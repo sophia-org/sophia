@@ -5,6 +5,9 @@ use sophia_protocol::{ContentGrant, ContentOutputFacts, ShellContentRecord, Tran
 #[path = "shell_typed_outbox_transport.rs"]
 mod transport;
 
+#[path = "shell_owner_files.rs"]
+pub(in crate::shell_transport) mod files;
+
 fn record(transaction: u64, control: bool, charge: usize) -> Admitted {
     Admitted {
         record: OutboundRecord::Content(

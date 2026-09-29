@@ -1,35 +1,16 @@
 use super::super::outbound::{Admitted, OutboundRecord};
-use super::super::socket::SocketWire;
-use super::super::wire::{ContentWant, Wire};
+use super::super::outbox::tests::files::Peer;
 use super::*;
 use crate::ShellSessionTransport;
+use sophia_protocol::shell_files::*;
 use sophia_protocol::*;
-use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// Attaches a real socket wire to the fixture's connection. The returned peer
-/// never reads, so written bytes stay exactly where a partial write left them.
-fn attach_socket(transport: &mut ShellSessionTransport) -> UnixStream {
-    let (local, peer) = UnixStream::pair().unwrap();
-    local.set_nonblocking(true).unwrap();
-    let limits = transport.state.content_limits.clone();
-    transport.state.wire = Some(Wire::Socket(Box::new(SocketWire::new(
-        local,
-        limits.as_ref(),
-    ))));
-    peer
-}
-
-/// Writes at most `bytes` of the front output record through the wire.
-fn write_bytes(transport: &mut ShellSessionTransport, bytes: usize) {
-    transport.poll_io_bounded(bytes).unwrap();
-}
-
-/// The wire frame of the front record: its whole-record write size.
-fn front_frame_bytes(transport: &ShellSessionTransport) -> usize {
-    SocketWire::encode(&transport.state.output.front().unwrap().record)
-        .unwrap()
-        .len()
+fn attach_files(transport: &mut ShellSessionTransport) -> Peer {
+    Peer::attach(
+        &mut transport.state,
+        Some(crate::ContentStoreProfile::Legacy),
+    )
 }
 
 /// A real typed bulk record: output facts with `outputs` rows, admitted as
@@ -91,6 +72,8 @@ impl Fixture {
         transport.content_epochs.admit(limits.clone()).unwrap();
         transport.state.store_grant = grant;
         transport.state.content_grant = Some(grant);
+        transport.state.connection_epoch = grant.connection_epoch;
+        transport.state.capabilities = SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE;
         transport.state.content_limits = Some(limits);
         Self {
             transport,
@@ -105,7 +88,7 @@ impl Drop for Fixture {
 }
 
 #[test]
-fn final_collection_refuses_a_live_socket_even_without_a_content_epoch() {
+fn final_collection_refuses_a_live_file_wire_even_without_a_content_epoch() {
     let mut fixture = Fixture::new(7);
     let transport = &mut fixture.transport;
     let owner = Box::new([41u8; 8]);
@@ -115,8 +98,8 @@ fn final_collection_refuses_a_live_socket_even_without_a_content_epoch() {
         .unwrap_err();
     assert_eq!(owner.as_ptr(), address);
     transport.disconnect().unwrap();
-    let (socket, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
-    transport.state.wire = Some(Wire::Socket(Box::new(SocketWire::new(socket, None))));
+    transport.state.connection_epoch = 2;
+    let _peer = Peer::attach(&mut transport.state, None);
     let owner = transport
         .finish_content_after_backend_drop(owner)
         .unwrap_err();
@@ -132,6 +115,7 @@ fn final_collection_refuses_a_live_socket_even_without_a_content_epoch() {
 fn all_store_credits_and_fifo_frames_share_one_capacity() {
     let mut fixture = Fixture::new(7);
     let transport = &mut fixture.transport;
+    let mut peer = attach_files(transport);
     let grant = transport.state.content_grant.unwrap();
     transport
         .content_epochs
@@ -282,16 +266,21 @@ fn all_store_credits_and_fifo_frames_share_one_capacity() {
             .state
             .control_capacity_available(&transport.content_epochs, 1)
     );
-    let _peer = attach_socket(transport);
-    let frame_bytes = front_frame_bytes(transport);
-    write_bytes(transport, frame_bytes - 1);
+    let record = transport.state.output.front().unwrap().record.clone();
+    let count = Peer::fill_journal(&mut transport.state, &record);
+    assert!(!Peer::drain(&mut transport.state));
     assert_eq!(transport.content_accounting(), transferred);
     assert!(
         !transport
             .state
             .control_capacity_available(&transport.content_epochs, 1)
     );
-    write_bytes(transport, 1);
+    peer.expect(&mut transport.state, &record);
+    assert!(Peer::drain(&mut transport.state));
+    for _ in 0..count {
+        peer.expect(&mut transport.state, &record);
+    }
+    peer.quiet(&mut transport.state);
     assert_eq!(transport.content_accounting().response_records, 6);
     assert_eq!(
         transport.content_accounting().response_bytes,
@@ -360,7 +349,7 @@ fn byte_budget_can_exhaust_before_record_budget_and_bulk_cannot_spend_it() {
 }
 
 #[test]
-fn cancellation_reserve_survives_bulk_and_partial_write_until_exact_transfer() {
+fn cancellation_reserve_survives_bulk_and_journal_pressure_until_exact_transfer() {
     let mut fixture = Fixture::new(3);
     let transport = &mut fixture.transport;
     let action = ContentAction {
@@ -388,7 +377,7 @@ fn cancellation_reserve_survives_bulk_and_partial_write_until_exact_transfer() {
         .unwrap();
     assert_eq!(transport.state.output.records(), 1);
     assert_eq!(transport.state.action_cancellations.len(), 1);
-    let _peer = attach_socket(transport);
+    let mut peer = attach_files(transport);
     let facts = output_facts(transport, 0);
     assert!(
         transport
@@ -434,14 +423,20 @@ fn cancellation_reserve_survives_bulk_and_partial_write_until_exact_transfer() {
             .state
             .control_capacity_available(&transport.content_epochs, 1)
     );
-    let remaining = front_frame_bytes(transport);
-    write_bytes(transport, remaining - 1);
+    let first = transport.state.output.front().unwrap().record.clone();
+    Peer::fill_journal(&mut transport.state, &first);
+    assert!(!Peer::drain(&mut transport.state));
+    assert_eq!(transport.state.output.records(), 3);
     assert!(
         !transport
             .state
             .control_capacity_available(&transport.content_epochs, 1)
     );
-    write_bytes(transport, 1);
+    peer.expect(&mut transport.state, &first);
+    // Only the credited action fits the one freed journal slot; bulk cannot
+    // use its terminal reserve, so the other obligations stay in the outbox.
+    assert!(!Peer::drain(&mut transport.state));
+    assert_eq!(transport.state.output.records(), 2);
     assert!(
         transport
             .state
@@ -676,85 +671,58 @@ fn refused_native_outcome_retains_candidate_then_publishes_once_before_action() 
 }
 
 #[test]
-fn complete_inbox_frames_and_partial_input_share_the_advertised_byte_budget() {
-    use std::io::Write;
-    use std::time::{Duration, Instant};
+fn full_file_inbox_refuses_custody_then_retries_the_same_id_without_loss() {
     let mut fixture = Fixture::new(64);
-    let transport = &mut fixture.transport;
-    let grant = transport.state.content_grant.unwrap();
-    let (local, mut peer) = UnixStream::pair().unwrap();
-    local.set_nonblocking(true).unwrap();
-    let limits = transport.state.content_limits.clone();
-    transport.state.wire = Some(Wire::Socket(Box::new(SocketWire::new(
-        local,
-        limits.as_ref(),
-    ))));
-    let frame_bytes = SOPHIA_IPC_HEADER_LEN + 48 + 65488;
-    let writer = std::thread::spawn(move || {
-        for transaction in 1..=8 {
-            let frame = encode_shell_content_frame(
-                TransactionId::from_raw(transaction),
-                &ShellContentRecord::ResourceChunk(ContentResourceChunk {
-                    grant,
-                    resource: ContentResourceId {
-                        id: 1,
-                        generation: 1,
-                    },
-                    ordinal: transaction as u32 - 1,
-                    offset: (transaction - 1) * 65488,
-                    bytes: vec![42; 65488],
-                }),
+    let t = &mut fixture.transport;
+    let mut peer = attach_files(t);
+    let grant = t.state.content_grant.unwrap();
+    let demand = |id| {
+        ShellContentRecord::FrameDemand(ContentFrameDemand {
+            grant,
+            output: ContentOutputId {
+                id: 1,
+                generation: 1,
+            },
+            allocation: ContentAllocationId {
+                id: 1,
+                generation: 1,
+            },
+            demand_id: id,
+            reason: 1,
+        })
+    };
+    let submit = |peer: &mut Peer, t: &mut ShellSessionTransport, id| {
+        peer.try_submit(&mut t.state, ShellFileKind::FrameDemand, |header| {
+            encode_shell_file_transaction(
+                header,
+                &ShellFileTransactionRecord {
+                    transaction: TransactionId::from_raw(id),
+                    record: demand(id),
+                },
             )
-            .unwrap();
-            peer.write_all(&frame).unwrap();
-        }
-    });
-    let limit = transport
-        .state
-        .content_limits
-        .as_ref()
-        .unwrap()
-        .max_input_queue_bytes as usize;
-    let deadline = Instant::now() + Duration::from_secs(2);
-    loop {
-        transport.poll_io().unwrap();
-        let (frames, retained) = transport.state.socket().unwrap().input_accounting();
-        let accounting = transport.content_accounting();
-        assert_eq!(accounting.input_bytes, retained);
-        assert_eq!(accounting.input_records, frames);
-        assert!(retained <= limit);
-        if retained == limit {
-            break;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "private peer did not fill the input budget"
-        );
-        std::thread::yield_now();
-    }
-    let (frames, retained) = transport.state.socket().unwrap().input_accounting();
-    assert!(
-        retained > frames * frame_bytes,
-        "the second whole frame cannot yet fit"
-    );
-    let mut received = 0;
-    while received < 8 {
-        transport.poll_io().unwrap();
-        assert!(transport.state.socket().unwrap().input_accounting().1 <= limit);
-        if let Some((transaction, _)) = transport
-            .state
-            .socket_mut()
             .unwrap()
-            .take_content(ContentWant::Resource)
-            .unwrap()
-        {
-            received += 1;
-            assert_eq!(transaction.raw(), received);
-        }
-        assert!(
-            Instant::now() < deadline,
-            "backpressure lost a complete or partial frame"
-        );
+        })
+    };
+    // Pin the export's INBOUND_RECORDS bound without exposing it for tests.
+    let bound = 64;
+    for id in 1..=bound {
+        assert!(submit(&mut peer, t, id));
     }
-    writer.join().unwrap();
+    assert!(!submit(&mut peer, t, bound + 1));
+    peer.quiet(&mut t.state);
+    let take = |t: &mut ShellSessionTransport| {
+        t.state
+            .files_mut()
+            .unwrap()
+            .export_mut()
+            .take_content(|r| matches!(r, ShellContentRecord::FrameDemand(_)))
+    };
+    assert_eq!(take(t), Some((TransactionId::from_raw(1), demand(1))));
+    assert!(submit(&mut peer, t, bound + 1));
+    for id in 2..=bound + 1 {
+        assert_eq!(take(t), Some((TransactionId::from_raw(id), demand(id))));
+    }
+    assert!(take(t).is_none());
+    assert!(t.state.inbound_idle());
+    peer.quiet(&mut t.state);
 }

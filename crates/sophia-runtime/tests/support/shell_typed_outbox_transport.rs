@@ -1,17 +1,15 @@
 //! The typed outbox under the real transport: neutral per-record charges,
-//! bulk saturation refused before any owner changes, each wire's own record
+//! bulk saturation refused before any owner changes, whole file record
 //! bounds, disconnected cleanup and neighbouring owners. The credit checks
-//! that replaced the per-owner socket-byte pre-checks are proven here by
+//! are proven here by
 //! intake that stays queued until its credit exists.
+use super::files::Peer;
 use crate::shell_transport::control_budget::{CONTROL_RECORD_BYTES, Class};
 use crate::shell_transport::outbound::{OutboundRecord, output_facts_charge};
-use crate::shell_transport::socket::SocketWire;
-use crate::shell_transport::wire::Wire;
 use crate::shell_transport::{ShellComponentTransport, ShellTransportError};
 use crate::{ContentEpochRegistry, ContentStoreProfile};
+use sophia_protocol::shell_files::*;
 use sophia_protocol::*;
-use std::io::Write as _;
-use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -65,38 +63,57 @@ impl Owner {
         transport.content_grant = Some(grant);
         transport.content_limits = Some(limits);
         transport.connection_epoch = epoch;
+        transport.capabilities = SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE;
         Self {
             transport,
             directory,
         }
     }
 
-    /// Attaches a real socket wire; the returned peer never reads unless asked.
-    fn attach_socket(&mut self) -> UnixStream {
-        let (local, peer) = UnixStream::pair().unwrap();
-        local.set_nonblocking(true).unwrap();
-        let limits = self.transport.content_limits.clone();
-        self.transport.wire = Some(Wire::Socket(Box::new(SocketWire::new(
-            local,
-            limits.as_ref(),
-        ))));
-        peer
+    fn attach_files(&mut self) -> Peer {
+        Peer::attach(&mut self.transport, Some(ContentStoreProfile::Legacy))
     }
-
-    /// Delivers one client frame through the socket's production read path.
-    fn deliver(&mut self, peer: &mut UnixStream, frame: &[u8]) {
-        peer.write_all(frame).unwrap();
-        let socket = self.transport.socket_mut().unwrap();
-        let before = socket.input_accounting().0;
-        while socket.input_accounting().0 == before {
-            socket.receive(4096).unwrap();
-        }
+    fn inbox(&mut self) -> usize {
+        usize::from(
+            !self
+                .transport
+                .files_mut()
+                .unwrap()
+                .export()
+                .inbound_is_empty(),
+        )
     }
-
-    fn inbox(&self) -> usize {
-        self.transport.socket().unwrap().input_accounting().0
+    fn begin_resource(&mut self, peer: &mut Peer) {
+        let grant = self.transport.store_grant;
+        peer.submit(
+            &mut self.transport,
+            ShellFileKind::ResourceBegin,
+            |header| {
+                encode_shell_file_resource_begin(
+                    header,
+                    &ShellFileResourceBegin {
+                        transaction: tx(3),
+                        slot: 0,
+                        record: ShellContentRecord::ResourceBegin(ContentResourceBegin {
+                            grant,
+                            resource: ContentResourceId {
+                                id: 1,
+                                generation: 1,
+                            },
+                            width_px: 1,
+                            height_px: 1,
+                            rendered_scale_numerator: 1,
+                            rendered_scale_denominator: 1,
+                            pixel_format: 1,
+                            chunk_count: 1,
+                            total_bytes: 4,
+                        }),
+                    },
+                )
+                .unwrap()
+            },
+        );
     }
-
     fn facts(&self, outputs: usize) -> OutboundRecord {
         OutboundRecord::Content(
             tx(90),
@@ -258,124 +275,95 @@ fn typed_bulk_saturation_is_refused_before_the_facts_owner_changes() {
 }
 
 #[test]
-fn every_control_record_fits_its_credit_as_a_whole_record_on_both_wires() {
+fn every_control_record_fits_its_credit_as_a_whole_file_record() {
     let mut epochs = registry();
     let mut owner = Owner::new(&mut epochs, 1, 64);
+    let _peer = owner.attach_files();
     let grant = owner.transport.store_grant;
     let text = "a".repeat(SOPHIA_SHELL_NATIVE_LAUNCHER_MAX_TEXT_BYTES);
-    for socket in [false, true] {
-        let _peer = socket.then(|| owner.attach_socket());
-        // The largest base-content response and the largest native record.
-        let allocation = owner
+    for (record, limit, charge) in [
+        (rejected_allocation(grant), CONTROL_RECORD_BYTES, 168),
+        (native_input(&text, grant), 512, 398),
+    ] {
+        let (_, body) = record.native().unwrap();
+        assert_eq!(body.len(), charge);
+        let admitted = owner
             .transport
-            .admit_record(rejected_allocation(grant), control(CONTROL_RECORD_BYTES))
+            .admit_record(record.clone(), control(limit))
             .unwrap();
-        assert_eq!(allocation.charge, 168);
-        let input = owner
+        assert_eq!(admitted.charge, charge);
+        let whole = SHELL_FILE_HEADER_BYTES + charge;
+        owner
             .transport
-            .admit_record(native_input(&text, grant), control(512))
+            .admit_record(record.clone(), control(whole))
             .unwrap();
-        assert_eq!(input.charge, 398);
-        for (record, limit) in [
-            (rejected_allocation(grant), CONTROL_RECORD_BYTES),
-            (native_input(&text, grant), 512),
-        ] {
-            let frame = SocketWire::encode(&record).unwrap().len();
-            let (_, body) = record.native().unwrap();
-            assert!(frame <= limit && 32 + body.len() <= limit);
-        }
-        // A credit smaller than the whole record (412 framed, 430 as a file
-        // record) refuses before custody.
         assert_eq!(
             owner
                 .transport
-                .admit_record(native_input(&text, grant), control(411))
+                .admit_record(record, control(whole - 1))
                 .unwrap_err(),
             ShellTransportError::ContentQueueSaturated
         );
-        owner.transport.wire = None;
     }
+    assert!(owner.transport.output.front().is_none());
 }
 
 #[test]
-fn native_input_is_bounded_by_its_text_and_by_each_wires_record_bound() {
+fn native_input_is_bounded_by_its_text_and_whole_file_record() {
     let mut epochs = registry();
     let mut owner = Owner::new(&mut epochs, 1, 64);
+    let _peer = owner.attach_files();
     let grant = owner.transport.store_grant;
     let longest = "a".repeat(SOPHIA_SHELL_NATIVE_LAUNCHER_MAX_TEXT_BYTES);
     let over = "a".repeat(SOPHIA_SHELL_NATIVE_LAUNCHER_MAX_TEXT_BYTES + 1);
-    // The record's own text bound, on every wire.
     assert_eq!(
         native_input(&over, grant).native().unwrap_err(),
         ShellTransportError::WrongContentRecord
     );
-    // The file record has a fixed text slot: the longest text admits.
     owner
         .transport
-        .admit_record(native_input(&longest, grant), control(512))
-        .unwrap();
-    // A socket peer advertised a smaller frame payload; it stays enforced
-    // there, before any custody, and nowhere else.
-    let limits = owner.transport.content_limits.as_mut().unwrap();
-    limits.max_chunk_bytes = 256;
-    limits.max_frame_payload = 304;
-    let _peer = owner.attach_socket();
-    owner
-        .transport
-        .admit_record(native_input(&"a".repeat(172), grant), control(512))
+        .admit_record(native_input(&longest, grant), control(430))
         .unwrap();
     assert_eq!(
         owner
             .transport
-            .admit_record(native_input(&"a".repeat(173), grant), control(512))
+            .admit_record(native_input(&longest, grant), control(429))
             .unwrap_err(),
-        ShellTransportError::WrongContentRecord
+        ShellTransportError::ContentQueueSaturated
     );
     assert!(owner.transport.output.front().is_none());
 }
 
 #[test]
-fn disconnect_releases_typed_records_lane_frames_publication_and_a_partial_write() {
+fn disconnect_releases_typed_records_file_input_and_snapshots() {
     let mut epochs = registry();
     let mut owner = Owner::new(&mut epochs, 1, 64);
-    let _peer = owner.attach_socket();
-    for outputs in [16, 3] {
+    let mut peer = owner.attach_files();
+    owner.begin_resource(&mut peer);
+    assert_eq!(owner.inbox(), 1);
+    let facts = owner
+        .transport
+        .admit_record(owner.facts(16), Class::Bulk)
+        .unwrap();
+    owner.transport.transfer_record(facts);
+    assert!(Peer::drain(&mut owner.transport));
+    assert!(
+        owner
+            .transport
+            .content_accounting(&epochs)
+            .snapshot_retained_bytes
+            > 0
+    );
+    // The snapshot and its announcement are still unread, and a submitted
+    // Begin still belongs to the export. Further typed records stay queued.
+    for outputs in [3, 4] {
         let admitted = owner
             .transport
             .admit_record(owner.facts(outputs), Class::Bulk)
             .unwrap();
         owner.transport.transfer_record(admitted);
     }
-    let lane = encode_shell_content_frame(
-        tx(7),
-        &ShellContentRecord::OutputFacts(ContentOutputFacts {
-            grant: owner.transport.store_grant,
-            facts_generation: 1,
-            outputs: vec![entry(1)],
-        }),
-    )
-    .unwrap();
-    owner.transport.enqueue_async(&epochs, lane).unwrap();
-    owner
-        .transport
-        .publish_indicators(
-            &epochs,
-            tx(8),
-            &ShellIndicatorSnapshot {
-                connection_epoch: 1,
-                generation: 1,
-                active_output: None,
-                statuses: Vec::new(),
-                indicators: Vec::new(),
-            },
-        )
-        .unwrap();
-    // One byte of the front record is in the kernel; its charge stays.
-    let Some(Wire::Socket(socket)) = owner.transport.wire.as_mut() else {
-        unreachable!("attached");
-    };
-    socket.send(&mut owner.transport.output, 1).unwrap();
-    assert!(owner.transport.fifo_records() >= 4);
+    assert_eq!(owner.transport.fifo_records(), 2);
     assert!(owner.transport.fifo_bytes() > 0);
     owner.transport.disconnect(&mut epochs).unwrap();
     assert!(owner.transport.wire.is_none());
@@ -387,10 +375,12 @@ fn disconnect_releases_typed_records_lane_frames_publication_and_a_partial_write
     assert_eq!(accounting.response_bytes, 0);
     assert_eq!(accounting.input_records, 0);
     assert_eq!(accounting.input_bytes, 0);
-    // A later epoch's socket starts with no half-written predecessor.
-    let _peer = owner.attach_socket();
-    assert!(owner.transport.inbound_idle());
-    assert!(owner.transport.fifo_is_empty());
+    assert_eq!(accounting.snapshot_retained_bytes, 0);
+    assert_eq!(accounting.snapshot_reserved_bytes, 0);
+    let mut successor = Owner::new(&mut epochs, 2, 64);
+    let _successor_peer = successor.attach_files();
+    assert!(successor.transport.inbound_idle());
+    assert!(successor.transport.fifo_is_empty());
 }
 
 #[test]
@@ -398,8 +388,8 @@ fn a_saturated_or_disconnected_neighbour_does_not_spend_another_owners_budget() 
     let mut epochs = registry();
     let mut first = Owner::new(&mut epochs, 1, 4);
     let mut second = Owner::new(&mut epochs, 2, 4);
-    let _first_peer = first.attach_socket();
-    let _second_peer = second.attach_socket();
+    let _first_peer = first.attach_files();
+    let _second_peer = second.attach_files();
     while first
         .transport
         .bulk_capacity_available(&epochs, output_facts_charge(0))
@@ -439,26 +429,8 @@ fn a_saturated_or_disconnected_neighbour_does_not_spend_another_owners_budget() 
 fn a_resource_request_stays_queued_until_its_response_credits_exist() {
     let mut epochs = registry();
     let mut owner = Owner::new(&mut epochs, 1, 2);
-    let mut peer = owner.attach_socket();
-    let begin = encode_shell_content_frame(
-        tx(3),
-        &ShellContentRecord::ResourceBegin(ContentResourceBegin {
-            grant: owner.transport.store_grant,
-            resource: ContentResourceId {
-                id: 1,
-                generation: 1,
-            },
-            width_px: 1,
-            height_px: 1,
-            rendered_scale_numerator: 1,
-            rendered_scale_denominator: 1,
-            pixel_format: 1,
-            chunk_count: 1,
-            total_bytes: 4,
-        }),
-    )
-    .unwrap();
-    owner.deliver(&mut peer, &begin);
+    let mut peer = owner.attach_files();
+    owner.begin_resource(&mut peer);
     // Begin owes up to three responses; two record credits cannot hold them.
     assert_eq!(
         owner
@@ -566,155 +538,104 @@ fn a_permit_and_an_allocation_answer_need_their_credits_before_the_owner_changes
 }
 
 #[test]
-fn the_socket_writes_typed_records_and_its_lane_frames_in_admission_order() {
-    socket_admission_order(0);
+fn the_file_journal_takes_typed_records_in_admission_order() {
+    file_admission_order(0);
 }
 
 #[test]
-fn socket_admission_order_survives_counter_wrap_before_either_queue() {
-    // MAX-1 stamps typed, MAX stamps lane, then 0 stamps typed. Starting at
-    // MAX instead wraps before the lane. Both comparisons must keep FIFO order.
-    socket_admission_order(u64::MAX - 1);
-    socket_admission_order(u64::MAX);
+fn file_admission_order_survives_outbox_counter_wrap() {
+    file_admission_order(u64::MAX - 1);
+    file_admission_order(u64::MAX);
 }
 
-fn socket_admission_order(first_sequence: u64) {
-    use std::io::Read as _;
+fn file_admission_order(first_sequence: u64) {
     let mut epochs = registry();
     let mut owner = Owner::new(&mut epochs, 1, 64);
-    let mut peer = owner.attach_socket();
+    let mut peer = owner.attach_files();
     owner.transport.output.next_sequence = first_sequence;
-    let first = owner
-        .transport
-        .admit_record(owner.facts(1), Class::Bulk)
-        .unwrap();
-    owner.transport.transfer_record(first);
-    let lane = encode_shell_content_frame(
-        tx(7),
-        &ShellContentRecord::OutputFacts(ContentOutputFacts {
-            grant: owner.transport.store_grant,
-            facts_generation: 1,
-            outputs: vec![entry(1), entry(2)],
-        }),
-    )
-    .unwrap();
-    owner.transport.enqueue_async(&epochs, lane).unwrap();
-    let last = owner
-        .transport
-        .admit_record(owner.facts(3), Class::Bulk)
-        .unwrap();
-    owner.transport.transfer_record(last);
-    owner.transport.poll_io(&mut epochs).unwrap();
-    assert!(owner.transport.fifo_is_empty());
-    peer.set_nonblocking(true).unwrap();
-    let mut bytes = Vec::new();
-    let mut chunk = [0; 4096];
-    while let Ok(count) = peer.read(&mut chunk) {
-        if count == 0 {
-            break;
-        }
-        bytes.extend_from_slice(&chunk[..count]);
-    }
-    let mut order = Vec::new();
-    let mut at = 0;
-    while at < bytes.len() {
-        let length = SOPHIA_IPC_HEADER_LEN
-            + u32::from_le_bytes(bytes[at + 16..at + 20].try_into().unwrap()) as usize;
-        let (transaction, record) = decode_shell_content_frame(&bytes[at..at + length]).unwrap();
-        let ShellContentRecord::OutputFacts(facts) = record else {
-            panic!("only output facts were queued");
+    let records = [90, 7, 91].map(|id| {
+        let OutboundRecord::Content(_, value) = rejected_allocation(owner.transport.store_grant)
+        else {
+            unreachable!()
         };
-        order.push((transaction.raw(), facts.outputs.len()));
-        at += length;
+        OutboundRecord::Content(tx(id), value)
+    });
+    for record in &records {
+        let admitted = owner
+            .transport
+            .admit_record(record.clone(), Class::Bulk)
+            .unwrap();
+        owner.transport.transfer_record(admitted);
     }
-    assert_eq!(order, [(90, 1), (7, 2), (90, 3)]);
-}
-
-fn catalog(connection_epoch: u64, entries: u16) -> ShellPersistentCatalog {
-    ShellPersistentCatalog {
-        catalog: ShellApplicationCatalog {
-            connection_epoch,
-            generation: 1,
-            entries: (1..=entries)
-                .map(|slot| ShellApplicationDescriptor {
-                    slot,
-                    available: true,
-                    label: format!("application {slot}"),
-                    keywords: String::new(),
-                })
-                .collect(),
-        },
-        identities: Default::default(),
+    assert!(Peer::drain(&mut owner.transport));
+    assert!(owner.transport.fifo_is_empty());
+    for record in &records {
+        peer.expect(&mut owner.transport, record);
     }
-}
-
-/// The socket frames of a whole catalog publication: Begin, one Entry per
-/// application, End.
-fn catalog_frames(catalog: &ShellPersistentCatalog) -> Vec<usize> {
-    encode_shell_application_catalog(tx(9), &catalog.catalog)
-        .unwrap()
-        .iter()
-        .map(Vec::len)
-        .collect()
+    peer.quiet(&mut owner.transport);
 }
 
 #[test]
-fn a_pending_socket_publication_is_accounted_once_until_it_has_left() {
+fn file_publication_charges_the_snapshot_once_after_outbox_transfer() {
     let mut epochs = registry();
     let mut owner = Owner::new(&mut epochs, 1, 2);
-    let _peer = owner.attach_socket();
-    let published = catalog(1, 3);
-    let frames = catalog_frames(&published);
-    assert_eq!(frames.len(), 5);
-    owner
+    let mut peer = owner.attach_files();
+    let facts = owner.facts(3);
+    let bytes = facts.native().unwrap().1.len() + SHELL_FILE_HEADER_BYTES;
+    let admitted = owner
         .transport
-        .publish_catalog(&epochs, tx(9), &published)
+        .admit_record(facts.clone(), Class::Bulk)
         .unwrap();
-    // Two records fit the record budget; three frames wait unadmitted.
-    let accounting = owner.transport.content_accounting(&epochs);
-    assert_eq!(owner.transport.fifo_records(), 2);
-    assert_eq!(owner.transport.pending_publication().0, 3);
-    assert_eq!(accounting.response_records, frames.len());
-    assert_eq!(accounting.response_bytes, frames.iter().sum::<usize>());
-    // Admission is unchanged: the pending frames spend no budget.
-    assert_eq!(owner.transport.fifo_bulk_bytes(), frames[0] + frames[1]);
-    let mut sent = 0;
-    while owner.transport.fifo_records() + owner.transport.pending_publication().0 > 0 {
-        // Each turn moves frames from pending into the lane before writing.
-        owner.transport.poll_io(&mut epochs).unwrap();
-        let (pending, pending_bytes) = owner.transport.pending_publication();
-        let accounting = owner.transport.content_accounting(&epochs);
-        assert_eq!(
-            accounting.response_records,
-            owner.transport.fifo_records() + pending
-        );
-        assert_eq!(
-            accounting.response_bytes,
-            owner.transport.fifo_bulk_bytes() + pending_bytes
-        );
-        sent += 1;
-        assert!(sent < 16, "the publication never drained");
-    }
-    let accounting = owner.transport.content_accounting(&epochs);
+    owner.transport.transfer_record(admitted);
     assert_eq!(
-        (accounting.response_records, accounting.response_bytes),
-        (0, 0)
+        owner.transport.content_accounting(&epochs).response_records,
+        1
+    );
+    assert_eq!(
+        owner
+            .transport
+            .content_accounting(&epochs)
+            .snapshot_retained_bytes,
+        0
+    );
+    assert!(Peer::drain(&mut owner.transport));
+    let accounting = owner.transport.content_accounting(&epochs);
+    assert_eq!(accounting.response_records, 0);
+    assert_eq!(accounting.response_bytes, 0);
+    assert_eq!(accounting.snapshot_retained_bytes, bytes);
+    peer.expect(&mut owner.transport, &facts);
+    // Reading/clunking releases the pin, but the current snapshot remains.
+    assert_eq!(
+        owner
+            .transport
+            .content_accounting(&epochs)
+            .snapshot_retained_bytes,
+        bytes
     );
 }
 
 #[test]
-fn disconnect_releases_a_pending_socket_publication() {
+fn disconnect_releases_a_published_file_snapshot() {
     let mut epochs = registry();
     let mut owner = Owner::new(&mut epochs, 1, 2);
-    let _peer = owner.attach_socket();
-    owner
+    let _peer = owner.attach_files();
+    let facts = owner
         .transport
-        .publish_catalog(&epochs, tx(9), &catalog(1, 3))
+        .admit_record(owner.facts(3), Class::Bulk)
         .unwrap();
-    assert!(owner.transport.pending_publication().0 > 0);
+    owner.transport.transfer_record(facts);
+    assert!(Peer::drain(&mut owner.transport));
+    assert!(
+        owner
+            .transport
+            .content_accounting(&epochs)
+            .snapshot_retained_bytes
+            > 0
+    );
     owner.transport.disconnect(&mut epochs).unwrap();
-    assert_eq!(owner.transport.pending_publication(), (0, 0));
     let accounting = owner.transport.content_accounting(&epochs);
     assert_eq!(accounting.response_records, 0);
     assert_eq!(accounting.response_bytes, 0);
+    assert_eq!(accounting.snapshot_retained_bytes, 0);
+    assert_eq!(accounting.snapshot_reserved_bytes, 0);
 }

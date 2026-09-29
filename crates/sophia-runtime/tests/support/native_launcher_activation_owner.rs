@@ -4,10 +4,9 @@
 use super::*;
 use crate::shell_transport::files::{ShellFileWire, ShellFiles, role_bounds};
 use crate::shell_transport::outbound::{Admitted, OutboundRecord};
-use sophia_protocol::shell_files::*;
-#[path = "shell_file_peer.rs"]
-mod shell_file_peer;
+use crate::shell_transport::outbox::tests::files::raw as shell_file_peer;
 use crate::shell_transport::wire::Wire;
+use sophia_protocol::shell_files::*;
 use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicU64, Ordering};
 static NEXT: AtomicU64 = AtomicU64::new(0);

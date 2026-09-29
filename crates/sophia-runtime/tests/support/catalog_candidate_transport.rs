@@ -2,7 +2,9 @@
 //! byte lease and response FIFO. No native presentation or dock launch.
 use super::super::super::outbound::OutboundRecord;
 use super::{Fixture, GRANT};
+use crate::shell_transport::wire::CatalogCandidatePart;
 use crate::{ContentAllocationSnapshot, ContentCandidateContext};
+use sophia_protocol::shell_files::*;
 use sophia_protocol::*;
 
 const OUTPUT: ContentOutputId = ContentOutputId {
@@ -50,11 +52,57 @@ fn fixture() -> Fixture {
     candidates.take_event().unwrap();
     f
 }
-fn enqueue_begin(f: &mut Fixture, value: CatalogCandidateBegin) {
-    f.deliver(
-        encode_shell_catalog_action_frame(tx(2), &ShellCatalogActionRecord::CandidateBegin(value))
-            .unwrap(),
+fn candidate(value: CatalogCandidateBegin) -> CatalogContentCandidate {
+    let v = value.content;
+    CatalogContentCandidate {
+        catalog_generation: value.catalog_generation,
+        candidate: ContentCandidate {
+            grant: v.grant,
+            candidate_generation: v.candidate_generation,
+            output: v.output,
+            facts_generation: v.facts_generation,
+            pacing_permit: v.pacing_permit,
+            interaction_generation: v.interaction_generation,
+            surfaces: vec![ContentSurface {
+                allocation: ALLOCATION,
+                scale_generation: 1,
+                role: 1,
+                edge: 1,
+                margins: ContentMargins::default(),
+                reservation_extent: 0,
+                parent_surface_index: u16::MAX,
+                anchor_parent_rect: ContentPixelRect::default(),
+            }],
+            placements: vec![ContentPlacement {
+                resource: RESOURCE,
+                surface_index: 0,
+                destination_x_px: 0,
+                destination_y_px: 0,
+            }],
+            targets: vec![],
+        },
+    }
+}
+fn enqueue_candidate(f: &mut Fixture, value: CatalogCandidateBegin) {
+    f.peer.submit(
+        &mut f.transport,
+        ShellFileKind::CatalogCandidate,
+        |header| {
+            encode_shell_file_catalog_candidate(
+                header,
+                &ShellFileCatalogCandidate {
+                    transaction: tx(2),
+                    candidate: candidate(value),
+                },
+            )
+            .unwrap()
+        },
     );
+}
+fn front(f: &mut Fixture) -> CatalogCandidatePart {
+    let (transaction, part) = f.transport.peek_catalog_candidate().unwrap().unwrap();
+    assert_eq!(transaction, tx(2));
+    part
 }
 fn allocation() -> ContentAllocationSnapshot {
     ContentAllocationSnapshot {
@@ -140,48 +188,7 @@ fn catalog_wire_assembly_reaches_real_submission_and_exact_response_fifo() {
         )
         .unwrap();
     while resources.take_event().is_some() {}
-    enqueue_begin(&mut f, begin());
-    f.deliver(
-        encode_shell_catalog_action_frame(
-            tx(3),
-            &ShellCatalogActionRecord::CandidateChunk(ContentCandidateChunk {
-                grant: GRANT,
-                candidate_generation: 1,
-                chunk_ordinal: 0,
-                surfaces: vec![ContentSurface {
-                    allocation: ALLOCATION,
-                    scale_generation: 1,
-                    role: 1,
-                    edge: 1,
-                    margins: ContentMargins::default(),
-                    reservation_extent: 0,
-                    parent_surface_index: u16::MAX,
-                    anchor_parent_rect: ContentPixelRect::default(),
-                }],
-                placements: vec![ContentPlacement {
-                    resource: RESOURCE,
-                    surface_index: 0,
-                    destination_x_px: 0,
-                    destination_y_px: 0,
-                }],
-                targets: vec![],
-            }),
-        )
-        .unwrap(),
-    );
-    f.deliver(
-        encode_shell_content_frame(
-            tx(4),
-            &ShellContentRecord::CandidateEnd(ContentCandidateEnd {
-                grant: GRANT,
-                candidate_generation: 1,
-                surface_count: 1,
-                placement_count: 1,
-                target_count: 0,
-            }),
-        )
-        .unwrap(),
-    );
+    enqueue_candidate(&mut f, begin());
     let allocations = [allocation()];
     f.transport
         .content_limits
@@ -194,7 +201,7 @@ fn catalog_wire_assembly_reaches_real_submission_and_exact_response_fifo() {
             .unwrap(),
         1
     );
-    assert_eq!(f.inbox(), 2);
+    assert!(matches!(front(&mut f), CatalogCandidatePart::Chunk(_)));
     f.transport
         .content_limits
         .as_mut()
@@ -206,7 +213,7 @@ fn catalog_wire_assembly_reaches_real_submission_and_exact_response_fifo() {
             .service_catalog_candidates(&mut f.epochs, &[], &catalog(), 0)
             .is_err()
     );
-    assert_eq!(f.inbox(), 1);
+    assert!(matches!(front(&mut f), CatalogCandidatePart::End(_)));
     assert_eq!(
         f.epochs
             .active_candidates(GRANT)
@@ -219,7 +226,7 @@ fn catalog_wire_assembly_reaches_real_submission_and_exact_response_fifo() {
             .service_catalog_candidates(&mut f.epochs, &[context(&allocations); 2], &catalog(), 0)
             .is_err()
     );
-    assert_eq!(f.inbox(), 1);
+    assert!(matches!(front(&mut f), CatalogCandidatePart::End(_)));
     assert_eq!(
         f.transport
             .service_catalog_candidates(&mut f.epochs, &[context(&allocations)], &catalog(), 0)
@@ -254,22 +261,25 @@ fn catalog_wire_assembly_reaches_real_submission_and_exact_response_fifo() {
     f.transport
         .content_presented(&mut f.epochs, GRANT, OUTPUT, 1, 8, 1, 1)
         .unwrap();
-    for kind in [1, 2] {
-        let Some(OutboundRecord::Content(transaction, record)) = f
-            .transport
-            .output
-            .front()
-            .map(|queued| queued.record.clone())
-        else {
-            panic!("the outcome is queued as a typed content record");
-        };
-        assert_eq!(transaction, tx(2));
-        assert!(
-            matches!(record, ShellContentRecord::CandidateOutcome(v) if v.kind == kind && v.candidate_generation == 1)
-        );
-        let bytes = f.front_frame_bytes();
-        f.send(bytes);
-    }
+    assert_eq!(f.transport.output.records(), 2);
+    let first = f.transport.output.front().unwrap().record.clone();
+    let OutboundRecord::Content(transaction, ShellContentRecord::CandidateOutcome(value)) = &first
+    else {
+        panic!("prepared outcome is typed");
+    };
+    assert_eq!(*transaction, tx(2));
+    assert_eq!(value.kind, 1);
+    assert_eq!(value.candidate_generation, 1);
+    let mut presented = value.clone();
+    presented.kind = 2;
+    presented.presentation_epoch = 8;
+    f.send();
+    f.peer.expect(&mut f.transport, &first);
+    f.peer.expect(
+        &mut f.transport,
+        &OutboundRecord::Content(tx(2), ShellContentRecord::CandidateOutcome(presented)),
+    );
+    f.peer.quiet(&mut f.transport);
     assert!(f.transport.output.front().is_none());
     f.transport.disconnect(&mut f.epochs).unwrap();
     f.epochs.collect();
@@ -284,7 +294,7 @@ fn candidate_intake_refuses_wrong_family_role_and_grant_before_dequeue() {
     let mut f = fixture();
     let mut value = begin();
     value.content.grant.connection_epoch += 1;
-    enqueue_begin(&mut f, value);
+    enqueue_candidate(&mut f, value);
     assert!(matches!(
         f.transport
             .service_catalog_candidates(&mut f.epochs, &[], &catalog(), 0),
@@ -298,11 +308,22 @@ fn candidate_intake_refuses_wrong_family_role_and_grant_before_dequeue() {
             .assembling_output(1),
         None
     );
-    f.transport.socket_mut().unwrap().take_catalog_candidate();
-    f.deliver(
-        encode_shell_content_frame(tx(2), &ShellContentRecord::CandidateBegin(begin().content))
-            .unwrap(),
-    );
+    f.transport
+        .files_mut()
+        .unwrap()
+        .export_mut()
+        .discard_catalog_candidate_parts();
+    f.peer
+        .submit(&mut f.transport, ShellFileKind::Candidate, |header| {
+            encode_shell_file_candidate(
+                header,
+                &ShellFileCandidate {
+                    transaction: tx(2),
+                    candidate: candidate(begin()).candidate,
+                },
+            )
+            .unwrap()
+        });
     assert!(matches!(
         f.transport
             .service_catalog_candidates(&mut f.epochs, &[], &catalog(), 0),
@@ -321,7 +342,7 @@ fn candidate_intake_refuses_wrong_family_role_and_grant_before_dequeue() {
 #[test]
 fn candidate_budget_defers_intake_and_stale_begin_emits_one_terminal() {
     let mut f = fixture();
-    enqueue_begin(&mut f, begin());
+    enqueue_candidate(&mut f, begin());
     f.transport
         .content_limits
         .as_mut()

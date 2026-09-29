@@ -238,16 +238,18 @@ full owner-loop acceptance.
 The typed shell outbox fixture, `tests/support/shell_outbox.rs` with its
 `shell_typed_outbox_transport.rs` submodule, joins the same private owners
 through the existing `outbox.rs` mount. It places exact neutral charges,
-bulk saturation, per-wire record bounds, a partial socket write and a
-neighbouring owner that no public call can select. The transport-budget,
-indicator, catalog and native-activation fixtures deliver requests through the
-real socket read path and drain through its write path on a socket pair whose
-peer does not read; they no longer write the private inbox or byte FIFO.
+bulk saturation, whole-file record bounds, journal refusal and a neighbouring
+owner that no public call can select. The transport-budget, indicator, catalog
+and native-activation fixtures use the shared `shell_owner_files.rs` peer through
+the existing test mount. Supplied negotiation lets requests traverse the real
+9P server while the fixture controls when the production outbox transfers
+records to its journal. This establishes credit custody, not authenticated
+negotiation, independent codec interoperability or kernel backpressure.
 
 The persistent catalog response fixture, `tests/support/shell_catalog_responses.rs`,
 uses the same narrow exception: supplied negotiated state, exact private credit
-accounting, forced returned refusal and partial FIFO drain. It does not enable
-dock negotiation or claim kernel backpressure. Its bodies remain outside `src`;
+accounting, forced returned refusal and whole-record journal handoff. It does not
+enable dock negotiation or claim kernel backpressure. Its bodies remain outside `src`;
 only its individual module mount is listed, with no checker or legacy-debt change.
 
 The file export's `tests/support/shell_file_descriptor_export.rs` mount controls
@@ -553,7 +555,8 @@ not a device, frontend-worker or full owner-loop execution.
 
 The native launcher activation owner mounts an external fixture beside its
 private pending reply and FIFO. It checks reservation before intake, exact
-outcome retention through returned refusal/close, and partial-write charges.
-Connection/request facts and write completion are supplied; this is not kernel
-backpressure or launch execution. The Session queue tests use the public native
-service with actual private sockets and need no private production test mount.
+outcome retention through returned refusal/close, and charges retained until
+the file journal accepts custody. Connection facts are supplied; requests and
+event reads cross the real 9P server. This is not kernel backpressure or launch
+execution. The Session queue tests use the public native service with actual
+private sockets and need no private production test mount.

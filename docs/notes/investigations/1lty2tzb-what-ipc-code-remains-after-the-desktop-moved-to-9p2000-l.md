@@ -2413,6 +2413,68 @@ or SDK changes in this slice. Other generic socket-admission, negotiation,
 content and descriptor controls still block removal of the common adapter;
 t269, t270 and t272 remain open. No installation is prepared or activated.
 
+## Remaining private shell owner controls over files (t269, 2026-09-28)
+
+The fixtures covering 28 controls in catalog responses (3), catalog candidates
+(3), indicator responses (3), typed outbox transport (12) and aggregate control
+budgets (7) no longer depend on the socket adapter. Wire controls now use files;
+passive owner/charge controls remain unchanged. Their shared external fixture
+supplies negotiated state, drives a real 9P server/raw peer, and separates
+request I/O from the production outbox drain. It uses Sophia's Rust codecs;
+this is neither independent-client
+interoperability nor authenticated negotiation. Production behavior is unchanged.
+
+The preserved owner assertions include exact record and byte credits, immutable
+completed outcomes, refusal before dequeue, wrong grant/family/capability,
+candidate context and visit bounds, held raster leases, Prepared/Presented
+order, neighbour isolation, cancellation reserve, sequence wrap, and cleanup.
+Exact native bodies and transactions are read and acknowledged through files.
+An ordered read/flush fence checks that no extra event appeared.
+
+The wire-specific replacements are explicit:
+
+- Journal saturation replaces partial socket writes. A queued response stays
+  charged on refusal; acknowledging one older event permits its whole-record
+  transfer. Peer receipt is distinct from local credit release. Bulk cannot
+  consume the journal's terminal reserve.
+- File candidates arrive whole and are consumed as Begin/Chunk/End parts.
+  Tests inspect the next part instead of counting obsolete socket frames.
+- Native input uses the 256-byte text bound and a 430-byte whole file record;
+  the retired socket's 172-byte fixture bound is not imposed on files.
+- Snapshot bytes are charged once after outbox transfer, retained after the
+  current object is read/clunked, and released on disconnect. Session's prior
+  publication-pressure controls cover whole-catalog refusal/retry. Files have
+  no partially published socket catalog or raw IPC lane to retain.
+- The full export inbox refuses transaction 65 with EAGAIN and no Submitted,
+  then admits that same ID after one of its 64 records is taken. The remaining
+  records are exact and ordered. This is the file inbox bound, not a claim that
+  its accounting equals the retired socket's partial-frame byte budget.
+
+Evidence is under `development-evidence/ipc-retirement/`:
+
+- `t269-owner-credits-restored.log`: all 56 runtime library tests pass.
+- `t269-owner-credits-clippy.log`: runtime clippy passes with all targets and
+  features and warnings denied.
+- `t269-owner-credit-drop-mutant-2.log`: removing the journal admission guard
+  fails six catalog, indicator, aggregate-budget and activation controls.
+- `t269-owner-inbox-mutant.log`: increasing the inbox bound from 64 to 65 fails
+  the required custody refusal. Both mutants compile in read-only sandbox
+  overlays; the restored checkout passes.
+- `t269-owner-credits-full.log`: the full isolated `cargo xtask check` exits
+  zero: 477 result groups, 6,629 passed, none failed and 63 ignored, plus clippy,
+  formatting and tool checks. No physical presentation claim is made.
+
+Earlier compile failures are retained: a non-Copy outcome needed cloning and
+the private export constant was inaccessible from this fixture. The test pins
+the bound without widening the API. The first credit-mutant attempt reused a
+cached baseline artifact because its overlay timestamp was old; that passing
+log is not mutation evidence. The counted rerun records a fresh compilation.
+
+No private runtime owner fixture still uses SocketWire or shell IPC frame
+encoders. Public admission, negotiation and descriptor transport tests still
+need migration before removing the common socket adapter. t269/t270/t272 stay
+open; this changes no installed release or live session.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)

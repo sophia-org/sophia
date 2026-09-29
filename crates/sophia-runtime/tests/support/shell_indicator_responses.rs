@@ -1,21 +1,17 @@
-//! Exact request/response custody and aggregate credits over a real socket
-//! pair whose peer does not read. Requests arrive through the production
-//! read path; FIFO drain is the production write path, one bounded turn at a
-//! time. These controls do not claim a kernel socket-backpressure schedule.
+//! Exact request/response custody through the real file export. Negotiated
+//! state is supplied; request submission, journal pressure and ACKs are real.
 use super::super::control_budget::{CONTROL_RECORD_BYTES, Class};
 use super::super::outbound::{Admitted, OutboundRecord};
-use super::super::socket::SocketWire;
-use super::super::wire::Wire;
+use super::super::outbox::tests::files::Peer;
 use super::*;
+use sophia_protocol::shell_files::*;
 use sophia_protocol::*;
-use std::io::Write as _;
-use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicU64, Ordering};
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
 struct Fixture {
     transport: ShellSessionTransport,
-    peer: UnixStream,
+    peer: Peer,
     directory: std::path::PathBuf,
 }
 impl Fixture {
@@ -42,13 +38,10 @@ impl Fixture {
             transport.state.content_limits = Some(limits);
             transport.state.content_grant = Some(grant);
         }
-        let (local, peer) = UnixStream::pair().unwrap();
-        local.set_nonblocking(true).unwrap();
-        let limits = transport.state.content_limits.clone();
-        transport.state.wire = Some(Wire::Socket(Box::new(SocketWire::new(
-            local,
-            limits.as_ref(),
-        ))));
+        let peer = Peer::attach(
+            &mut transport.state,
+            content.then_some(crate::ContentStoreProfile::Legacy),
+        );
         Self {
             transport,
             peer,
@@ -65,14 +58,20 @@ impl Fixture {
             action: 5,
             event_id,
         };
-        self.peer
-            .write_all(&encode_shell_indicator_activation(tx, &activation).unwrap())
-            .unwrap();
-        let socket = self.transport.state.socket_mut().unwrap();
-        let before = socket.input_accounting().0;
-        while socket.input_accounting().0 == before {
-            socket.receive(4096).unwrap();
-        }
+        self.peer.submit(
+            &mut self.transport.state,
+            ShellFileKind::IndicatorActivate,
+            |header| {
+                encode_shell_file_indicator_activate(
+                    header,
+                    &ShellFileIndicatorActivate {
+                        transaction: tx,
+                        activation,
+                    },
+                )
+                .unwrap()
+            },
+        );
         (tx, activation)
     }
 }
@@ -89,8 +88,27 @@ fn grant() -> ContentGrant {
     }
 }
 
-/// One owned typed bulk record: output facts with `outputs` rows.
+/// Zero-row controls use an indicator event so they also work without a
+/// content grant. The byte-budget control keeps its actual 16-row facts.
 fn bulk(t: &ShellSessionTransport, outputs: usize) -> Admitted {
+    if outputs == 0 {
+        return t
+            .state
+            .admit_record(
+                OutboundRecord::IndicatorOutcome(
+                    TransactionId::from_raw(90),
+                    ShellIndicatorActivationOutcome {
+                        connection_epoch: 1,
+                        snapshot_generation: 2,
+                        event_id: 90,
+                        status: ShellIndicatorActivationStatus::Accepted,
+                        reason: 0,
+                    },
+                ),
+                Class::Bulk,
+            )
+            .unwrap();
+    }
     let facts = ContentOutputFacts {
         grant: grant(),
         facts_generation: 1,
@@ -119,24 +137,12 @@ fn bulk(t: &ShellSessionTransport, outputs: usize) -> Admitted {
         .unwrap()
 }
 
-fn inbox(t: &ShellSessionTransport) -> usize {
-    t.state.socket().unwrap().input_accounting().0
-}
-
-fn front_frame(t: &ShellSessionTransport) -> Vec<u8> {
-    SocketWire::encode(&t.state.output.front().unwrap().record).unwrap()
-}
-
-/// Writes at most `bytes` of the output order through the socket.
-fn send(t: &mut ShellSessionTransport, bytes: usize) {
-    let Some(Wire::Socket(socket)) = t.state.wire.as_mut() else {
-        unreachable!("the fixture attaches a socket");
-    };
-    socket.send(&mut t.state.output, bytes).unwrap();
+fn inbox(t: &mut ShellSessionTransport) -> usize {
+    usize::from(!t.state.files_mut().unwrap().export().inbound_is_empty())
 }
 
 #[test]
-fn indicator_request_waits_for_credit_then_transfers_it_through_final_byte() {
+fn indicator_request_waits_for_credit_then_transfers_it_to_the_journal() {
     for content in [false, true] {
         let mut f = Fixture::new(content);
         let (tx, activation) = f.request(1);
@@ -154,9 +160,10 @@ fn indicator_request_waits_for_credit_then_transfers_it_through_final_byte() {
         );
         assert_eq!(inbox(t), 1);
         assert!(t.state.indicator_response.is_none());
-        while t.state.output.front().is_some() {
-            let bytes = front_frame(t).len();
-            send(t, bytes);
+        assert!(Peer::drain(&mut t.state));
+        let filler = bulk(t, 0).record;
+        for _ in 0..if content { 1 } else { 64 } {
+            f.peer.expect(&mut t.state, &filler);
         }
         assert_eq!(
             t.state
@@ -179,6 +186,12 @@ fn indicator_request_waits_for_credit_then_transfers_it_through_final_byte() {
             }
         }
         assert!(!t.state.bulk_capacity_available(&t.content_epochs, 1));
+        if !content {
+            assert!(Peer::drain(&mut t.state));
+            for _ in 0..63 {
+                f.peer.expect(&mut t.state, &filler);
+            }
+        }
         // A mismatched completion cannot change the original obligation.
         assert!(
             t.finish_indicator_activation(
@@ -193,13 +206,6 @@ fn indicator_request_waits_for_credit_then_transfers_it_through_final_byte() {
         t.finish_indicator_activation(tx, &activation, ShellIndicatorActivationStatus::Accepted, 0)
             .unwrap();
         assert!(t.state.indicator_response.is_none());
-        if !content {
-            assert_eq!(t.state.output.records(), 64);
-            for _ in 0..63 {
-                let bytes = front_frame(t).len();
-                send(t, bytes);
-            }
-        }
         assert_eq!(t.state.output.records(), 1);
         assert_eq!(t.state.output.controls(), 1);
         let owned = t.content_accounting();
@@ -224,15 +230,24 @@ fn indicator_request_waits_for_credit_then_transfers_it_through_final_byte() {
             )
             .is_err()
         );
-        let bytes = front_frame(t).len();
-        send(t, 1);
+        let fillers = Peer::fill_journal(&mut t.state, &filler);
+        assert!(!Peer::drain(&mut t.state));
         assert_eq!(t.content_accounting(), owned);
         assert_eq!(t.state.output.records(), 1);
         assert_eq!(t.state.output.controls(), 1);
         if content {
             assert!(!t.state.control_capacity_available(&t.content_epochs, 1));
         }
-        send(t, bytes - 1);
+        f.peer.expect(&mut t.state, &filler);
+        assert!(Peer::drain(&mut t.state));
+        for _ in 1..fillers {
+            f.peer.expect(&mut t.state, &filler);
+        }
+        f.peer.expect(
+            &mut t.state,
+            &OutboundRecord::IndicatorOutcome(actual_tx, outcome),
+        );
+        f.peer.quiet(&mut t.state);
         assert_eq!(
             (t.state.output.records(), t.state.output.controls()),
             (0, 0)
@@ -300,8 +315,9 @@ fn refused_outcome_transfer_retains_exact_completed_result_without_readmission()
             .unwrap()
             .is_none()
     ); // FIFO still owns credit.
-    let bytes = front_frame(t).len();
-    send(t, bytes);
+    let expected = t.state.output.front().unwrap().record.clone();
+    assert!(Peer::drain(&mut t.state));
+    f.peer.expect(&mut t.state, &expected);
     assert_eq!(
         t.state
             .take_indicator_request(&mut t.content_epochs,)

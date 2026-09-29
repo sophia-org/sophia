@@ -98,4 +98,4 @@ impl ShellOutbox {
 
 #[cfg(test)]
 #[path = "../../tests/support/shell_outbox.rs"]
-mod tests;
+pub(super) mod tests;
