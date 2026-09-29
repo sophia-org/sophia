@@ -2953,6 +2953,25 @@ source path. Removing these directories without preserving unique work and
 repointing that path would lose work or break the next build. This audit removes
 no worktree or branch.
 
+The cleanup preparation now preserves source in
+`development-evidence/ipc-retirement/cleanup-preservation-2026-09-29/`.
+Eight Git bundles cover the distinct repositories (niltempus shares the
+desktop-integration object database). Each bundle was verified and unpacked
+into an empty temporary repository, where every recorded reference and
+worktree commit was checked for presence. Six dirty worktrees have separate
+staged/unstaged binary patches and file archives covering 33 changed or
+untracked paths; archived file hashes and symlink targets were checked against
+the originals. Repository references and dirty status stayed unchanged during
+capture. `manifest.json` records the bundle hashes and restoration inputs.
+
+Ignored artifacts are excluded from that source backup.
+`cleanup-ignored-inventory.json` identifies ignored paths in 44 worktrees,
+including build caches, notebook indexes, provisioning directories and retained
+evidence. Those require classification and preservation where appropriate
+before any worktree removal; a verified source bundle alone does not authorize
+discarding them. T272 still awaits the output consumer decision, and no cleanup
+deletion has occurred.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)
