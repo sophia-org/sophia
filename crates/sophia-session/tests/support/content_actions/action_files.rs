@@ -1,12 +1,11 @@
 //! Raw 9P for independent activation/ack ordering; the SDK's combined response
 //! would hide the activation-before-ack case. Admission and FIFO are production.
+use crate::live_session::tests::shell_file_peer as file_peer;
 use sophia_protocol::shell_files::*;
 use sophia_protocol::*;
 use sophia_runtime::*;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
-#[path = "../../../../sophia-runtime/tests/support/shell_file_peer.rs"]
-mod file_peer;
 static NEXT: AtomicU64 = AtomicU64::new(1);
 pub(super) const GRANT: ContentGrant = ContentGrant {
     connection_epoch: 2,

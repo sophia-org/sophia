@@ -6,9 +6,11 @@ use sophia_session::session_actions::SessionLaunchQueue;
 use sophia_session::shell_native_launcher::{
     NativeLauncherActionService, NativeLauncherContentService,
 };
-#[allow(dead_code)]
 #[path = "support/content_actions/native_launcher_fixture.rs"]
+#[allow(dead_code)]
 mod fixture;
+#[path = "../../sophia-runtime/tests/support/shell_file_peer.rs"]
+mod shell_file_peer;
 use fixture::*;
 
 #[test]
@@ -59,7 +61,7 @@ fn exact_inputs_survive_receipt_saturation_and_resume_after_ack_without_replay()
     let mut events = vec![];
     for i in 0..16 {
         let (transaction, ShellNativeLauncherRecord::Input(input)) =
-            decode_shell_native_launcher_frame(&h.peer.read()).unwrap()
+            h.peer.read_native(&mut h.epochs)
         else {
             panic!("input")
         };
@@ -69,12 +71,13 @@ fn exact_inputs_survive_receipt_saturation_and_resume_after_ack_without_replay()
         events.push(input.event);
     }
     for event in events {
-        h.peer.send(ShellNativeLauncherRecord::InputAck(
-            NativeLauncherInputAck {
+        h.peer.send(
+            &mut h.epochs,
+            ShellNativeLauncherRecord::InputAck(NativeLauncherInputAck {
                 event,
                 disposition: 1,
-            },
-        ));
+            }),
+        );
     }
     assert_eq!(
         owner
@@ -86,7 +89,7 @@ fn exact_inputs_survive_receipt_saturation_and_resume_after_ack_without_replay()
     h.peer.transport.poll_io(&mut h.epochs).unwrap();
     for i in 16..32 {
         let (transaction, ShellNativeLauncherRecord::Input(input)) =
-            decode_shell_native_launcher_frame(&h.peer.read()).unwrap()
+            h.peer.read_native(&mut h.epochs)
         else {
             panic!("input")
         };
@@ -224,7 +227,7 @@ fn exact_close_cancels_only_local_input_and_preserves_issued_receipt_ownership()
     h.peer.transport.poll_io(&mut h.epochs).unwrap();
     for i in 0..16 {
         let (transaction, ShellNativeLauncherRecord::Input(input)) =
-            decode_shell_native_launcher_frame(&h.peer.read()).unwrap()
+            h.peer.read_native(&mut h.epochs)
         else {
             panic!("issued input retained")
         };
@@ -233,15 +236,11 @@ fn exact_close_cancels_only_local_input_and_preserves_issued_receipt_ownership()
     }
     // Closing owns revocation/Closed after the already-issued FIFO records.
     assert!(matches!(
-        decode_shell_native_launcher_frame(&h.peer.read())
-            .unwrap()
-            .1,
+        h.peer.read_native(&mut h.epochs).1,
         ShellNativeLauncherRecord::FocusRevoked(_)
     ));
     assert!(matches!(
-        decode_shell_native_launcher_frame(&h.peer.read())
-            .unwrap()
-            .1,
+        h.peer.read_native(&mut h.epochs).1,
         ShellNativeLauncherRecord::Closed(_)
     ));
 }
@@ -331,21 +330,17 @@ fn captured_text_and_escape_use_shared_dispatch_with_exact_focus_and_real_fifo()
             .unwrap()
     );
     h.peer.transport.poll_io(&mut h.epochs).unwrap();
-    let (transaction, ShellNativeLauncherRecord::Input(input)) =
-        decode_shell_native_launcher_frame(&h.peer.read()).unwrap()
+    let (transaction, ShellNativeLauncherRecord::Input(input)) = h.peer.read_native(&mut h.epochs)
     else {
         panic!("input")
     };
     assert_eq!(transaction, tx(101));
     assert_eq!(input.text, "λ");
     assert!(matches!(
-        decode_shell_native_launcher_frame(&h.peer.read())
-            .unwrap()
-            .1,
+        h.peer.read_native(&mut h.epochs).1,
         ShellNativeLauncherRecord::FocusRevoked(_)
     ));
-    let (transaction, ShellNativeLauncherRecord::Closed(_)) =
-        decode_shell_native_launcher_frame(&h.peer.read()).unwrap()
+    let (transaction, ShellNativeLauncherRecord::Closed(_)) = h.peer.read_native(&mut h.epochs)
     else {
         panic!("close")
     };
@@ -421,19 +416,15 @@ fn idle_missing_ack_closes_exact_opening_after_local_input_has_transferred() {
     assert_eq!(closed.grant, h.focus.grant);
     h.peer.transport.poll_io(&mut h.epochs).unwrap();
     assert!(matches!(
-        decode_shell_native_launcher_frame(&h.peer.read())
-            .unwrap()
-            .1,
+        h.peer.read_native(&mut h.epochs).1,
         ShellNativeLauncherRecord::Input(_)
     ));
     assert!(matches!(
-        decode_shell_native_launcher_frame(&h.peer.read())
-            .unwrap()
-            .1,
+        h.peer.read_native(&mut h.epochs).1,
         ShellNativeLauncherRecord::FocusRevoked(_)
     ));
     let (transaction, ShellNativeLauncherRecord::Closed(closed)) =
-        decode_shell_native_launcher_frame(&h.peer.read()).unwrap()
+        h.peer.read_native(&mut h.epochs)
     else {
         panic!("close")
     };

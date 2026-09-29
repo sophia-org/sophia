@@ -1,5 +1,5 @@
 #![cfg(feature = "native-session")]
-//! Real socket/store intake and the shared Session admission sequence. Renderer
+//! Real file/store intake and the shared Session admission sequence. Renderer
 //! completion/protection are supplied. Only the explicit process control spawns
 //! a device-hidden /bin/true child; it opens no display connection.
 use sophia_engine::PresentedContentTarget;
@@ -9,6 +9,8 @@ use sophia_session::session_actions::SessionLaunchQueue;
 use sophia_session::shell_native_launcher::NativeLauncherActionService;
 #[path = "support/content_actions/native_launcher_fixture.rs"]
 mod fixture;
+#[path = "../../sophia-runtime/tests/support/shell_file_peer.rs"]
+mod shell_file_peer;
 use fixture::*;
 
 #[test]
@@ -94,9 +96,7 @@ fn pointer_requires_actual_ledger_event_and_can_choose_an_unselected_visible_row
             .unwrap()
             .unwrap();
         h.peer.transport.poll_io(&mut h.epochs).unwrap();
-        let (_, ShellContentRecord::Action(action)) =
-            decode_shell_content_frame(&h.peer.read()).unwrap()
-        else {
+        let (_, ShellContentRecord::Action(action)) = h.peer.read_content(&mut h.epochs) else {
             panic!();
         };
         let activation = NativeLauncherActivation {
@@ -109,8 +109,9 @@ fn pointer_requires_actual_ledger_event_and_can_choose_an_unselected_visible_row
             slot: 1,
         };
         if ack_first {
-            h.peer
-                .send_content(ShellContentRecord::ActionAck(ContentActionAck {
+            h.peer.send_content(
+                &mut h.epochs,
+                ShellContentRecord::ActionAck(ContentActionAck {
                     grant: action.grant,
                     output: action.output,
                     candidate_generation: action.candidate_generation,
@@ -122,7 +123,8 @@ fn pointer_requires_actual_ledger_event_and_can_choose_an_unselected_visible_row
                     action_id: action.action_id,
                     event_id: action.event_id,
                     disposition: 2,
-                }));
+                }),
+            );
             assert_eq!(
                 h.service
                     .service_acks(&mut h.peer.transport.connection(&mut h.epochs), 1, 1)
@@ -157,24 +159,41 @@ fn revoked_exact_grant_cancels_native_queue_but_not_a_retained_worker_payload() 
 }
 
 #[test]
-fn saturated_socket_defers_admission_then_delivers_one_exact_queue_outcome() {
+fn saturated_file_outbox_defers_admission_then_delivers_one_exact_queue_outcome() {
     let mut h = Harness::new();
     let activation = h.accept();
-    let frame = encode_shell_content_frame(
-        tx(40),
-        &ShellContentRecord::OutputFacts(ContentOutputFacts {
-            grant: GRANT,
-            facts_generation: 5,
-            outputs: vec![facts()],
-        }),
-    )
-    .unwrap();
+    // Transport custody precedes the deliberate output saturation. Servicing
+    // the action below must still defer the launch until a response fits.
+    h.peer.send(
+        &mut h.epochs,
+        ShellNativeLauncherRecord::Activate(activation),
+    );
+    let record = ShellContentRecord::ResourceStatus(ContentResourceStatus {
+        grant: GRANT,
+        resource: ContentResourceId {
+            id: 99,
+            generation: 1,
+        },
+        status: 3,
+        reason: ContentReason::Stale as u16,
+        next_ordinal: 0,
+        admitted_bytes: 0,
+    });
     let mut sent = 0;
     let mut full = false;
     for _ in 0..4096 {
-        match h.peer.transport.send_async(&mut h.epochs, frame.clone()) {
-            Ok(()) => sent += 1,
-            Err(ShellTransportError::ActivationQueueSaturated) => {
+        match h
+            .peer
+            .transport
+            .send_content_record(&mut h.epochs, tx(40), &record)
+        {
+            Ok(()) => {
+                sent += 1;
+                // Fill the retained file journal as well as the local outbox;
+                // a service visit cannot make room merely by transferring it.
+                h.peer.transport.poll_io(&mut h.epochs).unwrap();
+            }
+            Err(ShellTransportError::ContentQueueSaturated) => {
                 full = true;
                 break;
             }
@@ -182,12 +201,11 @@ fn saturated_socket_defers_admission_then_delivers_one_exact_queue_outcome() {
         }
     }
     assert!(full);
-    h.peer.send(ShellNativeLauncherRecord::Activate(activation));
     assert!(!h.service(0));
     assert_eq!(h.queue.pending_len(), 0);
     for _ in 0..sent {
         h.peer.transport.poll_io(&mut h.epochs).unwrap();
-        assert_eq!(h.peer.read(), frame);
+        assert_eq!(h.peer.read_content(&mut h.epochs), (tx(40), record.clone()));
     }
     assert!(h.service(0));
     assert_eq!(h.queue.pending_len(), 1);
@@ -539,7 +557,7 @@ fn connected_visit_joins_real_pointer_ledger_cancellation_and_launch_queue() {
             .unwrap();
         h.peer.transport.poll_io(&mut h.epochs).unwrap();
         assert!(matches!(
-            decode_shell_content_frame(&h.peer.read()).unwrap().1,
+            h.peer.read_content(&mut h.epochs).1,
             ShellContentRecord::Action(_)
         ));
         let activation = NativeLauncherActivation {
@@ -551,7 +569,10 @@ fn connected_visit_joins_real_pointer_ledger_cancellation_and_launch_queue() {
             cause: 2,
             slot: 1,
         };
-        h.peer.send(ShellNativeLauncherRecord::Activate(activation));
+        h.peer.send(
+            &mut h.epochs,
+            ShellNativeLauncherRecord::Activate(activation),
+        );
         assert_eq!(
             h.service
                 .service_connected(
@@ -571,9 +592,7 @@ fn connected_visit_joins_real_pointer_ledger_cancellation_and_launch_queue() {
         assert_eq!(h.queue.pending_len(), usize::from(current));
         h.peer.transport.poll_io(&mut h.epochs).unwrap();
         if !current {
-            let (_, ShellContentRecord::Action(cancel)) =
-                decode_shell_content_frame(&h.peer.read()).unwrap()
-            else {
+            let (_, ShellContentRecord::Action(cancel)) = h.peer.read_content(&mut h.epochs) else {
                 panic!("cancel")
             };
             assert_eq!(cancel.kind, 3); // protocol ActionCancel
@@ -583,7 +602,10 @@ fn connected_visit_joins_real_pointer_ledger_cancellation_and_launch_queue() {
         assert_eq!(outcome.activation, activation);
         assert_eq!(outcome.status, if current { 1 } else { 2 });
         assert_eq!(h.queue.pending_len(), usize::from(current));
-        h.peer.send(ShellNativeLauncherRecord::Activate(activation));
+        h.peer.send(
+            &mut h.epochs,
+            ShellNativeLauncherRecord::Activate(activation),
+        );
         assert_eq!(
             h.service
                 .service_connected(

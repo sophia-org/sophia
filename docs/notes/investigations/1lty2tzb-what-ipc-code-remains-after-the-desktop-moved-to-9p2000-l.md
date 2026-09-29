@@ -2188,7 +2188,52 @@ all eight action controls, Session's 702 passing library tests, formatting,
 clippy and the tool verifiers. The sandbox has no display, network or devices;
 the gate explicitly does not prove native pixels or an installed release.
 
-The native launcher fixture and runtime socket adapter still need migration.
+### Session native launcher admission, input and execution over files
+
+Session's native launcher fixture no longer imports
+`native_launcher_socket.rs`. Its file peer negotiates the exact r7 profile,
+reads Limits and output/catalog objects, uploads through a slot, and submits
+one whole `NativeCandidate`. The candidate owner still consumes its three
+typed parts. Native input ACKs and activation requests stay separately
+sendable, preserving both ACK orderings and dispositions. Journal ACKs are
+separate from these semantic input ACKs. Observations received while awaiting
+`Submitted` remain queued for the test to inspect.
+
+All 23 controls in `native_launcher_admission`, `native_launcher_execution`
+and `native_launcher_input_owner` now run over files. The internal connected
+worker control also uses explicit 9P selection, including its second connection
+and real device-hidden `/bin/true` child. It compares both fetched catalogs
+with their actual publications instead of discarding four IPC frames.
+Launch origin, wrong-owner borrowing, queued and in-flight revocation,
+exact-once execution, focus/capture, receipt saturation, close ordering and
+missing-ACK timeout assertions are retained. Protection and renderer facts
+are supplied; no graphical or protected-launch acceptance is claimed.
+
+The backpressure control first gives the activation to transport custody,
+then fills the retained file journal and local outbox with typed resource-status
+records. Launch admission must wait for response credit; after the peer drains
+those records, the exact outcome and single launch are checked. Removing the
+production `control_capacity_available` guard makes that wait assertion fail
+in `t269-native-activation-credit-mutant.log`. The mutant was a read-only
+overlay; production source content was never changed.
+
+`t269-native-action-files-restored.log` passes all 23 controls with the guard
+restored. `t269-native-action-session-lib.log` passes 702 library tests with
+zero failures and 22 ignored; `t269-native-component-execution.log` separately
+passes the connected worker control after the final epoch assertion.
+Session library/test clippy and layout pass in `t269-native-action-clippy.log`
+and `t269-native-action-layout.log`. These are focused Session gates; the last
+complete repository gate is the preceding action-ledger migration above.
+
+Earlier failures are retained. The first upload helper clunked its slot before
+End, causing the export to cancel that upload; the corrected helper keeps the
+fid through completion and checks the exact eight retained bytes. The second
+run filled only the local outbox, which the next service visit could drain;
+the corrected pressure control also fills the retained journal. Neither fix
+changes production code or weakens the launch assertions. Public Rust record
+codecs remain shared, so this is not independent record-codec evidence.
+
+The runtime native launcher socket fixture and adapter still need migration.
 
 ## Validation and remaining work
 

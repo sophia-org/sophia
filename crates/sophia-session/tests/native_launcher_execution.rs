@@ -1,14 +1,16 @@
 #![cfg(feature = "native-session")]
-//! Actual private socket intake, worker verification and short-lived process
+//! Actual private file intake, worker verification and short-lived process
 //! execution. Supplied presentation/protection; no display or native compositor.
 use sophia_engine::PresentedContentTarget;
 use sophia_protocol::*;
 use sophia_session::application_catalog as catalog;
 use sophia_session::session_actions::SessionLaunchQueue;
 use sophia_session::shell_native_launcher::NativeLauncherActionService;
-#[allow(dead_code)]
 #[path = "support/content_actions/native_launcher_fixture.rs"]
+#[allow(dead_code)]
 mod fixture;
+#[path = "../../sophia-runtime/tests/support/shell_file_peer.rs"]
+mod shell_file_peer;
 use fixture::*;
 
 fn environment() -> catalog::CatalogProcessEnvironment<'static> {

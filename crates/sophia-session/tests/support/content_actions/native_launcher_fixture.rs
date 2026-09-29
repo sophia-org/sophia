@@ -1,10 +1,10 @@
 use super::*;
 use sophia_runtime::*;
 use sophia_session::application_catalog::*;
-#[allow(dead_code)] // Same real socket/store fixture, not a second implementation.
-#[path = "../../../../sophia-runtime/tests/support/native_launcher_socket.rs"]
-mod socket;
-pub(super) use socket::*;
+#[allow(dead_code)] // Shared file fixture for admission, input and execution.
+#[path = "native_files_peer.rs"]
+mod files;
+pub(super) use files::*;
 
 pub(super) struct Harness {
     pub epochs: ContentEpochRegistry,
@@ -51,15 +51,13 @@ impl Harness {
         )
         .unwrap();
         let catalog = PublishedApplicationCatalog::new(GRANT.connection_epoch, 8, catalog).unwrap();
-        assert_eq!(catalog.wire(), &socket::catalog());
+        assert_eq!(catalog.wire(), &files::catalog());
         peer.transport
             .grant_content_permit(&mut epochs, tx(3), OUTPUT, 1, 1, 0)
             .unwrap();
         peer.transport.poll_io(&mut epochs).unwrap();
-        peer.read();
-        peer.send(ShellNativeLauncherRecord::CandidateBegin(begin()));
-        peer.send(ShellNativeLauncherRecord::CandidateChunk(chunk()));
-        peer.send_content(ShellContentRecord::CandidateEnd(end()));
+        peer.read_content(&mut epochs);
+        peer.candidate(&mut epochs);
         let current = native(catalog.wire());
         assert_eq!(
             peer.transport
@@ -83,13 +81,11 @@ impl Harness {
             .unwrap();
         peer.transport.poll_io(&mut epochs).unwrap();
         for kind in [1, 2] {
-            assert!(
-                matches!(decode_shell_content_frame(&peer.read()).unwrap().1,
-                ShellContentRecord::CandidateOutcome(v) if v.kind == kind)
-            );
+            assert!(matches!(peer.read_content(&mut epochs).1,
+                ShellContentRecord::CandidateOutcome(v) if v.kind == kind));
         }
         assert_eq!(
-            decode_shell_native_launcher_frame(&peer.read()).unwrap().1,
+            peer.read_native(&mut epochs).1,
             ShellNativeLauncherRecord::Focus(focus)
         );
         let wire_target = chunk().targets.remove(1); // slot 1, not selected slot 2
@@ -143,10 +139,8 @@ impl Harness {
             .unwrap()
             .unwrap();
         self.peer.transport.poll_io(&mut self.epochs).unwrap();
-        assert!(
-            matches!(decode_shell_native_launcher_frame(&self.peer.read()).unwrap().1,
-            ShellNativeLauncherRecord::Input(v) if v.event == event)
-        );
+        assert!(matches!(self.peer.read_native(&mut self.epochs).1,
+            ShellNativeLauncherRecord::Input(v) if v.event == event));
         NativeLauncherActivation {
             event,
             cause: 1,
@@ -154,12 +148,13 @@ impl Harness {
         }
     }
     pub fn acknowledge(&mut self, activation: NativeLauncherActivation, disposition: u16) -> bool {
-        self.peer.send(ShellNativeLauncherRecord::InputAck(
-            NativeLauncherInputAck {
+        self.peer.send(
+            &mut self.epochs,
+            ShellNativeLauncherRecord::InputAck(NativeLauncherInputAck {
                 event: activation.event,
                 disposition,
-            },
-        ));
+            }),
+        );
         self.peer
             .transport
             .poll_native_launcher_input_ack(&mut self.epochs)
@@ -183,7 +178,7 @@ impl Harness {
     pub fn outcome(&mut self) -> NativeLauncherActivationOutcome {
         self.peer.transport.poll_io(&mut self.epochs).unwrap();
         let (_, ShellNativeLauncherRecord::ActivationOutcome(outcome)) =
-            decode_shell_native_launcher_frame(&self.peer.read()).unwrap()
+            self.peer.read_native(&mut self.epochs)
         else {
             panic!("outcome");
         };
@@ -194,8 +189,10 @@ impl Harness {
         activation: NativeLauncherActivation,
         active: usize,
     ) -> NativeLauncherActivationOutcome {
-        self.peer
-            .send(ShellNativeLauncherRecord::Activate(activation));
+        self.peer.send(
+            &mut self.epochs,
+            ShellNativeLauncherRecord::Activate(activation),
+        );
         assert!(self.service(active));
         let outcome = self.outcome();
         assert_eq!(outcome.activation, activation);

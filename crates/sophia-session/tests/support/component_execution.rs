@@ -1,6 +1,7 @@
 //! Actual connected worker, queue and ManagedSessionChild adoption. Supplied
 //! transport protection/presentation; only device-hidden /bin/true executes.
 use super::super::*;
+use super::shell_file_peer;
 use crate as sophia_session;
 use crate::shell_native_launcher::{NativeLauncherActionService, NativeLauncherContentService};
 use sophia_engine::PresentedContentTarget;
@@ -32,7 +33,7 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
                 config: None,
                 reservation: None,
                 gpu: sophia_config::ShellGpuMode::Denied,
-                transport: Default::default(),
+                transport: sophia_config::ShellTransportSelection::NineP2000L,
             });
         config.session_profile = PreparedSessionProfile::new(selected).unwrap();
         config.application_catalog = Some(sophia_config::ApplicationCatalogConfig {
@@ -85,29 +86,8 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
                 sophia_runtime::ContentStoreProfile::NativeLauncher,
                 other_limits,
             );
-            peer.transport
-                .begin_negotiation(
-                    &h.epochs,
-                    other_grant.connection_epoch,
-                    Duration::from_secs(2),
-                    granted(),
-                )
-                .unwrap();
-            use std::io::Write;
-            peer.client
-                .write_all(&encode_shell_v1_client_hello_frame(hello()).unwrap())
-                .unwrap();
-            let mut negotiated = false;
-            for _ in 0..2048 {
-                if let Some(welcome) = peer.transport.poll_negotiation(&mut h.epochs, 7).unwrap() {
-                    assert_eq!(welcome.connection_epoch, other_grant.connection_epoch);
-                    negotiated = true;
-                    break;
-                }
-            }
-            assert!(negotiated);
-            peer.read(); // Welcome.
-            peer.read(); // Exact independently reserved limits.
+            peer.negotiate(&mut h.epochs);
+            assert_eq!(peer.transport.content_limits().unwrap().grant, other_grant);
             catalog
                 .reconcile_connections(&[GRANT, other_grant], &mut h.queue)
                 .unwrap();
@@ -140,10 +120,8 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
             assert_ne!(first.connection_epoch, second.connection_epoch);
             h.peer.transport.poll_io(&mut h.epochs).unwrap();
             peer.transport.poll_io(&mut h.epochs).unwrap();
-            for _ in 0..4 {
-                h.peer.read();
-                peer.read();
-            }
+            assert_eq!(h.peer.read_catalog(&mut h.epochs), first);
+            assert_eq!(peer.read_catalog(&mut h.epochs), second);
             Some(peer)
         } else {
             None
@@ -192,13 +170,10 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
         assert_eq!(content.pending_inputs(), 0);
         h.peer.transport.poll_io(&mut h.epochs).unwrap();
         assert!(matches!(
-            decode_shell_native_launcher_frame(&h.peer.read())
-                .unwrap()
-                .1,
+            h.peer.read_native(&mut h.epochs).1,
             ShellNativeLauncherRecord::FocusRevoked(_)
         ));
-        let (_, ShellNativeLauncherRecord::Closed(closed)) =
-            decode_shell_native_launcher_frame(&h.peer.read()).unwrap()
+        let (_, ShellNativeLauncherRecord::Closed(closed)) = h.peer.read_native(&mut h.epochs)
         else {
             panic!("closed")
         };
