@@ -846,20 +846,24 @@ mod file_negotiation;
 fn content_connection_owner_cannot_admit_descriptor_authority() {
     let mut harness = Harness::new();
     let endpoint = harness.directory.join("descriptor");
-    for wire in [
-        sophia_config::ShellTransportSelection::CurrentIpc,
-        sophia_config::ShellTransportSelection::NineP2000L,
-    ] {
-        assert_eq!(
+    for explicit in [false, true] {
+        let result = if explicit {
             harness.owner.add_with_transport(
                 "metadata",
                 ShellComponentRole::Descriptor,
                 &endpoint,
                 rustix::process::geteuid().as_raw(),
-                wire,
-            ),
-            Err(ComponentConnectionError::InvalidSelection)
-        );
+                sophia_config::ShellTransportSelection::NineP2000L,
+            )
+        } else {
+            harness.owner.add(
+                "metadata",
+                ShellComponentRole::Descriptor,
+                &endpoint,
+                rustix::process::geteuid().as_raw(),
+            )
+        };
+        assert_eq!(result, Err(ComponentConnectionError::InvalidSelection));
         assert!(!endpoint.exists());
     }
 }

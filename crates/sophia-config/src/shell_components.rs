@@ -42,38 +42,33 @@ pub struct ShellComponentReservation {
     pub max_thickness: u16,
 }
 
-/// The wire one component's connection uses, fixed at startup. Current IPC
-/// remains the default; a selection never changes the role's grants.
+/// The wire one component's connection uses, fixed at startup. The retired
+/// IPC selector is refused; transport never changes the role's grants.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum ShellTransportSelection {
-    #[default]
-    CurrentIpc,
     /// `sophia_shell_fs_v1` over 9P2000.L.
+    #[default]
     NineP2000L,
 }
 
 impl ShellTransportSelection {
     pub fn parse(value: &str) -> Result<Self, &'static str> {
         match value {
-            "current-ipc" => Ok(Self::CurrentIpc),
             "9p2000.L" => Ok(Self::NineP2000L),
-            _ => Err("shell transport must be current-ipc or 9p2000.L"),
+            _ => Err("shell transport must be 9p2000.L"),
         }
     }
 
     /// The KDL value, matching the WM's `--wm-transport` names.
     pub const fn wire_name(self) -> &'static str {
         match self {
-            Self::CurrentIpc => "current-ipc",
             Self::NineP2000L => "9p2000.L",
         }
     }
 
-    /// The environment variable that names the component's endpoint, so a
-    /// client can never mistake one wire's socket for the other's.
+    /// The environment variable that names the component's 9P endpoint.
     pub const fn socket_env(self) -> &'static str {
         match self {
-            Self::CurrentIpc => "SOPHIA_SHELL_SOCKET",
             Self::NineP2000L => "SOPHIA_SHELL_9P_SOCKET",
         }
     }
@@ -157,11 +152,13 @@ pub(crate) fn parse(node: &KdlNode) -> Result<ShellComponentConfig, DesktopProfi
                 {
                     return Err(invalid("transport requires one untyped positional wire"));
                 }
-                transport = Some(match child.get(0).and_then(|value| value.as_string()) {
-                    Some("current-ipc") => ShellTransportSelection::CurrentIpc,
-                    Some("9p2000.L") => ShellTransportSelection::NineP2000L,
-                    _ => return Err(invalid("transport must be current-ipc or 9p2000.L")),
-                });
+                transport = Some(
+                    child
+                        .get(0)
+                        .and_then(|value| value.as_string())
+                        .ok_or_else(|| invalid("transport must be 9p2000.L"))
+                        .and_then(|value| ShellTransportSelection::parse(value).map_err(invalid))?,
+                );
             }
             "reservation" if reservation.is_none() => {
                 reservation = Some(parse_reservation(child)?);
@@ -196,13 +193,7 @@ pub(crate) fn parse(node: &KdlNode) -> Result<ShellComponentConfig, DesktopProfi
         config,
         gpu: gpu.unwrap_or_default(),
         reservation,
-        transport: transport.unwrap_or_else(|| {
-            if role == ShellComponentRole::Descriptor {
-                ShellTransportSelection::NineP2000L
-            } else {
-                ShellTransportSelection::default()
-            }
-        }),
+        transport: transport.unwrap_or_default(),
     })
 }
 
@@ -248,9 +239,6 @@ pub fn validate_shell_component_reservations(
             return Err(invalid(
                 "descriptor authority cannot be combined with content components",
             ));
-        }
-        if descriptor.transport != ShellTransportSelection::NineP2000L {
-            return Err(invalid("descriptor components require 9p2000.L"));
         }
         if descriptor.reservation.is_some() {
             return Err(invalid(

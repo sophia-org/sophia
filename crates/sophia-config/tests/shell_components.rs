@@ -238,7 +238,7 @@ fn three_roles_require_explicit_distinct_persistent_edges() {
 }
 
 #[test]
-fn component_transport_defaults_to_current_ipc_and_selects_9p_explicitly() {
+fn component_transport_defaults_to_9p_and_accepts_the_explicit_selection() {
     let fixture = Profile::new();
     let bar = r#"shell-component "panel" "bar" { executable "/opt/lom"; transport "9p2000.L"; };"#;
     let path = fixture.write(&format!("{bar} {LAUNCHER}"), true);
@@ -253,19 +253,58 @@ fn component_transport_defaults_to_current_ipc_and_selects_9p_explicitly() {
         panic!("two components");
     };
     assert_eq!(bar.transport, ShellTransportSelection::NineP2000L);
-    assert_eq!(launcher.transport, ShellTransportSelection::CurrentIpc);
+    assert_eq!(launcher.transport, ShellTransportSelection::NineP2000L);
     assert_eq!(bar.transport.socket_env(), "SOPHIA_SHELL_9P_SOCKET");
-    assert_eq!(launcher.transport.socket_env(), "SOPHIA_SHELL_SOCKET");
+    assert_eq!(launcher.transport.socket_env(), "SOPHIA_SHELL_9P_SOCKET");
+}
+
+#[test]
+fn every_component_role_defaults_to_files_and_refuses_the_retired_wire() {
+    let fixture = Profile::new();
+    for role in ["descriptor", "bar", "application-launcher", "dock"] {
+        let reservation = if role == "dock" {
+            r#"reservation "bottom" 24;"#
+        } else {
+            ""
+        };
+        for selection in ["", r#"transport "9p2000.L";"#] {
+            let path = fixture.write(
+                &format!(r#"shell-component "peer" "{role}" {{ executable "/opt/peer"; {reservation} {selection} }};"#),
+                true,
+            );
+            let prepared =
+                load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL).unwrap();
+            let component = &prepared.candidates.session.components.shell_components[0];
+            assert_eq!(component.transport, ShellTransportSelection::NineP2000L);
+            assert_eq!(component.transport.wire_name(), "9p2000.L");
+        }
+        let path = fixture.write(
+            &format!(r#"shell-component "peer" "{role}" {{ executable "/opt/peer"; {reservation} transport "current-ipc"; }};"#),
+            true,
+        );
+        let error = load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL)
+            .expect_err("a retired wire must fail profile validation");
+        assert!(
+            error
+                .to_string()
+                .contains("shell transport must be 9p2000.L"),
+            "{error}"
+        );
+    }
 }
 
 #[test]
 fn component_transport_refuses_unknown_repeated_and_typed_values() {
     for transport in [
+        r#"transport "current-ipc""#,
         r#"transport "9p""#,
+        r#"transport "9p2000.L"; transport "9p2000.L""#,
         r#"transport "9p2000.L"; transport "current-ipc""#,
         r#"transport (wire)"9p2000.L""#,
         r#"transport "9p2000.L" "current-ipc""#,
         r#"transport name="9p2000.L""#,
+        r#"transport 9"#,
+        r#"transport "9p2000.L" {}"#,
     ] {
         let fixture = Profile::new();
         let bar =

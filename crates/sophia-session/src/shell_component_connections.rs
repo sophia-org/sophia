@@ -102,13 +102,7 @@ impl ShellComponentConnections {
         directory: &Path,
         uid: u32,
     ) -> Result<usize, ComponentConnectionError> {
-        self.add_with_transport(
-            id,
-            role,
-            directory,
-            uid,
-            ShellTransportSelection::CurrentIpc,
-        )
+        self.add_with_transport(id, role, directory, uid, ShellTransportSelection::default())
     }
 
     /// As [`Self::add`], with the operator's startup wire for this component.
@@ -268,19 +262,13 @@ impl ShellComponentConnections {
         let result = connection
             .transport
             .authorize_protected_peer(evidence)
-            .and_then(|()| match connection.wire {
-                ShellTransportSelection::CurrentIpc => connection.transport.begin_negotiation(
+            .and_then(|()| {
+                connection.transport.begin_file_negotiation(
                     &self.epochs,
                     key.grant.connection_epoch,
                     timeout,
                     policy,
-                ),
-                ShellTransportSelection::NineP2000L => connection.transport.begin_file_negotiation(
-                    &self.epochs,
-                    key.grant.connection_epoch,
-                    timeout,
-                    policy,
-                ),
+                )
             });
         if let Err(error) = result {
             let _ = self.close(key);

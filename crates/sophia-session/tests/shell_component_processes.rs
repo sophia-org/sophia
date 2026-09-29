@@ -103,12 +103,11 @@ fn two_protected_processes_retain_independent_stop_and_replacement_custody() {
         ("menu", ShellComponentRole::ApplicationLauncher),
     ] {
         owner
-            .add_with_transport(
+            .add(
                 name,
                 role,
                 &directory.join(name),
                 rustix::process::geteuid().as_raw(),
-                sophia_config::ShellTransportSelection::NineP2000L,
             )
             .unwrap();
     }
@@ -123,6 +122,8 @@ fn two_protected_processes_retain_independent_stop_and_replacement_custody() {
             .arg("--exact")
             .arg("--ignored")
             .env("SOPHIA_FIXTURE_ROLE", key.slot.to_string())
+            .env("SOPHIA_SHELL_SOCKET", "/wrong/retired-endpoint")
+            .env("SOPHIA_SHELL_9P_SOCKET", "/wrong/file-endpoint")
             .protection_domain(domain))
     };
     let policy = ShellContentAdmissionPolicy::Granted {

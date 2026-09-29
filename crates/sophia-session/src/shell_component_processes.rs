@@ -92,10 +92,10 @@ impl ShellComponentProcesses {
                 .connections
                 .transport_selection(slot)
                 .map_err(|e| e.to_string())?;
-            // Neither wire's variable is inherited: the child sees exactly the
-            // one endpoint its selected wire serves.
+            // Strip the retired variable and any supplied 9P endpoint. Only
+            // this owner's protected endpoint may reach the child.
             spec.environment.retain(|(name, _)| {
-                name != ShellTransportSelection::CurrentIpc.socket_env()
+                name != "SOPHIA_SHELL_SOCKET"
                     && name != ShellTransportSelection::NineP2000L.socket_env()
             });
             spec = spec.env(wire.socket_env(), path).process_group();
@@ -123,7 +123,7 @@ impl ShellComponentProcesses {
         }
         result
     }
-    /// Revoke IPC authority first, then signal without blocking neighboring
+    /// Revoke connection authority first, then signal without blocking neighboring
     /// service. Errors retain the exact process and prevent replacement.
     pub fn request_stop(&mut self, key: ComponentConnectionKey) -> Result<(), String> {
         let slot = self.slots.get_mut(key.slot).ok_or("unknown component")?;

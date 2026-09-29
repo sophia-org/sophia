@@ -762,15 +762,15 @@ not assign behavior from an executable's name. Each client must implement the
 public contract for its role. Client-specific configuration and UI expectations
 belong in that client's documentation or the external desktop integration.
 
-Each component may select its wire with `transport "current-ipc"` (the default)
-or `transport "9p2000.L"`, the `sophia_shell_fs_v1` file export of
-[shell files](sophia-shell-files.md). The child receives only its selected
-endpoint: `SOPHIA_SHELL_SOCKET` for current IPC, `SOPHIA_SHELL_9P_SOCKET` for
-files. The selection is read at startup; a desktop-profile reload does not
-re-read shell components, so it cannot change a running component's wire.
-Selecting files changes the transport only, never the role's grants. It is
-development selection under t252: record families the file wire does not yet
-carry close that component rather than falling back.
+Every component uses `sophia_shell_fs_v1` over 9P2000.L. Omission of `transport`
+selects 9P; `transport "9p2000.L"` is also accepted. `transport "current-ipc"`
+is refused during configuration validation. The child receives only its
+owner's `SOPHIA_SHELL_9P_SOCKET`; supplied endpoint variables, including the
+retired `SOPHIA_SHELL_SOCKET`, are removed before protected launch.
+The role's grants and resource limits are unchanged. There is no wire fallback.
+The selection is read at startup; profile reload does not replace components.
+The default remains experimental while t250/t252 qualification is open under
+the accepted [source-retirement decision](notes/decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md).
 
 The descriptor component always uses 9P and admits its vocabulary before
 negotiating the peer. Metadata-only shells need no content grant; combined
@@ -778,7 +778,7 @@ descriptor/content shells retain normal content policy and limits. A client's
 capability bits cannot choose its role. Independent C interoperability and
 protected CPU presentation tests pass; the accepted
 [descriptor contract](sophia-shell-descriptors.md) defines the file role.
-The remaining compatibility retirement is tracked under t271 and t269.
+The remaining compatibility source retirement is tracked under t269.
 Selection applies at startup and does not alter a running connection's vocabulary.
 
 The generic `shell-gpu-content-proof` and `shell_content_conformance_host CLIENT`

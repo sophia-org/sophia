@@ -907,20 +907,22 @@ Skew is resolved by revision and capability negotiation, with no wire fallback.
 Supervisor replacement starts a fresh process and epoch; reconnect never replays
 unsettled submissions.
 
-Current IPC remains the default for independent content components until t269.
-Session-owned configuration selects their transport at startup. A descriptor
-component requires explicit `9p2000.L` and excludes other shell components;
-the single-shell CLI selectors are retired. Clients and inherited environment do not choose the
-server's protocol, and there is no sniffing or fallback. Mixed transports can
-use the same one `ContentEpochRegistry`; selection neither creates another
-budget nor changes a role's grants.
+Every Session shell component uses 9P2000.L. Omitted `transport` selects it;
+an explicit `9p2000.L` is accepted and `current-ipc` is refused. A descriptor
+component excludes other shell components; the single-shell CLI selectors are
+retired. Clients and inherited environment do not choose the server's protocol.
+Protected launch supplies only the owner's `SOPHIA_SHELL_9P_SOCKET`, removing
+supplied endpoint variables including the retired `SOPHIA_SHELL_SOCKET`.
+There is no sniffing or fallback. Components share one `ContentEpochRegistry`;
+the transport default neither creates another budget nor changes role grants.
 
-A transport change is a complete component replacement: stop, revoke, settle
-the existing retirement claims, then issue a fresh grant and connection epoch.
-It never migrates a live grant. Until a reload owner implements that complete
-transition, a reload requesting a transport change must refuse it and retain
-the startup selection. Explicit Session relaunch is the rollback path; an
-installed-default change remains a separate acceptance decision.
+Replacement stops and revokes the old component, retains outstanding retirement
+claims and issues a fresh grant and connection epoch. It never migrates a live
+grant. Profile reload does not replace the startup component selection. Recovery
+to an IPC client requires a verified compatible older release as a whole for the
+next login, rather than substitution in a running 9P Session. The default remains
+experimental: source retirement does not close the outstanding t250/t252 latency
+and physical qualification, or authorize installation.
 
 ## Independent clients and evidence
 

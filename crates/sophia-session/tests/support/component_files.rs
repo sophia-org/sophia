@@ -1,6 +1,6 @@
 //! Session's connection owner served by the public SDK over 9P. Protection
 //! evidence is supplied; protected child launch is tested separately.
-use sophia_config::{ShellComponentRole, ShellTransportSelection};
+use sophia_config::ShellComponentRole;
 use sophia_protocol::*;
 use sophia_runtime::*;
 use sophia_session::shell_component_connections::*;
@@ -38,12 +38,11 @@ impl Harness {
             ("menu", ShellComponentRole::ApplicationLauncher),
         ] {
             owner
-                .add_with_transport(
+                .add(
                     id,
                     role,
                     &directory.join(id),
                     rustix::process::geteuid().as_raw(),
-                    ShellTransportSelection::NineP2000L,
                 )
                 .unwrap();
         }

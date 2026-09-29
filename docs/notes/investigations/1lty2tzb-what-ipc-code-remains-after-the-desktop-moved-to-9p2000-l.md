@@ -2548,6 +2548,45 @@ This is coverage migration, not socket-adapter removal. Session recipe codecs,
 the optional lifecycle peer and indicator host, the compatibility workers and
 protocol/SDK frame code still require retirement. No release is installed.
 
+## Independent components default to files (t269, 2026-09-28)
+
+Candidate after `444de134b`: `ShellTransportSelection` has only `NineP2000L`.
+Omitting the KDL transport selects files for every role; explicit `current-ipc`
+fails profile validation. The content connection owner's default registration
+now uses files, and its negotiation dispatch no longer calls the socket
+handshake. Role reservations, protection evidence and replacement custody are
+unchanged. The descriptor exclusion is tested through default and explicit
+registration; a now-impossible IPC enum value is removed from that control.
+
+The protected process owner still strips both endpoint variables from supplied
+launch specs, then sets its own 9P endpoint. Its existing two-process lifecycle
+test now registers without transport overrides and supplies bogus values for
+both variables. The children assert that the retired variable is absent and
+negotiate the real export; held leases, neighbor survival, replacement epochs
+and final quiescence retain their assertions. The ordinary Session file fixture
+also uses default registration, while the explicit-selection tests remain.
+
+Focused evidence under `development-evidence/ipc-retirement/`:
+
+- `t269-shell-default-config.log`: nine configuration tests pass, including
+  omission, explicit 9P and retired-selector refusal for all four roles.
+- `t269-shell-default-session.log`: thirteen connection tests and seven process
+  tests pass; three protected/child entries are ignored in that ordinary run.
+- `t269-shell-default-protected.log`: the device-hidden protected two-process
+  control passes when explicitly run, including replacement after stop.
+- `t269-shell-default-selector-mutant.log`: accepting `current-ipc` as an alias
+  compiles, then fails the profile-refusal assertion. The original file is
+  restored for later gates.
+- `t269-shell-default-clippy.log`: configuration and Session clippy pass across
+  all targets and features with warnings denied.
+
+The shell contract and configuration guide describe the experimental default
+and whole-release recovery; latency and physical qualification remain open.
+Both SDK contract copies must be refreshed from this signed candidate before
+the combined gate and publication. The runtime socket implementation itself is
+still present for the remaining compatibility callers; t269 is not complete.
+No installed selection or running process changes.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)
