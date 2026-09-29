@@ -7,13 +7,12 @@ COSMIC. It tells you which component owns what, which protocol each piece
 speaks, and how the pieces fit together. Each section links to the document
 that owns the details. This one owns the shape.
 
-**Current interfaces and target:** the native role protocols described below
-remain implemented and supported. The accepted
-[9P2000.L direction](sophia-9p-control-bus.md) targets their progressive public
-replacement, together with a separate 9P application frontend alongside X11.
-Its file API remains design work. The goal is independent WMs, shells and
-applications using generic 9P clients or mounted file I/O while retaining the
-same admission, metadata and lifetime boundaries.
+**Current interfaces and target:** WM and shell roles use admitted 9P2000.L
+files, with the same authority and lifetime boundaries described below. Their
+old socket transports are retired. Output-role migration and daily-driver
+qualification remain in progress. The accepted
+[9P2000.L direction](sophia-9p-control-bus.md) also includes a planned application
+frontend alongside X11; that application frontend remains design work.
 
 Panel UI is supplied by the user's chosen shell. Sophia does not add a built-in
 workspace bar or reserve a fixed strip merely because a WM publishes indicators.
@@ -68,27 +67,23 @@ Engine renders its fixed chrome from sanitized descriptors.
 
 ## Bring Your Own Language
 
-Sophia's protocols are byte-level wire contracts over Unix sockets: a fixed
-frame header, fixed offsets, explicit widths, reserved fields that must be
-zero. There is no required SDK, no blessed binding, and no library you must
-link. If your language can open a socket and read bytes, you can build on
-Sophia.
+WM and shell roles expose 9P2000.L files containing bounded binary records:
+explicit lengths, epochs, identities, field widths and reserved bytes. A client
+can implement the published file contract in any language. The independent
+[C](https://github.com/sophia-org/sophia-desktop-sdk-c) and
+[Rust](https://github.com/sophia-org/sophia-desktop-sdk-rs) desktop SDKs provide
+clients and codecs; neither requires linking Sophia's implementation crates.
 
-This isn't an aspiration; it's how the existing clients work. Hagia and
-Narthex are written in Nim and depend on nothing from this repository. The
-archived window-manager client is 438 lines of plain C99, compiled directly
-with no binding — the compatibility gate builds those exact sources and runs
-them against the live server, so a wire change that breaks them is rejected
-as a break, not absorbed as a refactor. The shell has its own independent C
-client at 367 lines. Sophia's own codecs are Rust. Three languages already
-speak the same bytes, and yours would be the fourth.
+Hagia and Narthex are separate Nim clients. Sophia's conformance gates also
+compile independent C peers and exercise them against its file exports,
+admission and recovery owners. The old revision-3 WM socket client archive has
+retired with that transport.
 
-The protocol specifications live in `protocol/*.kdl` as language-neutral
-descriptions: every message, field, width, and bound. The shared corpus of
-golden frames, malformed frames, and fixed records gives you conformance
-testing from the first day — your decoder either parses the same bytes the
-Rust, C, and Nim decoders parse, or it doesn't, and no one has to take your
-word for it either way.
+Start with the [WM file contract](sophia-wm-files.md) or
+[shell file contract](sophia-shell-files.md). The language-neutral schemas in
+`protocol/*.kdl` define the layouts and bounds. Shared row corpora and
+independent valid/malformed file tests check interoperability. Output, broker
+and control IPC retain separate contracts while their migrations proceed.
 
 ## Application Frontends And Shell Toolkits
 
@@ -194,14 +189,12 @@ unadvertised future work.
 ## The Ladder
 
 **A window manager**, in the dwm, niri, or xmonad tradition. One binary
-speaking `sophia_wm_v1`. The interface carries thirteen capability bits, from
-`bindings` alone up to `translation_groups`; negotiate the ones you need and
-ignore the rest. A minimal tiler is a reducer — snapshot in, projection out —
-and you inherit the session's shell (or none), the portals, and the
-compatibility layer for free. Start from `protocol/archive/sophia-wm-v1-r3/`,
-which is self-contained: the frozen spec, a generated C codec, a worked
-client, and checksums. Hagia is the full-width reference.
-`docs/sophia-wm-api.md` and `docs/wm-v1-freeze-surface.md` own the details.
+using the [WM file contract](sophia-wm-files.md). Negotiate the capabilities
+your policy needs. A minimal tiler is a reducer: snapshot in, projection out.
+The session separately selects its shell and portal services. Start with the
+C or Rust desktop SDK's WM files client; Hagia is the full reference WM.
+`docs/sophia-wm-api.md` describes the policy semantics, and
+`protocol/sophia-wm-files-v1.kdl` defines their file representation.
 
 For smooth positional transitions, submit final placements with optional
 [translation groups](window-transitions.md). Engine owns the GPU timeline,
@@ -478,7 +471,7 @@ anybody:
 
 | You want to build | Read next | Copy from |
 | --- | --- | --- |
-| A window manager | `docs/sophia-wm-api.md`, `protocol/archive/sophia-wm-v1-r3/README.md` | the archived `client.c`, then Hagia |
+| A window manager | `docs/sophia-wm-api.md`, `docs/sophia-wm-files.md` | the desktop SDK WM files clients, then Hagia |
 | A shell | `docs/sophia-shell-v1-direction.md`, `protocol/sophia-shell-v1.kdl`, [paired plan](notes/plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md) | Narthex for descriptors; Lom for the developing content adapter |
 | A full desktop | this document, then both of the above | Hagia and Narthex, as the split to imitate |
 | Portal-using apps | `docs/namespaces-and-portals.md` | — |

@@ -1,5 +1,4 @@
 # Temporary legacy exceptions. Remove each entry when its domain split lands.
-large-source crates/sophia-protocol/src/ipc/wm_v1.rs
 large-source crates/sophia-x-authority/src/x11_socket/connection/dispatch.rs
 
 # Private allocation-adoption race; rationale in docs/style-guide.md.

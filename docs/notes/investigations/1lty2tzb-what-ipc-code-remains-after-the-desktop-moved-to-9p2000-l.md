@@ -2732,6 +2732,57 @@ independent C descriptor and content peers. The optional operator-supplied
 lifecycle executable remains explicitly unavailable; the built-in protected C
 file lifecycle and its negative controls passed.
 
+## Generated Rust WM codec and revision-3 archive retirement (t269, 2026-09-29)
+
+Starting from `42fc47b42`, the generated Rust WM socket codec and its generator
+functions are removed. The remaining IPC decoder refuses all former WM message
+numbers, 32–55, as unknown. A regression checks every number; the shell-number
+refusal and the output, broker and control codecs remain unchanged.
+
+The three remaining `policy_wire` tests checked only the retired wire: golden
+frame round trips, malformed frame errors, and chunk payload/transaction bounds.
+Those retire with the codec. `policy_record_corpus` retains exact shared row
+bytes, reserved fields and semantic validation. `wm_file_admission`,
+`wm_file_arrays`, `wm_file_controls` and `wm_file_envelope` retain complete file
+records, transactions, capabilities, bounds and malformed-input coverage.
+The independent C peer still exercises the real file export, protected
+recovery and supervised replacement in `check_policy_protocol.sh`.
+
+The revision-3 C client archive, including its frozen schema, codecs and
+checksums, is removed after its socket compatibility gate's earlier retirement.
+The contributor guide now directs WM authors to the file contracts and desktop
+SDKs. Historical notes retain their original descriptions. Current generated C
+bindings, golden socket corpora and schema copies remain bound by the SDK pins.
+The generator also still owns neutral WM rows and the output/control checks;
+its final retirement must preserve those actual users.
+
+Focused protocol/generator tests pass: 267 tests, zero failed. Generator
+`--check` and the independent WM file-protocol gate pass. The first full run
+refused an editorial change to `docs/sophia-wm-files.md`, whose bytes are pinned
+by both SDKs. That edit was withdrawn; the validation contract records this
+source retirement without changing the file contract. The second full run
+passed workspace tests but found SDK test binaries cached from
+`sophia-ipc-retirement`, with absolute fixture paths outside the current
+isolation mount. That cache was preserved under
+`target/rust-desktop-sdk-before-main-checkout`, and rebuilt for this checkout.
+Both failed logs are retained with the final run.
+
+`development-evidence/ipc-retirement/t269-wm-codec-full-3.log` records the
+complete isolated `cargo xtask check`, exit zero: 471 reported result groups,
+6,592 reported passes, no failures and 61 ignored, plus strict workspace clippy,
+formatting, SDK snapshot checks and tool verifiers. Focused and independent
+evidence is `t269-wm-codec-tests.log` and `t269-wm-codec-independent.log` in the
+same directory. Device-dependent graphics and physical qualification remain
+unproved. Changed note links resolve and task IDs remain unique; the notebook's
+broken-link report names 21 other notes, outside this change.
+
+The separate `niltempus build` report was a reviewed-toolchain refusal after
+Bubblewrap changed from 0.12.0 to 0.13.0. niltempus `04deea464` adds persistent
+Cargo targets for retries and early executable identity diagnostics. Its
+`docs/build-retries.md` owns the diagnosis, regenerated manifest identities and
+installer/tooling tests. This does not change Sophia's release pin or activate
+a desktop. The source-retirement and SDK/output qualification limits remain.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)
@@ -2755,9 +2806,9 @@ flips, by a published rollback recipe. The inventory maps to these task IDs;
 - t269: flip the WM and shell transport defaults to 9p2000.L, then delete the
   WM and shell IPC paths, codecs, generator, bindings, archive, scripts and
   gates (B, after t267, t268 and t271, under the accepted retirement decision). Descriptor production startup
-  now uses files and its runtime/socket codecs are removed; the WM generated
-  codec, generator, bindings and remaining compatibility artifacts still need
-  retirement.
+  now uses files; Rust WM/shell socket codecs and the revision-3 archive are
+  removed. The generator, current C bindings and SDK-bound compatibility
+  artifacts still need coordinated retirement.
 - t270: SDK releases without `sophia-shell-ipc`, `ipc-compat` and
   `WITH_IPC`; re-vendor and prune the `same_contract` lists.
 - t271: the Narthex descriptor profile and single-process metadata shell (C).

@@ -93,6 +93,14 @@ replacement's first commit. These tests use temporary sockets and supervised
 test processes, not a graphical session. Installed input/render fairness is a
 short optional operator smoke. Scripted reload remains deferred.
 
+The Rust WM and shell socket codecs are retired. Protocol tests require their
+former message numbers (WM 32–55; shell 96–122 and 160–202) to fail as unknown
+kinds. WM row values retain their golden corpus through `policy_record_corpus`;
+complete file envelopes, arrays and controls retain their own malformed-input
+tests. The generator still checks file rows, output/control contracts and the
+C SDK's pinned compatibility artifacts, but cannot regenerate the retired Rust
+WM frame codec. C SDK artifacts retire with the coordinated SDK update.
+
 `ShellWorkAreaCoordination` checks that a future ready shell reservation,
 derived work area, and exact WM projection promote as one coherent generation;
 normal shell or WM failure preserves the prior presented bundle. It is a target

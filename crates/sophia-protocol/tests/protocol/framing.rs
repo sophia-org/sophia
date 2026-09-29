@@ -1,4 +1,17 @@
 #[test]
+fn retired_wm_message_numbers_are_not_reinterpreted_as_other_roles() {
+    let original = encode_frame(IpcMessageKind::BrokerHealth, TransactionId::INVALID, &[]).unwrap();
+    for kind in 32u16..=55 {
+        let mut frame = original.clone();
+        frame[6..8].copy_from_slice(&kind.to_le_bytes());
+        assert_eq!(
+            decode_frame(&frame),
+            Err(IpcCodecError::UnknownMessageKind(kind))
+        );
+    }
+}
+
+#[test]
 fn retired_shell_message_numbers_are_not_reinterpreted_as_other_roles() {
     let original = encode_frame(IpcMessageKind::BrokerHealth, TransactionId::INVALID, &[]).unwrap();
     let retired: Vec<u16> = (96..=122).chain(160..=202).collect();
