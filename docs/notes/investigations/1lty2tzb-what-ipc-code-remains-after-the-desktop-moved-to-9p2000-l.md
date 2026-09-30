@@ -3304,9 +3304,39 @@ The subsequent full deterministic gate passes in `t253-performance-full.log`:
 6,304 passes, zero failures and 65 ignored checks across 435 groups, plus strict
 Clippy, SDK checks, layout, conformance and repository verifiers. This includes
 the existing refusal and recovery coverage; latency does not replace it.
-The separate supervised interactive launch/result path, startup transaction
-exemption coverage and applicable native acceptance remain open. No native or
-live-session acceptance is claimed.
+The separate supervised interactive launch/result path and applicable native
+acceptance remain open. No native or live-session acceptance is claimed.
+
+## Startup output ownership during peer loss (2026-09-29)
+
+Three deterministic cases now cover the profile-owned startup transaction in
+`output_file_startup_recovery.rs`, using the existing real output file service
+and Session owner rig. They admit `u64::MAX` locally through the authority owner,
+as `session_start` does, without submitting a transport proposal.
+
+- A disconnect before dispatch preserves the startup effect. Local rejection
+  later clears startup state, adopts the pending connection epoch and preserves
+  the topology; a replacement peer can submit a new proposal.
+- A disconnect after supplied apply preserves the startup candidate without
+  cancellation debt. Supplied first presentation commits, clears local state
+  and publishes the new topology to a replacement peer.
+- Rejection with an observer still connected stays local: a fenced event read
+  receives no outcome, the service remains available, and the same observer
+  can submit an ordinary proposal on its original epoch.
+
+The `desktop_launch_reload` group passes 56 cases with four ignored in
+`t253-startup-output-recovery.log`. Private-snapshot negative controls disable
+the startup exemption (both disconnect tests fail) and route startup settlement
+through the transport (the connected-observer test fails). Evidence is
+`t253-startup-exemption-negative.log` and
+`t253-startup-local-settlement-negative.log`. The mutated production file was
+restored and compared byte-for-byte; the private target never replaced canonical
+build artifacts. Targeted strict Clippy is recorded in
+`t253-startup-output-clippy.log`.
+
+No production behavior changed. Physical completion is supplied; these cases
+do not run KMS, the native owner loop's startup proof-rollback hook, a peer
+proposal competing with active startup, or startup rollback after apply.
 
 ## Connections
 

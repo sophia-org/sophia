@@ -37,6 +37,9 @@ use std::time::{Duration, Instant};
 const EPOCH: u64 = 3;
 const TOPOLOGY_EPOCH: u64 = 7;
 
+#[path = "output_file_startup_recovery.rs"]
+mod startup_recovery;
+
 enum Step {
     Negotiate,
     Propose(TransactionId, OutputTopologyCandidate),
