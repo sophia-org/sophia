@@ -202,3 +202,25 @@ The release also imports `spec/sophia-shell-files.md` from signed Sophia
 to the file schema and records that the existing Limits fields and validation
 relations survive adapter retirement. No wire layout changes. Its new digest
 is recorded in `spec/SHA256SUMS`; all other retained digests are unchanged.
+
+## Release 0.3.0: output file role
+
+`spec/sophia-output-files-v1.kdl` and `spec/sophia-output-files.md` are copied
+unmodified from signed Sophia `2f3264c432cc50af93e4fd911a71fc83117ca78e`.
+The KDL is the layout authority for `sophia_output_files.h`; the document
+supplies the file lifecycle, snapshot invariants and the revision-1 limitation
+that current transform and VRR are not published. The codec and session were
+written from these files, not translated from Sophia's Rust implementation.
+Their digests are recorded in `spec/SHA256SUMS`; all other digests are
+unchanged. Scripted-peer tests enforce the documented export rules. Sophia's
+independent C fixture at that commit passes negotiation, exact topology fetch,
+proposal delivery, terminal outcome and cumulative acknowledgement against the
+production OutputFileService. Evidence is
+`t253-c-peer-lifecycle-exchange.log` in Sophia's development evidence directory.
+The final 0.3.0 candidate also passes `make -j1 all check` (contract digests and
+17 test programs) in device-hidden isolation, recorded in
+`t253-sdk-030-check.log`. The peer linked against those built libraries passes
+the same production export fixture in `t253-sdk-030-export.log`.
+The SDK sources were the release candidate; version and provenance edits do not
+change those sources. This qualifies the C file client, not physical topology
+effects, native presentation, Rust client parity or output default selection.

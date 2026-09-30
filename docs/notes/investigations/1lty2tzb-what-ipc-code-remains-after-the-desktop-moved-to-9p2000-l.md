@@ -3110,6 +3110,85 @@ Session candidate following `d5281570`. t253 still needs independent
 physical-owner recovery, performance bounds and applicable native acceptance;
 t272 remains dependent on those gates.
 
+## Pinned SDK and output cancellation recovery (2026-09-29)
+
+Signed Sophia `2f3264c432cc50af93e4fd911a71fc83117ca78e` supplies the independent
+Session launch and lifecycle corrections above. Signed C SDK 0.3.0,
+`7ccfece173b4b01e563a27b8fe5cc07d4369b55a`, imports that exact output contract.
+Its contract checks and 17 C test programs pass in `t253-sdk-030-check.log`;
+the final built libraries pass the real-export peer in
+`t253-sdk-030-export.log`. These are local signed candidates, not an installation.
+
+Sophia's immutable SDK snapshot now names that revision. Its manifest digest is
+`2259db2fc97b0c31dccfb3b93b8e64fea53c64de267e25c43be4ffff9a140907`.
+The snapshot check verifies its commit/tree identity and compares the output
+KDL and lifecycle document with Sophia's authoritative files. The independent
+output C peer is an ordinary test compiled from this pin; it no longer requires
+an external candidate executable. `t253-sdk-030-pin.log` and
+`t253-pinned-output-peer.log` record both checks passing.
+
+The generic `output_file_recovery.rs` fixture joins the actual file worker to
+Session's output authority with one supplied head and two refresh modes. Six
+cases preserve the published topology after departure before dispatch, discard
+a queued proposal without promotion, retain cancellation debt during preparation
+and rollback, settle a failed rollback without publication, and preserve a
+commit that won the race with disconnect. Replacement peers read the expected
+snapshot at a fresh epoch and Qid. Private-snapshot negative controls fail when
+dispatched cancellation debt or committed publication is removed. A timeout
+failure control also confirms that an unfinished peer cannot trap the test in
+an unbounded join.
+
+`t253-output-owner-recovery.log` records the canonical Session launch/reload
+group: 52 passes, zero failures and four ignored child fixtures.
+`t253-output-recovery-clippy.log` records strict runtime/Session linting.
+The initial full-gate run was interrupted without a result. The second run
+(`t253-pinned-recovery-full-2.log`) passed the recovery and C peer cases but
+found that the SDK verifier's scratch fixture omitted the two newly required
+output contracts. The fixture now copies both and tests drift in each;
+`t253-sdk-030-pin-fixture.log` records that correction passing.
+The third full run exposed a missing setup barrier in the existing X11
+selection-routing test: the requestor could convert before the other worker
+processed SetSelectionOwner. A GetSelectionOwner reply now confirms the
+expected owner before conversion; the extra request advances two expected
+owner sequence numbers. `t253-x11-selection-barrier-2.log` records all 548
+X11 wire tests passing with that test-only correction.
+`t253-pinned-recovery-full-4.log` records the complete `cargo xtask check`
+gate passing: test summaries report 6,287 passes, zero failures and 64 ignored
+checks across 433 groups, followed by strict clippy, SDK, layout and conformance
+checks. Hardware proofs remain explicitly unproved in this device-hidden run.
+
+The recovery fixture calls physical observation methods in the native loop's
+order; it does not execute that loop or perform preparation, apply, presentation or
+restoration on hardware. Failed rollback preserves published state, not proof
+of physical restoration. Child-exit pause and the startup-transaction exemption
+are outside these six cases. Native acceptance, performance qualification and
+interactive launch/result delivery remain open under t253; t272 remains blocked
+by that migration gate.
+
+The independent CLI is signed locally as `sophia-output` 0.1.0,
+`a882af34ea4faa5774dd167c9df0219069605576` (signed tag `v0.1.0`). It vendors
+SDK `7ccfece` and reports both that revision and its manifest digest. Its final
+`make check` and real-output-service harness pass; evidence is
+`t253-cli-0.1.0-export-e2e.log`. The harness pins signed Sophia `2f3264c432`
+and records list, validate, rejected apply, missing-settings refusal and
+unauthorized-peer refusal. It is test-owner evidence without Session launch or
+KMS acceptance. Review controls reproduce and fix stale SDK objects after a
+pin transition, detect missing or extra vendored files even on warm builds,
+and reject signed or overflowing numeric IDs without aliasing `UINT64_MAX`.
+The CLI, SDK and Sophia candidates remain local; nothing was installed or pushed.
+
+Interactive launch remains a separate contract decision. Existing application
+launches grant no output authority, and host control has neither argument-bearing
+commands nor child output/result delivery. Reusing the protected output
+supervisor requires checked pidfd reassignment after each run, exclusivity while
+a child or cancellation debt remains, and a terminal result for exit before
+submission. Profile-declared fixed presets can reuse action dispatch. Terminal
+commands with per-run arguments need an administrative launch/result contract;
+the planned 9P administrative lane is t254. Such a launcher can keep the
+executable profile-declared and run it under Session supervision; it need not
+admit an arbitrary unsupervised process as the output peer. No administrative
+wire or authority expansion is included in this candidate.
+
 ## Connections
 
 - [Migrate desktop roles to a daily-driver 9P control bus](../plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md)

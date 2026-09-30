@@ -22,6 +22,9 @@ struct sophia_desktop_endpoint {
  * requires SOPHIA_SHELL_9P_SOCKET and refuses any SOPHIA_SHELL_SOCKET value. */
 int sophia_desktop_select_shell(const char *files, struct sophia_desktop_endpoint *out);
 int sophia_desktop_shell_environment(struct sophia_desktop_endpoint *out);
+/* The output role: requires SOPHIA_OUTPUT_9P_SOCKET and refuses any
+ * SOPHIA_OUTPUT_SOCKET value, even empty. Path rules match the shell's. */
+int sophia_desktop_output_environment(struct sophia_desktop_endpoint *out);
 
 /* Initialize to { .fd = -1 } before begin. The helper owns fd until take or
  * close. No waits or endpoint discovery: caller polls and enforces a deadline.

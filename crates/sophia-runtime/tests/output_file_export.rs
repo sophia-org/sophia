@@ -629,11 +629,48 @@ fn worker_delivers_once_settles_reserved_outcome_and_pauses_without_a_peer() {
 }
 
 #[test]
-#[ignore = "requires the separately built output C SDK candidate peer"]
 fn independent_c_sdk_session_against_the_output_file_worker() {
     use std::io::Write;
     use std::process::{Command, Stdio};
-    let binary = std::env::var_os("SOPHIA_OUTPUT_C_PEER").expect("explicit C peer binary");
+    let build = std::env::temp_dir().join(format!("output-c-peer-build-{}", std::process::id()));
+    std::fs::create_dir(&build).unwrap();
+    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let source = repo.join("vendor/c-desktop-sdk/source/src");
+    let binary = build.join("output-peer");
+    let mut compiler = Command::new("timeout");
+    compiler
+        .args(["-s", "KILL", "90", "nice", "-n", "19"])
+        .arg(std::env::var_os("CC").unwrap_or_else(|| "cc".into()))
+        .args([
+            "-std=c99",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-pedantic",
+            "-UNDEBUG",
+            "-I",
+        ])
+        .arg(&source);
+    for directory in ["nine_p", "output_files", "output_session"] {
+        let mut files = std::fs::read_dir(source.join(directory))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.extension().is_some_and(|extension| extension == "c"))
+            .collect::<Vec<_>>();
+        files.sort();
+        compiler.args(files);
+    }
+    let compiled = compiler
+        .arg(repo.join("crates/sophia-runtime/tests/support/output_files_peer.c"))
+        .arg("-o")
+        .arg(&binary)
+        .output()
+        .unwrap();
+    assert!(
+        compiled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
     let directory = std::env::temp_dir().join(format!("output-c-worker-{}", std::process::id()));
     let mut transport = OutputFileTransport::bind_for_supervised_uid(
         &directory,
@@ -698,4 +735,5 @@ fn independent_c_sdk_session_against_the_output_file_worker() {
     assert_eq!(proposals, 1);
     drop(service);
     assert!(!directory.exists());
+    std::fs::remove_dir_all(build).unwrap();
 }

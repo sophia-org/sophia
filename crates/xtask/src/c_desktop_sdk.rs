@@ -79,6 +79,11 @@ pub fn verify(snapshot: &Path, repo: &Path) -> Result<String, String> {
             "protocol/sophia-wm-files-v1.kdl",
         ),
         ("spec/sophia-wm-api.md", "docs/sophia-wm-api.md"),
+        ("spec/sophia-output-files.md", "docs/sophia-output-files.md"),
+        (
+            "spec/sophia-output-files-v1.kdl",
+            "protocol/sophia-output-files-v1.kdl",
+        ),
         (
             "spec/golden/sophia-wm-v1.records",
             "protocol/golden/sophia-wm-v1.records",

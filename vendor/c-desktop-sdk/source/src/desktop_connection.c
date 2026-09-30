@@ -31,6 +31,12 @@ int sophia_desktop_shell_environment(struct sophia_desktop_endpoint *out)
     return sophia_desktop_select_shell(getenv("SOPHIA_SHELL_9P_SOCKET"), out);
 }
 
+int sophia_desktop_output_environment(struct sophia_desktop_endpoint *out)
+{
+    if (getenv("SOPHIA_OUTPUT_SOCKET")) return SOPHIA_DESKTOP_CONNECT_ARGUMENT;
+    return sophia_desktop_select_shell(getenv("SOPHIA_OUTPUT_9P_SOCKET"), out);
+}
+
 static int fail(struct sophia_desktop_connection *c, int result, int error)
 {
     if (c->owns_fd && c->fd >= 0) close(c->fd);

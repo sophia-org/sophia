@@ -138,6 +138,8 @@ fn pinned_source_and_contract_are_both_required() {
         "docs/sophia-wm-files.md".to_owned(),
         "protocol/sophia-wm-files-v1.kdl".to_owned(),
         "docs/sophia-wm-api.md".to_owned(),
+        "docs/sophia-output-files.md".to_owned(),
+        "protocol/sophia-output-files-v1.kdl".to_owned(),
         "protocol/golden/sophia-wm-v1.records".to_owned(),
         "docs/references/diod-9p2000L-protocol.md".to_owned(),
     ];

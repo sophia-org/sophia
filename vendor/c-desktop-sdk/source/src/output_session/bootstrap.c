@@ -1,0 +1,147 @@
+#include "internal.h"
+
+static const char api[] = "sophia-output-files version=1\n";
+static const char *const files[] = {"events", "submit", "ack"};
+static uint32_t *fid(struct sophia_os *s, unsigned index) {
+  if (!index)
+    return &s->events_fid;
+  return index == 1 ? &s->submit_fid : &s->ack_fid;
+}
+/* Steps: 0 version, 1 attach, 2-5 api, 6-9 limits, 10-15 walk/open the
+ * events, submit and ack fids; 16 is complete. */
+static int bootstrap_drive(struct sophia_os *s) {
+  int r;
+  if (s->boot_op.active || s->bootstrap == 16)
+    return 0;
+  switch (s->bootstrap) {
+  case 0:
+    r = sophia_9p_version(&s->wire, &s->boot_op.handle);
+    break;
+  case 1:
+    r = sophia_9p_attach(&s->wire, "", "", &s->boot_op.handle, &s->root);
+    break;
+  case 2:
+  case 6: {
+    const char *name = s->bootstrap == 2 ? "api" : "limits";
+    s->boot_used = 0;
+    r = sophia_9p_walk(&s->wire, s->root, &name, 1, &s->boot_op.handle,
+                       &s->boot_fid);
+    break;
+  }
+  case 3:
+  case 7:
+    r = sophia_9p_lopen(&s->wire, s->boot_fid, 0, &s->boot_op.handle);
+    break;
+  case 4:
+  case 8: {
+    /* One byte past each exact size proves EOF without trusting a length. */
+    uint32_t n = (s->bootstrap == 4 ? (uint32_t)sizeof(api)
+                                    : SOPHIA_OF_LIMITS_RECORD + 1u) -
+                 (uint32_t)s->boot_used;
+    if (s->boot_iounit && n > s->boot_iounit)
+      n = s->boot_iounit;
+    r = sophia_9p_read(&s->wire, s->boot_fid, s->boot_used, n,
+                       &s->boot_op.handle);
+    break;
+  }
+  case 5:
+  case 9:
+    r = sophia_9p_clunk(&s->wire, s->boot_fid, &s->boot_op.handle);
+    break;
+  default: {
+    unsigned index = (s->bootstrap - 10u) / 2u;
+    if (!(s->bootstrap % 2))
+      r = sophia_9p_walk(&s->wire, s->root, &files[index], 1,
+                         &s->boot_op.handle, fid(s, index));
+    else
+      r = sophia_9p_lopen(&s->wire, *fid(s, index), index ? 1 : 0,
+                          &s->boot_op.handle);
+    break;
+  }
+  }
+  return os_started(&s->boot_op, r);
+}
+int os_boot_reply(struct sophia_os *s, const struct sophia_9p_reply *r) {
+  if (r->type == 7) {
+    s->remote_error = r->error;
+    return SOPHIA_9P_INVALID;
+  }
+  if (r->type == 111 && (r->count != 1 || r->qid.type))
+    return SOPHIA_9P_INVALID;
+  if (r->type == 13 && r->qid.type)
+    return SOPHIA_9P_INVALID;
+  if (s->bootstrap == 4 || s->bootstrap == 8) {
+    size_t maximum =
+        s->bootstrap == 4 ? sizeof(api) - 1 : SOPHIA_OF_LIMITS_RECORD;
+    if (r->type != 117 || r->count > maximum - s->boot_used)
+      return SOPHIA_9P_INVALID;
+    if (r->count) {
+      memcpy(s->boot_bytes + s->boot_used, r->data, r->count);
+      s->boot_used += r->count;
+      return 0;
+    }
+    if (s->bootstrap == 4) {
+      if (s->boot_used != sizeof(api) - 1 ||
+          memcmp(s->boot_bytes, api, sizeof(api) - 1))
+        return SOPHIA_9P_INVALID;
+    } else {
+      struct sophia_of_record value;
+      if (sophia_of_decode(s->boot_bytes, s->boot_used, &value) ||
+          value.header.kind != SOPHIA_OF_LIMITS)
+        return SOPHIA_9P_INVALID;
+      /* The Limits object carries the admitted epoch for every candidate,
+       * submit and ack on this attach. */
+      s->epoch = value.header.epoch;
+      s->limits = value.value.limits;
+      s->have_limits = 1;
+    }
+  }
+  if (s->bootstrap == 3 || s->bootstrap == 7)
+    s->boot_iounit = r->iounit;
+  if (s->bootstrap == 11)
+    s->events_iounit = r->iounit;
+  if ((s->bootstrap == 13 && r->iounit && r->iounit < SOPHIA_OF_SUBMIT_BYTES) ||
+      (s->bootstrap == 15 && r->iounit && r->iounit < SOPHIA_OF_ACK_BYTES))
+    return SOPHIA_9P_INVALID;
+  ++s->bootstrap;
+  if (s->bootstrap == 16) {
+    struct sophia_of_record value;
+    uint64_t ticket;
+    memset(&value, 0, sizeof(value));
+    value.header.kind = SOPHIA_OF_NEGOTIATE;
+    value.value.negotiate = s->config.offer;
+    return os_queue(s, &value, s->bootstrap_deadline, &ticket);
+  }
+  return 0;
+}
+int os_drive(struct sophia_os *s) {
+  int r = bootstrap_drive(s);
+  if (r || s->bootstrap != 16)
+    return r;
+  if (!s->event_op.active && s->journal_used < OS_JOURNAL_BYTES) {
+    size_t n = OS_JOURNAL_BYTES - s->journal_used;
+    if (n > s->wire.msize - 11u)
+      n = s->wire.msize - 11u;
+    if (s->events_iounit && n > s->events_iounit)
+      n = s->events_iounit;
+    r = os_started(&s->event_op,
+                   sophia_9p_read(&s->wire, s->events_fid, s->event_offset,
+                                  (uint32_t)n, &s->event_op.handle));
+    if (r)
+      return r;
+  }
+  if (!s->ack_op.active && s->consumed > s->acked) {
+    uint8_t b[SOPHIA_OF_ACK_BYTES];
+    if (sophia_of_ack_encode(b, s->epoch, s->consumed))
+      return SOPHIA_9P_INVALID;
+    r = sophia_9p_write(&s->wire, s->ack_fid, 0, b, sizeof(b),
+                        &s->ack_op.handle);
+    if (!r) {
+      s->ack_op.active = 1;
+      s->ack_pending = s->consumed;
+    } else if (r != SOPHIA_9P_BUSY)
+      return r;
+  }
+  r = os_tx_drive(s);
+  return r ? r : os_object_drive(s);
+}

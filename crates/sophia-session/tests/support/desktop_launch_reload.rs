@@ -28,6 +28,9 @@ mod policy_combined_output;
 #[path = "output_file_launch.rs"]
 mod output_file_launch;
 
+#[path = "output_file_recovery.rs"]
+mod output_file_recovery;
+
 #[path = "policy_expectation_settlement.rs"]
 mod policy_expectation_settlement;
 

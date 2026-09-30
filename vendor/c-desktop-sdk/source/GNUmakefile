@@ -2,7 +2,7 @@ PREFIX ?= /usr/local
 LIBDIR ?= $(PREFIX)/lib
 INCLUDEDIR ?= $(PREFIX)/include/sophia-desktop
 BUILD ?= build
-VERSION = 0.2.0
+VERSION = 0.3.0
 CC ?= cc
 AR ?= ar
 CFLAGS ?= -O2 -g
@@ -10,7 +10,7 @@ override CFLAGS += -std=c99 -Wall -Wextra -Werror -pedantic
 CPPFLAGS += -Isrc
 
 NINE_P = $(sort $(wildcard src/nine_p/*.c))
-FILES = $(sort $(wildcard src/shell_files/*.c src/shell_session/*.c src/native_session/*.c src/wm_files/*.c src/wm_session/*.c)) src/desktop_connection.c
+FILES = $(sort $(wildcard src/shell_files/*.c src/shell_session/*.c src/native_session/*.c src/wm_files/*.c src/wm_session/*.c src/output_files/*.c src/output_session/*.c)) src/desktop_connection.c
 objects = $(patsubst %.c,$(BUILD)/%.o,$(1))
 LIBRARIES = $(BUILD)/libsophia-9p.a $(BUILD)/libsophia-desktop.a
 PACKAGES = sophia-9p sophia-desktop
@@ -30,7 +30,7 @@ $(BUILD)/%.pc: pkgconfig/%.pc.in GNUmakefile
 	@mkdir -p $(@D)
 	sed -e 's|@PREFIX@|$(PREFIX)|g' -e 's|@LIBDIR@|$(LIBDIR)|g' -e 's|@INCLUDEDIR@|$(INCLUDEDIR)|g' -e 's|@VERSION@|$(VERSION)|g' $< > $@
 
-FILE_TESTS = sophia_9p_client_test sophia_shell_files_test sophia_shell_files_roles_test sophia_shell_files_descriptors_test sophia_shell_files_descriptor_candidates_test sophia_shell_files_descriptor_objects_test sophia_shell_files_staging_test desktop_connection_test shell_session_custody_test shell_session_events_test shell_session_descriptors_test shell_session_staging_test native_session_test wm_files_test wm_session_test
+FILE_TESTS = sophia_9p_client_test sophia_shell_files_test sophia_shell_files_roles_test sophia_shell_files_descriptors_test sophia_shell_files_descriptor_candidates_test sophia_shell_files_descriptor_objects_test sophia_shell_files_staging_test desktop_connection_test shell_session_custody_test shell_session_events_test shell_session_descriptors_test shell_session_staging_test native_session_test wm_files_test wm_session_test output_files_test output_session_test
 ifeq ($(shell uname -s),Linux)
 $(BUILD)/desktop_connection_test: WRAPS = -Wl,--wrap=getsockopt
 endif

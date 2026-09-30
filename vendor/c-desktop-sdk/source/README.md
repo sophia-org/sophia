@@ -18,13 +18,16 @@ to tunnel the old socket protocol through a file.
 
 ## Current coverage
 
-Release 0.2.0 provides a generic nonblocking 9P2000.L client, shell file
+Release 0.3.0 provides a generic nonblocking 9P2000.L client, shell file
 records and sessions for bar (r6), native launcher (r7) and persistent
-catalog/dock (r8), and the WM file codec and session. WM and shell socket
+catalog/dock (r8), and WM and output file codecs and sessions. WM and shell socket
 compatibility is removed; recovery uses a complete compatible older desktop release.
 WM file record codecs and a bounded WM session pass scripted-peer tests and
 Sophia's production WM export gate, and Hagia uses them through thin Nim
-bindings. Output authority and admin file clients are not implemented yet.
+bindings. The output file codec and session pass scripted-peer tests and
+Sophia's production output export exchange. This does not qualify physical
+display changes or the output default rollout. The admin file client is not
+implemented yet.
 
 Descriptor codecs and profile selection use the native layouts in
 `spec/sophia-shell-files-v1.kdl` and the rules in `spec/sophia-shell-descriptors.md`.
@@ -81,7 +84,7 @@ make install PREFIX=/usr/local DESTDIR=/path/to/staging
 The static libraries are:
 
 - `libsophia-9p.a`: generic transport, link with `-lsophia-9p`.
-- `libsophia-desktop.a`: WM and shell file codecs/sessions; link with
+- `libsophia-desktop.a`: WM, shell and output file codecs/sessions; link with
   `-lsophia-desktop -lsophia-9p`.
 
 Headers install under `include/sophia-desktop`; pkg-config packages are
@@ -116,3 +119,26 @@ revocation and protocol tests. Cross-compilation alone is insufficient. The
 first Linux release does not wait for BSD qualification.
 
 License: BSD-3-Clause; see [LICENSE](LICENSE).
+
+## Output role
+
+`sophia_output_files.h` encodes and decodes the output file records in
+`spec/sophia-output-files-v1.kdl`. A published Topology is authoritative, so
+decoding also applies the snapshot invariants in `spec/sophia-output-files.md`;
+proposals decode structurally and reach the server's topology owner for
+semantic validation.
+
+`sophia_output_session.h` owns one output attach: bootstrap, negotiation,
+submission custody, cumulative acknowledgements and topology fetches. Each
+ObjectPublished event is presented only after the SDK has read that exact
+object (matching Qid path and epochs) and released its handle, so the ack
+that follows consumption never precedes the full read. The next proposal opens
+its transaction only after the previous Submitted is acknowledged. EAGAIN
+retries identical bytes; other refusals settle the ticket. A negotiation
+refusal ends the session after its acknowledgement.
+`sophia_desktop_output_environment` requires `SOPHIA_OUTPUT_9P_SOCKET` and
+refuses the retired `SOPHIA_OUTPUT_SOCKET`.
+
+Revision 1 does not publish a head's current transform or VRR policy, and a
+proposal restates them for every enabled head. Callers must obtain explicit
+values rather than defaulting them.
