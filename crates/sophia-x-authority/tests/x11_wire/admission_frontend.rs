@@ -548,6 +548,18 @@ fn x_server_frontend_routes_selection_notify_to_the_requestor_client() {
         ))
         .unwrap();
 
+    // The requestor runs on another connection. Wait for ownership to be
+    // installed before it converts the selection; connecting it is no barrier
+    // to the owner's worker processing SetSelectionOwner.
+    owner
+        .write_all(&resource_request(XByteOrder::LittleEndian, 23, 1))
+        .unwrap();
+    let ownership = read_x_reply(&mut owner, XByteOrder::LittleEndian);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &ownership[8..12]),
+        owner_window
+    );
+
     let mut requestor = connect_x_socket(&socket_path);
     requestor
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
@@ -587,7 +599,7 @@ fn x_server_frontend_routes_selection_notify_to_the_requestor_client() {
         .recv_timeout(X_RECORD_READ_TIMEOUT)
         .expect("ConvertSelection must reach the dispatch observer");
     assert_eq!(request[0], 30);
-    assert_eq!(read_u16(XByteOrder::LittleEndian, &request[2..4]), 2);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &request[2..4]), 3);
     assert_eq!(
         read_u32(XByteOrder::LittleEndian, &request[8..12]),
         owner_window
@@ -709,7 +721,7 @@ fn x_server_frontend_routes_selection_notify_to_the_requestor_client() {
         .unwrap();
     let clear = read_x_record(&mut owner);
     assert_eq!(clear[0], 29);
-    assert_eq!(read_u16(XByteOrder::LittleEndian, &clear[2..4]), 4);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &clear[2..4]), 5);
     assert_eq!(
         read_u32(XByteOrder::LittleEndian, &clear[8..12]),
         owner_window
