@@ -1,4 +1,5 @@
 //! Nonblocking 9P turns for the separately supervised output authority.
+use std::os::fd::{AsFd, OwnedFd};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -44,6 +45,7 @@ impl From<PolicyRoleEndpointError> for OutputFileTransportError {
 
 pub struct OutputFileTransport {
     endpoint: PolicyRoleEndpoint,
+    assignee: Option<OwnedFd>,
     qids: OutputFileQids,
     limits: OutputFileLimits,
     next_epoch: u64,
@@ -68,6 +70,7 @@ impl OutputFileTransport {
                 PolicyRole::Output,
                 uid,
             )?,
+            assignee: None,
             qids: OutputFileQids::default(),
             limits,
             next_epoch: first_epoch,
@@ -84,9 +87,57 @@ impl OutputFileTransport {
         self.next_epoch
     }
 
+    /// The caller must retain this direct child unreaped through authorization.
+    /// Protected children must use authorize_supervised_process instead.
     pub fn authorize_supervised_pid(&mut self, pid: u32) -> Result<(), OutputFileTransportError> {
+        let pidfd = match rustix::process::pidfd_open(
+            rustix::process::Pid::from_raw(i32::try_from(pid).map_err(|_| Errno::EINVAL)?)
+                .ok_or(Errno::EINVAL)?,
+            rustix::process::PidfdFlags::empty(),
+        ) {
+            Ok(pidfd) => Some(pidfd),
+            Err(rustix::io::Errno::SRCH) => None,
+            Err(error) => return Err(std::io::Error::from(error).into()),
+        };
         self.endpoint.authorize_supervised_pid(pid)?;
+        self.assignee = pidfd;
         Ok(())
+    }
+
+    /// Protected peers require the supervisor's checked parent relationship;
+    /// opening a numeric PID alone cannot prove that bubblewrap still owns it.
+    pub fn authorize_supervised_process(
+        &mut self,
+        supervisor: &crate::ProcessSupervisor,
+    ) -> Result<(), OutputFileTransportError> {
+        let pidfd = supervisor.peer_pidfd()?;
+        let pid = supervisor.peer_id().ok_or(Errno::EINVAL)?;
+        self.endpoint.authorize_supervised_pid(pid)?;
+        self.assignee = pidfd;
+        Ok(())
+    }
+
+    fn assignee_alive(&self) -> Result<bool, OutputFileTransportError> {
+        let Some(pidfd) = &self.assignee else {
+            return Ok(false);
+        };
+        Self::pidfd_alive(pidfd)
+    }
+
+    fn pidfd_alive(pidfd: &OwnedFd) -> Result<bool, OutputFileTransportError> {
+        let mut fds = [rustix::event::PollFd::new(
+            pidfd,
+            rustix::event::PollFlags::IN,
+        )];
+        Ok(rustix::event::poll(
+            &mut fds,
+            Some(&rustix::event::Timespec {
+                tv_sec: 0,
+                tv_nsec: 0,
+            }),
+        )
+        .map_err(std::io::Error::from)?
+            == 0)
     }
 
     /// One accept attempt. The endpoint verifies credentials before any
@@ -98,11 +149,35 @@ impl OutputFileTransport {
         if self.server.is_some() {
             return Err(Errno::EAGAIN.into());
         }
+        if !self.assignee_alive()? {
+            return Ok(false);
+        }
         let next = self.next_epoch.checked_add(1).ok_or(Errno::ENOSPC)?;
         let epoch = self.next_epoch;
         let Some(stream) = self.endpoint.poll_expected()? else {
             return Ok(false);
         };
+        // Both identities must still be alive after numeric credentials match.
+        // A queued socket from an earlier occupant of this PID is not authority.
+        let authorized = (|| {
+            let connector =
+                sophia_linux_peer::socket_peer_pidfd(stream.as_fd()).map_err(|error| {
+                    std::io::Error::new(
+                        error.kind(),
+                        format!("output admission requires SO_PEERPIDFD: {error}"),
+                    )
+                })?;
+            Ok::<_, OutputFileTransportError>(
+                Self::pidfd_alive(&connector)? && self.assignee_alive()?,
+            )
+        })();
+        if !matches!(authorized, Ok(true)) {
+            if let Some(peer) = self.endpoint.active_peer() {
+                self.endpoint.release_peer(peer)?;
+            }
+            authorized?;
+            return Ok(false);
+        }
         // From admission onward, even a failed protocol setup spends the
         // epoch. No candidate from this stream may match a later connection.
         self.next_epoch = next;
@@ -132,6 +207,16 @@ impl OutputFileTransport {
 
     pub fn export(&self) -> Option<&OutputFileExport> {
         self.server.as_ref().map(Server::export)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn export_mut(&mut self) -> Option<&mut OutputFileExport> {
+        self.server.as_mut().map(Server::export_mut)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_replace_expected_pid(&mut self, pid: u32) {
+        self.endpoint.authorize_supervised_pid(pid).unwrap();
     }
 
     /// No waiting and no unbounded queue. A false result asks the service to

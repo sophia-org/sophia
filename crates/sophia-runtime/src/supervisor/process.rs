@@ -156,6 +156,33 @@ impl ProcessSupervisor {
         self.child.as_ref().map(|child| child.peer_pid)
     }
 
+    /// Capture the peer identity before authorization. Bubblewrap reaps its
+    /// own child, so check the parent relationship after opening the pidfd.
+    #[cfg(target_os = "linux")]
+    pub(crate) fn peer_pidfd(&self) -> std::io::Result<Option<std::os::fd::OwnedFd>> {
+        let Some(managed) = &self.child else {
+            return Ok(None);
+        };
+        let pid = rustix::process::Pid::from_raw(managed.peer_pid as i32)
+            .ok_or_else(|| std::io::Error::other("invalid supervised peer PID"))?;
+        let pidfd = match rustix::process::pidfd_open(pid, rustix::process::PidfdFlags::empty()) {
+            Ok(pidfd) => pidfd,
+            Err(rustix::io::Errno::SRCH) => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
+        if managed.protection.is_some() {
+            // The wrapper is our unreaped child. If it has lost this peer,
+            // the fd may name a recycled PID and must never authorize it.
+            let wrapper = managed.child.id();
+            let children =
+                std::fs::read_to_string(format!("/proc/{wrapper}/task/{wrapper}/children"))?;
+            if super::protection::parse_single_child_pid(&children) != Some(managed.peer_pid) {
+                return Ok(None);
+            }
+        }
+        Ok(Some(pidfd))
+    }
+
     pub fn protection_evidence(&self) -> Option<&ProtectionDomainEvidence> {
         self.child
             .as_ref()
@@ -360,3 +387,7 @@ impl Drop for ProcessSupervisor {
         let _ = self.terminate();
     }
 }
+
+#[cfg(all(test, target_os = "linux"))]
+#[path = "../../tests/support/output_peer_identity.rs"]
+mod output_peer_identity;

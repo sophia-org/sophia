@@ -188,7 +188,7 @@ struct LivePublicPolicyState {
     control_catalog_serial: u64,
     control_tickets: BTreeMap<u64, sophia_runtime::ControlTicket>,
     worker: Option<PolicyTransportWorker>,
-    output_service: Option<sophia_runtime::OutputTransportService>,
+    output_service: Option<LiveOutputService>,
     output_authority: Option<crate::live_output_authority::LiveOutputAuthorityOwner>,
     output_effect_dispatched: bool,
     /// A reloaded profile asked for a different output topology, and the owner
@@ -298,7 +298,7 @@ struct StartedPublicPolicyRuntime {
     supervisor_state: sophia_runtime::SupervisorState,
     restart_policy: RestartPolicy,
     worker: PolicyTransportWorker,
-    output_transport: Option<sophia_runtime::OutputSessionTransport>,
+    output_transport: Option<PreparedOutputTransport>,
     socket_path: std::path::PathBuf,
     checkpoint_path: std::path::PathBuf,
 }
@@ -449,6 +449,7 @@ fn policy_profile_identity(
 }
 
 include!("public_policy/transport.rs");
+include!("public_policy/output_service.rs");
 
 impl PreparedPublicPolicyLaunch {
     fn new(config: &PersistentXtermSessionConfig) -> Result<Self, Box<dyn std::error::Error>> {
@@ -502,15 +503,12 @@ impl PreparedPublicPolicyLaunch {
         let mut output_transport = config
             .native_scanout
             .then(|| {
-                sophia_runtime::OutputSessionTransport::bind_for_supervised_uid(
-                    self.directory.path().join("output-endpoint"),
-                    rustix::process::geteuid().as_raw(),
-                )
+                PreparedOutputTransport::bind(config, &self.directory.path().join("output-endpoint"))
             })
             .transpose()?;
         let output_socket_path = output_transport
             .as_ref()
-            .map(|transport| transport.socket_path().to_path_buf());
+            .and_then(|transport| transport.wm_socket_path().map(std::path::Path::to_path_buf));
         let checkpoint_path = self.directory.checkpoint_path();
         let spec = public_policy_launch_spec(
             config,
@@ -540,7 +538,7 @@ impl PreparedPublicPolicyLaunch {
             .ok_or("public WM supervisor did not retain the policy client's PID")?;
         transport.authorize(&supervisor)?;
         if let Some(output_transport) = output_transport.as_mut() {
-            output_transport.authorize_supervised_pid(child_pid)?;
+            output_transport.authorize_wm(child_pid)?;
         }
         let (state, _) = update_supervisor(supervisor_state, started, restart_policy);
         supervisor_state = state;

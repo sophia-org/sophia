@@ -21,7 +21,8 @@ impl LiveWmSession {
                 .is_some_and(|pending| pending.policy_settlement.is_some()),
             self.public
                 .as_ref()
-                .is_some_and(|public| public.output_effect_dispatched),
+                .is_some_and(|public| public.output_effect_dispatched
+                    && public.output_service.as_ref().is_none_or(|service| service.assigned_to_wm())),
         );
         match public_policy_restart_decision(
             restart_requested,
@@ -37,10 +38,12 @@ impl LiveWmSession {
                     self.supervisor.terminate()?;
                 }
                 let public = self.public.as_mut().expect("public WM state is present");
-                public.request_output_candidate_cancellation(
-                    "supervised WM restart requested during output apply".to_owned(),
-                    None,
-                )?;
+                if public.output_service.as_ref().is_none_or(|service| service.assigned_to_wm()) {
+                    public.request_output_candidate_cancellation(
+                        "supervised WM restart requested during output apply".to_owned(),
+                        None,
+                    )?;
+                }
                 public.worker.take();
                 public.transport_unavailable = true;
                 public.deferred_command = None;
@@ -81,7 +84,7 @@ impl LiveWmSession {
 
         self.force_transport_restart = false;
         self.restarts = self.restarts.saturating_add(1);
-        if let Some(output_service) = public.output_service.as_ref() {
+        if let Some(output_service) = public.output_service.as_ref().filter(|service| service.assigned_to_wm()) {
             let abandoned = output_service
                 .pause_acceptance(Duration::from_secs(1))
                 .map_err(|error| format!("output authority restart barrier failed: {error}"))?;
@@ -133,7 +136,7 @@ impl LiveWmSession {
             .ok_or("restarted public WM has no supervised PID")?;
         transport.authorize(&self.supervisor)?;
         crate::diagnostics::capture_process_identity("wm", pid, next_epoch);
-        if let Some(output_service) = public.output_service.as_ref() {
+        if let Some(output_service) = public.output_service.as_ref().filter(|service| service.assigned_to_wm()) {
             output_service
                 .command(
                     sophia_runtime::OutputTransportServiceCommand::ReplaceSupervisedPid { pid },

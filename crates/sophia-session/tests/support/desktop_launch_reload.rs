@@ -25,6 +25,9 @@ mod policy_transport_selection;
 #[path = "policy_combined_output.rs"]
 mod policy_combined_output;
 
+#[path = "output_file_launch.rs"]
+mod output_file_launch;
+
 #[path = "policy_expectation_settlement.rs"]
 mod policy_expectation_settlement;
 

@@ -452,6 +452,23 @@ impl PersistentXtermSessionConfig {
                 .map(|wm| wm.arguments.clone())
                 .unwrap_or_default()
         };
+        let output_process = arg_value(args, "--output-process");
+        let output_process_args = args.iter()
+            .filter_map(|arg| arg.strip_prefix("--output-process-arg="))
+            .map(ToOwned::to_owned).collect::<Vec<_>>();
+        if output_process_args.len() > 64 || output_process_args.iter().any(|arg| arg.len() > 4096) {
+            return Err("--output-process accepts at most 64 arguments of at most 4096 bytes".into());
+        }
+        if let Some(process) = &output_process {
+            if process.len() > 4096 || !std::path::Path::new(process).is_absolute() {
+                return Err("--output-process requires an absolute path".into());
+            }
+            if !native_scanout || wm_process.is_none() {
+                return Err("--output-process requires native scanout and a supervised public WM".into());
+            }
+        } else if !output_process_args.is_empty() {
+            return Err("--output-process-arg requires --output-process".into());
+        }
         if normal_session && wm_process.is_none() && applications.startup.is_empty()
             && applications.terminal.is_none() && applications.launcher.is_none()
             && applications.browser.is_none()
@@ -859,6 +876,8 @@ impl PersistentXtermSessionConfig {
             wm_process,
             wm_process_args,
             wm_process_executable_grants,
+            output_process,
+            output_process_args,
             shell_process,
             shell_shortcuts_enabled: live_shell_enabled,
             shell_config,

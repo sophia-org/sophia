@@ -1,6 +1,68 @@
 use super::*;
 
 #[test]
+fn output_process_selection_is_explicit_and_bounded() {
+    let base = vec![
+        "--wm-process=/usr/bin/true".to_owned(),
+        "--native-scanout".to_owned(),
+    ];
+    let mut args = base.clone();
+    args.extend([
+        "--output-process=/usr/bin/true".into(),
+        "--output-process-arg=list".into(),
+    ]);
+    // Valid selection reaches the separate physical-startup gate. Ordinary
+    // tests do not opt into native discovery just to parse these arguments.
+    assert!(
+        isolated_session_config(&args)
+            .unwrap_err()
+            .to_string()
+            .contains("SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE")
+    );
+    assert!(
+        isolated_session_config(&["--wm-process=/usr/bin/true".into()])
+            .unwrap()
+            .output_process
+            .is_none()
+    );
+    for (extra, expected) in [
+        (
+            vec!["--output-process=relative".to_owned()],
+            "absolute path",
+        ),
+        (
+            vec!["--output-process-arg=list".to_owned()],
+            "requires --output-process",
+        ),
+        (
+            vec![
+                "--output-process=/usr/bin/true".to_owned(),
+                format!("--output-process-arg={}", "x".repeat(4097)),
+            ],
+            "at most 64",
+        ),
+    ] {
+        let mut args = base.clone();
+        args.extend(extra);
+        assert!(
+            isolated_session_config(&args)
+                .unwrap_err()
+                .to_string()
+                .contains(expected)
+        );
+    }
+    assert!(
+        isolated_session_config(&[
+            "--wm-process=/usr/bin/true".into(),
+            "--output-process=/usr/bin/true".into()
+        ])
+        .unwrap_err()
+        .to_string()
+        .contains("native scanout")
+    );
+}
+
+#[test]
 fn retired_shell_wire_selection_is_refused() {
     assert!(
         isolated_session_config(&["--no-config".into(), "--shell-transport=9p2000.L".into(),])

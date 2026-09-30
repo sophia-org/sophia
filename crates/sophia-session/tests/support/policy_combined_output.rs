@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 const CHILD: &str = "live_session::reload::tests::desktop_launch_reload::policy_combined_output::combined_role_child";
 
-fn snapshot() -> OutputAuthoritySnapshot {
+pub(super) fn snapshot() -> OutputAuthoritySnapshot {
     OutputAuthoritySnapshot {
         topology_epoch: 1,
         primary_output: OutputId::from_raw(1),

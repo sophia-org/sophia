@@ -49,3 +49,9 @@ inline-tests crates/sophia-session/src/private_input/committed/generations.rs
 inline-tests crates/sophia-session/src/private_input/service.rs
 inline-tests crates/sophia-session/src/private_input/lifetime.rs
 inline-tests crates/sophia-session/src/private_input/faults.rs
+
+# External output expiry/identity fixtures and Session wait adapter; no inline test bodies.
+# Exact private worker and admission controls are described in docs/style-guide.md.
+inline-tests crates/sophia-runtime/src/output_file_service.rs
+inline-tests crates/sophia-runtime/src/output_file_transport.rs
+inline-tests crates/sophia-session/src/live_session/wm/public_policy/output_service.rs

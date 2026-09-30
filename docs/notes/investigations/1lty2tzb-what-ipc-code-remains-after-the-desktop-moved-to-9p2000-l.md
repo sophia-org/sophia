@@ -3057,6 +3057,59 @@ integration, independent-client recovery, performance bounds and native
 acceptance. t272 remains dependent on t253; no output socket source, WM API
 indicator or accepted rollback release is removed by this foundation.
 
+## Independent output Session candidate (2026-09-29)
+
+The candidate following signed foundation `d5281570` adds explicit
+`--output-process` selection, with a separate protected OutputAuthority process
+and bounded arguments. Both WM restart paths retain that process and its output
+epoch; the WM receives no output grant when this selector is used. One-shot
+exit pauses admission without repeating a command. The default remains socket
+output. No installation or live monitor change was made.
+
+Worker settlement and publication now treat deadline revocation as a normal
+epoch disconnect, preserving the listener. A non-revoked ESTALE remains an owner
+error. Disconnection cancels observed owner work by epoch; abandoned lists remain
+transport custody accounting, including work not yet delivered to the owner.
+
+Admission captures a pidfd and rechecks the protected peer's relationship to its
+unreaped bubblewrap wrapper. ESRCH or a changed relationship creates a dead
+assignment. After credential admission, the socket's own peer pidfd and the
+assignee must both still be alive. This rejects recycled numeric PIDs and queued
+sockets whose original connector has exited.
+
+Evidence under the same directory:
+
+- `t253-c-peer-exchange.log`: the independent public C SDK negotiates, reads
+  topology, submits a validation candidate, consumes Validated and acknowledges
+  it against the real export. The SDK source was an uncommitted candidate.
+- `t253-c-peer-lifecycle-exchange.log`: the same independent SDK exchange passes
+  after deadline and process-identity corrections, using the final compiled
+  export fixture. No physical backend participates.
+- `t253-cli-export-e2e.log`: the product-owned harness reports real-export list,
+  validate, rejected apply, missing-settings refusal and unauthorized-PID refusal
+  against `d5281570`, with fresh epochs. Its test owner is not a KMS backend.
+- `t253-lifecycle-runtime-3.log`: 22 admission/export/journal checks pass;
+  the separately built C candidate check remains opt-in.
+- `t253-lifecycle-session.log`: 68 output-related Session tests pass, including
+  the independent protected process across automatic and administrative WM
+  restart. Three child fixtures are ignored by ordinary discovery.
+- `t253-pidfd-runtime.log`: six filtered runtime checks pass, including deadline
+  expiry inside owner operations, dead assignment and wrapper relationship.
+- `t253-pidfd-session-2.log`: config bounds and protected independent-process
+  restart checks pass after checked pidfd capture was added.
+- `t253-session-full-3.log`: the complete `cargo xtask check` gate passes,
+  including workspace tests, strict clippy, SDK gates, layout and conformance.
+  Test summaries report 6,280 passes, zero failures and 65 ignored checks across
+  433 groups. The final queued-connector refusal and next-admission regression
+  passes here. Earlier full runs retained formatting and layout-audit failures;
+  external fixture mounts now have the documented narrow layout exceptions.
+
+These checks use supplied topology with devices and session sockets hidden,
+network disabled, nice 19 and one build job. This section accompanies the signed
+Session candidate following `d5281570`. t253 still needs independent
+physical-owner recovery, performance bounds and applicable native acceptance;
+t272 remains dependent on those gates.
+
 ## Connections
 
 - [Migrate desktop roles to a daily-driver 9P control bus](../plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md)

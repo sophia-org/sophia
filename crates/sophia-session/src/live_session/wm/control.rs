@@ -21,7 +21,7 @@ struct ControlRestartJob {
 
 struct ControlRestartResult {
     supervisor: ProcessSupervisor,
-    output_service: Option<sophia_runtime::OutputTransportService>,
+    output_service: Option<LiveOutputService>,
     result: Result<(PolicyTransportWorker, sophia_runtime::SupervisorEvent), String>,
     epoch: u64,
     abandoned_output: bool,
@@ -48,7 +48,9 @@ impl LiveWmSession {
         let mut supervisor = std::mem::replace(&mut self.supervisor, placeholder);
         let old_worker = public.worker.take();
         let old_lifetime = self.control_lifetime.take();
-        let output_service = public.output_service.take();
+        let output_service = if public.output_service.as_ref().is_some_and(|service| service.assigned_to_wm()) {
+            public.output_service.take()
+        } else { None };
         let endpoint = public.directory.endpoint_path();
         let profile_key = public.profile_key;
         let wm_transport = public.wm_transport;
@@ -132,7 +134,9 @@ impl LiveWmSession {
             .public
             .as_mut()
             .expect("restarting policy retains its owner");
-        public.output_service = result.output_service;
+        if result.output_service.is_some() {
+            public.output_service = result.output_service;
+        }
         if result.abandoned_output && public.abandon_output_candidate().is_err() {
             self.degraded = true;
             return;

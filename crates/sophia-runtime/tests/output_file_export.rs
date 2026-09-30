@@ -350,7 +350,7 @@ fn protected_transport_serves_native_records_and_fresh_reconnect_identity() {
     // A real connecting process with the wrong supervised PID is refused
     // before it can attach, even though its UID matches.
     transport
-        .authorize_supervised_pid(std::process::id() + 1)
+        .authorize_supervised_pid(rustix::process::getppid().unwrap().as_raw_pid() as u32)
         .unwrap();
     let wrong = UnixStream::connect(transport.socket_path()).unwrap();
     assert!(matches!(
@@ -625,5 +625,77 @@ fn worker_delivers_once_settles_reserved_outcome_and_pauses_without_a_peer() {
     let start = Instant::now();
     drop(service);
     assert!(start.elapsed() < Duration::from_secs(1));
+    assert!(!directory.exists());
+}
+
+#[test]
+#[ignore = "requires the separately built output C SDK candidate peer"]
+fn independent_c_sdk_session_against_the_output_file_worker() {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let binary = std::env::var_os("SOPHIA_OUTPUT_C_PEER").expect("explicit C peer binary");
+    let directory = std::env::temp_dir().join(format!("output-c-worker-{}", std::process::id()));
+    let mut transport = OutputFileTransport::bind_for_supervised_uid(
+        &directory,
+        rustix::process::geteuid().as_raw(),
+        7,
+        OutputFileLimits::default(),
+    )
+    .unwrap();
+    let mut peer = Command::new(binary)
+        .arg(transport.socket_path())
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    transport.authorize_supervised_pid(peer.id()).unwrap();
+    let service = OutputFileService::spawn(transport, snapshot(4)).unwrap();
+    peer.stdin.take().unwrap().write_all(b"G").unwrap();
+    let deadline = Instant::now() + Duration::from_secs(8);
+    let mut proposals = 0;
+    let status = loop {
+        if let Some(status) = peer.try_wait().unwrap() {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            peer.kill().unwrap();
+            peer.wait().unwrap();
+            panic!("independent output peer exceeded its deadline");
+        }
+        if let Some(event) = service.try_event().unwrap() {
+            match event {
+                OutputTransportServiceEvent::Connected { connection_epoch } => {
+                    assert_eq!(connection_epoch, 7)
+                }
+                OutputTransportServiceEvent::Proposal {
+                    proposal,
+                    admission,
+                } => {
+                    assert_eq!(admission, OutputProposalAdmission::Active);
+                    assert_eq!(
+                        proposal.message.candidate.intent,
+                        OutputTopologyIntent::ValidateOnly
+                    );
+                    proposals += 1;
+                    service
+                        .command(OutputFileServiceCommand::Settle {
+                            transaction: proposal.transaction,
+                            outcome: OutputV1Outcome {
+                                connection_epoch: 7,
+                                topology_epoch: 4,
+                                kind: OutputV1OutcomeKind::Validated,
+                                reason: 0,
+                            },
+                        })
+                        .unwrap();
+                }
+                OutputTransportServiceEvent::Disconnected { .. } => {}
+                other => panic!("unexpected event: {other:?}"),
+            }
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    };
+    assert!(status.success(), "independent peer: {status}");
+    assert_eq!(proposals, 1);
+    drop(service);
     assert!(!directory.exists());
 }

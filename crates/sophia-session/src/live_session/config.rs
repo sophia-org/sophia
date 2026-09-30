@@ -101,6 +101,8 @@ struct PersistentXtermSessionConfig {
     wm_process: Option<String>,
     wm_process_args: Vec<String>,
     wm_process_executable_grants: Vec<std::path::PathBuf>,
+    output_process: Option<String>,
+    output_process_args: Vec<String>,
     shell_process: Option<String>,
     /// Resolved provider capability shared by startup and launch-only reloads.
     shell_shortcuts_enabled: bool,

@@ -495,6 +495,7 @@ fn required_role(process: SupervisedProcessKind) -> ProtectionDomainRole {
         SupervisedProcessKind::PortalBroker => ProtectionDomainRole::PortalBroker,
         SupervisedProcessKind::MetadataBroker => ProtectionDomainRole::MetadataBroker,
         SupervisedProcessKind::Shell => ProtectionDomainRole::MetadataShell,
+        SupervisedProcessKind::OutputAuthority => ProtectionDomainRole::OutputAuthority,
         SupervisedProcessKind::SophiaXAuthority => ProtectionDomainRole::ApplicationFrontend,
     }
 }
@@ -684,7 +685,7 @@ fn wait_for_bubblewrap_peer(
     }
 }
 
-fn parse_single_child_pid(value: &str) -> Option<u32> {
+pub(super) fn parse_single_child_pid(value: &str) -> Option<u32> {
     let mut children = value.split_ascii_whitespace();
     let pid = children.next()?.parse::<u32>().ok()?;
     if pid == 0 || children.next().is_some() {

@@ -160,7 +160,7 @@ fn output_reload_settlement_is_local_and_keeps_a_connected_client_served() {
             connection_epoch: 1
         }
     );
-    public.output_service = Some(service);
+    public.output_service = Some(LiveOutputService::Socket(service));
     public.output_authority = Some(
         crate::live_output_authority::LiveOutputAuthorityOwner::new(1, snapshot.clone()).unwrap(),
     );

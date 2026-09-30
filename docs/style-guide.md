@@ -268,6 +268,16 @@ journal's 192 unsolicited records, so the terminal reserve, the byte reserve and
 the refused-append-spends-nothing rule cannot be placed publicly. Its bodies
 remain outside `src`; only the one mount is listed.
 
+The output worker mounts `tests/support/output_file_worker.rs` beside its private
+command and publication turns. This permits expiry between transport turns and
+owner operations without a scheduler race. Test-only transport accessors expose
+the export and substitute numeric credentials while retaining the real pidfd;
+the fixture tests reuse refusal and endpoint custody through real Unix sockets.
+`tests/support/output_peer_identity.rs` checks the supervisor's private child
+relationship. Session's output service has a test-only bounded event wait adapter
+for its external launch fixture. These exceptions permit fixture wiring, not
+inline test bodies or physical-device access.
+
 The private input Session fixtures mount `tests/support/private_input_session.rs`
 and `tests/support/private_input_generations.rs` to inspect exact retained custody,
 poison ownership locks, and prepare a candidate before a competing Engine commit.

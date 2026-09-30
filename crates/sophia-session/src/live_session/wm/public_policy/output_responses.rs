@@ -10,11 +10,14 @@ impl LivePublicPolicyState {
         }
         const MAX_EVENTS_PER_TURN: usize = 16;
         for _ in 0..MAX_EVENTS_PER_TURN {
-            let event = match self.output_service.as_ref() {
+            let event = match self.output_service.as_mut() {
                 Some(service) => match service.try_event() {
                     Ok(Some(event)) => event,
                     Ok(None) => break,
                     Err(_disconnected) => {
+                        self.request_output_candidate_cancellation(
+                            "output service event channel disconnected".to_owned(), None,
+                        )?;
                         self.output_service.take();
                         crate::session_println!(
                             "sophia_live_output_authority schema=1 status=degraded reason=service_disconnected preserved_topology=true"

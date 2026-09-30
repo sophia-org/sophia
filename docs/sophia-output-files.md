@@ -1,17 +1,17 @@
 # Output file records — implementation draft
 
 This document describes the native records and export under development for
-t253. The export is not wired into the live service, and no transport default
-changes here. The
+t253. Session exposes explicit independent process selection; the default
+remains the socket role. The
 [proposed decision](notes/decisions/vkkjmufd-use-native-records-for-the-separate-output-file-role.md)
 records the design and unresolved custody bounds. The existing
-[output authority contract](sophia-output-v1.md) still governs live service.
+[output authority contract](sophia-output-v1.md) governs physical ownership.
 
 The records use little-endian integers and native rows. They do not contain a
 socket frame. `sophia_protocol::output_files` currently implements envelopes,
 submit/ack controls and every body described below. Runtime custody primitives
 reserve terminal outcomes and bound domain replay history; the export joins
-these with file custody. Service integration remains pending. Envelope decoding alone never validates
+these with file custody. Envelope decoding alone never validates
 a typed body or grants authority.
 
 ## Identity and bounds
@@ -40,8 +40,7 @@ A whole record is at most 65,536 bytes. A candidate is at most 1,784 bytes.
 Complete-record decoders refuse truncation, trailing data and total-length
 mismatches; they are not stream assemblers. The Limits object supplies assembly
 and acknowledgement deadlines. The export enforces them and retains immutable
-publications. A bounded worker serves the adapter; live Session integration
-remains pending.
+publications. A bounded worker serves the adapter under Session supervision.
 
 `submit` is exactly 24 bytes: epoch u64, submission ID u64, candidate length
 u32, reserved u32=0. Both identities are nonzero; length is 48..1,784. This
@@ -149,6 +148,40 @@ flag independent of full queues. The worker polls in bounded nonblocking turns;
 absence of a peer does not block pause or shutdown. These are custody and
 supervision mechanisms, not physical rollback or display acceptance evidence.
 
+Deadline expiry during publication or settlement disconnects that epoch and
+leaves the worker available for later connections. An ESTALE owner error without
+export revocation remains an error. Disconnected cancels all physical work the
+owner observed for that epoch. An abandoned list accounts for transport custody
+and may also contain proposals that never reached the physical owner.
+
+## Explicit Session launch
+
+`--output-process=/absolute/path` selects an independent file-role process on
+the native Session path with an external WM. Repeat `--output-process-arg=...`
+to supply at most 64 arguments, each at most 4,096 bytes; the absolute program
+path has the same byte bound. Native device opt-in remains separately required.
+Without this selector, Session retains the existing socket role.
+
+The selected process receives only the OutputAuthority role and
+`SOPHIA_OUTPUT_9P_SOCKET`; the WM receives no output endpoint or output grant.
+Automatic and administrative WM restarts preserve the independent output
+process, connection epoch and topology pins. Session does not automatically
+restart this one-shot process or repeat its command. Exit requests acceptance
+pause and epoch cancellation. Admission retains a pidfd for the authorized
+process and checks it before and after peer credentials, preventing a recycled
+PID from gaining authority while exit notification is pending. Protected launch
+rechecks bubblewrap's child relationship after opening the pidfd. An already
+exited peer becomes a dead assignment with no admission authority.
+The kernel must support `SO_PEERPIDFD`; absence is a connection rejection with
+that requirement in its diagnostic. A failed identity lookup releases the
+accepted peer without spending an epoch and leaves the listener available.
+
+The supplied-topology launch/restart fixture and independent C SDK exchange
+exercise supervision and file custody. Physical topology acceptance and the
+output default rollout remain pending under t253.
+This selector launches the process at Session startup. It does not provide an
+interactive terminal command launcher or return the child's stdout to a caller.
+
 ## Journal custody
 
 The output journal reserves one record and 56 bytes for each pending proposal's
@@ -171,7 +204,7 @@ and Refused. Capacity refusal cannot leave a published prefix of these batches.
 The export joins these primitives to the real domain owner. It performs trial
 domain admission before committing the corresponding prepared batch; capacity
 refusal leaves the live domain identity unchanged. Its supervised transport is
-tested through actual 9P requests, separately from live Session integration.
+tested through actual 9P requests and supplied-topology Session supervision.
 
 ## Negotiation and submission receipt
 

@@ -23,6 +23,7 @@ pub enum SupervisedProcessKind {
     PortalBroker,
     MetadataBroker,
     Shell,
+    OutputAuthority,
     SophiaXAuthority,
 }
 

@@ -65,12 +65,7 @@ impl LiveWmSession {
                             Ok(transaction)
                         })
                         .transpose()?;
-                    let service = sophia_runtime::OutputTransportService::spawn(
-                        transport,
-                        1,
-                        TransactionId::from_raw(1),
-                        snapshot,
-                    )?;
+                    let service = transport.start(snapshot)?;
                     (
                         Some(service),
                         Some(authority),

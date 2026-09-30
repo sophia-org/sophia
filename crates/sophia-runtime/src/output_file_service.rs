@@ -109,6 +109,13 @@ impl OutputFileService {
         }
     }
 
+    pub fn event_timeout(
+        &self,
+        timeout: Duration,
+    ) -> Result<OutputTransportServiceEvent, mpsc::RecvTimeoutError> {
+        self.events.recv_timeout(timeout)
+    }
+
     pub fn pause_acceptance(
         &self,
         timeout: Duration,
@@ -120,6 +127,17 @@ impl OutputFileService {
         result
             .recv_timeout(timeout)
             .map_err(|_| "output pause deadline expired")
+    }
+
+    /// Revoke a departed supervised process without blocking the Session
+    /// turn. A queued pause already satisfies this request. The worker emits
+    /// Disconnected after earlier events, so accepted work reaches cancellation.
+    pub fn request_pause(&self) -> Result<(), &'static str> {
+        let (reply, _result) = mpsc::sync_channel(1);
+        match self.pause.try_send(reply) {
+            Ok(()) | Err(TrySendError::Full(_)) => Ok(()),
+            Err(TrySendError::Disconnected(_)) => Err("output pause worker disconnected"),
+        }
     }
 }
 
@@ -152,11 +170,19 @@ impl Worker {
         while !stopped.load(Ordering::Acquire) {
             if let Ok(reply) = pauses.try_recv() {
                 self.paused = true;
+                let epoch = self
+                    .transport
+                    .export()
+                    .map(|export| export.admission().connection().connection_epoch());
                 let abandoned = self
                     .transport
                     .disconnect()
                     .map_err(|error| error.to_string())?;
                 let _ = reply.try_send(abandoned);
+                if let Some(connection_epoch) = epoch {
+                    self.pending
+                        .push_back(OutputTransportServiceEvent::Disconnected { connection_epoch });
+                }
             }
             while let Some(event) = self.pending.pop_front() {
                 match events.try_send(event) {
@@ -177,20 +203,8 @@ impl Worker {
             }
             if self.transport.export().is_some() {
                 if !self.transport.turn().map_err(|error| error.to_string())? {
-                    let epoch = self
-                        .transport
-                        .export()
-                        .expect("connected")
-                        .admission()
-                        .connection()
-                        .connection_epoch();
-                    self.transport
-                        .disconnect()
+                    self.retire_connection()
                         .map_err(|error| error.to_string())?;
-                    self.pending
-                        .push_back(OutputTransportServiceEvent::Disconnected {
-                            connection_epoch: epoch,
-                        });
                 } else {
                     if self.pending.is_empty()
                         && let Some(delivery) = self.transport.take_delivery()
@@ -207,11 +221,7 @@ impl Worker {
                             .selected_capabilities()
                             != 0
                     {
-                        match self.transport.publish(&self.snapshot) {
-                            Ok(_) => self.publish_pending = false,
-                            Err(OutputFileTransportError::File(Errno::EAGAIN)) => {}
-                            Err(error) => return Err(error.to_string()),
-                        }
+                        self.publish().map_err(|error| error.to_string())?;
                     }
                 }
             } else if !self.paused && self.pending.is_empty() {
@@ -263,12 +273,58 @@ impl Worker {
                 if outcome.connection_epoch != 0 && outcome.connection_epoch < epoch {
                     return Ok(());
                 }
-                if let Some(proposal) = self.transport.settle(transaction, outcome)? {
-                    self.pending
-                        .push_back(OutputTransportServiceEvent::Promoted(proposal));
+                match self.transport.settle(transaction, outcome) {
+                    Ok(Some(proposal)) => self
+                        .pending
+                        .push_back(OutputTransportServiceEvent::Promoted(proposal)),
+                    Ok(None) => {}
+                    Err(error) => self.owner_error(error)?,
                 }
             }
         }
+        Ok(())
+    }
+
+    fn publish(&mut self) -> Result<(), OutputFileTransportError> {
+        match self.transport.publish(&self.snapshot) {
+            Ok(_) => self.publish_pending = false,
+            Err(OutputFileTransportError::File(Errno::EAGAIN)) => {}
+            Err(error) => self.owner_error(error)?,
+        }
+        Ok(())
+    }
+
+    fn owner_error(
+        &mut self,
+        error: OutputFileTransportError,
+    ) -> Result<(), OutputFileTransportError> {
+        // Owner operations also check deadlines. Expiry between worker turns
+        // retires this connection; an invalid owner epoch remains an error.
+        if matches!(error, OutputFileTransportError::File(Errno::ESTALE))
+            && self
+                .transport
+                .export()
+                .is_some_and(|export| export.is_revoked())
+        {
+            self.retire_connection()
+        } else {
+            Err(error)
+        }
+    }
+
+    fn retire_connection(&mut self) -> Result<(), OutputFileTransportError> {
+        let connection_epoch = self
+            .transport
+            .export()
+            .expect("connected")
+            .admission()
+            .connection()
+            .connection_epoch();
+        self.transport.disconnect()?;
+        // The owner cancels observed work by epoch. Transport custody can also
+        // include queued proposals that never reached the physical owner.
+        self.pending
+            .push_back(OutputTransportServiceEvent::Disconnected { connection_epoch });
         Ok(())
     }
 
@@ -300,3 +356,7 @@ impl Worker {
         self.pending.push_back(event);
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/support/output_file_worker.rs"]
+mod tests;
