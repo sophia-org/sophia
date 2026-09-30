@@ -447,6 +447,11 @@ recovery evidence, predeclared performance bounds, and applicable exact native
 topology acceptance. No transport result attests KMS or source retirement.
 This task owns output default selection and its separately authorized rollout.
 
+The [proposed display persistence and confirmation decision](../decisions/vnem82wz-keep-the-desktop-profile-as-the-persistent-display-configuration-and-treat-runtime-output-changes-as-confirmed-trials.md)
+keeps `sophia-output` as the frozen reference consumer. Confirmation requires a
+later output revision; product invocation remains t254 work. Neither extends
+this task's revision-1 acceptance gate.
+
 #### Output transport performance gate (declared 2026-09-29)
 
 Measure the real output file worker with the pinned generic C SDK peer and a
