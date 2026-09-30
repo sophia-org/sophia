@@ -15,6 +15,9 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
+rustix = { workspace = true, features = ["fs"] }
+serde_json = "1"
+sha2.workspace = true
 sophia-engine = { path = "../sophia-engine" }
 sophia-shell-client = { workspace = true }
 

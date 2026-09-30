@@ -18,6 +18,7 @@ mod headless_client_gate;
 mod m3_acceptance;
 mod native_protocol_family;
 mod nine_p_conformance;
+mod output_file_performance;
 mod rust_desktop_sdk;
 mod xterm_pointer_oracle;
 mod xtest_selection;
@@ -250,6 +251,10 @@ usage: cargo xtask <command>
 
   check rust-desktop-sdk
       Verify the vendored Rust desktop SDK snapshot, then run its own tests.
+
+  check output-file-performance prepare|measure --output=/PRIVATE/DIR
+      Prepare isolated release artifacts, then separately measure the signed
+      candidate once. Builds must finish before measurement starts.
 
   vendor-rust-desktop-sdk SDK_CHECKOUT REVISION
       Replace the vendored Rust desktop SDK with a signed revision, offline; the

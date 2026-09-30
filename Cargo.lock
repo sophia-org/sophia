@@ -1131,6 +1131,8 @@ name = "sophia-runtime"
 version = "0.1.0"
 dependencies = [
  "rustix",
+ "serde_json",
+ "sha2",
  "sophia-9p",
  "sophia-engine",
  "sophia-linux-peer",

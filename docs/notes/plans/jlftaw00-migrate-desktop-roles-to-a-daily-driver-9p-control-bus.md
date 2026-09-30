@@ -479,6 +479,26 @@ before measurement and run no other qualification workload concurrently.
 Record failed runs; do not discard outliers or substitute a best-of run. Any
 budget change requires a recorded rationale before another measurement.
 
+The opt-in runner separates builds from measurement:
+
+```sh
+cargo xtask check output-file-performance prepare --output=/absolute/new/private-directory
+cargo xtask check output-file-performance measure --output=/absolute/new/private-directory
+```
+
+Preparation requires a clean signed source tree, verifies the pinned C SDK,
+and builds the peer and release harness with one job in a private namespace.
+The offline registry is read-only: locked crates must already be extracted in
+the local Cargo cache. Host Cargo configuration is not imported. Once all
+builds and other qualification jobs have stopped, measurement checks the
+prepared artifact hashes and runs those binaries without rebuilding. A
+preparation permits one measurement; failed evidence cannot be overwritten.
+The runner records per-thread scheduler CPU time and context switches. The
+worker's existing one-millisecond sleep is periodic polling; the gate applies
+the declared CPU limit and reports wakeups without adding a new wakeup limit.
+An outer timeout or OOM can lose the current buffered workload, which makes
+the run incomplete; completed workloads remain on disk.
+
 Existing journal, record, staging, publication-pin and command-queue bounds
 remain correctness requirements. Their refusal/recovery controls run alongside
 this timing gate; fast successful requests do not replace saturation evidence.

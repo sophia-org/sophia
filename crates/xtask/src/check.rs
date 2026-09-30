@@ -12,6 +12,9 @@ use std::process::{Command, Stdio};
 pub fn run(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> {
     match arguments {
         [] => all(repo),
+        [subject, rest @ ..] if subject == "output-file-performance" => {
+            crate::output_file_performance::run(repo, rest)
+        }
         [subject, rest @ ..] if subject == "native-protocol-family" => {
             crate::native_protocol_family::run(repo, rest)
         }

@@ -3244,6 +3244,33 @@ This gate includes the strengthened replacement probe. Signed `193719655`
 declares the output transport performance workloads and limits before their
 first measurement; qualification itself is still pending.
 
+## Output performance harness candidate (2026-09-29)
+
+The uncommitted harness candidate implements the workloads declared in signed
+`193719655`. Its generic C peer uses only pinned SDK 0.3.0 APIs. The supplied
+Rust owner checks each candidate, settles ValidateOnly, and joins unique owner
+deliveries with acknowledged terminal samples. Fixture encodings reach the
+52,216-byte topology and 1,784-byte proposal limits. Per-task scheduler counters
+cover the owner, worker and peer; shutdown compares task IDs and checks endpoint
+removal. Submission-ID generation remains the SDK's responsibility; the
+harness directly checks transaction identities and owner deliveries.
+
+Review corrected a connection handshake deadlock, removed file writes and full
+candidate formatting from the timed owner path, and added a bounded failure
+drain to preserve peer samples. Evidence reserves terminal-record capacity so
+its own bound cannot bypass cleanup and lose the buffered workload. The
+launcher separates isolated preparation from measurement, checks signed source
+and artifact identities, and refuses to overwrite a measurement attempt.
+
+`t253-performance-harness-tests.log` records nine deterministic passes and one
+ignored measurement test. Coverage includes exact artifact selection, outer
+process timeout, failure-drain retention, evidence overflow, fixture bounds,
+percentiles, record rejection and delivery reconciliation. Targeted strict
+Clippy is recorded in `t253-performance-harness-clippy.log`. These checks do
+not run the C peer against the real service or establish performance. The
+launcher still needs an isolated preparation run and the signed candidate's
+first measurement. No native or live-session acceptance is claimed.
+
 ## Connections
 
 - [Migrate desktop roles to a daily-driver 9P control bus](../plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md)
