@@ -10,8 +10,8 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use crate::{
-    AdmittedOutputProposal, OutputFileSubmission, OutputFileTransport, OutputFileTransportError,
-    OutputTransportServiceEvent,
+    AdmittedOutputProposal, OutputFileAssignee, OutputFileSubmission, OutputFileTransport,
+    OutputFileTransportError, OutputTransportServiceEvent,
 };
 use sophia_9p::Errno;
 use sophia_protocol::{OutputAuthoritySnapshot, OutputV1Outcome, TransactionId};
@@ -20,7 +20,13 @@ const HANDOFF_CAPACITY: usize = 8;
 
 #[derive(Debug)]
 pub enum OutputFileServiceCommand {
+    /// Test-owner path: retain the direct child unreaped until the worker
+    /// acknowledges replacement. Protected peers use ReplaceSupervisedProcess.
     ReplaceSupervisedPid(u32),
+    /// Move the identity captured before queuing. Failure to apply a
+    /// reassignment is terminal for the service and emits Failed; the Session
+    /// owner then cancels its epoch. Capture errors never reach the worker.
+    ReplaceSupervisedProcess(OutputFileAssignee),
     PublishSnapshot(OutputAuthoritySnapshot),
     Settle {
         transaction: TransactionId,
@@ -250,6 +256,16 @@ impl Worker {
             OutputFileServiceCommand::ReplaceSupervisedPid(pid) => {
                 let abandoned = self.transport.disconnect()?;
                 self.transport.authorize_supervised_pid(pid)?;
+                self.paused = false;
+                self.pending
+                    .push_back(OutputTransportServiceEvent::AssigneeReplaced {
+                        connection_epoch: self.transport.next_epoch(),
+                        abandoned,
+                    });
+            }
+            OutputFileServiceCommand::ReplaceSupervisedProcess(assignee) => {
+                let abandoned = self.transport.disconnect()?;
+                self.transport.authorize_assignee(assignee)?;
                 self.paused = false;
                 self.pending
                     .push_back(OutputTransportServiceEvent::AssigneeReplaced {

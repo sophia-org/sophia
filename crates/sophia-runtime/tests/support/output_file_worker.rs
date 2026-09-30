@@ -3,6 +3,7 @@ use crate::OutputFileNode as Node;
 use sophia_9p::{OpenFlags, export::Export};
 use sophia_protocol::{output_files::*, *};
 use std::os::unix::net::UnixStream;
+use std::time::Instant;
 
 fn snapshot() -> OutputAuthoritySnapshot {
     OutputAuthoritySnapshot {
@@ -245,4 +246,113 @@ fn queued_socket_from_a_dead_connector_is_not_the_live_assignee() {
     let _next = UnixStream::connect(&path).unwrap();
     assert!(worker.transport.poll_accept(&worker.snapshot).unwrap());
     assert_eq!(worker.transport.next_epoch(), 8);
+}
+
+fn supervised(spec: crate::ProcessLaunchSpec) -> crate::ProcessSupervisor {
+    let mut supervisor =
+        crate::ProcessSupervisor::new(crate::SupervisedProcessKind::OutputAuthority, spec);
+    supervisor
+        .apply(crate::SupervisorCommand::StartProcess {
+            process: crate::SupervisedProcessKind::OutputAuthority,
+            delay: Duration::ZERO,
+        })
+        .unwrap();
+    supervisor
+}
+
+#[test]
+fn checked_reassignment_resumes_paused_worker_with_the_captured_peer() {
+    let mut worker = worker("checked-reassignment");
+    let old_peer = UnixStream::connect(worker.transport.socket_path()).unwrap();
+    assert!(worker.transport.poll_accept(&worker.snapshot).unwrap());
+    worker.paused = true;
+    let path = worker.transport.socket_path().to_owned();
+    // Queue the old assignee first so rejection cannot be hidden behind the
+    // new child's accepted connection in the listen backlog.
+    let _old_reconnect = UnixStream::connect(&path).unwrap();
+    let mut supervisor = supervised(
+        crate::ProcessLaunchSpec::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("output_file_service::tests::queued_connector_child")
+            .arg("--ignored")
+            .env("OUTPUT_IDENTITY_SOCKET", &path),
+    );
+    let assignee = OutputFileAssignee::from_supervisor(&supervisor).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !path.with_extension("ready").exists() {
+        assert!(Instant::now() < deadline, "supervised peer did not connect");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    std::fs::remove_file(path.with_extension("ready")).unwrap();
+    worker
+        .command(OutputFileServiceCommand::ReplaceSupervisedProcess(assignee))
+        .unwrap();
+    assert!(!worker.paused);
+    assert!(worker.transport.export().is_none());
+    assert!(
+        matches!(worker.pending.pop_front(), Some(OutputTransportServiceEvent::AssigneeReplaced {
+        connection_epoch: 8, abandoned,
+    }) if abandoned.is_empty())
+    );
+    assert!(worker.pending.is_empty());
+    let mut byte = [0];
+    old_peer
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .unwrap();
+    assert_eq!(std::io::Read::read(&mut &old_peer, &mut byte).unwrap(), 0);
+    assert!(matches!(worker.transport.poll_accept(&worker.snapshot),
+        Err(OutputFileTransportError::Endpoint(crate::PolicyRoleEndpointError::UnauthorizedPeer {
+            expected, actual,
+        })) if expected.pid == supervisor.peer_id().unwrap() && actual.pid == std::process::id()));
+    assert_eq!(worker.transport.next_epoch(), 8);
+    assert!(worker.transport.export().is_none());
+    assert!(worker.transport.poll_accept(&worker.snapshot).unwrap());
+    assert_eq!(
+        worker
+            .transport
+            .export()
+            .unwrap()
+            .admission()
+            .connection()
+            .connection_epoch(),
+        8
+    );
+    assert_eq!(worker.snapshot, snapshot());
+    supervisor.terminate().unwrap();
+}
+
+#[test]
+fn checked_assignment_that_dies_in_handoff_admits_nobody_and_spends_no_epoch() {
+    let mut worker = worker("checked-dead-handoff");
+    let mut supervisor = supervised(crate::ProcessLaunchSpec::new("/bin/sleep").arg("30"));
+    let assignee = OutputFileAssignee::from_supervisor(&supervisor).unwrap();
+    supervisor.terminate().unwrap();
+    worker.paused = true;
+    worker
+        .command(OutputFileServiceCommand::ReplaceSupervisedProcess(assignee))
+        .unwrap();
+    assert!(!worker.paused);
+    assert!(
+        matches!(worker.pending.pop_front(), Some(OutputTransportServiceEvent::AssigneeReplaced {
+        connection_epoch: 7, abandoned,
+    }) if abandoned.is_empty())
+    );
+    // Model a recycled numeric credential without changing the captured pidfd.
+    worker
+        .transport
+        .test_replace_expected_pid(std::process::id());
+    let _peer = UnixStream::connect(worker.transport.socket_path()).unwrap();
+    assert!(!worker.transport.poll_accept(&worker.snapshot).unwrap());
+    assert_eq!(worker.transport.next_epoch(), 7);
+    assert!(worker.transport.export().is_none());
+    assert!(worker.pending.is_empty());
+}
+
+#[test]
+fn missing_supervised_process_cannot_construct_a_worker_assignment() {
+    let supervisor = crate::ProcessSupervisor::new(
+        crate::SupervisedProcessKind::OutputAuthority,
+        crate::ProcessLaunchSpec::new("/bin/true"),
+    );
+    assert!(OutputFileAssignee::from_supervisor(&supervisor).is_err());
 }

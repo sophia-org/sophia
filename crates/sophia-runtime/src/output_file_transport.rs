@@ -14,6 +14,25 @@ use crate::{
 
 pub const SOPHIA_OUTPUT_9P_SOCKET_ENV: &str = "SOPHIA_OUTPUT_9P_SOCKET";
 
+/// A supervisor-checked peer captured before a worker handoff. Private fields
+/// prevent callers from pairing a numeric PID with an unrelated pidfd. A dead
+/// assignment is retained as such; consuming it never reopens the numeric PID.
+#[derive(Debug)]
+pub struct OutputFileAssignee {
+    pid: u32,
+    pidfd: Option<OwnedFd>,
+}
+
+impl OutputFileAssignee {
+    pub fn from_supervisor(
+        supervisor: &crate::ProcessSupervisor,
+    ) -> Result<Self, OutputFileTransportError> {
+        let pidfd = supervisor.peer_pidfd()?;
+        let pid = supervisor.peer_id().ok_or(Errno::EINVAL)?;
+        Ok(Self { pid, pidfd })
+    }
+}
+
 #[derive(Debug)]
 pub enum OutputFileTransportError {
     Endpoint(PolicyRoleEndpointError),
@@ -110,10 +129,15 @@ impl OutputFileTransport {
         &mut self,
         supervisor: &crate::ProcessSupervisor,
     ) -> Result<(), OutputFileTransportError> {
-        let pidfd = supervisor.peer_pidfd()?;
-        let pid = supervisor.peer_id().ok_or(Errno::EINVAL)?;
-        self.endpoint.authorize_supervised_pid(pid)?;
-        self.assignee = pidfd;
+        self.authorize_assignee(OutputFileAssignee::from_supervisor(supervisor)?)
+    }
+
+    pub(crate) fn authorize_assignee(
+        &mut self,
+        assignee: OutputFileAssignee,
+    ) -> Result<(), OutputFileTransportError> {
+        self.endpoint.authorize_supervised_pid(assignee.pid)?;
+        self.assignee = assignee.pidfd;
         Ok(())
     }
 

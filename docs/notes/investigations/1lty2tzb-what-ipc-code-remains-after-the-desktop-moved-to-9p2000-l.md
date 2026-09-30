@@ -3338,6 +3338,42 @@ No production behavior changed. Physical completion is supplied; these cases
 do not run KMS, the native owner loop's startup proof-rollback hook, a peer
 proposal competing with active startup, or startup rollback after apply.
 
+## Checked process identity through output reassignment (2026-09-29)
+
+The output worker now accepts `ReplaceSupervisedProcess(OutputFileAssignee)`.
+The assignee has private PID/pidfd fields and is captured through the
+supervisor's checked parent relationship before it enters the bounded command
+queue. Startup authorization uses the same capture. The fd moves with the
+command; the worker never reopens its numeric PID. Queue refusal returns the
+owned command so the caller can retain or drop it. A dead assignment remains
+dead even if a matching numeric credential later appears.
+
+Replacement retains the existing disconnect, abandoned-work accounting, fresh
+epoch and unpause sequence. Failure while applying replacement is terminal for
+the service; Session's existing Failed handling cancels its owner epoch. The
+numeric path remains for test owners that keep a direct child unreaped through
+the replacement acknowledgement; protected children use the captured identity.
+
+Tests close the old connection, refuse an old-assignee reconnect without spending
+an epoch, then admit the new supervised child. They also cover death between
+capture and worker handling, missing-child capture, and a live PID rejected by
+the protected parent check. That rejected identity passes through the real
+worker and serves no Tversion. A private-snapshot control reopening the numeric
+PID fails that last test; the mutation was restored and compared byte-for-byte.
+The protected relationship in that test is supplied, while the original
+protected launch checks remain separate.
+
+Evidence under `development-evidence/ipc-retirement/`:
+`t253-checked-output-reassignment.log` (11 passes, one helper ignored),
+`t253-checked-output-runtime.log` (23 passes),
+`t253-checked-output-session.log` (11 passes, two helpers ignored),
+`t253-checked-output-reopen-negative.log` (expected failure), and
+`t253-checked-output-clippy.log` (strict runtime/Session Clippy).
+The new handoff fixture checks empty abandonment; nonempty custody and recovery
+remain covered by the existing disconnect cases. This change adds no Session
+forwarder, trigger, launch policy or administrative wire. Interactive launch
+and result delivery still need their owning contract; no live authority changed.
+
 ## Connections
 
 - [Migrate desktop roles to a daily-driver 9P control bus](../plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md)
