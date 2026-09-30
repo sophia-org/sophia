@@ -518,15 +518,21 @@ Preserve command identities, stale-epoch/action rejection, at-most-once effects,
 bounded submit/outcome handling, cancellation semantics and restart recovery.
 An accepted operation is not proof of a launched application's success. Port
 the ordinary command CLI and use an independent protocol control without
-granting arbitrary command execution. New operations remain excluded except for
-the supervised output invocation approved by niltempus on 2026-09-30 below.
+granting arbitrary command execution. The supervised output invocation extension
+below is deferred; it is not a prerequisite for t253 or t272.
 
 #### Approved output invocation extension (2026-09-30)
 
-The separate 9P administrative export may accept an output invocation with
+**Deferred on 2026-09-30 by niltempus.** The earlier approval is retained here as
+decision history, not current implementation admission. `sophia-output` remains
+the frozen independent C-SDK reference consumer for t253. Product-facing output
+commands and their admission belong to t254. The revision-2 confirmation and
+profile-persistence proposal requires its own formal acceptance; this deferral
+does not change revision-1 output behavior or its native acceptance gate.
+
+The deferred proposal would allow the separate 9P administrative export to accept an output invocation with
 bounded arguments and return a bounded invocation identity and result. This
-slice may proceed now to unblock t253; it does not remove t254's t249 dependency
-for the remaining administrative migration or its rollout gates.
+does not remove t254's t249 dependency or its rollout gates.
 
 - The startup desktop profile declares the executable and explicitly enables
   administrative invocation. HostDomain admission remains separate from
@@ -546,12 +552,19 @@ for the remaining administrative migration or its rollout gates.
   client argument validation, output-owner candidate validation and native
   rollback with their existing owners.
 
-This approval admits contract and implementation work. It does not authorize
+The earlier approval admitted contract and implementation work, now deferred.
+It did not authorize
 installation, live monitor changes, a default switch, output IPC retirement or
 an expansion of the existing control-v1 wire. Exact native acceptance remains
 required by t253.
 
 #### Output invocation contract under review
+
+This draft is dormant with the extension above. The uncommitted codec draft is
+preserved outside the source tree as
+`~/.local/state/sophia/development-evidence/ipc-retirement/t254-admin-codec-checkpoint-20260930/`;
+its manifest identifies the base, source hashes and reapplicable patch. No
+administrative output endpoint or launch operation was implemented.
 
 The implementation must distinguish three intents: inspect, validate and apply.
 Arguments still belong to the declared client's parser; an intent is an owner

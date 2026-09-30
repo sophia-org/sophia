@@ -3414,7 +3414,12 @@ records its admitted scope:
   in the output owner, and rollback in the native owner. Do not extend the
   retired IPC role or the existing control-v1 wire.
 
-This is an approved scope amendment, not an accepted wire contract. Exact
+The approval was subsequently deferred by niltempus on 2026-09-30: the reference
+consumer does not require a product launcher to close t253/t272. The signed
+amendment remains historical; the owning plan records the deferral. The codec
+draft was preserved outside the working tree, and no administrative output
+endpoint was wired. The proposed confirmation/persistence model is not yet an
+accepted revision-2 wire contract. Exact
 record layouts, limits and denial/replay controls still need review within that
 scope. Fixed profile presets remain possible with the existing action model,
 but do not provide per-invocation terminal arguments and results.
