@@ -3374,6 +3374,56 @@ remain covered by the existing disconnect cases. This change adds no Session
 forwarder, trigger, launch policy or administrative wire. Interactive launch
 and result delivery still need their owning contract; no live authority changed.
 
+## Remaining launch decision and native evidence boundary (2026-09-29)
+
+The existing `tools/run_native_output_gate_tty4.sh` invokes the standalone
+`native-topology-probe`, `native-topology-validate` and `native-topology-apply`
+commands. Their hardware results cannot establish the output file peer through
+Session's output service and authority owner. The native owner loop's existing
+forced rollback hook also applies only to the profile-owned startup transaction.
+Reusing either result as acceptance of a peer-submitted 9P apply would skip part
+of the required path. No runner or device was invoked during this review.
+
+The interactive launcher needs a scope decision before implementation. T254's
+current exit explicitly preserves existing operations, "without granting
+arbitrary command execution or inventing new operations." The current control
+contract also excludes parameters and process execution. Merely moving T254
+earlier does not admit output-process launch as a new administrative operation.
+
+Proposed narrow amendment, awaiting niltempus's decision:
+
+- Add one output invocation operation to the separate 9P administrative lane,
+  using its HostDomain admission. Keep it disabled unless the startup profile
+  declares the output executable and permits administrative invocation.
+- The request selects that declared executable and supplies bounded argument
+  strings for the output client. It cannot select a different executable,
+  invoke a shell, inject environment variables or grant a host process direct
+  access to the protected output endpoint.
+- Session starts the child in the existing OutputAuthority protection domain
+  and transfers its captured identity through the checked reassignment command.
+  Refuse a new invocation while a child, active candidate or cancellation debt
+  remains; do not queue invocations.
+- Return a bounded invocation identity and terminal result. Join the result to
+  the child's admitted connection epoch and actual owner settlement. Exit
+  without submission is terminal refusal; a caller deadline is indeterminate
+  and does not erase physical cancellation debt. Listing also needs an explicit
+  bounded result representation; child exit alone is not an output snapshot.
+- Preserve argument validation in the independent client, candidate validation
+  in the output owner, and rollback in the native owner. Do not extend the
+  retired IPC role or the existing control-v1 wire.
+
+This is a proposed scope amendment, not an accepted wire contract. Exact
+record layouts, limits and denial/replay controls still need review within that
+scope. Fixed profile presets remain possible with the existing action model,
+but do not provide per-invocation terminal arguments and results.
+
+Native acceptance must separately identify a signed Session candidate, the
+independent peer and SDK, and the selected desktop profile. It must join a
+9P-submitted candidate to native apply, first presentation and restoration,
+including peer-loss cancellation, with retained failure evidence and whole
+release rollback. Preparing such a run does not authorize changing the running
+desktop, taking DRM master, switching defaults or retiring output IPC.
+
 ## Connections
 
 - [Migrate desktop roles to a daily-driver 9P control bus](../plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md)
