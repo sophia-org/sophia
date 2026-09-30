@@ -567,8 +567,8 @@ and Failed remain distinct terminal details. A successful process exit alone
 cannot establish either success. Inspect requires a negotiated observer, no
 proposal and successful supervised process completion, and returns the immutable
 topology captured for that invocation. Client stdout is not a result channel.
-The supervisor must preserve process completion status; its present `poll`
-interface discards that status. A protected wrapper's status is process evidence,
+The supervisor preserves process completion status through `take_exit_status`;
+the invocation owner must consume it when handling the exit. A protected wrapper's status is process evidence,
 never proof of native apply or first presentation.
 
 The proposed resource ceilings are 64 UTF-8 arguments, 1,024 bytes per argument,

@@ -3426,6 +3426,28 @@ including peer-loss cancellation, with retained failure evidence and whole
 release rollback. Preparing such a run does not authorize changing the running
 desktop, taking DRM master, switching defaults or retiring output IPC.
 
+## Supervised invocation completion prerequisite (2026-09-30)
+
+Following the approved t254 scope extension, `ProcessSupervisor` retains the
+reaped child's exit status for one consumption through `take_exit_status`.
+Both ordinary polling and requested termination preserve it. A new launch
+attempt clears an unconsumed predecessor status, including when spawning fails;
+an already-running refusal does not change the current child's state. Existing
+supervision events and restart policy stay unchanged. For a protected child,
+this is the wrapper's process status, not an output-owner settlement.
+
+Device-hidden, offline checks with nice 19 and one build job passed: five
+focused process tests and the requested-termination status test. They cover
+nonzero exit, success, consumption once, a new launch, failed spawn and
+termination. Strict Clippy for the runtime library and supervisor test passed
+after removing redundant clones of the Copy command enum. Logs are
+`t254-supervisor-exit-status.log`, `t254-supervisor-termination-status.log` and
+`t254-supervisor-exit-status-clippy-final.log` under the existing
+`~/.local/state/sophia/development-evidence/ipc-retirement/` evidence directory.
+The initial Clippy refusal remains in `t254-supervisor-exit-status-clippy.log`.
+No administrative export or invocation is wired yet; no native acceptance or
+live-session behavior is claimed.
+
 ## Connections
 
 - [Migrate desktop roles to a daily-driver 9P control bus](../plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md)

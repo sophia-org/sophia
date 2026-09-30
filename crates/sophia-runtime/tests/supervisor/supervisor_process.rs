@@ -1,5 +1,69 @@
 use super::*;
 
+fn reap_for_exit_status(supervisor: &mut ProcessSupervisor) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        if supervisor.poll().unwrap().is_some() {
+            assert_eq!(supervisor.child_id(), None);
+            return;
+        }
+        assert!(std::time::Instant::now() < deadline, "child did not exit");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+#[test]
+fn process_exit_status_is_consumed_once_and_cleared_before_a_new_launch() {
+    let mut supervisor = ProcessSupervisor::new(
+        SupervisedProcessKind::OutputAuthority,
+        ProcessLaunchSpec::new("/bin/sh").arg("-c").arg("exit 23"),
+    );
+    let start = SupervisorCommand::StartProcess {
+        process: SupervisedProcessKind::OutputAuthority,
+        delay: Duration::ZERO,
+    };
+    assert!(supervisor.take_exit_status().is_none());
+    supervisor.apply(start).unwrap();
+    reap_for_exit_status(&mut supervisor);
+    assert_eq!(supervisor.take_exit_status().unwrap().code(), Some(23));
+    assert!(supervisor.take_exit_status().is_none());
+    supervisor.apply(start).unwrap();
+    reap_for_exit_status(&mut supervisor);
+    // Leave the failure unconsumed, then start a successful invocation.
+    supervisor
+        .replace_launch_spec(ProcessLaunchSpec::new("/usr/bin/true"))
+        .unwrap();
+    supervisor.apply(start).unwrap();
+    assert!(supervisor.take_exit_status().is_none());
+    reap_for_exit_status(&mut supervisor);
+    assert!(supervisor.take_exit_status().unwrap().success());
+    supervisor.apply(start).unwrap();
+    reap_for_exit_status(&mut supervisor);
+    supervisor
+        .replace_launch_spec(ProcessLaunchSpec::new("/no-such-output-executable"))
+        .unwrap();
+    assert!(supervisor.apply(start).is_err());
+    assert!(supervisor.take_exit_status().is_none());
+}
+
+#[test]
+fn requested_termination_retains_the_reaped_exit_status() {
+    let mut supervisor = ProcessSupervisor::new(
+        SupervisedProcessKind::OutputAuthority,
+        ProcessLaunchSpec::new("/usr/bin/sleep").arg("30"),
+    );
+    supervisor
+        .apply(SupervisorCommand::StartProcess {
+            process: SupervisedProcessKind::OutputAuthority,
+            delay: Duration::ZERO,
+        })
+        .unwrap();
+    supervisor.request_termination().unwrap();
+    reap_for_exit_status(&mut supervisor);
+    assert!(!supervisor.take_exit_status().unwrap().success());
+    assert!(supervisor.take_exit_status().is_none());
+}
+
 #[test]
 fn supervisor_start_request_emits_immediate_start_without_consuming_restart_budget() {
     let state = SupervisorState::new(SupervisedProcessKind::WindowManager);

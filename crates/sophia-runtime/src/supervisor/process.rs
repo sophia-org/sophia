@@ -103,6 +103,7 @@ pub struct ProcessSupervisor {
     spec: ProcessLaunchSpec,
     child: Option<ManagedChild>,
     termination_deadline: Option<Instant>,
+    exit_status: Option<std::process::ExitStatus>,
 }
 
 #[derive(Debug)]
@@ -119,11 +120,19 @@ impl ProcessSupervisor {
             spec,
             child: None,
             termination_deadline: None,
+            exit_status: None,
         }
     }
 
     pub const fn process(&self) -> SupervisedProcessKind {
         self.process
+    }
+
+    /// Take the most recently reaped child's status once. For protected
+    /// processes this is the wrapper's status, not a domain-operation outcome.
+    /// A new launch attempt clears any unconsumed status from its predecessor.
+    pub fn take_exit_status(&mut self) -> Option<std::process::ExitStatus> {
+        self.exit_status.take()
     }
 
     pub fn launch_spec(&self) -> &ProcessLaunchSpec {
@@ -217,7 +226,8 @@ impl ProcessSupervisor {
         };
 
         match child.child.try_wait() {
-            Ok(Some(_status)) => {
+            Ok(Some(status)) => {
+                self.exit_status = Some(status);
                 self.child = None;
                 Ok(Some(SupervisorEvent::ProcessExited))
             }
@@ -278,14 +288,15 @@ impl ProcessSupervisor {
         let Some(deadline) = self.termination_deadline else {
             return Ok(false);
         };
-        let exited = managed
-            .child
-            .try_wait()
-            .map_err(|error| ProcessSupervisorError::WaitFailed {
-                process: self.process,
-                message: error.to_string(),
-            })?
-            .is_some();
+        let status =
+            managed
+                .child
+                .try_wait()
+                .map_err(|error| ProcessSupervisorError::WaitFailed {
+                    process: self.process,
+                    message: error.to_string(),
+                })?;
+        let exited = status.is_some();
         if self.spec.process_group && (exited || Instant::now() >= deadline) {
             let pid =
                 rustix::process::Pid::from_raw(managed.child.id() as i32).ok_or_else(|| {
@@ -305,6 +316,7 @@ impl ProcessSupervisor {
                 })?;
         }
         if exited {
+            self.exit_status = status;
             self.child = None;
             self.termination_deadline = None;
         }
@@ -325,6 +337,8 @@ impl ProcessSupervisor {
                 process: self.process,
             });
         }
+
+        self.exit_status = None;
 
         if !delay.is_zero() {
             std::thread::sleep(delay);
