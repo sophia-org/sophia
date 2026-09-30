@@ -4,14 +4,19 @@
 //! each step waits for an explicit command over a bounded channel.
 //!
 //! Limits: Session's native owner loop (owner_loop/wm_phase.rs) and KMS
-//! effects are not exercised. The tests act as the physical owner by calling
-//! the public observation seams in the order that loop uses them; no
+//! effects are not exercised. The tests supply native cancellation results to
+//! the loop's cancellation function and call its public observation seams; no
 //! preparation abort, apply, first presentation or rollback reaches a device,
-//! and LiveOutputTopologyOwner gating is not involved. The supervisor never
-//! runs a child, so process-exit pauses are not covered here.
+//! and LiveOutputTopologyOwner gating is not involved. The child-exit case
+//! uses a controlled stand-in supervisor child; the 9P peer still runs in this
+//! test process, so protected child identity is covered by separate tests.
 use super::*;
 use crate::live_output_authority::LiveOutputAuthorityOwner;
 use crate::live_session::tests::shell_file_peer as raw_peer;
+use crate::live_session::{
+    LiveOutputTopologyExecutionPhase as Execution, NativeOutputCancellationRequest,
+    cancel_output_topology_execution,
+};
 use sophia_backend_live::{
     LibdrmNativeOutputCapability, LibdrmNativeOutputTiming, LibdrmNativeVrrPropertyDiscoveryStatus,
     project_live_output_authority_snapshot,
@@ -251,7 +256,7 @@ struct Rig {
 
 /// One head with two supplied modes (60 and 75 Hz at the same size), a
 /// published topology on the current mode, the real file service with its
-/// first epoch at EPOCH, and a supervisor that never runs a child.
+/// first epoch at EPOCH, and an initially idle supervisor.
 fn rig(label: &str) -> Rig {
     let mut fixture = ReloadFixture::new();
     let public = fixture.wm.public.as_mut().unwrap();
@@ -333,6 +338,15 @@ impl Rig {
 
     fn authority(&mut self) -> &LiveOutputAuthorityOwner {
         self.public().output_authority.as_ref().unwrap()
+    }
+
+    fn supervisor(&mut self) -> &mut ProcessSupervisor {
+        let LiveOutputService::Files { supervisor, .. } =
+            self.public().output_service.as_mut().unwrap()
+        else {
+            panic!("file service expected")
+        };
+        supervisor
     }
 
     fn peer(&self) -> Peer {
@@ -468,6 +482,40 @@ impl Rig {
             Some(OutputTopologyTransactionPhase::AwaitingFirstPresentation)
         );
     }
+
+    /// Run the loop's cancellation dispatch with a supplied native result and
+    /// the actual policy rejection. Native effects remain outside this rig.
+    fn cancel_execution(
+        &mut self,
+        transaction: u64,
+        mut phase: Execution,
+        report: sophia_backend_live::LiveProductionNativeTopologyPreparationPhase,
+    ) -> Execution {
+        let expected_request = match phase {
+            Execution::Preparing | Execution::Applying => {
+                NativeOutputCancellationRequest::AbortPreparation
+            }
+            Execution::AwaitingFirstPresentation | Execution::Reconciling => {
+                NativeOutputCancellationRequest::Rollback
+            }
+            _ => panic!("this rig expects a native cancellation request"),
+        };
+        cancel_output_topology_execution(
+            &mut phase,
+            |request| {
+                assert_eq!(request, expected_request);
+                Ok(Some(report))
+            },
+            || {
+                self.public().reject_output_topology_effect(
+                    TransactionId::from_raw(transaction),
+                    OutputTopologyTransactionFailure::Stale,
+                )
+            },
+        )
+        .unwrap();
+        phase
+    }
 }
 
 /// A: the peer leaves before Session dispatches the effect. The candidate is
@@ -547,6 +595,15 @@ fn disconnect_after_dispatch_holds_debt_until_preparation_settles() {
         rig.fixture.wm.poll_output_authority().unwrap();
     }
     rig.assert_debt(11);
+    assert_eq!(
+        rig.cancel_execution(
+            11,
+            Execution::Preparing,
+            sophia_backend_live::LiveProductionNativeTopologyPreparationPhase::Aborting,
+        ),
+        Execution::Preparing
+    );
+    rig.assert_debt(11);
     // The owner loop's preparation-phase cancellation ends in this terminal.
     rig.public()
         .reject_output_topology_effect(
@@ -559,6 +616,112 @@ fn disconnect_after_dispatch_holds_debt_until_preparation_settles() {
     rig.admitted(12);
     second.quiet();
     second.close();
+}
+
+/// B-exit: the supervised process exits while the test peer remains connected.
+/// Session must request pause itself, retain preparation debt, and keep the
+/// listener paused after settlement instead of starting the one-shot again.
+#[test]
+fn supervised_exit_pauses_admission_and_preserves_preparation_debt() {
+    let mut rig = rig("child-exit");
+    rig.supervisor()
+        .replace_launch_spec(ProcessLaunchSpec::new("/bin/sleep").arg("60").process_group())
+        .unwrap();
+    rig.supervisor()
+        .apply(sophia_runtime::SupervisorCommand::StartProcess {
+            process: SupervisedProcessKind::OutputAuthority,
+            delay: Duration::ZERO,
+        })
+        .unwrap()
+        .expect("controlled child started");
+    let child = rig.supervisor().child_id().unwrap();
+
+    let mut peer = rig.peer();
+    peer.negotiate();
+    peer.propose(11, rig.apply());
+    rig.admitted(11);
+    rig.dispatch(11);
+    peer.quiet();
+    for _ in 0..32 {
+        rig.fixture.wm.poll_output_authority().unwrap();
+    }
+    assert!(
+        rig.public()
+            .output_candidate_cancellation_reason(TransactionId::from_raw(11))
+            .is_none()
+    );
+    assert!(rig.public().output_pending_connection_epoch.is_none());
+    assert_eq!(rig.supervisor().child_id(), Some(child));
+    // This is our unreaped stand-in child. Its exit, not a peer close or a
+    // direct service command, must cause Session to pause the worker.
+    rustix::process::kill_process(
+        rustix::process::Pid::from_raw(child as i32).unwrap(),
+        rustix::process::Signal::TERM,
+    )
+    .unwrap();
+    rig.cancellation_requested(11);
+    assert!(rig.supervisor().child_id().is_none());
+    rig.assert_debt(11);
+    assert_eq!(
+        rig.cancel_execution(
+            11,
+            Execution::Preparing,
+            sophia_backend_live::LiveProductionNativeTopologyPreparationPhase::Aborting,
+        ),
+        Execution::Preparing
+    );
+    rig.assert_debt(11);
+    rig.public()
+        .reject_output_topology_effect(
+            TransactionId::from_raw(11),
+            OutputTopologyTransactionFailure::Stale,
+        )
+        .unwrap();
+    rig.assert_preserved();
+    peer.close();
+
+    // A bare socket connect would produce no Connected event even on an
+    // accepting worker: that event requires role negotiation. Send Tversion
+    // and require that not even the first response byte is served.
+    use std::io::{Read, Write};
+    let mut replacement = std::os::unix::net::UnixStream::connect(&rig.socket).unwrap();
+    replacement
+        .set_read_timeout(Some(Duration::from_millis(200)))
+        .unwrap();
+    replacement
+        .set_write_timeout(Some(Duration::from_millis(200)))
+        .unwrap();
+    let version = [
+        21u32.to_le_bytes().as_slice(),
+        &[100, 255, 255],
+        &65536u32.to_le_bytes(),
+        &8u16.to_le_bytes(),
+        b"9P2000.L",
+    ]
+    .concat();
+    replacement.write_all(&version).unwrap();
+    let response = replacement.read(&mut [0]);
+    assert!(
+        matches!(&response, Err(error) if matches!(
+            error.kind(),
+            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+        )),
+        "paused listener served a replacement: {response:?}"
+    );
+    assert!(matches!(
+        rig.public()
+            .output_service
+            .as_ref()
+            .unwrap()
+            .event_timeout(Duration::from_millis(100)),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+    ));
+    for _ in 0..32 {
+        rig.fixture.wm.poll_output_authority().unwrap();
+    }
+    assert!(rig.supervisor().child_id().is_none(), "one-shot not restarted");
+    rig.assert_preserved();
+    drop(replacement);
 }
 
 /// C: the peer leaves after apply. Rejection moves the candidate to rollback
@@ -576,9 +739,14 @@ fn disconnect_after_apply_settles_only_after_rollback() {
     rig.cancellation_requested(11);
     rig.assert_debt(11);
     let transaction = TransactionId::from_raw(11);
-    rig.public()
-        .reject_output_topology_effect(transaction, OutputTopologyTransactionFailure::Stale)
-        .unwrap();
+    assert_eq!(
+        rig.cancel_execution(
+            11,
+            Execution::AwaitingFirstPresentation,
+            sophia_backend_live::LiveProductionNativeTopologyPreparationPhase::RollingBack,
+        ),
+        Execution::RollingBack
+    );
     assert_eq!(
         rig.authority().active_phase(),
         Some(OutputTopologyTransactionPhase::RollingBack)
@@ -606,9 +774,14 @@ fn disconnect_after_apply_with_failed_rollback_publishes_nothing() {
     first.close();
     rig.cancellation_requested(11);
     let transaction = TransactionId::from_raw(11);
-    rig.public()
-        .reject_output_topology_effect(transaction, OutputTopologyTransactionFailure::Stale)
-        .unwrap();
+    assert_eq!(
+        rig.cancel_execution(
+            11,
+            Execution::AwaitingFirstPresentation,
+            sophia_backend_live::LiveProductionNativeTopologyPreparationPhase::RollingBack,
+        ),
+        Execution::RollingBack
+    );
     rig.assert_debt(11);
     rig.public()
         .observe_output_topology_rollback_failed(transaction)

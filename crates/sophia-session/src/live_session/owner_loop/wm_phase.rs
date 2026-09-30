@@ -51,57 +51,32 @@
             if let Some(reason) = cancellation_reason.as_ref()
                 && execution.phase != LiveOutputTopologyExecutionPhase::WaitingForQuiescence
             {
-                match execution.phase {
-                    LiveOutputTopologyExecutionPhase::WaitingForQuiescence => {
-                        unreachable!("waiting cancellation is reduced below")
-                    }
-                    LiveOutputTopologyExecutionPhase::Preparing => {
-                        if !native.request_abort_output_topology_preparation(reason.clone()) {
-                            return Err("output cancellation lost native preparation state".into());
-                        }
-                    }
-                    LiveOutputTopologyExecutionPhase::Applying => {
-                        if !native.request_abort_output_topology_preparation(reason.clone()) {
-                            return Err("output cancellation lost native apply state".into());
-                        }
-                        match native.output_topology_preparation_phase() {
-                            Some(
-                                sophia_backend_live::LiveProductionNativeTopologyPreparationPhase::RollingBack,
-                            ) => {
-                                wm.reject_output_topology_effect(
-                                    transaction,
-                                    sophia_engine::OutputTopologyTransactionFailure::Stale,
-                                )?;
-                                execution.phase =
-                                    LiveOutputTopologyExecutionPhase::RollingBack;
+                let cancellation = cancel_output_topology_execution(
+                    &mut execution.phase,
+                    |request| {
+                        match request {
+                            NativeOutputCancellationRequest::AbortPreparation => {
+                                if !native.request_abort_output_topology_preparation(reason.clone()) {
+                                    return Err("output cancellation lost native preparation or apply state".into());
+                                }
                             }
-                            Some(
-                                sophia_backend_live::LiveProductionNativeTopologyPreparationPhase::Failed,
-                            ) => {
-                                // No card was mutated. Reuse the preparation
-                                // terminal path below to cancel resources and
-                                // settle the authority candidate locally.
-                                execution.phase = LiveOutputTopologyExecutionPhase::Preparing;
-                            }
-                            phase => {
-                                return Err(format!(
-                                    "output cancellation produced an invalid native phase: {phase:?}"
-                                )
-                                .into());
+                            NativeOutputCancellationRequest::Rollback => {
+                                native.request_output_topology_rollback(reason.clone())?;
                             }
                         }
-                    }
-                    LiveOutputTopologyExecutionPhase::AwaitingFirstPresentation
-                    | LiveOutputTopologyExecutionPhase::Reconciling => {
-                        native.request_output_topology_rollback(reason.clone())?;
+                        Ok(native.output_topology_preparation_phase())
+                    },
+                    || {
                         wm.reject_output_topology_effect(
                             transaction,
                             sophia_engine::OutputTopologyTransactionFailure::Stale,
-                        )?;
-                        execution.phase = LiveOutputTopologyExecutionPhase::RollingBack;
-                    }
-                    LiveOutputTopologyExecutionPhase::RollingBack => {}
-                }
+                        )
+                    },
+                );
+                // Keep physical progress even when policy rejection fails.
+                // The completion path must see the accepted rollback phase.
+                active_output_topology_preparation = Some(execution.clone());
+                cancellation?;
                 tracing::warn!(
                     "sophia_live_output_authority schema=2 status=cancellation_observed transaction={} phase={:?} reason={reason:?} published={}",
                     transaction.raw(),

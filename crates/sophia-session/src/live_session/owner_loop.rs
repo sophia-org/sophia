@@ -225,6 +225,8 @@ enum LiveOutputTopologyExecutionPhase {
     RollingBack,
 }
 
+include!("owner_loop/output_cancellation.rs");
+
 fn owner_loop_shell_presentation_available(
     seat_active: bool,
     native_attached: bool,

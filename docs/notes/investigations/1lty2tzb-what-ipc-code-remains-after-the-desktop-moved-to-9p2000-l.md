@@ -3189,6 +3189,61 @@ executable profile-declared and run it under Session supervision; it need not
 admit an arbitrary unsupervised process as the output peer. No administrative
 wire or authority expansion is included in this candidate.
 
+## Native cancellation and child-exit recovery (2026-09-29)
+
+Following signed `c0f549c1c`, the native owner loop calls one cancellation
+function for preparation, apply, first presentation and reconciliation. Native
+cancellation must succeed before policy observes rejection. An aborted apply
+that reports Failed returns to preparation cleanup; RollingBack retains the
+rollback obligation. An unexpected report cannot settle policy. Waiting for
+quiescence and an already accepted rollback add no native request.
+
+This extraction also corrects error recovery: once native rollback is accepted,
+the execution phase and the loop's retained completion copy become RollingBack
+before a policy rejection error propagates. Previously that error could leave
+the retained copy in Applying or AwaitingFirstPresentation.
+
+Seven tests exercise the function used by the loop, including native refusal,
+policy failure, every invalid apply-abort report, repeated cancellation and
+native-before-policy ordering. The real-file recovery rig now uses that same
+function before its policy observations. Its seventh case runs a controlled
+supervisor child, establishes an active dispatched proposal with no cancellation,
+then terminates only that unreaped child while the test peer stays connected.
+Session pauses the worker, retains preparation debt until settlement, preserves
+the snapshot and does not restart the one-shot. A replacement sends Tversion
+and receives no response byte while admission is paused; a bare socket connect
+would not prove this because Connected requires role negotiation.
+
+Focused passing evidence: `t253-native-cancellation.log`,
+`t253-native-cancellation-recovery.log`, `t253-output-child-exit-probe.log` and
+`t253-cancellation-session-lib.log` (718 passes, 24 ignored, before the final
+probe strengthening). Private-snapshot negative controls fail as intended:
+
+- `t253-cancellation-retention-negative.log`: moving the phase update after
+  policy rejection loses the accepted rollback state.
+- `t253-child-exit-pause-negative.log`: omitting Session's pause request prevents
+  cancellation debt from arriving and fails at the five-second test bound.
+- `t253-child-exit-listener-negative.log`: disconnecting but continuing to
+  accept serves the replacement's Tversion, so the strengthened probe fails.
+
+Control mutations were restored and compared byte-for-byte with canonical
+source. The affected private build-cache entries were removed before the final
+canonical gate. No devices, session sockets or network were exposed. These
+tests cover the actual cancellation decision and Session child-exit path with
+supplied native results; they do not prove native resource cleanup, card apply,
+presentation, physical restoration or complete loop recovery. The stand-in
+child is separate from the in-process protocol peer; protected identity remains
+covered by its separate launch/admission tests. The startup transaction exemption,
+performance qualification and applicable native acceptance remain open.
+
+The final canonical `cargo xtask check` passes in
+`t253-native-cancellation-full.log`: test summaries report 6,295 passes, zero
+failures and 64 ignored checks across 433 groups. Strict clippy, SDK identity
+and contract checks, layout, conformance and repository verifiers also pass.
+This gate includes the strengthened replacement probe. Signed `193719655`
+declares the output transport performance workloads and limits before their
+first measurement; qualification itself is still pending.
+
 ## Connections
 
 - [Migrate desktop roles to a daily-driver 9P control bus](../plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md)
