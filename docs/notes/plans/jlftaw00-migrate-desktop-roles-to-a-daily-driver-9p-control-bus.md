@@ -447,6 +447,44 @@ recovery evidence, predeclared performance bounds, and applicable exact native
 topology acceptance. No transport result attests KMS or source retirement.
 This task owns output default selection and its separately authorized rollout.
 
+#### Output transport performance gate (declared 2026-09-29)
+
+Measure the real output file worker with the pinned generic C SDK peer and a
+test topology owner. Use both the one-head/two-mode fixture and a maximum-size
+valid topology. No KMS or live Session is involved. These limits qualify the
+transport portion of an interactive command; they do not bound physical apply,
+first presentation or rollback.
+
+- Run 100 fresh connections per fixture. Measure connect through negotiation,
+  complete topology read and confirmed cumulative ack: p99 at most 100 ms and
+  every sample at most 500 ms.
+- After 20 unmeasured warm-up proposals, run 1,000 sequential ValidateOnly
+  proposals per fixture on one attach. Each has a fresh transaction/submission
+  ID, and the test owner answers Validated when it receives the proposal.
+  Measure submit through observed outcome and confirmed ack: p99 at most 50 ms
+  and every sample at most 250 ms. Require exactly one owner delivery and one
+  matching terminal outcome per proposal; retries cannot duplicate work.
+- With negotiation and all events acknowledged, measure an otherwise idle
+  worker for three ten-second intervals. Combined CPU time for the worker,
+  blocked peer and test owner must use at most 2% of one core in each interval;
+  none may spin while idle. Report thread counts
+  before launch, while serving, and after shutdown; no worker thread may remain
+  after its service is joined.
+
+Use nearest-rank percentiles and retain every raw sample, failure and timeout.
+Report source commits, SDK manifest, fixture identities, compiler/profile,
+kernel, CPU, sample counts, elapsed time and CPU time. Run device-hidden with
+network and session sockets absent, nice 19 and one build job. Finish builds
+before measurement and run no other qualification workload concurrently.
+Record failed runs; do not discard outliers or substitute a best-of run. Any
+budget change requires a recorded rationale before another measurement.
+
+Existing journal, record, staging, publication-pin and command-queue bounds
+remain correctness requirements. Their refusal/recovery controls run alongside
+this timing gate; fast successful requests do not replace saturation evidence.
+The separate native gate must measure and verify apply, first presentation and
+restoration on the exact candidate before t253 can close.
+
 ### t254 — Migrate administrative commands
 
 After the WM development exit t249, this lane can run independently of shell
