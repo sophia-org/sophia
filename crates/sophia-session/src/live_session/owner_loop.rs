@@ -226,6 +226,7 @@ enum LiveOutputTopologyExecutionPhase {
 }
 
 include!("owner_loop/output_cancellation.rs");
+include!("owner_loop/output_readback.rs");
 
 fn owner_loop_shell_presentation_available(
     seat_active: bool,
@@ -751,6 +752,9 @@ fn run_session_loop_inner(
     let mut observed_wm_restart_count = wm_session.as_ref().map_or(0, |wm| wm.restarts);
     let mut output_proof_rollback_after_apply =
         OutputProofRollbackAfterApply::new(config.output_proof_rollback_after_apply);
+    let mut output_peer_loss_proof =
+        OutputPeerLossProof::new(config.output_proof_peer_loss_after_apply);
+    let mut output_readback_proof = OutputReadbackProof::new(config.output_proof_readback);
 
     macro_rules! revoke_floating_pointer_interaction {
         ($reason:literal) => {{

@@ -207,6 +207,7 @@ struct LivePublicPolicyState {
     reload_output_transaction: Option<TransactionId>,
     output_cancel_requested: Option<(TransactionId, String)>,
     output_pending_connection_epoch: Option<u64>,
+    output_peer_loss_observation: Option<OutputPeerLossObservation>,
     next_output_snapshot_transaction: u64,
     output_capabilities: Vec<sophia_backend_live::LibdrmNativeOutputCapability>,
     _profile_fragments: sophia_config::DesktopProfileFragments,

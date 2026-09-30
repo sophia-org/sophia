@@ -3453,6 +3453,60 @@ The initial Clippy refusal remains in `t254-supervisor-exit-status-clippy.log`.
 No administrative export or invocation is wired yet; no native acceptance or
 live-session behavior is claimed.
 
+## Independent native output proof preparation (2026-09-30)
+
+The approved t253 candidate adds a public-C-SDK peer with validate, admission
+rejection, commit-and-restore, and await-supervisor-termination stages. Each
+stage declares the entire enabled layout and baseline topology epoch. The peer
+checks outcome epochs and fresh publication Qids; it flushes records before a
+possible signal. It remains independent of any named WM or shell.
+
+Session's opt-in peer-loss hold begins after all cards apply a non-profile
+transaction. It requests supervisor termination, then requires both the captured
+peer's signalled exit and the armed epoch's Disconnected event. The normal
+cancellation path owns rollback. Service failure, reassignment, missed departure
+deadline or outer-runtime interruption fails qualification. Readback failures
+after apply also request ordinary rollback; they do not abort into an unproven
+restoration or release a commit. The native proof guide describes the
+[readback scope and preparation command](../../testing/output-file-native-proof.md).
+
+Device-hidden evidence under
+`~/.local/state/sophia/development-evidence/ipc-retirement/`:
+
+- `t253-native-proof-peer-02/`: strict C99 compile and all 13 real-export
+  fixture checks pass. Removing the outcome-epoch, Qid-freshness or repeated-arg
+  checks fails its corresponding control. Earlier epoch-passed and early-outcome
+  controls are retained in `t253-native-proof-peer-01/`, including the first
+  failed link command that omitted `desktop_connection.c`.
+- `t253-native-session-peer-3.log`: all four stages pass through actual protected
+  Session launch, checked peer identity, owner settlement and supervision. The
+  death stage supplies restoration observations and checks the paused listener
+  with a real Tversion probe. Earlier fixture failures remain in logs 1 and 2:
+  double polling consumed the exit, and the expected restored snapshot omitted
+  generation advances. Both test assumptions were corrected.
+- `t253-native-proof-focused-1.log`: nine peer-loss state tests, two owner/KMS
+  readback tests, two preparation-result tests, two existing performance-process
+  tests and two backend readback tests pass. The recovery group also passes in
+  `t253-native-peer-loss-check-9.log` (14 passed, three opt-in cases ignored).
+- `t253-native-proof-clippy-1.log`: strict workspace Clippy passes. The first
+  full-gate attempt lacked a private XDG runtime directory; the second passed
+  workspace tests before Clippy refused a collapsible conditional. Both logs
+  are retained, and the equivalent conditional was simplified.
+- `t253-native-proof-gate-3.log`: workspace tests, Rust SDK checks and Clippy
+  pass. The layout gate then refused a new test mount in the readback module.
+  Its external tests were moved under the existing native-scanout test mount;
+  `xtask check layout` passes without adding a debt exception.
+- `t253-native-proof-gate-tail-1.log`: the moved tests pass (2/2), as do
+  layout, C-wire, layout-probe and Session evidence-reader controls. Its final
+  archive signature check initially lacked the public keyring in the private
+  HOME. `t253-native-proof-archive-1.log` passes that check with only the public
+  keyring mounted into a temporary GnuPG directory. No signing agent was changed.
+
+These fixtures supply physical observations. They do not run the native owner
+loop against DRM and cannot establish apply, presentation or restoration on
+hardware. The external integration verifier and attended run remain separate;
+neither t253 nor t272 is closed by this preparation.
+
 ## Connections
 
 - [Migrate desktop roles to a daily-driver 9P control bus](../plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md)

@@ -125,6 +125,7 @@ impl LiveWmSession {
             reload_output_transaction: None,
             output_cancel_requested: None,
             output_pending_connection_epoch: None,
+            output_peer_loss_observation: None,
             next_output_snapshot_transaction: 2,
             output_capabilities,
             reducer,

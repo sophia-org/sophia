@@ -681,6 +681,30 @@ impl PersistentXtermSessionConfig {
             max_runtime,
             wm_public_fault_after.is_some() || wm_public_restart_after_action.is_some(),
         )?;
+        let output_proof_peer_loss_after_apply = args.iter()
+            .any(|arg| arg == "--output-proof-peer-loss-after-apply");
+        validate_output_peer_loss_proof(
+            output_proof_peer_loss_after_apply,
+            native_scanout,
+            normal_session,
+            output_process.is_some(),
+            max_runtime,
+            std::env::var_os("SOPHIA_FRAME_FED_OUTPUT_ARM").as_deref()
+                == Some(std::ffi::OsStr::new("1")),
+            output_proof_rollback_after_apply || wm_public_fault_after.is_some()
+                || wm_public_restart_after_action.is_some(),
+        )?;
+        let output_proof_readback = output_proof_peer_loss_after_apply
+            || args.iter().any(|arg| arg == "--output-proof-readback");
+        if output_proof_readback {
+            validate_output_peer_loss_proof(
+                true, native_scanout, normal_session, output_process.is_some(), max_runtime,
+                std::env::var_os("SOPHIA_FRAME_FED_OUTPUT_ARM").as_deref()
+                    == Some(std::ffi::OsStr::new("1")),
+                output_proof_rollback_after_apply || wm_public_fault_after.is_some()
+                    || wm_public_restart_after_action.is_some(),
+            ).map_err(|reason| format!("--output-proof-readback: {reason}"))?;
+        }
         if native_scanout && std::env::var_os("SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE").is_none() {
             return Err(
                 "set SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1 to run persistent native scanout"
@@ -891,6 +915,8 @@ impl PersistentXtermSessionConfig {
             wm_public_fault_after,
             wm_public_restart_after_action,
             output_proof_rollback_after_apply,
+            output_proof_peer_loss_after_apply,
+            output_proof_readback,
             wm_socket_path: std::env::temp_dir().join(format!(
                 "sophia-live-wm-{}-{display_number}.sock",
                 std::process::id()

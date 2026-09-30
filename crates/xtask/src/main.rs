@@ -18,6 +18,7 @@ mod headless_client_gate;
 mod m3_acceptance;
 mod native_protocol_family;
 mod nine_p_conformance;
+mod output_file_native_proof;
 mod output_file_performance;
 mod rust_desktop_sdk;
 mod xterm_pointer_oracle;
@@ -253,6 +254,7 @@ usage: cargo xtask <command>
       Verify the vendored Rust desktop SDK snapshot, then run its own tests.
 
   check output-file-performance prepare|measure --output=/PRIVATE/DIR
+  check output-file-native-proof prepare --output=/PRIVATE/NEW/DIR
       Prepare isolated release artifacts, then separately measure the signed
       candidate once. Builds must finish before measurement starts.
 

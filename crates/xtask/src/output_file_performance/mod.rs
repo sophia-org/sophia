@@ -61,7 +61,7 @@ fn capture(repo: &Path, program: &str, args: &[&str]) -> Result<String, String> 
     result.map_err(|e| format!("{program} {args:?}: {e}; {stderr}"))
 }
 
-fn identity(repo: &Path) -> Result<Value, String> {
+pub(crate) fn identity(repo: &Path) -> Result<Value, String> {
     if !capture(
         repo,
         "git",
@@ -79,7 +79,7 @@ fn identity(repo: &Path) -> Result<Value, String> {
     )
 }
 
-fn sandbox(repo: &Path, output: &Path) -> Result<Sandbox, String> {
+pub(crate) fn sandbox(repo: &Path, output: &Path) -> Result<Sandbox, String> {
     let toolchain = PathBuf::from(capture(repo, "rustc", &["--print", "sysroot"])?);
     let cargo_home = std::env::var_os("CARGO_HOME")
         .map(PathBuf::from)
@@ -266,19 +266,23 @@ fn measure(repo: &Path, output: &Path) -> Result<(), String> {
 }
 
 pub(crate) fn artifact(messages: &str) -> Result<PathBuf, String> {
+    artifact_for(messages, "output_file_performance")
+}
+
+pub(crate) fn artifact_for(messages: &str, target: &str) -> Result<PathBuf, String> {
     let mut found = None;
     for line in messages.lines() {
         let message: Value = serde_json::from_str(line).map_err(|e| format!("Cargo JSON: {e}"))?;
         if message["reason"] == "compiler-artifact"
-            && message["target"]["name"] == "output_file_performance"
+            && message["target"]["name"] == target
             && message["profile"]["test"] == true
             && let Some(executable) = message["executable"].as_str()
             && found.replace(PathBuf::from(executable)).is_some()
         {
-            return Err("multiple performance artifacts".into());
+            return Err(format!("multiple artifacts for {target}"));
         }
     }
-    found.ok_or_else(|| "Cargo did not produce the performance harness".into())
+    found.ok_or_else(|| format!("Cargo did not produce the {target} harness"))
 }
 
 fn machine(repo: &Path) -> Result<Value, String> {
@@ -295,13 +299,13 @@ fn machine(repo: &Path) -> Result<Value, String> {
         "governors":governors,"intel_no_turbo":fs::read_to_string("/sys/devices/system/cpu/intel_pstate/no_turbo").ok(),
         "boost":fs::read_to_string("/sys/devices/system/cpu/cpufreq/boost").ok()}))
 }
-fn digest(path: &Path) -> Result<String, String> {
+pub(crate) fn digest(path: &Path) -> Result<String, String> {
     Ok(format!(
         "{:x}",
         Sha256::digest(fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?)
     ))
 }
-fn write(output: &Path, name: &str, value: &Value) -> Result<(), String> {
+pub(crate) fn write(output: &Path, name: &str, value: &Value) -> Result<(), String> {
     fs::write(
         output.join(name),
         serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?,

@@ -1,5 +1,31 @@
 impl LivePublicPolicyState {
     fn poll_output_authority(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(service) = self.output_service.as_mut() {
+            match service.poll_supervisor() {
+                Ok(Some((peer, status))) => {
+                    use std::os::unix::process::ExitStatusExt;
+                    if let Some(proof) = self.output_peer_loss_observation.as_mut() {
+                        // A later, different child exit invalidates this one-shot
+                        // observation; it must not be folded into an earlier exit.
+                        proof.terminated = proof.peer == peer && matches!(status.signal(), Some(9 | 15));
+                        proof.failed |= !proof.terminated;
+                    }
+                }
+                Ok(None) => {}
+                Err(_) => {
+                    self.fail_output_peer_loss_observation();
+                    // Reaping failure must not abort an outstanding physical
+                    // rollback. Retain custody and try supervision next turn.
+                    if self.output_cancel_requested.is_some() {
+                        tracing::error!("sophia_live_output_supervisor schema=1 status=failed reason=poll_during_rollback");
+                        return Ok(());
+                    }
+                    self.request_output_candidate_cancellation("output supervisor failed".to_owned(), None)?;
+                    self.output_service.take();
+                    return Ok(());
+                }
+            }
+        }
         // The transport may already have admitted a replacement peer after the
         // old one vanished. Leave its bounded event queue untouched until the
         // physical rollback settles and the authority owner adopts the new
@@ -15,6 +41,7 @@ impl LivePublicPolicyState {
                     Ok(Some(event)) => event,
                     Ok(None) => break,
                     Err(_disconnected) => {
+                        self.fail_output_peer_loss_observation();
                         self.request_output_candidate_cancellation(
                             "output service event channel disconnected".to_owned(), None,
                         )?;
@@ -95,6 +122,9 @@ impl LivePublicPolicyState {
                 sophia_runtime::OutputTransportServiceEvent::Disconnected {
                     connection_epoch,
                 } => {
+                    if let Some(proof) = self.output_peer_loss_observation.as_mut() {
+                        proof.disconnected |= proof.connection_epoch == connection_epoch;
+                    }
                     let replacement_epoch = connection_epoch
                         .checked_add(1)
                         .ok_or("output connection epoch exhausted after disconnect")?;
@@ -111,6 +141,7 @@ impl LivePublicPolicyState {
                     connection_epoch,
                     abandoned,
                 } => {
+                    self.fail_output_peer_loss_observation();
                     self.request_output_candidate_cancellation(
                         format!("output assignee replaced at epoch {connection_epoch}"),
                         Some(connection_epoch),
@@ -130,6 +161,7 @@ impl LivePublicPolicyState {
                     );
                 }
                 sophia_runtime::OutputTransportServiceEvent::Failed { message } => {
+                    self.fail_output_peer_loss_observation();
                     self.request_output_candidate_cancellation(
                         format!("output authority service failed: {message}"),
                         None,
@@ -143,6 +175,10 @@ impl LivePublicPolicyState {
             }
         }
         Ok(())
+    }
+
+    fn fail_output_peer_loss_observation(&mut self) {
+        if let Some(proof) = self.output_peer_loss_observation.as_mut() { proof.failed = true; }
     }
 
     fn settle_output_proposal(

@@ -146,26 +146,49 @@ impl LiveOutputService {
     > {
         match self {
             Self::Socket(service) => service.try_event(),
-            Self::Files {
-                service,
-                supervisor,
-            } => {
-                // Reap a one-shot client without repeating an apply command.
-                // Peer departure still reaches Session's rollback owner.
-                if supervisor
-                    .poll()
-                    .map_err(|_| sophia_runtime::OutputTransportServiceDisconnected)?
-                    .is_some()
-                {
-                    service
-                        .request_pause()
-                        .map_err(|_| sophia_runtime::OutputTransportServiceDisconnected)?;
-                }
-                service
-                    .try_event()
-                    .map_err(|_| sophia_runtime::OutputTransportServiceDisconnected)
-            }
+            Self::Files { service, .. } => service
+                .try_event()
+                .map_err(|_| sophia_runtime::OutputTransportServiceDisconnected),
         }
+    }
+
+    /// Reaping and pausing must continue even while rollback holds the event
+    /// queue. This observes child exit; a requested termination alone does not
+    /// revoke or cancel the transaction.
+    fn poll_supervisor(
+        &mut self,
+    ) -> Result<Option<(u32, std::process::ExitStatus)>, sophia_runtime::OutputTransportServiceDisconnected> {
+        use std::os::unix::process::ExitStatusExt;
+        let Self::Files {
+            service,
+            supervisor,
+        } = self
+        else {
+            return Ok(None);
+        };
+        let peer = supervisor.peer_id();
+        if supervisor
+            .poll()
+            .map_err(|_| sophia_runtime::OutputTransportServiceDisconnected)?
+            .is_some()
+        {
+            let status = supervisor.exit_status()
+                .ok_or(sophia_runtime::OutputTransportServiceDisconnected)?;
+            let peer_record = peer.map_or_else(|| "none".to_owned(), |value| value.to_string());
+            let code = status.code().map_or_else(|| "none".to_owned(), |value| value.to_string());
+            let signal = status.signal().map_or_else(|| "none".to_owned(), |value| value.to_string());
+            tracing::info!(
+                "sophia_live_output_supervisor schema=1 status=exited peer={peer_record} code={code} signal={signal}",
+            );
+            service
+                .request_pause()
+                .map_err(|_| sophia_runtime::OutputTransportServiceDisconnected)?;
+            tracing::info!(
+                "sophia_live_output_supervisor schema=1 status=pause_requested peer={peer_record}"
+            );
+            return Ok(peer.map(|peer| (peer, status)));
+        }
+        Ok(None)
     }
 
     fn pause_acceptance(

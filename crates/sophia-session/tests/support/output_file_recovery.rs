@@ -40,6 +40,12 @@ const TOPOLOGY_EPOCH: u64 = 7;
 #[path = "output_file_startup_recovery.rs"]
 mod startup_recovery;
 
+#[path = "output_file_peer_loss_proof.rs"]
+mod peer_loss_proof;
+
+#[path = "output_file_native_session.rs"]
+mod native_session;
+
 enum Step {
     Negotiate,
     Propose(TransactionId, OutputTopologyCandidate),

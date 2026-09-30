@@ -453,6 +453,9 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
             // explicit deadlines. Ending here can strand already-routed keys
             // without giving the frontend a chance to acknowledge them.
             if global_runtime_deadline_ends_session(config.input_proof_requested()) {
+                if output_peer_loss_proof.interrupt() {
+                    tracing::error!("sophia_output_peer_loss_proof schema=1 status=failed reason=session_runtime_deadline restoration=unproven");
+                }
                 service_runtime_deadline_key_drain!();
             }
         }

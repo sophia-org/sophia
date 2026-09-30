@@ -452,6 +452,57 @@ keeps `sophia-output` as the frozen reference consumer. Confirmation requires a
 later output revision; product invocation remains t254 work. Neither extends
 this task's revision-1 acceptance gate.
 
+#### Approved implementation and retirement sequence (2026-09-30)
+
+On 2026-09-30 niltempus approved completing revision-1 native acceptance before removing
+output IPC in t272. The frozen C reference CLI remains a proof consumer; the
+eventual unified `sophia output` subcommand is Rust tooling under t254. Neither
+the product launcher nor proposed revision-2 confirmation extends this gate.
+
+- Sophia owns the generic public-C-SDK proof peer and Session/native proof
+  controls. External niltempus Rust tooling assembles the named desktop, freezes
+  exact signed inputs and verifies attended hardware evidence. Claude implements
+  the independent peer through Herdr; Codex owns Session/native changes,
+  integration, signing and tracking, with reciprocal review.
+- Exercise validate, semantic rejection, commit A-to-B-to-A, and supervised
+  peer death after all cards apply B. Each layout states all enabled heads,
+  modes, transforms, VRR and geometry. The peer waits for the declared baseline
+  topology epoch as well as matching fields, so an identical-looking bootstrap
+  cannot race a pending profile startup transaction.
+- The one-shot, explicitly armed peer-loss proof requests supervisor termination
+  after native apply and holds terminal commit. Observed departure uses normal
+  supervision, disconnect, cancellation and rollback. Presentation can continue.
+  A five-second departure timeout fails the proof and requests restoration; it
+  never releases a commit. Startup/reload transactions cannot consume the proof.
+- Evidence joins the peer epoch/transaction to physical apply, first presentation,
+  restoration readback and clean process/native teardown. A preserved published
+  snapshot alone does not establish physical restoration. Run the unchanged
+  performance gate on each exact acceptance candidate and retain failed runs.
+- The final default has a profile-owned output authority without a required
+  external client. Only an explicitly configured protected output process gets
+  a 9P export; no process means no listener and no WM output grant.
+- After t253 acceptance, t272 preserves neutral ownership/recovery assertions,
+  removes output IPC and changes the strict WM API to
+  `output_transport=9p2000.L` with SDK 0.4.0, Hagia and affected spec/release pins.
+  Keep intermediate incompatible commits off master and retain the signed
+  contract identity imported by the SDK. Qualify the assembled candidate, then
+  promote that exact identity. Rollback restores the whole previous release.
+
+Approval covers implementation and isolated qualification. Prepare a concrete
+candidate and rollback recipe before requesting a separate attended hardware
+window or installation. Both tasks retain their physical acceptance exits;
+source retirement waits for t253, and repository cleanup follows retirement.
+
+The [native proof guide](../../testing/output-file-native-proof.md) specifies
+the generic preparation command, proof controls, evidence and remaining physical
+limits. The device-hidden Session fixture runs all four C-peer stages through
+protected launch and the actual policy owner, supplying physical observations.
+The native proof requires a changed mode timing with unchanged head enablement
+and KMS selections; it compares restored KMS timing/properties and labelled
+native-owner software state. This gate does not qualify routing changes or
+head-disabling cleanup. An interrupted outer runtime bound records failure and
+leaves restoration unproven.
+
 #### Output transport performance gate (declared 2026-09-29)
 
 Measure the real output file worker with the pinned generic C SDK peer and a

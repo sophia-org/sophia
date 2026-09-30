@@ -135,6 +135,12 @@ impl ProcessSupervisor {
         self.exit_status.take()
     }
 
+    /// Inspect the last reap for diagnostics without consuming it. Protected
+    /// processes report the wrapper status; a new launch clears this value.
+    pub fn exit_status(&self) -> Option<std::process::ExitStatus> {
+        self.exit_status
+    }
+
     pub fn launch_spec(&self) -> &ProcessLaunchSpec {
         &self.spec
     }

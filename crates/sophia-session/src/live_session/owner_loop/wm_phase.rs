@@ -36,7 +36,31 @@
             wm.request_deliberate_restart();
         }
         let _ = wm.poll_restart(&mut layout, output)?;
+        if config.output_proof_readback && !wm.startup_output_topology_pending()
+            && active_output_topology_preparation.is_none()
+            && let Some(native) = native_scanout.as_ref()
+            && let Some(snapshot) = wm.published_output_snapshot()
+        {
+            output_readback_proof.baseline(native, snapshot.topology_epoch)?;
+        }
         wm.poll_output_authority()?;
+        output_readback_proof.check_finished()?;
+        if output_peer_loss_proof.poll(Instant::now(), wm.output_peer_loss_observation()) {
+            tracing::error!("sophia_output_peer_loss_proof schema=1 status=failed reason=departure_timeout");
+        }
+        if let Some((epoch, transaction)) = output_peer_loss_proof.finish()? {
+            tracing::info!(
+                "sophia_output_peer_loss_proof schema=1 status=passed epoch={epoch} transaction={} disconnected=true terminated=true restored=true",
+                transaction.raw(),
+            );
+        }
+        if config.output_proof_readback && !wm.output_peer_supervisor_running()
+            && active_output_topology_preparation.is_none()
+            && let Some(native) = native_scanout.as_ref()
+            && let Some(snapshot) = wm.published_output_snapshot()
+        {
+            output_readback_proof.peer_exited(native, snapshot.topology_epoch)?;
+        }
         if let Some(mut execution) = active_output_topology_preparation.take() {
             // Keep a recovery copy in owner state across every fallible effect.
             // Normal progress overwrites or clears it below; an early `?`
@@ -47,7 +71,15 @@
                 .as_mut()
                 .ok_or("output topology preparation lost its native owner")?;
             let mut retain_execution = true;
-            let cancellation_reason = wm.output_topology_cancellation_reason(transaction);
+            let mut cancellation_reason = wm.output_topology_cancellation_reason(transaction);
+            if cancellation_reason.is_none()
+                && (output_peer_loss_proof.rollback_required(transaction)
+                    || output_readback_proof.rollback_required(transaction))
+            {
+                // Failure remains a cancellation request on every turn until
+                // restoration. It never clears the hold or fabricates exit.
+                cancellation_reason = Some("output native proof failed".to_owned());
+            }
             if let Some(reason) = cancellation_reason.as_ref()
                 && execution.phase != LiveOutputTopologyExecutionPhase::WaitingForQuiescence
             {
@@ -309,6 +341,16 @@
                         }
                         Transition::Applied { card_index, heads } => {
                             wm.observe_output_topology_applied(transaction, &heads)?;
+                            if let Err(error) = output_readback_proof.observe(native, "applied", transaction) {
+                                output_readback_proof.fail(transaction, error);
+                            }
+                            if let Some(epoch) = wm.output_peer_transaction_epoch(transaction)
+                                && output_peer_loss_proof.arm(epoch, transaction, Instant::now())
+                                && let Err(error) = wm.request_output_peer_proof_termination(transaction, epoch)
+                            {
+                                output_peer_loss_proof.fail(transaction);
+                                tracing::error!("sophia_output_peer_loss_proof schema=1 status=failed transaction={} reason=termination_request error={error}", transaction.raw());
+                            }
                             if output_proof_rollback_after_apply.take_for_startup(
                                 wm.is_startup_output_transaction(transaction),
                             ) {
@@ -370,6 +412,9 @@
                                     );
                                 }
                                 let candidate_outputs = native.install_applied_output_topology()?;
+                                if let Err(error) = output_readback_proof.observe(native, "installed", transaction) {
+                                    output_readback_proof.fail(transaction, error);
+                                }
                                 let candidate_viewports = execution
                                     .effect
                                     .resolved
@@ -519,12 +564,17 @@
                             cursor_updates.dirty = pointer.position().is_some();
                             cursor_updates.dirty_since = cursor_updates.dirty.then(Instant::now);
                             output_topology_owner.cancel_policy_change()?;
+                            if let Err(error) = output_readback_proof.observe(native, "restored", transaction) {
+                                output_readback_proof.fail(transaction, error);
+                            }
                             wm.observe_output_topology_rolled_back(transaction, &heads)?;
                             retain_execution = false;
                             tracing::warn!(
                                 "sophia_live_output_authority schema=2 status=rolled_back transaction={} card={} reason={reason:?} published=false input=enabled",
                                 transaction.raw(), card_index,
                             );
+                            output_peer_loss_proof.restored(transaction);
+                            output_readback_proof.settled(transaction);
                         }
                         Transition::FailedWithoutMutation { card_index } => {
                             let (plan, error) =
@@ -541,6 +591,10 @@
                             );
                         }
                         Transition::RollbackFailed { card_index } => {
+                            if output_peer_loss_proof.holds(transaction) {
+                                output_peer_loss_proof.fail(transaction);
+                                tracing::error!("sophia_output_peer_loss_proof schema=1 status=failed transaction={} reason=rollback_failed card={card_index} restoration=unproven", transaction.raw());
+                            }
                             wm.observe_output_topology_rollback_failed(transaction)?;
                             return Err(format!(
                                 "output topology rollback failed on card {card_index}"
@@ -558,14 +612,19 @@
                     }
                 }
                 LiveOutputTopologyExecutionPhase::AwaitingFirstPresentation => {
-                    if execution.first_frames.iter().all(|(output, frame)| {
+                    if !output_peer_loss_proof.holds(transaction)
+                        && execution.first_frames.iter().all(|(output, frame)| {
                         native.presented_frame(*output) == Some(*frame)
                     }) {
-                        execution.phase = LiveOutputTopologyExecutionPhase::Reconciling;
-                        tracing::info!(
-                            "sophia_live_output_authority schema=2 status=first_presented transaction={} outputs={} published=false rollback_retained=true",
-                            transaction.raw(), execution.first_frames.len(),
-                        );
+                        if let Err(error) = output_readback_proof.observe(native, "presented", transaction) {
+                            output_readback_proof.fail(transaction, error);
+                        } else {
+                            execution.phase = LiveOutputTopologyExecutionPhase::Reconciling;
+                            tracing::info!(
+                                "sophia_live_output_authority schema=2 status=first_presented transaction={} outputs={} published=false rollback_retained=true",
+                                transaction.raw(), execution.first_frames.len(),
+                            );
+                        }
                     }
                 }
                 LiveOutputTopologyExecutionPhase::Reconciling => {
@@ -685,6 +744,7 @@
                             if published != execution.effect.candidate_snapshot {
                                 return Err("output authority published the wrong candidate".into());
                             }
+                            output_readback_proof.settled(transaction);
                             output_topology_owner = published_topology_owner;
                             outputs = candidate_outputs;
                             output = candidate_primary;
@@ -709,6 +769,7 @@
                 active_output_topology_preparation = Some(execution);
             } else {
                 active_output_topology_preparation = None;
+                output_readback_proof.settled(transaction);
             }
         }
         // A reloaded profile asking for different displays becomes an ordinary
@@ -753,6 +814,11 @@
             && output_topology_owner.phase == LiveOutputTopologyPhase::Stable
             && let Some(effect) = wm.take_output_topology_effect()
         {
+            if let Some(epoch) = wm.output_peer_transaction_epoch(effect.transaction)
+                && let Some(native) = native_scanout.as_ref()
+            {
+                output_readback_proof.begin(native, epoch, effect.published_snapshot.topology_epoch, effect.transaction)?;
+            }
             if output_topology_owner.begin_policy_change()? {
                 let revoked_input_leases = advance_application_input_security_epoch(
                     &mut application_route_leases,

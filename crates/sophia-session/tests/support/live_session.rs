@@ -162,6 +162,9 @@ mod input_policy_tests;
 mod metadata_shell_tests;
 #[path = "live_session/output_proof_tests.rs"]
 mod output_proof_tests;
+
+#[path = "live_session/output_readback_tests.rs"]
+mod output_readback_tests;
 #[path = "live_session/output_topology_cancellation_tests.rs"]
 mod output_topology_cancellation_tests;
 #[path = "live_session/output_topology_owner_tests.rs"]

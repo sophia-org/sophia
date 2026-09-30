@@ -45,11 +45,15 @@ pub use render_devices::{
     LiveOutputAllocationContext, LiveOutputAllocationFormatPreference,
     LiveOutputAllocationPreference, LiveRenderDeviceNodeIdentity,
 };
+#[cfg(test)]
+#[path = "../../../tests/support/output_topology_readback.rs"]
+mod output_topology_readback_tests;
 mod renderer_handoff;
 mod renderer_images;
 mod shutdown;
 mod state;
 mod topology;
+mod topology_readback;
 pub use cursor::project_native_cursor_logical_viewport;
 pub use frame_damage::project_mirror_output_damage_snapshot;
 use frame_damage::{
@@ -62,6 +66,7 @@ pub use renderer_images::{
 };
 pub use state::*;
 pub use topology::*;
+pub use topology_readback::LiveProductionOutputKmsReadback;
 
 pub struct LiveProductionNativeScanout {
     /// Submit-to-flip samples; the offer-to-submit half lives per
