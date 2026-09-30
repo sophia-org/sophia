@@ -3390,7 +3390,9 @@ arbitrary command execution or inventing new operations." The current control
 contract also excludes parameters and process execution. Merely moving T254
 earlier does not admit output-process launch as a new administrative operation.
 
-Proposed narrow amendment, awaiting niltempus's decision:
+The following narrow amendment was proposed on 2026-09-29 and approved by
+niltempus on 2026-09-30. The [owning plan](../plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md#approved-output-invocation-extension-2026-09-30)
+records its admitted scope:
 
 - Add one output invocation operation to the separate 9P administrative lane,
   using its HostDomain admission. Keep it disabled unless the startup profile
@@ -3412,7 +3414,7 @@ Proposed narrow amendment, awaiting niltempus's decision:
   in the output owner, and rollback in the native owner. Do not extend the
   retired IPC role or the existing control-v1 wire.
 
-This is a proposed scope amendment, not an accepted wire contract. Exact
+This is an approved scope amendment, not an accepted wire contract. Exact
 record layouts, limits and denial/replay controls still need review within that
 scope. Fixed profile presets remain possible with the existing action model,
 but do not provide per-invocation terminal arguments and results.

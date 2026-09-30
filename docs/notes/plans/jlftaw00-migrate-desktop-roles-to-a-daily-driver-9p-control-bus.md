@@ -518,7 +518,94 @@ Preserve command identities, stale-epoch/action rejection, at-most-once effects,
 bounded submit/outcome handling, cancellation semantics and restart recovery.
 An accepted operation is not proof of a launched application's success. Port
 the ordinary command CLI and use an independent protocol control without
-granting arbitrary command execution or inventing new operations.
+granting arbitrary command execution. New operations remain excluded except for
+the supervised output invocation approved by niltempus on 2026-09-30 below.
+
+#### Approved output invocation extension (2026-09-30)
+
+The separate 9P administrative export may accept an output invocation with
+bounded arguments and return a bounded invocation identity and result. This
+slice may proceed now to unblock t253; it does not remove t254's t249 dependency
+for the remaining administrative migration or its rollout gates.
+
+- The startup desktop profile declares the executable and explicitly enables
+  administrative invocation. HostDomain admission remains separate from
+  read-only inspection and protected role admission.
+- The request cannot select an arbitrary executable, invoke a shell, inject
+  environment variables or authorize a host process as the output peer.
+  Session launches the declared executable in its OutputAuthority protection
+  domain and transfers the checked process identity to the output worker.
+- Permit one invocation at a time. Refuse another while its child, active
+  candidate or physical cancellation debt remains; do not queue invocations.
+- Attribute results to the invocation, admitted connection epoch and actual
+  owner settlement. Exit before submission is a terminal refusal. A caller
+  deadline reports an indeterminate result without erasing physical debt.
+  Listing needs a bounded result representation, not merely an exit status.
+- Define and test argument/result limits, stale identity and replay refusal,
+  disconnect, child exit, cancellation and recovery before acceptance. Keep
+  client argument validation, output-owner candidate validation and native
+  rollback with their existing owners.
+
+This approval admits contract and implementation work. It does not authorize
+installation, live monitor changes, a default switch, output IPC retirement or
+an expansion of the existing control-v1 wire. Exact native acceptance remains
+required by t253.
+
+#### Output invocation contract under review
+
+The implementation must distinguish three intents: inspect, validate and apply.
+Arguments still belong to the declared client's parser; an intent is an owner
+constraint, not a second parser for a particular CLI. Inspect admits no proposal;
+validate admits only ValidateOnly; apply admits only Apply. A mismatched or
+second proposal is refused before dispatch. Each invocation may attach once
+and submit at most one domain transaction. Existing independent output clients
+outside this administrative invocation retain their role contract.
+
+Use the existing output owner as the result source. Validate succeeds only on
+Validated; apply succeeds only on Committed. Refused, Rejected, Stale, RolledBack
+and Failed remain distinct terminal details. A successful process exit alone
+cannot establish either success. Inspect requires a negotiated observer, no
+proposal and successful supervised process completion, and returns the immutable
+topology captured for that invocation. Client stdout is not a result channel.
+The supervisor must preserve process completion status; its present `poll`
+interface discards that status. A protected wrapper's status is process evidence,
+never proof of native apply or first presentation.
+
+The proposed resource ceilings are 64 UTF-8 arguments, 1,024 bytes per argument,
+and 8,192 argument bytes in total, excluding length prefixes. Embedded NUL is
+refused; strings are passed directly as argv without shell interpretation.
+Fixed profile arguments precede invocation arguments, and the combined vector
+must fit the same ceilings. Identity counters never wrap. A result may carry one
+topology of at most the existing 52,216-byte encoded maximum, plus fixed status
+and identity fields; it carries no arbitrary child output or application data.
+These are draft wire limits to pin in the schema and codec controls before use.
+
+Reserve the invocation and its terminal-result capacity before spawning. A
+spawn failure settles that reservation; a handoff failure must terminate and
+reap the newly spawned child before the invocation slot becomes reusable.
+Transfer the captured assignee by value and wait for AssigneeReplaced before
+attributing a Connected epoch. Requests remain fenced by both the administrative
+session/connection identity and the startup profile generation. A profile reload
+cannot replace the declared executable or enable the startup-only grant.
+
+Separate caller completion from resource release. A caller deadline returns
+Indeterminate if dispatch may have occurred; it does not permit another launch,
+discard a pending rollback or turn a later commit into a rejection. Disconnect
+before dispatch withdraws undispatched work. After dispatch, caller loss follows
+the existing output cancellation and rollback owners, preserving any commit that
+already won the race. A result is attributed before the connection epoch changes,
+including locally settled cancellation. A vanished caller receives no result on
+a new attach, and clients must not automatically repeat an indeterminate apply.
+
+The export must specify bounded staging, one outstanding request per attach,
+exact same-identity replay behavior, finite terminal retention and exhaustion
+before mutation. Its 9P flush/clunk operations cancel delivery obligations, not
+committed physical effects. Result retention and acknowledgement must not hold
+the physical owner hostage after its child and cancellation debt are gone.
+Denial, replay, queue exhaustion, exit-before-negotiation, late settlement,
+caller loss and failed reassignment need independent negative controls. These
+requirements guide the forthcoming file schema; they do not describe an
+implemented administrative service.
 
 Exit: equivalent authorized command behavior over 9P, denial/replay/revocation
 controls, bounded performance and explicit rollback. Runtime reload or command
