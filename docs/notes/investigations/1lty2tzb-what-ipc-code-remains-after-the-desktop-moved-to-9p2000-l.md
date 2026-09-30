@@ -3242,12 +3242,12 @@ failures and 64 ignored checks across 433 groups. Strict clippy, SDK identity
 and contract checks, layout, conformance and repository verifiers also pass.
 This gate includes the strengthened replacement probe. Signed `193719655`
 declares the output transport performance workloads and limits before their
-first measurement; qualification itself is still pending.
+first measurement, recorded below.
 
-## Output performance harness candidate (2026-09-29)
+## Output transport performance qualification (2026-09-29)
 
-The uncommitted harness candidate implements the workloads declared in signed
-`193719655`. Its generic C peer uses only pinned SDK 0.3.0 APIs. The supplied
+Signed `516c0cb095e0dfead1e66c86ec8ace0291db6de8` implements the workloads
+declared in signed `193719655`. Its generic C peer uses only pinned SDK 0.3.0 APIs. The supplied
 Rust owner checks each candidate, settles ValidateOnly, and joins unique owner
 deliveries with acknowledged terminal samples. Fixture encodings reach the
 52,216-byte topology and 1,784-byte proposal limits. Per-task scheduler counters
@@ -3266,10 +3266,47 @@ and artifact identities, and refuses to overwrite a measurement attempt.
 ignored measurement test. Coverage includes exact artifact selection, outer
 process timeout, failure-drain retention, evidence overflow, fixture bounds,
 percentiles, record rejection and delivery reconciliation. Targeted strict
-Clippy is recorded in `t253-performance-harness-clippy.log`. These checks do
-not run the C peer against the real service or establish performance. The
-launcher still needs an isolated preparation run and the signed candidate's
-first measurement. No native or live-session acceptance is claimed.
+Clippy is recorded in `t253-performance-harness-clippy.log`.
+
+The first isolated preparation and measurement both pass. Evidence is retained
+under `~/.local/state/sophia/development-evidence/ipc-retirement/t253-perf-516c0cb09-01/`:
+`prepared.json` binds the signed source, SDK revision and manifest, and binary
+hashes; `machine.json` records the host; `samples.jsonl` retains all 4,746
+records; `measurement-result.json` reports the final verdict. No sample or
+failed attempt was discarded. The source and artifact identities matched
+before and after measurement. SDK revision is `7ccfece173b4b01e563a27b8fe5cc07d4369b55a`,
+manifest SHA-256 `2259db2fc97b0c31dccfb3b93b8e64fea53c64de267e25c43be4ffff9a140907`.
+
+| Fixture | Connect p99 / maximum (ms) | Proposal p99 / maximum (ms) | Idle CPU range (% of one core) |
+| --- | --- | --- | --- |
+| One head, two modes | 30.707 / 30.708 | 7.446 / 7.495 | 0.215–0.234 |
+| Sixteen heads, 2,048 modes | 30.953 / 30.961 | 7.493 / 7.508 | 0.211–0.214 |
+
+Each fixture has 100 fresh connections, 20 warm-up proposals and 1,000 measured
+proposals. All 1,020 proposal outcomes uniquely match the 1,020 owner settlements;
+no handoff retries occurred. All six ten-second idle intervals pass the 2% CPU
+limit. Each workload restores the original two harness threads after joining
+its one worker, and removes its endpoint directory. The peer remains blocked
+with zero measured idle CPU. The worker has about 950 voluntary context switches
+per second from its existing periodic sleep; these are reported, not hidden.
+Sequential request/reply steps through that polling loop are consistent with
+the tight latency distributions. These figures include polling delay and do
+not isolate codec or transport processing cost.
+
+Measurement took 81.95 seconds after all builds stopped. The host was an AMD
+Ryzen 9 7950X3D, kernel `6.18.54_1`, powersave governor with boost enabled;
+compilers were Rust 1.96.1 and GCC 14.2.1. Execution used release optimization,
+nice 19, a private PID/network namespace and hidden devices/session sockets.
+Independent audits recomputed sample counts, nearest-rank percentiles, delivery
+sets, CPU intervals and thread restoration from the raw records.
+
+The subsequent full deterministic gate passes in `t253-performance-full.log`:
+6,304 passes, zero failures and 65 ignored checks across 435 groups, plus strict
+Clippy, SDK checks, layout, conformance and repository verifiers. This includes
+the existing refusal and recovery coverage; latency does not replace it.
+The separate supervised interactive launch/result path, startup transaction
+exemption coverage and applicable native acceptance remain open. No native or
+live-session acceptance is claimed.
 
 ## Connections
 
