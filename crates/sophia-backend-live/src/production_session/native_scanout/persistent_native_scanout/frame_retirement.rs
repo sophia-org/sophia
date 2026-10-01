@@ -99,7 +99,7 @@ impl LiveProductionNativeScanout {
                 self.publish_mirror_group_page_flip(output, runtime, retirement.completed_serial);
                 return Ok(());
             }
-            self.retire_ready(output, runtime)
+            self.retire_ready_and_retry_cleanup(output, runtime)
         }
 
         pub fn retire_ready_and_retry_cleanup(

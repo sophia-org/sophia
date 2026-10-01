@@ -86,6 +86,17 @@
                 let preparation_wake = output_topology_quarantined.then(|| {
                     native_scanout.as_ref().and_then(|native| native.output_topology_preparation_next_service())
                 }).flatten();
+                // A rollback waiting for candidate presentation ownership is
+                // paced the same way; the backend reports no preparation wake then.
+                let rollback_wake = active_output_topology_preparation
+                    .as_ref()
+                    .filter(|execution| execution.phase == LiveOutputTopologyExecutionPhase::RollingBack)
+                    .and_then(|execution| execution.rollback_quiescence.as_ref())
+                    .and_then(OutputTopologyRollbackQuiescence::next_wake);
+                let preparation_wake = match (preparation_wake, rollback_wake) {
+                    (Some(preparation), Some(rollback)) => Some(preparation.min(rollback)),
+                    (preparation, rollback) => preparation.or(rollback),
+                };
                 // Preserve topology quarantine and alternate bounded frame
                 // service with authority turns, including after frontend EOF.
                 if (native_frame_service_preemption && !output_topology_quarantined)

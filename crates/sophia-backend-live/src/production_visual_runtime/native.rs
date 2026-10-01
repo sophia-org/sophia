@@ -2,6 +2,7 @@ use super::*;
 
 mod layout_witness;
 mod page_flip;
+mod rollback;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum LiveProductionNativeSuspendOutcome {

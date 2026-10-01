@@ -503,6 +503,14 @@ native-owner software state. This gate does not qualify routing changes or
 head-disabling cleanup. An interrupted outer runtime bound records failure and
 leaves restoration unproven.
 
+The attended `344e9534b` candidate passed validate, rejection and commit-restore.
+Peer death then exposed submitted first frames whose completion trackers were
+replaced before retirement. The
+[rollback drain investigation](../investigations/0bc9j2k2-rollback-must-drain-candidate-presentation-before-replacing-completion-trackers.md)
+records the failure and the shared normal/shutdown rollback wait. Reverse KMS
+acceptance without restored readback is insufficient; t253 still needs a new
+candidate and an attended pass through all four stages.
+
 The attended `d4b06de81` candidate passed rollback timing projection but stalled
 before KMS while preparing rollback images. The
 [singleton custody investigation](../investigations/foc74sm7-topology-rebind-must-transfer-singleton-framebuffer-custody-before-ordinary-presentation.md)

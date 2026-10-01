@@ -389,6 +389,7 @@ impl std::error::Error for LiveProductionNativeTopologyPlanError {}
 include!("topology/planning.rs");
 
 include!("topology/semantic_startup.rs");
+include!("topology/rollback_drain.rs");
 include!("topology/publication.rs");
 include!("topology/preparation_status.rs");
 include!("topology/preparation.rs");

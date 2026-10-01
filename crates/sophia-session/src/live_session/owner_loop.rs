@@ -227,6 +227,7 @@ enum LiveOutputTopologyExecutionPhase {
 
 include!("owner_loop/output_cancellation.rs");
 include!("owner_loop/output_readback.rs");
+include!("owner_loop/output_rollback_quiescence.rs");
 
 fn owner_loop_shell_presentation_available(
     seat_active: bool,
@@ -255,6 +256,9 @@ struct LiveOutputTopologyExecution {
     quiescence_escalated: bool,
     last_preparation_progress:
         Option<sophia_backend_live::LiveProductionNativeTopologyPreparationReport>,
+    /// Set on the first rollback turn. The reverse apply waits for candidate
+    /// presentation ownership to settle, with its own deadline.
+    rollback_quiescence: Option<OutputTopologyRollbackQuiescence>,
 }
 
 const OUTPUT_TOPOLOGY_QUIESCENCE_TIMEOUT: Duration = Duration::from_secs(2);

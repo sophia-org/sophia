@@ -67,27 +67,15 @@
     if let Some(native_scanout) = native_scanout.as_mut()
         && native_scanout.output_topology_preparation_active()
     {
-        if native_scanout.output_topology_preparation_phase()
-            == Some(
-                sophia_backend_live::LiveProductionNativeTopologyPreparationPhase::FirstFramesQueued,
-            )
-            && let Some(runtime) = runtime.as_mut()
-        {
-            let candidate_outputs = native_scanout.outputs();
-            if let Err(error) = runtime.suspend_native_scanout(
-                native_scanout,
-                &candidate_outputs,
-                Duration::from_secs(2),
-            ) {
-                cleanup_failures.push(format!(
-                    "candidate topology first-frame drain failed before rollback: {error}"
-                ));
-            }
-        }
+        // Submitted candidate first frames are not suspended here: that would
+        // drop the displayed owner before restoration. The rollback branch
+        // below retires them in place before its blocking reverse apply.
         native_scanout.request_abort_output_topology_preparation(
             "session completion cancelled topology preparation",
         );
         let deadline = Instant::now() + Duration::from_secs(2);
+        let mut rollback_quiescence =
+            OutputTopologyRollbackQuiescence::until(Instant::now(), deadline);
         loop {
             use sophia_backend_live::LiveProductionNativeTopologyPreparationPhase as Phase;
             match native_scanout.output_topology_preparation_phase() {
@@ -139,9 +127,21 @@
                     break;
                 }
                 Some(Phase::RollingBack) => {
-                    if let Err(error) =
-                        native_scanout.service_prepared_output_topology_apply()
-                    {
+                    // Without the visual runtime nothing can retire candidate
+                    // presentation ownership, so restoration cannot be proven
+                    // safe to start.
+                    let Some(runtime) = runtime.as_mut() else {
+                        cleanup_failures
+                            .push("topology completion rollback lost the visual runtime".to_owned());
+                        break;
+                    };
+                    let mut owners = (runtime, &mut *native_scanout);
+                    if let Err(error) = rollback_quiescence.turn(
+                        Instant::now(),
+                        &mut owners,
+                        |(runtime, native)| runtime.service_output_topology_rollback_quiescence(native),
+                        |(_, native)| native.service_prepared_output_topology_apply(),
+                    ) {
                         cleanup_failures
                             .push(format!("topology completion rollback failed: {error}"));
                         break;
@@ -174,7 +174,23 @@
                     );
                 break;
             }
-            std::thread::yield_now();
+            // A rollback still waiting for presentation ownership idles until
+            // its next turn, never past the abort deadline.
+            let now = Instant::now();
+            match rollback_quiescence.next_wake() {
+                Some(wake) if native_scanout.output_topology_preparation_phase() == Some(Phase::RollingBack) => {
+                    let wait = wake
+                        .saturating_duration_since(now)
+                        .min(deadline.saturating_duration_since(now))
+                        .min(Duration::from_millis(1));
+                    if wait.is_zero() {
+                        std::thread::yield_now();
+                    } else {
+                        std::thread::sleep(wait);
+                    }
+                }
+                _ => std::thread::yield_now(),
+            }
         }
         while native_scanout.output_topology_cleanup_pending() && Instant::now() < deadline {
             native_scanout.retry_output_topology_cleanup();

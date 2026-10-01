@@ -124,6 +124,12 @@ impl LiveProductionNativeScanout {
             .current_card_index()
             .ok_or("native topology apply coordinator has no current card")?;
         let rollback = state.phase == LiveProductionNativeTopologyPreparationPhase::RollingBack;
+        // A rollback install resets head completion and pacing state. Keep the
+        // old trackers intact until the runtime has retired candidate flips.
+        if rollback && !self.output_topology_rollback_quiescent() {
+            self.output_topology_preparation = Some(state);
+            return Ok(LiveProductionNativeTopologyApplyTransition::Retry);
+        }
         let changes = topology_card_changes(&state, card_index, rollback)?;
         let group = self
             .groups

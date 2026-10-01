@@ -28,20 +28,7 @@ impl LiveProductionNativeScanout {
     /// displayed owner is intentionally allowed: topology apply replaces that
     /// owner, just as it did before cohorts tracked last-head release.
     pub fn output_topology_preparation_quiescent(&self) -> bool {
-        !self.layout_probe_cleanup_pending()
-            && self.output_topology_cleanup.is_empty()
-            && self.output_topology_preparation.is_none()
-            && self.heads.iter().all(|head| {
-                head.rendering_content.is_none()
-                    && head.submitted_content.is_none()
-                    && head.scanout_custody.submitted().is_none()
-                    && head.prepared_scanout.is_none()
-                    && !head.scanout_custody.cleanup_pending()
-            })
-            && self
-                .exporters
-                .iter()
-                .all(|exporter| !exporter.worker_in_flight())
+        self.output_topology_preparation_quiescence_blocker().is_none()
     }
 
     /// Names the first unmet clause of `output_topology_preparation_quiescent`,
@@ -50,13 +37,21 @@ impl LiveProductionNativeScanout {
     /// A wait that reports only that it timed out sends its reader back to the
     /// source to guess which owner was still holding a frame.
     pub fn output_topology_preparation_quiescence_blocker(&self) -> Option<&'static str> {
+        self.output_topology_ordinary_quiescence_blocker(false)
+    }
+
+    pub(crate) fn output_topology_rollback_quiescent(&self) -> bool {
+        self.output_topology_ordinary_quiescence_blocker(true).is_none()
+    }
+
+    fn output_topology_ordinary_quiescence_blocker(&self, rollback: bool) -> Option<&'static str> {
         if self.layout_probe_cleanup_pending() {
             return Some("layout_probe_cleanup");
         }
         if !self.output_topology_cleanup.is_empty() {
             return Some("topology_cleanup");
         }
-        if self.output_topology_preparation.is_some() {
+        if !rollback && self.output_topology_preparation.is_some() {
             return Some("topology_preparation");
         }
         for head in &self.heads {

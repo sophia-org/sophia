@@ -329,7 +329,33 @@
                 LiveOutputTopologyExecutionPhase::Applying
                 | LiveOutputTopologyExecutionPhase::RollingBack => {
                     use sophia_backend_live::LiveProductionNativeTopologyApplyTransition as Transition;
-                    let transition = native.service_prepared_output_topology_apply()?;
+                    let transition = if execution.phase == LiveOutputTopologyExecutionPhase::RollingBack {
+                        // Every rollback reason arrives here. Candidate first
+                        // frames may already be submitted when peer loss or a
+                        // presentation failure starts it; the blocking reverse
+                        // apply must not run until they have retired.
+                        let now = Instant::now();
+                        let mut owners = (runtime.as_mut(), &mut *native);
+                        match execution
+                            .rollback_quiescence
+                            .get_or_insert_with(|| OutputTopologyRollbackQuiescence::new(now))
+                            .turn(
+                                now,
+                                &mut owners,
+                                |(runtime, native)| {
+                                    runtime
+                                        .as_deref_mut()
+                                        .ok_or("output rollback lost the visual runtime")?
+                                        .service_output_topology_rollback_quiescence(native)
+                                },
+                                |(_, native)| native.service_prepared_output_topology_apply(),
+                            )? {
+                            OutputTopologyRollbackStep::Pending => Transition::Retry,
+                            OutputTopologyRollbackStep::Effect(transition) => transition,
+                        }
+                    } else {
+                        native.service_prepared_output_topology_apply()?
+                    };
                     match transition {
                         Transition::Retry => {}
                         Transition::CardApplied { card_index, heads } => {
@@ -866,6 +892,7 @@
                 frontend_candidate_published: false,
                 quiescence_escalated: false,
                 last_preparation_progress: None,
+                rollback_quiescence: None,
             });
             tracing::info!(
                 "sophia_live_output_authority schema=2 status=waiting_for_quiescence transaction={} timeout_msec={} input=quarantined",

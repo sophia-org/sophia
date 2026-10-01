@@ -311,3 +311,99 @@ fn topology_handoff_can_roll_back_before_any_ordinary_frame_has_presented() {
     );
     assert!(head.displayed().is_none());
 }
+
+#[test]
+fn topology_rollback_handoff_retires_candidate_flip_before_replacing_its_displayed_owner() {
+    let owner = NativeFrameOwner::new();
+    let head_id = RenderHeadId::from_raw(1);
+    let output = OutputId::from_raw(1);
+    let identity = owner.frame(output, head_id, 3, 11);
+    let device = Device::new();
+    let mut candidate = runtimes(&[1]);
+    let state = candidate
+        .values_mut()
+        .next()
+        .unwrap()
+        .runtime
+        .primary_output_state_mut();
+    state.native_custody_scope = Some((owner, head_id));
+    state
+        .scanout_custody
+        .adopt_displayed(displayed(70, None))
+        .unwrap();
+    state
+        .scanout_custody
+        .accept_submission(displayed(71, Some(identity)))
+        .unwrap();
+    assert!(candidate.native_scanout_in_flight());
+    let state = candidate
+        .values_mut()
+        .next()
+        .unwrap()
+        .runtime
+        .primary_output_state_mut();
+    assert!(
+        state
+            .scanout_custody
+            .retire_replaced_displayed(&device)
+            .is_err()
+    );
+    assert!(device.destroyed.borrow().is_empty());
+    let callback = crate::LivePageFlipCallbackReport {
+        decision: crate::LivePageFlipCallbackDecision::Accepted,
+        event: crate::LivePageFlipEvent {
+            status: crate::LivePageFlipEventStatus::Presented,
+            frame_serial: Some(1),
+        },
+    };
+    assert!(matches!(
+        state
+            .scanout_custody
+            .present(&device, &callback, Some(identity)),
+        crate::PersistentFlipOutcome::Presented { .. }
+    ));
+    assert_eq!(*device.destroyed.borrow(), [70]);
+    assert!(state.scanout_custody.displayed().is_some());
+    assert!(!candidate.native_scanout_in_flight());
+
+    // Only now supply the blocking restoration commit. The candidate's first
+    // frame remains displayed until that event, then the production handoff
+    // retires it and adopts the restored image.
+    let mut head = PersistentScanoutCustody::default();
+    head.adopt_displayed(displayed(72, None)).unwrap();
+    let mut restored = runtimes(&[1]);
+    restored
+        .values_mut()
+        .next()
+        .unwrap()
+        .runtime
+        .primary_output_state_mut()
+        .native_custody_scope = Some((owner, head_id));
+    assert!(
+        handoff_topology_custody(
+            owner,
+            &mut [TopologyCustodyHead {
+                head: head_id,
+                output,
+                enabled: true,
+                custody: &mut head,
+                device: &device,
+            }],
+            &mut candidate,
+            &mut restored
+        )
+        .unwrap()
+        .is_empty()
+    );
+    assert_eq!(*device.destroyed.borrow(), [70, 71]);
+    assert!(!candidate.native_scanout_in_flight());
+    assert!(
+        restored
+            .values()
+            .next()
+            .unwrap()
+            .runtime
+            .rendered_primary_plane_scanout_displayed()
+    );
+    assert!(head.displayed().is_none());
+}
