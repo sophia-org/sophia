@@ -1,6 +1,9 @@
 # Temporary legacy exceptions. Remove each entry when its domain split lands.
 large-source crates/sophia-x-authority/src/x11_socket/connection/dispatch.rs
 
+# One external raw 9P peer shared by shell and output unit fixtures; no test bodies.
+inline-tests crates/sophia-runtime/src/lib.rs
+
 # Private allocation-adoption race; rationale in docs/style-guide.md.
 inline-tests crates/sophia-renderer-live/src/shared_pixmap/service.rs
 

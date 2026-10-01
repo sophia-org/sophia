@@ -112,6 +112,69 @@ Log `22-session-fixture-repairs.log` records 738 passing Session tests before
 that exact-refusal assertion; `23-session-exact-refusal.log` records its check.
 These follow-up changes repair test fixtures only.
 
+The signed follow-up `ee3819e16` passed the Session library, then its full gate
+(`24-d2-full-check.log`) exposed a parallel fixture directory collision.
+`component_files` and `component_publication_files` each had their own counter
+but used the same `session-component-files-{pid}-{counter}` path. The publication
+fixture now uses its own prefix, so its creation and teardown cannot affect
+the other fixture's sockets. `25-publication-directory-full-check.log` retains
+the subsequent full check. This change also affects only a test fixture.
+That check passed the repaired fixtures and reached the Rust SDK snapshot
+tests, which correctly refused the stale imported WM contract. The Rust SDK
+also imports the WM envelope and custody rules for its shell clients. Signed
+Rust SDK `b38b809e1a09a62911dd940cfcc5067a7ee5b06d` refreshes that document
+verbatim from C, its checksum and provenance, with no library or version
+change. Its 324 tests and strict Clippy pass. Sophia vendors that exact signed
+snapshot through `vendor-rust-desktop-sdk`; the contract equality check remains
+required. Evidence is in `t272-sdk-rs-wm-doc-01` and
+`26-rust-sdk-vendor.log`.
+
+Log `27-final-full-check.log` then exposed a production ordering gap in the
+output worker. After the old connection departed, Session queued Committed
+settlement and topology publication. The worker consumed only the settlement
+before accepting a replacement with its superseded snapshot. The publication
+followed later, but the replacement's first fact was stale. A stale-base proposal
+would still be refused; that effect safety did not satisfy bootstrap ordering.
+
+The worker now accepts only after observing its command queue empty, with no
+intervening command read. Already queued owner commands therefore precede the
+replacement bootstrap. Commands arriving after that observation remain normal
+subsequent updates. Live exports retain one-command-per-turn fairness. The
+original Session test still requires the committed snapshot on negotiation;
+the attempted fixture-only wait in log `28-replacement-publication.log` was
+discarded. A deterministic worker regression queues settlement, publication
+and a backlog connection before starting the worker, then checks the first
+published object and complete topology. The worker and Session recovery checks
+pass in `29-command-before-bootstrap.log`.
+Removing the empty-queue accept guard in a private source copy and separate
+target fails the new test deterministically: the first publication has topology
+epoch 4 instead of 5 (`30-bootstrap-order-mutant.log`). Canonical source and
+build artifacts were not used for the mutant.
+
+Log `31-bootstrap-order-full-check.log` passed the output recovery checks but
+found an older WM idle-test sampling race. The counter condition also held
+while the Tflush-serving turn was still returning, after writing Rflush. The
+fixture now identifies the next idle entry with the reply already on the wire,
+releases its gate, and observes entry into the real idle call before measuring.
+The same 50 ms no-spin assertion and Stop/bell assertions remain. A single
+two-second deadline bounds the synchronization. The seven idle tests pass,
+the repaired test passes 100 repeats, and three parallel Session library runs
+each pass 738 tests. Replacing the real blocking turn with a zero-duration
+turn fails the unchanged no-spin assertion. Evidence, including qualification
+wrapper mistakes distinguished from source failures, is retained in
+`t272-idle-fixture-01`. No WM production code changed.
+
+Log `33-final-assembled-full-check.log` passed the tests, then strict Clippy
+refused the new worker test's second mount of the raw 9P peer in the runtime
+library test binary. Shell and output fixtures now share one test-only mount;
+the peer implementation and assertions are unchanged. The source-layout
+ledger records that external support mount.
+
+The complete `cargo xtask check` passes in `34-shared-peer-full-check.log`,
+including workspace and SDK tests, strict Clippy, source layout, wire checks
+and six promoted direct-scanout archives. The device-hidden gate explicitly
+does not establish new pixel or native output acceptance.
+
 The assembled signed Sophia candidate, SDK 0.4 and repinned Hagia must pass
 the clean-tree gates, fresh preparation/performance and attended native run
 before promotion. Intermediate C remains reachable for SDK provenance. Rollback

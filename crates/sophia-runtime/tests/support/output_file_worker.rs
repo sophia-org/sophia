@@ -80,6 +80,95 @@ fn worker_with_limits(label: &str, limits: OutputFileLimits) -> Worker {
 #[path = "output_file_epoch_retirement.rs"]
 mod epoch_retirement;
 
+use crate::raw_file_test_peer as raw_peer;
+
+#[test]
+fn replacement_bootstrap_follows_all_prequeued_owner_commands() {
+    let mut worker = worker_with_limits("queued-bootstrap", OutputFileLimits::default());
+    let mut expected = snapshot();
+    expected.topology_epoch += 1;
+    let (commands, incoming) = mpsc::sync_channel(HANDOFF_CAPACITY);
+    let (_pause, pauses) = mpsc::sync_channel(1);
+    let (events, _received) = mpsc::sync_channel(HANDOFF_CAPACITY);
+    // The old connection is already gone. A settlement followed by publication
+    // must both run before the waiting replacement captures its bootstrap.
+    commands
+        .send(OutputFileServiceCommand::Settle {
+            transaction: TransactionId::from_raw(1),
+            outcome: OutputV1Outcome {
+                connection_epoch: 6,
+                topology_epoch: expected.topology_epoch,
+                kind: OutputV1OutcomeKind::Committed,
+                reason: 0,
+            },
+        })
+        .unwrap();
+    commands
+        .send(OutputFileServiceCommand::PublishSnapshot(expected.clone()))
+        .unwrap();
+    let stream = UnixStream::connect(worker.transport.socket_path()).unwrap();
+    let stopped = Arc::new(AtomicBool::new(false));
+    let stop = stopped.clone();
+    let thread = std::thread::spawn(move || worker.run(&incoming, &pauses, &events, &stop));
+    // Always join the real worker, including when the old ordering mutant fails.
+    let result = std::panic::catch_unwind(move || {
+        let mut peer = raw_peer::Peer::from_stream(stream);
+        peer.setup();
+        let record = encode_output_file_record(
+            OutputFileHeader {
+                kind: OutputFileKind::Negotiate,
+                connection_epoch: 7,
+                submission_id: 1,
+                sequence: 0,
+            },
+            &encode_output_file_negotiate(OutputV1ClientHello {
+                minimum_revision: 1,
+                maximum_revision: 1,
+                capabilities: SOPHIA_OUTPUT_CAPABILITY_OBSERVE,
+            }),
+        )
+        .unwrap();
+        peer.open(5, b"transaction", 2);
+        assert_eq!(peer.write(5, &record).0, 119);
+        let submit = encode_output_file_submit(OutputFileSubmit {
+            connection_epoch: 7,
+            submission_id: 1,
+            candidate_bytes: record.len() as u32,
+        })
+        .unwrap();
+        assert_eq!(peer.write(3, &submit).0, 119);
+        for kind in [OutputFileKind::Submitted, OutputFileKind::Negotiated] {
+            let bytes = peer.next_event();
+            assert_eq!(
+                decode_output_file_record(&bytes, OutputFileClass::Event)
+                    .unwrap()
+                    .header
+                    .kind,
+                kind
+            );
+        }
+        let bytes = peer.next_event();
+        let record = decode_output_file_record(&bytes, OutputFileClass::Event).unwrap();
+        assert_eq!(record.header.kind, OutputFileKind::ObjectPublished);
+        let publication = decode_output_file_publication(record.body).unwrap();
+        assert_eq!(publication.topology_epoch, expected.topology_epoch);
+        peer.open(6, b"topology", 0);
+        let bytes = peer.read(6, 0);
+        let record = decode_output_file_record(&bytes, OutputFileClass::Object).unwrap();
+        assert_eq!(
+            decode_output_file_topology(record.body, 7)
+                .unwrap()
+                .snapshot,
+            expected
+        );
+    });
+    stopped.store(true, Ordering::Release);
+    thread.join().unwrap().unwrap();
+    if let Err(panic) = result {
+        std::panic::resume_unwind(panic);
+    }
+}
+
 fn negotiate(worker: &mut Worker) -> UnixStream {
     let peer = UnixStream::connect(worker.transport.socket_path()).unwrap();
     assert!(worker.transport.poll_accept(&worker.snapshot).unwrap());

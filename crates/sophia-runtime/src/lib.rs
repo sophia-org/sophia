@@ -38,6 +38,10 @@ mod shell_transport;
 mod supervisor;
 mod tracing;
 
+#[cfg(all(test, target_os = "linux"))]
+#[path = "../tests/support/shell_file_peer.rs"]
+pub(crate) mod raw_file_test_peer;
+
 mod prelude {
     pub(crate) use core::fmt;
     pub(crate) use std::ffi::OsString;

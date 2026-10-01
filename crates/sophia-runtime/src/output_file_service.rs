@@ -200,10 +200,11 @@ impl Worker {
                     }
                 }
             }
+            let mut commands_drained = false;
             if self.pending.is_empty() {
                 match commands.try_recv() {
                     Ok(command) => self.command(command).map_err(|error| error.to_string())?,
-                    Err(TryRecvError::Empty) => {}
+                    Err(TryRecvError::Empty) => commands_drained = true,
                     Err(TryRecvError::Disconnected) => return Ok(()),
                 }
             }
@@ -230,7 +231,10 @@ impl Worker {
                         self.publish().map_err(|error| error.to_string())?;
                     }
                 }
-            } else if !self.paused && self.pending.is_empty() {
+            } else if !self.paused && self.pending.is_empty() && commands_drained {
+                // A replacement bootstrap must include already queued commits.
+                // Keep one-command fairness for live exports, but accept only
+                // after observing an empty owner-command queue.
                 match self.transport.poll_accept(&self.snapshot) {
                     Ok(true) => self.publish_pending = false,
                     Ok(false) => {}
