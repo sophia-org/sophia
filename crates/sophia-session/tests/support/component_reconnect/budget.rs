@@ -31,7 +31,7 @@ fn repeated_reduced_successors_keep_every_predecessor_until_its_consumer_ends() 
         assert_ne!(h.owner.work_area_bands(), bands);
         h.owner.retry_at[0] = Some(Instant::now() + Duration::from_secs(60));
         drop(peer);
-        h.service();
+        h.service_until_revoked(key);
         pins.push(pixels);
         assert_eq!(h.owner.collect().retired_epochs, pins.len());
         assert_eq!(
@@ -82,7 +82,7 @@ fn component_budget_refusal_is_named_and_recovers_after_real_collection() {
     }
     h.owner.retry_at[0] = Some(Instant::now() + Duration::from_secs(60));
     drop(peer);
-    h.service();
+    h.service_until_revoked(old);
     let before = h.owner.collect();
     assert_eq!(
         before.memory.resident + before.memory.retiring,

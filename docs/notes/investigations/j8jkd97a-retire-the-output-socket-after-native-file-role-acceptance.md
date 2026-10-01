@@ -91,6 +91,27 @@ fragments over the source ceiling from t253. The mounts now have explicit
 entries; authority service waiting and completion rollback were extracted
 without changing their statements or order.
 
+The clean signed `ae5a746c5` full gate reached a pre-existing shell fixture
+race: `component_disconnect_settles_real_debt_without_disposing_pixels_or_neighbor`
+expected Revoked after one service call following SDK-handle drop, but observed
+Connected. The focused repeat passed. The fixture now services until the owner
+observes EOF, under a two-second bound; it does not force revocation and retains
+every debt, pixel and neighbor assertion. No shell production code changes.
+Logs `18-signed-full-check.log` and `19-shell-reconnect-focused.log` preserve
+the original failure and repeat. Log `20-session-eof-wait.log` exposed the same
+single-visit assumption at another fixture site. The shared bounded wait now
+covers all five asynchronous disconnect sites, including the budget cases.
+
+Log `21-session-eof-waits.log` exposed the previously recorded descriptor
+startup fixture failure: its negative path launched the supervisor's stale
+`--serve` arguments instead of the configured child test. The fixture now
+prepares and replaces the launch specification as production does, then
+requires the child's successful exit. It also requires `UnsupportedRevision`
+from the content-only parent, so a timeout cannot satisfy the negative.
+Log `22-session-fixture-repairs.log` records 738 passing Session tests before
+that exact-refusal assertion; `23-session-exact-refusal.log` records its check.
+These follow-up changes repair test fixtures only.
+
 The assembled signed Sophia candidate, SDK 0.4 and repinned Hagia must pass
 the clean-tree gates, fresh preparation/performance and attended native run
 before promotion. Intermediate C remains reachable for SDK provenance. Rollback
