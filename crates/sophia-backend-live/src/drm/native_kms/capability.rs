@@ -291,7 +291,7 @@ where
 /// left the server unable to answer any client that asked how the display is
 /// actually scanned -- and left RandR inventing a modeline with no blanking at
 /// all. The mode is right here; there was never a reason not to keep it.
-fn native_output_timing(mode: drm::control::Mode) -> LibdrmNativeOutputTiming {
+pub(crate) fn native_output_timing(mode: drm::control::Mode) -> LibdrmNativeOutputTiming {
     let (width, height) = mode.size();
     let (hsync_start, hsync_end, htotal) = mode.hsync();
     let (vsync_start, vsync_end, vtotal) = mode.vsync();

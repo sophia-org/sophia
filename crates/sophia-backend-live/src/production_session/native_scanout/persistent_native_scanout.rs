@@ -40,6 +40,9 @@ mod layout_retirement;
 pub(crate) use layout_retirement::LiveProductionNativeRetirementContent;
 pub use layout_retirement::LiveProductionRetiredLayoutWitness;
 mod output_capabilities;
+#[cfg(test)]
+#[path = "../../../tests/support/output_installed_rollback.rs"]
+mod output_installed_rollback_tests;
 mod render_devices;
 pub use render_devices::{
     LiveOutputAllocationContext, LiveOutputAllocationFormatPreference,

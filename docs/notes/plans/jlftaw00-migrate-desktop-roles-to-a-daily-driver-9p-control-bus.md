@@ -503,6 +503,12 @@ native-owner software state. This gate does not qualify routing changes or
 head-disabling cleanup. An interrupted outer runtime bound records failure and
 leaves restoration unproven.
 
+The attended `170d606b6` candidate passed validate and semantic rejection but
+failed before its first runtime Apply reached KMS. The
+[rollback timing investigation](../investigations/l696uhdc-rollback-preparation-must-use-the-installed-mode-after-a-topology-commit.md)
+records the stale discovery-mode defect, its deterministic regression and the
+requirement to qualify a new candidate before accepting t253.
+
 #### Output transport performance gate (declared 2026-09-29)
 
 Measure the real output file worker with the pinned generic C SDK peer and a

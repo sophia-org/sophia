@@ -42,13 +42,6 @@ impl LiveProductionNativeScanout {
         &self,
         snapshot: &sophia_protocol::OutputAuthoritySnapshot,
     ) -> Result<crate::LiveResolvedOutputTopology, LiveProductionNativeTopologyPlanError> {
-        let capabilities = self
-            .output_capabilities()
-            .map_err(|error| LiveProductionNativeTopologyPlanError::Native(error.to_string()))?;
-        let capability_by_head = capabilities
-            .iter()
-            .filter_map(|capability| capability.head().map(|head| (head, capability)))
-            .collect::<BTreeMap<_, _>>();
         let current = self
             .heads
             .iter()
@@ -68,11 +61,23 @@ impl LiveProductionNativeScanout {
                 )
             })
             .collect::<Vec<_>>();
-        project_live_production_published_topology(&current, snapshot, |native| {
-            capability_by_head
-                .get(&native.head)
-                .map(|capability| capability.selected_mode())
-                .ok_or(LiveProductionNativeTopologyPlanError::PublishedSnapshotMismatch)
-        })
+        project_installed_output_topology(&current, snapshot)
     }
+}
+
+pub(super) fn project_installed_output_topology(
+    current: &[LiveProductionNativeTopologyCurrentHead],
+    snapshot: &sophia_protocol::OutputAuthoritySnapshot,
+) -> Result<crate::LiveResolvedOutputTopology, LiveProductionNativeTopologyPlanError> {
+    // Discovery's selected mode anchors the public mode-ID ordering and stays
+    // fixed across commits. Rollback must instead use the installed selection,
+    // which may already differ after the profile's startup transaction.
+    project_live_production_published_topology(current, snapshot, |native| {
+        native
+            .selection
+            .mode()
+            .map(crate::native_output_timing)
+            .filter(|timing| timing.valid())
+            .ok_or(LiveProductionNativeTopologyPlanError::PublishedSnapshotMismatch)
+    })
 }
