@@ -403,7 +403,7 @@ impl Drop for PeerProcess {
 
 /// Owner inputs in arrival order: service events and peer records.
 pub enum Input<'a> {
-    Event(OutputTransportServiceEvent),
+    Event(OutputFileServiceEvent),
     Line(&'a Line),
 }
 
@@ -681,12 +681,12 @@ pub fn run(
             if let Some(event) = service.try_event().map_err(|e| e.to_string())? {
                 idle = false;
                 match &event {
-                    OutputTransportServiceEvent::Connected { connection_epoch } => {
+                    OutputFileServiceEvent::Connected { connection_epoch } => {
                         run.connected += 1;
                         state.connection_epoch = Some(*connection_epoch);
                     }
-                    OutputTransportServiceEvent::Disconnected { .. } => run.disconnected += 1,
-                    OutputTransportServiceEvent::Proposal {
+                    OutputFileServiceEvent::Disconnected { .. } => run.disconnected += 1,
+                    OutputFileServiceEvent::Proposal {
                         proposal,
                         admission,
                     } => {
@@ -695,7 +695,7 @@ pub fn run(
                         }
                         run.deliveries.push(proposal.clone());
                     }
-                    OutputTransportServiceEvent::ProposalRejected { transaction, .. } => {
+                    OutputFileServiceEvent::ProposalRejected { transaction, .. } => {
                         run.admission_rejections.push(*transaction)
                     }
                     other => return Err(format!("unexpected service event: {other:?}")),

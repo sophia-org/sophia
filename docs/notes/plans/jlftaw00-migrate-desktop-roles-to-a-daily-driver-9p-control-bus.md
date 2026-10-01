@@ -495,6 +495,13 @@ the product launcher nor proposed revision-2 confirmation extends this gate.
   contract identity imported by the SDK. Qualify the assembled candidate, then
   promote that exact identity. Rollback restores the whole previous release.
 
+The [retirement implementation record](../investigations/j8jkd97a-retire-the-output-socket-after-native-file-role-acceptance.md)
+maps the deleted socket assertions to retained file/domain tests and records
+contract C, SDK 0.4 provenance and the remaining assembled-candidate gate.
+The startup-only rollback proof flag is retired; startup physical rollback is
+not covered by the peer-loss native gate. Historical frame-fed archives keep
+their original source pairs.
+
 Approval covers implementation and isolated qualification. Prepare a concrete
 candidate and rollback recipe before requesting a separate attended hardware
 window or installation. Both tasks retain their physical acceptance exits;

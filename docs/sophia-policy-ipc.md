@@ -36,7 +36,7 @@ separate endpoints, capabilities, disclosure budgets, and protection domains.
 | --- | --- | --- | --- |
 | `sophia_wm_v1` major 1 revision 3 | metadata-blind spatial policy | stable | [Sophia Window Manager API](sophia-wm-api.md) |
 | `sophia_shell_v1` major 1 revision 8 | metadata-bearing shell | experimental descriptor and admitted content workflows; r7 native launcher and r8 persistent catalog are separate supervised profiles | [Sophia Shell Interface Direction](sophia-shell-v1-direction.md) |
-| `sophia_output_v1` major 1 revision 1 | exclusive output policy | experimental schema, codec, authenticated transport and live output owner; no stability promise | [Output Authority v1](sophia-output-v1.md) |
+| Output file API 1 | exclusive output policy | separate 9P role; output IPC retired | [Output files](sophia-output-files.md) |
 | `sophia_control_v1` major 1 revision 1 | explicitly admitted host administration; no role authority | experimental Linux endpoint; policy actions and confirmed restart | [Sophia Control v1](sophia-control-v1.md) |
 | later broker, portal, and session families | separately authorized services | not specified | future role specifications |
 
@@ -182,7 +182,6 @@ retaining revisions 1–8 under their capability gates. Revision 7
 adds the native launcher and revision 8 the persistent catalog; neither grants
 arbitrary component roles or general service access. See the
 [capability map](native-desktop-capabilities.md) for source-backed scope; and
-- `protocol/sophia-output-v1.kdl` for experimental `sophia_output_v1` revision 1.
 
 The separate scripting service uses `protocol/sophia-control-v1.kdl` for
 experimental control major 1 revision 1. It shares this family's envelope but
@@ -445,11 +444,10 @@ alternative to the public protocol.
 
 ## Output Authority Interface
 
-`sophia_output_v1` is a separate exclusive role socket. Session supervision may
-grant it to the supervised WM or shell process, but possession never widens
-`sophia_wm_v1` or `sophia_shell_v1`: the peer negotiates the output role on
-`SOPHIA_OUTPUT_SOCKET`, and exactly one authenticated supervised PID owns it at
-a time.
+Output uses the [9P output file role](sophia-output-files.md). An explicitly
+configured protected output process receives `SOPHIA_OUTPUT_9P_SOCKET` under
+its own supervision. WM and shell assignments confer no output grant. With no
+output process, Session retains profile configuration without a listener.
 
 The session sends a bounded complete capability snapshot. Head and mode IDs are
 opaque session identities; labels are bounded connector-neutral display labels.
@@ -472,10 +470,10 @@ rollback, never a degraded commit. The old policy-visible topology remains
 published until every new logical output has presented once. Outcomes are
 explicitly validated, committed, stale, rejected, rolled back, or failed.
 
-The schema, Rust codec, authenticated transport, live-session role assignment
+The native file records, authenticated transport, live-session role assignment
 and native apply/rebuild path are implemented. The
-[role contract](sophia-output-v1.md) specifies the intentional differences in
-transaction correlation, complete frames and open diagnostic reasons.
+[role contract](sophia-output-files.md) specifies transaction correlation,
+bounded journal custody and open diagnostic reasons.
 Independent lifecycle and retained compatibility evidence remain necessary
 before the interface revision can be called stable.
 

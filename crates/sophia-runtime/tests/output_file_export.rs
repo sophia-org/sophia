@@ -10,6 +10,9 @@ use sophia_protocol::*;
 use sophia_runtime::*;
 use std::time::{Duration, Instant};
 
+#[path = "support/output_file_connection_retirement.rs"]
+mod connection_retirement;
+
 fn snapshot(epoch: u64) -> OutputAuthoritySnapshot {
     OutputAuthoritySnapshot {
         topology_epoch: epoch,
@@ -587,10 +590,10 @@ fn worker_delivers_once_settles_reserved_outcome_and_pauses_without_a_peer() {
         assert!(Instant::now() < deadline, "worker client stalled");
         if let Some(event) = service.try_event().unwrap() {
             match event {
-                OutputTransportServiceEvent::Connected { connection_epoch } => {
+                OutputFileServiceEvent::Connected { connection_epoch } => {
                     assert_eq!(connection_epoch, 7)
                 }
-                OutputTransportServiceEvent::Proposal {
+                OutputFileServiceEvent::Proposal {
                     proposal,
                     admission,
                 } => {
@@ -608,7 +611,7 @@ fn worker_delivers_once_settles_reserved_outcome_and_pauses_without_a_peer() {
                         })
                         .unwrap();
                 }
-                OutputTransportServiceEvent::Disconnected { .. } => {}
+                OutputFileServiceEvent::Disconnected { .. } => {}
                 other => panic!("unexpected event: {other:?}"),
             }
         }
@@ -700,10 +703,10 @@ fn independent_c_sdk_session_against_the_output_file_worker() {
         }
         if let Some(event) = service.try_event().unwrap() {
             match event {
-                OutputTransportServiceEvent::Connected { connection_epoch } => {
+                OutputFileServiceEvent::Connected { connection_epoch } => {
                     assert_eq!(connection_epoch, 7)
                 }
-                OutputTransportServiceEvent::Proposal {
+                OutputFileServiceEvent::Proposal {
                     proposal,
                     admission,
                 } => {
@@ -725,7 +728,7 @@ fn independent_c_sdk_session_against_the_output_file_worker() {
                         })
                         .unwrap();
                 }
-                OutputTransportServiceEvent::Disconnected { .. } => {}
+                OutputFileServiceEvent::Disconnected { .. } => {}
                 other => panic!("unexpected event: {other:?}"),
             }
         }

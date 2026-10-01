@@ -74,7 +74,6 @@ impl ReloadFixture {
         let key = sophia_config::DesktopProfileActivationKey::from(&config.desktop_profile);
         let socket_path = directory.endpoint_path().join("wm.sock");
         let checkpoint_path = directory.checkpoint_path();
-        let output_socket = directory.path().join("output-endpoint/output.sock");
         // Exercise exact launch-spec preservation without acquiring a socket or
         // starting the supervised process or output authority.
         let spec = public_policy_launch_spec(
@@ -84,7 +83,6 @@ impl ReloadFixture {
             &checkpoint_path,
             profile_fragments.path(sophia_config::DesktopAuthority::Policy),
             true,
-            Some(&output_socket),
         )
         .unwrap();
         let output = sophia_engine::HeadlessOutput::deterministic();
@@ -291,16 +289,8 @@ impl ReloadFixture {
             .replacement_spec
             .take()
             .unwrap();
-        let previous_output = self
-            .wm
-            .supervisor
-            .launch_spec()
-            .environment
-            .iter()
-            .find(|(name, _)| name == sophia_runtime::SOPHIA_OUTPUT_SOCKET_ENV)
-            .unwrap()
-            .clone();
-        assert!(spec.environment.contains(&previous_output));
+        assert!(spec.environment.iter().all(|(name, _)|
+            name != "SOPHIA_OUTPUT_SOCKET" && name != "SOPHIA_OUTPUT_9P_SOCKET"));
         let public = self.wm.public.as_mut().unwrap();
         assert!(spec.environment.iter().any(|(name, path)| {
             name == "SOPHIA_WM_POLICY_CANDIDATE"

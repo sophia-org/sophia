@@ -7,4 +7,4 @@
 //! `crate::byte_cursor::CursorError`'s `From` impl into `IpcCodecError` keeps
 //! every `?` in this module producing the identical error it does today.
 
-pub(crate) use crate::byte_cursor::{Cursor, push_i32, push_u8, push_u16, push_u32, push_u64};
+pub(crate) use crate::byte_cursor::{Cursor, push_u8, push_u16, push_u32, push_u64};

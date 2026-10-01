@@ -1,14 +1,21 @@
-tree c0e21e3d940d80da90f9c9414b42b481f46c57da
-parent 5975b181e848dd463bbbc97e6a3205fbedc0347f
-author Mason Green <mason@greenm01.net> 1790728123 -0400
-committer Mason Green <mason@greenm01.net> 1790728123 -0400
+tree 843ddd14d6eef80766fe8045f49df3621fd32d3e
+parent 7ccfece173b4b01e563a27b8fe5cc07d4369b55a
+author Mason Green <mason@greenm01.net> 1790854352 -0400
+committer Mason Green <mason@greenm01.net> 1790854352 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarxXuxsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIGEAD/ZpkuCXd9uNADkpO111N7
- Gtg6q++mNqGQ7hzy0CIreXEBAKBGvbODF4cb3cPPzWPgG/1xcDdIlHKf/ZqIubWD
- 8wMA
- =8Ezq
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCar5E0BsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJ5YgD+KuRKj6WF5A85EyNbeUyR
+ w53lb1I9K9oCt4vntjbBDZQBAMAVDYIP5rB+SPLecPOJJytjhIslPyE+hly8g7nF
+ FZsO
+ =tCP2
  -----END PGP SIGNATURE-----
 
-Add output file codec and session for SDK 0.3.0
+Release C SDK 0.4.0 with the 9P2000.L WM api
+
+Import sophia-wm-files.md and sophia-output-files.md unmodified from
+signed Sophia contract b0721d0de6a03cb44e57b0a923c6c385cf40b676. The
+WM session now requires the exact api bytes naming output_transport=9p2000.L
+and refuses the retired current_ipc value before negotiation.
+
+Build and test guidance uses caller priority and the available CPUs.

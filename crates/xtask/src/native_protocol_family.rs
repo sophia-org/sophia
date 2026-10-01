@@ -179,7 +179,7 @@ fn stages() -> Vec<Stage> {
             ],
         ),
         (
-            "output-client",
+            "output-configuration",
             "cargo",
             vec![
                 "test",
@@ -188,7 +188,24 @@ fn stages() -> Vec<Stage> {
                 "-p",
                 "sophia-conformance",
                 "--test",
-                "output_ipc",
+                "output_configuration",
+            ],
+        ),
+        (
+            "output-session-files",
+            "cargo",
+            vec![
+                "test",
+                "--offline",
+                "-q",
+                "-p",
+                "sophia-session",
+                "--features",
+                "native-session",
+                "--lib",
+                "output_",
+                "--",
+                "--test-threads=1",
             ],
         ),
         // Control shares the envelope, but is not a supervised desktop role.

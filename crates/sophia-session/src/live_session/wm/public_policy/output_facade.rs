@@ -18,17 +18,11 @@ impl LiveWmSession {
             .is_some_and(|public| public.startup_output_transaction.is_some())
     }
 
-    fn is_startup_output_transaction(&self, transaction: TransactionId) -> bool {
-        self.public
-            .as_ref()
-            .is_some_and(|public| public.startup_output_transaction == Some(transaction))
-    }
-
     fn output_peer_transaction_epoch(&self, transaction: TransactionId) -> Option<u64> {
         let public = self.public.as_ref()?;
         if public.startup_output_transaction == Some(transaction)
             || public.reload_output_transaction == Some(transaction)
-            || !matches!(public.output_service, Some(LiveOutputService::Files { .. }))
+            || public.output_service.is_none()
         {
             return None;
         }

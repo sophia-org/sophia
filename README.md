@@ -92,7 +92,7 @@ Investigations and design decisions live in the [development notebook](docs/note
 
 Sophia is a research prototype. X11 is the current application protocol, and the Rust frontend implements a subset of it. Application compatibility and end-to-end validation remain in progress.
 
-The accepted [9P2000.L direction](docs/sophia-9p-control-bus.md) targets common public interfaces for WMs, shells and administration, plus a 9P application frontend alongside X11. It preserves namespace isolation and separate authorities. WM and shell roles now use direct 9P2000.L exclusively; their defaults remain experimental while latency and physical qualification are open. Output-role migration remains in progress. [Read-only WM inspection](docs/sophia-wm-inspection.md) has a separate host-domain permission and endpoint. The application frontend remains planned; other frontend candidates have not been promoted by this decision.
+The accepted [9P2000.L direction](docs/sophia-9p-control-bus.md) targets common public interfaces for WMs, shells and administration, plus a 9P application frontend alongside X11. It preserves namespace isolation and separate authorities. WM, shell and output roles use direct 9P2000.L exclusively; their release qualification remains separate from source retirement. An explicit protected output process receives the output role; without one, Session owns profile configuration without an output listener. [Read-only WM inspection](docs/sophia-wm-inspection.md) has a separate host-domain permission and endpoint. The application frontend remains planned; other frontend candidates have not been promoted by this decision.
 
 ## License
 

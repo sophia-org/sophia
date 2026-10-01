@@ -14,6 +14,8 @@ mod host_domain;
 pub mod inspection;
 mod output_connection;
 mod output_file_admission;
+#[cfg(target_os = "linux")]
+mod output_file_events;
 mod output_file_export;
 mod output_file_journal;
 mod output_file_reads;
@@ -22,9 +24,6 @@ mod output_file_service;
 #[cfg(target_os = "linux")]
 mod output_file_transport;
 #[cfg(target_os = "linux")]
-mod output_service;
-#[cfg(target_os = "linux")]
-mod output_transport;
 mod policy_capabilities;
 mod policy_profile_handoff;
 #[cfg(target_os = "linux")]
@@ -63,6 +62,8 @@ pub use error::*;
 pub use inspection::SOPHIA_WM_INSPECT_SOCKET_ENV;
 pub use output_connection::*;
 pub use output_file_admission::*;
+#[cfg(target_os = "linux")]
+pub use output_file_events::*;
 pub use output_file_export::*;
 pub use output_file_journal::*;
 #[cfg(target_os = "linux")]
@@ -70,9 +71,6 @@ pub use output_file_service::*;
 #[cfg(target_os = "linux")]
 pub use output_file_transport::*;
 #[cfg(target_os = "linux")]
-pub use output_service::*;
-#[cfg(target_os = "linux")]
-pub use output_transport::*;
 pub use policy_capabilities::*;
 pub use policy_profile_handoff::*;
 #[cfg(target_os = "linux")]

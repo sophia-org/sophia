@@ -4,7 +4,6 @@ use crate::PolicyRole;
 pub const SOPHIA_WM_9P_SOCKET_ENV: &str = "SOPHIA_WM_9P_SOCKET";
 pub const SOPHIA_SHELL_9P_SOCKET_ENV: &str = "SOPHIA_SHELL_9P_SOCKET";
 pub const SOPHIA_BROKER_SOCKET_ENV: &str = "SOPHIA_BROKER_SOCKET";
-pub const SOPHIA_OUTPUT_SOCKET_ENV: &str = "SOPHIA_OUTPUT_SOCKET";
 
 // Compatibility names for adapters that have not yet been retired.
 pub use crate::{RoleEndpoint as PolicyRoleEndpoint, RoleEndpointError as PolicyRoleEndpointError};
@@ -16,7 +15,7 @@ impl PolicyRole {
             Self::Wm => SOPHIA_WM_9P_SOCKET_ENV,
             Self::Shell => SOPHIA_SHELL_9P_SOCKET_ENV,
             Self::Broker => SOPHIA_BROKER_SOCKET_ENV,
-            Self::Output => SOPHIA_OUTPUT_SOCKET_ENV,
+            Self::Output => crate::SOPHIA_OUTPUT_9P_SOCKET_ENV,
         }
     }
 }

@@ -305,7 +305,6 @@ fn public_policy_child_executable_grant_is_explicit_and_read_only() {
         std::path::Path::new("/run/user/1000/sophia/policy/checkpoint/policy.checkpoint"),
         std::path::Path::new("/run/user/1000/sophia/policy/policy.profile.kdl"),
         false,
-        None,
     )
     .unwrap();
     let domain = spec.protection_domain.as_ref().unwrap();
@@ -432,13 +431,6 @@ fn public_policy_restart_aborts_settlement_before_process_replacement() {
         public_policy_restart_decision(false, false, true),
         PublicPolicyRestartDecision::Idle,
     );
-}
-
-#[test]
-fn output_topology_effect_is_a_restart_settlement_barrier() {
-    assert!(public_policy_restart_settlement_pending(false, true));
-    assert!(public_policy_restart_settlement_pending(true, false));
-    assert!(!public_policy_restart_settlement_pending(false, false));
 }
 
 #[test]

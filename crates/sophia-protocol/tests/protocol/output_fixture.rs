@@ -1,5 +1,4 @@
-// Output topology fixtures shared by the neutral output-configuration tests
-// and the output role's `sophia_output_v1` tests.
+// Output topology fixtures for the neutral output-configuration tests.
 fn output_head(
     head: u64,
     generation: u64,

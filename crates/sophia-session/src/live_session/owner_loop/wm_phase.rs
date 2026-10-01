@@ -377,30 +377,6 @@
                                 output_peer_loss_proof.fail(transaction);
                                 tracing::error!("sophia_output_peer_loss_proof schema=1 status=failed transaction={} reason=termination_request error={error}", transaction.raw());
                             }
-                            if output_proof_rollback_after_apply.take_for_startup(
-                                wm.is_startup_output_transaction(transaction),
-                            ) {
-                                tracing::warn!(
-                                    "sophia_live_output_authority schema=3 status=proof_rollback_triggered transaction={} boundary=after_apply card={} heads={} candidate_installed=false published=false",
-                                    transaction.raw(),
-                                    card_index,
-                                    heads.len(),
-                                );
-                                wm.reject_output_topology_effect(
-                                    transaction,
-                                    sophia_engine::OutputTopologyTransactionFailure::Apply,
-                                )?;
-                                native.request_output_topology_rollback(
-                                    "proof requested rollback after KMS apply",
-                                )?;
-                                execution.phase = LiveOutputTopologyExecutionPhase::RollingBack;
-                                tracing::warn!(
-                                    "sophia_live_output_authority schema=3 status=rollback_started transaction={} reason=proof_after_apply published=false",
-                                    transaction.raw(),
-                                );
-                                active_output_topology_preparation = Some(execution.clone());
-                                continue;
-                            }
                             let installation = (|| -> Result<_, Box<dyn std::error::Error>> {
                                 let runtime = runtime
                                     .as_mut()

@@ -501,15 +501,11 @@ impl PreparedPublicPolicyLaunch {
     ) -> Result<StartedPublicPolicyRuntime, Box<dyn std::error::Error>> {
         let mut transport = bind_public_policy_transport(&self.directory, profile_key, config.wm_transport)?;
         let socket_path = transport.socket_path().to_path_buf();
-        let mut output_transport = config
-            .native_scanout
+        let output_transport = (config.native_scanout && config.output_process.is_some())
             .then(|| {
                 PreparedOutputTransport::bind(config, &self.directory.path().join("output-endpoint"))
             })
             .transpose()?;
-        let output_socket_path = output_transport
-            .as_ref()
-            .and_then(|transport| transport.wm_socket_path().map(std::path::Path::to_path_buf));
         let checkpoint_path = self.directory.checkpoint_path();
         let spec = public_policy_launch_spec(
             config,
@@ -519,7 +515,6 @@ impl PreparedPublicPolicyLaunch {
             self.profile_fragments
                 .path(sophia_config::DesktopAuthority::Policy),
             profile_key.is_some(),
-            output_socket_path.as_deref(),
         )?;
         let mut supervisor = ProcessSupervisor::new(SupervisedProcessKind::WindowManager, spec);
         let restart_policy = RestartPolicy::default();
@@ -534,13 +529,7 @@ impl PreparedPublicPolicyLaunch {
         let started = supervisor
             .apply(command)?
             .ok_or("public WM supervisor did not start the policy client")?;
-        let child_pid = supervisor
-            .peer_id()
-            .ok_or("public WM supervisor did not retain the policy client's PID")?;
         transport.authorize(&supervisor)?;
-        if let Some(output_transport) = output_transport.as_mut() {
-            output_transport.authorize_wm(child_pid)?;
-        }
         let (state, _) = update_supervisor(supervisor_state, started, restart_policy);
         supervisor_state = state;
         let worker = start_public_policy_worker(transport, 1, profile_key, config.native_scanout, &supervisor, self.wm_filesystem_qids.clone())?;
@@ -602,13 +591,6 @@ const fn public_policy_restart_decision(
     } else {
         PublicPolicyRestartDecision::Restart
     }
-}
-
-const fn public_policy_restart_settlement_pending(
-    layout_settlement_pending: bool,
-    output_effect_dispatched: bool,
-) -> bool {
-    layout_settlement_pending || output_effect_dispatched
 }
 
 include!("public_policy/output_responses.rs");
@@ -795,21 +777,12 @@ fn public_policy_launch_spec(
     checkpoint_path: &std::path::Path,
     candidate_path: &std::path::Path,
     require_profile_activation: bool,
-    output_socket_path: Option<&std::path::Path>,
 ) -> Result<ProcessLaunchSpec, sophia_runtime::ProtectionDomainSpecError> {
     let spec = ProcessLaunchSpec::new(process)
         .env(config.wm_transport.socket_env(), socket_path)
         .env("SOPHIA_WM_POLICY_CHECKPOINT", checkpoint_path)
         .env("SOPHIA_WM_POLICY_CANDIDATE", candidate_path)
         .process_group();
-    let spec = if let Some(output_socket_path) = output_socket_path {
-        spec.env(
-            sophia_runtime::SOPHIA_OUTPUT_SOCKET_ENV,
-            output_socket_path,
-        )
-    } else {
-        spec
-    };
     let spec = if require_profile_activation {
         spec.env("SOPHIA_WM_POLICY_PROFILE_ACTIVATION", "required")
     } else {
@@ -819,14 +792,7 @@ fn public_policy_launch_spec(
         spec,
         |spec, argument| spec.arg(argument),
     );
-    let roles = if output_socket_path.is_some() {
-        vec![
-            sophia_runtime::ProtectionDomainRole::SpatialPolicy,
-            sophia_runtime::ProtectionDomainRole::OutputAuthority,
-        ]
-    } else {
-        vec![sophia_runtime::ProtectionDomainRole::SpatialPolicy]
-    };
+    let roles = [sophia_runtime::ProtectionDomainRole::SpatialPolicy];
     let mut domain = sophia_runtime::ProtectionDomainSpec::bubblewrap(roles)?
         .path(sophia_runtime::ProtectionPath::read_only(candidate_path))?
         .path(sophia_runtime::ProtectionPath::read_only(
@@ -839,13 +805,6 @@ fn public_policy_launch_spec(
                 .parent()
                 .expect("a public policy checkpoint always has a parent"),
         ))?;
-    if let Some(output_socket_path) = output_socket_path {
-        domain = domain.path(sophia_runtime::ProtectionPath::read_only(
-            output_socket_path
-                .parent()
-                .expect("an output authority socket always has a parent"),
-        ))?;
-    }
     for executable in &config.wm_process_executable_grants {
         domain = domain.path(sophia_runtime::ProtectionPath::read_only(executable))?;
     }

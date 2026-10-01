@@ -414,12 +414,6 @@ impl LiveWmSession {
                 &public.checkpoint_path,
                 fragments.path(sophia_config::DesktopAuthority::Policy),
                 true,
-                self.supervisor
-                    .launch_spec()
-                    .environment
-                    .iter()
-                    .find(|(name, _)| name == sophia_runtime::SOPHIA_OUTPUT_SOCKET_ENV)
-                    .map(|(_, value)| std::path::Path::new(value)),
             )?;
             Ok((fragments, key, policy, shortcuts, spec))
         })();

@@ -40,8 +40,8 @@ fn protected_identity_must_still_belong_to_the_wrapper() {
 #[test]
 fn rejected_live_pid_stays_dead_through_output_worker_reassignment() {
     use crate::{
-        OutputFileAssignee, OutputFileService, OutputFileServiceCommand, OutputFileTransport,
-        OutputTransportServiceEvent,
+        OutputFileAssignee, OutputFileService, OutputFileServiceCommand, OutputFileServiceEvent,
+        OutputFileTransport,
     };
     use sophia_protocol::{output_files::OutputFileLimits, *};
     use std::io::{Read, Write};
@@ -113,7 +113,7 @@ fn rejected_live_pid_stays_dead_through_output_worker_reassignment() {
         .unwrap();
     assert!(
         matches!(service.event_timeout(Duration::from_secs(2)).unwrap(),
-        OutputTransportServiceEvent::AssigneeReplaced {connection_epoch:1,abandoned} if abandoned.is_empty())
+        OutputFileServiceEvent::AssigneeReplaced {connection_epoch:1,abandoned} if abandoned.is_empty())
     );
     let mut peer = UnixStream::connect(path).unwrap();
     peer.set_read_timeout(Some(Duration::from_millis(100)))

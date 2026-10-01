@@ -317,7 +317,6 @@ fn public_policy_launch_receives_only_the_staged_policy_candidate() {
         std::path::Path::new("/run/user/1000/sophia/policy/checkpoint/sophia-wm-policy.checkpoint"),
         std::path::Path::new("/run/user/1000/sophia/policy/policy.profile.kdl"),
         false,
-        None,
     )
     .unwrap();
     assert!(spec.environment.contains(&(
@@ -376,9 +375,6 @@ fn public_policy_launch_receives_only_the_staged_policy_candidate() {
         std::path::Path::new("/run/user/1000/sophia/policy/checkpoint/sophia-wm-policy.checkpoint"),
         std::path::Path::new("/run/user/1000/sophia/policy/policy.profile.kdl"),
         true,
-        Some(std::path::Path::new(
-            "/run/user/1000/sophia/policy/output-endpoint/output.sock",
-        )),
     )
     .unwrap();
     assert!(
@@ -386,10 +382,8 @@ fn public_policy_launch_receives_only_the_staged_policy_candidate() {
             .environment
             .contains(&("SOPHIA_WM_POLICY_PROFILE_ACTIVATION".into(), "required".into()))
     );
-    assert!(activated.environment.contains(&(
-        sophia_runtime::SOPHIA_OUTPUT_SOCKET_ENV.into(),
-        "/run/user/1000/sophia/policy/output-endpoint/output.sock".into(),
-    )));
+    assert!(activated.environment.iter().all(|(name, _)|
+        name != "SOPHIA_OUTPUT_SOCKET" && name != "SOPHIA_OUTPUT_9P_SOCKET"));
     let domain = activated.protection_domain.as_ref().unwrap();
     assert!(
         domain
@@ -397,13 +391,9 @@ fn public_policy_launch_receives_only_the_staged_policy_candidate() {
             .contains(&sophia_runtime::ProtectionDomainRole::SpatialPolicy)
     );
     assert!(
-        domain
+        !domain
             .roles()
             .contains(&sophia_runtime::ProtectionDomainRole::OutputAuthority)
     );
-    assert_eq!(domain.paths().len(), 4);
-    assert_eq!(
-        domain.paths()[3],
-        sophia_runtime::ProtectionPath::read_only("/run/user/1000/sophia/policy/output-endpoint")
-    );
+    assert_eq!(domain.paths(), spec.protection_domain.as_ref().unwrap().paths());
 }

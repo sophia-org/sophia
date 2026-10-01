@@ -1,6 +1,19 @@
 use super::*;
 
 #[test]
+fn retired_startup_output_proof_is_refused() {
+    assert!(
+        isolated_session_config(&[
+            "--no-config".into(),
+            "--output-proof-rollback-after-apply".into(),
+        ])
+        .unwrap_err()
+        .to_string()
+        .contains("--output-proof-rollback-after-apply is retired")
+    );
+}
+
+#[test]
 fn output_process_selection_is_explicit_and_bounded() {
     let base = vec![
         "--wm-process=/usr/bin/true".to_owned(),
@@ -121,7 +134,6 @@ fn selected_wm_socket_does_not_change_profile_output_or_checkpoint_grants() {
         std::path::Path::new("/tmp/wm-checkpoint/state"),
         std::path::Path::new("/tmp/wm-profile/candidate"),
         true,
-        Some(std::path::Path::new("/tmp/output-endpoint/output.sock")),
     )
     .unwrap();
     config.wm_transport = WmTransportSelection::NineP2000L;
@@ -132,7 +144,6 @@ fn selected_wm_socket_does_not_change_profile_output_or_checkpoint_grants() {
         std::path::Path::new("/tmp/wm-checkpoint/state"),
         std::path::Path::new("/tmp/wm-profile/candidate"),
         true,
-        Some(std::path::Path::new("/tmp/output-endpoint/output.sock")),
     )
     .unwrap();
     assert_eq!(default.protection_domain, files.protection_domain);

@@ -9,7 +9,7 @@
 enum LiveOutputTopologyQuarantine {
     /// A DRM hotplug notice, or a retry of one.
     Hotplug,
-    /// A `sophia_output_v1` candidate between admission and settlement.
+    /// An output file candidate between admission and settlement.
     Policy,
 }
 

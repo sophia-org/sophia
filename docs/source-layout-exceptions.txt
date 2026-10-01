@@ -55,3 +55,8 @@ inline-tests crates/sophia-session/src/private_input/faults.rs
 inline-tests crates/sophia-runtime/src/output_file_service.rs
 inline-tests crates/sophia-runtime/src/output_file_transport.rs
 inline-tests crates/sophia-session/src/live_session/wm/public_policy/output_service.rs
+
+# External topology budget and framebuffer-custody fixtures; src holds mounts only.
+inline-tests crates/sophia-backend-live/src/production_session/native_scanout/persistent_native_scanout/topology.rs
+inline-tests crates/sophia-backend-live/src/production_session/native_scanout/persistent_native_scanout/topology_custody.rs
+inline-tests crates/sophia-backend-live/src/scanout/rendered_scanout/custody.rs

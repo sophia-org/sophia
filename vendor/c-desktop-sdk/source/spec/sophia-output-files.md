@@ -1,11 +1,13 @@
-# Output file records — implementation draft
+# Output file records — revision 1
 
-This document describes the native records and export under development for
-t253. Session exposes explicit independent process selection; the default
-remains the socket role. The
+This document specifies the separate output role over 9P2000.L. Session owns
+persistent profile configuration whether or not a client is configured. With
+no output process there is no output listener. An explicit `--output-process`
+receives only its protected output endpoint in `SOPHIA_OUTPUT_9P_SOCKET`;
+WM assignment grants no output authority. The retired `SOPHIA_OUTPUT_SOCKET`
+is not a supported endpoint. The
 [proposed decision](notes/decisions/vkkjmufd-use-native-records-for-the-separate-output-file-role.md)
-records the design and unresolved custody bounds. The existing
-[output authority contract](sophia-output-v1.md) governs physical ownership.
+records the design history. The ownership rules below govern native effects.
 
 The records use little-endian integers and native rows. They do not contain a
 socket frame. `sophia_protocol::output_files` currently implements envelopes,
@@ -13,6 +15,40 @@ submit/ack controls and every body described below. Runtime custody primitives
 reserve terminal outcomes and bound domain replay history; the export joins
 these with file custody. Envelope decoding alone never validates
 a typed body or grants authority.
+
+## Physical ownership and recovery
+
+The client receives opaque head and mode identities and connector-neutral
+labels, never DRM handles or raw input. Observe/configure capabilities confer
+no WM, application, shell or profile-write authority. A proposal names the
+current connection and base topology epochs, complete enabled-head intent,
+explicit transforms, VRR, geometry and per-member mappings. Omitted connected
+heads are disabled by intent. The owner validates support and the full layout.
+
+Validated settles validate-only work without a physical effect. For Apply,
+Session prepares candidate and rollback resources before changing hardware.
+The new topology is published only after the physical owner accepts every
+output's first presentation. Until then the previous published topology remains
+authoritative. Partial apply and cancellation retain preparation/rollback debt
+until restoration is observed; a preserved snapshot alone is not restoration.
+RolledBack reports observed restoration, while Failed does not promise it.
+Outcome and acknowledgement are separate: acknowledging a record creates no
+physical effect or confirmation of a trial.
+
+Disconnect or reassignment abandons active and queued work at the old epoch.
+A replacement negotiates afresh; no fid or outcome crosses the epoch boundary.
+Committed state survives client departure. Work already dispatched must settle
+or roll back before replacement facts or new effects are admitted. Startup and
+profile reload transactions belong to Session and settle locally, without a
+transport ticket. Client departure does not cancel the startup transaction.
+Runtime changes are not written back to the desktop profile. Revision 1 has
+no confirmation operation or automatic trial confirmation timer.
+
+The outcome reason is an open u16 diagnostic code; an unknown reason grants
+no operation and cannot change the outcome kind. Unknown kinds, transforms,
+mappings, intents, outcome values, reserved values and trailing bytes refuse.
+New vocabulary requires a negotiated revision or capability with an outbound
+gate. Owner deadlines are not a promise that an elapsed transaction committed.
 
 ## Identity and bounds
 

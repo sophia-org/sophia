@@ -55,7 +55,7 @@ impl LivePublicPolicyState {
                 None => break,
             };
             match event {
-                sophia_runtime::OutputTransportServiceEvent::Connected { connection_epoch } => {
+                sophia_runtime::OutputFileServiceEvent::Connected { connection_epoch } => {
                     let authority = self
                         .output_authority
                         .as_mut()
@@ -78,39 +78,21 @@ impl LivePublicPolicyState {
                         "sophia_live_output_authority schema=1 status=connected epoch={connection_epoch}"
                     );
                 }
-                sophia_runtime::OutputTransportServiceEvent::Proposal {
+                sophia_runtime::OutputFileServiceEvent::Proposal {
                     proposal,
                     admission,
                 } => match admission {
                     sophia_runtime::OutputProposalAdmission::Active => {
                         self.settle_output_proposal(proposal)?;
                     }
-                    sophia_runtime::OutputProposalAdmission::Queued { replaced } => {
-                        if let Some(replaced) = replaced {
-                            let authority = self
-                                .output_authority
-                                .as_ref()
-                                .ok_or("queued output proposal has no authority owner")?;
-                            self.output_service
-                                .as_ref()
-                                .ok_or("queued output proposal lost its service")?
-                                .command(sophia_runtime::OutputTransportServiceCommand::Reply {
-                                    transaction: replaced.transaction,
-                                    outcome: sophia_protocol::OutputV1Outcome {
-                                        connection_epoch: authority.connection_epoch(),
-                                        topology_epoch: authority.published().topology_epoch,
-                                        kind: sophia_protocol::OutputV1OutcomeKind::Stale,
-                                        reason: sophia_protocol::SOPHIA_OUTPUT_OUTCOME_REASON_STALE,
-                                    },
-                                })
-                                .map_err(|_| "output stale-reply queue disconnected")?;
-                        }
-                    }
+                    // The file export journals a replaced successor's Stale
+                    // outcome atomically with admission. No second reply is due.
+                    sophia_runtime::OutputProposalAdmission::Queued { .. } => {}
                 },
-                sophia_runtime::OutputTransportServiceEvent::Promoted(proposal) => {
+                sophia_runtime::OutputFileServiceEvent::Promoted(proposal) => {
                     self.settle_output_proposal(proposal)?;
                 }
-                sophia_runtime::OutputTransportServiceEvent::ProposalRejected {
+                sophia_runtime::OutputFileServiceEvent::ProposalRejected {
                     transaction,
                     message,
                 } => {
@@ -119,7 +101,7 @@ impl LivePublicPolicyState {
                         transaction.raw(),
                     );
                 }
-                sophia_runtime::OutputTransportServiceEvent::Disconnected {
+                sophia_runtime::OutputFileServiceEvent::Disconnected {
                     connection_epoch,
                 } => {
                     if let Some(proof) = self.output_peer_loss_observation.as_mut() {
@@ -137,7 +119,7 @@ impl LivePublicPolicyState {
                     );
                     break;
                 }
-                sophia_runtime::OutputTransportServiceEvent::AssigneeReplaced {
+                sophia_runtime::OutputFileServiceEvent::AssigneeReplaced {
                     connection_epoch,
                     abandoned,
                 } => {
@@ -155,12 +137,12 @@ impl LivePublicPolicyState {
                         break;
                     }
                 }
-                sophia_runtime::OutputTransportServiceEvent::ConnectionRejected { message } => {
+                sophia_runtime::OutputFileServiceEvent::ConnectionRejected { message } => {
                     crate::session_println!(
                         "sophia_live_output_authority schema=1 status=connection_rejected reason={message:?} preserved_topology=true"
                     );
                 }
-                sophia_runtime::OutputTransportServiceEvent::Failed { message } => {
+                sophia_runtime::OutputFileServiceEvent::Failed { message } => {
                     self.fail_output_peer_loss_observation();
                     self.request_output_candidate_cancellation(
                         format!("output authority service failed: {message}"),
@@ -239,7 +221,7 @@ impl LivePublicPolicyState {
         self.output_service
             .as_ref()
             .ok_or("output settlement lost its transport service")?
-            .command(sophia_runtime::OutputTransportServiceCommand::Settle {
+            .command(sophia_runtime::OutputFileServiceCommand::Settle {
                 transaction: settlement.transaction,
                 outcome: settlement.outcome,
             })

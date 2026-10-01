@@ -92,14 +92,14 @@ struct Owner {
 impl Owner {
     fn event(
         &mut self,
-        event: OutputTransportServiceEvent,
+        event: OutputFileServiceEvent,
         service: &OutputFileService,
         snapshot: &OutputAuthoritySnapshot,
         mode: &str,
         evidence: &mut Evidence,
     ) -> Result<(), String> {
         match event {
-            OutputTransportServiceEvent::Connected { connection_epoch } => {
+            OutputFileServiceEvent::Connected { connection_epoch } => {
                 if self.epoch.is_some() || connection_epoch != self.connected + 1 {
                     return Err("unexpected connection epoch".into());
                 }
@@ -107,7 +107,7 @@ impl Owner {
                 self.connected += 1;
                 evidence.record(json!({"kind":"connected", "epoch":connection_epoch}))?;
             }
-            OutputTransportServiceEvent::Disconnected { connection_epoch } => {
+            OutputFileServiceEvent::Disconnected { connection_epoch } => {
                 if self.epoch != Some(connection_epoch) {
                     return Err("unexpected disconnect epoch".into());
                 }
@@ -115,7 +115,7 @@ impl Owner {
                 self.disconnected += 1;
                 evidence.record(json!({"kind":"disconnected", "epoch":connection_epoch}))?;
             }
-            OutputTransportServiceEvent::Proposal {
+            OutputFileServiceEvent::Proposal {
                 proposal,
                 admission: OutputProposalAdmission::Active,
             } => {

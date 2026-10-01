@@ -29,7 +29,7 @@ impl LiveWmSession {
         let (output_service, output_authority, output_capabilities, startup_output_transaction) =
             match (output_transport, output_bootstrap) {
                 (
-                    Some(transport),
+                    transport,
                     Some(LiveOutputAuthorityBootstrap {
                         snapshot,
                         capabilities,
@@ -65,9 +65,9 @@ impl LiveWmSession {
                             Ok(transaction)
                         })
                         .transpose()?;
-                    let service = transport.start(snapshot)?;
+                    let service = transport.map(|transport| transport.start(snapshot)).transpose()?;
                     (
-                        Some(service),
+                        service,
                         Some(authority),
                         capabilities,
                         startup_transaction,
@@ -76,9 +76,6 @@ impl LiveWmSession {
                 (None, None) => (None, None, Vec::new(), None),
                 (Some(_), None) => {
                     return Err("native output role has no capability snapshot".into());
-                }
-                (None, Some(_)) => {
-                    return Err("native output snapshot has no supervised role endpoint".into());
                 }
             };
 

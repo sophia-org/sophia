@@ -3516,3 +3516,13 @@ neither t253 nor t272 is closed by this preparation.
   and the rule that shared codecs are relocated, not deleted.
 - [WM file contract](../../sophia-wm-files.md) now specifies the file-only
   Session launch and whole-release rollback.
+
+### Output socket retirement candidate (t272, 2026-10-01)
+
+[T253 native acceptance](../milestones/ofard23a-accept-the-revision-1-output-file-role-through-native-rollback.md)
+now satisfies the deletion prerequisite. The
+[retirement implementation record](j8jkd97a-retire-the-output-socket-after-native-file-role-acceptance.md)
+records signed contract C, published SDK 0.4, the source deletion, coverage
+mapping and whole-release rollback. It also records the retired startup-only
+proof and its physical qualification gap. The assembled candidate and attended
+gate remain required; this implementation record does not close t272.

@@ -224,3 +224,40 @@ the same production export fixture in `t253-sdk-030-export.log`.
 The SDK sources were the release candidate; version and provenance edits do not
 change those sources. This qualifies the C file client, not physical topology
 effects, native presentation, Rust client parity or output default selection.
+
+## Release 0.4.0: 9P2000.L output transport in the WM api
+
+`spec/sophia-wm-files.md` and `spec/sophia-output-files.md` are copied
+unmodified from signed Sophia contract commit
+`b0721d0de6a03cb44e57b0a923c6c385cf40b676`. The WM document names the WM
+`api` file's exact bytes and removes the WM's output grant. The output document
+becomes revision 1 and takes over physical ownership and recovery from the
+retired output IPC contract. Their new digests replace both entries in
+`spec/SHA256SUMS`. No other imported contract changes; every other digest is
+unchanged. That commit is a contract source, not a qualifying Session build.
+
+The WM session (`src/wm_session/bootstrap.c`) requires the exact `api` bytes
+`sophia-wm-files version=1 output_transport=9p2000.L` followed by a newline.
+The retired `current_ipc` value, a missing newline, a different letter case and
+an api without the transport field are refused before negotiation. Scripted
+tests assert each refusal with no submission. A private mutant accepting the
+retired string alongside the current one fails that test. The output session's
+wrong-api negative (a WM api offered to the output role) is unchanged. The
+output codec already keeps the outcome reason as an open u16 value, as revision 1
+requires. No output codec or session source changes in this release.
+
+`output_files` stays true. It is backed by Sophia's output file role at signed
+Sophia `ddd27bd6d9ac6d8e73394d9326705a7a62916f35`: native proof preparation
+(13 export tests and the protected Session fixture), performance qualification,
+and an attended four-stage native run (validate, reject, commit-restore and
+peer-death rollback) assembled by niltempus `bec6db137d7e`. The evidence is
+`t253-native-run-bec6db1-01` and `t253-perf-ddd27bd6d-01` in Sophia's development
+evidence directory. The run covered one DRM card with two heads and a
+refresh-only change on one head, verified by KMS and owner readback records.
+Resolution, position, enable, transform, mirror and multi-card changes are not
+qualified by it.
+
+`make all check` passes in device-hidden isolation at normal priority with the
+available CPUs (17 test programs). Build and test guidance no longer prescribes
+a fixed nice value or job count.
+

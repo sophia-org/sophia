@@ -216,10 +216,6 @@ pub(crate) fn run_persistent_xterm_session(
         }
         output_authority_capabilities = Some(capabilities.clone());
     }
-    validate_prepared_output_proof_candidate(
-        config.output_proof_rollback_after_apply,
-        startup_output_activation.is_some(),
-    )?;
     let device_map =
         sophia_backend_live::NativeLibinputDeviceMap::new(SeatId::from_raw(SESSION_SEAT_RAW))
             .with_keyboard_device(DeviceId::from_raw(SESSION_KEYBOARD_DEVICE_RAW))

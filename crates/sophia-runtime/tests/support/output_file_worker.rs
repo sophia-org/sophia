@@ -46,16 +46,23 @@ fn snapshot() -> OutputAuthoritySnapshot {
 }
 
 fn worker(label: &str) -> Worker {
+    worker_with_limits(
+        label,
+        OutputFileLimits {
+            ack_progress_timeout_millis: 1,
+            ..OutputFileLimits::default()
+        },
+    )
+}
+
+fn worker_with_limits(label: &str, limits: OutputFileLimits) -> Worker {
     let directory =
         std::env::temp_dir().join(format!("output-worker-{}-{label}", std::process::id()));
     let mut transport = OutputFileTransport::bind_for_supervised_uid(
         directory,
         rustix::process::geteuid().as_raw(),
         7,
-        OutputFileLimits {
-            ack_progress_timeout_millis: 1,
-            ..OutputFileLimits::default()
-        },
+        limits,
     )
     .unwrap();
     transport
@@ -69,6 +76,9 @@ fn worker(label: &str) -> Worker {
         pending: VecDeque::new(),
     }
 }
+
+#[path = "output_file_epoch_retirement.rs"]
+mod epoch_retirement;
 
 fn negotiate(worker: &mut Worker) -> UnixStream {
     let peer = UnixStream::connect(worker.transport.socket_path()).unwrap();
@@ -135,7 +145,7 @@ fn expiry_inside_owner_operations_keeps_listener_available() {
         assert!(worker.transport.export().is_none());
         assert!(matches!(
             worker.pending.pop_front(),
-            Some(OutputTransportServiceEvent::Disconnected {
+            Some(OutputFileServiceEvent::Disconnected {
                 connection_epoch: 7
             })
         ));
@@ -290,7 +300,7 @@ fn checked_reassignment_resumes_paused_worker_with_the_captured_peer() {
     assert!(!worker.paused);
     assert!(worker.transport.export().is_none());
     assert!(
-        matches!(worker.pending.pop_front(), Some(OutputTransportServiceEvent::AssigneeReplaced {
+        matches!(worker.pending.pop_front(), Some(OutputFileServiceEvent::AssigneeReplaced {
         connection_epoch: 8, abandoned,
     }) if abandoned.is_empty())
     );
@@ -333,7 +343,7 @@ fn checked_assignment_that_dies_in_handoff_admits_nobody_and_spends_no_epoch() {
         .unwrap();
     assert!(!worker.paused);
     assert!(
-        matches!(worker.pending.pop_front(), Some(OutputTransportServiceEvent::AssigneeReplaced {
+        matches!(worker.pending.pop_front(), Some(OutputFileServiceEvent::AssigneeReplaced {
         connection_epoch: 7, abandoned,
     }) if abandoned.is_empty())
     );

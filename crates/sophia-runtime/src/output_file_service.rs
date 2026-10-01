@@ -10,8 +10,8 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use crate::{
-    AdmittedOutputProposal, OutputFileAssignee, OutputFileSubmission, OutputFileTransport,
-    OutputFileTransportError, OutputTransportServiceEvent,
+    AdmittedOutputProposal, OutputFileAssignee, OutputFileServiceEvent, OutputFileSubmission,
+    OutputFileTransport, OutputFileTransportError,
 };
 use sophia_9p::Errno;
 use sophia_protocol::{OutputAuthoritySnapshot, OutputV1Outcome, TransactionId};
@@ -37,7 +37,7 @@ pub enum OutputFileServiceCommand {
 pub struct OutputFileService {
     commands: SyncSender<OutputFileServiceCommand>,
     pause: SyncSender<SyncSender<Vec<AdmittedOutputProposal>>>,
-    events: Receiver<OutputTransportServiceEvent>,
+    events: Receiver<OutputFileServiceEvent>,
     stopped: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
@@ -69,7 +69,7 @@ impl OutputFileService {
                     let _ = worker.transport.disconnect();
                     // Bounded sends preserve earlier owner events. On shutdown
                     // the stop flag always releases this retry loop.
-                    let mut failed = OutputTransportServiceEvent::Failed { message };
+                    let mut failed = OutputFileServiceEvent::Failed { message };
                     while !stop.load(Ordering::Acquire) {
                         match outgoing.try_send(failed) {
                             Ok(()) | Err(TrySendError::Disconnected(_)) => break,
@@ -107,7 +107,7 @@ impl OutputFileService {
             })
     }
 
-    pub fn try_event(&self) -> Result<Option<OutputTransportServiceEvent>, mpsc::TryRecvError> {
+    pub fn try_event(&self) -> Result<Option<OutputFileServiceEvent>, mpsc::TryRecvError> {
         match self.events.try_recv() {
             Ok(event) => Ok(Some(event)),
             Err(TryRecvError::Empty) => Ok(None),
@@ -118,7 +118,7 @@ impl OutputFileService {
     pub fn event_timeout(
         &self,
         timeout: Duration,
-    ) -> Result<OutputTransportServiceEvent, mpsc::RecvTimeoutError> {
+    ) -> Result<OutputFileServiceEvent, mpsc::RecvTimeoutError> {
         self.events.recv_timeout(timeout)
     }
 
@@ -162,7 +162,7 @@ struct Worker {
     publish_pending: bool,
     paused: bool,
     // One unsent event plus, at most, a disconnect while that event waits.
-    pending: VecDeque<OutputTransportServiceEvent>,
+    pending: VecDeque<OutputFileServiceEvent>,
 }
 
 impl Worker {
@@ -170,7 +170,7 @@ impl Worker {
         &mut self,
         commands: &Receiver<OutputFileServiceCommand>,
         pauses: &Receiver<SyncSender<Vec<AdmittedOutputProposal>>>,
-        events: &SyncSender<OutputTransportServiceEvent>,
+        events: &SyncSender<OutputFileServiceEvent>,
         stopped: &AtomicBool,
     ) -> Result<(), String> {
         while !stopped.load(Ordering::Acquire) {
@@ -187,7 +187,7 @@ impl Worker {
                 let _ = reply.try_send(abandoned);
                 if let Some(connection_epoch) = epoch {
                     self.pending
-                        .push_back(OutputTransportServiceEvent::Disconnected { connection_epoch });
+                        .push_back(OutputFileServiceEvent::Disconnected { connection_epoch });
                 }
             }
             while let Some(event) = self.pending.pop_front() {
@@ -236,7 +236,7 @@ impl Worker {
                     Ok(false) => {}
                     Err(error) => {
                         self.pending
-                            .push_back(OutputTransportServiceEvent::ConnectionRejected {
+                            .push_back(OutputFileServiceEvent::ConnectionRejected {
                                 message: error.to_string(),
                             })
                     }
@@ -258,7 +258,7 @@ impl Worker {
                 self.transport.authorize_supervised_pid(pid)?;
                 self.paused = false;
                 self.pending
-                    .push_back(OutputTransportServiceEvent::AssigneeReplaced {
+                    .push_back(OutputFileServiceEvent::AssigneeReplaced {
                         connection_epoch: self.transport.next_epoch(),
                         abandoned,
                     });
@@ -268,7 +268,7 @@ impl Worker {
                 self.transport.authorize_assignee(assignee)?;
                 self.paused = false;
                 self.pending
-                    .push_back(OutputTransportServiceEvent::AssigneeReplaced {
+                    .push_back(OutputFileServiceEvent::AssigneeReplaced {
                         connection_epoch: self.transport.next_epoch(),
                         abandoned,
                     });
@@ -292,7 +292,7 @@ impl Worker {
                 match self.transport.settle(transaction, outcome) {
                     Ok(Some(proposal)) => self
                         .pending
-                        .push_back(OutputTransportServiceEvent::Promoted(proposal)),
+                        .push_back(OutputFileServiceEvent::Promoted(proposal)),
                     Ok(None) => {}
                     Err(error) => self.owner_error(error)?,
                 }
@@ -340,30 +340,28 @@ impl Worker {
         // The owner cancels observed work by epoch. Transport custody can also
         // include queued proposals that never reached the physical owner.
         self.pending
-            .push_back(OutputTransportServiceEvent::Disconnected { connection_epoch });
+            .push_back(OutputFileServiceEvent::Disconnected { connection_epoch });
         Ok(())
     }
 
     fn deliver(&mut self, delivery: OutputFileSubmission) {
         let event = match delivery {
             OutputFileSubmission::Replayed => return,
-            OutputFileSubmission::Negotiated(welcome) => OutputTransportServiceEvent::Connected {
+            OutputFileSubmission::Negotiated(welcome) => OutputFileServiceEvent::Connected {
                 connection_epoch: welcome.connection_epoch,
             },
-            OutputFileSubmission::Refused(reason) => {
-                OutputTransportServiceEvent::ConnectionRejected {
-                    message: format!("output negotiation refused: {reason:?}"),
-                }
-            }
+            OutputFileSubmission::Refused(reason) => OutputFileServiceEvent::ConnectionRejected {
+                message: format!("output negotiation refused: {reason:?}"),
+            },
             OutputFileSubmission::Proposal {
                 proposal,
                 admission,
-            } => OutputTransportServiceEvent::Proposal {
+            } => OutputFileServiceEvent::Proposal {
                 proposal,
                 admission,
             },
             OutputFileSubmission::Rejected(transaction) => {
-                OutputTransportServiceEvent::ProposalRejected {
+                OutputFileServiceEvent::ProposalRejected {
                     transaction,
                     message: "output candidate failed semantic admission".into(),
                 }

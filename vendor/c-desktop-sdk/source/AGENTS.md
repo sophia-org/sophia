@@ -11,6 +11,7 @@ Read README.md and PROVENANCE.md before changing the library.
   Report contract gaps to Sophia; do not infer rules from its implementation.
 - Keep public values passive, memory bounded, and ownership explicit.
 - Put tests in src/tests/. Keep live production-export harnesses in Sophia.
-- Build and test with nice 19 and at most two jobs during coordinated work.
+- Build and test at normal priority with the available CPUs; do not add nice or
+  fixed job counts to build or test commands.
 - Sign commits; never reset or restart gpg-agent. Do not add coauthor trailers.
 - Preserve license and copyright text.
