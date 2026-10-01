@@ -15,11 +15,8 @@ mod roles;
 fn compile(repo: &Path, root: &Path) -> PathBuf {
     let bindings = repo.join("vendor/c-desktop-sdk/source/src");
     let output = root.join("c-role-peer");
-    let mut command = Command::new("nice");
-    command
-        .args(["-n", "19"])
-        .arg(std::env::var_os("CC").unwrap_or_else(|| "cc".into()))
-        .args(["-std=c99", "-Wall", "-Wextra", "-Werror", "-pedantic"]);
+    let mut command = Command::new(std::env::var_os("CC").unwrap_or_else(|| "cc".into()));
+    command.args(["-std=c99", "-Wall", "-Wextra", "-Werror", "-pedantic"]);
     for dir in ["nine_p", "shell_files"] {
         let mut files = std::fs::read_dir(bindings.join(dir))
             .unwrap()
@@ -99,9 +96,7 @@ fn native_launcher_and_persistent_dock_use_the_c_file_session() {
         let stdout = scratch.0.join(format!("{name}.stdout"));
         let stderr = scratch.0.join(format!("{name}.stderr"));
         let mut child = process::ChildGuard(
-            Command::new("nice")
-                .args(["-n", "19"])
-                .arg(&binary)
+            Command::new(&binary)
                 .arg(&scratch.0)
                 .arg(name)
                 .stdin(Stdio::piped())

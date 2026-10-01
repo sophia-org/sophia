@@ -19,18 +19,15 @@ const VERDICT: &str = "sophia_c_native_sdk status=pass\n";
 fn compile(repo: &Path, root: &Path) -> PathBuf {
     let sdk = repo.join("vendor/c-desktop-sdk/source/src");
     let output = root.join("c-native-peer");
-    let mut command = Command::new("nice");
-    command
-        .args(["-n", "19"])
-        .arg(std::env::var_os("CC").unwrap_or_else(|| "cc".into()))
-        .args([
-            "-std=c99",
-            "-Wall",
-            "-Wextra",
-            "-Werror",
-            "-pedantic",
-            "-UNDEBUG",
-        ]);
+    let mut command = Command::new(std::env::var_os("CC").unwrap_or_else(|| "cc".into()));
+    command.args([
+        "-std=c99",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-pedantic",
+        "-UNDEBUG",
+    ]);
     for dir in ["nine_p", "shell_files", "shell_session", "native_session"] {
         let mut files = std::fs::read_dir(sdk.join(dir))
             .unwrap()
@@ -108,9 +105,7 @@ fn c_native_session_drives_the_launcher_lifecycle_against_production_owners() {
     let stdout = scratch.0.join("peer.stdout");
     let stderr = scratch.0.join("peer.stderr");
     let mut child = process::ChildGuard(
-        Command::new("nice")
-            .args(["-n", "19"])
-            .arg(&binary)
+        Command::new(&binary)
             .arg(&control_path)
             .arg(fixture.socket_path())
             .stdin(Stdio::piped())

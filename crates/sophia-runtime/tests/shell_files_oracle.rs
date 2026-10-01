@@ -90,12 +90,9 @@ fn independent_go_judges_the_production_shell_file_export() {
         .collect::<Vec<_>>();
     let stderr = scratch.0.join("stderr");
     let mut child = process::ChildGuard(
-        Command::new("nice")
-            .args(["-n", "19"])
-            .arg(binary)
+        Command::new(binary)
             .arg("-root")
             .arg(&scratch.0)
-            .env("GOMAXPROCS", "2")
             .stdin(Stdio::piped())
             .stdout(Stdio::from(std::fs::File::create(&stdout).unwrap()))
             .stderr(Stdio::from(std::fs::File::create(&stderr).unwrap()))

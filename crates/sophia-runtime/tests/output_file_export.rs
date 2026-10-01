@@ -639,7 +639,7 @@ fn independent_c_sdk_session_against_the_output_file_worker() {
     let binary = build.join("output-peer");
     let mut compiler = Command::new("timeout");
     compiler
-        .args(["-s", "KILL", "90", "nice", "-n", "19"])
+        .args(["-s", "KILL", "90"])
         .arg(std::env::var_os("CC").unwrap_or_else(|| "cc".into()))
         .args([
             "-std=c99",

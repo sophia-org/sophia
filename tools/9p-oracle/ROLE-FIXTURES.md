@@ -171,4 +171,5 @@ The final footer requires status=pass, checks=96, failed=0 and successful child
 exit. Add parser controls for a missing role check, duplicate role name and a
 54-check footer. Preserve bounded child waits, captured output and cleanup;
 adjust the current 90-second runtime deadline only with measured justification.
-All code gates remain nice 19, jobs 2, private outputs, outside 00:45–04:00.
+All code gates use private outputs, the caller's priority and parallelism, and
+run outside 00:45–04:00.

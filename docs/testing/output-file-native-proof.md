@@ -108,9 +108,10 @@ requires a clean signed checkout and verifies its vendored SDK. It builds the
 generic peer, runtime harness and Session harness in a private namespace with
 devices, network and session sockets hidden. It requires the declared runtime
 test set and runs the protected Session fixture, then writes artifact hashes
-to `prepared.json`. Jobs are limited to one at nice 19. It keeps compiler and
-test logs, refuses an existing output directory, and records native acceptance
-as false. A changed source or artifact identity prevents successful preparation.
+to `prepared.json`. Builds run at the caller's priority with the caller's
+`CARGO_BUILD_JOBS`, or every available CPU; `prepared.json` records the jobs
+used and the actual nice value. It keeps compiler and test logs, refuses an
+existing output directory, and records native acceptance as false. A changed source or artifact identity prevents successful preparation.
 The offline Cargo registry must already contain extracted locked dependencies.
 
 Runtime fixtures exercise the real file service with supplied owner outcomes.

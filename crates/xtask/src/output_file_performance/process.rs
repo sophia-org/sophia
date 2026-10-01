@@ -1,4 +1,6 @@
 //! Private namespace and bounded execution for build and measurement phases.
+//! Children run at the caller's priority; builds use the caller's
+//! `CARGO_BUILD_JOBS` or every available CPU, and both are recorded.
 use std::fs::{self, File};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -10,6 +12,8 @@ pub struct Sandbox {
     pub output: PathBuf,
     pub toolchain: PathBuf,
     pub registry: PathBuf,
+    /// Cargo and make parallelism inside the namespace.
+    pub jobs: usize,
 }
 
 impl Sandbox {
@@ -72,25 +76,50 @@ impl Sandbox {
                 "LC_ALL",
                 "C",
                 "--setenv",
-                "CARGO_BUILD_JOBS",
-                "1",
-                "--setenv",
                 "CARGO_NET_OFFLINE",
                 "true",
                 "--setenv",
                 "RUST_TEST_THREADS",
                 "1",
             ])
+            .args(["--setenv", "CARGO_BUILD_JOBS"])
+            .arg(self.jobs.to_string())
             .args(["--setenv", "CARGO_HOME"])
             .arg(self.output.join("cargo-home"))
             .args(["--setenv", "CARGO_TARGET_DIR"])
             .arg(self.output.join("target"))
             .arg("--chdir")
             .arg(&self.repo)
-            .args(["/usr/bin/nice", "-n", "19"])
             .arg(program);
         command
     }
+}
+
+/// Build parallelism: an explicit `CARGO_BUILD_JOBS` must be a canonical
+/// positive integer; without one, every available CPU.
+pub fn jobs(explicit: Option<&std::ffi::OsStr>, available: usize) -> Result<usize, String> {
+    let Some(value) = explicit else {
+        return Ok(available.max(1));
+    };
+    value
+        .to_str()
+        .filter(|v| !v.starts_with('0') && v.bytes().all(|b| b.is_ascii_digit()))
+        .and_then(|v| v.parse().ok())
+        .ok_or_else(|| format!("CARGO_BUILD_JOBS must be a positive integer, not {value:?}"))
+}
+
+/// This process's nice value, which every sandboxed child inherits.
+pub fn niceness() -> Result<i32, String> {
+    let stat =
+        fs::read_to_string("/proc/self/stat").map_err(|e| format!("/proc/self/stat: {e}"))?;
+    nice_field(&stat).ok_or_else(|| format!("unreadable /proc/self/stat: {stat:?}"))
+}
+
+/// Field 19 of proc_pid_stat(5). The command name may contain spaces or
+/// parentheses, so fields are counted from the last `)`, which ends field 2.
+pub fn nice_field(stat: &str) -> Option<i32> {
+    let (_, rest) = stat.rsplit_once(')')?;
+    rest.split_ascii_whitespace().nth(16)?.parse().ok()
 }
 
 struct OwnedChild(Child, bool);

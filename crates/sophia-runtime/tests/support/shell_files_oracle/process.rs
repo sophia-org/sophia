@@ -54,8 +54,8 @@ pub fn build(repo: &Path, dir: &Path) -> PathBuf {
     let binary = dir.join("shell-oracle");
     let log = dir.join("go-build.log");
     let mut child = ChildGuard(
-        Command::new("nice")
-            .args(["-n", "19", "go", "build", "-p", "2", "-o"])
+        Command::new("go")
+            .args(["build", "-o"])
             .arg(&binary)
             .arg("./cmd/shell-oracle")
             .current_dir(module)
@@ -63,7 +63,6 @@ pub fn build(repo: &Path, dir: &Path) -> PathBuf {
             .env("GOPROXY", "off")
             .env("GOTOOLCHAIN", "local")
             .env("GOWORK", "off")
-            .env("GOMAXPROCS", "2")
             .env(
                 "GOCACHE",
                 std::env::var_os("GOCACHE")

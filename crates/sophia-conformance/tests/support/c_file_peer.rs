@@ -21,6 +21,18 @@ fn run(command: &mut Command, what: &str) {
     assert!(status.success(), "{what} failed: {status}");
 }
 
+/// The caller's `CARGO_BUILD_JOBS`, else every available CPU.
+fn make_jobs() -> usize {
+    match std::env::var("CARGO_BUILD_JOBS") {
+        Ok(jobs) => jobs
+            .parse()
+            .ok()
+            .filter(|&jobs| jobs > 0)
+            .unwrap_or_else(|| panic!("CARGO_BUILD_JOBS must be a positive integer: {jobs:?}")),
+        Err(_) => std::thread::available_parallelism().map_or(1, usize::from),
+    }
+}
+
 /// Build the SDK into `directory/sdk` and the peer into `directory`. A nonzero
 /// `mutation` selects one of the peer's red-control builds.
 pub fn build(directory: &Path, source: &str, mutation: u32) -> PathBuf {
@@ -37,7 +49,7 @@ pub fn build(directory: &Path, source: &str, mutation: u32) -> PathBuf {
         run(
             Command::new("make")
                 .arg("-s")
-                .arg("-j2")
+                .arg(format!("-j{}", make_jobs()))
                 .arg("-C")
                 .arg(&sdk)
                 .arg(format!("BUILD={}", libraries.display()))

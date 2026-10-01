@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import runner
 import prepare
 import analyze
+import build
 import re
 
 FAKE = r'''
@@ -136,6 +137,11 @@ class ProbeTests(unittest.TestCase):
         self.assertFalse(protocol.invalid)
         protocol.feed(b"D PRIVATE_CANARY_NEVER_LOG")
         self.assertTrue(protocol.invalid)
+
+    def test_build_jobs_default_to_every_cpu_and_honor_the_caller(self):
+        env = build.build_env({"PATH": "/usr/bin", "SOPHIA_X": "1", "HAGIA_Y": "2"})
+        self.assertEqual(env, {"PATH": "/usr/bin", "CARGO_BUILD_JOBS": str(os.cpu_count() or 1)})
+        self.assertEqual(build.build_env({"CARGO_BUILD_JOBS": "3"})["CARGO_BUILD_JOBS"], "3")
 
     def test_every_instrumented_marker_is_accepted(self):
         source = (Path(__file__).parent / "build.py").read_text()

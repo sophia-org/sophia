@@ -150,7 +150,7 @@ The strict role controls cover both fixes, including the 4096-row catalog.
 
 Build offline with `GOFLAGS=-mod=readonly`, `GOPROXY=off`,
 `GOTOOLCHAIN=local`, `GOWORK=off`; validate the existing module and sum pins.
-Use `GOMAXPROCS=2`, `go build -p 2` and a private Go build cache. Bound child
+Use a private Go build cache; Go and Cargo parallelism follow the caller. Bound child
 execution, captured output, wire buffers, pending requests and control messages.
 On failure, capture the transcript, terminate/reap the owned child, disconnect
 exports and remove only the fixture's private temporary directory.
@@ -167,17 +167,17 @@ From the repository root:
 ```sh
 sh tools/check_shell_files_oracle.sh
 cd tools/9p-oracle
-export GOFLAGS=-mod=readonly GOPROXY=off GOTOOLCHAIN=local GOWORK=off GOMAXPROCS=2
+export GOFLAGS=-mod=readonly GOPROXY=off GOTOOLCHAIN=local GOWORK=off
 export GOCACHE="$(pwd)/../../target/shell-oracle/go-cache"
-nice -n 19 go test -p 2 ./...
-nice -n 19 go vet -p 2 ./...
+go test ./...
+go vet ./...
 ```
 
 Run offline Go tests/vet, the new runtime integration test, Rust formatting,
 Clippy for the new test and `xtask check layout`. Recheck the existing C1 Go
-build and tests. All gates use nice 19, jobs 2 and private output directories;
-respect operator pauses for latency measurements. Signed commits go to the
-director for review and merge.
+build and tests. All gates run at the caller's priority and parallelism with
+private output directories; respect operator pauses for latency measurements.
+Signed commits go to the director for review and merge.
 
 Shared xtask integration and any future Session-policy harness are separate
 follow-ups. This fixture proves wire/owner interoperability within the boundary

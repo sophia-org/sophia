@@ -122,12 +122,9 @@ pub(super) fn compile(root: &Path, modules: &[&str], source: &str) -> PathBuf {
     let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let sdk = repo.join("vendor/c-desktop-sdk/source/src");
     let binary = root.join("sdk-peer");
-    let mut command = Command::new("/usr/bin/nice");
+    let mut command = Command::new("/usr/bin/cc");
     command
         .args([
-            "-n",
-            "19",
-            "/usr/bin/cc",
             "-std=c99",
             "-O2",
             "-g",

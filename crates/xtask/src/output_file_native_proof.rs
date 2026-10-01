@@ -72,7 +72,8 @@ fn prepare(repo: &Path, output: &Path, source: &serde_json::Value) -> Result<(),
     let mut sdk = sandbox.command("make");
     sdk.arg("-C")
         .arg(&sdk_source)
-        .args(["-j1", "CC=cc", "CFLAGS=-O2"])
+        .arg(format!("-j{}", sandbox.jobs))
+        .args(["CC=cc", "CFLAGS=-O2"])
         .arg(format!("BUILD={}", output.join("sdk").display()))
         .arg("all");
     process::run(&mut sdk, output, "sdk-build", Duration::from_secs(600))?;
@@ -192,7 +193,7 @@ fn prepare(repo: &Path, output: &Path, source: &serde_json::Value) -> Result<(),
         &json!({"schema":1,"source":source,
         "peer_sha256":peer_digest,"harness_sha256":harness_digest,
         "session_harness_sha256":session_digest,
-        "rust_profile":"release","cargo_jobs":1,"nice":19,
+        "rust_profile":"release","cargo_jobs":sandbox.jobs,"nice":process::niceness()?,
         "c_flags":"-std=c99 -O2 -Wall -Wextra -Werror -pedantic -UNDEBUG",
         "export_tests":EXPORT_TESTS,"session_test":SESSION_TEST,"device_hidden":true,"session_sockets_hidden":true,
         "network_hidden":true,"native_acceptance":false,

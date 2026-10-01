@@ -550,7 +550,7 @@ fn compile(repo: &Path, root: &Path) -> PathBuf {
     let output = root.join("descriptor-peer");
     let mut command = Command::new("timeout");
     command
-        .args(["-s", "KILL", "90", "nice", "-n", "19"])
+        .args(["-s", "KILL", "90"])
         .arg(std::env::var_os("CC").unwrap_or_else(|| "cc".into()))
         .args([
             "-std=c99",
@@ -602,9 +602,7 @@ fn independent_c_session_exchanges_descriptor_families_with_the_production_expor
         let stdout = root.join("stdout");
         let stderr = root.join("stderr");
         let mut child = process::ChildGuard(
-            Command::new("nice")
-                .args(["-n", "19"])
-                .arg(&binary)
+            Command::new(&binary)
                 .arg(socket_dir.join("shell.sock"))
                 .arg(&control_path)
                 .arg(name)

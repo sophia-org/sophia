@@ -29,17 +29,15 @@ impl Drop for Scratch {
 fn compile(directory: &Path, name: &str) -> PathBuf {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/c-desktop-sdk/source/src");
     let binary = directory.join(name);
-    let mut cc = Command::new("nice");
-    cc.args(["-n", "19"])
-        .arg(std::env::var_os("CC").unwrap_or_else(|| "cc".into()))
-        .args([
-            "-std=c99",
-            "-Wall",
-            "-Wextra",
-            "-Werror",
-            "-pedantic",
-            "-UNDEBUG",
-        ]);
+    let mut cc = Command::new(std::env::var_os("CC").unwrap_or_else(|| "cc".into()));
+    cc.args([
+        "-std=c99",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-pedantic",
+        "-UNDEBUG",
+    ]);
     for domain in ["nine_p", "shell_files", "shell_session"] {
         let mut sources: Vec<_> = std::fs::read_dir(root.join(domain))
             .unwrap()

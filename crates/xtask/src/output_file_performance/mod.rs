@@ -89,11 +89,13 @@ pub(crate) fn sandbox(repo: &Path, output: &Path) -> Result<Sandbox, String> {
         .join("registry")
         .canonicalize()
         .map_err(|e| format!("Cargo registry: {e}"))?;
+    let available = std::thread::available_parallelism().map_or(1, usize::from);
     Ok(Sandbox {
         repo: repo.into(),
         output: output.into(),
         toolchain,
         registry,
+        jobs: process::jobs(std::env::var_os("CARGO_BUILD_JOBS").as_deref(), available)?,
     })
 }
 
@@ -110,7 +112,8 @@ fn prepare(repo: &Path, output: &Path) -> Result<(), String> {
         let mut sdk = sandbox.command("make");
         sdk.arg("-C")
             .arg(&sdk_source)
-            .args(["-j1", "CC=cc", "CFLAGS=-O2"])
+            .arg(format!("-j{}", sandbox.jobs))
+            .args(["CC=cc", "CFLAGS=-O2"])
             .arg(format!("BUILD={}", output.join("sdk").display()))
             .arg("all");
         process::run(&mut sdk, output, "sdk-build", Duration::from_secs(600))?;
@@ -173,7 +176,7 @@ fn prepare(repo: &Path, output: &Path) -> Result<(), String> {
             "prepared.json",
             &json!({"schema":1,"source":source,
             "peer_sha256":digest(&output.join("peer"))?,"harness_sha256":digest(&output.join("harness"))?,
-            "rust_profile":"release", "cargo_jobs":1, "nice":19,
+            "rust_profile":"release", "cargo_jobs":sandbox.jobs, "nice":process::niceness()?,
             "c_flags":"-std=c99 -O2 -Wall -Wextra -Werror -pedantic -Wconversion -Wshadow",
             "rust_flags":"workspace release profile; RUSTFLAGS unset",
             "registry":"read-only offline registry; all locked crates must already be extracted; host Cargo configuration is not imported",
@@ -297,7 +300,8 @@ fn machine(repo: &Path) -> Result<Value, String> {
     Ok(json!({"kernel":capture(repo,"uname", &["-r"])?,
         "cpuinfo":fs::read_to_string("/proc/cpuinfo").map_err(|e|e.to_string())?,
         "governors":governors,"intel_no_turbo":fs::read_to_string("/sys/devices/system/cpu/intel_pstate/no_turbo").ok(),
-        "boost":fs::read_to_string("/sys/devices/system/cpu/cpufreq/boost").ok()}))
+        "boost":fs::read_to_string("/sys/devices/system/cpu/cpufreq/boost").ok(),
+        "nice":process::niceness()?}))
 }
 pub(crate) fn digest(path: &Path) -> Result<String, String> {
     Ok(format!(

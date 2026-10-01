@@ -129,6 +129,13 @@ def instrument(root):
     replace(xcb, original, 't082_trace::connection(self.conn.as_ptr() as usize);\n' + mark("xcb_event_wait_enter") + "\n" + original + "\n" + mark("xcb_event_wait_return"))
 
 
+def build_env(environ):
+    """Cargo's environment: no Sophia or Hagia state, and the caller's
+    CARGO_BUILD_JOBS or every CPU, at the caller's priority."""
+    env = {k: v for k, v in environ.items() if not k.startswith(("SOPHIA_", "HAGIA_"))}
+    env.setdefault("CARGO_BUILD_JOBS", str(os.cpu_count() or 1))
+    return env
+
 def build(args):
     dest = args.output.resolve()
     dest.mkdir(parents=True, exist_ok=False)
@@ -169,8 +176,7 @@ def build(args):
     (pin / "src/clipboard_probe.rs").write_text(clipboard_trace.CLIENT)
     with (pin / "Cargo.toml").open("a") as out:
         out.write('\n[dependencies.arboard]\nversion="=3.6.1"\ndefault-features=false\nfeatures=["image-data"]\n[[bin]]\nname="clipboard-probe"\npath="src/clipboard_probe.rs"\n')
-    env = {k: v for k, v in os.environ.items() if not k.startswith(("SOPHIA_", "HAGIA_"))}
-    env["CARGO_BUILD_JOBS"] = "4"
+    env = build_env(os.environ)
     target = args.target.resolve() if args.target else dest / "target"
     env["CARGO_TARGET_DIR"] = str(target)
     command = ["cargo", "build", "--offline", "--release"]
@@ -183,6 +189,7 @@ def build(args):
     if versions(dest / "baseline/Cargo.lock") != locked_versions or versions(pin / "Cargo.lock") != locked_versions:
         raise RuntimeError("Registry dependency versions drifted")
     identity = {"archives": ARCHIVES, "generator_sha256": tool_hashes,
+                "cargo_jobs": env["CARGO_BUILD_JOBS"], "nice": os.nice(0),
                 "generated_source_sha256": {str(p.relative_to(dest)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(source.rglob("*")) if p.is_file() and (p.suffix == ".rs" or p.name in ("Cargo.toml", "Cargo.lock"))},
                 "tools_base_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=HERE, text=True).strip(),
                 "binaries": {name: hashlib.sha256((dest / name).read_bytes()).hexdigest() for name in ("pinentry-baseline", "pinentry-instrumented", "clipboard-probe")}}

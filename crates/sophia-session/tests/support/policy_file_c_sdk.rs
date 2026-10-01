@@ -38,8 +38,8 @@ fn c_sdk_drives_profile_configuration_snapshot_and_policy_exchange() {
     let socket = scratch.0.join("wm.sock");
     let listener = UnixListener::bind(&socket).unwrap();
     listener.set_nonblocking(true).unwrap();
-    let mut command = Command::new("/usr/bin/nice");
-    command.args(["-n", "19"]).arg(&binary).arg(&socket);
+    let mut command = Command::new(&binary);
+    command.arg(&socket);
     let peer = process::Process::spawn(&mut command, &scratch.0, "peer");
     let until = Instant::now() + Duration::from_secs(5);
     let stream = loop {
