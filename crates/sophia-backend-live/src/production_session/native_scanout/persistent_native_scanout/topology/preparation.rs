@@ -113,6 +113,7 @@ impl LiveProductionNativeScanout {
             rollback_frames,
             phase: LiveProductionNativeTopologyPreparationPhase::PreparingCandidate,
             failure: None,
+            budget: LiveProductionNativeTopologyPreparationBudget::new(std::time::Instant::now()),
         });
         Ok(LiveProductionNativeTopologyPreparationReport {
             phase: LiveProductionNativeTopologyPreparationPhase::PreparingCandidate,
@@ -135,7 +136,28 @@ impl LiveProductionNativeScanout {
             .output_topology_preparation
             .take()
             .ok_or("native output topology preparation is not active")?;
-        let result = self.service_output_topology_preparation_inner(&mut state);
+        let result = match state.budget.turn(state.phase, std::time::Instant::now()) {
+            LiveProductionNativeTopologyPreparationTurn::Service => {
+                self.service_output_topology_preparation_inner(&mut state)
+            }
+            // Too soon after the previous poll: report the unchanged state
+            // rather than polling the renderer again.
+            LiveProductionNativeTopologyPreparationTurn::Wait => Ok(()),
+            // The existing abort drain takes over from here: it waits for
+            // any export a worker still owns, then cancels the partial
+            // cohort. Nothing reaches KMS and no owner is dropped early.
+            LiveProductionNativeTopologyPreparationTurn::Expired { elapsed } => Err(format!(
+                "native topology preparation exceeded its {} ms limit after {} ms in {:?}: candidate {}/{} rollback {}/{} prepared; renderer export still pending",
+                LIVE_PRODUCTION_TOPOLOGY_PREPARATION_LIMIT.as_millis(),
+                elapsed.as_millis(),
+                state.phase,
+                state.resources.candidate_count(),
+                state.plan.heads.len(),
+                state.resources.rollback_count(),
+                state.plan.heads.len(),
+            )
+            .into()),
+        };
         if let Err(error) = &result {
             state.failure = Some(error.to_string());
             state.phase = LiveProductionNativeTopologyPreparationPhase::Aborting;
@@ -153,5 +175,13 @@ impl LiveProductionNativeScanout {
             );
         }
         Ok(report)
+    }
+
+    /// When an active preparation next needs servicing, if it is paced. The
+    /// owner loop may idle until then instead of turning without work.
+    pub fn output_topology_preparation_next_service(&self) -> Option<std::time::Instant> {
+        self.output_topology_preparation
+            .as_ref()
+            .and_then(|state| state.budget.next_service(state.phase))
     }
 }

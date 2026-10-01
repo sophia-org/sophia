@@ -425,6 +425,7 @@ impl LiveProductionVisualRuntime {
     /// precedes both.
     pub fn topology_rebind_quiescent(&self) -> bool {
         !self.native_scanout_in_flight()
+            && !self.outputs.native_cleanup_pending()
             && self.present_scheduler.in_flight_displayed_layer().is_none()
             && !self.present_scheduler.has_runnable_queued()
             && self.software_present_frames_waiting.is_empty()
@@ -459,6 +460,9 @@ impl LiveProductionVisualRuntime {
         let mut blockers = Vec::new();
         if self.native_scanout_in_flight() {
             blockers.push("native_scanout_in_flight");
+        }
+        if self.outputs.native_cleanup_pending() {
+            blockers.push("native_scanout_cleanup");
         }
         if self.present_scheduler.in_flight_displayed_layer().is_some() {
             blockers.push("in_flight_displayed_layer");
@@ -536,6 +540,7 @@ impl LiveProductionVisualRuntime {
             .content_layout_generation
             .checked_add(1)
             .ok_or("content layout generation exhausted")?;
+        native_scanout.handoff_installed_topology_custody(&mut self.outputs, &mut next)?;
         self.outputs = next;
         self.ordinary_repaints_pending.clear();
         self.input_projections = input_projections;

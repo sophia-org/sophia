@@ -107,6 +107,7 @@ impl LiveProductionNativeScanout {
             output: OutputId,
             runtime: &mut crate::LiveBackendRuntimeAssembly,
         ) -> Result<(), Box<dyn std::error::Error>> {
+            self.retry_output_topology_cleanup();
             self.service_layout_probe_cleanup();
             let index = self.primary_head(output)?;
             self.retire_ready(output, runtime)?;

@@ -342,6 +342,7 @@ pub(super) struct LiveProductionNativeTopologyPreparation {
     apply: LiveProductionNativeTopologyApplyCoordinator,
     phase: LiveProductionNativeTopologyPreparationPhase,
     failure: Option<String>,
+    budget: LiveProductionNativeTopologyPreparationBudget,
 }
 
 struct LiveProductionNativeInstalledHead {
@@ -391,6 +392,10 @@ include!("topology/semantic_startup.rs");
 include!("topology/publication.rs");
 include!("topology/preparation_status.rs");
 include!("topology/preparation.rs");
+include!("topology/preparation_budget.rs");
+#[cfg(test)]
+#[path = "../../../../tests/support/output_topology_preparation_budget.rs"]
+mod preparation_budget_tests;
 include!("topology/apply.rs");
 include!("topology/installation.rs");
 include!("topology/resource_preparation.rs");

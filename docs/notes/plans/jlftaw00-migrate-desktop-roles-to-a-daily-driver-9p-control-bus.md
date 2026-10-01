@@ -503,6 +503,13 @@ native-owner software state. This gate does not qualify routing changes or
 head-disabling cleanup. An interrupted outer runtime bound records failure and
 leaves restoration unproven.
 
+The attended `d4b06de81` candidate passed rollback timing projection but stalled
+before KMS while preparing rollback images. The
+[singleton custody investigation](../investigations/foc74sm7-topology-rebind-must-transfer-singleton-framebuffer-custody-before-ordinary-presentation.md)
+records the duplicate retained framebuffer owner, the rebind correction and
+bounded preparation. Native acceptance remains open; the next run needs fresh
+signed preparation, performance evidence, integration pins and sealed inputs.
+
 The attended `170d606b6` candidate passed validate and semantic rejection but
 failed before its first runtime Apply reached KMS. The
 [rollback timing investigation](../investigations/l696uhdc-rollback-preparation-must-use-the-installed-mode-after-a-topology-commit.md)

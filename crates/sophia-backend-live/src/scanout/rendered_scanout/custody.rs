@@ -5,6 +5,10 @@
 
 use crate::prelude::*;
 
+#[cfg(test)]
+#[path = "../../../tests/support/output_topology_custody.rs"]
+mod topology_tests;
+
 const CLEANUP_CAPACITY: usize = 3;
 
 #[derive(Debug)]
@@ -113,6 +117,52 @@ impl PersistentScanoutCustody {
 
     pub(crate) fn can_adopt_displayed(&self) -> bool {
         self.submitted.is_none() && self.displayed.is_none()
+    }
+
+    pub(crate) fn can_transfer_displayed_to(&self, next: &Self) -> bool {
+        self.displayed.is_some()
+            && self.submitted.is_none()
+            && next.can_adopt_displayed()
+            && !next.cleanup_pending()
+    }
+
+    /// Move the on-plane owner into the ledger that will submit its successor.
+    /// A refusal leaves both ledgers untouched; no framebuffer is retired here.
+    /// Any predecessor cleanup stays in the source ledger, independently of
+    /// the displayed owner being transferred.
+    pub(crate) fn transfer_displayed_to(&mut self, next: &mut Self) -> bool {
+        if !self.can_transfer_displayed_to(next) {
+            return false;
+        }
+        next.displayed = self.displayed.take();
+        true
+    }
+
+    /// The caller has completed a blocking replacement on this head. Retain
+    /// failed DRM cleanup explicitly when the old runtime is about to be dropped.
+    pub(crate) fn retire_replaced_displayed<D: LibdrmNativePrimaryPlaneResourceDevice>(
+        &mut self,
+        device: &D,
+    ) -> Result<Option<BoxedRenderedPrimaryPlaneScanoutCleanup>, &'static str> {
+        if self.submitted.is_some() || self.cleanup_pending() {
+            return Err("topology handoff requires quiescent runtime custody");
+        }
+        let Some(submission) = self.displayed.take() else {
+            return Ok(None);
+        };
+        let LiveRenderedPrimaryPlaneScanoutSubmission {
+            scanout_buffer,
+            correlation,
+            primary_plane,
+            ..
+        } = submission;
+        Ok(primary_plane.retire(device).cleanup.map(|primary_plane| {
+            LiveRenderedPrimaryPlaneScanoutCleanup {
+                scanout_buffer,
+                correlation,
+                primary_plane,
+            }
+        }))
     }
 
     pub(crate) fn can_retire_displayed(&self) -> bool {
