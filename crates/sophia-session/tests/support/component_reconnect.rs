@@ -319,6 +319,21 @@ impl Harness {
         .unwrap();
     }
 
+    fn service_until_revoked(&mut self, key: ComponentConnectionKey) {
+        // Closing the SDK handle does not synchronously deliver EOF to the
+        // owner. Drive the real service until it observes departure, as Session
+        // does, without manufacturing a revocation in the fixture.
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            self.service();
+            if self.owner.phase(key).unwrap() == ComponentConnectionPhase::Revoked {
+                return;
+            }
+            assert!(Instant::now() < deadline, "component EOF was not observed");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
     fn debt(
         &mut self,
         key: ComponentConnectionKey,
@@ -396,7 +411,7 @@ fn component_disconnect_settles_real_debt_without_disposing_pixels_or_neighbor()
     let old_target = h.backend.runtime().input_projections()[0].content[0].targets[0].clone();
     h.issue_current(old, &mut peer);
     drop(peer);
-    h.service();
+    h.service_until_revoked(old);
     assert_eq!(
         h.owner.phase(old).unwrap(),
         ComponentConnectionPhase::Revoked
@@ -493,7 +508,7 @@ fn replacement_with_retained_predecessor(has_dock: bool) {
     let old_target = h.backend.runtime().input_projections()[0].content[0].targets[0].clone();
     h.issue_current(old, &mut peer);
     drop(peer);
-    h.service();
+    h.service_until_revoked(old);
     assert!(h.backend.claims().is_empty());
     let (replacement, mut peer, replacement_pixels) = h.connect_extent(0, 2);
     assert_ne!(old.grant, replacement.grant);
@@ -752,7 +767,7 @@ fn two_role_panel_reconnect_progresses_after_all_old_native_work_completes() {
     let (neighbor, _neighbor_peer, neighbor_pixels) = h.connect(1);
     h.debt(old, &mut peer, neighbor_pixels.clone());
     drop((peer, retained)); // No test-owned old byte consumer masks progress.
-    h.service();
+    h.service_until_revoked(old);
     assert!(h.backend.claims().is_empty());
     h.backend.simulate_completion(output().id);
     h.backend.retry().unwrap();

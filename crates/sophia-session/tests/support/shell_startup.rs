@@ -268,6 +268,10 @@ fn the_content_profile_cannot_admit_a_descriptor_child() {
     // This negative intentionally binds the content-only export instead of
     // the descriptor owner's fixed negotiation path. The same protected peer
     // must be refused before it gains descriptor authority.
+    // Match launch_and_negotiate's launch preparation: the fixture replaced
+    // --serve with the child test arguments after constructing its supervisor.
+    let (launch_spec, _) = shell.gpu.prepare(&shell.base_launch_spec, 1).unwrap();
+    shell.supervisor.replace_launch_spec(launch_spec).unwrap();
     shell
         .supervisor
         .apply(sophia_runtime::SupervisorCommand::StartProcess {
@@ -279,16 +283,28 @@ fn the_content_profile_cannot_admit_a_descriptor_child() {
         .transport
         .authorize_protected_peer(shell.supervisor.protection_evidence().unwrap())
         .unwrap();
-    assert!(
-        shell
-            .transport
-            .accept_files_with_content_policy(
-                1,
-                Duration::from_secs(5),
-                shell.content.admission_policy(),
-            )
-            .is_err()
+    let error = shell
+        .transport
+        .accept_files_with_content_policy(
+            1,
+            Duration::from_secs(5),
+            shell.content.admission_policy(),
+        )
+        .unwrap_err();
+    assert_eq!(
+        error,
+        sophia_runtime::ShellTransportError::UnsupportedRevision
     );
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while shell.supervisor.exit_status().is_none() {
+        shell.supervisor.poll().unwrap();
+        assert!(
+            Instant::now() < deadline,
+            "descriptor refusal child did not exit"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(shell.supervisor.exit_status().unwrap().success());
     shell.supervisor.terminate().unwrap();
     assert!(!shell.connected);
     assert_eq!(shell.next_connection_epoch, 1);

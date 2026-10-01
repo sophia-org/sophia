@@ -14,16 +14,9 @@ impl LiveWmSession {
         self.poll_public_proof_restart()?;
         let restart_requested = self.force_transport_restart;
         let process_exited = self.supervisor.poll()?.is_some();
-        let settlement_pending = public_policy_restart_settlement_pending(
-            layout
-                .pending
-                .as_ref()
-                .is_some_and(|pending| pending.policy_settlement.is_some()),
-            self.public
-                .as_ref()
-                .is_some_and(|public| public.output_effect_dispatched
-                    && public.output_service.as_ref().is_none_or(|service| service.assigned_to_wm())),
-        );
+        // Output has its own supervisor and physical settlement lifetime.
+        let settlement_pending = layout.pending.as_ref()
+            .is_some_and(|pending| pending.policy_settlement.is_some());
         match public_policy_restart_decision(
             restart_requested,
             process_exited,
@@ -38,12 +31,6 @@ impl LiveWmSession {
                     self.supervisor.terminate()?;
                 }
                 let public = self.public.as_mut().expect("public WM state is present");
-                if public.output_service.as_ref().is_none_or(|service| service.assigned_to_wm()) {
-                    public.request_output_candidate_cancellation(
-                        "supervised WM restart requested during output apply".to_owned(),
-                        None,
-                    )?;
-                }
                 public.worker.take();
                 public.transport_unavailable = true;
                 public.deferred_command = None;
@@ -84,18 +71,6 @@ impl LiveWmSession {
 
         self.force_transport_restart = false;
         self.restarts = self.restarts.saturating_add(1);
-        if let Some(output_service) = public.output_service.as_ref().filter(|service| service.assigned_to_wm()) {
-            let abandoned = output_service
-                .pause_acceptance(Duration::from_secs(1))
-                .map_err(|error| format!("output authority restart barrier failed: {error}"))?;
-            if !abandoned.is_empty() {
-                public.abandon_output_candidate()?;
-            }
-            crate::session_println!(
-                "sophia_live_output_authority schema=2 status=acceptance_paused abandoned={} preserved_topology=true",
-                abandoned.len(),
-            );
-        }
         let next_epoch = public.next_connection_epoch;
         public.next_connection_epoch = public
             .next_connection_epoch
@@ -136,13 +111,6 @@ impl LiveWmSession {
             .ok_or("restarted public WM has no supervised PID")?;
         transport.authorize(&self.supervisor)?;
         crate::diagnostics::capture_process_identity("wm", pid, next_epoch);
-        if let Some(output_service) = public.output_service.as_ref().filter(|service| service.assigned_to_wm()) {
-            output_service
-                .command(
-                    sophia_runtime::OutputTransportServiceCommand::ReplaceSupervisedPid { pid },
-                )
-                .map_err(|_| "output authority service is unavailable during WM restart")?;
-        }
         let (state, _) = update_supervisor(self.supervisor_state.clone(), started, self.restart_policy);
         self.supervisor_state = state;
         public.reducer.connect(next_epoch)?;

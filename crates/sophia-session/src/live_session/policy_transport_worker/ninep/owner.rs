@@ -4,7 +4,7 @@ use sophia_9p::connection::ConnectionId;
 #[path = "../../../../tests/support/policy_file_atomic_cycle.rs"]
 mod atomic_tests;
 
-const API: &[u8] = b"sophia-wm-files version=1 output_transport=current_ipc\n";
+const API: &[u8] = b"sophia-wm-files version=1 output_transport=9p2000.L\n";
 /// The fixed root vocabulary, in the order a listing gives it. Each entry's
 /// cookie is its position plus one.
 const ROOT_ENTRIES: [(&[u8], Node); 7] = [

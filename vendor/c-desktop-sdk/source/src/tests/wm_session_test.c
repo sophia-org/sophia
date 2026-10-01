@@ -367,6 +367,25 @@ static void bad_limits_and_negotiation_refuse(void) {
     wr_drop(r);
   }
 }
+static void retired_output_transport_api_refuses(void) {
+  /* The api file is compared byte for byte. The retired current_ipc output
+   * transport, and near-misses of the current one, never negotiate. */
+  static const char *const refused[] = {
+      "sophia-wm-files version=1 output_transport=current_ipc\n",
+      "sophia-wm-files version=1 output_transport=9p2000.L",
+      "sophia-wm-files version=1 output_transport=9P2000.L\n",
+      "sophia-wm-files version=1\n",
+  };
+  unsigned which;
+  for (which = 0; which < sizeof(refused) / sizeof(*refused); ++which) {
+    struct wm_rig *r = wr_new();
+    r->peer.api = refused[which];
+    terminal(r);
+    assert(sophia_ws_state(r->session) == SOPHIA_WS_FAILED);
+    assert(!r->peer.submits);
+    wr_drop(r);
+  }
+}
 static void impossible_offer_refuses_before_submission(void) {
   unsigned profile;
   for (profile = 0; profile < 2; ++profile) {
@@ -578,6 +597,7 @@ int main(void) {
   RUN(partial_event_deadline_runs_during_pending_ack);
   RUN(deadline_never_sends_and_close_classifies);
   RUN(bad_limits_and_negotiation_refuse);
+  RUN(retired_output_transport_api_refuses);
   RUN(impossible_offer_refuses_before_submission);
   RUN(event_lengths_and_sequences_fail_immediately);
   RUN(ack_faults_and_revocation_keep_custody);

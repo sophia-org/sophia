@@ -69,9 +69,7 @@ fn exercise(peer: &Path, stage: &str) {
         ]);
     }
     let prepared = PreparedOutputTransport::bind(config, &directory).unwrap();
-    let PreparedOutputTransport::Files { supervisor, .. } = &prepared else {
-        panic!("file role")
-    };
+    let PreparedOutputTransport::Files { supervisor, .. } = &prepared;
     assert_eq!(
         supervisor.protection_evidence().unwrap().roles,
         [sophia_runtime::ProtectionDomainRole::OutputAuthority]

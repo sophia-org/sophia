@@ -198,3 +198,13 @@ relations; it changes no layout. All other retained spec digests are unchanged.
 The restored indicator check also exposed an inconsistent existing ordering
 fixture, which now acknowledges the same action as its activation. Isolated
 workspace tests and strict all-target, all-feature Clippy pass.
+
+## WM output transport naming
+
+`spec/sophia-wm-files.md` is copied unmodified from signed Sophia contract
+`b0721d0de6a03cb44e57b0a923c6c385cf40b676`. The WM `api` file now names
+`output_transport=9p2000.L`, and the WM receives no output endpoint or grant.
+This SDK has no WM client, and its connection reads only the shell role's
+`api` line. The document remains the reference for the envelope, custody and
+retry rules the shell contract adopts, which this revision does not change.
+Library sources, wire layouts and the other spec digests are unchanged.

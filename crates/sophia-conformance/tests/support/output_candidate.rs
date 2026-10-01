@@ -1,194 +1,28 @@
-//! Retained output-role peer from the retired sophia-wm-demo at 7c9134eff.
-//! It uses Sophia's codec, so it is not an independent implementation. Output
-//! IPC remains until t253/t272; this fixture adds no WM transport or policy.
-use std::io::{Read, Write};
-use std::os::unix::net::UnixStream;
-use std::path::Path;
-use std::time::Duration;
-
+//! Pure candidate construction retained from the retired output reference peer.
 use sophia_protocol::{
-    IpcCodecError, OutputAuthoritySnapshot, OutputGroupMember, OutputHeadDescriptor,
-    OutputHeadMapping, OutputHeadTargetProposal, OutputLogicalGroupProposal,
-    OutputLogicalGroupState, OutputTopologyCandidate, OutputTopologyCandidateError,
-    OutputTopologyIntent, OutputTransform, OutputV1ClientHello, OutputV1Outcome, OutputV1Proposal,
-    OutputVrrPolicy, Rect, SOPHIA_IPC_HEADER_LEN, SOPHIA_IPC_MAX_PAYLOAD_LEN,
-    SOPHIA_OUTPUT_CAPABILITY_CONFIGURE, SOPHIA_OUTPUT_CAPABILITY_OBSERVE,
-    SOPHIA_OUTPUT_INTERFACE_REVISION, TransactionId, decode_output_v1_outcome_frame,
-    decode_output_v1_server_welcome_frame, decode_output_v1_snapshot_frame,
-    encode_output_v1_client_hello_frame, encode_output_v1_proposal_frame,
+    OutputAuthoritySnapshot, OutputGroupMember, OutputHeadDescriptor, OutputHeadMapping,
+    OutputHeadTargetProposal, OutputLogicalGroupProposal, OutputLogicalGroupState,
+    OutputTopologyCandidate, OutputTopologyCandidateError, OutputTopologyIntent, OutputTransform,
+    OutputVrrPolicy, Rect,
 };
 
 #[derive(Debug)]
-pub enum OutputV1ClientError {
-    Io(std::io::Error),
-    Codec(IpcCodecError),
+pub enum CandidateError {
     Candidate(OutputTopologyCandidateError),
-    UnsupportedRevision(u16),
-    MissingCapability,
-    InvalidWelcome,
-    ConnectionEpochMismatch,
-    TransactionMismatch,
     InvalidProofTopology(&'static str),
-    TransactionExhausted,
 }
-
-impl core::fmt::Display for OutputV1ClientError {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+impl core::fmt::Display for CandidateError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::Io(error) => write!(formatter, "output I/O: {error}"),
-            Self::Codec(error) => write!(formatter, "output codec: {error:?}"),
-            Self::Candidate(error) => write!(formatter, "output candidate: {error}"),
-            Self::UnsupportedRevision(revision) => {
-                write!(formatter, "unsupported output revision: {revision}")
-            }
-            Self::InvalidProofTopology(reason) => {
-                write!(formatter, "invalid proof topology: {reason}")
-            }
-            _ => write!(formatter, "{self:?}"),
+            Self::Candidate(error) => write!(f, "output candidate: {error}"),
+            Self::InvalidProofTopology(reason) => write!(f, "invalid proof topology: {reason}"),
         }
     }
 }
-
-impl std::error::Error for OutputV1ClientError {}
-
-impl From<std::io::Error> for OutputV1ClientError {
-    fn from(error: std::io::Error) -> Self {
-        Self::Io(error)
-    }
-}
-
-impl From<IpcCodecError> for OutputV1ClientError {
-    fn from(error: IpcCodecError) -> Self {
-        Self::Codec(error)
-    }
-}
-
-impl From<OutputTopologyCandidateError> for OutputV1ClientError {
+impl std::error::Error for CandidateError {}
+impl From<OutputTopologyCandidateError> for CandidateError {
     fn from(error: OutputTopologyCandidateError) -> Self {
         Self::Candidate(error)
-    }
-}
-
-/// Reference client for the exclusive physical-output role.
-///
-/// Physical head labels remain private to this role. The policy connection
-/// still receives only logical outputs and opaque surface identities.
-pub struct OutputV1Client {
-    stream: UnixStream,
-    connection_epoch: u64,
-    max_heads: usize,
-    max_groups: usize,
-    max_modes_per_head: usize,
-    max_heads_per_group: usize,
-    next_transaction: u64,
-}
-
-impl OutputV1Client {
-    pub fn connect(path: impl AsRef<Path>, timeout: Duration) -> Result<Self, OutputV1ClientError> {
-        let mut stream = UnixStream::connect(path)?;
-        stream.set_read_timeout(Some(timeout))?;
-        stream.set_write_timeout(Some(timeout))?;
-        stream.write_all(&encode_output_v1_client_hello_frame(OutputV1ClientHello {
-            minimum_revision: SOPHIA_OUTPUT_INTERFACE_REVISION,
-            maximum_revision: SOPHIA_OUTPUT_INTERFACE_REVISION,
-            capabilities: SOPHIA_OUTPUT_CAPABILITY_OBSERVE | SOPHIA_OUTPUT_CAPABILITY_CONFIGURE,
-        })?)?;
-        stream.flush()?;
-        let welcome = decode_output_v1_server_welcome_frame(&read_frame(&mut stream)?)?;
-        if welcome.selected_revision != SOPHIA_OUTPUT_INTERFACE_REVISION {
-            return Err(OutputV1ClientError::UnsupportedRevision(
-                welcome.selected_revision,
-            ));
-        }
-        let required = SOPHIA_OUTPUT_CAPABILITY_OBSERVE | SOPHIA_OUTPUT_CAPABILITY_CONFIGURE;
-        if welcome.capabilities & required != required {
-            return Err(OutputV1ClientError::MissingCapability);
-        }
-        if welcome.connection_epoch == 0
-            || welcome.max_heads < 3
-            || welcome.max_groups < 2
-            || welcome.max_modes_per_head == 0
-            || welcome.max_heads_per_group < 2
-        {
-            return Err(OutputV1ClientError::InvalidWelcome);
-        }
-        Ok(Self {
-            stream,
-            connection_epoch: welcome.connection_epoch,
-            max_heads: usize::from(welcome.max_heads),
-            max_groups: usize::from(welcome.max_groups),
-            max_modes_per_head: usize::from(welcome.max_modes_per_head),
-            max_heads_per_group: usize::from(welcome.max_heads_per_group),
-            next_transaction: 1,
-        })
-    }
-
-    pub fn receive_snapshot(
-        &mut self,
-    ) -> Result<(TransactionId, OutputAuthoritySnapshot), OutputV1ClientError> {
-        let (transaction, message) =
-            decode_output_v1_snapshot_frame(&read_frame(&mut self.stream)?)?;
-        if message.connection_epoch != self.connection_epoch {
-            return Err(OutputV1ClientError::ConnectionEpochMismatch);
-        }
-        if message.snapshot.heads.len() > self.max_heads
-            || message.snapshot.groups.len() > self.max_groups
-            || message
-                .snapshot
-                .heads
-                .iter()
-                .any(|head| head.modes.len() > self.max_modes_per_head)
-            || message
-                .snapshot
-                .groups
-                .iter()
-                .any(|group| group.members.len() > self.max_heads_per_group)
-        {
-            return Err(OutputV1ClientError::InvalidWelcome);
-        }
-        message.snapshot.validate()?;
-        Ok((transaction, message.snapshot))
-    }
-
-    pub fn submit(
-        &mut self,
-        candidate: OutputTopologyCandidate,
-        snapshot: &OutputAuthoritySnapshot,
-    ) -> Result<OutputV1Outcome, OutputV1ClientError> {
-        candidate.validate_against(snapshot)?;
-        let transaction = TransactionId::from_raw(self.next_transaction);
-        self.next_transaction = self
-            .next_transaction
-            .checked_add(1)
-            .ok_or(OutputV1ClientError::TransactionExhausted)?;
-        let frame = encode_output_v1_proposal_frame(
-            transaction,
-            &OutputV1Proposal {
-                connection_epoch: self.connection_epoch,
-                candidate,
-            },
-        )?;
-        self.stream.write_all(&frame)?;
-        self.stream.flush()?;
-        // A snapshot is an unsolicited update and may arrive at any moment,
-        // including between a proposal and the outcome answering it. Reading
-        // the next frame as an outcome regardless once turned a published
-        // topology into a decode failure and took the session down with it, so
-        // updates are consumed while waiting rather than tripped over.
-        let (outcome_transaction, outcome) = loop {
-            let frame = read_frame(&mut self.stream)?;
-            match decode_output_v1_snapshot_frame(&frame) {
-                Ok(_) => continue,
-                Err(_) => break decode_output_v1_outcome_frame(&frame)?,
-            }
-        };
-        if outcome_transaction != transaction {
-            return Err(OutputV1ClientError::TransactionMismatch);
-        }
-        if outcome.connection_epoch != self.connection_epoch {
-            return Err(OutputV1ClientError::ConnectionEpochMismatch);
-        }
-        Ok(outcome)
     }
 }
 
@@ -239,13 +73,13 @@ pub fn mixed_mirror_extended_candidate(
     mirror_member_label: &str,
     extended_label: &str,
     policy: MirrorSizingPolicy,
-) -> Result<OutputTopologyCandidate, OutputV1ClientError> {
+) -> Result<OutputTopologyCandidate, CandidateError> {
     snapshot.validate()?;
     if mirror_primary_label == mirror_member_label
         || mirror_primary_label == extended_label
         || mirror_member_label == extended_label
     {
-        return Err(OutputV1ClientError::InvalidProofTopology(
+        return Err(CandidateError::InvalidProofTopology(
             "proof labels are not distinct",
         ));
     }
@@ -255,7 +89,7 @@ pub fn mixed_mirror_extended_candidate(
         .filter(|head| head.connected)
         .collect::<Vec<_>>();
     if connected.len() != 3 {
-        return Err(OutputV1ClientError::InvalidProofTopology(
+        return Err(CandidateError::InvalidProofTopology(
             "proof requires exactly three connected heads",
         ));
     }
@@ -264,12 +98,12 @@ pub fn mixed_mirror_extended_candidate(
     let extended = head_by_label(&connected, extended_label)?;
     for head in [primary, member, extended] {
         if !head.enabled || head.current_mode.is_none() {
-            return Err(OutputV1ClientError::InvalidProofTopology(
+            return Err(CandidateError::InvalidProofTopology(
                 "proof head is not enabled with a current mode",
             ));
         }
         if !head.transforms.contains(OutputTransform::Normal) {
-            return Err(OutputV1ClientError::InvalidProofTopology(
+            return Err(CandidateError::InvalidProofTopology(
                 "proof head does not support the normal transform",
             ));
         }
@@ -279,14 +113,14 @@ pub fn mixed_mirror_extended_candidate(
     let member_group = group_for_head(snapshot, member)?;
     let extended_group = group_for_head(snapshot, extended)?;
     if primary_group.output == extended_group.output {
-        return Err(OutputV1ClientError::InvalidProofTopology(
+        return Err(CandidateError::InvalidProofTopology(
             "mirror primary and extended head already share one logical output",
         ));
     }
     // A pre-existing mirror is acceptable, but an unrelated shared identity is
     // not: consuming it would silently remove another logical placement.
     if member_group.output != primary_group.output && member_group.output == extended_group.output {
-        return Err(OutputV1ClientError::InvalidProofTopology(
+        return Err(CandidateError::InvalidProofTopology(
             "mirror member currently belongs to the extended output",
         ));
     }
@@ -299,7 +133,7 @@ pub fn mixed_mirror_extended_candidate(
         height: mirror_size.height,
     };
     let extended_x = mirror_logical.x.checked_add(mirror_logical.width).ok_or(
-        OutputV1ClientError::InvalidProofTopology("extended placement overflows root coordinates"),
+        CandidateError::InvalidProofTopology("extended placement overflows root coordinates"),
     )?;
     let (primary_mapping, member_mapping) = mirror_member_mappings(policy);
     let targets = [primary, member, extended]
@@ -425,7 +259,7 @@ fn mirror_logical_size(
     primary: &OutputHeadDescriptor,
     member: &OutputHeadDescriptor,
     policy: MirrorSizingPolicy,
-) -> Result<sophia_protocol::Size, OutputV1ClientError> {
+) -> Result<sophia_protocol::Size, CandidateError> {
     match policy {
         MirrorSizingPolicy::OptimizeForPrimary => current_mode_pixel_size(primary),
         MirrorSizingPolicy::OptimizeForMember => current_mode_pixel_size(member),
@@ -465,17 +299,17 @@ const fn mirror_member_mappings(
 /// The pixel size of the mode this head is currently running.
 fn current_mode_pixel_size(
     head: &OutputHeadDescriptor,
-) -> Result<sophia_protocol::Size, OutputV1ClientError> {
+) -> Result<sophia_protocol::Size, CandidateError> {
     let mode = head
         .current_mode
-        .ok_or(OutputV1ClientError::InvalidProofTopology(
+        .ok_or(CandidateError::InvalidProofTopology(
             "proof head is not enabled with a current mode",
         ))?;
     head.modes
         .iter()
         .find(|descriptor| descriptor.mode == mode)
         .map(|descriptor| descriptor.pixel_size)
-        .ok_or(OutputV1ClientError::InvalidProofTopology(
+        .ok_or(CandidateError::InvalidProofTopology(
             "proof head reports a current mode it does not advertise",
         ))
 }
@@ -483,15 +317,13 @@ fn current_mode_pixel_size(
 fn head_by_label<'a>(
     heads: &[&'a OutputHeadDescriptor],
     label: &str,
-) -> Result<&'a OutputHeadDescriptor, OutputV1ClientError> {
+) -> Result<&'a OutputHeadDescriptor, CandidateError> {
     let mut matches = heads.iter().copied().filter(|head| head.label == label);
-    let head = matches
-        .next()
-        .ok_or(OutputV1ClientError::InvalidProofTopology(
-            "proof label is absent",
-        ))?;
+    let head = matches.next().ok_or(CandidateError::InvalidProofTopology(
+        "proof label is absent",
+    ))?;
     if matches.next().is_some() {
-        return Err(OutputV1ClientError::InvalidProofTopology(
+        return Err(CandidateError::InvalidProofTopology(
             "proof label is ambiguous",
         ));
     }
@@ -501,32 +333,12 @@ fn head_by_label<'a>(
 fn group_for_head<'a>(
     snapshot: &'a OutputAuthoritySnapshot,
     head: &OutputHeadDescriptor,
-) -> Result<&'a OutputLogicalGroupState, OutputV1ClientError> {
+) -> Result<&'a OutputLogicalGroupState, CandidateError> {
     snapshot
         .groups
         .iter()
         .find(|group| group.members.iter().any(|member| member.head == head.head))
-        .ok_or(OutputV1ClientError::InvalidProofTopology(
+        .ok_or(CandidateError::InvalidProofTopology(
             "proof head has no logical output",
         ))
-}
-
-fn read_frame(stream: &mut UnixStream) -> Result<Vec<u8>, OutputV1ClientError> {
-    let mut header = [0; SOPHIA_IPC_HEADER_LEN];
-    stream.read_exact(&mut header)?;
-    let payload_len = u32::from_le_bytes(
-        header[16..20]
-            .try_into()
-            .expect("fixed frame payload range is present"),
-    ) as usize;
-    if payload_len > SOPHIA_IPC_MAX_PAYLOAD_LEN {
-        return Err(OutputV1ClientError::Codec(IpcCodecError::PayloadTooLarge(
-            payload_len,
-        )));
-    }
-    let mut frame = Vec::with_capacity(SOPHIA_IPC_HEADER_LEN + payload_len);
-    frame.extend_from_slice(&header);
-    frame.resize(SOPHIA_IPC_HEADER_LEN + payload_len, 0);
-    stream.read_exact(&mut frame[SOPHIA_IPC_HEADER_LEN..])?;
-    Ok(frame)
 }

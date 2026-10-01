@@ -90,7 +90,6 @@ fn protected_wm_environment_and_grants_do_not_receive_host_inspection() {
             std::path::Path::new("/tmp/wm-checkpoint/state"),
             std::path::Path::new("/tmp/wm-profile/candidate"),
             true,
-            Some(std::path::Path::new("/tmp/output-endpoint/output.sock")),
         )
         .unwrap()
     };

@@ -1,7 +1,7 @@
 #include "internal.h"
 
 static const char api[] =
-    "sophia-wm-files version=1 output_transport=current_ipc\n";
+    "sophia-wm-files version=1 output_transport=9p2000.L\n";
 static const char *const files[] = {"events", "submit", "ack"};
 static uint32_t *fid(struct sophia_ws *s, unsigned index) {
   if (!index)
@@ -77,7 +77,8 @@ int ws_boot_reply(struct sophia_ws *s, const struct sophia_9p_reply *r) {
     }
     if (s->bootstrap == 4) {
       /* This advertises the separate output role's current contract. It
-       * does not select or connect any output wire for the WM client. */
+       * does not select or connect any output wire for the WM client. The
+       * comparison is exact: an export still naming current_ipc is refused. */
       if (s->boot_used != sizeof(api) - 1 ||
           memcmp(s->boot_bytes, api, sizeof(api) - 1))
         return SOPHIA_9P_INVALID;

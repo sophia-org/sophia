@@ -129,7 +129,7 @@ struct ActiveOutputCandidate {
     transaction_state: OutputTopologyTransaction,
 }
 
-/// Session orchestration for one exclusive `sophia_output_v1` owner.
+/// Session orchestration for the exclusive output topology owner.
 ///
 /// This type has no DRM handles and performs no effects. It joins the output
 /// protocol's complete proposal, backend-native resolution, and Engine's

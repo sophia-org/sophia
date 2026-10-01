@@ -44,9 +44,7 @@ use output::{
 };
 use output_proof::{
     OUTPUT_PEER_LOSS_DEPARTURE_TIMEOUT, OutputPeerLossObservation, OutputPeerLossProof,
-    OutputProofRollbackAfterApply, parse_output_proof_rollback_after_apply,
     validate_output_peer_loss_proof,
-    validate_prepared_output_proof_candidate,
 };
 use session::{
     SessionApplicationConfig, SessionApplicationOverrides, SessionApplicationSpec,
@@ -118,7 +116,6 @@ struct PersistentXtermSessionConfig {
     wm_transport: WmTransportSelection,
     wm_public_fault_after: Option<PublicPolicyFaultPoint>,
     wm_public_restart_after_action: Option<WmActionId>,
-    output_proof_rollback_after_apply: bool,
     output_proof_peer_loss_after_apply: bool,
     output_proof_readback: bool,
     wm_socket_path: std::path::PathBuf,

@@ -1,27 +1,14 @@
-use std::io::{Read, Write};
-use std::os::unix::net::UnixListener;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
-
+//! Neutral topology assertions retained from the retired output socket peer.
 use sophia_protocol::{
     DisplayHeadId, DisplayModeId, OutputAuthoritySnapshot, OutputGroupMember, OutputHeadDescriptor,
     OutputHeadMapping, OutputLogicalGroupState, OutputModeDescriptor, OutputTransformSet,
-    OutputV1Outcome, OutputV1OutcomeKind, OutputV1ServerWelcome, OutputV1Snapshot, OutputVrrPolicy,
-    Rect, SOPHIA_IPC_HEADER_LEN, SOPHIA_OUTPUT_CAPABILITY_CONFIGURE,
-    SOPHIA_OUTPUT_CAPABILITY_OBSERVE, SOPHIA_OUTPUT_INTERFACE_REVISION, Size, TransactionId,
-    decode_output_v1_client_hello_frame, decode_output_v1_proposal_frame,
-    encode_output_v1_outcome_frame, encode_output_v1_server_welcome_frame,
-    encode_output_v1_snapshot_frame,
+    OutputVrrPolicy, Rect, Size,
 };
-#[path = "support/output_ipc_peer.rs"]
+#[path = "support/output_candidate.rs"]
 mod peer;
-
 use peer::{
-    MirrorSizingPolicy, OutputV1Client, mixed_mirror_extended_candidate,
-    mixed_mirror_extended_topology_is_applied,
+    MirrorSizingPolicy, mixed_mirror_extended_candidate, mixed_mirror_extended_topology_is_applied,
 };
-
-static NEXT_SOCKET: AtomicU64 = AtomicU64::new(1);
 
 #[test]
 fn mixed_candidate_keeps_modes_and_forms_one_mirror_plus_one_extended_group() {
@@ -318,94 +305,6 @@ fn mixed_candidate_refuses_to_disable_an_unmentioned_connected_head() {
     );
 }
 
-#[test]
-fn output_client_negotiates_snapshot_and_committed_candidate() {
-    let socket = std::env::temp_dir().join(format!(
-        "sophia-conformance-output-ipc-{}-{}",
-        std::process::id(),
-        NEXT_SOCKET.fetch_add(1, Ordering::Relaxed)
-    ));
-    let listener = UnixListener::bind(&socket).unwrap();
-    let expected_snapshot = three_head_snapshot();
-    let served_snapshot = expected_snapshot.clone();
-    let server = std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        let hello = decode_output_v1_client_hello_frame(&read_frame(&mut stream)).unwrap();
-        assert_eq!(hello.minimum_revision, SOPHIA_OUTPUT_INTERFACE_REVISION);
-        assert_eq!(
-            hello.capabilities,
-            SOPHIA_OUTPUT_CAPABILITY_OBSERVE | SOPHIA_OUTPUT_CAPABILITY_CONFIGURE
-        );
-        stream
-            .write_all(
-                &encode_output_v1_server_welcome_frame(OutputV1ServerWelcome {
-                    selected_revision: SOPHIA_OUTPUT_INTERFACE_REVISION,
-                    capabilities: SOPHIA_OUTPUT_CAPABILITY_OBSERVE
-                        | SOPHIA_OUTPUT_CAPABILITY_CONFIGURE,
-                    connection_epoch: 9,
-                    max_heads: 16,
-                    max_groups: 16,
-                    max_modes_per_head: 128,
-                    max_heads_per_group: 4,
-                })
-                .unwrap(),
-            )
-            .unwrap();
-        stream
-            .write_all(
-                &encode_output_v1_snapshot_frame(
-                    TransactionId::from_raw(7),
-                    &OutputV1Snapshot {
-                        connection_epoch: 9,
-                        snapshot: served_snapshot.clone(),
-                    },
-                )
-                .unwrap(),
-            )
-            .unwrap();
-        let (transaction, proposal) =
-            decode_output_v1_proposal_frame(&read_frame(&mut stream)).unwrap();
-        proposal
-            .candidate
-            .validate_against(&served_snapshot)
-            .unwrap();
-        assert_eq!(proposal.candidate.groups.len(), 2);
-        stream
-            .write_all(
-                &encode_output_v1_outcome_frame(
-                    transaction,
-                    OutputV1Outcome {
-                        connection_epoch: 9,
-                        topology_epoch: 5,
-                        kind: OutputV1OutcomeKind::Committed,
-                        reason: 0,
-                    },
-                )
-                .unwrap(),
-            )
-            .unwrap();
-    });
-
-    let mut client = OutputV1Client::connect(&socket, Duration::from_secs(1)).unwrap();
-    let (snapshot_transaction, snapshot) = client.receive_snapshot().unwrap();
-    assert_eq!(snapshot_transaction.raw(), 7);
-    assert_eq!(snapshot, expected_snapshot);
-    let candidate = mixed_mirror_extended_candidate(
-        &snapshot,
-        "Display 1",
-        "Display 2",
-        "Display 3",
-        MirrorSizingPolicy::OptimizeForPrimary,
-    )
-    .unwrap();
-    let outcome = client.submit(candidate, &snapshot).unwrap();
-    assert_eq!(outcome.kind, OutputV1OutcomeKind::Committed);
-    assert_eq!(outcome.topology_epoch, 5);
-
-    server.join().unwrap();
-    std::fs::remove_file(socket).unwrap();
-}
-
 fn three_head_snapshot() -> OutputAuthoritySnapshot {
     OutputAuthoritySnapshot {
         topology_epoch: 4,
@@ -463,16 +362,4 @@ fn group(
             mapping: OutputHeadMapping::Exact,
         }],
     }
-}
-
-fn read_frame(stream: &mut impl Read) -> Vec<u8> {
-    let mut header = [0; SOPHIA_IPC_HEADER_LEN];
-    stream.read_exact(&mut header).unwrap();
-    let payload_len = u32::from_le_bytes(header[16..20].try_into().unwrap()) as usize;
-    let mut frame = header.to_vec();
-    frame.resize(SOPHIA_IPC_HEADER_LEN + payload_len, 0);
-    stream
-        .read_exact(&mut frame[SOPHIA_IPC_HEADER_LEN..])
-        .unwrap();
-    frame
 }

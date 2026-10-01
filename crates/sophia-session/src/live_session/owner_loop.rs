@@ -754,8 +754,6 @@ fn run_session_loop_inner(
     let mut seat_release_started = None;
     let mut seat_release_prepared = false;
     let mut observed_wm_restart_count = wm_session.as_ref().map_or(0, |wm| wm.restarts);
-    let mut output_proof_rollback_after_apply =
-        OutputProofRollbackAfterApply::new(config.output_proof_rollback_after_apply);
     let mut output_peer_loss_proof =
         OutputPeerLossProof::new(config.output_proof_peer_loss_after_apply);
     let mut output_readback_proof = OutputReadbackProof::new(config.output_proof_readback);

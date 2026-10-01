@@ -21,10 +21,8 @@ struct ControlRestartJob {
 
 struct ControlRestartResult {
     supervisor: ProcessSupervisor,
-    output_service: Option<LiveOutputService>,
     result: Result<(PolicyTransportWorker, sophia_runtime::SupervisorEvent), String>,
     epoch: u64,
-    abandoned_output: bool,
 }
 
 impl LiveWmSession {
@@ -48,9 +46,6 @@ impl LiveWmSession {
         let mut supervisor = std::mem::replace(&mut self.supervisor, placeholder);
         let old_worker = public.worker.take();
         let old_lifetime = self.control_lifetime.take();
-        let output_service = if public.output_service.as_ref().is_some_and(|service| service.assigned_to_wm()) {
-            public.output_service.take()
-        } else { None };
         let endpoint = public.directory.endpoint_path();
         let profile_key = public.profile_key;
         let wm_transport = public.wm_transport;
@@ -71,25 +66,19 @@ impl LiveWmSession {
         let (completion, results) = std::sync::mpsc::sync_channel(1);
         let (stop, stopped) = std::sync::mpsc::sync_channel::<()>(1);
         let job = std::thread::Builder::new().name("sophia-wm-restart".into()).spawn(move || {
-            let mut abandoned_output = false;
             let result = (|| -> Result<_, String> {
                 supervisor.terminate().map_err(|e| e.to_string())?;
                 drop(old_worker);
                 drop(old_lifetime);
-                if let Some(service) = &output_service { abandoned_output = !service.pause_acceptance(Duration::from_secs(1))?.is_empty(); }
                 let mut transport = bind_public_policy_endpoint(&endpoint, profile_key, wm_transport).map_err(|e| e.to_string())?;
                 let started = supervisor.apply(command).map_err(|e| e.to_string())?.ok_or("supervisor declined restart")?;
-                let pid = supervisor.peer_id().ok_or("replacement has no peer")?;
                 transport.authorize(&supervisor).map_err(|e| e.to_string())?;
-                if let Some(service) = &output_service {
-                    service.command(sophia_runtime::OutputTransportServiceCommand::ReplaceSupervisedPid { pid }).map_err(|_| "output service unavailable")?;
-                }
                 let worker = start_public_policy_worker(transport, epoch, profile_key, native_presentation_capable, &supervisor, wm_filesystem_qids).map_err(|e| e.to_string())?;
                 Ok((worker, started))
             })();
             if result.is_err() { let _ = supervisor.terminate(); }
             let keep_alive = result.is_ok();
-            let _ = completion.send(ControlRestartResult { supervisor, output_service, result, epoch, abandoned_output });
+            let _ = completion.send(ControlRestartResult { supervisor, result, epoch });
             if keep_alive { let _ = stopped.recv(); }
         });
         match job {
@@ -134,13 +123,6 @@ impl LiveWmSession {
             .public
             .as_mut()
             .expect("restarting policy retains its owner");
-        if result.output_service.is_some() {
-            public.output_service = result.output_service;
-        }
-        if result.abandoned_output && public.abandon_output_candidate().is_err() {
-            self.degraded = true;
-            return;
-        }
         match result.result {
             Ok((worker, started)) => {
                 let (state, _) =

@@ -23,6 +23,8 @@ struct IdleGate {
 #[derive(Default)]
 struct Probe {
     idle_entered: AtomicUsize,
+    // Past the fixture gate, immediately before the real idle receive.
+    idle_inner: AtomicUsize,
     idle_returned: AtomicUsize,
     fallback: AtomicUsize,
     bells: AtomicUsize,
@@ -118,6 +120,7 @@ impl PolicyAdapter for Observed {
                 .recv_timeout(BOUND)
                 .map_err(|e| e.to_string())?;
         }
+        self.probe.idle_inner.fetch_add(1, Ordering::SeqCst);
         let result = self.inner.idle_receive(permit, cap);
         self.probe.idle_returned.fetch_add(1, Ordering::SeqCst);
         result
@@ -270,6 +273,54 @@ fn finish_read(peer: &mut Peer, tag: u16) -> Vec<u8> {
     body[4..].to_vec()
 }
 
+/// Holds the driver at its next idle entry. The caller releases it.
+fn arm_idle_gate(
+    probe: &Probe,
+) -> (
+    std::sync::mpsc::Receiver<()>,
+    std::sync::mpsc::SyncSender<()>,
+) {
+    let (entered, entered_rx) = std::sync::mpsc::sync_channel(1);
+    let (release_tx, release) = std::sync::mpsc::sync_channel(1);
+    let previous = probe
+        .before_idle
+        .lock()
+        .unwrap()
+        .replace(IdleGate { entered, release });
+    assert!(previous.is_none(), "one idle gate at a time");
+    (entered_rx, release_tx)
+}
+fn begin_flush(peer: &mut Peer, old: u16) -> u16 {
+    assert!(peer.queued.is_empty());
+    peer.tag += 1;
+    let mut bytes = 9u32.to_le_bytes().to_vec();
+    bytes.push(108);
+    bytes.extend(peer.tag.to_le_bytes());
+    bytes.extend(old.to_le_bytes());
+    peer.stream.write_all(&bytes).unwrap();
+    peer.tag
+}
+fn finish_flush(peer: &mut Peer, tag: u16) {
+    let mut reply = [0; 7];
+    peer.stream.read_exact(&mut reply).unwrap();
+    assert_eq!(u32::from_le_bytes(reply[..4].try_into().unwrap()), 7);
+    assert_eq!(reply[4], 109);
+    assert_eq!(u16::from_le_bytes(reply[5..].try_into().unwrap()), tag);
+}
+/// Whether a reply is already on the wire, without consuming it.
+fn reply_written(peer: &Peer) -> bool {
+    use rustix::net::{RecvFlags, recv};
+    match recv(
+        &peer.stream,
+        &mut [0u8; 1],
+        RecvFlags::PEEK | RecvFlags::DONTWAIT,
+    ) {
+        Ok(_) => true,
+        Err(rustix::io::Errno::AGAIN) => false,
+        Err(error) => panic!("peek reply: {error}"),
+    }
+}
+
 #[test]
 fn idle_driver_delivers_appended_outcome_without_a_following_command() {
     let (worker, mut peer, caps, probe) = configured();
@@ -312,13 +363,37 @@ fn idle_driver_services_ack_clunk_flush_and_blocks_when_quiet() {
     assert_eq!(refused.0, 7);
     assert_eq!(u32::from_le_bytes(refused.1.try_into().unwrap()), 116); // ESTALE
     let tag = begin_read(&mut peer);
-    assert_eq!(peer.rpc(108, &tag.to_le_bytes()).unwrap().0, 109);
+    // The turn that answers the flush may still be returning after Rflush is
+    // on the wire, so `entered > returned` does not identify the quiet turn.
+    // Hold every idle entry until one starts with Rflush already written: all
+    // wire work is then complete, and no wake writer runs in this phase.
+    let (mut entered, mut release) = arm_idle_gate(&probe);
+    let flush = begin_flush(&mut peer, tag);
+    // One bound for the whole search: turns that never write Rflush must fail.
+    let deadline = Instant::now() + BOUND;
+    let before = loop {
+        // recv_timeout(ZERO) still returns an entry already queued.
+        assert!(
+            Instant::now() < deadline,
+            "no idle entry after Rflush within the bound"
+        );
+        entered
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .expect("an idle entry after Rflush within the bound");
+        // The driver is held at this entry, so the wire cannot change.
+        if reply_written(&peer) {
+            break probe.idle_entered.load(Ordering::SeqCst);
+        }
+        let next = arm_idle_gate(&probe);
+        release.send(()).unwrap();
+        (entered, release) = next;
+    };
+    release.send(()).unwrap();
+    // The held turn has passed the fixture gate into the real idle receive.
+    wait_for(|| probe.idle_inner.load(Ordering::SeqCst) >= before);
+    finish_flush(&mut peer, flush);
     assert_eq!(*probe.sent.lock().unwrap(), commands);
     assert_eq!(probe.fallback.load(Ordering::SeqCst), 0);
-    wait_for(|| {
-        probe.idle_entered.load(Ordering::SeqCst) > probe.idle_returned.load(Ordering::SeqCst)
-    });
-    let before = probe.idle_entered.load(Ordering::SeqCst);
     std::thread::sleep(Duration::from_millis(50));
     assert_eq!(
         probe.idle_entered.load(Ordering::SeqCst),

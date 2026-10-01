@@ -7,7 +7,7 @@ mod proof;
 
 use proof::{A_EPOCH, Input, argv, layout_a, layout_b, run, run_offline};
 use sophia_protocol::*;
-use sophia_runtime::OutputTransportServiceEvent as Event;
+use sophia_runtime::OutputFileServiceEvent as Event;
 
 fn delivered(input: &Input<'_>) -> Option<(TransactionId, OutputTopologyCandidate)> {
     match input {

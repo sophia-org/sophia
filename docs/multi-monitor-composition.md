@@ -38,11 +38,11 @@ desktop. The WM continues to see only logical outputs; it never receives
 physical mode, scale, transform, connector, CRTC, card, mode-object,
 framebuffer, render-target, or head-count identity.
 
-Physical topology control is a separate privileged authority. A shell or the
-selected WM process may host the exclusive `sophia_output_v1` role and receive
+Physical topology control is a separate privileged authority. An explicitly
+configured protected output process may receive the exclusive output file role and
 opaque head capability handles needed to choose each head's mode, scale,
 transform, position, and mirror membership. Those handles and capabilities do
-not enter the ordinary `sophia_wm_v1` scene/policy projection, and neither IPC
+not enter the ordinary `sophia_wm_v1` scene/policy projection, and neither role
 exposes connector, CRTC, card, mode-object, or framebuffer identity.
 
 Mirroring is semantic rather than framebuffer identity:
@@ -873,21 +873,21 @@ parallel multi-monitor subsystem.
   last applicable output retirement. The latest output UST and transaction
   generation form the logical completion clock; CRTC-local sequences are not
   combined.
-- The exclusive `sophia_output_v1` Rust wire and authenticated transport exist
+- The exclusive output file role and authenticated 9P transport exist
   with bounded capability snapshots and complete topology proposals. Backend
   projection binds capabilities to opaque heads and resolves independently
   selected modes into mixed mirror and extended groups. A session-side candidate
   owner now joins that projection to `OutputTopologyTransaction`: validation is
   nonmutating, fresh identities remain provisional through preparation and
   rollback, and the replacement snapshot stays private until every new logical
-  output presents. Generated language-neutral conformance remains cutover work.
+  output presents. The public C SDK supplies independent conformance evidence.
 - The output transport also has an optional cancellable service loop and
   incrementally buffered proposal intake. No-client startup and shutdown are
   bounded, and a client may pause between frame header and payload without
   blocking the visual owner. A native live session now binds that service in
-  the selected public WM's private policy directory, authorizes the exact
-  supervised PID, advertises it through `SOPHIA_OUTPUT_SOCKET`, and replaces
-  the assignee and connection epoch on a supervised restart. Complete
+  explicit output process's private endpoint, authorizes its captured process
+  identity and advertises it through `SOPHIA_OUTPUT_9P_SOCKET`. WM restarts
+  leave that assignment unchanged; output peer departure fences its epoch. Complete
   proposals reach the session-side authority owner. Validate-only proposals
   settle normally. Apply proposals cross into the visual/session owner as
   immutable effect contracts; that owner binds every enabled and disabled head

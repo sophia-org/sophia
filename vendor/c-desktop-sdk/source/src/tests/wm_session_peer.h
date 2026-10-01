@@ -36,6 +36,7 @@ struct wm_peer {
   unsigned object_again, object_opens, object_truncate;
   unsigned submit_silent, custody_on_error, event_first, error_once;
   unsigned bad_event_before, wrong_epoch, wrong_kind, close_after;
+  const char *api; /* Served `api` bytes; null serves the current contract. */
 };
 struct wm_rig {
   struct wm_peer peer;
@@ -211,10 +212,11 @@ static inline void wp_request(struct wm_peer *p, const uint8_t *message) {
     unsigned file = p->files[fid];
     uint64_t offset = wp_get(q + 4, 8);
     uint32_t count = (uint32_t)wp_get(q + 12, 4);
-    static const uint8_t api[] =
-        "sophia-wm-files version=1 output_transport=current_ipc\n";
+    static const char api[] =
+        "sophia-wm-files version=1 output_transport=9p2000.L\n";
     if (file == WP_API)
-      wp_data(p, tag, api, sizeof(api) - 1, offset, count);
+      wp_data(p, tag, (const uint8_t *)(p->api ? p->api : api),
+              p->api ? strlen(p->api) : sizeof(api) - 1, offset, count);
     else if (file == WP_LIMITS)
       wp_data(p, tag, p->limits, sizeof(p->limits), offset, count);
     else if (file == WP_SNAPSHOT) {

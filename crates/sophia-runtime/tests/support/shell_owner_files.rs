@@ -8,8 +8,7 @@ use sophia_protocol::shell_files::*;
 use std::os::unix::net::UnixStream;
 use std::time::{Duration, Instant};
 
-#[path = "shell_file_peer.rs"]
-pub(in crate::shell_transport) mod raw;
+pub(in crate::shell_transport) use crate::raw_file_test_peer as raw;
 
 pub struct Peer {
     raw: raw::Peer,

@@ -1,7 +1,6 @@
 // The independent file-role process has its own supervisor and never
 // inherits WM restart or reapply policy.
 enum PreparedOutputTransport {
-    Socket(sophia_runtime::OutputSessionTransport),
     Files {
         transport: Box<sophia_runtime::OutputFileTransport>,
         supervisor: ProcessSupervisor,
@@ -14,11 +13,8 @@ impl PreparedOutputTransport {
         directory: &std::path::Path,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let uid = rustix::process::geteuid().as_raw();
-        let Some(process) = &config.output_process else {
-            return Ok(Self::Socket(
-                sophia_runtime::OutputSessionTransport::bind_for_supervised_uid(directory, uid)?,
-            ));
-        };
+        let process = config.output_process.as_ref()
+            .ok_or("output transport requires an explicitly configured process")?;
         let mut transport = sophia_runtime::OutputFileTransport::bind_for_supervised_uid(
             directory,
             uid,
@@ -53,33 +49,11 @@ impl PreparedOutputTransport {
         })
     }
 
-    fn wm_socket_path(&self) -> Option<&std::path::Path> {
-        match self {
-            Self::Socket(transport) => Some(transport.socket_path()),
-            Self::Files { .. } => None,
-        }
-    }
-
-    fn authorize_wm(&mut self, pid: u32) -> Result<(), sophia_runtime::OutputTransportError> {
-        match self {
-            Self::Socket(transport) => transport.authorize_supervised_pid(pid),
-            Self::Files { .. } => Ok(()),
-        }
-    }
-
     fn start(
         self,
         snapshot: sophia_protocol::OutputAuthoritySnapshot,
     ) -> Result<LiveOutputService, std::io::Error> {
         Ok(match self {
-            Self::Socket(transport) => {
-                LiveOutputService::Socket(sophia_runtime::OutputTransportService::spawn(
-                    transport,
-                    1,
-                    TransactionId::from_raw(1),
-                    snapshot,
-                )?)
-            }
             Self::Files {
                 transport,
                 supervisor,
@@ -92,7 +66,6 @@ impl PreparedOutputTransport {
 }
 
 enum LiveOutputService {
-    Socket(sophia_runtime::OutputTransportService),
     Files {
         service: sophia_runtime::OutputFileService,
         supervisor: Box<ProcessSupervisor>,
@@ -100,55 +73,22 @@ enum LiveOutputService {
 }
 
 impl LiveOutputService {
-    fn assigned_to_wm(&self) -> bool {
-        matches!(self, Self::Socket(_))
-    }
-
     fn command(
         &self,
-        command: sophia_runtime::OutputTransportServiceCommand,
-    ) -> Result<(), sophia_runtime::OutputTransportServiceCommand> {
-        use sophia_runtime::{
-            OutputFileServiceCommand as Files, OutputTransportServiceCommand as Old,
-        };
-        let Self::Files { service, .. } = self else {
-            let Self::Socket(service) = self else {
-                unreachable!()
-            };
-            return service.command(command);
-        };
-        let retained = command.clone();
-        let command = match command {
-            Old::PublishSnapshot { snapshot, .. } => Files::PublishSnapshot(snapshot),
-            Old::Settle {
-                transaction,
-                outcome,
-            } => Files::Settle {
-                transaction,
-                outcome,
-            },
-            // This terminal already belongs to the atomic replacement batch.
-            Old::Reply { outcome, .. }
-                if outcome.kind == sophia_protocol::OutputV1OutcomeKind::Stale =>
-            {
-                return Ok(());
-            }
-            _ => return Err(retained),
-        };
-        service.command(command).map_err(|_| retained)
+        command: sophia_runtime::OutputFileServiceCommand,
+    ) -> Result<(), sophia_runtime::OutputFileServiceCommand> {
+        let Self::Files { service, .. } = self;
+        service.command(command)
     }
 
     fn try_event(
         &mut self,
     ) -> Result<
-        Option<sophia_runtime::OutputTransportServiceEvent>,
-        sophia_runtime::OutputTransportServiceDisconnected,
+        Option<sophia_runtime::OutputFileServiceEvent>,
+        std::sync::mpsc::TryRecvError,
     > {
         match self {
-            Self::Socket(service) => service.try_event(),
-            Self::Files { service, .. } => service
-                .try_event()
-                .map_err(|_| sophia_runtime::OutputTransportServiceDisconnected),
+            Self::Files { service, .. } => service.try_event(),
         }
     }
 
@@ -157,23 +97,20 @@ impl LiveOutputService {
     /// revoke or cancel the transaction.
     fn poll_supervisor(
         &mut self,
-    ) -> Result<Option<(u32, std::process::ExitStatus)>, sophia_runtime::OutputTransportServiceDisconnected> {
+    ) -> Result<Option<(u32, std::process::ExitStatus)>, std::sync::mpsc::TryRecvError> {
         use std::os::unix::process::ExitStatusExt;
         let Self::Files {
             service,
             supervisor,
-        } = self
-        else {
-            return Ok(None);
-        };
+        } = self;
         let peer = supervisor.peer_id();
         if supervisor
             .poll()
-            .map_err(|_| sophia_runtime::OutputTransportServiceDisconnected)?
+            .map_err(|_| std::sync::mpsc::TryRecvError::Disconnected)?
             .is_some()
         {
             let status = supervisor.exit_status()
-                .ok_or(sophia_runtime::OutputTransportServiceDisconnected)?;
+                .ok_or(std::sync::mpsc::TryRecvError::Disconnected)?;
             let peer_record = peer.map_or_else(|| "none".to_owned(), |value| value.to_string());
             let code = status.code().map_or_else(|| "none".to_owned(), |value| value.to_string());
             let signal = status.signal().map_or_else(|| "none".to_owned(), |value| value.to_string());
@@ -182,7 +119,7 @@ impl LiveOutputService {
             );
             service
                 .request_pause()
-                .map_err(|_| sophia_runtime::OutputTransportServiceDisconnected)?;
+                .map_err(|_| std::sync::mpsc::TryRecvError::Disconnected)?;
             tracing::info!(
                 "sophia_live_output_supervisor schema=1 status=pause_requested peer={peer_record}"
             );
@@ -191,24 +128,13 @@ impl LiveOutputService {
         Ok(None)
     }
 
-    fn pause_acceptance(
-        &self,
-        timeout: Duration,
-    ) -> Result<Vec<sophia_runtime::AdmittedOutputProposal>, &'static str> {
-        match self {
-            Self::Socket(service) => service.pause_acceptance(timeout),
-            Self::Files { service, .. } => service.pause_acceptance(timeout),
-        }
-    }
-
     #[cfg(test)]
     fn event_timeout(
         &self,
         timeout: Duration,
-    ) -> Result<sophia_runtime::OutputTransportServiceEvent, std::sync::mpsc::RecvTimeoutError>
+    ) -> Result<sophia_runtime::OutputFileServiceEvent, std::sync::mpsc::RecvTimeoutError>
     {
         match self {
-            Self::Socket(service) => service.event_timeout(timeout),
             Self::Files { service, .. } => service.event_timeout(timeout),
         }
     }

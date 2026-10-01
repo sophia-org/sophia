@@ -46,6 +46,9 @@ mod peer_loss_proof;
 #[path = "output_file_native_session.rs"]
 mod native_session;
 
+#[path = "output_file_reload_settlement.rs"]
+mod reload_settlement;
+
 enum Step {
     Negotiate,
     Propose(TransactionId, OutputTopologyCandidate),
@@ -351,10 +354,7 @@ impl Rig {
 
     fn supervisor(&mut self) -> &mut ProcessSupervisor {
         let LiveOutputService::Files { supervisor, .. } =
-            self.public().output_service.as_mut().unwrap()
-        else {
-            panic!("file service expected")
-        };
+            self.public().output_service.as_mut().unwrap();
         supervisor
     }
 

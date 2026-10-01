@@ -1,15 +1,25 @@
-//! Real Session restart entrypoints with file WM and existing output IPC in one
-//! supervised process. Native mode only selects the fixture bootstrap: topology
-//! is supplied, capabilities are empty, and no native device is constructed.
-//! No pending topology candidate, rollback, frame or retirement is simulated.
+//! A profile-only WM through real Session launch and both restart entrypoints,
+//! with the default WM transport and no output process. The WM receives no
+//! output endpoint or output-authority grant. Session's native output
+//! authority, including its startup transaction, has no listener and survives
+//! every WM replacement unchanged. Native mode only selects the fixture
+//! bootstrap: the capability is supplied and no native device is constructed;
+//! dispatch is supplied; no effect is physically applied or presented.
 use super::*;
+use sophia_backend_live::{
+    LibdrmNativeOutputCapability, LibdrmNativeOutputTiming, LibdrmNativeVrrPropertyDiscoveryStatus,
+    project_live_output_authority_snapshot,
+};
 use sophia_protocol::*;
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::time::{Duration, Instant};
 
-const CHILD: &str = "live_session::reload::tests::desktop_launch_reload::policy_combined_output::combined_role_child";
+const CHILD: &str = "live_session::reload::tests::desktop_launch_reload::policy_combined_output::profile_only_wm_child";
+const STARTUP: u64 = u64::MAX;
 
+/// A neutral supplied topology for fixtures that do not exercise native
+/// capabilities.
 pub(super) fn snapshot() -> OutputAuthoritySnapshot {
     OutputAuthoritySnapshot {
         topology_epoch: 1,
@@ -50,84 +60,130 @@ pub(super) fn snapshot() -> OutputAuthoritySnapshot {
     }
 }
 
-fn read_frame(stream: &mut UnixStream) -> Vec<u8> {
-    let mut header = [0; SOPHIA_IPC_HEADER_LEN];
-    stream.read_exact(&mut header).unwrap();
-    let payload = u32::from_le_bytes(header[16..20].try_into().unwrap()) as usize;
-    assert!(payload <= 1024 * 1024, "bounded output fixture frame");
-    let mut bytes = header.to_vec();
-    bytes.resize(SOPHIA_IPC_HEADER_LEN + payload, 0);
-    stream
-        .read_exact(&mut bytes[SOPHIA_IPC_HEADER_LEN..])
-        .unwrap();
-    bytes
-}
-
 #[test]
-#[ignore = "protected combined-role child invoked by its Session parent"]
-fn combined_role_child() {
-    assert!(std::env::var_os("SOPHIA_WM_SOCKET").is_none());
+#[ignore = "protected profile-only WM child invoked by its Session parent"]
+fn profile_only_wm_child() {
+    for name in [
+        "SOPHIA_WM_SOCKET",
+        "SOPHIA_OUTPUT_SOCKET",
+        "SOPHIA_OUTPUT_9P_SOCKET",
+    ] {
+        assert!(std::env::var_os(name).is_none(), "{name} reached the WM");
+    }
     let wm_path = std::env::var_os("SOPHIA_WM_9P_SOCKET").unwrap();
     let (limits, wm_epoch, qid, _wm) = policy_transport_worker::ninep::selection_peer::startup(
         UnixStream::connect(wm_path).unwrap(),
     );
     assert!(limits.profile_required);
-    let mut output =
-        UnixStream::connect(std::env::var_os("SOPHIA_OUTPUT_SOCKET").unwrap()).unwrap();
-    output
-        .set_read_timeout(Some(Duration::from_secs(4)))
-        .unwrap();
-    output
-        .set_write_timeout(Some(Duration::from_secs(4)))
-        .unwrap();
-    output
-        .write_all(
-            &encode_output_v1_client_hello_frame(OutputV1ClientHello {
-                minimum_revision: 1,
-                maximum_revision: 1,
-                capabilities: SOPHIA_OUTPUT_CAPABILITY_OBSERVE,
-            })
-            .unwrap(),
-        )
-        .unwrap();
-    let welcome = decode_output_v1_server_welcome_frame(&read_frame(&mut output)).unwrap();
-    let (_, received) = decode_output_v1_snapshot_frame(&read_frame(&mut output)).unwrap();
-    assert_eq!(received.connection_epoch, welcome.connection_epoch);
-    assert_eq!(received.snapshot, snapshot());
     let checkpoint = PathBuf::from(std::env::var_os("SOPHIA_WM_POLICY_CHECKPOINT").unwrap());
-    // This third socket is only a fixture witness: parent SO_PEERCRED measures
-    // the child in its own PID namespace rather than trusting the child's PID.
+    // Fixture witness only: parent SO_PEERCRED measures the child in its own
+    // PID namespace rather than trusting the child's PID.
     let mut witness =
         UnixStream::connect(checkpoint.parent().unwrap().join("role-witness.sock")).unwrap();
     witness
         .set_write_timeout(Some(Duration::from_secs(4)))
         .unwrap();
     witness
-        .write_all(
-            &[
-                wm_epoch.to_le_bytes(),
-                qid.to_le_bytes(),
-                welcome.connection_epoch.to_le_bytes(),
-            ]
-            .concat(),
-        )
+        .write_all(&[wm_epoch.to_le_bytes(), qid.to_le_bytes()].concat())
         .unwrap();
-    // Both admitted role streams remain held by this same process. The actual
-    // Session restart terminates it; there is no fixture replacement owner.
+    // The actual Session restart terminates this process.
     std::thread::sleep(Duration::from_secs(20));
 }
 
-fn observe_roles(wm: &mut LiveWmSession, listener: &UnixListener, epoch: u64) -> (u32, u64, u64) {
+/// One head with 60 and 75 Hz modes at the output's size, its projected
+/// topology and a profile startup candidate selecting 75 Hz.
+fn native_bootstrap(output: sophia_engine::HeadlessOutput) -> LiveOutputAuthorityBootstrap {
+    let size = |refresh| {
+        LibdrmNativeOutputTiming::new(
+            u32::try_from(output.size.width).unwrap(),
+            u32::try_from(output.size.height).unwrap(),
+            refresh,
+        )
+    };
+    let current = size(60_000);
+    let capability = LibdrmNativeOutputCapability::new(
+        output.id,
+        11,
+        "DP-1",
+        [current, size(75_000)],
+        Some(current),
+        current,
+        LibdrmNativeVrrPropertyDiscoveryStatus::Discovered,
+    )
+    .unwrap()
+    .bind_head(sophia_engine::RenderHeadId::from_raw(11))
+    .unwrap();
+    let snapshot =
+        project_live_output_authority_snapshot(std::slice::from_ref(&capability), &[output], 7)
+            .unwrap();
+    let head = &snapshot.heads[0];
+    let group = &snapshot.groups[0];
+    let alternate = head
+        .modes
+        .iter()
+        .map(|mode| mode.mode)
+        .find(|mode| Some(*mode) != head.current_mode)
+        .unwrap();
+    let startup_candidate = OutputTopologyCandidate {
+        base_topology_epoch: snapshot.topology_epoch,
+        intent: OutputTopologyIntent::Apply,
+        primary_group_index: 0,
+        heads: vec![OutputHeadTargetProposal {
+            head: head.head,
+            head_generation: head.generation,
+            mode: alternate,
+            transform: OutputTransform::Normal,
+            vrr: OutputVrrPolicy::Disabled,
+        }],
+        groups: vec![OutputLogicalGroupProposal {
+            output: group.output,
+            logical: group.logical,
+            members: group.members.clone(),
+        }],
+    };
+    LiveOutputAuthorityBootstrap {
+        snapshot,
+        capabilities: vec![capability],
+        startup_candidate: Some(startup_candidate),
+    }
+}
+
+/// Session's output authority is exactly as bootstrapped: no service, the
+/// first epoch, the original topology and the same startup effect custody.
+fn assert_output_retained(wm: &LiveWmSession, expected: &OutputAuthoritySnapshot, dispatched: bool) {
+    let public = wm.public.as_ref().unwrap();
+    assert!(public.output_service.is_none(), "no output listener");
+    let authority = public.output_authority.as_ref().unwrap();
+    assert_eq!(authority.connection_epoch(), 1);
+    assert_eq!(authority.published(), expected);
+    assert_eq!(
+        authority.active_transaction(),
+        Some(TransactionId::from_raw(STARTUP))
+    );
+    assert_eq!(
+        public.startup_output_transaction,
+        Some(TransactionId::from_raw(STARTUP))
+    );
+    assert_eq!(public.output_topology_effect_pending(), !dispatched);
+    assert_eq!(public.output_effect_dispatched, dispatched);
+    assert!(public.output_pending_connection_epoch.is_none());
+    assert!(public.output_cancel_requested.is_none());
+}
+
+fn observe_wm(
+    wm: &mut LiveWmSession,
+    listener: &UnixListener,
+    epoch: u64,
+    expected: &OutputAuthoritySnapshot,
+    dispatched: bool,
+) -> (u32, u64) {
     let deadline = Instant::now() + Duration::from_secs(5);
     let mut witness = loop {
         wm.poll_output_authority().unwrap();
         match listener.accept() {
             Ok((stream, _)) => break stream,
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                assert!(
-                    Instant::now() < deadline,
-                    "both role negotiations must complete"
-                );
+                assert!(Instant::now() < deadline, "WM negotiation must complete");
                 std::thread::sleep(Duration::from_millis(2));
             }
             Err(error) => panic!("role witness accept: {error}"),
@@ -139,37 +195,36 @@ fn observe_roles(wm: &mut LiveWmSession, listener: &UnixListener, epoch: u64) ->
     let credentials = rustix::net::sockopt::socket_peercred(&witness).unwrap();
     let pid = credentials.pid.as_raw_pid() as u32;
     assert_eq!(wm.supervisor.peer_id(), Some(pid));
-    assert_eq!(wm.supervisor.protection_evidence().unwrap().peer_pid, pid);
-    let mut record = [0; 24];
+    let evidence = wm.supervisor.protection_evidence().unwrap();
+    assert_eq!(evidence.peer_pid, pid);
+    assert!(
+        !evidence
+            .roles
+            .contains(&sophia_runtime::ProtectionDomainRole::OutputAuthority),
+        "the WM holds no output-authority grant"
+    );
+    let mut record = [0; 16];
     witness.read_exact(&mut record).unwrap();
-    let values: Vec<u64> = record
-        .chunks_exact(8)
-        .map(|b| u64::from_le_bytes(b.try_into().unwrap()))
-        .collect();
-    assert_eq!(values[0], epoch);
+    assert_eq!(u64::from_le_bytes(record[..8].try_into().unwrap()), epoch);
     assert_eq!(wm.public.as_ref().unwrap().connection_epoch, epoch);
-    loop {
-        wm.poll_output_authority().unwrap();
-        let public = wm.public.as_ref().unwrap();
-        let authority = public.output_authority.as_ref().unwrap();
-        if authority.connection_epoch() == values[2] {
-            assert_eq!(authority.published(), &snapshot());
-            assert!(public.output_service.is_some());
-            break;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "production output owner must adopt replacement epoch"
-        );
-        std::thread::sleep(Duration::from_millis(2));
-    }
-    (pid, values[1], values[2])
+    wm.poll_output_authority().unwrap();
+    assert_output_retained(wm, expected, dispatched);
+    (pid, u64::from_le_bytes(record[8..].try_into().unwrap()))
 }
 
 #[test]
-fn file_and_output_roles_share_the_supervised_replacement_across_both_entrypoints() {
+fn profile_only_wm_restarts_keep_native_output_authority_without_a_listener() {
+    profile_only_restarts(false);
+}
+
+#[test]
+fn profile_only_wm_restarts_preserve_a_dispatched_output_effect() {
+    profile_only_restarts(true);
+}
+
+fn profile_only_restarts(dispatched: bool) {
     let mut source = ConfigFixture::new(&[]);
-    source.config.wm_socket_path = source.directory.join("combined-wm.sock");
+    source.config.wm_socket_path = source.directory.join("profile-only-wm.sock");
     source.config.wm_process = Some(
         std::env::current_exe()
             .unwrap()
@@ -183,7 +238,8 @@ fn file_and_output_roles_share_the_supervised_replacement_across_both_entrypoint
         "--ignored".into(),
         "--nocapture".into(),
     ];
-    source.config.wm_transport = WmTransportSelection::NineP2000L;
+    assert!(source.config.output_process.is_none());
+    assert_eq!(source.config.wm_transport, WmTransportSelection::NineP2000L);
     // Fixture bootstrap selection only. Do not run native startup discovery.
     source.config.native_scanout = true;
     let prepared = LiveWmSession::prepare_public_launch(&mut source.config).unwrap();
@@ -204,12 +260,13 @@ fn file_and_output_roles_share_the_supervised_replacement_across_both_entrypoint
     let started = LiveWmSession::activate_public_launch(&mut source.config, prepared)
         .unwrap()
         .unwrap();
+    assert!(
+        started.runtime.output_transport.is_none(),
+        "no output process, no output endpoint"
+    );
     let output = sophia_engine::HeadlessOutput::deterministic();
-    let bootstrap = LiveOutputAuthorityBootstrap {
-        snapshot: snapshot(),
-        capabilities: vec![],
-        startup_candidate: None,
-    };
+    let bootstrap = native_bootstrap(output);
+    let expected = bootstrap.snapshot.clone();
     let mut wm = LiveWmSession::from_started_public_config(
         &source.config,
         &[output],
@@ -217,13 +274,17 @@ fn file_and_output_roles_share_the_supervised_replacement_across_both_entrypoint
         Some(bootstrap),
     )
     .unwrap();
-    let first = observe_roles(&mut wm, &listener, 1);
+    if dispatched {
+        assert_eq!(wm.take_output_topology_effect().unwrap().transaction.raw(), STARTUP);
+    }
+    assert_output_retained(&wm, &expected, dispatched);
+    let first = observe_wm(&mut wm, &listener, 1, &expected, dispatched);
     let mut layout = PersistentLiveLayout::default();
     wm.force_transport_restart = true;
     wm.poll_public_restart(&mut layout, output).unwrap();
-    let second = observe_roles(&mut wm, &listener, 2);
+    let second = observe_wm(&mut wm, &listener, 2, &expected, dispatched);
     assert_ne!(second.0, first.0);
-    assert!(second.1 > first.1 && second.2 > first.2);
+    assert!(second.1 > first.1);
     assert_eq!(wm.begin_control_restart(output).unwrap(), 3);
     let deadline = Instant::now() + Duration::from_secs(5);
     while wm.control_restart.is_some() {
@@ -231,10 +292,10 @@ fn file_and_output_roles_share_the_supervised_replacement_across_both_entrypoint
         wm.poll_control_restart(&mut layout, output);
         std::thread::sleep(Duration::from_millis(2));
     }
-    let third = observe_roles(&mut wm, &listener, 3);
+    let third = observe_wm(&mut wm, &listener, 3, &expected, dispatched);
     assert_ne!(third.0, first.0);
     assert_ne!(third.0, second.0);
-    assert!(third.1 > second.1 && third.2 > second.2);
+    assert!(third.1 > second.1);
     assert_eq!(wm.policy_wire_name(), "sophia_wm_fs_v1");
     assert!(!wm.public.as_ref().unwrap().configured);
 }

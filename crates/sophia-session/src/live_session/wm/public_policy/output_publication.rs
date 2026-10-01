@@ -15,14 +15,14 @@ impl LivePublicPolicyState {
             .next_output_snapshot_transaction
             .checked_add(1)
             .ok_or("output snapshot transaction exhausted")?;
-        let published = self.output_service.as_ref().is_some_and(|service| {
-            service
-                .command(sophia_runtime::OutputTransportServiceCommand::PublishSnapshot {
-                    transaction,
-                    snapshot,
-                })
-                .is_ok()
-        });
+        // Profile-only sessions have an authority owner without an export.
+        // Absence is normal; a failed handoff to an existing export is not.
+        let Some(service) = self.output_service.as_ref() else {
+            return Ok((transaction, false));
+        };
+        let published = service
+            .command(sophia_runtime::OutputFileServiceCommand::PublishSnapshot(snapshot))
+            .is_ok();
         if !published {
             self.output_service.take();
             tracing::warn!(

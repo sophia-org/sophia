@@ -9,7 +9,7 @@ static NEXT: AtomicU64 = AtomicU64::new(0);
 fn file_bar_and_launcher_negotiate_in_one_registry() {
     use sophia_protocol::shell_files::*;
     let directory = std::env::temp_dir().join(format!(
-        "session-component-files-{}-{}",
+        "session-component-publication-files-{}-{}",
         std::process::id(),
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));

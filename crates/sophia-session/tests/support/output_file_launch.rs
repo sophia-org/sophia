@@ -138,10 +138,7 @@ fn observe(
                 1
             );
             let LiveOutputService::Files { supervisor, .. } =
-                public.output_service.as_ref().unwrap()
-            else {
-                panic!("file role")
-            };
+                public.output_service.as_ref().unwrap();
             assert_eq!(supervisor.peer_id(), Some(output_pid));
             assert_ne!(wm.supervisor.peer_id(), Some(output_pid));
             return (epoch, qid);
@@ -191,10 +188,7 @@ fn independent_output_process_survives_both_wm_restart_paths_without_reassignmen
     let PreparedOutputTransport::Files {
         transport,
         supervisor,
-    } = started.runtime.output_transport.as_ref().unwrap()
-    else {
-        panic!("file role")
-    };
+    } = started.runtime.output_transport.as_ref().unwrap();
     let pid = supervisor.peer_id().unwrap();
     assert_eq!(
         supervisor.protection_evidence().unwrap().roles,

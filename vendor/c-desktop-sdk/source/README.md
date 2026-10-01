@@ -18,15 +18,18 @@ to tunnel the old socket protocol through a file.
 
 ## Current coverage
 
-Release 0.3.0 provides a generic nonblocking 9P2000.L client, shell file
+Release 0.4.0 provides a generic nonblocking 9P2000.L client, shell file
 records and sessions for bar (r6), native launcher (r7) and persistent
 catalog/dock (r8), and WM and output file codecs and sessions. WM and shell socket
 compatibility is removed; recovery uses a complete compatible older desktop release.
 WM file record codecs and a bounded WM session pass scripted-peer tests and
 Sophia's production WM export gate, and Hagia uses them through thin Nim
-bindings. The output file codec and session pass scripted-peer tests and
-Sophia's production output export exchange. This does not qualify physical
-display changes or the output default rollout. The admin file client is not
+bindings. The WM session requires the exact `api` file naming the output role's
+9P2000.L transport and refuses the retired `current_ipc` value. The output file
+codec and session pass scripted-peer tests, Sophia's production output export
+exchange and Sophia's attended native output acceptance on one card with two
+heads (see provenance for its scope). The output default rollout and other
+physical configurations are not qualified here. The admin file client is not
 implemented yet.
 
 Descriptor codecs and profile selection use the native layouts in
@@ -76,8 +79,8 @@ Requires a POSIX system, a C99 compiler, GNU make, ar, and sha256sum. Tests use
 Unix socket pairs; they do not discover or connect to a desktop.
 
 ```sh
-nice -n 19 make -j2
-nice -n 19 make -j2 check
+make -j"$(nproc)"
+make -j"$(nproc)" check
 make install PREFIX=/usr/local DESTDIR=/path/to/staging
 ```
 

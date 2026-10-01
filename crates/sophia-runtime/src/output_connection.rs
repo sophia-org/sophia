@@ -72,7 +72,6 @@ impl OutputConnectionState {
     /// The file export advertises this per-epoch limit. At exhaustion, new
     /// identities are refused before custody changes; already accepted work
     /// can still settle. A newer connection epoch starts a fresh history.
-    /// The retiring socket adapter retains its existing default behavior.
     pub fn with_transaction_limit(limit: usize) -> Self {
         Self {
             transaction_limit: Some(limit),

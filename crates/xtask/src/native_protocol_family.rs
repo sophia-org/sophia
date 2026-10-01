@@ -67,8 +67,8 @@ pub fn run(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> {
             "identity_error": final_identity.as_ref().err(), "phases": phases,
             "device_hidden": true, "native_acceptance": false,
             "supplied_facts": ["presentation completions", "output topology", "input activations"],
-            "wm_transport": "9p2000.L", "shell_transports": ["9p2000.L"], "output_transport": "current_ipc",
-            "output_independent_lifecycle": false,
+            "wm_transport": "9p2000.L", "shell_transports": ["9p2000.L"], "output_transport": "9p2000.L",
+            "output_independent_lifecycle": true,
         }),
     )?;
     if !coherent {
@@ -179,7 +179,7 @@ fn stages() -> Vec<Stage> {
             ],
         ),
         (
-            "output-client",
+            "output-configuration",
             "cargo",
             vec![
                 "test",
@@ -188,7 +188,24 @@ fn stages() -> Vec<Stage> {
                 "-p",
                 "sophia-conformance",
                 "--test",
-                "output_ipc",
+                "output_configuration",
+            ],
+        ),
+        (
+            "output-session-files",
+            "cargo",
+            vec![
+                "test",
+                "--offline",
+                "-q",
+                "-p",
+                "sophia-session",
+                "--features",
+                "native-session",
+                "--lib",
+                "output_",
+                "--",
+                "--test-threads=1",
             ],
         ),
         // Control shares the envelope, but is not a supervised desktop role.

@@ -28,9 +28,8 @@ pub enum PolicyRole {
     /// spatial policy. Sharing the WM socket would also give a broker peer the WM's
     /// admission, which is exactly the conflation the role split exists to prevent.
     Broker,
-    /// `sophia_output_v1`, the exclusive physical-output authority. Session
-    /// supervision may grant it to a WM or shell process without widening that
-    /// process's WM/shell interface.
+    /// The exclusive output file authority, assigned to its own protected
+    /// supervised process. WM and shell assignment confer no output grant.
     Output,
 }
 
