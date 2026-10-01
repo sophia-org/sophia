@@ -2,7 +2,7 @@
 id: j8jkd97a
 date: 2026-10-01
 kind: investigation
-status: investigating
+status: closed
 tags: [investigation, output, 9p]
 ---
 # Retire the output socket after native file-role acceptance
@@ -20,8 +20,8 @@ remains bound to that source; this retirement requires its own qualification.
 
 Signed contract C is `b0721d0de6a03cb44e57b0a923c6c385cf40b676` on
 `integration/t272-output-files`. It changes the strict WM API to
-`sophia-wm-files version=1 output_transport=9p2000.L\n`. C deliberately remains
-off master: its vendored SDK 0.3 WM client expects `current_ipc`, so C alone
+`sophia-wm-files version=1 output_transport=9p2000.L\n`. C was kept off master
+as a standalone candidate: its vendored SDK 0.3 WM client expects `current_ipc`, so C alone
 fails its own WM bootstrap. The assembled candidate with SDK 0.4 is coherent.
 
 C SDK 0.4.0, signed commit `497e7e01531415078a4a3da2455ebe82ec18fd0e`,
@@ -175,9 +175,9 @@ including workspace and SDK tests, strict Clippy, source layout, wire checks
 and six promoted direct-scanout archives. The device-hidden gate explicitly
 does not establish new pixel or native output acceptance.
 
-The assembled signed Sophia candidate, SDK 0.4 and repinned Hagia must pass
-the clean-tree gates, fresh preparation/performance and attended native run
-before promotion. Intermediate C remains reachable for SDK provenance. Rollback
+The [accepted assembled candidate](../milestones/dzsezje2-accept-output-ipc-retirement-with-the-strict-file-only-wm-contract.md)
+passed the repository gates, fresh preparation/performance and attended native
+run before promotion. Intermediate C remains reachable for SDK provenance. Rollback
 restores the whole previous release: pre-C Sophia with its old WM and SDK;
 mixing the old WM SDK with the new API intentionally fails bootstrap.
 The reverse mix also fails: SDK 0.4 refuses the old API. Hagia's repin includes

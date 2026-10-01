@@ -3524,5 +3524,7 @@ now satisfies the deletion prerequisite. The
 [retirement implementation record](j8jkd97a-retire-the-output-socket-after-native-file-role-acceptance.md)
 records signed contract C, published SDK 0.4, the source deletion, coverage
 mapping and whole-release rollback. It also records the retired startup-only
-proof and its physical qualification gap. The assembled candidate and attended
-gate remain required; this implementation record does not close t272.
+proof and its physical qualification gap. The subsequent
+[t272 acceptance](../milestones/dzsezje2-accept-output-ipc-retirement-with-the-strict-file-only-wm-contract.md)
+records the exact assembled candidate, passing attended gate and signed master
+promotion. Earlier evidence in this inventory retains its original scope.

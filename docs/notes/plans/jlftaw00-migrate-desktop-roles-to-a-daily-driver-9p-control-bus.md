@@ -502,6 +502,12 @@ The startup-only rollback proof flag is retired; startup physical rollback is
 not covered by the peer-loss native gate. Historical frame-fed archives keep
 their original source pairs.
 
+The [t272 acceptance](../milestones/dzsezje2-accept-output-ipc-retirement-with-the-strict-file-only-wm-contract.md)
+records the four passing native stages on `21bdf9f60`, SDK 0.4 and its matching
+external WM, plus fresh performance and independent verification. Signed merge
+`4c1012b89` promotes the exact candidate tree; the physical limits remain as
+declared below.
+
 Approval covers implementation and isolated qualification. Prepare a concrete
 candidate and rollback recipe before requesting a separate attended hardware
 window or installation. Both tasks retain their physical acceptance exits;
