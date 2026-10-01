@@ -59,6 +59,11 @@ pub struct LiveRenderedOutputState {
     /// heads that were submitted and the heads that are awaited cannot disagree.
     #[cfg(feature = "libdrm-events")]
     pub(crate) native_selections: Vec<LibdrmNativePrimaryPlaneSelection>,
+    /// Cleanup routing is assigned by the native owner, independently of a
+    /// frame correlation. Blocking topology images have no ordinary-frame
+    /// identity and may need retirement before the first ordinary flip.
+    #[cfg(feature = "libdrm-events")]
+    pub(crate) native_custody_scope: Option<(crate::NativeFrameOwner, sophia_engine::RenderHeadId)>,
     /// Heads that went away while this output had work in flight.
     ///
     /// `VisualRetirement.tla` settles such a generation as `head_lost`: the lost
@@ -114,6 +119,8 @@ impl LiveRenderedOutputState {
             cursor_ride_request: None,
             #[cfg(feature = "libdrm-events")]
             native_selections: Vec::new(),
+            #[cfg(feature = "libdrm-events")]
+            native_custody_scope: None,
             #[cfg(feature = "libdrm-events")]
             lost_heads: BTreeSet::new(),
             #[cfg(feature = "libdrm-events")]

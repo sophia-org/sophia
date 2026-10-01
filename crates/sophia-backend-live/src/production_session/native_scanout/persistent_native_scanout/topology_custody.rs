@@ -9,6 +9,14 @@ struct TopologyCustodyHead<'a, D> {
 }
 
 impl LiveProductionNativeScanout {
+    pub(crate) fn singleton_custody_scope(
+        &self,
+        output: OutputId,
+    ) -> Option<(crate::NativeFrameOwner, sophia_engine::RenderHeadId)> {
+        let indices = self.head_indices(output);
+        (indices.len() == 1).then(|| (self.native_frame_owner, self.heads[indices[0]].head))
+    }
+
     /// Called after the blocking topology commit and all fallible runtime
     /// construction. Singleton flips use runtime custody; mirrors use head
     /// custody. Leaving a singleton's topology owner in the head ledger pins a
@@ -55,24 +63,29 @@ fn handoff_topology_custody<D: crate::LibdrmNativePrimaryPlaneResourceDevice>(
     // pass changes membership. Each prevalidated route names the same cell.
     let mut previous_heads = Vec::new();
     for output in previous.values() {
-        let custody = &output.runtime.primary_output_state().scanout_custody;
+        let runtime = output.runtime.primary_output_state();
+        let custody = &runtime.scanout_custody;
         if custody.submitted().is_some() || custody.cleanup_pending() {
             return Err("topology handoff requires quiescent runtime custody");
         }
         let index = match custody.displayed() {
             None => None,
             Some(owner) => {
-                let identity = owner
-                    .correlation()
-                    .and_then(|frame| frame.native)
-                    .ok_or("topology handoff lost the old displayed head identity")?;
-                if identity.owner() != native_owner.raw() {
+                let (scope_owner, scope_head) = runtime
+                    .native_custody_scope
+                    .ok_or("topology handoff lost the old displayed head scope")?;
+                if scope_owner != native_owner {
                     return Err("topology handoff found a foreign displayed owner");
+                }
+                if let Some(frame) = owner.correlation().and_then(|frame| frame.native)
+                    && (frame.owner() != scope_owner.raw() || frame.head() != scope_head)
+                {
+                    return Err("topology handoff displayed frame disagrees with its head scope");
                 }
                 Some(
                     heads
                         .iter()
-                        .position(|head| head.head == identity.head())
+                        .position(|head| head.head == scope_head)
                         .ok_or("topology handoff lost the old displayed head")?,
                 )
             }
@@ -96,7 +109,8 @@ fn handoff_topology_custody<D: crate::LibdrmNativePrimaryPlaneResourceDevice>(
             && (!heads[index]
                 .custody
                 .can_transfer_displayed_to(&runtime.scanout_custody)
-                || !runtime.retain_rendered_primary_plane_displayed_submission)
+                || !runtime.retain_rendered_primary_plane_displayed_submission
+                || runtime.native_custody_scope != Some((native_owner, heads[index].head)))
         {
             return Err("topology handoff cannot adopt the displayed singleton owner");
         }

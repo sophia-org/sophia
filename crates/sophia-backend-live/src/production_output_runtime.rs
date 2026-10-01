@@ -84,6 +84,8 @@ impl LiveProductionOutputRuntimeSet {
                 ) {
                     return Err("production native output heads were not registered".into());
                 }
+                runtime.primary_output_state_mut().native_custody_scope =
+                    native_scanout.singleton_custody_scope(output.id);
             }
             output_runtimes.insert(
                 output.id,

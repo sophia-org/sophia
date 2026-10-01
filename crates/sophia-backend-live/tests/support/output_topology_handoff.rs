@@ -51,6 +51,7 @@ fn topology_handoff_moves_singletons_keeps_mirrors_and_routes_disabled_old_heads
     // Old output IDs no longer name the same groups. Head 4 is now disabled.
     for (runtime, (head, fb)) in previous.values_mut().zip([(4, 40), (1, 10)]) {
         let state = runtime.runtime.primary_output_state_mut();
+        state.native_custody_scope = Some((owner, RenderHeadId::from_raw(head)));
         state
             .scanout_custody
             .adopt_displayed(displayed(
@@ -60,6 +61,12 @@ fn topology_handoff_moves_singletons_keeps_mirrors_and_routes_disabled_old_heads
             .unwrap();
     }
     let mut next = runtimes(&[8, 9]);
+    next.values_mut()
+        .next()
+        .unwrap()
+        .runtime
+        .primary_output_state_mut()
+        .native_custody_scope = Some((owner, RenderHeadId::from_raw(1)));
     let device_a = Device::new();
     let device_b = Device::new();
     let mut custody: [PersistentScanoutCustody; 4] = std::array::from_fn(|_| Default::default());
@@ -120,6 +127,7 @@ fn topology_handoff_preflights_every_owner_before_retiring_or_transferring_any()
         "submitted",
         "destination",
         "empty",
+        "frame_scope",
     ] {
         let owner = NativeFrameOwner::new();
         let device = Device::new();
@@ -146,7 +154,22 @@ fn topology_handoff_preflights_every_owner_before_retiring_or_transferring_any()
                     ),
                 )
             };
-            let cell = &mut output.runtime.primary_output_state_mut().scanout_custody;
+            let state = output.runtime.primary_output_state_mut();
+            state.native_custody_scope = identity.map(|identity| {
+                (
+                    if index == 1 && fault == "foreign" {
+                        NativeFrameOwner::new()
+                    } else {
+                        owner
+                    },
+                    if index == 1 && fault == "frame_scope" {
+                        RenderHeadId::from_raw(9)
+                    } else {
+                        identity.head()
+                    },
+                )
+            });
+            let cell = &mut state.scanout_custody;
             if index == 1 && fault == "submitted" {
                 cell.accept_submission(displayed(20, identity)).unwrap();
             } else {
@@ -155,6 +178,12 @@ fn topology_handoff_preflights_every_owner_before_retiring_or_transferring_any()
             }
         }
         let mut next = runtimes(&[3]);
+        next.values_mut()
+            .next()
+            .unwrap()
+            .runtime
+            .primary_output_state_mut()
+            .native_custody_scope = Some((owner, RenderHeadId::from_raw(1)));
         if fault == "destination" {
             next.values_mut()
                 .next()
@@ -180,9 +209,10 @@ fn topology_handoff_preflights_every_owner_before_retiring_or_transferring_any()
             handoff_topology_custody(owner, &mut heads, &mut previous, &mut next).unwrap_err();
         let expected = match fault {
             "foreign" => "foreign displayed owner",
-            "missing" => "old displayed head identity",
+            "missing" => "old displayed head scope",
             "unknown" => "lost the old displayed head",
             "submitted" => "quiescent runtime custody",
+            "frame_scope" => "frame disagrees with its head scope",
             _ => "cannot adopt the displayed singleton owner",
         };
         assert!(error.contains(expected), "{fault}: {error}");
@@ -200,4 +230,84 @@ fn topology_handoff_preflights_every_owner_before_retiring_or_transferring_any()
         );
         assert_eq!(heads[0].custody.displayed().is_some(), fault != "empty");
     }
+}
+
+#[test]
+fn topology_handoff_can_roll_back_before_any_ordinary_frame_has_presented() {
+    let owner = NativeFrameOwner::new();
+    let head_id = RenderHeadId::from_raw(1);
+    let device = Device::new();
+    let mut previous = runtimes(&[1]);
+    let mut applied = runtimes(&[2]);
+    applied
+        .values_mut()
+        .next()
+        .unwrap()
+        .runtime
+        .primary_output_state_mut()
+        .native_custody_scope = Some((owner, head_id));
+    let mut head = PersistentScanoutCustody::default();
+    // Topology composition uses an unidentified mixed frame. No ordinary
+    // submission or page-flip event has happened on either side of this test.
+    head.adopt_displayed(displayed(60, None)).unwrap();
+    assert!(
+        handoff_topology_custody(
+            owner,
+            &mut [TopologyCustodyHead {
+                head: head_id,
+                output: OutputId::from_raw(2),
+                enabled: true,
+                custody: &mut head,
+                device: &device,
+            }],
+            &mut previous,
+            &mut applied
+        )
+        .unwrap()
+        .is_empty()
+    );
+    assert!(device.destroyed.borrow().is_empty());
+    let mut restored = runtimes(&[1]);
+    restored
+        .values_mut()
+        .next()
+        .unwrap()
+        .runtime
+        .primary_output_state_mut()
+        .native_custody_scope = Some((owner, head_id));
+    head.adopt_displayed(displayed(61, None)).unwrap();
+    assert!(
+        handoff_topology_custody(
+            owner,
+            &mut [TopologyCustodyHead {
+                head: head_id,
+                output: OutputId::from_raw(1),
+                enabled: true,
+                custody: &mut head,
+                device: &device,
+            }],
+            &mut applied,
+            &mut restored
+        )
+        .unwrap()
+        .is_empty()
+    );
+    assert_eq!(*device.destroyed.borrow(), [60]);
+    assert!(
+        !applied
+            .values()
+            .next()
+            .unwrap()
+            .runtime
+            .rendered_primary_plane_scanout_displayed()
+    );
+    assert!(
+        restored
+            .values()
+            .next()
+            .unwrap()
+            .runtime
+            .rendered_primary_plane_scanout_displayed()
+    );
+    assert!(head.displayed().is_none());
 }

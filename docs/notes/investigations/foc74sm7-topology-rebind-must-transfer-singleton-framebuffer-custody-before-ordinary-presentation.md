@@ -27,6 +27,8 @@ Under `~/.local/state/sophia/development-evidence/ipc-retirement/`:
   All three stage recovery records are retained alongside it.
 - `t253-commit-restore-slot-audit-01/AUDIT.md`: independent source/log analysis.
 - `t253-topology-custody-01/`: isolated regression, controls and check logs.
+- `t253-custody-scope-01/`: rollback before an ordinary frame, scope refusal
+  checks, and the control requiring an ordinary frame identity.
 
 The log records six renderer slots held during the stall, against four during
 validate/reject. There are three slots per head. The final counters show
@@ -53,6 +55,16 @@ output IDs and connector numbers alone cannot identify a card. Failed cleanup
 stays in native custody and blocks another preparation. Every handoff is
 validated before any owner moves.
 
+A final audit of signed `e51a17b86` found that a transferred topology image
+has no ordinary-frame identity. Rollback can replace it before an ordinary
+frame presents, so that identity cannot be required for cleanup routing.
+Each native singleton runtime now receives a separate owner/head scope when
+it is built, including semantic startup and topology adoption. Cleanup uses
+that scope; any ordinary-frame identity present must agree with it. This
+does not invent a frame identity or grant presentation authority. The e51
+preparation and performance results are retained as superseded evidence;
+no attended run used it.
+
 Cleanup remaining in a former mirror head stays separate from the transferred
 displayed owner. Singleton and disabled-head cleanup drains on ordinary
 retirement turns. Current mirror heads retain their existing cleanup consumer,
@@ -76,11 +88,19 @@ ordinary presentation. Supplied monotonic instants cover the shared deadline,
 retry pacing and abort drain. Removing transfer or deadline enforcement in
 private copies causes the corresponding regressions to fail.
 
-Final isolated checks passed: backend library 209 tests, `libdrm_events_feature`
+The initial custody checks passed: backend library 209 tests, `libdrm_events_feature`
 305 tests, and Session's output-file group 14 tests (three opt-in tests ignored).
 Backend and Session strict Clippy passed with all targets and features; formatting
 and diff checks passed. The signed preparation will run the protected peer
 fixture. First compile and lint failures are retained in the evidence directory.
+
+The scope follow-up adds the case where rollback replaces an unidentified
+topology image before any ordinary presentation. Restoring the old frame-identity
+requirement makes that test fail. The updated backend library passes 210 tests
+and the feature suite passes 305; strict backend/Session Clippy passes. The
+first full rerun reused a private mutant artifact because the shared target saw
+older canonical source timestamps. Its failure is retained; touching the
+unchanged canonical source forced the clean rebuild reported here.
 
 These checks do not exercise KMS, a GPU renderer, or the whole native owner
 loop. The attended sequence remains required on a fresh signed candidate,
