@@ -119,6 +119,6 @@ Session fixtures exercise supervision, cancellation and debt with supplied
 physical observations. Neither proves KMS apply, presentation or restoration.
 The attended gate must run the assembled signed candidate with a conforming
 9P WM. Named desktop assembly and its acceptance runner belong in external
-integration tooling, not Sophia. T272 retirement remains blocked on T253's
-native acceptance, followed by qualification of the assembled strict-API
-Sophia/SDK/WM replacement.
+integration tooling, not Sophia. [T253 native acceptance](../notes/milestones/ofard23a-accept-the-revision-1-output-file-role-through-native-rollback.md)
+is recorded for signed Sophia `ddd27bd6d9` on 2026-10-01. T272 must qualify the
+assembled strict-API Sophia/SDK/WM replacement under its own identities.

@@ -2,7 +2,7 @@
 id: 0bc9j2k2
 date: 2026-10-01
 kind: investigation
-status: awaiting-physical-acceptance
+status: closed
 tags: [investigation, rendering, validation]
 ---
 # Rollback must drain candidate presentation before replacing completion trackers
@@ -124,3 +124,15 @@ passed their previously failing native boundary: commit-restore now succeeds.
 This investigation owns the subsequent peer-death failure. Acceptance remains
 in [t253](../plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md#t253--migrate-the-separate-output-role);
 output IPC retirement in t272 still waits for it.
+
+## Physical acceptance, 2026-10-01
+
+Signed Sophia `ddd27bd6d9`, assembled by integration `bec6db137d`, passed all
+four attended stages, including commit-restore and peer death after apply.
+Restored KMS and owner readbacks, local RolledBack settlement, the joined
+peer-loss verdict and clean native/console shutdown are present. The
+[acceptance record](../milestones/ofard23a-accept-the-revision-1-output-file-role-through-native-rollback.md)
+binds the exact manifests, independent audits and performance evidence.
+This closes the observed defect for the declared one-card, two-head,
+refresh-only fixture. Earlier failures and the deterministic-test limits
+above remain evidence; they are not relabelled as passing runs.

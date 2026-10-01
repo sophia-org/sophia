@@ -2,7 +2,7 @@
 id: l696uhdc
 date: 2026-09-30
 kind: investigation
-status: awaiting-physical-acceptance
+status: closed
 tags: [investigation]
 ---
 # Rollback preparation must use the installed mode after a topology commit
@@ -71,3 +71,15 @@ from the deterministic result.
   owns the remaining native acceptance gate.
 - [Native proof guide](../../testing/output-file-native-proof.md) separates
   supplied owner observations from physical restoration evidence.
+
+## Physical acceptance, 2026-10-01
+
+Signed Sophia `ddd27bd6d9`, assembled by integration `bec6db137d`, passed all
+four attended stages, including commit-restore and peer death after apply.
+Restored KMS and owner readbacks, local RolledBack settlement, the joined
+peer-loss verdict and clean native/console shutdown are present. The
+[acceptance record](../milestones/ofard23a-accept-the-revision-1-output-file-role-through-native-rollback.md)
+binds the exact manifests, independent audits and performance evidence.
+This closes the observed defect for the declared one-card, two-head,
+refresh-only fixture. Earlier failures and the deterministic-test limits
+above remain evidence; they are not relabelled as passing runs.

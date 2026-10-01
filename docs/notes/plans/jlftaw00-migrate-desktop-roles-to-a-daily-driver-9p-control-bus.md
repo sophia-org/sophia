@@ -431,6 +431,13 @@ is recorded debt.
 
 ### t253 — Migrate the separate output role
 
+**Accepted 2026-10-01:** signed Sophia `ddd27bd6d9`, assembled by integration
+`bec6db137d`, passed all four attended native stages and the exact-candidate
+performance gate. The [acceptance record](../milestones/ofard23a-accept-the-revision-1-output-file-role-through-native-rollback.md)
+binds the manifests, independent audits, regression controls and physical limits.
+T272 may now retire IPC and qualify its strict-API replacement; no daily release
+installation is implied.
+
 After shell acceptance, specify its bounded bootstrap/topology/candidate/outcome
 files and map them to the existing output authority. Implement an adapter and
 an independent peer that actually consumes this role; Hagia WM success alone
@@ -508,15 +515,15 @@ Peer death then exposed submitted first frames whose completion trackers were
 replaced before retirement. The
 [rollback drain investigation](../investigations/0bc9j2k2-rollback-must-drain-candidate-presentation-before-replacing-completion-trackers.md)
 records the failure and the shared normal/shutdown rollback wait. Reverse KMS
-acceptance without restored readback is insufficient; t253 still needs a new
-candidate and an attended pass through all four stages.
+acceptance without restored readback is insufficient. The subsequent
+`ddd27bd6d9` run supplies that restored readback and all four passing stages.
 
 The attended `d4b06de81` candidate passed rollback timing projection but stalled
 before KMS while preparing rollback images. The
 [singleton custody investigation](../investigations/foc74sm7-topology-rebind-must-transfer-singleton-framebuffer-custody-before-ordinary-presentation.md)
 records the duplicate retained framebuffer owner, the rebind correction and
-bounded preparation. Native acceptance remains open; the next run needs fresh
-signed preparation, performance evidence, integration pins and sealed inputs.
+bounded preparation. The accepted run uses fresh signed preparation,
+performance evidence, integration pins and sealed inputs after this correction.
 
 The attended `170d606b6` candidate passed validate and semantic rejection but
 failed before its first runtime Apply reached KMS. The
@@ -551,7 +558,10 @@ first presentation or rollback.
 Use nearest-rank percentiles and retain every raw sample, failure and timeout.
 Report source commits, SDK manifest, fixture identities, compiler/profile,
 kernel, CPU, sample counts, elapsed time and CPU time. Run device-hidden with
-network and session sockets absent, nice 19 and one build job. Finish builds
+network and session sockets absent. On 2026-09-30 niltempus amended the original
+nice-19/one-job configuration: builds and measurements inherit caller priority,
+and builds use the explicit positive CARGO_BUILD_JOBS or available parallelism.
+Record actual jobs and niceness; timing limits remain unchanged. Finish builds
 before measurement and run no other qualification workload concurrently.
 Record failed runs; do not discard outliers or substitute a best-of run. Any
 budget change requires a recorded rationale before another measurement.
@@ -564,7 +574,7 @@ cargo xtask check output-file-performance measure --output=/absolute/new/private
 ```
 
 Preparation requires a clean signed source tree, verifies the pinned C SDK,
-and builds the peer and release harness with one job in a private namespace.
+and builds the peer and release harness in a private namespace.
 The offline registry is read-only: locked crates must already be extracted in
 the local Cargo cache. Host Cargo configuration is not imported. Once all
 builds and other qualification jobs have stopped, measurement checks the

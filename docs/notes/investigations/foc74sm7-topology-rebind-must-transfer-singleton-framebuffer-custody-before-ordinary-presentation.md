@@ -2,7 +2,7 @@
 id: foc74sm7
 date: 2026-09-30
 kind: investigation
-status: awaiting-physical-acceptance
+status: closed
 tags: [investigation]
 ---
 # Topology rebind must transfer singleton framebuffer custody before ordinary presentation
@@ -113,3 +113,15 @@ inputs. Failed runs remain intact; no acceptance threshold was relaxed.
   retain their native acceptance and retirement ordering.
 - [Installed rollback timing](l696uhdc-rollback-preparation-must-use-the-installed-mode-after-a-topology-commit.md)
   fixed the earlier projection failure; this run passed that boundary.
+
+## Physical acceptance, 2026-10-01
+
+Signed Sophia `ddd27bd6d9`, assembled by integration `bec6db137d`, passed all
+four attended stages, including commit-restore and peer death after apply.
+Restored KMS and owner readbacks, local RolledBack settlement, the joined
+peer-loss verdict and clean native/console shutdown are present. The
+[acceptance record](../milestones/ofard23a-accept-the-revision-1-output-file-role-through-native-rollback.md)
+binds the exact manifests, independent audits and performance evidence.
+This closes the observed defect for the declared one-card, two-head,
+refresh-only fixture. Earlier failures and the deterministic-test limits
+above remain evidence; they are not relabelled as passing runs.
