@@ -106,7 +106,7 @@ protocol "sophia_wm_fs_v1" api-version=1 byte-order="little" max-object-bytes=10
         field "request_id" type="u64" offset=16 nonzero=#true
         field "scene_generation" type="u64" offset=24 nonzero=#true
         field "policy_generation" type="u64" offset=32 nonzero=#true
-        field "cause_kind" type="u16" offset=40 min=0 max=7
+        field "cause_kind" type="u16" offset=40 min=0 max=8
         field "output_count" type="u16" offset=42 min=1 max=16
         field "reserved" type="u32" offset=44 value=0
     }
@@ -163,6 +163,16 @@ protocol "sophia_wm_fs_v1" api-version=1 byte-order="little" max-object-bytes=10
         field "phase" type="u16" offset=16 min=1 max=2
         field "reason" type="u16" offset=18 min=0 max=5
         field "count" type="u32" offset=20 min=1
+    }
+    // A keyboard activation of an action declared in
+    // ConfigurationActionLifecycle, sent instead of Action only when
+    // chord_actions is selected. activation_serial names this admitted
+    // activation and chord_serial its chord's first admitted activation, so the
+    // opener carries equal serials. Both are opaque within the connection epoch.
+    cause "ChordAction" kind=8 size=24 {
+        field "activation_serial" type="u64" offset=0 nonzero=#true
+        field "chord_serial" type="u64" offset=8 nonzero=#true
+        field "action" type="u64" offset=16 nonzero=#true
     }
     body-prefix "Dirty" size=16 {
         field "policy_generation" type="u64" offset=0 nonzero=#true
@@ -251,6 +261,7 @@ protocol "sophia_wm_fs_v1" api-version=1 byte-order="little" max-object-bytes=10
         capability "surface_instances" bit=18
         capability "presentation_actions" bit=19
         capability "action_lifecycle" bit=20
+        capability "chord_actions" bit=21
 
         outcome "committed" value=1
         outcome "rejected_stale" value=2

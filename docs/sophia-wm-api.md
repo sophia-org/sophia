@@ -291,8 +291,11 @@ the WM sees no difference in how it was triggered.
 A WM that needs to know when a held chord ends declares the action under
 `action_lifecycle` ([chord lifecycle](sophia-wm-files.md#chord-lifecycle)). It
 then receives Held and Ended for that action's chords, for whichever modifiers
-the operator chose. Sophia attaches no meaning to them: a switcher that commits
-on release, or a hold-to-preview, is WM policy.
+the operator chose. With `chord_actions` as well, the chord's keyboard
+activations arrive as ChordAction, naming both the activation and its chord,
+so the WM can tell them from the same action invoked another way. Sophia
+attaches no meaning to them: a switcher that commits on release, or a
+hold-to-preview, is WM policy.
 
 Session actions are advertised opaque tokens. A WM may request an advertised
 token with an optional opaque target. It cannot supply an executable, argument,
