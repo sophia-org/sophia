@@ -359,3 +359,30 @@ New tests:
 
 The ChordAction cause is qualified only by literal and scripted-peer tests:
 Session does not send it yet.
+
+## Release 0.7.0: held capture
+
+`spec/sophia-wm-files-v1.kdl`, `spec/sophia-wm-files.md` and
+`spec/sophia-wm-api.md` are copied unmodified from signed Sophia contract
+commit `ac04e1a7487e9be3a238075e3c624aff93705f2d` on `feature/held-capture`. Its parent held copies
+byte-identical to the 0.6.0 pins, so the import brings only this change. The
+golden corpus is unchanged, because the contract adds no fixed row. The three new digests replace their entries in
+`spec/SHA256SUMS`.
+
+The contract adds capability bit 22, `held_capture`, which requires
+`surface_instances` and `presentation_actions`. With it, a presentation whose
+outputs are all Overlay may carry a keyboard output and bindings. Sophia passes
+modifier keys through such a capture and takes only other keys. The
+regenerated rows add only the capability constant.
+
+The presentation codec already carries `keyboard_output`, output modes and
+bindings without judging their combination, so no codec change is needed.
+Negotiation (`src/wm_session/events.c`) fails when `held_capture` is selected
+without both dependencies. The scripted peer's full capability set (`WP_CAPS`)
+now includes bit 22.
+
+New test: scripted peers check all eight combinations of the three related
+capabilities.
+
+Held capture is qualified only by scripted-peer tests: Session does not
+implement it yet.

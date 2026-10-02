@@ -10,7 +10,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define WP_CAPS ((UINT64_C(1) << 22) - 1)
+#define WP_CAPS ((UINT64_C(1) << 23) - 1)
 #define WP_EPOCH 41u
 enum {
   WP_ROOT = 1,

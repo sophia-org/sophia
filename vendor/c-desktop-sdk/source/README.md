@@ -18,7 +18,7 @@ to tunnel the old socket protocol through a file.
 
 ## Current coverage
 
-Release 0.6.0 provides a generic nonblocking 9P2000.L client, shell file
+Release 0.7.0 provides a generic nonblocking 9P2000.L client, shell file
 records and sessions for bar (r6), native launcher (r7) and persistent
 catalog/dock (r8), and WM and output file codecs and sessions. WM and shell socket
 compatibility is removed; recovery uses a complete compatible older desktop release.
@@ -28,8 +28,11 @@ bindings. The WM session requires the exact `api` file naming the output role's
 9P2000.L transport and refuses the retired `current_ipc` value. The WM codec
 also carries the additive chord lifecycle (`action_lifecycle`): Configuration
 rows declaring lifecycle actions and the ActionLifecycle cause, plus, with
-`chord_actions`, the ChordAction cause that marks a chord's own activations. Sophia's
-Session does not implement it yet, so it is tested only against scripted peers.
+`chord_actions`, the ChordAction cause that marks a chord's own activations, and
+`held_capture`, which lets an Overlay presentation carry a keyboard output and
+bindings while a chord is held. The codec carries presentations unchanged; the
+session negotiates `held_capture` only with `surface_instances` and
+`presentation_actions`, and it is tested against scripted peers only.
 The output file
 codec and session pass scripted-peer tests, Sophia's production output export
 exchange and Sophia's attended native output acceptance on one card with two

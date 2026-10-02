@@ -262,6 +262,7 @@ protocol "sophia_wm_fs_v1" api-version=1 byte-order="little" max-object-bytes=10
         capability "presentation_actions" bit=19
         capability "action_lifecycle" bit=20
         capability "chord_actions" bit=21
+        capability "held_capture" bit=22
 
         outcome "committed" value=1
         outcome "rejected_stale" value=2
