@@ -8,6 +8,9 @@ const fn report_wm_rejection_diagnostic(rejections: usize) -> bool {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum LiveWmProposalSource {
     Action(WmActionId),
+    /// A lifecycle cause for a chord the WM follows. Never elided as a
+    /// duplicate and never handled as an ordinary or session-operation Action.
+    Chord(sophia_engine::WmChordToken),
     Focus(SurfaceId),
     PointerFocus,
     PointerGesture {
@@ -34,8 +37,39 @@ enum LivePhysicalWmActionDisposition {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum LiveOrderedWmActionAdmission {
-    Admitted,
+    Admitted { serial: u64 },
     RejectedCapacity { report: bool },
+}
+
+/// The admitted Actions of one chord the WM follows, for its lifecycle causes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct LiveChordRecord {
+    /// The chord's first admitted Action.
+    serial: u64,
+    action: WmActionId,
+    /// Its admitted Actions, saturating.
+    count: u32,
+}
+
+/// What became of one shortcut activation of a chord the WM follows.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LiveChordActionAdmission {
+    Admitted,
+    /// The WM is gone or not configured: refused with the chord.
+    Withheld,
+    /// A join of a chord whose opener was never admitted.
+    Discarded,
+    RejectedCapacity { report: bool },
+}
+
+/// What became of one Held or Ended the router reported.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LiveChordEventAdmission {
+    Queued,
+    /// Held found the public queue full; the chord still ends.
+    HeldDropped,
+    /// No admitted opener: the event belongs to a chord the WM never saw.
+    Discarded,
 }
 
 impl From<LiveWmRequestAdmission> for LivePhysicalWmActionDisposition {
@@ -72,6 +106,13 @@ struct LiveWmSession {
     request_peak_depth: usize,
     request_rejections: usize,
     action_requests_ordered: usize,
+    /// Seats last reported with unknown modifiers, for transition lines only.
+    uncertain_seats: BTreeSet<SeatId>,
+    /// Whether physical keys were last matched against shortcuts; leaving it
+    /// ends the open chords cancelled, once.
+    keyboard_matching: bool,
+    /// Chords with an admitted opener, for this WM epoch.
+    chord_ledger: BTreeMap<sophia_engine::WmChordToken, LiveChordRecord>,
     stale_responses: usize,
     work_area_relayout_required: bool,
     /// The shell's presented work-area claim, mirrored here because the WM
@@ -425,21 +466,41 @@ impl LiveWmSession {
         _layout: &PersistentLiveLayout,
         _output: sophia_engine::HeadlessOutput,
     ) -> Result<LiveOrderedWmActionAdmission, Box<dyn std::error::Error>> {
+        self.enqueue_activation(action, None)
+    }
+
+    /// Queue one admitted activation. `chord` is `None` for an ordinary
+    /// Action. With `chord_actions` selected, a followed chord's activation is
+    /// a ChordAction instead: `Some(None)` for its opener, whose chord serial
+    /// is its own, `Some(Some(chord_serial))` for a join.
+    fn enqueue_activation(
+        &mut self,
+        action: WmActionId,
+        chord: Option<Option<u64>>,
+    ) -> Result<LiveOrderedWmActionAdmission, Box<dyn std::error::Error>> {
         let public = self.public.as_mut().ok_or("public WM state is unavailable")?;
         let activation_serial = public.mint_transaction()?.raw();
         let active_output = public.active_output;
-        let admission = public.queue_cause(LivePublicPolicyCause {
-            source: LiveWmProposalSource::Action(action),
-            cause: sophia_protocol::PolicyRequestCause::Action {
+        let cause = match chord {
+            None => sophia_protocol::PolicyRequestCause::Action {
                 activation_serial,
                 action,
             },
+            Some(chord_serial) => sophia_protocol::PolicyRequestCause::ChordAction {
+                activation_serial,
+                chord_serial: chord_serial.unwrap_or(activation_serial),
+                action,
+            },
+        };
+        let admission = public.queue_cause(LivePublicPolicyCause {
+            source: LiveWmProposalSource::Action(action),
+            cause,
             affected_outputs: public.all_outputs(active_output),
         });
         match admission {
             LiveWmRequestAdmission::Admitted => {
                 self.action_requests_ordered = self.action_requests_ordered.saturating_add(1);
-                Ok(LiveOrderedWmActionAdmission::Admitted)
+                Ok(LiveOrderedWmActionAdmission::Admitted { serial: activation_serial })
             }
             LiveWmRequestAdmission::RejectedCapacity => {
                 self.request_rejections = self.request_rejections.saturating_add(1);
@@ -451,6 +512,211 @@ impl LiveWmSession {
                 unreachable!("ordered WM actions are never duplicate-elided")
             }
         }
+    }
+
+    /// Install bindings and the WM's declared chords, keeping the router: its
+    /// record of keys down, refusals and owed chords outlive a reload. Equal
+    /// bindings keep open chords and take the new metadata; changed bindings
+    /// end them cancelled. A new epoch's reset happens at the epoch boundary,
+    /// never here.
+    fn install_shortcuts(
+        &mut self,
+        registry: sophia_engine::WmShortcutRegistry,
+        lifecycles: &[sophia_protocol::PolicyActionLifecycleInterest],
+    ) {
+        let router = match self.shortcuts.as_mut() {
+            Some(router) => {
+                router.replace_registry(registry);
+                router
+            }
+            None => self.shortcuts.insert(WmShortcutRouter::new(registry)),
+        };
+        router.set_action_lifecycles(lifecycles);
+    }
+
+    /// Record whether this turn matches physical keys. The transition out of
+    /// matching (CursorOnly or Suppressed) ends every open chord cancelled,
+    /// exactly once, whether or not any key or poller follows; key tracking and
+    /// consumed-release pairing continue.
+    fn observe_keyboard_matching(&mut self, matching: bool) {
+        if self.keyboard_matching && !matching
+            && let Some(router) = self.shortcuts.as_mut()
+        {
+            router.cancel_all_chords();
+        }
+        self.keyboard_matching = matching;
+    }
+
+    /// The per-turn shortcut service, run whatever physical input is doing:
+    /// holds, sequence timeouts and Helds that fell due, and anything seat,
+    /// reload, routing or removal paths left in the router, in order. Seats
+    /// whose modifiers became unknown or known again are reported once, on
+    /// the change.
+    fn service_shortcuts(&mut self, now_msec: u64) -> Vec<sophia_engine::WmShortcutOutput> {
+        let Some(router) = self.shortcuts.as_mut() else {
+            return Vec::new();
+        };
+        router.poll_shortcuts(now_msec);
+        let events = router.take_outputs();
+        let uncertain = router.uncertain_seats().collect::<BTreeSet<_>>();
+        for seat in uncertain.symmetric_difference(&self.uncertain_seats) {
+            crate::session_println!(
+                "sophia_live_shortcuts schema=1 status=shortcut_seat_uncertain seat={} state={}",
+                seat.raw(),
+                if uncertain.contains(seat) { "entered" } else { "cleared" },
+            );
+        }
+        self.uncertain_seats = uncertain;
+        events
+    }
+
+    /// Whether a live policy replacing its configuration holds every physical
+    /// input in order. A WM that is gone, restarting or degraded holds nothing;
+    /// its inputs are refused instead, so the hold never outlives the epoch.
+    fn holds_physical_inputs(&self) -> bool {
+        self.control_restart.is_none()
+            && !self.degraded
+            && self.public.as_ref().is_some_and(|public| {
+                !public.configured && !public.transport_unavailable
+            })
+    }
+
+    /// Whether a configured policy can still be delivered to: not restarting,
+    /// not degraded, and its transport not given up. A failed restart can keep
+    /// an old configured public object while degraded, and an aborted
+    /// settlement marks the transport unavailable without clearing
+    /// `configured`; neither may spend a chord credit.
+    fn policy_live(&self) -> bool {
+        self.control_restart.is_none()
+            && !self.degraded
+            && self.public.as_ref().is_some_and(|public| {
+                public.configured && !public.transport_unavailable
+            })
+    }
+
+    /// Admit one activation of a chord the WM follows, or refuse it with the
+    /// chord whenever the policy is not live. A refusal can end a join's chord; that Ended is queued at once,
+    /// at this position, so nothing passes it.
+    fn admit_chord_action(
+        &mut self,
+        action: WmActionId,
+        chord: sophia_engine::WmChordActivation,
+        device: sophia_protocol::DeviceId,
+        keycode: u32,
+        layout: &PersistentLiveLayout,
+        output: sophia_engine::HeadlessOutput,
+    ) -> Result<LiveChordActionAdmission, Box<dyn std::error::Error>> {
+        let admission = if !self.policy_live() {
+            LiveChordActionAdmission::Withheld
+        } else if !chord.opens && !self.chord_admitted(chord.token) {
+            // Not an ordinary Action: it is discarded with the chord.
+            LiveChordActionAdmission::Discarded
+        } else {
+            let _ = (layout, output);
+            // With chord_actions the WM is told which activations are this
+            // chord's: the opener names itself, a join names the opener.
+            let chord_actions = self.public.as_ref().is_some_and(|public| {
+                public.selected_capabilities & sophia_protocol::SOPHIA_WM_CAPABILITY_CHORD_ACTIONS
+                    != 0
+            });
+            let representation = chord_actions.then(|| {
+                if chord.opens {
+                    None
+                } else {
+                    self.chord_ledger.get(&chord.token).map(|record| record.serial)
+                }
+            });
+            match self.enqueue_activation(action, representation)? {
+                LiveOrderedWmActionAdmission::Admitted { serial } => {
+                    self.record_chord_action(chord.token, chord.opens, serial, action);
+                    return Ok(LiveChordActionAdmission::Admitted);
+                }
+                LiveOrderedWmActionAdmission::RejectedCapacity { report } => {
+                    LiveChordActionAdmission::RejectedCapacity { report }
+                }
+            }
+        };
+        if let Some(router) = self.shortcuts.as_mut() {
+            // Only this refusal's own terminal is queued here; any other
+            // output stays in the router for the next ordered take.
+            let ended = if chord.opens {
+                router.chord_opener_refused(chord.token);
+                None
+            } else {
+                router.chord_join_refused(chord.token, device, keycode)
+            };
+            if let Some(event) = ended {
+                self.enqueue_chord_event(event)?;
+            }
+        }
+        Ok(admission)
+    }
+
+    /// Whether a chord's opener was admitted this epoch; a join of any other
+    /// chord is discarded rather than delivered as an ordinary Action.
+    fn chord_admitted(&self, token: sophia_engine::WmChordToken) -> bool {
+        self.chord_ledger.contains_key(&token)
+    }
+
+    /// Record an admitted Action of a chord: the opener starts its record, a
+    /// join counts.
+    fn record_chord_action(
+        &mut self,
+        token: sophia_engine::WmChordToken,
+        opens: bool,
+        serial: u64,
+        action: WmActionId,
+    ) {
+        if opens {
+            self.chord_ledger.insert(token, LiveChordRecord { serial, action, count: 1 });
+        } else if let Some(record) = self.chord_ledger.get_mut(&token) {
+            record.count = record.count.saturating_add(1);
+        }
+    }
+
+    /// Queue Held or Ended for a chord with an admitted opener. Ended is the
+    /// chord's last cause: its record goes, and it enters the public queue
+    /// past the request bound (the credits bound it) but behind every cause
+    /// queued before it.
+    fn enqueue_chord_event(
+        &mut self,
+        event: sophia_engine::WmChordEvent,
+    ) -> Result<LiveChordEventAdmission, Box<dyn std::error::Error>> {
+        let (token, phase) = match event {
+            sophia_engine::WmChordEvent::Held { token } => {
+                (token, sophia_protocol::PolicyChordPhase::Held)
+            }
+            sophia_engine::WmChordEvent::Ended { token, end } => {
+                (token, sophia_protocol::PolicyChordPhase::Ended(end))
+            }
+        };
+        let Some(record) = self.chord_ledger.get(&token).copied() else {
+            return Ok(LiveChordEventAdmission::Discarded);
+        };
+        let public = self.public.as_mut().ok_or("public WM state is unavailable")?;
+        let active_output = public.active_output;
+        let cause = LivePublicPolicyCause {
+            source: LiveWmProposalSource::Chord(token),
+            cause: sophia_protocol::PolicyRequestCause::ActionLifecycle {
+                activation_serial: record.serial,
+                action: record.action,
+                phase,
+                count: record.count,
+            },
+            affected_outputs: public.all_outputs(active_output),
+        };
+        if matches!(phase, sophia_protocol::PolicyChordPhase::Ended(_)) {
+            self.chord_ledger.remove(&token);
+            public.queue_chord_terminal(cause);
+            return Ok(LiveChordEventAdmission::Queued);
+        }
+        Ok(match public.queue_cause(cause) {
+            LiveWmRequestAdmission::Admitted => LiveChordEventAdmission::Queued,
+            LiveWmRequestAdmission::RejectedCapacity => LiveChordEventAdmission::HeldDropped,
+            LiveWmRequestAdmission::Duplicate => {
+                unreachable!("chord causes are never duplicate-elided")
+            }
+        })
     }
 
     fn enqueue_pointer_interaction(

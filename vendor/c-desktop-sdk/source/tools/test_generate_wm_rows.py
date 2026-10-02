@@ -21,7 +21,7 @@ class GeneratedRows(unittest.TestCase):
         parsed = rows(FILES)
         records = parsed["records"]
         self.assertEqual(sum(row[3] is None for row in records), 8)
-        self.assertEqual(sum(row[3] is not None for row in records), 14)
+        self.assertEqual(sum(row[3] is not None for row in records), 15)
         header, source = gen.render(parsed)
         self.assertIn("sophia-wm-files-v1.kdl row-layouts", header)
         for retired in ("sophia_wm_v1", "SOPHIA_WM_V1", "frame"):

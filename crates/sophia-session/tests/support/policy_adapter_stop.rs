@@ -45,6 +45,7 @@ impl PolicyAdapter for WaitingAdapter {
         let event = PolicyAdapterEvent::Configuration {
             transaction: TransactionId::from_raw(1),
             configuration: PolicyConfiguration {
+                action_lifecycles: Vec::new(),
                 connection_epoch: 1,
                 generation: 1,
                 actions: vec![],

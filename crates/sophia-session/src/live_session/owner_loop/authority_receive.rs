@@ -18,6 +18,14 @@
             || explicit_pointer_grabs.pending() != 0,
     );
     let maximum = runtime.as_ref().map_or(maximum, |r| r.frame_deadline_cap_wait(now, maximum));
+    // Held, hold decisions and sequence timeouts use the same owner clock
+    // as routing and per-turn service. Only an actual deadline caps idle;
+    // the registry or an open chord alone never requires polling.
+    let maximum = shortcut_wait_cap(
+        wm_session.as_ref().and_then(|wm| wm.shortcuts.as_ref()),
+        u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+        maximum,
+    );
     // Shell wires are served inline and cannot ring, so their own
     // readiness ends this wait. Each is subscribed only when the
     // next pass turns it: components are visited only while a

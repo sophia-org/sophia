@@ -26,6 +26,11 @@ fn policy_cause_subject_is_live(
         }
         sophia_protocol::PolicyRequestCause::Focus { target }
         | sophia_protocol::PolicyRequestCause::Interaction { target, .. } => live(target),
+        // A chord names no surface or output, and it is never withdrawn: its
+        // Ended is the WM's terminal obligation and carries its credit.
+        sophia_protocol::PolicyRequestCause::ActionLifecycle { .. } => true,
+        // Like Action: it names no surface or output to outlive.
+        sophia_protocol::PolicyRequestCause::ChordAction { .. } => true,
         _ => true,
     }
 }
@@ -390,7 +395,9 @@ fn enqueue_public_policy_cause(
     }
     if !matches!(
         cause.source,
-        LiveWmProposalSource::Action(_) | LiveWmProposalSource::PointerGesture { .. }
+        LiveWmProposalSource::Action(_)
+            | LiveWmProposalSource::Chord(_)
+            | LiveWmProposalSource::PointerGesture { .. }
     ) && (in_flight_source == Some(cause.source)
         || queue.iter().any(|pending| pending.source == cause.source))
     {

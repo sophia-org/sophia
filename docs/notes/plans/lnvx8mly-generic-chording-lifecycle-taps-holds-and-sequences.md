@@ -45,6 +45,39 @@ checks; live CPU improvement remains unmeasured until the attended comparison.
 Heavy builds are coordinated with root, at caller priority and available CPUs,
 in private targets. Small pure Nim tests may run independently.
 
+## Combined candidate, 2026-10-02
+
+The reviewed t277 implementation through `5ed1f20dd` is integrated with t276
+`1b0b5d088`. All four shortcut shapes are implemented. The matching client is
+Hagia `252ee7ef`, with C SDK `8f59a9cd` (0.6.0); the Rust SDK contract import
+is `fe5e0960`.
+
+The only merge conflict was the owner receive path. It keeps t276's
+notification and fd receive, with a `next_deadline()` cap for hold decisions,
+Held causes and sequence timeouts. An open chord without a timer does not
+shorten the idle wait. Four Session tests cover these deadlines, the return
+to idle and a notification interrupting a future deadline. pF independently
+reviewed the conflict and all six automatic overlaps; no blocker was found.
+
+Evidence: `~/.local/state/sophia/development-evidence/t276-t277-integration-01/`.
+The frozen combined source passed 405 test binaries: 6,206 passed, none failed,
+78 ignored, with all workspace features and targets enabled. Strict Clippy,
+formatting, layout, protocol generation and both SDK checks passed. Child
+test-process summaries are excluded from those totals. The source inventory
+was unchanged across the run.
+
+A shape-changing profile reload can queue cancelled terminals after shortcut
+service. They wait for the next maintenance turn, whose requested wait is at
+most 25 ms, or an earlier wake. This is not a scheduler-latency bound. The
+deadline helper is tested; its placement in the full owner loop is reviewed
+in source. No hardware or live performance claim follows from these checks.
+
+Prepare one combined release through niltempus. Installation must also select
+the matching personal Hagia before the next login: the installer preserves
+an existing personal WM. The personal profile remains user-owned; its current
+version has no recent-window bindings. Attended chording and idle-performance
+acceptance remain pending.
+
 ## Connections
 
 - [Idle wakeups, t276](../investigations/qvrk2298-remove-timer-polling-from-idle-desktop-workers.md)

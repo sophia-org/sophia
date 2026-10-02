@@ -113,8 +113,13 @@ impl LiveWmSession {
                         sophia_protocol::validate_policy_presentation_actions(p, &public.actions).is_ok());
                     match if !presentation_cause_valid { Err(sophia_protocol::PolicyProjectionOutcome::RejectedStale) } else if context_valid && presentation_valid { public.reducer.stage_proposal(&reconciliation.policy) } else { Err(sophia_protocol::PolicyProjectionOutcome::RejectedInvalid) } {
                     Ok(staged) => {
+                        // A followed chord's activation never carries session-operation
+                        // authority, whatever its action is registered as.
+                        let chord_action = public.in_flight_request.as_ref().is_some_and(|request| {
+                            matches!(request.cause, sophia_protocol::PolicyRequestCause::ChordAction { .. })
+                        });
                         let expected_operation_slot = match source {
-                            LiveWmProposalSource::Action(action) => public
+                            LiveWmProposalSource::Action(action) if !chord_action => public
                                 .actions
                                 .iter()
                                 .find(|registered| registered.action == action)
@@ -350,6 +355,20 @@ impl LiveWmSession {
                     request: request.clone(),
                 })
                 .map_err(|_| "public WM cycle queue is busy")?;
+            // A chord's credit returns only now, with its Ended handed off as
+            // the in-flight Cycle: never on dequeue or a failed handoff.
+            if let LiveWmProposalSource::Chord(token) = cause.source
+                && matches!(
+                    cause.cause,
+                    sophia_protocol::PolicyRequestCause::ActionLifecycle {
+                        phase: sophia_protocol::PolicyChordPhase::Ended(_),
+                        ..
+                    }
+                )
+                && let Some(router) = self.shortcuts.as_mut()
+            {
+                router.chord_delivered(token);
+            }
             public.in_flight_source = Some(cause.source);
             public.in_flight_request = Some(request);
             public.cycle_submitted = true;

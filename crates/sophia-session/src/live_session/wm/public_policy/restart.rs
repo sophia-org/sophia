@@ -123,6 +123,11 @@ impl LiveWmSession {
             public.wm_filesystem_qids.clone(),
         )?);
         public.connection_epoch = next_epoch;
+        // The old epoch's chords, credits and records go with it, once, here.
+        self.chord_ledger.clear();
+        if let Some(router) = self.shortcuts.as_mut() {
+            router.reset_chords();
+        }
         public.presentation_capture.revoke();
         public.presentation_input.revoke();
         public.presentation_receipts.clear();

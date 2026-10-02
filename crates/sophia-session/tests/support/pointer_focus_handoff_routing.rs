@@ -251,3 +251,179 @@ fn a_left_press_still_opens_a_focus_handoff_when_one_can_be_answered() {
         "the WM is asked for the focus change the press implies"
     );
 }
+
+/// One batch with the handoff and a shortcut router, at owner time `now`,
+/// with `applied` as the client focus the WM's answer has applied.
+fn route_with_shortcuts(
+    layout: &PersistentLiveLayout,
+    layers: &[LayerSnapshot],
+    events: Vec<InputEventPacket>,
+    handoff: &mut PointerFocusHandoffState,
+    shortcuts: &mut WmShortcutRouter,
+    applied: Option<SurfaceId>,
+    now: u64,
+) -> PhysicalInputRouteReport {
+    let (sender, _receiver) = sync_channel(8);
+    let (mut repeat, keymap) = super::test_key_repeat_parts();
+    let mut pointer = SessionPointerPlacement::default();
+    pointer.center_on_primary_output(Size {
+        width: 100,
+        height: 100,
+    });
+    route_input_events_with_pointer_focus(
+        events,
+        &InputFocusState::new(),
+        &[],
+        layers,
+        &layout.presentation_roles,
+        &layout.client_routes,
+        &sender,
+        &mut XCoreKeyboardMapper::new(),
+        &mut repeat,
+        &keymap,
+        &mut SessionClientKeyState::default(),
+        &mut EmergencyChordState::awaiting_arm(),
+        &mut VirtualTerminalChordState::default(),
+        &mut PhysicalKeyboardCoverage::default(),
+        Some(shortcuts),
+        &mut pointer,
+        true,
+        false,
+        false,
+        PhysicalInputRoutingMode::Full,
+        &mut 1,
+        now,
+        None,
+        None,
+        Some(handoff),
+        applied,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(OutputId::from_raw(1)),
+        5,
+        None,
+        None,
+        None,
+    )
+    .unwrap()
+}
+
+/// D3b (D3a review): a button deferred by a focus handoff already abandoned
+/// pending shortcut work when it arrived. Its replay, after the WM answers,
+/// is that same button, so a sequence started meanwhile stays pending and
+/// completes.
+#[test]
+fn replaying_a_deferred_button_keeps_a_sequence_started_after_it() {
+    use sophia_engine::{WmKeyStep, WmSequenceBinding, WmSequenceLeader, WmShortcutPlan};
+    let step = |keycode, modifiers| WmKeyStep { keycode, modifiers };
+    let super_mask = sophia_protocol::WmModifierMask::SUPER;
+    let (leaf, leader) = (WmActionId::from_raw(5), WmActionId::from_raw(6));
+    let plan = WmShortcutPlan {
+        sequences: vec![WmSequenceBinding {
+            steps: vec![step(17, super_mask), step(37, 0)],
+            action: leaf,
+        }],
+        leaders: vec![WmSequenceLeader {
+            steps: vec![step(17, super_mask)],
+            action: leader,
+        }],
+        ..WmShortcutPlan::default()
+    };
+    let mut router = WmShortcutRouter::new(
+        sophia_engine::WmShortcutRegistry::from_plan(
+            &plan,
+            sophia_protocol::WmCapabilities::all_supported(),
+            1,
+            sophia_protocol::WmChromePolicy::default(),
+        )
+        .unwrap(),
+    );
+    router.set_action_lifecycles(&[sophia_protocol::PolicyActionLifecycleInterest {
+        action: leader,
+        held_ms: 0,
+    }]);
+    let mut layout = PersistentLiveLayout::default();
+    let surface = SurfaceId::new(201, 1);
+    let layers = vec![add_surface(&mut layout, surface, admission(1, 4))];
+    let mut handoff = PointerFocusHandoffState::default();
+    let key = |serial, keycode, pressed| event(serial, InputEventKind::Key { keycode, pressed });
+
+    let pressed = route_with_shortcuts(
+        &layout,
+        &layers,
+        press_on_surface(),
+        &mut handoff,
+        &mut router,
+        None,
+        10,
+    );
+    assert_eq!(
+        pressed.pointer_buttons_routed, 0,
+        "the press waits for the handoff"
+    );
+    assert_eq!(handoff.target(), Some(surface));
+
+    let started = route_with_shortcuts(
+        &layout,
+        &layers,
+        vec![key(3, 125, true), key(4, 17, true)],
+        &mut handoff,
+        &mut router,
+        None,
+        20,
+    );
+    assert!(matches!(
+        started.policy_inputs[..],
+        [PhysicalPolicyInput::ChordAction(chorded)] if chorded.action == leader && chorded.chord.opens
+    ));
+
+    let replayed = route_with_shortcuts(
+        &layout,
+        &layers,
+        Vec::new(),
+        &mut handoff,
+        &mut router,
+        Some(surface),
+        30,
+    );
+    assert_eq!(
+        replayed.pointer_buttons_routed, 1,
+        "the answered handoff replays the press"
+    );
+    assert!(
+        replayed.policy_inputs.is_empty(),
+        "{:?}",
+        replayed.policy_inputs
+    );
+    assert!(
+        router.next_deadline().is_some(),
+        "the sequence is still pending"
+    );
+
+    let completed = route_with_shortcuts(
+        &layout,
+        &layers,
+        vec![key(5, 125, false), key(6, 37, true)],
+        &mut handoff,
+        &mut router,
+        Some(surface),
+        40,
+    );
+    assert!(
+        matches!(
+            completed.policy_inputs[..],
+            [
+                PhysicalPolicyInput::Action(action),
+                PhysicalPolicyInput::Chord(sophia_engine::WmChordEvent::Ended {
+                    end: sophia_protocol::PolicyChordEnd::Completed,
+                    ..
+                }),
+            ] if action == leaf
+        ),
+        "{:?}",
+        completed.policy_inputs
+    );
+}

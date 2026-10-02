@@ -1,19 +1,20 @@
-tree 27659ceab7ee1da13fe0834b21871ee6663e23f6
-parent a0dc13da70ad7ba34406e6c84531cbb2ffd6b52b
-author Mason Green <mason@greenm01.net> 1790856965 -0400
-committer Mason Green <mason@greenm01.net> 1790856965 -0400
+tree 0a6e0db50c22348efefa172f6d2371a0a09d3d20
+parent 7f8ccb50aa6d237fc44dccbff4100a83b4f4f153
+author Mason Green <mason@greenm01.net> 1790913132 -0400
+committer Mason Green <mason@greenm01.net> 1790913132 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCar5PBRsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLRcQD9Gze0PC9wKbsd8hIzZlHt
- rOeAN9Nr+qmdnYSnBn1Z/ZABAIL3UOQcAXEgnyhUPgzLgc/+VGHamjtOD/x/UTGq
- 2TkK
- =aHoW
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCar8qbBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIA7QEAoyAro76fwMjzKYmUhs7j
+ SzfOHzhT1/16Nw2CLphTK4cA/29C6bRIiYOX6bS0tdzSKXQuHtgG6dhCsKfz8Vym
+ abYM
+ =nMKZ
  -----END PGP SIGNATURE-----
 
-Import the WM output transport naming contract
+Import the WM ChordAction contract
 
 Copy spec/sophia-wm-files.md unmodified from signed Sophia contract
-b0721d0de6a03cb44e57b0a923c6c385cf40b676 and record its digest. The WM api
-now names output_transport=9p2000.L. This SDK has no WM client; library
-sources, wire layouts and the other contract digests are unchanged.
+b0a2b0303b02af27598def07f455e8e0240b9366 and record its digest. The WM file
+contract adds the chord_actions capability and the ChordAction cause. This
+SDK has no WM client; library sources, wire layouts and the other contract
+digests are unchanged.

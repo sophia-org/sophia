@@ -21,13 +21,26 @@
                             virtual_terminal_chord
                                 .pressed_modifier_keycodes_for(event.device);
                         keyboard_coverage.observe_virtual_terminal(terminal);
+                        // The switch ends the seat's chords cancelled, before the
+                        // synthetic releases below could end them released.
+                        if let Some(shortcuts) = shortcuts.as_deref_mut() {
+                            shortcuts.cancel_seat_chords(event.seat);
+                        }
                         for modifier_keycode in virtual_terminal_chord
                             .pressed_modifier_keycodes_for(event.device)
                             .into_iter()
                             .flatten()
                         {
+                            // A synthetic release is never a tap's release:
+                            // whatever it would claim is declined.
                             if let Some(shortcuts) = shortcuts.as_deref_mut() {
-                                let _ = shortcuts.route_key(event.seat, modifier_keycode, false);
+                                // Declining returns the switch's cancelled
+                                // terminals first, then anything the release
+                                // itself caused.
+                                let outputs = shortcuts
+                                    .key_event(event.seat, event.device, modifier_keycode, false, now_msec)
+                                    .decline();
+                                push_shortcut_outputs(outputs, &mut report);
                             }
                             let _ = modifiers.map_evdev_key(modifier_keycode, false);
                             if let Some((_, keyboard)) = launcher.as_mut() {
@@ -103,6 +116,7 @@
                             report.deliveries.push(delivery);
                         }
                         report.virtual_terminal = Some(terminal);
+                        take_shortcut_outputs(shortcuts.as_deref_mut(), &mut report);
                         discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
                     }
                     }
@@ -112,11 +126,60 @@
                         report.emergency_exit = true;
                         discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
                     }
-                    let decision = if routing_mode != PhysicalInputRoutingMode::CursorOnly {
-                        shortcuts.as_deref_mut().map(|router|router.route_key(event.seat,keycode,pressed))
-                    } else {None};
-                    let switcher=decision.as_ref().is_some_and(|d|d.action.is_some_and(is_shell_switcher_shortcut));
-                    let help=decision.as_ref().is_some_and(|d|d.action==Some(SHELL_HELP_SHORTCUT_ACTION));
+                    // CursorOnly matches nothing but still records every key, so
+                    // the record is true when matching resumes. Its chords already
+                    // ended cancelled on the mode transition. Otherwise the router's
+                    // claim on this event is a proposal until the captures below
+                    // have decided. It is resolved first, then everything the router
+                    // produced is taken in order: work that came due before the
+                    // event, then the event's own.
+                    let mut key_event = match shortcuts.as_deref_mut() {
+                        Some(router) if routing_mode == PhysicalInputRoutingMode::CursorOnly => {
+                            Some(router.observe_key_event(event.seat, event.device, keycode, pressed, now_msec))
+                        }
+                        Some(router) => Some(router.key_event(event.seat, event.device, keycode, pressed, now_msec)),
+                        None => None,
+                    };
+                    // What came due, and the terminals a release caused, keep the
+                    // old place at the event boundary, ahead of any capture.
+                    if let Some(key_event) = key_event.as_mut() {
+                        push_shortcut_outputs(key_event.take_outputs(), &mut report);
+                    }
+                    let consumed = key_event.as_ref().is_some_and(|key_event| key_event.consumed());
+                    if pressed && key_event.as_ref().is_some_and(|key_event| key_event.router().seat_uncertain(event.seat)) {
+                        report.shortcut_uncertain_presses = report.shortcut_uncertain_presses.saturating_add(1);
+                    }
+                    let proposal = key_event.as_ref().and_then(|key_event| key_event.proposal().cloned());
+                    let possible = |accept: &dyn Fn(WmActionId) -> bool| {
+                        proposal.as_ref().is_some_and(|proposal| {
+                            proposal.possible_actions.iter().any(|action| accept(*action))
+                        })
+                    };
+                    // A consumed press that claims nothing (a repeat, or an opener
+                    // refused for lack of credit) is the router's: no capture may
+                    // read it as an activation of its own.
+                    if pressed && consumed && proposal.is_none() {
+                        if let Some(key_event) = key_event.take() {
+                            push_shortcut_outputs(key_event.decline(), &mut report);
+                        }
+                        if key_repeat_map.evdev_key_repeats(keycode) { key_repeat.cancel_seat(event.seat); }
+                        continue;
+                    }
+                    // The switcher and help exceptions follow an action this event
+                    // selects: an immediate chord's, or a modifier tap's at its
+                    // release. A press that only may lead to one (an undecided
+                    // hold, any sequence step, an arming modifier) keeps the
+                    // launcher's and reference sheet's precedence. Every possible
+                    // action counts only toward policy protection below.
+                    let selected = proposal
+                        .as_ref()
+                        .filter(|proposal| matches!(proposal.kind, sophia_engine::WmPressKind::Immediate | sophia_engine::WmPressKind::FireModifierTap))
+                        .and_then(|proposal| proposal.possible_actions.first().copied());
+                    let switcher = selected.is_some_and(is_shell_switcher_shortcut);
+                    let help = selected == Some(SHELL_HELP_SHORTCUT_ACTION);
+                    // A capture that takes the event declines the proposal; the
+                    // outputs are taken before the capture continues.
+                    let mut captured = false;
                     if !switcher && !help && let Some((capture,keyboard))=launcher.as_mut() {
                         let (text,clear)=launcher_text.as_ref().map_or((None,false),|(text,clear)|(text.as_deref(),*clear));
                         let(consumed,input)=capture.route(&event,text,pointer.position(),clear,keyboard.command_modifier_active());
@@ -124,42 +187,58 @@
                             return Err("native launcher capture capacity exhausted".into());
                         }
                         report.launcher_events.extend(input);
-                        if consumed {
-                            if let Some(policy) = policy_presentation.as_mut() { policy.capture.revoke(); }
-                            key_repeat.cancel_seat(event.seat);discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
-                        }
+                        captured = consumed;
                     }
-                    if !switcher && let Some(capture)=reference_capture.as_deref_mut() {
+                    if !captured && !switcher && let Some(capture)=reference_capture.as_deref_mut() {
                         let (consumed,operation)=capture.route(&event);
                         report.reference_operations.extend(operation);
-                        if consumed {
-                            if let Some(policy) = policy_presentation.as_mut() { policy.capture.revoke(); }
-                            key_repeat.cancel_seat(event.seat);discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
+                        captured = consumed;
+                    }
+                    if captured {
+                        if let Some(key_event) = key_event.take() {
+                            push_shortcut_outputs(key_event.decline(), &mut report);
                         }
+                        if let Some(policy) = policy_presentation.as_mut() { policy.capture.revoke(); }
+                        key_repeat.cancel_seat(event.seat);discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
                     }
                     if let Some(policy) = policy_presentation.as_mut() {
-                        let protected = decision.as_ref().and_then(|decision| decision.action).is_some_and(|action|
-                            is_reserved_session_action(action) || policy.protected_actions.contains(&action));
+                        // An event that may lead to a chord the WM follows is
+                        // protected too: its Held and Ended only mean anything if the
+                        // capture leaves its Actions alone. The router decides that
+                        // from frozen eligibility, so a join stays protected after its
+                        // declaration is removed. Every action the event may still
+                        // lead to counts.
+                        let protected = proposal.as_ref().is_some_and(|proposal| proposal.follows_chord)
+                            || possible(&|action| is_reserved_session_action(action) || policy.protected_actions.contains(&action));
                         if !protected {
-                            let mask = shortcuts.as_deref().map_or(sophia_protocol::WmModifierMask { bits: 0 }, |router| router.modifier_mask(event.seat));
+                            // With the seat's modifiers unknown nothing may match: the
+                            // capture swallows presses as it does when shielding, and
+                            // still settles the releases it owes.
+                            let router = key_event.as_ref().map(|key_event| key_event.router());
+                            let uncertain = router.is_some_and(|router| router.seat_uncertain(event.seat));
+                            let mask = router.map_or(sophia_protocol::WmModifierMask { bits: 0 }, |router| router.modifier_mask(event.seat));
                             let application_active = client_keys.pending_len() != 0
                                 || application_route_leases.as_deref().is_some_and(|leases| leases.leases().next().is_some())
                                 || pointer_focus_handoff.as_deref().and_then(PointerFocusHandoffState::target).is_some();
-                            let disposition = if policy.keyboard_needs_shield(input_projections) {
+                            let disposition = if uncertain || policy.keyboard_needs_shield(input_projections) {
                                 policy.capture.block_key(event.seat, event.device, keycode, pressed, application_active)
                             } else {
                                 policy.capture.key(policy.state, event.seat, event.device, keycode, pressed, mask, application_active)
                             };
                             if record_policy_input(disposition, &mut report) {
+                                if let Some(key_event) = key_event.take() {
+                                    push_shortcut_outputs(key_event.decline(), &mut report);
+                                }
                                 key_repeat.cancel_seat(event.seat);
                                 continue;
                             }
                         }
                     }
-                    if let Some(decision)=decision && decision.consumed {
+                    if let Some(key_event) = key_event.take() {
+                        push_shortcut_outputs(key_event.accept(), &mut report);
+                    }
+                    if consumed {
                         if pressed && key_repeat_map.evdev_key_repeats(keycode) {key_repeat.cancel_seat(event.seat);}
-                        report.wm_actions.extend(decision.action);
-                        report.policy_inputs.extend(decision.action.map(PhysicalPolicyInput::Action));
                         continue;
                     }
                 }

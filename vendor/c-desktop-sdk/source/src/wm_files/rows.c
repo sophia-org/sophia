@@ -716,6 +716,29 @@ int sophia_wf_projection_presentation_binding_encode(void *dst, size_t size, con
     memcpy(dst, p, sizeof(p));
     return 0;
 }
+int sophia_wf_configuration_action_lifecycle_decode(const void *src, size_t size, struct sophia_wf_configuration_action_lifecycle *out)
+{
+    const uint8_t *p = src;
+    struct sophia_wf_configuration_action_lifecycle v;
+    if (!src || !out) return -4;
+    if (size != 16u) return -1;
+    memset(&v, 0, sizeof(v));
+    v.action = (uint64_t)wf_get(p + 0, 8);
+    v.held_ms = (uint32_t)wf_get(p + 8, 4);
+    if (!wf_zero(p + 12, 4)) return -1;
+    *out = v;
+    return 0;
+}
+int sophia_wf_configuration_action_lifecycle_encode(void *dst, size_t size, const struct sophia_wf_configuration_action_lifecycle *v)
+{
+    uint8_t p[16];
+    if (!dst || !v || size < 16u) return -4;
+    memset(p, 0, sizeof(p));
+    wf_put(p + 0, (uint64_t)v->action, 8);
+    wf_put(p + 8, (uint64_t)v->held_ms, 4);
+    memcpy(dst, p, sizeof(p));
+    return 0;
+}
 int wf_row_layout(uint16_t family, uint16_t kind, size_t *width,
                   uint32_t *maximum, uint64_t *capabilities)
 {
@@ -829,6 +852,11 @@ int wf_row_layout(uint16_t family, uint16_t kind, size_t *width,
         *capabilities = SOPHIA_WF_CAP_PRESENTATION_ACTIONS | SOPHIA_WF_CAP_ACTIONS | SOPHIA_WF_CAP_SURFACE_INSTANCES;
         return 0;
     }
+    if (family == SOPHIA_WF_CONFIGURATION && kind == 65294u) {
+        *width = 16; *maximum = 256;
+        *capabilities = SOPHIA_WF_CAP_ACTION_LIFECYCLE | SOPHIA_WF_CAP_ACTIONS | SOPHIA_WF_CAP_CONFIGURATION;
+        return 0;
+    }
     return -1;
 }
 int wf_row_reserved(uint16_t family, uint16_t kind, const uint8_t *p)
@@ -847,5 +875,7 @@ int wf_row_reserved(uint16_t family, uint16_t kind, const uint8_t *p)
         return wf_zero(p + 68, 4) ? 0 : -1;
     if (family == SOPHIA_WF_PROJECTION && kind == 65292u)
         return wf_zero(p + 60, 4) ? 0 : -1;
+    if (family == SOPHIA_WF_CONFIGURATION && kind == 65294u)
+        return wf_zero(p + 12, 4) ? 0 : -1;
     return 0;
 }

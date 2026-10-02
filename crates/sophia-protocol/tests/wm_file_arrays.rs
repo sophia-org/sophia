@@ -33,6 +33,7 @@ fn configuration() -> WmFileConfiguration {
     WmFileConfiguration {
         transaction: TransactionId::from_raw(23),
         configuration: PolicyConfiguration {
+            action_lifecycles: Vec::new(),
             connection_epoch: 2,
             generation: 3,
             actions: fixture::actions(),

@@ -20,7 +20,9 @@ const POLICY_SUPPORTED_CAPABILITIES: u64 = SOPHIA_WM_CAPABILITY_BINDINGS
     | SOPHIA_WM_CAPABILITY_OUTPUT_POLICY_KEYS
     | SOPHIA_WM_CAPABILITY_OUTPUT_LAUNCH_CONTEXT
     | SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES
-    | SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS;
+    | SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS
+    | SOPHIA_WM_CAPABILITY_ACTION_LIFECYCLE
+    | SOPHIA_WM_CAPABILITY_CHORD_ACTIONS;
 
 /// Select only offered mechanisms available to this Session, removing dependent
 /// mechanisms whose prerequisites did not survive selection. The caller owns
@@ -42,6 +44,14 @@ pub const fn select_policy_capabilities(
     }
     if selected & SOPHIA_WM_CAPABILITY_LAUNCH_ORIGIN == 0 {
         selected &= !SOPHIA_WM_CAPABILITY_OUTPUT_LAUNCH_CONTEXT;
+    }
+    let lifecycle_inputs = SOPHIA_WM_CAPABILITY_ACTIONS | SOPHIA_WM_CAPABILITY_CONFIGURATION;
+    if selected & lifecycle_inputs != lifecycle_inputs {
+        selected &= !SOPHIA_WM_CAPABILITY_ACTION_LIFECYCLE;
+    }
+    // Chord actions mark the lifecycle's own activations, so they go with it.
+    if selected & SOPHIA_WM_CAPABILITY_ACTION_LIFECYCLE == 0 {
+        selected &= !SOPHIA_WM_CAPABILITY_CHORD_ACTIONS;
     }
     selected
 }

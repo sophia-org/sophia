@@ -49,6 +49,7 @@ impl PolicyFileCodec for Codec {
                     700
                 }),
                 configuration: PolicyConfiguration {
+                    action_lifecycles: Vec::new(),
                     connection_epoch: record.header.connection_epoch,
                     generation: 3,
                     actions: Vec::new(),
@@ -534,6 +535,7 @@ fn real_array_decoder_refuses_unnegotiated_chrome_before_semantic_delivery() {
     let value = WmFileConfiguration {
         transaction: TransactionId::from_raw(700),
         configuration: PolicyConfiguration {
+            action_lifecycles: Vec::new(),
             connection_epoch: 9,
             generation: 3,
             actions: Vec::new(),

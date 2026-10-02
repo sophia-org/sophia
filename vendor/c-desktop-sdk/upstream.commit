@@ -1,21 +1,26 @@
-tree 843ddd14d6eef80766fe8045f49df3621fd32d3e
-parent 7ccfece173b4b01e563a27b8fe5cc07d4369b55a
-author Mason Green <mason@greenm01.net> 1790854352 -0400
-committer Mason Green <mason@greenm01.net> 1790854352 -0400
+tree 2ce6f1644aa03a062dfd9d87d62cde99eb1c08b2
+parent 05f09de6d9cf7b5aba776d5967dee5a949f6cad7
+author Mason Green <mason@greenm01.net> 1790913124 -0400
+committer Mason Green <mason@greenm01.net> 1790913124 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCar5E0BsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJ5YgD+KuRKj6WF5A85EyNbeUyR
- w53lb1I9K9oCt4vntjbBDZQBAMAVDYIP5rB+SPLecPOJJytjhIslPyE+hly8g7nF
- FZsO
- =tCP2
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCar8qZBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJV5QEA/Hb9cJht6xer+9lqQO1U
+ cqthfTOXHk958rIVUSN7nzUA/jPDPVzpvb4yjTpHCJBjOIbZbPT8XxQ28Pvpm7NC
+ OH0F
+ =V4ok
  -----END PGP SIGNATURE-----
 
-Release C SDK 0.4.0 with the 9P2000.L WM api
+Release C SDK 0.6.0 with the ChordAction cause
 
-Import sophia-wm-files.md and sophia-output-files.md unmodified from
-signed Sophia contract b0721d0de6a03cb44e57b0a923c6c385cf40b676. The
-WM session now requires the exact api bytes naming output_transport=9p2000.L
-and refuses the retired current_ipc value before negotiation.
+Import sophia-wm-files-v1.kdl, sophia-wm-files.md and sophia-wm-api.md
+unmodified from signed Sophia contract b0a2b0303b02af27598def07f455e8e0240b9366.
+Capability bit 21, chord_actions, requires action_lifecycle, actions and
+configuration. With it, a followed chord's keyboard activations arrive as
+ChordAction (cause 8: activation serial, chord serial and action, all
+nonzero). A client that selected the lifecycle alone keeps its 0.5.1 behaviour
+and refuses cause 8; negotiation refuses chord_actions without its
+dependencies.
 
-Build and test guidance uses caller priority and the available CPUs.
+ChordAction is qualified only by literal and scripted-peer tests: Session does
+not send it yet.

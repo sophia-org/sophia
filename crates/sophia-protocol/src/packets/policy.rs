@@ -100,6 +100,63 @@ pub struct PolicyConfiguration {
     pub generation: u64,
     pub actions: Vec<PolicyActionRegistration>,
     pub chrome: WmChromePolicy,
+    /// Actions whose keyboard chords the WM asked to follow; empty unless
+    /// `action_lifecycle` was negotiated.
+    pub action_lifecycles: Vec<PolicyActionLifecycleInterest>,
+}
+
+/// One `ConfigurationActionLifecycle` row: Session reports the chord behind
+/// this action's keyboard activations, with Held after `held_ms` (0: never).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PolicyActionLifecycleInterest {
+    pub action: WmActionId,
+    pub held_ms: u32,
+}
+
+/// The longest Held threshold a WM may declare, and the shortest nonzero one.
+pub const POLICY_ACTION_LIFECYCLE_HELD_MS: core::ops::RangeInclusive<u32> = 50..=5000;
+
+/// Where a declared chord is in its life. Held carries no reason; Ended says
+/// why the chord is over, and nothing for that chord follows it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PolicyChordPhase {
+    Held,
+    Ended(PolicyChordEnd),
+}
+
+/// Completed, aborted and timed out end only sequence leaders, which keys do
+/// not hold; leaders never end released.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u16)]
+pub enum PolicyChordEnd {
+    Released = 1,
+    Cancelled = 2,
+    Completed = 3,
+    Aborted = 4,
+    TimedOut = 5,
+}
+
+impl PolicyChordPhase {
+    /// The wire's phase and reason codes.
+    pub const fn codes(self) -> (u16, u16) {
+        match self {
+            Self::Held => (1, 0),
+            Self::Ended(end) => (2, end as u16),
+        }
+    }
+
+    /// Only Held with reason 0, or Ended with a known reason, is valid.
+    pub const fn from_codes(phase: u16, reason: u16) -> Option<Self> {
+        Some(match (phase, reason) {
+            (1, 0) => Self::Held,
+            (2, 1) => Self::Ended(PolicyChordEnd::Released),
+            (2, 2) => Self::Ended(PolicyChordEnd::Cancelled),
+            (2, 3) => Self::Ended(PolicyChordEnd::Completed),
+            (2, 4) => Self::Ended(PolicyChordEnd::Aborted),
+            (2, 5) => Self::Ended(PolicyChordEnd::TimedOut),
+            _ => return None,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -181,6 +238,24 @@ pub enum PolicyRequestCause {
         activation_serial: u64,
         action: WmActionId,
         identity: crate::PolicyPresentationIdentity,
+    },
+    /// A keyboard activation of a followed chord, sent instead of `Action`
+    /// when `chord_actions` is selected. `activation_serial` names this
+    /// activation and `chord_serial` the chord's first one, the serial its
+    /// Held and Ended name; the opener carries equal serials.
+    ChordAction {
+        activation_serial: u64,
+        chord_serial: u64,
+        action: WmActionId,
+    },
+    /// The chord behind a declared action's keyboard activations.
+    /// `activation_serial` names the chord's first admitted Action and `count`
+    /// its admitted Actions, saturating.
+    ActionLifecycle {
+        activation_serial: u64,
+        action: WmActionId,
+        phase: PolicyChordPhase,
+        count: u32,
     },
     Focus {
         target: SurfaceId,

@@ -208,3 +208,26 @@ This SDK has no WM client, and its connection reads only the shell role's
 `api` line. The document remains the reference for the envelope, custody and
 retry rules the shell contract adopts, which this revision does not change.
 Library sources, wire layouts and the other spec digests are unchanged.
+
+## WM chord lifecycle contract
+
+`spec/sophia-wm-files.md` is copied unmodified from signed Sophia contract
+`86bf65046627ef9fea2a041ae10b08472b3271d1`, the additive chord lifecycle
+commit on `feature/generic-chording`. It adds the `action_lifecycle`
+capability, the Configuration rows declaring followed actions and the
+ActionLifecycle cause. This SDK has no WM client, so none of that is
+implemented here. The document remains the reference for the envelope,
+custody and retry rules the shell contract adopts, which this revision does
+not change. Library sources, wire layouts and the other spec digests are
+unchanged.
+
+## WM ChordAction contract
+
+`spec/sophia-wm-files.md` is copied unmodified from signed Sophia contract
+`b0a2b0303b02af27598def07f455e8e0240b9366` on `feature/generic-chording`. It
+adds the `chord_actions` capability and the ChordAction cause that marks a
+followed chord's own keyboard activations. This SDK has no WM client, so
+nothing of it is implemented here; the document remains the reference for the
+envelope, custody and retry rules the shell contract adopts, which this
+revision does not change. Library sources, wire layouts and the other spec
+digests are unchanged.

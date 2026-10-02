@@ -730,7 +730,7 @@ fn validate_setting(
             "gpu-memory-bytes",
         ]
         .contains(&name),
-        DesktopAuthority::Shortcut => ["profile", "bind", "pointer-bind"].contains(&name),
+        DesktopAuthority::Shortcut => crate::shortcut_candidate::SETTINGS.contains(&name),
         DesktopAuthority::Session => [
             "application",
             "terminal",
@@ -935,11 +935,16 @@ pub fn desktop_profile_shell_panel_thickness(profile: &DesktopProfileGeneration)
 }
 
 fn setting_key(authority: DesktopAuthority, node: &KdlNode) -> Result<String, DesktopProfileError> {
-    let mut key = format!("{}.{}", authority.name(), node.name().value());
+    let name = match authority {
+        DesktopAuthority::Shortcut => crate::shortcut_candidate::setting_name(node),
+        _ => node.name().value(),
+    };
+    let mut key = format!("{}.{}", authority.name(), name);
     if authority != DesktopAuthority::Policy
         && [
             "bind",
             "pointer-bind",
+            "leader",
             "application",
             "device",
             "named",

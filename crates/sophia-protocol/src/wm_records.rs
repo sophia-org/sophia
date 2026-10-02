@@ -20,7 +20,11 @@ mod tab_groups;
 mod translation;
 mod values;
 
-pub use configuration::{decode_policy_configuration_records, encode_policy_configuration_records};
+pub use configuration::{
+    CONFIGURATION_ACTION_LIFECYCLE_RECORD_KIND, CONFIGURATION_ACTION_LIFECYCLE_RECORD_LEN,
+    CONFIGURATION_ACTION_LIFECYCLE_RECORD_MAX, decode_policy_configuration_records,
+    encode_policy_configuration_records,
+};
 pub use launch_origins::{
     LAUNCH_CONTEXT_RECORD_LEN, PROJECTION_LAUNCH_CONTEXT_RECORD_KIND,
     SNAPSHOT_LAUNCH_ORIGIN_RECORD_KIND, decode_policy_launch_contexts_records,

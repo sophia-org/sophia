@@ -83,6 +83,20 @@ fn authority_wait_timeout(
     )
 }
 
+/// Shortcuts cap the current wait only when their next timer is due sooner.
+/// Service advances and drains due work on the following owner turn.
+fn shortcut_wait_cap(
+    router: Option<&WmShortcutRouter>,
+    elapsed_msec: u64,
+    maximum: Duration,
+) -> Duration {
+    router
+        .and_then(WmShortcutRouter::next_deadline)
+        .map_or(maximum, |deadline| {
+            maximum.min(Duration::from_millis(deadline.saturating_sub(elapsed_msec)))
+        })
+}
+
 /// Work the owner holds itself, which no producer rings for when it comes due.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct OwnerHeldWork {

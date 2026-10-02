@@ -101,6 +101,134 @@ fn native_frame_progress_preempts_metadata_only_authority_batches() {
     ));
 }
 
+fn shortcut_timer_router(plan: sophia_engine::WmShortcutPlan) -> sophia_engine::WmShortcutRouter {
+    sophia_engine::WmShortcutRouter::new(
+        sophia_engine::WmShortcutRegistry::from_plan(
+            &plan,
+            sophia_protocol::WmCapabilities::all_supported(),
+            1,
+            sophia_protocol::WmChromePolicy::default(),
+        )
+        .unwrap(),
+    )
+}
+
+#[test]
+fn an_open_chord_without_a_timer_keeps_the_idle_wait() {
+    use sophia_engine::WmShortcutPlan;
+    use sophia_protocol::{DeviceId, PolicyActionLifecycleInterest, WmActionId, WmBindingRegistration};
+    let idle = authority_wait_timeout(false, false, false);
+    assert_eq!(shortcut_wait_cap(None, 0, idle), idle);
+    let action = WmActionId::from_raw(5);
+    let mut router = shortcut_timer_router(WmShortcutPlan {
+        immediate: vec![WmBindingRegistration {
+            action,
+            keycode: 67,
+            modifiers: sophia_protocol::WmModifierMask { bits: 0 },
+        }],
+        ..WmShortcutPlan::default()
+    });
+    router.set_action_lifecycles(&[PolicyActionLifecycleInterest { action, held_ms: 0 }]);
+    assert_eq!(shortcut_wait_cap(Some(&router), 0, idle), idle);
+    let outputs = router.key_event(SeatId::from_raw(1), DeviceId::from_raw(1), 67, true, 0).accept();
+    assert!(matches!(outputs[..], [sophia_engine::WmShortcutOutput::Activation(a)] if a.chord.is_some()));
+    assert_eq!(router.next_deadline(), None);
+    assert_eq!(shortcut_wait_cap(Some(&router), 500, idle), idle);
+}
+
+#[test]
+fn servicing_hold_and_held_deadlines_restores_the_idle_wait() {
+    use sophia_engine::{WmChordEvent, WmHoldBinding, WmKeyStep, WmShortcutOutput, WmShortcutPlan};
+    use sophia_protocol::{DeviceId, PolicyActionLifecycleInterest, WmActionId};
+    let action = WmActionId::from_raw(5);
+    let mut router = shortcut_timer_router(WmShortcutPlan {
+        holds: vec![WmHoldBinding {
+            step: WmKeyStep { keycode: 67, modifiers: 0 },
+            hold_ms: 500,
+            action,
+        }],
+        ..WmShortcutPlan::default()
+    });
+    router.set_action_lifecycles(&[PolicyActionLifecycleInterest { action, held_ms: 150 }]);
+    assert!(router.key_event(SeatId::from_raw(1), DeviceId::from_raw(1), 67, true, 100).accept().is_empty());
+    let idle = authority_wait_timeout(false, false, false);
+    assert_eq!(router.next_deadline(), Some(600));
+    assert_eq!(shortcut_wait_cap(Some(&router), 100, idle), idle);
+    assert_eq!(shortcut_wait_cap(Some(&router), 590, idle), Duration::from_millis(10));
+    // A frame or shell deadline that is nearer stays authoritative.
+    assert_eq!(shortcut_wait_cap(Some(&router), 590, Duration::from_millis(1)), Duration::from_millis(1));
+    assert_eq!(shortcut_wait_cap(Some(&router), 600, idle), Duration::ZERO);
+    router.poll_shortcuts(600);
+    assert!(matches!(router.take_outputs()[..], [WmShortcutOutput::Activation(a)] if a.action == action));
+    assert_eq!(router.next_deadline(), Some(750));
+    assert_eq!(shortcut_wait_cap(Some(&router), 600, idle), idle);
+    router.poll_shortcuts(600);
+    assert!(router.take_outputs().is_empty());
+    assert_eq!(shortcut_wait_cap(Some(&router), 745, idle), Duration::from_millis(5));
+    assert_eq!(shortcut_wait_cap(Some(&router), 755, idle), Duration::ZERO);
+    router.poll_shortcuts(755);
+    assert!(matches!(router.take_outputs()[..], [WmShortcutOutput::Chord(WmChordEvent::Held { .. })]));
+    // The chord is still open, but its one Held was delivered to the outbox.
+    assert_eq!(router.next_deadline(), None);
+    assert_eq!(shortcut_wait_cap(Some(&router), 755, idle), idle);
+    router.poll_shortcuts(900);
+    assert!(router.take_outputs().is_empty());
+}
+
+#[test]
+fn a_sequence_timeout_does_not_leave_a_zero_length_owner_wait() {
+    use sophia_engine::{WmChordEvent, WmKeyStep, WmSequenceBinding, WmSequenceLeader, WmShortcutOutput, WmShortcutPlan};
+    use sophia_protocol::{DeviceId, PolicyActionLifecycleInterest, PolicyChordEnd, WmActionId};
+    let prefix = WmKeyStep { keycode: 67, modifiers: 0 };
+    let hint = WmActionId::from_raw(5);
+    let mut router = shortcut_timer_router(WmShortcutPlan {
+        sequences: vec![WmSequenceBinding {
+            steps: vec![prefix, WmKeyStep { keycode: 68, modifiers: 0 }],
+            action: WmActionId::from_raw(6),
+        }],
+        leaders: vec![WmSequenceLeader { steps: vec![prefix], action: hint }],
+        ..WmShortcutPlan::default()
+    });
+    router.set_action_lifecycles(&[PolicyActionLifecycleInterest { action: hint, held_ms: 0 }]);
+    assert!(matches!(router.key_event(SeatId::from_raw(1), DeviceId::from_raw(1), 67, true, 1000).accept()[..], [WmShortcutOutput::Activation(_)]));
+    let idle = authority_wait_timeout(false, false, false);
+    assert_eq!(router.next_deadline(), Some(2000));
+    assert_eq!(shortcut_wait_cap(Some(&router), 1999, idle), Duration::from_millis(1));
+    assert_eq!(shortcut_wait_cap(Some(&router), 2000, idle), Duration::ZERO);
+    router.poll_shortcuts(2000);
+    assert!(matches!(router.take_outputs()[..], [WmShortcutOutput::Chord(WmChordEvent::Ended { end: PolicyChordEnd::TimedOut, .. })]));
+    assert_eq!(shortcut_wait_cap(Some(&router), 2000, idle), idle);
+    router.poll_shortcuts(2000);
+    assert!(router.take_outputs().is_empty());
+}
+
+#[test]
+fn a_notification_preempts_a_future_shortcut_deadline() {
+    use sophia_engine::{WmHoldBinding, WmKeyStep, WmShortcutPlan};
+    use sophia_protocol::{DeviceId, WmActionId};
+    let mut router = shortcut_timer_router(WmShortcutPlan {
+        holds: vec![WmHoldBinding {
+            step: WmKeyStep { keycode: 67, modifiers: 0 },
+            hold_ms: 5000,
+            action: WmActionId::from_raw(5),
+        }],
+        ..WmShortcutPlan::default()
+    });
+    assert!(router.key_event(SeatId::from_raw(1), DeviceId::from_raw(1), 67, true, 0).accept().is_empty());
+    let owner = crate::live_session::OwnerWake::new().unwrap();
+    let (_authority, receiver) = std::sync::mpsc::sync_channel::<()>(1);
+    owner.begin_pass().unwrap();
+    let budget = shortcut_wait_cap(Some(&router), 0, Duration::from_secs(30));
+    assert_eq!(budget, Duration::from_secs(5));
+    // Work published after inspection rings; its notification is not replaced
+    // by the shortcut deadline. The next turn must inspect that work first.
+    owner.notifier().notify();
+    let started = Instant::now();
+    assert_eq!(owner.receive(&receiver, budget), Err(std::sync::mpsc::RecvTimeoutError::Timeout));
+    assert!(started.elapsed() < Duration::from_secs(2), "shortcut wait ignored the notification");
+    assert_eq!(router.next_deadline(), Some(5000));
+}
+
 #[test]
 fn deferred_cpu_composition_retains_the_native_visual_owner() {
     assert_eq!(

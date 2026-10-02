@@ -91,7 +91,7 @@ use super::{
     production_cycle_native_owner_policy, public_policy_launch_spec,
     public_policy_restart_decision, public_session_operations, record_runtime_commits,
     rects_intersect, resolve_public_shortcuts, route_input_events,
-    session_failure_with_refused_requests, settle_session_fatal_error,
+    session_failure_with_refused_requests, settle_session_fatal_error, shortcut_wait_cap,
     stable_gpu_frame_proves_post_input_pixels, startup_submission_requirement,
     successful_primary_exit_ends_session, synchronize_runtime_surface_chrome_style,
     take_settled_input_delivery_wait, terminal_exit_is_session_failure,
@@ -149,6 +149,8 @@ fn add_test_surface_route(
 
 #[path = "live_session/authority_merge_tests.rs"]
 mod authority_merge_tests;
+#[path = "live_session/chord_routing_tests.rs"]
+mod chord_routing_tests;
 #[path = "live_session/desktop_shortcut_tests.rs"]
 mod desktop_shortcut_tests;
 #[path = "live_session/device_identity_tests.rs"]
@@ -1408,6 +1410,9 @@ mod launcher_input_routing;
 #[path = "window_allocation.rs"]
 mod window_allocation;
 
+#[path = "shortcut_keys.rs"]
+pub(crate) mod shortcut_keys;
+use shortcut_keys::route_test_key;
 #[path = "pointer_focus.rs"]
 mod pointer_focus_tests;
 

@@ -134,6 +134,11 @@ impl LiveWmSession {
                 }
                 public.worker = Some(worker);
                 public.connection_epoch = result.epoch;
+                // The old epoch's chords, credits and records go with it, once, here.
+                self.chord_ledger.clear();
+                if let Some(router) = self.shortcuts.as_mut() {
+                    router.reset_chords();
+                }
                 public.configured = false;
                 public.negotiated = false;
                 public.selected_capabilities = 0;

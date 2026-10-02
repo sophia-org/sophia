@@ -207,7 +207,7 @@ impl LiveWmSession {
         public.configured = true;
         public.note_inspection_event(Some(InspectionEvent::ConfigurationChanged));
         self.command_registry = launch.commands;
-        self.shortcuts = Some(WmShortcutRouter::new(registry));
+        self.install_shortcuts(registry, &configuration.action_lifecycles);
         self.chrome = configuration.chrome;
         self.stage_visual_chrome(self.candidate_chrome_style());
         crate::session_println!(
@@ -265,7 +265,7 @@ impl LiveWmSession {
                 public.configured = true;
                 public.note_inspection_event(Some(InspectionEvent::ConfigurationChanged));
                 self.chrome = configuration.chrome;
-                self.shortcuts = Some(WmShortcutRouter::new(registry));
+                self.install_shortcuts(registry, &configuration.action_lifecycles);
                 self.stage_visual_chrome(self.candidate_chrome_style());
                 crate::session_println!(
                     "sophia_live_wm_configuration schema=2 status=committed catalog_generation={} session_operation_count={}",
@@ -493,14 +493,14 @@ impl LiveWmSession {
                 &commands,
                 &dropped,
             )?;
-            Some((commands, registry, dropped))
+            Some((commands, registry, dropped, configuration.action_lifecycles.clone()))
         } else {
             None
         };
         let report = config.publish_core_config_reload(prepared);
-        if let Some((commands, registry, dropped)) = next {
+        if let Some((commands, registry, dropped, lifecycles)) = next {
             self.command_registry = commands;
-            self.shortcuts = Some(WmShortcutRouter::new(registry));
+            self.install_shortcuts(registry, &lifecycles);
             config.dropped_shortcuts.clone_from(&dropped);
             self.public.as_mut().expect("core reload retains public policy").dropped_default_shortcuts = dropped;
         }

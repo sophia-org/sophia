@@ -10,6 +10,8 @@ mod policy_active_focus;
 #[path = "../../../sophia-config/examples/desktop_profile_probe.rs"]
 mod desktop_probe;
 
+use crate::live_session::tests::shortcut_keys::route_test_key;
+
 #[path = "component_launch_reload.rs"]
 mod component_launch_reload;
 
@@ -33,6 +35,9 @@ mod output_file_recovery;
 
 #[path = "policy_expectation_settlement.rs"]
 mod policy_expectation_settlement;
+
+#[path = "chord_lifecycle_session.rs"]
+mod chord_lifecycle_session;
 
 #[path = "policy_inspection.rs"]
 mod policy_inspection;
@@ -92,6 +97,7 @@ impl ReloadFixture {
         let mut reducer = sophia_engine::PolicyProjectionReducer::new(scene).unwrap();
         reducer.connect(1).unwrap();
         let configuration = sophia_protocol::PolicyConfiguration {
+            action_lifecycles: Vec::new(),
             connection_epoch: 1,
             generation: key.generation().raw(),
             actions,
@@ -197,6 +203,9 @@ impl ReloadFixture {
             request_peak_depth: 0,
             request_rejections: 0,
             action_requests_ordered: 0,
+            chord_ledger: BTreeMap::new(),
+            uncertain_seats: BTreeSet::new(),
+            keyboard_matching: true,
             stale_responses: 0,
             work_area_relayout_required: false,
             shell_reservation_bands: Vec::new(),
@@ -271,6 +280,7 @@ impl ReloadFixture {
     fn configuration(&self) -> sophia_protocol::PolicyConfiguration {
         let public = self.wm.public.as_ref().unwrap();
         sophia_protocol::PolicyConfiguration {
+            action_lifecycles: Vec::new(),
             connection_epoch: public.connection_epoch,
             // Hagia starts its action catalog at 1 for each new connection,
             // independently of the activated desktop profile generation.
@@ -340,10 +350,10 @@ fn command_only_reload_changes_the_real_router_and_registry_without_a_policy_res
     let retained = fixture.wm.command_registry.command(first).unwrap();
     let seat = SeatId::from_raw(1);
     let router = fixture.wm.shortcuts.as_mut().unwrap();
-    assert!(router.route_key(seat, 125, true).action.is_none());
-    assert_eq!(router.route_key(seat, 48, true).action, Some(first));
-    router.route_key(seat, 48, false);
-    router.route_key(seat, 125, false);
+    assert!(route_test_key(router, seat, sophia_protocol::DeviceId::from_raw(1), 125, true, 0).1.is_none());
+    assert_eq!(route_test_key(router, seat, sophia_protocol::DeviceId::from_raw(1), 48, true, 0).1, Some(first));
+    route_test_key(router, seat, sophia_protocol::DeviceId::from_raw(1), 48, false, 0);
+    route_test_key(router, seat, sophia_protocol::DeviceId::from_raw(1), 125, false, 0);
     assert!(router.shortcut_idle());
     fixture.save("/second/command", None);
     assert_eq!(fixture.reload(), DesktopProfileReloadOutcome::Applied);
@@ -468,10 +478,10 @@ shortcut {
     assert_eq!(launch_profile.startup.as_deref(), Some([].as_slice()));
     let router = fixture.wm.shortcuts.as_mut().unwrap();
     let seat = SeatId::from_raw(1);
-    router.route_key(seat, 125, true);
-    assert_eq!(router.route_key(seat, 48, true).action, Some(replacement));
-    router.route_key(seat, 48, false);
-    router.route_key(seat, 125, false);
+    route_test_key(router, seat, sophia_protocol::DeviceId::from_raw(1), 125, true, 0);
+    assert_eq!(route_test_key(router, seat, sophia_protocol::DeviceId::from_raw(1), 48, true, 0).1, Some(replacement));
+    route_test_key(router, seat, sophia_protocol::DeviceId::from_raw(1), 48, false, 0);
+    route_test_key(router, seat, sophia_protocol::DeviceId::from_raw(1), 125, false, 0);
     assert!(router.shortcut_idle());
     assert_eq!(fixture.wm.supervisor.launch_spec(), &old_spec);
     assert_eq!(fixture.policy_path(), old_policy_path);
@@ -500,12 +510,7 @@ fn policy_acceptance_keeps_active_commands_and_key_ledger_until_input_is_idle() 
         sophia_protocol::PolicyProjectionOutcome::RejectedInvalid
     );
     let seat = SeatId::from_raw(1);
-    fixture
-        .wm
-        .shortcuts
-        .as_mut()
-        .unwrap()
-        .route_key(seat, 125, true);
+    route_test_key(fixture.wm.shortcuts.as_mut().unwrap(), seat, sophia_protocol::DeviceId::from_raw(1), 125, true, 0);
     let held = fixture.wm.shortcuts.clone();
     assert_eq!(
         fixture.stage_configuration(&fixture.configuration()),
@@ -516,12 +521,7 @@ fn policy_acceptance_keeps_active_commands_and_key_ledger_until_input_is_idle() 
     assert_eq!(fixture.wm.command_registry.action("demo"), Some(old_action));
     assert_eq!(fixture.source.config.applications, old_applications);
     assert!(!fixture.wm.public.as_ref().unwrap().configured);
-    fixture
-        .wm
-        .shortcuts
-        .as_mut()
-        .unwrap()
-        .route_key(seat, 125, false);
+    route_test_key(fixture.wm.shortcuts.as_mut().unwrap(), seat, sophia_protocol::DeviceId::from_raw(1), 125, false, 0);
     fixture.settle(true);
     assert!(fixture.wm.public.as_ref().unwrap().configured);
     assert!(fixture.wm.shortcuts.as_ref().unwrap().shortcut_idle());
@@ -692,12 +692,7 @@ fn restored_policy_configuration_preserves_a_held_key_until_its_release() {
     fixture.wm.supervisor = ProcessSupervisor::new(SupervisedProcessKind::WindowManager, restored);
     fixture.wm.force_transport_restart = false;
     let seat = SeatId::from_raw(1);
-    fixture
-        .wm
-        .shortcuts
-        .as_mut()
-        .unwrap()
-        .route_key(seat, 125, true);
+    route_test_key(fixture.wm.shortcuts.as_mut().unwrap(), seat, sophia_protocol::DeviceId::from_raw(1), 125, true, 0);
     let held = fixture.wm.shortcuts.clone();
     assert_eq!(
         fixture.stage_configuration(&fixture.configuration()),
@@ -705,12 +700,7 @@ fn restored_policy_configuration_preserves_a_held_key_until_its_release() {
     );
     fixture.settle(false);
     assert_eq!(fixture.wm.shortcuts, held);
-    fixture
-        .wm
-        .shortcuts
-        .as_mut()
-        .unwrap()
-        .route_key(seat, 125, false);
+    route_test_key(fixture.wm.shortcuts.as_mut().unwrap(), seat, sophia_protocol::DeviceId::from_raw(1), 125, false, 0);
     fixture.settle(true);
     assert!(fixture.wm.shortcuts.as_ref().unwrap().shortcut_idle());
     assert!(fixture.wm.public.as_ref().unwrap().configured);
@@ -758,12 +748,7 @@ fn policy_timeout_restores_the_active_generation_without_waiting_for_key_release
     );
     fixture.replacement_started();
     fixture.wm.desktop_reload.as_mut().unwrap().deadline = Instant::now();
-    fixture
-        .wm
-        .shortcuts
-        .as_mut()
-        .unwrap()
-        .route_key(SeatId::from_raw(1), 125, true);
+    route_test_key(fixture.wm.shortcuts.as_mut().unwrap(), SeatId::from_raw(1), sophia_protocol::DeviceId::from_raw(1), 125, true, 0);
     assert!(!fixture.wm.shortcuts.as_ref().unwrap().shortcut_idle());
     let held = fixture.wm.shortcuts.clone();
     fixture.settle(false);

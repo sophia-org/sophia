@@ -79,6 +79,30 @@ fn encode_cause(cause: PolicyRequestCause) -> (u16, Vec<u8>) {
             }
             6
         }
+        PolicyRequestCause::ChordAction {
+            activation_serial,
+            chord_serial,
+            action,
+        } => {
+            bytes.extend(activation_serial.to_le_bytes());
+            bytes.extend(chord_serial.to_le_bytes());
+            bytes.extend(action.raw().to_le_bytes());
+            8
+        }
+        PolicyRequestCause::ActionLifecycle {
+            activation_serial,
+            action,
+            phase,
+            count,
+        } => {
+            let (phase, reason) = phase.codes();
+            bytes.extend(activation_serial.to_le_bytes());
+            bytes.extend(action.raw().to_le_bytes());
+            bytes.extend(phase.to_le_bytes());
+            bytes.extend(reason.to_le_bytes());
+            bytes.extend(count.to_le_bytes());
+            7
+        }
     };
     (kind, bytes)
 }
@@ -90,6 +114,7 @@ fn decode_cause(kind: u16, bytes: &[u8]) -> Result<PolicyRequestCause, WmFilePay
         2 => 8,
         4 | 5 => 32,
         6 => 64,
+        7 | 8 => 24,
         _ => return Err(WmFilePayloadError::Value),
     };
     if bytes.len() != size {
@@ -143,6 +168,18 @@ fn decode_cause(kind: u16, bytes: &[u8]) -> Result<PolicyRequestCause, WmFilePay
                 target_id: u64_at(bytes, 48)?,
                 target_generation: u64_at(bytes, 56)?,
             },
+        },
+        7 => PolicyRequestCause::ActionLifecycle {
+            activation_serial: u64_at(bytes, 0)?,
+            action: WmActionId::from_raw(u64_at(bytes, 8)?),
+            phase: PolicyChordPhase::from_codes(u16_at(bytes, 16)?, u16_at(bytes, 18)?)
+                .ok_or(WmFilePayloadError::Value)?,
+            count: u32_at(bytes, 20)?,
+        },
+        8 => PolicyRequestCause::ChordAction {
+            activation_serial: u64_at(bytes, 0)?,
+            chord_serial: u64_at(bytes, 8)?,
+            action: WmActionId::from_raw(u64_at(bytes, 16)?),
         },
         _ => return Err(WmFilePayloadError::Value),
     })

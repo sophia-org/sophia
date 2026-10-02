@@ -193,6 +193,49 @@ fn shared_record_codecs_match_every_golden_record() {
                     .bytes
                     .clone()
             }
+            "configuration_action_lifecycle" => {
+                // A row must name a registered policy action, so the sample is
+                // decoded beside a one-action catalog holding its action.
+                let catalog = PolicyConfiguration {
+                    connection_epoch: 1,
+                    generation: 1,
+                    actions: vec![PolicyActionRegistration {
+                        action: WmActionId::from_raw(5),
+                        name: "confirm".into(),
+                        session_operation_slot: None,
+                    }],
+                    chrome: WmChromePolicy::default(),
+                    action_lifecycles: Vec::new(),
+                };
+                let mut input = encode_policy_configuration_records(&catalog).unwrap();
+                input.push(PolicyRecordSection {
+                    kind: CONFIGURATION_ACTION_LIFECYCLE_RECORD_KIND,
+                    count: 1,
+                    bytes: data.clone(),
+                });
+                let configuration = decode_policy_configuration_records(
+                    PolicyConfigurationMetadata {
+                        connection_epoch: 1,
+                        generation: 1,
+                        chrome: WmChromePolicy::default(),
+                    },
+                    &refs(&input),
+                )
+                .unwrap();
+                assert_eq!(
+                    configuration.action_lifecycles,
+                    [PolicyActionLifecycleInterest {
+                        action: WmActionId::from_raw(5),
+                        held_ms: 150,
+                    }]
+                );
+                encode_policy_configuration_records(&configuration)
+                    .unwrap()
+                    .into_iter()
+                    .find(|section| section.kind == CONFIGURATION_ACTION_LIFECYCLE_RECORD_KIND)
+                    .unwrap()
+                    .bytes
+            }
             other => panic!("unknown record `{other}`"),
         };
         assert_eq!(encoded, data, "golden mismatch for {name}");

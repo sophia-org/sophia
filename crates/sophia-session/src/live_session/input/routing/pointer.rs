@@ -14,6 +14,16 @@
                     report.pointer_axes_observed =
                         report.pointer_axes_observed.saturating_add(1);
                 }
+                // A button or scroll abandons a pending modifier tap, tap-or-hold
+                // decision or sequence on its seat, before any capture can take
+                // the event. Motion does not.
+                if !control_plane_applied
+                    && (is_button || is_axis)
+                    && let Some(router) = shortcuts.as_deref_mut()
+                {
+                    router.pointer_activity(event.seat, now_msec);
+                    take_shortcut_outputs(shortcuts.as_deref_mut(), &mut report);
+                }
                 if !control_plane_applied && let Some((capture,_))=launcher.as_mut() {
                     if capture.active() && !capture.native_active() && matches!(kind,sophia_protocol::InputEventKind::PointerMotion){
                         let focused=focus.focused_surface(event.seat);
@@ -318,10 +328,13 @@
                             y: global.y.round() as i32,
                         }
                     });
+                    // With the seat's modifiers unknown, Super is never taken as
+                    // held: a gesture may not start from a guessed mask.
                     let super_held = shortcuts.as_deref().is_some_and(|shortcuts| {
-                        shortcuts.modifier_mask(event.seat).bits
-                            & sophia_protocol::WmModifierMask::SUPER
-                            != 0
+                        !shortcuts.seat_uncertain(event.seat)
+                            && shortcuts.modifier_mask(event.seat).bits
+                                & sophia_protocol::WmModifierMask::SUPER
+                                != 0
                     });
                     let route =
                         sophia_engine::hit_test_scene_surface_for_input(&event, input_layers);

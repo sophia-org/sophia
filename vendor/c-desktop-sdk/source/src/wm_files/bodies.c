@@ -32,7 +32,7 @@ static int contains(const struct sophia_wf_cycle *v, uint64_t output) {
   return 0;
 }
 static int cause_size(uint16_t kind) {
-  static const int sizes[] = {0, 16, 8, 16, 32, 32, 64};
+  static const int sizes[] = {0, 16, 8, 16, 32, 32, 64, 24, 24};
   return kind < sizeof(sizes) / sizeof(sizes[0]) ? sizes[kind] : -1;
 }
 static uint64_t cause_cap(uint16_t kind) {
@@ -48,6 +48,12 @@ static uint64_t cause_cap(uint16_t kind) {
   case SOPHIA_WF_PRESENTATION_ACTION:
     return SOPHIA_WF_CAP_ACTIONS | SOPHIA_WF_CAP_SURFACE_INSTANCES |
            SOPHIA_WF_CAP_PRESENTATION_ACTIONS;
+  case SOPHIA_WF_ACTION_LIFECYCLE:
+    return SOPHIA_WF_CAP_ACTIONS | SOPHIA_WF_CAP_CONFIGURATION |
+           SOPHIA_WF_CAP_ACTION_LIFECYCLE;
+  case SOPHIA_WF_CHORD_ACTION:
+    return SOPHIA_WF_CAP_ACTIONS | SOPHIA_WF_CAP_CONFIGURATION |
+           SOPHIA_WF_CAP_ACTION_LIFECYCLE | SOPHIA_WF_CAP_CHORD_ACTIONS;
   default:
     return 0;
   }
@@ -121,6 +127,27 @@ static int cause_read(const uint8_t *p, uint64_t caps,
                    ((!a->target_id) == (!a->target_generation))
                ? 0
                : -1;
+  }
+  case SOPHIA_WF_ACTION_LIFECYCLE: {
+    struct sophia_wf_action_lifecycle *a = &v->value.action_lifecycle;
+    a->serial = wf_get(p, 8);
+    a->action = wf_get(p + 8, 8);
+    a->phase = (uint16_t)wf_get(p + 16, 2);
+    a->reason = (uint16_t)wf_get(p + 18, 2);
+    a->count = (uint32_t)wf_get(p + 20, 4);
+    return a->serial && a->action && a->count &&
+                   ((a->phase == SOPHIA_WF_LIFECYCLE_HELD && !a->reason) ||
+                    (a->phase == SOPHIA_WF_LIFECYCLE_ENDED && a->reason >= 1 &&
+                     a->reason <= 5))
+               ? 0
+               : -1;
+  }
+  case SOPHIA_WF_CHORD_ACTION: {
+    struct sophia_wf_chord_action *a = &v->value.chord_action;
+    a->serial = wf_get(p, 8);
+    a->chord_serial = wf_get(p + 8, 8);
+    a->action = wf_get(p + 16, 8);
+    return a->serial && a->chord_serial && a->action ? 0 : -1;
   }
   default:
     return -1;
@@ -422,6 +449,22 @@ static void cause_write(uint8_t *p, const struct sophia_wf_cycle *v) {
     wf_put(p + 40, a->presentation_epoch, 8);
     wf_put(p + 48, a->target_id, 8);
     wf_put(p + 56, a->target_generation, 8);
+    break;
+  }
+  case SOPHIA_WF_ACTION_LIFECYCLE: {
+    const struct sophia_wf_action_lifecycle *a = &v->value.action_lifecycle;
+    wf_put(p, a->serial, 8);
+    wf_put(p + 8, a->action, 8);
+    wf_put(p + 16, a->phase, 2);
+    wf_put(p + 18, a->reason, 2);
+    wf_put(p + 20, a->count, 4);
+    break;
+  }
+  case SOPHIA_WF_CHORD_ACTION: {
+    const struct sophia_wf_chord_action *a = &v->value.chord_action;
+    wf_put(p, a->serial, 8);
+    wf_put(p + 8, a->chord_serial, 8);
+    wf_put(p + 16, a->action, 8);
     break;
   }
   default:

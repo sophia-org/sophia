@@ -1,4 +1,5 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::ops::RangeInclusive;
 
 use kdl::{KdlDocument, KdlNode};
 
@@ -10,11 +11,19 @@ use crate::{
 pub const DESKTOP_SHORTCUT_MAX_BINDINGS: usize = 256;
 pub const DESKTOP_SHORTCUT_MAX_TRIGGER_BYTES: usize = 64;
 pub const DESKTOP_SHORTCUT_MAX_TARGET_BYTES: usize = 128;
+/// Steps in a key sequence, its first chord included.
+pub const DESKTOP_SHORTCUT_MAX_SEQUENCE_STEPS: usize = 4;
+/// The width of a help row's chord text in the shell's shortcut catalog.
+pub const DESKTOP_SHORTCUT_MAX_DISPLAY_BYTES: usize = 64;
+pub const DESKTOP_SHORTCUT_HOLD_MS: RangeInclusive<u32> = 100..=5000;
+pub const DESKTOP_SHORTCUT_TAP_MS: RangeInclusive<u32> = 50..=2000;
+pub const DESKTOP_SHORTCUT_SEQUENCE_MS: RangeInclusive<u32> = 200..=10000;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct DesktopShortcutModifiers(u8);
 
 impl DesktopShortcutModifiers {
+    pub const NONE: Self = Self(0);
     pub const SHIFT: Self = Self(1 << 0);
     pub const CONTROL: Self = Self(1 << 1);
     pub const ALT: Self = Self(1 << 2);
@@ -36,6 +45,57 @@ pub struct DesktopShortcutChord {
     pub kind: DesktopShortcutBindingKind,
     pub modifiers: DesktopShortcutModifiers,
     pub trigger: String,
+}
+
+impl DesktopShortcutChord {
+    /// The modifier class a lone modifier tap names, as in `bind "Super" ..`.
+    /// Such a chord fires on the modifier's release, never as a key press.
+    pub fn modifier_tap(&self) -> Option<DesktopShortcutModifiers> {
+        if self.kind != DesktopShortcutBindingKind::Key || self.modifiers.bits() != 0 {
+            return None;
+        }
+        modifier_class(&self.trigger)
+    }
+
+    /// How the chord reads in help: modifiers in a fixed order, then the key.
+    pub fn display(&self) -> String {
+        let mut parts = Vec::new();
+        for (bit, name) in [
+            (DesktopShortcutModifiers::SUPER, "Super"),
+            (DesktopShortcutModifiers::CONTROL, "Ctrl"),
+            (DesktopShortcutModifiers::SHIFT, "Shift"),
+            (DesktopShortcutModifiers::ALT, "Alt"),
+        ] {
+            if self.modifiers.bits() & bit.bits() != 0 {
+                parts.push(name.to_owned());
+            }
+        }
+        let trigger = match self.trigger.as_str() {
+            "slash" => "/".to_owned(),
+            "return" => "Enter".to_owned(),
+            trigger if self.kind == DesktopShortcutBindingKind::Pointer => {
+                format!("Mouse {trigger}")
+            }
+            trigger => {
+                let mut characters = trigger.chars();
+                characters.next().map_or(String::new(), |first| {
+                    first.to_uppercase().collect::<String>() + characters.as_str()
+                })
+            }
+        };
+        parts.push(trigger);
+        parts.join("+")
+    }
+}
+
+fn modifier_class(trigger: &str) -> Option<DesktopShortcutModifiers> {
+    Some(match trigger {
+        "shift" => DesktopShortcutModifiers::SHIFT,
+        "ctrl" => DesktopShortcutModifiers::CONTROL,
+        "alt" => DesktopShortcutModifiers::ALT,
+        "super" => DesktopShortcutModifiers::SUPER,
+        _ => return None,
+    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -82,10 +142,67 @@ pub enum DesktopShortcutTarget {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DesktopShortcutBinding {
+    /// The first chord. A sequence continues with `steps`.
     pub chord: DesktopShortcutChord,
+    pub steps: Vec<DesktopShortcutChord>,
+    /// A hold variant: fires when the chord is still held after this long.
+    /// The binding on the same chord without it is the tap variant.
+    pub hold_ms: Option<u32>,
     pub target: DesktopShortcutTarget,
     pub label: Option<String>,
     pub group: Option<String>,
+}
+
+impl DesktopShortcutBinding {
+    /// Every chord of the binding in order: one, or a sequence's steps.
+    pub fn path(&self) -> impl Iterator<Item = &DesktopShortcutChord> {
+        core::iter::once(&self.chord).chain(&self.steps)
+    }
+
+    /// A lone modifier tap, as in `bind "Super" ..`.
+    pub fn modifier_tap(&self) -> Option<DesktopShortcutModifiers> {
+        (self.steps.is_empty() && self.hold_ms.is_none())
+            .then(|| self.chord.modifier_tap())
+            .flatten()
+    }
+}
+
+/// An action fired when a pending sequence reaches its prefix, such as a hint
+/// of the keys that may follow. It is always a policy action.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DesktopShortcutLeader {
+    pub chord: DesktopShortcutChord,
+    pub steps: Vec<DesktopShortcutChord>,
+    pub action: String,
+    pub label: Option<String>,
+    pub group: Option<String>,
+}
+
+impl DesktopShortcutLeader {
+    pub fn path(&self) -> impl Iterator<Item = &DesktopShortcutChord> {
+        core::iter::once(&self.chord).chain(&self.steps)
+    }
+
+    pub fn display(&self) -> String {
+        format!("{} ...", display_path(self.path()))
+    }
+}
+
+/// How long a modifier tap may be held, and how long a sequence waits for its
+/// next step.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DesktopShortcutTiming {
+    pub tap_ms: u32,
+    pub sequence_ms: u32,
+}
+
+impl Default for DesktopShortcutTiming {
+    fn default() -> Self {
+        Self {
+            tap_ms: 400,
+            sequence_ms: 1000,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -94,6 +211,53 @@ pub struct DesktopShortcutCandidate {
     pub digest: ConfigDigest,
     pub profile: String,
     pub bindings: Vec<DesktopShortcutBinding>,
+    pub leaders: Vec<DesktopShortcutLeader>,
+    pub timing: DesktopShortcutTiming,
+}
+
+impl DesktopShortcutCandidate {
+    /// How a binding reads in help: its chords, then what kind of press it is.
+    pub fn binding_display(&self, binding: &DesktopShortcutBinding) -> String {
+        let path = display_path(binding.path());
+        if binding.modifier_tap().is_some() {
+            return format!("{path} (tap)");
+        }
+        let Some(_) = binding.hold_ms else {
+            return path;
+        };
+        let tapped = self.bindings.iter().any(|other| {
+            other.hold_ms.is_none() && other.chord == binding.chord && other.steps.is_empty()
+        });
+        if tapped {
+            format!("{path} (hold)")
+        } else {
+            format!("{path} (hold only)")
+        }
+    }
+}
+
+fn display_path<'a>(path: impl Iterator<Item = &'a DesktopShortcutChord>) -> String {
+    path.map(DesktopShortcutChord::display)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The settings a profile's shortcut section may contain.
+pub(crate) const SETTINGS: [&str; 5] = [
+    "profile",
+    "bind",
+    "pointer-bind",
+    "leader",
+    "shortcut-timing",
+];
+
+/// The name a shortcut setting is keyed by. A hold variant shares its trigger
+/// with the tap variant on that chord, so it is keyed apart.
+pub(crate) fn setting_name(node: &KdlNode) -> &str {
+    match node.name().value() {
+        "bind" if node.get("hold-ms").is_some() => "bind-hold",
+        name => name,
+    }
 }
 
 fn schema_error(message: impl Into<String>) -> DesktopProfileError {
@@ -173,8 +337,20 @@ fn parse_chord(
             "slash".to_owned()
         }
         "/" | "slash" => "slash".to_owned(),
+        // One spelling per physical key, so shapes compare as resolution
+        // will see them (both are evdev 28).
+        "enter" => "return".to_owned(),
+        "control" => "ctrl".to_owned(),
         _ => trigger.to_ascii_lowercase(),
     };
+    if kind == DesktopShortcutBindingKind::Key
+        && modifier_class(&trigger).is_some()
+        && modifier_bits != 0
+    {
+        return Err(schema_error(
+            "a modifier tap names one modifier and nothing else",
+        ));
+    }
     if kind == DesktopShortcutBindingKind::Pointer
         && !["left", "middle", "right"].contains(&trigger.as_str())
     {
@@ -191,6 +367,21 @@ fn parse_chord(
         return Err(schema_error(
             "reserved emergency chord cannot be overridden",
         ));
+    }
+    // Ctrl+Alt+F1..F12 switch virtual terminals before any shortcut is
+    // matched, whatever other modifiers are down.
+    let control_alt =
+        DesktopShortcutModifiers::CONTROL.bits() | DesktopShortcutModifiers::ALT.bits();
+    if kind == DesktopShortcutBindingKind::Key
+        && modifier_bits & control_alt == control_alt
+        && let Some(terminal) = trigger
+            .strip_prefix('f')
+            .and_then(|number| number.parse::<u8>().ok())
+            .filter(|number| (1..=12).contains(number))
+    {
+        return Err(schema_error(format!(
+            "reserved virtual-terminal chord Ctrl+Alt+F{terminal} cannot be bound"
+        )));
     }
     Ok(DesktopShortcutChord {
         kind,
@@ -342,6 +533,94 @@ fn parse_target(
     }
 }
 
+/// A trigger's chords: one, or a key sequence of steps one space apart.
+fn parse_path(
+    kind: DesktopShortcutBindingKind,
+    source: &str,
+    steps: RangeInclusive<usize>,
+) -> Result<(DesktopShortcutChord, Vec<DesktopShortcutChord>), DesktopProfileError> {
+    if source.is_empty() || source.len() > DESKTOP_SHORTCUT_MAX_TRIGGER_BYTES {
+        return Err(schema_error("trigger length is invalid"));
+    }
+    let parts = source.split(' ').collect::<Vec<_>>();
+    if !steps.contains(&parts.len()) {
+        return Err(schema_error("trigger has an unsupported number of steps"));
+    }
+    if parts.len() > 1 && kind != DesktopShortcutBindingKind::Key {
+        return Err(schema_error("only key bindings may be sequences"));
+    }
+    let mut chords = parts
+        .into_iter()
+        .map(|part| parse_chord(kind, part))
+        .collect::<Result<Vec<_>, _>>()?;
+    if chords.len() > 1 {
+        if chords.iter().any(|chord| chord.modifier_tap().is_some()) {
+            return Err(schema_error("a sequence step cannot be a modifier tap"));
+        }
+        if chords[1..].iter().any(|chord| chord.trigger == "escape") {
+            return Err(schema_error(
+                "Escape abandons a sequence and cannot continue one",
+            ));
+        }
+    }
+    let first = chords.remove(0);
+    Ok((first, chords))
+}
+
+fn integer_property(
+    node: &KdlNode,
+    name: &str,
+    range: RangeInclusive<u32>,
+) -> Result<Option<u32>, DesktopProfileError> {
+    let entries = node
+        .entries()
+        .iter()
+        .filter(|entry| entry.name().is_some_and(|entry| entry.value() == name))
+        .collect::<Vec<_>>();
+    match entries.as_slice() {
+        [] => Ok(None),
+        [entry] => entry
+            .value()
+            .as_integer()
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|value| range.contains(value))
+            .map(Some)
+            .ok_or_else(|| schema_error(format!("{name} is out of range"))),
+        _ => Err(schema_error(format!("duplicate {name}"))),
+    }
+}
+
+fn display_metadata(
+    node: &KdlNode,
+    name: &str,
+    limit: usize,
+) -> Result<Option<String>, DesktopProfileError> {
+    if node
+        .entries()
+        .iter()
+        .filter(|e| e.name().is_some_and(|n| n.value() == name))
+        .count()
+        > 1
+    {
+        return Err(schema_error("duplicate binding metadata"));
+    }
+    node.get(name)
+        .map(|v| {
+            v.as_string()
+                .filter(|s| {
+                    !s.is_empty()
+                        && s.len() <= limit
+                        && !s.chars().any(|c| {
+                            c.is_control()
+                                || matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+                        })
+                })
+                .map(str::to_owned)
+                .ok_or_else(|| schema_error("invalid binding metadata"))
+        })
+        .transpose()
+}
+
 fn parse_binding(node: &KdlNode) -> Result<DesktopShortcutBinding, DesktopProfileError> {
     if node.entries().iter().filter(|e| e.name().is_none()).count() != 2
         || node.children().is_some()
@@ -350,10 +629,10 @@ fn parse_binding(node: &KdlNode) -> Result<DesktopShortcutBinding, DesktopProfil
             .entries()
             .iter()
             .filter_map(|e| e.name())
-            .any(|n| !matches!(n.value(), "label" | "group"))
+            .any(|n| !matches!(n.value(), "label" | "group" | "hold-ms"))
     {
         return Err(schema_error(
-            "binding requires trigger and target strings with optional label/group",
+            "binding requires trigger and target strings with optional label/group/hold-ms",
         ));
     }
     let kind = match node.name().value() {
@@ -365,37 +644,146 @@ fn parse_binding(node: &KdlNode) -> Result<DesktopShortcutBinding, DesktopProfil
         .ok_or_else(|| schema_error("binding trigger must be a string"))?;
     let target = positional_string(node, 1)
         .ok_or_else(|| schema_error("binding target must be a string"))?;
-    let metadata =
-        |name: &str, limit: usize| -> Result<Option<String>, DesktopProfileError> {
-            if node
-                .entries()
-                .iter()
-                .filter(|e| e.name().is_some_and(|n| n.value() == name))
-                .count()
-                > 1
-            {
-                return Err(schema_error("duplicate binding metadata"));
-            }
-            node.get(name)
-                .map(|v| {
-                    v.as_string()
-                        .filter(|s| {
-                            !s.is_empty() && s.len() <= limit && !s.chars().any(|c| {
-                                c.is_control()
-                                    || matches!(c,'\u{202a}'..='\u{202e}'|'\u{2066}'..='\u{2069}')
-                            })
-                        })
-                        .map(str::to_owned)
-                        .ok_or_else(|| schema_error("invalid binding metadata"))
-                })
-                .transpose()
-        };
+    let (chord, steps) = parse_path(kind, trigger, 1..=DESKTOP_SHORTCUT_MAX_SEQUENCE_STEPS)?;
+    let hold_ms = integer_property(node, "hold-ms", DESKTOP_SHORTCUT_HOLD_MS)?;
+    if hold_ms.is_some()
+        && (kind != DesktopShortcutBindingKind::Key
+            || !steps.is_empty()
+            || chord.modifier_tap().is_some())
+    {
+        return Err(schema_error(
+            "hold-ms applies only to a single key chord with a key",
+        ));
+    }
     Ok(DesktopShortcutBinding {
-        chord: parse_chord(kind, trigger)?,
+        chord,
+        steps,
+        hold_ms,
         target: parse_target(kind, target)?,
-        label: metadata("label", 128)?,
-        group: metadata("group", 64)?,
+        label: display_metadata(node, "label", 128)?,
+        group: display_metadata(node, "group", 64)?,
     })
+}
+
+fn parse_leader(node: &KdlNode) -> Result<DesktopShortcutLeader, DesktopProfileError> {
+    if node.entries().iter().filter(|e| e.name().is_none()).count() != 2
+        || node.children().is_some()
+        || node.ty().is_some()
+        || node
+            .entries()
+            .iter()
+            .filter_map(|e| e.name())
+            .any(|n| !matches!(n.value(), "label" | "group"))
+    {
+        return Err(schema_error(
+            "leader requires prefix and target strings with optional label/group",
+        ));
+    }
+    let prefix =
+        positional_string(node, 0).ok_or_else(|| schema_error("leader prefix must be a string"))?;
+    let target =
+        positional_string(node, 1).ok_or_else(|| schema_error("leader target must be a string"))?;
+    let (chord, steps) = parse_path(
+        DesktopShortcutBindingKind::Key,
+        prefix,
+        1..=DESKTOP_SHORTCUT_MAX_SEQUENCE_STEPS - 1,
+    )?;
+    if chord.modifier_tap().is_some() {
+        return Err(schema_error("a leader prefix cannot be a modifier tap"));
+    }
+    let action = target
+        .strip_prefix("policy:")
+        .ok_or_else(|| schema_error("a leader target must be a policy action"))?;
+    Ok(DesktopShortcutLeader {
+        chord,
+        steps,
+        action: policy_action(action)?,
+        label: display_metadata(node, "label", 128)?,
+        group: display_metadata(node, "group", 64)?,
+    })
+}
+
+fn parse_timing(node: &KdlNode) -> Result<DesktopShortcutTiming, DesktopProfileError> {
+    if node.entries().iter().any(|entry| {
+        entry
+            .name()
+            .is_none_or(|name| !matches!(name.value(), "tap-ms" | "sequence-ms"))
+    }) || node.entries().is_empty()
+        || node.children().is_some()
+        || node.ty().is_some()
+    {
+        return Err(schema_error(
+            "shortcut-timing takes only tap-ms and sequence-ms",
+        ));
+    }
+    let defaults = DesktopShortcutTiming::default();
+    Ok(DesktopShortcutTiming {
+        tap_ms: integer_property(node, "tap-ms", DESKTOP_SHORTCUT_TAP_MS)?
+            .unwrap_or(defaults.tap_ms),
+        sequence_ms: integer_property(node, "sequence-ms", DESKTOP_SHORTCUT_SEQUENCE_MS)?
+            .unwrap_or(defaults.sequence_ms),
+    })
+}
+
+/// The cross-binding rules: every physical shape is bound once, no sequence
+/// extends another binding, leaders sit on sequence prefixes without nesting
+/// and own their actions, and every help row fits its catalog width.
+fn validate_shapes(candidate: &DesktopShortcutCandidate) -> Result<(), DesktopProfileError> {
+    let mut shapes = BTreeSet::new();
+    let mut key_paths = BTreeSet::new();
+    for binding in &candidate.bindings {
+        let path = binding.path().cloned().collect::<Vec<_>>();
+        if !shapes.insert((path.clone(), binding.hold_ms.is_some())) {
+            return Err(schema_error("duplicate physical chord"));
+        }
+        if binding.chord.kind == DesktopShortcutBindingKind::Key {
+            key_paths.insert(path);
+        }
+        if candidate.binding_display(binding).len() > DESKTOP_SHORTCUT_MAX_DISPLAY_BYTES {
+            return Err(schema_error("binding is too long to show in help"));
+        }
+    }
+    for path in &key_paths {
+        if (1..path.len()).any(|length| key_paths.contains(&path[..length])) {
+            return Err(schema_error("a sequence cannot extend another binding"));
+        }
+    }
+    let mut leaders = BTreeMap::new();
+    for leader in &candidate.leaders {
+        let prefix = leader.path().cloned().collect::<Vec<_>>();
+        if !key_paths
+            .iter()
+            .any(|path| path.len() > prefix.len() && path.starts_with(&prefix))
+        {
+            return Err(schema_error("a leader must prefix a sequence"));
+        }
+        if leaders.insert(prefix, &leader.action).is_some() {
+            return Err(schema_error("duplicate leader"));
+        }
+        if leader.display().len() > DESKTOP_SHORTCUT_MAX_DISPLAY_BYTES {
+            return Err(schema_error("leader is too long to show in help"));
+        }
+    }
+    for prefix in leaders.keys() {
+        if leaders
+            .keys()
+            .any(|other| other.len() < prefix.len() && prefix.starts_with(other))
+        {
+            return Err(schema_error("leaders cannot nest on one sequence"));
+        }
+    }
+    let mut leader_actions = BTreeSet::new();
+    for action in leaders.values() {
+        let bound = candidate.bindings.iter().any(|binding| {
+            matches!(&binding.target, DesktopShortcutTarget::PolicyAction(name) if name == *action)
+        });
+        if bound || !leader_actions.insert(*action) {
+            return Err(schema_error(
+                "a leader's action cannot be bound to anything else",
+            ));
+        }
+    }
+    Ok(())
 }
 
 pub fn prepare_desktop_shortcut_candidate(
@@ -409,8 +797,10 @@ pub fn prepare_desktop_shortcut_candidate(
         digest: candidate.digest,
         profile: String::new(),
         bindings: Vec::new(),
+        leaders: Vec::new(),
+        timing: DesktopShortcutTiming::default(),
     };
-    let mut chords = BTreeSet::new();
+    let mut timed = false;
     for value in &candidate.values {
         let node = single_node(&value.encoded)?;
         match node.name().value() {
@@ -421,20 +811,33 @@ pub fn prepare_desktop_shortcut_candidate(
                 prepared.profile = exact_profile(&node)?;
             }
             "bind" | "pointer-bind" => {
-                if prepared.bindings.len() >= DESKTOP_SHORTCUT_MAX_BINDINGS {
+                if prepared.bindings.len() + prepared.leaders.len() >= DESKTOP_SHORTCUT_MAX_BINDINGS
+                {
                     return Err(schema_error("binding count exceeds 256"));
                 }
-                let binding = parse_binding(&node)?;
-                if !chords.insert(binding.chord.clone()) {
-                    return Err(schema_error("duplicate physical chord"));
+                prepared.bindings.push(parse_binding(&node)?);
+            }
+            "leader" => {
+                if prepared.bindings.len() + prepared.leaders.len() >= DESKTOP_SHORTCUT_MAX_BINDINGS
+                {
+                    return Err(schema_error("binding count exceeds 256"));
                 }
-                prepared.bindings.push(binding);
+                prepared.leaders.push(parse_leader(&node)?);
+            }
+            "shortcut-timing" => {
+                if timed {
+                    return Err(schema_error("duplicate shortcut-timing"));
+                }
+                timed = true;
+                prepared.timing = parse_timing(&node)?;
             }
             _ => return Err(schema_error("candidate contains a non-shortcut setting")),
         }
     }
-    if prepared.profile.is_empty() && !prepared.bindings.is_empty() {
+    if prepared.profile.is_empty() && !(prepared.bindings.is_empty() && prepared.leaders.is_empty())
+    {
         return Err(schema_error("profile identity is required"));
     }
+    validate_shapes(&prepared)?;
     Ok(prepared)
 }

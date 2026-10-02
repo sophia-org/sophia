@@ -72,5 +72,8 @@
 
 (define-fun projection_presentation_binding_record_width () Int 16)
 (define-fun projection_presentation_binding_record_max () Int 256)
+
+(define-fun configuration_action_lifecycle_record_width () Int 16)
+(define-fun configuration_action_lifecycle_record_max () Int 256)
 (define-fun max_record_width () Int 140)
 (define-fun max_record_count () Int 2048)

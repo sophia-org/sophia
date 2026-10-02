@@ -77,8 +77,8 @@ fn check_terminal_reload(provider: &str) {
     assert_eq!(fixture.reload(), DesktopProfileReloadOutcome::Applied);
     let router = fixture.wm.shortcuts.as_mut().unwrap();
     let seat = SeatId::from_raw(1);
-    assert!(router.route_key(seat, 125, true).action.is_none());
-    let action = router.route_key(seat, 28, true).action.unwrap();
+    assert!(route_test_key(router, seat, sophia_protocol::DeviceId::from_raw(1), 125, true, 0).1.is_none());
+    let action = route_test_key(router, seat, sophia_protocol::DeviceId::from_raw(1), 28, true, 0).1.unwrap();
     let command = fixture.wm.command_registry.command(action).unwrap();
     assert_eq!(command.executable, Path::new("/usr/bin/kitty"));
     assert_ne!(action, old_action);

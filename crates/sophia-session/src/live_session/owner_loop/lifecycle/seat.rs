@@ -157,6 +157,8 @@ if let Some(controller) = seat_controller.as_mut() {
                                 // device that pressed it.
                                 flush_all_client_keys!("input_reopened");
                                 keyboard_coverage.forget_all_devices();
+                                // The seat is reset: its shortcut record, refusals and chords go too.
+                                if let Some(wm) = wm_session.as_mut() && let Some(shortcuts) = wm.shortcuts.as_mut() { let _ = shortcuts.clear_seat(seat); }
                                 modifiers = config.keyboard_mapper();
                                 virtual_terminal_chord = VirtualTerminalChordState::default();
                                 emergency_chord = EmergencyChordState::armed();
@@ -183,6 +185,8 @@ if let Some(controller) = seat_controller.as_mut() {
                         )?;
                         flush_all_client_keys!("input_reopened");
                         keyboard_coverage.forget_all_devices();
+                        // The seat is reset: its shortcut record, refusals and chords go too.
+                        if let Some(wm) = wm_session.as_mut() && let Some(shortcuts) = wm.shortcuts.as_mut() { let _ = shortcuts.clear_seat(seat); }
                         modifiers = config.keyboard_mapper();
                         virtual_terminal_chord = VirtualTerminalChordState::default();
                         emergency_chord = EmergencyChordState::armed();
@@ -330,6 +334,8 @@ if let Some(controller) = seat_controller.as_mut() {
                 seat_release_prepared = false;
                 requested_virtual_terminal = None;
                 modifiers = config.keyboard_mapper();
+                // The seat is reset: its shortcut record, refusals and chords go too.
+                if let Some(wm) = wm_session.as_mut() && let Some(shortcuts) = wm.shortcuts.as_mut() { let _ = shortcuts.clear_seat(seat); }
                 key_repeat.cancel_seat(seat);
                 virtual_terminal_chord = VirtualTerminalChordState::default();
                 emergency_chord = EmergencyChordState::armed();
@@ -399,6 +405,8 @@ if let Some(controller) = seat_controller.as_mut() {
                 )?;
                 flush_all_client_keys!("input_reopened");
                 keyboard_coverage.forget_all_devices();
+                // The seat is reset: its shortcut record, refusals and chords go too.
+                if let Some(wm) = wm_session.as_mut() && let Some(shortcuts) = wm.shortcuts.as_mut() { let _ = shortcuts.clear_seat(seat); }
                 cursor_updates = CursorUpdateState::new(pointer.position().is_some());
                 seat_state = seat_state.acquired();
                 render_owners.seat_active = seat_state == sophia_backend_live::LiveSeatState::Active;
