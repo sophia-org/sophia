@@ -284,7 +284,7 @@ impl LiveProductionVisualRuntime {
                         output,
                         committed,
                         display_list,
-                        scene_generation.max(1),
+                        (scene_generation.max(1), None),
                         &sources,
                     )?,
                 ))
@@ -298,7 +298,7 @@ impl LiveProductionVisualRuntime {
         output: OutputId,
         committed: &[CommittedSurfaceState],
         display_list: CompositorDisplayList,
-        scene_generation: u64,
+        (scene_generation, prepared): (u64, Option<&sophia_engine::PreparedSurfaceCommit>),
         sources: &[sophia_renderer_live::LiveOwnedHeadCompositionSource],
     ) -> Result<Vec<crate::LiveProductionHeadCompositionFrame>, Box<dyn std::error::Error>> {
         let logical_viewport = self
@@ -324,24 +324,58 @@ impl LiveProductionVisualRuntime {
         for plan in &plans {
             trace_live_head_composition_plan(plan);
         }
+        let prepared = prepared.or_else(|| self.present_scheduler.in_flight_prepared());
         plans
             .iter()
             .map(|plan| {
+                let mut frame = sophia_renderer_live::lower_head_composition_plan_with_caches(
+                    plan,
+                    sources,
+                    &mut self.indicator_strip_cache.borrow_mut(),
+                    &mut self.text_cache.borrow_mut(),
+                )?;
+                self.attach_frame_damage_history(&mut frame, plan, committed, prepared)?;
                 Ok(crate::LiveProductionHeadCompositionFrame {
                     head: plan.head,
                     scene_generation: plan.scene_generation,
                     target_generation: plan.target_generation,
                     mapping: plan.mapping,
                     logical_content_checksum: plan.logical_content_checksum,
-                    frame: sophia_renderer_live::lower_head_composition_plan_with_caches(
-                        plan,
-                        sources,
-                        &mut self.indicator_strip_cache.borrow_mut(),
-                        &mut self.text_cache.borrow_mut(),
-                    )?,
+                    frame,
                 })
             })
             .collect()
+    }
+
+    fn attach_frame_damage_history(
+        &self,
+        frame: &mut sophia_renderer_live::LiveOwnedMixedCompositionFrame,
+        plan: &sophia_engine::HeadCompositionPlan,
+        committed: &[CommittedSurfaceState],
+        prepared: Option<&sophia_engine::PreparedSurfaceCommit>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(snapshot) = frame.output_damage_snapshot.as_mut() {
+            let precise: Vec<_> = committed
+                .iter()
+                .filter(|state| {
+                    plan.target_transform == sophia_protocol::OutputTransform::Normal
+                        && plan.layers.iter().any(|layer| {
+                            layer.surface == state.surface
+                                && layer.variant == state.content.canonical_variant().variant
+                                && layer.requested_sampling
+                                    == sophia_engine::HeadSamplingClass::Exact
+                                && layer.native_geometry == layer.native_clip
+                        })
+                })
+                .map(|state| state.surface)
+                .collect();
+            snapshot.damage_history = sophia_engine::restrict_surface_damage_precision(
+                self.production
+                    .damage_history_for_candidate(committed, prepared)?,
+                &precise,
+            );
+        }
+        Ok(())
     }
 
     /// The in-flight submission's transaction, when that submission put a
@@ -510,7 +544,7 @@ impl LiveProductionVisualRuntime {
                         output,
                         &source_set.committed,
                         display_list,
-                        source_set.scene_generation,
+                        (source_set.scene_generation, None),
                         &source_set.sources,
                     )?,
                 ))
@@ -574,18 +608,25 @@ impl LiveProductionVisualRuntime {
                 .collect::<Vec<_>>();
             let plans = sophia_engine::build_output_head_plans(&snapshot, &output_targets)?;
             for plan in &plans {
+                let mut frame = sophia_renderer_live::lower_head_composition_plan_with_caches(
+                    plan,
+                    &source_set.sources,
+                    &mut self.indicator_strip_cache.borrow_mut(),
+                    &mut self.text_cache.borrow_mut(),
+                )?;
+                self.attach_frame_damage_history(
+                    &mut frame,
+                    plan,
+                    &source_set.committed,
+                    self.present_scheduler.in_flight_prepared(),
+                )?;
                 frames.push(crate::LiveProductionHeadCompositionFrame {
                     head: plan.head,
                     scene_generation: plan.scene_generation,
                     target_generation: plan.target_generation,
                     mapping: plan.mapping,
                     logical_content_checksum: plan.logical_content_checksum,
-                    frame: sophia_renderer_live::lower_head_composition_plan_with_caches(
-                        plan,
-                        &source_set.sources,
-                        &mut self.indicator_strip_cache.borrow_mut(),
-                        &mut self.text_cache.borrow_mut(),
-                    )?,
+                    frame,
                 });
             }
         }

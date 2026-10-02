@@ -4,6 +4,8 @@
 
 (A) 2026-09-26 Qualify a pinned 9P WM daily-driver configuration with classified validation gates, drag-latency budgets, attended recovery and verified compatible whole-release rollback. +critical +9p @physical id:t250 order:000.000004 depends:t249 [details](docs/notes/plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md#t250--qualify-the-wm-daily-configuration)
 
+(A) 2026-10-02 Qualify retained capture execution, CPU raster reuse and bounded damage on the matched live terminal workload +critical +renderer @physical id:t278 order:000.000005 [details](docs/notes/investigations/wwr7oaer-reduce-per-frame-capture-and-cpu-raster-cost-without-reusing-live-image-storage.md)
+
 (A) 2026-09-26 Join and accept the shell 9P adapter with independent Lom, Bemenu and Provlita clients, per-component grants, native lifetime/input evidence, measured bounds and Narthex rollback. +critical +9p @development id:t252 order:000.000006 depends:t251,t263 [details](docs/notes/plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md#t252--join-and-accept-the-shell-path)
 
 (B) 2026-09-26 Migrate existing administrative commands to a separately authorized 9P export and CLI while preserving HostDomain admission, operation outcomes, replay/revocation checks and read-only inspection. +parallel +9p @development id:t254 order:000.000008 depends:t249 [details](docs/notes/plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md#t254--migrate-administrative-commands)

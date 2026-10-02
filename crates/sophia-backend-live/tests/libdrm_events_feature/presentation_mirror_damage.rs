@@ -38,6 +38,7 @@ fn mirror_damage_projection_places_instances_regions_and_stamp_coverage() {
         height: 300,
     };
     let snapshot = OutputFrameDamageSnapshot {
+        damage_history: Default::default(),
         output: HeadlessOutput {
             id: output,
             size: source,
@@ -285,6 +286,7 @@ fn a_cover_mirror_copy_drops_policy_targets_it_crops_away() {
         })
     };
     let snapshot = OutputFrameDamageSnapshot {
+        damage_history: Default::default(),
         output: HeadlessOutput {
             id: output,
             size: source,

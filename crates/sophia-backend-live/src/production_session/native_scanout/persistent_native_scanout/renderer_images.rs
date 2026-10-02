@@ -736,10 +736,79 @@ impl LiveProductionNativeScanout {
         // outputs sharing a thread, summing what each head can reach would
         // report the head count and hide the very collapse being measured.
         let renderer_workers = self.renderer_worker_count();
-        let folded = self.exporters.iter().fold(
+        let mut snapshots: Vec<_> = self
+            .exporters
+            .iter()
+            .map(|exporter| {
+                (
+                    exporter.render_metrics_identity(),
+                    exporter.persistent_render_stats(),
+                )
+            })
+            .collect();
+        retain_latest_context_metrics(&mut snapshots);
+        let folded = self.exporters.iter().zip(snapshots).fold(
             LivePersistentRenderMetrics::default(),
-            |mut metrics, exporter| {
-                let stats = exporter.persistent_render_stats();
+            |mut metrics, (exporter, (_, stats))| {
+                metrics.capture_setup_cpu = metrics
+                    .capture_setup_cpu
+                    .saturating_add(stats.capture_setup_cpu);
+                metrics.capture_copy_cpu = metrics
+                    .capture_copy_cpu
+                    .saturating_add(stats.capture_copy_cpu);
+                metrics.capture_cleanup_cpu = metrics
+                    .capture_cleanup_cpu
+                    .saturating_add(stats.capture_cleanup_cpu);
+                metrics.composition_cpu = metrics
+                    .composition_cpu
+                    .saturating_add(stats.composition_cpu);
+
+                metrics.transfer_captures = metrics
+                    .transfer_captures
+                    .saturating_add(stats.transfer_captures);
+                metrics.transfer_attempts = metrics
+                    .transfer_attempts
+                    .saturating_add(stats.transfer_attempts);
+                metrics.transfer_failures = metrics
+                    .transfer_failures
+                    .saturating_add(stats.transfer_failures);
+                metrics.capture_context_creations = metrics
+                    .capture_context_creations
+                    .saturating_add(stats.capture_context_creations);
+                metrics.capture_context_reuses = metrics
+                    .capture_context_reuses
+                    .saturating_add(stats.capture_context_reuses);
+                metrics.capture_surface_creations = metrics
+                    .capture_surface_creations
+                    .saturating_add(stats.capture_surface_creations);
+                metrics.capture_failures = metrics
+                    .capture_failures
+                    .saturating_add(stats.capture_failures);
+                metrics.composition_full_frames = metrics
+                    .composition_full_frames
+                    .saturating_add(stats.composition_full_frames);
+                metrics.composition_partial_frames = metrics
+                    .composition_partial_frames
+                    .saturating_add(stats.composition_partial_frames);
+                metrics.composition_repaint_pixels = metrics
+                    .composition_repaint_pixels
+                    .saturating_add(stats.composition_repaint_pixels);
+                metrics.composition_target_pixels = metrics
+                    .composition_target_pixels
+                    .saturating_add(stats.composition_target_pixels);
+                metrics.capture_setup_elapsed = metrics
+                    .capture_setup_elapsed
+                    .saturating_add(stats.capture_setup_elapsed);
+                metrics.capture_copy_elapsed = metrics
+                    .capture_copy_elapsed
+                    .saturating_add(stats.capture_copy_elapsed);
+                metrics.capture_cleanup_elapsed = metrics
+                    .capture_cleanup_elapsed
+                    .saturating_add(stats.capture_cleanup_elapsed);
+                metrics.composition_elapsed = metrics
+                    .composition_elapsed
+                    .saturating_add(stats.composition_elapsed);
+
                 metrics.target_creations = metrics
                     .target_creations
                     .saturating_add(stats.target_creations);
@@ -889,3 +958,4 @@ impl LiveProductionNativeScanout {
 }
 
 include!("output_frame_queue.rs");
+include!("render_metrics.rs");

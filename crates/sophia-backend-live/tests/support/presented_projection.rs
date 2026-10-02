@@ -85,6 +85,7 @@ fn presented_projection_keeps_retired_geometry_and_excludes_unpresented_surface(
     let retired = surface(11, 2);
     let committed_only = surface(12, 1);
     let presented = OutputFrameDamageSnapshot {
+        damage_history: Default::default(),
         output: HeadlessOutput::deterministic(),
         surfaces: vec![OutputFrameSurfaceState {
             surface: retired,
@@ -145,6 +146,7 @@ fn presented_projection_preserves_retired_stacking_order() {
     let lower = surface(21, 1);
     let upper = surface(22, 1);
     let presented = OutputFrameDamageSnapshot {
+        damage_history: Default::default(),
         output: HeadlessOutput::deterministic(),
         surfaces: [lower, upper]
             .into_iter()
@@ -381,6 +383,7 @@ fn retired_descriptor_frame_publishes_only_current_interaction() {
         targets: vec![target.clone()],
     };
     let presented = OutputFrameDamageSnapshot {
+        damage_history: Default::default(),
         output,
         surfaces: Vec::new(),
         compositor_display_list: CompositorDisplayList {
@@ -540,6 +543,7 @@ fn a_shaped_input_region_reaches_both_input_projections_and_punches_through() {
         },
     };
     let presented = OutputFrameDamageSnapshot {
+        damage_history: Default::default(),
         output: HeadlessOutput::deterministic(),
         surfaces: vec![
             presented_state(below, below_geometry),

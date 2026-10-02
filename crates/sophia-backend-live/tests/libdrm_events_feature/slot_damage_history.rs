@@ -430,6 +430,7 @@ fn worker_slot_damage_history_does_not_own_copied_shell_pixels() {
 
     let output = slot_damage_output();
     let snapshot = sophia_engine::OutputFrameDamageSnapshot {
+        damage_history: Default::default(),
         output,
         surfaces: Vec::new(),
         compositor_display_list: sophia_engine::CompositorDisplayList {

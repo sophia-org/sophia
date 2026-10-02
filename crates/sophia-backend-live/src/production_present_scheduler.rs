@@ -674,6 +674,13 @@ impl LiveProductionPresentScheduler {
         }
     }
 
+    pub fn in_flight_prepared(&self) -> Option<&PreparedSurfaceCommit> {
+        match self.in_flight.as_ref()? {
+            LiveProductionInFlightPresent::Rendering(present)
+            | LiveProductionInFlightPresent::Submitted(present) => Some(&present.prepared),
+        }
+    }
+
     pub fn in_flight_candidate(&self) -> Option<&[CommittedSurfaceState]> {
         match self.in_flight.as_ref()? {
             LiveProductionInFlightPresent::Rendering(present)

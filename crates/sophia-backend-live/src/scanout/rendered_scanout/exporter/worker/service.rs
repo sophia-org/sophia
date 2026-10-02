@@ -57,6 +57,11 @@ pub(super) fn run_worker<D>(
     let report = NativeGbmRenderedScanoutContext::from_backend_device_result(device);
     let context_status = report.status;
     let mut context = report.context;
+    if let Some(context) = context.as_mut() {
+        context.set_render_timing_enabled(
+            std::env::var("SOPHIA_RENDER_TIMING").is_ok_and(|value| value == "1"),
+        );
+    }
     if let Some(render_context) = context.as_mut()
         && let Err(error) = render_context.set_image_import_devices(import_devices)
     {
@@ -72,6 +77,7 @@ pub(super) fn run_worker<D>(
     let mut outputs = BTreeMap::<LiveRendererWorkerOutputKey, WorkerOutputState>::new();
     let mut next_lease_id = 1_u64;
     let mut reported_transfers = 0_u64;
+    let mut observation_order = 0_u64;
 
     while !control.is_shutdown() {
         outputs.retain(|_, state| !state.claim.is_detached());
@@ -82,6 +88,7 @@ pub(super) fn run_worker<D>(
             break;
         }
         outputs.retain(|_, state| !state.claim.is_detached());
+        observation_order = observation_order.saturating_add(1);
         match command {
             WorkerCommand::Register {
                 output,
@@ -198,10 +205,11 @@ pub(super) fn run_worker<D>(
                     }
                     reported_transfers = completed;
                 }
-                let persistent_render_stats = context.as_ref().map_or_else(
+                let mut persistent_render_stats = context.as_ref().map_or_else(
                     LiveNativePersistentRenderStats::default,
                     NativeGbmRenderedScanoutContext::persistent_render_stats,
                 );
+                persistent_render_stats.observation_order = observation_order;
                 let composition_nonzero_rgb_pixels = context.as_ref().map_or(0, |context| {
                     context.composition_nonzero_rgb_pixels(output.target_set())
                 });
@@ -278,10 +286,11 @@ pub(super) fn run_worker<D>(
                 let result = context.as_mut().map_or(Ok(false), |context| {
                     context.restore_promoted_renderer_image(snapshot)
                 });
-                let persistent_render_stats = context.as_ref().map_or_else(
+                let mut persistent_render_stats = context.as_ref().map_or_else(
                     LiveNativePersistentRenderStats::default,
                     NativeGbmRenderedScanoutContext::persistent_render_stats,
                 );
+                persistent_render_stats.observation_order = observation_order;
                 let _ = completion_sender.send(WorkerRestoreImageResult {
                     result,
                     persistent_render_stats,
@@ -291,10 +300,11 @@ pub(super) fn run_worker<D>(
                 let result = context
                     .as_mut()
                     .map_or(Ok(0), |context| context.clear_renderer_images());
-                let persistent_render_stats = context.as_ref().map_or_else(
+                let mut persistent_render_stats = context.as_ref().map_or_else(
                     LiveNativePersistentRenderStats::default,
                     NativeGbmRenderedScanoutContext::persistent_render_stats,
                 );
+                persistent_render_stats.observation_order = observation_order;
                 let _ = completion_sender.send(WorkerMaintenanceResult {
                     result,
                     persistent_render_stats,

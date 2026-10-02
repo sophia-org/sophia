@@ -389,3 +389,162 @@ fn a_lying_damage_table_is_caught_by_the_checksum() {
         "a repaint that skipped changed tiles produced identical pixels, so the checksum cannot catch a stale region"
     );
 }
+
+/// A whole-window source whose contents change in small disjoint rectangles.
+/// Every seventh rendered preparation is discarded. The next reuses its public
+/// generation and handle, but changes different pixels. Buffer ages must never
+/// confuse those rejected pixels with the committed predecessor.
+fn journal_sequence(node: &std::path::Path, damage_enabled: bool) -> Run {
+    use sophia_engine::{SurfaceDamageHistory, SurfaceDamageIdentity};
+    use sophia_protocol::{
+        BufferSource, CommittedSurfaceState, Rect, Region, Size, SurfaceContentSet, SurfaceId,
+    };
+    let mut context =
+        NativeGbmRenderedScanoutContext::from_backend_device_result(open_render_node(node))
+            .context
+            .expect("render context");
+    context.force_composition_pixel_capture();
+    let mut slots = WorkerSlotDamage::with_enabled(damage_enabled);
+    let mut history = SurfaceDamageHistory::default();
+    let size = Size {
+        width: WIDTH,
+        height: HEIGHT,
+    };
+    let geometry = Rect {
+        x: 0,
+        y: 0,
+        width: WIDTH,
+        height: HEIGHT,
+    };
+    let mut committed = CommittedSurfaceState {
+        surface: SurfaceId::new(1, 1),
+        committed_generation: 0,
+        geometry,
+        content: SurfaceContentSet::singleton(BufferSource::CpuBuffer { handle: 1 }, size),
+        damage: Region::empty(),
+    };
+    let mut committed_pixels = vec![0u8; (WIDTH * HEIGHT * 4) as usize];
+    let mut result = Run {
+        checksums: Vec::new(),
+        partial_frames: 0,
+    };
+    let target = LiveGbmEglFrameTargetRecord::new(size);
+    for index in 0..40 {
+        let rect = TILES[index % TILES.len()];
+        let mut pixels = committed_pixels.clone();
+        for y in rect.y..rect.y + rect.height {
+            for x in rect.x..rect.x + rect.width {
+                let start = ((y * WIDTH + x) * 4) as usize;
+                pixels[start..start + 4].copy_from_slice(&[index as u8 + 10, 80, 140, 255]);
+            }
+        }
+        let mut variant = committed.content.canonical_variant().clone();
+        variant.damage = Region::single(rect);
+        let candidate = CommittedSurfaceState {
+            committed_generation: committed.committed_generation + 1,
+            content: SurfaceContentSet::new(size, vec![variant]).unwrap(),
+            ..committed.clone()
+        };
+        let identity = SurfaceDamageIdentity::default();
+        let mut snapshot = sophia_engine::output_frame_damage_snapshot(
+            output(),
+            sophia_engine::CompositorDisplayList {
+                output: output().id,
+                commands: vec![sophia_engine::CompositorDisplayCommand::Surface {
+                    surface: candidate.surface,
+                }],
+            },
+            std::slice::from_ref(&candidate),
+            None,
+        )
+        .unwrap();
+        snapshot.damage_history = history
+            .for_candidate(
+                std::slice::from_ref(&committed),
+                std::slice::from_ref(&candidate),
+                Some(&identity),
+            )
+            .unwrap();
+        let frame = LiveOwnedMixedCompositionFrame {
+            layers: vec![LiveOwnedMixedCompositionLayer::Cpu {
+                buffer: LiveSharedCpuBufferSource {
+                    handle: 1,
+                    size,
+                    stride: (WIDTH * 4) as u32,
+                    format: u32::from_le_bytes(*b"XR24"),
+                    generation: index as u64 + 1,
+                    bytes: Arc::new(pixels.clone()).into(),
+                },
+                placement: placement(geometry),
+            }],
+            output_damage_snapshot: Some(snapshot),
+            trace: None,
+            direct_scanout: Default::default(),
+        };
+        let slot_index = index % SLOTS;
+        let slot = LiveRendererFrameSlotId::from_index(slot_index).unwrap();
+        let table = slots.repaint_table(slot, frame.output_damage_snapshot.as_ref(), size);
+        let report = context
+            .export_owned_mixed_frame_with_modifiers_in_frame_slot(
+                NativeFrameTargetSetId::DEFAULT,
+                slot_index,
+                target,
+                &frame,
+                &[],
+                table.as_ref(),
+            )
+            .unwrap();
+        assert!(report.buffer.is_some(), "{:?}", report.detail);
+        if matches!(
+            report.repaint,
+            LiveNativeCompositionRepaintOutcome::Partial { .. }
+        ) {
+            result.partial_frames += 1;
+        }
+        slots.settle(
+            slot,
+            true,
+            report.target_generation,
+            frame.output_damage_snapshot.clone(),
+        );
+        result.checksums.push(
+            context
+                .composition_pixel_metrics(NativeFrameTargetSetId::DEFAULT)
+                .unwrap()
+                .checksum,
+        );
+        if index % 7 != 4 {
+            history.record_committed(
+                std::slice::from_ref(&committed),
+                std::slice::from_ref(&candidate),
+                &identity,
+            );
+            committed = candidate;
+            committed_pixels = pixels;
+        }
+    }
+    result
+}
+
+#[test]
+#[ignore = "requires SOPHIA_TEST_RENDER_NODE; render node only"]
+fn committed_damage_journal_matches_full_pixels_across_rejected_candidates_and_buffer_age() {
+    let node =
+        std::path::PathBuf::from(std::env::var_os("SOPHIA_TEST_RENDER_NODE").expect("render node"));
+    let full = journal_sequence(&node, false);
+    let damage = journal_sequence(&node, true);
+    assert_eq!(
+        full.checksums, damage.checksums,
+        "partial repaint left stale candidate pixels"
+    );
+    assert_eq!(full.partial_frames, 0);
+    assert!(
+        damage.partial_frames > 0,
+        "the partial repaint proof must execute"
+    );
+    eprintln!(
+        "journal pixels: frames={} partial={}",
+        damage.checksums.len(),
+        damage.partial_frames
+    );
+}

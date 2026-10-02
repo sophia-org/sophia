@@ -400,6 +400,7 @@ struct NativeCompositionRenderEvidence {
     buffer_age: Option<u32>,
     /// Whether this render repainted the whole target or only its damage.
     repaint: NativeCompositionRepaintOutcome,
+    repaint_pixels: u64,
 }
 
 /// Ask the surface how old the buffer it just handed back is, in renders into
@@ -477,6 +478,11 @@ fn render_native_target_composition(
             })
             .collect(),
     };
+    let repaint_pixels = damage.map_or(u64::from(frame.width) * u64::from(frame.height), |rects| {
+        rects.iter().fold(0u64, |sum, r| sum.saturating_add(
+            u64::try_from(r.width.max(0)).unwrap_or(0)
+                .saturating_mul(u64::try_from(r.height.max(0)).unwrap_or(0))))
+    });
     let repaint = match damage {
         None => NativeCompositionRepaintOutcome::Full,
         Some(rects) => NativeCompositionRepaintOutcome::Partial { rects: rects.len() },
@@ -690,6 +696,7 @@ fn render_native_target_composition(
     let mut evidence = NativeCompositionRenderEvidence {
         buffer_age,
         repaint,
+        repaint_pixels,
         ..NativeCompositionRenderEvidence::default()
     };
     let result = draw_result

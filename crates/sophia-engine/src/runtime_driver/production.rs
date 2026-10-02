@@ -88,6 +88,7 @@ pub struct ProductionSessionCycleError<Error> {
 pub struct ProductionSessionCoordinator {
     engine: HeadlessEngine,
     committed_surfaces: Vec<CommittedSurfaceState>,
+    damage_history: crate::SurfaceDamageHistory,
     next_cycle: u64,
 }
 
@@ -97,6 +98,7 @@ impl ProductionSessionCoordinator {
             engine,
             committed_surfaces: Vec::new(),
             next_cycle: 1,
+            damage_history: Default::default(),
         }
     }
 
@@ -104,8 +106,28 @@ impl ProductionSessionCoordinator {
         mut self,
         committed_surfaces: Vec<CommittedSurfaceState>,
     ) -> Self {
+        self.damage_history.clear();
         self.committed_surfaces = committed_surfaces;
         self
+    }
+
+    pub fn damage_history_for_candidate(
+        &self,
+        candidate: &[CommittedSurfaceState],
+        prepared: Option<&PreparedSurfaceCommit>,
+    ) -> Result<
+        std::sync::Arc<[std::sync::Arc<crate::SurfaceDamageTransition>]>,
+        crate::OutputFrameDamageError,
+    > {
+        let identity = prepared
+            .filter(|prepared| {
+                candidate
+                    .iter()
+                    .all(|state| prepared.candidate().contains(state))
+            })
+            .map(PreparedSurfaceCommit::damage_identity);
+        self.damage_history
+            .for_candidate(&self.committed_surfaces, candidate, identity)
     }
 
     pub fn engine(&self) -> &HeadlessEngine {
@@ -117,6 +139,10 @@ impl ProductionSessionCoordinator {
     }
 
     pub fn replace_committed_surfaces(&mut self, committed_surfaces: Vec<CommittedSurfaceState>) {
+        // Synchronization/recovery is not proof of a client damage transition.
+        if self.committed_surfaces != committed_surfaces {
+            self.damage_history.clear();
+        }
         self.committed_surfaces = committed_surfaces;
     }
 
@@ -128,7 +154,16 @@ impl ProductionSessionCoordinator {
     ) -> Vec<TransactionCommit> {
         authority_batches
             .iter()
-            .map(|batch| batch.commit(&self.engine, &mut self.committed_surfaces))
+            .map(|batch| {
+                let before = self.committed_surfaces.clone();
+                let commit = batch.commit(&self.engine, &mut self.committed_surfaces);
+                self.damage_history.record_committed(
+                    &before,
+                    &self.committed_surfaces,
+                    &Default::default(),
+                );
+                commit
+            })
             .collect()
     }
 
@@ -147,6 +182,26 @@ impl ProductionSessionCoordinator {
             .iter()
             .find(|state| state.surface == rebased.surface)
             .map_or(0, |state| state.committed_generation);
+        if rebased.previous_committed_generation != transaction.previous_committed_generation {
+            let variants = rebased
+                .content
+                .variants()
+                .iter()
+                .cloned()
+                .map(|mut variant| {
+                    variant.damage = sophia_protocol::Region::single(sophia_protocol::Rect {
+                        x: 0,
+                        y: 0,
+                        width: variant.pixel_size.width,
+                        height: variant.pixel_size.height,
+                    });
+                    variant
+                })
+                .collect();
+            rebased.content =
+                sophia_protocol::SurfaceContentSet::new(rebased.content.logical_extent(), variants)
+                    .expect("replacing valid damage with the full raster remains valid");
+        }
         self.engine.prepare_surface_transactions(
             rebased.transaction,
             std::slice::from_ref(&rebased),
@@ -158,8 +213,14 @@ impl ProductionSessionCoordinator {
         &mut self,
         prepared: PreparedSurfaceCommit,
     ) -> TransactionCommit {
-        self.engine
-            .apply_prepared_surface_commit(prepared, &mut self.committed_surfaces)
+        let before = self.committed_surfaces.clone();
+        let identity = prepared.damage_identity().clone();
+        let commit = self
+            .engine
+            .apply_prepared_surface_commit(prepared, &mut self.committed_surfaces);
+        self.damage_history
+            .record_committed(&before, &self.committed_surfaces, &identity);
+        commit
     }
 
     /// Revalidates the Engine state for an already-retired frame, then asks the

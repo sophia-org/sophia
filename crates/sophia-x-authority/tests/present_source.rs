@@ -204,3 +204,80 @@ fn firefox_strip_uploads_present_on_the_parent_and_preserve_later_patches() {
         })
     );
 }
+
+#[test]
+fn only_untransformed_top_level_present_supplies_source_pixel_damage() {
+    let small = Rect {
+        x: 2,
+        y: 3,
+        width: 4,
+        height: 5,
+    };
+    let full = Region::single(Rect {
+        x: 0,
+        y: 0,
+        width: 40,
+        height: 20,
+    });
+    // Coordinate ambiguity must not turn into undersized output repaint.
+    for (label, window, child_offset, x_offset, valid, damage, precise) in [
+        ("top-level", PARENT, 0, 0, None, Region::single(small), true),
+        ("child", CHILD, 0, 0, None, Region::single(small), false),
+        ("offset", PARENT, 0, 1, None, Region::single(small), false),
+        (
+            "size mismatch",
+            PARENT,
+            1,
+            0,
+            None,
+            Region::single(small),
+            false,
+        ),
+        (
+            "valid region",
+            PARENT,
+            0,
+            0,
+            Some(Region::single(small)),
+            Region::single(small),
+            false,
+        ),
+        (
+            "complex",
+            PARENT,
+            0,
+            0,
+            None,
+            Region {
+                rects: vec![small; 33],
+            },
+            false,
+        ),
+    ] {
+        let mut runtime = fixture(40, 20, child_offset);
+        runtime
+            .create_dri3_pixmap(NS, PIXMAP, 1, 40 * 20 * 4, 40, 20, 160, 24, 32)
+            .unwrap();
+        runtime.begin_dispatch();
+        let response = runtime.present_standard_pixmap(
+            TransactionId::from_raw(201),
+            NS,
+            window,
+            PIXMAP,
+            x_offset,
+            0,
+            valid,
+            Some(damage.clone()),
+        );
+        assert_eq!(
+            response.outcome,
+            XAuthorityResponseOutcome::Accepted,
+            "{label}"
+        );
+        assert_eq!(
+            response.transactions[0].content.canonical_variant().damage,
+            if precise { damage } else { full.clone() },
+            "{label}"
+        );
+    }
+}

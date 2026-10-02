@@ -303,3 +303,123 @@ fn busy_composed_pixels_do_not_pin_a_replaced_shell_resource() {
         "the old framebuffer is still in flight"
     );
 }
+
+#[test]
+fn gpu_only_updates_reuse_cpu_pixels_but_source_transitions_repaint() {
+    let output = HeadlessOutput {
+        id: OutputId::from_raw(1),
+        size: Size {
+            width: 4,
+            height: 2,
+        },
+        scale: 1,
+    };
+    let surface = SurfaceId::new(1, 1);
+    let size = Size {
+        width: 2,
+        height: 1,
+    };
+    let mut state = CommittedSurfaceState {
+        surface,
+        committed_generation: 1,
+        geometry: Rect {
+            x: 1,
+            y: 0,
+            width: 2,
+            height: 1,
+        },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::DmaBuf { handle: 1 },
+            size,
+        ),
+        damage: Region::empty(),
+    };
+    let list = CompositorDisplayList {
+        output: output.id,
+        commands: vec![CompositorDisplayCommand::Surface { surface }],
+    };
+    let mut scene = LiveProductionCpuScene::new(output.size);
+    let first = scene
+        .compose_display_list(output, std::slice::from_ref(&state), &list, None)
+        .unwrap()
+        .frame
+        .bytes
+        .clone();
+    state.committed_generation = 2;
+    state.content =
+        sophia_protocol::SurfaceContentSet::singleton(BufferSource::DmaBuf { handle: 2 }, size);
+    let second = scene
+        .compose_display_list(output, std::slice::from_ref(&state), &list, None)
+        .unwrap()
+        .frame
+        .bytes
+        .clone();
+    assert!(
+        Arc::ptr_eq(&first, &second),
+        "native image generations must not copy CPU backing"
+    );
+    assert_eq!(scene.cpu_raster_count(), 1);
+    assert_eq!(scene.cpu_raster_reuse_count(), 1);
+
+    scene
+        .apply_updates([LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+            handle: 3,
+            size,
+            stride: 8,
+            format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+            generation: 3,
+            bytes: Arc::new(vec![0x55; 8]),
+        })])
+        .unwrap();
+    state.committed_generation = 3;
+    state.content =
+        sophia_protocol::SurfaceContentSet::singleton(BufferSource::CpuBuffer { handle: 3 }, size);
+    let cpu = scene
+        .compose_display_list(output, std::slice::from_ref(&state), &list, None)
+        .unwrap()
+        .frame
+        .bytes
+        .clone();
+    assert_eq!(&cpu[4..12], &[0x55; 8]);
+    assert!(!Arc::ptr_eq(&first, &cpu));
+    // An upload can advance the CPU registry independently of placement and
+    // authority generation. The backing must still reflect its new bytes.
+    scene
+        .apply_updates([LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+            handle: 3,
+            size,
+            stride: 8,
+            format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+            generation: 4,
+            bytes: Arc::new(vec![0x77; 8]),
+        })])
+        .unwrap();
+    let uploaded = scene
+        .compose_display_list(output, std::slice::from_ref(&state), &list, None)
+        .unwrap()
+        .frame
+        .bytes
+        .clone();
+    assert_eq!(&uploaded[4..12], &[0x77; 8]);
+    assert_eq!(
+        &cpu[4..12],
+        &[0x55; 8],
+        "old CPU generation remains immutable"
+    );
+    state.committed_generation = 4;
+    state.content =
+        sophia_protocol::SurfaceContentSet::singleton(BufferSource::DmaBuf { handle: 4 }, size);
+    let gpu = scene
+        .compose_display_list(output, &[state], &list, None)
+        .unwrap();
+    assert!(
+        gpu.frame.bytes.iter().all(|byte| *byte == 0),
+        "CPU pixels under the new GPU source must be cleared"
+    );
+    assert_eq!(scene.cpu_raster_count(), 4);
+    assert!(
+        first.iter().all(|byte| *byte == 0),
+        "an in-flight CPU backing stays immutable"
+    );
+    assert_eq!(&cpu[4..12], &[0x55; 8]);
+}

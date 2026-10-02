@@ -30,6 +30,7 @@ fn a_retired_frame_stops_routing_input_to_a_surface_that_left_the_layout() {
         },
     };
     let presented = sophia_engine::OutputFrameDamageSnapshot {
+        damage_history: Default::default(),
         output: sophia_engine::HeadlessOutput {
             id: OutputId::from_raw(1),
             size: Size {
@@ -169,6 +170,7 @@ fn layout_removal_drops_input_eligibility_before_any_flip_retires() {
         },
     };
     let stale = sophia_engine::OutputFrameDamageSnapshot {
+        damage_history: Default::default(),
         output: sophia_engine::HeadlessOutput {
             id: OutputId::from_raw(1),
             size: Size {

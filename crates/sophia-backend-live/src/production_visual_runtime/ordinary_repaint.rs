@@ -56,7 +56,7 @@ impl LiveProductionVisualRuntime {
                 output,
                 &sources.committed,
                 list,
-                sources.scene_generation,
+                (sources.scene_generation, None),
                 &sources.sources,
             )?;
             admit(&mut self.ordinary_repaints_pending, native, output, frames)?;

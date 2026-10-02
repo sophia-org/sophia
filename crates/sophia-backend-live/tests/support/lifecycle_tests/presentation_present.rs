@@ -224,7 +224,7 @@ impl PresentScene {
             self.output,
             &committed,
             list,
-            1,
+            (1, None),
             &sources,
         )?;
         Ok((sources, vec![(self.output, frames)]))

@@ -15,6 +15,32 @@ pub fn reduced_record(line: &str) -> Option<String> {
         if !key.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_') {
             continue;
         }
+        // Context counters contain "text" but carry no client text. Admit only
+        // the exact numeric vocabulary of the renderer measurement record.
+        if name == "sophia_live_render_work" {
+            if matches!(key, "schema" | "uptime_msec" | "timing_enabled" | "cpu_scene_elapsed_nsec" | "cpu_scene_cpu_nsec"
+                | "transfer_captures_count" | "transfer_attempts_count" | "transfer_failures_count" | "cpu_raster_count" | "cpu_raster_reuse_count"
+                | "capture_context_creations_count" | "capture_context_reuses_count"
+                | "capture_surface_creations_count" | "capture_failures_count"
+                | "composition_full_frames_count" | "composition_partial_frames_count"
+                | "composition_repaint_pixels_count" | "composition_target_pixels_count"
+                | "pipeline_creations_count" | "snapshot_captures_count"
+                | "import_cache_imports_count" | "import_cache_hits_count"
+                | "capture_setup_elapsed_nsec" | "capture_copy_elapsed_nsec"
+                | "capture_cleanup_elapsed_nsec" | "composition_elapsed_nsec"
+                | "capture_setup_cpu_nsec"
+                | "capture_copy_cpu_nsec"
+                | "capture_cleanup_cpu_nsec"
+                | "composition_cpu_nsec"
+)
+                && !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
+                && value.parse::<u128>().is_ok()
+            {
+                result.push(' ');
+                result.push_str(field);
+            }
+            continue;
+        }
         if [
             "xid",
             "namespace",

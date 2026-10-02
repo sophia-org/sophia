@@ -363,6 +363,12 @@ where
             )
     }
 
+    pub(crate) fn render_metrics_identity(&self) -> Option<usize> {
+        self.worker
+            .as_ref()
+            .map(NativeGbmRendererWorker::metrics_identity)
+    }
+
     pub fn persistent_render_stats(&self) -> sophia_renderer_live::LiveNativePersistentRenderStats {
         self.worker.as_ref().map_or_else(
             || {

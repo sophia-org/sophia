@@ -23,6 +23,8 @@ pub struct OutputFrameSurfaceState {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OutputFrameDamageSnapshot {
+    pub damage_history:
+        std::sync::Arc<[std::sync::Arc<super::damage_history::SurfaceDamageTransition>]>,
     pub output: HeadlessOutput,
     pub surfaces: Vec<OutputFrameSurfaceState>,
     pub compositor_display_list: CompositorDamageList,
@@ -118,6 +120,7 @@ pub fn output_frame_damage_snapshot(
         });
     }
     Ok(OutputFrameDamageSnapshot {
+        damage_history: Default::default(),
         output,
         surfaces,
         compositor_display_list: compositor_display_list.into(),
@@ -163,10 +166,47 @@ pub fn output_frame_damage(
         extend_surface_extents(&mut damage, &current.surfaces);
     } else {
         for (before, after) in previous.surfaces.iter().zip(&current.surfaces) {
-            if before != after {
-                damage.push(before.geometry);
-                damage.push(after.geometry);
+            if before != after
+                || super::damage_history::surface_damage_identity(before, &previous.damage_history)
+                    != super::damage_history::surface_damage_identity(
+                        after,
+                        &current.damage_history,
+                    )
+            {
+                if let Some(precise) = super::damage_history::accumulated_surface_damage(
+                    before,
+                    after,
+                    &previous.damage_history,
+                    &current.damage_history,
+                ) {
+                    damage.rects.extend(precise.rects);
+                } else {
+                    damage.push(before.geometry);
+                    damage.push(after.geometry);
+                }
             }
+        }
+    }
+    // Preview instances are compositor nodes. Reused public generations can
+    // still name different rejected/accepted candidate pixels; their opaque
+    // preparation identities must therefore participate in invalidation too.
+    for instance in previous
+        .compositor_display_list
+        .surface_instances()
+        .chain(current.compositor_display_list.surface_instances())
+    {
+        let old = super::damage_history::instance_damage_identity(
+            instance.source,
+            instance.source_generation,
+            &previous.damage_history,
+        );
+        let new = super::damage_history::instance_damage_identity(
+            instance.source,
+            instance.source_generation,
+            &current.damage_history,
+        );
+        if old != new {
+            damage.push(instance.visible());
         }
     }
     if previous.software_cursor != current.software_cursor {

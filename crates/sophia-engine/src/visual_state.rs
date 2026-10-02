@@ -56,6 +56,7 @@ pub struct SurfaceVisualStateTable {
 /// commit. Dropping the value is the explicit discard operation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PreparedSurfaceCommit {
+    pub(crate) damage_identity: crate::SurfaceDamageIdentity,
     pub(crate) commit: TransactionCommit,
     pub(crate) baseline: Vec<CommittedSurfaceState>,
     pub(crate) candidate: Vec<CommittedSurfaceState>,
@@ -68,10 +69,17 @@ impl PreparedSurfaceCommit {
         candidate: Vec<CommittedSurfaceState>,
     ) -> Self {
         Self {
+            damage_identity: Default::default(),
             commit,
             baseline,
             candidate,
         }
+    }
+
+    /// Identifies this exact candidate's pixels, even if another candidate
+    /// later reuses its generation and client buffer handle.
+    pub fn damage_identity(&self) -> &crate::SurfaceDamageIdentity {
+        &self.damage_identity
     }
 
     pub const fn transaction(&self) -> TransactionId {

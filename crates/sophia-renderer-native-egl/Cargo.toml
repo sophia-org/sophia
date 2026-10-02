@@ -10,7 +10,7 @@ rust-version.workspace = true
 gbm = { version = "0.18.0", optional = true, default-features = false }
 glow = { version = "0.17.0", default-features = false }
 khronos-egl = { version = "6.0.0", default-features = false, features = ["dynamic", "1_5"] }
-rustix = { workspace = true, features = ["std"] }
+rustix = { workspace = true, features = ["std", "time"] }
 tracing.workspace = true
 
 [features]

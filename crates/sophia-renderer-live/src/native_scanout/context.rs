@@ -24,9 +24,34 @@ where
         self.inner.image_transfer_stats()
     }
 
+    pub fn set_render_timing_enabled(&mut self, enabled: bool) {
+        self.inner.set_render_timing_enabled(enabled);
+    }
+
     pub fn persistent_render_stats(&self) -> LiveNativePersistentRenderStats {
         let stats = self.inner.persistent_render_stats();
         LiveNativePersistentRenderStats {
+            observation_order: 0,
+            capture_setup_cpu: stats.capture_setup_cpu,
+            capture_copy_cpu: stats.capture_copy_cpu,
+            capture_cleanup_cpu: stats.capture_cleanup_cpu,
+            composition_cpu: stats.composition_cpu,
+
+            transfer_captures: stats.transfer_captures,
+            transfer_attempts: stats.transfer_attempts,
+            transfer_failures: stats.transfer_failures,
+            capture_context_creations: stats.capture_context_creations,
+            capture_context_reuses: stats.capture_context_reuses,
+            capture_surface_creations: stats.capture_surface_creations,
+            capture_failures: stats.capture_failures,
+            composition_full_frames: stats.composition_full_frames,
+            composition_partial_frames: stats.composition_partial_frames,
+            composition_repaint_pixels: stats.composition_repaint_pixels,
+            composition_target_pixels: stats.composition_target_pixels,
+            capture_setup_elapsed: stats.capture_setup_elapsed,
+            capture_copy_elapsed: stats.capture_copy_elapsed,
+            capture_cleanup_elapsed: stats.capture_cleanup_elapsed,
+            composition_elapsed: stats.composition_elapsed,
             target_creations: stats.target_creations,
             target_recreations: stats.target_recreations,
             gl_pipeline_creations: stats.gl_pipeline_creations,

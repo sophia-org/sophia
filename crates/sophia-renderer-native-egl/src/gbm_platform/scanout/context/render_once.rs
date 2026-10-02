@@ -60,6 +60,7 @@ where
             );
         if let Some(persistent) = self.composition_target.as_mut() {
             let render_started = Instant::now();
+            let timing_started = self.render_timing_enabled.then(RenderStageTimer::start);
             admission.drawing_started();
             let rendered = render_native_target_composition(
                 &self.egl,
@@ -74,6 +75,18 @@ where
                 self.buffer_age_supported,
             );
             self.stats.max_render = self.stats.max_render.max(render_started.elapsed());
+            if let Some(started) = timing_started {
+                self.stats.composition_cpu = self.stats.composition_cpu.saturating_add(started.cpu_elapsed());
+                self.stats.composition_elapsed = self.stats.composition_elapsed.saturating_add(started.elapsed());
+            }
+            if let Ok((_, evidence)) = &rendered {
+                match evidence.repaint {
+                    NativeCompositionRepaintOutcome::Full => self.stats.composition_full_frames = self.stats.composition_full_frames.saturating_add(1),
+                    NativeCompositionRepaintOutcome::Partial { .. } => self.stats.composition_partial_frames = self.stats.composition_partial_frames.saturating_add(1),
+                }
+                self.stats.composition_repaint_pixels = self.stats.composition_repaint_pixels.saturating_add(evidence.repaint_pixels);
+                self.stats.composition_target_pixels = self.stats.composition_target_pixels.saturating_add(u64::from(frame.width) * u64::from(frame.height));
+            }
             let render_evidence = rendered
                 .as_ref()
                 .ok()
@@ -162,6 +175,7 @@ where
                     frame.layers.len(),
                 );
             let render_started = Instant::now();
+            let timing_started = self.render_timing_enabled.then(RenderStageTimer::start);
             let mut import_cache = NativeDmaBufImportCache::with_capacity_and_stats(
                 self.import_cache_capacity,
                 NativeDmaBufImportCacheStats::default(),
@@ -180,6 +194,18 @@ where
                 self.buffer_age_supported,
             );
             self.stats.max_render = self.stats.max_render.max(render_started.elapsed());
+            if let Some(started) = timing_started {
+                self.stats.composition_cpu = self.stats.composition_cpu.saturating_add(started.cpu_elapsed());
+                self.stats.composition_elapsed = self.stats.composition_elapsed.saturating_add(started.elapsed());
+            }
+            if let Ok((_, evidence)) = &rendered {
+                match evidence.repaint {
+                    NativeCompositionRepaintOutcome::Full => self.stats.composition_full_frames = self.stats.composition_full_frames.saturating_add(1),
+                    NativeCompositionRepaintOutcome::Partial { .. } => self.stats.composition_partial_frames = self.stats.composition_partial_frames.saturating_add(1),
+                }
+                self.stats.composition_repaint_pixels = self.stats.composition_repaint_pixels.saturating_add(evidence.repaint_pixels);
+                self.stats.composition_target_pixels = self.stats.composition_target_pixels.saturating_add(u64::from(frame.width) * u64::from(frame.height));
+            }
             let generation = self.allocate_target_generation();
             let render_evidence = rendered
                 .as_ref()
@@ -306,6 +332,7 @@ where
         }
         if let Some(persistent) = self.composition_target.as_mut() {
             let render_started = Instant::now();
+            let timing_started = self.render_timing_enabled.then(RenderStageTimer::start);
             let rendered = render_native_target_dmabuf(
                 &self.egl,
                 self.display,
@@ -314,6 +341,11 @@ where
                 frame,
             );
             self.stats.max_render = self.stats.max_render.max(render_started.elapsed());
+            if let Some(started) = timing_started {
+                self.stats.composition_cpu = self.stats.composition_cpu.saturating_add(started.cpu_elapsed());
+                self.stats.composition_elapsed = self.stats.composition_elapsed.saturating_add(started.elapsed());
+            }
+
             match rendered {
                 Ok(buffer) if is_supported_rendered_scanout_candidate_buffer(&buffer) => {
                     return Ok(buffer);
@@ -357,6 +389,7 @@ where
             self.stats.dmabuf_target_creations =
                 self.stats.dmabuf_target_creations.saturating_add(1);
             let render_started = Instant::now();
+            let timing_started = self.render_timing_enabled.then(RenderStageTimer::start);
             let rendered = render_native_target_dmabuf(
                 &self.egl,
                 self.display,
@@ -365,6 +398,11 @@ where
                 frame,
             );
             self.stats.max_render = self.stats.max_render.max(render_started.elapsed());
+            if let Some(started) = timing_started {
+                self.stats.composition_cpu = self.stats.composition_cpu.saturating_add(started.cpu_elapsed());
+                self.stats.composition_elapsed = self.stats.composition_elapsed.saturating_add(started.elapsed());
+            }
+
             let generation = self.allocate_target_generation();
             match rendered {
                 Ok(buffer) if is_supported_rendered_scanout_candidate_buffer(&buffer) => {
@@ -466,6 +504,7 @@ where
         }
         if let Some(persistent) = self.composition_target.as_mut() {
             let render_started = Instant::now();
+            let timing_started = self.render_timing_enabled.then(RenderStageTimer::start);
             let rendered = render_native_target_frame(
                 &self.egl,
                 self.display,
@@ -474,6 +513,11 @@ where
                 pixels,
             );
             self.stats.max_render = self.stats.max_render.max(render_started.elapsed());
+            if let Some(started) = timing_started {
+                self.stats.composition_cpu = self.stats.composition_cpu.saturating_add(started.cpu_elapsed());
+                self.stats.composition_elapsed = self.stats.composition_elapsed.saturating_add(started.elapsed());
+            }
+
             match rendered {
                 Ok(buffer) if is_supported_rendered_scanout_candidate_buffer(&buffer) => {
                     self.stats.frame_uploads = self.stats.frame_uploads.saturating_add(1);
@@ -518,6 +562,7 @@ where
             self.stats.cpu_target_creations =
                 self.stats.cpu_target_creations.saturating_add(1);
             let render_started = Instant::now();
+            let timing_started = self.render_timing_enabled.then(RenderStageTimer::start);
             let rendered = render_native_target_frame(
                 &self.egl,
                 self.display,
@@ -526,6 +571,11 @@ where
                 pixels,
             );
             self.stats.max_render = self.stats.max_render.max(render_started.elapsed());
+            if let Some(started) = timing_started {
+                self.stats.composition_cpu = self.stats.composition_cpu.saturating_add(started.cpu_elapsed());
+                self.stats.composition_elapsed = self.stats.composition_elapsed.saturating_add(started.elapsed());
+            }
+
             let generation = self.allocate_target_generation();
             match rendered {
                 Ok(buffer) if is_supported_rendered_scanout_candidate_buffer(&buffer) => {

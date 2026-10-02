@@ -39,6 +39,8 @@ pub(crate) struct PersistentXrgb8888GlPipeline {
     program: glow::NativeProgram,
     reconstruction_program: Option<glow::NativeProgram>,
     texture: glow::NativeTexture,
+    texture_width: Cell<u32>,
+    texture_height: Cell<u32>,
     cpu_layer_texture: glow::NativeTexture,
     cpu_layer_texture_width: Cell<u32>,
     cpu_layer_texture_height: Cell<u32>,
@@ -192,17 +194,6 @@ impl PersistentXrgb8888GlPipeline {
                 glow::CLAMP_TO_EDGE as i32,
             );
             gl.pixel_store_i32(glow::UNPACK_ALIGNMENT, 4);
-            gl.tex_image_2d(
-                glow::TEXTURE_2D,
-                0,
-                glow::RGBA as i32,
-                width as i32,
-                height as i32,
-                0,
-                glow::BGRA,
-                glow::UNSIGNED_BYTE,
-                glow::PixelUnpackData::Slice(None),
-            );
             gl.bind_texture(glow::TEXTURE_2D, Some(cpu_layer_texture));
             gl.tex_parameter_i32(
                 glow::TEXTURE_2D,
@@ -224,17 +215,6 @@ impl PersistentXrgb8888GlPipeline {
                 glow::TEXTURE_WRAP_T,
                 glow::CLAMP_TO_EDGE as i32,
             );
-            gl.tex_image_2d(
-                glow::TEXTURE_2D,
-                0,
-                glow::RGBA as i32,
-                width as i32,
-                height as i32,
-                0,
-                glow::BGRA,
-                glow::UNSIGNED_BYTE,
-                glow::PixelUnpackData::Slice(None),
-            );
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(vertex_buffer));
             gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, vertex_bytes, glow::STATIC_DRAW);
         }
@@ -243,9 +223,11 @@ impl PersistentXrgb8888GlPipeline {
             program,
             reconstruction_program,
             texture,
+            texture_width: Cell::new(0),
+            texture_height: Cell::new(0),
             cpu_layer_texture,
-            cpu_layer_texture_width: Cell::new(width),
-            cpu_layer_texture_height: Cell::new(height),
+            cpu_layer_texture_width: Cell::new(0),
+            cpu_layer_texture_height: Cell::new(0),
             vertex_buffer,
             sampling_evidence: Cell::new(0),
             exact_nearest_draws: Cell::new(0),
@@ -258,6 +240,18 @@ impl PersistentXrgb8888GlPipeline {
             width,
             height,
         })
+    }
+
+    pub(crate) fn set_extent(&mut self, width: u32, height: u32) {
+        self.width = width;
+        self.height = height;
+        self.ambient_clip.set(None);
+    }
+
+    pub(crate) fn flush_commands(&self) {
+        unsafe {
+            self.gl.flush();
+        }
     }
 
     pub(crate) fn upload(&self, pixels: &[u8]) -> Result<(), NativeEglDrawSmokeStatus> {
@@ -274,6 +268,21 @@ impl PersistentXrgb8888GlPipeline {
                 .viewport(0, 0, self.width as i32, self.height as i32);
             self.gl.active_texture(glow::TEXTURE0);
             self.gl.bind_texture(glow::TEXTURE_2D, Some(self.texture));
+            if self.texture_width.get() != self.width || self.texture_height.get() != self.height {
+                self.gl.tex_image_2d(
+                    glow::TEXTURE_2D,
+                    0,
+                    glow::RGBA as i32,
+                    self.width as i32,
+                    self.height as i32,
+                    0,
+                    glow::BGRA,
+                    glow::UNSIGNED_BYTE,
+                    glow::PixelUnpackData::Slice(None),
+                );
+                self.texture_width.set(self.width);
+                self.texture_height.set(self.height);
+            }
             self.gl.tex_sub_image_2d(
                 glow::TEXTURE_2D,
                 0,

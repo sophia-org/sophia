@@ -98,6 +98,7 @@ fn generation_with_owner(
         heads: (0..2)
             .map(|head_index| {
                 let damage = sophia_engine::OutputFrameDamageSnapshot {
+                    damage_history: Default::default(),
                     output: sophia_engine::HeadlessOutput {
                         id: output,
                         size,

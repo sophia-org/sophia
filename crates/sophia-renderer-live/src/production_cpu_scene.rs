@@ -1,3 +1,6 @@
+mod timing;
+mod updates;
+
 use sophia_engine::{
     CompositorDisplayCommand, CompositorDisplayList, HeadlessOutput, OutputFrameDamageSnapshot,
     OutputRepaintPlan, OutputRepaintPolicy, output_frame_damage, output_frame_damage_snapshot,
@@ -40,6 +43,10 @@ pub struct LiveProductionCpuScene {
     output_size: Size,
     buffers: LiveCpuBufferRegistry,
     last_report: Option<LiveCpuCompositionReport>,
+    last_cpu_damage_snapshot: Option<OutputFrameDamageSnapshot>,
+    timing: timing::CpuSceneTiming,
+    cpu_raster_count: u64,
+    cpu_raster_reuse_count: u64,
     last_output_damage_snapshot: Option<OutputFrameDamageSnapshot>,
     max_nonzero_pixel_bytes: usize,
     max_layers_composed: usize,
@@ -60,6 +67,13 @@ impl LiveProductionCpuScene {
             output_size,
             buffers: LiveCpuBufferRegistry::new(),
             last_report: None,
+            last_cpu_damage_snapshot: None,
+            timing: timing::CpuSceneTiming {
+                enabled: std::env::var("SOPHIA_RENDER_TIMING").as_deref() == Ok("1"),
+                ..Default::default()
+            },
+            cpu_raster_count: 0,
+            cpu_raster_reuse_count: 0,
             last_output_damage_snapshot: None,
             max_nonzero_pixel_bytes: 0,
             max_layers_composed: 0,
@@ -104,41 +118,10 @@ impl LiveProductionCpuScene {
         self.output_size = output_size;
         self.last_report = None;
         self.last_output_damage_snapshot = None;
+        self.last_cpu_damage_snapshot = None;
         self.retained_primary_frames.clear();
         self.secondary_output_frames.clear();
         Ok(true)
-    }
-
-    pub fn apply_updates(
-        &mut self,
-        updates: impl IntoIterator<Item = LiveCpuBufferUpdate>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        for update in updates {
-            self.buffers
-                .apply(update)
-                .map_err(|error| format!("renderer CPU buffer update failed: {error:?}"))?;
-        }
-        Ok(())
-    }
-
-    pub fn apply_production_updates(
-        &mut self,
-        updates: impl IntoIterator<Item = LiveCpuBufferUpdate>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        for update in updates {
-            match self.buffers.apply(update) {
-                Ok(_) | Err(crate::LiveCpuBufferRegistryError::MissingPatchBase) => {}
-                Err(error) => {
-                    return Err(format!("renderer CPU buffer update failed: {error:?}").into());
-                }
-            }
-        }
-        Ok(())
-    }
-
-    pub fn reconcile_buffer_residency(&mut self, retained_handles: &[u64]) {
-        self.buffers
-            .retain_handles(|handle| retained_handles.binary_search(&handle).is_ok());
     }
 
     pub fn resident_buffer_count(&self) -> usize {
@@ -197,6 +180,7 @@ impl LiveProductionCpuScene {
     /// the complete output even when scene facts are otherwise unchanged.
     pub fn force_full_repaint(&mut self) {
         self.last_output_damage_snapshot = None;
+        self.last_cpu_damage_snapshot = None;
     }
 
     pub fn compose_visible(
@@ -271,6 +255,20 @@ impl LiveProductionCpuScene {
             .collect()
     }
 
+    pub const fn render_timing_enabled(&self) -> bool {
+        self.timing.enabled
+    }
+    pub const fn cpu_scene_timing(&self) -> (std::time::Duration, std::time::Duration) {
+        (self.timing.elapsed, self.timing.cpu)
+    }
+
+    pub const fn cpu_raster_count(&self) -> u64 {
+        self.cpu_raster_count
+    }
+    pub const fn cpu_raster_reuse_count(&self) -> u64 {
+        self.cpu_raster_reuse_count
+    }
+
     pub fn compose_display_list(
         &mut self,
         output: HeadlessOutput,
@@ -278,6 +276,24 @@ impl LiveProductionCpuScene {
         display_list: &CompositorDisplayList,
         cursor_position: Option<Point>,
     ) -> Result<&LiveCpuCompositionReport, Box<dyn std::error::Error>> {
+        self.compose_display_list_with_damage_history(
+            output,
+            committed_surfaces,
+            display_list,
+            cursor_position,
+            Default::default(),
+        )
+    }
+
+    pub fn compose_display_list_with_damage_history(
+        &mut self,
+        output: HeadlessOutput,
+        committed_surfaces: &[CommittedSurfaceState],
+        display_list: &CompositorDisplayList,
+        cursor_position: Option<Point>,
+        damage_history: std::sync::Arc<[std::sync::Arc<sophia_engine::SurfaceDamageTransition>]>,
+    ) -> Result<&LiveCpuCompositionReport, Box<dyn std::error::Error>> {
+        let timing = self.timing.start();
         if output.size != self.output_size {
             return Err("CPU scene output descriptor has a mismatched size".into());
         }
@@ -290,14 +306,62 @@ impl LiveProductionCpuScene {
             width: i32::try_from(self.cursor_asset.width()).unwrap_or(i32::MAX),
             height: i32::try_from(self.cursor_asset.height()).unwrap_or(i32::MAX),
         });
-        let current_output_damage_snapshot = output_frame_damage_snapshot(
+        let mut current_output_damage_snapshot = output_frame_damage_snapshot(
             output,
             display_list.clone(),
             committed_surfaces,
             cursor_geometry,
         )?;
-        let (reusable_bytes, repaint_damage) =
-            self.take_primary_repaint_baseline(&current_output_damage_snapshot);
+        current_output_damage_snapshot.damage_history = damage_history;
+        // Keep the native frame's identity intact. The CPU backing has a
+        // different dependency set: DMA-BUF pixels are sampled by the worker,
+        // not rasterized here. In particular a fresh GPU transaction must not
+        // trigger a full-window clear and CPU copy-on-write.
+        let mut cpu_display_list = display_list.clone();
+        cpu_display_list.commands.retain(|command| match command {
+            CompositorDisplayCommand::Surface { surface } => committed_surfaces.iter()
+                .find(|state| state.surface == *surface)
+                .is_some_and(|state| matches!(state.buffer(), BufferSource::CpuBuffer { handle } if self.buffers.get(handle).is_some())),
+            CompositorDisplayCommand::SurfaceInstance(instance) => committed_surfaces.iter()
+                .find(|state| state.surface == instance.source)
+                .is_some_and(|state| matches!(state.buffer(), BufferSource::CpuBuffer { handle } if self.buffers.get(handle).is_some())),
+            CompositorDisplayCommand::PresentationStamp(_) => false,
+            _ => true,
+        });
+        // CPU registry generations identify the bytes actually rasterized,
+        // including an upload that does not change authority placement facts.
+        let cpu_states: Vec<_> = committed_surfaces
+            .iter()
+            .map(|state| {
+                let mut state = state.clone();
+                if let BufferSource::CpuBuffer { handle } = state.buffer()
+                    && let Some(buffer) = self.buffers.get(handle)
+                {
+                    state.committed_generation = buffer.generation;
+                }
+                state
+            })
+            .collect();
+        for command in &mut cpu_display_list.commands {
+            if let CompositorDisplayCommand::SurfaceInstance(instance) = command
+                && let Some(state) = cpu_states
+                    .iter()
+                    .find(|state| state.surface == instance.source)
+            {
+                instance.source_generation = state.committed_generation;
+            }
+        }
+        let cpu_snapshot =
+            output_frame_damage_snapshot(output, cpu_display_list, &cpu_states, cursor_geometry)?;
+        let (reusable_bytes, repaint_damage) = self.take_primary_repaint_baseline(&cpu_snapshot);
+        if repaint_damage
+            .as_ref()
+            .is_some_and(|damage| damage.rects.is_empty())
+        {
+            self.cpu_raster_reuse_count = self.cpu_raster_reuse_count.saturating_add(1);
+        } else {
+            self.cpu_raster_count = self.cpu_raster_count.saturating_add(1);
+        }
         let indicator_buffers = display_list
             .commands
             .iter()
@@ -509,7 +573,9 @@ impl LiveProductionCpuScene {
             })?,
         );
         self.last_output_damage_snapshot = Some(current_output_damage_snapshot);
+        self.last_cpu_damage_snapshot = Some(cpu_snapshot);
         self.record_last_report();
+        self.timing.finish(timing);
         Ok(self.last_report.as_ref().expect("assigned above"))
     }
 
@@ -518,7 +584,7 @@ impl LiveProductionCpuScene {
         current: &OutputFrameDamageSnapshot,
     ) -> (Option<std::sync::Arc<Vec<u8>>>, Option<Region>) {
         let latest = self.last_report.take().and_then(|report| {
-            self.last_output_damage_snapshot
+            self.last_cpu_damage_snapshot
                 .take()
                 .map(|output_damage_snapshot| RetainedPrimaryCpuFrame {
                     bytes: report.frame.bytes,
@@ -626,6 +692,7 @@ impl LiveProductionCpuScene {
             .map_err(|error| format!("persistent CPU composition failed: {error:?}"))?,
         );
         self.last_output_damage_snapshot = None;
+        self.last_cpu_damage_snapshot = None;
         self.retained_primary_frames.clear();
         self.record_last_report();
         Ok(self.last_report.as_ref().expect("assigned above"))

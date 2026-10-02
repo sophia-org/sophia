@@ -72,11 +72,12 @@ impl LiveProductionVisualRuntime {
             .ok_or("software composition has no output descriptor")?;
         let compose_started = Instant::now();
         let composition = scene
-            .compose_display_list(
+            .compose_display_list_with_damage_history(
                 output,
                 &committed,
                 &display_list,
                 cursor_presentation.composition_position(),
+                self.production.damage_history_for_candidate(&committed, self.present_scheduler.in_flight_prepared())?,
             )?
             .clone();
         self.record_focus_ring_observation(&committed, LiveChromeObservationSource::Repaint, true)?;

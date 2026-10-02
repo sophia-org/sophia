@@ -32,6 +32,9 @@ pub struct XDrawingUpdate {
     /// which is correct only for a raster the authority itself sized.
     pub raster_extent: Option<Size>,
     pub damage: Region,
+    /// Proven source-pixel damage from an unoffset top-level Present. Other
+    /// drawing paths carry only window damage and retain full raster damage.
+    pub(crate) raster_damage: Option<Region>,
     pub previous_committed_generation: u64,
     pub timeout_msec: u32,
 }
@@ -55,6 +58,7 @@ impl XDrawingUpdate {
             presentation_extent: None,
             raster_extent: None,
             damage,
+            raster_damage: None,
             previous_committed_generation,
             timeout_msec,
         }
@@ -80,6 +84,7 @@ impl XDrawingUpdate {
             presentation_extent: Some(presentation_extent),
             raster_extent: Some(raster_extent),
             damage,
+            raster_damage: None,
             previous_committed_generation,
             timeout_msec,
         }
@@ -103,6 +108,7 @@ impl XDrawingUpdate {
             presentation_extent: None,
             raster_extent: None,
             damage,
+            raster_damage: None,
             previous_committed_generation,
             timeout_msec,
         }
@@ -126,6 +132,7 @@ impl XDrawingUpdate {
             presentation_extent: None,
             raster_extent: None,
             damage,
+            raster_damage: None,
             previous_committed_generation,
             timeout_msec,
         }
@@ -175,6 +182,22 @@ pub fn surface_transaction_from_drawing_update(
         return Err(XAuthorityAccessError::InvalidResource);
     }
 
+    let mut content = sophia_protocol::SurfaceContentSet::singleton(update.buffer, raster_extent);
+    if matches!(update.buffer, BufferSource::DmaBuf { .. })
+        && raster_extent == presentation_extent
+        && window.interior_geometry().width == raster_extent.width
+        && window.interior_geometry().height == raster_extent.height
+        && let Some(raster_damage) = update.raster_damage.as_ref()
+        && raster_damage.rects.len() <= 32
+    {
+        let mut variant = content.canonical_variant().clone();
+        variant.damage = raster_damage.clone();
+        // The constructor validates source-pixel coordinates and bounds. If
+        // this producer supplied another coordinate space, keep full damage.
+        if let Ok(precise) = sophia_protocol::SurfaceContentSet::new(raster_extent, vec![variant]) {
+            content = precise;
+        }
+    }
     Ok(SurfaceTransaction {
         transaction: update.transaction,
         authority: AuthorityKind::SophiaX,
@@ -184,7 +207,7 @@ pub fn surface_transaction_from_drawing_update(
         surface: window.surface,
         namespace: Some(window.namespace),
         target_geometry: window.interior_geometry(),
-        content: sophia_protocol::SurfaceContentSet::singleton(update.buffer, raster_extent),
+        content,
         presentation_extent,
         damage: update.damage,
         readiness: SurfaceTransactionReadiness::Ready,

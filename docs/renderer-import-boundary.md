@@ -75,6 +75,84 @@ compositor-owned snapshot before submitting the head's worker request. It may
 not borrow another head's cache entry or scanout-buffer lease, and failure to
 find or restore a donor rejects the topology before KMS mutation.
 
+## Capture execution and immutable storage
+
+Each renderer image still receives a fresh capture surface and BO. An exported
+snapshot can outlive the client's pixmap, the local image-store entry and the
+context that captured it. Eviction is therefore not permission to reuse its
+storage.
+
+The EGL owner retains at most two compatible capture contexts and pipelines,
+one for XR24 and one for AR24. A new size updates the drawing extent; a changed
+EGL configuration replaces the cached context. Each capture imports the actual
+client descriptors into a fresh, one-entry cache, copies the full source, flushes
+the copy, clears that import and unbinds the context. Cross-device transfer
+keeps its explicit completion fence. Cleanup or rendering failure invalidates
+execution reuse; a surface-allocation failure before binding can try the next
+modifier with the same context. CPU upload textures are allocated only when a
+draw needs them.
+
+This reuses execution resources without pooling capture storage or retaining
+mutable client imports. Per-head composition targets, image custody, KMS
+retirement and transfer completion retain their existing owners.
+
+## Damage provenance
+
+Engine retains up to 16 transitions per surface, 32 rectangles per transition
+and 8 MiB of damage metadata per journal or frame view. A view refuses more
+than 1024 source surfaces. Candidate endpoints take priority over older history
+when a view reaches its byte budget.
+
+A prepared commit has an opaque identity which survives its successful commit.
+Public generations and buffer handles alone cannot identify pixels: a rejected
+candidate and a later commit can reuse both. A frame snapshot retains the
+identities of its sources, including preview-only sources. A precise chain
+must connect the retained slot's identity through every intervening commit.
+The final edge must also reach the target preparation's identity, including
+when an unassociated view reuses an older generation and buffer.
+Missing, evicted or unproved history falls back to full surface damage.
+Synchronization and recovery replacements clear the journal; rebased client
+transactions carry full raster damage.
+
+The first precise path is canonical, unscaled, unclipped, Normal-transform
+sampling. X Authority supplies source-pixel rectangles only for an unoffset
+top-level DMA-BUF Present without a valid-region override. Other mappings keep
+full damage. A changed source also damages its preview instances.
+Density-selected or scaled alternate variants therefore retain correctness but
+do not receive this partial-damage optimization.
+
+Both native head-composition paths and CPU repaint carry the exact in-flight
+preparation into the frame snapshot. A view without an associated preparation
+gets a fresh local identity which cannot masquerade as a later commit. The CPU
+raster has a separate key: it follows CPU registry uploads and compositor
+content, excluding GPU-only generations. Equal-generation uploads and buffer
+eviction invalidate its retained baselines. Busy CPU frame bytes remain
+immutable.
+
+## Measuring render work
+
+Session emits cumulative `sophia_live_render_work schema=1` counters on its
+existing resource-sampling cadence. They distinguish CPU raster reuse, capture
+context reuse, fresh capture surfaces, transfers and full/partial composition.
+Repaint pixels describe the actual repaint after buffer-age selection. Shared
+worker-context counters are counted once using the newest observation; output
+slot counters remain per output.
+Replacing a context can lower its cumulative counters. Window-delta analysis
+must treat a decreasing counter as a reset rather than negative work.
+
+`SOPHIA_RENDER_TIMING=1` additionally records elapsed and calling-thread CPU
+time for CPU composition and native setup/copy/cleanup/composition. Normal
+rendering does not take these extra per-frame clocks. Thread time excludes
+driver helper threads, and the root context's stage timings exclude work in a
+separate transfer context. Transfer counters identify that limitation. These
+measurements contain no client text, handles, paths or pixel data.
+
+The render-node tests compare partial and full pixels through buffer age and
+rejected preparations, and check exported snapshots after local eviction and
+context destruction. The fixed-cadence capture and CPU-scene benchmarks measure
+individual paths; they do not establish a live desktop's total CPU use, KMS
+behaviour or input latency.
+
 Startup reports expose only reduced renderer import health: CPU fallback, native
 import capable, or degraded. Per-path status is reduced to disabled, enabled, or
 degraded for XPixmap and DMA-BUF. No renderer-private handle, file descriptor,

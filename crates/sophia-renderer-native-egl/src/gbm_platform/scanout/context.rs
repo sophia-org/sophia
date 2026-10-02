@@ -33,6 +33,9 @@ pub struct NativeGbmRenderedScanoutContext<T: std::os::fd::AsFd> {
     gbm_device: gbm::Device<T>,
     stats: NativeGbmPersistentRenderStats,
     composition_target: Option<PersistentCompositionTarget>,
+    // Execution only: no client import or captured pixel storage survives here.
+    // One compatible context per supported capture format (XR24 and AR24).
+    capture_targets: [Option<(khronos_egl::Config, NativeRenderTarget)>; 2],
     /// Target slots and pixel-proof state, one set per output the context
     /// serves. A device-shared context renders for several outputs, and a
     /// slot index alone does not identify a bundle across them: two outputs
@@ -63,6 +66,7 @@ pub struct NativeGbmRenderedScanoutContext<T: std::os::fd::AsFd> {
     /// proof budget. For equivalence smokes only: per-frame `glReadPixels` on
     /// a session hot path is exactly what the budget exists to prevent.
     capture_pixels_always: bool,
+    render_timing_enabled: bool,
     import_cache_capacity: usize,
     renderer_images: std::collections::BTreeMap<NativeRendererImageId, NativeRendererImage>,
     renderer_image_bytes: u64,
@@ -230,6 +234,7 @@ where
             gbm_device,
             stats: NativeGbmPersistentRenderStats::default(),
             composition_target: None,
+            capture_targets: [None, None],
             target_sets: std::collections::BTreeMap::new(),
             current_target_set: NativeFrameTargetSetId::DEFAULT,
             import_cache_capacity,
@@ -245,6 +250,7 @@ where
             last_render_repaint: NativeCompositionRepaintOutcome::Full,
             last_render_target_generation: None,
             capture_pixels_always: false,
+            render_timing_enabled: false,
         })
     }
 
@@ -257,8 +263,16 @@ where
         generation
     }
 
+    /// Qualification-only wall-clock timings; normal rendering counts work only.
+    pub fn set_render_timing_enabled(&mut self, enabled: bool) {
+        self.render_timing_enabled = enabled;
+    }
+
     pub fn persistent_render_stats(&self) -> NativeGbmPersistentRenderStats {
         let mut stats = self.stats;
+        stats.transfer_captures = self.transfer_stats.captures;
+        stats.transfer_attempts = self.transfer_stats.attempts;
+        stats.transfer_failures = self.transfer_stats.failures;
         if let Some(persistent) = self.composition_target.as_ref() {
             accumulate_import_cache_stats(&mut stats.import_cache, persistent.import_cache.stats());
             stats.sampling = stats
@@ -274,6 +288,9 @@ where
             stats.sampling = stats
                 .sampling
                 .saturating_add(persistent.target.pipeline.sampling_stats());
+        }
+        for (_, target) in self.capture_targets.iter().flatten() {
+            stats.sampling = stats.sampling.saturating_add(target.pipeline.sampling_stats());
         }
         stats
     }
@@ -665,6 +682,7 @@ where
 include!("context/render_once.rs");
 include!("context/renderer_images.rs");
 include!("context/image_capture.rs");
+include!("context/timing.rs");
 include!("context/image_transfer.rs");
 include!("context/image_bridge.rs");
 impl<T> NativeGbmRenderedScanoutContext<T>
@@ -728,6 +746,9 @@ where
                     self.destroy_persistent_composition_target(persistent);
                 }
             }
+        }
+        for (_, target) in std::mem::take(&mut self.capture_targets).into_iter().flatten() {
+            self.destroy_native_render_target(target);
         }
         // Target imports are gone; release retained buffer surfaces while their
         // EGL display and its dynamically loaded entry points still exist.

@@ -399,6 +399,10 @@ impl NativeGbmRendererWorker {
         self.context_status
     }
 
+    pub(super) fn metrics_identity(&self) -> usize {
+        Arc::as_ptr(&self.core) as usize
+    }
+
     pub const fn persistent_render_stats(&self) -> LiveNativePersistentRenderStats {
         self.persistent_render_stats
     }

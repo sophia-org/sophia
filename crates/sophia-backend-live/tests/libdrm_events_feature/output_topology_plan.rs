@@ -881,6 +881,7 @@ fn topology_composition_frame(
         frame: sophia_renderer_live::LiveOwnedMixedCompositionFrame {
             layers: Vec::new(),
             output_damage_snapshot: Some(sophia_engine::OutputFrameDamageSnapshot {
+                damage_history: Default::default(),
                 output: sophia_engine::HeadlessOutput {
                     id: output,
                     size,
@@ -913,6 +914,7 @@ fn identified_head_composition_frame(
         frame: sophia_renderer_live::LiveOwnedMixedCompositionFrame {
             layers: Vec::new(),
             output_damage_snapshot: Some(sophia_engine::OutputFrameDamageSnapshot {
+                damage_history: Default::default(),
                 output: sophia_engine::HeadlessOutput {
                     id: target.output,
                     size: target.native_size,

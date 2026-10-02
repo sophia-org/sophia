@@ -290,6 +290,27 @@ pub struct NativeCompositionTrace {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct NativeGbmPersistentRenderStats {
+    pub transfer_captures: u64,
+    pub transfer_attempts: u64,
+    pub transfer_failures: u64,
+    pub capture_setup_cpu: std::time::Duration,
+    pub capture_copy_cpu: std::time::Duration,
+    pub capture_cleanup_cpu: std::time::Duration,
+    pub composition_cpu: std::time::Duration,
+
+    pub capture_context_creations: u64,
+    pub capture_context_reuses: u64,
+    pub capture_surface_creations: u64,
+    pub capture_failures: u64,
+    pub composition_full_frames: u64,
+    pub composition_partial_frames: u64,
+    pub composition_repaint_pixels: u64,
+    pub composition_target_pixels: u64,
+    pub capture_setup_elapsed: std::time::Duration,
+    pub capture_copy_elapsed: std::time::Duration,
+    pub capture_cleanup_elapsed: std::time::Duration,
+    pub composition_elapsed: std::time::Duration,
+
     pub target_creations: usize,
     pub target_recreations: usize,
     pub gl_pipeline_creations: usize,

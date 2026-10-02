@@ -91,7 +91,7 @@ impl LiveProductionVisualRuntime {
                 output,
                 &sources.committed,
                 list,
-                sources.scene_generation,
+                (sources.scene_generation, None),
                 &sources.sources,
             )?;
             frames.push((output, heads));

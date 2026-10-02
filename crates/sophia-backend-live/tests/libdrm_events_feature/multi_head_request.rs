@@ -210,6 +210,7 @@ fn mirror_damage_projection_preserves_identity_and_targets_each_head() {
         scale: 2,
     };
     let snapshot = OutputFrameDamageSnapshot {
+        damage_history: Default::default(),
         output: HeadlessOutput {
             id: output,
             size: source,
@@ -359,6 +360,7 @@ fn mirror_projection_snapshot(
     let output = OutputId::from_raw(1);
     let surface = SurfaceId::new(9, 2);
     OutputFrameDamageSnapshot {
+        damage_history: Default::default(),
         output: HeadlessOutput {
             id: output,
             size: source,
@@ -516,6 +518,7 @@ fn invalid_mirror_damage_projection_fails_before_changing_the_snapshot() {
     let output = OutputId::from_raw(1);
     let source = scanout_size(2560, 1440);
     let snapshot = OutputFrameDamageSnapshot {
+        damage_history: Default::default(),
         output: HeadlessOutput {
             id: output,
             size: source,

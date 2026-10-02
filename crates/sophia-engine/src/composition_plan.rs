@@ -822,6 +822,7 @@ pub fn head_output_damage_snapshot(plan: &HeadCompositionPlan) -> OutputFrameDam
         }
     }
     OutputFrameDamageSnapshot {
+        damage_history: Default::default(),
         output,
         surfaces,
         compositor_display_list: display_list.into(),

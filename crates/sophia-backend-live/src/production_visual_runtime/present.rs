@@ -291,7 +291,7 @@ impl LiveProductionVisualRuntime {
                         output,
                         prepared.candidate(),
                         output_display_list,
-                        transaction.raw(),
+                        (transaction.raw(), Some(&prepared)),
                         &head_sources,
                     )?,
                 ))

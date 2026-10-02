@@ -697,7 +697,7 @@ impl XAuthorityRuntime {
         // ended the session over.
         self.raster_store
             .invalidate_unjournaled_presentation(target_window, presentation_extent);
-        self.finish_drawing_update(XDrawingUpdate::present_buffer(
+        let mut update = XDrawingUpdate::present_buffer(
             transaction,
             namespace,
             target_window,
@@ -707,7 +707,13 @@ impl XAuthorityRuntime {
             damage,
             target_generation,
             250,
-        ))
+        );
+        if target_window == window && x_offset == 0 && y_offset == 0
+            && child_x == 0 && child_y == 0 && valid_region.is_none()
+            && matches!(buffer, sophia_protocol::BufferSource::DmaBuf { .. }) {
+            update.raster_damage = Some(Region { rects: source_damage });
+        }
+        self.finish_drawing_update(update)
     }
 
     pub fn create_dri3_fence(
