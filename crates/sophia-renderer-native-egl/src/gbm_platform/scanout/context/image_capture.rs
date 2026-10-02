@@ -40,6 +40,7 @@ impl<T: std::os::fd::AsFd> NativeGbmRenderedScanoutContext<T> {
             .bind_api(khronos_egl::OPENGL_API)
             .map_err(|_| NativeGbmScanoutBufferExportDetail::EglBindApiFailed)?;
         let layer = NativeCompositionLayer::DmaBuf(NativeDmaBufCompositionLayer {
+            custody: None,
             image_id,
             frame: source,
             target: NativeCompositionRect {
@@ -103,10 +104,17 @@ impl<T: std::os::fd::AsFd> NativeGbmRenderedScanoutContext<T> {
                 }
             };
             if let Some(started) = setup_started {
-                self.stats.capture_setup_cpu = self.stats.capture_setup_cpu.saturating_add(started.cpu_elapsed());
-                self.stats.capture_setup_elapsed = self.stats.capture_setup_elapsed.saturating_add(started.elapsed());
+                self.stats.capture_setup_cpu = self
+                    .stats
+                    .capture_setup_cpu
+                    .saturating_add(started.cpu_elapsed());
+                self.stats.capture_setup_elapsed = self
+                    .stats
+                    .capture_setup_elapsed
+                    .saturating_add(started.elapsed());
             }
-            self.stats.capture_surface_creations = self.stats.capture_surface_creations.saturating_add(1);
+            self.stats.capture_surface_creations =
+                self.stats.capture_surface_creations.saturating_add(1);
             self.stats.dmabuf_target_creations =
                 self.stats.dmabuf_target_creations.saturating_add(1);
             let mut import_cache = NativeDmaBufImportCache::with_capacity_and_stats(
@@ -128,8 +136,14 @@ impl<T: std::os::fd::AsFd> NativeGbmRenderedScanoutContext<T> {
                 self.buffer_age_supported,
             );
             if let Some(started) = copy_started {
-                self.stats.capture_copy_cpu = self.stats.capture_copy_cpu.saturating_add(started.cpu_elapsed());
-                self.stats.capture_copy_elapsed = self.stats.capture_copy_elapsed.saturating_add(started.elapsed());
+                self.stats.capture_copy_cpu = self
+                    .stats
+                    .capture_copy_cpu
+                    .saturating_add(started.cpu_elapsed());
+                self.stats.capture_copy_elapsed = self
+                    .stats
+                    .capture_copy_elapsed
+                    .saturating_add(started.elapsed());
             }
             let generation = self.allocate_target_generation();
             let persistent = PersistentCompositionTarget {
@@ -154,7 +168,9 @@ impl<T: std::os::fd::AsFd> NativeGbmRenderedScanoutContext<T> {
                         Ok(None)
                     };
                     let retained = completion.is_ok();
-                    if let Err(error) = self.finish_renderer_image_capture(persistent, config, retained) {
+                    if let Err(error) =
+                        self.finish_renderer_image_capture(persistent, config, retained)
+                    {
                         if let Ok(Some(sync)) = completion {
                             let _ = unsafe { self.egl.destroy_sync(self.display, sync) };
                         }
@@ -176,7 +192,10 @@ impl<T: std::os::fd::AsFd> NativeGbmRenderedScanoutContext<T> {
             // This candidate already failed. A cleanup error invalidates its
             // execution cache, but must not hide the import error or prevent
             // the remaining format/modifier candidates from being tried.
-            if self.finish_renderer_image_capture(persistent, config, false).is_err() {
+            if self
+                .finish_renderer_image_capture(persistent, config, false)
+                .is_err()
+            {
                 self.stats.capture_failures = self.stats.capture_failures.saturating_add(1);
             }
         }
@@ -223,15 +242,29 @@ impl<T: std::os::fd::AsFd> NativeGbmRenderedScanoutContext<T> {
     fn create_capture_target(
         &mut self,
         spec: RenderTargetSpec,
-    ) -> Result<(NativeRenderTarget, std::rc::Rc<NativeFrameSurface>, std::time::Duration), NativeGbmScanoutBufferExportDetail> {
+    ) -> Result<
+        (
+            NativeRenderTarget,
+            std::rc::Rc<NativeFrameSurface>,
+            std::time::Duration,
+        ),
+        NativeGbmScanoutBufferExportDetail,
+    > {
         let slot = usize::from(spec.candidate.format == gbm::Format::Argb8888);
         if let Some((config, mut target)) = self.capture_targets[slot].take() {
             if config == spec.config && target.surface_format == spec.candidate.format {
                 let started = Instant::now();
                 // Never recycle the previous image's surface or BO. Its exported
                 // FDs may still be in use even after local image-store eviction.
-                let surface = create_native_frame_surface(&self.egl, self.display,
-                    &self.gbm_device, spec.width, spec.height, spec.config, &spec.candidate);
+                let surface = create_native_frame_surface(
+                    &self.egl,
+                    self.display,
+                    &self.gbm_device,
+                    spec.width,
+                    spec.height,
+                    spec.config,
+                    &spec.candidate,
+                );
                 let surface = match surface {
                     Ok(surface) => surface,
                     Err(error) => {
@@ -246,16 +279,23 @@ impl<T: std::os::fd::AsFd> NativeGbmRenderedScanoutContext<T> {
                 target.width = spec.width;
                 target.height = spec.height;
                 target.pipeline.set_extent(spec.width, spec.height);
-                self.stats.capture_context_reuses = self.stats.capture_context_reuses.saturating_add(1);
-                self.stats.frame_surface_creations = self.stats.frame_surface_creations.saturating_add(1);
-                self.stats.max_frame_surface_create = self.stats.max_frame_surface_create.max(elapsed);
+                self.stats.capture_context_reuses =
+                    self.stats.capture_context_reuses.saturating_add(1);
+                self.stats.frame_surface_creations =
+                    self.stats.frame_surface_creations.saturating_add(1);
+                self.stats.max_frame_surface_create =
+                    self.stats.max_frame_surface_create.max(elapsed);
                 return Ok((target, surface, elapsed));
             }
-            self.stats.sampling = self.stats.sampling.saturating_add(target.pipeline.sampling_stats());
+            self.stats.sampling = self
+                .stats
+                .sampling
+                .saturating_add(target.pipeline.sampling_stats());
             self.destroy_native_render_target(target);
         }
         let created = self.create_render_target(spec)?;
-        self.stats.capture_context_creations = self.stats.capture_context_creations.saturating_add(1);
+        self.stats.capture_context_creations =
+            self.stats.capture_context_creations.saturating_add(1);
         Ok(created)
     }
 
@@ -267,8 +307,14 @@ impl<T: std::os::fd::AsFd> NativeGbmRenderedScanoutContext<T> {
     ) -> Result<(), NativeGbmScanoutBufferExportDetail> {
         let started = self.render_timing_enabled.then(RenderStageTimer::start);
         let surface = persistent.surface.egl_surface();
-        let cleaned = self.egl.make_current(self.display, Some(surface), Some(surface),
-            Some(persistent.target.egl_context))
+        let cleaned = self
+            .egl
+            .make_current(
+                self.display,
+                Some(surface),
+                Some(surface),
+                Some(persistent.target.egl_context),
+            )
             .map_err(|_| NativeGbmScanoutBufferExportDetail::EglMakeCurrentFailed)
             .and_then(|()| {
                 // Swap/lock exports an implicitly synchronized DMA-BUF. Flush
@@ -276,7 +322,10 @@ impl<T: std::os::fd::AsFd> NativeGbmRenderedScanoutContext<T> {
                 // a context. Cross-device scratch reuse additionally retains
                 // the completion fence made by capture_completion above.
                 persistent.target.pipeline.flush_commands();
-                persistent.import_cache.clear(&self.egl, self.display, &persistent.target.pipeline).map(|_| ())
+                persistent
+                    .import_cache
+                    .clear(&self.egl, self.display, &persistent.target.pipeline)
+                    .map(|_| ())
             });
         if cleaned.is_err() {
             persistent.import_cache.abandon(&self.egl, self.display);
@@ -290,13 +339,22 @@ impl<T: std::os::fd::AsFd> NativeGbmRenderedScanoutContext<T> {
         if retain && cleaned.is_ok() {
             self.capture_targets[slot] = Some((config, persistent.target));
         } else {
-            self.stats.sampling = self.stats.sampling.saturating_add(persistent.target.pipeline.sampling_stats());
+            self.stats.sampling = self
+                .stats
+                .sampling
+                .saturating_add(persistent.target.pipeline.sampling_stats());
             self.destroy_native_render_target(persistent.target);
         }
         // The capture surface lives with the returned buffer, never the cache.
         if let Some(started) = started {
-            self.stats.capture_cleanup_cpu = self.stats.capture_cleanup_cpu.saturating_add(started.cpu_elapsed());
-            self.stats.capture_cleanup_elapsed = self.stats.capture_cleanup_elapsed.saturating_add(started.elapsed());
+            self.stats.capture_cleanup_cpu = self
+                .stats
+                .capture_cleanup_cpu
+                .saturating_add(started.cpu_elapsed());
+            self.stats.capture_cleanup_elapsed = self
+                .stats
+                .capture_cleanup_elapsed
+                .saturating_add(started.elapsed());
         }
         cleaned
     }

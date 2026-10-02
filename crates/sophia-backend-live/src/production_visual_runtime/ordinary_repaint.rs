@@ -59,7 +59,12 @@ impl LiveProductionVisualRuntime {
                 (sources.scene_generation, None),
                 &sources.sources,
             )?;
-            admit(&mut self.ordinary_repaints_pending, native, output, frames)?;
+            if let Err(error) = admit(&mut self.ordinary_repaints_pending, native, output, frames) {
+                if self.handle_preview_refusal(error.as_ref()) {
+                    continue;
+                }
+                return Err(error);
+            }
         }
         Ok(())
     }

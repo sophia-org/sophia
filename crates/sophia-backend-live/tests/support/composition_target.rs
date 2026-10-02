@@ -8,6 +8,9 @@ pub(super) struct Target {
     pub queue: crate::DeferredNativeCompositions,
     pub next: u64,
     pub reject_output: Option<OutputId>,
+    pub preview_failures: BTreeMap<OutputId, crate::LivePreviewFrameFailure>,
+    pub preview_withdraw_ready: bool,
+    pub recovering: BTreeSet<OutputId>,
     frames: BTreeMap<OutputId, OutputFramePresentationState>,
     rendering: BTreeMap<
         OutputId,
@@ -50,6 +53,9 @@ impl Target {
             queue: Default::default(),
             next: 1,
             reject_output: None,
+            preview_failures: BTreeMap::new(),
+            preview_withdraw_ready: true,
+            recovering: BTreeSet::new(),
             frames: outputs
                 .iter()
                 .map(|output| {
@@ -260,7 +266,12 @@ impl NativeCompositionTarget for Target {
         false
     }
     fn required_outputs_ready(&self, outputs: &BTreeSet<OutputId>) -> bool {
-        outputs.iter().all(|output| self.ready(*output))
+        outputs
+            .iter()
+            .all(|output| !self.recovering.contains(output) && self.ready(*output))
+    }
+    fn output_recovering(&self, output: OutputId) -> bool {
+        self.recovering.contains(&output)
     }
     fn queue_retained_batch(
         &mut self,
@@ -268,6 +279,12 @@ impl NativeCompositionTarget for Target {
         required: &BTreeSet<OutputId>,
     ) -> Result<BTreeMap<OutputId, crate::LiveProductionNativeFrameId>, Box<dyn std::error::Error>>
     {
+        assert!(
+            frames
+                .iter()
+                .all(|(output, _)| !self.recovering.contains(output)),
+            "a retained projection must defer recovering outputs before admission"
+        );
         self.queue_scene_batch(
             frames,
             required,
@@ -286,7 +303,15 @@ impl NativeCompositionTarget for Target {
         )
     }
     fn retained_repaint_deferred(&self) -> bool {
-        self.outputs.keys().any(|output| self.protected(*output))
+        !self.recovering.is_empty() || self.outputs.keys().any(|output| self.protected(*output))
+    }
+    fn presented_frame_id(&self, output: OutputId) -> Option<crate::LiveProductionNativeFrameId> {
+        self.custody
+            .get(&output)?
+            .displayed()?
+            .correlation()?
+            .native
+            .map(|identity| crate::LiveProductionNativeFrameId::from_raw(identity.frame()))
     }
     fn presented_frame(&self, output: OutputId) -> Option<&OutputFrameDamageSnapshot> {
         self.frames
@@ -444,5 +469,59 @@ impl Target {
         self.queue
             .admit_batch(prepared, &self.outputs.keys().copied().collect())
             .map_err(|(reason, _owners)| reason.into())
+    }
+}
+
+impl composition_target::PreviewRecoveryTarget for Target {
+    fn preview_frame_failures(&mut self) -> Vec<crate::LivePreviewFrameFailure> {
+        self.preview_failures.values().copied().collect()
+    }
+    fn withdraw_preview_frame(
+        &mut self,
+        failure: crate::LivePreviewFrameFailure,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        assert_eq!(self.preview_failures.get(&failure.output), Some(&failure));
+        if self.preview_withdraw_ready {
+            if self.queue.pending(failure.output) {
+                assert_eq!(self.queue.get(failure.output).unwrap().frame, failure.frame);
+                self.begin_render(failure.output);
+            }
+            self.rendering.remove(&failure.output);
+            self.frames
+                .get_mut(&failure.output)
+                .unwrap()
+                .discard_rendering();
+        }
+        Ok(self.preview_withdraw_ready)
+    }
+    fn queue_preview_present_replacement(
+        &mut self,
+        failure: crate::LivePreviewFrameFailure,
+        _: Option<TransactionId>,
+        batches: Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>,
+    ) -> Result<BTreeMap<OutputId, crate::LiveProductionNativeFrameId>, Box<dyn std::error::Error>>
+    {
+        assert_eq!(self.preview_failures.get(&failure.output), Some(&failure));
+        assert!(self.preview_withdraw_ready);
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].0, failure.output);
+        self.recovering.remove(&failure.output);
+        let result = self.queue_retained_batch(batches, &BTreeSet::from([failure.output]));
+        self.recovering.insert(failure.output);
+        result
+    }
+    fn finish_preview_frame_recovery(
+        &mut self,
+        failure: crate::LivePreviewFrameFailure,
+    ) -> Result<(), &'static str> {
+        assert_eq!(self.preview_failures.remove(&failure.output), Some(failure));
+        self.recovering.remove(&failure.output);
+        Ok(())
+    }
+    fn rollback_renderer_image(
+        &mut self,
+        _: sophia_renderer_live::LiveRendererImageId,
+    ) -> Result<usize, crate::LiveRendererScanoutBufferExportDetail> {
+        panic!("this fixture must retry the Present, never waive it")
     }
 }

@@ -221,6 +221,23 @@ impl LiveProductionMirrorGroupLifecycle {
         true
     }
 
+    /// Withdrawal is legal only before this generation owns a physical submit.
+    /// Keep newest as a tombstone so a newer replacement supersedes late worker
+    /// results. Older submitted work keeps its watchdog until its flip.
+    pub fn withdraw_unsubmitted(&mut self, frame: LiveProductionNativeFrameId) -> bool {
+        if self.failed
+            || self.inflight.values().any(|active| *active == frame)
+            || self.displayed.values().any(|displayed| *displayed == frame)
+            || self.newest != Some(frame)
+        {
+            return false;
+        }
+        if self.inflight.is_empty() {
+            self.active_progress_at = None;
+        }
+        true
+    }
+
     pub fn mark_submitted(
         &mut self,
         head: RenderHeadId,

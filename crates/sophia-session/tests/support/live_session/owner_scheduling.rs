@@ -71,6 +71,7 @@ fn native_frame_progress_preempts_metadata_only_authority_batches() {
         }],
         presentation_queued: false,
         software_frame_waiting: false,
+        preparation_pending: false,
     };
 
     assert!(native_frame_service_requires_owner_progress(&request));
@@ -89,6 +90,7 @@ fn native_frame_progress_preempts_metadata_only_authority_batches() {
         }],
         presentation_queued: false,
         software_frame_waiting: false,
+        preparation_pending: false,
     };
     assert!(!native_frame_service_requires_owner_progress(&idle));
 
@@ -277,6 +279,7 @@ fn native_frame_progress_cannot_consecutively_preempt_authority() {
         }],
         presentation_queued: false,
         software_frame_waiting: false,
+        preparation_pending: false,
     };
 
     assert!(native_frame_service_should_preempt_authority(
@@ -304,6 +307,7 @@ fn native_frame_progress_cannot_consecutively_preempt_authority() {
         }],
         presentation_queued: false,
         software_frame_waiting: false,
+        preparation_pending: false,
     };
     assert!(!native_frame_service_should_preempt_authority(
         &idle, false, false, 0, false
@@ -356,4 +360,15 @@ fn a_pending_pointer_grab_counts_as_a_control_for_both_the_decision_and_the_coun
     // backlog left to earn priority for.
     assert!(control_priority_should_reset(1, 1, true));
     assert!(control_priority_should_reset(0, 1, true));
+}
+
+#[test]
+fn cold_preparation_requests_owner_progress_without_a_fake_pending_frame() {
+    let mut request = OutputFrameServiceRequest {
+        preparation_pending: true,
+        ..Default::default()
+    };
+    assert!(native_frame_service_requires_owner_progress(&request));
+    request.preparation_pending = false;
+    assert!(!native_frame_service_requires_owner_progress(&request));
 }

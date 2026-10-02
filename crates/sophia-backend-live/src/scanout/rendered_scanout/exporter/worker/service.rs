@@ -252,6 +252,15 @@ pub(super) fn run_worker<D>(
                     .map_or(Ok(false), |context| context.evict_renderer_image(image_id));
                 let _ = completion_sender.send(result);
             }
+            WorkerCommand::EvictImports {
+                image_id,
+                completion_sender,
+            } => {
+                let result = context.as_mut().map_or(Ok(false), |context| {
+                    context.evict_renderer_image_imports(image_id)
+                });
+                let _ = completion_sender.send(result);
+            }
             WorkerCommand::Promote {
                 image_id,
                 completion_sender,
@@ -259,6 +268,16 @@ pub(super) fn run_worker<D>(
                 let result = context.as_mut().map_or(Ok(false), |context| {
                     context.promote_renderer_image(image_id)
                 });
+                let _ = completion_sender.send(result);
+            }
+            WorkerCommand::PromoteAndExport {
+                image_id,
+                completion_sender,
+            } => {
+                let result = context.as_mut().map_or_else(
+                    || Ok(sophia_renderer_live::LiveRendererImagePromotion::default()),
+                    |context| context.promote_and_export_renderer_image(image_id),
+                );
                 let _ = completion_sender.send(result);
             }
             WorkerCommand::Rollback {

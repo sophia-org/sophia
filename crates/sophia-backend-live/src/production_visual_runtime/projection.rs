@@ -171,6 +171,9 @@ impl LiveProductionVisualRuntime {
             let Some(output) = self.outputs.output_id(index) else {
                 continue;
             };
+            if let Some(frame) = native_scanout.presented_frame_id(output) {
+                self.settle_shell_retirement_claims(output, frame);
+            }
             if let Some(frame) = native_scanout.presented_frame(output) {
                 self.tab_frames
                     .insert(output, frame.compositor_display_list.clone());

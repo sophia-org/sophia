@@ -7,6 +7,10 @@ impl LiveProductionVisualRuntime {
         outputs: &[sophia_engine::HeadlessOutput],
         native_scanout: Option<&mut LiveProductionNativeScanout>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        let image_reads = native_scanout
+            .as_deref()
+            .map(|native| native.renderer_image_reads())
+            .unwrap_or_default();
         let production = sophia_engine::ProductionSessionCoordinator::new(
             sophia_engine::HeadlessEngine::default(),
         );
@@ -31,6 +35,7 @@ impl LiveProductionVisualRuntime {
             })
             .collect();
         Ok(Self {
+            image_reads,
             native_suspended: false,
             production,
             outputs: output_runtimes,
@@ -57,6 +62,7 @@ impl LiveProductionVisualRuntime {
             ordinary_repaints_pending: BTreeSet::new(),
             content_layout_generation: 1,
             retained_projection_retirements: BTreeMap::new(),
+            queued_shell_retirements: BTreeMap::new(),
             translations: TranslationTimeline::default(),
             translation_origin: Instant::now(),
             translation_deadlines: BTreeMap::new(),

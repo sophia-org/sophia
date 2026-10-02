@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 
 mod first_visibility;
 mod frame_tick;
+mod preview_recovery;
 
 pub use first_visibility::LiveProductionFirstVisibilityReason;
 
@@ -95,6 +96,9 @@ pub struct LiveProductionSubmittedPresent {
     pub surface: sophia_protocol::SurfaceId,
     pub prepared: PreparedSurfaceCommit,
     pub displayed_layer: crate::LiveRetainedRendererImageLayer,
+    pub(crate) recovery_sources: Vec<sophia_renderer_live::LiveOwnedHeadCompositionSource>,
+    pub(crate) recovery_order: Vec<SurfaceId>,
+    pub(crate) image_reads: Vec<sophia_renderer_live::LiveRendererImageRead>,
 }
 
 impl LiveProductionSubmittedPresent {
@@ -119,6 +123,9 @@ impl LiveProductionSubmittedPresent {
             surface,
             prepared,
             displayed_layer,
+            recovery_sources: Vec::new(),
+            recovery_order: Vec::new(),
+            image_reads: Default::default(),
         })
     }
 
@@ -670,6 +677,20 @@ impl LiveProductionPresentScheduler {
             LiveProductionInFlightPresent::Rendering(present)
             | LiveProductionInFlightPresent::Submitted(present) => {
                 Some((present.surface, &present.displayed_layer))
+            }
+        }
+    }
+
+    pub(crate) fn in_flight_recovery_sources(
+        &self,
+    ) -> Option<(
+        &[sophia_renderer_live::LiveOwnedHeadCompositionSource],
+        &[SurfaceId],
+    )> {
+        match self.in_flight.as_ref()? {
+            LiveProductionInFlightPresent::Rendering(present)
+            | LiveProductionInFlightPresent::Submitted(present) => {
+                Some((&present.recovery_sources, &present.recovery_order))
             }
         }
     }

@@ -240,6 +240,7 @@ impl LiveProductionNativeScanout {
             ));
         }
         self.image_import_devices = devices;
+        self.preview_images.invalidate_foreign();
         self.render_devices.generation = generation;
         self.refresh_allocation_devices();
         Ok(())

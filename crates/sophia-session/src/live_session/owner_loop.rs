@@ -152,6 +152,7 @@ fn native_frame_service_requires_owner_progress(request: &OutputFrameServiceRequ
     // lowering.
     request.presentation_queued
         || request.software_frame_waiting
+        || request.preparation_pending
         || request.outputs.iter().any(|output| {
             output.pending_frame || output.native_phase != OutputNativeFramePhase::Idle
         })

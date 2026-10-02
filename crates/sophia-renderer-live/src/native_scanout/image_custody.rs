@@ -13,6 +13,17 @@ where
             .map_err(reduced_native_owned_scanout_buffer_export_detail)
     }
 
+    pub fn evict_renderer_image_imports(
+        &mut self,
+        image: LiveRendererImageId,
+    ) -> Result<bool, LiveRendererScanoutBufferExportDetail> {
+        self.inner
+            .evict_renderer_image_imports(
+                sophia_renderer_native_egl::NativeRendererImageId::from_raw(image.raw()),
+            )
+            .map_err(reduced_native_owned_scanout_buffer_export_detail)
+    }
+
     pub fn promote_renderer_image(
         &mut self,
         image_id: LiveRendererImageId,
@@ -22,6 +33,21 @@ where
                 image_id.raw(),
             ))
             .map_err(reduced_native_owned_scanout_buffer_export_detail)
+    }
+
+    /// One worker visit promotes and, only when requested, exports the same
+    /// immutable image. Export failure cannot undo the completed promotion.
+    pub fn promote_and_export_renderer_image(
+        &mut self,
+        image_id: LiveRendererImageId,
+    ) -> Result<LiveRendererImagePromotion, LiveRendererScanoutBufferExportDetail> {
+        let promoted = self.promote_renderer_image(image_id)?;
+        let snapshot = if promoted {
+            self.export_promoted_renderer_image(image_id)
+        } else {
+            Ok(None)
+        };
+        Ok(LiveRendererImagePromotion { promoted, snapshot })
     }
 
     pub fn export_promoted_renderer_image(

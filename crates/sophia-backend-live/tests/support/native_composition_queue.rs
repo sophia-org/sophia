@@ -123,6 +123,7 @@ fn generation_with_owner(
                         nonzero_rgb_pixels: 0,
                     },
                     frame: crate::LiveOwnedMixedCompositionFrame {
+                        image_reads: Default::default(),
                         layers: vec![LiveOwnedMixedCompositionLayer::Cpu {
                             buffer: LiveSharedCpuBufferSource {
                                 handle: description.resource.id,

@@ -332,6 +332,7 @@ fn pending_rendered_frame_is_a_latest_frame_wins_slot() {
     assert!(exporter.pending_cpu_frame());
 
     exporter.set_pending_mixed_frame(sophia_renderer_live::LiveOwnedMixedCompositionFrame {
+        image_reads: Default::default(),
         layers: Vec::new(),
         output_damage_snapshot: None,
         trace: None,
@@ -399,14 +400,17 @@ fn stable_present_requires_this_transaction_displayed_with_real_pixels() {
     // that a particular one was shown.
     assert!(!live_production_scanout_is_stable_present(
         Some(LiveProductionScanoutContent::RetainedMixed {
- logical_content_checksum: None,
- requires_retirement: false,
+            logical_content_checksum: None,
+            requires_retirement: false,
             frame: sophia_backend_live::LiveProductionNativeFrameId::from_raw(4),
             nonzero_rgb_pixels: 1,
         }),
         transaction,
     ));
-    assert!(!live_production_scanout_is_stable_present(None, transaction));
+    assert!(!live_production_scanout_is_stable_present(
+        None,
+        transaction
+    ));
 }
 
 #[cfg(feature = "gbm-probe")]

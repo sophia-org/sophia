@@ -100,9 +100,8 @@ impl LiveProductionVisualRuntime {
         let output = frame.output;
         let grant = frame.grant;
         if self
-            .retained_projection_retirements
-            .get(&key)
-            .is_some_and(|owner| *owner != grant)
+            .shell_retirement_claims(key)
+            .any(|owner| owner != grant)
         {
             return Err(
                 "shell content candidate found an unreconciled retirement from another grant"
@@ -148,6 +147,21 @@ impl LiveProductionVisualRuntime {
         Ok(true)
     }
 
+    pub(in crate::production_visual_runtime) fn shell_retirement_claims(
+        &self,
+        key: ShellContentKey,
+    ) -> impl Iterator<Item = sophia_protocol::ContentGrant> + '_ {
+        self.retained_projection_retirements
+            .get(&key)
+            .copied()
+            .into_iter()
+            .chain(
+                self.queued_shell_retirements
+                    .values()
+                    .filter_map(move |claims| claims.get(&key).copied()),
+            )
+    }
+
     /// Retires the physical-presentation claims owned by a revoked shell
     /// connection. The caller must revoke that connection first: clearing a
     /// live claim without closing its protocol obligation would strand an
@@ -159,7 +173,14 @@ impl LiveProductionVisualRuntime {
         let before = self.retained_projection_retirements.len();
         self.retained_projection_retirements
             .retain(|_, owner| *owner != grant);
-        before.saturating_sub(self.retained_projection_retirements.len())
+        let mut removed = before.saturating_sub(self.retained_projection_retirements.len());
+        self.queued_shell_retirements.retain(|_, claims| {
+            let before = claims.len();
+            claims.retain(|_, owner| *owner != grant);
+            removed += before - claims.len();
+            !claims.is_empty()
+        });
+        removed
     }
 
     /// Drops content for outputs that no longer exist after a quiescent
@@ -173,6 +194,10 @@ impl LiveProductionVisualRuntime {
             .retained_projection_retirements
             .keys()
             .any(|(output, _)| !outputs.contains(output))
+            || self
+                .queued_shell_retirements
+                .keys()
+                .any(|(output, _)| !outputs.contains(output))
         {
             return Err(
                 "native topology replacement would orphan a shell content retirement claim".into(),

@@ -366,6 +366,13 @@ fn a_bound_software_frame_blocks_publication() {
     runtime.software_present_frames_bound.insert(
         frame,
         software_present::LiveProductionSoftwarePresentBinding {
+            source_set: compositor_graphics::LiveProductionRetainedCompositionSourceSet {
+                _image_reads: Default::default(),
+                committed: Vec::new(),
+                presentation_order: Vec::new(),
+                scene_generation: 1,
+                sources: Vec::new(),
+            },
             frames: BTreeMap::from([(output, frame)]),
             clock_output: output,
             output_cohort: TransactionPresentationCohort::new(

@@ -18,6 +18,10 @@ impl LiveProductionVisualRuntime {
         // Physical submissions have settled. Queued or unframed client
         // presents now lose their candidate layout through the existing skip
         // path, without releasing the buffer still displayed by the CRTC.
+        self.settle_detached_preview_failures(native_scanout.take_detached_preview_failures())?;
+        // Native retirement above has consumed every presented claim. All
+        // remaining frame bindings were discarded by the rollback drain.
+        self.rearm_all_shell_retirement_claims()?;
         self.skip_presentations_for_topology(Some(native_scanout));
         Ok(self.topology_rebind_quiescent())
     }

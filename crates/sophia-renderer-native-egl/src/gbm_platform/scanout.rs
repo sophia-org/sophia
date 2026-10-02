@@ -13,8 +13,10 @@ mod image_transfer_policy;
 mod output_candidates;
 mod output_format;
 use output_format::CompositionFormatAdmission;
+mod snapshot_custody;
 mod types;
 use output_candidates::{RenderedScanoutCandidate, rendered_scanout_candidates};
+pub use snapshot_custody::*;
 
 pub use import_cache::*;
 pub use types::*;

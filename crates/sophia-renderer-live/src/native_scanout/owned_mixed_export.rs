@@ -151,6 +151,13 @@ where
                     image_id: *image_id,
                     placement: *placement,
                 },
+                LiveOwnedMixedCompositionLayer::Snapshot {
+                    snapshot,
+                    placement,
+                } => LiveMixedCompositionLayer::Snapshot {
+                    snapshot,
+                    placement: *placement,
+                },
                 LiveOwnedMixedCompositionLayer::Solid { geometry, color } => {
                     LiveMixedCompositionLayer::Solid {
                         geometry: *geometry,

@@ -479,9 +479,13 @@ fn render_native_target_composition(
             .collect(),
     };
     let repaint_pixels = damage.map_or(u64::from(frame.width) * u64::from(frame.height), |rects| {
-        rects.iter().fold(0u64, |sum, r| sum.saturating_add(
-            u64::try_from(r.width.max(0)).unwrap_or(0)
-                .saturating_mul(u64::try_from(r.height.max(0)).unwrap_or(0))))
+        rects.iter().fold(0u64, |sum, r| {
+            sum.saturating_add(
+                u64::try_from(r.width.max(0))
+                    .unwrap_or(0)
+                    .saturating_mul(u64::try_from(r.height.max(0)).unwrap_or(0)),
+            )
+        })
     });
     let repaint = match damage {
         None => NativeCompositionRepaintOutcome::Full,
@@ -520,64 +524,138 @@ fn render_native_target_composition(
             target.pipeline.begin_composition();
         }
         trace_native_lifecycle("composition_started");
-    for (layer_index, layer) in frame.layers.iter().enumerate() {
-        if draw_result.is_err() {
-            break;
-        }
-        draw_result = match layer {
-            NativeCompositionLayer::Cpu(layer) => {
-                trace_native_lifecycle("composition_cpu_layer_started");
-                let result = target
-                    .pipeline
-                    .draw_cpu_layer(
-                        GlCpuLayer {
-                            width: layer.width,
-                            height: layer.height,
-                            stride: layer.stride,
-                            pixels: layer.pixels,
-                            alpha: layer.alpha,
-                            alpha_mode: if layer.format == 0x3432_5241 {
-                                crate::NativeCompositionAlphaMode::Premultiplied
-                            } else {
-                                crate::NativeCompositionAlphaMode::Opaque
-                            },
-                        },
-                        layer.target.into(),
-                        layer.clip.map(Into::into),
-                        layer.sampling,
-                        frame.trace,
-                    )
-                    .map_err(|_| NativeGbmScanoutBufferExportDetail::CpuLayerUploadFailed);
-                if result.is_ok() {
-                    trace_native_lifecycle("composition_cpu_layer_finished");
-                    if trace_layer_pixels {
-                        trace_composition_pixels(
-                            &target.pipeline,
-                            "cpu",
-                            layer_index,
-                            layer.target,
-                            layer.format,
-                            u64::from(gbm::Modifier::Invalid),
-                            layer.stride,
-                        );
-                    }
-                }
-                result
+        for (layer_index, layer) in frame.layers.iter().enumerate() {
+            if draw_result.is_err() {
+                break;
             }
-            NativeCompositionLayer::DmaBuf(layer) => {
-                trace_native_lifecycle("composition_dmabuf_layer_started");
-                let result = import_cache
-                    .texture(egl, display, &target.pipeline, *layer)
-                    .and_then(|texture| {
+            draw_result = match layer {
+                NativeCompositionLayer::Cpu(layer) => {
+                    trace_native_lifecycle("composition_cpu_layer_started");
+                    let result = target
+                        .pipeline
+                        .draw_cpu_layer(
+                            GlCpuLayer {
+                                width: layer.width,
+                                height: layer.height,
+                                stride: layer.stride,
+                                pixels: layer.pixels,
+                                alpha: layer.alpha,
+                                alpha_mode: if layer.format == 0x3432_5241 {
+                                    crate::NativeCompositionAlphaMode::Premultiplied
+                                } else {
+                                    crate::NativeCompositionAlphaMode::Opaque
+                                },
+                            },
+                            layer.target.into(),
+                            layer.clip.map(Into::into),
+                            layer.sampling,
+                            frame.trace,
+                        )
+                        .map_err(|_| NativeGbmScanoutBufferExportDetail::CpuLayerUploadFailed);
+                    if result.is_ok() {
+                        trace_native_lifecycle("composition_cpu_layer_finished");
+                        if trace_layer_pixels {
+                            trace_composition_pixels(
+                                &target.pipeline,
+                                "cpu",
+                                layer_index,
+                                layer.target,
+                                layer.format,
+                                u64::from(gbm::Modifier::Invalid),
+                                layer.stride,
+                            );
+                        }
+                    }
+                    result
+                }
+                NativeCompositionLayer::DmaBuf(layer) => {
+                    trace_native_lifecycle("composition_dmabuf_layer_started");
+                    let result = import_cache
+                        .texture(egl, display, &target.pipeline, *layer)
+                        .and_then(|texture| {
+                            target
+                                .pipeline
+                                .draw_texture_layer(
+                                    texture,
+                                    (layer.frame.width, layer.frame.height),
+                                    layer.target.into(),
+                                    layer.clip.map(Into::into),
+                                    layer.alpha,
+                                    if layer.frame.format == 0x3432_5241 {
+                                        crate::NativeCompositionAlphaMode::Premultiplied
+                                    } else {
+                                        crate::NativeCompositionAlphaMode::Opaque
+                                    },
+                                    layer.sampling,
+                                    frame.trace,
+                                )
+                                .map_err(|_| {
+                                    NativeGbmScanoutBufferExportDetail::CompositionDrawFailed
+                                })
+                        });
+                    if result.is_ok() {
+                        trace_native_lifecycle("composition_dmabuf_layer_finished");
+                        if trace_layer_pixels {
+                            trace_composition_pixels(
+                                &target.pipeline,
+                                "dmabuf",
+                                layer_index,
+                                layer.target,
+                                layer.frame.format,
+                                layer.frame.modifier,
+                                layer.frame.planes[0].map_or(0, |plane| plane.stride),
+                            );
+                        }
+                    }
+                    result
+                }
+                NativeCompositionLayer::RendererImage(layer) => {
+                    trace_native_lifecycle("composition_renderer_image_layer_started");
+                    let result = (|| {
+                        let image = renderer_images
+                            .get(&layer.image_id)
+                            .ok_or(NativeGbmScanoutBufferExportDetail::InvalidRendererImageId)?;
+                        let plane_count = image.buffer.plane_count();
+                        let plane_offsets = image.buffer.plane_offsets();
+                        let plane_strides = image.buffer.plane_pitches();
+                        let plane_fds = image.buffer.export_plane_fds()?.into_plane_fds();
+                        let planes = std::array::from_fn(|index| {
+                            plane_fds[index].as_ref().map(|fd| NativeDmaBufPlane {
+                                fd: fd.as_fd(),
+                                offset: plane_offsets[index],
+                                stride: plane_strides[index],
+                            })
+                        });
+                        let imported = NativeDmaBufCompositionLayer {
+                            custody: None,
+                            image_id: layer.image_id,
+                            frame: NativeMultiPlaneDmaBufFrame {
+                                width: image.buffer.width(),
+                                height: image.buffer.height(),
+                                format: image.buffer.format(),
+                                modifier: image
+                                    .buffer
+                                    .modifier()
+                                    .unwrap_or(u64::from(gbm::Modifier::Invalid)),
+                                plane_count,
+                                planes,
+                            },
+                            target: layer.target,
+                            clip: layer.clip,
+                            alpha: layer.alpha,
+                            sampling: layer.sampling,
+                        };
+                        let texture =
+                            import_cache.texture(egl, display, &target.pipeline, imported)?;
                         target
                             .pipeline
                             .draw_texture_layer(
                                 texture,
-                                (layer.frame.width, layer.frame.height),
+                                (image.buffer.width(), image.buffer.height()),
                                 layer.target.into(),
                                 layer.clip.map(Into::into),
                                 layer.alpha,
-                                if layer.frame.format == 0x3432_5241 {
+                                if image.buffer.format() == 0x3432_5241 {
                                     crate::NativeCompositionAlphaMode::Premultiplied
                                 } else {
                                     crate::NativeCompositionAlphaMode::Opaque
@@ -585,110 +663,37 @@ fn render_native_target_composition(
                                 layer.sampling,
                                 frame.trace,
                             )
-                                .map_err(|_| {
-                                    NativeGbmScanoutBufferExportDetail::CompositionDrawFailed
-                                })
-                    });
-                if result.is_ok() {
-                    trace_native_lifecycle("composition_dmabuf_layer_finished");
-                    if trace_layer_pixels {
-                        trace_composition_pixels(
-                            &target.pipeline,
-                            "dmabuf",
-                            layer_index,
-                            layer.target,
-                            layer.frame.format,
-                            layer.frame.modifier,
-                            layer.frame.planes[0].map_or(0, |plane| plane.stride),
-                        );
+                            .map_err(|_| NativeGbmScanoutBufferExportDetail::CompositionDrawFailed)
+                    })();
+                    if result.is_ok() {
+                        trace_native_lifecycle("composition_renderer_image_layer_finished");
                     }
+                    result
                 }
-                result
-            }
-            NativeCompositionLayer::RendererImage(layer) => {
-                trace_native_lifecycle("composition_renderer_image_layer_started");
-                let result = (|| {
-                    let image = renderer_images
-                        .get(&layer.image_id)
-                        .ok_or(NativeGbmScanoutBufferExportDetail::InvalidRendererImageId)?;
-                    let plane_count = image.buffer.plane_count();
-                    let plane_offsets = image.buffer.plane_offsets();
-                    let plane_strides = image.buffer.plane_pitches();
-                    let plane_fds = image.buffer.export_plane_fds()?.into_plane_fds();
-                    let planes = std::array::from_fn(|index| {
-                        plane_fds[index].as_ref().map(|fd| NativeDmaBufPlane {
-                            fd: fd.as_fd(),
-                            offset: plane_offsets[index],
-                            stride: plane_strides[index],
-                        })
-                    });
-                    let imported = NativeDmaBufCompositionLayer {
-                        image_id: layer.image_id,
-                        frame: NativeMultiPlaneDmaBufFrame {
-                            width: image.buffer.width(),
-                            height: image.buffer.height(),
-                            format: image.buffer.format(),
-                            modifier: image
-                                .buffer
-                                .modifier()
-                                .unwrap_or(u64::from(gbm::Modifier::Invalid)),
-                            plane_count,
-                            planes,
-                        },
-                        target: layer.target,
-                        clip: layer.clip,
-                        alpha: layer.alpha,
-                        sampling: layer.sampling,
-                    };
-                        let texture =
-                            import_cache.texture(egl, display, &target.pipeline, imported)?;
-                    target
+                NativeCompositionLayer::Solid(layer) => {
+                    trace_native_lifecycle("composition_solid_layer_started");
+                    let result = target
                         .pipeline
-                        .draw_texture_layer(
-                            texture,
-                            (image.buffer.width(), image.buffer.height()),
-                            layer.target.into(),
-                            layer.clip.map(Into::into),
-                            layer.alpha,
-                            if image.buffer.format() == 0x3432_5241 {
-                                crate::NativeCompositionAlphaMode::Premultiplied
-                            } else {
-                                crate::NativeCompositionAlphaMode::Opaque
-                            },
-                            layer.sampling,
-                            frame.trace,
-                        )
-                        .map_err(|_| NativeGbmScanoutBufferExportDetail::CompositionDrawFailed)
-                })();
-                if result.is_ok() {
-                    trace_native_lifecycle("composition_renderer_image_layer_finished");
-                }
-                result
-            }
-            NativeCompositionLayer::Solid(layer) => {
-                trace_native_lifecycle("composition_solid_layer_started");
-                let result = target
-                    .pipeline
-                    .draw_solid_layer(layer.target.into(), layer.color)
-                    .map_err(|_| NativeGbmScanoutBufferExportDetail::CompositionFinishFailed);
-                if result.is_ok() {
-                    trace_native_lifecycle("composition_solid_layer_finished");
-                    if trace_layer_pixels {
-                        trace_composition_pixels(
-                            &target.pipeline,
-                            "solid",
-                            layer_index,
-                            layer.target,
-                            0,
-                            u64::from(gbm::Modifier::Invalid),
-                            0,
-                        );
+                        .draw_solid_layer(layer.target.into(), layer.color)
+                        .map_err(|_| NativeGbmScanoutBufferExportDetail::CompositionFinishFailed);
+                    if result.is_ok() {
+                        trace_native_lifecycle("composition_solid_layer_finished");
+                        if trace_layer_pixels {
+                            trace_composition_pixels(
+                                &target.pipeline,
+                                "solid",
+                                layer_index,
+                                layer.target,
+                                0,
+                                u64::from(gbm::Modifier::Invalid),
+                                0,
+                            );
+                        }
                     }
+                    result
                 }
-                result
-            }
-        };
-    }
+            };
+        }
     }
     // Validation and pixel capture read the whole target, so the confinement
     // ends with the last pass rather than with the render.

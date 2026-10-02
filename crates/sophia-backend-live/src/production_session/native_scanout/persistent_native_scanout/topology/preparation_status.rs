@@ -45,6 +45,11 @@ impl LiveProductionNativeScanout {
     }
 
     fn output_topology_ordinary_quiescence_blocker(&self, rollback: bool) -> Option<&'static str> {
+        // Recovery must settle its exact frames before topology may discard
+        // queued native state. No recovery deadline spans this transaction.
+        if !rollback && !self.preview_failures.is_empty() {
+            return Some("preview_recovery");
+        }
         if self.layout_probe_cleanup_pending() {
             return Some("layout_probe_cleanup");
         }

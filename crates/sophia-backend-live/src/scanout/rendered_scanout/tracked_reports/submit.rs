@@ -11,6 +11,7 @@ pub struct LiveTrackedRenderedPrimaryPlaneScanoutSubmitReport {
     pub target: Option<LiveGbmEglFrameTargetStatus>,
     pub target_size: Option<Size>,
     pub export: Option<LiveRendererScanoutBufferExportStatus>,
+    pub export_detail: Option<LiveRendererScanoutBufferExportDetail>,
     pub scanout_buffer: Option<LiveRendererScanoutBufferStatus>,
     pub buffer_format: Option<LibdrmNativeScanoutBufferFormatDetail>,
     pub buffer_modifier: Option<LibdrmNativeScanoutBufferModifierDetail>,

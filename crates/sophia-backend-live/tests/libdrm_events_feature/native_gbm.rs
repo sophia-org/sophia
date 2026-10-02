@@ -3,6 +3,7 @@
 fn pending_renderer_work_can_be_discarded_only_before_worker_ownership() {
     let mut exporter = NativeGbmRenderedScanoutBufferDiscoveryExporter::new(MissingRenderDevice);
     exporter.set_pending_mixed_frame(sophia_renderer_live::LiveOwnedMixedCompositionFrame {
+        image_reads: Default::default(),
         layers: Vec::new(),
         output_damage_snapshot: None,
         trace: None,
@@ -50,6 +51,13 @@ fn live_runtime_tick_native_gbm_rendered_scanout_fails_closed_when_render_device
             .expect("active scanout submit should be reported")
             .status,
         LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus::ScanoutExportFailed
+    );
+    assert_eq!(
+        tick.rendered_primary_plane_scanout_submit
+            .unwrap()
+            .export_detail,
+        Some(LiveRendererScanoutBufferExportDetail::BackendDeviceUnavailable),
+        "the typed exporter failure must survive preparation, submission and tracking"
     );
     assert_eq!(
         tick.engine.runtime.runtime_state.last_scanout_state,
@@ -463,4 +471,51 @@ fn live_runtime_assembly_fails_rendered_scanout_submit_before_kms_on_export_fail
     assert!(submitted.submission.is_none());
 
     std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn mirror_preview_withdrawal_never_poisons_or_waives_a_submitted_owner() {
+    let output = sophia_protocol::OutputId::from_raw(1);
+    let a = sophia_engine::RenderHeadId::from_raw(1);
+    let b = sophia_engine::RenderHeadId::from_raw(2);
+    let frame = |n| sophia_backend_live::LiveProductionNativeFrameId::from_raw(n);
+    let mut group =
+        sophia_backend_live::LiveProductionMirrorGroupLifecycle::new(output, [a, b]).unwrap();
+    group.mark_initialized(a);
+    group.mark_initialized(b);
+    assert_eq!(
+        group.begin(frame(1)),
+        sophia_backend_live::LiveProductionMirrorGroupBegin::Started
+    );
+    assert!(group.withdraw_unsubmitted(frame(1)));
+    assert!(!group.failed());
+    assert!(group.active_age().is_none());
+    assert_eq!(
+        group.begin(frame(2)),
+        sophia_backend_live::LiveProductionMirrorGroupBegin::Started
+    );
+    group.mark_submitted(a, frame(2));
+    assert!(!group.withdraw_unsubmitted(frame(2)));
+    assert!(!group.withdraw_unsubmitted(frame(1)));
+    assert!(!group.failed());
+    assert!(group.awaiting_flips());
+}
+
+#[test]
+fn withdrawing_a_new_mirror_frame_keeps_the_older_flip_watchdog() {
+    let output = sophia_protocol::OutputId::from_raw(1);
+    let a = sophia_engine::RenderHeadId::from_raw(1);
+    let b = sophia_engine::RenderHeadId::from_raw(2);
+    let frame = |n| sophia_backend_live::LiveProductionNativeFrameId::from_raw(n);
+    let mut group =
+        sophia_backend_live::LiveProductionMirrorGroupLifecycle::new(output, [a, b]).unwrap();
+    group.mark_initialized(a);
+    group.mark_initialized(b);
+    group.begin(frame(1));
+    group.mark_submitted(b, frame(1));
+    group.begin(frame(2));
+    assert!(group.withdraw_unsubmitted(frame(2)));
+    assert!(group.awaiting_flips());
+    assert!(group.active_generation_hard_stalled(std::time::Duration::ZERO));
+    assert!(!group.failed());
 }

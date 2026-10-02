@@ -14,6 +14,22 @@ where
         &mut self,
         image_id: NativeRendererImageId,
     ) -> Result<bool, NativeGbmScanoutBufferExportDetail> {
+        let evicted_import = self.evict_renderer_image_imports(image_id)?;
+        // Drop every EGL import before its compositor-owned GBM backing store.
+        // This ordering keeps cache recovery from observing a dead DMA-BUF.
+        let evicted_image = self.renderer_images.remove(&image_id);
+        if let Some(image) = evicted_image {
+            self.renderer_image_bytes = self.renderer_image_bytes.saturating_sub(image.bytes);
+            self.stats.snapshot_evictions = self.stats.snapshot_evictions.saturating_add(1);
+            self.update_renderer_image_stats();
+            return Ok(true);
+        }
+        Ok(evicted_import)
+    }
+    pub fn evict_renderer_image_imports(
+        &mut self,
+        image_id: NativeRendererImageId,
+    ) -> Result<bool, NativeGbmScanoutBufferExportDetail> {
         let mut evicted_import = self.evict_current_target_import(image_id)?;
         // Every set: an image is device-wide, so an eviction that skipped one
         // output's bundles would leave that head importing a dead DMA-BUF.
@@ -25,15 +41,6 @@ where
                     })
                     .expect("bounded native frame target slot")?;
             }
-        }
-        // Drop every EGL import before its compositor-owned GBM backing store.
-        // This ordering keeps cache recovery from observing a dead DMA-BUF.
-        let evicted_image = self.renderer_images.remove(&image_id);
-        if let Some(image) = evicted_image {
-            self.renderer_image_bytes = self.renderer_image_bytes.saturating_sub(image.bytes);
-            self.stats.snapshot_evictions = self.stats.snapshot_evictions.saturating_add(1);
-            self.update_renderer_image_stats();
-            return Ok(true);
         }
         Ok(evicted_import)
     }
@@ -73,9 +80,7 @@ where
         }
         Ok(evicted_import)
     }
-    pub fn clear_renderer_images(
-        &mut self,
-    ) -> Result<usize, NativeGbmScanoutBufferExportDetail> {
+    pub fn clear_renderer_images(&mut self) -> Result<usize, NativeGbmScanoutBufferExportDetail> {
         let mut cleared_imports = self.clear_current_target_imports()?;
         for set in self.target_sets.keys().copied().collect::<Vec<_>>() {
             for frame_slot in 0..NATIVE_FRAME_TARGET_SLOT_CAPACITY {
@@ -90,10 +95,8 @@ where
         let cleared_images = self.renderer_images.len();
         self.renderer_images.clear();
         self.renderer_image_bytes = 0;
-        self.stats.snapshot_evictions = self
-            .stats
-            .snapshot_evictions
-            .saturating_add(cleared_images);
+        self.stats.snapshot_evictions =
+            self.stats.snapshot_evictions.saturating_add(cleared_images);
         self.update_renderer_image_stats();
         Ok(cleared_imports.max(cleared_images))
     }
@@ -112,11 +115,10 @@ where
                 )
                 .map_err(|_| NativeGbmScanoutBufferExportDetail::EglMakeCurrentFailed)?;
             let live_entries = persistent.import_cache.stats().live_entries;
-            let result = persistent.import_cache.clear(
-                &self.egl,
-                self.display,
-                &persistent.target.pipeline,
-            );
+            let result =
+                persistent
+                    .import_cache
+                    .clear(&self.egl, self.display, &persistent.target.pipeline);
             let _ = self.egl.make_current(self.display, None, None, None);
             if result.is_err()
                 && let Some(persistent) = self.composition_target.take()
@@ -160,13 +162,11 @@ where
         let pitches = image.buffer.plane_pitches();
         let offsets = image.buffer.plane_offsets();
         let planes = std::array::from_fn(|index| {
-            plane_fds[index]
-                .take()
-                .map(|fd| NativeOwnedDmaBufPlane {
-                    fd,
-                    offset: offsets[index],
-                    stride: pitches[index],
-                })
+            plane_fds[index].take().map(|fd| NativeOwnedDmaBufPlane {
+                fd,
+                offset: offsets[index],
+                stride: pitches[index],
+            })
         });
         if planes[..usize::from(image.buffer.plane_count())]
             .iter()
@@ -185,6 +185,8 @@ where
                 .unwrap_or(u64::from(gbm::Modifier::Invalid)),
             plane_count: image.buffer.plane_count(),
             planes,
+            charge: None,
+            epoch: None,
         }))
     }
     pub fn restore_promoted_renderer_image(

@@ -1030,3 +1030,60 @@ fn the_client_output_ending_keeps_its_cause_and_its_numbers() {
         "sophia_x11_client_output schema=1 status=ended client=7"
     );
 }
+
+#[test]
+#[cfg(feature = "native-session")]
+fn preview_recovery_failures_keep_compiler_owned_codes_without_image_text() {
+    use sophia_backend_live::LivePreviewImageRefusal as R;
+    use sophia_renderer_live::{LiveRendererImageId, LiveRendererScanoutBufferExportDetail as D};
+    use sophia_session::diagnostics::failure_code;
+    let image = LiveRendererImageId::from_raw(987654321);
+    for (error, expected) in [
+        (R::Pending { image }, "preview_image_pending"),
+        (R::Missing { image }, "preview_image_missing"),
+        (R::CrossDevice { image }, "preview_image_cross_device"),
+        (
+            R::Renderer {
+                image,
+                detail: D::InvalidRendererImageId,
+            },
+            "renderer_invalid_renderer_image_id",
+        ),
+        (
+            R::Renderer {
+                image,
+                detail: D::WorkerStalled,
+            },
+            "renderer_worker_stalled",
+        ),
+        (
+            R::Renderer {
+                image,
+                detail: D::EglContextUnavailable,
+            },
+            "renderer_egl_context_unavailable",
+        ),
+    ] {
+        assert_eq!(failure_code(&error), expected);
+        assert!(!error.to_string().contains("987654321"));
+        let record = format!(
+            "sophia_session_failure schema=1 status=failed phase=lifecycle failure_code={expected} error={error:?}"
+        );
+        let reduced = reduced_record(&record).unwrap();
+        assert!(reduced.contains(&format!("failure_code={expected}")));
+        assert!(!reduced.contains("987654321"));
+    }
+    for message in [
+        "preview recovery already owns this output",
+        "preview replacement does not own the withdrawn output",
+        "preview recovery could not transfer its unsubmitted frame mapping",
+        "preview recovery lost its exact failure owner",
+        "preview recovery found a conflicting shell retirement claim",
+        "preview recovery display list invalid",
+    ] {
+        let error: Box<dyn std::error::Error> = message.into();
+        assert_eq!(failure_code(error.as_ref()), "preview_recovery_invariant");
+    }
+    let private = std::io::Error::other("preview recovery /private/client-title");
+    assert_eq!(failure_code(&private), "unclassified");
+}

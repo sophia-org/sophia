@@ -1,3 +1,4 @@
+mod preview_custody;
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 mod shutdown;
 mod worker_export;
@@ -518,11 +519,7 @@ where
             || matches!(self.worker.as_ref(), Some(worker) if worker.in_flight())
     }
 
-    /// Discards work that has not crossed into the renderer worker.
-    ///
-    /// An in-flight command must still be polled so its resulting lease can be
-    /// released. Returning false makes that ownership distinction explicit to
-    /// topology-abort code.
+    /// Discard queued work only; an in-flight worker still owns its frame.
     pub fn discard_pending_frame(&mut self) -> bool {
         self.invalidate_layout_probe();
         if self.worker_in_flight() {

@@ -51,7 +51,11 @@ pub use render_devices::{
 #[cfg(test)]
 #[path = "../../../tests/support/output_topology_readback.rs"]
 mod output_topology_readback_tests;
+mod preview_custody;
+mod preview_recovery;
+pub use preview_recovery::LivePreviewFrameFailure;
 mod renderer_handoff;
+pub use preview_custody::LivePreviewImageRefusal;
 mod renderer_images;
 mod shutdown;
 mod state;
@@ -134,6 +138,8 @@ pub struct LiveProductionNativeScanout {
     /// Seat-admitted render nodes retained for this native owner's lifetime.
     image_import_devices: Vec<std::fs::File>,
     render_devices: render_devices::LiveRenderDeviceState,
+    preview_images: preview_custody::PreviewImages,
+    preview_failures: BTreeMap<OutputId, LivePreviewFrameFailure>,
     /// Primary presentation and last-head ownership for mirror generations.
     output_lifecycles: BTreeMap<OutputId, LiveProductionMirrorGroupLifecycle>,
     /// Engine-owned prepare/submit/flip barrier for the active generation
@@ -438,6 +444,7 @@ fn mirror_tracked_prepare_report(
         target: prepare.target,
         target_size: Some(size),
         export: prepare.export,
+        export_detail: prepare.export_detail,
         scanout_buffer: prepare.scanout_buffer,
         buffer_format: prepare.buffer_format,
         buffer_modifier: prepare.buffer_modifier,
@@ -474,6 +481,7 @@ fn mirror_tracked_submit_report(
         target: result.target,
         target_size: Some(size),
         export: result.export,
+        export_detail: result.export_detail,
         scanout_buffer: result.scanout_buffer,
         buffer_format: result.buffer_format,
         buffer_modifier: result.buffer_modifier,
@@ -623,3 +631,7 @@ fn trace_live_native_lifecycle(stage: &str) {
         tracing::info!("sophia_live_native_lifecycle schema=1 stage={stage}");
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/support/preview_inventory.rs"]
+mod preview_inventory_tests;

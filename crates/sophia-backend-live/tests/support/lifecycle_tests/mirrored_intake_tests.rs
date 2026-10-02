@@ -281,10 +281,17 @@ fn settled_mirror_requires_every_current_head_and_never_just_equal_pixels() {
 // Replay real lowered owners at the ordinary-repaint adapter boundary. The
 // capture does not publish or settle the originating shell candidate.
 fn take_lowered(
+    runtime: &mut LiveProductionVisualRuntime,
     target: &mut MirroredTarget,
     output: OutputId,
 ) -> Vec<crate::LiveProductionHeadCompositionFrame> {
     let generation = target.queue.take_ready(output, None, None, None).unwrap();
+    // This probe removes the accepted frame before rendering it. Return its
+    // exact claim, just as a non-presenting withdrawal must, before capturing
+    // the next candidate for the ordinary-repaint comparison.
+    runtime
+        .rearm_shell_retirement_claims(output, generation.frame)
+        .unwrap();
     generation
         .heads
         .into_iter()
@@ -335,7 +342,7 @@ fn deferred_ordinary_change_back_is_not_suppressed_by_displayed_pixels() {
             Some(&mut target),
         )
         .unwrap();
-    let original = take_lowered(&mut target, output.id);
+    let original = take_lowered(&mut runtime, &mut target, output.id);
     let original_checksum = original[0].logical_content_checksum;
     for index in &target.outputs[&output.id] {
         assert_eq!(
@@ -349,7 +356,7 @@ fn deferred_ordinary_change_back_is_not_suppressed_by_displayed_pixels() {
     runtime
         .set_shell_content_on_target(changed, &scene, Some(&mut target))
         .unwrap();
-    let changed = take_lowered(&mut target, output.id);
+    let changed = take_lowered(&mut runtime, &mut target, output.id);
     assert_ne!(changed[0].logical_content_checksum, original_checksum);
     target
         .queue_retained_batch(vec![(output.id, changed)], &BTreeSet::new())

@@ -211,6 +211,22 @@ impl LiveProductionVisualRuntime {
         &mut self,
         outputs: &[sophia_engine::HeadlessOutput],
     ) -> Result<LiveProductionNativeSuspendReport, Box<dyn std::error::Error>> {
+        // No native owner can be consulted after forced revocation. Its old
+        // failure records die with it; all retained sources are discarded by
+        // the caller, so revoke any presentation that samples those sources.
+        let sources = self
+            .policy_presentation
+            .as_ref()
+            .map(|p| {
+                p.presentation
+                    .instances
+                    .iter()
+                    .map(|instance| instance.source)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        self.revoke_policy_presentation_for_removed(&sources);
+        self.retained_projection_pending = true;
         self.detach_native_scanout(
             None,
             outputs,
@@ -288,7 +304,7 @@ impl LiveProductionVisualRuntime {
 
     fn detach_native_scanout(
         &mut self,
-        native_scanout: Option<&mut LiveProductionNativeScanout>,
+        mut native_scanout: Option<&mut LiveProductionNativeScanout>,
         _outputs: &[sophia_engine::HeadlessOutput],
         outcome: LiveProductionNativeSuspendOutcome,
     ) -> Result<LiveProductionNativeSuspendReport, Box<dyn std::error::Error>> {
@@ -298,11 +314,17 @@ impl LiveProductionVisualRuntime {
                 .as_deref()
                 .map_or(0, LiveProductionNativeScanout::head_scanout_in_flight_count),
         );
+        if let Some(native) = native_scanout.as_deref_mut() {
+            self.settle_detached_preview_failures(native.take_detached_preview_failures())?;
+        }
         let skipped_present = self.skip_in_flight_present(native_scanout, |runtime| {
             runtime.native_suspend_present_rejections =
                 runtime.native_suspend_present_rejections.saturating_add(1);
         });
         self.reject_software_presents();
+        // Detached native frames cannot issue first-presentation receipts.
+        // Keep only their exact unsatisfied claims for the resumed topology.
+        self.rearm_all_shell_retirement_claims()?;
         let invalidation_epoch = self
             .input_projections
             .iter()
@@ -358,6 +380,7 @@ impl LiveProductionVisualRuntime {
         scene: &LiveProductionCpuScene,
         renderer_handoff: Option<&LiveProductionRendererImageHandoff>,
     ) -> Result<usize, Box<dyn std::error::Error>> {
+        native_scanout.use_renderer_image_reads(self.image_reads.clone())?;
         self.validate_native_retirement_disposition()?;
         let retained = self.retained_renderer_image_ids();
         validate_renderer_image_resume_admission(
@@ -433,6 +456,7 @@ impl LiveProductionVisualRuntime {
             && self.software_present_frames_waiting.is_empty()
             && self.software_present_frames_bound.is_empty()
             && self.software_presents_unframed.is_empty()
+            && self.queued_shell_retirements.is_empty()
     }
 
     /// Every unmet clause, not just the first.
@@ -480,6 +504,9 @@ impl LiveProductionVisualRuntime {
         }
         if !self.software_presents_unframed.is_empty() {
             blockers.push("software_present_unframed");
+        }
+        if !self.queued_shell_retirements.is_empty() {
+            blockers.push("shell_retirement_bound");
         }
         if blockers.is_empty() {
             return "none".to_owned();
@@ -547,6 +574,9 @@ impl LiveProductionVisualRuntime {
         self.outputs = next;
         self.ordinary_repaints_pending.clear();
         self.input_projections = input_projections;
+        // Topology first frames intentionally omit the tier; re-present it
+        // after the topology barrier without waiting for another input event.
+        self.retained_projection_pending |= self.policy_presentation.is_some();
         Ok(())
     }
 
@@ -672,6 +702,10 @@ impl LiveProductionVisualRuntime {
             &mut output.runtime,
             compositor_tick_input(&layer_templates, 0, Vec::new(), None),
         )?;
+        check_frame_service_report(
+            &report,
+            native_scanout.has_preview_frame_failure(selected_output),
+        )?;
         use crate::LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus as Status;
         match report
             .rendered_primary_plane_scanout_submit
@@ -699,6 +733,16 @@ impl LiveProductionVisualRuntime {
             Some(Status::ScanoutExportPending) | None => {}
             Some(Status::AlreadyInFlight | Status::CleanupPending) => {}
             Some(status) => {
+                if status == Status::ScanoutExportFailed
+                    && let Some(detail) = report
+                        .rendered_primary_plane_scanout_submit
+                        .and_then(|submit| submit.export_detail)
+                {
+                    if native_scanout.has_preview_frame_failure(selected_output) {
+                        return Ok(report);
+                    }
+                    return Err(detail.into());
+                }
                 return Err(format!(
                     "Present output cohort failed while servicing output {}: submit_status={status:?}",
                     selected_output.raw()
@@ -785,6 +829,7 @@ impl LiveProductionVisualRuntime {
             native_scanout.retire_ready_and_retry_cleanup(selected_output, &mut output.runtime)?;
         }
         if let Some(retirement) = native_scanout.take_presentation_feedback(selected_output) {
+            self.settle_shell_retirement_claims(selected_output, retirement.frame);
             // Any retirement on this output means a successor flip has taken
             // the plane, so a client buffer displayed directly before it is no
             // longer being scanned and may be idled. Done here rather than in
@@ -846,5 +891,48 @@ impl LiveProductionVisualRuntime {
 
     pub fn native_diagnostic(&self) -> String {
         self.outputs.diagnostic()
+    }
+}
+
+/// Every output tick can drive an older retained or software frame, including
+/// outputs outside the newly admitted GPU Present cohort.
+pub(super) fn check_frame_service_report(
+    report: &crate::LiveBackendRuntimeTickReport,
+    recovering: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let Some(submit) = report.rendered_primary_plane_scanout_submit else {
+        return Ok(());
+    };
+    check_frame_service_submission(submit.status, submit.export_detail, recovering)
+}
+
+pub(super) fn check_frame_service_submission(
+    status: crate::LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus,
+    detail: Option<crate::LiveRendererScanoutBufferExportDetail>,
+    recovering: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use crate::LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus as S;
+    match status {
+        S::SubmittedWaitingForPageFlip
+        | S::ScanoutExportPending
+        | S::AlreadyInFlight
+        | S::CleanupPending => Ok(()),
+        S::ScanoutExportFailed
+            if recovering
+                && matches!(
+                    detail,
+                    Some(
+                        crate::LiveRendererScanoutBufferExportDetail::InvalidRendererImageId
+                            | crate::LiveRendererScanoutBufferExportDetail::RendererImageStoreFull
+                    )
+                ) =>
+        {
+            Ok(())
+        }
+        S::ScanoutExportFailed if detail.is_some() => Err(detail.unwrap().into()),
+        S::ScanoutExportFailed => Err("native frame service export failed without detail".into()),
+        S::ScanoutTargetNotReady => Err("native frame service target not ready".into()),
+        S::FrameTargetUnavailable => Err("native frame service frame target unavailable".into()),
+        S::PrimaryPlaneSubmitFailed => Err("native frame service plane submit failed".into()),
     }
 }

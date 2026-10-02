@@ -316,6 +316,7 @@ impl LiveProductionVisualRuntime {
             outputs,
             presentation_queued,
             software_frame_waiting: software_frame_waiting.is_some(),
+            preparation_pending: native_scanout.cold_preparation_ready(),
         })
     }
 
@@ -329,6 +330,12 @@ impl LiveProductionVisualRuntime {
         native_scanout.pump_native_completions()?;
         // Optional evidence owns resources even when no frame is pending.
         native_scanout.service_layout_probe_cleanup();
+        native_scanout.service_renderer_image_evictions()?;
+        self.recover_policy_preview_frames(scene, native_scanout)?;
+        // Cold migration has one quota per native service pass. WM publication
+        // installation may prepare hot previews separately, never cold copies.
+        native_scanout.prepare_retained_images()?;
+        self.prepare_policy_preview_images(native_scanout)?;
         if self.retained_projection_pending {
             self.queue_retained_projection(scene, native_scanout)?;
         }
@@ -355,6 +362,7 @@ impl LiveProductionVisualRuntime {
                         self.retire_native_scanout_output(native_scanout, output)?
                     {
                         retired_present = Some(retired);
+                        self.service_ordinary_repaints(scene, native_scanout)?;
                     }
                 }
                 OutputFrameServiceEffect::SubmitQueuedPresentation { output } => {

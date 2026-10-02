@@ -82,6 +82,7 @@ fn frame() -> (LiveOwnedMixedCompositionFrame, UnixStream) {
     peer.set_nonblocking(true).unwrap();
     (
         LiveOwnedMixedCompositionFrame {
+            image_reads: Default::default(),
             trace: Some(LiveCompositionTrace {
                 output: OutputId::from_raw(1),
                 head: RenderHeadId::from_raw(2),

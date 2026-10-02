@@ -22,43 +22,46 @@ fn proven_direct_frame() -> sophia_renderer_live::LiveOwnedMixedCompositionFrame
         .expect("test plane descriptor")
         .into();
     sophia_renderer_live::LiveOwnedMixedCompositionFrame {
+        image_reads: Default::default(),
         trace: Some(sophia_renderer_live::LiveCompositionTrace {
             output: OutputId::from_raw(1),
             head: sophia_engine::RenderHeadId::from_raw(1),
             scene_generation: 91,
         }),
-        layers: vec![sophia_renderer_live::LiveOwnedMixedCompositionLayer::DmaBuf {
-            image_id: sophia_renderer_live::LiveRendererImageId::from_raw(11),
-            frame: sophia_renderer_live::LiveOwnedMultiPlaneDmaBufFrame {
-                width: 640,
-                height: 480,
-                format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
-                modifier: 0,
-                plane_count: 1,
-                planes: [
-                    Some(sophia_renderer_live::LiveOwnedDmaBufPlane {
-                        fd,
-                        offset: 0,
-                        stride: 2_560,
-                    }),
-                    None,
-                    None,
-                    None,
-                ],
-            },
-            placement: sophia_renderer_live::LiveCompositionPlacement {
-                target: Rect {
-                    x: 0,
-                    y: 0,
+        layers: vec![
+            sophia_renderer_live::LiveOwnedMixedCompositionLayer::DmaBuf {
+                image_id: sophia_renderer_live::LiveRendererImageId::from_raw(11),
+                frame: sophia_renderer_live::LiveOwnedMultiPlaneDmaBufFrame {
                     width: 640,
                     height: 480,
+                    format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+                    modifier: 0,
+                    plane_count: 1,
+                    planes: [
+                        Some(sophia_renderer_live::LiveOwnedDmaBufPlane {
+                            fd,
+                            offset: 0,
+                            stride: 2_560,
+                        }),
+                        None,
+                        None,
+                        None,
+                    ],
                 },
-                clip: None,
-                transform: sophia_protocol::Transform::IDENTITY,
-                alpha: 1.0,
-                sampling: sophia_engine::HeadSamplingClass::Exact,
+                placement: sophia_renderer_live::LiveCompositionPlacement {
+                    target: Rect {
+                        x: 0,
+                        y: 0,
+                        width: 640,
+                        height: 480,
+                    },
+                    clip: None,
+                    transform: sophia_protocol::Transform::IDENTITY,
+                    alpha: 1.0,
+                    sampling: sophia_engine::HeadSamplingClass::Exact,
+                },
             },
-        }],
+        ],
         output_damage_snapshot: None,
         direct_scanout: sophia_engine::DirectScanoutVerdict::Eligible,
     }
@@ -73,9 +76,8 @@ fn a_disabled_exporter_never_derives_a_direct_candidate() {
     assert!(!exporter.direct_scanout_enabled());
     exporter.set_pending_mixed_frame(proven_direct_frame());
 
-    let export = exporter.export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(
-        direct_scanout_head(),
-    ));
+    let export = exporter
+        .export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(direct_scanout_head()));
 
     assert_eq!(exporter.direct_scanout_attempts(), 0);
     assert!(export.owner.is_none());
@@ -89,15 +91,16 @@ fn a_proven_frame_exports_the_clients_buffer_and_keeps_its_composed_form() {
     exporter.set_direct_scanout_enabled(true);
     exporter.set_pending_mixed_frame(proven_direct_frame());
 
-    let export = exporter.export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(
-        direct_scanout_head(),
-    ));
+    let export = exporter
+        .export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(direct_scanout_head()));
 
     assert_eq!(
         export.status,
         LiveRendererScanoutBufferExportStatus::Exported
     );
-    let owner = export.owner.expect("a direct export owns the client buffer");
+    let owner = export
+        .owner
+        .expect("a direct export owns the client buffer");
     assert!(owner.is_direct_client_buffer());
     // A client's buffer was allocated against the client's device, so it takes
     // the PRIME transport rather than a handle only the renderer's file knows.
@@ -127,9 +130,8 @@ fn a_refused_direct_attempt_re_offers_the_same_content_for_composition() {
     let mut exporter = NativeGbmRenderedScanoutBufferDiscoveryExporter::new(MissingRenderDevice);
     exporter.set_direct_scanout_enabled(true);
     exporter.set_pending_mixed_frame(proven_direct_frame());
-    let _ = exporter.export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(
-        direct_scanout_head(),
-    ));
+    let _ = exporter
+        .export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(direct_scanout_head()));
     assert!(!exporter.pending_frame());
 
     assert!(LiveRenderedScanoutBufferExporter::fall_back_from_direct(
@@ -141,9 +143,8 @@ fn a_refused_direct_attempt_re_offers_the_same_content_for_composition() {
     // refusal from becoming a loop. `PresentFlipOwnership.tla`, `CommitRefused`.
     assert!(exporter.pending_mixed_frame());
     assert_eq!(exporter.direct_scanout_fallbacks(), 1);
-    let second = exporter.export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(
-        direct_scanout_head(),
-    ));
+    let second = exporter
+        .export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(direct_scanout_head()));
     assert_eq!(exporter.direct_scanout_attempts(), 1);
     assert!(second.owner.is_none());
     assert!(!exporter.direct_scanout_outstanding());
@@ -160,9 +161,8 @@ fn committing_a_direct_flip_drops_the_composed_form_and_counts_the_flip() {
     let mut exporter = NativeGbmRenderedScanoutBufferDiscoveryExporter::new(MissingRenderDevice);
     exporter.set_direct_scanout_enabled(true);
     exporter.set_pending_mixed_frame(proven_direct_frame());
-    let _ = exporter.export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(
-        direct_scanout_head(),
-    ));
+    let _ = exporter
+        .export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(direct_scanout_head()));
 
     assert_eq!(exporter.direct_scanout_flips(), 0);
     LiveRenderedScanoutBufferExporter::commit_direct_scanout(&mut exporter);
@@ -219,9 +219,8 @@ fn a_refused_validating_commit_ends_the_episode_and_is_counted() {
     let mut exporter = NativeGbmRenderedScanoutBufferDiscoveryExporter::new(MissingRenderDevice);
     exporter.set_direct_scanout_enabled(true);
     exporter.set_pending_mixed_frame(proven_direct_frame());
-    let _ = exporter.export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(
-        direct_scanout_head(),
-    ));
+    let _ = exporter
+        .export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(direct_scanout_head()));
 
     LiveRenderedScanoutBufferExporter::record_direct_scanout_test(&mut exporter, false);
 
@@ -242,9 +241,8 @@ fn losing_the_direct_path_ends_any_episode_in_progress() {
     let mut exporter = NativeGbmRenderedScanoutBufferDiscoveryExporter::new(MissingRenderDevice);
     exporter.set_direct_scanout_enabled(true);
     exporter.set_pending_mixed_frame(proven_direct_frame());
-    let _ = exporter.export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(
-        direct_scanout_head(),
-    ));
+    let _ = exporter
+        .export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(direct_scanout_head()));
     LiveRenderedScanoutBufferExporter::record_direct_scanout_test(&mut exporter, true);
     assert!(!LiveRenderedScanoutBufferExporter::direct_scanout_test_required(&exporter));
 
@@ -263,9 +261,8 @@ fn a_structurally_ineligible_frame_falls_through_to_composition_without_a_second
     let mut exporter = NativeGbmRenderedScanoutBufferDiscoveryExporter::new(MissingRenderDevice);
     exporter.set_direct_scanout_enabled(true);
     let mut frame = proven_direct_frame();
-    frame
-        .layers
-        .push(sophia_renderer_live::LiveOwnedMixedCompositionLayer::Solid {
+    frame.layers.push(
+        sophia_renderer_live::LiveOwnedMixedCompositionLayer::Solid {
             geometry: Rect {
                 x: 0,
                 y: 0,
@@ -277,19 +274,19 @@ fn a_structurally_ineligible_frame_falls_through_to_composition_without_a_second
                 green: 0,
                 blue: 0,
             },
-        });
+        },
+    );
     exporter.set_pending_mixed_frame(frame);
 
-    let export = exporter.export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(
-        direct_scanout_head(),
-    ));
+    let export = exporter
+        .export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(direct_scanout_head()));
 
     assert_eq!(exporter.direct_scanout_attempts(), 1);
     assert_eq!(exporter.direct_scanout_refusals(), 1);
     assert_eq!(
-        exporter.last_direct_scanout_refusal().map(
-            sophia_renderer_live::LiveDirectScanoutRefusal::reduced_name
-        ),
+        exporter
+            .last_direct_scanout_refusal()
+            .map(sophia_renderer_live::LiveDirectScanoutRefusal::reduced_name),
         Some("layer_count")
     );
     assert!(export.owner.is_none());
@@ -297,9 +294,8 @@ fn a_structurally_ineligible_frame_falls_through_to_composition_without_a_second
 
     // Re-offered without its proof: a second pass makes no second attempt.
     exporter.set_direct_scanout_enabled(true);
-    let _ = exporter.export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(
-        direct_scanout_head(),
-    ));
+    let _ = exporter
+        .export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(direct_scanout_head()));
     assert_eq!(exporter.direct_scanout_attempts(), 1);
 }
 
@@ -313,9 +309,8 @@ fn every_step_of_an_episode_names_the_scene_it_belongs_to() {
     let mut exporter = NativeGbmRenderedScanoutBufferDiscoveryExporter::new(MissingRenderDevice);
     exporter.set_direct_scanout_enabled(true);
     exporter.set_pending_mixed_frame(proven_direct_frame());
-    let _ = exporter.export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(
-        direct_scanout_head(),
-    ));
+    let _ = exporter
+        .export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(direct_scanout_head()));
 
     assert_eq!(exporter.outstanding_direct_scene_generation(), Some(91));
     LiveRenderedScanoutBufferExporter::record_direct_scanout_test(&mut exporter, true);
@@ -511,9 +506,8 @@ fn a_geometry_refusal_says_what_it_measured() {
     let mut exporter = NativeGbmRenderedScanoutBufferDiscoveryExporter::new(MissingRenderDevice);
     exporter.set_direct_scanout_enabled(true);
     // A target must have been seen, because the head's size comes from it.
-    let _ = exporter.export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(
-        direct_scanout_head(),
-    ));
+    let _ = exporter
+        .export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(direct_scanout_head()));
 
     let mut frame = proven_direct_frame();
     frame.direct_scanout = sophia_engine::DirectScanoutVerdict::LayerNotHeadSized;
@@ -555,18 +549,20 @@ fn an_exporter_composes_until_direct_scanout_is_admitted() {
     // handed to the plane.
     let mut exporter = NativeGbmRenderedScanoutBufferDiscoveryExporter::new(MissingRenderDevice);
     exporter.set_pending_mixed_frame(proven_direct_frame());
-    let _ = exporter.export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(
-        direct_scanout_head(),
-    ));
+    let _ = exporter
+        .export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(direct_scanout_head()));
     assert_eq!(exporter.direct_scanout_attempts(), 0);
     assert!(!exporter.direct_scanout_outstanding());
 
     // Admitted, the same frame is offered to the plane.
     exporter.set_direct_scanout_enabled(true);
     exporter.set_pending_mixed_frame(proven_direct_frame());
-    let export = exporter.export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(
-        direct_scanout_head(),
-    ));
+    let export = exporter
+        .export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(direct_scanout_head()));
     assert_eq!(exporter.direct_scanout_attempts(), 1);
-    assert!(export.owner.is_some_and(|owner| owner.is_direct_client_buffer()));
+    assert!(
+        export
+            .owner
+            .is_some_and(|owner| owner.is_direct_client_buffer())
+    );
 }

@@ -9,6 +9,9 @@ pub(crate) trait NativeCompositionTarget {
     fn head_targets(&self, output: OutputId) -> Vec<HeadRenderTarget>;
     fn has_in_flight_direct(&self) -> bool;
     fn required_outputs_ready(&self, outputs: &BTreeSet<OutputId>) -> bool;
+    fn output_recovering(&self, _output: OutputId) -> bool {
+        false
+    }
     fn queue_retained_batch(
         &mut self,
         frames: Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>,
@@ -18,7 +21,19 @@ pub(crate) trait NativeCompositionTarget {
         &mut self,
         frames: Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>,
     ) -> Result<BTreeMap<OutputId, crate::LiveProductionNativeFrameId>, Box<dyn std::error::Error>>;
+    fn software_outputs_ready(&self, outputs: &BTreeSet<OutputId>) -> bool {
+        self.required_outputs_ready(outputs)
+    }
+    fn queue_software_batch(
+        &mut self,
+        frames: Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>,
+    ) -> Result<BTreeMap<OutputId, crate::LiveProductionNativeFrameId>, Box<dyn std::error::Error>>
+    {
+        let required = frames.iter().map(|(output, _)| *output).collect();
+        self.queue_retained_batch(frames, &required)
+    }
     fn retained_repaint_deferred(&self) -> bool;
+    fn presented_frame_id(&self, output: OutputId) -> Option<crate::LiveProductionNativeFrameId>;
     fn presented_frame(&self, output: OutputId) -> Option<&OutputFrameDamageSnapshot>;
     /// The frame each of this output's heads last retired, one entry per
     /// head, primary first. A mirror head that has retired nothing yet is
@@ -47,6 +62,9 @@ impl NativeCompositionTarget for LiveProductionNativeScanout {
     fn required_outputs_ready(&self, outputs: &BTreeSet<OutputId>) -> bool {
         self.retained_retirements_ready(outputs)
     }
+    fn output_recovering(&self, output: OutputId) -> bool {
+        self.has_preview_frame_failure(output)
+    }
     fn queue_retained_batch(
         &mut self,
         frames: Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>,
@@ -62,13 +80,82 @@ impl NativeCompositionTarget for LiveProductionNativeScanout {
     {
         self.queue_ordinary_head_composition_batch(frames)
     }
+    fn software_outputs_ready(&self, outputs: &BTreeSet<OutputId>) -> bool {
+        outputs.iter().all(|output| self.frame_queue_ready(*output))
+    }
+    fn queue_software_batch(
+        &mut self,
+        frames: Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>,
+    ) -> Result<BTreeMap<OutputId, crate::LiveProductionNativeFrameId>, Box<dyn std::error::Error>>
+    {
+        self.queue_software_present_output_head_composition_frames(frames)
+    }
     fn retained_repaint_deferred(&self) -> bool {
         LiveProductionNativeScanout::retained_repaint_deferred(self)
+    }
+    fn presented_frame_id(&self, output: OutputId) -> Option<crate::LiveProductionNativeFrameId> {
+        self.presented_frame(output)
     }
     fn presented_frame(&self, output: OutputId) -> Option<&OutputFrameDamageSnapshot> {
         self.presented_output_frame(output)
     }
     fn presented_head_frames(&self, output: OutputId) -> Vec<Option<&OutputFrameDamageSnapshot>> {
         self.presented_output_head_frames(output)
+    }
+}
+
+/// The native failure/drain boundary. Runtime retries retain the production
+/// lowering and scheduler; tests substitute only worker and KMS observations.
+pub(crate) trait PreviewRecoveryTarget: NativeCompositionTarget {
+    fn preview_frame_failures(&mut self) -> Vec<crate::LivePreviewFrameFailure>;
+    fn withdraw_preview_frame(
+        &mut self,
+        failure: crate::LivePreviewFrameFailure,
+    ) -> Result<bool, Box<dyn std::error::Error>>;
+    fn queue_preview_present_replacement(
+        &mut self,
+        failure: crate::LivePreviewFrameFailure,
+        transaction: Option<TransactionId>,
+        batches: Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>,
+    ) -> Result<BTreeMap<OutputId, crate::LiveProductionNativeFrameId>, Box<dyn std::error::Error>>;
+    fn finish_preview_frame_recovery(
+        &mut self,
+        failure: crate::LivePreviewFrameFailure,
+    ) -> Result<(), &'static str>;
+    fn rollback_renderer_image(
+        &mut self,
+        image: sophia_renderer_live::LiveRendererImageId,
+    ) -> Result<usize, crate::LiveRendererScanoutBufferExportDetail>;
+}
+impl PreviewRecoveryTarget for LiveProductionNativeScanout {
+    fn preview_frame_failures(&mut self) -> Vec<crate::LivePreviewFrameFailure> {
+        self.preview_frame_failures()
+    }
+    fn withdraw_preview_frame(
+        &mut self,
+        failure: crate::LivePreviewFrameFailure,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        self.withdraw_preview_frame(failure)
+    }
+    fn queue_preview_present_replacement(
+        &mut self,
+        failure: crate::LivePreviewFrameFailure,
+        transaction: Option<TransactionId>,
+        batches: Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>,
+    ) -> Result<BTreeMap<OutputId, crate::LiveProductionNativeFrameId>, Box<dyn std::error::Error>>
+    {
+        self.queue_preview_present_replacement(failure, transaction, batches)
+    }
+    fn finish_preview_frame_recovery(
+        &mut self,
+        failure: crate::LivePreviewFrameFailure,
+    ) -> Result<(), &'static str> {
+        self.finish_preview_frame_recovery(failure)
+    }
+    fn rollback_renderer_image(
+        &mut self,
+        image: sophia_renderer_live::LiveRendererImageId,
+    ) -> Result<usize, crate::LiveRendererScanoutBufferExportDetail> {
+        self.rollback_renderer_image(image)
     }
 }

@@ -297,6 +297,7 @@ impl LiveProductionNativeScanout {
                     .export_promoted_renderer_image(image_id)?
                     .is_some()
                 {
+                    self.record_image_owner(target_index, image_id);
                     continue;
                 }
                 if self.exporters[target_index].promote_renderer_image(image_id)?
@@ -304,6 +305,7 @@ impl LiveProductionNativeScanout {
                         .export_promoted_renderer_image(image_id)?
                         .is_some()
                 {
+                    self.record_image_owner(target_index, image_id);
                     continue;
                 }
 
@@ -338,6 +340,7 @@ impl LiveProductionNativeScanout {
                     )
                     .into());
                 }
+                self.record_image_owner(target_index, image_id);
                 tracing::info!(
                     "sophia_live_output_topology schema=1 status=renderer_image_replicated head={} image={} kms_submits=0",
                     head.raw(),

@@ -280,3 +280,109 @@ fn a_present_and_its_renderer_image_name_each_other() {
 
 #[path = "../../../tests/support/live_presentation_regressions.rs"]
 mod live_presentation_regressions;
+
+#[test]
+fn failed_preview_rearms_only_its_exact_unsatisfied_shell_claims() {
+    let a = OutputId::from_raw(1);
+    let b = OutputId::from_raw(2);
+    let outputs = [a, b].map(|id| HeadlessOutput {
+        id,
+        size: Size {
+            width: 640,
+            height: 480,
+        },
+        scale: 1,
+    });
+    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    let failed = LiveProductionNativeFrameId::from_raw(10);
+    let successful = LiveProductionNativeFrameId::from_raw(11);
+    let replacement = LiveProductionNativeFrameId::from_raw(12);
+    let grant = sophia_protocol::ContentGrant {
+        connection_epoch: 7,
+        content_grant_epoch: 9,
+    };
+    let old = sophia_protocol::ContentGrant {
+        connection_epoch: 5,
+        content_grant_epoch: 6,
+    };
+    let ka = (a, LiveShellContentLayer::Shell);
+    let kb = (b, LiveShellContentLayer::Shell);
+    runtime
+        .retained_projection_retirements
+        .extend([(ka, grant), (kb, old)]);
+    assert!(runtime.topology_rebind_quiescent());
+    runtime.bind_shell_retirement_claims(&BTreeMap::from([(a, failed), (b, successful)]));
+    assert!(
+        !runtime.topology_rebind_quiescent(),
+        "topology cannot discard a bound shell receipt"
+    );
+    assert!(runtime.retained_projection_retirements.is_empty());
+    runtime.settle_shell_retirement_claims(b, successful);
+    runtime
+        .rearm_shell_retirement_claims(a, successful)
+        .unwrap();
+    runtime
+        .rearm_shell_retirement_claims(b, successful)
+        .unwrap();
+    assert!(runtime.retained_projection_retirements.is_empty());
+    runtime.rearm_shell_retirement_claims(a, failed).unwrap();
+    assert_eq!(
+        runtime.retained_projection_retirements,
+        BTreeMap::from([(ka, grant)])
+    );
+    runtime.bind_shell_retirement_claims(&BTreeMap::from([(a, replacement)]));
+    runtime.settle_shell_retirement_claims(a, replacement);
+    runtime.rearm_shell_retirement_claims(a, failed).unwrap();
+    runtime
+        .rearm_shell_retirement_claims(a, replacement)
+        .unwrap();
+    assert!(runtime.retained_projection_retirements.is_empty());
+    assert!(runtime.queued_shell_retirements.is_empty());
+    assert!(runtime.topology_rebind_quiescent());
+    // Revocation terminates queued claims too, without borrowing a new grant.
+    runtime.retained_projection_retirements.insert(ka, grant);
+    runtime.bind_shell_retirement_claims(&BTreeMap::from([(a, failed)]));
+    assert_eq!(runtime.revoke_shell_content_retirement_claims(old), 0);
+    assert_eq!(runtime.revoke_shell_content_retirement_claims(grant), 1);
+    runtime.rearm_shell_retirement_claims(a, failed).unwrap();
+    assert!(runtime.retained_projection_retirements.is_empty());
+}
+
+#[test]
+fn rollback_rearms_all_discarded_claims_after_settling_presented_frames() {
+    let a = OutputId::from_raw(1);
+    let b = OutputId::from_raw(2);
+    let outputs = [a, b].map(|id| HeadlessOutput {
+        id,
+        size: Size {
+            width: 64,
+            height: 64,
+        },
+        scale: 1,
+    });
+    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    let grant = sophia_protocol::ContentGrant {
+        connection_epoch: 7,
+        content_grant_epoch: 9,
+    };
+    let fa = LiveProductionNativeFrameId::from_raw(10);
+    let fb = LiveProductionNativeFrameId::from_raw(11);
+    let ka = (a, LiveShellContentLayer::Shell);
+    let kb = (b, LiveShellContentLayer::Shell);
+    runtime
+        .retained_projection_retirements
+        .extend([(ka, grant), (kb, grant)]);
+    runtime.bind_shell_retirement_claims(&BTreeMap::from([(a, fa), (b, fb)]));
+    runtime.retained_projection_pending = false;
+    // Native drain already delivered A's exact receipt. B never submitted,
+    // was discarded, and had no preview failure record.
+    runtime.settle_shell_retirement_claims(a, fa);
+    runtime.rearm_all_shell_retirement_claims().unwrap();
+    assert!(runtime.queued_shell_retirements.is_empty());
+    assert_eq!(
+        runtime.retained_projection_retirements,
+        BTreeMap::from([(kb, grant)])
+    );
+    assert!(runtime.retained_projection_pending);
+    assert!(runtime.topology_rebind_quiescent());
+}

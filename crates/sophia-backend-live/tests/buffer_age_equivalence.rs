@@ -208,6 +208,7 @@ fn frame_for(generations: [u64; 3]) -> LiveOwnedMixedCompositionFrame {
         });
     }
     LiveOwnedMixedCompositionFrame {
+        image_reads: Default::default(),
         layers,
         output_damage_snapshot: Some(snapshot(generations)),
         trace: None,
@@ -466,6 +467,7 @@ fn journal_sequence(node: &std::path::Path, damage_enabled: bool) -> Run {
             )
             .unwrap();
         let frame = LiveOwnedMixedCompositionFrame {
+            image_reads: Default::default(),
             layers: vec![LiveOwnedMixedCompositionLayer::Cpu {
                 buffer: LiveSharedCpuBufferSource {
                     handle: 1,

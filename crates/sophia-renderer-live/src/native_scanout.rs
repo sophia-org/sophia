@@ -13,8 +13,18 @@ pub use sophia_renderer_native_egl::{
     NativeCompositionOutputRequest as LiveCompositionOutputRequest,
 };
 
+mod image_reads;
+pub use image_reads::{LiveRendererImageRead, LiveRendererImageReads};
+
 mod renderer_images;
-pub use renderer_images::LiveRendererImageSnapshot;
+pub use renderer_images::{
+    LiveRendererImagePromotion, LiveRendererImageSnapshot, LiveRendererSnapshotWeak,
+    LiveRetainedRendererImageSnapshot,
+};
+pub use sophia_renderer_native_egl::{
+    NativeRendererSnapshotBudget as LiveRendererSnapshotBudget,
+    NativeRendererSnapshotEpoch as LiveRendererSnapshotEpoch,
+};
 
 #[derive(Debug)]
 pub struct NativeGbmOwnedScanoutBuffer {
@@ -208,6 +218,10 @@ pub enum LiveMixedCompositionLayer<'a> {
         image_id: LiveRendererImageId,
         placement: LiveCompositionPlacement,
     },
+    Snapshot {
+        snapshot: &'a LiveRetainedRendererImageSnapshot,
+        placement: LiveCompositionPlacement,
+    },
     Solid {
         geometry: Rect,
         color: CompositorRgb8,
@@ -231,6 +245,10 @@ pub enum LiveOwnedMixedCompositionLayer {
         format: u32,
         placement: LiveCompositionPlacement,
     },
+    Snapshot {
+        snapshot: LiveRetainedRendererImageSnapshot,
+        placement: LiveCompositionPlacement,
+    },
     Solid {
         geometry: Rect,
         color: CompositorRgb8,
@@ -239,6 +257,8 @@ pub enum LiveOwnedMixedCompositionLayer {
 
 #[derive(Debug, Default)]
 pub struct LiveOwnedMixedCompositionFrame {
+    /// Store-backed sources remain live through worker completion.
+    pub image_reads: Box<[LiveRendererImageRead]>,
     pub layers: Vec<LiveOwnedMixedCompositionLayer>,
     pub output_damage_snapshot: Option<sophia_engine::OutputFrameDamageSnapshot>,
     pub trace: Option<LiveCompositionTrace>,

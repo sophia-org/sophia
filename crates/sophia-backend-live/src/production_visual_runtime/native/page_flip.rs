@@ -60,11 +60,32 @@ impl LiveProductionVisualRuntime {
         // renderer never saw it. Demanding a snapshot here failed the first
         // frame that ever reached a plane directly -- after it had already
         // been displayed, which made a working flip look like a lost one.
-        if !retirement.direct && native_scanout.promote_renderer_image(image)? == 0 {
-            return Err(format!(
-                "retired Present lost its staged renderer snapshot: transaction={} surface={} image={} output={} frame={}",
-                transaction.raw(), surface.index(), image.raw(), output.raw(), retirement.frame.raw(),
-            ).into());
+        if !retirement.direct {
+            let capturing_outputs = self
+                .outputs
+                .logical_viewports()
+                .map(|(output, _)| output)
+                .filter(|output| self.present_scheduler.in_flight_frame(*output).is_some())
+                .collect();
+            let (promoted, preview) = native_scanout.promote_renderer_image_for_previews(
+                image,
+                Some(surface),
+                &capturing_outputs,
+                &self.instance_outputs(surface),
+            )?;
+            if promoted == 0 {
+                return Err(format!(
+                    "retired Present lost its staged renderer snapshot: transaction={} surface={} image={} output={} frame={}",
+                    transaction.raw(), surface.index(), image.raw(), output.raw(), retirement.frame.raw(),
+                ).into());
+            }
+            if let Err(refusal) = preview {
+                // The physical flip already happened. A preview refusal may
+                // revoke a publication, never undo this client's retirement.
+                if !self.handle_preview_refusal(&refusal) {
+                    return Err(refusal.into());
+                }
+            }
         }
         let submitted = self
             .present_scheduler
@@ -76,7 +97,7 @@ impl LiveProductionVisualRuntime {
             .ok_or("joined native retirement retained no physical presentation clock")?;
         let ust = clock.ust;
         let msc = clock.msc;
-        let outputs = submitted.frames().map(|(output, _)| output).collect();
+        let outputs: Vec<_> = submitted.frames().map(|(output, _)| output).collect();
         let direct = retirement.direct;
         // Read before the settlement consumes the prepared commit: if the
         // Engine refuses the candidate, this and the current generation are
@@ -173,6 +194,13 @@ impl LiveProductionVisualRuntime {
         if let Some(replaced) = replaced {
             native_scanout.evict_renderer_image(replaced.layer.image_id)?;
         }
+        // Preview-only outputs have no part in this Present's completion or
+        // MSC clock. Each carries one coalesced repaint of the newest source.
+        self.ordinary_repaints_pending.extend(
+            self.instance_outputs(submitted.surface)
+                .into_iter()
+                .filter(|output| !outputs.contains(output)),
+        );
         Ok(Some(LiveProductionRetiredPresent {
             candidate: submitted.candidate,
             transaction: submitted.transaction,

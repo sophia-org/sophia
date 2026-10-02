@@ -121,6 +121,7 @@ fn dropping_a_full_queue_facade_and_core_does_not_wait_for_a_stalled_worker() {
         })
         .unwrap();
     let core = std::sync::Arc::new(super::NativeGbmRendererWorkerCore {
+        image_store: super::NEXT_IMAGE_STORE.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         command_sender: commands,
         _thread: std::sync::Mutex::new(thread),
         control,
@@ -176,6 +177,7 @@ fn inventory_test_core(
         })
         .unwrap();
     let core = std::sync::Arc::new(super::NativeGbmRendererWorkerCore {
+        image_store: super::NEXT_IMAGE_STORE.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         command_sender: commands,
         _thread: std::sync::Mutex::new(thread),
         control: std::sync::Arc::new(super::WorkerControl::default()),
@@ -257,7 +259,9 @@ fn inventory_replacement_allows_one_pending_exact_generation() {
 fn explicit_core_shutdown_survives_full_wakeup_and_reports_only_joined_completion() {
     let (core, receive, resume) = inventory_test_core(1);
     assert!(core.poll_shutdown().is_err());
-    core.command_sender.try_send(WorkerCommand::Shutdown).unwrap();
+    core.command_sender
+        .try_send(WorkerCommand::Shutdown)
+        .unwrap();
     core.request_shutdown();
     assert!(core.control.is_shutdown());
     assert!(!core.poll_shutdown().unwrap());
@@ -375,6 +379,7 @@ fn missing_device_exporter()
         })
         .unwrap();
     let core = std::sync::Arc::new(super::NativeGbmRendererWorkerCore {
+        image_store: super::NEXT_IMAGE_STORE.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         command_sender: commands,
         _thread: std::sync::Mutex::new(thread),
         control,

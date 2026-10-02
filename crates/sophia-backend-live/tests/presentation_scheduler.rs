@@ -1349,3 +1349,66 @@ fn drain_runnable_transactions_leaves_layout_deferred() {
     );
     assert!(!scheduler.has_queued());
 }
+
+#[test]
+fn preview_recovery_replaces_only_unsubmitted_frames_without_changing_the_clock() {
+    for retired_first in [false, true] {
+        let transaction = TransactionId::from_raw(991);
+        let surface = SurfaceId::new(881, 1);
+        let a = OutputId::from_raw(3);
+        let b = OutputId::from_raw(9);
+        let mut scheduler = LiveProductionPresentScheduler::default();
+        scheduler.mark_rendering(in_flight_present_for_outputs(transaction, surface, [a, b]));
+        let old_a = scheduler.in_flight_frame(a).unwrap();
+        let old_b = scheduler.in_flight_frame(b).unwrap();
+        scheduler.mark_output_submitted(a).unwrap();
+        let clock = LiveProductionPageFlipRetirement {
+            output: a,
+            ust: 900,
+            msc: 1113395,
+        };
+        if retired_first {
+            assert_eq!(scheduler.mark_output_retired(clock).unwrap(), None);
+        }
+        let replacement = LiveProductionNativeFrameId::from_raw(100);
+        assert!(!scheduler.replace_unsubmitted_frame(a, old_a, replacement));
+        assert!(!scheduler.replace_unsubmitted_frame(b, old_a, replacement));
+        assert!(!scheduler.replace_unsubmitted_frame(b, old_b, old_b));
+        assert!(scheduler.replace_unsubmitted_frame(b, old_b, replacement));
+        assert_eq!(scheduler.submitted_frame(a), Some(old_a));
+        assert_eq!(scheduler.unsubmitted_frame(b), Some(replacement));
+        assert!(
+            !scheduler.owns_frame(b, old_b),
+            "withdrawn id can never settle the transaction"
+        );
+        assert!(scheduler.owns_frame(b, replacement));
+        assert_eq!(
+            scheduler.mark_output_submitted(b).unwrap(),
+            Some(transaction)
+        );
+        assert!(!scheduler.replace_unsubmitted_frame(
+            b,
+            replacement,
+            LiveProductionNativeFrameId::from_raw(101)
+        ));
+        if !retired_first {
+            assert_eq!(scheduler.mark_output_retired(clock).unwrap(), None);
+        }
+        assert!(
+            scheduler
+                .mark_output_retired(LiveProductionPageFlipRetirement {
+                    output: b,
+                    ust: 1200,
+                    msc: 4202,
+                })
+                .unwrap()
+                .is_some()
+        );
+        let submitted = scheduler.take_submitted().unwrap();
+        assert_eq!(submitted.presentation_clock(), Some(clock));
+        assert_eq!(
+            submitted.frames().collect::<Vec<_>>(),
+            vec![(a, old_a), (b, replacement)]
+        );
+    }
+}

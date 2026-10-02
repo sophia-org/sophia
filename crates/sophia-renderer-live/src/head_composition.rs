@@ -351,6 +351,7 @@ pub fn lower_head_composition_plan_with_caches(
     }
     let direct_scanout = lowered_direct_scanout(plan, &layers);
     Ok(LiveOwnedMixedCompositionFrame {
+        image_reads: Default::default(),
         layers,
         output_damage_snapshot: Some(output_damage_snapshot),
         trace: Some(LiveCompositionTrace {

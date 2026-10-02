@@ -153,75 +153,7 @@ impl LiveProductionHeadCompositionContent {
     }
 }
 
-fn project_owned_mixed_frame(
-    frame: &crate::LiveOwnedMixedCompositionFrame,
-    source: sophia_protocol::Size,
-    destination: sophia_engine::HeadlessOutput,
-    fit: sophia_protocol::OutputHeadMapping,
-) -> Result<crate::LiveOwnedMixedCompositionFrame, Box<dyn std::error::Error>> {
-    if source.width <= 0 || source.height <= 0 {
-        return Err("mirror mixed-frame source size is invalid".into());
-    }
-    let target = crate::project_mirror_rect(source, destination.size, fit);
-    if target.width <= 0 || target.height <= 0 {
-        return Err("mirror mixed-frame projection is empty".into());
-    }
-    let mut projected = crate::try_clone_mixed_frame(frame)?;
-    for layer in &mut projected.layers {
-        match layer {
-            sophia_renderer_live::LiveOwnedMixedCompositionLayer::Cpu { placement, .. }
-            | sophia_renderer_live::LiveOwnedMixedCompositionLayer::DmaBuf { placement, .. }
-            | sophia_renderer_live::LiveOwnedMixedCompositionLayer::RendererImage {
-                placement,
-                ..
-            } => {
-                placement.target =
-                    crate::project_mirror_child_rect(placement.target, source, target);
-                placement.clip = placement
-                    .clip
-                    .map(|clip| crate::project_mirror_child_rect(clip, source, target));
-            }
-            sophia_renderer_live::LiveOwnedMixedCompositionLayer::Solid { geometry, .. } => {
-                *geometry = crate::project_mirror_child_rect(*geometry, source, target);
-            }
-        }
-    }
-    projected.output_damage_snapshot = frame
-        .output_damage_snapshot
-        .as_ref()
-        .map(|snapshot| project_mirror_output_damage_snapshot(snapshot, source, destination, fit))
-        .transpose()?;
-    Ok(projected)
-}
-
 impl LiveProductionNativeScanout {
-    fn mirror_mixed_transaction_frame(
-        &self,
-        output: OutputId,
-        transaction: TransactionId,
-    ) -> Option<LiveProductionNativeFrameId> {
-        self.head_indices(output)
-            .into_iter()
-            .find_map(|head_index| {
-                let head = &self.heads[head_index];
-                [
-                    head.pending_content,
-                    head.rendering_content,
-                    head.submitted_content,
-                ]
-                .into_iter()
-                .flatten()
-                .find_map(|content| match content {
-                    LiveProductionScanoutContent::MixedPresent {
-                        frame,
-                        transaction: owned,
-                        ..
-                    } if owned == transaction => Some(frame),
-                    _ => None,
-                })
-            })
-    }
-
     fn mirror_generation_content(
         &self,
         output: OutputId,
@@ -269,6 +201,9 @@ impl LiveProductionNativeScanout {
         generation: LiveProductionQueuedMirrorGeneration,
     ) -> Result<(), &'static str> {
         let output = generation.output;
+        if self.has_preview_frame_failure(output) {
+            return Err("preview recovery owns this output");
+        }
         let frame = generation.frame;
         let Some(lifecycle) = self.output_lifecycles.get(&output) else {
             self.deferred_mirror_generations
@@ -333,6 +268,9 @@ impl LiveProductionNativeScanout {
         &mut self,
         output: OutputId,
     ) -> Result<bool, &'static str> {
+        if self.has_preview_frame_failure(output) {
+            return Ok(false);
+        }
         if !self.deferred_mirror_generations.pending(output) {
             return Ok(false);
         }
@@ -535,7 +473,7 @@ impl LiveProductionNativeScanout {
             || self.installed_retirement_protected(output)
     }
 
-    fn installed_retirement_protected(&self, output: OutputId) -> bool {
+    pub(super) fn installed_retirement_protected(&self, output: OutputId) -> bool {
         self.head_indices(output).iter().any(|index| {
             let head = &self.heads[*index];
             [
@@ -550,9 +488,11 @@ impl LiveProductionNativeScanout {
     }
 
     pub(crate) fn retained_repaint_deferred(&self) -> bool {
-        self.logical_outputs
-            .iter()
-            .any(|output| self.output_retirement_protected(output.id))
+        !self.preview_failures.is_empty()
+            || self
+                .logical_outputs
+                .iter()
+                .any(|output| self.output_retirement_protected(output.id))
     }
 
     /// Queues one immutable software-Present cohort on every applicable
@@ -617,10 +557,13 @@ impl LiveProductionNativeScanout {
         };
         let admitted =
             self.prepare_and_admit_head_batch(vec![(output, frames)], &BTreeSet::new(), content)?;
-        Ok(admitted[&output])
+        admitted
+            .get(&output)
+            .copied()
+            .ok_or_else(|| "single output composition was deferred".into())
     }
 
-    fn validate_head_composition_frames(
+    pub(super) fn validate_head_composition_frames(
         &self,
         output: OutputId,
         frames: &[LiveProductionHeadCompositionFrame],
@@ -659,6 +602,21 @@ impl LiveProductionNativeScanout {
         &mut self,
         image_id: sophia_renderer_live::LiveRendererImageId,
     ) -> Result<usize, crate::LiveRendererScanoutBufferExportDetail> {
+        if !self.preview_images.reads.request_eviction(image_id) {
+            return Ok(0);
+        }
+        let keys = self
+            .preview_images
+            .snapshots
+            .keys()
+            .copied()
+            .filter(|(image, _)| *image == image_id)
+            .collect::<Vec<_>>();
+        for key in keys {
+            self.preview_images.retire_snapshot(key);
+        }
+        self.preview_images.owners.remove(&image_id);
+        self.preview_images.cold_misses.remove(&image_id);
         let mut evicted = 0usize;
         for exporter in self.exporters.iter_mut() {
             evicted = evicted.saturating_add(usize::from(exporter.evict_renderer_image(image_id)?));
@@ -670,12 +628,8 @@ impl LiveProductionNativeScanout {
         &mut self,
         image_id: sophia_renderer_live::LiveRendererImageId,
     ) -> Result<usize, crate::LiveRendererScanoutBufferExportDetail> {
-        let mut promoted = 0usize;
-        for exporter in self.exporters.iter_mut() {
-            promoted =
-                promoted.saturating_add(usize::from(exporter.promote_renderer_image(image_id)?));
-        }
-        Ok(promoted)
+        self.promote_renderer_image_for_previews(image_id, None, &BTreeSet::new(), &BTreeSet::new())
+            .map(|(promoted, _)| promoted)
     }
 
     pub fn rollback_renderer_image(
@@ -707,6 +661,7 @@ impl LiveProductionNativeScanout {
     pub fn clear_renderer_images(
         &mut self,
     ) -> Result<usize, crate::LiveRendererScanoutBufferExportDetail> {
+        self.preview_images.invalidate();
         let mut evicted = 0usize;
         for exporter in self.exporters.iter_mut() {
             evicted = evicted.saturating_add(exporter.clear_renderer_images()?);

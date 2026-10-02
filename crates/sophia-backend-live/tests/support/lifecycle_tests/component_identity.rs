@@ -372,3 +372,53 @@ fn separate_component_layers_keep_both_real_sources_on_one_output() {
     );
     assert!(runtime.retained_projection_retirements.is_empty());
 }
+
+#[test]
+fn a_bound_shell_claim_refuses_a_new_grant_before_recovery_can_conflict() {
+    let outputs = outputs();
+    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    let scene = LiveProductionCpuScene::new(outputs[0].size);
+    let mut target = Target::new(&outputs);
+    let old = grant();
+    let new = ContentGrant {
+        connection_epoch: old.connection_epoch + 1,
+        content_grant_epoch: old.content_grant_epoch + 1,
+    };
+    let mut stores = [old, new].map(|grant| {
+        sophia_runtime::ContentResourceStore::new(ContentLimits::prototype(grant)).unwrap()
+    });
+    for (index, grant) in [old, new].into_iter().enumerate() {
+        let frame = shell_frame(
+            outputs[0],
+            1,
+            upload(
+                &mut stores[index],
+                grant,
+                ContentResourceId {
+                    id: 1,
+                    generation: 1,
+                },
+            ),
+        );
+        let result = runtime.set_shell_content_on_target(frame, &scene, Some(&mut target));
+        if index == 0 {
+            assert!(result.is_ok());
+            assert!(runtime.retained_projection_retirements.is_empty());
+            assert_eq!(runtime.queued_shell_retirements.len(), 1);
+        } else {
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "shell content candidate found an unreconciled retirement from another grant"
+            );
+        }
+    }
+    let key = (outputs[0].id, LiveShellContentLayer::Shell);
+    assert_eq!(runtime.shell_content[&key].frame.grant, old);
+    let frame = runtime.queued_shell_retirements.keys().next().unwrap().1;
+    runtime
+        .rearm_shell_retirement_claims(outputs[0].id, frame)
+        .unwrap();
+    assert_eq!(runtime.retained_projection_retirements[&key], old);
+    target.drain();
+    target.teardown();
+}

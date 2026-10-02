@@ -12,6 +12,7 @@ pub(super) struct LiveProductionSoftwarePresentFrame {
 }
 
 pub(super) struct LiveProductionSoftwarePresentBinding {
+    pub source_set: compositor_graphics::LiveProductionRetainedCompositionSourceSet,
     pub frames: BTreeMap<OutputId, LiveProductionNativeFrameId>,
     pub clock_output: OutputId,
     pub output_cohort: sophia_engine::TransactionPresentationCohort,
@@ -100,12 +101,15 @@ impl LiveProductionVisualRuntime {
         Ok(())
     }
 
-    pub(super) fn stage_software_present_frame(
+    pub(super) fn stage_software_present_frame<T: NativeCompositionTarget>(
         &mut self,
-        native_scanout: &mut LiveProductionNativeScanout,
+        native_scanout: &mut T,
         output: OutputId,
     ) -> Result<bool, Box<dyn std::error::Error>> {
-        if native_scanout.primary_head_index(output).is_none() {
+        if self.native_publication_blocked() {
+            return Ok(false);
+        }
+        if native_scanout.head_targets(output).is_empty() {
             return Err("software Present targeted an unknown native output".into());
         }
         let required_outputs = self
@@ -113,10 +117,7 @@ impl LiveProductionVisualRuntime {
             .logical_viewports()
             .map(|(output, _)| output)
             .collect::<Vec<_>>();
-        if required_outputs
-            .iter()
-            .any(|output| !native_scanout.frame_queue_ready(*output))
-        {
+        if !native_scanout.software_outputs_ready(&required_outputs.iter().copied().collect()) {
             return Ok(false);
         }
         let Some(waiting) = self.software_present_frames_waiting.front() else {
@@ -139,8 +140,7 @@ impl LiveProductionVisualRuntime {
         if !output_cohort.is_required(output) {
             return Err("software Present cohort omitted its selected clock output".into());
         }
-        let frames =
-            native_scanout.queue_software_present_output_head_composition_frames(batches)?;
+        let frames = native_scanout.queue_software_batch(batches)?;
         let root = frames
             .values()
             .next()
@@ -155,16 +155,18 @@ impl LiveProductionVisualRuntime {
         // Keep the frame in the waiting queue through every fallible staging
         // operation. If native queueing fails, shutdown must still find its
         // submissions and release their SurfaceContentStream ownership.
-        let waiting = self
+        let mut waiting = self
             .software_present_frames_waiting
             .pop_front()
             .expect("software Present frame front retained through staging");
+        waiting.source_set._image_reads = self.image_reads_for_sources(&waiting.source_set.sources);
         for frame in frames.values() {
             self.software_present_frame_owners.insert(*frame, root);
         }
         let replaced = self.software_present_frames_bound.insert(
             root,
             LiveProductionSoftwarePresentBinding {
+                source_set: waiting.source_set,
                 frames,
                 clock_output: output,
                 output_cohort,

@@ -705,3 +705,6 @@ fn a_hidden_first_present_is_released_when_the_presentation_withdraws() {
     let (_, captured) = scene.compose_present().unwrap();
     assert!(captured, "and its next composition captures it");
 }
+
+#[path = "preview_recovery.rs"]
+mod preview_recovery;

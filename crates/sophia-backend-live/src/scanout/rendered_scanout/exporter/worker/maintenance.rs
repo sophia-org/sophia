@@ -16,6 +16,16 @@ impl NativeGbmRendererWorker {
         })
     }
 
+    pub fn evict_renderer_image_imports(
+        &self,
+        image_id: LiveRendererImageId,
+    ) -> Result<bool, LiveRendererScanoutBufferExportDetail> {
+        self.renderer_image_transition(|completion_sender| WorkerCommand::EvictImports {
+            image_id,
+            completion_sender,
+        })
+    }
+
     pub fn promote_renderer_image(
         &self,
         image_id: LiveRendererImageId,
@@ -24,6 +34,26 @@ impl NativeGbmRendererWorker {
             image_id,
             completion_sender,
         })
+    }
+
+    pub fn promote_and_export_renderer_image(
+        &self,
+        image_id: LiveRendererImageId,
+    ) -> Result<
+        sophia_renderer_live::LiveRendererImagePromotion,
+        LiveRendererScanoutBufferExportDetail,
+    > {
+        let (completion_sender, completion_receiver) = sync_channel(1);
+        self.core
+            .command_sender
+            .try_send(WorkerCommand::PromoteAndExport {
+                image_id,
+                completion_sender,
+            })
+            .map_err(reduce_worker_command_send_error)?;
+        completion_receiver
+            .recv_timeout(WORKER_MAINTENANCE_TIMEOUT)
+            .map_err(reduce_worker_maintenance_receive_error)?
     }
 
     pub fn rollback_renderer_image(

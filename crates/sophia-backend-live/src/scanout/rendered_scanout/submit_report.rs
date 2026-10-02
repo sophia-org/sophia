@@ -9,6 +9,7 @@ pub struct LiveRenderedPrimaryPlaneScanoutSubmitResult<Owner> {
     pub scanout_target: LiveKmsScanoutTargetStatus,
     pub target: Option<LiveGbmEglFrameTargetStatus>,
     pub export: Option<LiveRendererScanoutBufferExportStatus>,
+    pub export_detail: Option<LiveRendererScanoutBufferExportDetail>,
     pub scanout_buffer: Option<LiveRendererScanoutBufferStatus>,
     pub buffer_format: Option<LibdrmNativeScanoutBufferFormatDetail>,
     pub buffer_modifier: Option<LibdrmNativeScanoutBufferModifierDetail>,

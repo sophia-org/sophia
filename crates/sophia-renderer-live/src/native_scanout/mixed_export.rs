@@ -83,6 +83,7 @@ where
                     });
                     Ok(sophia_renderer_native_egl::NativeCompositionLayer::DmaBuf(
                         sophia_renderer_native_egl::NativeDmaBufCompositionLayer {
+                            custody: None,
                             image_id: sophia_renderer_native_egl::NativeRendererImageId::from_raw(
                                 image_id.raw(),
                             ),
@@ -123,6 +124,23 @@ where
                             },
                         ),
                     )
+                }
+                LiveMixedCompositionLayer::Snapshot {
+                    snapshot,
+                    placement,
+                } => {
+                    validate_placement(*placement)?;
+                    Ok(sophia_renderer_native_egl::NativeCompositionLayer::DmaBuf(
+                        sophia_renderer_native_egl::NativeDmaBufCompositionLayer {
+                            image_id: snapshot.inner.image_id(),
+                            frame: snapshot.inner.as_frame(),
+                            custody: Some(&snapshot.inner),
+                            target: native_rect(placement.target),
+                            clip: placement.clip.map(native_rect),
+                            alpha: placement.alpha,
+                            sampling: native_sampling(placement.sampling),
+                        },
+                    ))
                 }
                 LiveMixedCompositionLayer::Solid { geometry, color } => {
                     if geometry.is_empty() {

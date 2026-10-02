@@ -24,6 +24,7 @@ fn request(
         outputs,
         presentation_queued,
         software_frame_waiting: false,
+        preparation_pending: false,
     }
 }
 
@@ -32,6 +33,7 @@ fn software_request(outputs: Vec<OutputFrameServiceObservation>) -> OutputFrameS
         outputs,
         presentation_queued: false,
         software_frame_waiting: true,
+        preparation_pending: false,
     }
 }
 

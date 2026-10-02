@@ -9,6 +9,8 @@ use std::os::unix::net::UnixStream;
 fn snapshot_duplicate_keeps_original_on_failed_import_and_survives_original_drop() {
     let (plane, mut peer) = UnixStream::pair().unwrap();
     let original = NativeRendererImageSnapshot {
+        charge: None,
+        epoch: None,
         image_id: NativeRendererImageId::from_raw(7),
         width: 32,
         height: 8,

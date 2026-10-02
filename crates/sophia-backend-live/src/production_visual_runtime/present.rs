@@ -50,7 +50,9 @@ impl LiveProductionVisualRuntime {
             .iter()
             .any(|state| state.surface == queued_surface)
             && !self.present_scheduler.front_first_visibility_exhausted();
-        if !self.presentation_order.contains(&queued_surface) {
+        if !self.presentation_order.contains(&queued_surface)
+            && self.instance_outputs(queued_surface).is_empty()
+        {
             if first_presentation {
                 self.present_scheduler.defer_first_visibility(
                     queued_candidate,
@@ -96,22 +98,8 @@ impl LiveProductionVisualRuntime {
             .find(|state| state.surface == queued_surface)
             .map(|state| state.geometry)
             .ok_or("ready Present candidate lost its surface geometry")?;
-        let logical_viewports = self.outputs.logical_viewports().collect::<Vec<_>>();
-        let mut applicable_outputs = sophia_engine::applicable_output_retirement_set(
-            &logical_viewports,
-            previous_geometry,
-            candidate_geometry,
-        )?;
-        // Only heads that can display this surface owe its retirement. A
-        // scrolling column overlapping its neighbour does not belong there.
-        applicable_outputs.retain(|output| {
-            live_surface_routes_to_output(
-                queued_surface,
-                &self.surface_outputs,
-                &self.geometry_routed_surfaces,
-                *output,
-            )
-        });
+        let applicable_outputs =
+            self.present_retirement_outputs(queued_surface, previous_geometry, candidate_geometry)?;
         if applicable_outputs.is_empty() {
             if first_presentation {
                 self.present_scheduler.defer_first_visibility(
@@ -195,6 +183,7 @@ impl LiveProductionVisualRuntime {
                 }),
                 LiveOwnedMixedCompositionLayer::Cpu { .. }
                 | LiveOwnedMixedCompositionLayer::RendererImage { .. }
+                | LiveOwnedMixedCompositionLayer::Snapshot { .. }
                 | LiveOwnedMixedCompositionLayer::Solid { .. } => None,
             })
             .ok_or("ready Present frame did not retain its DMA-BUF")?;
@@ -364,21 +353,30 @@ impl LiveProductionVisualRuntime {
             LiveChromeObservationSource::Present,
             false,
         )?;
-        let frames = native_scanout
-            .queue_present_output_head_composition_frames(transaction, output_head_frames)?;
+        let frames = match native_scanout
+            .queue_present_output_head_composition_frames(transaction, output_head_frames)
+        {
+            Ok(frames) => frames,
+            Err(error) if self.handle_preview_refusal(error.as_ref()) => {
+                return self.run_observation_tick();
+            }
+            Err(error) => return Err(error),
+        };
         self.present_scheduler.pop_front();
-        self.present_scheduler.mark_rendering(
-            LiveProductionSubmittedPresent::new(
-                frames.clone(),
-                clock_output,
-                queued_candidate,
-                transaction,
-                queued_surface,
-                prepared,
-                current_layer,
-            )
-            .ok_or("Present rendering has no output cohort")?,
-        );
+        let mut submitted = LiveProductionSubmittedPresent::new(
+            frames.clone(),
+            clock_output,
+            queued_candidate,
+            transaction,
+            queued_surface,
+            prepared,
+            current_layer,
+        )
+        .ok_or("Present rendering has no output cohort")?;
+        submitted.image_reads = self.image_reads_for_sources(&head_sources);
+        submitted.recovery_sources = head_sources;
+        submitted.recovery_order = self.presentation_order.clone();
+        self.present_scheduler.mark_rendering(submitted);
 
         let production = &self.production;
         let surface_metadata = &self.surface_metadata;
@@ -412,7 +410,21 @@ impl LiveProductionVisualRuntime {
                 .outputs
                 .output_id(index)
                 .ok_or("Present tick report lost its logical output")?;
+            super::native::check_frame_service_report(
+                &report,
+                native_scanout.has_preview_frame_failure(output),
+            )?;
             if !frames.contains_key(&output) {
+                if report
+                    .rendered_primary_plane_scanout_submit
+                    .is_some_and(|submit| submit.status == Status::SubmittedWaitingForPageFlip)
+                {
+                    let content = native_scanout
+                        .submitted_content(output)
+                        .ok_or("independent native submit lost its content")?;
+                    self.settle_submission_ownership(native_scanout, output, content, None)?;
+                    self.observe_software_present_frame_submitted(content.frame())?;
+                }
                 continue;
             }
             if selected_report.is_none() {
@@ -437,6 +449,16 @@ impl LiveProductionVisualRuntime {
                 | Some(Status::AlreadyInFlight | Status::CleanupPending)
                 | None => {}
                 Some(status) => {
+                    if status == Status::ScanoutExportFailed
+                        && let Some(detail) = report
+                            .rendered_primary_plane_scanout_submit
+                            .and_then(|submit| submit.export_detail)
+                    {
+                        if native_scanout.has_preview_frame_failure(output) {
+                            continue;
+                        }
+                        return Err(detail.into());
+                    }
                     return Err(format!(
                         "Present output cohort failed after admission: output={} status={status:?}",
                         output.raw()

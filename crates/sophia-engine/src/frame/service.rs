@@ -29,6 +29,9 @@ pub struct OutputFrameServiceRequest {
     /// Staging it requires every output to be natively idle, so it is a
     /// property of the request rather than of any one output.
     pub software_frame_waiting: bool,
+    /// Renderer preparation can progress on the next owner pass, but has no
+    /// native frame to submit yet. Busy workers wake the owner themselves.
+    pub preparation_pending: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

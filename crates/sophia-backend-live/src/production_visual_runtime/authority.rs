@@ -394,6 +394,7 @@ impl LiveProductionVisualRuntime {
                 let released = match reason {
                     crate::LiveProductionFirstVisibilityReason::OutsidePresentationOrder => {
                         self.presentation_order.contains(&surface)
+                            || !self.instance_outputs(surface).is_empty()
                     }
                     crate::LiveProductionFirstVisibilityReason::NoApplicableOutput
                     | crate::LiveProductionFirstVisibilityReason::OutsideHeadFrames => {
@@ -412,7 +413,7 @@ impl LiveProductionVisualRuntime {
                         })
                     }
                 };
-                released.then_some(surface)
+                (released || !self.instance_outputs(surface).is_empty()).then_some(surface)
             })
             .collect::<Vec<_>>();
         self.present_scheduler.release_first_visibility(&visible);

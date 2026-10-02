@@ -192,14 +192,10 @@ fn rendered_head_preparation_retains_export_owner_without_committing() {
         .prepared
         .take()
         .expect("renderer preparation retains the complete head owner");
-    let ordinary = sophia_backend_live::prepare_rendered_topology_head_from_prepared_scanout(
-        ordinary, None,
-    )
-    .expect_err("page-flip resources have no mode blob and cannot enter topology apply");
-    let cancelled = cancel_prepared_rendered_primary_plane_scanout(
-        &device,
-        ordinary,
-    );
+    let ordinary =
+        sophia_backend_live::prepare_rendered_topology_head_from_prepared_scanout(ordinary, None)
+            .expect_err("page-flip resources have no mode blob and cannot enter topology apply");
+    let cancelled = cancel_prepared_rendered_primary_plane_scanout(&device, ordinary);
     assert_eq!(
         cancelled.destroy,
         LibdrmNativePrimaryPlaneResourceDestroyStatus::Destroyed
@@ -225,15 +221,14 @@ fn rendered_topology_head_joins_one_card_commit_before_adoption() {
     };
     let selection = select_native_primary_plane_target(&device);
     let mut exporter = FakeRenderedScanoutExporter::exported(size);
-    let mut prepared =
-        prepare_rendered_primary_plane_topology_head_from_target_and_selection_with(
-            LiveKmsScanoutTargetStatus::Ready,
-            Some(LiveGbmEglFrameTargetRecord::new(size)),
-            selection,
-            None,
-            &device,
-            &mut exporter,
-        );
+    let mut prepared = prepare_rendered_primary_plane_topology_head_from_target_and_selection_with(
+        LiveKmsScanoutTargetStatus::Ready,
+        Some(LiveGbmEglFrameTargetRecord::new(size)),
+        selection,
+        None,
+        &device,
+        &mut exporter,
+    );
     assert_eq!(
         prepared.status,
         LiveRenderedPrimaryPlaneScanoutPrepareStatus::Prepared
@@ -261,9 +256,10 @@ fn rendered_topology_head_joins_one_card_commit_before_adoption() {
         None,
     )
     .expect("modeset preparation should convert into a card-scoped head");
-    let mut build = build_native_topology_change_atomic_request(&[
-        LibdrmNativeAtomicTopologyChange::Enabled(topology.atomic_head()),
-    ]);
+    let mut build =
+        build_native_topology_change_atomic_request(&[LibdrmNativeAtomicTopologyChange::Enabled(
+            topology.atomic_head(),
+        )]);
     assert_eq!(build.status, LibdrmNativeMultiHeadRequestBuildStatus::Built);
     let request = build
         .request
@@ -900,6 +896,12 @@ fn live_runtime_assembly_drops_resources_from_non_exported_rendered_scanout() {
         submitted.export,
         Some(LiveRendererScanoutBufferExportStatus::Unavailable)
     );
+    assert_eq!(
+        submitted.export_detail,
+        Some(LiveRendererScanoutBufferExportDetail::from_status(
+            LiveRendererScanoutBufferExportStatus::Unavailable,
+        )),
+    );
     assert_eq!(submitted.scanout_buffer, None);
     assert_eq!(submitted.submit, None);
     assert!(submitted.submission.is_none());
@@ -933,7 +935,10 @@ fn live_runtime_assembly_defers_a_pending_renderer_worker_without_native_submit(
         submitted.export,
         Some(LiveRendererScanoutBufferExportStatus::Pending)
     );
-    assert_eq!(submitted.runtime_scanout_state(), RuntimeScanoutState::Deferred);
+    assert_eq!(
+        submitted.runtime_scanout_state(),
+        RuntimeScanoutState::Deferred
+    );
     assert_eq!(exporter.export_attempts(), 1);
     assert!(submitted.submission.is_none());
     assert!(submitted.cleanup.is_none());

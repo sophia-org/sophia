@@ -156,6 +156,13 @@ impl LiveProductionNativeScanout {
                 if !self.exporters[index].restore_promoted_renderer_image(snapshot.try_clone()?)? {
                     return Err("replacement renderer rejected a retained image snapshot".into());
                 }
+                if let Some(owner) = self.exporters[index].image_store_identity() {
+                    self.preview_images
+                        .owners
+                        .entry(snapshot.image_id())
+                        .or_default()
+                        .insert(owner);
+                }
             }
         }
         Ok(expected_count)

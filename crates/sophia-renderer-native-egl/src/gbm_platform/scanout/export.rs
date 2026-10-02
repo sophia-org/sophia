@@ -194,6 +194,7 @@ fn native_owned_scanout_buffer_from_bo(
         plane_fds,
         modifier: normalized_scanout_modifier(buffer.modifier()),
         _buffer: Some(buffer),
+        _sampled_snapshots: Vec::new(),
         _egl_surface: None,
         _surface: surface,
         _frame_surface: None,
@@ -232,15 +233,27 @@ fn scanout_plane_offsets(buffer: &gbm::BufferObject<()>, plane_count: u32) -> [u
 }
 
 fn plane_handle(buffer: &gbm::BufferObject<()>, plane_count: u32, plane: i32) -> u32 {
-    if plane < plane_count as i32 { unsafe { buffer.handle_for_plane(plane).u32_ } } else { 0 }
+    if plane < plane_count as i32 {
+        unsafe { buffer.handle_for_plane(plane).u32_ }
+    } else {
+        0
+    }
 }
 
 fn plane_pitch(buffer: &gbm::BufferObject<()>, plane_count: u32, plane: i32) -> u32 {
-    if plane < plane_count as i32 { buffer.stride_for_plane(plane) } else { 0 }
+    if plane < plane_count as i32 {
+        buffer.stride_for_plane(plane)
+    } else {
+        0
+    }
 }
 
 fn plane_offset(buffer: &gbm::BufferObject<()>, plane_count: u32, plane: i32) -> u32 {
-    if plane < plane_count as i32 { buffer.offset(plane) } else { 0 }
+    if plane < plane_count as i32 {
+        buffer.offset(plane)
+    } else {
+        0
+    }
 }
 
 fn capture_scanout_plane_fds(

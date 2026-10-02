@@ -58,7 +58,7 @@ impl LiveProductionVisualRuntime {
         let Some(epoch) = self.shell_content_presentation_epoch(key.0, grant, candidate) else {
             return Ok(false);
         };
-        if self.retained_projection_retirements.contains_key(&key) {
+        if self.shell_retirement_claims(key).next().is_some() {
             return Ok(false);
         }
         let native = native.ok_or("popout withdrawal requires native presentation")?;
@@ -156,7 +156,7 @@ impl LiveProductionVisualRuntime {
         let Some(epoch) = self.shell_content_presentation_epoch(output, grant, candidate) else {
             return Ok(None);
         };
-        if self.retained_projection_retirements.contains_key(&key) {
+        if self.shell_retirement_claims(key).next().is_some() {
             return Ok(None);
         }
         let native = native.ok_or("component removal requires native presentation")?;
@@ -190,6 +190,11 @@ impl LiveProductionVisualRuntime {
             .retained_projection_retirements
             .iter()
             .any(|((output, _), grant)| *output == removal.output && *grant == removal.grant)
+            || self.queued_shell_retirements.values().any(|claims| {
+                claims.iter().any(|((output, _), grant)| {
+                    *output == removal.output && *grant == removal.grant
+                })
+            })
         {
             return false;
         }

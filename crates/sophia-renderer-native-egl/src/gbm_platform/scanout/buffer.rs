@@ -13,6 +13,7 @@ pub struct NativeGbmOwnedScanoutBuffer {
     modifier: Option<u64>,
     // Drop explicitly releases the locked front buffer before its surface.
     _buffer: Option<gbm::BufferObject<()>>,
+    _sampled_snapshots: Vec<std::sync::Arc<NativeRendererImageSnapshot>>,
     _egl_surface: Option<NativeEglSurfaceOwner>,
     _surface: Option<gbm::Surface<()>>,
     _frame_surface: Option<std::rc::Rc<NativeFrameSurface>>,

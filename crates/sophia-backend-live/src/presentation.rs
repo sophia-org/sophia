@@ -163,6 +163,13 @@ pub fn try_clone_mixed_frame(
                 format: *format,
                 placement: *placement,
             }),
+            LiveOwnedMixedCompositionLayer::Snapshot {
+                snapshot,
+                placement,
+            } => Ok(LiveOwnedMixedCompositionLayer::Snapshot {
+                snapshot: snapshot.clone(),
+                placement: *placement,
+            }),
             LiveOwnedMixedCompositionLayer::Solid { geometry, color } => {
                 Ok(LiveOwnedMixedCompositionLayer::Solid {
                     geometry: *geometry,
@@ -172,6 +179,7 @@ pub fn try_clone_mixed_frame(
         })
         .collect::<std::io::Result<Vec<_>>>()?;
     Ok(LiveOwnedMixedCompositionFrame {
+        image_reads: frame.image_reads.clone(),
         layers,
         output_damage_snapshot: frame.output_damage_snapshot.clone(),
         trace: frame.trace,
@@ -382,6 +390,7 @@ impl LivePresentationResourceSession {
             placement: pixel_aligned_dma_buf_placement(descriptor.size, target, clip, alpha),
         });
         Ok(LiveOwnedMixedCompositionFrame {
+            image_reads: Default::default(),
             layers,
             output_damage_snapshot: None,
             trace: None,

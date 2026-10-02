@@ -49,6 +49,7 @@ pub struct LiveRenderedPrimaryPlaneScanoutPrepareResult<Owner> {
     pub scanout_target: LiveKmsScanoutTargetStatus,
     pub target: Option<LiveGbmEglFrameTargetStatus>,
     pub export: Option<LiveRendererScanoutBufferExportStatus>,
+    pub export_detail: Option<LiveRendererScanoutBufferExportDetail>,
     pub scanout_buffer: Option<LiveRendererScanoutBufferStatus>,
     pub buffer_format: Option<LibdrmNativeScanoutBufferFormatDetail>,
     pub buffer_modifier: Option<LibdrmNativeScanoutBufferModifierDetail>,
@@ -90,6 +91,7 @@ impl<Owner> LiveRenderedPrimaryPlaneScanoutPrepareResult<Owner> {
             scanout_target,
             target,
             export,
+            export_detail: None,
             scanout_buffer: None,
             buffer_format: None,
             buffer_modifier: None,
@@ -246,32 +248,38 @@ where
         );
     }
     if export.status != LiveRendererScanoutBufferExportStatus::Exported {
-        return LiveRenderedPrimaryPlaneScanoutPrepareResult::stopped(
+        let mut result = LiveRenderedPrimaryPlaneScanoutPrepareResult::stopped(
             LiveRenderedPrimaryPlaneScanoutPrepareStatus::ScanoutExportFailed,
             scanout_target,
             Some(target.status),
             Some(export.status),
         );
+        result.export_detail = Some(export.detail);
+        return result;
     }
     let (Some(descriptor), Some(owner)) = (export.descriptor, export.owner) else {
-        return LiveRenderedPrimaryPlaneScanoutPrepareResult::stopped(
+        let mut result = LiveRenderedPrimaryPlaneScanoutPrepareResult::stopped(
             LiveRenderedPrimaryPlaneScanoutPrepareStatus::ScanoutExportFailed,
             scanout_target,
             Some(target.status),
             Some(export.status),
         );
+        result.export_detail = Some(LiveRendererScanoutBufferExportDetail::RetainedBufferMissing);
+        return result;
     };
     let shares_kms_drm_file = owner.shares_kms_drm_file();
     let prime_fds = (!shares_kms_drm_file)
         .then(|| owner.export_scanout_dma_buf_fds().ok().flatten())
         .flatten();
     if !shares_kms_drm_file && prime_fds.is_none() {
-        return LiveRenderedPrimaryPlaneScanoutPrepareResult::stopped(
+        let mut result = LiveRenderedPrimaryPlaneScanoutPrepareResult::stopped(
             LiveRenderedPrimaryPlaneScanoutPrepareStatus::ScanoutExportFailed,
             scanout_target,
             Some(target.status),
             Some(export.status),
         );
+        result.export_detail = Some(LiveRendererScanoutBufferExportDetail::InvalidBufferDescriptor);
+        return result;
     }
     let mut native = if shares_kms_drm_file {
         prepare_native_primary_plane_scanout_from_selection_and_renderer_descriptor_with_policy(
@@ -341,6 +349,7 @@ where
         scanout_target,
         target: Some(target.status),
         export: Some(export.status),
+        export_detail: Some(export.detail),
         scanout_buffer: Some(native.scanout_buffer),
         buffer_format: native.buffer_format,
         buffer_modifier: native.buffer_modifier,
@@ -411,6 +420,7 @@ where
         scanout_target: LiveKmsScanoutTargetStatus::Ready,
         target: Some(LiveGbmEglFrameTargetStatus::Ready),
         export: Some(LiveRendererScanoutBufferExportStatus::Exported),
+        export_detail: Some(LiveRendererScanoutBufferExportDetail::Exported),
         scanout_buffer: Some(native.scanout_buffer),
         buffer_format: native.buffer_format,
         buffer_modifier: native.buffer_modifier,

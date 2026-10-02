@@ -15,15 +15,18 @@ fn correlated_facade() -> (
 }
 
 fn mixed_job(generation: u64) -> super::PendingRenderedFrame {
-    super::PendingRenderedFrame::Mixed(sophia_renderer_live::LiveOwnedMixedCompositionFrame {
-        trace: Some(sophia_renderer_live::LiveCompositionTrace {
-            output: sophia_protocol::OutputId::from_raw(7),
-            head: sophia_engine::RenderHeadId::from_raw(17),
-            scene_generation: generation,
-        }),
-        direct_scanout: sophia_engine::DirectScanoutVerdict::Eligible,
-        ..Default::default()
-    }, None)
+    super::PendingRenderedFrame::Mixed(
+        sophia_renderer_live::LiveOwnedMixedCompositionFrame {
+            trace: Some(sophia_renderer_live::LiveCompositionTrace {
+                output: sophia_protocol::OutputId::from_raw(7),
+                head: sophia_engine::RenderHeadId::from_raw(17),
+                scene_generation: generation,
+            }),
+            direct_scanout: sophia_engine::DirectScanoutVerdict::Eligible,
+            ..Default::default()
+        },
+        None,
+    )
 }
 
 fn submit_mixed_job(
@@ -41,7 +44,10 @@ fn submit_owned_job(
     facade: &mut super::NativeGbmRendererWorker,
     commands: &Receiver<WorkerCommand>,
     frame: super::PendingRenderedFrame,
-) -> (super::LiveRendererFrameCorrelation, super::PendingRenderedFrame) {
+) -> (
+    super::LiveRendererFrameCorrelation,
+    super::PendingRenderedFrame,
+) {
     facade
         .submit(
             LiveGbmEglFrameTargetRecord::new(Size {
@@ -215,7 +221,10 @@ fn a_hard_stalled_job_cannot_assign_its_late_result_to_another_frame_and_the_wor
     assert_eq!(facade.metrics().hard_stalls, 1);
     assert_eq!(facade.metrics().stall_recoveries, 1);
     let (second, _) = submit_mixed_job(&mut facade, &commands, 47);
-    assert_ne!(second, first, "a fresh render, not the stalled one's identity");
+    assert_ne!(
+        second, first,
+        "a fresh render, not the stalled one's identity"
+    );
     assert!(commands.try_recv().is_err());
 }
 
@@ -594,9 +603,10 @@ fn output_format_requests_cross_the_worker_boundary_without_relabeling() {
     }
 }
 
-
 fn native_job(identity: crate::LiveNativeFrameIdentity) -> super::PendingRenderedFrame {
-    let super::PendingRenderedFrame::Mixed(frame, _) = mixed_job(41) else { unreachable!() };
+    let super::PendingRenderedFrame::Mixed(frame, _) = mixed_job(41) else {
+        unreachable!()
+    };
     super::PendingRenderedFrame::Mixed(frame, Some(identity))
 }
 
@@ -611,17 +621,31 @@ fn native_identity_survives_identical_pixels_pending_and_same_frame_retry() {
     let (first, frame) = submit_owned_job(&mut facade, &commands, native_job(a));
     let pending = native_job(b);
     assert_eq!(first.trace, super::frame_correlation(&pending, None).trace);
-    assert_ne!(first.native, super::frame_correlation(&pending, None).native);
-    results.send(correlated_result(first, WorkerOutcome::Deferred(frame))).unwrap();
-    let super::WorkerPoll::Deferred(frame) = facade.poll() else { panic!("deferred owner missing") };
+    assert_ne!(
+        first.native,
+        super::frame_correlation(&pending, None).native
+    );
+    results
+        .send(correlated_result(first, WorkerOutcome::Deferred(frame)))
+        .unwrap();
+    let super::WorkerPoll::Deferred(frame) = facade.poll() else {
+        panic!("deferred owner missing")
+    };
     let (retry, _) = submit_owned_job(&mut facade, &commands, frame);
     assert_eq!(retry.native, Some(a));
     assert_ne!(retry.request, first.request);
-    results.send(correlated_result(retry, exported_outcome())).unwrap();
-    let super::WorkerPoll::Exported(lease) = facade.poll() else { panic!("exact retry missing") };
+    results
+        .send(correlated_result(retry, exported_outcome()))
+        .unwrap();
+    let super::WorkerPoll::Exported(lease) = facade.poll() else {
+        panic!("exact retry missing")
+    };
     assert_eq!(lease.correlation().native, Some(a));
     drop(lease);
-    assert!(matches!(commands.recv().unwrap(), WorkerCommand::Release { .. }));
+    assert!(matches!(
+        commands.recv().unwrap(),
+        WorkerCommand::Release { .. }
+    ));
     let (next, _) = submit_owned_job(&mut facade, &commands, pending);
     assert_eq!(next.native, Some(b));
     assert_eq!(next.trace, retry.trace);
@@ -641,10 +665,105 @@ fn wrong_head_or_reconstructed_native_owner_cannot_complete_the_current_job() {
         let (mut facade, commands, results) = correlated_facade();
         let (mut result, _) = submit_owned_job(&mut facade, &commands, native_job(current));
         result.native = Some(wrong);
-        results.send(correlated_result(result, exported_outcome())).unwrap();
-        assert!(matches!(facade.poll(), super::WorkerPoll::Failed(
-            super::LiveRendererScanoutBufferExportDetail::WorkerDisconnected
-        )));
+        results
+            .send(correlated_result(result, exported_outcome()))
+            .unwrap();
+        assert!(matches!(
+            facade.poll(),
+            super::WorkerPoll::Failed(
+                super::LiveRendererScanoutBufferExportDetail::WorkerDisconnected
+            )
+        ));
         assert!(facade.quarantined);
     }
+}
+
+#[test]
+fn preview_withdrawal_keeps_a_hard_stalled_worker_fatal() {
+    let identity = crate::NativeFrameOwner::new().frame(
+        sophia_protocol::OutputId::from_raw(7),
+        sophia_engine::RenderHeadId::from_raw(17),
+        1,
+        1,
+    );
+    let (mut facade, commands, _results) = correlated_facade();
+    let _ = submit_owned_job(&mut facade, &commands, native_job(identity));
+    facade.in_flight.as_mut().unwrap().submitted_at =
+        std::time::Instant::now() - super::LIVE_RENDERER_WORKER_HARD_STALL;
+    assert_eq!(
+        facade.poll_discarded_preview_render(identity),
+        Err(super::LiveRendererScanoutBufferExportDetail::WorkerStalled)
+    );
+    assert_eq!(
+        facade.poll_discarded_preview_render(identity),
+        Err(super::LiveRendererScanoutBufferExportDetail::WorkerStalled)
+    );
+}
+
+#[test]
+fn preview_withdrawal_does_not_swallow_exhausted_slots_or_client_import_failures() {
+    use super::LiveRendererScanoutBufferExportDetail as D;
+    let identity = crate::NativeFrameOwner::new().frame(
+        sophia_protocol::OutputId::from_raw(7),
+        sophia_engine::RenderHeadId::from_raw(17),
+        1,
+        1,
+    );
+    for detail in [
+        D::RetainedBufferMissing,
+        D::DmaBufImportCacheFull,
+        D::EglContextUnavailable,
+        D::InvalidRendererImageId,
+        D::RendererImageStoreFull,
+    ] {
+        let (mut facade, commands, results) = correlated_facade();
+        let (correlation, _) = submit_owned_job(&mut facade, &commands, native_job(identity));
+        results
+            .send(correlated_result(
+                correlation,
+                WorkerOutcome::Failed(detail),
+            ))
+            .unwrap();
+        let expected = if matches!(
+            detail,
+            D::InvalidRendererImageId | D::RendererImageStoreFull
+        ) {
+            Ok(true)
+        } else {
+            Err(detail)
+        };
+        assert_eq!(
+            facade.poll_discarded_preview_render(identity),
+            expected,
+            "{detail:?}"
+        );
+    }
+}
+
+#[test]
+fn preview_withdrawal_cannot_consume_a_newer_worker_result() {
+    let owner = crate::NativeFrameOwner::new();
+    let output = sophia_protocol::OutputId::from_raw(7);
+    let head = sophia_engine::RenderHeadId::from_raw(17);
+    let old = owner.frame(output, head, 1, 1);
+    let newer = owner.frame(output, head, 1, 2);
+    let (mut facade, commands, results) = correlated_facade();
+    let (correlation, _) = submit_owned_job(&mut facade, &commands, native_job(newer));
+    results
+        .send(correlated_result(correlation, exported_outcome()))
+        .unwrap();
+    assert_eq!(
+        facade.poll_discarded_preview_render(old),
+        Err(super::LiveRendererScanoutBufferExportDetail::InvalidTarget)
+    );
+    assert_eq!(facade.in_flight_correlation(), Some(correlation));
+    let super::WorkerPoll::Exported(lease) = facade.poll() else {
+        panic!("withdrawal lost a newer result")
+    };
+    assert_eq!(lease.correlation().native, Some(newer));
+    drop(lease);
+    assert!(matches!(
+        commands.recv().unwrap(),
+        WorkerCommand::Release { .. }
+    ));
 }

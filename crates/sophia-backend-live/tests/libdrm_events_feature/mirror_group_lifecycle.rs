@@ -97,11 +97,7 @@ fn ordinary_successor_waits_until_the_primary_owns_a_present_generation() {
         LiveProductionMirrorGenerationQueue::DeferUntilPrimarySubmission
     );
     assert_eq!(
-        reduce_live_production_mirror_generation_queue(
-            Some(present),
-            Some(present),
-            Some(content)
-        ),
+        reduce_live_production_mirror_generation_queue(Some(present), Some(present), Some(content)),
         LiveProductionMirrorGenerationQueue::Install
     );
     assert_eq!(
@@ -109,8 +105,8 @@ fn ordinary_successor_waits_until_the_primary_owns_a_present_generation() {
             Some(present),
             None,
             Some(LiveProductionScanoutContent::RetainedMixed {
- logical_content_checksum: None,
- requires_retirement: false,
+                logical_content_checksum: None,
+                requires_retirement: false,
                 frame: present,
                 nonzero_rgb_pixels: 0,
             })
@@ -180,7 +176,10 @@ fn aborted_mirror_group_cannot_admit_a_new_generation() {
     );
     assert!(group.abort(first));
     assert!(group.failed());
-    assert_eq!(group.begin(second), LiveProductionMirrorGroupBegin::Poisoned);
+    assert_eq!(
+        group.begin(second),
+        LiveProductionMirrorGroupBegin::Poisoned
+    );
 }
 
 #[test]
@@ -188,24 +187,20 @@ fn renderer_work_keeps_its_generation_identity_during_coalescing() {
     let current = LiveProductionNativeFrameId::from_raw(41);
     let next = LiveProductionNativeFrameId::from_raw(42);
     let current_content = LiveProductionScanoutContent::RetainedMixed {
- logical_content_checksum: None,
- requires_retirement: false,
+        logical_content_checksum: None,
+        requires_retirement: false,
         frame: current,
         nonzero_rgb_pixels: 10,
     };
     let next_content = LiveProductionScanoutContent::RetainedMixed {
- logical_content_checksum: None,
- requires_retirement: false,
+        logical_content_checksum: None,
+        requires_retirement: false,
         frame: next,
         nonzero_rgb_pixels: 11,
     };
 
     assert_eq!(
-        live_production_mirror_head_work_frame(
-            true,
-            Some(current_content),
-            Some(next_content)
-        ),
+        live_production_mirror_head_work_frame(true, Some(current_content), Some(next_content)),
         Some(current)
     );
     assert_eq!(
@@ -242,15 +237,13 @@ fn renderer_start_captures_content_even_without_a_submit_report() {
 fn renderer_start_refuses_missing_or_competing_content_identity() {
     let frame = LiveProductionNativeFrameId::from_raw(41);
     let content = LiveProductionScanoutContent::RetainedMixed {
- logical_content_checksum: None,
- requires_retirement: false,
+        logical_content_checksum: None,
+        requires_retirement: false,
         frame,
         nonzero_rgb_pixels: 0,
     };
 
-    assert!(
-        advance_live_production_renderer_content(false, true, &mut None, &mut None).is_err()
-    );
+    assert!(advance_live_production_renderer_content(false, true, &mut None, &mut None).is_err());
     assert!(
         advance_live_production_renderer_content(
             false,
@@ -264,12 +257,14 @@ fn renderer_start_refuses_missing_or_competing_content_identity() {
 
 #[test]
 fn native_renderer_ownership_transition_is_not_gated_by_a_submit_report() {
-    let source = include_str!("../../src/production_session/native_scanout/persistent_native_scanout/singleton_tick.rs");
+    let source = include_str!(
+        "../../src/production_session/native_scanout/persistent_native_scanout/singleton_tick.rs"
+    );
     let singleton = source
-        .split_once("            self.observe_callbacks(index, report.page_flip_callbacks.clone());\n")
+        .split_once("self.observe_callbacks(index, report.page_flip_callbacks.clone());\n")
         .expect("singleton scanout observes callbacks")
         .1
-        .split_once("            if let Some(submit) = report.rendered_primary_plane_scanout_submit")
+        .split_once("if let Some(submit) = report.rendered_primary_plane_scanout_submit")
         .expect("singleton scanout later handles its optional submit report")
         .0;
 
@@ -278,7 +273,9 @@ fn native_renderer_ownership_transition_is_not_gated_by_a_submit_report() {
 
 #[test]
 fn normal_mirror_retirement_cannot_reenter_scene_projection() {
-    let source = include_str!("../../src/production_session/native_scanout/persistent_native_scanout/frame_retirement.rs");
+    let source = include_str!(
+        "../../src/production_session/native_scanout/persistent_native_scanout/frame_retirement.rs"
+    );
     let retirement = source
         .split_once("        pub fn retire_ready(\n")
         .expect("native scanout retains the normal retirement entry point")
@@ -301,8 +298,12 @@ fn native_head_identity_is_wired_from_sessions_to_engine_registry() {
     // head. Deleting any of the three ends unwires the boundary and fails
     // this test rather than leaving a dead record type behind.
     let source = concat!(
-        include_str!("../../src/production_session/native_scanout/persistent_native_scanout/construction.rs"),
-        include_str!("../../src/production_session/native_scanout/persistent_native_scanout/completion_pump.rs"),
+        include_str!(
+            "../../src/production_session/native_scanout/persistent_native_scanout/construction.rs"
+        ),
+        include_str!(
+            "../../src/production_session/native_scanout/persistent_native_scanout/completion_pump.rs"
+        ),
     );
     assert!(source.contains("LiveProductionNativeHeadTable::from_records(sessions.head_records"));
     assert!(source.contains("presentation_outputs.admit(target)"));

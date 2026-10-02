@@ -196,6 +196,7 @@ fn full_state_composition_keeps_retained_surface_before_current_damage() {
         ],
     };
     let current = sophia_renderer_live::LiveOwnedMixedCompositionFrame {
+        image_reads: Default::default(),
         layers: vec![LiveOwnedMixedCompositionLayer::DmaBuf {
             image_id: LiveRendererImageId::from_raw(1),
             frame: frame(),
@@ -236,6 +237,7 @@ fn full_state_composition_keeps_retained_surface_before_current_damage() {
         .map(|layer| match layer {
             LiveOwnedMixedCompositionLayer::DmaBuf { placement, .. }
             | LiveOwnedMixedCompositionLayer::RendererImage { placement, .. }
+            | LiveOwnedMixedCompositionLayer::Snapshot { placement, .. }
             | LiveOwnedMixedCompositionLayer::Cpu { placement, .. } => placement.target.x,
             LiveOwnedMixedCompositionLayer::Solid { geometry, .. } => geometry.x,
         })
@@ -257,6 +259,7 @@ fn mixed_frame_clone_preserves_compositor_solid_rectangles() {
         output_frame_damage_snapshot(output, CompositorDisplayList::empty(output.id), &[], None)
             .unwrap();
     let frame = LiveOwnedMixedCompositionFrame {
+        image_reads: Default::default(),
         layers: vec![LiveOwnedMixedCompositionLayer::Solid {
             geometry: Rect {
                 x: 4,
@@ -307,6 +310,7 @@ fn mixed_frame_clone_preserves_compositor_solid_rectangles() {
 fn mixed_frame_clone_shares_immutable_cpu_pixels() {
     let pixels = std::sync::Arc::new(vec![0x7f; 64]);
     let frame = LiveOwnedMixedCompositionFrame {
+        image_reads: Default::default(),
         layers: vec![LiveOwnedMixedCompositionLayer::Cpu {
             buffer: LiveSharedCpuBufferSource {
                 handle: 17,

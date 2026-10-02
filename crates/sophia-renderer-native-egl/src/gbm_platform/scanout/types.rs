@@ -55,6 +55,8 @@ pub struct NativeRendererImageSnapshot {
     pub(super) modifier: u64,
     pub(super) plane_count: u8,
     pub(super) planes: [Option<NativeOwnedDmaBufPlane>; 4],
+    pub(super) charge: Option<std::sync::Arc<super::snapshot_custody::SnapshotCharge>>,
+    pub(super) epoch: Option<std::sync::Arc<super::NativeRendererSnapshotEpoch>>,
 }
 
 #[derive(Debug)]
@@ -86,6 +88,8 @@ impl NativeRendererImageSnapshot {
             modifier: self.modifier,
             plane_count: self.plane_count,
             planes,
+            charge: self.charge.clone(),
+            epoch: self.epoch.clone(),
         })
     }
 
@@ -93,7 +97,11 @@ impl NativeRendererImageSnapshot {
         self.image_id
     }
 
-    pub(super) fn as_frame(&self) -> NativeMultiPlaneDmaBufFrame<'_> {
+    pub fn is_current(&self) -> bool {
+        self.epoch.as_ref().is_none_or(|epoch| epoch.is_valid())
+    }
+
+    pub fn as_frame(&self) -> NativeMultiPlaneDmaBufFrame<'_> {
         NativeMultiPlaneDmaBufFrame {
             width: self.width,
             height: self.height,
@@ -162,6 +170,8 @@ pub struct NativeCpuCompositionLayer<'a> {
 pub struct NativeDmaBufCompositionLayer<'a> {
     pub image_id: NativeRendererImageId,
     pub frame: NativeMultiPlaneDmaBufFrame<'a>,
+    /// Immutable foreign storage retained by both the import and the output.
+    pub custody: Option<&'a std::sync::Arc<NativeRendererImageSnapshot>>,
     pub target: NativeCompositionRect,
     pub clip: Option<NativeCompositionRect>,
     pub alpha: f32,

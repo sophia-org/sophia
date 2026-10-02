@@ -608,6 +608,7 @@ fn border_bands_are_clipped_individually_to_the_scene_they_belong_to() {
 fn direct_frame() -> sophia_renderer_live::LiveOwnedMixedCompositionFrame {
     let fd: OwnedFd = std::fs::File::open("/dev/null").unwrap().into();
     sophia_renderer_live::LiveOwnedMixedCompositionFrame {
+        image_reads: Default::default(),
         layers: vec![LiveOwnedMixedCompositionLayer::DmaBuf {
             image_id: LiveRendererImageId::from_raw(7),
             frame: LiveOwnedMultiPlaneDmaBufFrame {

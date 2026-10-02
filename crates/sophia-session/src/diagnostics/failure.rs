@@ -107,7 +107,141 @@ const RENDERER_CODES: &[(Detail, &str)] = &[
         "renderer_retained_buffer_missing",
     ),
 ];
+const PREVIEW_REFUSAL_CODES: &[&str] = &[
+    "preview_image_pending",
+    "preview_image_missing",
+    "preview_image_cross_device",
+];
+
 const INVARIANT_CODES: &[(&str, &str)] = &[
+    (
+        "topology composition display list invalid",
+        "topology_composition_invariant",
+    ),
+    (
+        "preview retry found a non-local source",
+        "preview_recovery_invariant",
+    ),
+    (
+        "preview recovery found a conflicting shell retirement claim",
+        "preview_recovery_invariant",
+    ),
+    (
+        "preview recovery display list invalid",
+        "preview_recovery_invariant",
+    ),
+    (
+        "single output composition was deferred",
+        "native_composition_deferred",
+    ),
+    (
+        "native frame service export failed without detail",
+        "native_frame_service_failed",
+    ),
+    (
+        "native frame service target not ready",
+        "native_frame_service_failed",
+    ),
+    (
+        "native frame service frame target unavailable",
+        "native_frame_service_failed",
+    ),
+    (
+        "native frame service plane submit failed",
+        "native_frame_service_failed",
+    ),
+    (
+        "independent native submit lost its content",
+        "native_frame_service_failed",
+    ),
+    (
+        "preview recovery already owns this output",
+        "preview_recovery_invariant",
+    ),
+    (
+        "preview recovery cannot skip a partially submitted Present",
+        "preview_recovery_invariant",
+    ),
+    (
+        "preview recovery cannot withdraw a submitted frame",
+        "preview_recovery_invariant",
+    ),
+    (
+        "preview recovery could not transfer its unsubmitted frame mapping",
+        "preview_recovery_invariant",
+    ),
+    (
+        "preview recovery did not admit its replacement",
+        "preview_recovery_invariant",
+    ),
+    (
+        "preview recovery lost its Present image",
+        "preview_recovery_invariant",
+    ),
+    (
+        "preview recovery lost its Present transaction",
+        "preview_recovery_invariant",
+    ),
+    (
+        "preview recovery lost its exact failure owner",
+        "preview_recovery_invariant",
+    ),
+    (
+        "preview recovery lost its frozen sources",
+        "preview_recovery_invariant",
+    ),
+    (
+        "preview recovery lost its prepared candidate",
+        "preview_recovery_invariant",
+    ),
+    (
+        "preview recovery lost its unsubmitted Present",
+        "preview_recovery_invariant",
+    ),
+    (
+        "preview recovery tried to replace a submitted Present frame",
+        "preview_recovery_invariant",
+    ),
+    (
+        "preview replacement does not own the withdrawn output",
+        "preview_recovery_invariant",
+    ),
+    (
+        "software preview recovery admitted no frame",
+        "preview_recovery_invariant",
+    ),
+    (
+        "software preview recovery cannot replace a submitted frame",
+        "preview_recovery_invariant",
+    ),
+    (
+        "software preview recovery does not own an unsubmitted frame",
+        "preview_recovery_invariant",
+    ),
+    (
+        "software preview recovery lost its binding",
+        "preview_recovery_invariant",
+    ),
+    (
+        "software preview recovery lost its frame mapping",
+        "preview_recovery_invariant",
+    ),
+    (
+        "software preview recovery lost its source set",
+        "preview_recovery_invariant",
+    ),
+    (
+        "software preview recovery reused a native frame identity",
+        "preview_recovery_invariant",
+    ),
+    (
+        "native renderer registry replaced with live readers or evictions",
+        "renderer_image_registry_custody",
+    ),
+    (
+        "native preview recovery admission bypassed readiness",
+        "preview_recovery_admission",
+    ),
     (
         "public WM projection has no reconciled content placement",
         "wm_missing_reconciled_content",
@@ -160,6 +294,16 @@ pub fn failure_code(error: &(dyn std::error::Error + 'static)) -> &'static str {
             .find(|(candidate, _)| candidate == detail)
             .map_or("unclassified", |(_, code)| *code);
     }
+    #[cfg(feature = "native-session")]
+    if let Some(refusal) = error.downcast_ref::<sophia_backend_live::LivePreviewImageRefusal>() {
+        use sophia_backend_live::LivePreviewImageRefusal as R;
+        return match refusal {
+            R::Pending { .. } => "preview_image_pending",
+            R::Missing { .. } => "preview_image_missing",
+            R::CrossDevice { .. } => "preview_image_cross_device",
+            R::Renderer { detail, .. } => failure_code(detail),
+        };
+    }
     let message = error.to_string();
     INVARIANT_CODES
         .iter()
@@ -168,7 +312,8 @@ pub fn failure_code(error: &(dyn std::error::Error + 'static)) -> &'static str {
 }
 
 pub(super) fn approved_failure_code(value: &str) -> bool {
-    super::recovery::CODES.contains(&value)
+    PREVIEW_REFUSAL_CODES.contains(&value)
+        || super::recovery::CODES.contains(&value)
         || value == "unclassified"
         || RENDERER_CODES.iter().any(|(_, code)| *code == value)
         || INVARIANT_CODES.iter().any(|(_, code)| *code == value)

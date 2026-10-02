@@ -179,6 +179,31 @@ impl LiveProductionNativeScanout {
         required: &BTreeSet<OutputId>,
         content: LiveProductionHeadCompositionContent,
     ) -> Result<BTreeMap<OutputId, LiveProductionNativeFrameId>, Box<dyn std::error::Error>> {
+        self.prepare_and_admit_head_batch_for_recovery(batches, required, content, None)
+    }
+
+    pub(super) fn prepare_and_admit_head_batch_for_recovery(
+        &mut self,
+        mut batches: NativeHeadCompositionBatch,
+        required: &BTreeSet<OutputId>,
+        content: LiveProductionHeadCompositionContent,
+        recovery: Option<LivePreviewFrameFailure>,
+    ) -> Result<BTreeMap<OutputId, LiveProductionNativeFrameId>, Box<dyn std::error::Error>> {
+        defer_recovering_outputs(&mut batches, required, content, |output| {
+            Ok(self.preview_recovery_blocks(output)?
+                && self.preview_failures.get(&output).copied() != recovery)
+        })?;
+        for (output, frames) in &batches {
+            self.validate_head_composition_frames(*output, frames)?;
+        }
+        self.attach_preview_custody(&mut batches, recovery.is_none())
+            .map_err(|refusal| -> Box<dyn std::error::Error> {
+                if recovery.is_some() {
+                    "preview retry found a non-local source".into()
+                } else {
+                    refusal.into()
+                }
+            })?;
         let states = self
             .logical_outputs
             .iter()
@@ -208,7 +233,8 @@ impl LiveProductionNativeScanout {
                     output.id,
                     super::composition_admission::NativeCompositionOutput {
                         targets,
-                        ready: self.frame_queue_ready(output.id),
+                        ready: self.frame_queue_ready(output.id)
+                            || recovery.is_some_and(|failure| failure.output == output.id),
                         protected: self.output_retirement_protected(output.id),
                         available: !self.mirror_generation_failed(output.id),
                         newest,
@@ -259,11 +285,33 @@ impl LiveProductionNativeScanout {
         &mut self,
         generations: Vec<LiveProductionQueuedMirrorGeneration>,
     ) -> Result<BTreeMap<OutputId, LiveProductionNativeFrameId>, Box<dyn std::error::Error>> {
+        // Only foreign Snapshot layers can name a preview refusal. Freeze that
+        // attribution before the frame moves into worker custody.
+        let sources = generations
+            .iter()
+            .flat_map(|generation| &generation.heads)
+            .filter_map(|head| {
+                head.frame
+                    .layers
+                    .iter()
+                    .find_map(|layer| match layer {
+                        crate::LiveOwnedMixedCompositionLayer::Snapshot { snapshot, .. } => self
+                            .preview_images
+                            .demand_sources
+                            .get(&snapshot.image_id())
+                            .map(|(source, _)| *source),
+                        _ => None,
+                    })
+                    .map(|source| (head.identity, source))
+            })
+            .collect::<Vec<_>>();
         let configured = self.output_lifecycles.keys().copied().collect();
         let admitted = self
             .deferred_mirror_generations
             .admit_batch(generations, &configured)
             .map_err(|(reason, _unaccepted)| -> Box<dyn std::error::Error> { reason.into() })?;
+        self.prune_preview_frame_sources();
+        self.preview_images.frame_sources.extend(sources);
         // Queue evidence follows the complete owned transfer, never preparation.
         for output in admitted.keys() {
             let generation = self
@@ -293,4 +341,29 @@ impl LiveProductionNativeScanout {
         }
         Ok(admitted)
     }
+}
+
+/// Keep per-output deferral ahead of custody and batch validation.
+pub(super) fn defer_recovering_outputs(
+    batches: &mut NativeHeadCompositionBatch,
+    required: &BTreeSet<OutputId>,
+    content: LiveProductionHeadCompositionContent,
+    mut recovering: impl FnMut(OutputId) -> Result<bool, Box<dyn std::error::Error>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut deferred = BTreeSet::new();
+    for (output, _) in batches.iter() {
+        if recovering(*output)? {
+            if required.contains(output)
+                || matches!(
+                    content,
+                    LiveProductionHeadCompositionContent::MixedPresent(_)
+                )
+            {
+                return Err("native preview recovery admission bypassed readiness".into());
+            }
+            deferred.insert(*output);
+        }
+    }
+    batches.retain(|(output, _)| !deferred.contains(output));
+    Ok(())
 }

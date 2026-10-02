@@ -159,6 +159,8 @@ impl Drop for NativeGbmRendererWorkerScanoutLease {
     }
 }
 
+static NEXT_IMAGE_STORE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
 /// The thread itself, and everything a device group shares.
 ///
 /// One core serves every output of one DRM device: one EGL display, one GBM
@@ -166,6 +168,7 @@ impl Drop for NativeGbmRendererWorkerScanoutLease {
 /// each; the core outlives them and shuts the thread down when the last
 /// reference goes.
 pub struct NativeGbmRendererWorkerCore {
+    image_store: u64,
     command_sender: SyncSender<WorkerCommand>,
     _thread: std::sync::Mutex<WorkerThread>,
     control: Arc<WorkerControl>,
@@ -194,6 +197,11 @@ impl NativeGbmRendererWorkerCore {
                 "renderer import device capacity exceeded",
             ));
         }
+        let image_store = NEXT_IMAGE_STORE
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+                value.checked_add(1)
+            })
+            .map_err(|_| io::Error::other("renderer store identity exhausted"))?;
         let device = device?;
         let identity = DeviceIdentity::from_device(&device)?;
         let reservation = WorkerRegistry::shared().reserve(identity)?;
@@ -213,6 +221,7 @@ impl NativeGbmRendererWorkerCore {
                 })
         })?;
         Ok(Arc::new(Self {
+            image_store,
             command_sender,
             _thread: std::sync::Mutex::new(thread),
             control,
@@ -397,6 +406,10 @@ impl NativeGbmRendererWorker {
 
     pub const fn context_status(&self) -> Option<NativeGbmRenderedScanoutContextStatus> {
         self.context_status
+    }
+
+    pub(super) fn image_store_identity(&self) -> u64 {
+        self.core.image_store
     }
 
     pub(super) fn metrics_identity(&self) -> usize {
@@ -748,9 +761,22 @@ enum WorkerCommand {
         image_id: LiveRendererImageId,
         completion_sender: SyncSender<Result<bool, LiveRendererScanoutBufferExportDetail>>,
     },
+    EvictImports {
+        image_id: LiveRendererImageId,
+        completion_sender: SyncSender<Result<bool, LiveRendererScanoutBufferExportDetail>>,
+    },
     Promote {
         image_id: LiveRendererImageId,
         completion_sender: SyncSender<Result<bool, LiveRendererScanoutBufferExportDetail>>,
+    },
+    PromoteAndExport {
+        image_id: LiveRendererImageId,
+        completion_sender: SyncSender<
+            Result<
+                sophia_renderer_live::LiveRendererImagePromotion,
+                LiveRendererScanoutBufferExportDetail,
+            >,
+        >,
     },
     Rollback {
         image_id: LiveRendererImageId,
@@ -879,3 +905,5 @@ mod service;
 mod tests;
 
 use service::run_worker;
+
+mod preview_recovery;

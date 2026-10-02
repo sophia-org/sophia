@@ -30,6 +30,7 @@ mod mirrored_composition_test_target;
 mod ordinary_repaint;
 mod output_composition;
 mod policy_presentation;
+mod preview_custody;
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
 #[path = "../tests/support/session_content_fixture.rs"]
@@ -38,6 +39,7 @@ pub mod session_content_fixture;
 #[doc(hidden)]
 #[path = "../tests/support/session_policy_presentation_fixture.rs"]
 pub mod session_policy_presentation_fixture;
+mod software_preview_recovery;
 use composition_target::NativeCompositionTarget;
 pub use policy_presentation::{
     LivePolicyPresentation, LivePolicyPresentationRefusal, LivePolicyPresentationRevocation,
@@ -383,6 +385,7 @@ pub struct LiveShellContentFrame {
 }
 
 pub struct LiveProductionVisualRuntime {
+    image_reads: sophia_renderer_live::LiveRendererImageReads,
     /// A revoked native seat must not acquire headless presentation semantics
     /// while final authority removals are drained.
     native_suspended: bool,
@@ -418,6 +421,10 @@ pub struct LiveProductionVisualRuntime {
     /// physical retirement. Pixel equality or a replacement connection cannot
     /// settle that protocol obligation.
     retained_projection_retirements: BTreeMap<ShellContentKey, sophia_protocol::ContentGrant>,
+    queued_shell_retirements: BTreeMap<
+        (OutputId, LiveProductionNativeFrameId),
+        BTreeMap<ShellContentKey, sophia_protocol::ContentGrant>,
+    >,
     translations: TranslationTimeline,
     translation_origin: Instant,
     translation_deadlines: BTreeMap<OutputId, Instant>,

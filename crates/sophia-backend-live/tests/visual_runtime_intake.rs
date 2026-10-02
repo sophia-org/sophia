@@ -291,9 +291,50 @@ fn provisional_extended_topology_composes_each_head_from_one_committed_scene() {
         ],
         mirror_grouping: NativeMirrorGrouping::none(),
     };
+    runtime
+        .set_policy_presentation(
+            Some(sophia_backend_live::LivePolicyPresentation {
+                owner_epoch: 41,
+                presentation: sophia_protocol::PolicyPresentation {
+                    generation: 1,
+                    keyboard_output: None,
+                    outputs: vec![sophia_protocol::PolicyPresentationOutput {
+                        output: left,
+                        generation: 1,
+                        mode: sophia_protocol::PolicyPresentationMode::Overlay,
+                        coverage: Rect {
+                            x: 0,
+                            y: 0,
+                            width: 640,
+                            height: 480,
+                        },
+                    }],
+                    instances: vec![],
+                    regions: vec![],
+                    bindings: vec![],
+                },
+            }),
+            &scene,
+            None,
+        )
+        .unwrap();
     let frames = runtime
         .compose_output_topology_head_frames(&scene, &resolved, 9)
         .expect("both extended viewports should lower independently");
+    assert!(frames.iter().all(|frame| {
+        frame
+            .frame
+            .output_damage_snapshot
+            .as_ref()
+            .unwrap()
+            .compositor_display_list
+            .presentation_stamp()
+            .is_none()
+    }));
+    assert!(
+        runtime.policy_presentation().is_some(),
+        "next retained scene keeps the publication"
+    );
     assert_eq!(frames.len(), 2);
     assert_eq!(
         frames.iter().map(|frame| frame.head).collect::<Vec<_>>(),

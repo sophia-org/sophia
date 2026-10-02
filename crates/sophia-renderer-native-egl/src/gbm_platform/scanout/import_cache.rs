@@ -119,6 +119,7 @@ struct NativeDmaBufImport {
     fingerprint: NativeDmaBufFingerprint,
     image: khronos_egl::Image,
     texture: glow::NativeTexture,
+    _custody: Option<std::sync::Arc<super::NativeRendererImageSnapshot>>,
 }
 
 pub(crate) struct NativeDmaBufImportCache {
@@ -148,6 +149,21 @@ impl NativeDmaBufImportCache {
         pipeline: &PersistentXrgb8888GlPipeline,
         layer: NativeDmaBufCompositionLayer<'_>,
     ) -> Result<glow::NativeTexture, NativeGbmScanoutBufferExportDetail> {
+        // One immutable image can have copies in several stores. A snapshot
+        // from a replacement donor is a new backing even when its image ID
+        // still names the same pixels. Old custody never authenticates it.
+        let replace = self.entries.iter().flatten().any(|entry| {
+            entry.image_id == layer.image_id
+                && entry._custody.as_ref().is_some_and(|old| {
+                    !old.import_cacheable()
+                        || layer
+                            .custody
+                            .is_none_or(|new| !std::sync::Arc::ptr_eq(old, new))
+                })
+        });
+        if replace {
+            self.evict(egl, display, pipeline, layer.image_id)?;
+        }
         let fingerprint = NativeDmaBufFingerprint::from_layer(layer)?;
         let admission = native_renderer_image_cache_admission(
             self.entries
@@ -191,6 +207,7 @@ impl NativeDmaBufImportCache {
             fingerprint,
             image,
             texture,
+            _custody: layer.custody.cloned(),
         });
         self.stats.imports = self.stats.imports.saturating_add(1);
         self.stats.live_entries = self.stats.live_entries.saturating_add(1);

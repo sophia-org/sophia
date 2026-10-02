@@ -290,7 +290,9 @@ where
                 .saturating_add(persistent.target.pipeline.sampling_stats());
         }
         for (_, target) in self.capture_targets.iter().flatten() {
-            stats.sampling = stats.sampling.saturating_add(target.pipeline.sampling_stats());
+            stats.sampling = stats
+                .sampling
+                .saturating_add(target.pipeline.sampling_stats());
         }
         stats
     }
@@ -333,14 +335,6 @@ where
             .get(&set)
             .map_or(0, |set| set.proven_composition_nonzero_rgb_pixels)
     }
-
-
-
-
-
-
-
-
 
     pub fn export_rendered_owned_scanout_buffer(
         &self,
@@ -499,10 +493,7 @@ where
         preferred_modifiers: &[u64],
     ) -> NativeGbmOwnedScanoutBufferExportReport {
         self.with_frame_target_slot(set, frame_slot, |context| {
-            context.export_dmabuf_owned_scanout_buffer_with_modifiers(
-                frame,
-                preferred_modifiers,
-            )
+            context.export_dmabuf_owned_scanout_buffer_with_modifiers(frame, preferred_modifiers)
         })
         .unwrap_or_else(invalid_frame_slot_report)
     }
@@ -549,7 +540,6 @@ where
                         || layer.target.width <= 0
                         || layer.target.height <= 0
                         || !layer.alpha.is_finite()
-                        || !self.renderer_images.contains_key(&layer.image_id)
                 }
                 NativeCompositionLayer::Solid(layer) => {
                     layer.target.width <= 0 || layer.target.height <= 0
@@ -565,6 +555,30 @@ where
                 repaint: NativeCompositionRepaintOutcome::Full,
             };
         }
+        if frame.layers.iter().any(|layer| {
+            matches!(layer, NativeCompositionLayer::RendererImage(layer)
+                if !self.renderer_images.contains_key(&layer.image_id))
+                || matches!(layer, NativeCompositionLayer::DmaBuf(layer)
+                    if layer.custody.is_some_and(|snapshot| !snapshot.is_current()))
+        }) {
+            // The render epilogue will not run. Release the stale imports even
+            // when an old queued snapshot is refused before drawing.
+            for image in frame.layers.iter().filter_map(|layer| match layer {
+                NativeCompositionLayer::DmaBuf(layer)
+                    if layer
+                        .custody
+                        .is_some_and(|snapshot| !snapshot.import_cacheable()) =>
+                {
+                    Some(layer.image_id)
+                }
+                _ => None,
+            }) {
+                let _ = self.evict_renderer_image_imports(image);
+            }
+            return failed_scanout_buffer_report(
+                NativeGbmScanoutBufferExportDetail::InvalidRendererImageId,
+            );
+        }
         self.last_render_buffer_age = None;
         self.last_render_repaint = NativeCompositionRepaintOutcome::Full;
         self.last_render_target_generation = None;
@@ -572,6 +586,33 @@ where
             Ok(buffer) => exported_scanout_buffer_report(buffer),
             Err(detail) => failed_scanout_buffer_report(detail),
         };
+        if let Some(buffer) = &mut report.buffer {
+            buffer._sampled_snapshots = frame
+                .layers
+                .iter()
+                .filter_map(|layer| match layer {
+                    NativeCompositionLayer::DmaBuf(layer) => layer.custody.cloned(),
+                    _ => None,
+                })
+                .collect();
+        }
+        // A frame may outlive the publication's demand and the broadcast
+        // eviction. It still owns valid pixels, but must not resurrect an
+        // unbounded import-cache owner after drawing those pixels once.
+        for image in frame.layers.iter().filter_map(|layer| match layer {
+            NativeCompositionLayer::DmaBuf(layer)
+                if layer
+                    .custody
+                    .is_some_and(|snapshot| !snapshot.import_cacheable()) =>
+            {
+                Some(layer.image_id)
+            }
+            _ => None,
+        }) {
+            // Cleanup cannot erase the successful render's buffer or fence.
+            // The eviction path destroys a target whose import cleanup fails.
+            let _ = self.evict_renderer_image_imports(image);
+        }
         report.buffer_age = self.last_render_buffer_age;
         report.repaint = self.last_render_repaint;
         report.target_generation = self.last_render_target_generation;
@@ -642,7 +683,6 @@ where
         Some(result)
     }
 
-
     fn create_render_target(
         &mut self,
         spec: RenderTargetSpec,
@@ -666,8 +706,7 @@ where
         self.stats.max_target_create = self.stats.max_target_create.max(started.elapsed());
         if let Ok((_, _, surface_create_duration)) = &created {
             self.stats.target_creations = self.stats.target_creations.saturating_add(1);
-            self.stats.gl_pipeline_creations =
-                self.stats.gl_pipeline_creations.saturating_add(1);
+            self.stats.gl_pipeline_creations = self.stats.gl_pipeline_creations.saturating_add(1);
             self.stats.frame_surface_creations =
                 self.stats.frame_surface_creations.saturating_add(1);
             self.stats.max_frame_surface_create = self
@@ -677,7 +716,6 @@ where
         }
         created
     }
-
 }
 include!("context/render_once.rs");
 include!("context/renderer_images.rs");
@@ -712,11 +750,10 @@ where
             )
             .is_ok()
         {
-            let _ = persistent.import_cache.clear(
-                &self.egl,
-                self.display,
-                &persistent.target.pipeline,
-            );
+            let _ =
+                persistent
+                    .import_cache
+                    .clear(&self.egl, self.display, &persistent.target.pipeline);
         } else {
             persistent.import_cache.abandon(&self.egl, self.display);
         }
@@ -747,7 +784,10 @@ where
                 }
             }
         }
-        for (_, target) in std::mem::take(&mut self.capture_targets).into_iter().flatten() {
+        for (_, target) in std::mem::take(&mut self.capture_targets)
+            .into_iter()
+            .flatten()
+        {
             self.destroy_native_render_target(target);
         }
         // Target imports are gone; release retained buffer surfaces while their

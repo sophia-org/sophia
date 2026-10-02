@@ -353,3 +353,74 @@ fn thousand_presented_refreshes_keep_capture_on_both_outputs() {
         );
     }
 }
+
+#[test]
+fn retained_and_shell_admission_defer_a_recovering_nonrequired_output() {
+    let outputs = outputs();
+    let a = outputs[0].id;
+    let b = outputs[1].id;
+    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    let scene = LiveProductionCpuScene::new(outputs[0].size);
+    let mut target = Target::new(&outputs);
+    target.recovering.insert(b); // Withdrawal still waits for worker completion.
+    target.preview_withdraw_ready = false;
+    let failure = crate::LivePreviewFrameFailure::test_failure(
+        b,
+        crate::LiveProductionNativeFrameId::from_raw(900),
+        41,
+        1,
+        SurfaceId::new(1, 1),
+    );
+    target.preview_failures.insert(b, failure);
+    runtime
+        .recover_policy_preview_frames(&scene, &mut target)
+        .unwrap();
+    runtime
+        .retained_projection_retirements
+        .insert((a, LiveShellContentLayer::Shell), grant());
+    assert!(
+        runtime
+            .queue_retained_projection(&scene, &mut target)
+            .unwrap()
+    );
+    assert!(target.queue.pending(a));
+    assert!(!target.queue.pending(b));
+    assert!(runtime.retained_projection_pending);
+    target.complete(a);
+    runtime.publish_presented_input_layers(&target);
+    let mut store =
+        sophia_runtime::ContentResourceStore::new(ContentLimits::prototype(grant())).unwrap();
+    let lease = upload(
+        &mut store,
+        grant(),
+        ContentResourceId {
+            id: 901,
+            generation: 1,
+        },
+    );
+    runtime
+        .set_shell_content_on_target(shell_frame(outputs[0], 2, lease), &scene, Some(&mut target))
+        .unwrap();
+    assert!(target.queue.pending(a));
+    assert!(!target.queue.pending(b));
+    assert!(runtime.retained_projection_pending);
+    target.complete(a);
+    runtime.publish_presented_input_layers(&target);
+    target.preview_withdraw_ready = true;
+    runtime
+        .recover_policy_preview_frames(&scene, &mut target)
+        .unwrap();
+    assert!(target.preview_failures.is_empty());
+    assert!(
+        runtime
+            .queue_retained_projection(&scene, &mut target)
+            .unwrap()
+    );
+    assert!(
+        target.queue.pending(b),
+        "the deferred output resumes after recovery"
+    );
+    target.drain();
+    runtime.publish_presented_input_layers(&target);
+    target.teardown();
+}

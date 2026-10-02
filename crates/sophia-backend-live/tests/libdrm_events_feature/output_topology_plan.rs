@@ -15,8 +15,7 @@ fn topology_plan_selection_with_cursor(
     raw: u32,
     size: sophia_protocol::Size,
 ) -> sophia_backend_live::LibdrmNativePrimaryPlaneSelection {
-    topology_plan_selection(raw, size)
-        .with_cursor_plane(drm::control::from_u32(raw + 300).unwrap())
+    topology_plan_selection(raw, size).with_cursor_plane(drm::control::from_u32(raw + 300).unwrap())
 }
 
 fn topology_plan_mode() -> drm::control::Mode {
@@ -30,9 +29,7 @@ fn live_native_topology_plan_resolves_every_enabled_and_disabled_head_without_mu
         LiveProductionNativeTopologyCurrentHead, LiveProductionNativeTopologyDisposition,
         NativeMirrorGrouping,
     };
-    use sophia_protocol::{
-        OutputHeadMapping, OutputId, OutputTransform, OutputVrrPolicy, Size,
-    };
+    use sophia_protocol::{OutputHeadMapping, OutputId, OutputTransform, OutputVrrPolicy, Size};
 
     let output_one = OutputId::from_raw(1);
     let output_two = OutputId::from_raw(2);
@@ -135,8 +132,9 @@ fn live_native_topology_plan_resolves_every_enabled_and_disabled_head_without_mu
         size: small,
         scale: 1,
     });
-    split.logical_viewports.push(
-        sophia_backend_live::LiveOutputAuthorityLogicalViewport {
+    split
+        .logical_viewports
+        .push(sophia_backend_live::LiveOutputAuthorityLogicalViewport {
             output: output_two,
             logical: Rect {
                 x: large.width,
@@ -144,8 +142,7 @@ fn live_native_topology_plan_resolves_every_enabled_and_disabled_head_without_mu
                 width: small.width,
                 height: small.height,
             },
-        },
-    );
+        });
     split.disabled_heads.clear();
     split.primary_heads.insert(output_two, head_two);
     split.targets.push(LiveOutputAuthorityHeadTarget {
@@ -190,9 +187,7 @@ fn live_native_topology_plan_rejects_incomplete_coverage_and_stale_generations()
         LiveOutputAuthorityHeadTarget, LiveProductionNativeTopologyCurrentHead,
         LiveProductionNativeTopologyPlanError, NativeMirrorGrouping,
     };
-    use sophia_protocol::{
-        OutputHeadMapping, OutputId, OutputTransform, OutputVrrPolicy, Size,
-    };
+    use sophia_protocol::{OutputHeadMapping, OutputId, OutputTransform, OutputVrrPolicy, Size};
 
     let output = OutputId::from_raw(1);
     let size = Size {
@@ -258,12 +253,12 @@ fn live_native_topology_plan_rejects_incomplete_coverage_and_stale_generations()
         ))
     );
 
-    resolved.disabled_heads.push(
-        sophia_backend_live::LiveOutputAuthorityDisabledHead {
+    resolved
+        .disabled_heads
+        .push(sophia_backend_live::LiveOutputAuthorityDisabledHead {
             head: head_two,
             target_generation: 2,
-        },
-    );
+        });
     resolved.targets[0].target_generation = 1;
     assert_eq!(
         sophia_backend_live::plan_live_production_native_topology(
@@ -277,7 +272,9 @@ fn live_native_topology_plan_rejects_incomplete_coverage_and_stale_generations()
     );
 }
 
-fn topology_apply_plan(card_indices: &[usize]) -> sophia_backend_live::LiveProductionNativeTopologyPlan {
+fn topology_apply_plan(
+    card_indices: &[usize],
+) -> sophia_backend_live::LiveProductionNativeTopologyPlan {
     use sophia_backend_live::{
         LiveOutputAuthorityLogicalViewport, LiveProductionNativeTopologyDisposition,
         LiveProductionNativeTopologyHeadPlan, LiveProductionNativeTopologyPlan,
@@ -588,21 +585,23 @@ fn published_topology_projection_uses_published_viewports_and_live_native_target
         ),
     ];
 
-    let projected = project_live_production_published_topology(
-        &current,
-        &snapshot,
-        |head| {
-            Ok(LibdrmNativeOutputTiming::new(
-                head.selection.size().width as u32,
-                head.selection.size().height as u32,
-                60_000,
-            ))
-        },
-    )
+    let projected = project_live_production_published_topology(&current, &snapshot, |head| {
+        Ok(LibdrmNativeOutputTiming::new(
+            head.selection.size().width as u32,
+            head.selection.size().height as u32,
+            60_000,
+        ))
+    })
     .unwrap();
 
-    assert_eq!(projected.logical_viewports[0].logical, snapshot.groups[0].logical);
-    assert_eq!(projected.logical_viewports[1].logical, snapshot.groups[1].logical);
+    assert_eq!(
+        projected.logical_viewports[0].logical,
+        snapshot.groups[0].logical
+    );
+    assert_eq!(
+        projected.logical_viewports[1].logical,
+        snapshot.groups[1].logical
+    );
     assert_eq!(projected.targets[0].native_size, left_size);
     assert_eq!(projected.targets[0].target_generation, 4);
     assert_eq!(projected.targets[1].native_size, right_size);
@@ -645,7 +644,10 @@ fn topology_resource_cohort_requires_complete_candidate_and_rollback_owners() {
             .unwrap(),
         Transition::Accepted
     );
-    assert!(!resources.ready(), "candidate coverage alone must not permit apply");
+    assert!(
+        !resources.ready(),
+        "candidate coverage alone must not permit apply"
+    );
     assert_eq!(
         resources
             .prepare_rollback(enabled, "rollback-enabled".into())
@@ -662,7 +664,10 @@ fn topology_resource_cohort_requires_complete_candidate_and_rollback_owners() {
     assert!(resources.ready());
     assert_eq!(resources.card_heads(0), vec![enabled]);
     assert_eq!(resources.card_heads(1), vec![disabled]);
-    assert!(matches!(resources.candidate(enabled), Some(Candidate::Enabled(_))));
+    assert!(matches!(
+        resources.candidate(enabled),
+        Some(Candidate::Enabled(_))
+    ));
     assert!(matches!(
         resources.candidate(disabled),
         Some(Candidate::Disabled(_))
@@ -714,7 +719,10 @@ fn topology_resource_cohort_restores_a_previously_disabled_head_without_a_frameb
             .unwrap(),
         Transition::Ready
     );
-    assert!(matches!(resources.rollback(head), Some(Candidate::Disabled(_))));
+    assert!(matches!(
+        resources.rollback(head),
+        Some(Candidate::Disabled(_))
+    ));
 }
 
 #[test]
@@ -879,6 +887,7 @@ fn topology_composition_frame(
         mapping,
         logical_content_checksum: output.raw(),
         frame: sophia_renderer_live::LiveOwnedMixedCompositionFrame {
+            image_reads: Default::default(),
             layers: Vec::new(),
             output_damage_snapshot: Some(sophia_engine::OutputFrameDamageSnapshot {
                 damage_history: Default::default(),
@@ -912,6 +921,7 @@ fn identified_head_composition_frame(
         mapping: target.mapping,
         logical_content_checksum: checksum,
         frame: sophia_renderer_live::LiveOwnedMixedCompositionFrame {
+            image_reads: Default::default(),
             layers: Vec::new(),
             output_damage_snapshot: Some(sophia_engine::OutputFrameDamageSnapshot {
                 damage_history: Default::default(),
@@ -1051,9 +1061,7 @@ fn current_heads_reduce_to_independent_committed_render_targets() {
     use sophia_backend_live::{
         LiveProductionNativeTopologyCurrentHead, reduce_live_production_head_render_target,
     };
-    use sophia_protocol::{
-        OutputHeadMapping, OutputId, OutputTransform, OutputVrrPolicy, Size,
-    };
+    use sophia_protocol::{OutputHeadMapping, OutputId, OutputTransform, OutputVrrPolicy, Size};
 
     let output = OutputId::from_raw(41);
     let large = LiveProductionNativeTopologyCurrentHead::new_with_target(

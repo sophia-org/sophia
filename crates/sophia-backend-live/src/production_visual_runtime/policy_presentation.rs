@@ -399,7 +399,9 @@ impl LiveProductionVisualRuntime {
         }
         let previous = std::mem::replace(&mut self.policy_presentation, presentation);
         if let Some(native_scanout) = native_scanout
-            && let Err(error) = self.queue_retained_projection(scene, native_scanout)
+            && let Err(error) = self
+                .prepare_policy_preview_images(native_scanout)
+                .and_then(|()| self.queue_retained_projection(scene, native_scanout))
         {
             self.policy_presentation = previous;
             return Err(error);
@@ -467,6 +469,101 @@ impl LiveProductionVisualRuntime {
             generation: revoked.presentation.generation,
             source,
         });
+    }
+
+    /// Foreign image failure withdraws the entire publication. It does not
+    /// acknowledge pixels or alter any client's Present retirement.
+    pub(super) fn handle_preview_refusal(
+        &mut self,
+        error: &(dyn std::error::Error + 'static),
+    ) -> bool {
+        let Some(refusal) = error.downcast_ref::<crate::LivePreviewImageRefusal>() else {
+            return false;
+        };
+        if matches!(
+            refusal,
+            crate::LivePreviewImageRefusal::Pending { .. }
+                | crate::LivePreviewImageRefusal::Renderer {
+                    detail: crate::LiveRendererScanoutBufferExportDetail::WorkerPending
+                        | crate::LiveRendererScanoutBufferExportDetail::WorkerQueueFull,
+                    ..
+                }
+        ) {
+            return true;
+        }
+        // Budget/identity refusal is publication-local. A real renderer or
+        // device failure must retain its ordinary fatal classification.
+        if matches!(refusal, crate::LivePreviewImageRefusal::Renderer { detail, .. }
+            if !matches!(detail, crate::LiveRendererScanoutBufferExportDetail::RendererImageStoreFull
+                | crate::LiveRendererScanoutBufferExportDetail::InvalidRendererImageId))
+        {
+            return false;
+        }
+        let Some(presentation) = &self.policy_presentation else {
+            return false;
+        };
+        let image = refusal.image();
+        let source = self
+            .displayed_surfaces
+            .iter()
+            .find_map(|(surface, displayed)| {
+                (displayed.layer.image_id == image).then_some(*surface)
+            })
+            .or_else(|| {
+                self.present_scheduler
+                    .in_flight_displayed_layer()
+                    .and_then(|(surface, layer)| (layer.image_id == image).then_some(surface))
+            });
+        let Some(source) =
+            source.filter(|source| presentation.sources().any(|candidate| candidate == *source))
+        else {
+            return false;
+        };
+        self.policy_presentation_revocation = Some(LivePolicyPresentationRevocation {
+            owner_epoch: presentation.owner_epoch,
+            generation: presentation.presentation.generation,
+            source,
+        });
+        self.policy_presentation = None;
+        self.retained_projection_pending = true;
+        true
+    }
+
+    pub(super) fn instance_outputs(&self, surface: SurfaceId) -> BTreeSet<OutputId> {
+        self.policy_presentation
+            .as_ref()
+            .into_iter()
+            .flat_map(|p| &p.presentation.instances)
+            .filter(|instance| instance.source == surface)
+            .map(|instance| instance.output)
+            .collect()
+    }
+
+    pub(super) fn present_retirement_outputs(
+        &self,
+        surface: SurfaceId,
+        previous: Option<Rect>,
+        geometry: Rect,
+    ) -> Result<Vec<OutputId>, sophia_engine::HeadCompositionPlanError> {
+        let viewports = self.outputs.logical_viewports().collect::<Vec<_>>();
+        let mut outputs =
+            sophia_engine::applicable_output_retirement_set(&viewports, previous, geometry)?;
+        outputs.retain(|output| {
+            self.presentation_order.contains(&surface)
+                && live_surface_routes_to_output(
+                    surface,
+                    &self.surface_outputs,
+                    &self.geometry_routed_surfaces,
+                    *output,
+                )
+                && !self.surface_hidden_by_policy(surface, *output)
+        });
+        if outputs.is_empty()
+            && let Some(output) = self.instance_outputs(surface).into_iter().next()
+        {
+            outputs.push(output);
+        }
+        Ok(outputs)
     }
 
     /// The last revocation, once: what presented input and the WM are told.
