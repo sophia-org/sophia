@@ -2,7 +2,7 @@
 id: qvrk2298
 date: 2026-10-01
 kind: investigation
-status: awaiting-physical-acceptance
+status: closed
 tags: [investigation, session, x11]
 ---
 # Remove timer polling from idle desktop workers
@@ -122,10 +122,10 @@ of one new test. These checks cover the development source over `dd62b50c8`;
 it has not been installed or physically accepted. Combined qualification with
 t277 follows the separate feature reviews.
 
-Physical acceptance still needs three matched 60-second samples per workload
-and preserved input, frame and restoration behavior. No CPU reduction is claimed
-from the device-free tests. The original 84-thread count need not fall: this
-change removes idle polling, not workers. The libinput dispatch-gap statistic
+The original physical acceptance plan required three matched 60-second samples
+per workload and preserved input, frame and restoration behavior. No CPU
+reduction is claimed from the device-free tests. The original 84-thread count
+need not fall: this change removes idle polling, not workers. The libinput dispatch-gap statistic
 now includes intentional idle time; it is not an input-latency measurement.
 The live desktop is not modified by development checks. Task t276 owns acceptance.
 
@@ -140,10 +140,26 @@ records the measurements, corrected normalization and limitations. Raw evidence
 and the reproducible comparison are in
 `~/.local/state/sophia/development-evidence/t278-live-cpu-01/`.
 
-Task t276 remains open. One sample per workload does not meet the three-sample
-criterion, and these samples supply no new latency, frame-pacing, restoration
-or teardown measurement. The earlier input checks are separate evidence and
-do not substitute for those measurements.
+The initial assessment kept t276 open. One sample per workload does not meet
+the three-sample criterion, and these samples supply no new latency,
+frame-pacing, restoration or teardown measurement. The earlier input checks
+are separate evidence and do not substitute for those measurements.
+
+## Formal operator acceptance, 2026-10-02
+
+niltempus stated, as relayed by pF: **"this is formal acceptance."** The
+operator explicitly requested acceptance and closure of t276 and t278 using
+the installed `niltempus-9de41ea905db10201b9e` CPU result. Task t276 is closed
+on that release decision, supported by its code qualification and the accepted
+live evidence. The installed Sophia revision is
+`f650e68831f15a7e8b767dac88c598aebe515e51`.
+
+The [t278 acceptance record](wwr7oaer-reduce-per-frame-capture-and-cpu-raster-cost-without-reusing-live-image-storage.md#formal-operator-acceptance-2026-10-02)
+names the frozen comparison and decision evidence. This decision supersedes
+the planned three-repeat requirement and the remaining live checks as blockers
+to closing these two tasks. Their measurement limits remain recorded: both
+compared releases contain t276, so no isolated CPU saving is attributed to it.
+No new latency, pacing, restoration or teardown measurement is claimed.
 
 ## Connections
 

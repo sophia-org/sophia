@@ -2,7 +2,7 @@
 id: wwr7oaer
 date: 2026-10-02
 kind: investigation
-status: awaiting-physical-acceptance
+status: closed
 tags: [investigation, renderer, performance]
 ---
 # Reduce per-frame capture and CPU raster cost without reusing live image storage
@@ -122,7 +122,7 @@ these measurements do not claim partial-damage gains for scaled variants.
 The rebuilt final capture executable is byte-identical to the measured one
 (`65-bench-identity.json`).
 
-Open acceptance in [todo.md](../../../todo.md): qualify the installable candidate
+At code qualification, the outstanding acceptance was to qualify the candidate
 and measure the same live terminal workload at matched client frame rate. Check
 the periodic counters, resource bounds, input responsiveness and clean teardown.
 No live session, personal profile, terminal animation setting or Herdr server was
@@ -182,13 +182,35 @@ Codex sample for the new idle subtraction; its appended correction preserves
 that error and fixes the result. The animating Claude-pane run was not matched
 to its morning baseline and does not establish a second matched comparison.
 
-This is supporting evidence, not completion of t278. There is one 60-second
+Before the operator decision below, this was supporting evidence rather than
+completion of t278. There is one 60-second
 sample per workload. Periodic render counters and resource bounds, input
 responsiveness, frame pacing and clean teardown still need qualification.
 Both releases already contain t276, and the new release also contains t279
 and t284; these live samples do not isolate either t276 or t278. They establish
-no separate idle-wakeup acceptance. No build, configuration change or generated
+no separate idle-wakeup measurement. No build, configuration change or generated
 input was used to collect them; the operator controlled the workload.
+
+## Formal operator acceptance, 2026-10-02
+
+niltempus stated, as relayed by pF: **"this is formal acceptance."** The
+operator explicitly accepted the installed `niltempus-9de41ea905db10201b9e`
+live CPU result and requested acceptance and status changes for t278 and t276.
+Task t278 is closed on that decision, with the code qualification and live
+evidence above. The installed Sophia revision is
+`f650e68831f15a7e8b767dac88c598aebe515e51`.
+
+The decision is retained in `t278-live-cpu-01/FORMAL-ACCEPTANCE.txt`. Its
+accepted `ROOT-COMPARISON.json` has SHA256
+`904765a10eff6f63404243aabd8d71307e7bd5e478e62c3206ef799ad7e190b6`.
+The earlier open-status assessment in that evidence is preserved as history;
+this operator decision supersedes it.
+
+The operator accepts closure without the remaining planned repeats and live
+checks. The single-sample, incomplete-cadence and attribution limits above
+remain. No additional latency, pacing, resource-bound or teardown measurement
+was performed, and none is reported as passing. Future CPU optimizations are
+separate work; this acceptance does not close another task's required checks.
 
 ## Connections
 
