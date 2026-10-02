@@ -79,6 +79,7 @@ fn desktop_shortcuts_resolve_against_the_policy_action_catalog() {
         sophia_engine::WmShortcutDecision {
             action: Some(WmActionId::from_raw(1)),
             consumed: true,
+            chord: None,
         }
     );
 }

@@ -27,7 +27,7 @@
                             .flatten()
                         {
                             if let Some(shortcuts) = shortcuts.as_deref_mut() {
-                                let _ = shortcuts.route_key(event.seat, modifier_keycode, false);
+                                let _ = shortcuts.route_key(event.seat, event.device, modifier_keycode, false, event.time_msec);
                             }
                             let _ = modifiers.map_evdev_key(modifier_keycode, false);
                             if let Some((_, keyboard)) = launcher.as_mut() {
@@ -113,7 +113,7 @@
                         discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
                     }
                     let decision = if routing_mode != PhysicalInputRoutingMode::CursorOnly {
-                        shortcuts.as_deref_mut().map(|router|router.route_key(event.seat,keycode,pressed))
+                        shortcuts.as_deref_mut().map(|router|router.route_key(event.seat,event.device,keycode,pressed,event.time_msec))
                     } else {None};
                     let switcher=decision.as_ref().is_some_and(|d|d.action.is_some_and(is_shell_switcher_shortcut));
                     let help=decision.as_ref().is_some_and(|d|d.action==Some(SHELL_HELP_SHORTCUT_ACTION));

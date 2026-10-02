@@ -134,10 +134,10 @@ fn compiled_desktop_with_no_applications_accepts_the_standard_policy_vocabulary(
     }
     let mut shortcuts = fixture.wm.shortcuts.clone().unwrap();
     let seat = SeatId::from_raw(1);
-    shortcuts.route_key(seat, 125, true); // Super
-    assert!(shortcuts.route_key(seat, 48, true).action.is_none()); // browser
-    assert!(shortcuts.route_key(seat, 28, true).action.is_none()); // terminal
-    assert!(shortcuts.route_key(seat, 16, true).action.is_some()); // close
+    shortcuts.route_key(seat, sophia_protocol::DeviceId::from_raw(1), 125, true, 0); // Super
+    assert!(shortcuts.route_key(seat, sophia_protocol::DeviceId::from_raw(1), 48, true, 0).action.is_none()); // browser
+    assert!(shortcuts.route_key(seat, sophia_protocol::DeviceId::from_raw(1), 28, true, 0).action.is_none()); // terminal
+    assert!(shortcuts.route_key(seat, sophia_protocol::DeviceId::from_raw(1), 16, true, 0).action.is_some()); // close
 
     // A core reload may supply an application that the fallback could not
     // previously launch. Recompute omissions with the new command registry.
@@ -160,7 +160,7 @@ fn compiled_desktop_with_no_applications_accepts_the_standard_policy_vocabulary(
             .contains(&sophia_config::DesktopSessionShortcut::LaunchTerminal)
     );
     let mut shortcuts = fixture.wm.shortcuts.clone().unwrap();
-    shortcuts.route_key(seat, 125, true);
-    assert!(shortcuts.route_key(seat, 28, true).action.is_some());
-    assert!(shortcuts.route_key(seat, 48, true).action.is_none());
+    shortcuts.route_key(seat, sophia_protocol::DeviceId::from_raw(1), 125, true, 0);
+    assert!(shortcuts.route_key(seat, sophia_protocol::DeviceId::from_raw(1), 28, true, 0).action.is_some());
+    assert!(shortcuts.route_key(seat, sophia_protocol::DeviceId::from_raw(1), 48, true, 0).action.is_none());
 }
