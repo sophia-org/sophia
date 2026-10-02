@@ -129,6 +129,22 @@ change removes idle polling, not workers. The libinput dispatch-gap statistic
 now includes intentional idle time; it is not an input-latency measurement.
 The live desktop is not modified by development checks. Task t276 owns acceptance.
 
+## Later live CPU evidence, 2026-10-02
+
+The installed `niltempus-9de41ea905db10201b9e` session (Sophia `f650e688`)
+was sampled read-only for comparison with `niltempus-2adbe49302088d28c023`
+(Sophia `9d3a4190`). Both releases already contain t276, so the observed CPU
+reduction cannot establish this task's contribution. The
+[t278 investigation](wwr7oaer-reduce-per-frame-capture-and-cpu-raster-cost-without-reusing-live-image-storage.md#live-cpu-evidence-2026-10-02)
+records the measurements, corrected normalization and limitations. Raw evidence
+and the reproducible comparison are in
+`~/.local/state/sophia/development-evidence/t278-live-cpu-01/`.
+
+Task t276 remains open. One sample per workload does not meet the three-sample
+criterion, and these samples supply no new latency, frame-pacing, restoration
+or teardown measurement. The earlier input checks are separate evidence and
+do not substitute for those measurements.
+
 ## Connections
 
 - [Sophia X authority](../../sophia-x-authority.md): queue receipts, recipient

@@ -146,6 +146,50 @@ Resolving the adjacent t278/t279 queue insertions changes no code. Production
 and test files remain byte-identical to the combined qualified tree. Live
 CPU, input behaviour and physical retirement still require the next-login run.
 
+## Live CPU evidence, 2026-10-02
+
+The operator arranged Ghostty with the active Codex pane in Herdr on DP1 and
+btop on DP2. pF sampled `/proc` read-only after a 10-second grace period, for
+60 seconds, using the same sampler as the morning baseline. The baseline was
+release `niltempus-2adbe49302088d28c023` (Sophia `9d3a4190`); the new session
+ran `niltempus-9de41ea905db10201b9e` (Sophia `f650e688`, PID 30884).
+Evidence is under `~/.local/state/sophia/development-evidence/` in
+`t276-t277-live-01/ghostty-dp1-01.json` and
+`t278-live-cpu-01/ghostty-codex-02.json`, with the corresponding empty-DP1
+samples. `t278-live-cpu-01/root-compare.py` recomputes the results from the
+retained data; `ROOT-COMPARISON.json` records the inputs' digests and limits.
+
+| Measurement | Morning baseline | New session |
+| --- | ---: | ---: |
+| Sophia CPU, percent of one core | 30.15 | 10.75 |
+| Render-worker runtime, percent of one core | 12.49 | 2.78 |
+| Owner-thread runtime, percent of one core | 12.31 | 5.47 |
+| Ghostty CPU, percent of one core | 14.08 | 12.85 |
+| Recorded Ghostty retirements per second | 53.58 | 51.80 |
+| Sophia CPU with empty DP1 and btop on DP2 | 5.28 | 3.37 |
+
+Sophia process CPU fell 64.3%; render-worker runtime fell 77.7%. This supports
+a live reduction consistent with the isolated capture measurements. Diagnostic
+budgets suppress retirement records, so the similar recorded rates do not
+prove identical actual frame cadence. Client sets also differ: Sophia had 91
+threads in the baseline active run and 70 in the new run.
+
+Subtracting each session's empty-DP1 CPU and dividing by recorded retirements
+gives approximately 4.64 and 1.43 ms per recorded retirement. These ratios are
+not direct renderer timings: their denominators are incomplete and their idle
+costs come from separate samples. The initial pF report used a static visible
+Codex sample for the new idle subtraction; its appended correction preserves
+that error and fixes the result. The animating Claude-pane run was not matched
+to its morning baseline and does not establish a second matched comparison.
+
+This is supporting evidence, not completion of t278. There is one 60-second
+sample per workload. Periodic render counters and resource bounds, input
+responsiveness, frame pacing and clean teardown still need qualification.
+Both releases already contain t276, and the new release also contains t279
+and t284; these live samples do not isolate either t276 or t278. They establish
+no separate idle-wakeup acceptance. No build, configuration change or generated
+input was used to collect them; the operator controlled the workload.
+
 ## Connections
 
 - [Renderer import boundary](../../renderer-import-boundary.md) owns the current
