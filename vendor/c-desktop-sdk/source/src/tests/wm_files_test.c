@@ -258,8 +258,40 @@ static void action_lifecycle_vectors(void) {
   n = lifecycle(p, 2, 1, 1);
   memset(p + 104, 0, 8);
   reject(p, n, UINT64_MAX);
-  n = cycle(p, 8, 24);
+  n = cycle(p, 9, 24);
   reject(p, n, UINT64_MAX);
+}
+/* ChordAction: serial@96, chord_serial@104, action@112. */
+static void chord_action_vectors(void) {
+  const uint64_t needs[] = {SOPHIA_WF_CAP_ACTIONS, SOPHIA_WF_CAP_CONFIGURATION,
+                            SOPHIA_WF_CAP_ACTION_LIFECYCLE,
+                            SOPHIA_WF_CAP_CHORD_ACTIONS};
+  uint8_t p[512];
+  struct sophia_wf_record r;
+  size_t n = cycle(p, 8, 24), i;
+  put(p + 96, 43, 8);
+  put(p + 104, 41, 8);
+  put(p + 112, 186, 8);
+  roundtrip(p, n, UINT64_MAX);
+  assert(!sophia_wf_decode(p, n, UINT64_MAX, &r));
+  assert(r.value.cycle.cause == SOPHIA_WF_CHORD_ACTION &&
+         r.value.cycle.value.chord_action.serial == 43 &&
+         r.value.cycle.value.chord_action.chord_serial == 41 &&
+         r.value.cycle.value.chord_action.action == 186);
+  /* A client that selected the lifecycle alone never accepts cause 8. */
+  for (i = 0; i < sizeof(needs) / sizeof(needs[0]); ++i)
+    reject(p, n, UINT64_MAX & ~needs[i]);
+  /* The opener carries equal serials. */
+  put(p + 104, 43, 8);
+  roundtrip(p, n, UINT64_MAX);
+  for (i = 0; i < 3; ++i) {
+    n = cycle(p, 8, 24);
+    put(p + 96, 43, 8);
+    put(p + 104, 41, 8);
+    put(p + 112, 186, 8);
+    memset(p + 96 + i * 8, 0, 8);
+    reject(p, n, UINT64_MAX);
+  }
 }
 static void cycle_vectors(void) {
   uint8_t p[512];
@@ -321,6 +353,7 @@ static void cycle_vectors(void) {
   put(p + 152, 2, 8);
   roundtrip(p, n, UINT64_MAX);
   action_lifecycle_vectors();
+  chord_action_vectors();
 }
 /* A Configuration declaring two lifecycle actions: rows at 96 and 112. */
 static void configuration_lifecycle_rows(void) {

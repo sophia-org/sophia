@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sdk": "sophia-desktop-sdk-c",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "release": true,
   "dialect": "9P2000.L",
   "shell_file_api": 1,

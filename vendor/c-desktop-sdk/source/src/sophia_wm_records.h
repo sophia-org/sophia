@@ -24,6 +24,7 @@
 #define SOPHIA_WF_CAP_SURFACE_INSTANCES (UINT64_C(1) << 18)
 #define SOPHIA_WF_CAP_PRESENTATION_ACTIONS (UINT64_C(1) << 19)
 #define SOPHIA_WF_CAP_ACTION_LIFECYCLE (UINT64_C(1) << 20)
+#define SOPHIA_WF_CAP_CHORD_ACTIONS (UINT64_C(1) << 21)
 /* Fixed rows only; no socket headers or transfer framing.
  * Decode and encode check width and reserved bytes. Complete file-record
  * validation additionally checks sections and negotiated capabilities.

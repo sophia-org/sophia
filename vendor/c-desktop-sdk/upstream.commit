@@ -1,20 +1,26 @@
-tree c17de982ae35c7c5625dd6348721e87c73663759
-parent 77939d2375658ef7fa3d76bb5462dad876c45ff3
-author Mason Green <mason@greenm01.net> 1790904403 -0400
-committer Mason Green <mason@greenm01.net> 1790904403 -0400
+tree 2ce6f1644aa03a062dfd9d87d62cde99eb1c08b2
+parent 05f09de6d9cf7b5aba776d5967dee5a949f6cad7
+author Mason Green <mason@greenm01.net> 1790913124 -0400
+committer Mason Green <mason@greenm01.net> 1790913124 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCar8IUxsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKmqQD/Ydo9tkGhK8KxhSrtuibp
- Mka108Z6kmtQq0IX7wNqGIwBAJIE/Y6erWsBwEWYeTYcFm0Ywn8KyXlJ9YdzFYwG
- VVcD
- =PpHE
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCar8qZBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJV5QEA/Hb9cJht6xer+9lqQO1U
+ cqthfTOXHk958rIVUSN7nzUA/jPDPVzpvb4yjTpHCJBjOIbZbPT8XxQ28Pvpm7NC
+ OH0F
+ =V4ok
  -----END PGP SIGNATURE-----
 
-Release C SDK 0.5.1 with the chord lifecycle golden row
+Release C SDK 0.6.0 with the ChordAction cause
 
-Import spec/golden/sophia-wm-v1.records unmodified from signed Sophia
-3a1dce11febb64df2fc98a83f5ac1ff342287947, which regenerates the outputs
-contract 86bf6504 omitted. Its one new row is the
-ConfigurationActionLifecycle sample. wm_files_test decodes it and expects 23
-rows, still refusing any unrecognised row. No library change.
+Import sophia-wm-files-v1.kdl, sophia-wm-files.md and sophia-wm-api.md
+unmodified from signed Sophia contract b0a2b0303b02af27598def07f455e8e0240b9366.
+Capability bit 21, chord_actions, requires action_lifecycle, actions and
+configuration. With it, a followed chord's keyboard activations arrive as
+ChordAction (cause 8: activation serial, chord serial and action, all
+nonzero). A client that selected the lifecycle alone keeps its 0.5.1 behaviour
+and refuses cause 8; negotiation refuses chord_actions without its
+dependencies.
+
+ChordAction is qualified only by literal and scripted-peer tests: Session does
+not send it yet.

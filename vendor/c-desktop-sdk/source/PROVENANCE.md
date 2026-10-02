@@ -325,3 +325,37 @@ Its one new line is the `configuration_action_lifecycle` sample: action 5,
 expects 23 golden rows. An unrecognised row still fails the test. Against the
 0.5.0 sources the new corpus fails with "unrecognized golden row". No library
 source changes; v0.5.0 is unchanged and remains tagged.
+
+## Release 0.6.0: ChordAction
+
+`spec/sophia-wm-files-v1.kdl`, `spec/sophia-wm-files.md` and
+`spec/sophia-wm-api.md` are copied unmodified from signed Sophia contract
+commit `b0a2b0303b02af27598def07f455e8e0240b9366` on
+`feature/generic-chording`. Its parent held copies byte-identical to the 0.5.1
+pins, so the import brings only this change. The golden corpus is unchanged,
+because the new cause adds no fixed row. The three new digests replace their
+entries in `spec/SHA256SUMS`.
+
+The contract adds capability bit 21, `chord_actions`, which requires
+`action_lifecycle`, `actions` and `configuration`. With it, a keyboard
+activation of a followed chord arrives as ChordAction: cause 8, 24 bytes,
+holding the activation serial, the chord serial and the action, all nonzero.
+The opener carries equal serials. The regenerated rows add only the capability
+constant.
+
+`src/sophia_wm_files.h` and `src/wm_files/bodies.c` hand-code the cause.
+Decoding, and encoding through the same check, require all four capabilities
+and refuse a zero field, so a client that selected `action_lifecycle` alone
+(0.5.1 behaviour) refuses cause 8. Negotiation (`src/wm_session/events.c`)
+fails when `chord_actions` is selected without the lifecycle, actions and
+configuration. Cause 9 is now the unknown code in the literal tests.
+
+New tests:
+- literal ChordAction vectors: the round trip, the opener's equal serials,
+  each missing capability, and each zero field;
+- scripted peers: all sixteen combinations of the four related capabilities,
+  and cause 8 refused before an application sees it without `chord_actions`
+  but delivered with it.
+
+The ChordAction cause is qualified only by literal and scripted-peer tests:
+Session does not send it yet.

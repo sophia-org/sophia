@@ -16,9 +16,10 @@ Then replace `source/` from `git archive <exact revision>`, save
 SHA-256 file manifest with that revision, and run the snapshot check and C gates.
 Do not edit the snapshot or use a moving branch as its identity.
 
-The 0.5.1 pin keeps 0.4.0's strict WM API naming the independent 9P output
+The 0.6.0 pin keeps 0.4.0's strict WM API naming the independent 9P output
 transport, refusing the retired `current_ipc` API, and adds the chord
-lifecycle (`action_lifecycle`). Its checks compare
+lifecycle (`action_lifecycle`) and the ChordAction cause (`chord_actions`).
+Its checks compare
 the WM, shell and output file contracts and neutral WM rows; socket schemas,
 bindings and corpora have retired.
 The snapshot and its checks require no network access.

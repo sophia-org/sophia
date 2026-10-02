@@ -190,8 +190,8 @@ static void short_submit_and_final_read_preserve_observed_custody(void) {
     wr_drop(r);
   }
 }
-static void snapshot_and_cause(struct wm_rig *r,
-                               const struct sophia_wf_action_lifecycle *cause) {
+static void snapshot_and_value(struct wm_rig *r, uint16_t cause_kind,
+                               const void *cause, size_t cause_bytes) {
   struct sophia_wf_record value = {0};
   struct sophia_wf_snapshot_output row = {0};
   uint8_t bytes[56];
@@ -219,12 +219,18 @@ static void snapshot_and_cause(struct wm_rig *r,
   value.value.cycle.output_count = 1;
   value.value.cycle.outputs[0] = 10;
   if (cause) {
-    value.value.cycle.cause = SOPHIA_WF_ACTION_LIFECYCLE;
-    value.value.cycle.value.action_lifecycle = *cause;
+    value.value.cycle.cause = cause_kind;
+    memcpy(&value.value.cycle.value, cause, cause_bytes);
   }
   wp_record(&r->peer, &value);
 }
-static void snapshot_and_cycle(struct wm_rig *r) { snapshot_and_cause(r, NULL); }
+static void snapshot_and_cause(struct wm_rig *r,
+                               const struct sophia_wf_action_lifecycle *cause) {
+  snapshot_and_value(r, SOPHIA_WF_ACTION_LIFECYCLE, cause, sizeof(*cause));
+}
+static void snapshot_and_cycle(struct wm_rig *r) {
+  snapshot_and_value(r, 0, NULL, 0);
+}
 static void snapshot_is_complete_bound_and_pin_released(void) {
   struct wm_rig *r = wr_new();
   const struct sophia_wf_record *snapshot, *again;
@@ -539,7 +545,8 @@ static void lifecycle_negotiation_requires_actions_and_configuration(void) {
   const uint64_t chosen[] = {lifecycle | actions | configuration,
                              lifecycle | configuration, lifecycle | actions,
                              actions | configuration};
-  const uint64_t required = WP_CAPS & ~(lifecycle | actions | configuration);
+  const uint64_t required = WP_CAPS & ~(lifecycle | actions | configuration |
+                                        SOPHIA_WF_CAP_CHORD_ACTIONS);
   unsigned which;
   for (which = 0; which < sizeof(chosen) / sizeof(*chosen); ++which) {
     struct wm_rig *r =
@@ -562,7 +569,9 @@ static void lifecycle_cause_requires_negotiated_capability(void) {
   unsigned enabled;
   for (enabled = 0; enabled < 2; ++enabled) {
     struct wm_rig *r = wr_new_caps(
-        enabled ? WP_CAPS : WP_CAPS & ~SOPHIA_WF_CAP_ACTION_LIFECYCLE);
+        enabled ? WP_CAPS
+                : WP_CAPS & ~(SOPHIA_WF_CAP_ACTION_LIFECYCLE |
+                              SOPHIA_WF_CAP_CHORD_ACTIONS));
     const struct sophia_wf_record *event = NULL;
     wr_ready(r);
     /* The peer encodes a valid cause even when it was not negotiated. */
@@ -576,6 +585,66 @@ static void lifecycle_cause_requires_negotiated_capability(void) {
              event->value.cycle.value.action_lifecycle.reason ==
                  SOPHIA_WF_LIFECYCLE_RELEASED &&
              event->value.cycle.value.action_lifecycle.count == 3);
+    } else {
+      terminal(r);
+      assert(sophia_ws_state(r->session) == SOPHIA_WS_FAILED);
+      assert(sophia_ws_event(r->session, &event) != 0 && event == NULL);
+    }
+    wr_drop(r);
+  }
+}
+/* chord_actions needs action_lifecycle, actions and configuration, which the
+ * lifecycle in turn needs: every combination of the four is checked. */
+static void chord_negotiation_requires_the_whole_lifecycle(void) {
+  const uint64_t bits[] = {SOPHIA_WF_CAP_ACTIONS, SOPHIA_WF_CAP_CONFIGURATION,
+                           SOPHIA_WF_CAP_ACTION_LIFECYCLE,
+                           SOPHIA_WF_CAP_CHORD_ACTIONS};
+  const uint64_t all = bits[0] | bits[1] | bits[2] | bits[3];
+  const uint64_t required = WP_CAPS & ~all;
+  unsigned combination, i;
+  for (combination = 0; combination < 16; ++combination) {
+    uint64_t chosen = 0;
+    int valid;
+    struct wm_rig *r;
+    for (i = 0; i < 4; ++i)
+      if (combination & (1u << i))
+        chosen |= bits[i];
+    valid = (!(chosen & bits[2]) || (chosen & (bits[0] | bits[1])) ==
+                                        (bits[0] | bits[1])) &&
+            (!(chosen & bits[3]) ||
+             (chosen & (bits[0] | bits[1] | bits[2])) ==
+                 (bits[0] | bits[1] | bits[2]));
+    r = wr_new_offer(required, all);
+    r->peer.selected = required | chosen;
+    if (valid) {
+      wr_ready(r);
+      assert(sophia_ws_capabilities(r->session) == r->peer.selected);
+    } else {
+      terminal(r);
+      assert(sophia_ws_state(r->session) == SOPHIA_WS_FAILED);
+    }
+    wr_drop(r);
+  }
+}
+/* A client that selected the lifecycle alone (0.5.1 behaviour) refuses
+ * cause 8 before an application sees it; one with chord_actions receives it. */
+static void chord_action_requires_its_own_capability(void) {
+  const struct sophia_wf_chord_action join = {43, 41, 186};
+  unsigned enabled;
+  for (enabled = 0; enabled < 2; ++enabled) {
+    struct wm_rig *r = wr_new_caps(
+        enabled ? WP_CAPS : WP_CAPS & ~SOPHIA_WF_CAP_CHORD_ACTIONS);
+    const struct sophia_wf_record *event = NULL;
+    wr_ready(r);
+    snapshot_and_value(r, SOPHIA_WF_CHORD_ACTION, &join, sizeof(join));
+    if (enabled) {
+      steps(r, 20);
+      assert(!sophia_ws_event(r->session, &event));
+      assert(event->header.kind == SOPHIA_WF_CYCLE &&
+             event->value.cycle.cause == SOPHIA_WF_CHORD_ACTION &&
+             event->value.cycle.value.chord_action.serial == 43 &&
+             event->value.cycle.value.chord_action.chord_serial == 41 &&
+             event->value.cycle.value.chord_action.action == 186);
     } else {
       terminal(r);
       assert(sophia_ws_state(r->session) == SOPHIA_WS_FAILED);
@@ -664,6 +733,8 @@ int main(void) {
   RUN(presentation_receipt_requires_negotiated_capability);
   RUN(lifecycle_negotiation_requires_actions_and_configuration);
   RUN(lifecycle_cause_requires_negotiated_capability);
+  RUN(chord_negotiation_requires_the_whole_lifecycle);
+  RUN(chord_action_requires_its_own_capability);
 #undef RUN
   puts("wm_session_test: scripted 9P custody, snapshot and deadline controls "
        "passed");

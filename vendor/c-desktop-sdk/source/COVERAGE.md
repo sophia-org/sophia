@@ -17,13 +17,13 @@ Clients retain their own policy and UI logic. No missing file operation falls
 back to IPC. Former descriptor-based operations require a reviewed file or
 protected-grant contract, rather than a hidden ancillary-data channel.
 
-## Release 0.5.1
+## Release 0.6.0
 
 | Role | File contract | Client status |
 | --- | --- | --- |
 | Shell: bar, native launcher, catalog/dock, indicators, content | Pinned API 1, revisions 6–8 | Implemented; scope and evidence in README and tests |
 | WM: negotiation, profile handoff, configuration, snapshots, cycles, projections, session operations, presentation receipts | Sophia WM file API 1 (`b0721d0de`); `api` names the 9P2000.L output transport | Implemented: literal/scripted tests including exact `api` refusal of `current_ipc`, Sophia production WM export gate (`c4e17899e`) and Hagia thin bindings (`b3d8496`) |
-| WM chord lifecycle: `action_lifecycle` Configuration rows and ActionLifecycle cause | Additive contract (`86bf6504`, generated rows `3a1dce11`) | Codec and negotiation, with literal and scripted-peer tests only; Session's implementation, production export gate and Hagia use are pending |
+| WM chord lifecycle: `action_lifecycle` Configuration rows and ActionLifecycle cause; `chord_actions` ChordAction cause | Additive contracts (`86bf6504`, generated rows `3a1dce11`; ChordAction `b0a2b030`) | Codec and negotiation, with literal and scripted-peer tests only; Session's implementation, production export gate and Hagia use are pending |
 | Output authority: negotiation, topology publication, validate/apply proposals, outcomes | Sophia output file API 1, revision 1 (`b0721d0de`) | Codec/session, literal and scripted-peer tests, independent C exchange against the production export, and Sophia's attended native acceptance (`ddd27bd6d`; one card, two heads, refresh-only change) |
 | Admin/control: the public control operations and their results | Existing control schema does not establish a 9P file contract | File contract and SDK client gap |
 
