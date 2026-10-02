@@ -313,3 +313,83 @@ fn a_full_catalog_may_be_followed_and_the_section_bounds_more() {
         })
     ));
 }
+
+const CHORD_ACTION_CAPABILITIES: u64 = LIFECYCLE_CAPABILITIES | SOPHIA_WM_CAPABILITY_CHORD_ACTIONS;
+
+fn chord_action(activation_serial: u64, chord_serial: u64) -> PolicyRequestCause {
+    PolicyRequestCause::ChordAction {
+        activation_serial,
+        chord_serial,
+        action: WmActionId::from_raw(186),
+    }
+}
+
+/// ChordAction is cause 8: activation_serial, chord_serial, action. The
+/// opener carries equal serials; a join its own with the opener's chord.
+#[test]
+fn a_chord_action_round_trips_with_its_literal_layout() {
+    for (activation, chord) in [(41, 41), (43, 41)] {
+        let value = cycle(chord_action(activation, chord));
+        let bytes = encode_wm_file_cycle(header(WmFileKind::Cycle), &value, u64::MAX).unwrap();
+        assert_eq!(decode_wm_file_cycle(&bytes, u64::MAX).unwrap(), value);
+        let body = &bytes[bytes.len() - 24..];
+        assert_eq!(bytes[72..74], 8u16.to_le_bytes(), "cause kind");
+        assert_eq!(body[..8], activation.to_le_bytes());
+        assert_eq!(body[8..16], chord.to_le_bytes());
+        assert_eq!(body[16..24], 186u64.to_le_bytes());
+    }
+}
+
+/// A peer that selected the lifecycle alone never accepts cause 8.
+#[test]
+fn a_chord_action_needs_all_four_capabilities() {
+    let cause = chord_action(43, 41);
+    assert_eq!(
+        policy_request_cause_capabilities(&cause),
+        CHORD_ACTION_CAPABILITIES
+    );
+    let value = cycle(cause);
+    let h = header(WmFileKind::Cycle);
+    let bytes = encode_wm_file_cycle(h, &value, u64::MAX).unwrap();
+    for bit in [
+        SOPHIA_WM_CAPABILITY_ACTIONS,
+        SOPHIA_WM_CAPABILITY_CONFIGURATION,
+        SOPHIA_WM_CAPABILITY_ACTION_LIFECYCLE,
+        SOPHIA_WM_CAPABILITY_CHORD_ACTIONS,
+    ] {
+        assert_eq!(
+            decode_wm_file_cycle(&bytes, !bit),
+            Err(WmFilePayloadError::Capabilities { missing: bit })
+        );
+        assert!(encode_wm_file_cycle(h, &value, !bit).is_err());
+    }
+}
+
+#[test]
+fn a_chord_action_refuses_any_zero_field() {
+    let value = cycle(chord_action(43, 41));
+    let bytes = encode_wm_file_cycle(header(WmFileKind::Cycle), &value, u64::MAX).unwrap();
+    let body = bytes.len() - 24;
+    for at in [0, 8, 16] {
+        let mut wire = bytes.clone();
+        wire[body + at..body + at + 8].fill(0);
+        assert!(
+            decode_wm_file_cycle(&wire, u64::MAX).is_err(),
+            "zero at {at}"
+        );
+    }
+    for cause in [
+        chord_action(0, 41),
+        chord_action(43, 0),
+        PolicyRequestCause::ChordAction {
+            activation_serial: 43,
+            chord_serial: 41,
+            action: WmActionId::from_raw(0),
+        },
+    ] {
+        assert!(
+            validate_policy_projection_request(&fixture::request(cause)).is_err(),
+            "{cause:?}"
+        );
+    }
+}

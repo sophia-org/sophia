@@ -29,6 +29,8 @@ fn policy_cause_subject_is_live(
         // A chord names no surface or output, and it is never withdrawn: its
         // Ended is the WM's terminal obligation and carries its credit.
         sophia_protocol::PolicyRequestCause::ActionLifecycle { .. } => true,
+        // Like Action: it names no surface or output to outlive.
+        sophia_protocol::PolicyRequestCause::ChordAction { .. } => true,
         _ => true,
     }
 }

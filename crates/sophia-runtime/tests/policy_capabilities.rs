@@ -22,7 +22,8 @@ fn selected_mechanisms_are_bounded_by_offer_ceiling_and_profile_admission() {
         | SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES;
     let dependent = SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS
         | SOPHIA_WM_CAPABILITY_OUTPUT_LAUNCH_CONTEXT
-        | SOPHIA_WM_CAPABILITY_ACTION_LIFECYCLE;
+        | SOPHIA_WM_CAPABILITY_ACTION_LIFECYCLE
+        | SOPHIA_WM_CAPABILITY_CHORD_ACTIONS;
     assert_eq!(
         select_policy_capabilities(u64::MAX, u64::MAX, false),
         unconditional | dependent
@@ -93,5 +94,31 @@ fn action_lifecycle_needs_both_actions_and_configuration() {
                 "offer {offer:03b} ceiling {ceiling:03b}"
             );
         }
+    }
+}
+
+/// Chord actions mark the lifecycle's own activations: they are dropped with
+/// the lifecycle, including when the lifecycle itself lacks an input.
+#[test]
+fn chord_actions_need_the_whole_lifecycle() {
+    let bits = [
+        SOPHIA_WM_CAPABILITY_ACTIONS,
+        SOPHIA_WM_CAPABILITY_CONFIGURATION,
+        SOPHIA_WM_CAPABILITY_ACTION_LIFECYCLE,
+        SOPHIA_WM_CAPABILITY_CHORD_ACTIONS,
+    ];
+    let all = bits.iter().fold(0, |all, bit| all | bit);
+    for offer in 0..16_u64 {
+        let offered = (0..4)
+            .filter(|index| offer & (1 << index) != 0)
+            .fold(0, |set, index| set | bits[index]);
+        let selected = select_policy_capabilities(offered, u64::MAX, true) & all;
+        let lifecycle = offered & (bits[0] | bits[1] | bits[2]) == bits[0] | bits[1] | bits[2];
+        assert_eq!(selected & bits[2] != 0, lifecycle, "offer {offer:04b}");
+        assert_eq!(
+            selected & bits[3] != 0,
+            lifecycle && offered & bits[3] != 0,
+            "offer {offer:04b}"
+        );
     }
 }

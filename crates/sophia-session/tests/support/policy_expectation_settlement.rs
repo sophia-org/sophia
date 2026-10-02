@@ -21,6 +21,13 @@ struct Staged {
 /// Issues one close-window action through the real cycle and returns the
 /// proposal whose settlement identity the request path derived.
 fn staged_close_action() -> Staged {
+    staged_close_cause(PolicyRequestCause::Action {
+        activation_serial: 19,
+        action: CLOSE,
+    })
+}
+
+fn staged_close_cause(cause: PolicyRequestCause) -> Staged {
     let mut fixture = ReloadFixture::new();
     let output = sophia_engine::HeadlessOutput::deterministic();
     let (worker, commands, events) = policy_transport_worker::worker_capture::capturing_worker();
@@ -33,10 +40,7 @@ fn staged_close_action() -> Staged {
     }];
     public.queue.push_back(LivePublicPolicyCause {
         source: LiveWmProposalSource::Action(CLOSE),
-        cause: PolicyRequestCause::Action {
-            activation_serial: 19,
-            action: CLOSE,
-        },
+        cause,
         affected_outputs: vec![output.id],
     });
     let mut layout = PersistentLiveLayout::default();
@@ -80,20 +84,27 @@ fn staged_close_action() -> Staged {
         .poll_request(&mut layout, output, true)
         .unwrap()
         .expect("the projection stages");
-    let settlement = proposal
-        .policy_settlement
-        .expect("a policy settlement identity");
-    assert!(settlement.expect_session_operation);
-    assert_eq!(
-        fixture.wm.public.as_ref().unwrap().expected_operation_slot,
-        Some(3)
-    );
     Staged {
         fixture,
         layout,
         proposal,
         commands,
     }
+}
+
+/// The close action's settlement expects its session operation.
+fn staged_close_expecting_operation() -> Staged {
+    let staged = staged_close_action();
+    let settlement = staged
+        .proposal
+        .policy_settlement
+        .expect("a policy settlement identity");
+    assert!(settlement.expect_session_operation);
+    assert_eq!(
+        staged.fixture.wm.public.as_ref().unwrap().expected_operation_slot,
+        Some(3)
+    );
+    staged
 }
 
 fn submitted_outcome(
@@ -117,7 +128,7 @@ fn assert_refusal_expects_no_operation(stale: bool) {
         proposal,
         commands,
         ..
-    } = staged_close_action();
+    } = staged_close_expecting_operation();
     let output = sophia_engine::HeadlessOutput::deterministic();
     if stale {
         // The scene moves before the layout settles, so the staged
@@ -171,7 +182,7 @@ fn a_committed_session_action_still_expects_its_session_operation() {
         mut layout,
         proposal,
         commands,
-    } = staged_close_action();
+    } = staged_close_expecting_operation();
     let output = sophia_engine::HeadlessOutput::deterministic();
     let result = layout.commit_proposal(proposal);
     assert_eq!(result.update.commit.outcome, TransactionOutcome::Committed);
@@ -186,5 +197,25 @@ fn a_committed_session_action_still_expects_its_session_operation() {
     assert_eq!(
         fixture.wm.public.as_ref().unwrap().expected_operation_slot,
         Some(3)
+    );
+}
+
+/// A followed chord's activation carries no session-operation authority, even
+/// for an action registered as a session operation.
+#[test]
+fn a_chord_action_never_expects_a_session_operation() {
+    let staged = staged_close_cause(PolicyRequestCause::ChordAction {
+        activation_serial: 19,
+        chord_serial: 19,
+        action: CLOSE,
+    });
+    let settlement = staged
+        .proposal
+        .policy_settlement
+        .expect("a policy settlement identity");
+    assert!(!settlement.expect_session_operation);
+    assert_eq!(
+        staged.fixture.wm.public.as_ref().unwrap().expected_operation_slot,
+        None
     );
 }

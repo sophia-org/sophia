@@ -239,6 +239,15 @@ pub enum PolicyRequestCause {
         action: WmActionId,
         identity: crate::PolicyPresentationIdentity,
     },
+    /// A keyboard activation of a followed chord, sent instead of `Action`
+    /// when `chord_actions` is selected. `activation_serial` names this
+    /// activation and `chord_serial` the chord's first one, the serial its
+    /// Held and Ended name; the opener carries equal serials.
+    ChordAction {
+        activation_serial: u64,
+        chord_serial: u64,
+        action: WmActionId,
+    },
     /// The chord behind a declared action's keyboard activations.
     /// `activation_serial` names the chord's first admitted Action and `count`
     /// its admitted Actions, saturating.

@@ -13,12 +13,12 @@ use std::collections::BTreeSet;
 
 use crate::wm_rows::{
     SOPHIA_WM_CAPABILITY_ACTION_LIFECYCLE, SOPHIA_WM_CAPABILITY_ACTIONS,
-    SOPHIA_WM_CAPABILITY_CONFIGURATION, SOPHIA_WM_CAPABILITY_OUTPUT_ACTIONS,
-    SOPHIA_WM_CAPABILITY_POINTER_FOCUS, SOPHIA_WM_CAPABILITY_POINTER_INTERACTIONS,
-    SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS, SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES,
-    SOPHIA_WM_OUTCOME_COMMITTED, SOPHIA_WM_OUTCOME_DISCONNECTED,
-    SOPHIA_WM_OUTCOME_REJECTED_INVALID, SOPHIA_WM_OUTCOME_REJECTED_STALE,
-    SOPHIA_WM_OUTCOME_TIMED_OUT,
+    SOPHIA_WM_CAPABILITY_CHORD_ACTIONS, SOPHIA_WM_CAPABILITY_CONFIGURATION,
+    SOPHIA_WM_CAPABILITY_OUTPUT_ACTIONS, SOPHIA_WM_CAPABILITY_POINTER_FOCUS,
+    SOPHIA_WM_CAPABILITY_POINTER_INTERACTIONS, SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS,
+    SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES, SOPHIA_WM_OUTCOME_COMMITTED,
+    SOPHIA_WM_OUTCOME_DISCONNECTED, SOPHIA_WM_OUTCOME_REJECTED_INVALID,
+    SOPHIA_WM_OUTCOME_REJECTED_STALE, SOPHIA_WM_OUTCOME_TIMED_OUT,
 };
 use crate::{
     BinaryCodecError, OutputId, PolicyDirtyRequest, PolicyInteractionAxis, PolicyInteractionKind,
@@ -64,6 +64,12 @@ pub const fn policy_request_cause_capabilities(cause: &PolicyRequestCause) -> u6
             SOPHIA_WM_CAPABILITY_ACTIONS
                 | SOPHIA_WM_CAPABILITY_CONFIGURATION
                 | SOPHIA_WM_CAPABILITY_ACTION_LIFECYCLE
+        }
+        PolicyRequestCause::ChordAction { .. } => {
+            SOPHIA_WM_CAPABILITY_ACTIONS
+                | SOPHIA_WM_CAPABILITY_CONFIGURATION
+                | SOPHIA_WM_CAPABILITY_ACTION_LIFECYCLE
+                | SOPHIA_WM_CAPABILITY_CHORD_ACTIONS
         }
         PolicyRequestCause::PointerFocus { .. } => SOPHIA_WM_CAPABILITY_POINTER_FOCUS,
         PolicyRequestCause::Interaction { .. } => SOPHIA_WM_CAPABILITY_POINTER_INTERACTIONS,
@@ -295,6 +301,16 @@ pub(crate) fn validate_request_cause_scalars(
         } => {
             if count == 0 {
                 return Err(invalid("action_lifecycle_cause", 0));
+            }
+            action(activation_serial, id)
+        }
+        PolicyRequestCause::ChordAction {
+            activation_serial,
+            chord_serial,
+            action: id,
+        } => {
+            if chord_serial == 0 {
+                return Err(invalid("chord_action_cause", 0));
             }
             action(activation_serial, id)
         }

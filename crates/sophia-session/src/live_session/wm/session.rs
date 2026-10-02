@@ -466,15 +466,35 @@ impl LiveWmSession {
         _layout: &PersistentLiveLayout,
         _output: sophia_engine::HeadlessOutput,
     ) -> Result<LiveOrderedWmActionAdmission, Box<dyn std::error::Error>> {
+        self.enqueue_activation(action, None)
+    }
+
+    /// Queue one admitted activation. `chord` is `None` for an ordinary
+    /// Action. With `chord_actions` selected, a followed chord's activation is
+    /// a ChordAction instead: `Some(None)` for its opener, whose chord serial
+    /// is its own, `Some(Some(chord_serial))` for a join.
+    fn enqueue_activation(
+        &mut self,
+        action: WmActionId,
+        chord: Option<Option<u64>>,
+    ) -> Result<LiveOrderedWmActionAdmission, Box<dyn std::error::Error>> {
         let public = self.public.as_mut().ok_or("public WM state is unavailable")?;
         let activation_serial = public.mint_transaction()?.raw();
         let active_output = public.active_output;
-        let admission = public.queue_cause(LivePublicPolicyCause {
-            source: LiveWmProposalSource::Action(action),
-            cause: sophia_protocol::PolicyRequestCause::Action {
+        let cause = match chord {
+            None => sophia_protocol::PolicyRequestCause::Action {
                 activation_serial,
                 action,
             },
+            Some(chord_serial) => sophia_protocol::PolicyRequestCause::ChordAction {
+                activation_serial,
+                chord_serial: chord_serial.unwrap_or(activation_serial),
+                action,
+            },
+        };
+        let admission = public.queue_cause(LivePublicPolicyCause {
+            source: LiveWmProposalSource::Action(action),
+            cause,
             affected_outputs: public.all_outputs(active_output),
         });
         match admission {
@@ -591,7 +611,21 @@ impl LiveWmSession {
             // Not an ordinary Action: it is discarded with the chord.
             LiveChordActionAdmission::Discarded
         } else {
-            match self.enqueue_action(action, layout, output)? {
+            let _ = (layout, output);
+            // With chord_actions the WM is told which activations are this
+            // chord's: the opener names itself, a join names the opener.
+            let chord_actions = self.public.as_ref().is_some_and(|public| {
+                public.selected_capabilities & sophia_protocol::SOPHIA_WM_CAPABILITY_CHORD_ACTIONS
+                    != 0
+            });
+            let representation = chord_actions.then(|| {
+                if chord.opens {
+                    None
+                } else {
+                    self.chord_ledger.get(&chord.token).map(|record| record.serial)
+                }
+            });
+            match self.enqueue_activation(action, representation)? {
                 LiveOrderedWmActionAdmission::Admitted { serial } => {
                     self.record_chord_action(chord.token, chord.opens, serial, action);
                     return Ok(LiveChordActionAdmission::Admitted);

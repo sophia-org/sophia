@@ -113,8 +113,13 @@ impl LiveWmSession {
                         sophia_protocol::validate_policy_presentation_actions(p, &public.actions).is_ok());
                     match if !presentation_cause_valid { Err(sophia_protocol::PolicyProjectionOutcome::RejectedStale) } else if context_valid && presentation_valid { public.reducer.stage_proposal(&reconciliation.policy) } else { Err(sophia_protocol::PolicyProjectionOutcome::RejectedInvalid) } {
                     Ok(staged) => {
+                        // A followed chord's activation never carries session-operation
+                        // authority, whatever its action is registered as.
+                        let chord_action = public.in_flight_request.as_ref().is_some_and(|request| {
+                            matches!(request.cause, sophia_protocol::PolicyRequestCause::ChordAction { .. })
+                        });
                         let expected_operation_slot = match source {
-                            LiveWmProposalSource::Action(action) => public
+                            LiveWmProposalSource::Action(action) if !chord_action => public
                                 .actions
                                 .iter()
                                 .find(|registered| registered.action == action)

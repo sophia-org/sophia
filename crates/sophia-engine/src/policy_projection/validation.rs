@@ -288,6 +288,12 @@ pub(super) fn validate_request_cause(
             count,
             ..
         } if activation_serial != 0 && action.is_valid() && count != 0 => Ok(()),
+        // A followed chord's activation names its chord, but no surface.
+        PolicyRequestCause::ChordAction {
+            activation_serial,
+            chord_serial,
+            action,
+        } if activation_serial != 0 && chord_serial != 0 && action.is_valid() => Ok(()),
         _ => Err(PolicyProjectionError::InvalidRequestCause),
     }
 }

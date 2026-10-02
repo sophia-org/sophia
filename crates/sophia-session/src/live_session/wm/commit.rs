@@ -187,7 +187,9 @@ impl LiveWmSession {
                     && settlement.expect_session_operation,
             })?;
         if let Some(request) = public.in_flight_request.as_ref()
-            && let sophia_protocol::PolicyRequestCause::Action { activation_serial, action } | sophia_protocol::PolicyRequestCause::OutputAction { activation_serial, action, .. } = request.cause
+            && let sophia_protocol::PolicyRequestCause::Action { activation_serial, action }
+                | sophia_protocol::PolicyRequestCause::ChordAction { activation_serial, action, .. }
+                | sophia_protocol::PolicyRequestCause::OutputAction { activation_serial, action, .. } = request.cause
         {
             let (target_output, target_generation) = match request.cause {
                 sophia_protocol::PolicyRequestCause::OutputAction { output, output_generation, .. } => (output.raw(), output_generation),

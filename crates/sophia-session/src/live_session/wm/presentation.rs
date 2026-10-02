@@ -336,7 +336,8 @@ impl LivePublicPolicyState {
                     })
             }
             // Not a presented cause; its own queue owner keeps it current.
-            sophia_protocol::PolicyRequestCause::ActionLifecycle { .. } => true,
+            sophia_protocol::PolicyRequestCause::ActionLifecycle { .. }
+            | sophia_protocol::PolicyRequestCause::ChordAction { .. } => true,
             _ => true,
         }
     }

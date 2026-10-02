@@ -446,3 +446,152 @@ fn a_configured_but_dead_policy_withholds_chord_openers() {
         assert!(c.causes().is_empty(), "{state}");
     }
 }
+
+const LIFECYCLE: u64 = sophia_protocol::SOPHIA_WM_CAPABILITY_ACTIONS
+    | sophia_protocol::SOPHIA_WM_CAPABILITY_CONFIGURATION
+    | sophia_protocol::SOPHIA_WM_CAPABILITY_ACTION_LIFECYCLE;
+const CHORD_ACTIONS: u64 = LIFECYCLE | sophia_protocol::SOPHIA_WM_CAPABILITY_CHORD_ACTIONS;
+const SECOND_SEAT: SeatId = SeatId::from_raw(2);
+
+impl Chords {
+    fn select(&mut self, capabilities: u64) {
+        self.fixture.wm.public.as_mut().unwrap().selected_capabilities = capabilities;
+    }
+
+    fn key_on(&mut self, seat: SeatId, keycode: u32, pressed: bool, now: u64) -> sophia_engine::WmShortcutDecision {
+        self.router().route_key(seat, KEYBOARD, keycode, pressed, now)
+    }
+}
+
+fn chord_action(cause: PolicyRequestCause) -> (u64, u64) {
+    let PolicyRequestCause::ChordAction { activation_serial, chord_serial, action } = cause else {
+        panic!("not a ChordAction: {cause:?}");
+    };
+    assert_eq!(action, NEXT);
+    (activation_serial, chord_serial)
+}
+
+/// With chord_actions, the opener names itself, a join names the opener, and
+/// Held and Ended name that same chord serial.
+#[test]
+fn chord_actions_name_their_activation_and_their_chord() {
+    let mut c = chords();
+    c.select(CHORD_ACTIONS);
+    c.key(ALT, true, 0);
+    let opener = c.key(TAB, true, 0);
+    assert_eq!(c.admit(opener, TAB), LiveChordActionAdmission::Admitted);
+    c.key(TAB, false, 1);
+    let join = c.key(TAB, true, 2);
+    assert_eq!(c.admit(join, TAB), LiveChordActionAdmission::Admitted);
+    c.router().poll_chords(150);
+    c.events();
+    c.key(TAB, false, 160);
+    c.key(ALT, false, 170);
+    c.events();
+    let causes = c.causes();
+    let (first, chord) = chord_action(causes[0]);
+    assert_eq!(first, chord);
+    let (second, joined) = chord_action(causes[1]);
+    assert_ne!(second, first);
+    assert_eq!(joined, chord);
+    assert_eq!(serial(causes[2]), chord);
+    assert_eq!(lifecycle(causes[2]), (PolicyChordPhase::Held, 2));
+    assert_eq!(serial(causes[3]), chord);
+    assert_eq!(
+        lifecycle(causes[3]),
+        (PolicyChordPhase::Ended(PolicyChordEnd::Released), 2)
+    );
+}
+
+/// The same action on two seats makes two chords with distinct chord serials,
+/// each terminal naming its own.
+#[test]
+fn chords_of_one_action_on_two_seats_keep_their_own_identity() {
+    let mut c = chords();
+    c.select(CHORD_ACTIONS);
+    c.key(ALT, true, 0);
+    let first = c.key(TAB, true, 0);
+    assert_eq!(c.admit(first, TAB), LiveChordActionAdmission::Admitted);
+    c.key_on(SECOND_SEAT, ALT, true, 1);
+    let second = c.key_on(SECOND_SEAT, TAB, true, 1);
+    assert!(second.chord.unwrap().opens);
+    assert_eq!(c.admit(second, TAB), LiveChordActionAdmission::Admitted);
+    c.key_on(SECOND_SEAT, TAB, false, 2);
+    c.key_on(SECOND_SEAT, ALT, false, 3);
+    c.events();
+    let causes = c.causes();
+    let (_, one) = chord_action(causes[0]);
+    let (_, two) = chord_action(causes[1]);
+    assert_ne!(one, two);
+    assert_eq!(serial(causes[2]), two);
+    assert_eq!(
+        lifecycle(causes[2]),
+        (PolicyChordPhase::Ended(PolicyChordEnd::Released), 1)
+    );
+}
+
+/// A peer that selected the lifecycle alone keeps its contract: plain Action,
+/// then Held and Ended naming the first Action's serial.
+#[test]
+fn a_lifecycle_only_peer_still_receives_plain_actions() {
+    let mut c = chords();
+    c.select(LIFECYCLE);
+    c.key(ALT, true, 0);
+    let opener = c.key(TAB, true, 0);
+    assert_eq!(c.admit(opener, TAB), LiveChordActionAdmission::Admitted);
+    c.key(TAB, false, 1);
+    c.key(ALT, false, 2);
+    c.events();
+    let causes = c.causes();
+    let PolicyRequestCause::Action { activation_serial, action: NEXT } = causes[0] else {
+        panic!("expected a plain Action: {:?}", causes[0]);
+    };
+    assert_eq!(serial(causes[1]), activation_serial);
+    assert!(causes.iter().all(|cause| !matches!(cause, PolicyRequestCause::ChordAction { .. })));
+}
+
+/// An ordinary invocation of a followed action while its chord is held stays
+/// an ordinary Action: it joins nothing and owes no terminal.
+#[test]
+fn an_ordinary_invocation_during_a_held_chord_stays_ordinary() {
+    let mut c = chords();
+    c.select(CHORD_ACTIONS);
+    c.key(ALT, true, 0);
+    let opener = c.key(TAB, true, 0);
+    assert_eq!(c.admit(opener, TAB), LiveChordActionAdmission::Admitted);
+    assert!(matches!(
+        c.fixture.wm.enqueue_action(NEXT, &c.layout, c.output).unwrap(),
+        LiveOrderedWmActionAdmission::Admitted { .. }
+    ));
+    c.key(TAB, false, 1);
+    c.key(ALT, false, 2);
+    c.events();
+    let causes = c.causes();
+    let (_, chord) = chord_action(causes[0]);
+    assert!(matches!(causes[1], PolicyRequestCause::Action { action: NEXT, .. }));
+    assert_eq!(serial(causes[2]), chord);
+    assert_eq!(
+        lifecycle(causes[2]),
+        (PolicyChordPhase::Ended(PolicyChordEnd::Released), 1)
+    );
+}
+
+/// The engine accepts a ChordAction and Session hands it off as a Cycle.
+#[test]
+fn a_chord_action_is_handed_off_as_a_cycle() {
+    let mut c = chords();
+    c.select(CHORD_ACTIONS);
+    c.key(ALT, true, 0);
+    let opener = c.key(TAB, true, 0);
+    assert_eq!(c.admit(opener, TAB), LiveChordActionAdmission::Admitted);
+    let (worker, commands, _events) = policy_transport_worker::worker_capture::capturing_worker();
+    c.fixture.wm.public.as_mut().unwrap().worker = Some(worker);
+    assert!(c.fixture.wm.poll_request(&mut c.layout, c.output, true).unwrap().is_none());
+    let policy_transport_worker::PolicyTransportCommand::Cycle { request, .. } =
+        commands.try_recv().expect("the chord action issues a cycle")
+    else {
+        panic!("the first command is the cycle");
+    };
+    let (activation, chord) = chord_action(request.cause);
+    assert_eq!(activation, chord);
+}
