@@ -286,12 +286,39 @@ an idle authority consumes an exact unseen rollback key as a no-state
 tombstone. That prevents local reuse of a generation it was never asked to
 prepare while preserving its active identity.
 Shortcut candidates are prepared into bounded typed chords before staging:
-at most 256 key or pointer bindings, normalized modifier/key identities, no
-duplicate chord, and no reserved Ctrl-Alt-Backspace override. Every target is
-explicitly authority-qualified, for example `policy:switch-layout` or
-`session:close-window`; pointer bindings cannot invoke session capabilities.
-This preparation does not activate the candidate or grant an unavailable
-capability.
+at most 256 key or pointer bindings and leaders together, normalized
+modifier/key identities, no duplicate chord, and no reserved chord. The
+reserved chords are Ctrl-Alt-Backspace (emergency recovery) and Ctrl-Alt-F1
+through F12 with any further modifiers (virtual-terminal switching, which
+Sophia handles before any shortcut). The error names the reserved chord, so a
+profile that bound one fails at load rather than silently switching terminals.
+Every target is explicitly authority-qualified, for example
+`policy:switch-layout` or `session:close-window`; pointer bindings cannot invoke
+session capabilities. This preparation does not activate the candidate or grant
+an unavailable capability.
+
+The shortcut section also admits chording shapes, validated now and installed
+once their matching lands:
+
+- `bind "Super" "policy:x"` is a lone modifier tap (Shift, Ctrl, Alt or Super,
+  with nothing else).
+- `hold-ms=500` (100 to 5000) on a single key chord makes it the hold variant
+  of that chord. The same chord without `hold-ms` is its tap variant. A hold
+  variant with no tap variant is allowed; its short press is consumed and
+  fires nothing, and help shows it as "(hold only)".
+- `bind "Super+w k" "policy:y"` is a key sequence of two to four steps
+  separated by single spaces. Escape cannot be a continuation, and no sequence
+  may extend another binding.
+- `leader "Super+w" "policy:hint"` names a policy action fired when a sequence
+  reaches that prefix. There is at most one leader on any sequence path, and
+  its action is bound to nothing else.
+- `shortcut-timing tap-ms=400 sequence-ms=1000` sets the modifier-tap window
+  (50 to 2000) and the sequence step timeout (200 to 10000). These values are
+  the defaults.
+
+Until then, a profile using any of these shapes is refused when its shortcuts
+are installed, with an error naming the shape. It is never installed with only
+its ordinary bindings.
 
 The desktop profile recognizes `session:window-switcher` as a session-owned
 action; it is not registered by the WM. The compiled profile enables the shell

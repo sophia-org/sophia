@@ -378,49 +378,35 @@ impl LiveMetadataShell {
 }
 
 fn shortcut_rows(candidate: &sophia_config::DesktopShortcutCandidate) -> Vec<ShellShortcut> {
-    use sophia_config::{DesktopShortcutModifiers as M, DesktopShortcutTarget as T};
-    candidate
-        .bindings
-        .iter()
+    use sophia_config::DesktopShortcutTarget as T;
+    // Bindings and leaders together are bounded by the shortcut catalog's 256
+    // rows, and each display by its chord text width, when the profile is
+    // prepared.
+    let bindings = candidate.bindings.iter().map(|b| {
+        let action = match &b.target {
+            T::PolicyAction(n) => format!("policy:{n}"),
+            T::Session(op) => format!("session:{}", op.profile_name()),
+            T::LaunchApplication(name) => format!("application:{name}"),
+        };
+        (candidate.binding_display(b), action, &b.label, &b.group)
+    });
+    let leaders = candidate.leaders.iter().map(|l| {
+        (
+            l.display(),
+            format!("policy:{}", l.action),
+            &l.label,
+            &l.group,
+        )
+    });
+    bindings
+        .chain(leaders)
         .enumerate()
-        .map(|(i, b)| {
-            let mut parts = Vec::new();
-            for (bit, name) in [
-                (M::SUPER, "Super"),
-                (M::CONTROL, "Ctrl"),
-                (M::SHIFT, "Shift"),
-                (M::ALT, "Alt"),
-            ] {
-                if b.chord.modifiers.bits() & bit.bits() != 0 {
-                    parts.push(name.to_owned());
-                }
-            }
-            let trigger = match b.chord.trigger.as_str() {
-                "slash" => "/".to_owned(),
-                "return" => "Enter".to_owned(),
-                t if b.chord.kind == sophia_config::DesktopShortcutBindingKind::Pointer => {
-                    format!("Mouse {t}")
-                }
-                t => {
-                    let mut c = t.chars();
-                    c.next().map_or(String::new(), |first| {
-                        first.to_uppercase().collect::<String>() + c.as_str()
-                    })
-                }
-            };
-            parts.push(trigger);
-            let action = match &b.target {
-                T::PolicyAction(n) => format!("policy:{n}"),
-                T::Session(op) => format!("session:{}", op.profile_name()),
-                T::LaunchApplication(name) => format!("application:{name}"),
-            };
-            ShellShortcut {
-                slot: (i + 1) as u16,
-                chord: parts.join("+"),
-                action,
-                label: b.label.clone(),
-                group: b.group.clone(),
-            }
+        .map(|(i, (chord, action, label, group))| ShellShortcut {
+            slot: (i + 1) as u16,
+            chord,
+            action,
+            label: label.clone(),
+            group: group.clone(),
         })
         .collect()
 }

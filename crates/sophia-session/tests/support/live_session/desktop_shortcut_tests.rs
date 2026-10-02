@@ -9,6 +9,8 @@ fn shortcut_candidate(
         digest: sophia_config::ConfigDigest::new([7; 32]),
         profile: "test".to_owned(),
         bindings,
+        leaders: Vec::new(),
+        timing: sophia_config::DesktopShortcutTiming::default(),
     }
 }
 
@@ -24,6 +26,8 @@ fn key_shortcut(
             modifiers: sophia_config::DesktopShortcutModifiers::SUPER,
             trigger: trigger.to_owned(),
         },
+        steps: Vec::new(),
+        hold_ms: None,
         target,
     }
 }
@@ -81,6 +85,84 @@ fn desktop_shortcuts_resolve_against_the_policy_action_catalog() {
             consumed: true,
             chord: None,
         }
+    );
+}
+
+/// Profile shapes whose matching is not wired yet are refused by name, never
+/// installed as their immediate bindings alone (t277 D1).
+#[test]
+fn chording_shapes_are_refused_until_their_matching_exists() {
+    let configuration = sophia_protocol::PolicyConfiguration {
+        action_lifecycles: Vec::new(),
+        connection_epoch: 1,
+        generation: 1,
+        actions: vec![sophia_protocol::PolicyActionRegistration {
+            action: WmActionId::from_raw(1),
+            name: "focus-next".to_owned(),
+            session_operation_slot: None,
+        }],
+        chrome: sophia_protocol::WmChromePolicy::default(),
+    };
+    let commands =
+        SessionCommandRegistry::prepare(1, &SessionApplicationConfig::default()).unwrap();
+    let target = sophia_config::DesktopShortcutTarget::PolicyAction("focus-next".to_owned());
+    let resolve = |candidate: &sophia_config::DesktopShortcutCandidate| {
+        resolve_public_shortcuts(
+            candidate,
+            &configuration,
+            candidate.generation.raw(),
+            &commands,
+        )
+        .map(|registry| registry.binding_count())
+    };
+    let mut candidate = shortcut_candidate(vec![key_shortcut("j", target.clone())]);
+    // The default timing, written out, is no shape at all.
+    candidate.timing = sophia_config::DesktopShortcutTiming {
+        tap_ms: 400,
+        sequence_ms: 1000,
+    };
+    assert_eq!(resolve(&candidate), Ok(1));
+
+    let mut sequence = candidate.clone();
+    sequence.bindings[0]
+        .steps
+        .push(key_shortcut("k", target.clone()).chord);
+    assert_eq!(
+        resolve(&sequence),
+        Err("shortcut sequences are not yet supported")
+    );
+
+    let mut hold = candidate.clone();
+    hold.bindings[0].hold_ms = Some(500);
+    assert_eq!(resolve(&hold), Err("hold shortcuts are not yet supported"));
+
+    let mut tap = candidate.clone();
+    tap.bindings[0].chord.modifiers = sophia_config::DesktopShortcutModifiers::NONE;
+    tap.bindings[0].chord.trigger = "super".to_owned();
+    assert_eq!(
+        resolve(&tap),
+        Err("modifier tap shortcuts are not yet supported")
+    );
+
+    let mut leader = sequence.clone();
+    leader.bindings[0].steps.clear();
+    leader.leaders.push(sophia_config::DesktopShortcutLeader {
+        chord: key_shortcut("w", target.clone()).chord,
+        steps: Vec::new(),
+        action: "focus-next".to_owned(),
+        label: None,
+        group: None,
+    });
+    assert_eq!(
+        resolve(&leader),
+        Err("shortcut leaders are not yet supported")
+    );
+
+    let mut timing = candidate;
+    timing.timing.tap_ms = 300;
+    assert_eq!(
+        resolve(&timing),
+        Err("shortcut timing is not yet supported")
     );
 }
 

@@ -64,6 +64,25 @@ fn resolve_public_shortcuts_with_dropped_defaults(
                 .map(|slot| ((slot, action.name.as_str()), action.action))
         })
         .collect::<BTreeMap<_, _>>();
+    // Profile shapes whose matching is not wired yet are refused by name
+    // rather than installed without them (t277 D1).
+    if !candidate.leaders.is_empty() {
+        return Err("shortcut leaders are not yet supported");
+    }
+    if candidate.timing != sophia_config::DesktopShortcutTiming::default() {
+        return Err("shortcut timing is not yet supported");
+    }
+    for binding in &candidate.bindings {
+        if !binding.steps.is_empty() {
+            return Err("shortcut sequences are not yet supported");
+        }
+        if binding.hold_ms.is_some() {
+            return Err("hold shortcuts are not yet supported");
+        }
+        if binding.modifier_tap().is_some() {
+            return Err("modifier tap shortcuts are not yet supported");
+        }
+    }
     let mut bindings = Vec::with_capacity(candidate.bindings.len());
     for binding in &candidate.bindings {
         // These omissions were admitted and reported at startup only for the
