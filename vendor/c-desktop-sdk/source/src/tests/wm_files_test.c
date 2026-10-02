@@ -209,6 +209,58 @@ static size_t cycle(uint8_t *p, unsigned cause, size_t bytes) {
   put(p + 88, 20, 8);
   return n;
 }
+/* ActionLifecycle: serial@96, action@104, phase@112, reason@114, count@116. */
+static size_t lifecycle(uint8_t *p, unsigned phase, unsigned reason,
+                        uint32_t count) {
+  size_t n = cycle(p, 7, 24);
+  put(p + 96, 41, 8);
+  put(p + 104, 186, 8);
+  put(p + 112, phase, 2);
+  put(p + 114, reason, 2);
+  put(p + 116, count, 4);
+  return n;
+}
+static void action_lifecycle_vectors(void) {
+  const uint64_t needs[] = {SOPHIA_WF_CAP_ACTIONS, SOPHIA_WF_CAP_CONFIGURATION,
+                            SOPHIA_WF_CAP_ACTION_LIFECYCLE};
+  uint8_t p[512];
+  struct sophia_wf_record r;
+  size_t n, i;
+  unsigned phase, reason;
+  n = lifecycle(p, 1, 0, 1);
+  roundtrip(p, n, UINT64_MAX);
+  assert(!sophia_wf_decode(p, n, UINT64_MAX, &r));
+  assert(r.value.cycle.cause == SOPHIA_WF_ACTION_LIFECYCLE &&
+         r.value.cycle.value.action_lifecycle.serial == 41 &&
+         r.value.cycle.value.action_lifecycle.action == 186 &&
+         r.value.cycle.value.action_lifecycle.phase == SOPHIA_WF_LIFECYCLE_HELD &&
+         r.value.cycle.value.action_lifecycle.count == 1);
+  /* Each capability the cause depends on is required on its own. */
+  for (i = 0; i < sizeof(needs) / sizeof(needs[0]); ++i)
+    reject(p, n, UINT64_MAX & ~needs[i]);
+  /* Held carries reason 0 only; Ended one of 1..5; nothing else is valid. */
+  for (phase = 0; phase < 4; ++phase)
+    for (reason = 0; reason < 7; ++reason) {
+      n = lifecycle(p, phase, reason, 3);
+      if ((phase == 1 && reason == 0) ||
+          (phase == 2 && reason >= 1 && reason <= 5))
+        roundtrip(p, n, UINT64_MAX);
+      else
+        reject(p, n, UINT64_MAX);
+    }
+  n = lifecycle(p, 2, 1, UINT32_MAX); /* count saturates; it never wraps. */
+  roundtrip(p, n, UINT64_MAX);
+  n = lifecycle(p, 2, 1, 0);
+  reject(p, n, UINT64_MAX);
+  n = lifecycle(p, 2, 1, 1);
+  memset(p + 96, 0, 8);
+  reject(p, n, UINT64_MAX);
+  n = lifecycle(p, 2, 1, 1);
+  memset(p + 104, 0, 8);
+  reject(p, n, UINT64_MAX);
+  n = cycle(p, 8, 24);
+  reject(p, n, UINT64_MAX);
+}
 static void cycle_vectors(void) {
   uint8_t p[512];
   size_t n, i;
@@ -268,6 +320,35 @@ static void cycle_vectors(void) {
   reject(p, n, UINT64_MAX);
   put(p + 152, 2, 8);
   roundtrip(p, n, UINT64_MAX);
+  action_lifecycle_vectors();
+}
+/* A Configuration declaring two lifecycle actions: rows at 96 and 112. */
+static void configuration_lifecycle_rows(void) {
+  const uint64_t caps = SOPHIA_WF_CAP_ACTIONS | SOPHIA_WF_CAP_CONFIGURATION |
+                        SOPHIA_WF_CAP_ACTION_LIFECYCLE;
+  uint8_t p[512];
+  struct sophia_wf_record r;
+  struct sophia_wf_configuration_action_lifecycle row;
+  size_t n = record(p, 260, 48 + 16 + 32);
+  put(p + 32, 71, 8);
+  put(p + 40, 9, 8);
+  put(p + 50, 1, 2);
+  put(p + 80, 65294, 2);
+  put(p + 84, 2, 4);
+  put(p + 88, 32, 4);
+  put(p + 96, 186, 8);
+  put(p + 104, 150, 4);
+  put(p + 112, 187, 8);
+  roundtrip(p, n, caps);
+  assert(!sophia_wf_decode(p, n, caps, &r) && r.section_count == 1);
+  assert(!sophia_wf_configuration_action_lifecycle_decode(r.sections[0].rows,
+                                                          16, &row) &&
+         row.action == 186 && row.held_ms == 150);
+  reject(p, n, caps & ~SOPHIA_WF_CAP_ACTION_LIFECYCLE);
+  reject(p, n, caps & ~SOPHIA_WF_CAP_CONFIGURATION);
+  reject(p, n, caps & ~SOPHIA_WF_CAP_ACTIONS);
+  p[108] = 1; /* reserved */
+  reject(p, n, caps);
 }
 static void sections(void) {
   uint8_t p[4096], encoded[4096], unchanged[4096];
@@ -327,6 +408,7 @@ static void sections(void) {
   reject(p, n, SOPHIA_WF_CAP_LAUNCH_ORIGIN);
   put(p + 112, 1, 2);
   reject(p, n, UINT64_MAX);
+  configuration_lifecycle_rows();
 }
 static void control_writes(void) {
   uint8_t p[24], old[24];
@@ -440,10 +522,11 @@ static void golden_rows(void) {
                                             v.role == 1 && v.action == 0);
     ROW(projection_presentation_binding,
         v.action == 5 && v.keycode == 28 && v.modifiers == 0);
+    ROW(configuration_action_lifecycle, v.action == 5 && v.held_ms == 150);
     assert(!"unrecognized golden row");
   row_done:;
   }
-  assert(!ferror(file) && seen == 22);
+  assert(!ferror(file) && seen == 23);
   assert(!fclose(file));
 }
 #undef ROW

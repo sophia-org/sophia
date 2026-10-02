@@ -284,7 +284,15 @@ argument contract and do not follow from the existing action ordinal.
 Engine matches registered physical chords before client routing, emits one
 activation on the initial press, suppresses repeat activations until release,
 and exposes only the action ID and reduced snapshot context. No rejected action
-falls through to application input.
+falls through to application input. A profile may also bind a lone modifier tap,
+a key sequence or a long press. Each still produces ordinary activations, so
+the WM sees no difference in how it was triggered.
+
+A WM that needs to know when a held chord ends declares the action under
+`action_lifecycle` ([chord lifecycle](sophia-wm-files.md#chord-lifecycle)). It
+then receives Held and Ended for that action's chords, for whichever modifiers
+the operator chose. Sophia attaches no meaning to them: a switcher that commits
+on release, or a hold-to-preview, is WM policy.
 
 Session actions are advertised opaque tokens. A WM may request an advertised
 token with an optional opaque target. It cannot supply an executable, argument,

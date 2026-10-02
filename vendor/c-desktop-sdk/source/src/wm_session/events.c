@@ -37,6 +37,8 @@ int ws_events_validate(struct sophia_ws *s) {
           (caps & s->config.offer.required) != s->config.offer.required ||
           ((caps & SOPHIA_WF_CAP_PRESENTATION_ACTIONS) &&
            !(caps & SOPHIA_WF_CAP_SURFACE_INSTANCES)) ||
+          ((caps & SOPHIA_WF_CAP_ACTION_LIFECYCLE) &&
+           (~caps & (SOPHIA_WF_CAP_ACTIONS | SOPHIA_WF_CAP_CONFIGURATION))) ||
           ((caps & SOPHIA_WF_CAP_OUTPUT_LAUNCH_CONTEXT) &&
            !(caps & SOPHIA_WF_CAP_LAUNCH_ORIGIN)) ||
           (s->limits.profile_required &&

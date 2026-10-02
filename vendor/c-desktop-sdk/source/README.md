@@ -18,14 +18,18 @@ to tunnel the old socket protocol through a file.
 
 ## Current coverage
 
-Release 0.4.0 provides a generic nonblocking 9P2000.L client, shell file
+Release 0.5.1 provides a generic nonblocking 9P2000.L client, shell file
 records and sessions for bar (r6), native launcher (r7) and persistent
 catalog/dock (r8), and WM and output file codecs and sessions. WM and shell socket
 compatibility is removed; recovery uses a complete compatible older desktop release.
 WM file record codecs and a bounded WM session pass scripted-peer tests and
 Sophia's production WM export gate, and Hagia uses them through thin Nim
 bindings. The WM session requires the exact `api` file naming the output role's
-9P2000.L transport and refuses the retired `current_ipc` value. The output file
+9P2000.L transport and refuses the retired `current_ipc` value. The WM codec
+also carries the additive chord lifecycle (`action_lifecycle`): Configuration
+rows declaring lifecycle actions and the ActionLifecycle cause. Sophia's
+Session does not implement it yet, so it is tested only against scripted peers.
+The output file
 codec and session pass scripted-peer tests, Sophia's production output export
 exchange and Sophia's attended native output acceptance on one card with two
 heads (see provenance for its scope). The output default rollout and other
@@ -41,7 +45,7 @@ See [coverage](COVERAGE.md#parity-gate) for the remaining migration work.
 
 The WM file codec (`sophia_wm_files.h`) covers API-1 envelopes, typed scalar
 bodies, cycle causes, complete section bounds and negotiated section disclosure.
-`sophia_wm_records.h` supplies all 22 neutral fixed row codecs without socket
+`sophia_wm_records.h` supplies all 23 neutral fixed row codecs without socket
 framing. These enforce structural wire rules; Session still validates scene,
 geometry, policy phase and authority. The focused codec test uses literal
 bodies and the pinned golden row corpus, not a live export. The fixed rows are

@@ -190,7 +190,8 @@ static void short_submit_and_final_read_preserve_observed_custody(void) {
     wr_drop(r);
   }
 }
-static void snapshot_and_cycle(struct wm_rig *r) {
+static void snapshot_and_cause(struct wm_rig *r,
+                               const struct sophia_wf_action_lifecycle *cause) {
   struct sophia_wf_record value = {0};
   struct sophia_wf_snapshot_output row = {0};
   uint8_t bytes[56];
@@ -217,8 +218,13 @@ static void snapshot_and_cycle(struct wm_rig *r) {
   value.value.cycle.policy_generation = 1;
   value.value.cycle.output_count = 1;
   value.value.cycle.outputs[0] = 10;
+  if (cause) {
+    value.value.cycle.cause = SOPHIA_WF_ACTION_LIFECYCLE;
+    value.value.cycle.value.action_lifecycle = *cause;
+  }
   wp_record(&r->peer, &value);
 }
+static void snapshot_and_cycle(struct wm_rig *r) { snapshot_and_cause(r, NULL); }
 static void snapshot_is_complete_bound_and_pin_released(void) {
   struct wm_rig *r = wr_new();
   const struct sophia_wf_record *snapshot, *again;
@@ -526,6 +532,58 @@ static void presentation_receipt_requires_negotiated_capability(void) {
     wr_drop(r);
   }
 }
+static void lifecycle_negotiation_requires_actions_and_configuration(void) {
+  const uint64_t lifecycle = SOPHIA_WF_CAP_ACTION_LIFECYCLE,
+                 actions = SOPHIA_WF_CAP_ACTIONS,
+                 configuration = SOPHIA_WF_CAP_CONFIGURATION;
+  const uint64_t chosen[] = {lifecycle | actions | configuration,
+                             lifecycle | configuration, lifecycle | actions,
+                             actions | configuration};
+  const uint64_t required = WP_CAPS & ~(lifecycle | actions | configuration);
+  unsigned which;
+  for (which = 0; which < sizeof(chosen) / sizeof(*chosen); ++which) {
+    struct wm_rig *r =
+        wr_new_offer(required, lifecycle | actions | configuration);
+    r->peer.selected = required | chosen[which];
+    if (which == 1 || which == 2) {
+      /* Session never selects the lifecycle without both of its inputs. */
+      terminal(r);
+      assert(sophia_ws_state(r->session) == SOPHIA_WS_FAILED);
+    } else {
+      wr_ready(r);
+      assert(sophia_ws_capabilities(r->session) == r->peer.selected);
+    }
+    wr_drop(r);
+  }
+}
+static void lifecycle_cause_requires_negotiated_capability(void) {
+  const struct sophia_wf_action_lifecycle ended = {
+      41, 186, SOPHIA_WF_LIFECYCLE_ENDED, SOPHIA_WF_LIFECYCLE_RELEASED, 3};
+  unsigned enabled;
+  for (enabled = 0; enabled < 2; ++enabled) {
+    struct wm_rig *r = wr_new_caps(
+        enabled ? WP_CAPS : WP_CAPS & ~SOPHIA_WF_CAP_ACTION_LIFECYCLE);
+    const struct sophia_wf_record *event = NULL;
+    wr_ready(r);
+    /* The peer encodes a valid cause even when it was not negotiated. */
+    snapshot_and_cause(r, &ended);
+    if (enabled) {
+      steps(r, 20);
+      assert(!sophia_ws_event(r->session, &event));
+      assert(event->header.kind == SOPHIA_WF_CYCLE &&
+             event->value.cycle.cause == SOPHIA_WF_ACTION_LIFECYCLE &&
+             event->value.cycle.value.action_lifecycle.serial == 41 &&
+             event->value.cycle.value.action_lifecycle.reason ==
+                 SOPHIA_WF_LIFECYCLE_RELEASED &&
+             event->value.cycle.value.action_lifecycle.count == 3);
+    } else {
+      terminal(r);
+      assert(sophia_ws_state(r->session) == SOPHIA_WS_FAILED);
+      assert(sophia_ws_event(r->session, &event) != 0 && event == NULL);
+    }
+    wr_drop(r);
+  }
+}
 static void local_work_wakes_a_poll_first_caller(void) {
   unsigned kind, missed = 0;
   for (kind = 0; kind < 3; ++kind) {
@@ -604,6 +662,8 @@ int main(void) {
   RUN(snapshot_retry_is_paced_and_truncation_refuses);
   RUN(full_retained_journal_still_observes_submitted);
   RUN(presentation_receipt_requires_negotiated_capability);
+  RUN(lifecycle_negotiation_requires_actions_and_configuration);
+  RUN(lifecycle_cause_requires_negotiated_capability);
 #undef RUN
   puts("wm_session_test: scripted 9P custody, snapshot and deadline controls "
        "passed");

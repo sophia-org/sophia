@@ -37,7 +37,22 @@ enum sophia_wf_cause {
   SOPHIA_WF_POINTER_FOCUS,
   SOPHIA_WF_INTERACTION,
   SOPHIA_WF_OUTPUT_ACTION,
-  SOPHIA_WF_PRESENTATION_ACTION
+  SOPHIA_WF_PRESENTATION_ACTION,
+  SOPHIA_WF_ACTION_LIFECYCLE
+};
+/* ActionLifecycle phases and reasons. Held carries reason 0 only; Ended one
+ * of the reasons below, and completed, aborted and timed out end only
+ * sequence leaders. */
+enum sophia_wf_lifecycle_phase {
+  SOPHIA_WF_LIFECYCLE_HELD = 1,
+  SOPHIA_WF_LIFECYCLE_ENDED = 2
+};
+enum sophia_wf_lifecycle_reason {
+  SOPHIA_WF_LIFECYCLE_RELEASED = 1,
+  SOPHIA_WF_LIFECYCLE_CANCELLED = 2,
+  SOPHIA_WF_LIFECYCLE_COMPLETED = 3,
+  SOPHIA_WF_LIFECYCLE_ABORTED = 4,
+  SOPHIA_WF_LIFECYCLE_TIMED_OUT = 5
 };
 struct sophia_wf_header {
   uint16_t kind;
@@ -92,6 +107,12 @@ struct sophia_wf_presentation_action {
   uint64_t serial, action, publication_generation, output, output_generation;
   uint64_t presentation_epoch, target_id, target_generation;
 };
+/* serial names the chord's first admitted Action; count its admitted Actions. */
+struct sophia_wf_action_lifecycle {
+  uint64_t serial, action;
+  uint16_t phase, reason;
+  uint32_t count;
+};
 struct sophia_wf_cycle {
   uint64_t snapshot_transaction, request_transaction, request_id;
   uint64_t scene_generation, policy_generation;
@@ -104,6 +125,7 @@ struct sophia_wf_cycle {
     struct sophia_wf_interaction interaction;
     struct sophia_wf_output_action output_action;
     struct sophia_wf_presentation_action presentation_action;
+    struct sophia_wf_action_lifecycle action_lifecycle;
   } value;
 };
 struct sophia_wf_dirty {

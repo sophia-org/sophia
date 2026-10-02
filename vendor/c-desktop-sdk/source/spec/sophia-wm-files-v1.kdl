@@ -106,7 +106,7 @@ protocol "sophia_wm_fs_v1" api-version=1 byte-order="little" max-object-bytes=10
         field "request_id" type="u64" offset=16 nonzero=#true
         field "scene_generation" type="u64" offset=24 nonzero=#true
         field "policy_generation" type="u64" offset=32 nonzero=#true
-        field "cause_kind" type="u16" offset=40 min=0 max=6
+        field "cause_kind" type="u16" offset=40 min=0 max=7
         field "output_count" type="u16" offset=42 min=1 max=16
         field "reserved" type="u32" offset=44 value=0
     }
@@ -150,6 +150,19 @@ protocol "sophia_wm_fs_v1" api-version=1 byte-order="little" max-object-bytes=10
         field "presentation_epoch" type="u64" offset=40 nonzero=#true
         field "target_id" type="u64" offset=48
         field "target_generation" type="u64" offset=56
+    }
+    // The chord that fired an Action, reported only for actions the WM declared
+    // in ConfigurationActionLifecycle. activation_serial names the chord's first
+    // admitted Action. phase: 1 held, 2 ended. reason is 0 when held and only
+    // then; when ended 1 released, 2 cancelled, 3 completed, 4 aborted, 5 timed
+    // out; 3-5 only for sequence leaders, which never end released. count is
+    // the number of the chord's admitted Actions, saturating.
+    cause "ActionLifecycle" kind=7 size=24 {
+        field "activation_serial" type="u64" offset=0 nonzero=#true
+        field "action" type="u64" offset=8 nonzero=#true
+        field "phase" type="u16" offset=16 min=1 max=2
+        field "reason" type="u16" offset=18 min=0 max=5
+        field "count" type="u32" offset=20 min=1
     }
     body-prefix "Dirty" size=16 {
         field "policy_generation" type="u64" offset=0 nonzero=#true
@@ -237,6 +250,7 @@ protocol "sophia_wm_fs_v1" api-version=1 byte-order="little" max-object-bytes=10
         capability "output_launch_context" bit=17
         capability "surface_instances" bit=18
         capability "presentation_actions" bit=19
+        capability "action_lifecycle" bit=20
 
         outcome "committed" value=1
         outcome "rejected_stale" value=2
@@ -470,6 +484,14 @@ protocol "sophia_wm_fs_v1" api-version=1 byte-order="little" max-object-bytes=10
             field "action" type="u64" sample=5
             field "keycode" type="u32" sample=28
             field "modifiers" type="u32" sample=0
+        }
+        // Read only in a Configuration. Each row asks for ActionLifecycle causes
+        // for one catalog action, at most once; held_ms 0 asks for Ended only,
+        // otherwise 50..=5000. reserved must be 0.
+        extension-record "ConfigurationActionLifecycle" transfer="snapshot" kind=65294 gate="action_lifecycle" max=256 {
+            field "action" type="u64" sample=5
+            field "held_ms" type="u32" sample=150
+            field "reserved" type="u32" sample=0
         }
     }
 

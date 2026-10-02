@@ -10,7 +10,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define WP_CAPS ((UINT64_C(1) << 20) - 1)
+#define WP_CAPS ((UINT64_C(1) << 21) - 1)
 #define WP_EPOCH 41u
 enum {
   WP_ROOT = 1,
@@ -325,9 +325,11 @@ static inline void wp_pump(struct wm_peer *p) {
     p->close_after = 0;
   }
 }
-static inline struct wm_rig *wr_new_caps(uint64_t caps) {
+static inline struct wm_rig *wr_new_offer(uint64_t required,
+                                          uint64_t optional) {
   struct wm_rig *r = calloc(1, sizeof(*r));
-  struct sophia_ws_config cfg = {8192, {caps, 0}, 10000};
+  struct sophia_ws_config cfg = {8192, {required, optional}, 10000};
+  uint64_t caps = required | optional;
   struct sophia_wf_record value = {0};
   size_t n;
   int sockets[2];
@@ -350,6 +352,9 @@ static inline struct wm_rig *wr_new_caps(uint64_t caps) {
   assert(!sophia_ws_open_fd(r->session, r->client_fd, &cfg, r->storage,
                             sophia_ws_storage_bytes(8192), 0));
   return r;
+}
+static inline struct wm_rig *wr_new_caps(uint64_t caps) {
+  return wr_new_offer(caps, 0);
 }
 static inline struct wm_rig *wr_new(void) {
   return wr_new_caps(WP_CAPS);

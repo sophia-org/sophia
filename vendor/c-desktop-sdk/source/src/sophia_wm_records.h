@@ -23,6 +23,7 @@
 #define SOPHIA_WF_CAP_OUTPUT_LAUNCH_CONTEXT (UINT64_C(1) << 17)
 #define SOPHIA_WF_CAP_SURFACE_INSTANCES (UINT64_C(1) << 18)
 #define SOPHIA_WF_CAP_PRESENTATION_ACTIONS (UINT64_C(1) << 19)
+#define SOPHIA_WF_CAP_ACTION_LIFECYCLE (UINT64_C(1) << 20)
 /* Fixed rows only; no socket headers or transfer framing.
  * Decode and encode check width and reserved bytes. Complete file-record
  * validation additionally checks sections and negotiated capabilities.
@@ -294,4 +295,11 @@ struct sophia_wf_projection_presentation_binding {
 };
 int sophia_wf_projection_presentation_binding_decode(const void *, size_t, struct sophia_wf_projection_presentation_binding *);
 int sophia_wf_projection_presentation_binding_encode(void *, size_t, const struct sophia_wf_projection_presentation_binding *);
+#define SOPHIA_WF_CONFIGURATION_ACTION_LIFECYCLE_BYTES 16u
+struct sophia_wf_configuration_action_lifecycle {
+    uint64_t action;
+    uint32_t held_ms;
+};
+int sophia_wf_configuration_action_lifecycle_decode(const void *, size_t, struct sophia_wf_configuration_action_lifecycle *);
+int sophia_wf_configuration_action_lifecycle_encode(void *, size_t, const struct sophia_wf_configuration_action_lifecycle *);
 #endif

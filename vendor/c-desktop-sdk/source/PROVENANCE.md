@@ -261,3 +261,67 @@ qualified by it.
 available CPUs (17 test programs). Build and test guidance no longer prescribes
 a fixed nice value or job count.
 
+## Release 0.5.0: additive chord lifecycle
+
+`spec/sophia-wm-files-v1.kdl`, `spec/sophia-wm-files.md` and
+`spec/sophia-wm-api.md` are copied unmodified from signed Sophia commit
+`86bf65046627ef9fea2a041ae10b08472b3271d1` on `feature/generic-chording`. That
+commit is the additive contract commit. Its parent, `dd62b50c8`, held copies
+byte-identical to the previous pins, so the import brings only this change.
+The commit is published for source reachability. It is not an implementation
+or acceptance claim: Session does not implement the lifecycle at that commit.
+The three new digests replace their entries in `spec/SHA256SUMS`, and every
+other digest is unchanged.
+
+The contract adds capability bit 20, `action_lifecycle`. It also adds the
+Configuration-only extension row `ConfigurationActionLifecycle` (kind 65294,
+16 bytes, at most 256, gated on `action_lifecycle`, `actions` and
+`configuration`) and the ActionLifecycle cause (kind 7, 24 bytes).
+
+`tools/generate_wm_rows.py` now expects 15 extension rows. It routes this row
+to the Configuration family: the contract reads it only in a Configuration,
+although it is written with snapshot transfer. The regenerated rows add the
+capability constant, the row codec, its layout and its reserved check; earlier
+rows are unchanged.
+
+`src/sophia_wm_files.h` and `src/wm_files/bodies.c` hand-code the cause. Its
+body is serial, action, phase, reason and count. It requires `actions`,
+`configuration` and `action_lifecycle`. Decoding, and encoding through the
+same check, accept only Held with reason 0, or Ended with reasons 1 to 5, a
+nonzero serial and action, and a count of at least 1. Negotiation
+(`src/wm_session/events.c`) fails when the selected capabilities include
+`action_lifecycle` without both `actions` and `configuration`, matching
+Session's selection rule.
+
+The codec checks the row's layout, its capability gate and its reserved bytes.
+Session's semantic validation owns two further kinds of rule, and the codec
+repeats neither:
+
+- Catalog and cross-row rules: each action is in the catalog, is not a session
+  operation, and appears in at most one row.
+- The per-row value rule: `held_ms` is 0 or 50 to 5000.
+
+Literal vectors cover every phase and reason pairing, count 0 and the
+saturated maximum, a zero serial or action, an unknown cause 8, each missing
+capability, and the Configuration rows with their capability gate and reserved
+bytes. Scripted-peer tests cover the negotiated dependency in both directions
+and the cause being refused before an application sees it when the capability
+was not negotiated. Three bounded mutants are each killed by these tests:
+removing the cause's capability gate, removing the negotiated dependency, and
+accepting Held with any reason.
+
+## Release 0.5.1: golden row for the chord lifecycle
+
+Sophia's contract commit `86bf6504` changed the WM file KDL but not the outputs
+generated from it, so 0.5.0 copied a golden row corpus without the new row.
+Signed Sophia commit `3a1dce11febb64df2fc98a83f5ac1ff342287947`, the follow-up
+to `86bf6504` on `feature/generic-chording`, adds those generated outputs and
+nothing else. `spec/golden/sophia-wm-v1.records` is copied unmodified from it.
+Its one new line is the `configuration_action_lifecycle` sample: action 5,
+`held_ms` 150, reserved 0. The new digest replaces that entry in
+`spec/SHA256SUMS`; every other contract copy and digest is unchanged.
+
+`wm_files_test` decodes that row with the existing generated codec and now
+expects 23 golden rows. An unrecognised row still fails the test. Against the
+0.5.0 sources the new corpus fails with "unrecognized golden row". No library
+source changes; v0.5.0 is unchanged and remains tagged.
