@@ -52,6 +52,7 @@ impl PolicyInputCapture {
         keycode: u32,
         pressed: bool,
         application_capture_active: bool,
+        held_capture: bool,
     ) -> PolicyInputDisposition {
         let key = (seat, device, Press::Key(keycode));
         if !pressed && self.debts.remove(&key).is_some() {
@@ -59,6 +60,9 @@ impl PolicyInputCapture {
         }
         if self.debts.contains_key(&key) {
             return PolicyInputDisposition::Consumed;
+        }
+        if held_capture && crate::is_modifier_keycode(keycode) {
+            return PolicyInputDisposition::Pass;
         }
         if application_capture_active {
             return PolicyInputDisposition::Pass;
@@ -190,6 +194,11 @@ impl PolicyInputCapture {
         }
         if self.debts.contains_key(&key) {
             return PolicyInputDisposition::Consumed;
+        }
+        // A held capture never takes a modifier: the chord it serves is held
+        // by those keys, and the focused client keeps both of their edges.
+        if state.held_capture() && crate::is_modifier_keycode(keycode) {
+            return PolicyInputDisposition::Pass;
         }
         if application_capture_active {
             return PolicyInputDisposition::Pass;

@@ -112,11 +112,13 @@ pub fn validate_policy_presentation_shape(p: &PolicyPresentation) -> Result<(), 
         }
     }
     if let Some(output) = p.keyboard_output {
+        // A keyboard scope is either modal over replaced applications or, with
+        // held capture, an Overlay scope; never a mixture of the two.
+        let uniform = |mode| p.outputs.iter().all(|o| o.mode == mode);
         if !outputs.contains_key(&output)
             || p.bindings.is_empty()
-            || p.outputs
-                .iter()
-                .any(|o| o.mode != PolicyPresentationMode::ReplaceApplications)
+            || !(uniform(PolicyPresentationMode::ReplaceApplications)
+                || uniform(PolicyPresentationMode::Overlay))
         {
             return Err("invalid modal presentation");
         }

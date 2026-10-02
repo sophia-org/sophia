@@ -277,6 +277,7 @@ fn an_unpresented_second_output_never_borrows_primary_input_authority() {
         policy_publication: None,
         frame_completed: false,
         policy_visible: false,
+        presented_keyboard: Default::default(),
         output: outputs[0].id,
         epoch: 99,
         layers: vec![],

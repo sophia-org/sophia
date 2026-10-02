@@ -150,6 +150,18 @@ impl PresentedPolicyState {
         self.completed.get(&output).copied()
     }
 
+    /// A keyboard scope over Overlay outputs: applications stay in place and
+    /// modifier keys keep their ordinary routing, so a held chord is undisturbed.
+    pub fn held_capture(&self) -> bool {
+        self.publication.as_ref().is_some_and(|publication| {
+            publication.keyboard_output.is_some()
+                && publication
+                    .outputs
+                    .iter()
+                    .all(|output| output.mode == sophia_protocol::PolicyPresentationMode::Overlay)
+        })
+    }
+
     /// Existing application sequences retain their owner until settlement.
     pub fn modal_ready(&self, application_capture_active: bool) -> bool {
         !application_capture_active

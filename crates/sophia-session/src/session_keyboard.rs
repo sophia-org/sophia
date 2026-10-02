@@ -233,6 +233,15 @@ impl SessionClientKeyState {
         self.pressed.len()
     }
 
+    /// Held client keys other than modifiers: the only application sequences
+    /// a held capture waits for, since it never takes a modifier.
+    pub fn pending_non_modifier_len(&self) -> usize {
+        self.pressed
+            .iter()
+            .filter(|key| !sophia_engine::is_modifier_keycode(key.keycode))
+            .count()
+    }
+
     pub fn metrics(&self) -> SessionClientKeyMetrics {
         self.metrics
     }

@@ -53,6 +53,7 @@ fn mirror_damage_projection_places_instances_regions_and_stamp_coverage() {
                     output,
                     output_generation: 1,
                     coverage: whole,
+                    keyboard: Default::default(),
                 }),
                 CompositorDisplayCommand::Rect(CompositorRect {
                     opacity: 255,
@@ -305,6 +306,7 @@ fn a_cover_mirror_copy_drops_policy_targets_it_crops_away() {
                         width: 2560,
                         height: 1440,
                     },
+                    keyboard: Default::default(),
                 }),
                 // A 720x720 Cover mirror keeps the middle 1440 source columns.
                 instance(1, 100),

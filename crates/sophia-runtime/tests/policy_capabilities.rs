@@ -23,7 +23,8 @@ fn selected_mechanisms_are_bounded_by_offer_ceiling_and_profile_admission() {
     let dependent = SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS
         | SOPHIA_WM_CAPABILITY_OUTPUT_LAUNCH_CONTEXT
         | SOPHIA_WM_CAPABILITY_ACTION_LIFECYCLE
-        | SOPHIA_WM_CAPABILITY_CHORD_ACTIONS;
+        | SOPHIA_WM_CAPABILITY_CHORD_ACTIONS
+        | SOPHIA_WM_CAPABILITY_HELD_CAPTURE;
     assert_eq!(
         select_policy_capabilities(u64::MAX, u64::MAX, false),
         unconditional | dependent
@@ -119,6 +120,31 @@ fn chord_actions_need_the_whole_lifecycle() {
             selected & bits[3] != 0,
             lifecycle && offered & bits[3] != 0,
             "offer {offer:04b}"
+        );
+    }
+}
+
+/// A held capture is a presentation's keyboard scope: it goes with
+/// presentation actions, which go with surface instances.
+#[test]
+fn held_capture_needs_presentation_actions_and_instances() {
+    let bits = [
+        SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES,
+        SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS,
+        SOPHIA_WM_CAPABILITY_HELD_CAPTURE,
+    ];
+    let all = bits.iter().fold(0, |all, bit| all | bit);
+    for offer in 0..8_u64 {
+        let offered = (0..3)
+            .filter(|index| offer & (1 << index) != 0)
+            .fold(0, |set, index| set | bits[index]);
+        let selected = select_policy_capabilities(offered, u64::MAX, true) & all;
+        let actions = offered & (bits[0] | bits[1]) == bits[0] | bits[1];
+        assert_eq!(selected & bits[1] != 0, actions, "offer {offer:03b}");
+        assert_eq!(
+            selected & bits[2] != 0,
+            actions && offered & bits[2] != 0,
+            "offer {offer:03b}"
         );
     }
 }

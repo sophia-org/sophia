@@ -111,6 +111,7 @@ fn projection(layers: Vec<LayerSnapshot>) -> sophia_backend_live::LivePresentedI
         policy_publication: None,
         frame_completed: false,
         policy_visible: false,
+        presented_keyboard: Default::default(),
         output: OutputId::from_raw(1),
         epoch: 5,
         layers,

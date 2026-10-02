@@ -138,7 +138,10 @@ Every covered output must have replacement mode with a visible full-coverage
 Backdrop, unless `held_capture` is selected and every covered output is Overlay.
 That held capture leaves applications in place, passes modifier keys through
 and waits only for held non-modifier application keys
-([held capture](sophia-wm-files.md#held-capture)). Bindings and pointer actions are eligible only once the matching
+([held capture](sophia-wm-files.md#held-capture)). While its pixels are still
+presented after a revocation, disconnect or replacement, shielding keeps the
+presented scope's rule until every head retires the change: a held strip still
+on screen passes modifiers, and modal pixels still on screen take them. Bindings and pointer actions are eligible only once the matching
 presentation has completed on all covered outputs and every mirrored head.
 Protected recovery/session controls retain precedence.
 Existing application captures keep their existing owner; modal admission waits

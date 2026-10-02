@@ -475,6 +475,7 @@ fn an_instance_forces_composition_and_a_stamp_alone_does_not() {
         output: OUTPUT,
         output_generation: 1,
         coverage: rect(0, 0, 1280, 720),
+        keyboard: Default::default(),
     });
     let stamped = plan(
         &committed,

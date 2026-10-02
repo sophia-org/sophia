@@ -5,6 +5,29 @@ pub(super) struct PresentedPolicyFrameEvidence {
     pub(super) publication: Option<LivePresentedPolicyPublication>,
     pub(super) completed: bool,
     pub(super) visible: bool,
+    pub(super) keyboard: sophia_engine::PresentedKeyboardScope,
+}
+
+/// Each head's own scope, aggregated without requiring the heads to agree on
+/// a publication: a mirror two generations apart still shows Held twice. A
+/// head with no retired frame is unknown and counts as Modal; a frame with no
+/// stamp shows no publication.
+pub fn presented_keyboard_scope(
+    heads: &[Option<&sophia_engine::OutputFrameDamageSnapshot>],
+) -> sophia_engine::PresentedKeyboardScope {
+    heads
+        .iter()
+        .map(|frame| match frame {
+            None => sophia_engine::PresentedKeyboardScope::Modal,
+            Some(frame) => frame
+                .compositor_display_list
+                .presentation_stamp()
+                .map_or(sophia_engine::PresentedKeyboardScope::None, |stamp| {
+                    stamp.keyboard
+                }),
+        })
+        .max()
+        .unwrap_or_default()
 }
 
 mod content;
@@ -223,6 +246,7 @@ impl LiveProductionVisualRuntime {
                     publication,
                     completed: frame_completed,
                     visible: policy_visible,
+                    keyboard: presented_keyboard_scope(&heads),
                 },
                 input_layers,
                 chrome_targets,
@@ -255,6 +279,7 @@ impl LiveProductionVisualRuntime {
             publication: policy_publication,
             completed: frame_completed,
             visible: policy_visible,
+            keyboard: presented_keyboard,
         } = policy;
         let Some(output) = self.input_projections.get(index).map(|p| p.output) else {
             return;
@@ -304,6 +329,7 @@ impl LiveProductionVisualRuntime {
         };
         if projection.frame_completed != frame_completed
             || projection.policy_visible != policy_visible
+            || projection.presented_keyboard != presented_keyboard
             || projection.policy_publication != policy_publication
             || !same_interaction_projection(&projection.layers, &input_layers)
             || projection.chrome_targets != chrome_targets
@@ -328,6 +354,7 @@ impl LiveProductionVisualRuntime {
         projection.policy_publication = policy_publication;
         projection.frame_completed = frame_completed;
         projection.policy_visible = policy_visible;
+        projection.presented_keyboard = presented_keyboard;
         projection.chrome_targets = chrome_targets;
         projection.chrome_occlusion = chrome_occlusion;
         projection.descriptor_targets = descriptor_targets;

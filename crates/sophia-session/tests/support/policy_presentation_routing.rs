@@ -51,6 +51,7 @@ fn presented(
         instances: vec![],
         regions: vec![(1, 1), (2, 1)],
     });
+    projections[0].presented_keyboard = sophia_engine::PresentedKeyboardScope::Modal;
     public.observe_presented_policy(&projections);
     assert!(public.presentation_input.modal_ready(false));
     projections
@@ -110,6 +111,34 @@ fn route_captured(
     reference: Option<&mut sophia_engine::ReferenceSheetCapture>,
     shortcuts: Option<&mut WmShortcutRouter>,
 ) -> PhysicalInputRouteReport {
+    let (report, ingress) = route_with_client_keys(
+        public,
+        projections,
+        kinds,
+        launcher,
+        reference,
+        shortcuts,
+        &mut SessionClientKeyState::default(),
+    );
+    assert_eq!(ingress, 0, "modal input must not escape to application ingress");
+    report
+}
+
+/// As `route_captured`, with the client-key ledger supplied, so keys an
+/// application already holds are part of the picture. Returns the report and
+/// how many routed inputs reached application ingress.
+fn route_with_client_keys(
+    public: &mut LivePublicPolicyState,
+    projections: &[sophia_backend_live::LivePresentedInputProjection],
+    kinds: &[(sophia_protocol::DeviceId, InputEventKind)],
+    launcher: Option<(
+        &mut sophia_engine::LauncherCapture,
+        &mut sophia_engine::LauncherKeyboard,
+    )>,
+    reference: Option<&mut sophia_engine::ReferenceSheetCapture>,
+    shortcuts: Option<&mut WmShortcutRouter>,
+    client_keys: &mut SessionClientKeyState,
+) -> (PhysicalInputRouteReport, usize) {
     let events = kinds
         .iter()
         .copied()
@@ -144,7 +173,7 @@ fn route_captured(
         &mut XCoreKeyboardMapper::new(),
         &mut repeat,
         &keymap,
-        &mut SessionClientKeyState::default(),
+        client_keys,
         &mut EmergencyChordState::awaiting_arm(),
         &mut VirtualTerminalChordState::default(),
         &mut PhysicalKeyboardCoverage::default(),
@@ -184,12 +213,8 @@ fn route_captured(
         }),
     )
     .unwrap();
-    assert_eq!(
-        receiver.try_iter().count(),
-        0,
-        "modal input must not escape to application ingress"
-    );
-    report
+    let ingress = receiver.try_iter().count();
+    (report, ingress)
 }
 
 fn actions(report: &PhysicalInputRouteReport) -> Vec<sophia_engine::PresentedPolicyAction> {
@@ -784,4 +809,415 @@ fn only_a_selected_action_skips_the_launcher_or_reference_capture() {
             assert_eq!(actions, fired, "{name} with {capture:?}");
         }
     }
+}
+
+/// An Overlay publication with a keyboard scope: a held capture. Escape with
+/// Alt is bound to action 77. `completed` false leaves the frame unfinished,
+/// so the capture shields instead of matching.
+/// The held publication: an Overlay keyboard scope binding Escape with Alt
+/// to action 77, at `generation`.
+fn held_publication(public: &LivePublicPolicyState, generation: u64) -> PolicyPresentation {
+    let mut p = publication(public);
+    p.generation = generation;
+    let output = p.outputs[0];
+    assert_eq!(output.mode, PolicyPresentationMode::Overlay);
+    p.regions[0].action = None;
+    p.keyboard_output = Some(output.output);
+    p.bindings.push(sophia_protocol::PolicyPresentationBinding {
+        keycode: 1,
+        modifiers: sophia_protocol::WmModifierMask {
+            bits: sophia_protocol::WmModifierMask::ALT,
+        },
+        action: WmActionId::from_raw(77),
+    });
+    sophia_protocol::validate_policy_presentation_shape(&p).unwrap();
+    p
+}
+
+/// A modal publication over replaced applications at `generation`.
+fn modal_publication(public: &LivePublicPolicyState, generation: u64) -> PolicyPresentation {
+    let mut p = held_publication(public, generation);
+    p.outputs[0].mode = PolicyPresentationMode::ReplaceApplications;
+    sophia_protocol::validate_policy_presentation_shape(&p).unwrap();
+    p
+}
+
+fn register_action_77(public: &mut LivePublicPolicyState) {
+    public
+        .actions
+        .push(sophia_protocol::PolicyActionRegistration {
+            action: WmActionId::from_raw(77),
+            name: "opaque-action".into(),
+            session_operation_slot: None,
+        });
+}
+
+fn held_presented(
+    public: &mut LivePublicPolicyState,
+    completed: bool,
+) -> Vec<sophia_backend_live::LivePresentedInputProjection> {
+    let p = held_publication(public, 1);
+    let output = p.outputs[0];
+    register_action_77(public);
+    public.presentation_input.admit(1, p).unwrap();
+    assert!(public.presentation_input.held_capture());
+    let runtime = LiveProductionVisualRuntime::new(&public.outputs, None).unwrap();
+    let mut projections = runtime.input_projections().to_vec();
+    projections[0].frame_completed = completed;
+    projections[0].policy_visible = true;
+    projections[0].policy_publication = Some(sophia_backend_live::LivePresentedPolicyPublication {
+        owner_epoch: 1,
+        generation: 1,
+        output: output.output,
+        output_generation: output.generation,
+        instances: vec![],
+        regions: vec![(1, 1)],
+    });
+    projections[0].presented_keyboard = sophia_engine::PresentedKeyboardScope::Held;
+    if completed {
+        public.observe_presented_policy(&projections);
+        assert!(public.presentation_input.modal_ready(false));
+    }
+    projections
+}
+
+/// Alt+Tab, followed: further Tabs while Alt is held are chord joins.
+fn followed_alt_tab() -> WmShortcutRouter {
+    let mut router = WmShortcutRouter::new(
+        sophia_engine::WmShortcutRegistry::new(
+            &[sophia_protocol::WmBindingRegistration {
+                action: WmActionId::from_raw(186),
+                keycode: 15,
+                modifiers: sophia_protocol::WmModifierMask {
+                    bits: sophia_protocol::WmModifierMask::ALT,
+                },
+            }],
+            sophia_protocol::WmCapabilities::all_supported(),
+            1,
+            sophia_protocol::WmChromePolicy::default(),
+        )
+        .unwrap(),
+    );
+    router.set_action_lifecycles(&[sophia_protocol::PolicyActionLifecycleInterest {
+        action: WmActionId::from_raw(186),
+        held_ms: 0,
+    }]);
+    router
+}
+
+/// A key an application already holds, delivered before any capture existed.
+fn held_by_application(keycode: u32) -> SessionClientKeyState {
+    let mut keys = SessionClientKeyState::default();
+    keys.record_routed(
+        SessionClientPressedKey {
+            surface: SurfaceId::new(201, 1),
+            seat: SeatId::from_raw(1),
+            device: sophia_protocol::DeviceId::from_raw(1),
+            keycode,
+        },
+        true,
+    );
+    keys
+}
+
+fn keyed(kinds: &[InputEventKind]) -> Vec<(sophia_protocol::DeviceId, InputEventKind)> {
+    kinds
+        .iter()
+        .map(|kind| (sophia_protocol::DeviceId::from_raw(1), *kind))
+        .collect()
+}
+
+/// Escape while Alt is held is the held capture's; the application keeps Alt.
+/// Alt's press and release both reach client routing, and the capture owes
+/// nothing for them, while Escape and its release never do.
+#[test]
+fn a_held_capture_takes_escape_and_leaves_alt_to_the_application() {
+    let mut fixture = ReloadFixture::new();
+    let public = fixture.wm.public.as_mut().unwrap();
+    let projections = held_presented(public, true);
+    let mut router = followed_alt_tab();
+    let mut keys = held_by_application(56);
+    let (report, _) = route_with_client_keys(
+        public,
+        &projections,
+        &keyed(&[key(56, true), key(1, true), key(1, false), key(56, false)]),
+        None,
+        None,
+        Some(&mut router),
+        &mut keys,
+    );
+    assert_eq!(actions(&report).len(), 1, "{:?}", report.policy_inputs);
+    assert_eq!(actions(&report)[0].action, WmActionId::from_raw(77));
+    assert_eq!(
+        report.keys_suppressed_no_focus, 2,
+        "both of Alt's edges went on to client routing; Escape's did not"
+    );
+}
+
+/// Control: a modal capture over replaced applications still takes Alt.
+#[test]
+fn a_modal_capture_still_takes_modifiers() {
+    let mut fixture = ReloadFixture::new();
+    let public = fixture.wm.public.as_mut().unwrap();
+    let projections = presented(public);
+    let mut router = followed_alt_tab();
+    let report = route_with_shortcuts(
+        public,
+        &projections,
+        &[key(56, true), key(56, false)],
+        None,
+        Some(&mut router),
+    );
+    assert_eq!(report.keys_suppressed_no_focus, 0, "the modal capture swallowed Alt");
+}
+
+/// A non-modifier key an application still holds keeps its sequence: the
+/// held capture passes everything until it is released.
+#[test]
+fn a_held_capture_waits_for_a_held_application_key() {
+    let mut fixture = ReloadFixture::new();
+    let public = fixture.wm.public.as_mut().unwrap();
+    let projections = held_presented(public, true);
+    let mut router = followed_alt_tab();
+    let mut keys = held_by_application(30);
+    let (report, _) = route_with_client_keys(
+        public,
+        &projections,
+        &keyed(&[key(56, true), key(1, true), key(1, false)]),
+        None,
+        None,
+        Some(&mut router),
+        &mut keys,
+    );
+    assert!(actions(&report).is_empty(), "{:?}", report.policy_inputs);
+    assert_eq!(report.keys_suppressed_no_focus, 3, "Alt and Escape went to client routing");
+}
+
+/// A further Tab of the held Alt+Tab is still the router's join, the capture
+/// takes Escape in between, and Alt's release ends the chord.
+#[test]
+fn a_held_capture_leaves_the_chord_join_and_its_end_to_the_router() {
+    let mut fixture = ReloadFixture::new();
+    let public = fixture.wm.public.as_mut().unwrap();
+    let projections = held_presented(public, true);
+    let mut router = followed_alt_tab();
+    let mut keys = SessionClientKeyState::default();
+    let (report, _) = route_with_client_keys(
+        public,
+        &projections,
+        &keyed(&[
+            key(56, true),
+            key(15, true),
+            key(15, false),
+            key(1, true),
+            key(1, false),
+            key(56, false),
+        ]),
+        None,
+        None,
+        Some(&mut router),
+        &mut keys,
+    );
+    assert!(
+        matches!(
+            report.policy_inputs[..],
+            [
+                PhysicalPolicyInput::ChordAction(join),
+                PhysicalPolicyInput::PresentedAction(escape),
+                PhysicalPolicyInput::Chord(sophia_engine::WmChordEvent::Ended {
+                    end: sophia_protocol::PolicyChordEnd::Released,
+                    ..
+                }),
+            ] if join.action == WmActionId::from_raw(186) && escape.action == WmActionId::from_raw(77)
+        ),
+        "{:?}",
+        report.policy_inputs
+    );
+}
+
+/// Before its frame completes a held capture shields, swallowing new keys,
+/// but it still never takes a modifier.
+#[test]
+fn a_shielded_held_capture_still_passes_modifiers() {
+    let mut fixture = ReloadFixture::new();
+    let public = fixture.wm.public.as_mut().unwrap();
+    let projections = held_presented(public, false);
+    let mut router = followed_alt_tab();
+    let mut keys = SessionClientKeyState::default();
+    let (report, _) = route_with_client_keys(
+        public,
+        &projections,
+        &keyed(&[key(56, true), key(1, true), key(1, false), key(56, false)]),
+        None,
+        None,
+        Some(&mut router),
+        &mut keys,
+    );
+    assert!(actions(&report).is_empty(), "{:?}", report.policy_inputs);
+    assert_eq!(report.keys_suppressed_no_focus, 2, "Alt's edges reached client routing; Escape did not");
+}
+
+/// Alt down, Escape down and up, Alt up, on the Alt+Tab router.
+fn alt_escape() -> Vec<(sophia_protocol::DeviceId, InputEventKind)> {
+    keyed(&[key(56, true), key(1, true), key(1, false), key(56, false)])
+}
+
+fn route_alt_escape(
+    public: &mut LivePublicPolicyState,
+    projections: &[sophia_backend_live::LivePresentedInputProjection],
+) -> PhysicalInputRouteReport {
+    let mut router = followed_alt_tab();
+    route_with_client_keys(
+        public,
+        projections,
+        &alt_escape(),
+        None,
+        None,
+        Some(&mut router),
+        &mut SessionClientKeyState::default(),
+    )
+    .0
+}
+
+/// Revoked while the held strip is still on screen: the shield keeps the
+/// presented Held rule, so Alt passes and Escape is shielded. Once every head
+/// retires the withdrawal, nothing is shielded.
+#[test]
+fn a_revoked_held_strip_still_on_screen_keeps_passing_modifiers() {
+    let mut fixture = ReloadFixture::new();
+    let public = fixture.wm.public.as_mut().unwrap();
+    let mut projections = held_presented(public, true);
+    public.presentation_input.revoke();
+    assert!(!public.presentation_input.held_capture());
+    let report = route_alt_escape(public, &projections);
+    assert!(actions(&report).is_empty(), "{:?}", report.policy_inputs);
+    assert_eq!(report.keys_suppressed_no_focus, 2, "Alt's edges pass; Escape is shielded");
+    projections[0].policy_visible = false;
+    projections[0].policy_publication = None;
+    projections[0].presented_keyboard = sophia_engine::PresentedKeyboardScope::None;
+    let report = route_alt_escape(public, &projections);
+    assert_eq!(report.keys_suppressed_no_focus, 4, "withdrawn: nothing is shielded");
+}
+
+/// A new owner epoch's publication is admitted but not yet presented: the
+/// old Held pixels keep their rule.
+#[test]
+fn a_new_owner_epoch_keeps_the_presented_held_rule() {
+    let mut fixture = ReloadFixture::new();
+    let public = fixture.wm.public.as_mut().unwrap();
+    let projections = held_presented(public, true);
+    let next = held_publication(public, 2);
+    public.presentation_input.admit(2, next).unwrap();
+    let report = route_alt_escape(public, &projections);
+    assert!(actions(&report).is_empty(), "{:?}", report.policy_inputs);
+    assert_eq!(report.keys_suppressed_no_focus, 2);
+}
+
+/// Old modal pixels still on screen with a held publication admitted: a new
+/// modifier is still the modal scope's. Once the heads show Held, the Alt the
+/// modal scope consumed keeps its consumed release (debts first), and only
+/// fresh Alt edges pass.
+#[test]
+fn old_modal_pixels_keep_modal_rules_until_the_held_strip_is_presented() {
+    let mut fixture = ReloadFixture::new();
+    let public = fixture.wm.public.as_mut().unwrap();
+    let mut projections = presented(public);
+    let mut router = followed_alt_tab();
+    let mut keys = SessionClientKeyState::default();
+    let mut route = |public: &mut LivePublicPolicyState,
+                     projections: &[sophia_backend_live::LivePresentedInputProjection],
+                     kinds: &[InputEventKind]| {
+        route_with_client_keys(
+            public,
+            projections,
+            &keyed(kinds),
+            None,
+            None,
+            Some(&mut router),
+            &mut keys,
+        )
+        .0
+        .keys_suppressed_no_focus
+    };
+    assert_eq!(route(public, &projections, &[key(56, true)]), 0, "the modal scope took Alt");
+    let next = held_publication(public, 2);
+    public.presentation_input.admit(1, next).unwrap();
+    assert!(public.presentation_input.held_capture());
+    assert_eq!(
+        route(public, &projections, &[key(42, true), key(42, false), key(1, true), key(1, false)]),
+        0,
+        "old modal pixels: a new Shift and Escape are shielded"
+    );
+    projections[0].presented_keyboard = sophia_engine::PresentedKeyboardScope::Held;
+    assert_eq!(
+        route(public, &projections, &[key(56, false)]),
+        0,
+        "the modal scope's Alt keeps its consumed release"
+    );
+    assert_eq!(
+        route(public, &projections, &[key(56, true), key(56, false)]),
+        2,
+        "fresh Alt edges pass the presented held strip"
+    );
+}
+
+/// Old Held pixels with a modal publication admitted pass Alt until any head
+/// shows the modal frame.
+#[test]
+fn old_held_pixels_pass_modifiers_until_a_head_shows_modal() {
+    let mut fixture = ReloadFixture::new();
+    let public = fixture.wm.public.as_mut().unwrap();
+    let mut projections = held_presented(public, true);
+    let next = modal_publication(public, 2);
+    public.presentation_input.admit(1, next).unwrap();
+    assert!(!public.presentation_input.held_capture());
+    let report = route_alt_escape(public, &projections);
+    assert_eq!(report.keys_suppressed_no_focus, 2);
+    projections[0].presented_keyboard = sophia_engine::PresentedKeyboardScope::Modal;
+    let report = route_alt_escape(public, &projections);
+    assert_eq!(report.keys_suppressed_no_focus, 0, "a head shows the modal frame");
+}
+
+/// A visible output whose head mode is unknown aggregates to Modal and
+/// swallows, as before the held capture.
+#[test]
+fn an_unknown_presented_head_shields_as_modal() {
+    let mut fixture = ReloadFixture::new();
+    let public = fixture.wm.public.as_mut().unwrap();
+    let mut projections = held_presented(public, true);
+    projections[0].policy_publication = None;
+    projections[0].presented_keyboard = sophia_engine::PresentedKeyboardScope::Modal;
+    let report = route_alt_escape(public, &projections);
+    assert_eq!(report.keys_suppressed_no_focus, 0);
+}
+
+/// A held publication admitted before any frame presents it shields nothing:
+/// modifiers and keys pass, and no action is taken.
+#[test]
+fn an_admitted_held_capture_with_no_presented_frame_passes_everything() {
+    let mut fixture = ReloadFixture::new();
+    let public = fixture.wm.public.as_mut().unwrap();
+    let mut projections = held_presented(public, false);
+    projections[0].policy_visible = false;
+    projections[0].policy_publication = None;
+    projections[0].presented_keyboard = sophia_engine::PresentedKeyboardScope::None;
+    let report = route_alt_escape(public, &projections);
+    assert!(actions(&report).is_empty(), "{:?}", report.policy_inputs);
+    assert_eq!(report.keys_suppressed_no_focus, 4);
+}
+
+/// Two shielded outputs, one still presenting modal pixels: Modal outranks
+/// Held across outputs too, so Alt is swallowed.
+#[test]
+fn a_modal_output_outranks_a_held_one_while_shielding() {
+    let mut fixture = ReloadFixture::new();
+    let public = fixture.wm.public.as_mut().unwrap();
+    let mut projections = held_presented(public, true);
+    public.presentation_input.revoke();
+    let mut modal = projections[0].clone();
+    modal.output = sophia_protocol::OutputId::from_raw(999);
+    modal.presented_keyboard = sophia_engine::PresentedKeyboardScope::Modal;
+    projections.push(modal);
+    let report = route_alt_escape(public, &projections);
+    assert_eq!(report.keys_suppressed_no_focus, 0, "the modal output keeps Alt");
 }

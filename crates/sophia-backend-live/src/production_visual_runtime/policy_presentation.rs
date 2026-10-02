@@ -204,6 +204,15 @@ impl LivePolicyPresentation {
                 output,
                 output_generation: record.generation,
                 coverage: record.coverage,
+                keyboard: match (self.presentation.keyboard_output, record.mode) {
+                    (None, _) => sophia_engine::PresentedKeyboardScope::None,
+                    (Some(_), PolicyPresentationMode::Overlay) => {
+                        sophia_engine::PresentedKeyboardScope::Held
+                    }
+                    (Some(_), PolicyPresentationMode::ReplaceApplications) => {
+                        sophia_engine::PresentedKeyboardScope::Modal
+                    }
+                },
             },
         ))
         .chain(layered.into_iter().map(|(_, command)| command))

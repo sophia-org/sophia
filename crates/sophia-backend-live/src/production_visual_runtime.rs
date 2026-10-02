@@ -47,6 +47,7 @@ mod native;
 mod ownership;
 mod present;
 mod projection;
+pub use projection::presented_keyboard_scope;
 mod service;
 mod software_present;
 mod translation;
@@ -287,6 +288,10 @@ pub struct LivePresentedInputProjection {
     pub frame_completed: bool,
     /// Some head still shows policy pixels, including a mixed-head transition.
     pub policy_visible: bool,
+    /// The keyboard scope the presented pixels hold, aggregated over every
+    /// head regardless of stamp agreement: Modal if any head shows Modal or a
+    /// head's frame is unknown, else Held if any head shows Held.
+    pub presented_keyboard: sophia_engine::PresentedKeyboardScope,
     pub epoch: u64,
     pub layers: Vec<LayerSnapshot>,
     pub chrome_targets: Vec<sophia_engine::IndicatorChromeHitTarget>,
