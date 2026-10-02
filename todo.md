@@ -183,3 +183,11 @@ Give a blind WM opaque same-application groups (surface_groups, bit 24): a per-e
 Draw window labels a WM positions but never reads (surface_labels, bit 25): a SurfaceLabel region filled from the broker descriptor under the disclosure policy. +candidate @planning id:t282 order:282 peer:hagia/h013 [details](docs/notes/plans/kgo1ugnz-held-capture-and-blind-wm-capabilities-for-niri-parity.md#t282)
 
 Add a bounded WM deadline (policy_deadlines, bit 26): one outstanding token and delay per connection, a Deadline cause when due, merged into the owner wait. +candidate @planning id:t283 order:283 peer:hagia/h014 [details](docs/notes/plans/kgo1ugnz-held-capture-and-blind-wm-capabilities-for-niri-parity.md#t283)
+
+Generalize the existing window-translation spring into an Engine transition primitive: bounded spring and ease specs animating rect, clip and opacity, sampled closed-form in time, with retargeting, exit ghosts, snap-on-budget and a reduced-motion profile switch that also covers translation. +candidate @planning id:t285 order:285 [details](docs/notes/plans/bzofyaco-compositor-driven-transitions-for-wm-presentations-and-shell-components.md#t285)
+
+Let a WM animate its presentations (next WM capability bit): default and per-target transitions, instances entering from their source placement, and exit ghosts on withdrawal. +candidate @planning id:t286 order:286 peer:hagia/h016,h017 [details](docs/notes/plans/bzofyaco-compositor-driven-transitions-for-wm-presentations-and-shell-components.md#t286)
+
+Let shell components animate placements (next shell capability bit): Sophia-interpolated enter, exit and move transitions for content placements and popouts; component content animation keeps the existing FrameDemand lifecycle. +candidate @planning id:t287 order:287 [details](docs/notes/plans/bzofyaco-compositor-driven-transitions-for-wm-presentations-and-shell-components.md#t287)
+
+Extend window motion beyond the existing positional translation (bit 12): animated resizes synchronised with configure and commit, scale, clip and opacity of committed windows, and workspace-switch effects. +candidate @planning id:t288 order:288 [details](docs/notes/plans/bzofyaco-compositor-driven-transitions-for-wm-presentations-and-shell-components.md#t288)
