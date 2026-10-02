@@ -57,7 +57,8 @@ object limits. A client submits disjoint required and optional capability masks
 before profile handoff. The existing admission owner intersects their union
 with the supported set and Session ceiling, then removes presentation actions
 without surface instances, output launch context without launch origin, and
-action lifecycle without both actions and configuration.
+action lifecycle without both actions and configuration, and chord actions
+without action lifecycle, actions and configuration.
 If any required bit is absent after these reductions, including an unknown
 required bit, admission fails and closes the endpoint without a Negotiated
 event. A malformed offer is refused before submission custody. Native presentation
@@ -321,8 +322,8 @@ filesystem qid allocator continues across epochs.
 The Cycle event has a 48-byte prefix, the affected output IDs and one exact
 cause body. It names both the immutable snapshot transaction and the separate
 request transaction/request ID. File cause codes are SceneChanged=0, Action=1,
-Focus=2, PointerFocus=3, Interaction=4, OutputAction=5, PresentationAction=6
-and ActionLifecycle=7.
+Focus=2, PointerFocus=3, Interaction=4, OutputAction=5, PresentationAction=6,
+ActionLifecycle=7 and ChordAction=8.
 These are file codes: legacy PointerFocus/Interaction numbering must not be
 copied. Geometry fields are signed 32-bit values; the shared semantic validator
 enforces the interaction-specific rules.
@@ -335,6 +336,34 @@ not a session operation, at most once, with `held_ms` 0 or 50 to 5000 and
 `reserved` 0; anything else refuses the Configuration. Session then reports the
 chord behind that action's keyboard activations. Other actions, and activations
 from presentation, indicators or control, get no lifecycle.
+
+With `chord_actions` selected as well, Session sends each admitted keyboard
+activation that opens or joins a followed chord as ChordAction instead of
+Action. `activation_serial` names that activation and `chord_serial` the
+chord's first admitted activation: the opener carries equal serials, and each
+join carries its own `activation_serial` with the opener's `chord_serial`. Held
+and Ended for the chord name that same `chord_serial` in their
+`activation_serial`. A client can therefore distinguish followed activations
+from ordinary Actions and correlate each with its chord's single terminal,
+including overlapping chords of the same action on different seats. Serials
+are opaque correlations within the connection epoch, never an origin or a
+time. ChordAction requires `actions`, `configuration`, `action_lifecycle` and
+`chord_actions`. It grants no session-operation authority, since a declared
+action is never a session operation.
+
+The opening chord fixes lifecycle eligibility under the rules below. While
+`chord_actions` is selected, joins of a followed chord remain ChordAction even
+if a replacement Configuration removes its declaration. Keyboard activations
+that neither open nor join a followed chord keep their ordinary cause kind, as
+does every activation from presentation, indicators or control; those carry no
+lifecycle. Without `chord_actions` followed activations remain Action, exactly
+as before, and a client that selected only `action_lifecycle` never receives
+ChordAction.
+
+Where the rules below speak of a chord's Actions, they include its ChordAction
+activations when `chord_actions` is selected. Admitted counts, opener refusal,
+first-in first-out order, the eight credits and the one Ended per chord are
+unchanged: a join reserves no credit and creates no second terminal.
 
 A chord opens when a declared action fires from the keyboard. It keeps the
 `held_ms` and eligibility of the row it opened under until it ends: replacing

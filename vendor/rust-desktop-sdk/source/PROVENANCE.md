@@ -220,3 +220,14 @@ implemented here. The document remains the reference for the envelope,
 custody and retry rules the shell contract adopts, which this revision does
 not change. Library sources, wire layouts and the other spec digests are
 unchanged.
+
+## WM ChordAction contract
+
+`spec/sophia-wm-files.md` is copied unmodified from signed Sophia contract
+`b0a2b0303b02af27598def07f455e8e0240b9366` on `feature/generic-chording`. It
+adds the `chord_actions` capability and the ChordAction cause that marks a
+followed chord's own keyboard activations. This SDK has no WM client, so
+nothing of it is implemented here; the document remains the reference for the
+envelope, custody and retry rules the shell contract adopts, which this
+revision does not change. Library sources, wire layouts and the other spec
+digests are unchanged.
