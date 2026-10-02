@@ -56,7 +56,8 @@ The server publishes its admitted epoch, API range, capability ceiling and
 object limits. A client submits disjoint required and optional capability masks
 before profile handoff. The existing admission owner intersects their union
 with the supported set and Session ceiling, then removes presentation actions
-without surface instances and output launch context without launch origin.
+without surface instances, output launch context without launch origin, and
+action lifecycle without both actions and configuration.
 If any required bit is absent after these reductions, including an unknown
 required bit, admission fails and closes the endpoint without a Negotiated
 event. A malformed offer is refused before submission custody. Native presentation
@@ -320,10 +321,87 @@ filesystem qid allocator continues across epochs.
 The Cycle event has a 48-byte prefix, the affected output IDs and one exact
 cause body. It names both the immutable snapshot transaction and the separate
 request transaction/request ID. File cause codes are SceneChanged=0, Action=1,
-Focus=2, PointerFocus=3, Interaction=4, OutputAction=5 and PresentationAction=6.
+Focus=2, PointerFocus=3, Interaction=4, OutputAction=5, PresentationAction=6
+and ActionLifecycle=7.
 These are file codes: legacy PointerFocus/Interaction numbering must not be
 copied. Geometry fields are signed 32-bit values; the shared semantic validator
 enforces the interaction-specific rules.
+
+### Chord lifecycle
+
+With `action_lifecycle` selected, a Configuration may carry up to 256
+`ConfigurationActionLifecycle` rows. Each row names one catalog action that is
+not a session operation, at most once, with `held_ms` 0 or 50 to 5000 and
+`reserved` 0; anything else refuses the Configuration. Session then reports the
+chord behind that action's keyboard activations. Other actions, and activations
+from presentation, indicators or control, get no lifecycle.
+
+A chord opens when a declared action fires from the keyboard. It keeps the
+`held_ms` and eligibility of the row it opened under until it ends: replacing
+the Configuration neither alters nor ends an open chord, and only chords opened
+afterwards follow the new rows. Further activations of the same action while
+the chord is open join it. `count` is the number of the chord's Actions that
+were admitted; an activation refused by either input queue is not counted. It
+saturates at 0xffffffff. `activation_serial` always names the chord's first
+admitted Action, so a client can match every lifecycle cause to that Action;
+a press whose Action is not admitted opens no chord and reports nothing.
+
+A chord is held by keys, and the chord that opened decides which. If its
+opening press had modifiers, the chord is held while any modifier key is down
+on the seat, including modifiers pressed after it fired. Otherwise it is held
+while any trigger key of its admitted Actions is down: the opener's, and each
+joining press adds its own, from any keyboard on the seat. Modifiers stay with
+the focused client; the chord never consumes them. So a tap fires the Action
+and then Ended(released) on the trigger's release. Alt held over Alt+Tab and
+Alt+Shift+Tab gives two chords that are released together when the last
+modifier goes up, in either order: Shift then Alt ends both at Alt, Alt then
+Shift ends both at Shift. Chords that end together are reported in the order
+they opened.
+
+A sequence leader is the exception. A declared action that fires on a leader
+press, such as `Super+w` before `Super+w k`, opens a chord that keys do not
+hold. It lasts until its sequence completes, is abandoned or expires, or until
+it is cancelled, so releasing Super during the sequence ends nothing.
+
+`Held` is phase 1 with reason 0. It is sent at most once, when the chord is
+still open `held_ms` after it opened, and never when `held_ms` is 0. `Ended` is
+phase 2 and is sent exactly once per opened chord, as its last cause:
+
+- 1 released: a chord held by keys is no longer held;
+- 2 cancelled: a VT switch, device removal, a shortcut registry change, a
+  seat reset, or keyboard routing leaving Session ended it first;
+- 3 completed, 4 aborted, 5 timed out: a leader's sequence finished, was
+  abandoned, or expired. Only leaders end this way, and leaders never end
+  released.
+
+Every other phase and reason pairing, and `count` 0, is malformed.
+
+Each WM connection epoch has eight lifecycle credits. Admitting a chord's
+first Action takes one. The credit is held while the chord is open and while
+its Ended waits, and it returns only when Session successfully hands that Ended
+to the WM as the in-flight Cycle; removing it from a queue, or a handoff that
+fails, returns nothing. So open chords plus Ended causes still waiting in
+Session share eight credits; one further Ended may be the in-flight Cycle under
+the existing bounded transport custody. This holds however slowly the WM
+consumes Cycles, and however many chords open, end, or are cancelled
+meanwhile. While no credit is free, a press
+that would open a new chord is still consumed as a shortcut, but Session
+queues no Action for it and opens no chord. A press that joins an open chord
+needs no credit: its Action is ordinary input under the physical bounds.
+Ending a chord early never frees its credit. A new epoch discards every open
+chord and every pending lifecycle cause without a cause, and restores all
+eight credits, because those Actions belonged to the old epoch.
+
+Actions, Held and Ended keep their relative order, and their order against
+other ordinary queued causes. The opening Action is delivered before any Held
+or Ended for its chord, Held before Ended, and nothing for a chord follows its
+Ended. Session's existing priority security cancellation is still queued ahead
+of ordinary causes and may pass them. It never reorders them among themselves,
+and it takes or returns no credit. Ended is exempt from the input queue bounds,
+since the credits bound it. That exemption lets it enter a full queue but
+never lets it pass an ordinary cause queued before it. Held is not
+exempt: when a bound drops it, its chord still ends. A Configuration being
+replaced holds the queue as a whole, which delays them all equally.
 
 Dirty and session-operation candidates, their typed outcomes and presentation
 receipts have bounded complete bodies in the same schema. Strict neutral
