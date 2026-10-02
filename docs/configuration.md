@@ -297,8 +297,8 @@ Every target is explicitly authority-qualified, for example
 session capabilities. This preparation does not activate the candidate or grant
 an unavailable capability.
 
-The shortcut section also admits chording shapes, validated now and installed
-once their matching lands:
+The shortcut section also admits chording shapes. They are installed as
+written, beside the ordinary chords:
 
 - `bind "Super" "policy:x"` is a lone modifier tap (Shift, Ctrl, Alt or Super,
   with nothing else).
@@ -316,9 +316,24 @@ once their matching lands:
   (50 to 2000) and the sequence step timeout (200 to 10000). These values are
   the defaults.
 
-Until then, a profile using any of these shapes is refused when its shortcuts
-are installed, with an error naming the shape. It is never installed with only
-its ordinary bindings.
+A modifier tap arms only when no other key is down, and fires when the modifier
+is released within `tap-ms` with nothing pressed in between. Any other key, a
+second modifier included, or a pointer button or scroll disarms it. The
+modifier itself is never consumed: clients, including X clients that grab it,
+see both of its edges. A key chord with a hold variant is decided at `hold-ms`:
+a release before then fires the tap variant, and the hold fires at the
+threshold whether or not another event follows. A non-modifier key, pointer
+button or scroll before the decision fires neither. While a sequence is
+pending, every non-modifier key is consumed with its release. A completed
+sequence fires its action; Escape, a key that is not a next step, a pointer
+button or scroll aborts it, and `sequence-ms` without a step times it out. A
+leader fires only when the WM has declared lifecycle interest in its action,
+and its chord then ends with the sequence's outcome. Every decision uses
+Sophia's owner clock when the event is processed, not the device's event
+timestamp. Batching and owner delay can therefore make a measured interval
+shorter or longer than the physical one: events processed in one batch can
+measure zero apart, and there is no hard bound on how soon a timer is answered.
+Events are still processed in the order they arrived.
 
 The desktop profile recognizes `session:window-switcher` as a session-owned
 action; it is not registered by the WM. The compiled profile enables the shell

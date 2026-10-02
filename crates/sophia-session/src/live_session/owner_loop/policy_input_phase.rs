@@ -106,26 +106,24 @@ macro_rules! dispatch_physical_policy_inputs {
                     PhysicalPolicyInput::Action(action) => action,
                 };
 
-                if is_reserved_session_action(action)
-                    && action != SHELL_HELP_SHORTCUT_ACTION
-                    && !is_shell_switcher_shortcut(action)
-                {
+                let route = physical_action_route(action);
+                if route == PhysicalActionRoute::SessionCommand {
                     if let Some(wm) = wm_session.as_mut() {
                         wm.enqueue_command_shortcut(action, session_launches, secondary_children.len())?;
                     }
                     continue;
                 }
-                if action==SHELL_HELP_SHORTCUT_ACTION || is_shell_switcher_shortcut(action){
+                if matches!(route, PhysicalActionRoute::Help | PhysicalActionRoute::Switcher){
                     if let Some(shell)=metadata_shell.as_mut() && shell.launcher_busy(){
                         shell.cancel_launcher()?;launcher_capture.present(None,0,&[],true);
                         if let Some(runtime)=runtime.as_mut(){runtime.set_descriptor_overlay(None,&scene,native_scanout.as_mut())?;}
                     }
                 }
-                if action==SHELL_HELP_SHORTCUT_ACTION {
+                if route == PhysicalActionRoute::Help {
                     if let Some(shell)=metadata_shell.as_mut(){shell.queue_reference(sophia_protocol::ShellReferenceOperation::Toggle,wm_session.as_ref().and_then(LiveWmSession::reference_output).unwrap_or(output.id));}
                     continue;
                 }
-                if is_shell_switcher_shortcut(action) {
+                if route == PhysicalActionRoute::Switcher {
                     let broker = metadata_broker
                         .as_ref()
                         .ok_or("shell shortcut has no live metadata broker")?;

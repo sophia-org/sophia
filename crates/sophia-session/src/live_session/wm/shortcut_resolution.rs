@@ -8,6 +8,29 @@ const fn is_shell_switcher_shortcut(action: sophia_protocol::WmActionId) -> bool
     action.raw() == SHELL_SWITCHER_SHORTCUT_ACTION.raw()
 }
 
+/// Where an ordinary activated action goes, however it was fired: a key, or
+/// a deadline. Help and the switcher sit in the reserved session range but
+/// are shell requests, never command launches.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PhysicalActionRoute {
+    SessionCommand,
+    Help,
+    Switcher,
+    Policy,
+}
+
+const fn physical_action_route(action: sophia_protocol::WmActionId) -> PhysicalActionRoute {
+    if action.raw() == SHELL_HELP_SHORTCUT_ACTION.raw() {
+        PhysicalActionRoute::Help
+    } else if is_shell_switcher_shortcut(action) {
+        PhysicalActionRoute::Switcher
+    } else if is_reserved_session_action(action) {
+        PhysicalActionRoute::SessionCommand
+    } else {
+        PhysicalActionRoute::Policy
+    }
+}
+
 fn session_shortcut_identity(
     shortcut: sophia_config::DesktopSessionShortcut,
 ) -> Option<(u16, &'static str)> {
@@ -64,26 +87,44 @@ fn resolve_public_shortcuts_with_dropped_defaults(
                 .map(|slot| ((slot, action.name.as_str()), action.action))
         })
         .collect::<BTreeMap<_, _>>();
-    // Profile shapes whose matching is not wired yet are refused by name
-    // rather than installed without them (t277 D1).
-    if !candidate.leaders.is_empty() {
-        return Err("shortcut leaders are not yet supported");
-    }
-    if candidate.timing != sophia_config::DesktopShortcutTiming::default() {
-        return Err("shortcut timing is not yet supported");
-    }
-    for binding in &candidate.bindings {
-        if !binding.steps.is_empty() {
-            return Err("shortcut sequences are not yet supported");
-        }
-        if binding.hold_ms.is_some() {
-            return Err("hold shortcuts are not yet supported");
-        }
-        if binding.modifier_tap().is_some() {
-            return Err("modifier tap shortcuts are not yet supported");
-        }
-    }
-    let mut bindings = Vec::with_capacity(candidate.bindings.len());
+    let plan = resolve_shortcut_plan(candidate, &policy_actions, &session_actions, commands, dropped)?;
+    // Built from prepared authorities, so there is no transport handshake to
+    // fabricate before constructing Engine's shortcut registry.
+    sophia_engine::WmShortcutRegistry::from_plan(
+        &plan,
+        sophia_protocol::WmCapabilities::all_supported(),
+        configuration.generation,
+        configuration.chrome,
+    )
+    .map_err(|_| "resolved shortcut registry is invalid")
+}
+
+/// Every key shape of the profile, resolved against the policy catalog and
+/// the session's commands: immediate chords, hold variants, lone modifier
+/// taps, key sequences and their leaders, and the timing. Pointer bindings
+/// name the engine's fixed gestures and only validate.
+fn resolve_shortcut_plan(
+    candidate: &sophia_config::DesktopShortcutCandidate,
+    policy_actions: &BTreeMap<&str, sophia_protocol::WmActionId>,
+    session_actions: &BTreeMap<(u16, &str), sophia_protocol::WmActionId>,
+    commands: &SessionCommandRegistry,
+    dropped: &[sophia_config::DesktopSessionShortcut],
+) -> Result<sophia_engine::WmShortcutPlan, &'static str> {
+    let step = |chord: &sophia_config::DesktopShortcutChord| {
+        sophia_config::desktop_shortcut_evdev_keycode(&chord.trigger)
+            .map(|keycode| sophia_engine::WmKeyStep {
+                keycode,
+                modifiers: u32::from(chord.modifiers.bits()),
+            })
+            .ok_or("shortcut trigger has no evdev identity")
+    };
+    let mut plan = sophia_engine::WmShortcutPlan {
+        timing: sophia_engine::WmShortcutTiming {
+            tap_ms: candidate.timing.tap_ms,
+            sequence_ms: candidate.timing.sequence_ms,
+        },
+        ..sophia_engine::WmShortcutPlan::default()
+    };
     for binding in &candidate.bindings {
         // These omissions were admitted and reported at startup only for the
         // compiled fallback. Keep the source candidate and its digest intact.
@@ -130,23 +171,44 @@ fn resolve_public_shortcuts_with_dropped_defaults(
             .copied()
             .ok_or("shortcut names an unavailable session capability")?,
         };
-        let keycode = sophia_config::desktop_shortcut_evdev_keycode(&binding.chord.trigger)
-            .ok_or("shortcut trigger has no evdev identity")?;
-        bindings.push(sophia_protocol::WmBindingRegistration {
+        if let Some(modifier) = binding.modifier_tap() {
+            plan.taps.push(sophia_engine::WmModifierTapBinding {
+                modifier: u32::from(modifier.bits()),
+                action,
+            });
+        } else if let Some(hold_ms) = binding.hold_ms {
+            plan.holds.push(sophia_engine::WmHoldBinding {
+                step: step(&binding.chord)?,
+                hold_ms,
+                action,
+            });
+        } else if binding.steps.is_empty() {
+            let step = step(&binding.chord)?;
+            plan.immediate.push(sophia_protocol::WmBindingRegistration {
+                action,
+                keycode: step.keycode,
+                modifiers: sophia_protocol::WmModifierMask {
+                    bits: step.modifiers,
+                },
+            });
+        } else {
+            plan.sequences.push(sophia_engine::WmSequenceBinding {
+                steps: binding.path().map(step).collect::<Result<_, _>>()?,
+                action,
+            });
+        }
+    }
+    for leader in &candidate.leaders {
+        // A leader is a policy action the WM may follow, never a session
+        // capability.
+        let action = policy_actions
+            .get(leader.action.as_str())
+            .copied()
+            .ok_or("shortcut leader names an unregistered policy action")?;
+        plan.leaders.push(sophia_engine::WmSequenceLeader {
+            steps: leader.path().map(step).collect::<Result<_, _>>()?,
             action,
-            keycode,
-            modifiers: sophia_protocol::WmModifierMask {
-                bits: u32::from(binding.chord.modifiers.bits()),
-            },
         });
     }
-    // Built from prepared authorities, so there is no transport handshake to
-    // fabricate before constructing Engine's shortcut registry.
-    sophia_engine::WmShortcutRegistry::new(
-        &bindings,
-        sophia_protocol::WmCapabilities::all_supported(),
-        configuration.generation,
-        configuration.chrome,
-    )
-    .map_err(|_| "resolved shortcut registry is invalid")
+    Ok(plan)
 }

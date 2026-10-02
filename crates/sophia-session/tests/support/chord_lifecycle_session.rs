@@ -695,3 +695,112 @@ fn a_join_the_wm_refuses_queues_its_own_terminal() {
     );
     assert!(c.router().take_outputs().is_empty());
 }
+
+/// D3b (dispatch decision 01): a hold resolved from the profile fires by its
+/// deadline with no key event. Its actual service output takes the
+/// production path (from_shortcut, the physical queue's admit and next, and
+/// the dispatch classifier) and lands exactly where the same action, pressed
+/// as an immediate chord, lands: same identity, same route. The rows are a
+/// registered application command, help, the switcher and an ordinary policy
+/// action. Nothing is emitted before the deadline, exactly one activation at
+/// it, and none on later service. The shell and launch effects behind each
+/// route, and the owner loop itself, are reviewed in source, not run here.
+#[test]
+fn a_hold_fired_by_its_deadline_is_dispatched_like_its_key() {
+    use sophia_config::{
+        DesktopSessionShortcut as S, DesktopShortcutBinding, DesktopShortcutBindingKind,
+        DesktopShortcutChord, DesktopShortcutModifiers as M, DesktopShortcutTarget as T,
+    };
+    let mut fixture = ReloadFixture::new();
+    fixture.save("/usr/bin/demo", None);
+    assert_eq!(fixture.reload(), DesktopProfileReloadOutcome::Applied);
+    let demo = fixture.wm.command_registry.action("demo").unwrap();
+    let targets = [
+        (T::LaunchApplication("demo".to_owned()), demo, PhysicalActionRoute::SessionCommand),
+        (T::Session(S::ShortcutHelp), SHELL_HELP_SHORTCUT_ACTION, PhysicalActionRoute::Help),
+        (T::Session(S::WindowSwitcher), SHELL_SWITCHER_SHORTCUT_ACTION, PhysicalActionRoute::Switcher),
+        (T::PolicyAction("plain".to_owned()), PLAIN, PhysicalActionRoute::Policy),
+    ];
+    // Each target is a Super+digit hold (1..4) and a Super+digit immediate
+    // chord (5..8), the key-origin control.
+    let binding = |digit: u32, target: &T, hold_ms| DesktopShortcutBinding {
+        chord: DesktopShortcutChord {
+            kind: DesktopShortcutBindingKind::Key,
+            modifiers: M::SUPER,
+            trigger: digit.to_string(),
+        },
+        steps: Vec::new(),
+        hold_ms,
+        target: target.clone(),
+        label: None,
+        group: None,
+    };
+    let mut bindings = Vec::new();
+    for (index, (target, _, _)) in targets.iter().enumerate() {
+        let index = u32::try_from(index).unwrap();
+        bindings.push(binding(index + 1, target, Some(500)));
+        bindings.push(binding(index + 5, target, None));
+    }
+    let candidate = sophia_config::DesktopShortcutCandidate {
+        generation: sophia_config::ConfigGeneration::INITIAL,
+        digest: sophia_config::ConfigDigest::new([9; 32]),
+        profile: "dispatch".to_owned(),
+        bindings,
+        leaders: Vec::new(),
+        timing: sophia_config::DesktopShortcutTiming::default(),
+    };
+    let configuration = sophia_protocol::PolicyConfiguration {
+        action_lifecycles: Vec::new(),
+        connection_epoch: 1,
+        generation: 1,
+        actions: vec![PolicyActionRegistration {
+            action: PLAIN,
+            name: "plain".into(),
+            session_operation_slot: None,
+        }],
+        chrome: sophia_protocol::WmChromePolicy::default(),
+    };
+    let registry = resolve_public_shortcuts(&candidate, &configuration, 1, &fixture.wm.command_registry).unwrap();
+    fixture.wm.shortcuts = Some(WmShortcutRouter::new(registry));
+    fn router(fixture: &mut ReloadFixture) -> &mut WmShortcutRouter {
+        fixture.wm.shortcuts.as_mut().unwrap()
+    }
+    // The physical queue and classifier the dispatch macro runs.
+    let dispatch = |router: &mut WmShortcutRouter, outputs: Vec<sophia_engine::WmShortcutOutput>| {
+        let mut queue = PhysicalPolicyInputQueue::default();
+        for output in outputs {
+            assert!(queue.admit(PhysicalPolicyInput::from_shortcut(output), true, Some(router)));
+        }
+        let mut dispatched = Vec::new();
+        while let Some(input) = queue.next(false) {
+            let PhysicalPolicyInput::Action(action) = input else {
+                panic!("an ordinary action, got {input:?}");
+            };
+            dispatched.push((action, physical_action_route(action)));
+        }
+        dispatched
+    };
+    let super_key = 125;
+    route_test_key(router(&mut fixture), SEAT, KEYBOARD, super_key, true, 0);
+    for (index, (_, action, route)) in targets.into_iter().enumerate() {
+        let index = u32::try_from(index).unwrap();
+        let start = 1_000 * u64::from(index + 1);
+        // Key origin: the immediate chord.
+        let keycode = index + 6;
+        let (_, _, pressed) = route_test_key(router(&mut fixture), SEAT, KEYBOARD, keycode, true, start);
+        route_test_key(router(&mut fixture), SEAT, KEYBOARD, keycode, false, start);
+        let by_key = dispatch(router(&mut fixture), pressed);
+        assert_eq!(by_key, [(action, route)], "key origin, row {index}");
+        // Timer origin: the hold, with no later key event.
+        let keycode = index + 2;
+        let (_, _, held) = route_test_key(router(&mut fixture), SEAT, KEYBOARD, keycode, true, start);
+        assert!(held.is_empty(), "row {index}: nothing before the deadline");
+        assert!(fixture.wm.service_shortcuts(start + 499).is_empty(), "row {index}");
+        let fired = fixture.wm.service_shortcuts(start + 500);
+        let by_timer = dispatch(router(&mut fixture), fired);
+        assert_eq!(by_timer, by_key, "timer origin, row {index}");
+        assert!(fixture.wm.service_shortcuts(start + 900).is_empty(), "row {index}: once");
+        let (_, _, released) = route_test_key(router(&mut fixture), SEAT, KEYBOARD, keycode, false, start + 950);
+        assert!(released.is_empty(), "row {index}: no duplicate at release");
+    }
+}
