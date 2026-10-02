@@ -1,18 +1,29 @@
-//! Policy configuration rows: named action registrations. Chrome travels in
-//! the configuration metadata; each transport chooses how to carry it.
+//! Policy configuration rows: named action registrations and the actions whose
+//! chords the WM follows. Chrome travels in the configuration metadata; each
+//! transport chooses how to carry it.
 use std::collections::BTreeSet;
 
+use crate::byte_cursor::{Cursor, push_u32, push_u64};
 use crate::wm_rows::{
     SNAPSHOT_ACTION_RECORD_KIND, WmV1SnapshotActionRecord, decode_wm_v1_snapshot_action_records,
     encode_wm_v1_snapshot_action_records,
 };
-use crate::{BinaryCodecError, PolicyActionRegistration, PolicyConfiguration, WmActionId};
+use crate::{
+    BinaryCodecError, POLICY_ACTION_LIFECYCLE_HELD_MS, PolicyActionLifecycleInterest,
+    PolicyActionRegistration, PolicyConfiguration, WmActionId,
+};
 
 use super::values::{invalid, push_policy_section};
 use super::{
     PolicyConfigurationMetadata, PolicyRecordContext, PolicyRecordSection, PolicyRecordSectionRef,
     validate_policy_record_sections,
 };
+
+/// `ConfigurationActionLifecycle`, gated on `action_lifecycle`: action u64,
+/// held_ms u32, reserved u32.
+pub const CONFIGURATION_ACTION_LIFECYCLE_RECORD_KIND: u16 = 0xff0e;
+pub const CONFIGURATION_ACTION_LIFECYCLE_RECORD_LEN: usize = 16;
+pub const CONFIGURATION_ACTION_LIFECYCLE_RECORD_MAX: usize = 256;
 
 pub fn encode_policy_configuration_records(
     configuration: &PolicyConfiguration,
@@ -47,6 +58,20 @@ pub fn encode_policy_configuration_records(
         records.len(),
         encode_wm_v1_snapshot_action_records(&records)?,
     )?;
+    let mut rows = Vec::with_capacity(
+        configuration.action_lifecycles.len() * CONFIGURATION_ACTION_LIFECYCLE_RECORD_LEN,
+    );
+    for interest in &configuration.action_lifecycles {
+        push_u64(&mut rows, interest.action.raw());
+        push_u32(&mut rows, interest.held_ms);
+        push_u32(&mut rows, 0);
+    }
+    push_policy_section(
+        &mut sections,
+        CONFIGURATION_ACTION_LIFECYCLE_RECORD_KIND,
+        configuration.action_lifecycles.len(),
+        rows,
+    )?;
     Ok(sections)
 }
 
@@ -59,7 +84,23 @@ pub fn decode_policy_configuration_records(
     }
     validate_policy_record_sections(PolicyRecordContext::Configuration, sections)?;
     let mut records = Vec::new();
+    let mut action_lifecycles = Vec::new();
     for section in sections {
+        if section.kind == CONFIGURATION_ACTION_LIFECYCLE_RECORD_KIND {
+            for row in section
+                .bytes
+                .chunks_exact(CONFIGURATION_ACTION_LIFECYCLE_RECORD_LEN)
+            {
+                let mut c = Cursor::new(row);
+                let action = WmActionId::from_raw(c.u64()?);
+                let held_ms = c.u32()?;
+                if c.u32()? != 0 {
+                    return Err(invalid("policy_configuration_action_lifecycle", 0));
+                }
+                action_lifecycles.push(PolicyActionLifecycleInterest { action, held_ms });
+            }
+            continue;
+        }
         records.extend(decode_wm_v1_snapshot_action_records(
             section.bytes,
             section.count,
@@ -70,6 +111,7 @@ pub fn decode_policy_configuration_records(
         generation: metadata.generation,
         chrome: metadata.chrome,
         actions: decode_policy_action_rows(records)?,
+        action_lifecycles,
     };
     validate_policy_configuration(&configuration)?;
     Ok(configuration)
@@ -116,6 +158,28 @@ pub(crate) fn validate_policy_configuration(
             || !action_names.insert(action.name.as_str())
         {
             return Err(invalid("policy_configuration_action", 0));
+        }
+    }
+
+    // Each lifecycle row names a registered action that is not a session
+    // operation, once, with Held off or within the contract's range.
+    if configuration.action_lifecycles.len() > CONFIGURATION_ACTION_LIFECYCLE_RECORD_MAX {
+        return Err(BinaryCodecError::CountTooLarge {
+            count: configuration.action_lifecycles.len(),
+            max: CONFIGURATION_ACTION_LIFECYCLE_RECORD_MAX,
+        });
+    }
+    let mut lifecycle_ids = BTreeSet::new();
+    for interest in &configuration.action_lifecycles {
+        let policy_action = configuration.actions.iter().any(|action| {
+            action.action == interest.action && action.session_operation_slot.is_none()
+        });
+        if !policy_action
+            || (interest.held_ms != 0
+                && !POLICY_ACTION_LIFECYCLE_HELD_MS.contains(&interest.held_ms))
+            || !lifecycle_ids.insert(interest.action)
+        {
+            return Err(invalid("policy_configuration_action_lifecycle", 0));
         }
     }
     Ok(())

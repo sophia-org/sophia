@@ -43,5 +43,9 @@ pub const fn select_policy_capabilities(
     if selected & SOPHIA_WM_CAPABILITY_LAUNCH_ORIGIN == 0 {
         selected &= !SOPHIA_WM_CAPABILITY_OUTPUT_LAUNCH_CONTEXT;
     }
+    let lifecycle_inputs = SOPHIA_WM_CAPABILITY_ACTIONS | SOPHIA_WM_CAPABILITY_CONFIGURATION;
+    if selected & lifecycle_inputs != lifecycle_inputs {
+        selected &= !SOPHIA_WM_CAPABILITY_ACTION_LIFECYCLE;
+    }
     selected
 }

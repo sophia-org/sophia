@@ -243,6 +243,7 @@ fn profile() -> PolicyProfileAdmission {
 }
 fn configuration() -> PolicyConfiguration {
     PolicyConfiguration {
+        action_lifecycles: Vec::new(),
         connection_epoch: 9,
         generation: 4,
         actions: vec![],

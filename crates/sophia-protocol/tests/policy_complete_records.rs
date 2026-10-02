@@ -161,6 +161,7 @@ fn presentation_order_is_checked_before_any_caller_coalesces() {
 #[test]
 fn configuration_records_share_catalog_and_chrome_validation() {
     let configuration = PolicyConfiguration {
+        action_lifecycles: Vec::new(),
         connection_epoch: 2,
         generation: 3,
         actions: fixture::actions(),

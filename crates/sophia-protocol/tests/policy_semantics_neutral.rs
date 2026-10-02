@@ -139,6 +139,7 @@ fn policy_configuration_records_reject_ambiguous_or_invalid_actions() {
         session_operation_slot: None,
     };
     let mut configuration = PolicyConfiguration {
+        action_lifecycles: Vec::new(),
         connection_epoch: 2,
         generation: 3,
         actions: vec![action.clone(), action],

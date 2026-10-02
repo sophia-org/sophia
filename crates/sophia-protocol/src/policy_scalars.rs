@@ -12,7 +12,8 @@
 use std::collections::BTreeSet;
 
 use crate::wm_rows::{
-    SOPHIA_WM_CAPABILITY_ACTIONS, SOPHIA_WM_CAPABILITY_OUTPUT_ACTIONS,
+    SOPHIA_WM_CAPABILITY_ACTION_LIFECYCLE, SOPHIA_WM_CAPABILITY_ACTIONS,
+    SOPHIA_WM_CAPABILITY_CONFIGURATION, SOPHIA_WM_CAPABILITY_OUTPUT_ACTIONS,
     SOPHIA_WM_CAPABILITY_POINTER_FOCUS, SOPHIA_WM_CAPABILITY_POINTER_INTERACTIONS,
     SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS, SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES,
     SOPHIA_WM_OUTCOME_COMMITTED, SOPHIA_WM_OUTCOME_DISCONNECTED,
@@ -58,6 +59,11 @@ pub const fn policy_request_cause_capabilities(cause: &PolicyRequestCause) -> u6
             SOPHIA_WM_CAPABILITY_ACTIONS
                 | SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES
                 | SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS
+        }
+        PolicyRequestCause::ActionLifecycle { .. } => {
+            SOPHIA_WM_CAPABILITY_ACTIONS
+                | SOPHIA_WM_CAPABILITY_CONFIGURATION
+                | SOPHIA_WM_CAPABILITY_ACTION_LIFECYCLE
         }
         PolicyRequestCause::PointerFocus { .. } => SOPHIA_WM_CAPABILITY_POINTER_FOCUS,
         PolicyRequestCause::Interaction { .. } => SOPHIA_WM_CAPABILITY_POINTER_INTERACTIONS,
@@ -276,6 +282,19 @@ pub(crate) fn validate_request_cause_scalars(
                 || !affected_outputs.contains(&identity.output)
             {
                 return Err(invalid("presentation_action_cause", 0));
+            }
+            action(activation_serial, id)
+        }
+        // The phase is valid by construction; the wire codec refuses any
+        // other phase and reason pairing before it is built.
+        PolicyRequestCause::ActionLifecycle {
+            activation_serial,
+            action: id,
+            count,
+            ..
+        } => {
+            if count == 0 {
+                return Err(invalid("action_lifecycle_cause", 0));
             }
             action(activation_serial, id)
         }

@@ -42,6 +42,7 @@ fn desktop_shortcuts_resolve_against_the_policy_action_catalog() {
         ),
     ]);
     let configuration = sophia_protocol::PolicyConfiguration {
+        action_lifecycles: Vec::new(),
         connection_epoch: 1,
         generation: 1,
         actions: vec![
@@ -89,6 +90,7 @@ fn desktop_shortcuts_reject_unregistered_policy_semantics() {
         sophia_config::DesktopShortcutTarget::PolicyAction("unknown".to_owned()),
     )]);
     let configuration = sophia_protocol::PolicyConfiguration {
+        action_lifecycles: Vec::new(),
         connection_epoch: 1,
         generation: 1,
         actions: Vec::new(),
@@ -115,6 +117,7 @@ fn descriptor_switcher_shortcut_is_session_owned() {
         ),
     )]);
     let configuration = sophia_protocol::PolicyConfiguration {
+        action_lifecycles: Vec::new(),
         connection_epoch: 1,
         generation: 1,
         actions: Vec::new(),
@@ -143,6 +146,7 @@ fn descriptor_switcher_shortcut_is_session_owned() {
 fn policy_cannot_claim_the_descriptor_switcher_action_identity() {
     let candidate = shortcut_candidate(Vec::new());
     let configuration = sophia_protocol::PolicyConfiguration {
+        action_lifecycles: Vec::new(),
         connection_epoch: 1,
         generation: 1,
         actions: vec![sophia_protocol::PolicyActionRegistration {

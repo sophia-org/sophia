@@ -94,6 +94,10 @@ pub fn policy_record_layout(context: PolicyRecordContext, kind: u16) -> Option<(
         (Configuration, SNAPSHOT_ACTION_RECORD_KIND) => {
             (SNAPSHOT_ACTION_RECORD_SIZE, SNAPSHOT_ACTION_RECORD_MAX)
         }
+        (Configuration, super::CONFIGURATION_ACTION_LIFECYCLE_RECORD_KIND) => (
+            super::CONFIGURATION_ACTION_LIFECYCLE_RECORD_LEN,
+            super::CONFIGURATION_ACTION_LIFECYCLE_RECORD_MAX,
+        ),
         (Snapshot, SNAPSHOT_OUTPUT_RECORD_KIND) => {
             (SNAPSHOT_OUTPUT_RECORD_SIZE, SNAPSHOT_OUTPUT_RECORD_MAX)
         }

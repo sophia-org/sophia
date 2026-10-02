@@ -14,6 +14,11 @@ fn section_capabilities(context: PolicyRecordContext, kind: u16) -> u64 {
             PolicyRecordContext::Snapshot | PolicyRecordContext::Configuration,
             SNAPSHOT_ACTION_RECORD_KIND,
         ) => SOPHIA_WM_CAPABILITY_ACTIONS,
+        (PolicyRecordContext::Configuration, CONFIGURATION_ACTION_LIFECYCLE_RECORD_KIND) => {
+            SOPHIA_WM_CAPABILITY_ACTION_LIFECYCLE
+                | SOPHIA_WM_CAPABILITY_ACTIONS
+                | SOPHIA_WM_CAPABILITY_CONFIGURATION
+        }
         (PolicyRecordContext::Snapshot, SNAPSHOT_SESSION_OPERATION_RECORD_KIND) => {
             SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS
         }

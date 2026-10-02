@@ -17,6 +17,7 @@ fn event(kind: WmFileKind, tx: u64, epoch: u64) -> PolicyAdapterEvent {
         WmFileKind::Configuration => PolicyAdapterEvent::Configuration {
             transaction,
             configuration: PolicyConfiguration {
+                action_lifecycles: Vec::new(),
                 connection_epoch: epoch,
                 generation: 3,
                 actions: vec![],

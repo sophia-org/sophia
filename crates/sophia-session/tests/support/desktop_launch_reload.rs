@@ -92,6 +92,7 @@ impl ReloadFixture {
         let mut reducer = sophia_engine::PolicyProjectionReducer::new(scene).unwrap();
         reducer.connect(1).unwrap();
         let configuration = sophia_protocol::PolicyConfiguration {
+            action_lifecycles: Vec::new(),
             connection_epoch: 1,
             generation: key.generation().raw(),
             actions,
@@ -271,6 +272,7 @@ impl ReloadFixture {
     fn configuration(&self) -> sophia_protocol::PolicyConfiguration {
         let public = self.wm.public.as_ref().unwrap();
         sophia_protocol::PolicyConfiguration {
+            action_lifecycles: Vec::new(),
             connection_epoch: public.connection_epoch,
             // Hagia starts its action catalog at 1 for each new connection,
             // independently of the activated desktop profile generation.

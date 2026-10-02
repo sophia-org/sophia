@@ -72,6 +72,7 @@ fn configured() -> (PolicyTransportWorker, Peer, u64) {
     let config = WmFileConfiguration {
         transaction: TransactionId::from_raw(10),
         configuration: PolicyConfiguration {
+            action_lifecycles: Vec::new(),
             connection_epoch: 9,
             generation: 3,
             actions: vec![],
