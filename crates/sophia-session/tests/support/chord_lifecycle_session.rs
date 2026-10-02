@@ -24,6 +24,8 @@ struct Chords {
     fixture: ReloadFixture,
     layout: PersistentLiveLayout,
     output: sophia_engine::HeadlessOutput,
+    /// Chord events key events returned, waiting for `events` in order.
+    returned: Vec<sophia_engine::WmChordEvent>,
 }
 
 fn registry(generation: u64, bindings: &[(WmActionId, u32, u32)]) -> WmShortcutRegistry {
@@ -69,6 +71,7 @@ fn chords() -> Chords {
         fixture,
         layout: PersistentLiveLayout::default(),
         output: sophia_engine::HeadlessOutput::deterministic(),
+        returned: Vec::new(),
     }
 }
 
@@ -78,7 +81,24 @@ impl Chords {
     }
 
     fn key(&mut self, keycode: u32, pressed: bool, now: u64) -> sophia_engine::WmShortcutDecision {
-        self.router().route_key(SEAT, KEYBOARD, keycode, pressed, now)
+        self.key_on(SEAT, keycode, pressed, now)
+    }
+
+    /// One key event, accepted: its activation is the decision, and its chord
+    /// events wait for `events`.
+    fn key_on(&mut self, seat: SeatId, keycode: u32, pressed: bool, now: u64) -> sophia_engine::WmShortcutDecision {
+        let (consumed, _, outputs) = route_test_key(self.router(), seat, KEYBOARD, keycode, pressed, now);
+        let mut decision = sophia_engine::WmShortcutDecision { action: None, consumed, chord: None };
+        for output in outputs {
+            match output {
+                sophia_engine::WmShortcutOutput::Activation(activation) => {
+                    decision.action = Some(activation.action);
+                    decision.chord = activation.chord;
+                }
+                sophia_engine::WmShortcutOutput::Chord(event) => self.returned.push(event),
+            }
+        }
+        decision
     }
 
     /// Admit a routed activation the way the owner loop's dispatch does.
@@ -100,7 +120,13 @@ impl Chords {
 
     /// Queue every lifecycle event the router reported, in order.
     fn events(&mut self) -> Vec<LiveChordEventAdmission> {
-        let events = self.router().drain_chord_events();
+        let mut events = core::mem::take(&mut self.returned);
+        events.extend(self.router().take_outputs().into_iter().map(|output| match output {
+            sophia_engine::WmShortcutOutput::Chord(event) => event,
+            sophia_engine::WmShortcutOutput::Activation(activation) => {
+                panic!("an activation left in the router: {activation:?}")
+            }
+        }));
         events
             .into_iter()
             .map(|event| self.fixture.wm.enqueue_chord_event(event).unwrap())
@@ -148,7 +174,7 @@ fn lifecycle_causes_follow_their_actions_in_event_order() {
     let join = c.key(TAB, true, 20);
     assert_eq!(c.admit(join, TAB), LiveChordActionAdmission::Admitted);
     c.plain();
-    c.router().poll_chords(150);
+    c.router().poll_shortcuts(150);
     assert_eq!(c.events(), [LiveChordEventAdmission::Queued]);
     c.key(TAB, false, 200);
     c.key(ALT, false, 210);
@@ -235,7 +261,7 @@ fn ended_passes_the_request_bound_but_no_earlier_cause_and_held_does_not() {
     let opener = c.key(TAB, true, 0);
     assert_eq!(c.admit(opener, TAB), LiveChordActionAdmission::Admitted);
     c.fill_queue_to(WM_OWNER_REQUEST_CAPACITY);
-    c.router().poll_chords(150);
+    c.router().poll_shortcuts(150);
     assert_eq!(c.events(), [LiveChordEventAdmission::HeldDropped]);
     c.key(TAB, false, 200);
     c.key(ALT, false, 210);
@@ -310,7 +336,7 @@ fn a_security_cancel_passes_chord_causes_without_reordering_them() {
     c.key(ALT, true, 0);
     let opener = c.key(TAB, true, 0);
     assert_eq!(c.admit(opener, TAB), LiveChordActionAdmission::Admitted);
-    c.router().poll_chords(150);
+    c.router().poll_shortcuts(150);
     c.key(TAB, false, 160);
     c.key(ALT, false, 170);
     c.events();
@@ -374,13 +400,11 @@ fn the_chord_service_delivers_timers_and_cancellations_without_physical_input() 
     assert_eq!(c.admit(opener, TAB), LiveChordActionAdmission::Admitted);
     let token = opener.chord.unwrap().token;
     assert_eq!(c.router().next_deadline(), Some(150));
-    assert!(c.fixture.wm.service_chords(149).is_empty());
+    assert!(c.fixture.wm.service_shortcuts(149).is_empty());
     assert!(c.router().clear_seat(SEAT));
     assert_eq!(
-        c.fixture.wm.service_chords(150),
-        [
-            sophia_engine::WmChordEvent::Ended { token, end: PolicyChordEnd::Cancelled },
-        ]
+        c.fixture.wm.service_shortcuts(150),
+        [sophia_engine::WmShortcutOutput::Chord(sophia_engine::WmChordEvent::Ended { token, end: PolicyChordEnd::Cancelled })]
     );
     assert_eq!(c.router().next_deadline(), None);
 
@@ -390,11 +414,11 @@ fn the_chord_service_delivers_timers_and_cancellations_without_physical_input() 
     assert_eq!(c.admit(opener, TAB), LiveChordActionAdmission::Admitted);
     let token = opener.chord.unwrap().token;
     assert_eq!(
-        c.fixture.wm.service_chords(150),
-        [sophia_engine::WmChordEvent::Held { token }]
+        c.fixture.wm.service_shortcuts(150),
+        [sophia_engine::WmShortcutOutput::Chord(sophia_engine::WmChordEvent::Held { token })]
     );
     assert_eq!(c.router().next_deadline(), None);
-    assert!(c.fixture.wm.service_chords(10_000).is_empty());
+    assert!(c.fixture.wm.service_shortcuts(10_000).is_empty());
 }
 
 /// Review R3: leaving keyboard matching ends the open chords cancelled on the
@@ -409,11 +433,11 @@ fn leaving_keyboard_matching_cancels_open_chords_once() {
     let token = opener.chord.unwrap().token;
     c.fixture.wm.observe_keyboard_matching(false);
     assert_eq!(
-        c.fixture.wm.service_chords(10),
-        [sophia_engine::WmChordEvent::Ended { token, end: PolicyChordEnd::Cancelled }]
+        c.fixture.wm.service_shortcuts(10),
+        [sophia_engine::WmShortcutOutput::Chord(sophia_engine::WmChordEvent::Ended { token, end: PolicyChordEnd::Cancelled })]
     );
     c.fixture.wm.observe_keyboard_matching(false);
-    assert!(c.fixture.wm.service_chords(1_000).is_empty());
+    assert!(c.fixture.wm.service_shortcuts(1_000).is_empty());
     c.fixture.wm.observe_keyboard_matching(true);
     c.key(TAB, false, 1_001);
     let reopened = c.key(TAB, true, 1_002);
@@ -458,9 +482,6 @@ impl Chords {
         self.fixture.wm.public.as_mut().unwrap().selected_capabilities = capabilities;
     }
 
-    fn key_on(&mut self, seat: SeatId, keycode: u32, pressed: bool, now: u64) -> sophia_engine::WmShortcutDecision {
-        self.router().route_key(seat, KEYBOARD, keycode, pressed, now)
-    }
 }
 
 fn chord_action(cause: PolicyRequestCause) -> (u64, u64) {
@@ -483,7 +504,7 @@ fn chord_actions_name_their_activation_and_their_chord() {
     c.key(TAB, false, 1);
     let join = c.key(TAB, true, 2);
     assert_eq!(c.admit(join, TAB), LiveChordActionAdmission::Admitted);
-    c.router().poll_chords(150);
+    c.router().poll_shortcuts(150);
     c.events();
     c.key(TAB, false, 160);
     c.key(ALT, false, 170);
@@ -594,4 +615,83 @@ fn a_chord_action_is_handed_off_as_a_cycle() {
     };
     let (activation, chord) = chord_action(request.cause);
     assert_eq!(activation, chord);
+}
+
+/// D3: the per-turn service carries a hold that fired by its deadline, with
+/// no key event to carry it, and the WM admits it like any routed action.
+#[test]
+fn the_service_carries_a_hold_fired_by_its_deadline() {
+    let mut c = chords();
+    let plan = sophia_engine::WmShortcutPlan {
+        holds: vec![sophia_engine::WmHoldBinding {
+            step: sophia_engine::WmKeyStep {
+                keycode: F9,
+                modifiers: 0,
+            },
+            hold_ms: 500,
+            action: PLAIN,
+        }],
+        ..sophia_engine::WmShortcutPlan::default()
+    };
+    c.fixture.wm.shortcuts = Some(WmShortcutRouter::new(
+        WmShortcutRegistry::from_plan(
+            &plan,
+            WmCapabilities::all_supported(),
+            1,
+            sophia_protocol::WmChromePolicy::default(),
+        )
+        .unwrap(),
+    ));
+    assert_eq!(c.key(F9, true, 0).action, None);
+    assert!(c.fixture.wm.service_shortcuts(499).is_empty());
+    assert!(matches!(
+        c.fixture.wm.service_shortcuts(500)[..],
+        [sophia_engine::WmShortcutOutput::Activation(activation)]
+            if activation.action == PLAIN && activation.chord.is_none()
+    ));
+    c.plain();
+    assert!(c.fixture.wm.service_shortcuts(10_000).is_empty());
+}
+
+/// D3: a join the WM refuses stops holding its chord. When it held the
+/// chord's last trigger, that refusal's own Ended reaches the WM, past the
+/// full queue, as a terminal does.
+#[test]
+fn a_join_the_wm_refuses_queues_its_own_terminal() {
+    let mut c = chords();
+    c.router().set_action_lifecycles(&[PolicyActionLifecycleInterest {
+        action: PLAIN,
+        held_ms: 0,
+    }]);
+    let opener = c.key(F9, true, 0);
+    assert_eq!(c.admit(opener, F9), LiveChordActionAdmission::Admitted);
+    let token = opener.chord.unwrap().token;
+    let second = DeviceId::from_raw(2);
+    let (_, _, outputs) = route_test_key(c.router(), SEAT, second, F9, true, 1);
+    let [sophia_engine::WmShortcutOutput::Activation(join)] = outputs[..] else {
+        panic!("expected the join, got {outputs:?}");
+    };
+    assert_eq!(join.chord, Some(WmChordActivation { token, opens: false }));
+    c.key(F9, false, 2);
+    assert!(c.events().is_empty(), "the second keyboard still holds it");
+    c.fill_queue_to(WM_OWNER_REQUEST_CAPACITY);
+    assert!(matches!(
+        c.fixture
+            .wm
+            .admit_chord_action(PLAIN, join.chord.unwrap(), second, F9, &c.layout, c.output)
+            .unwrap(),
+        LiveChordActionAdmission::RejectedCapacity { .. }
+    ));
+    let last = *c.causes().last().unwrap();
+    assert!(
+        matches!(
+            last,
+            PolicyRequestCause::ActionLifecycle {
+                phase: PolicyChordPhase::Ended(PolicyChordEnd::Released),
+                ..
+            }
+        ),
+        "{last:?}"
+    );
+    assert!(c.router().take_outputs().is_empty());
 }

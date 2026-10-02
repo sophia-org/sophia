@@ -30,9 +30,117 @@ fn binding(action: WmActionId, keycode: u32, modifiers: u32) -> WmBindingRegistr
     }
 }
 
+/// These tests read as one call per key event, with chord events drained
+/// separately. `Keys` adapts the two-phase API to that: each event is
+/// accepted, its activation is the decision, and its chord events wait for
+/// `drain_chord_events`.
+struct Keys {
+    router: WmShortcutRouter,
+    events: Vec<WmChordEvent>,
+}
+
+impl core::ops::Deref for Keys {
+    type Target = WmShortcutRouter;
+
+    fn deref(&self) -> &WmShortcutRouter {
+        &self.router
+    }
+}
+
+impl core::ops::DerefMut for Keys {
+    fn deref_mut(&mut self) -> &mut WmShortcutRouter {
+        &mut self.router
+    }
+}
+
+impl Keys {
+    fn absorb(&mut self, outputs: Vec<WmShortcutOutput>) -> Option<WmShortcutActivation> {
+        let mut activation = None;
+        for output in outputs {
+            match output {
+                WmShortcutOutput::Activation(fired) => {
+                    assert!(
+                        activation.replace(fired).is_none(),
+                        "one activation per event"
+                    );
+                }
+                WmShortcutOutput::Chord(event) => self.events.push(event),
+            }
+        }
+        activation
+    }
+
+    fn decision(&mut self, consumed: bool, outputs: Vec<WmShortcutOutput>) -> WmShortcutDecision {
+        let activation = self.absorb(outputs);
+        WmShortcutDecision {
+            action: activation.map(|activation| activation.action),
+            consumed,
+            chord: activation.and_then(|activation| activation.chord),
+        }
+    }
+
+    fn route_key(
+        &mut self,
+        seat: SeatId,
+        device: DeviceId,
+        keycode: u32,
+        pressed: bool,
+        now: u64,
+    ) -> WmShortcutDecision {
+        let event = self.router.key_event(seat, device, keycode, pressed, now);
+        let consumed = event.consumed();
+        let outputs = event.accept();
+        self.decision(consumed, outputs)
+    }
+
+    fn observe_key(
+        &mut self,
+        seat: SeatId,
+        device: DeviceId,
+        keycode: u32,
+        pressed: bool,
+    ) -> WmShortcutDecision {
+        let event = self
+            .router
+            .observe_key_event(seat, device, keycode, pressed, 0);
+        let consumed = event.consumed();
+        let outputs = event.accept();
+        self.decision(consumed, outputs)
+    }
+
+    fn poll_chords(&mut self, now: u64) {
+        self.router.poll_shortcuts(now);
+        let outputs = self.router.take_outputs();
+        assert!(self.absorb(outputs).is_none());
+    }
+
+    /// The buffer stands for events not yet drained, so a new epoch drops
+    /// them as it drops the router's own.
+    fn reset_chords(&mut self) {
+        self.router.reset_chords();
+        self.events.clear();
+    }
+
+    /// An undrained event of a refused opener goes with it, as in the router.
+    fn chord_opener_refused(&mut self, token: WmChordToken) -> bool {
+        self.events.retain(|event| match event {
+            WmChordEvent::Held { token: owner } | WmChordEvent::Ended { token: owner, .. } => {
+                *owner != token
+            }
+        });
+        self.router.chord_opener_refused(token)
+    }
+
+    fn drain_chord_events(&mut self) -> Vec<WmChordEvent> {
+        let outputs = self.router.take_outputs();
+        assert!(self.absorb(outputs).is_none());
+        core::mem::take(&mut self.events)
+    }
+}
+
 /// Alt+Tab, Alt+Shift+Tab, F9 and keypad 9 for one unmodified action, and an
 /// undeclared Alt+F9. Next and previous declare Held at 150 ms.
-fn router() -> WmShortcutRouter {
+fn router() -> Keys {
     let registry = WmShortcutRegistry::new(
         &[
             binding(NEXT, TAB, WmModifierMask::ALT),
@@ -47,7 +155,10 @@ fn router() -> WmShortcutRouter {
         WmChromePolicy::default(),
     )
     .unwrap();
-    let mut router = WmShortcutRouter::new(registry);
+    let mut router = Keys {
+        router: WmShortcutRouter::new(registry),
+        events: Vec::new(),
+    };
     router.set_action_lifecycles(&[
         interest(NEXT, 150),
         interest(PREVIOUS, 150),
@@ -60,11 +171,11 @@ fn interest(action: WmActionId, held_ms: u32) -> PolicyActionLifecycleInterest {
     PolicyActionLifecycleInterest { action, held_ms }
 }
 
-fn press(router: &mut WmShortcutRouter, keycode: u32, time: u64) -> WmShortcutDecision {
+fn press(router: &mut Keys, keycode: u32, time: u64) -> WmShortcutDecision {
     router.route_key(SEAT, KEYBOARD, keycode, true, time)
 }
 
-fn release(router: &mut WmShortcutRouter, keycode: u32, time: u64) -> WmShortcutDecision {
+fn release(router: &mut Keys, keycode: u32, time: u64) -> WmShortcutDecision {
     router.route_key(SEAT, KEYBOARD, keycode, false, time)
 }
 
@@ -181,7 +292,8 @@ fn a_refused_join_trigger_stops_holding_the_chord() {
     let mut router = router();
     let launch = opened(press(&mut router, F9, 0));
     press(&mut router, KP_9, 1);
-    router.chord_join_refused(launch, KEYBOARD, KP_9);
+    // F9 still holds the chord, so the refusal ends nothing.
+    assert_eq!(router.chord_join_refused(launch, KEYBOARD, KP_9), None);
     release(&mut router, F9, 2);
     assert_eq!(
         router.drain_chord_events(),
@@ -471,7 +583,7 @@ fn keyboard(raw: u64) -> DeviceId {
 }
 
 /// Four keyboards holding every modifier, as the review's reproductions do.
-fn hold_all_modifiers(router: &mut WmShortcutRouter, pressed: bool) {
+fn hold_all_modifiers(router: &mut Keys, pressed: bool) {
     for device in 10..14 {
         for keycode in MODIFIERS {
             router.route_key(SEAT, keyboard(device), keycode, pressed, 1);
@@ -480,7 +592,7 @@ fn hold_all_modifiers(router: &mut WmShortcutRouter, pressed: bool) {
 }
 
 /// Fill every device slot with a keyboard holding one ordinary key.
-fn fill_device_slots(router: &mut WmShortcutRouter) {
+fn fill_device_slots(router: &mut Keys) {
     for device in 100..100 + WM_MAX_SHORTCUT_DEVICES as u64 {
         router.route_key(SEAT, keyboard(device), 30, true, 0);
     }

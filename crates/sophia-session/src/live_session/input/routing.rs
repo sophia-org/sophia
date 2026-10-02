@@ -237,7 +237,7 @@ fn route_input_events_with_launcher(
                     router.remove_device(event.device);
                     router.cancel_seat_chords(event.seat);
                 }
-                drain_chord_events(shortcuts.as_deref_mut(), &mut report.policy_inputs);
+                take_shortcut_outputs(shortcuts.as_deref_mut(), &mut report);
                 let removal = release_departed_device(
                     event.device,
                     client_keys,

@@ -365,11 +365,19 @@ fn chord_terminals_pass_the_input_bound_behind_earlier_inputs() {
         action: WmActionId::from_raw(5),
         held_ms: 0,
     }]);
-    let token = router
-        .route_key(SeatId::from_raw(1), DeviceId::from_raw(1), 67, true, 0)
-        .chord
-        .unwrap()
-        .token;
+    let (_, _, outputs) = route_test_key(
+        &mut router,
+        SeatId::from_raw(1),
+        DeviceId::from_raw(1),
+        67,
+        true,
+        0,
+    );
+    let PhysicalPolicyInput::ChordAction(opener) = PhysicalPolicyInput::from_shortcut(outputs[0])
+    else {
+        panic!("a declared action opens a chord");
+    };
+    let token = opener.chord.token;
     let mut queue = PhysicalPolicyInputQueue::default();
     for value in 1..=256 {
         assert!(queue.push(
@@ -437,13 +445,14 @@ fn launch_router() -> sophia_engine::WmShortcutRouter {
     router
 }
 
-fn chorded(decision: sophia_engine::WmShortcutDecision, keycode: u32) -> PhysicalPolicyInput {
-    PhysicalPolicyInput::ChordAction(PhysicalChordAction {
-        action: decision.action.unwrap(),
-        chord: decision.chord.unwrap(),
-        device: DeviceId::from_raw(1),
-        keycode,
-    })
+/// The chord action a key event fired, as key routing queues it.
+fn chorded(outputs: Vec<sophia_engine::WmShortcutOutput>) -> PhysicalPolicyInput {
+    let [output] = outputs[..] else {
+        panic!("one activation, got {outputs:?}");
+    };
+    let input = PhysicalPolicyInput::from_shortcut(output);
+    assert!(matches!(input, PhysicalPolicyInput::ChordAction(_)));
+    input
 }
 
 /// Review R1: an opener the physical queue cannot take is refused to the
@@ -459,11 +468,25 @@ fn an_opener_refused_at_the_physical_bound_returns_its_credit() {
             Some(&mut router)
         ));
     }
-    let opener = router.route_key(SeatId::from_raw(1), DeviceId::from_raw(1), 67, true, 0);
-    assert!(!queue.admit(chorded(opener, 67), true, Some(&mut router)));
+    let (_, _, opener) = route_test_key(
+        &mut router,
+        SeatId::from_raw(1),
+        DeviceId::from_raw(1),
+        67,
+        true,
+        0,
+    );
+    assert!(!queue.admit(chorded(opener), true, Some(&mut router)));
     assert_eq!(router.chord_credits_free(), sophia_engine::WM_CHORD_CREDITS);
-    router.route_key(SeatId::from_raw(1), DeviceId::from_raw(1), 67, false, 1);
-    assert!(router.drain_chord_events().is_empty());
+    let (_, _, release) = route_test_key(
+        &mut router,
+        SeatId::from_raw(1),
+        DeviceId::from_raw(1),
+        67,
+        false,
+        1,
+    );
+    assert!(release.is_empty());
 }
 
 /// Review R1: a join refused at the bound stops holding its chord; the Ended
@@ -482,23 +505,24 @@ fn a_join_refused_at_the_physical_bound_ends_its_chord_behind_the_opener() {
     }
     let seat = SeatId::from_raw(1);
     let device = DeviceId::from_raw(1);
-    let opener = router.route_key(seat, device, 67, true, 0);
-    let token = opener.chord.unwrap().token;
-    assert!(queue.admit(chorded(opener, 67), true, Some(&mut router)));
-    let join = router.route_key(seat, device, 73, true, 1);
-    router.route_key(seat, device, 67, false, 2);
-    assert!(
-        router.drain_chord_events().is_empty(),
-        "the join's key still holds it"
-    );
-    assert!(!queue.admit(chorded(join, 73), true, Some(&mut router)));
+    let (_, _, opener) = route_test_key(&mut router, seat, device, 67, true, 0);
+    let opener = chorded(opener);
+    let PhysicalPolicyInput::ChordAction(PhysicalChordAction { chord, .. }) = opener else {
+        unreachable!("chorded checks the variant");
+    };
+    let token = chord.token;
+    assert!(queue.admit(opener, true, Some(&mut router)));
+    let (_, _, join) = route_test_key(&mut router, seat, device, 73, true, 1);
+    let (_, _, release) = route_test_key(&mut router, seat, device, 67, false, 2);
+    assert!(release.is_empty(), "the join's key still holds it");
+    assert!(!queue.admit(chorded(join), true, Some(&mut router)));
     for value in 1..=255 {
         assert_eq!(
             queue.next(false),
             Some(PhysicalPolicyInput::Action(WmActionId::from_raw(value)))
         );
     }
-    assert_eq!(queue.next(false), Some(chorded(opener, 67)));
+    assert_eq!(queue.next(false), Some(opener));
     assert_eq!(
         queue.next(false),
         Some(PhysicalPolicyInput::Chord(

@@ -14,6 +14,16 @@
                     report.pointer_axes_observed =
                         report.pointer_axes_observed.saturating_add(1);
                 }
+                // A button or scroll abandons a pending modifier tap, tap-or-hold
+                // decision or sequence on its seat, before any capture can take
+                // the event. Motion does not.
+                if !control_plane_applied
+                    && (is_button || is_axis)
+                    && let Some(router) = shortcuts.as_deref_mut()
+                {
+                    router.pointer_activity(event.seat, now_msec);
+                    take_shortcut_outputs(shortcuts.as_deref_mut(), &mut report);
+                }
                 if !control_plane_applied && let Some((capture,_))=launcher.as_mut() {
                     if capture.active() && !capture.native_active() && matches!(kind,sophia_protocol::InputEventKind::PointerMotion){
                         let focused=focus.focused_surface(event.seat);

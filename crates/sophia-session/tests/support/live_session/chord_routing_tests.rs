@@ -1,5 +1,8 @@
 use super::*;
-use sophia_engine::{WmChordEvent, WmShortcutRegistry, WmShortcutRouter};
+use sophia_engine::{
+    WM_CHORD_CREDITS, WmChordEvent, WmHoldBinding, WmKeyStep, WmSequenceBinding, WmSequenceLeader,
+    WmShortcutPlan, WmShortcutRegistry, WmShortcutRouter,
+};
 use sophia_protocol::{
     InputEventKind, InputEventPacket, PolicyActionLifecycleInterest, PolicyChordEnd,
     WmBindingRegistration, WmCapabilities, WmModifierMask,
@@ -69,6 +72,17 @@ fn route(
     events: Vec<InputEventPacket>,
     mode: PhysicalInputRoutingMode,
 ) -> Vec<PhysicalPolicyInput> {
+    route_at(router, virtual_terminal, events, mode, 0)
+}
+
+/// As `route`, at owner time `now`, the clock deadlines are judged against.
+fn route_at(
+    router: &mut WmShortcutRouter,
+    virtual_terminal: &mut crate::session_keyboard::VirtualTerminalChordState,
+    events: Vec<InputEventPacket>,
+    mode: PhysicalInputRoutingMode,
+    now: u64,
+) -> Vec<PhysicalPolicyInput> {
     let (input_sender, _input_receiver) = sync_channel(64);
     let mut modifiers = XCoreKeyboardMapper::new();
     let (mut key_repeat, key_repeat_map) = super::test_key_repeat_parts();
@@ -98,7 +112,7 @@ fn route(
         false,
         mode,
         &mut next_delivery,
-        0,
+        now,
         None,
         None,
         None,
@@ -243,4 +257,170 @@ fn a_virtual_terminal_switch_cancels_before_releasing_modifiers() {
         PhysicalInputRoutingMode::Full,
     );
     assert_eq!(inputs, [ended(token, PolicyChordEnd::Cancelled)]);
+}
+
+const HOLD: WmActionId = WmActionId::from_raw(188);
+const SEQUENCE: WmActionId = WmActionId::from_raw(189);
+const LEADER: WmActionId = WmActionId::from_raw(190);
+const SUPER: u32 = 125;
+const F10: u32 = 68;
+const W: u32 = 17;
+const K: u32 = 37;
+
+/// The immediate shapes above plus a bare F10 hold and a Super+W K sequence
+/// with a leader, every action followed.
+fn deferred_shortcuts() -> WmShortcutRouter {
+    let step = |keycode, modifiers| WmKeyStep { keycode, modifiers };
+    let plan = WmShortcutPlan {
+        immediate: [(NEXT, TAB, WmModifierMask::ALT), (PLAIN, F9, 0)]
+            .map(|(action, keycode, bits)| WmBindingRegistration {
+                action,
+                keycode,
+                modifiers: WmModifierMask { bits },
+            })
+            .to_vec(),
+        holds: vec![WmHoldBinding {
+            step: step(F10, 0),
+            hold_ms: 500,
+            action: HOLD,
+        }],
+        sequences: vec![WmSequenceBinding {
+            steps: vec![step(W, WmModifierMask::SUPER), step(K, 0)],
+            action: SEQUENCE,
+        }],
+        leaders: vec![WmSequenceLeader {
+            steps: vec![step(W, WmModifierMask::SUPER)],
+            action: LEADER,
+        }],
+        ..WmShortcutPlan::default()
+    };
+    let mut router = WmShortcutRouter::new(
+        WmShortcutRegistry::from_plan(
+            &plan,
+            WmCapabilities::all_supported(),
+            1,
+            sophia_protocol::WmChromePolicy::default(),
+        )
+        .unwrap(),
+    );
+    router.set_action_lifecycles(
+        &[PLAIN, HOLD, LEADER].map(|action| PolicyActionLifecycleInterest { action, held_ms: 0 }),
+    );
+    router
+}
+
+fn opener(input: &PhysicalPolicyInput) -> WmActionId {
+    match input {
+        PhysicalPolicyInput::ChordAction(chorded) if chorded.chord.opens => chorded.action,
+        other => panic!("expected an opening chord action, got {other:?}"),
+    }
+}
+
+/// D2 review: a hold that came due and a fresh press, both meeting a full
+/// physical queue. The due activation is queued before the event's, both
+/// openers are refused at the bound with their credits returned, and the
+/// router takes further input normally.
+#[test]
+fn a_due_activation_and_a_fresh_press_meet_a_full_queue_in_order() {
+    let mut router = deferred_shortcuts();
+    let mut vt = Default::default();
+    let full = PhysicalInputRoutingMode::Full;
+    assert!(
+        route_at(
+            &mut router,
+            &mut vt,
+            vec![key(KEYBOARD, F10, true)],
+            full,
+            0
+        )
+        .is_empty()
+    );
+    let mut queue = PhysicalPolicyInputQueue::default();
+    for value in 1..=256 {
+        assert!(queue.push(
+            PhysicalPolicyInput::Action(WmActionId::from_raw(value)),
+            true
+        ));
+    }
+    let inputs = route_at(
+        &mut router,
+        &mut vt,
+        vec![key(KEYBOARD, F9, true)],
+        full,
+        600,
+    );
+    assert_eq!(inputs.iter().map(opener).collect::<Vec<_>>(), [HOLD, PLAIN]);
+    for input in inputs {
+        assert!(!queue.admit(input, true, Some(&mut router)));
+    }
+    assert_eq!(router.chord_credits_free(), WM_CHORD_CREDITS);
+    assert!(router.take_outputs().is_empty());
+    // Refused openers left nothing to end, and the router is free.
+    let releases = vec![key(KEYBOARD, F10, false), key(KEYBOARD, F9, false)];
+    assert!(route_at(&mut router, &mut vt, releases, full, 700).is_empty());
+    let again = route_at(
+        &mut router,
+        &mut vt,
+        vec![key(KEYBOARD, F9, true)],
+        full,
+        800,
+    );
+    assert_eq!(again.iter().map(opener).collect::<Vec<_>>(), [PLAIN]);
+}
+
+/// A pointer button abandons a pending sequence on its seat: its leader ends
+/// aborted, and the next key is fresh input, not a continuation.
+#[test]
+fn a_pointer_button_abandons_a_pending_sequence() {
+    let mut router = deferred_shortcuts();
+    let mut vt = Default::default();
+    let full = PhysicalInputRoutingMode::Full;
+    let start = vec![key(KEYBOARD, SUPER, true), key(KEYBOARD, W, true)];
+    let started = route_at(&mut router, &mut vt, start, full, 0);
+    assert_eq!(started.iter().map(opener).collect::<Vec<_>>(), [LEADER]);
+    let button = event(
+        DeviceId::from_raw(9),
+        InputEventKind::PointerButton {
+            button: 272,
+            pressed: true,
+        },
+    );
+    let abandoned = route_at(&mut router, &mut vt, vec![button], full, 10);
+    assert!(matches!(
+        abandoned[..],
+        [PhysicalPolicyInput::Chord(WmChordEvent::Ended {
+            end: PolicyChordEnd::Aborted,
+            ..
+        })]
+    ));
+    let fresh = route_at(&mut router, &mut vt, vec![key(KEYBOARD, K, true)], full, 20);
+    assert!(fresh.is_empty(), "{fresh:?}");
+}
+
+/// A hold fired by its deadline, with no key event to carry it, becomes the
+/// same chord action key routing would queue.
+#[test]
+fn a_hold_fired_by_its_deadline_becomes_a_chord_action() {
+    let mut router = deferred_shortcuts();
+    let mut vt = Default::default();
+    let full = PhysicalInputRoutingMode::Full;
+    assert!(
+        route_at(
+            &mut router,
+            &mut vt,
+            vec![key(KEYBOARD, F10, true)],
+            full,
+            0
+        )
+        .is_empty()
+    );
+    assert_eq!(router.next_deadline(), Some(500));
+    router.poll_shortcuts(500);
+    let inputs = router
+        .take_outputs()
+        .into_iter()
+        .map(PhysicalPolicyInput::from_shortcut)
+        .collect::<Vec<_>>();
+    assert_eq!(inputs.iter().map(opener).collect::<Vec<_>>(), [HOLD]);
+    assert_eq!(router.next_deadline(), None);
 }

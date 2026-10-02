@@ -108,7 +108,47 @@ fn plan() -> WmShortcutPlan {
     }
 }
 
-fn router_with(interests: &[(WmActionId, u32)]) -> WmShortcutRouter {
+/// A router with the outputs its key events returned kept in order, so the
+/// tests can take everything produced since the last take.
+struct Keys {
+    router: WmShortcutRouter,
+    kept: Vec<WmShortcutOutput>,
+}
+
+impl Keys {
+    fn new(router: WmShortcutRouter) -> Self {
+        Self {
+            router,
+            kept: Vec::new(),
+        }
+    }
+
+    fn keep(&mut self, outputs: Vec<WmShortcutOutput>) {
+        self.kept.extend(outputs);
+    }
+
+    fn take(&mut self) -> Vec<WmShortcutOutput> {
+        let mut outputs = core::mem::take(&mut self.kept);
+        outputs.extend(self.router.take_outputs());
+        outputs
+    }
+}
+
+impl core::ops::Deref for Keys {
+    type Target = WmShortcutRouter;
+
+    fn deref(&self) -> &WmShortcutRouter {
+        &self.router
+    }
+}
+
+impl core::ops::DerefMut for Keys {
+    fn deref_mut(&mut self) -> &mut WmShortcutRouter {
+        &mut self.router
+    }
+}
+
+fn router_with(interests: &[(WmActionId, u32)]) -> Keys {
     let registry = WmShortcutRegistry::from_plan(
         &plan(),
         WmCapabilities::all_supported(),
@@ -116,7 +156,7 @@ fn router_with(interests: &[(WmActionId, u32)]) -> WmShortcutRouter {
         WmChromePolicy::default(),
     )
     .unwrap();
-    let mut router = WmShortcutRouter::new(registry);
+    let mut router = Keys::new(WmShortcutRouter::new(registry));
     let interests = interests
         .iter()
         .map(|(action, held_ms)| PolicyActionLifecycleInterest {
@@ -128,17 +168,17 @@ fn router_with(interests: &[(WmActionId, u32)]) -> WmShortcutRouter {
     router
 }
 
-fn router() -> WmShortcutRouter {
+fn router() -> Keys {
     router_with(&[])
 }
 
 /// Route a key event on the first keyboard and accept what it proposes.
-fn key(router: &mut WmShortcutRouter, keycode: u32, pressed: bool, time: u64) -> bool {
+fn key(router: &mut Keys, keycode: u32, pressed: bool, time: u64) -> bool {
     key_on(router, SEAT, KEYBOARD, keycode, pressed, time)
 }
 
 fn key_on(
-    router: &mut WmShortcutRouter,
+    router: &mut Keys,
     seat: SeatId,
     device: DeviceId,
     keycode: u32,
@@ -147,37 +187,35 @@ fn key_on(
 ) -> bool {
     let event = router.key_event(seat, device, keycode, pressed, time);
     let consumed = event.consumed();
-    event.accept();
+    let returned = event.accept();
+    router.keep(returned);
     consumed
 }
 
-fn proposal(
-    router: &mut WmShortcutRouter,
-    keycode: u32,
-    pressed: bool,
-    time: u64,
-) -> Option<WmPressProposal> {
+fn proposal(router: &mut Keys, keycode: u32, pressed: bool, time: u64) -> Option<WmPressProposal> {
     let event = router.key_event(SEAT, KEYBOARD, keycode, pressed, time);
     let proposal = event.proposal().cloned();
-    event.accept();
+    let returned = event.accept();
+    router.keep(returned);
     proposal
 }
 
-fn decline(router: &mut WmShortcutRouter, keycode: u32, pressed: bool, time: u64) {
-    router
+fn decline(router: &mut Keys, keycode: u32, pressed: bool, time: u64) {
+    let returned = router
         .key_event(SEAT, KEYBOARD, keycode, pressed, time)
         .decline();
+    router.keep(returned);
 }
 
-fn tap(router: &mut WmShortcutRouter, keycode: u32, time: u64) {
+fn tap(router: &mut Keys, keycode: u32, time: u64) {
     key(router, keycode, true, time);
     key(router, keycode, false, time);
 }
 
 /// The actions fired since the last take, in order.
-fn fired(router: &mut WmShortcutRouter) -> Vec<WmActionId> {
+fn fired(router: &mut Keys) -> Vec<WmActionId> {
     router
-        .take_outputs()
+        .take()
         .into_iter()
         .filter_map(|output| match output {
             WmShortcutOutput::Activation(activation) => Some(activation.action),
@@ -196,9 +234,9 @@ enum Out {
     Ended(PolicyChordEnd),
 }
 
-fn outputs(router: &mut WmShortcutRouter) -> Vec<Out> {
+fn outputs(router: &mut Keys) -> Vec<Out> {
     router
-        .take_outputs()
+        .take()
         .into_iter()
         .map(|output| match output {
             WmShortcutOutput::Activation(activation) => match activation.chord {
@@ -224,7 +262,8 @@ mod modifier_taps {
         // Modifiers always reach clients, tap or not.
         assert!(!event.consumed());
         assert_eq!(event.proposal().unwrap().kind, WmPressKind::FireModifierTap);
-        event.accept();
+        let returned = event.accept();
+        router.keep(returned);
         assert_eq!(fired(&mut router), [LAUNCHER]);
         assert!(router.shortcut_idle());
         assert_eq!(router.next_deadline(), None);
@@ -296,7 +335,7 @@ mod modifier_taps {
 mod tap_or_hold {
     use super::*;
 
-    fn super_q(router: &mut WmShortcutRouter, time: u64) -> WmPressProposal {
+    fn super_q(router: &mut Keys, time: u64) -> WmPressProposal {
         key(router, LEFT_SUPER, true, time);
         proposal(router, Q, true, time).unwrap()
     }
@@ -336,7 +375,7 @@ mod tap_or_hold {
     /// servicing the timer first changes nothing.
     #[test]
     fn interruption_before_the_deadline_fires_nothing_and_after_it_settles_first() {
-        let interrupts: [fn(&mut WmShortcutRouter, u64); 2] = [
+        let interrupts: [fn(&mut Keys, u64); 2] = [
             |router, time| tap(router, L, time),
             |router, time| router.pointer_activity(SEAT, time),
         ];
@@ -380,7 +419,8 @@ mod tap_or_hold {
         let repeat = router.key_event(SEAT, KEYBOARD, Q, true, 250);
         assert!(repeat.consumed());
         assert!(repeat.proposal().is_none());
-        repeat.accept();
+        let returned = repeat.accept();
+        router.keep(returned);
         key(&mut router, Q, false, 300);
         assert_eq!(fired(&mut router), [CLOSE]);
     }
@@ -562,7 +602,7 @@ mod tap_or_hold {
 mod sequences {
     use super::*;
 
-    fn start(router: &mut WmShortcutRouter, time: u64) -> WmPressProposal {
+    fn start(router: &mut Keys, time: u64) -> WmPressProposal {
         key(router, LEFT_SUPER, true, time);
         proposal(router, W, true, time).unwrap()
     }
@@ -608,7 +648,8 @@ mod sequences {
             let event = router.key_event(SEAT, KEYBOARD, key_code, true, 100);
             assert!(event.consumed());
             assert!(event.proposal().unwrap().possible_actions.is_empty());
-            event.accept();
+            let returned = event.accept();
+            router.keep(returned);
             assert_eq!(outputs(&mut router), [Out::Ended(PolicyChordEnd::Aborted)]);
             assert!(key(&mut router, key_code, false, 150));
         }
@@ -680,7 +721,7 @@ mod sequences {
         )
         .unwrap();
         for second_keyboard in [false, true] {
-            let mut router = WmShortcutRouter::new(registry.clone());
+            let mut router = Keys::new(WmShortcutRouter::new(registry.clone()));
             start(&mut router, 0);
             key(&mut router, W, false, 10);
             key(&mut router, LEFT_SUPER, false, 20);
@@ -763,7 +804,7 @@ mod sequences {
             outputs(&mut router);
             start(&mut router, 0);
             if case == 2 {
-                let token = match router.take_outputs().as_slice() {
+                let token = match router.take().as_slice() {
                     [WmShortcutOutput::Activation(activation)] => activation.chord.unwrap().token,
                     other => panic!("expected the leader, got {other:?}"),
                 };
@@ -858,7 +899,8 @@ mod proposals {
         let event = router.key_event(SEAT, KEYBOARD, N, true, 10);
         assert!(event.consumed());
         assert!(event.proposal().is_none());
-        event.accept();
+        let returned = event.accept();
+        router.keep(returned);
         assert!(fired(&mut router).is_empty());
         // A join needs no credit and is still proposed: seat 11 still holds
         // N on its first keyboard.
@@ -867,7 +909,8 @@ mod proposals {
             join.proposal()
                 .is_some_and(|proposal| proposal.follows_chord)
         );
-        join.accept();
+        let returned = join.accept();
+        router.keep(returned);
         assert_eq!(fired(&mut router), [PLAIN]);
     }
 
@@ -922,7 +965,7 @@ mod boundaries {
     /// not fired, and a leader ends cancelled.
     #[test]
     fn cancellation_drops_due_work_without_firing_it() {
-        let cancels: [fn(&mut WmShortcutRouter); 4] = [
+        let cancels: [fn(&mut Keys); 4] = [
             |router| router.cancel_seat_chords(SEAT),
             |router| router.cancel_all_chords(),
             |router| {

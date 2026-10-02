@@ -1409,6 +1409,9 @@ mod launcher_input_routing;
 #[path = "window_allocation.rs"]
 mod window_allocation;
 
+#[path = "shortcut_keys.rs"]
+pub(crate) mod shortcut_keys;
+use shortcut_keys::route_test_key;
 #[path = "pointer_focus.rs"]
 mod pointer_focus_tests;
 

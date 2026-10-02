@@ -158,14 +158,31 @@ impl WmKeyEvent<'_> {
         self.router
     }
 
-    pub fn accept(mut self) {
+    /// Everything produced before this event's proposal is resolved, in
+    /// order: work that came due before it, and the terminals its release
+    /// caused. The proposal's own outputs follow its resolution. Taking them
+    /// is not admitting them; the caller still queues them in this order.
+    #[must_use = "a key event's outputs must be queued in order"]
+    pub fn take_outputs(&mut self) -> Vec<WmShortcutOutput> {
+        self.router.take_outputs()
+    }
+
+    /// Accept whatever the event claims. Returns every output not yet taken,
+    /// in order, ending with the event's own.
+    #[must_use = "a key event's outputs must be queued in order"]
+    pub fn accept(mut self) -> Vec<WmShortcutOutput> {
         self.resolve(true);
+        self.router.take_outputs()
     }
 
     /// A capture took the event: whatever it would have fired never fires.
     /// The press stays recorded as it was, so its release pairs as before.
-    pub fn decline(mut self) {
+    /// Returns every output not yet taken, in order, such as the Ended of a
+    /// sequence the event abandoned.
+    #[must_use = "a key event's outputs must be queued in order"]
+    pub fn decline(mut self) -> Vec<WmShortcutOutput> {
         self.resolve(false);
+        self.router.take_outputs()
     }
 
     fn resolve(&mut self, accept: bool) {
@@ -214,7 +231,7 @@ impl WmShortcutRouter {
     /// Record one physical key event without matching it: presses claim
     /// nothing, releases still end chords and keep consumed pairing. Used
     /// while matching is disabled, so the record stays true for when it
-    /// resumes.
+    /// resumes. The event never carries a proposal.
     pub fn observe_key_event(
         &mut self,
         seat: SeatId,
@@ -222,9 +239,18 @@ impl WmShortcutRouter {
         keycode: u32,
         pressed: bool,
         now: u64,
-    ) -> bool {
+    ) -> WmKeyEvent<'_> {
         self.advance(now);
-        self.route(seat, device, keycode, pressed, now, false).0
+        let (consumed, _) = self.route(seat, device, keycode, pressed, now, false);
+        WmKeyEvent {
+            router: self,
+            seat,
+            device,
+            keycode,
+            now,
+            consumed,
+            proposal: None,
+        }
     }
 
     /// A pointer button or axis event on `seat`: it disarms a modifier tap,

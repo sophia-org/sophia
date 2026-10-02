@@ -27,31 +27,66 @@ pub(super) struct PhysicalChordAction {
     pub(super) keycode: u32,
 }
 
-/// Move the router's lifecycle events into the policy inputs at this event's
-/// boundary, so Action, Held and Ended keep one order.
-pub(super) fn drain_chord_events(
+impl PhysicalPolicyInput {
+    /// One router output as a policy input: an activation of a followed
+    /// chord stays tied to it, any other is an ordinary Action.
+    pub(super) fn from_shortcut(output: sophia_engine::WmShortcutOutput) -> Self {
+        match output {
+            sophia_engine::WmShortcutOutput::Activation(activation) => match activation.chord {
+                Some(chord) => Self::ChordAction(PhysicalChordAction {
+                    action: activation.action,
+                    chord,
+                    device: activation.device,
+                    keycode: activation.keycode,
+                }),
+                None => Self::Action(activation.action),
+            },
+            sophia_engine::WmShortcutOutput::Chord(event) => Self::Chord(event),
+        }
+    }
+}
+
+/// Move everything the router produced, in its order, into the policy inputs
+/// at this event's boundary: activations, Held and Ended keep one order, and
+/// an earlier call's terminal batch is never left behind. Counts every
+/// activation as a WM action of the report.
+pub(super) fn take_shortcut_outputs(
     router: Option<&mut WmShortcutRouter>,
-    inputs: &mut Vec<PhysicalPolicyInput>,
+    report: &mut PhysicalInputRouteReport,
 ) {
     if let Some(router) = router {
-        inputs.extend(
-            router
-                .drain_chord_events()
-                .into_iter()
-                .map(PhysicalPolicyInput::Chord),
-        );
+        push_shortcut_outputs(router.take_outputs(), report);
+    }
+}
+
+pub(super) fn push_shortcut_outputs(
+    outputs: Vec<sophia_engine::WmShortcutOutput>,
+    report: &mut PhysicalInputRouteReport,
+) {
+    for output in outputs {
+        if let sophia_engine::WmShortcutOutput::Activation(activation) = output {
+            report.wm_actions.push(activation.action);
+        }
+        report
+            .policy_inputs
+            .push(PhysicalPolicyInput::from_shortcut(output));
     }
 }
 
 impl PhysicalChordAction {
     /// Tell the router this activation was never admitted, so an opener's
     /// chord is dropped with its credit and a join's trigger stops holding.
-    pub(super) fn refuse(self, router: Option<&mut WmShortcutRouter>) {
-        let Some(router) = router else { return };
+    /// Returns the Ended a refused join caused, for the caller to queue.
+    pub(super) fn refuse(
+        self,
+        router: Option<&mut WmShortcutRouter>,
+    ) -> Option<sophia_engine::WmChordEvent> {
+        let router = router?;
         if self.chord.opens {
             router.chord_opener_refused(self.chord.token);
+            None
         } else {
-            router.chord_join_refused(self.chord.token, self.device, self.keycode);
+            router.chord_join_refused(self.chord.token, self.device, self.keycode)
         }
     }
 }
@@ -115,12 +150,9 @@ impl PhysicalPolicyInputQueue {
             return true;
         }
         if let PhysicalPolicyInput::ChordAction(chorded) = input
-            && let Some(router) = router
+            && let Some(ended) = chorded.refuse(router)
         {
-            chorded.refuse(Some(&mut *router));
-            for event in router.drain_chord_events() {
-                self.push(PhysicalPolicyInput::Chord(event), hover_enabled);
-            }
+            self.push(PhysicalPolicyInput::Chord(ended), hover_enabled);
         }
         false
     }

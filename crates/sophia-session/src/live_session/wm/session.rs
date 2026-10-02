@@ -547,16 +547,17 @@ impl LiveWmSession {
         self.keyboard_matching = matching;
     }
 
-    /// The per-turn chord service, run whatever physical input is doing: Held
-    /// that fell due, and anything seat, reload or removal paths left in the
-    /// router, in order. Seats whose modifiers became unknown or known again
-    /// are reported once, on the change.
-    fn service_chords(&mut self, now_msec: u64) -> Vec<sophia_engine::WmChordEvent> {
+    /// The per-turn shortcut service, run whatever physical input is doing:
+    /// holds, sequence timeouts and Helds that fell due, and anything seat,
+    /// reload, routing or removal paths left in the router, in order. Seats
+    /// whose modifiers became unknown or known again are reported once, on
+    /// the change.
+    fn service_shortcuts(&mut self, now_msec: u64) -> Vec<sophia_engine::WmShortcutOutput> {
         let Some(router) = self.shortcuts.as_mut() else {
             return Vec::new();
         };
-        router.poll_chords(now_msec);
-        let events = router.drain_chord_events();
+        router.poll_shortcuts(now_msec);
+        let events = router.take_outputs();
         let uncertain = router.uncertain_seats().collect::<BTreeSet<_>>();
         for seat in uncertain.symmetric_difference(&self.uncertain_seats) {
             crate::session_println!(
@@ -636,12 +637,15 @@ impl LiveWmSession {
             }
         };
         if let Some(router) = self.shortcuts.as_mut() {
-            if chord.opens {
+            // Only this refusal's own terminal is queued here; any other
+            // output stays in the router for the next ordered take.
+            let ended = if chord.opens {
                 router.chord_opener_refused(chord.token);
+                None
             } else {
-                router.chord_join_refused(chord.token, device, keycode);
-            }
-            for event in router.drain_chord_events() {
+                router.chord_join_refused(chord.token, device, keycode)
+            };
+            if let Some(event) = ended {
                 self.enqueue_chord_event(event)?;
             }
         }

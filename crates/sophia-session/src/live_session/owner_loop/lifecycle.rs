@@ -358,7 +358,9 @@
             let mut chord_report = PhysicalInputRouteReport::default();
             if let Some(wm) = wm_session.as_mut() {
                 chord_report.policy_inputs.extend(
-                    wm.service_chords(chord_now).into_iter().map(PhysicalPolicyInput::Chord),
+                    wm.service_shortcuts(chord_now)
+                        .into_iter()
+                        .map(PhysicalPolicyInput::from_shortcut),
                 );
             }
             if !chord_report.policy_inputs.is_empty() || physical_policy_inputs.has_pending() {

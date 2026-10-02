@@ -302,10 +302,22 @@ impl WmShortcutRouter {
         refused
     }
 
-    /// A joining Action was not admitted; its trigger stops holding the chord.
-    pub fn chord_join_refused(&mut self, token: WmChordToken, device: DeviceId, keycode: u32) {
+    /// A joining Action was not admitted; its trigger stops holding the
+    /// chord. Returns the chord's Ended if that was its last hold, for the
+    /// refusing caller to queue where the join would have gone.
+    pub fn chord_join_refused(
+        &mut self,
+        token: WmChordToken,
+        device: DeviceId,
+        keycode: u32,
+    ) -> Option<WmChordEvent> {
+        let mut ended = Vec::new();
         self.chords
-            .join_refused(token, (device, keycode), &mut self.outbox);
+            .join_refused(token, (device, keycode), &mut ended);
+        ended.into_iter().find_map(|output| match output {
+            WmShortcutOutput::Chord(event) => Some(event),
+            WmShortcutOutput::Activation(_) => None,
+        })
     }
 
     /// The chord's Ended was handed to the WM as the in-flight Cycle.
@@ -356,72 +368,6 @@ impl WmShortcutRouter {
             && self.seats.values().all(|state| {
                 state.devices.is_empty() && state.refused.is_empty() && !state.saturated
             })
-    }
-
-    // The single-call API Session uses until its two-phase wiring lands
-    // (t277 D3). With only immediate chords bound, every key event resolves
-    // at once and only chord events wait to be drained.
-
-    /// Route one physical key event, accepting whatever it claims.
-    /// `now_msec` is the owner's clock, the one `poll_chords` and
-    /// `next_deadline` use.
-    pub fn route_key(
-        &mut self,
-        seat: SeatId,
-        device: DeviceId,
-        keycode: u32,
-        pressed: bool,
-        now_msec: u64,
-    ) -> WmShortcutDecision {
-        let event = self.key_event(seat, device, keycode, pressed, now_msec);
-        let consumed = event.consumed();
-        event.accept();
-        let mut decision = WmShortcutDecision {
-            consumed,
-            ..WmShortcutDecision::pass()
-        };
-        self.outbox.retain(|output| match output {
-            WmShortcutOutput::Activation(activation) => {
-                decision.action = Some(activation.action);
-                decision.chord = activation.chord;
-                false
-            }
-            WmShortcutOutput::Chord(_) => true,
-        });
-        decision
-    }
-
-    /// Record one physical key event without matching it.
-    pub fn observe_key(
-        &mut self,
-        seat: SeatId,
-        device: DeviceId,
-        keycode: u32,
-        pressed: bool,
-    ) -> WmShortcutDecision {
-        let consumed = self.observe_key_event(seat, device, keycode, pressed, 0);
-        WmShortcutDecision {
-            consumed,
-            ..WmShortcutDecision::pass()
-        }
-    }
-
-    /// Send Held for every chord due at `now_msec`.
-    pub fn poll_chords(&mut self, now_msec: u64) {
-        self.poll_shortcuts(now_msec);
-    }
-
-    /// Lifecycle events in the order Session must queue them.
-    pub fn drain_chord_events(&mut self) -> Vec<WmChordEvent> {
-        let mut events = Vec::new();
-        self.outbox.retain(|output| match output {
-            WmShortcutOutput::Chord(event) => {
-                events.push(*event);
-                false
-            }
-            WmShortcutOutput::Activation(_) => true,
-        });
-        events
     }
 }
 
