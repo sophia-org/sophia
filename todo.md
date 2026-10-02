@@ -6,6 +6,8 @@
 
 (A) 2026-10-02 Qualify retained capture execution, CPU raster reuse and bounded damage on the matched live terminal workload +critical +renderer @physical id:t278 order:000.000005 [details](docs/notes/investigations/wwr7oaer-reduce-per-frame-capture-and-cpu-raster-cost-without-reusing-live-image-storage.md)
 
+(A) 2026-10-02 Let a WM take non-modifier keys on an Overlay presentation while a chord is held (held_capture, bit 22): modifier edges stay with applications and the chord, presented-scope shielding until withdrawal completes; contract, C SDK 0.7.0, Rust import, Engine and Session. +critical @development id:t279 order:000.0000055 peer:hagia/h009 [details](docs/notes/plans/kgo1ugnz-held-capture-and-blind-wm-capabilities-for-niri-parity.md#t279)
+
 (A) 2026-09-26 Join and accept the shell 9P adapter with independent Lom, Bemenu and Provlita clients, per-component grants, native lifetime/input evidence, measured bounds and Narthex rollback. +critical +9p @development id:t252 order:000.000006 depends:t251,t263 [details](docs/notes/plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md#t252--join-and-accept-the-shell-path)
 
 (B) 2026-09-26 Migrate existing administrative commands to a separately authorized 9P export and CLI while preserving HostDomain admission, operation outcomes, replay/revocation checks and read-only inspection. +parallel +9p @development id:t254 order:000.000008 depends:t249 [details](docs/notes/plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md#t254--migrate-administrative-commands)
@@ -171,3 +173,11 @@ Evaluate an optional renderer-independent GPU bridge only against a named isolat
 (B) 2026-09-28 Investigate adopting the Plan 9 namespace model in Sophia: per-process service views, bind/mount/union semantics, inheritance, admission and revocation; propose the Linux mapping and migration design. +parallel +namespaces @planning id:t275 order:275 [details](docs/notes/investigations/kcfh2hdg-adopting-the-plan-9-namespace-model-in-sophia.md)
 (B) 2026-10-01 Remove idle worker polling with cancellable wake notifications; validate scheduling and live idle CPU +parallel @development id:t276 order:276 [details](docs/notes/investigations/qvrk2298-remove-timer-polling-from-idle-desktop-workers.md)
 (B) 2026-10-01 Implement generic chording lifecycle, modifier taps, holds and sequences with additive WM negotiation +parallel @development id:t277 order:277 [details](docs/notes/plans/lnvx8mly-generic-chording-lifecycle-taps-holds-and-sequences.md)
+
+Report per-surface attention to a blind WM (surface_attention, bit 23): WM_HINTS UrgencyHint and DEMANDS_ATTENTION as one snapshot state bit, with an Engine-coloured Attention region role. +candidate @planning id:t280 order:280 peer:hagia/h015 [details](docs/notes/plans/kgo1ugnz-held-capture-and-blind-wm-capabilities-for-niri-parity.md#t280)
+
+Give a blind WM opaque same-application groups (surface_groups, bit 24): a per-epoch keyed token of the reduced WM_CLASS class, never a name. +candidate @planning id:t281 order:281 peer:hagia/h012 [details](docs/notes/plans/kgo1ugnz-held-capture-and-blind-wm-capabilities-for-niri-parity.md#t281)
+
+Draw window labels a WM positions but never reads (surface_labels, bit 25): a SurfaceLabel region filled from the broker descriptor under the disclosure policy. +candidate @planning id:t282 order:282 peer:hagia/h013 [details](docs/notes/plans/kgo1ugnz-held-capture-and-blind-wm-capabilities-for-niri-parity.md#t282)
+
+Add a bounded WM deadline (policy_deadlines, bit 26): one outstanding token and delay per connection, a Deadline cause when due, merged into the owner wait. +candidate @planning id:t283 order:283 peer:hagia/h014 [details](docs/notes/plans/kgo1ugnz-held-capture-and-blind-wm-capabilities-for-niri-parity.md#t283)

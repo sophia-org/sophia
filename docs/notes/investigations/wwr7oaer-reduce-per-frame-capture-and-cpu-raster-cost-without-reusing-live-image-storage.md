@@ -132,6 +132,20 @@ this change with the separately reviewed held-switcher work (t279 and Hagia
 h009-h011). Combined qualification and next-login preparation are required;
 neither task is physically accepted by these device-isolated gates.
 
+## Combined release qualification
+
+Renderer commit `6e0f480946f769915bc42d78ea2f56b3a0bccbd7` and held-capture
+implementation `55830ddae7d1cea6a2cfd2b69765eb7a48f5627d` merged mechanically
+in `5a0f8121f63b1243235789e3730b1b853bf73103`. The sole shared test file
+contains independent additions. The combined tree passes the complete xtask
+gate, pinned architecture models and partial/full pixel equivalence on both
+render nodes. Evidence is in `t278-t279-release-01` (`02`–`06`).
+
+The held-capture plan and task rows from `bd87b77d` are merged separately.
+Resolving the adjacent t278/t279 queue insertions changes no code. Production
+and test files remain byte-identical to the combined qualified tree. Live
+CPU, input behaviour and physical retirement still require the next-login run.
+
 ## Connections
 
 - [Renderer import boundary](../../renderer-import-boundary.md) owns the current
