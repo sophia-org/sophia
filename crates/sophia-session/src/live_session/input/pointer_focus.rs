@@ -23,6 +23,10 @@ pub(super) struct PhysicalPolicyInputQueue {
 }
 
 impl PhysicalPolicyInputQueue {
+    pub(super) fn is_empty(&self) -> bool {
+        self.pending.is_empty()
+    }
+
     pub(super) fn synchronize(&mut self, epoch: Option<u64>) {
         if self.epoch != epoch {
             self.epoch = epoch;

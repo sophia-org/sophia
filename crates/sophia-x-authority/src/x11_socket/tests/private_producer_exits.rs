@@ -446,11 +446,10 @@ fn producers_refuse_while_the_unwinding_guard_collects() {
     producers_refuse_during_collection(true);
 }
 
-/// The exit paused right after it closed producer admission, before it
-/// stopped or waited for anything: the connection is alive, its grant
-/// valid, and a submission through an ingress issued earlier is refused
-/// whole -- not accepted into a service that is collecting. The port has
-/// ended at the same point.
+/// The exit paused right after it closed producer admission, before collection
+/// joins or discharges anything. Closing admission also tells the independent
+/// watchdog to interrupt sockets: a connection can already have departed, but
+/// its custody remains uncollected. Previously issued producers refuse whole.
 #[test]
 fn a_submission_is_refused_the_moment_the_exit_closes_admission_before_anything_is_waited_for() {
     let (launched, socket_path) = launch_producing("producer-admission-closed", 9615, 4);
@@ -493,7 +492,6 @@ fn a_submission_is_refused_the_moment_the_exit_closes_admission_before_anything_
         "the exit reached its pause after closing admission"
     );
     let standing = launched.access.standing();
-    let frame_alive = custody.cleanup_record().destruction_standing();
     let refused = ingress
         .submit(&lease, button_to(surface, XAuthorityInputDeliveryId::from_raw(96152), 272, false))
         .map(|_| ())
@@ -511,12 +509,25 @@ fn a_submission_is_refused_the_moment_the_exit_closes_admission_before_anything_
         )
         .map(|_| ())
         .map_err(|(refusal, _)| format!("{refusal:?}"));
+    // Force the schedule the old "frame still alive" assertion raced: the
+    // watchdog closes the socket even while the collection thread is paused.
+    let departed = waited_for(|| matches!(
+        custody.cleanup_record().destruction_standing(),
+        PrivateDestructionStanding::Decided(PrivateDestructionDecision::Deferred(
+            PrivateDestructionDeferral::WorkerRunning
+        ))
+    ));
+    let before_collection = observe_worker(&custody, &launched.registry);
     release.send(()).expect("the exit is waiting at its pause");
     let client_ended = eof_within(&mut client, 3);
     let registry = launched.registry.clone();
     let outcome = produced_outcome(launched, "admission closed");
     let seen = observe_worker(&custody, &registry);
-    assert_eq!(frame_alive, PrivateDestructionStanding::NotRequested, "the frame was still alive");
+    assert!(departed, "the independent watchdog interrupted the connection");
+    assert_eq!(before_collection.join_phase, PrivateReapingPhase::NotBegun);
+    assert!(before_collection.handle_in_slot, "collection has not taken the worker");
+    assert!(before_collection.row, "the exact recipient remains retained");
+    assert!(!before_collection.committed, "cleanup has not discharged its obligation");
     assert_eq!(standing, PrivatePortStanding::Ended, "the port ended at the same point");
     assert!(refused.is_err(), "the issued ingress refuses whole: {refused:?}");
     assert!(refused_control.is_err(), "the issued control producer refuses whole: {refused_control:?}");

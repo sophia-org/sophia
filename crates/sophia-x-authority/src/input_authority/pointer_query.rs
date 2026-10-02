@@ -27,9 +27,19 @@ pub(crate) struct XPointerQueryState {
 }
 
 impl XInputAuthorityState {
+    /// Called once by private instance preparation, before producers exist.
+    /// Ordinary client namespaces keep their existing last-client cleanup.
+    pub(crate) fn retain_instance_pointer(&mut self, namespace: NamespaceId, root: XResourceId) {
+        self.namespaces.entry(namespace).or_default().query_root = Some(root);
+    }
+
     pub(crate) fn register_query_client(&mut self, namespace: NamespaceId, client: u64) {
         let state = self.namespaces.entry(namespace).or_default();
-        if state.query_scope.0.load(std::sync::atomic::Ordering::Acquire) {
+        if state
+            .query_scope
+            .0
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
             state.query_scope = OrderedQueryScope::default();
         }
         state.query_clients.insert(client);

@@ -13,6 +13,9 @@
 /// cover is refused rather than performed.
 #[cfg(unix)]
 trait RoutedBrokerAccess {
+    // Private runners retain their timed budget/maintenance turns until their
+    // producer port exposes an equivalent notification and deadline contract.
+    fn event_driven_idle(&self) -> bool { false }
     fn broker(&mut self) -> Result<&XServerFrontendRouteBroker, X11SetupSocketError>;
     /// Serve the accepted order once, bounded: the public broker routes what
     /// is pending; the private service takes one turn on its prepared
@@ -59,6 +62,9 @@ trait RoutedBrokerAccess {
 
 #[cfg(unix)]
 impl RoutedBrokerAccess for XServerFrontendRouteBroker {
+    fn event_driven_idle(&self) -> bool {
+        !self.raw_service_ingress.load(Ordering::Acquire)
+    }
     fn broker(&mut self) -> Result<&XServerFrontendRouteBroker, X11SetupSocketError> {
         Ok(self)
     }

@@ -52,7 +52,7 @@ fn peer_failure_writer(
             client: XServerFrontendClientId::from_raw(1),
         },
         X11InputEventReceiver::Routed {
-            receiver,
+            receiver: receiver.into(),
             deliveries: Some(deliveries),
             recovery: None,
         },

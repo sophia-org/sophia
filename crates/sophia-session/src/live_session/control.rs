@@ -69,6 +69,20 @@ impl LiveControlState {
         }
     }
 
+    /// The control worker rings the owner after queuing a ticket and after a
+    /// claim's admission recheck. The service lives as long as the session.
+    pub(super) fn set_owner_wake(&self, notifier: &sophia_wake::Notifier) {
+        if let Some(service) = self.service.as_ref() {
+            service.set_owner_wake(notifier.clone());
+        }
+    }
+
+    /// A ticket taken but not dispatched. It can wait for queued policy work
+    /// to settle, and that settling does not ring the owner.
+    pub(super) fn owner_work_pending(&self) -> bool {
+        self.next.is_some()
+    }
+
     pub(super) fn take_session_requests(&mut self) -> SessionControlRequests {
         std::mem::take(&mut self.requests)
     }

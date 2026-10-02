@@ -110,6 +110,7 @@ fn spawn_x11_control_writer(
         .and_then(|routing| routing.client_senders(client).ok())
         .and_then(|senders| senders.connection_state.get()?.control_source.get()?.upgrade());
     let stop = Arc::new(AtomicBool::new(false));
+    let wake = channels.wake();
     let writer_stop = stop.clone();
     macro_rules! interrupt_after_effect {
         ($execution:expr) => {{
@@ -162,7 +163,7 @@ fn spawn_x11_control_writer(
         };
         let run = || -> Result<(), X11SetupSocketError> {
         while !writer_stop.load(Ordering::Acquire) {
-            let routed = match channels.recv_timeout(client) {
+            let routed = match channels.receive(client, &writer_stop) {
                 Ok(routed) => routed,
                 Err(RecvTimeoutError::Timeout) => continue,
                 Err(RecvTimeoutError::Disconnected) => return Ok(()),
@@ -798,7 +799,7 @@ fn spawn_x11_control_writer(
         };
         run()
     });
-    Ok(X11ControlWriter { stop, thread })
+    Ok(X11ControlWriter { stop, wake, thread })
 }
 
 #[cfg(unix)]

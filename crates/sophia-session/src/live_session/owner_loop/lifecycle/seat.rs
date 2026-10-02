@@ -150,6 +150,7 @@ if let Some(controller) = seat_controller.as_mut() {
                                     config,
                                     device_map,
                                     Some(controller.device_opener()),
+                                    &owner_wake.notifier(),
                                 )?;
                                 // A reopened seat announces its devices under new identities. What
                                 // the old ones still held is released now, so no key outlives the
@@ -178,6 +179,7 @@ if let Some(controller) = seat_controller.as_mut() {
                             config,
                             device_map,
                             Some(controller.device_opener()),
+                            &owner_wake.notifier(),
                         )?;
                         flush_all_client_keys!("input_reopened");
                         keyboard_coverage.forget_all_devices();
@@ -239,6 +241,7 @@ if let Some(controller) = seat_controller.as_mut() {
                     config,
                     device_map,
                     Some(controller.device_opener()),
+                    &owner_wake.notifier(),
                 )?;
                 flush_all_client_keys!("input_reopened");
                 keyboard_coverage.forget_all_devices();
@@ -392,6 +395,7 @@ if let Some(controller) = seat_controller.as_mut() {
                     config,
                     device_map,
                     Some(controller.device_opener()),
+                    &owner_wake.notifier(),
                 )?;
                 flush_all_client_keys!("input_reopened");
                 keyboard_coverage.forget_all_devices();

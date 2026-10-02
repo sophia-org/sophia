@@ -511,8 +511,8 @@ impl ControlCompletionRegistry {
     /// nothing. It exists so a departed connection's evidence custody can be
     /// retired during the run: control cleanup pairs each record with its
     /// connection's custody slot, so a custody must outlive its own client's
-    /// unanswered records -- and no other client's, which is what the
-    /// instance-wide count could not say.
+    /// unanswered records. Cross-client output debts are checked separately
+    /// by exact recipient identity before custody is retired.
     pub fn outstanding_for(&self, client: XServerFrontendClientId) -> Option<usize> {
         self.inner.lock().ok().map(|inner| {
             inner

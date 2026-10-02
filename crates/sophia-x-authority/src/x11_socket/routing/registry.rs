@@ -75,10 +75,12 @@ struct XServerFrontendRouteRegistry {
     /// A client writer reads it here because this is what both routing sites
     /// and every client registration already reach.
     control_completion: Arc<std::sync::OnceLock<ControlCompletionRegistry>>,
-    acknowledgement_sender: SyncSender<XAuthorityClientControlAck>,
+    acknowledgement_sender: sophia_wake::SignalSender<XAuthorityClientControlAck>,
     input_delivery_sender: Option<Sender<XAuthorityClientInputDelivery>>,
-    metadata_candidate_sender: SyncSender<XAuthorityClientMetadataCandidate>,
-    route_lease_update_sender: Option<SyncSender<XAuthorityRouteLeaseUpdate>>,
+    metadata_candidate_sender: sophia_wake::SignalSender<XAuthorityClientMetadataCandidate>,
+    route_lease_update_sender: Option<sophia_wake::SignalSender<XAuthorityRouteLeaseUpdate>>,
+    owner_wake: sophia_wake::WakeSlot,
+    service_wake: sophia_wake::WakeSlot,
     explicit_pointer_grabs: Option<crate::XAuthorityExplicitPointerGrabClient>,
     input_control_epoch: Arc<AtomicU64>,
     per_client_input_capacity: NonZeroUsize,
@@ -175,11 +177,11 @@ struct XAuthorityEpochRoutedInput {
 #[derive(Clone)]
 struct XServerFrontendClientRouteSenders {
     connection_state: Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
-    input: SyncSender<XAuthorityClientInputEvent>,
+    input: sophia_wake::channel::Sender<XAuthorityClientInputEvent>,
     /// What has been queued to `input` and what its writer has finished
     /// with, shared with the connection that owns the writer.
     input_watermark: Arc<X11InputWatermark>,
-    control: SyncSender<X11RoutedControl>,
+    control: sophia_wake::channel::Sender<X11RoutedControl>,
     protocol: X11ProtocolSender,
     admission: Option<ClientAdmissionContext>,
     /// The namespace the connection was registered into, known from the
@@ -214,10 +216,10 @@ struct XServerFrontendClientRouteSenders {
 
 #[cfg(unix)]
 struct XServerFrontendClientRouteChannels {
-    input: Receiver<XAuthorityClientInputEvent>,
+    input: sophia_wake::channel::Receiver<XAuthorityClientInputEvent>,
     input_watermark: Arc<X11InputWatermark>,
     protocol_watermark: Arc<X11ProtocolWatermark>,
-    control: Receiver<X11RoutedControl>,
+    control: sophia_wake::channel::Receiver<X11RoutedControl>,
     protocol: X11ProtocolReceiver,
     #[allow(dead_code)]
     ordered: XAuthorityOrderedReceiver,
@@ -472,11 +474,18 @@ impl XServerFrontendRouteRegistry {
         ),
         XServerFrontendRouteError,
     > {
-        let (input_sender, input) = sync_channel(self.per_client_input_capacity.get());
-        let (control_sender, control) = sync_channel(self.per_client_control_capacity.get());
+        let (input_sender, input) = sophia_wake::channel::bounded(self.per_client_input_capacity.get())
+            .map_err(|_| XServerFrontendRouteError::ContinuationUnavailable { client })?;
+        let (control_sender, control) = sophia_wake::channel::bounded(self.per_client_control_capacity.get())
+            .map_err(|_| XServerFrontendRouteError::ContinuationUnavailable { client })?;
         let (protocol_sender, protocol) =
-            sync_channel(self.per_client_protocol_capacity.get());
+            sophia_wake::channel::bounded(self.per_client_protocol_capacity.get())
+                .map_err(|_| XServerFrontendRouteError::ContinuationUnavailable { client })?;
         let (ordered_sender, ordered) = sync_channel(self.per_client_input_capacity.get());
+        // Capacity changes release deferred controls in the frontend owner.
+        if let Some(wake) = self.service_wake.notifier() {
+            control.set_capacity_wake(wake);
+        }
         // MINTED WITH THE QUEUE, so there is no moment at which this
         // registration's queue is reachable through a sender that no close can
         // serialize with. Bound to this registration: a replacement for the

@@ -7,6 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+sophia-wake = { path = "../sophia-wake" }
 sophia-9p = { path = "../sophia-9p", optional = true }
 sophia-backend-live = { path = "../sophia-backend-live", optional = true, default-features = false }
 sophia-broker = { path = "../sophia-broker" }
@@ -21,7 +22,7 @@ sophia-x-authority = { path = "../sophia-x-authority" }
 sophia-xshmfence = { path = "../sophia-xshmfence" }
 tracing.workspace = true
 sha2.workspace = true
-rustix = { version = "1.1", default-features = false, features = ["process", "rand", "system", "fs", "time", "pipe"] }
+rustix = { version = "1.1", default-features = false, features = ["process", "rand", "system", "fs", "time", "pipe", "event"] }
 x11rb = { version = "0.13.1", features = ["xtest"] }
 
 [dev-dependencies]

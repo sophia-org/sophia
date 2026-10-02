@@ -186,13 +186,13 @@ pub fn run_x11_core_socket_server_once_session_channels(
         &state,
         X11ClientConnectionInputs {
             input_receiver: Some(X11InputEventReceiver::Routed {
-                receiver: input_receiver,
+                receiver: input_receiver.into(),
                 deliveries: None,
                 recovery: None,
             }),
             control_channels: Some(X11ControlChannels::Routed {
                 receiver: control_receiver,
-                acknowledgements: control_ack_sender,
+                acknowledgements: control_ack_sender.into(),
                 completion: None,
             }),
             client_routing: None,
@@ -301,6 +301,9 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
         backpressure_observer,
     ));
     let worker_egress = ordered_egress.clone();
+    if let Some(wake) = frontend.config.owner_wake.notifier() {
+        ordered_egress.owner_wake.set(wake);
+    }
     let observer: Arc<X11CoreTraceObserver> = Arc::new(move |trace| {
         if trace.failure == Some(X11ObservedDispatchFailure::UnpublishedEffects) {
             worker_egress.cancel();

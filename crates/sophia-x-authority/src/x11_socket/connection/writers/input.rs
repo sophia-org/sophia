@@ -58,6 +58,7 @@ fn spawn_x11_input_event_writer(
         client,
     } = state;
     let stop = Arc::new(AtomicBool::new(false));
+    let wake = receiver.wake();
     let writer_stop = stop.clone();
     let thread = std::thread::spawn(move || {
         let _recovery_guard = X11InputWriterRecoveryGuard { receiver: &receiver, client };
@@ -76,7 +77,7 @@ fn spawn_x11_input_event_writer(
                 propagation_stop,
                 delivery,
             ) =
-                match receiver.recv_timeout(client) {
+                match receiver.receive(client, &writer_stop) {
                     Ok(event) => event,
                     Err(RecvTimeoutError::Timeout) => continue,
                     Err(RecvTimeoutError::Disconnected) => return Ok(()),
@@ -934,7 +935,7 @@ fn spawn_x11_input_event_writer(
         }
         Ok(())
     });
-    Ok(X11InputEventWriter { stop, thread })
+    Ok(X11InputEventWriter { stop, wake, thread })
 }
 
 #[cfg(unix)]

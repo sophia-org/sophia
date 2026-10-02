@@ -107,6 +107,7 @@ struct XAuthorityExplicitPointerGrabResponseState {
 }
 
 struct XAuthorityExplicitPointerGrabShared {
+    owner_wake: sophia_wake::WakeSlot,
     request_gate: Mutex<()>,
     state: Mutex<XAuthorityExplicitPointerGrabResponseState>,
     ready: Condvar,
@@ -131,6 +132,9 @@ impl core::fmt::Debug for XAuthorityExplicitPointerGrabClient {
 }
 
 impl XAuthorityExplicitPointerGrabClient {
+    pub fn set_owner_wake(&self, wake: sophia_wake::Notifier) {
+        self.shared.owner_wake.set(wake);
+    }
     pub fn request(
         &self,
         admission: ClientAdmissionContext,
@@ -183,6 +187,7 @@ impl XAuthorityExplicitPointerGrabClient {
             Ok(()) => {
                 state.outstanding.insert(id, (deadline, prepare));
                 self.shared.pending.fetch_add(1, Ordering::AcqRel);
+                self.shared.owner_wake.notify();
             }
             Err(TrySendError::Full(_)) => {
                 return Err(XAuthorityExplicitPointerGrabBridgeError::Capacity);
@@ -327,6 +332,7 @@ pub fn x_authority_explicit_pointer_grab_bridge(
         next_id: AtomicU64::new(1),
         pending: AtomicUsize::new(0),
         prepare_capacity: capacity.get(),
+        owner_wake: sophia_wake::WakeSlot::default(),
     });
     (
         XAuthorityExplicitPointerGrabClient {

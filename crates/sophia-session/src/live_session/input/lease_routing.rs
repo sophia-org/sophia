@@ -22,6 +22,11 @@ struct HeldLeaseInput {
 }
 
 impl PendingLeaseInput {
+    /// Held input expires on the owner's clock, not on a producer's ring.
+    pub(super) fn holds_input(&self) -> bool {
+        self.held.is_some()
+    }
+
     pub(super) fn cancel(&mut self, identity: sophia_protocol::ApplicationRouteLeaseIdentity) {
         if self
             .held
@@ -147,7 +152,7 @@ pub(super) fn presented_application_scope(
 pub(super) fn cancel_application_lease(
     state: &mut ApplicationRouteLeaseState,
     client_routes: &XAuthorityClientSurfaceRoutes,
-    sender: &SyncSender<XAuthorityRouteLeaseRelease>,
+    sender: &dyn SessionSender<XAuthorityRouteLeaseRelease>,
     held: &mut PendingLeaseInput,
     identity: sophia_protocol::ApplicationRouteLeaseIdentity,
     now_msec: u64,
@@ -172,7 +177,7 @@ pub(super) fn cancel_application_lease(
 pub(super) fn reconcile_lease_presentation(
     state: &mut ApplicationRouteLeaseState,
     client_routes: &XAuthorityClientSurfaceRoutes,
-    sender: &SyncSender<XAuthorityRouteLeaseRelease>,
+    sender: &dyn SessionSender<XAuthorityRouteLeaseRelease>,
     held: &mut PendingLeaseInput,
     seat: SeatId,
     pointer_output: Option<sophia_protocol::OutputId>,
@@ -266,7 +271,7 @@ pub(super) fn flush_held_lease_input<S: RoutedInputIngress>(
     client_routes: &XAuthorityClientSurfaceRoutes,
     projections: &[sophia_backend_live::LivePresentedInputProjection],
     sender: &S,
-    release_sender: &SyncSender<XAuthorityRouteLeaseRelease>,
+    release_sender: &dyn SessionSender<XAuthorityRouteLeaseRelease>,
     next_delivery: &mut u64,
     now_msec: u64,
     report: &mut PhysicalInputRouteReport,

@@ -57,7 +57,7 @@ fn input_delivery_notifications_do_not_backpressure_x11_writers() {
     let (_route_sender, route_receiver) = sync_channel(1);
     let (delivery_sender, delivery_receiver) = channel();
     let receiver = X11InputEventReceiver::Routed {
-        receiver: route_receiver,
+        receiver: route_receiver.into(),
         deliveries: Some(delivery_sender),
         recovery: None,
     };
@@ -513,7 +513,7 @@ fn routed_input_discards_another_clients_event() {
         .unwrap();
 
     let receiver = X11InputEventReceiver::Routed {
-        receiver,
+        receiver: receiver.into(),
         deliveries: None,
         recovery: None,
     };

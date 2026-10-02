@@ -153,6 +153,7 @@ impl ShellComponentTransport {
         self.reserved_limits = None;
         self.peer_closed = false;
         self.output.clear();
+        self.output_blocked = false;
         self.action_cancellations.clear();
         self.indicator_response = None;
         self.catalog_response = None;

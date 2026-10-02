@@ -83,7 +83,7 @@ use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::process::CommandExt;
 use std::process::{Child, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender};
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -103,6 +103,8 @@ use cpu_visual_progress::{CpuVisualProgress, presented_logical_checksum};
 use metadata_shell::live_shell_activation_surfaces;
 mod native_retirement;
 mod native_session_evidence;
+mod owner_wake;
+use owner_wake::{OwnerWake, SessionSender};
 mod visual_progress;
 use native_session_evidence::{NativeEvidenceSnapshot, NativeSessionEvidence};
 mod policy_transport_worker;
@@ -239,7 +241,23 @@ pub(super) fn plan_validation_device<'a>(
     device
 }
 
+/// Opens physical input and attaches the owner's wake. Every opening goes
+/// through here, replacements included, so no poller can publish into a
+/// queue the owner sleeps past.
 fn open_session_physical_input(
+    config: &PersistentXtermSessionConfig,
+    device_map: sophia_backend_live::NativeLibinputDeviceMap,
+    seat_opener: Option<sophia_backend_live::LiveSeatDeviceOpener>,
+    owner_wake: &sophia_wake::Notifier,
+) -> Result<Option<SessionPhysicalInput>, Box<dyn std::error::Error>> {
+    let input = open_unattached_session_physical_input(config, device_map, seat_opener)?;
+    if let Some(SessionPhysicalInput::Threaded(poller)) = input.as_ref() {
+        poller.set_owner_wake(owner_wake.clone());
+    }
+    Ok(input)
+}
+
+fn open_unattached_session_physical_input(
     config: &PersistentXtermSessionConfig,
     device_map: sophia_backend_live::NativeLibinputDeviceMap,
     seat_opener: Option<sophia_backend_live::LiveSeatDeviceOpener>,

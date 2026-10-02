@@ -119,6 +119,54 @@ fn real_endpoint_client_waits_for_owner_settlement_and_reuses_connection() {
     });
 }
 
+/// The owner sleeps between turns, so the worker rings it for a queued ticket
+/// and again when a claim's admission recheck settles.
+#[test]
+fn owner_is_rung_for_a_queued_ticket_and_for_its_claim_recheck() {
+    fn rung(owner: &sophia_wake::Wake) -> bool {
+        let rung = owner
+            .wait(Some(Instant::now() + Duration::from_secs(3)))
+            .unwrap();
+        owner.clear().unwrap();
+        rung
+    }
+    let f = Fixture::new();
+    let owner = sophia_wake::Wake::new().unwrap();
+    f.service.set_owner_wake(owner.notifier());
+    // Attachment rings once; this test starts from a quiet wake.
+    owner.clear().unwrap();
+    let mut stream = f.raw();
+    send(&mut stream, 1, ControlMessage::Commands);
+    read(&mut stream);
+    send(
+        &mut stream,
+        2,
+        ControlMessage::Invoke {
+            generation: 7,
+            command: action(),
+        },
+    );
+    assert!(rung(&owner), "a queued ticket did not ring the owner");
+    let ticket = f
+        .service
+        .try_request()
+        .expect("the ring preceded the ticket's publication");
+    // A first claim asks the worker for a fresh admission check. Unless the
+    // worker already answered, the owner sleeps until that answer rings it.
+    if !ticket.claim() {
+        assert!(rung(&owner), "the admission recheck did not ring the owner");
+        assert!(ticket.claim());
+    }
+    ticket.finish(ControlOutcome::Committed);
+    assert!(matches!(
+        read(&mut stream).1,
+        ControlMessage::Outcome {
+            outcome: ControlOutcome::Committed,
+            ..
+        }
+    ));
+}
+
 #[test]
 fn stale_and_unknown_commands_never_reach_owner() {
     let f = Fixture::new();

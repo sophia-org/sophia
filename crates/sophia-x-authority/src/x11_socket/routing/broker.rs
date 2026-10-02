@@ -12,10 +12,12 @@
 /// registry state remains service-fatal.
 #[cfg(unix)]
 pub struct XServerFrontendRouteBroker {
+    service_wake: sophia_wake::WakeSlot,
+    raw_service_ingress: Arc<AtomicBool>,
     registry: XServerFrontendRouteRegistry,
     input_sender: SyncSender<XAuthorityClientInputEvent>,
     input_receiver: Receiver<XAuthorityClientInputEvent>,
-    routed_input_sender: SyncSender<XAuthorityEpochRoutedInput>,
+    routed_input_sender: sophia_wake::SignalSender<XAuthorityEpochRoutedInput>,
     routed_input_receiver: Receiver<XAuthorityEpochRoutedInput>,
     input_control_epoch: Arc<AtomicU64>,
     routed_input_capacity: usize,
@@ -52,178 +54,11 @@ pub struct XServerFrontendRouteBroker {
     acknowledgement_receiver: Option<Receiver<XAuthorityClientControlAck>>,
     metadata_candidate_receiver: Option<Receiver<XAuthorityClientMetadataCandidate>>,
     source_payload_receiver: Receiver<crate::ClipboardSourcePayload>,
-    raster_sender: SyncSender<sophia_protocol::SurfaceRasterRequirements>,
+    raster_sender: sophia_wake::SignalSender<sophia_protocol::SurfaceRasterRequirements>,
     raster_receiver: Receiver<sophia_protocol::SurfaceRasterRequirements>,
 }
 
-#[cfg(unix)]
-#[derive(Clone)]
-pub struct XAuthorityRoutedInputSender {
-    sender: SyncSender<XAuthorityEpochRoutedInput>,
-    control_epoch: Arc<AtomicU64>,
-    capacity: usize,
-    recovery: InputRecovery,
-    /// Shared with the broker rather than copied from it.
-    ///
-    /// A sender handed out before the gate was installed would otherwise keep
-    /// its own `None` and go on stamping from the bare counter, which is an
-    /// ungated route into a gated broker.
-    control_gate: Arc<std::sync::OnceLock<crate::ControlEpochGate>>,
-}
-
-#[cfg(unix)]
-impl XAuthorityRoutedInputSender {
-    /// Stamp work once, at enqueue.
-    ///
-    /// Without a coordinator this is the counter, exactly as before. With one,
-    /// a transition in flight yields no stamp at all, so the work is refused
-    /// here rather than queued against a revision that is being replaced.
-    fn stamp(&self) -> Result<crate::ControlStamp, ()> {
-        match self.control_gate.get() {
-            Some(gate) => gate.stamp().map_err(|_| ()),
-            None => Ok(crate::ControlStamp {
-                control_epoch: self.control_epoch.load(Ordering::Acquire),
-                publication: 0,
-            }),
-        }
-    }
-}
-
-#[cfg(unix)]
-impl XAuthorityRoutedInputSender {
-    pub fn send(
-        &self,
-        route: XAuthorityRoutedInput,
-    ) -> Result<(), std::sync::mpsc::SendError<XAuthorityRoutedInput>> {
-        let stamp = match self.stamp() {
-            Ok(stamp) => stamp,
-            Err(()) => return Err(std::sync::mpsc::SendError(route)),
-        };
-        let envelope = XAuthorityEpochRoutedInput {
-            control_epoch: stamp.control_epoch,
-            publication: stamp.publication,
-            route,
-            reservation: None,
-            completion: None,
-        };
-        if !self.recovery.admit(&envelope.route, envelope.control_epoch, Instant::now()) {
-            return Err(std::sync::mpsc::SendError(envelope.route));
-        }
-        self.sender.send(envelope).map_err(|error| {
-            self.recovery.abort_enqueue(error.0.route.delivery);
-            std::sync::mpsc::SendError(error.0.route)
-        })
-    }
-
-    /// Stamp work and reserve its place in the recovery ledger.
-    ///
-    /// Reservation before acceptance, so a caller that is later refused has
-    /// something exact to roll back rather than a guess. Every refusal here is
-    /// typed at its source: the ledger being full, this delivery already being
-    /// live, and the ledger being unreadable are three different answers, and
-    /// only the first is worth retrying.
-    fn stamp_and_reserve(
-        &self,
-        route: XAuthorityRoutedInput,
-    ) -> Result<(XAuthorityEpochRoutedInput, Option<PrivateAcceptedInputCompletion>), PrivateSendError> {
-        let stamp = match self.stamp() {
-            Ok(stamp) => stamp,
-            Err(()) => return Err(PrivateSendError::Denied(route)),
-        };
-        let envelope = XAuthorityEpochRoutedInput {
-            control_epoch: stamp.control_epoch,
-            publication: stamp.publication,
-            route,
-            reservation: None,
-            completion: None,
-        };
-        match self
-            .recovery
-            .admit_with_completion(&envelope.route, envelope.control_epoch, Instant::now())
-        {
-            Ok(completion) => Ok((envelope, completion)),
-            Err(RecoveryAdmissionRefusal::LedgerFull) => {
-                Err(PrivateSendError::Saturated(envelope.route))
-            }
-            Err(RecoveryAdmissionRefusal::DeliveryAlreadyTracked(_)) => {
-                Err(PrivateSendError::DeliveryAlreadyTracked(envelope.route))
-            }
-            Err(RecoveryAdmissionRefusal::LedgerUnavailable) => {
-                Err(PrivateSendError::Unavailable(envelope.route))
-            }
-        }
-    }
-
-    /// Release exactly one reservation, by its own delivery.
-    ///
-    /// Never another request's: a refusal rolls back what it reserved and
-    /// leaves every live delivery alone.
-    fn abort_reservation(&self, delivery: Option<XAuthorityInputDeliveryId>) {
-        self.recovery.abort_enqueue(delivery);
-    }
-
-    pub fn try_send(
-        &self,
-        route: XAuthorityRoutedInput,
-    ) -> Result<(), std::sync::mpsc::TrySendError<XAuthorityRoutedInput>> {
-        let stamp = match self.stamp() {
-            Ok(stamp) => stamp,
-            Err(()) => return Err(std::sync::mpsc::TrySendError::Full(route)),
-        };
-        let envelope = XAuthorityEpochRoutedInput {
-            control_epoch: stamp.control_epoch,
-            publication: stamp.publication,
-            route,
-            reservation: None,
-            completion: None,
-        };
-        if !self.recovery.admit(&envelope.route, envelope.control_epoch, Instant::now()) {
-            return Err(TrySendError::Full(envelope.route));
-        }
-        self.sender.try_send(envelope).map_err(|error| {
-            let (envelope, full) = match error {
-                TrySendError::Full(envelope) => (envelope, true),
-                TrySendError::Disconnected(envelope) => (envelope, false),
-            };
-            self.recovery.abort_enqueue(envelope.route.delivery);
-            if full { TrySendError::Full(envelope.route) }
-            else { TrySendError::Disconnected(envelope.route) }
-        })
-    }
-
-    /// The queue's bound, so a saturation report can say what was exhausted
-    /// rather than only that something was.
-    pub const fn capacity(&self) -> usize {
-        self.capacity
-    }
-
-    pub fn control_epoch(&self) -> u64 {
-        self.control_epoch.load(Ordering::Acquire)
-    }
-
-    pub fn advance_control_epoch(&self, next: u64) -> bool {
-        // A coordinator owns every transition it is installed for, so the
-        // lockless path is refused rather than quietly racing it.
-        if self.control_gate.get().is_some() {
-            return false;
-        }
-        let mut current = self.control_epoch.load(Ordering::Acquire);
-        loop {
-            if next <= current {
-                return next == current;
-            }
-            match self.control_epoch.compare_exchange(
-                current,
-                next,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => return true,
-                Err(observed) => current = observed,
-            }
-        }
-    }
-}
+include!("broker_input_sender.rs");
 
 /// Cloneable protocol-feedback handle for Engine/backend presentation code.
 ///
@@ -253,7 +88,7 @@ pub struct XServerFrontendControlRouter {
 #[cfg(unix)]
 #[derive(Clone)]
 pub struct XServerFrontendRasterRouter {
-    sender: SyncSender<sophia_protocol::SurfaceRasterRequirements>,
+    sender: sophia_wake::SignalSender<sophia_protocol::SurfaceRasterRequirements>,
 }
 
 #[cfg(unix)]
@@ -359,6 +194,9 @@ impl XServerFrontendRouteBroker {
         mut self,
         client: crate::XAuthorityExplicitPointerGrabClient,
     ) -> Self {
+        if let Some(wake) = self.registry.owner_wake.notifier() {
+            client.set_owner_wake(wake);
+        }
         self.registry.explicit_pointer_grabs = Some(client);
         self
     }
@@ -479,23 +317,30 @@ impl XServerFrontendRouteBroker {
         let (control_sender, control_receiver) = sync_channel(capacities.control.get());
         let (metadata_candidate_sender, metadata_candidate_receiver) =
             sync_channel(capacities.control.get());
-        let (source_payload_sender, source_payload_receiver) =
-            sync_channel(capacities.input.get());
+        let (source_payload_sender, source_payload_receiver) = sync_channel(capacities.input.get());
         let (raster_sender, raster_receiver) = sync_channel(capacities.control.get());
         let input_authority = Arc::new(Mutex::new(crate::XInputAuthorityState::default()));
+        let service_wake = sophia_wake::WakeSlot::default();
+        let owner_wake = sophia_wake::WakeSlot::default();
         let broker = Self {
+            service_wake: service_wake.clone(),
+            raw_service_ingress: Arc::new(AtomicBool::new(false)),
             control_gate: Arc::new(std::sync::OnceLock::new()),
             registry_identity: Arc::new(()),
             raw_ingress_exposed: Arc::new(AtomicBool::new(false)),
             registry: XServerFrontendRouteRegistry {
+                owner_wake: owner_wake.clone(),
+                service_wake: service_wake.clone(),
                 // Ingress + frozen + every possible client's private queue and
                 // active writer. Terminal receipts retain their credit until
                 // observed, so a slow owner cannot grow an unbounded ledger.
                 input_recovery: InputRecovery::new(
                     capacities.input.get().saturating_mul(2).saturating_add(
                         usize::from(X11_MAX_CLIENT_RESOURCE_RANGES)
-                            .saturating_mul(capacities.input.get().saturating_add(1))),
-                    input_delivery_sender.clone(), input_authority.clone(),
+                            .saturating_mul(capacities.input.get().saturating_add(1)),
+                    ),
+                    input_delivery_sender.clone(),
+                    input_authority.clone(),
                 ),
                 runtime: Arc::new(std::sync::OnceLock::new()),
                 last_pointer_route: Arc::new(Mutex::new(BTreeMap::new())),
@@ -523,10 +368,17 @@ impl XServerFrontendRouteBroker {
                 xkb_config: crate::XkbRmlvoConfig::default(),
                 xkb_worker: XkbKeyboardWorker::spawn(crate::XkbRmlvoConfig::default()),
                 control_completion: Arc::new(std::sync::OnceLock::new()),
-                acknowledgement_sender,
+                acknowledgement_sender: sophia_wake::SignalSender::new(
+                    acknowledgement_sender,
+                    owner_wake.clone(),
+                ),
                 input_delivery_sender,
-                metadata_candidate_sender,
-                route_lease_update_sender,
+                metadata_candidate_sender: sophia_wake::SignalSender::new(
+                    metadata_candidate_sender,
+                    owner_wake.clone(),
+                ),
+                route_lease_update_sender: route_lease_update_sender
+                    .map(|sender| sophia_wake::SignalSender::new(sender, owner_wake.clone())),
                 explicit_pointer_grabs: None,
                 input_control_epoch: input_control_epoch.clone(),
                 per_client_input_capacity: capacities.input,
@@ -538,7 +390,10 @@ impl XServerFrontendRouteBroker {
             },
             input_sender,
             input_receiver,
-            routed_input_sender,
+            routed_input_sender: sophia_wake::SignalSender::new(
+                routed_input_sender,
+                service_wake.clone(),
+            ),
             routed_input_receiver,
             input_control_epoch,
             routed_input_capacity: capacities.input.get(),
@@ -550,12 +405,15 @@ impl XServerFrontendRouteBroker {
             acknowledgement_receiver,
             metadata_candidate_receiver: Some(metadata_candidate_receiver),
             source_payload_receiver,
-            raster_sender,
+            raster_sender: sophia_wake::SignalSender::new(raster_sender, service_wake),
             raster_receiver,
         };
         // The replay of the pointer's position after a hierarchy change
         // enters through the broker's own ingress (t211).
-        let _ = broker.registry.pointer_replay.set(broker.routed_input_sender());
+        let _ = broker
+            .registry
+            .pointer_replay
+            .set(broker.routed_input_sender());
         broker
     }
 
@@ -572,6 +430,7 @@ impl XServerFrontendRouteBroker {
             return Err(ActivationRefused::RawIngressRefusedUnderGate);
         }
         self.raw_ingress_exposed.store(true, Ordering::Release);
+        self.raw_service_ingress.store(true, Ordering::Release);
         Ok(self.input_sender.clone())
     }
 
@@ -586,10 +445,12 @@ impl XServerFrontendRouteBroker {
     }
 
     pub fn route_lease_release_sender(&self) -> SyncSender<XAuthorityRouteLeaseRelease> {
+        self.raw_service_ingress.store(true, Ordering::Release);
         self.route_lease_release_sender.clone()
     }
 
     pub fn control_sender(&self) -> SyncSender<XAuthorityClientControlCommand> {
+        self.raw_service_ingress.store(true, Ordering::Release);
         self.control_sender.clone()
     }
 
@@ -613,10 +474,7 @@ impl XServerFrontendRouteBroker {
 
     pub(crate) fn try_recv_raster_requirements(
         &self,
-    ) -> Result<
-        sophia_protocol::SurfaceRasterRequirements,
-        std::sync::mpsc::TryRecvError,
-    > {
+    ) -> Result<sophia_protocol::SurfaceRasterRequirements, std::sync::mpsc::TryRecvError> {
         self.raster_receiver.try_recv()
     }
 
@@ -666,7 +524,9 @@ impl XServerFrontendRouteBroker {
             return Err(ActivationRefused::RawIngressAlreadyExposed);
         }
         match self.control_gate.get() {
-            Some(installed) if installed.coordinator_incarnation() == gate.coordinator_incarnation() => {
+            Some(installed)
+                if installed.coordinator_incarnation() == gate.coordinator_incarnation() =>
+            {
                 Ok(())
             }
             Some(_) => Err(ActivationRefused::DifferentGateInstalled),
@@ -726,11 +586,8 @@ impl XServerFrontendRouteBroker {
 
         let mut recorded = None;
         let mut released = None;
-        let completion = authority.execute_reserved(
-            issuer,
-            request.token,
-            request.connection,
-            |permit| {
+        let completion =
+            authority.execute_reserved(issuer, request.token, request.connection, |permit| {
                 // Beneath common, and on its own: this reads grab ownership
                 // and nothing that would need the other two.
                 match request.action {
@@ -786,8 +643,7 @@ impl XServerFrontendRouteBroker {
                     }
                 }
                 Ok(())
-            },
-        )?;
+            })?;
         Ok(crate::SyntheticOutcome {
             completion,
             record: recorded,
@@ -840,8 +696,7 @@ impl XServerFrontendRouteBroker {
                             })
                             .is_ok(),
                         None => {
-                            route.control_epoch
-                                == self.input_control_epoch.load(Ordering::Acquire)
+                            route.control_epoch == self.input_control_epoch.load(Ordering::Acquire)
                         }
                     };
                     match self.registry.route_engine_input_admitted(
@@ -854,7 +709,10 @@ impl XServerFrontendRouteBroker {
                     ) {
                         Ok(()) => {
                             routed = routed.saturating_add(1);
-                            report_completion(completion, sophia_input_authority::RequestCompletion::Processed);
+                            report_completion(
+                                completion,
+                                sophia_input_authority::RequestCompletion::Processed,
+                            );
                         }
                         Err(XServerFrontendRouteError::SyntheticChordRefused) => {
                             report_completion(
@@ -870,10 +728,16 @@ impl XServerFrontendRouteBroker {
                             | XServerFrontendRouteError::UnknownClient { .. }
                             | XServerFrontendRouteError::ClientQueueFull { .. },
                         ) => {
-                            report_completion(completion, sophia_input_authority::RequestCompletion::Cancelled);
+                            report_completion(
+                                completion,
+                                sophia_input_authority::RequestCompletion::Cancelled,
+                            );
                         }
                         Err(error) => {
-                            report_completion(completion, sophia_input_authority::RequestCompletion::Cancelled);
+                            report_completion(
+                                completion,
+                                sophia_input_authority::RequestCompletion::Cancelled,
+                            );
                             return Err(error);
                         }
                     }
@@ -920,13 +784,10 @@ impl XServerFrontendRouteBroker {
                 }
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => {}
             }
-            let thawed = match self
-                .registry
-                .drain_thawed_input(
-                    self.input_control_epoch.load(Ordering::Acquire),
-                    self.control_gate.get(),
-                )
-            {
+            let thawed = match self.registry.drain_thawed_input(
+                self.input_control_epoch.load(Ordering::Acquire),
+                self.control_gate.get(),
+            ) {
                 Ok(thawed) => thawed,
                 Err(
                     XServerFrontendRouteError::UnknownSurface { .. }
@@ -977,3 +838,5 @@ impl XServerFrontendRouteBroker {
         self.registry.route_present_idle(transaction)
     }
 }
+
+include!("broker_wake.rs");

@@ -7,6 +7,7 @@ use crate::live_session::{
     SessionQuiescence, SessionQuiescenceDecision, SessionQuiescenceSnapshot,
 };
 use sophia_x_authority::XWindowAllocationUpdate;
+use std::sync::mpsc::SyncSender;
 
 fn update(
     receiver: &Receiver<XServerFrontendServiceCommand>,

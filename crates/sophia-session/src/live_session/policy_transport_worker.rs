@@ -87,6 +87,9 @@ pub(super) struct PolicyTransportWorker {
     thread: Option<JoinHandle<()>>,
     stop: Option<Box<dyn PolicyAdapterStop>>,
     command_wake: Option<Box<dyn PolicyAdapterCommandWake>>,
+    /// The Session owner's wake, rung after each published event and after
+    /// the event queue disconnects.
+    owner_wake: sophia_wake::WakeSlot,
 }
 
 impl PolicyTransportWorker {
@@ -99,6 +102,10 @@ impl PolicyTransportWorker {
         let command_wake = transport.command_wake_handle();
         let (command_sender, command_receiver) = sync_channel(POLICY_TRANSPORT_CAPACITY);
         let (event_sender, event_receiver) = sync_channel(POLICY_TRANSPORT_CAPACITY);
+        let owner_wake = sophia_wake::WakeSlot::default();
+        // Dropped when the thread ends, after the queue is disconnected, so a
+        // woken owner already sees the disconnection.
+        let event_sender = sophia_wake::SignalSender::new(event_sender, owner_wake.clone());
         let thread = std::thread::Builder::new()
             .name("sophia-policy-v1".to_owned())
             .spawn(move || {
@@ -120,7 +127,18 @@ impl PolicyTransportWorker {
             thread: Some(thread),
             stop,
             command_wake,
+            owner_wake,
         })
+    }
+
+    /// Installs the owner's wake. Installation rings once, so an event queued
+    /// before the owner attached is not left for the next one.
+    pub(super) fn set_owner_wake(&self, notifier: sophia_wake::Notifier) {
+        self.owner_wake.set(notifier);
+    }
+
+    pub(super) fn owner_wake_attached(&self) -> bool {
+        self.owner_wake.attached()
     }
 
     pub(super) fn try_command(

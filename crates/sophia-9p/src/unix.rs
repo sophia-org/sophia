@@ -8,6 +8,9 @@
 //! An export whose data changes outside a request (an event arriving for a
 //! waiting read) calls [`Wake::wake`], and every waiting read is retried.
 //! [`Wake::stop`] ends [`Server::run`] and closes every connection.
+//!
+//! An owner that also waits on other sources takes [`Server::poll_fds`] into
+//! its own wait, then calls [`Server::turn`] with a zero timeout.
 
 use std::io::{self, Read, Write};
 use std::os::fd::OwnedFd;
@@ -188,14 +191,21 @@ impl<E: Export> Server<E> {
         Ok(true)
     }
 
-    fn wait(&self, timeout: Option<Duration>) -> io::Result<Readiness> {
+    /// The descriptors and interest [`Self::turn`] waits on, for an owner
+    /// that waits on this server beside its own sources. This only borrows:
+    /// the owner's next turn consumes whatever readiness it reports.
+    pub fn poll_fds(&self) -> Vec<PollFd<'_>> {
+        self.poll_set()
+    }
+
+    /// The same input-room, output and listener-capacity policy as a turn.
+    fn poll_set(&self) -> Vec<PollFd<'_>> {
         let listening = self.slots.len() < self.limits.max_connections();
         let mut fds = Vec::with_capacity(self.slots.len() + 2);
         fds.push(PollFd::new(&self.reader, PollFlags::IN));
         if let Some(listener) = self.listener.as_ref().filter(|_| listening) {
             fds.push(PollFd::new(listener, PollFlags::IN));
         }
-        let offset = fds.len();
         for slot in &self.slots {
             let mut flags = PollFlags::empty();
             if slot.connection.input_room() > 0 {
@@ -206,10 +216,16 @@ impl<E: Export> Server<E> {
             }
             fds.push(PollFd::new(&slot.stream, flags));
         }
+        fds
+    }
+
+    fn wait(&self, timeout: Option<Duration>) -> io::Result<Readiness> {
         let timeout = timeout
             .map(Timespec::try_from)
             .transpose()
             .map_err(|_| io::Error::other("timeout out of range"))?;
+        let mut fds = self.poll_set();
+        let offset = fds.len() - self.slots.len();
         poll(&mut fds, timeout.as_ref())?;
         Ok(Readiness {
             wake: fds[0].revents(),

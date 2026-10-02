@@ -6,10 +6,12 @@ struct SessionLoopChannels<'a> {
     control_acknowledgements: &'a Receiver<XAuthorityClientControlAck>,
     input_deliveries: &'a Receiver<XAuthorityClientInputDelivery>,
     route_lease_updates: &'a Receiver<XAuthorityRouteLeaseUpdate>,
-    route_lease_releases: &'a SyncSender<XAuthorityRouteLeaseRelease>,
+    route_lease_releases: &'a dyn SessionSender<XAuthorityRouteLeaseRelease>,
     explicit_pointer_grabs: &'a sophia_x_authority::XAuthorityExplicitPointerGrabOwner,
-    frontend_service: &'a SyncSender<XServerFrontendServiceCommand>,
+    frontend_service: &'a dyn SessionSender<XServerFrontendServiceCommand>,
     metadata_candidates: &'a Receiver<sophia_x_authority::XAuthorityClientMetadataCandidate>,
+    /// Every producer above rings this after publishing; see `owner_wake`.
+    owner_wake: &'a OwnerWake,
 }
 
 struct SessionLoopResources<'a> {
@@ -60,18 +62,73 @@ struct SessionLoopStartup<'a> {
     xtest_scene: Arc<x_frontend::xtest::LiveXTestPointerScene>,
 }
 
+/// The longest the owner sleeps for authority work before servicing itself.
+///
+/// The 25 ms budget is maintenance only: child reaping, config and topology
+/// notices, window-allocation cadence, and protocol expiry deadlines.
+/// Producers ring the owner's wake; inline shell sockets join the same poll.
+/// The 1 ms budget stays wherever the owner holds work that advances on its
+/// own clock, because nothing rings when that work comes due.
 fn authority_wait_timeout(
-    physical_input_active: bool,
+    owner_input_work_pending: bool,
     cursor_update_pending: bool,
     control_pending: bool,
 ) -> Duration {
     Duration::from_millis(
-        if physical_input_active || cursor_update_pending || control_pending {
+        if owner_input_work_pending || cursor_update_pending || control_pending {
             1
         } else {
             25
         },
     )
+}
+
+/// Work the owner holds itself, which no producer rings for when it comes due.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct OwnerHeldWork {
+    /// Key repeat, held client keys, buffered motion, focus handoffs, held
+    /// lease input and queued policy input: each advances on the owner's clock.
+    input: bool,
+    /// Input receipts and the release barriers and handoffs they advance.
+    /// Arrivals ring the owner; locally held transitions keep a short budget.
+    input_receipts: bool,
+    /// A native frame, cursor completion or retirement in progress. Page flips
+    /// are observed by polling, not delivered.
+    frames: bool,
+    /// Topology preparation, application, presentation wait, rollback, retry
+    /// or a parked notice or publication.
+    output_topology: bool,
+    /// A VT switch, seat release or seat acquisition in progress.
+    seat: bool,
+    /// Active shell interaction keeps the existing capture service cadence;
+    /// its socket replies also wake the owner directly.
+    shell_interaction: bool,
+    /// Layout epochs, coordinator updates, session actions, restarts, reloads,
+    /// logout, deadline drains and quiescence.
+    lifecycle: bool,
+}
+
+impl OwnerHeldWork {
+    const fn any(self) -> bool {
+        self.input
+            || self.input_receipts
+            || self.frames
+            || self.output_topology
+            || self.seat
+            || self.shell_interaction
+            || self.lifecycle
+    }
+}
+
+/// Physical input alone no longer selects the short budget: its worker rings
+/// the owner. Sessions without physical input keep their prior budget, and
+/// proof sessions keep polling so their timed evidence is unchanged.
+fn owner_input_work_pending(
+    physical_input: bool,
+    proof_session: bool,
+    held: OwnerHeldWork,
+) -> bool {
+    physical_input && (proof_session || held.any())
 }
 
 fn native_frame_service_requires_owner_progress(request: &OutputFrameServiceRequest) -> bool {
@@ -362,6 +419,7 @@ fn run_session_loop_inner(
         explicit_pointer_grabs,
         frontend_service: frontend_service_sender,
         metadata_candidates: metadata_candidate_receiver,
+        owner_wake,
     } = channels;
     let SessionLoopResources {
         launch_origins,

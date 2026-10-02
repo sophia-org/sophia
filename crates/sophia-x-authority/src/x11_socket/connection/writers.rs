@@ -1,15 +1,19 @@
 #[cfg(unix)]
 struct X11InputEventWriter {
+    wake: Option<sophia_wake::Notifier>,
     stop: Arc<AtomicBool>,
     thread: std::thread::JoinHandle<Result<(), X11SetupSocketError>>,
 }
+#[cfg(unix)]
 struct X11ControlWriter {
+    wake: Option<sophia_wake::Notifier>,
     stop: Arc<AtomicBool>,
     thread: std::thread::JoinHandle<Result<(), X11SetupSocketError>>,
 }
 
 #[cfg(unix)]
 struct X11ProtocolEventWriter {
+    wake: Option<sophia_wake::Notifier>,
     stop: Arc<AtomicBool>,
     thread: std::thread::JoinHandle<Result<(), X11SetupSocketError>>,
 }
@@ -122,6 +126,11 @@ impl X11ClientWriters {
         {
             stop.store(true, Ordering::Release);
         }
+        for wake in [
+            self.input.as_ref().and_then(|writer| writer.wake.as_ref()),
+            self.control.as_ref().and_then(|writer| writer.wake.as_ref()),
+            self.protocol.as_ref().and_then(|writer| writer.wake.as_ref()),
+        ].into_iter().flatten() { wake.notify(); }
         if let Some(drain) = self.drain.as_ref() {
             drain.stop();
         }
@@ -358,11 +367,12 @@ fn spawn_x11_protocol_event_writer(
     receiver: impl Into<X11ProtocolReceiver>,
 ) -> Result<X11ProtocolEventWriter, X11SetupSocketError> {
     let receiver = receiver.into();
+    let wake = receiver.wake();
     let stop = Arc::new(AtomicBool::new(false));
     let writer_stop = stop.clone();
     let thread = std::thread::spawn(move || {
         while !writer_stop.load(Ordering::Acquire) {
-            let envelope = match receiver.receive(Duration::from_millis(10)) {
+            let envelope = match receiver.receive(&writer_stop) {
                 Ok(event) => event,
                 Err(RecvTimeoutError::Timeout) => continue,
                 Err(RecvTimeoutError::Disconnected) => return Ok(()),
@@ -415,7 +425,7 @@ fn spawn_x11_protocol_event_writer(
         }
         Ok(())
     });
-    Ok(X11ProtocolEventWriter { stop, thread })
+    Ok(X11ProtocolEventWriter { stop, wake, thread })
 }
 
 #[cfg(unix)]

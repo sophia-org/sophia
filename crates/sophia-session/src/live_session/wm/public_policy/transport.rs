@@ -12,6 +12,26 @@ impl LiveWmSession {
             })
             .wire_name()
     }
+
+    /// Gives the owner's wake to policy and output-role workers that lack it.
+    ///
+    /// Workers are replaced on start, restart, reload and control restart,
+    /// some of them on a helper thread. The owner calls this before every
+    /// idle wait instead, so no replacement path can be missed; attaching
+    /// rings once, so events published before it are still seen.
+    fn attach_owner_wake(&self, notifier: &sophia_wake::Notifier) {
+        let Some(public) = self.public.as_ref() else {
+            return;
+        };
+        if let Some(worker) = public.worker.as_ref()
+            && !worker.owner_wake_attached()
+        {
+            worker.set_owner_wake(notifier.clone());
+        }
+        if let Some(service) = public.output_service.as_ref() {
+            service.attach_owner_wake(notifier);
+        }
+    }
 }
 impl PublicPolicyTransport {
     fn socket_path(&self) -> &std::path::Path {

@@ -18,12 +18,66 @@ fn finish_clients(
     clients: [UnixStream; 2],
     sources: [&PrivateControlClientSource; 2],
 ) {
+    let controls = service.registry.control_completion().unwrap();
+    let lease = service.owner.lease();
+    let recipients: Vec<_> = lease
+        .custodies_of(&service.registry)
+        .into_iter()
+        .filter(|pin| {
+            controls.peer_debt_names(&pin.cleanup_record().connection_state) == Some(true)
+        })
+        .map(|pin| Arc::clone(&pin.custody))
+        .collect();
     drop(clients);
     assert!(waited_for(|| sources.iter().all(|source| source
         .teardown
         .lock()
         .unwrap()
         .finished)));
+    for custody in &recipients {
+        // Force the live reclaim window, which slower timed writer shutdown
+        // previously hid. Read the actual worker/discharge facts only.
+        assert!(waited_for(|| custody.join().result().is_some()
+            && custody
+                .cleanup_record()
+                .ordered_home
+                .storage_returned
+                .load(Ordering::Acquire)));
+    }
+    if !recipients.is_empty() {
+        // The second acknowledgement fences the first owner's whole turn,
+        // including its reclaim pass. A stale allocation update has no effect.
+        for _ in 0..2 {
+            let (acknowledgement, answer) = sync_channel(1);
+            service
+                .commands
+                .send(
+                    XServerFrontendServiceCommand::UpdateWindowAllocationPreferences {
+                        snapshot: crate::XWindowAllocationPreferences {
+                            generation: 0,
+                            topology_generation: 0,
+                            windows: Vec::new(),
+                        },
+                        acknowledgement,
+                    },
+                )
+                .unwrap();
+            assert_ne!(
+                answer.recv_timeout(Duration::from_secs(5)).unwrap(),
+                crate::XWindowAllocationUpdate::Applied
+            );
+        }
+        let kept = service.owner.inventory.kept.lock().unwrap();
+        for recipient in recipients {
+            assert!(
+                kept.places
+                    .iter()
+                    .flatten()
+                    .any(|pin| Arc::ptr_eq(pin, &recipient)),
+                "live reclaim discarded a recipient still named by cross-client output debt"
+            );
+        }
+    }
     service
         .commands
         .send(XServerFrontendServiceCommand::StopAndDisconnect)

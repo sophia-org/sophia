@@ -136,6 +136,10 @@ impl LiveMetadataShell {
         }
         if self.connected {
             if self.supervisor.poll()?.is_none() {
+                // The wire turns on every pass, so the readiness the owner's
+                // wait subscribed is consumed even when no service below has
+                // work for it.
+                self.transport.poll_io()?;
                 return Ok(LiveMetadataShellPoll::Healthy);
             }
             self.connected = false;
@@ -148,6 +152,21 @@ impl LiveMetadataShell {
             return Ok(LiveMetadataShellPoll::Unavailable);
         }
         self.reconnect_or_defer("retry")
+    }
+
+    /// Readiness of the shell's wire, borrowed for the owner's wait. The next
+    /// pass's `poll` turns that wire. Nothing is subscribed while paused, when
+    /// `poll` does not turn it.
+    pub(in crate::live_session) fn poll_fds(&self) -> Vec<rustix::event::PollFd<'_>> {
+        if !self.connected || self.presentation_paused {
+            return Vec::new();
+        }
+        self.transport.poll_fds()
+    }
+
+    /// Whether the wire holds records the next pass's turn can move.
+    pub(in crate::live_session) fn output_pending(&self) -> bool {
+        self.connected && !self.presentation_paused && self.transport.output_pending()
     }
 
     /// Keeps a shell connection from accepting obligations while native

@@ -241,3 +241,5 @@ fn interrupted_activation_is_unavailable_even_if_its_grab_fields_agree() {
     );
     assert_eq!(state.pointer_grab(ns), Some(reached.recipient()));
 }
+#[path = "../../tests/support/instance_pointer_lifetime.rs"]
+mod instance_pointer_lifetime;

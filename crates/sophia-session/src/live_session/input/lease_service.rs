@@ -3,7 +3,7 @@ fn service_application_route_leases(
     leases: &mut ApplicationRouteLeaseState,
     seat: sophia_protocol::SeatId,
     started: Instant,
-    frontend_service_sender: &SyncSender<XServerFrontendServiceCommand>,
+    frontend_service_sender: &dyn SessionSender<XServerFrontendServiceCommand>,
 ) -> Result<(), Box<dyn std::error::Error>> {
         let lease_updates = drain_application_route_lease_updates(
             receiver,

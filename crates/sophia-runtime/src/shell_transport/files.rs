@@ -95,6 +95,12 @@ impl ShellFileWire {
         self.server.export_mut()
     }
 
+    /// The server's readiness, borrowed for the owner's wait. The next
+    /// [`Self::turn`] consumes it.
+    pub(super) fn poll_fds(&self) -> Vec<rustix::event::PollFd<'_>> {
+        self.server.poll_fds()
+    }
+
     /// One nonblocking turn: whatever requests are ready, no waiting.
     pub(super) fn turn(&mut self) -> Result<(), ShellTransportError> {
         if !self.server.turn(Some(Duration::ZERO)).map_err(io_error)?

@@ -91,10 +91,15 @@ let mut next_surface_sample = started + Duration::from_secs(1);
 let mut surface_samples = 0_u32;
 let mut native_frame_service_deadline_armed = false;
 let mut native_frame_idle_service_cycles = 0_u8;
+// Handed to producers the owner replaces while it runs.
+let owner_notifier = owner_wake.notifier();
 let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
     'session: loop {
-        // Flush the preceding turn before any early-continue path. Idle input
-        // waits are bounded by authority_wait_timeout (at most 25 ms).
+        // Before any producer is inspected, so a ring that lands during this
+        // pass stays readable and ends the pass's wait at once. Idle waits
+        // are bounded by authority_wait_timeout (at most 25 ms).
+        owner_wake.begin_pass()?;
+        // Flush the preceding turn before any early-continue path.
         if let Some(wm) = wm_session.as_mut() {
             wm.service_inspection(logout_requested || session_quiescence.is_some());
             if wm.public.as_ref().is_none_or(|public| public.inspection.is_none()) {

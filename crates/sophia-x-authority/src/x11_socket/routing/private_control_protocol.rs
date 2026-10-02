@@ -42,7 +42,7 @@ impl PrivateControlProtocolReceipt {
 #[cfg(unix)]
 #[derive(Clone)]
 struct X11ProtocolSender {
-    sender: SyncSender<X11ProtocolEvent>,
+    sender: sophia_wake::channel::Sender<X11ProtocolEvent>,
     /// Raised as an event is queued; the connection's reply ordering reads
     /// it.
     watermark: Arc<X11ProtocolWatermark>,
@@ -75,6 +75,13 @@ impl<T> X11RouteSender<T> for SyncSender<T> {
 }
 
 #[cfg(unix)]
+impl<T> X11RouteSender<T> for sophia_wake::channel::Sender<T> {
+    fn try_route_send(self, value: T) -> Result<(), TrySendError<T>> {
+        self.try_send(value)
+    }
+}
+
+#[cfg(unix)]
 impl X11RouteSender<XClientEvent> for X11ProtocolSender {
     fn try_route_send(self, value: XClientEvent) -> Result<(), TrySendError<XClientEvent>> {
         self.try_send(value)
@@ -84,7 +91,7 @@ impl X11RouteSender<XClientEvent> for X11ProtocolSender {
 #[cfg(unix)]
 enum X11ProtocolReceiver {
     Tracked {
-        receiver: Receiver<X11ProtocolEvent>,
+        receiver: sophia_wake::channel::Receiver<X11ProtocolEvent>,
         registration: Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
         watermark: Arc<X11ProtocolWatermark>,
     },
@@ -110,12 +117,22 @@ impl X11ProtocolReceiver {
         }
     }
 
-    fn receive(&self, timeout: Duration) -> Result<X11ProtocolEvent, RecvTimeoutError> {
+    fn wake(&self) -> Option<sophia_wake::Notifier> {
         match self {
-            Self::Tracked { receiver, .. } => receiver.recv_timeout(timeout),
+            Self::Tracked { receiver, .. } => receiver.notifier(),
+            #[cfg(all(test, unix))]
+            Self::Ordinary(_) => None,
+        }
+    }
+
+    fn receive(&self, stop: &AtomicBool) -> Result<X11ProtocolEvent, RecvTimeoutError> {
+        match self {
+            Self::Tracked { receiver, .. } => receiver.recv_until_stopped(stop)
+                .map_err(|_| RecvTimeoutError::Disconnected)?
+                .ok_or(RecvTimeoutError::Disconnected),
             #[cfg(all(test, unix))]
             Self::Ordinary(receiver) => receiver
-                .recv_timeout(timeout)
+                .recv_timeout(Duration::from_millis(10))
                 .map(X11ProtocolEvent::untracked),
         }
     }
@@ -178,7 +195,10 @@ impl X11ProtocolReceiver {
         }
     }
     fn recv_timeout(&self, timeout: Duration) -> Result<XClientEvent, RecvTimeoutError> {
-        self.receive(timeout).map(|event| event.event)
+        match self {
+            Self::Tracked { receiver, .. } => receiver.recv_timeout(timeout).map(|event| event.event),
+            Self::Ordinary(receiver) => receiver.recv_timeout(timeout),
+        }
     }
     fn try_recv(&self) -> Result<XClientEvent, TryRecvError> {
         match self {

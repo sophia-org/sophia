@@ -89,6 +89,9 @@ impl Connection {
                         Ordering::Acquire,
                     );
                 }
+                // The owner's claim waits on this recheck either way. Ring
+                // after the phase is published so its next claim sees it.
+                context.owner_wake.notify();
             }
             if now.duration_since(ticket.received) >= Duration::from_secs(10) {
                 ticket.expire();
@@ -286,9 +289,10 @@ struct Context<'a> {
     domain: &'a HostDomain,
     session_id: [u64; 2],
     view: &'a Mutex<View>,
-    requests: &'a SyncSender<ControlTicket>,
+    requests: &'a sophia_wake::SignalSender<ControlTicket>,
     active: &'a mut Vec<ControlTicket>,
     wake: &'a Arc<UnixStream>,
+    owner_wake: &'a sophia_wake::WakeSlot,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -300,7 +304,8 @@ pub(super) fn run(
     session_id: [u64; 2],
     view: Arc<Mutex<View>>,
     stop: Arc<AtomicBool>,
-    requests: SyncSender<ControlTicket>,
+    requests: sophia_wake::SignalSender<ControlTicket>,
+    owner_wake: sophia_wake::WakeSlot,
 ) {
     let mut peers = Vec::<Connection>::new();
     let mut active = Vec::<ControlTicket>::new();
@@ -383,6 +388,7 @@ pub(super) fn run(
             requests: &requests,
             active: &mut active,
             wake: &wake_tx,
+            owner_wake: &owner_wake,
         };
         peers.retain_mut(|peer| peer.service(&mut context).unwrap_or(false));
         if !peers.is_empty() {

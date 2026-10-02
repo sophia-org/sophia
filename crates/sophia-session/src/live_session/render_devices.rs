@@ -73,6 +73,15 @@ pub(super) struct LiveRenderDeviceCoordinator {
 }
 
 impl LiveRenderDeviceCoordinator {
+    /// Preparation and acknowledgements are local channels without an owner
+    /// wake. Keep the active service cadence until the transition settles.
+    pub(super) fn owner_work_pending(&self) -> bool {
+        self.dirty
+            || self.preparation.is_some()
+            || self.install.is_some()
+            || !self.losses.is_empty()
+    }
+
     pub(super) fn shell_gpu_device(&self) -> Result<Identity, String> {
         if !self.active_available {
             return Err("the active render device is unavailable".into());
@@ -175,7 +184,7 @@ impl LiveRenderDeviceCoordinator {
     pub(super) fn poll(
         &mut self,
         now: Instant,
-        frontend: &SyncSender<Command>,
+        frontend: &dyn super::SessionSender<Command>,
     ) -> Result<(), String> {
         self.poll_losses(now, frontend)?;
         match self.prepared.try_recv() {
@@ -262,7 +271,11 @@ impl LiveRenderDeviceCoordinator {
         tracing::warn!(ticket=self.ticket, %reason, "render-device preparation deferred");
     }
 
-    fn poll_losses(&mut self, now: Instant, frontend: &SyncSender<Command>) -> Result<(), String> {
+    fn poll_losses(
+        &mut self,
+        now: Instant,
+        frontend: &dyn super::SessionSender<Command>,
+    ) -> Result<(), String> {
         let mut completed = Vec::new();
         for (&generation, acknowledgement) in &mut self.losses {
             if let Some((receiver, deadline)) = acknowledgement {
@@ -299,7 +312,11 @@ impl LiveRenderDeviceCoordinator {
         Ok(())
     }
 
-    fn poll_install(&mut self, now: Instant, frontend: &SyncSender<Command>) -> Result<(), String> {
+    fn poll_install(
+        &mut self,
+        now: Instant,
+        frontend: &dyn super::SessionSender<Command>,
+    ) -> Result<(), String> {
         let Some(mut install) = self.install.take() else {
             return Ok(());
         };

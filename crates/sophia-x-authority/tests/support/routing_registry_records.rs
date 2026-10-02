@@ -220,8 +220,8 @@ fn a_registration_with_no_registry_to_answer_to_permits_no_effect() {
     // A writer holding a registration whose registry it cannot reach cannot
     // establish who owns the outcome, so it may not produce one.
     let orphaned = X11ControlChannels::ClientBound {
-        receiver: channel().1,
-        acknowledgements: sync_channel(1).0,
+        receiver: channel().1.into(),
+        acknowledgements: sync_channel(1).0.into(),
         completion: None,
     };
     assert_eq!(
@@ -434,8 +434,8 @@ fn an_acknowledgement_the_record_refuses_never_reaches_the_receiver() {
     let registry = crate::ControlCompletionRegistry::with_capacity(4).expect("an unused origin");
     let (acknowledgements, acks) = sync_channel(4);
     let channels = X11ControlChannels::ClientBound {
-        receiver: channel().1,
-        acknowledgements,
+        receiver: channel().1.into(),
+        acknowledgements: acknowledgements.into(),
         completion: Some(registry.clone()),
     };
     let command = configure(client, surface, 28001);
@@ -509,8 +509,8 @@ fn a_contradicting_outcome_is_refused_before_it_is_sent() {
         ))
         .expect("the empty slot");
     let channels = X11ControlChannels::ClientBound {
-        receiver: channel().1,
-        acknowledgements,
+        receiver: channel().1.into(),
+        acknowledgements: acknowledgements.into(),
         completion: Some(registry.clone()),
     };
     let command = configure(client, surface, 29001);
@@ -690,8 +690,8 @@ fn no_outcome_is_published_for_a_record_its_producer_still_owns() {
     let registry = crate::ControlCompletionRegistry::with_capacity(4).expect("an unused origin");
     let (acknowledgements, acks) = sync_channel(4);
     let channels = X11ControlChannels::ClientBound {
-        receiver: channel().1,
-        acknowledgements,
+        receiver: channel().1.into(),
+        acknowledgements: acknowledgements.into(),
         completion: Some(registry.clone()),
     };
     let command = configure(client, surface, 30001);
@@ -834,6 +834,7 @@ fn stopping_one_writer_does_not_leave_the_others_running() {
     // An input writer that fails the moment it is joined, ahead of the others.
     let failing_stop = Arc::new(AtomicBool::new(false));
     let failing = X11InputEventWriter {
+        wake: None,
         stop: failing_stop.clone(),
         thread: std::thread::spawn(|| {
             Err(X11SetupSocketError::new("an input writer that failed"))

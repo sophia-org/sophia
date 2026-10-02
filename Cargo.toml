@@ -14,6 +14,7 @@ members = [
     "crates/sophia-renderer-native-egl",
     "crates/sophia-renderer-live",
     "crates/sophia-runtime",
+    "crates/sophia-wake",
     "crates/sophia-session",
     "crates/sophia-sysv-shm",
     "crates/sophia-9p",
@@ -24,6 +25,7 @@ members = [
     "crates/xtask",
 ]
 default-members = [
+    "crates/sophia-wake",
     "crates/sophia-cli",
     "crates/sophia-backend-live",
     "crates/sophia-broker",

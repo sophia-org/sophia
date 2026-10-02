@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU16, Ordering};
 use std::sync::{
     Arc, Mutex,
-    mpsc::{Receiver, SyncSender, sync_channel},
+    mpsc::{Receiver, sync_channel},
 };
 use std::thread::JoinHandle;
 use std::time::Instant;
@@ -118,6 +118,9 @@ pub struct ControlService {
     requests: Receiver<ControlTicket>,
     stop: Arc<AtomicBool>,
     wake: Arc<UnixStream>,
+    /// The owner's wake. The worker rings it after queuing a ticket, after
+    /// settling a claim's admission recheck, and when it stops.
+    owner_wake: sophia_wake::WakeSlot,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -169,12 +172,17 @@ impl ControlService {
             }));
             let stop = Arc::new(AtomicBool::new(false));
             let (tx, requests) = sync_channel(CONTROL_MAX_PENDING);
+            let owner_wake = sophia_wake::WakeSlot::default();
+            let thread_owner_wake = owner_wake.clone();
             let thread_view = view.clone();
             let thread_stop = stop.clone();
             let thread_wake = wake.clone();
             let thread = std::thread::Builder::new()
                 .name("sophia-control-v1".into())
                 .spawn(move || {
+                    // Dropped when the worker returns, which rings the owner
+                    // after the queue is already disconnected.
+                    let requests = sophia_wake::SignalSender::new(tx, thread_owner_wake.clone());
                     transport::run(
                         listener,
                         wake_rx,
@@ -183,7 +191,8 @@ impl ControlService {
                         session_id,
                         thread_view,
                         thread_stop,
-                        tx,
+                        requests,
+                        thread_owner_wake,
                     );
                 })?;
             Ok(Self {
@@ -193,6 +202,7 @@ impl ControlService {
                 requests,
                 stop,
                 wake,
+                owner_wake,
                 thread: Some(thread),
             })
         })();
@@ -223,6 +233,11 @@ impl ControlService {
     }
     pub fn try_request(&self) -> Option<ControlTicket> {
         self.requests.try_recv().ok()
+    }
+    /// Installs the owner's wake. Installation rings once, so a ticket queued
+    /// before the owner attached is not left for the next one.
+    pub fn set_owner_wake(&self, notifier: sophia_wake::Notifier) {
+        self.owner_wake.set(notifier);
     }
     pub fn is_running(&self) -> bool {
         self.thread.as_ref().is_some_and(|t| !t.is_finished())

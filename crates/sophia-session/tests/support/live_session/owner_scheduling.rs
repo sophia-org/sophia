@@ -1,5 +1,5 @@
 #[test]
-fn physical_input_selects_the_low_latency_owner_wait_budget() {
+fn held_owner_work_selects_the_low_latency_owner_wait_budget() {
     assert_eq!(
         authority_wait_timeout(true, false, false),
         Duration::from_millis(1)
@@ -15,6 +15,48 @@ fn physical_input_selects_the_low_latency_owner_wait_budget() {
     assert_eq!(
         authority_wait_timeout(false, false, false),
         Duration::from_millis(25)
+    );
+}
+
+#[test]
+fn physical_input_alone_lets_an_idle_owner_sleep_until_rung() {
+    let budget = |physical, proof, held| {
+        authority_wait_timeout(
+            owner_input_work_pending(physical, proof, held),
+            false,
+            false,
+        )
+    };
+    let idle = OwnerHeldWork::default();
+    // The input worker rings the owner, so an attached seat is not a reason
+    // to poll. This was a 1 ms budget whenever physical input existed.
+    assert_eq!(budget(true, false, idle), Duration::from_millis(25));
+    // Proof sessions keep their established timing.
+    assert_eq!(budget(true, true, idle), Duration::from_millis(1));
+    // Each class of owner-held work keeps the short service wait, because
+    // nothing rings when it comes due.
+    let held = [
+        OwnerHeldWork { input: true, ..idle },
+        OwnerHeldWork { input_receipts: true, ..idle },
+        OwnerHeldWork { frames: true, ..idle },
+        OwnerHeldWork { output_topology: true, ..idle },
+        OwnerHeldWork { seat: true, ..idle },
+        OwnerHeldWork { shell_interaction: true, ..idle },
+        OwnerHeldWork { lifecycle: true, ..idle },
+    ];
+    for work in held {
+        assert_eq!(budget(true, false, work), Duration::from_millis(1), "{work:?}");
+        // Without physical input the owner keeps its prior budget.
+        assert_eq!(budget(false, false, work), Duration::from_millis(25), "{work:?}");
+    }
+    // Cursor and control work keep the short wait whatever else holds.
+    assert_eq!(
+        authority_wait_timeout(owner_input_work_pending(true, false, idle), true, false),
+        Duration::from_millis(1)
+    );
+    assert_eq!(
+        authority_wait_timeout(owner_input_work_pending(true, false, idle), false, true),
+        Duration::from_millis(1)
     );
 }
 

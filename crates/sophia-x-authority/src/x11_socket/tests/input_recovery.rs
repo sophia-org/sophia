@@ -279,7 +279,7 @@ fn input_recovery_writer_exit_settles_current_and_queued_deliveries() {
     }
     let (_sender, receiver) = sync_channel(2);
     let receiver = X11InputEventReceiver::Routed {
-        receiver,
+        receiver: receiver.into(),
         deliveries: None,
         recovery: Some(recovery.clone()),
     };

@@ -1,6 +1,9 @@
-use super::{SessionQuiescence, XAuthorityObservedTransactionBatch, XServerFrontendServiceCommand};
+use super::{
+    SessionQuiescence, SessionSender, XAuthorityObservedTransactionBatch,
+    XServerFrontendServiceCommand,
+};
 use std::collections::VecDeque;
-use std::sync::mpsc::{Receiver, SendError, SyncSender, TryRecvError};
+use std::sync::mpsc::{Receiver, SendError, TryRecvError};
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -89,7 +92,7 @@ pub(super) fn observe_authority_ingress(
 }
 
 fn send_frontend_stop(
-    sender: &SyncSender<XServerFrontendServiceCommand>,
+    sender: &dyn SessionSender<XServerFrontendServiceCommand>,
     stopped: &mut bool,
     command: XServerFrontendServiceCommand,
 ) -> Result<(), SendError<XServerFrontendServiceCommand>> {
@@ -103,7 +106,7 @@ fn send_frontend_stop(
 
 /// Stops frontend admission once. Fatal cleanup terminates clients separately.
 pub(super) fn stop_frontend_intake(
-    sender: &SyncSender<XServerFrontendServiceCommand>,
+    sender: &dyn SessionSender<XServerFrontendServiceCommand>,
     stopped: &mut bool,
 ) -> Result<(), SendError<XServerFrontendServiceCommand>> {
     send_frontend_stop(
@@ -116,7 +119,7 @@ pub(super) fn stop_frontend_intake(
 /// Closes client streams without cancelling their accepted ordered work.
 /// Merely closing admission leaves a live browser holding quiescence open.
 pub(super) fn disconnect_frontend_for_drain(
-    sender: &SyncSender<XServerFrontendServiceCommand>,
+    sender: &dyn SessionSender<XServerFrontendServiceCommand>,
     stopped: &mut bool,
 ) -> Result<(), SendError<XServerFrontendServiceCommand>> {
     send_frontend_stop(
@@ -130,7 +133,7 @@ pub(super) fn disconnect_frontend_for_drain(
 /// A failed send remains fatal and never reopens the publisher.
 pub(super) fn begin_frontend_quiescence(
     publisher: &mut super::window_allocation::LiveWindowAllocationPublisher,
-    sender: &SyncSender<XServerFrontendServiceCommand>,
+    sender: &dyn SessionSender<XServerFrontendServiceCommand>,
     stopped: &mut bool,
 ) -> Result<(), SendError<XServerFrontendServiceCommand>> {
     publisher.begin_quiescence();

@@ -342,7 +342,39 @@ impl ShellComponentSession {
                 }
             }
         }
+        // Every connected wire turns once per visit, so the readiness the
+        // owner's wait subscribed is consumed even when no role service has
+        // work for that wire. A failure ends that component as a service
+        // failure would.
+        for (key, error) in self.processes.turn_connected().into_iter().flatten() {
+            crate::session_eprintln!(
+                "sophia_shell_component schema=1 status=service_failed slot={} reason={error}",
+                key.slot
+            );
+            self.stop(key)?;
+            if self.record_service_failure(key.slot, std::time::Instant::now())? {
+                crate::session_eprintln!(
+                    "sophia_shell_component schema=1 status=start_backoff slot={}",
+                    key.slot
+                );
+            }
+        }
         Ok(visit)
+    }
+
+    /// Readiness of the wires `poll` visits, borrowed for the owner's wait.
+    /// Nothing is subscribed while service is paused or stopping: `poll`
+    /// then closes those wires rather than turning them.
+    pub fn poll_fds(&self) -> Vec<rustix::event::PollFd<'_>> {
+        if !self.available || self.stopping {
+            return Vec::new();
+        }
+        self.processes.poll_fds()
+    }
+
+    /// Whether a connected wire holds records the next visit can move.
+    pub fn output_pending(&self) -> bool {
+        self.available && !self.stopping && self.processes.output_pending()
     }
 
     /// Exact connected attempt plus current presentation permission is required

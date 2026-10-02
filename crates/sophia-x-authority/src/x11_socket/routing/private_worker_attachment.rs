@@ -199,7 +199,6 @@ impl PrivateXServerFrontend {
     fn uncollected_mark(&self) -> Arc<Mutex<Vec<usize>>> {
         Arc::clone(&self.uncollected)
     }
-
 }
 
 #[cfg(unix)]
@@ -431,9 +430,7 @@ fn reclaim_idle_departures(
         ) {
             continue;
         }
-        if PrivateReapingRecord::bound_to(&pin).reap_finished().reaped
-            == PrivateReaped::Joined
-        {
+        if PrivateReapingRecord::bound_to(&pin).reap_finished().reaped == PrivateReaped::Joined {
             progressed += 1;
         }
     }
@@ -459,13 +456,9 @@ fn reclaim_idle_departures(
     // connection. The next idle turn continues; nothing here loops to force
     // it.
     //
-    // WITHOUT THE INSTANCE-WIDE GATES, AND WITH THE ONE THING THEY PROTECTED.
-    // The invocation-end visit retires a custody only once the invocation has
-    // completed and no control record is outstanding anywhere. Neither is a
-    // fact about this custody. What the control gate was protecting is real:
-    // control cleanup pairs each record with its connection's custody slot,
-    // so a custody must outlive its OWN client's unanswered records. So that is
-    // what is asked, per client, and nothing about anybody else's.
+    // Keep custody for its own unanswered controls AND other clients' output
+    // that names this exact recipient. Faster worker teardown can open this
+    // window before the source has proved a failed peer write terminated.
     let controls = registry.control_completion();
     for pin in service.custodies_of(registry) {
         let client = pin.cleanup_record().client;
@@ -473,6 +466,13 @@ fn reclaim_idle_departures(
             .as_ref()
             .and_then(|controls| controls.outstanding_for(client))
             != Some(0)
+        {
+            continue;
+        }
+        if controls
+            .as_ref()
+            .and_then(|controls| controls.peer_debt_names(&pin.cleanup_record().connection_state))
+            != Some(false)
         {
             continue;
         }

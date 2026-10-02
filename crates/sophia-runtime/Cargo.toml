@@ -7,6 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+sophia-wake = { path = "../sophia-wake" }
 rustix = { version = "1.1", default-features = false, features = ["net", "process", "std", "event", "rand"] }
 sophia-linux-peer = { path = "../sophia-linux-peer" }
 sophia-9p = { path = "../sophia-9p" }

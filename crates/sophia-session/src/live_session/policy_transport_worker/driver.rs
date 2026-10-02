@@ -94,7 +94,8 @@ pub(super) fn run_policy_transport(
     connection_epoch: u64,
     profile_admission: Option<PolicyProfileAdmission>,
     commands: &Receiver<PolicyTransportCommand>,
-    events: &SyncSender<PolicyTransportEvent>,
+    // The worker's sender rings the Session owner after each publication.
+    events: &impl crate::live_session::SessionSender<PolicyTransportEvent>,
 ) -> Result<(), String> {
     transport.admit(
         PolicyAdmissionPermit(()),

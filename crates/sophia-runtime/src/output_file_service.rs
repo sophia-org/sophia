@@ -39,6 +39,9 @@ pub struct OutputFileService {
     pause: SyncSender<SyncSender<Vec<AdmittedOutputProposal>>>,
     events: Receiver<OutputFileServiceEvent>,
     stopped: Arc<AtomicBool>,
+    /// The owner's wake, rung after each published event and once the event
+    /// queue has disconnected.
+    owner_wake: sophia_wake::WakeSlot,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -55,6 +58,8 @@ impl OutputFileService {
         let (outgoing, events) = mpsc::sync_channel(HANDOFF_CAPACITY);
         let stopped = Arc::new(AtomicBool::new(false));
         let stop = stopped.clone();
+        let owner_wake = sophia_wake::WakeSlot::default();
+        let worker_owner_wake = owner_wake.clone();
         let thread = std::thread::Builder::new()
             .name("sophia-output-files".into())
             .spawn(move || {
@@ -64,6 +69,7 @@ impl OutputFileService {
                     publish_pending: false,
                     paused: false,
                     pending: VecDeque::with_capacity(2),
+                    owner_wake: worker_owner_wake,
                 };
                 if let Err(message) = worker.run(&incoming, &pauses, &outgoing, &stop) {
                     let _ = worker.transport.disconnect();
@@ -72,21 +78,42 @@ impl OutputFileService {
                     let mut failed = OutputFileServiceEvent::Failed { message };
                     while !stop.load(Ordering::Acquire) {
                         match outgoing.try_send(failed) {
-                            Ok(()) | Err(TrySendError::Disconnected(_)) => break,
+                            Ok(()) => {
+                                worker.owner_wake.notify();
+                                break;
+                            }
+                            Err(TrySendError::Disconnected(_)) => break,
                             Err(TrySendError::Full(event)) => failed = event,
                         }
                         std::thread::sleep(Duration::from_millis(1));
                     }
                 }
                 let _ = worker.transport.disconnect();
+                // Disconnect first, so a woken owner already sees it.
+                drop(outgoing);
+                worker.owner_wake.notify();
             })?;
         Ok(Self {
             commands,
             pause,
             events,
             stopped,
+            owner_wake,
             thread: Some(thread),
         })
+    }
+
+    /// Installs the owner's wake. Installation rings once, so an event queued
+    /// before the owner attached is not left for the next one.
+    pub fn set_owner_wake(&self, notifier: sophia_wake::Notifier) {
+        self.owner_wake.set(notifier);
+    }
+
+    /// Whether an owner wake is installed. The owner attaches its wake to a
+    /// replacement service on its next turn, and asks this first so it does
+    /// not ring itself on every turn.
+    pub fn owner_wake_attached(&self) -> bool {
+        self.owner_wake.attached()
     }
 
     /// Full and disconnected queues return the command without taking custody.
@@ -163,6 +190,7 @@ struct Worker {
     paused: bool,
     // One unsent event plus, at most, a disconnect while that event waits.
     pending: VecDeque<OutputFileServiceEvent>,
+    owner_wake: sophia_wake::WakeSlot,
 }
 
 impl Worker {
@@ -192,7 +220,7 @@ impl Worker {
             }
             while let Some(event) = self.pending.pop_front() {
                 match events.try_send(event) {
-                    Ok(()) => {}
+                    Ok(()) => self.owner_wake.notify(),
                     Err(TrySendError::Disconnected(_)) => return Ok(()),
                     Err(TrySendError::Full(event)) => {
                         self.pending.push_front(event);

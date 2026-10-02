@@ -51,7 +51,13 @@ fn drive_routed_service(
 ) -> Result<(), X11SetupSocketError> {
     let mut accepting = true;
     let mut raster_fallbacks = XRasterFallbackCoalescer::default();
+    let wake = sophia_wake::Wake::new()
+        .map_err(|error| X11SetupSocketError::new(format!("frontend wake: {error}")))?;
+    frontend.service_wake.set(wake.notifier());
+    broker.broker()?.service_wake.set(wake.notifier());
+    if let Some(slot) = &frontend.config.service_wake { slot.set(wake.notifier()); }
     loop {
+        wake.clear().map_err(|error| X11SetupSocketError::new(error.to_string()))?;
         let mut progressed = false;
         match service_commands.try_recv() {
             Ok(XServerFrontendServiceCommand::UpdateWindowAllocationPreferences { snapshot, acknowledgement }) => {
@@ -259,7 +265,23 @@ fn drive_routed_service(
             return Ok(());
         }
         if !progressed {
-            std::thread::sleep(Duration::from_millis(1));
+            // Legacy raw producers and the private budgeted runner retain
+            // their service cadence until all their ingress can notify.
+            if frontend.config.service_wake.is_none() || !broker.event_driven_idle() {
+                std::thread::sleep(Duration::from_millis(1));
+                continue;
+            }
+            let timed = pending_raster_egress.is_some()
+                || !frontend.pending_admission_revocations.is_empty();
+            let deadline = timed.then(|| Instant::now() + Duration::from_millis(1));
+            let mut fds = vec![rustix::event::PollFd::new(&wake, rustix::event::PollFlags::IN)];
+            // A readable backlog at capacity is not runnable work. Departing
+            // workers ring the owner when an admission slot becomes available.
+            if accepting && frontend.active_client_worker_count() < frontend.config.max_concurrent_clients().get() {
+                fds.push(rustix::event::PollFd::new(&frontend.listener, rustix::event::PollFlags::IN));
+            }
+            sophia_wake::wait(&mut fds, deadline)
+                .map_err(|error| X11SetupSocketError::new(format!("frontend wait: {error}")))?;
         }
     }
 }

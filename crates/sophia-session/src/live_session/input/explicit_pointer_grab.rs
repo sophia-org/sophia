@@ -56,7 +56,7 @@ pub(super) fn drain_explicit_pointer_grab_controls(
     pending: &mut ExplicitPointerGrabQueue,
     layout: &PersistentLiveLayout,
     held_input: &mut PendingLeaseInput,
-    release_sender: &SyncSender<XAuthorityRouteLeaseRelease>,
+    release_sender: &dyn SessionSender<XAuthorityRouteLeaseRelease>,
     seat_owned: bool,
     focus: &InputFocusState,
     seat: SeatId,

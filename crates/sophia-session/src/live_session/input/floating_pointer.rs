@@ -88,6 +88,10 @@ fn floating_pointer_interaction(
 }
 
 impl FloatingPointerGestureState {
+    pub(super) fn active(&self) -> bool {
+        self.active.is_some()
+    }
+
     pub(super) fn cancel(&mut self) -> Option<FloatingPointerPolicyInteraction> {
         let active = self.active.take()?;
         Some(floating_pointer_interaction(

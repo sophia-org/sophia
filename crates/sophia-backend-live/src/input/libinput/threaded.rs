@@ -1,26 +1,27 @@
 use std::collections::VecDeque;
+use std::os::fd::{AsFd, BorrowedFd};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TryRecvError, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use rustix::event::{PollFd, PollFlags, Timespec, poll};
+use rustix::event::{PollFd, PollFlags};
 use sophia_protocol::{
     BoundedCapacity, CapacityAcquisitionLedger, CapacityBatchAttempt, CapacityBatchOutcome,
     CapacityEscalation, CapacityResourceId, CapacitySaturationDisposition,
     CapacitySaturationReport, CapacityWait, drive_capacity_batch,
 };
+use sophia_wake::{Notifier, Wake, WakeSlot};
 
 use crate::prelude::*;
 
 use super::{
-    NativeLibinputDeviceMap, NativeLibinputOpenError, NativeLibinputPointerPolicy,
-    NativeLibinputPolicyReport, open_native_libinput_path_poller_with_pointer_policy,
+    NativeLibinputDeviceMap, NativeLibinputEventPoller, NativeLibinputEventReader,
+    NativeLibinputOpenError, NativeLibinputPointerPolicy, NativeLibinputPolicyReport,
+    open_native_libinput_path_poller_with_pointer_policy,
     open_native_libinput_udev_poller_with_pointer_policy,
 };
-
-const INPUT_THREAD_POLL_MSEC: i64 = 1;
 
 const NATIVE_INPUT_ACQUISITION: CapacityResourceId =
     CapacityResourceId("backend_live.input.acquisition");
@@ -90,6 +91,10 @@ struct QueuedInputEvent {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ThreadedNativeInputStats {
+    /// The longest interval between two worker reads. The worker sleeps
+    /// without a timeout while the seat is idle, so this includes intentional
+    /// idle time and is not a dispatch latency: a quiet seat reports a large
+    /// gap by design.
     pub max_dispatch_gap_msec: usize,
     pub max_queue_depth: usize,
     pub max_queue_dwell_msec: usize,
@@ -107,6 +112,10 @@ pub struct ThreadedNativeLibinputEventPoller {
     health: Receiver<Result<(), String>>,
     policy: Arc<std::sync::Mutex<NativeLibinputPolicyReport>>,
     stop: Arc<AtomicBool>,
+    /// Rings the worker out of its untimed wait; the flag alone is never seen.
+    stop_wake: Notifier,
+    /// The consumer's wake, rung by the worker whenever it publishes.
+    owner_wake: WakeSlot,
     queue_depth: Arc<AtomicUsize>,
     max_queue_depth: Arc<AtomicUsize>,
     max_dispatch_gap_msec: Arc<AtomicUsize>,
@@ -119,6 +128,15 @@ pub struct ThreadedNativeLibinputEventPoller {
 }
 
 impl ThreadedNativeLibinputEventPoller {
+    /// Installs the consumer's wake. The worker rings it after each batch it
+    /// publishes (events, the inventory changes they carry, saturation), when
+    /// a deferral starts waiting on a full queue, and when it stops or fails.
+    /// Installation itself rings once, so anything published before the
+    /// consumer attached is not left for the next device event.
+    pub fn set_owner_wake(&self, notifier: Notifier) {
+        self.owner_wake.set(notifier);
+    }
+
     pub fn stats(&self) -> ThreadedNativeInputStats {
         ThreadedNativeInputStats {
             max_dispatch_gap_msec: self.max_dispatch_gap_msec.load(Ordering::Acquire),
@@ -201,6 +219,11 @@ impl NonBlockingInputPoller for ThreadedNativeLibinputEventPoller {
                 });
             packets.push(queued.packet);
         }
+        // The worker rings once per batch, and a ring is coalesced. What this
+        // call leaves queued would otherwise wait for the next device event.
+        if packets.len() >= self.max_read_per_poll && self.queue_depth.load(Ordering::Acquire) > 0 {
+            self.owner_wake.notify();
+        }
         self.worker_error()?;
         Ok(packets)
     }
@@ -209,6 +232,7 @@ impl NonBlockingInputPoller for ThreadedNativeLibinputEventPoller {
 impl Drop for ThreadedNativeLibinputEventPoller {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
+        self.stop_wake.notify();
         if let Some(worker) = self.worker.take() {
             let _ = worker.join();
         }
@@ -335,6 +359,12 @@ fn open_threaded_native_libinput_poller(
 ) -> Result<ThreadedNativeLibinputEventPoller, NativeLibinputOpenError> {
     let max_read_per_poll = max_read_per_poll.clamp(1, 256);
     let queue_capacity = queue_capacity.clamp(1, 4_096);
+    // Without a stop wake the worker could never be joined from its untimed
+    // wait, so failing to make one is failing to open.
+    let stop_wake = Wake::new().map_err(|_| NativeLibinputOpenError::DeviceUnavailable)?;
+    let stop_notifier = stop_wake.notifier();
+    let owner_wake = WakeSlot::default();
+    let worker_owner_wake = owner_wake.clone();
     let (sender, receiver) = sync_channel(queue_capacity);
     let (startup_sender, startup_receiver) = sync_channel(1);
     let (health_sender, health) = sync_channel(1);
@@ -395,6 +425,8 @@ fn open_threaded_native_libinput_poller(
             &mut poller,
             sender,
             &worker_stop,
+            &stop_wake,
+            &worker_owner_wake,
             &worker_depth,
             &worker_max_depth,
             &worker_max_gap,
@@ -402,6 +434,8 @@ fn open_threaded_native_libinput_poller(
             capacity,
         );
         let _ = health_sender.try_send(result);
+        // Publish the outcome first: a consumer woken here must find it.
+        worker_owner_wake.notify();
     });
     match startup_receiver.recv_timeout(Duration::from_secs(5)) {
         Ok(Ok((_policy, policy, inventory))) => Ok(ThreadedNativeLibinputEventPoller {
@@ -409,6 +443,8 @@ fn open_threaded_native_libinput_poller(
             health,
             policy,
             stop,
+            stop_wake: stop_notifier,
+            owner_wake,
             queue_depth,
             max_queue_depth,
             max_dispatch_gap_msec,
@@ -425,38 +461,93 @@ fn open_threaded_native_libinput_poller(
         }
         Err(_) => {
             stop.store(true, Ordering::Release);
+            stop_notifier.notify();
             let _ = worker.join();
             Err(NativeLibinputOpenError::DeviceUnavailable)
         }
     }
 }
 
+/// The worker's view of libinput: a descriptor that turns readable when the
+/// kernel has something for it, and a bounded read of what libinput holds.
+/// Tests drive the production loop through this with descriptors and batches
+/// they control.
+trait AcquisitionSource {
+    fn readiness(&self) -> BorrowedFd<'_>;
+    /// Reads at most [`Self::batch_limit`] events.
+    fn read_batch(&mut self) -> io::Result<Vec<InputEventPacket>>;
+    fn batch_limit(&self) -> usize;
+}
+
+impl AcquisitionSource for NativeLibinputEventPoller<NativeLibinputEventReader> {
+    fn readiness(&self) -> BorrowedFd<'_> {
+        self.reader().libinput_mut_ref().as_fd()
+    }
+
+    fn read_batch(&mut self) -> io::Result<Vec<InputEventPacket>> {
+        self.poll_ready()
+    }
+
+    fn batch_limit(&self) -> usize {
+        self.max_read_per_poll()
+    }
+}
+
+/// Blocks until libinput or the stop wake is readable and reports whether
+/// the stop wake was. There is no timeout: an idle seat costs no wakeups, so
+/// every reason to run again has to arrive on one of these descriptors.
+fn wait_for_input(source: BorrowedFd<'_>, stop: BorrowedFd<'_>) -> Result<bool, String> {
+    let mut fds = [
+        PollFd::new(&source, PollFlags::IN),
+        PollFd::new(&stop, PollFlags::IN),
+    ];
+    sophia_wake::wait(&mut fds, None).map_err(|error| error.to_string())?;
+    let stopped = fds[1]
+        .revents()
+        .intersects(PollFlags::IN | PollFlags::ERR | PollFlags::HUP | PollFlags::NVAL);
+    if !stopped
+        && fds[0]
+            .revents()
+            .intersects(PollFlags::ERR | PollFlags::HUP | PollFlags::NVAL)
+    {
+        return Err("native input descriptor closed while waiting".to_owned());
+    }
+    Ok(stopped)
+}
+
 fn run_input_worker(
-    poller: &mut super::NativeLibinputEventPoller<super::NativeLibinputEventReader>,
+    source: &mut impl AcquisitionSource,
     sender: SyncSender<QueuedInputEvent>,
     stop: &AtomicBool,
+    stop_wake: &Wake,
+    owner_wake: &WakeSlot,
     queue_depth: &AtomicUsize,
     max_queue_depth: &AtomicUsize,
     max_dispatch_gap_msec: &AtomicUsize,
     saturation: &Mutex<NativeInputAcquisitionSaturation>,
     capacity: BoundedCapacity,
 ) -> Result<(), String> {
-    let timeout = Timespec {
-        tv_sec: 0,
-        tv_nsec: INPUT_THREAD_POLL_MSEC * 1_000_000,
-    };
     let mut last_dispatch = Instant::now();
+    // The first read never waits: announcements retained from the open, and
+    // anything libinput queued meanwhile, have no readiness of their own.
+    let mut drained = false;
     while !stop.load(Ordering::Acquire) {
-        {
-            let libinput = poller.reader().libinput_mut_ref();
-            let mut fds = [PollFd::new(libinput, PollFlags::IN)];
-            poll(&mut fds, Some(&timeout)).map_err(|error| error.to_string())?;
+        if drained && wait_for_input(source.readiness(), stop_wake.as_fd())? {
+            // Clear before the flag is checked again, so a later ring stays
+            // readable. Only teardown rings this wake.
+            stop_wake.clear().map_err(|error| error.to_string())?;
+            continue;
         }
         let gap = usize::try_from(last_dispatch.elapsed().as_millis()).unwrap_or(usize::MAX);
         observe_max(max_dispatch_gap_msec, gap);
         last_dispatch = Instant::now();
-        let events = poller.poll_ready().map_err(|error| error.to_string())?;
-        record_arrivals(saturation, events.len());
+        let events = source.read_batch().map_err(|error| error.to_string())?;
+        // A full batch can leave events in libinput's own queue, which does
+        // not keep its descriptor readable. Read again before sleeping; a
+        // short batch means the read ran libinput's queue dry.
+        drained = events.len() < source.batch_limit();
+        let arrived = events.len();
+        record_arrivals(saturation, arrived);
         let outcome = drive_capacity_batch(
             &capacity,
             events,
@@ -477,6 +568,9 @@ fn run_input_worker(
                     Ok(()) => CapacityBatchAttempt::Accepted,
                     Err(TrySendError::Full(event)) => {
                         queue_depth.fetch_sub(1, Ordering::AcqRel);
+                        // The batch has not been rung for yet, and the
+                        // deferral only ends early if the consumer drains.
+                        owner_wake.notify();
                         CapacityBatchAttempt::Full {
                             record: event.packet,
                             depth: capacity.capacity,
@@ -504,6 +598,11 @@ fn run_input_worker(
             CapacityBatchOutcome::Saturated {
                 discarded, report, ..
             } => record_discarded(saturation, discarded, report),
+        }
+        // One ring covers the batch: its events, the inventory changes they
+        // carry, and any saturation report.
+        if arrived > 0 {
+            owner_wake.notify();
         }
     }
     Ok(())
@@ -548,3 +647,7 @@ fn observe_max(value: &AtomicUsize, candidate: usize) {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/support/libinput_threaded_wake.rs"]
+mod wake_tests;

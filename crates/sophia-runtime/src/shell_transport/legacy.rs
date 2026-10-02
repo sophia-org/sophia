@@ -23,4 +23,14 @@ impl ShellSessionTransport {
             content_epochs: ContentEpochRegistry::new(64 * 1024 * 1024)?,
         })
     }
+
+    /// See [`ShellComponentTransport::poll_fds`].
+    pub fn poll_fds(&self) -> Vec<rustix::event::PollFd<'_>> {
+        self.state.poll_fds()
+    }
+
+    /// See [`ShellComponentTransport::output_pending`].
+    pub fn output_pending(&self) -> bool {
+        self.state.output_pending()
+    }
 }

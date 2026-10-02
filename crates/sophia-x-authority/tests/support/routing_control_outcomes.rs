@@ -63,8 +63,8 @@ fn a_control_credit_is_released_exactly_once_when_its_outcome_is_recorded() {
     };
     assert!(completion.is_some(), "the writer is given the registration");
     let writer = X11ControlChannels::ClientBound {
-        receiver: channel().1,
-        acknowledgements,
+        receiver: channel().1.into(),
+        acknowledgements: acknowledgements.into(),
         completion: private.broker.registry.control_completion(),
     };
     assert!(
@@ -364,8 +364,8 @@ fn a_control_writer_records_that_its_client_has_none_when_it_stops() {
     let routing = broker.registry.clone();
     let (routes, route_receiver) = sync_channel(4);
     let channels = X11ControlChannels::ClientBound {
-        receiver: route_receiver,
-        acknowledgements: sync_channel(4).0,
+        receiver: route_receiver.into(),
+        acknowledgements: sync_channel(4).0.into(),
         completion: Some(registry.clone()),
     };
 
@@ -480,8 +480,8 @@ fn a_recorded_outcome_is_republished_once_the_channel_drains() {
         })
         .expect("the empty slot");
     let writer = X11ControlChannels::ClientBound {
-        receiver: channel().1,
-        acknowledgements,
+        receiver: channel().1.into(),
+        acknowledgements: acknowledgements.into(),
         completion: private.broker.registry.control_completion(),
     };
     assert_eq!(
@@ -781,7 +781,7 @@ fn writer_windows(surface: SurfaceId) -> Arc<Mutex<BTreeMap<SurfaceId, XResource
 fn writer_start(
     registry: Option<&XServerFrontendRouteRegistry>,
     state: &X11CoreSocketServerState,
-    control: Receiver<X11RoutedControl>,
+    control: impl Into<sophia_wake::channel::Receiver<X11RoutedControl>>,
     completion: Option<crate::ControlCompletionRegistry>,
     acknowledgements: SyncSender<XAuthorityClientControlAck>,
     client: XServerFrontendClientId,
@@ -820,8 +820,8 @@ fn writer_start(
         client,
         registry.cloned(),
         X11ControlChannels::ClientBound {
-            receiver: control,
-            acknowledgements,
+            receiver: control.into(),
+            acknowledgements: acknowledgements.into(),
             completion,
         },
     )
@@ -832,6 +832,7 @@ fn writer_start(
 #[cfg(unix)]
 fn writer_join(writer: X11ControlWriter) -> bool {
     writer.stop.store(true, Ordering::Release);
+    if let Some(wake) = &writer.wake { wake.notify(); }
     let limit = std::time::Instant::now() + std::time::Duration::from_secs(2);
     while !writer.thread.is_finished() && std::time::Instant::now() < limit {
         std::thread::yield_now();

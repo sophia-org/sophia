@@ -73,6 +73,13 @@ enum LiveOutputService {
 }
 
 impl LiveOutputService {
+    fn attach_owner_wake(&self, notifier: &sophia_wake::Notifier) {
+        let Self::Files { service, .. } = self;
+        if !service.owner_wake_attached() {
+            service.set_owner_wake(notifier.clone());
+        }
+    }
+
     fn command(
         &self,
         command: sophia_runtime::OutputFileServiceCommand,

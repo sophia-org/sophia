@@ -317,6 +317,58 @@ impl ShellComponentConnections {
         events
     }
 
+    /// Readiness of every negotiating or connected wire, borrowed for one
+    /// wait. `poll_negotiations` and `turn_connected` consume it.
+    pub fn poll_fds(&self) -> Vec<rustix::event::PollFd<'_>> {
+        self.connections
+            .iter()
+            .filter(|connection| {
+                matches!(
+                    connection.attempt,
+                    Some((
+                        _,
+                        ComponentConnectionPhase::Negotiating | ComponentConnectionPhase::Connected
+                    ))
+                )
+            })
+            .flat_map(|connection| connection.transport.poll_fds())
+            .collect()
+    }
+
+    /// Whether a connected wire holds records its next turn can move.
+    pub fn output_pending(&self) -> bool {
+        self.connections.iter().any(|connection| {
+            matches!(
+                connection.attempt,
+                Some((_, ComponentConnectionPhase::Connected))
+            ) && connection.transport.output_pending()
+        })
+    }
+
+    /// One nonblocking turn of every connected wire. Role services turn a
+    /// wire only when they have work for it, so without this, requests the
+    /// owner was woken for could stay unread and keep every wait short.
+    /// A failure is reported once for its exact owner; neighbors still turn.
+    pub fn turn_connected(
+        &mut self,
+    ) -> [Option<(ComponentConnectionKey, ShellTransportError)>; MAX_SHELL_COMPONENTS] {
+        let mut failures = std::array::from_fn(|_| None);
+        for (slot, (connection, failure)) in self
+            .connections
+            .iter_mut()
+            .zip(failures.iter_mut())
+            .enumerate()
+        {
+            let Some((grant, ComponentConnectionPhase::Connected)) = connection.attempt else {
+                continue;
+            };
+            if let Err(error) = connection.transport.poll_io(&mut self.epochs) {
+                *failure = Some((ComponentConnectionKey { slot, grant }, error));
+            }
+        }
+        failures
+    }
+
     /// The callback cannot retain either mutable owner or lend a second
     /// registry. Admission/disconnect remain on this owner, not this view.
     pub fn with_connection<R>(

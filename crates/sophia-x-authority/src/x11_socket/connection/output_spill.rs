@@ -32,10 +32,6 @@ pub const X_AUTHORITY_CLIENT_OUTPUT_SPILL_LIMIT: usize = 16 << 20;
 #[cfg(unix)]
 pub const X_AUTHORITY_CLIENT_OUTPUT_SILENCE_LIMIT: Duration = Duration::from_secs(6);
 
-/// How long the drain waits between looks, and how long it polls for room.
-#[cfg(unix)]
-const X11_OUTPUT_DRAIN_SLICE: Duration = Duration::from_millis(50);
-
 /// A record the kernel refused, kept whole with what is still to send of it
 /// and, until its first byte has gone, the descriptors that travel with it.
 #[cfg(unix)]
@@ -73,7 +69,7 @@ pub struct X11ClientOutput {
     last_activity: Instant,
     /// Signalled when the spill gains its first record, so the drain can
     /// sleep on it rather than poll an empty spill.
-    wake: Arc<Condvar>,
+    wake: sophia_wake::WakeSlot,
     client: u64,
 }
 
@@ -89,7 +85,7 @@ impl X11ClientOutput {
             ended: None,
             last_progress: Instant::now(),
             last_activity: Instant::now(),
-            wake: Arc::new(Condvar::new()),
+            wake: sophia_wake::WakeSlot::default(),
             client,
         }
     }
@@ -279,7 +275,7 @@ impl X11ClientOutput {
         });
         self.outstanding += owed;
         if first {
-            self.wake.notify_all();
+            self.wake.notify();
         }
         Ok(())
     }
@@ -309,7 +305,7 @@ impl X11ClientOutput {
         self.spill.clear();
         self.outstanding = 0;
         self.ended = Some(ending);
-        self.wake.notify_all();
+        self.wake.notify();
     }
 }
 
@@ -336,7 +332,7 @@ pub(crate) struct X11OutputDrain {
     /// The output's own wake, so a stop reaches a drain asleep on an empty
     /// spill at once rather than at its next slice: teardown waits for this
     /// thread, and a connection's teardown is measured in microseconds.
-    wake: Arc<Condvar>,
+    wake: sophia_wake::Notifier,
     /// Taken by whoever joins it; a drain dropped with its thread still here
     /// stops and joins it itself.
     thread: Option<std::thread::JoinHandle<Result<(), X11SetupSocketError>>>,
@@ -347,7 +343,7 @@ impl X11OutputDrain {
     /// Tell the drain to stop, and wake it so it hears.
     pub(crate) fn stop(&self) {
         self.stop.store(true, Ordering::Release);
-        self.wake.notify_all();
+        self.wake.notify();
     }
 }
 
@@ -366,7 +362,10 @@ fn spawn_x11_output_drain(
     output: Arc<Mutex<X11ClientOutput>>,
     client: u64,
 ) -> Result<X11OutputDrain, X11SetupSocketError> {
-    let (handle, wake) = {
+    let wait = sophia_wake::Wake::new()
+        .map_err(|error| X11SetupSocketError::new(format!("X11 drain wake: {error}")))?;
+    let wake = wait.notifier();
+    let handle = {
         let guard = output
             .lock()
             .map_err(|_| X11SetupSocketError::new("X11 output socket lock poisoned"))?;
@@ -375,7 +374,8 @@ fn spawn_x11_output_drain(
                 "failed to clone X11 output socket for the drain: {error}"
             ))
         })?;
-        (handle, guard.wake.clone())
+        guard.wake.set(wake.clone());
+        handle
     };
     let stop = Arc::new(AtomicBool::new(false));
     let drain_stop = stop.clone();
@@ -383,6 +383,9 @@ fn spawn_x11_output_drain(
         .name(format!("sophia-x11-drain-{client}"))
         .spawn(move || -> Result<(), X11SetupSocketError> {
             loop {
+                // Drain before inspecting state. Stop does not need the wire
+                // mutex and cannot race past this descriptor's retained wake.
+                wait.clear().map_err(|error| X11SetupSocketError::new(error.to_string()))?;
                 let mut guard = output
                     .lock()
                     .map_err(|_| X11SetupSocketError::new("X11 output socket lock poisoned"))?;
@@ -395,11 +398,8 @@ fn spawn_x11_output_drain(
                     return Ok(());
                 }
                 if guard.spill.is_empty() {
-                    let wake = guard.wake.clone();
-                    let (guard, _) = wake
-                        .wait_timeout(guard, X11_OUTPUT_DRAIN_SLICE)
-                        .map_err(|_| X11SetupSocketError::new("X11 output socket lock poisoned"))?;
                     drop(guard);
+                    wait.wait(None).map_err(|error| X11SetupSocketError::new(error.to_string()))?;
                     continue;
                 }
                 let silence = guard.silence();
@@ -409,17 +409,15 @@ fn spawn_x11_output_drain(
                 }
                 // Wait for room without the mutex: a writer admitting a record
                 // must not queue behind a drain that is only waiting.
+                let deadline = guard.last_activity.max(guard.last_progress)
+                    + X_AUTHORITY_CLIENT_OUTPUT_SILENCE_LIMIT;
                 drop(guard);
-                let mut watched = [rustix::event::PollFd::new(
-                    &handle,
-                    rustix::event::PollFlags::OUT,
-                )];
-                let slice = rustix::fs::Timespec {
-                    tv_sec: 0,
-                    tv_nsec: i64::from(X11_OUTPUT_DRAIN_SLICE.subsec_nanos()),
-                };
-                match rustix::event::poll(&mut watched, Some(&slice)) {
-                    Ok(_) | Err(rustix::io::Errno::INTR) => {}
+                let mut watched = [
+                    rustix::event::PollFd::new(&handle, rustix::event::PollFlags::OUT),
+                    rustix::event::PollFd::new(&wait, rustix::event::PollFlags::IN),
+                ];
+                match sophia_wake::wait(&mut watched, Some(deadline)) {
+                    Ok(_) => {}
                     Err(error) => {
                         return Err(X11SetupSocketError::new(format!(
                             "X11 output drain could not wait for the socket: {error}"

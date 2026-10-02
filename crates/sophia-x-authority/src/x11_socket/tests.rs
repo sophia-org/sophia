@@ -5,6 +5,9 @@ use crate::XAuthorityControlKind;
 use sophia_protocol::{DeviceId, Point};
 use std::sync::mpsc::sync_channel;
 
+#[path = "../../tests/support/idle_wake.rs"]
+mod idle_wake;
+
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/support/color_allocation_cleanup.rs"

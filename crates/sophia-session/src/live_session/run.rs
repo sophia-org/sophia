@@ -45,11 +45,15 @@ pub(crate) fn run_persistent_xterm_session(
     let display_number = parse_display_number(&config.display)?;
     let bound_socket_path = prepare_display_socket(&config.socket_path, display_number)?;
     let (mut xauthority, xauthority_cookie) = LiveXAuthorityFile::create(display_number)?;
+    // Every producer the owner loop inspects gets this before it can publish
+    // anything the owner would otherwise sleep past.
+    let owner_wake = OwnerWake::new()?;
     let mut seat_controller = config
         .native_scanout
         .then(sophia_backend_live::LiveSeatController::open)
         .transpose()?;
     if let Some(controller) = seat_controller.as_mut() {
+        controller.set_owner_wake(owner_wake.notifier());
         let _ = controller.dispatch()?;
         crate::session_println!(
             "sophia_live_seat schema=1 status=active seat={}",
@@ -226,6 +230,7 @@ pub(crate) fn run_persistent_xterm_session(
         seat_controller
             .as_ref()
             .map(sophia_backend_live::LiveSeatController::device_opener),
+        &owner_wake.notifier(),
     )?;
     if let Some(physical_input) = physical_input.as_ref() {
         let policy = physical_input.policy_report();
@@ -284,6 +289,7 @@ pub(crate) fn run_persistent_xterm_session(
         None
     };
     let mut scripting = LiveControlState::start(&mut config);
+    scripting.set_owner_wake(&owner_wake.notifier());
     let mut wm_session = LiveWmSession::from_config(
         &config,
         &initial_outputs,
@@ -323,33 +329,10 @@ pub(crate) fn run_persistent_xterm_session(
         namespace: x_namespace.id,
         session_user_id,
     });
-    let mut frontend_config =
-        XServerFrontendConfig::new_with_namespace_context(&server_path, x_namespace)?
-            .with_output_topology(output_topology.clone())?
-            .with_xkb_config(config.xkb_config.clone())?
-            .with_setup_authorization(XServerFrontendSetupAuthorization::MitMagicCookie(
-                xauthority_cookie,
-            ))
-            // XLibre maps immediately unless a redirecting policy owner is
-            // present. Deferring without a WM strands the client's toplevel
-            // before MapNotify, VisibilityNotify, and Expose.
-            .with_policy_map_deferred(policy_map_mode.frontend_deferred())
-            .with_font_path(config.font_path.clone())
-            .with_admission_policy(admission_policy);
-    let mut client_render_devices = None;
-    if !config.software_client_rendering
-        && let Some(native_scanout) = native_scanout.as_ref()
-    {
-        let seat = seat_controller
-            .as_ref()
-            .ok_or("native client device lost its seat")?
-            .device_opener()
-            .name()
-            .to_owned();
-        let (bundle, coordinator) = render_devices::initial(native_scanout, &seat)?;
-        frontend_config = frontend_config.with_device_bundle(bundle);
-        client_render_devices = Some(coordinator);
-    }
+    // The frontend sleeps until a service command or routed input rings this.
+    // Every Session sender into it must therefore be a notifying one.
+    let frontend_service_wake = sophia_wake::WakeSlot::default();
+    let (mut frontend_config, client_render_devices) = include!("run/frontend_config.rs");
     let (authority_sender, authority_receiver) = sync_channel(SESSION_AUTHORITY_CAPACITY);
     let (control_ack_sender, control_ack_receiver) = sync_channel(SESSION_CONTROL_CAPACITY);
     // Completion notifications must never kill an X11 writer merely because
@@ -363,6 +346,8 @@ pub(crate) fn run_persistent_xterm_session(
             NonZeroUsize::new(SESSION_CONTROL_CAPACITY)
                 .expect("session explicit pointer-grab capacity is nonzero"),
         );
+    // A grab request rings the owner after it is queued.
+    explicit_pointer_grab_client.set_owner_wake(owner_wake.notifier());
     let mut broker = XServerFrontendRouteBroker::with_route_capacities_xkb_and_lease_updates(
         XServerFrontendRouteCapacities::new(
             NonZeroUsize::new(SESSION_KEY_CAPACITY)
@@ -380,6 +365,8 @@ pub(crate) fn run_persistent_xterm_session(
         config.xkb_config.clone(),
     )?
     .with_explicit_pointer_grab_client(explicit_pointer_grab_client);
+    // Control receipts, metadata candidates and lease updates ring the owner.
+    broker.set_owner_wake(owner_wake.notifier());
     let metadata_candidate_receiver = broker
         .take_metadata_candidate_receiver()
         .ok_or("X frontend omitted its reduced metadata route")?;
@@ -408,11 +395,14 @@ pub(crate) fn run_persistent_xterm_session(
         )
             as Arc<dyn sophia_x_authority::XServerFrontendInjectionPolicy>);
     }
-    let route_lease_release_sender = broker.route_lease_release_sender();
+    // The raw sender would return the frontend to its polling service.
+    let route_lease_release_sender = broker.notifying_route_lease_release_sender();
     let control_sender = broker.control_router();
     let raster_sender = broker.raster_router();
     let protocol_router = broker.protocol_router();
     let (service_command_sender, service_command_receiver) = sync_channel(1);
+    let service_command_sender =
+        sophia_wake::SignalSender::new(service_command_sender, frontend_service_wake);
     let mut server = Some(std::thread::spawn(move || {
         run_x_server_frontend_routed_until_stopped(
             frontend_config,
@@ -815,6 +805,7 @@ pub(crate) fn run_persistent_xterm_session(
             explicit_pointer_grabs: &explicit_pointer_grab_owner,
             frontend_service: &service_command_sender,
             metadata_candidates: &metadata_candidate_receiver,
+            owner_wake: &owner_wake,
         },
         SessionLoopResources {
             launch_origins: &launch_origins,

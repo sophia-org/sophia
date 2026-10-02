@@ -28,7 +28,7 @@ fn routed_control_discards_another_clients_command_and_labels_its_ack() {
 
     let channels = X11ControlChannels::Routed {
         receiver: command_receiver,
-        acknowledgements: ack_sender,
+        acknowledgements: ack_sender.into(),
         completion: None,
     };
     assert!(matches!(

@@ -74,11 +74,56 @@ fn worker_with_limits(label: &str, limits: OutputFileLimits) -> Worker {
         publish_pending: false,
         paused: false,
         pending: VecDeque::new(),
+        owner_wake: sophia_wake::WakeSlot::default(),
     }
 }
 
 #[path = "output_file_epoch_retirement.rs"]
 mod epoch_retirement;
+
+/// The owner's wake rings only once the event it announces is receivable.
+#[test]
+fn worker_rings_the_owner_after_each_published_event() {
+    let wake = sophia_wake::Wake::new().unwrap();
+    let mut worker = worker("owner-wake");
+    worker.owner_wake.set(wake.notifier());
+    wake.clear().unwrap();
+    worker
+        .pending
+        .push_back(OutputFileServiceEvent::Disconnected {
+            connection_epoch: 7,
+        });
+    let (_commands, incoming) = mpsc::sync_channel(HANDOFF_CAPACITY);
+    let (_pause, pauses) = mpsc::sync_channel(1);
+    let (events, received) = mpsc::sync_channel(HANDOFF_CAPACITY);
+    let stopped = Arc::new(AtomicBool::new(false));
+    let stop = stopped.clone();
+    let thread = std::thread::spawn(move || worker.run(&incoming, &pauses, &events, &stop));
+    let rung = wake.wait(Some(Instant::now() + Duration::from_secs(5)));
+    // Read at the ring, before the worker can do anything more.
+    let published = received.try_recv();
+    stopped.store(true, Ordering::Release);
+    thread.join().unwrap().unwrap();
+    assert!(rung.unwrap(), "the published event did not ring the owner");
+    assert!(matches!(
+        published,
+        Ok(OutputFileServiceEvent::Disconnected {
+            connection_epoch: 7
+        })
+    ));
+}
+
+#[test]
+fn service_attaches_the_owner_wake_once_and_rings_on_attachment() {
+    let Worker { transport, .. } = worker("owner-attach");
+    let service = OutputFileService::spawn(transport, snapshot()).unwrap();
+    let wake = sophia_wake::Wake::new().unwrap();
+    assert!(!service.owner_wake_attached());
+    service.set_owner_wake(wake.notifier());
+    assert!(service.owner_wake_attached());
+    // Anything published before attachment must still be inspected.
+    assert!(wake.wait(Some(Instant::now())).unwrap());
+}
 
 use crate::raw_file_test_peer as raw_peer;
 

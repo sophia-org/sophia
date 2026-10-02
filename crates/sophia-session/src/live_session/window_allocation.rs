@@ -235,7 +235,7 @@ impl LiveWindowAllocationPublisher {
         native: &LiveProductionNativeScanout,
         layout: &PersistentLiveLayout,
         outputs: &[sophia_engine::HeadlessOutput],
-        service: &SyncSender<XServerFrontendServiceCommand>,
+        service: &dyn SessionSender<XServerFrontendServiceCommand>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         self.poll_snapshot(now, topology_generation, service, || {
             window_allocation_rows(
@@ -251,7 +251,7 @@ impl LiveWindowAllocationPublisher {
         &mut self,
         now: Instant,
         topology_generation: u64,
-        service: &SyncSender<XServerFrontendServiceCommand>,
+        service: &dyn SessionSender<XServerFrontendServiceCommand>,
         snapshot: impl FnOnce() -> Vec<sophia_x_authority::XWindowAllocationPreference>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if self.quiescing {

@@ -131,6 +131,9 @@ fn three_windows_reuse_buffers_while_one_exact_present_remains_held() {
         );
         assert!(owner_channels.protocol.try_recv().is_err());
         writer.stop.store(true, Ordering::Release);
+        if let Some(wake) = &writer.wake {
+            wake.notify();
+        }
         writer.thread.join().unwrap().unwrap();
     }
 }

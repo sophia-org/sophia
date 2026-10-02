@@ -2,6 +2,7 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::io;
+use std::os::fd::{AsFd, BorrowedFd};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -379,6 +380,15 @@ impl RoleEndpoint {
         }
         self.active_peer = None;
         Ok(())
+    }
+
+    /// The listener, borrowed for an owner's wait, while an accept would be
+    /// attempted: a peer is authorized and none holds the role.
+    ///
+    /// While a peer holds the role, a queued connection stays queued until
+    /// release. Its readiness persists, and no turn can consume it.
+    pub fn accept_readiness(&self) -> Option<BorrowedFd<'_>> {
+        (self.active_peer.is_none() && self.expected_pid.is_some()).then(|| self.listener.as_fd())
     }
 
     pub fn socket_path(&self) -> &Path {

@@ -121,6 +121,9 @@ pub struct ShellComponentTransport {
     peer_closed: bool,
     /// Typed Session-to-client records not yet in a wire's custody.
     output: outbox::ShellOutbox,
+    /// The last turn left records queued because the journal was full. Only
+    /// the peer's progress, which its socket reports, frees that room.
+    output_blocked: bool,
     action_cancellations: Vec<sophia_protocol::ContentAction>,
     indicator_response: Option<indicator_responses::PendingIndicatorResponse>,
     catalog_response: Option<catalog_responses::PendingCatalogResponse>,
@@ -153,6 +156,7 @@ impl ShellComponentTransport {
             capabilities: 0,
             peer_closed: false,
             output: outbox::ShellOutbox::default(),
+            output_blocked: false,
             action_cancellations: Vec::with_capacity(16),
             indicator_response: None,
             catalog_response: None,
@@ -202,6 +206,7 @@ impl ShellComponentTransport {
         }
         self.negotiation = None;
         self.output.clear();
+        self.output_blocked = false;
         self.action_cancellations.clear();
         self.indicator_response = None;
         self.catalog_response = None;
@@ -313,14 +318,51 @@ impl ShellComponentTransport {
         self.flush_native_activation(epochs)?;
         self.flush_native_close(epochs)?;
         self.flush_native_accept(epochs)?;
-        let closed = match self.wire.as_mut() {
+        let (closed, blocked) = match self.wire.as_mut() {
             None => return Err(ShellTransportError::NotConnected),
             Some(files) => Self::turn_files(files, &mut self.output)?,
         };
+        self.output_blocked = blocked;
         if closed {
             self.peer_closed = true;
         }
         Ok(())
+    }
+
+    /// Descriptors whose readiness this owner's next visit consumes, borrowed
+    /// for one wait: the active wire, or a pending negotiation's listener or
+    /// accepted wire. Nothing here accepts, reads or decides.
+    ///
+    /// The owner must visit whatever it subscribes, through `poll_io` or
+    /// `poll_negotiation`, on its next pass; readiness is level-triggered.
+    pub fn poll_fds(&self) -> Vec<rustix::event::PollFd<'_>> {
+        use negotiation_service::Stage;
+        use rustix::event::{PollFd, PollFlags};
+        if let Some(files) = self.wire.as_ref() {
+            return files.poll_fds();
+        }
+        match self.negotiation.as_ref().map(|pending| &pending.stage) {
+            None => Vec::new(),
+            Some(Stage::Waiting) => self
+                .endpoint
+                .accept_readiness()
+                .map(|listener| PollFd::from_borrowed_fd(listener, PollFlags::IN))
+                .into_iter()
+                .collect(),
+            Some(Stage::Accepted(stream)) => vec![PollFd::new(stream, PollFlags::IN)],
+            Some(Stage::Files(files)) => files.poll_fds(),
+        }
+    }
+
+    /// Records queued after the wire's last turn that the next turn can move.
+    /// They have no descriptor to wake the owner, so it keeps a short wait.
+    /// Records held behind a full journal are not counted: the peer frees
+    /// that room by acknowledging, and its socket reports that.
+    pub fn output_pending(&self) -> bool {
+        self.wire.is_some()
+            && !self.peer_closed
+            && !self.output_blocked
+            && self.output.records() != 0
     }
 
     /// Moves queued records into the journal, or publishes queued objects, in
@@ -349,22 +391,23 @@ impl ShellComponentTransport {
 
     /// File wire service: serve ready 9P requests, move queued records into
     /// the journal in FIFO order, then serve again so waiting reads see them.
-    /// Returns whether the peer ended its connection.
+    /// Returns whether the peer ended its connection, and whether records
+    /// remain queued behind a full journal.
     fn turn_files(
         files: &mut files::ShellFileWire,
         output: &mut outbox::ShellOutbox,
-    ) -> Result<bool, ShellTransportError> {
+    ) -> Result<(bool, bool), ShellTransportError> {
         match files.turn() {
-            Err(ShellTransportError::NotConnected) => return Ok(true),
+            Err(ShellTransportError::NotConnected) => return Ok((true, false)),
             Err(error) => return Err(error),
             Ok(()) => {}
         }
         let blocked = !Self::drain_file_output(files, output)?;
         files.check_ack_progress(blocked, std::time::Instant::now())?;
         match files.turn() {
-            Err(ShellTransportError::NotConnected) => Ok(true),
+            Err(ShellTransportError::NotConnected) => Ok((true, blocked)),
             Err(error) => Err(error),
-            Ok(()) => Ok(false),
+            Ok(()) => Ok((false, blocked)),
         }
     }
 

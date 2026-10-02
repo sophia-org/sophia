@@ -17,6 +17,8 @@ const DEFAULT_MAX_CONCURRENT_CLIENTS: NonZeroUsize = match NonZeroUsize::new(16)
 
 #[derive(Clone)]
 pub struct XServerFrontendConfig {
+    pub(crate) service_wake: Option<sophia_wake::WakeSlot>,
+    pub(crate) owner_wake: sophia_wake::WakeSlot,
     socket_path: PathBuf,
     namespace: NamespaceContext,
     setup_authorization: XServerFrontendSetupAuthorization,
@@ -107,6 +109,8 @@ impl XServerFrontendConfig {
             ));
         }
         Ok(Self {
+            service_wake: None,
+            owner_wake: sophia_wake::WakeSlot::default(),
             socket_path,
             namespace,
             setup_authorization: XServerFrontendSetupAuthorization::default(),
@@ -125,6 +129,18 @@ impl XServerFrontendConfig {
             // every test and probe independent of what the host has installed.
             font_path: Vec::new(),
         })
+    }
+
+    /// All service command producers must notify this slot after publication.
+    /// Bare-channel callers retain the established bounded polling service.
+    pub fn with_service_wake(mut self, wake: sophia_wake::WakeSlot) -> Self {
+        self.service_wake = Some(wake);
+        self
+    }
+
+    pub fn with_owner_wake(self, wake: sophia_wake::Notifier) -> Self {
+        self.owner_wake.set(wake);
+        self
     }
 
     pub fn with_setup_authorization(

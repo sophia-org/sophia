@@ -1,0 +1,322 @@
+//! The owner's wait against producers that publish, then ring.
+//!
+//! Elapsed-time bounds are generous: they separate "woken" from "waited out
+//! a thirty-second deadline", not one scheduling delay from another.
+#![cfg(test)]
+
+use super::*;
+use std::io::{Read, Write};
+use std::os::unix::net::UnixStream;
+use std::sync::mpsc::sync_channel;
+use std::thread;
+
+const LONG: Duration = Duration::from_secs(30);
+const PROMPT: Duration = Duration::from_secs(5);
+
+/// A producer's view of the owner, as Session hands it to each worker.
+fn attached(owner: &OwnerWake) -> sophia_wake::WakeSlot {
+    let slot = sophia_wake::WakeSlot::default();
+    slot.set(owner.notifier());
+    slot
+}
+
+#[test]
+fn a_publication_between_inspection_and_wait_ends_the_wait() {
+    let owner = OwnerWake::new().unwrap();
+    let (_authority, authority_queue) = sync_channel::<u32>(1);
+    let (input, input_queue) = sync_channel::<u32>(1);
+    let input = sophia_wake::SignalSender::new(input, attached(&owner));
+    owner.begin_pass().unwrap();
+    // The pass inspects input, finds nothing, and moves on to its wait. The
+    // producer publishes in that gap; its ring must not be lost.
+    assert_eq!(input_queue.try_recv(), Err(TryRecvError::Empty));
+    input.send(7).unwrap();
+    let started = Instant::now();
+    assert_eq!(
+        owner.receive(&authority_queue, LONG),
+        Err(RecvTimeoutError::Timeout)
+    );
+    assert!(started.elapsed() < PROMPT, "the ring was lost");
+    // The next pass clears first, then finds the work the ring announced.
+    owner.begin_pass().unwrap();
+    assert_eq!(input_queue.try_recv(), Ok(7));
+}
+
+#[test]
+fn work_published_before_the_pass_is_found_by_its_inspection() {
+    let owner = OwnerWake::new().unwrap();
+    let (authority, authority_queue) = sync_channel::<u32>(1);
+    let authority = sophia_wake::SignalSender::new(authority, attached(&owner));
+    authority.send(3).unwrap();
+    // Clearing consumes the ring, never the work.
+    owner.begin_pass().unwrap();
+    let started = Instant::now();
+    assert_eq!(owner.receive(&authority_queue, LONG), Ok(3));
+    assert!(started.elapsed() < PROMPT);
+}
+
+#[test]
+fn input_published_during_a_long_idle_wait_ends_it() {
+    let owner = OwnerWake::new().unwrap();
+    let (_authority, authority_queue) = sync_channel::<u32>(1);
+    let (input, input_queue) = sync_channel::<u32>(4);
+    let input = sophia_wake::SignalSender::new(input, attached(&owner));
+    owner.begin_pass().unwrap();
+    let producer = thread::spawn(move || {
+        // Usually lands while the owner sleeps; landing first is also correct.
+        thread::sleep(Duration::from_millis(50));
+        input.send(1).unwrap();
+        input
+    });
+    let started = Instant::now();
+    assert_eq!(
+        owner.receive(&authority_queue, LONG),
+        Err(RecvTimeoutError::Timeout)
+    );
+    assert!(
+        started.elapsed() < PROMPT,
+        "idle wait ignored the input ring"
+    );
+    let _input = producer.join().unwrap();
+    owner.begin_pass().unwrap();
+    assert_eq!(input_queue.try_recv(), Ok(1));
+}
+
+#[test]
+fn authority_published_during_the_wait_is_returned_by_it() {
+    let owner = OwnerWake::new().unwrap();
+    let (authority, authority_queue) = sync_channel::<u32>(1);
+    let authority = sophia_wake::SignalSender::new(authority, attached(&owner));
+    owner.begin_pass().unwrap();
+    let producer = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(50));
+        authority.send(9).unwrap();
+        authority
+    });
+    let started = Instant::now();
+    assert_eq!(owner.receive(&authority_queue, LONG), Ok(9));
+    assert!(started.elapsed() < PROMPT);
+    drop(producer.join().unwrap());
+}
+
+#[test]
+fn the_deadline_bounds_an_unrung_wait() {
+    let owner = OwnerWake::new().unwrap();
+    let (_authority, authority_queue) = sync_channel::<u32>(1);
+    owner.begin_pass().unwrap();
+    let budget = Duration::from_millis(20);
+    let started = Instant::now();
+    assert_eq!(
+        owner.receive(&authority_queue, budget),
+        Err(RecvTimeoutError::Timeout)
+    );
+    assert!(started.elapsed() >= budget);
+}
+
+#[test]
+fn a_stale_ring_is_cleared_and_does_not_shorten_the_next_wait() {
+    let owner = OwnerWake::new().unwrap();
+    let (_authority, authority_queue) = sync_channel::<u32>(1);
+    owner.notifier().notify();
+    owner.notifier().notify();
+    owner.begin_pass().unwrap();
+    let budget = Duration::from_millis(20);
+    let started = Instant::now();
+    assert_eq!(
+        owner.receive(&authority_queue, budget),
+        Err(RecvTimeoutError::Timeout)
+    );
+    assert!(started.elapsed() >= budget);
+}
+
+#[test]
+fn producer_disconnection_wakes_the_owner_and_reads_as_disconnected() {
+    let owner = OwnerWake::new().unwrap();
+    let (authority, authority_queue) = sync_channel::<u32>(1);
+    let authority = sophia_wake::SignalSender::new(authority, attached(&owner));
+    owner.begin_pass().unwrap();
+    let producer = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(50));
+        drop(authority);
+    });
+    let started = Instant::now();
+    assert_eq!(
+        owner.receive(&authority_queue, LONG),
+        Err(RecvTimeoutError::Disconnected)
+    );
+    assert!(started.elapsed() < PROMPT, "disconnection did not ring");
+    producer.join().unwrap();
+}
+
+#[test]
+fn producers_outliving_the_owner_publish_without_ringing_a_closed_wake() {
+    let owner = OwnerWake::new().unwrap();
+    let (input, input_queue) = sync_channel::<u32>(1);
+    let input = sophia_wake::SignalSender::new(input, attached(&owner));
+    // Session shutdown drops the owner before every worker has joined.
+    drop(owner);
+    input.send(5).unwrap();
+    drop(input);
+    assert_eq!(input_queue.try_recv(), Ok(5));
+}
+
+/// A socket the owner serves inline, as it holds a shell wire, and its peer.
+fn served() -> (UnixStream, UnixStream) {
+    let (served, peer) = UnixStream::pair().unwrap();
+    served.set_nonblocking(true).unwrap();
+    (served, peer)
+}
+
+fn readable(socket: &UnixStream) -> Vec<PollFd<'_>> {
+    vec![PollFd::new(socket, PollFlags::IN)]
+}
+
+#[test]
+fn an_idle_socket_lets_the_deadline_end_the_wait() {
+    let owner = OwnerWake::new().unwrap();
+    let (_authority, authority_queue) = sync_channel::<u32>(1);
+    let (socket, _peer) = served();
+    owner.begin_pass().unwrap();
+    let budget = Duration::from_millis(20);
+    let started = Instant::now();
+    assert_eq!(
+        owner
+            .receive_with_fds(&authority_queue, budget, readable(&socket))
+            .unwrap(),
+        Err(RecvTimeoutError::Timeout)
+    );
+    assert!(started.elapsed() >= budget);
+}
+
+#[test]
+fn a_request_during_a_long_idle_wait_ends_it() {
+    let owner = OwnerWake::new().unwrap();
+    let (_authority, authority_queue) = sync_channel::<u32>(1);
+    let (mut socket, mut peer) = served();
+    owner.begin_pass().unwrap();
+    let client = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(50));
+        peer.write_all(b"request").unwrap();
+        peer
+    });
+    let started = Instant::now();
+    assert_eq!(
+        owner
+            .receive_with_fds(&authority_queue, LONG, readable(&socket))
+            .unwrap(),
+        Err(RecvTimeoutError::Timeout)
+    );
+    assert!(
+        started.elapsed() < PROMPT,
+        "idle wait ignored the socket's request"
+    );
+    let _peer = client.join().unwrap();
+    // The next pass serves the socket.
+    owner.begin_pass().unwrap();
+    let mut request = [0; 7];
+    socket.read_exact(&mut request).unwrap();
+    assert_eq!(&request, b"request");
+}
+
+#[test]
+fn consumed_readiness_does_not_shorten_the_next_wait() {
+    let owner = OwnerWake::new().unwrap();
+    let (_authority, authority_queue) = sync_channel::<u32>(1);
+    let (mut socket, mut peer) = served();
+    peer.write_all(b"once").unwrap();
+    owner.begin_pass().unwrap();
+    let started = Instant::now();
+    assert_eq!(
+        owner
+            .receive_with_fds(&authority_queue, LONG, readable(&socket))
+            .unwrap(),
+        Err(RecvTimeoutError::Timeout)
+    );
+    assert!(started.elapsed() < PROMPT);
+    owner.begin_pass().unwrap();
+    let mut request = [0; 4];
+    socket.read_exact(&mut request).unwrap();
+    // Served, the socket is idle again: the owner sleeps out its budget
+    // rather than spinning on readiness it already consumed.
+    let budget = Duration::from_millis(20);
+    let started = Instant::now();
+    assert_eq!(
+        owner
+            .receive_with_fds(&authority_queue, budget, readable(&socket))
+            .unwrap(),
+        Err(RecvTimeoutError::Timeout)
+    );
+    assert!(
+        started.elapsed() >= budget,
+        "consumed readiness ended the wait"
+    );
+}
+
+#[test]
+fn rings_and_authority_still_end_a_wait_that_watches_sockets() {
+    let owner = OwnerWake::new().unwrap();
+    let (authority, authority_queue) = sync_channel::<u32>(1);
+    let authority = sophia_wake::SignalSender::new(authority, attached(&owner));
+    let (input, input_queue) = sync_channel::<u32>(1);
+    let input = sophia_wake::SignalSender::new(input, attached(&owner));
+    let (socket, _peer) = served();
+    owner.begin_pass().unwrap();
+    let producer = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(50));
+        input.send(1).unwrap();
+        input
+    });
+    let started = Instant::now();
+    assert_eq!(
+        owner
+            .receive_with_fds(&authority_queue, LONG, readable(&socket))
+            .unwrap(),
+        Err(RecvTimeoutError::Timeout)
+    );
+    assert!(
+        started.elapsed() < PROMPT,
+        "the ring was lost beside a socket"
+    );
+    let _input = producer.join().unwrap();
+    owner.begin_pass().unwrap();
+    assert_eq!(input_queue.try_recv(), Ok(1));
+    let producer = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(50));
+        authority.send(4).unwrap();
+        authority
+    });
+    let started = Instant::now();
+    assert_eq!(
+        owner
+            .receive_with_fds(&authority_queue, LONG, readable(&socket))
+            .unwrap(),
+        Ok(4)
+    );
+    assert!(started.elapsed() < PROMPT);
+    drop(producer.join().unwrap());
+}
+
+#[test]
+fn either_sender_drives_session_helpers() {
+    let owner = OwnerWake::new().unwrap();
+    let (bare, bare_queue) = sync_channel::<u32>(1);
+    let (notifying, notifying_queue) = sync_channel::<u32>(1);
+    let notifying = sophia_wake::SignalSender::new(notifying, attached(&owner));
+    owner.begin_pass().unwrap();
+    let rung = || owner.wake.wait(Some(Instant::now())).unwrap();
+
+    let bare: &dyn SessionSender<u32> = &bare;
+    bare.try_send(1).unwrap();
+    assert!(matches!(bare.try_send(2), Err(TrySendError::Full(2))));
+    assert_eq!(bare_queue.try_recv(), Ok(1));
+    assert!(!rung(), "a bare sender has no ring to give");
+
+    let notifying: &dyn SessionSender<u32> = &notifying;
+    notifying.try_send(1).unwrap();
+    assert!(rung());
+    owner.begin_pass().unwrap();
+    // A refused publication rings nothing: nothing new was queued.
+    assert!(matches!(notifying.try_send(2), Err(TrySendError::Full(2))));
+    assert!(!rung());
+    assert_eq!(notifying_queue.try_recv(), Ok(1));
+}

@@ -467,6 +467,51 @@ fn semantic_adapter_refuses_projection_before_configuration_or_cycle() {
     }
 }
 
+/// The real worker rings the Session owner after each event it publishes and
+/// after its event queue disconnects, so the owner's idle wait never outlasts
+/// policy traffic.
+#[test]
+fn worker_rings_the_owner_after_each_publication_and_after_disconnect() {
+    let owner = crate::live_session::OwnerWake::new().unwrap();
+    let Harness {
+        worker,
+        incoming,
+        trace: _trace,
+        ..
+    } = Harness::new(false);
+    // Negotiated may already be queued. Attaching rings once either way, so
+    // an event published before the owner attached is not stranded.
+    assert!(!worker.owner_wake_attached());
+    worker.set_owner_wake(owner.notifier());
+    assert!(worker.owner_wake_attached());
+    let next = || {
+        owner.begin_pass().unwrap();
+        let started = std::time::Instant::now();
+        let result = owner.receive(&worker.events, Duration::from_secs(30));
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "the owner waited out its deadline"
+        );
+        result
+    };
+    assert!(matches!(next(), Ok(PolicyTransportEvent::Negotiated)));
+    incoming
+        .send(PolicyAdapterEvent::Configuration {
+            transaction: tx(3),
+            configuration: configuration(),
+        })
+        .unwrap();
+    assert!(matches!(
+        next(),
+        Ok(PolicyTransportEvent::Configuration { transaction, .. }) if transaction == tx(3)
+    ));
+    // A lost peer fails the driver: the failure is published and rung, then
+    // the worker's queue disconnects and rings once more.
+    drop(incoming);
+    assert!(matches!(next(), Ok(PolicyTransportEvent::Failed(_))));
+    assert!(matches!(next(), Err(RecvTimeoutError::Disconnected)));
+}
+
 #[test]
 fn semantic_adapter_rejection_does_not_wait_for_a_session_operation() {
     let h = Harness::new(false);

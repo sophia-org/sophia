@@ -59,7 +59,7 @@ fn write_xi_u32(byte_order: XByteOrder, out: &mut [u8], value: u32) {
 enum X11InputEventReceiver {
     Plain(Receiver<XAuthorityInputEvent>),
     Routed {
-        receiver: Receiver<XAuthorityClientInputEvent>,
+        receiver: sophia_wake::channel::Receiver<XAuthorityClientInputEvent>,
         deliveries: Option<Sender<XAuthorityClientInputDelivery>>,
         recovery: Option<InputRecovery>,
     },
@@ -82,16 +82,39 @@ type X11ReceivedInputEvent = (
 
 #[cfg(unix)]
 impl X11InputEventReceiver {
-    fn recv_timeout(
+    fn wake(&self) -> Option<sophia_wake::Notifier> {
+        match self {
+            Self::Plain(_) => None,
+            Self::Routed { receiver, .. } => receiver.notifier(),
+        }
+    }
+
+    #[cfg(test)]
+    fn recv_timeout(&self, client: XServerFrontendClientId) -> Result<X11ReceivedInputEvent, RecvTimeoutError> {
+        self.receive_with_wait(client, &AtomicBool::new(false), Some(Duration::from_millis(10)))
+    }
+
+    fn receive(
         &self,
         client: XServerFrontendClientId,
+        stop: &AtomicBool,
     ) -> Result<X11ReceivedInputEvent, RecvTimeoutError> {
+        self.receive_with_wait(client, stop, None)
+    }
+
+    fn receive_with_wait(&self, client: XServerFrontendClientId, stop: &AtomicBool, timeout: Option<Duration>) -> Result<X11ReceivedInputEvent, RecvTimeoutError> {
         match self {
             Self::Plain(receiver) => receiver
                 .recv_timeout(Duration::from_millis(10))
                 .map(|event| (event, None, None, None, None, None, 0, None, None, None, None)),
             Self::Routed { receiver, .. } => {
-                match receiver.recv_timeout(Duration::from_millis(10)) {
+                let received = match timeout {
+                    Some(timeout) => receiver.recv_timeout(timeout),
+                    None => receiver.recv_until_stopped(stop)
+                        .map_err(|_| RecvTimeoutError::Disconnected)?
+                        .ok_or(RecvTimeoutError::Disconnected),
+                };
+                match received {
                     Ok(route) if route.client == client => Ok((
                         route.event,
                         route.target_window,
@@ -150,23 +173,39 @@ impl X11InputEventReceiver {
 enum X11ControlChannels {
     Routed {
         receiver: Receiver<XAuthorityClientControlCommand>,
-        acknowledgements: SyncSender<XAuthorityClientControlAck>,
+        acknowledgements: sophia_wake::SignalSender<XAuthorityClientControlAck>,
         /// Present only on a private instance, where every accepted control
         /// has a registration waiting for its outcome.
         completion: Option<ControlCompletionRegistry>,
     },
     ClientBound {
-        receiver: Receiver<X11RoutedControl>,
-        acknowledgements: SyncSender<XAuthorityClientControlAck>,
+        receiver: sophia_wake::channel::Receiver<X11RoutedControl>,
+        acknowledgements: sophia_wake::SignalSender<XAuthorityClientControlAck>,
         completion: Option<ControlCompletionRegistry>,
     },
 }
 
 #[cfg(unix)]
 impl X11ControlChannels {
-    fn recv_timeout(
+    fn wake(&self) -> Option<sophia_wake::Notifier> {
+        match self {
+            Self::Routed { .. } => None,
+            Self::ClientBound { receiver, .. } => receiver.notifier(),
+        }
+    }
+
+    #[cfg(test)]
+    fn recv_timeout(&self, client: XServerFrontendClientId) -> Result<X11RoutedControl, RecvTimeoutError> {
+        match self {
+            Self::ClientBound { receiver, .. } => receiver.recv_timeout(Duration::from_millis(10)),
+            Self::Routed { .. } => self.receive(client, &AtomicBool::new(false)),
+        }
+    }
+
+    fn receive(
         &self,
         client: XServerFrontendClientId,
+        stop: &AtomicBool,
     ) -> Result<X11RoutedControl, RecvTimeoutError> {
         match self {
             Self::Routed { receiver, .. } => {
@@ -186,7 +225,9 @@ impl X11ControlChannels {
                     Err(error) => Err(error),
                 }
             }
-            Self::ClientBound { receiver, .. } => receiver.recv_timeout(Duration::from_millis(10)),
+            Self::ClientBound { receiver, .. } => receiver.recv_until_stopped(stop)
+                .map_err(|_| RecvTimeoutError::Disconnected)?
+                .ok_or(RecvTimeoutError::Disconnected),
         }
     }
 

@@ -237,7 +237,7 @@ fn a_cancelled_input_write_is_not_reported_as_flushed() {
             client,
         },
         X11InputEventReceiver::Routed {
-            receiver,
+            receiver: receiver.into(),
             deliveries: None,
             recovery: Some(recovery.clone()),
         },
@@ -753,7 +753,7 @@ fn losing_a_connection_gives_up_its_writers_and_then_its_registration() {
         watchdog_transport: None,
         writers: X11ClientWriters {
             input: None,
-            control: Some(X11ControlWriter { stop, thread }),
+            control: Some(X11ControlWriter { stop, wake: None, thread }),
             protocol: None,
             drain: None,
             transport: std::os::unix::net::UnixStream::pair().unwrap().0,

@@ -84,6 +84,34 @@ impl ControlRecord {
 
 #[cfg(unix)]
 impl ControlCompletionRegistry {
+    /// Another client's unresolved output can still need this exact
+    /// recipient's retained custody as proof of termination.
+    fn peer_debt_names(
+        &self,
+        recipient: &Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
+    ) -> Option<bool> {
+        let held = self.inner.lock().ok()?;
+        for record in &held.records {
+            let Some(execution) = &record.source else {
+                continue;
+            };
+            // Reclaim may retry next turn; never wait while holding the
+            // completion table against a writer updating its execution.
+            let operation = execution.try_lock().ok()?;
+            if operation
+                .protocol_receipts
+                .iter()
+                .any(|receipt| !receipt.settled() && Arc::ptr_eq(&receipt.recipient, recipient))
+                || operation.focus_peers.iter().any(|peer| {
+                    !peer.flushed && !peer.superseded && Arc::ptr_eq(&peer.recipient, recipient)
+                })
+            {
+                return Some(true);
+            }
+        }
+        Some(false)
+    }
+
     fn execution_of(
         &self,
         token: ControlCompletionToken,

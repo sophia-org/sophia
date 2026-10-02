@@ -947,7 +947,7 @@ fn a_control_completion_closes_only_on_a_real_acknowledgement() {
     let (delivered, delivered_receiver) = sync_channel(4);
     let channels = X11ControlChannels::Routed {
         receiver: channel().1,
-        acknowledgements: delivered,
+        acknowledgements: delivered.into(),
         completion: Some(registry.clone()),
     };
     let ack = XAuthorityControlAck {
@@ -1000,7 +1000,7 @@ fn a_full_channel_records_the_acknowledgement_rather_than_the_command() {
     .expect("the empty slot");
     let channels = X11ControlChannels::Routed {
         receiver: channel().1,
-        acknowledgements: full,
+        acknowledgements: full.into(),
         completion: Some(registry.clone()),
     };
     let ack = XAuthorityControlAck {
@@ -1083,7 +1083,7 @@ fn a_gone_receiver_is_not_a_published_acknowledgement() {
     drop(gone_receiver);
     let channels = X11ControlChannels::Routed {
         receiver: channel().1,
-        acknowledgements: gone,
+        acknowledgements: gone.into(),
         completion: Some(registry.clone()),
     };
     let ack = XAuthorityControlAck {

@@ -192,6 +192,17 @@ impl ShellComponentProcesses {
     ) -> Result<R, ComponentConnectionError> {
         self.connections.with_connection(key, service)
     }
+    pub fn poll_fds(&self) -> Vec<rustix::event::PollFd<'_>> {
+        self.connections.poll_fds()
+    }
+    pub fn output_pending(&self) -> bool {
+        self.connections.output_pending()
+    }
+    pub fn turn_connected(
+        &mut self,
+    ) -> [Option<(ComponentConnectionKey, ShellTransportError)>; MAX_SHELL_COMPONENTS] {
+        self.connections.turn_connected()
+    }
     pub fn finish_after_backend_drop<B>(
         &mut self,
         backend: B,

@@ -75,7 +75,8 @@ impl Default for XAuthorityOrderedEgressState {
 
 #[cfg(unix)]
 struct XAuthorityOrderedEgress {
-    sender: SyncSender<XAuthorityObservedTransactionBatch>,
+    owner_wake: sophia_wake::WakeSlot,
+    sender: sophia_wake::SignalSender<XAuthorityObservedTransactionBatch>,
     cancellation: Arc<AtomicBool>,
     transport_disconnected: AtomicBool,
     state: Mutex<XAuthorityOrderedEgressState>,
@@ -90,8 +91,10 @@ impl XAuthorityOrderedEgress {
         cancellation: Arc<AtomicBool>,
         telemetry: Arc<XAuthorityBackpressureObserver>,
     ) -> Self {
+        let owner_wake = sophia_wake::WakeSlot::default();
         Self {
-            sender,
+            sender: sophia_wake::SignalSender::new(sender, owner_wake.clone()),
+            owner_wake,
             cancellation,
             transport_disconnected: AtomicBool::new(false),
             state: Mutex::new(XAuthorityOrderedEgressState::default()),
@@ -285,7 +288,9 @@ impl XAuthorityOrderedEgress {
                 return self.advance(&mut envelope, false);
             };
             match self.sender.try_send(batch) {
-                Ok(()) => return self.advance(&mut envelope, true),
+                Ok(()) => {
+                    return self.advance(&mut envelope, true);
+                }
                 Err(TrySendError::Full(batch)) => {
                     envelope.batch = Some(batch);
                     self.begin_wait(&mut envelope)?;

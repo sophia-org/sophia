@@ -45,7 +45,7 @@ impl XServerFrontendRouteRegistry {
         &self,
         client: XServerFrontendClientId,
         incarnation: &Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
-        sender: SyncSender<X11RoutedControl>,
+        sender: sophia_wake::channel::Sender<X11RoutedControl>,
         control: X11RoutedControl,
     ) -> Result<(), XServerFrontendRouteError> {
         if self.control_completion.get().is_none() {
@@ -144,7 +144,7 @@ impl XServerFrontendRouteRegistry {
     fn send_deferred(
         queue: &mut VecDeque<XDeferredRoutedControl>,
         incarnation: &Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
-        sender: &SyncSender<X11RoutedControl>,
+        sender: &sophia_wake::channel::Sender<X11RoutedControl>,
     ) -> DeferredSend {
         let mut sent = 0;
         while let Some(deferred) = queue.pop_front() {

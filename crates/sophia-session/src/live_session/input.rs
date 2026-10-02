@@ -235,7 +235,7 @@ fn application_route_lease_for_request(
 fn request_application_route_lease_release(
     state: &mut ApplicationRouteLeaseState,
     client_routes: &XAuthorityClientSurfaceRoutes,
-    sender: &SyncSender<XAuthorityRouteLeaseRelease>,
+    sender: &dyn SessionSender<XAuthorityRouteLeaseRelease>,
     seat: sophia_protocol::SeatId,
     now_msec: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -272,7 +272,7 @@ fn advance_application_input_security_epoch(
     state: &mut ApplicationRouteLeaseState,
     input_sender: &XAuthorityRoutedInputSender,
     client_routes: &XAuthorityClientSurfaceRoutes,
-    release_sender: &SyncSender<XAuthorityRouteLeaseRelease>,
+    release_sender: &dyn SessionSender<XAuthorityRouteLeaseRelease>,
 ) -> Result<usize, Box<dyn std::error::Error>> {
     let revoked = state
         .security_transition()
@@ -347,7 +347,7 @@ struct PhysicalInputRoutingContext<'a> {
     reference_capture: &'a mut sophia_engine::ReferenceSheetCapture,
     launcher_capture: &'a mut sophia_engine::LauncherCapture,
     launcher_keyboard: &'a mut sophia_engine::LauncherKeyboard,
-    route_lease_release_sender: &'a SyncSender<XAuthorityRouteLeaseRelease>,
+    route_lease_release_sender: &'a dyn SessionSender<XAuthorityRouteLeaseRelease>,
     input_output: Option<sophia_protocol::OutputId>,
     input_presentation_epoch: u64,
     /// Holds pointer motion so it reaches the frontend at the composition
@@ -564,7 +564,7 @@ fn route_input_events_with_pointer_focus(
     application_route_leases: Option<&mut ApplicationRouteLeaseState>,
     chrome_captures: Option<&mut sophia_engine::ChromeCaptureState>,
     descriptor_captures: Option<&mut sophia_engine::PresentedChromeCaptureState>,
-    route_lease_release_sender: Option<&SyncSender<XAuthorityRouteLeaseRelease>>,
+    route_lease_release_sender: Option<&dyn SessionSender<XAuthorityRouteLeaseRelease>>,
     input_output: Option<sophia_protocol::OutputId>,
     input_presentation_epoch: u64,
     input_projections: Option<&[sophia_backend_live::LivePresentedInputProjection]>,

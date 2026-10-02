@@ -87,15 +87,7 @@
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout)
             }
             Err(AuthorityWorkWait::Receive) => {
-                let now = Instant::now();
-                let maximum = authority_wait_timeout(
-                    physical_input.is_some(),
-                    cursor_updates.dirty,
-                    session_controls.pending_len() != 0
-                        || explicit_pointer_grabs.pending() != 0,
-                );
-                let maximum = runtime.as_ref().map_or(maximum, |r| r.frame_deadline_cap_wait(now, maximum));
-                authority_receiver.recv_timeout(paced_repaint_wait_cap(primary_frame_pacer, paced_repaint_runnable, now, maximum))
+                include!("authority_receive.rs")
             }
         };
         native_frame_service_preempted_previous_cycle = native_frame_service_preemption;

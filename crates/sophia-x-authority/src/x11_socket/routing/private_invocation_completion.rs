@@ -225,12 +225,9 @@ impl PrivateRetainedExecutionResources {
     /// above reaches it behind two instance-wide gates -- the invocation
     /// completed, and no control record outstanding anywhere -- and a cursor.
     /// The idle-window reclaim reaches it during the run with neither: the
-    /// seven checks in `completed_custody_evidence` are per-custody and are
-    /// the whole of what retiring this one custody needs, and the one thing
-    /// the instance-wide control gate was protecting -- that a custody must
-    /// outlive its client's unanswered control records, since control cleanup
-    /// pairs each record with its connection's slot -- the live caller asks
-    /// per client instead. Neither caller reads anything of the retained
+    /// checks in `completed_custody_evidence` are per-custody. The live caller
+    /// also checks this client's controls and cross-client output debts that
+    /// still need the exact recipient's termination evidence. Neither caller reads anything of the retained
     /// resources; this was never a method and the retained type was only its
     /// namespace.
     ///

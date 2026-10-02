@@ -9,6 +9,7 @@ use sophia_x_authority::{
     XAuthorityExplicitPointerGrabRequestKind as Control,
     XAuthorityExplicitPointerGrabResponse as Response,
 };
+use std::sync::mpsc::SyncSender;
 
 fn admission(client: u64, namespace: u64) -> ClientAdmissionContext {
     ClientAdmissionContext::new(

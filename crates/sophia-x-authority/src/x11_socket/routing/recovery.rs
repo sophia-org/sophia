@@ -126,6 +126,7 @@ struct InputRecoveryState {
 #[cfg(unix)]
 #[derive(Clone)]
 struct InputRecovery {
+    owner_wake: sophia_wake::WakeSlot,
     lifecycle: Arc<std::sync::OnceLock<PrivateLifecycleOwner>>,
     /// Setup-only role: independent transport registration, never execution
     /// or cleanup authority. Installed before a private frontend is returned.
@@ -192,6 +193,7 @@ impl InputRecovery {
         authority: Arc<Mutex<crate::XInputAuthorityState>>,
     ) -> Self {
         Self {
+            owner_wake: sophia_wake::WakeSlot::default(),
             lifecycle: Arc::new(std::sync::OnceLock::new()),
             watchdog: Arc::new(std::sync::OnceLock::new()),
             state: Arc::default(),
@@ -718,6 +720,7 @@ impl InputRecovery {
         }
         if let Some(sender) = &self.sender {
             let _ = sender.send(receipt);
+            self.owner_wake.notify();
         }
         PrivateTerminalDisposition::Recorded
     }

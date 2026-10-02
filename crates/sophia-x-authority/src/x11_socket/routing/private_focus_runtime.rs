@@ -199,11 +199,14 @@ impl XServerFrontendRouteRegistry {
                     .input_authority
                     .lock()
                     .map_err(|_| PrivateAppliedRegistryRefusal::AuthorityUnavailable)?;
-                if !authority.has_ordered_namespace(owner.namespace)
-                    || authority
-                        .pointer_query_state(owner.namespace)
-                        .position
-                        .is_some()
+                if !authority.has_ordered_namespace(owner.namespace) {
+                    return Ok(false);
+                }
+                authority.retain_instance_pointer(owner.namespace, root);
+                if authority
+                    .pointer_query_state(owner.namespace)
+                    .position
+                    .is_some()
                 {
                     return Ok(false);
                 }

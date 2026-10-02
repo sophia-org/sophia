@@ -7,6 +7,7 @@
 #[cfg(unix)]
 #[derive(Debug)]
 pub struct XServerFrontend {
+    service_wake: sophia_wake::WakeSlot,
     config: XServerFrontendConfig,
     listener: UnixListener,
     state: X11CoreSocketServerState,
@@ -62,6 +63,7 @@ impl XServerFrontend {
         let (worker_completion_sender, worker_completions) = std::sync::mpsc::channel();
         let (worker_admission_event_sender, worker_admission_events) = std::sync::mpsc::channel();
         Ok(Self {
+            service_wake: sophia_wake::WakeSlot::default(),
             config,
             listener,
             state,
@@ -418,6 +420,7 @@ impl XServerFrontend {
         let admission_policy = self.config.admission_policy();
         let injection_policy = self.config.injection_policy();
         let completion_sender = self.worker_completion_sender.clone();
+        let completion_wake = self.service_wake.clone();
         let admission_event_sender = self.worker_admission_event_sender.clone();
         #[cfg(all(test, unix))]
         let acceptance_origin = routing.clone();
@@ -454,6 +457,7 @@ impl XServerFrontend {
                     ))
                 });
                 let _ = completion_sender.send(X11CoreClientWorkerCompletion { worker_id, result });
+                completion_wake.notify();
             })
             .map_err(|error| {
                 X11SetupSocketError::new(format!("failed to start X11 client worker: {error}"))

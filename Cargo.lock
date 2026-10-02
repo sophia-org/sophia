@@ -976,6 +976,7 @@ dependencies = [
  "sophia-protocol",
  "sophia-renderer-live",
  "sophia-runtime",
+ "sophia-wake",
  "sophia-xshmfence",
  "tracing",
  "udev",
@@ -1138,6 +1139,7 @@ dependencies = [
  "sophia-linux-peer",
  "sophia-protocol",
  "sophia-shell-client",
+ "sophia-wake",
  "tracing",
  "tracing-subscriber",
 ]
@@ -1162,6 +1164,7 @@ dependencies = [
  "sophia-renderer-native-egl",
  "sophia-runtime",
  "sophia-shell-client",
+ "sophia-wake",
  "sophia-x-authority",
  "sophia-xshmfence",
  "tracing",
@@ -1193,6 +1196,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sophia-wake"
+version = "0.1.0"
+dependencies = [
+ "rustix",
+]
+
+[[package]]
 name = "sophia-x-authority"
 version = "0.1.0"
 dependencies = [
@@ -1204,6 +1214,7 @@ dependencies = [
  "sophia-portal",
  "sophia-protocol",
  "sophia-sysv-shm",
+ "sophia-wake",
  "tracing",
  "xkbcommon",
 ]

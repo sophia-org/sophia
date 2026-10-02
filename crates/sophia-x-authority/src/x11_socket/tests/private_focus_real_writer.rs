@@ -33,7 +33,7 @@
             Some(fixture.private.broker.registry.clone()),
             X11ControlChannels::ClientBound {
                 receiver: channels.control,
-                acknowledgements: ack_sender,
+                acknowledgements: ack_sender.into(),
                 completion: None,
             },
         )

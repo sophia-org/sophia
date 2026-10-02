@@ -58,6 +58,9 @@ pub struct XPassiveInputGrab {
 #[derive(Clone, Debug, Default)]
 struct XNamespaceInputAuthority {
     query: XPointerQueryState,
+    /// A prepared private instance owns its pointer across client departures.
+    /// Only the root position survives; client query scopes still retire.
+    query_root: Option<XResourceId>,
     query_scope: OrderedQueryScope,
     query_clients: std::collections::BTreeSet<u64>,
     pointer: Option<XActiveInputGrab>,
@@ -634,7 +637,27 @@ impl XInputAuthorityState {
             state.freeze.remove_owner(owner);
             let query_removed = state.query_clients.remove(&owner);
             if state.query_clients.is_empty() {
-                state.query = XPointerQueryState::default();
+                // Losing the last client does not move the instance's pointer.
+                // Drop its client window anchor and masks, retaining only the
+                // root coordinates established by the native observation.
+                let position = state.query_root.and_then(|root| {
+                    state.query.position.map(|position| XPointerObservation {
+                        surface_window: root,
+                        surface: crate::ROOT_POINTER_SURFACE,
+                        local_x: i32::from(position.root_x),
+                        local_y: i32::from(position.root_y),
+                        ..position
+                    })
+                });
+                state.query = XPointerQueryState {
+                    position,
+                    last_time_msec: if position.is_some() {
+                        state.query.last_time_msec
+                    } else {
+                        0
+                    },
+                    ..XPointerQueryState::default()
+                };
                 if query_removed {
                     state
                         .query_scope
@@ -662,6 +685,7 @@ impl XInputAuthorityState {
                 state.server_grab_waiters.notify_all();
             }
             state.pointer.is_some()
+                || state.query_root.is_some()
                 || !state.query_clients.is_empty()
                 || state.keyboard.is_some()
                 || !state.buttons.is_empty()

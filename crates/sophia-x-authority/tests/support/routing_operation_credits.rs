@@ -74,8 +74,8 @@ fn publishing_an_outcome_does_not_free_a_credit_while_its_focus_out_is_queued() 
     // The operation is answered while the FocusOut it queued on the other
     // client still sits in that client's writer queue.
     let channels = X11ControlChannels::ClientBound {
-        receiver: channel().1,
-        acknowledgements,
+        receiver: channel().1.into(),
+        acknowledgements: acknowledgements.into(),
         completion: Some(registry.clone()),
     };
     channels
@@ -853,8 +853,8 @@ fn an_effect_whose_intent_cannot_be_recorded_does_not_happen() {
     // could tell it from one that never happened -- which is exactly the
     // state a discharge is read from.
     let orphaned = X11ControlChannels::ClientBound {
-        receiver: channel().1,
-        acknowledgements: sync_channel(1).0,
+        receiver: channel().1.into(),
+        acknowledgements: sync_channel(1).0.into(),
         completion: None,
     };
     assert_eq!(

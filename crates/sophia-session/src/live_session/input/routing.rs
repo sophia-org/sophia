@@ -31,7 +31,7 @@ fn route_input_events_with_launcher(
     mut chrome_captures: Option<&mut sophia_engine::ChromeCaptureState>,
     mut descriptor_captures: Option<&mut sophia_engine::PresentedChromeCaptureState>,
     mut content_captures: Option<&mut sophia_engine::ContentCaptureState>,
-    route_lease_release_sender: Option<&SyncSender<XAuthorityRouteLeaseRelease>>,
+    route_lease_release_sender: Option<&dyn SessionSender<XAuthorityRouteLeaseRelease>>,
     input_output: Option<sophia_protocol::OutputId>,
     input_presentation_epoch: u64,
     input_projections: Option<&[sophia_backend_live::LivePresentedInputProjection]>,

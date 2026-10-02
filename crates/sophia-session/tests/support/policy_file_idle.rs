@@ -613,7 +613,7 @@ fn incomplete_readiness_opt_in_fails_once_instead_of_spinning() {
         fn disconnect(&mut self) {}
     }
     let (_commands, receive) = sync_channel(1);
-    let (events, _audit) = sync_channel(2);
+    let (events, _audit) = sync_channel::<PolicyTransportEvent>(2);
     assert_eq!(
         run_policy_transport(&mut Incomplete, 9, None, &receive, &events),
         Err("adapter does not support readiness-driven idle".into())
@@ -639,6 +639,7 @@ fn disconnected_command_queue_does_not_ring() {
             inner: Box::new(Noop),
             probe: probe.clone(),
         })),
+        owner_wake: Default::default(),
     };
     assert!(worker.try_command(outcome(90)).is_err());
     assert_eq!(probe.bells.load(Ordering::SeqCst), 0);
