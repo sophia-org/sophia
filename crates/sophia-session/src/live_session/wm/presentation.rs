@@ -335,6 +335,8 @@ impl LivePublicPolicyState {
                         registered.action == action && registered.session_operation_slot.is_none()
                     })
             }
+            // Not a presented cause; its own queue owner keeps it current.
+            sophia_protocol::PolicyRequestCause::ActionLifecycle { .. } => true,
             _ => true,
         }
     }

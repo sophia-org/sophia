@@ -65,14 +65,44 @@ fn route(
         &mut sophia_engine::LauncherKeyboard,
     )>,
 ) -> PhysicalInputRouteReport {
+    route_with_shortcuts(public, projections, kinds, launcher, None)
+}
+
+fn route_with_shortcuts(
+    public: &mut LivePublicPolicyState,
+    projections: &[sophia_backend_live::LivePresentedInputProjection],
+    kinds: &[InputEventKind],
+    launcher: Option<(
+        &mut sophia_engine::LauncherCapture,
+        &mut sophia_engine::LauncherKeyboard,
+    )>,
+    shortcuts: Option<&mut WmShortcutRouter>,
+) -> PhysicalInputRouteReport {
+    let keyed = kinds
+        .iter()
+        .map(|kind| (sophia_protocol::DeviceId::from_raw(1), *kind))
+        .collect::<Vec<_>>();
+    route_on_devices(public, projections, &keyed, launcher, shortcuts)
+}
+
+fn route_on_devices(
+    public: &mut LivePublicPolicyState,
+    projections: &[sophia_backend_live::LivePresentedInputProjection],
+    kinds: &[(sophia_protocol::DeviceId, InputEventKind)],
+    launcher: Option<(
+        &mut sophia_engine::LauncherCapture,
+        &mut sophia_engine::LauncherKeyboard,
+    )>,
+    shortcuts: Option<&mut WmShortcutRouter>,
+) -> PhysicalInputRouteReport {
     let events = kinds
         .iter()
         .copied()
         .enumerate()
-        .map(|(index, kind)| InputEventPacket {
+        .map(|(index, (device, kind))| InputEventPacket {
             serial: index as u64 + 1,
             seat: SeatId::from_raw(1),
-            device: sophia_protocol::DeviceId::from_raw(1),
+            device,
             time_msec: index as u64 + 1,
             kind,
             global_position: Some(Point { x: 10.0, y: 10.0 }),
@@ -103,7 +133,7 @@ fn route(
         &mut EmergencyChordState::awaiting_arm(),
         &mut VirtualTerminalChordState::default(),
         &mut PhysicalKeyboardCoverage::default(),
-        None,
+        shortcuts,
         &mut pointer,
         true,
         false,
@@ -313,4 +343,113 @@ fn physical_policy_routing_revokes_keys_when_a_completed_frame_loses_its_stamp()
             .iter()
             .any(|receipt| receipt.outcome == PolicyPresentationOutcome::Revoked)
     );
+}
+
+/// Enter fires CHORD, a chord the WM follows; the modal capture also binds
+/// Enter, to action 77.
+fn followed_enter() -> WmShortcutRouter {
+    let mut router = WmShortcutRouter::new(
+        sophia_engine::WmShortcutRegistry::new(
+            &[sophia_protocol::WmBindingRegistration {
+                action: WmActionId::from_raw(186),
+                keycode: 28,
+                modifiers: sophia_protocol::WmModifierMask { bits: 0 },
+            }],
+            sophia_protocol::WmCapabilities::all_supported(),
+            1,
+            sophia_protocol::WmChromePolicy::default(),
+        )
+        .unwrap(),
+    );
+    router.set_action_lifecycles(&[sophia_protocol::PolicyActionLifecycleInterest {
+        action: WmActionId::from_raw(186),
+        held_ms: 0,
+    }]);
+    router
+}
+
+/// A followed chord's activation is protected: the capture leaves it alone,
+/// so its Held and Ended mean something.
+#[test]
+fn a_followed_chord_bypasses_the_modal_capture() {
+    let mut fixture = ReloadFixture::new();
+    let public = fixture.wm.public.as_mut().unwrap();
+    let projections = presented(public);
+    let mut router = followed_enter();
+    let report = route_with_shortcuts(public, &projections, &[key(28, true)], None, Some(&mut router));
+    assert!(actions(&report).is_empty());
+    assert!(matches!(
+        report.policy_inputs[..],
+        [PhysicalPolicyInput::ChordAction(chorded)] if chorded.action == WmActionId::from_raw(186)
+    ));
+}
+
+/// A press the router consumes but fires nothing for, because every credit is
+/// owed, is the router's: it never becomes a presentation activation.
+#[test]
+fn a_shortcut_refused_for_credit_is_no_presentation_activation() {
+    let mut fixture = ReloadFixture::new();
+    let public = fixture.wm.public.as_mut().unwrap();
+    let projections = presented(public);
+    let mut router = followed_enter();
+    for _ in 0..sophia_engine::WM_CHORD_CREDITS {
+        router.route_key(SeatId::from_raw(1), sophia_protocol::DeviceId::from_raw(1), 28, true, 0);
+        router.route_key(SeatId::from_raw(1), sophia_protocol::DeviceId::from_raw(1), 28, false, 0);
+    }
+    assert_eq!(router.chord_credits_free(), 0);
+    let report = route_with_shortcuts(public, &projections, &[key(28, true)], None, Some(&mut router));
+    assert!(actions(&report).is_empty());
+    assert!(report.policy_inputs.iter().all(|input| matches!(input, PhysicalPolicyInput::Chord(_))));
+}
+
+/// With the seat's modifiers unknown nothing matches: the capture swallows the
+/// press without activating its binding and still settles its release.
+#[test]
+fn an_uncertain_seat_matches_no_presentation_binding() {
+    let mut fixture = ReloadFixture::new();
+    let public = fixture.wm.public.as_mut().unwrap();
+    let projections = presented(public);
+    let mut router = followed_enter();
+    let seat = SeatId::from_raw(1);
+    for device in 100..100 + sophia_engine::WM_MAX_SHORTCUT_DEVICES as u64 {
+        router.route_key(seat, sophia_protocol::DeviceId::from_raw(device), 30, true, 0);
+    }
+    router.route_key(seat, sophia_protocol::DeviceId::from_raw(99), 56, true, 0);
+    assert!(router.seat_uncertain(seat));
+    // An unbound key for the router, bound in the capture only.
+    let report = route_with_shortcuts(
+        public,
+        &projections,
+        &[key(28, true), key(28, false)],
+        None,
+        Some(&mut router),
+    );
+    assert!(actions(&report).is_empty());
+    assert!(report.policy_inputs.is_empty());
+    assert_eq!(report.shortcut_uncertain_presses, 1);
+}
+
+/// Review R2: protection follows the activation, not the current declaration.
+/// An open chord keeps its frozen eligibility, so a join from another keyboard
+/// after the row is removed is still the chord's, never the capture's.
+#[test]
+fn a_join_keeps_its_protection_after_its_declaration_is_removed() {
+    let mut fixture = ReloadFixture::new();
+    let public = fixture.wm.public.as_mut().unwrap();
+    let projections = presented(public);
+    let mut router = followed_enter();
+    let first = sophia_protocol::DeviceId::from_raw(1);
+    let second = sophia_protocol::DeviceId::from_raw(2);
+    let report = route_on_devices(public, &projections, &[(first, key(28, true))], None, Some(&mut router));
+    let Some(PhysicalPolicyInput::ChordAction(opener)) = report.policy_inputs.first().copied() else {
+        panic!("the opener is the chord's: {:?}", report.policy_inputs);
+    };
+    router.set_action_lifecycles(&[]);
+    let report = route_on_devices(public, &projections, &[(second, key(28, true))], None, Some(&mut router));
+    assert!(actions(&report).is_empty());
+    assert!(matches!(
+        report.policy_inputs[..],
+        [PhysicalPolicyInput::ChordAction(join)]
+            if join.chord.token == opener.chord.token && !join.chord.opens
+    ));
 }

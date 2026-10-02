@@ -25,6 +25,8 @@ pub(super) struct PhysicalInputRouteReport {
     pub(super) keys_observed: usize,
     pub(super) keys_suppressed_no_focus: usize,
     pub(super) keys_suppressed_stale_focus: usize,
+    /// Presses on a seat whose modifiers are unknown, so nothing matched them.
+    pub(super) shortcut_uncertain_presses: usize,
     pub(super) key_targets: Vec<SurfaceId>,
     pub(super) routed_key_presses: Vec<(u64, u64)>,
     pub(super) deferred_key_presses: Vec<(u64, u64)>,

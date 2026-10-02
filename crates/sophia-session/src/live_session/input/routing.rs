@@ -67,6 +67,7 @@ fn route_input_events_with_launcher(
         keys_observed: 0,
         keys_suppressed_no_focus: 0,
         keys_suppressed_stale_focus: 0,
+        shortcut_uncertain_presses: 0,
         keys_routed: 0,
         key_targets: Vec::new(),
         routed_key_presses: Vec::new(),
@@ -229,6 +230,14 @@ fn route_input_events_with_launcher(
             }
             sophia_protocol::InputEventKind::DeviceRemoved => {
                 if let Some(policy) = policy_presentation.as_mut() { policy.capture.remove_device(event.device); }
+                // The seat's chords end cancelled even when this keyboard has
+                // nothing down now: an earlier trigger of its may still belong
+                // to a chord the seat's modifiers hold.
+                if let Some(router) = shortcuts.as_deref_mut() {
+                    router.remove_device(event.device);
+                    router.cancel_seat_chords(event.seat);
+                }
+                drain_chord_events(shortcuts.as_deref_mut(), &mut report.policy_inputs);
                 let removal = release_departed_device(
                     event.device,
                     client_keys,

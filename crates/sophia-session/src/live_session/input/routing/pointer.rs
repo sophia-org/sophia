@@ -318,10 +318,13 @@
                             y: global.y.round() as i32,
                         }
                     });
+                    // With the seat's modifiers unknown, Super is never taken as
+                    // held: a gesture may not start from a guessed mask.
                     let super_held = shortcuts.as_deref().is_some_and(|shortcuts| {
-                        shortcuts.modifier_mask(event.seat).bits
-                            & sophia_protocol::WmModifierMask::SUPER
-                            != 0
+                        !shortcuts.seat_uncertain(event.seat)
+                            && shortcuts.modifier_mask(event.seat).bits
+                                & sophia_protocol::WmModifierMask::SUPER
+                                != 0
                     });
                     let route =
                         sophia_engine::hit_test_scene_surface_for_input(&event, input_layers);

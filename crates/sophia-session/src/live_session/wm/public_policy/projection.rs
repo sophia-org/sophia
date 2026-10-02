@@ -46,6 +46,12 @@ impl LivePublicPolicyState {
         )
     }
 
+    /// Ended for a chord: exempt from the request bound, since the credits
+    /// bound it, but queued behind every ordinary cause before it.
+    fn queue_chord_terminal(&mut self, cause: LivePublicPolicyCause) {
+        self.queue.push_back(cause);
+    }
+
     fn queue_security_cancel(
         &mut self,
         cause: LivePublicPolicyCause,

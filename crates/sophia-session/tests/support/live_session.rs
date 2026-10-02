@@ -148,6 +148,8 @@ fn add_test_surface_route(
 
 #[path = "live_session/authority_merge_tests.rs"]
 mod authority_merge_tests;
+#[path = "live_session/chord_routing_tests.rs"]
+mod chord_routing_tests;
 #[path = "live_session/desktop_shortcut_tests.rs"]
 mod desktop_shortcut_tests;
 #[path = "live_session/device_identity_tests.rs"]

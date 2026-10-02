@@ -10,7 +10,8 @@ macro_rules! dispatch_physical_policy_inputs {
             }
             let hover_enabled = wm_session.as_ref().is_some_and(LiveWmSession::pointer_focus_enabled);
             for input in report.policy_inputs.iter().copied() {
-                if !physical_policy_inputs.push(input, hover_enabled) {
+                let router = wm_session.as_mut().and_then(|wm| wm.shortcuts.as_mut());
+                if !physical_policy_inputs.admit(input, hover_enabled, router) {
                     if matches!(input, PhysicalPolicyInput::PresentedAction(_))
                         && let Some(public) = wm_session.as_mut().and_then(|wm| wm.public.as_mut()) {
                         public.revoke_live_presentation();
@@ -19,7 +20,41 @@ macro_rules! dispatch_physical_policy_inputs {
                 }
             }
             while let Some(input) = physical_policy_inputs.next(wm_session.as_ref().is_some_and(LiveWmSession::pointer_focus_pending)) {
+                // A live policy replacing its configuration holds the whole queue
+                // in order; nothing is dropped and nothing jumps ahead. A WM that
+                // is gone or restarting holds nothing: its inputs are refused below.
+                if wm_session.as_ref().is_some_and(LiveWmSession::holds_physical_inputs) {
+                    physical_policy_inputs.hold(input);
+                    break;
+                }
                 let action = match input {
+                    PhysicalPolicyInput::Chord(event) => {
+                        let Some(wm) = wm_session.as_mut() else { continue };
+                        if wm.public.is_none() { continue; }
+                        if wm.enqueue_chord_event(event)? == LiveChordEventAdmission::HeldDropped {
+                            crate::session_eprintln!("sophia_live_wm schema=1 status=chord_held_dropped reason=capacity");
+                        }
+                        continue;
+                    }
+                    PhysicalPolicyInput::ChordAction(chorded) => {
+                        let Some(wm) = wm_session.as_mut() else { continue };
+                        match wm.admit_chord_action(chorded.action, chorded.chord, chorded.device, chorded.keycode, &layout, output)? {
+                            LiveChordActionAdmission::Admitted => crate::session_println!(
+                                "sophia_live_wm schema=1 status=physical_action_admitted action={}",
+                                chorded.action.raw(),
+                            ),
+                            LiveChordActionAdmission::Withheld => crate::session_println!(
+                                "sophia_live_wm schema=2 status=physical_action_withheld reason=policy_replacement"
+                            ),
+                            LiveChordActionAdmission::Discarded => {}
+                            LiveChordActionAdmission::RejectedCapacity { report: true } => crate::session_eprintln!(
+                                "sophia_live_wm schema=2 status=request_rejected source=action reason=capacity action={}",
+                                chorded.action.raw(),
+                            ),
+                            LiveChordActionAdmission::RejectedCapacity { report: false } => {}
+                        }
+                        continue;
+                    }
                     PhysicalPolicyInput::PresentedAction(action) => {
                         if let Some(wm) = wm_session.as_mut() { wm.enqueue_presented_action(action)?; }
                         continue;
@@ -156,7 +191,7 @@ macro_rules! dispatch_physical_policy_inputs {
                     continue;
                 }
                 match wm.enqueue_action(action, &layout, output)? {
-                    LiveOrderedWmActionAdmission::Admitted => {
+                    LiveOrderedWmActionAdmission::Admitted { .. } => {
                         crate::session_println!(
                             "sophia_live_wm schema=1 status=physical_action_admitted action={}",
                             action.raw(),

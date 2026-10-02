@@ -20,8 +20,9 @@ fn selected_mechanisms_are_bounded_by_offer_ceiling_and_profile_admission() {
         | SOPHIA_WM_CAPABILITY_OUTPUT_ACTIONS
         | SOPHIA_WM_CAPABILITY_OUTPUT_POLICY_KEYS
         | SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES;
-    let dependent =
-        SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS | SOPHIA_WM_CAPABILITY_OUTPUT_LAUNCH_CONTEXT;
+    let dependent = SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS
+        | SOPHIA_WM_CAPABILITY_OUTPUT_LAUNCH_CONTEXT
+        | SOPHIA_WM_CAPABILITY_ACTION_LIFECYCLE;
     assert_eq!(
         select_policy_capabilities(u64::MAX, u64::MAX, false),
         unconditional | dependent
@@ -61,6 +62,36 @@ fn each_dependency_is_removed_after_either_offer_or_ceiling_excludes_its_prerequ
                     };
                 assert_eq!(select_policy_capabilities(offer, ceiling, true), expected);
             }
+        }
+    }
+}
+
+/// The chord lifecycle needs both actions and configuration: it is dropped
+/// when the offer or the ceiling excludes either one, or both.
+#[test]
+fn action_lifecycle_needs_both_actions_and_configuration() {
+    let actions = SOPHIA_WM_CAPABILITY_ACTIONS;
+    let configuration = SOPHIA_WM_CAPABILITY_CONFIGURATION;
+    let lifecycle = SOPHIA_WM_CAPABILITY_ACTION_LIFECYCLE;
+    let all = actions | configuration | lifecycle;
+    for offer in 0..8_u64 {
+        for ceiling in 0..8_u64 {
+            let bits = |set: u64| {
+                (if set & 1 != 0 { actions } else { 0 })
+                    | (if set & 2 != 0 { configuration } else { 0 })
+                    | (if set & 4 != 0 { lifecycle } else { 0 })
+            };
+            let both = bits(offer) & bits(ceiling);
+            let expected = if both & (actions | configuration) == actions | configuration {
+                both
+            } else {
+                both & !lifecycle
+            };
+            assert_eq!(
+                select_policy_capabilities(bits(offer), bits(ceiling), true) & all,
+                expected,
+                "offer {offer:03b} ceiling {ceiling:03b}"
+            );
         }
     }
 }

@@ -95,6 +95,15 @@
                         || explicit_pointer_grabs.pending() != 0,
                 );
                 let maximum = runtime.as_ref().map_or(maximum, |r| r.frame_deadline_cap_wait(now, maximum));
+                // Wake for the next chord Held; the per-turn chord service polls it.
+                let maximum = wm_session
+                    .as_ref()
+                    .and_then(|wm| wm.shortcuts.as_ref())
+                    .and_then(WmShortcutRouter::next_deadline)
+                    .map_or(maximum, |deadline| {
+                        let elapsed = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+                        maximum.min(Duration::from_millis(deadline.saturating_sub(elapsed)))
+                    });
                 authority_receiver.recv_timeout(paced_repaint_wait_cap(primary_frame_pacer, paced_repaint_runnable, now, maximum))
             }
         };

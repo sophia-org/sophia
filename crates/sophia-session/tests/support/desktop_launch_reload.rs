@@ -34,6 +34,9 @@ mod output_file_recovery;
 #[path = "policy_expectation_settlement.rs"]
 mod policy_expectation_settlement;
 
+#[path = "chord_lifecycle_session.rs"]
+mod chord_lifecycle_session;
+
 #[path = "policy_inspection.rs"]
 mod policy_inspection;
 
@@ -198,6 +201,9 @@ impl ReloadFixture {
             request_peak_depth: 0,
             request_rejections: 0,
             action_requests_ordered: 0,
+            chord_ledger: BTreeMap::new(),
+            uncertain_seats: BTreeSet::new(),
+            keyboard_matching: true,
             stale_responses: 0,
             work_area_relayout_required: false,
             shell_reservation_bands: Vec::new(),

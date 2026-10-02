@@ -280,6 +280,14 @@ pub(super) fn validate_request_cause(
         {
             Ok(())
         }
+        // The chord names no surface; its first Action already passed the
+        // action checks, and the phase is valid by construction.
+        PolicyRequestCause::ActionLifecycle {
+            activation_serial,
+            action,
+            count,
+            ..
+        } if activation_serial != 0 && action.is_valid() && count != 0 => Ok(()),
         _ => Err(PolicyProjectionError::InvalidRequestCause),
     }
 }

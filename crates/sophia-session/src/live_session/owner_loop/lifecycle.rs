@@ -292,6 +292,15 @@
         if runtime_deadline_key_drain.is_draining() || session_quiescence.is_some() {
             input_routing_mode = PhysicalInputRoutingMode::Suppressed;
         }
+        // Leaving keyboard matching ends the open chords cancelled now, on the
+        // transition itself, before input or the chord timers run: no further
+        // key or poller is needed for it.
+        if let Some(wm) = wm_session.as_mut() {
+            wm.observe_keyboard_matching(!matches!(
+                input_routing_mode,
+                PhysicalInputRoutingMode::CursorOnly | PhysicalInputRoutingMode::Suppressed
+            ));
+        }
         let explicit_controls = drain_explicit_pointer_grab_controls(
             explicit_pointer_grabs,
             &mut application_route_leases,
@@ -339,6 +348,23 @@
                 primary_frame_interval
             );
         metrics.max_input_phase = metrics.max_input_phase.max(input_phase_started.elapsed());
+        // Chords owe the WM whatever physical input is doing: Held falls due by
+        // the clock, and seat resets, reloads and removals leave cancellations in
+        // the router. Both join the same FIFO behind everything routed before,
+        // and the queue is dispatched every turn, suppressed or not, so nothing
+        // owed is stranded and an overdue deadline never spins the wait.
+        {
+            let chord_now = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+            let mut chord_report = PhysicalInputRouteReport::default();
+            if let Some(wm) = wm_session.as_mut() {
+                chord_report.policy_inputs.extend(
+                    wm.service_chords(chord_now).into_iter().map(PhysicalPolicyInput::Chord),
+                );
+            }
+            if !chord_report.policy_inputs.is_empty() || physical_policy_inputs.has_pending() {
+                dispatch_physical_policy_inputs!(&chord_report);
+            }
+        }
         if input_requested_exit {
             break;
         }

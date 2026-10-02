@@ -187,7 +187,7 @@ static void projection_and_operation(void) {
 }
 int main(int argc, char **argv) {
   struct sockaddr_un address = {0};
-  struct sophia_ws_config config = {4096, {(UINT64_C(1) << 20) - 1, 0}, 0};
+  struct sophia_ws_config config = {4096, {(UINT64_C(1) << 21) - 1, 0}, 0};
   struct sophia_ws_obligations obligations;
   void *storage;
   size_t bytes = sophia_ws_storage_bytes(config.msize);

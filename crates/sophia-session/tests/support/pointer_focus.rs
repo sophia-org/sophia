@@ -343,3 +343,174 @@ fn pointer_focus_queue_is_bounded_without_replacing_ordered_actions() {
     }
     assert_eq!(queue.next(false), None);
 }
+
+/// Ended for a chord passes the input bound, which the credits already bound,
+/// and joins behind everything queued; Held is ordinary and is refused.
+#[test]
+fn chord_terminals_pass_the_input_bound_behind_earlier_inputs() {
+    let mut router = sophia_engine::WmShortcutRouter::new(
+        sophia_engine::WmShortcutRegistry::new(
+            &[sophia_protocol::WmBindingRegistration {
+                action: WmActionId::from_raw(5),
+                keycode: 67,
+                modifiers: sophia_protocol::WmModifierMask { bits: 0 },
+            }],
+            sophia_protocol::WmCapabilities::all_supported(),
+            1,
+            sophia_protocol::WmChromePolicy::default(),
+        )
+        .unwrap(),
+    );
+    router.set_action_lifecycles(&[sophia_protocol::PolicyActionLifecycleInterest {
+        action: WmActionId::from_raw(5),
+        held_ms: 0,
+    }]);
+    let token = router
+        .route_key(SeatId::from_raw(1), DeviceId::from_raw(1), 67, true, 0)
+        .chord
+        .unwrap()
+        .token;
+    let mut queue = PhysicalPolicyInputQueue::default();
+    for value in 1..=256 {
+        assert!(queue.push(
+            PhysicalPolicyInput::Action(WmActionId::from_raw(value)),
+            true
+        ));
+    }
+    let held = PhysicalPolicyInput::Chord(sophia_engine::WmChordEvent::Held { token });
+    assert!(!queue.push(held, true));
+    let ended = PhysicalPolicyInput::Chord(sophia_engine::WmChordEvent::Ended {
+        token,
+        end: sophia_protocol::PolicyChordEnd::Released,
+    });
+    assert!(queue.push(ended, true));
+    for value in 1..=256 {
+        assert_eq!(
+            queue.next(false),
+            Some(PhysicalPolicyInput::Action(WmActionId::from_raw(value)))
+        );
+    }
+    assert_eq!(queue.next(false), Some(ended));
+}
+
+/// A hold puts the input back at the head, so every input keeps its place.
+#[test]
+fn a_hold_keeps_the_whole_queue_in_order() {
+    let mut queue = PhysicalPolicyInputQueue::default();
+    for value in 1..=3 {
+        queue.push(
+            PhysicalPolicyInput::Action(WmActionId::from_raw(value)),
+            true,
+        );
+    }
+    let first = queue.next(false).unwrap();
+    queue.hold(first);
+    assert!(queue.has_pending());
+    for value in 1..=3 {
+        assert_eq!(
+            queue.next(false),
+            Some(PhysicalPolicyInput::Action(WmActionId::from_raw(value)))
+        );
+    }
+    assert!(!queue.has_pending());
+}
+
+fn launch_router() -> sophia_engine::WmShortcutRouter {
+    let bindings = [67, 73].map(|keycode| sophia_protocol::WmBindingRegistration {
+        action: WmActionId::from_raw(5),
+        keycode,
+        modifiers: sophia_protocol::WmModifierMask { bits: 0 },
+    });
+    let mut router = sophia_engine::WmShortcutRouter::new(
+        sophia_engine::WmShortcutRegistry::new(
+            &bindings,
+            sophia_protocol::WmCapabilities::all_supported(),
+            1,
+            sophia_protocol::WmChromePolicy::default(),
+        )
+        .unwrap(),
+    );
+    router.set_action_lifecycles(&[sophia_protocol::PolicyActionLifecycleInterest {
+        action: WmActionId::from_raw(5),
+        held_ms: 0,
+    }]);
+    router
+}
+
+fn chorded(decision: sophia_engine::WmShortcutDecision, keycode: u32) -> PhysicalPolicyInput {
+    PhysicalPolicyInput::ChordAction(PhysicalChordAction {
+        action: decision.action.unwrap(),
+        chord: decision.chord.unwrap(),
+        device: DeviceId::from_raw(1),
+        keycode,
+    })
+}
+
+/// Review R1: an opener the physical queue cannot take is refused to the
+/// router at that bound, so its credit returns and nothing is owed for it.
+#[test]
+fn an_opener_refused_at_the_physical_bound_returns_its_credit() {
+    let mut router = launch_router();
+    let mut queue = PhysicalPolicyInputQueue::default();
+    for value in 1..=256 {
+        assert!(queue.admit(
+            PhysicalPolicyInput::Action(WmActionId::from_raw(value)),
+            true,
+            Some(&mut router)
+        ));
+    }
+    let opener = router.route_key(SeatId::from_raw(1), DeviceId::from_raw(1), 67, true, 0);
+    assert!(!queue.admit(chorded(opener, 67), true, Some(&mut router)));
+    assert_eq!(router.chord_credits_free(), sophia_engine::WM_CHORD_CREDITS);
+    router.route_key(SeatId::from_raw(1), DeviceId::from_raw(1), 67, false, 1);
+    assert!(router.drain_chord_events().is_empty());
+}
+
+/// Review R1: a join refused at the bound stops holding its chord; the Ended
+/// that causes joins the back of the same FIFO, behind the chord's opener and
+/// everything else already waiting.
+#[test]
+fn a_join_refused_at_the_physical_bound_ends_its_chord_behind_the_opener() {
+    let mut router = launch_router();
+    let mut queue = PhysicalPolicyInputQueue::default();
+    for value in 1..=255 {
+        assert!(queue.admit(
+            PhysicalPolicyInput::Action(WmActionId::from_raw(value)),
+            true,
+            Some(&mut router)
+        ));
+    }
+    let seat = SeatId::from_raw(1);
+    let device = DeviceId::from_raw(1);
+    let opener = router.route_key(seat, device, 67, true, 0);
+    let token = opener.chord.unwrap().token;
+    assert!(queue.admit(chorded(opener, 67), true, Some(&mut router)));
+    let join = router.route_key(seat, device, 73, true, 1);
+    router.route_key(seat, device, 67, false, 2);
+    assert!(
+        router.drain_chord_events().is_empty(),
+        "the join's key still holds it"
+    );
+    assert!(!queue.admit(chorded(join, 73), true, Some(&mut router)));
+    for value in 1..=255 {
+        assert_eq!(
+            queue.next(false),
+            Some(PhysicalPolicyInput::Action(WmActionId::from_raw(value)))
+        );
+    }
+    assert_eq!(queue.next(false), Some(chorded(opener, 67)));
+    assert_eq!(
+        queue.next(false),
+        Some(PhysicalPolicyInput::Chord(
+            sophia_engine::WmChordEvent::Ended {
+                token,
+                end: sophia_protocol::PolicyChordEnd::Released,
+            }
+        ))
+    );
+    assert_eq!(queue.next(false), None);
+    assert_eq!(
+        router.chord_credits_free(),
+        sophia_engine::WM_CHORD_CREDITS - 1
+    );
+}

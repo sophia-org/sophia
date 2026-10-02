@@ -213,22 +213,65 @@ impl WmShortcutRouter {
         }
     }
 
-    /// Install new bindings. Open chords end cancelled, but the keys down stay
-    /// recorded, so the release of a press the old bindings consumed is still
+    /// Install a registry. Its metadata (generation, chrome, capabilities)
+    /// always replaces the old. Only a change of bindings is a registry change
+    /// for chords: open chords then end cancelled. The keys down stay recorded
+    /// either way, so the release of a press the old bindings consumed is still
     /// consumed rather than reaching a client unpaired.
     pub fn replace_registry(&mut self, registry: WmShortcutRegistry) {
+        if self.registry.bindings != registry.bindings {
+            self.chords.cancel_all();
+        }
         self.registry = registry;
+    }
+
+    /// End every open chord cancelled, as when keyboard routing leaves Session.
+    pub fn cancel_all_chords(&mut self) {
         self.chords.cancel_all();
     }
 
-    /// Route one physical key event at event time `time_msec`.
+    /// Record one physical key event without matching it: presses activate
+    /// nothing, releases still end chords and keep consumed pairing. Used while
+    /// matching is disabled, so the record stays true for when it resumes.
+    pub fn observe_key(
+        &mut self,
+        seat: SeatId,
+        device: DeviceId,
+        keycode: u32,
+        pressed: bool,
+    ) -> WmShortcutDecision {
+        self.route(seat, device, keycode, pressed, 0, false)
+    }
+
+    /// Seats whose modifier state is unknown, for reporting transitions.
+    pub fn uncertain_seats(&self) -> impl Iterator<Item = SeatId> + '_ {
+        self.seats
+            .iter()
+            .filter(|(_, state)| !state.mask_known())
+            .map(|(seat, _)| *seat)
+    }
+
+    /// Route one physical key event. `now_msec` is the owner's clock, the one
+    /// `poll_chords` and `next_deadline` use.
     pub fn route_key(
         &mut self,
         seat: SeatId,
         device: DeviceId,
         keycode: u32,
         pressed: bool,
+        now_msec: u64,
+    ) -> WmShortcutDecision {
+        self.route(seat, device, keycode, pressed, now_msec, true)
+    }
+
+    fn route(
+        &mut self,
+        seat: SeatId,
+        device: DeviceId,
+        keycode: u32,
+        pressed: bool,
         time_msec: u64,
+        matching: bool,
     ) -> WmShortcutDecision {
         if !seat.is_valid() || keycode >= KEYCODE_LIMIT {
             return WmShortcutDecision::pass();
@@ -285,7 +328,7 @@ impl WmShortcutRouter {
             }
             state.devices.push(DeviceKeys::new(device));
         }
-        let matched = if state.mask_known() {
+        let matched = if matching && state.mask_known() {
             let modifiers = state.modifier_mask();
             self.registry
                 .lookup(keycode, modifiers)

@@ -350,6 +350,20 @@ impl LiveWmSession {
                     request: request.clone(),
                 })
                 .map_err(|_| "public WM cycle queue is busy")?;
+            // A chord's credit returns only now, with its Ended handed off as
+            // the in-flight Cycle: never on dequeue or a failed handoff.
+            if let LiveWmProposalSource::Chord(token) = cause.source
+                && matches!(
+                    cause.cause,
+                    sophia_protocol::PolicyRequestCause::ActionLifecycle {
+                        phase: sophia_protocol::PolicyChordPhase::Ended(_),
+                        ..
+                    }
+                )
+                && let Some(router) = self.shortcuts.as_mut()
+            {
+                router.chord_delivered(token);
+            }
             public.in_flight_source = Some(cause.source);
             public.in_flight_request = Some(request);
             public.cycle_submitted = true;

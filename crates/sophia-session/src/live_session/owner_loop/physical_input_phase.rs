@@ -487,7 +487,7 @@ macro_rules! drain_physical_input {
                     .copied()
                     .ok_or("indicator activation targets an unavailable output")?;
                 match wm.enqueue_action(action, &layout, action_output)? {
-                    LiveOrderedWmActionAdmission::Admitted => {
+                    LiveOrderedWmActionAdmission::Admitted { .. } => {
                         crate::session_println!(
                             "sophia_live_wm schema=1 status=physical_action_admitted action={}",
                             action.raw(),
@@ -701,6 +701,12 @@ macro_rules! drain_physical_input {
                     report.chrome_events_consumed,
                     report.pointer_lease_waits,
                     report.pointer_lease_rejections,
+                );
+            }
+            if report.shortcut_uncertain_presses > 0 {
+                crate::session_println!(
+                    "sophia_live_shortcuts schema=1 status=presses_unmatched reason=modifiers_unknown count={}",
+                    report.shortcut_uncertain_presses,
                 );
             }
             if report.pointer_buttons_observed > 0 {

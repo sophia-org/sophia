@@ -624,3 +624,70 @@ fn a_refused_keyboards_later_modifier_also_suppresses_matching() {
             .is_none()
     );
 }
+
+/// Matching disabled (CursorOnly) still records presses and releases, so a
+/// modifier pressed meanwhile is known on return, a duplicate is no new
+/// action, and a press consumed before keeps its consumed release.
+#[test]
+fn observing_without_matching_keeps_the_record_true_across_modes() {
+    let mut router = router();
+    let launch = opened(press(&mut router, F9, 0));
+    router.cancel_all_chords();
+    assert_eq!(
+        router.drain_chord_events(),
+        [ended(launch, PolicyChordEnd::Cancelled)]
+    );
+    // CursorOnly: Alt goes down, F9 repeats, a fresh Tab is not matched.
+    assert!(!router.observe_key(SEAT, KEYBOARD, LEFT_ALT, true).consumed);
+    let repeat = router.observe_key(SEAT, KEYBOARD, F9, true);
+    assert!(repeat.consumed && repeat.action.is_none());
+    let tab = router.observe_key(SEAT, KEYBOARD, TAB, true);
+    assert!(tab.action.is_none() && !tab.consumed);
+    assert!(router.observe_key(SEAT, KEYBOARD, F9, false).consumed);
+    assert!(!router.observe_key(SEAT, KEYBOARD, TAB, false).consumed);
+    // Back to Full: Alt is still known to be down.
+    assert_eq!(router.modifier_mask(SEAT).bits, WmModifierMask::ALT);
+    assert_eq!(press(&mut router, F9, 1).action, Some(UNDECLARED));
+    assert!(router.drain_chord_events().is_empty());
+}
+
+/// Equal bindings keep open chords but take the new registry's metadata;
+/// changed bindings cancel them, keeping the record of keys down.
+#[test]
+fn a_registry_with_equal_bindings_keeps_chords_and_updates_metadata() {
+    let mut router = router();
+    press(&mut router, LEFT_ALT, 0);
+    let next = opened(press(&mut router, TAB, 0));
+    let same = |generation| {
+        WmShortcutRegistry::new(
+            &[
+                binding(NEXT, TAB, WmModifierMask::ALT),
+                binding(PREVIOUS, TAB, WmModifierMask::ALT | WmModifierMask::SHIFT),
+                binding(LAUNCH, F9, 0),
+                binding(LAUNCH, KP_9, 0),
+                binding(UNDECLARED, F9, WmModifierMask::ALT),
+            ],
+            WmCapabilities::all_supported(),
+            generation,
+            WmChromePolicy::default(),
+        )
+        .unwrap()
+    };
+    router.replace_registry(same(7));
+    assert_eq!(router.policy_generation(), 7);
+    assert!(router.drain_chord_events().is_empty());
+    let changed = WmShortcutRegistry::new(
+        &[binding(NEXT, TAB, WmModifierMask::ALT)],
+        WmCapabilities::all_supported(),
+        8,
+        WmChromePolicy::default(),
+    )
+    .unwrap();
+    router.replace_registry(changed);
+    assert_eq!(router.policy_generation(), 8);
+    assert_eq!(
+        router.drain_chord_events(),
+        [ended(next, PolicyChordEnd::Cancelled)]
+    );
+    assert!(release(&mut router, TAB, 1).consumed);
+}
