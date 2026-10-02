@@ -217,11 +217,25 @@
                             let router = key_event.as_ref().map(|key_event| key_event.router());
                             let uncertain = router.is_some_and(|router| router.seat_uncertain(event.seat));
                             let mask = router.map_or(sophia_protocol::WmModifierMask { bits: 0 }, |router| router.modifier_mask(event.seat));
-                            let application_active = client_keys.pending_len() != 0
+                            // A held capture leaves modifiers to their owner, so only a
+                            // held non-modifier application key makes it wait. While
+                            // shielding, the rule is that of the pixels on screen, kept
+                            // until their withdrawal completes; otherwise every stamp
+                            // is current or none is presented yet, and the admitted
+                            // publication's rule applies.
+                            let shielded = uncertain || policy.keyboard_needs_shield(input_projections);
+                            let held_capture = if shielded {
+                                PolicyPresentedInputRouting::presented_keyboard(input_projections)
+                                    == sophia_engine::PresentedKeyboardScope::Held
+                            } else {
+                                policy.state.held_capture()
+                            };
+                            let held_client_keys = if held_capture { client_keys.pending_non_modifier_len() } else { client_keys.pending_len() };
+                            let application_active = held_client_keys != 0
                                 || application_route_leases.as_deref().is_some_and(|leases| leases.leases().next().is_some())
                                 || pointer_focus_handoff.as_deref().and_then(PointerFocusHandoffState::target).is_some();
-                            let disposition = if uncertain || policy.keyboard_needs_shield(input_projections) {
-                                policy.capture.block_key(event.seat, event.device, keycode, pressed, application_active)
+                            let disposition = if shielded {
+                                policy.capture.block_key(event.seat, event.device, keycode, pressed, application_active, held_capture)
                             } else {
                                 policy.capture.key(policy.state, event.seat, event.device, keycode, pressed, mask, application_active)
                             };

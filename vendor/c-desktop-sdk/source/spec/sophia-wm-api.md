@@ -296,6 +296,9 @@ activations arrive as ChordAction, naming both the activation and its chord,
 so the WM can tell them from the same action invoked another way. Sophia
 attaches no meaning to them: a switcher that commits on release, or a
 hold-to-preview, is WM policy.
+With `held_capture`, an Overlay presentation may also take non-modifier keys
+while the chord is held, for example to cancel or confirm that switcher
+([held capture](sophia-wm-files.md#held-capture)).
 
 Session actions are advertised opaque tokens. A WM may request an advertised
 token with an optional opaque target. It cannot supply an executable, argument,

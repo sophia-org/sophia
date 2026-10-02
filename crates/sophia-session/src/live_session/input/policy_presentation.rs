@@ -36,6 +36,23 @@ fn record_policy_input(
 }
 
 impl PolicyPresentedInputRouting<'_> {
+    /// The keyboard scope of the pixels actually presented on the outputs the
+    /// shield inspects, independently of what is admitted now: Modal over
+    /// Held over none, each output already aggregated over its heads.
+    fn presented_keyboard(
+        projections: Option<&[sophia_backend_live::LivePresentedInputProjection]>,
+    ) -> sophia_engine::PresentedKeyboardScope {
+        projections
+            .into_iter()
+            .flatten()
+            .filter(|projection| {
+                projection.policy_visible || projection.policy_publication.is_some()
+            })
+            .map(|projection| projection.presented_keyboard)
+            .max()
+            .unwrap_or_default()
+    }
+
     fn keyboard_needs_shield(
         &self,
         projections: Option<&[sophia_backend_live::LivePresentedInputProjection]>,

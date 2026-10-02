@@ -17,6 +17,7 @@ impl LiveProductionVisualRuntime {
                 policy_publication: None,
                 frame_completed: false,
                 policy_visible: false,
+                presented_keyboard: Default::default(),
                 output,
                 epoch: 0,
                 layers: Vec::new(),

@@ -135,7 +135,13 @@ output. Sophia interprets neither action names nor workspace/window selection.
 
 A keyboard output requests a modal scope over the publication's covered outputs.
 Every covered output must have replacement mode with a visible full-coverage
-Backdrop. Bindings and pointer actions are eligible only once the matching
+Backdrop, unless `held_capture` is selected and every covered output is Overlay.
+That held capture leaves applications in place, passes modifier keys through
+and waits only for held non-modifier application keys
+([held capture](sophia-wm-files.md#held-capture)). While its pixels are still
+presented after a revocation, disconnect or replacement, shielding keeps the
+presented scope's rule until every head retires the change: a held strip still
+on screen passes modifiers, and modal pixels still on screen take them. Bindings and pointer actions are eligible only once the matching
 presentation has completed on all covered outputs and every mirrored head.
 Protected recovery/session controls retain precedence.
 Existing application captures keep their existing owner; modal admission waits
@@ -186,8 +192,9 @@ deadline; acknowledgement never extends that deadline or recreates authority.
 
 ## Wire and compatibility
 
-Reserve capability bits 18 (`surface_instances`) and 19
-(`presentation_actions`); actions require instances. Use extension records after
+Reserve capability bits 18 (`surface_instances`), 19
+(`presentation_actions`) and 22 (`held_capture`); actions require instances,
+and held capture requires both. Use extension records after
 the frozen revision-3 projection records. The canonical KDL schema owns assigned
 record/message numbers, sizes and reserved fields. Generate Rust/C framing and
 keep Hagia's independent Nim implementation covered by shared conformance data.

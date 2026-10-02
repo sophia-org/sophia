@@ -1,26 +1,27 @@
-tree 2ce6f1644aa03a062dfd9d87d62cde99eb1c08b2
-parent 05f09de6d9cf7b5aba776d5967dee5a949f6cad7
-author Mason Green <mason@greenm01.net> 1790913124 -0400
-committer Mason Green <mason@greenm01.net> 1790913124 -0400
+tree 1ae70ed8be0de7c59740995528cb2788ea8eff21
+parent 8f59a9cd3221776246aad70c3a178c5ba941fb0d
+author Mason Green <mason@greenm01.net> 1790949508 -0400
+committer Mason Green <mason@greenm01.net> 1790949508 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCar8qZBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJV5QEA/Hb9cJht6xer+9lqQO1U
- cqthfTOXHk958rIVUSN7nzUA/jPDPVzpvb4yjTpHCJBjOIbZbPT8XxQ28Pvpm7NC
- OH0F
- =V4ok
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCar+4hBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJNRQD+P/IU8WBpaBmaVX35gfSG
+ Q+4W3DlxqqYLGZJqRNWwXp0BAOVtxq06Ldr1qJL+VvWCvbs03c74UbpEVFGVBsUo
+ 56oO
+ =yD/o
  -----END PGP SIGNATURE-----
 
-Release C SDK 0.6.0 with the ChordAction cause
+Release C SDK 0.7.0 with the held capture capability
 
 Import sophia-wm-files-v1.kdl, sophia-wm-files.md and sophia-wm-api.md
-unmodified from signed Sophia contract b0a2b0303b02af27598def07f455e8e0240b9366.
-Capability bit 21, chord_actions, requires action_lifecycle, actions and
-configuration. With it, a followed chord's keyboard activations arrive as
-ChordAction (cause 8: activation serial, chord serial and action, all
-nonzero). A client that selected the lifecycle alone keeps its 0.5.1 behaviour
-and refuses cause 8; negotiation refuses chord_actions without its
-dependencies.
+unmodified from signed Sophia contract ac04e1a7487e9be3a238075e3c624aff93705f2d.
+Capability bit 22, held_capture, requires surface_instances and
+presentation_actions. With it, a presentation whose outputs are all Overlay
+may carry a keyboard output and bindings. Sophia passes modifier keys through
+such a capture and takes only other keys. The presentation codec already
+carries modes and keyboard outputs, so it is unchanged. Negotiation refuses
+held_capture without its dependencies, and the scripted peers' full
+capability set now includes bit 22.
 
-ChordAction is qualified only by literal and scripted-peer tests: Session does
-not send it yet.
+Held capture is qualified only by scripted-peer tests: Session does not
+implement it yet.

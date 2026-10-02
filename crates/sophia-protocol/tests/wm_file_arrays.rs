@@ -190,6 +190,38 @@ fn unnegotiated_projection_sections_refuse_before_domain_delivery() {
     assert!(decode_wm_file_projection(&bytes, !SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS).is_err());
 }
 
+/// An Overlay keyboard scope needs `held_capture` on both directions; the
+/// same bindings over replaced applications do not.
+#[test]
+fn an_overlay_keyboard_scope_needs_held_capture() {
+    let mut proposal = fixture::proposal();
+    let presentation = proposal.presentation.as_mut().unwrap();
+    assert!(presentation.keyboard_output.is_some());
+    let modal =
+        encode_wm_file_projection(header(WmFileKind::Projection), &proposal, u64::MAX).unwrap();
+    assert!(decode_wm_file_projection(&modal, !SOPHIA_WM_CAPABILITY_HELD_CAPTURE).is_ok());
+    for output in &mut proposal.presentation.as_mut().unwrap().outputs {
+        output.mode = PolicyPresentationMode::Overlay;
+    }
+    let held =
+        encode_wm_file_projection(header(WmFileKind::Projection), &proposal, u64::MAX).unwrap();
+    assert_eq!(
+        decode_wm_file_projection(&held, !SOPHIA_WM_CAPABILITY_HELD_CAPTURE),
+        Err(WmFilePayloadError::Capabilities {
+            missing: SOPHIA_WM_CAPABILITY_HELD_CAPTURE
+        })
+    );
+    assert!(
+        encode_wm_file_projection(
+            header(WmFileKind::Projection),
+            &proposal,
+            !SOPHIA_WM_CAPABILITY_HELD_CAPTURE
+        )
+        .is_err()
+    );
+    assert!(decode_wm_file_projection(&held, u64::MAX).is_ok());
+}
+
 #[test]
 fn configuration_caps_catalog_and_chrome_share_validation() {
     let config = configuration();

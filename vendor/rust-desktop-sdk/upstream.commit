@@ -1,20 +1,21 @@
-tree 0a6e0db50c22348efefa172f6d2371a0a09d3d20
-parent 7f8ccb50aa6d237fc44dccbff4100a83b4f4f153
-author Mason Green <mason@greenm01.net> 1790913132 -0400
-committer Mason Green <mason@greenm01.net> 1790913132 -0400
+tree d0d2787ed46e77ad24dc2bc4eb65ab3ba1507265
+parent fe5e09605e65316f4cd7435bccf0cf53d008d415
+author Mason Green <mason@greenm01.net> 1790949544 -0400
+committer Mason Green <mason@greenm01.net> 1790949544 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCar8qbBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIA7QEAoyAro76fwMjzKYmUhs7j
- SzfOHzhT1/16Nw2CLphTK4cA/29C6bRIiYOX6bS0tdzSKXQuHtgG6dhCsKfz8Vym
- abYM
- =nMKZ
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCar+4qBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGK4EAD/Vs8PpcvzgMFxzoo/hxEK
+ 3tGxCiGjbA17fhe9LfyE+7oBAN7MxNKYifzjIVcEc9zZq2xc2aMPAVMP4fGixAVn
+ WnQM
+ =kahj
  -----END PGP SIGNATURE-----
 
-Import the WM ChordAction contract
+Import the WM held capture contract
 
 Copy spec/sophia-wm-files.md unmodified from signed Sophia contract
-b0a2b0303b02af27598def07f455e8e0240b9366 and record its digest. The WM file
-contract adds the chord_actions capability and the ChordAction cause. This
-SDK has no WM client; library sources, wire layouts and the other contract
-digests are unchanged.
+ac04e1a7487e9be3a238075e3c624aff93705f2d and record its digest. The WM file
+contract adds the held_capture capability: an Overlay presentation may carry a
+keyboard output and bindings while modifier keys pass through. This SDK has no
+WM client; library sources, wire layouts and the other contract digests are
+unchanged.

@@ -135,7 +135,12 @@ fn shape_rejects_duplicate_targets_order_and_unbounded_or_invisible_modal_record
             3 => p.instances[0].destination.x = i32::MAX,
             4 => p.instances[0].opacity_millis = 0,
             5 => p.regions.clear(),
-            6 => p.outputs[0].mode = PolicyPresentationMode::Overlay,
+            // A keyboard scope may not mix replacement and Overlay outputs.
+            6 => p.outputs.push(PolicyPresentationOutput {
+                output: OutputId::from_raw(2),
+                mode: PolicyPresentationMode::Overlay,
+                ..p.outputs[0]
+            }),
             7 => p.keyboard_output = None,
             8 => p.bindings[0].modifiers.bits = WmModifierMask::CONTROL | WmModifierMask::ALT,
             _ => p.instances[0].source = SurfaceId::new(1, 0),
@@ -199,6 +204,18 @@ fn action_catalog_excludes_unknown_actions_and_session_operations() {
     let mut p = p;
     p.regions[0].action = Some(WmActionId::from_raw(6));
     assert!(validate_policy_presentation_actions(&p, &actions).is_err());
+}
+
+/// An Overlay keyboard scope is a held capture: a valid shape, which the
+/// file path then gates on `held_capture` (`wm_file_arrays.rs`).
+#[test]
+fn an_all_overlay_keyboard_scope_is_a_valid_held_capture_shape() {
+    let mut p = presentation();
+    p.outputs[0].mode = PolicyPresentationMode::Overlay;
+    assert!(validate_policy_presentation_shape(&p).is_ok());
+    assert!(encode_policy_presentation_records(Some(&p), 4).is_ok());
+    p.bindings.clear();
+    assert!(validate_policy_presentation_shape(&p).is_err());
 }
 
 /// `reduced_action_and_receipt_roundtrip_only_with_complete_identities_and_capabilities`,

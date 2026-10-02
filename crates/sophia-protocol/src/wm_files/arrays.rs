@@ -221,6 +221,15 @@ fn presentation_capabilities(
             SOPHIA_WM_CAPABILITY_ACTIONS | SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS,
         )?;
     }
+    if let Some(presentation) = &proposal.presentation
+        && presentation.keyboard_output.is_some()
+        && presentation
+            .outputs
+            .iter()
+            .all(|output| output.mode == PolicyPresentationMode::Overlay)
+    {
+        require_capabilities(capabilities, SOPHIA_WM_CAPABILITY_HELD_CAPTURE)?;
+    }
     Ok(())
 }
 

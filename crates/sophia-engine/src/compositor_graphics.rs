@@ -253,6 +253,21 @@ pub struct CompositorPresentationStamp {
     pub output_generation: u64,
     /// The output's presentation coverage, in this list's coordinates.
     pub coverage: Rect,
+    /// The keyboard scope of the publication these pixels show, so input
+    /// shielding follows what is on screen until its withdrawal completes.
+    pub keyboard: PresentedKeyboardScope,
+}
+
+/// The keyboard scope a presented publication holds on its output.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
+pub enum PresentedKeyboardScope {
+    /// No keyboard scope: the publication takes no keys.
+    #[default]
+    None,
+    /// An Overlay held capture: modifiers keep their ordinary routing.
+    Held,
+    /// A modal scope over replaced applications: every key is the scope's.
+    Modal,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

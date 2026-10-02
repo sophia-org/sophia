@@ -515,7 +515,8 @@ static void presentation_receipt_requires_negotiated_capability(void) {
     const struct sophia_wf_record *event = NULL;
     if (!enabled)
       caps &= ~(SOPHIA_WF_CAP_SURFACE_INSTANCES |
-                SOPHIA_WF_CAP_PRESENTATION_ACTIONS);
+                SOPHIA_WF_CAP_PRESENTATION_ACTIONS |
+                SOPHIA_WF_CAP_HELD_CAPTURE);
     r = wr_new_caps(caps);
     wr_ready(r);
     receipt.header.kind = SOPHIA_WF_PRESENTATION_RECEIPT;
@@ -614,6 +615,37 @@ static void chord_negotiation_requires_the_whole_lifecycle(void) {
             (!(chosen & bits[3]) ||
              (chosen & (bits[0] | bits[1] | bits[2])) ==
                  (bits[0] | bits[1] | bits[2]));
+    r = wr_new_offer(required, all);
+    r->peer.selected = required | chosen;
+    if (valid) {
+      wr_ready(r);
+      assert(sophia_ws_capabilities(r->session) == r->peer.selected);
+    } else {
+      terminal(r);
+      assert(sophia_ws_state(r->session) == SOPHIA_WS_FAILED);
+    }
+    wr_drop(r);
+  }
+}
+/* held_capture needs surface_instances and presentation_actions, which in turn
+ * needs surface_instances: every combination of the three is checked. */
+static void held_capture_negotiation_requires_presentation_actions(void) {
+  const uint64_t bits[] = {SOPHIA_WF_CAP_SURFACE_INSTANCES,
+                           SOPHIA_WF_CAP_PRESENTATION_ACTIONS,
+                           SOPHIA_WF_CAP_HELD_CAPTURE};
+  const uint64_t all = bits[0] | bits[1] | bits[2];
+  const uint64_t required = WP_CAPS & ~all;
+  unsigned combination, i;
+  for (combination = 0; combination < 8; ++combination) {
+    uint64_t chosen = 0;
+    int valid;
+    struct wm_rig *r;
+    for (i = 0; i < 3; ++i)
+      if (combination & (1u << i))
+        chosen |= bits[i];
+    valid = (!(chosen & bits[1]) || (chosen & bits[0])) &&
+            (!(chosen & bits[2]) ||
+             (chosen & (bits[0] | bits[1])) == (bits[0] | bits[1]));
     r = wr_new_offer(required, all);
     r->peer.selected = required | chosen;
     if (valid) {
@@ -735,6 +767,7 @@ int main(void) {
   RUN(lifecycle_cause_requires_negotiated_capability);
   RUN(chord_negotiation_requires_the_whole_lifecycle);
   RUN(chord_action_requires_its_own_capability);
+  RUN(held_capture_negotiation_requires_presentation_actions);
 #undef RUN
   puts("wm_session_test: scripted 9P custody, snapshot and deadline controls "
        "passed");

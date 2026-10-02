@@ -10,6 +10,12 @@ pub(crate) const KEYCODE_LIMIT: u32 = 0x300;
 const KEY_WORDS: usize = (KEYCODE_LIMIT / 64) as usize;
 const MODIFIER_KEYCODES: [u32; 8] = [42, 54, 29, 97, 56, 100, 125, 126];
 
+/// Whether an evdev keycode is a Shift, Control, Alt or Super key, left or
+/// right: the keys a chord is held by, which no capture may take from it.
+pub fn is_modifier_keycode(keycode: u32) -> bool {
+    MODIFIER_KEYCODES.contains(&keycode)
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct WmSeatShortcutState {
     pub(crate) devices: Vec<DeviceKeys>,

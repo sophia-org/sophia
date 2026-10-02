@@ -22,7 +22,8 @@ const POLICY_SUPPORTED_CAPABILITIES: u64 = SOPHIA_WM_CAPABILITY_BINDINGS
     | SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES
     | SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS
     | SOPHIA_WM_CAPABILITY_ACTION_LIFECYCLE
-    | SOPHIA_WM_CAPABILITY_CHORD_ACTIONS;
+    | SOPHIA_WM_CAPABILITY_CHORD_ACTIONS
+    | SOPHIA_WM_CAPABILITY_HELD_CAPTURE;
 
 /// Select only offered mechanisms available to this Session, removing dependent
 /// mechanisms whose prerequisites did not survive selection. The caller owns
@@ -52,6 +53,11 @@ pub const fn select_policy_capabilities(
     // Chord actions mark the lifecycle's own activations, so they go with it.
     if selected & SOPHIA_WM_CAPABILITY_ACTION_LIFECYCLE == 0 {
         selected &= !SOPHIA_WM_CAPABILITY_CHORD_ACTIONS;
+    }
+    // A held capture is a presentation's keyboard scope: it needs presentation
+    // actions, which already went with surface instances above.
+    if selected & SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS == 0 {
+        selected &= !SOPHIA_WM_CAPABILITY_HELD_CAPTURE;
     }
     selected
 }

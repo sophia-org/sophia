@@ -57,8 +57,9 @@ object limits. A client submits disjoint required and optional capability masks
 before profile handoff. The existing admission owner intersects their union
 with the supported set and Session ceiling, then removes presentation actions
 without surface instances, output launch context without launch origin, and
-action lifecycle without both actions and configuration, and chord actions
-without action lifecycle, actions and configuration.
+action lifecycle without both actions and configuration, chord actions
+without action lifecycle, actions and configuration, and held capture without
+both surface instances and presentation actions.
 If any required bit is absent after these reductions, including an unknown
 required bit, admission fails and closes the endpoint without a Negotiated
 event. A malformed offer is refused before submission custody. Native presentation
@@ -431,6 +432,29 @@ since the credits bound it. That exemption lets it enter a full queue but
 never lets it pass an ordinary cause queued before it. Held is not
 exempt: when a bound drops it, its chord still ends. A Configuration being
 replaced holds the queue as a whole, which delays them all equally.
+
+### Held capture
+
+With `held_capture` selected, a presentation whose covered outputs are all
+Overlay may name a keyboard output and carry bindings, as a replacement
+presentation does. Held capture requires `surface_instances` and
+`presentation_actions`. It lets a WM take keys while a chord is held, for
+example to cancel or confirm a switcher, without replacing applications.
+
+An Overlay keyboard capture never takes a modifier key. Shift, Control, Alt
+and Super presses and releases keep their ordinary routing, so the focused
+client sees both edges and chords end as they would without the capture.
+Every other press within the capture's scope is matched exactly against the
+bindings: a match is a presentation action, and an unbound key is consumed
+and reaches no client. A consumed press keeps its release.
+
+Chord-followed presses, such as a further Tab of a held Alt+Tab, still belong
+to the shortcut authority, and recovery and session controls keep precedence.
+A held modifier does not delay the capture. Any other key an application
+already holds does, until it is released, so an application sequence keeps
+its owner. A publication that mixes Overlay and replacement outputs with a
+keyboard output is malformed. Without `held_capture`, an Overlay keyboard
+output refuses the publication.
 
 Dirty and session-operation candidates, their typed outcomes and presentation
 receipts have bounded complete bodies in the same schema. Strict neutral

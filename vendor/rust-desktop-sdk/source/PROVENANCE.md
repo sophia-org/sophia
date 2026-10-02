@@ -231,3 +231,11 @@ nothing of it is implemented here; the document remains the reference for the
 envelope, custody and retry rules the shell contract adopts, which this
 revision does not change. Library sources, wire layouts and the other spec
 digests are unchanged.
+
+## WM held capture contract
+
+`spec/sophia-wm-files.md` is copied unmodified from signed Sophia contract
+`ac04e1a7487e9be3a238075e3c624aff93705f2d` on `feature/held-capture`. It adds the `held_capture` capability: an Overlay presentation may
+carry a keyboard output and bindings while modifier keys pass through. This
+SDK has no WM client, so none of that is implemented here. Library sources,
+wire layouts and the other spec digests are unchanged.

@@ -23,6 +23,7 @@ pub use deferred::{
     WmKeyEvent, WmPressKind, WmPressProposal, WmShortcutActivation, WmShortcutOutput,
 };
 use ledger::WmSeatShortcutState;
+pub use ledger::is_modifier_keycode;
 use plan::Shapes;
 pub use plan::{
     WmHoldBinding, WmKeyStep, WmModifierTapBinding, WmSequenceBinding, WmSequenceLeader,

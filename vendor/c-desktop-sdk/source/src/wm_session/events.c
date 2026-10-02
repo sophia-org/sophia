@@ -42,6 +42,9 @@ int ws_events_validate(struct sophia_ws *s) {
           ((caps & SOPHIA_WF_CAP_CHORD_ACTIONS) &&
            (~caps & (SOPHIA_WF_CAP_ACTION_LIFECYCLE | SOPHIA_WF_CAP_ACTIONS |
                      SOPHIA_WF_CAP_CONFIGURATION))) ||
+          ((caps & SOPHIA_WF_CAP_HELD_CAPTURE) &&
+           (~caps & (SOPHIA_WF_CAP_SURFACE_INSTANCES |
+                     SOPHIA_WF_CAP_PRESENTATION_ACTIONS))) ||
           ((caps & SOPHIA_WF_CAP_OUTPUT_LAUNCH_CONTEXT) &&
            !(caps & SOPHIA_WF_CAP_LAUNCH_ORIGIN)) ||
           (s->limits.profile_required &&
