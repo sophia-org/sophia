@@ -1,19 +1,20 @@
-tree 27659ceab7ee1da13fe0834b21871ee6663e23f6
-parent a0dc13da70ad7ba34406e6c84531cbb2ffd6b52b
-author Mason Green <mason@greenm01.net> 1790856965 -0400
-committer Mason Green <mason@greenm01.net> 1790856965 -0400
+tree 83753b51fd65fa9637d25b02b972b680a4cf4864
+parent b38b809e1a09a62911dd940cfcc5067a7ee5b06d
+author Mason Green <mason@greenm01.net> 1790909230 -0400
+committer Mason Green <mason@greenm01.net> 1790909230 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCar5PBRsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLRcQD9Gze0PC9wKbsd8hIzZlHt
- rOeAN9Nr+qmdnYSnBn1Z/ZABAIL3UOQcAXEgnyhUPgzLgc/+VGHamjtOD/x/UTGq
- 2TkK
- =aHoW
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCar8bLhsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLlvAEA5Xzbh2GhW37alT4510hJ
+ nPJap1K8zdBvsgB87yD/FgQBAJJWh4ny3zZkASeL150cSRVQyApo9fbYoOdQ4GSX
+ diUI
+ =5cfk
  -----END PGP SIGNATURE-----
 
-Import the WM output transport naming contract
+Import the WM chord lifecycle contract
 
 Copy spec/sophia-wm-files.md unmodified from signed Sophia contract
-b0721d0de6a03cb44e57b0a923c6c385cf40b676 and record its digest. The WM api
-now names output_transport=9p2000.L. This SDK has no WM client; library
-sources, wire layouts and the other contract digests are unchanged.
+86bf65046627ef9fea2a041ae10b08472b3271d1 and record its digest. The WM file
+contract adds the action_lifecycle capability, its Configuration rows and
+the ActionLifecycle cause. This SDK has no WM client; library sources, wire
+layouts and the other contract digests are unchanged.
