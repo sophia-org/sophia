@@ -16,6 +16,7 @@ const LEFT_SHIFT: u32 = 42;
 const TAB: u32 = 15;
 const F9: u32 = 67;
 const KP_9: u32 = 73;
+const KP_8: u32 = 72;
 const NEXT: WmActionId = WmActionId::from_raw(186);
 const PREVIOUS: WmActionId = WmActionId::from_raw(187);
 const LAUNCH: WmActionId = WmActionId::from_raw(190);
@@ -39,6 +40,7 @@ fn router() -> WmShortcutRouter {
             binding(LAUNCH, F9, 0),
             binding(LAUNCH, KP_9, 0),
             binding(UNDECLARED, F9, WmModifierMask::ALT),
+            binding(LAUNCH, KP_8, WmModifierMask::ALT),
         ],
         WmCapabilities::all_supported(),
         1,
@@ -666,6 +668,7 @@ fn a_registry_with_equal_bindings_keeps_chords_and_updates_metadata() {
                 binding(LAUNCH, F9, 0),
                 binding(LAUNCH, KP_9, 0),
                 binding(UNDECLARED, F9, WmModifierMask::ALT),
+                binding(LAUNCH, KP_8, WmModifierMask::ALT),
             ],
             WmCapabilities::all_supported(),
             generation,
@@ -690,4 +693,29 @@ fn a_registry_with_equal_bindings_keeps_chords_and_updates_metadata() {
         [ended(next, PolicyChordEnd::Cancelled)]
     );
     assert!(release(&mut router, TAB, 1).consumed);
+}
+
+/// D2 review R1, through the single-call API: a join pressed with Alt still
+/// holds the unmodified opener's trigger-held chord by its own key.
+#[test]
+fn a_modified_join_holds_an_unmodified_openers_chord() {
+    let mut router = router();
+    let launch = opened(press(&mut router, F9, 0));
+    press(&mut router, LEFT_ALT, 10);
+    let join = press(&mut router, KP_8, 20);
+    assert_eq!(join.action, Some(LAUNCH));
+    assert_eq!(
+        join.chord,
+        Some(WmChordActivation {
+            token: launch,
+            opens: false
+        })
+    );
+    release(&mut router, F9, 30);
+    assert!(router.drain_chord_events().is_empty());
+    release(&mut router, KP_8, 40);
+    assert_eq!(
+        router.drain_chord_events(),
+        [ended(launch, PolicyChordEnd::Released)]
+    );
 }

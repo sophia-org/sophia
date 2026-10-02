@@ -6,14 +6,27 @@
 
 use crate::prelude::*;
 use sophia_protocol::{
-    PolicyActionLifecycleInterest, WM_MAX_BINDINGS, WmActionId, WmBindingRegistration,
-    WmCapabilities, WmChromePolicy, WmModifierMask,
+    PolicyActionLifecycleInterest, WmActionId, WmBindingRegistration, WmCapabilities,
+    WmChromePolicy, WmModifierMask,
 };
 
 mod chord;
+mod deferred;
+mod ledger;
+mod plan;
 use chord::ChordBook;
 pub use chord::{
     WM_CHORD_CREDITS, WmChordActivation, WmChordCreditsExhausted, WmChordEvent, WmChordToken,
+};
+use deferred::Pending;
+pub use deferred::{
+    WmKeyEvent, WmPressKind, WmPressProposal, WmShortcutActivation, WmShortcutOutput,
+};
+use ledger::WmSeatShortcutState;
+use plan::Shapes;
+pub use plan::{
+    WmHoldBinding, WmKeyStep, WmModifierTapBinding, WmSequenceBinding, WmSequenceLeader,
+    WmShortcutPlan, WmShortcutTiming,
 };
 
 /// Why a set of bindings could not become a registry.
@@ -25,7 +38,7 @@ pub type WmShortcutRegistryError = &'static str;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WmShortcutRegistry {
-    bindings: BTreeMap<(u32, u32), WmActionId>,
+    shapes: Shapes,
     held: BTreeMap<u32, WmActionId>,
     pub(crate) capabilities: WmCapabilities,
     policy_generation: u64,
@@ -51,15 +64,34 @@ impl WmShortcutDecision {
 }
 
 impl WmShortcutRegistry {
-    /// Builds a registry from bindings a caller already resolved.
-    ///
-    /// Every rejection here is about the bindings themselves, not about who asked:
-    /// an invalid action or keycode, an unsupported modifier, the reserved
-    /// emergency chord, a duplicate chord, or more bindings than the wire admits.
-    /// A caller that speaks a protocol revision checks its own version first and
-    /// then calls this.
+    /// Builds a registry from immediate bindings a caller already resolved.
     pub fn new(
         bindings: &[WmBindingRegistration],
+        capabilities: WmCapabilities,
+        policy_generation: u64,
+        chrome: WmChromePolicy,
+    ) -> Result<Self, WmShortcutRegistryError> {
+        Self::from_plan(
+            &WmShortcutPlan {
+                immediate: bindings.to_vec(),
+                ..WmShortcutPlan::default()
+            },
+            capabilities,
+            policy_generation,
+            chrome,
+        )
+    }
+
+    /// Builds a registry from every shortcut shape a caller resolved.
+    ///
+    /// Every rejection here is about the shapes themselves, not about who
+    /// asked: an invalid action or keycode, an unsupported modifier, a
+    /// reserved chord (emergency recovery, or virtual-terminal switching) in
+    /// any step, a duplicate or ambiguous shape, a misplaced or reused
+    /// leader, timing out of range, or more entries than the wire admits. A
+    /// caller that speaks a protocol revision checks its own version first.
+    pub fn from_plan(
+        plan: &WmShortcutPlan,
         capabilities: WmCapabilities,
         policy_generation: u64,
         chrome: WmChromePolicy,
@@ -73,36 +105,8 @@ impl WmShortcutRegistry {
         if !valid_chrome_policy(chrome) {
             return Err("invalid WM chrome policy");
         }
-        if bindings.len() > WM_MAX_BINDINGS {
-            return Err("too many WM bindings");
-        }
-
-        let mut resolved = BTreeMap::new();
-        for binding in bindings {
-            if !binding.action.is_valid() || binding.keycode == 0 || binding.keycode > 0x2ff {
-                return Err("invalid WM binding");
-            }
-            if binding.modifiers.bits & !WmModifierMask::SUPPORTED != 0 {
-                return Err("unsupported WM modifier");
-            }
-            // Ctrl-Alt-Backspace belongs to emergency recovery and is never
-            // available to a policy client, whatever it registers.
-            if binding.keycode == 14
-                && binding.modifiers.bits & (WmModifierMask::CONTROL | WmModifierMask::ALT)
-                    == WmModifierMask::CONTROL | WmModifierMask::ALT
-            {
-                return Err("reserved emergency chord");
-            }
-            if resolved
-                .insert((binding.keycode, binding.modifiers.bits), binding.action)
-                .is_some()
-            {
-                return Err("duplicate WM chord");
-            }
-        }
-
         Ok(Self {
-            bindings: resolved,
+            shapes: Shapes::build(plan)?,
             held: BTreeMap::new(),
             capabilities,
             policy_generation,
@@ -122,7 +126,7 @@ impl WmShortcutRegistry {
                 ..WmShortcutDecision::pass()
             };
         }
-        let Some(action) = self.lookup(keycode, modifiers) else {
+        let Some(&action) = self.shapes.immediate.get(&(keycode, modifiers.bits)) else {
             return WmShortcutDecision::pass();
         };
         let first_press = self.held.insert(keycode, action).is_none();
@@ -133,12 +137,9 @@ impl WmShortcutRegistry {
         }
     }
 
-    fn lookup(&self, keycode: u32, modifiers: WmModifierMask) -> Option<WmActionId> {
-        self.bindings.get(&(keycode, modifiers.bits)).copied()
-    }
-
+    /// Every bound shape: immediate chords, holds, taps, sequences, leaders.
     pub fn binding_count(&self) -> usize {
-        self.bindings.len()
+        self.shapes.count
     }
 
     pub const fn policy_generation(&self) -> u64 {
@@ -162,9 +163,6 @@ pub const WM_MAX_SHORTCUT_SEATS: usize = 16;
 /// Devices tracked at once per seat while they have keys down. A device's
 /// slot frees when its last key goes up.
 pub const WM_MAX_SHORTCUT_DEVICES: usize = 16;
-/// Every evdev keycode (KEY_MAX). Higher codes are never bound and pass.
-const KEYCODE_LIMIT: u32 = 0x300;
-const KEY_WORDS: usize = (KEYCODE_LIMIT / 64) as usize;
 
 /// Matches physical keys for every seat and follows the WM's declared chords.
 ///
@@ -184,24 +182,13 @@ pub struct WmShortcutRouter {
     pub(crate) registry: WmShortcutRegistry,
     seats: BTreeMap<SeatId, WmSeatShortcutState>,
     chords: ChordBook,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct WmSeatShortcutState {
-    devices: Vec<DeviceKeys>,
-    /// Devices refused a slot, and whether each pressed a modifier since.
-    refused: BTreeMap<DeviceId, bool>,
-    /// More devices were refused than could be named; only a seat reset
-    /// makes the mask known again.
-    saturated: bool,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct DeviceKeys {
-    device: DeviceId,
-    down: [u64; KEY_WORDS],
-    /// Presses that were shortcuts; their releases are consumed with them.
-    consumed: [u64; KEY_WORDS],
+    /// At most one undecided tap, hold or sequence per seat.
+    pending: BTreeMap<SeatId, Pending>,
+    /// Activations and chord events not yet taken, in order.
+    outbox: Vec<WmShortcutOutput>,
+    /// Orders equal deadlines: every pending decision and every chord gets
+    /// the next number when it is created.
+    next_created: u64,
 }
 
 impl WmShortcutRouter {
@@ -210,37 +197,30 @@ impl WmShortcutRouter {
             registry,
             seats: BTreeMap::new(),
             chords: ChordBook::default(),
+            pending: BTreeMap::new(),
+            outbox: Vec::new(),
+            next_created: 0,
         }
     }
 
     /// Install a registry. Its metadata (generation, chrome, capabilities)
-    /// always replaces the old. Only a change of bindings is a registry change
-    /// for chords: open chords then end cancelled. The keys down stay recorded
-    /// either way, so the release of a press the old bindings consumed is still
-    /// consumed rather than reaching a client unpaired.
+    /// always replaces the old. Only a change of shapes is a registry change
+    /// for chords: open chords then end cancelled and pending decisions are
+    /// dropped. The keys down stay recorded either way, so the release of a
+    /// press the old shapes consumed is still consumed rather than reaching a
+    /// client unpaired.
     pub fn replace_registry(&mut self, registry: WmShortcutRegistry) {
-        if self.registry.bindings != registry.bindings {
-            self.chords.cancel_all();
+        if self.registry.shapes != registry.shapes {
+            self.cancel_all_chords();
         }
         self.registry = registry;
     }
 
-    /// End every open chord cancelled, as when keyboard routing leaves Session.
+    /// End every open chord cancelled and drop every pending decision, as
+    /// when keyboard routing leaves Session.
     pub fn cancel_all_chords(&mut self) {
-        self.chords.cancel_all();
-    }
-
-    /// Record one physical key event without matching it: presses activate
-    /// nothing, releases still end chords and keep consumed pairing. Used while
-    /// matching is disabled, so the record stays true for when it resumes.
-    pub fn observe_key(
-        &mut self,
-        seat: SeatId,
-        device: DeviceId,
-        keycode: u32,
-        pressed: bool,
-    ) -> WmShortcutDecision {
-        self.route(seat, device, keycode, pressed, 0, false)
+        self.chords.cancel_all(&mut self.outbox);
+        self.pending.clear();
     }
 
     /// Seats whose modifier state is unknown, for reporting transitions.
@@ -251,139 +231,36 @@ impl WmShortcutRouter {
             .map(|(seat, _)| *seat)
     }
 
-    /// Route one physical key event. `now_msec` is the owner's clock, the one
-    /// `poll_chords` and `next_deadline` use.
-    pub fn route_key(
-        &mut self,
-        seat: SeatId,
-        device: DeviceId,
-        keycode: u32,
-        pressed: bool,
-        now_msec: u64,
-    ) -> WmShortcutDecision {
-        self.route(seat, device, keycode, pressed, now_msec, true)
-    }
-
-    fn route(
-        &mut self,
-        seat: SeatId,
-        device: DeviceId,
-        keycode: u32,
-        pressed: bool,
-        time_msec: u64,
-        matching: bool,
-    ) -> WmShortcutDecision {
-        if !seat.is_valid() || keycode >= KEYCODE_LIMIT {
-            return WmShortcutDecision::pass();
-        }
-        if !self.seats.contains_key(&seat) {
-            if self.seats.len() >= WM_MAX_SHORTCUT_SEATS {
-                return WmShortcutDecision::pass();
-            }
-            self.seats.insert(seat, WmSeatShortcutState::default());
-        }
-        let Some(state) = self.seats.get_mut(&seat) else {
-            return WmShortcutDecision::pass();
-        };
-        let modifier = modifier_bit(keycode) != 0;
-        if let Some(pressed_modifier) = state.refused.get_mut(&device) {
-            // A refused device stays refused: one of its presses may already
-            // have reached a client, so none of its keys can be matched.
-            *pressed_modifier |= pressed && modifier;
-            if !pressed {
-                let modifiers_down = state.modifiers_down();
-                self.chords
-                    .key_released(seat, (device, keycode), modifiers_down);
-            }
-            return WmShortcutDecision::pass();
-        }
-        if !pressed {
-            let consumed = state.release(device, keycode);
-            let modifiers_down = state.modifiers_down();
-            self.chords
-                .key_released(seat, (device, keycode), modifiers_down);
-            return WmShortcutDecision {
-                consumed,
-                ..WmShortcutDecision::pass()
-            };
-        }
-        if let Some(keys) = state.devices.iter().find(|keys| keys.device == device)
-            && keys.is_down(keycode)
-        {
-            // Autorepeat, or a duplicate press: it fires nothing and joins
-            // nothing, and its consumption follows the original press.
-            return WmShortcutDecision {
-                consumed: keys.is_consumed(keycode),
-                ..WmShortcutDecision::pass()
-            };
-        }
-        if !state.devices.iter().any(|keys| keys.device == device) {
-            if state.devices.len() >= WM_MAX_SHORTCUT_DEVICES {
-                if state.refused.len() >= WM_MAX_SHORTCUT_DEVICES {
-                    state.saturated = true;
-                } else {
-                    state.refused.insert(device, modifier);
-                }
-                return WmShortcutDecision::pass();
-            }
-            state.devices.push(DeviceKeys::new(device));
-        }
-        let matched = if matching && state.mask_known() {
-            let modifiers = state.modifier_mask();
-            self.registry
-                .lookup(keycode, modifiers)
-                .map(|action| (action, modifiers))
-        } else {
-            None
-        };
-        state.press(device, keycode, matched.is_some());
-        let Some((action, modifiers)) = matched else {
-            return WmShortcutDecision::pass();
-        };
-        match self.chords.activate(
-            seat,
-            action,
-            (device, keycode),
-            modifiers.bits != 0,
-            time_msec,
-        ) {
-            Ok(chord) => WmShortcutDecision {
-                action: Some(action),
-                consumed: true,
-                chord,
-            },
-            // Every credit is owed to the WM: the press is still a shortcut,
-            // but it queues nothing and opens nothing.
-            Err(WmChordCreditsExhausted) => WmShortcutDecision {
-                consumed: true,
-                ..WmShortcutDecision::pass()
-            },
-        }
-    }
-
-    /// End every chord on the seat cancelled and forget its keys. This is the
-    /// trusted reset that also clears a refused or saturated seat.
+    /// End every chord on the seat cancelled, drop its pending decision and
+    /// forget its keys. This is the trusted reset that also clears a refused
+    /// or saturated seat.
     pub fn clear_seat(&mut self, seat: SeatId) -> bool {
-        self.chords.cancel_seat(seat);
+        self.cancel_seat_chords(seat);
         self.seats.remove(&seat).is_some()
     }
 
-    /// End every chord on the seat cancelled, keeping its keys recorded. Used
-    /// before synthetic releases (a VT switch) so those end nothing released.
+    /// End every chord on the seat cancelled and drop its pending decision,
+    /// keeping its keys recorded. Used before synthetic releases (a VT
+    /// switch) so those end nothing released.
     pub fn cancel_seat_chords(&mut self, seat: SeatId) {
-        self.chords.cancel_seat(seat);
+        self.chords.cancel_seat(seat, &mut self.outbox);
+        self.pending.remove(&seat);
     }
 
     /// A device went away: its keys, or its refusal, are forgotten, and every
-    /// chord on a seat it was part of ends cancelled.
+    /// chord and pending decision on a seat it was part of ends cancelled.
     pub fn remove_device(&mut self, device: DeviceId) {
+        let mut cancelled = Vec::new();
         for (seat, state) in &mut self.seats {
             let tracked = state.devices.len();
             state.devices.retain(|keys| keys.device != device);
             let refused = state.refused.remove(&device).is_some();
             if refused || state.devices.len() != tracked {
-                self.chords.cancel_seat(*seat);
+                cancelled.push(*seat);
             }
+        }
+        for seat in cancelled {
+            self.cancel_seat_chords(seat);
         }
     }
 
@@ -401,19 +278,34 @@ impl WmShortcutRouter {
         self.chords.set_interests(interests);
     }
 
-    /// A new WM epoch: chords and pending events are dropped and credits return.
+    /// A new WM epoch: chords, pending decisions and untaken outputs are
+    /// dropped without a cause, and credits return. The keys down stay
+    /// recorded, so old releases stay paired.
     pub fn reset_chords(&mut self) {
         self.chords.reset();
+        self.pending.clear();
+        self.outbox.clear();
     }
 
-    /// The opener's Action was not admitted; the chord is dropped with its credit.
+    /// The opener's Action was not admitted; the chord is dropped with its
+    /// credit, and any of its events not yet taken with it.
     pub fn chord_opener_refused(&mut self, token: WmChordToken) -> bool {
-        self.chords.opener_refused(token)
+        let refused = self.chords.opener_refused(token);
+        self.outbox.retain(|output| {
+            !matches!(
+                output,
+                WmShortcutOutput::Chord(
+                    WmChordEvent::Held { token: event } | WmChordEvent::Ended { token: event, .. }
+                ) if *event == token
+            )
+        });
+        refused
     }
 
     /// A joining Action was not admitted; its trigger stops holding the chord.
     pub fn chord_join_refused(&mut self, token: WmChordToken, device: DeviceId, keycode: u32) {
-        self.chords.join_refused(token, (device, keycode));
+        self.chords
+            .join_refused(token, (device, keycode), &mut self.outbox);
     }
 
     /// The chord's Ended was handed to the WM as the in-flight Cycle.
@@ -421,19 +313,14 @@ impl WmShortcutRouter {
         self.chords.delivered(token)
     }
 
-    /// Send Held for every chord due at `now_msec`.
-    pub fn poll_chords(&mut self, now_msec: u64) {
-        self.chords.poll(now_msec);
-    }
-
-    /// The event time of the next Held, to bound how long the owner may wait.
+    /// The owner time of the next decision, sequence timeout or Held, to
+    /// bound how long the owner may wait. None when nothing is pending: an
+    /// armed modifier tap is judged at its release and needs no timer.
     pub fn next_deadline(&self) -> Option<u64> {
-        self.chords.next_deadline()
-    }
-
-    /// Lifecycle events in the order Session must queue them.
-    pub fn drain_chord_events(&mut self) -> Vec<WmChordEvent> {
-        self.chords.drain()
+        match (self.chords.next_deadline(), self.pending_deadline()) {
+            (Some(held), Some(pending)) => Some(held.min(pending)),
+            (held, pending) => held.or(pending),
+        }
     }
 
     pub fn chord_credits_free(&self) -> usize {
@@ -465,9 +352,76 @@ impl WmShortcutRouter {
 
     pub fn shortcut_idle(&self) -> bool {
         self.chords.is_idle()
+            && self.pending.is_empty()
             && self.seats.values().all(|state| {
                 state.devices.is_empty() && state.refused.is_empty() && !state.saturated
             })
+    }
+
+    // The single-call API Session uses until its two-phase wiring lands
+    // (t277 D3). With only immediate chords bound, every key event resolves
+    // at once and only chord events wait to be drained.
+
+    /// Route one physical key event, accepting whatever it claims.
+    /// `now_msec` is the owner's clock, the one `poll_chords` and
+    /// `next_deadline` use.
+    pub fn route_key(
+        &mut self,
+        seat: SeatId,
+        device: DeviceId,
+        keycode: u32,
+        pressed: bool,
+        now_msec: u64,
+    ) -> WmShortcutDecision {
+        let event = self.key_event(seat, device, keycode, pressed, now_msec);
+        let consumed = event.consumed();
+        event.accept();
+        let mut decision = WmShortcutDecision {
+            consumed,
+            ..WmShortcutDecision::pass()
+        };
+        self.outbox.retain(|output| match output {
+            WmShortcutOutput::Activation(activation) => {
+                decision.action = Some(activation.action);
+                decision.chord = activation.chord;
+                false
+            }
+            WmShortcutOutput::Chord(_) => true,
+        });
+        decision
+    }
+
+    /// Record one physical key event without matching it.
+    pub fn observe_key(
+        &mut self,
+        seat: SeatId,
+        device: DeviceId,
+        keycode: u32,
+        pressed: bool,
+    ) -> WmShortcutDecision {
+        let consumed = self.observe_key_event(seat, device, keycode, pressed, 0);
+        WmShortcutDecision {
+            consumed,
+            ..WmShortcutDecision::pass()
+        }
+    }
+
+    /// Send Held for every chord due at `now_msec`.
+    pub fn poll_chords(&mut self, now_msec: u64) {
+        self.poll_shortcuts(now_msec);
+    }
+
+    /// Lifecycle events in the order Session must queue them.
+    pub fn drain_chord_events(&mut self) -> Vec<WmChordEvent> {
+        let mut events = Vec::new();
+        self.outbox.retain(|output| match output {
+            WmShortcutOutput::Chord(event) => {
+                events.push(*event);
+                false
+            }
+            WmShortcutOutput::Activation(_) => true,
+        });
+        events
     }
 }
 
@@ -477,88 +431,4 @@ pub(crate) fn valid_chrome_policy(chrome: WmChromePolicy) -> bool {
     };
     valid_style(chrome.focus_ring.enabled, chrome.focus_ring.width)
         && valid_style(chrome.frame.enabled, chrome.frame.width)
-}
-
-impl WmSeatShortcutState {
-    fn mask_known(&self) -> bool {
-        !self.saturated && !self.refused.values().any(|modifier| *modifier)
-    }
-
-    /// Whether a modifier may be down: a known one, or any while unknown.
-    fn modifiers_down(&self) -> bool {
-        !self.mask_known() || self.modifier_mask().bits != 0
-    }
-
-    fn modifier_mask(&self) -> WmModifierMask {
-        let mut bits = 0;
-        for keys in &self.devices {
-            for keycode in [42, 54, 29, 97, 56, 100, 125, 126] {
-                if keys.is_down(keycode) {
-                    bits |= modifier_bit(keycode);
-                }
-            }
-        }
-        WmModifierMask { bits }
-    }
-
-    fn press(&mut self, device: DeviceId, keycode: u32, consumed: bool) {
-        if let Some(keys) = self.devices.iter_mut().find(|keys| keys.device == device) {
-            let (word, bit) = DeviceKeys::slot(keycode);
-            keys.down[word] |= bit;
-            if consumed {
-                keys.consumed[word] |= bit;
-            }
-        }
-    }
-
-    /// Whether the released press was consumed. A device with nothing left
-    /// down gives up its slot.
-    fn release(&mut self, device: DeviceId, keycode: u32) -> bool {
-        let Some(index) = self.devices.iter().position(|keys| keys.device == device) else {
-            return false;
-        };
-        let keys = &mut self.devices[index];
-        let consumed = keys.is_down(keycode) && keys.is_consumed(keycode);
-        let (word, bit) = DeviceKeys::slot(keycode);
-        keys.down[word] &= !bit;
-        keys.consumed[word] &= !bit;
-        if keys.down.iter().all(|word| *word == 0) {
-            self.devices.remove(index);
-        }
-        consumed
-    }
-}
-
-impl DeviceKeys {
-    const fn new(device: DeviceId) -> Self {
-        Self {
-            device,
-            down: [0; KEY_WORDS],
-            consumed: [0; KEY_WORDS],
-        }
-    }
-
-    const fn slot(keycode: u32) -> (usize, u64) {
-        ((keycode / 64) as usize, 1 << (keycode % 64))
-    }
-
-    fn is_down(&self, keycode: u32) -> bool {
-        let (word, bit) = Self::slot(keycode);
-        self.down[word] & bit != 0
-    }
-
-    fn is_consumed(&self, keycode: u32) -> bool {
-        let (word, bit) = Self::slot(keycode);
-        self.consumed[word] & bit != 0
-    }
-}
-
-const fn modifier_bit(keycode: u32) -> u32 {
-    match keycode {
-        42 | 54 => WmModifierMask::SHIFT,
-        29 | 97 => WmModifierMask::CONTROL,
-        56 | 100 => WmModifierMask::ALT,
-        125 | 126 => WmModifierMask::SUPER,
-        _ => 0,
-    }
 }
