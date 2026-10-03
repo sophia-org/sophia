@@ -105,8 +105,34 @@ curve code: the Ed448 field arithmetic, decaf, Elligator2 and SPAKE2-EE that
 Ported files carry 9front's MIT notice in their headers and an entry in
 `THIRD-PARTY-NOTICES.md`.
 
-Unlock depends on the agent: t293 delivers the factotum core and `pam` before
-t292 can unlock anything but its test seam.
+Unlock depends on the agent: t293 delivers the factotum core, `pam` and `pass`
+before t292 can unlock anything but its test seam.
+
+A porting design citing 9front file and line for each rule is retained at
+`~/.local/state/sophia/development-evidence/t034-factotum-design/factotum-port-design.md`
+(sha256 `392722e7de78007392ffb549fd83086ef09e209ba8a178ac880fcd15dc7f44d8`).
+niltempus settled its open questions on 2026-10-03:
+
+- The PAM binding lives in one small package, `sophia-factotum-pam`: the
+  executed helper and the only crate exempt from the workspace's
+  `unsafe_code = "forbid"`, each unsafe block commented. The agent is safe Rust
+  and never links libpam.
+- `pam` is served only on the private channel Session holds with the agent, so
+  no other same-UID process can test passwords through it. The user-facing
+  endpoint stays closed in t293 and opens later under t275's namespace rules.
+- The Ed448 field uses RustCrypto's constant-time `crypto-bigint`; only 9front's
+  `.mp` formulas (decaf, Elligator2, SPAKE2-EE, the ladder) are ported.
+- Unlock calls `pam_authenticate` only, as swaylock and lockme do, so an expired
+  account can still unlock its running session; empty secrets are refused
+  (`PAM_DISALLOW_NULL_AUTHTOK`).
+
+Defaults taken without a separate decision: `pam` verifies only the agent's
+owner; the helper must be root-owned and not writable by the user, checked at
+start; `mlockall` falls back from `MCL_FUTURE` to `MCL_CURRENT` with a warning
+rather than risk aborting the agent; `confirm` and `needkey` refuse opens until
+a secure prompt exists; sophia-9p gains an opt-in zeroing of consumed input for
+the agent's connections; 9front's file-level error strings become 9P2000.L
+errno values with the text mirrored to `log`.
 
 Persistent key storage (secstore) and secure prompts remain open.
 

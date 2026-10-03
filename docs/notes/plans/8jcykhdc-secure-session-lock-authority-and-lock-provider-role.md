@@ -123,7 +123,7 @@ X client or provider record can enter or leave locked state; a verdict for an
 earlier lock epoch or a superseded attempt never unlocks; relocking during
 authentication discards the in-flight verdict.
 
-### t293 sophia-factotum core and pam
+### t293 sophia-factotum core, pam and pass
 
 Port 9front's factotum agent to `crates/sophia-factotum` under the
 [factotum ADR](../decisions/hhbejm8k-port-9front-factotum-to-rust-as-sophia-factotum.md):
@@ -141,7 +141,11 @@ dumpability and best-effort `mlockall`, and without `NO_NEW_PRIVS` because
 submit. Ship an example `sophia-lock` PAM file with `pam_faildelay` and `pam_unix`
 and no faillock. Never log secrets, their length or PAM prompts. 9front's
 `factotum` sources and lockme's `auth.nim`/`password.nim` are the references;
-ported files carry 9front's MIT notice.
+ported files carry 9front's MIT notice. `pass` moves here from t298 because the
+key ring needs a protocol that takes keys. The PAM binding is the separate
+`sophia-factotum-pam` package, the one crate exempt from the unsafe-code lint;
+`pam` is served only on Session's private channel. The decisions and defaults
+are in the factotum ADR; the cited design is in development evidence.
 
 Exit: conversation and key-ring controls ported from factotum's behaviour,
 including hidden secrets on `ctl` reads and refused cross-UID peers;
@@ -184,14 +188,14 @@ On an exact installed release with a lock provider: two outputs, hotplug while
 locked, a VT round trip, a provider kill, a wrong and a right password. Physical
 evidence stays separate from the deterministic checks.
 
-### t298 pass, p9any and dp9ik
+### t298 p9any and dp9ik
 
-Add `pass`, `p9any` and `dp9ik` (client and server roles) to `sophia-factotum`,
+Add `p9any` and `dp9ik` (client and server roles) to `sophia-factotum`,
 and port libauthsrv's ticket, authenticator and key formats, `passtokey`, `form1`
 and authpak into `crates/sophia-libauthsrv`, shared with the separately hosted
-auth-server port. Take the primitives from audited RustCrypto crates and port
-only authpak's curve code (Ed448 field arithmetic, decaf, Elligator2, SPAKE2-EE),
-as niltempus decided on 2026-10-03.
+auth-server port. Take the primitives from audited RustCrypto crates, the Ed448
+field from `crypto-bigint`, and port only authpak's formulas (decaf, Elligator2,
+SPAKE2-EE, the ladder), as niltempus decided on 2026-10-03.
 Build an independent C oracle from 9front's libauthsrv and libsec sources,
 including the C that `mpc` generates, under `tools/`. Wiring `Tauth` into
 `sophia-9p` exports waits for t275's decision.
