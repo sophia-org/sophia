@@ -43,12 +43,15 @@ then extract the native C and Rust SDKs in parallel, complete their lifecycle
 and file-role support, and move Bemenu/Lom/Provlita to pinned releases. New
 releases include t261; its prior source fix was absent from the installed WM.
 
-Codex directs tracking, contract review, integration and build slots, and owns
+Codex directs tracking, contract review and integration, and owns
 the C SDK, Bemenu and independent oracle. Claude owns Rust extraction, B6c and
 Sophia's Rust dependency integration; separate agents adopt Lom and Provlita
 after a tested SDK commit is pinned. Preserve Bemenu's unpushed local commits
-and coordinate Provlita's Lom GPU-helper pin. Build at nice 19, jobs 2, with
-private targets and explicit quiet windows for measurements.
+and coordinate Provlita's Lom GPU-helper pin. Follow the
+[build and test coordination policy](../../build-and-test-coordination.md),
+updated on 2026-10-03: ordinary builds and correctness gates run concurrently
+with bounded jobs and reusable private targets; measurements get explicit
+quiet windows when needed.
 
 Source integration: signed master merge `987cfd39` incorporates t252 at
 `79a09a302`. Its production source is identical to that gated branch; only

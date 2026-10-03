@@ -174,8 +174,11 @@ refusing missing or zero-test runs.
 ### Working arrangement
 
 All lanes preserve prior worktrees, branches and evidence. Signed checkpoints
-are shared through herdr, heavy jobs are device-hidden and serial (nice 19,
-jobs 2, exclusive disk targets), and only the director allocates main gates.
+are shared through herdr. Follow the
+[build and test coordination policy](../../build-and-test-coordination.md),
+updated on 2026-10-03: ordinary device-hidden builds and correctness gates may
+run concurrently with bounded jobs and reusable private targets. Coordinate
+controlled measurements and exclusive hardware access separately.
 No source edits occur in main. Queue IDs are reserved centrally; other open
 tasks are neither closed nor silently retargeted by this work.
 

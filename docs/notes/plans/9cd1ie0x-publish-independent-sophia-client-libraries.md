@@ -125,10 +125,13 @@ bounded-memory, maximum-object and revocation controls, and the independent
 Go oracle's exact 96-check verdict. Native rendering, installed rollout and
 performance acceptance remain t252 gates.
 
-Codex directs tracking, normative changes, integration review and compile slots.
+Codex directs tracking, normative changes and integration review.
 Claude owns Sophia-side Rust dependency integration; Codex owns C snapshots,
-Bemenu and the oracle. Use isolated worktrees, nice 19/jobs 2/private targets,
-signed commits and herdr handoffs. Never reset gpg-agent. Authentication may
+Bemenu and the oracle. Use isolated worktrees, reusable private targets,
+signed commits and herdr handoffs. The
+[build and test coordination policy](../../build-and-test-coordination.md),
+updated on 2026-10-03, allows concurrent ordinary builds and correctness gates.
+Never reset gpg-agent. Authentication may
 block publication but does not block local implementation.
 
 ## Application adoption, 2026-09-27
