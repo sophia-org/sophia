@@ -1075,6 +1075,7 @@ version = "0.1.0"
 dependencies = [
  "rustix",
  "sophia-9p",
+ "sophia-9p-client",
  "tracing",
  "zeroize",
 ]

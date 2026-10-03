@@ -37,7 +37,9 @@
 //! `pass` and the Linux `pam` login (with `p9any` and `dp9ik` to follow); and
 //! `confirm` and `needkey` stay closed until a trusted prompt exists.
 
+pub mod agent;
 pub mod attr;
+pub mod client;
 pub mod conversation;
 pub mod ctl;
 pub mod export;
