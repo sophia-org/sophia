@@ -98,6 +98,27 @@ acknowledgement, journal and upload-slot custody follow the
 [shell file rules](sophia-shell-files.md#records-and-submission) unchanged; a
 candidate is at most 128 bytes.
 
+| File | Open | Contents |
+| --- | --- | --- |
+| `api` | read | exactly `sophia-lock-files version=1 epoch=<epoch>\n`, the epoch in decimal without leading zeros |
+| `limits` | read | the Limits object, fixed for the connection epoch |
+| `lock` | read | the newest Lock object |
+| `events` | read | the event journal |
+| `transaction` | read-write | one staged candidate |
+| `submit`, `ack` | write | the 24-byte submit and 16-byte ack controls |
+| `upload/N` | write | bytes of the upload bound to slot N when opened |
+
+Every Lock publication gets a fresh Qid path, greater than every earlier one,
+and an open handle keeps reading the object it opened; walk and open report
+that object's Qid path. `ObjectPublished` names the generation and Qid path of
+one publication. A provider that walks or opens `lock` and finds a greater Qid
+path than the announcement named is looking at a newer publication, whose own
+`ObjectPublished` follows later in the journal; a smaller one is a protocol
+violation. A successful negotiation journals `Submitted`, `Negotiated` and an
+`ObjectPublished` for the current lock object together, so the first lock
+object needs no separate request. An `upload/N` writer opened while slot N is
+not bound fails with `ESTALE`, and stays bound to the upload it opened.
+
 ## Negotiation
 
 `Negotiate` names a revision range, the requested capabilities and up to eight
