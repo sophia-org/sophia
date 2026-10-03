@@ -39,7 +39,7 @@ fi
 
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
-for model in RetainedCompositionAdmission NativeSessionLifecycle TabDescriptorPresentation VisualRetirement VisualRetirementSlots VisualDamageHistory StableBackingLease AdmissionRecovery PresentFrameOwnership PresentCopyOwnership PresentFlipOwnership PresentMixedOwnership SurfaceContentStream GeometryFeedback PolicyConnection PolicyProjection PolicyLifecycle PolicySettlementRecovery PolicyOutputSettlement PolicyRefreshLifecycle OutputTopologyLifecycle ShellObservation ShellDescriptorLifecycle ShellWorkAreaCoordination IndicatorTransfer IndicatorAction TargetResolvedInput TargetInputPacing InputAuthorityArbitration PointerGrabAdmission FrameServiceArbitration PageFlipCompletionPump PageFlipPresentationTracker SharedWorkerService CursorPlaneTransactionOwner MirrorHeadPacing PixelSilentAdmission ContinuousContentPresentation ShellContentLifecycle ShellContentBundleComposition ShellPresentedContentAction ShellContentOutbox ShellGpuLaunchAdmission InputDeliveryRecovery XAuthorityShutdown X11ClientOutputSpill; do
+for model in RetainedCompositionAdmission NativeSessionLifecycle TabDescriptorPresentation VisualRetirement VisualRetirementSlots VisualDamageHistory StableBackingLease AdmissionRecovery PresentFrameOwnership PresentCopyOwnership PresentFlipOwnership PresentMixedOwnership SurfaceContentStream GeometryFeedback PolicyConnection PolicyProjection PolicyLifecycle PolicySettlementRecovery PolicyOutputSettlement PolicyRefreshLifecycle OutputTopologyLifecycle ShellObservation ShellDescriptorLifecycle ShellWorkAreaCoordination IndicatorTransfer IndicatorAction TargetResolvedInput TargetInputPacing InputAuthorityArbitration PointerGrabAdmission FrameServiceArbitration PageFlipCompletionPump PageFlipPresentationTracker SharedWorkerService CursorPlaneTransactionOwner MirrorHeadPacing PixelSilentAdmission ContinuousContentPresentation ShellContentLifecycle ShellContentBundleComposition ShellPresentedContentAction ShellContentOutbox ShellGpuLaunchAdmission InputDeliveryRecovery XAuthorityShutdown X11ClientOutputSpill SessionLock; do
     cp "$MODEL_DIR/$model.tla" "$TEMP_DIR/"
     cp "$MODEL_DIR/$model.cfg" "$TEMP_DIR/"
     (
@@ -134,6 +134,44 @@ for control in \
             }
             ;;
     esac
+done
+
+# Each session-lock control drops one rule of the lock (t034): the verdict's
+# check of the current attempt, the void a relock casts on the attempt in
+# flight, the provider image's connection and lock epoch, the unlock's wait
+# for the applied input epoch, and the cover proof before Locked.
+for control in \
+    SessionLockStaleVerdict \
+    SessionLockRelockKeepsAttempt \
+    SessionLockStaleProviderImage \
+    SessionLockEarlyUnlock \
+    SessionLockUncoveredLock; do
+    control_dir="$TEMP_DIR/$control"
+    mkdir "$control_dir"
+    cp "$MODEL_DIR/SessionLock.tla" "$MODEL_DIR/$control.cfg" "$control_dir/"
+    log="$control_dir/control.log"
+    if (
+        cd "$control_dir"
+        java -XX:+UseParallelGC -jar "$JAR_PATH" \
+            -deadlock \
+            -workers 1 \
+            -fp 0 \
+            -config "$control.cfg" \
+            SessionLock.tla
+    ) >"$log" 2>&1; then
+        echo "TLA+ negative control unexpectedly passed: $control" >&2
+        exit 1
+    fi
+    case "$control" in
+        SessionLockStaleVerdict|SessionLockRelockKeepsAttempt) invariant=NoStaleUnlock ;;
+        SessionLockStaleProviderImage) invariant=ProviderImageIsCurrent ;;
+        SessionLockEarlyUnlock) invariant=InputReturnsOnlyAfterApplied ;;
+        SessionLockUncoveredLock) invariant=LockedOnlyWhenCovered ;;
+    esac
+    grep -Fq "Invariant $invariant is violated." "$log" || {
+        echo "TLA+ session-lock control failed for the wrong reason: $control" >&2
+        exit 1
+    }
 done
 
 # These configurations deliberately weaken exactly one progress or identity

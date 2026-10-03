@@ -379,6 +379,22 @@ grant, and every replacement process receives a fresh grant epoch. Its negative
 controls retain a grant across device loss and reuse an epoch so the two
 security properties remain executable rather than prose-only.
 
+`SessionLock.tla` models the session lock (t034): the `SessionLockState`
+reducer in `crates/sophia-session/src/session_lock.rs`, the X frontend's
+requested and applied input epochs, Engine's cover proof, and a lock provider
+whose connection can be replaced. The authenticator may answer any attempt it
+was ever given, in any order, including attempts of earlier locks. It checks
+that only the current attempt of the current lock, begun after the latest lock
+request, unlocks; that a provider image is shown only for the current
+connection and lock epoch; that input returns only after the frontend applied
+the epoch that ends the lock; and that the session is reported locked only once
+every head showed its cover. Five negative controls each drop one of those
+rules (`SessionLockStaleVerdict`, `SessionLockRelockKeepsAttempt`,
+`SessionLockStaleProviderImage`, `SessionLockEarlyUnlock`,
+`SessionLockUncoveredLock`), and each must violate its invariant. A passing
+run is bounded decision evidence: three epochs, four attempts and two provider
+connections, not a refinement proof of the Rust reducer.
+
 `ShellContentBundleComposition.tla` models the seam between the two shell
 models rather than merging them. The work-area model carries `candidateReady`
 as an opaque boolean and proves a presented bundle was ready, coherent and

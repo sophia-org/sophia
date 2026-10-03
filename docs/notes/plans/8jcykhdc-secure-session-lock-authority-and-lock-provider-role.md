@@ -337,6 +337,19 @@ SDKs before any Sophia consumer.
 Model lock epochs, stale verdicts, relock during authentication and provider
 replacement in `validation/architecture`.
 
+Checkpoint 2026-10-03 on `models/t296`: `validation/tla/SessionLock.tla`
+models the reducer, the frontend's requested and applied input epochs, the
+cover proof and a replaceable provider. The authenticator may answer any
+attempt it was ever given, in any order. The model holds `NoStaleUnlock`,
+`ProviderImageIsCurrent`, `InputReturnsOnlyAfterApplied` and
+`LockedOnlyWhenCovered` over 395,063 distinct states (three epochs, four
+attempts, two connections). Five negative controls, one per rule, each violate
+their invariant; the stale-verdict control's trace is the relock case (attempt
+1 of epoch 1, a relock to epoch 2, then attempt 1's verdict). It is temporal
+and epoch evidence, so it lives with the TLA+ models rather than the Alloy
+topology; role authority over the lock (no WM, shell, X client or provider
+record can enter or leave it) remains covered by the code controls.
+
 ### t297 Attended acceptance
 
 On an exact installed release with a lock provider: two outputs, hotplug while
