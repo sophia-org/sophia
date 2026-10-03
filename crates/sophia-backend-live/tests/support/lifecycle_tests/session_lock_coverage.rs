@@ -315,3 +315,36 @@ fn a_hotplugged_output_shows_the_cover_on_its_first_frame() {
         );
     }
 }
+
+/// t289 joined: background pacing and Present clock selection see what the
+/// heads draw. While locked no surface is visible and every new Present binds
+/// the fallback clock; unlocking makes them visible again, which is the edge
+/// that releases Presents parked while locked.
+#[test]
+fn a_locked_session_paces_every_client_as_hidden_and_binds_the_fallback_clock() {
+    let (outputs, mut runtime, scene, _target) = desktop();
+    let right = SurfaceId::new(6, 1);
+    let geometry = rect(64, 0, 64, 32);
+    let clock = |runtime: &LiveProductionVisualRuntime| {
+        runtime.present_clock_outputs([(right, geometry)], Some(outputs[0].id))
+    };
+    assert!(runtime.background_surface_is_visible(right, geometry, 0.0));
+    assert_eq!(clock(&runtime), vec![(right, Some(outputs[1].id))]);
+
+    runtime
+        .set_session_lock_on::<MirroredTarget>(Some(cover(9)), &scene, None)
+        .unwrap();
+    assert!(!runtime.background_surface_is_visible(right, geometry, 0.0));
+    assert_eq!(clock(&runtime), vec![(right, None)], "the fallback clock");
+    assert!(
+        runtime
+            .background_visible_surfaces([(right, geometry)])
+            .is_empty()
+    );
+
+    runtime
+        .set_session_lock_on::<MirroredTarget>(None, &scene, None)
+        .unwrap();
+    assert!(runtime.background_surface_is_visible(right, geometry, 0.0));
+    assert_eq!(clock(&runtime), vec![(right, Some(outputs[1].id))]);
+}

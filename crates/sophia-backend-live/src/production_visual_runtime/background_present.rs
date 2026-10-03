@@ -73,6 +73,13 @@ impl LiveProductionVisualRuntime {
         &self,
         geometries: &BTreeMap<SurfaceId, Rect>,
     ) -> Vec<BackgroundOutputVisibility> {
+        // While the session is locked every output draws the cover alone, so
+        // no output samples any surface: every client is paced as hidden and
+        // every new Present binds the fallback clock. Unlocking makes them
+        // visible again, which is the edge that releases parked Presents.
+        if self.session_lock.is_some() {
+            return Vec::new();
+        }
         self.outputs
             .logical_viewports()
             .map(|(output, viewport)| {
