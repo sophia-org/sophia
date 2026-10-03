@@ -285,6 +285,8 @@ pub struct ExternalWmConfig {
 pub struct DesktopComponents {
     pub window_manager: Option<ExternalWmConfig>,
     pub shell_components: Vec<crate::ShellComponentConfig>,
+    /// The session lock's renderer, if the operator chose one.
+    pub lock_provider: Option<crate::LockProviderConfig>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

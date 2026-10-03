@@ -670,7 +670,7 @@ impl LiveProductionVisualRuntime {
             shell_content: &self.shell_content,
             descriptor_overlay: self.descriptor_overlay.as_ref(),
             policy_presentation: self.policy_presentation.as_ref(),
-            session_lock: self.session_lock,
+            session_lock: self.session_lock.clone(),
         }
     }
 

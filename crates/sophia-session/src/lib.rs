@@ -56,7 +56,9 @@ pub mod session_actions;
 pub mod session_control;
 pub mod session_keyboard;
 pub mod session_lock;
+pub mod session_lock_frames;
 pub mod session_lock_input;
+pub mod session_lock_object;
 pub mod session_shutdown;
 pub mod session_startup;
 #[cfg(feature = "native-session")]

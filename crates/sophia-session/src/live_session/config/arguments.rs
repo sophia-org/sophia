@@ -432,6 +432,7 @@ impl PersistentXtermSessionConfig {
             );
         }
         let components = &session_profile_candidate.components;
+        let lock_provider = components.lock_provider.clone();
         let configured_wm = components.window_manager.as_ref()
             .or(core_snapshot.external_wm.as_ref());
         let explicit_wm_process = arg_value(args, "--wm-process");
@@ -916,6 +917,7 @@ impl PersistentXtermSessionConfig {
             shell_shortcuts_enabled: live_shell_enabled,
             factotum,
             inject_session_lock,
+            lock_provider,
             shell_config,
             shell_panel_thickness,
             shell_content_enabled,

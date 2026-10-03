@@ -25,6 +25,7 @@ pub enum SupervisedProcessKind {
     Shell,
     OutputAuthority,
     SophiaXAuthority,
+    LockProvider,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

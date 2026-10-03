@@ -288,10 +288,17 @@ pub fn lower_head_composition_plan_with_caches(
             }
             HeadCompositorCommand::ContentImage(content) => {
                 if !content.clip.is_empty() {
-                    let identity = content.image.resource.description().resource;
+                    let handle = match &content.image.resource {
+                        sophia_engine::CompositorImageSource::Shell(lease) => {
+                            shell_content_handle(lease.description().resource)
+                        }
+                        sophia_engine::CompositorImageSource::Lock(image) => {
+                            crate::lock_image_handle(image.identity)
+                        }
+                    };
                     layers.push(LiveOwnedMixedCompositionLayer::Cpu {
                         buffer: LiveSharedCpuBufferSource {
-                            handle: shell_content_handle(identity),
+                            handle,
                             size: content.image.size_px,
                             stride: content.image.stride,
                             format: content.image.format,

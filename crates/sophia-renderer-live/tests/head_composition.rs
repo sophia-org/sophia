@@ -1043,7 +1043,7 @@ fn shell_content_lowers_exact_pixels_and_keeps_the_resource_until_frame_retireme
                 },
                 stride: 16,
                 format: u32::from_le_bytes(*b"AR24"),
-                resource: lease,
+                resource: lease.into(),
             },
             geometry: Rect {
                 x: 15,
@@ -1133,7 +1133,7 @@ fn shell_content_lowers_exact_pixels_and_keeps_the_resource_until_frame_retireme
         .content_images()
         .next()
         .unwrap();
-    assert_eq!(identity.resource, description);
+    assert_eq!(identity.resource.shell(), Some(&description));
     assert_eq!(store.usage().backing, 0);
     store.collect();
     assert!(store.take_event().is_none());

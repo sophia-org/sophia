@@ -39,7 +39,7 @@ fn three_components_keep_independent_sources_and_dock_removal_preserves_neighbor
     assert_eq!(
         runtime.tab_frames[&outputs[0].id]
             .content_images()
-            .map(|v| v.resource.grant)
+            .map(|v| v.resource.shell().expect("shell content").grant)
             .collect::<Vec<_>>(),
         grants
     );
@@ -249,7 +249,15 @@ fn separate_component_layers_keep_both_real_sources_on_one_output() {
         1,
         upload(&mut launcher_store, launcher_grant, resource),
     );
-    let duplicate_grant = shell_frame(outputs[0], 2, panel.images[0].resource.clone());
+    let duplicate_grant = shell_frame(
+        outputs[0],
+        2,
+        panel.images[0]
+            .resource
+            .shell()
+            .expect("shell content")
+            .clone(),
+    );
     runtime
         .set_shell_component_content_on_target(
             panel,
@@ -294,8 +302,8 @@ fn separate_component_layers_keep_both_real_sources_on_one_output() {
         .content_images()
         .collect::<Vec<_>>();
     assert_eq!(images.len(), 2);
-    assert_eq!(images[0].resource.grant, panel_grant);
-    assert_eq!(images[1].resource.grant, launcher_grant);
+    assert_eq!(images[0].resource.shell().unwrap().grant, panel_grant);
+    assert_eq!(images[1].resource.shell().unwrap().grant, launcher_grant);
     let bindings = &runtime.input_projections[0].content;
     assert_eq!(bindings.len(), 2);
     assert_eq!(bindings[0].grant, panel_grant);

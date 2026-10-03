@@ -532,13 +532,30 @@ impl LiveProductionCpuScene {
                 }
                 CompositorDisplayCommand::ContentImage(content) => {
                     if content.output_size_px != output.size {
+                        // A lock image sized for another head of a mirrored
+                        // output is left out here: the fill beneath it still
+                        // covers the head, and the cover never fails closed
+                        // into an error.
+                        if matches!(
+                            content.resource,
+                            sophia_engine::CompositorImageSource::Lock(_)
+                        ) {
+                            continue;
+                        }
                         return Err("shell content targets a stale output size".into());
                     }
                     elements.push(LiveCpuCompositionElementRef::Layer(
                         LiveCpuCompositionLayerRef {
                             geometry: content.geometry_px,
                             buffer: LiveCpuBufferSourceRef {
-                                handle: content.resource.description().resource.id,
+                                handle: match &content.resource {
+                                    sophia_engine::CompositorImageSource::Shell(lease) => {
+                                        lease.description().resource.id
+                                    }
+                                    sophia_engine::CompositorImageSource::Lock(image) => {
+                                        crate::lock_image_handle(image.identity)
+                                    }
+                                },
                                 size: content.size_px,
                                 stride: content.stride,
                                 format: content.format,

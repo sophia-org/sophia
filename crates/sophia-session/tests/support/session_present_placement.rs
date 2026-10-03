@@ -365,14 +365,14 @@ fn direct_first_map_and_visible_popup_use_geometry_but_lock_wins() {
     );
     visual
         .set_session_lock(
-            Some(sophia_engine::SessionLockCover {
-                epoch: sophia_engine::SessionLockEpoch::from_raw(1).unwrap(),
-                fill: sophia_engine::CompositorRgb8 {
+            Some(sophia_engine::SessionLockCover::fill(
+                sophia_engine::SessionLockEpoch::from_raw(1).unwrap(),
+                sophia_engine::CompositorRgb8 {
                     red: 0,
                     green: 0,
                     blue: 0,
                 },
-            }),
+            )),
             &sophia_backend_live::LiveProductionCpuScene::new(Size {
                 width: 64,
                 height: 32,

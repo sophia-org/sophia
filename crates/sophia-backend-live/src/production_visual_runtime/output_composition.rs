@@ -26,7 +26,7 @@ impl OutputComposition<'_> {
         // A locked output draws the cover and nothing else. This is the one
         // place every retained, Present, recovery and topology list is built,
         // so no path can compose the desktop around it.
-        if let Some(cover) = self.session_lock {
+        if let Some(cover) = &self.session_lock {
             return Ok(cover.display_list(output, viewport));
         }
         // The WM presentation tier: above ordinary application content and
@@ -175,7 +175,7 @@ impl OutputCompositionSnapshot {
             shell_content: runtime.shell_content.clone(),
             descriptor_overlay: runtime.descriptor_overlay.clone(),
             policy_presentation: runtime.policy_presentation.clone(),
-            session_lock: runtime.session_lock,
+            session_lock: runtime.session_lock.clone(),
             viewports: runtime.outputs.logical_viewports().collect(),
         }
     }
@@ -195,7 +195,7 @@ impl OutputCompositionSnapshot {
             shell_content: &self.shell_content,
             descriptor_overlay: self.descriptor_overlay.as_ref(),
             policy_presentation: self.policy_presentation.as_ref(),
-            session_lock: self.session_lock,
+            session_lock: self.session_lock.clone(),
         }
         .display_list(
             output,

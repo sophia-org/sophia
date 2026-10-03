@@ -291,6 +291,41 @@ with the export; the provider cannot claim or end locked state, see characters,
 draw outside its allocation, present into a newer lock epoch from an older
 connection or delay the cover; crash, stall and replacement leave the fill.
 
+Checkpoint 2026-10-03 on `lock/t034-next`:
+- `sophia_protocol::lock_files` is the record codec, bound to the KDL by
+  `lock_file_schema.rs`. Rules the contract states in prose are covered in
+  `lock_files.rs`.
+- `sophia_runtime::lock_files` holds one provider connection epoch:
+  - negotiation, which refuses chords that hold only Shift or that Session
+    reserves;
+  - uploads, which become images only once every byte has arrived;
+  - frame demands and permits;
+  - candidates, checked against the published lock object, the allocation,
+    the image's size and the permit, with journal room held for every
+    answer;
+  - revocation of what a new lock object no longer grants.
+- `LockFileExport` serves the files over the `sophia-9p` export: a fixed
+  root, a single admitted attach, lock objects pinned per generation, one
+  staged candidate, and upload writers fenced by binding.
+- Controls: 13 custody, 7 export.
+- Since then, on the same branch:
+  - the endpoint (`PolicyRole::Lock`, pidfd admission, a fresh epoch per
+    connection) and its worker thread;
+  - the profile's `session { lock-provider }` selection, launched once a
+    topology is published, in its own domain, restarted with backoff;
+  - the lock object and the provider's limits derived from the topology;
+  - entries for the lock's edits and verdicts;
+  - content images given an owner-specific source, so a lock image has its
+    own identity and texture handles apart from shell content;
+  - the cover drawing each output's provider image over the fill, with the
+    coverage proof extended to it;
+  - candidates placed over their outputs, outcomes (presented, superseded,
+    rejected) and permits paced by presentation.
+  - granted chords reaching the lock keyboard, and a direct GPU grant;
+  - an independent C peer against the production export.
+- Open: following a render-device change after a direct grant, and a live
+  run with a real provider (kleis through the t295 C SDK client).
+
 ### t295 SDKs
 
 Add a lock client to sophia-desktop-sdk-c and codecs to sophia-desktop-sdk-rs,

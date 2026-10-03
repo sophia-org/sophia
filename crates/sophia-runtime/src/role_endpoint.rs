@@ -32,6 +32,10 @@ pub enum PolicyRole {
     /// The exclusive output file authority, assigned to its own protected
     /// supervised process. WM and shell assignment confer no output grant.
     Output,
+    /// The session lock provider (`sophia_lock_fs_v1`): it renders what a
+    /// locked session shows and holds no other authority. It cannot enter,
+    /// leave or delay the lock, and never sees the secret.
+    Lock,
 }
 
 impl PolicyRole {
@@ -42,6 +46,7 @@ impl PolicyRole {
             Self::Shell => "shell.sock",
             Self::Broker => "broker.sock",
             Self::Output => "output.sock",
+            Self::Lock => "lock.sock",
         }
     }
 
@@ -55,6 +60,7 @@ impl PolicyRole {
             Self::Shell => ProtectionDomainRole::MetadataShell,
             Self::Broker => ProtectionDomainRole::MetadataBroker,
             Self::Output => ProtectionDomainRole::OutputAuthority,
+            Self::Lock => ProtectionDomainRole::LockProvider,
         }
     }
 
@@ -72,7 +78,9 @@ impl PolicyRole {
     /// with no `bwrap`, not a side effect of this rule.
     pub const fn is_metadata_bearing(self) -> bool {
         match self {
-            Self::Wm | Self::Output => false,
+            // A lock provider sees its own allocations and nothing about
+            // applications or windows.
+            Self::Wm | Self::Output | Self::Lock => false,
             Self::Shell | Self::Broker => true,
         }
     }

@@ -114,6 +114,9 @@ struct PersistentXtermSessionConfig {
     factotum: Option<SessionFactotum>,
     /// Proof only: lock once the physical input proof is armed.
     inject_session_lock: bool,
+    /// The lock's renderer, if the operator selected one. A lock never
+    /// depends on it: without it, or while it is down, the cover is a fill.
+    lock_provider: Option<sophia_config::LockProviderConfig>,
     shell_config: Option<std::path::PathBuf>,
     shell_panel_thickness: Option<u16>,
     shell_content_enabled: bool,

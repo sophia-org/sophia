@@ -16,9 +16,12 @@
 
 use crate::prelude::*;
 use crate::{
-    CompositorDisplayCommand, CompositorDisplayList, CompositorNodeId, CompositorRect,
-    CompositorRgb8, OutputFrameDamageSnapshot,
+    CompositorContentImage, CompositorDisplayCommand, CompositorDisplayList, CompositorImageSource,
+    CompositorImageSourceIdentity, CompositorNodeId, CompositorRect, CompositorRgb8,
+    OutputFrameDamageSnapshot,
 };
+use std::collections::BTreeMap;
+use std::sync::Arc;
 
 /// One lock, from the moment Session begins it until it ends. Epochs are
 /// minted by Session and never reused, so a frame drawn for one lock never
@@ -48,31 +51,126 @@ impl SessionLockEpoch {
     }
 }
 
+/// Which provider image a lock shows: its connection epoch, so a replaced
+/// provider's image is never the same identity as its successor's, and its
+/// resource. Comparable and pixel-free.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct SessionLockImageIdentity {
+    pub output: OutputId,
+    pub connection_epoch: u64,
+    pub resource_id: u64,
+    pub resource_generation: u64,
+}
+
+/// A lock provider's whole image for one output, premultiplied BGRA8, sized
+/// exactly to that output's allocation.
+#[derive(Clone)]
+pub struct SessionLockImage {
+    pub identity: SessionLockImageIdentity,
+    pub width_px: u32,
+    pub height_px: u32,
+    pub pixels: std::sync::Arc<[u8]>,
+}
+
+impl PartialEq for SessionLockImage {
+    /// The identity names the pixels: a resource is immutable once whole.
+    fn eq(&self, other: &Self) -> bool {
+        self.identity == other.identity
+            && self.width_px == other.width_px
+            && self.height_px == other.height_px
+    }
+}
+
+impl Eq for SessionLockImage {}
+
+/// The provider image an output shows over the fill, and the candidate
+/// generation that placed it there.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SessionLockImagePlacement {
+    pub image: SessionLockImage,
+    pub generation: u64,
+}
+
+impl core::fmt::Debug for SessionLockImage {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("SessionLockImage")
+            .field("identity", &self.identity)
+            .field("width_px", &self.width_px)
+            .field("height_px", &self.height_px)
+            .finish_non_exhaustive()
+    }
+}
+
 /// What Engine draws on every head while the session is locked.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SessionLockCover {
     pub epoch: SessionLockEpoch,
     pub fill: CompositorRgb8,
+    /// The provider image each output shows over the fill, if any. Shared,
+    /// so the cover stays cheap to hand to every frame.
+    pub images: Arc<BTreeMap<OutputId, SessionLockImagePlacement>>,
 }
 
 impl SessionLockCover {
-    /// The display list of a locked output: the opaque fill over the whole
-    /// logical viewport, and nothing else. Letterbox bars outside the
-    /// viewport are the planner's black background.
-    pub fn display_list<C>(&self, output: OutputId, viewport: Rect) -> CompositorDisplayList<C> {
-        CompositorDisplayList {
-            output,
-            commands: vec![CompositorDisplayCommand::Rect(CompositorRect {
-                opacity: u8::MAX,
-                node: CompositorNodeId::SessionLock {
-                    output,
-                    epoch: self.epoch.raw(),
-                },
-                generation: self.epoch.raw(),
-                geometry: viewport,
-                color: self.fill,
-            })],
+    /// A cover of the fill alone.
+    pub fn fill(epoch: SessionLockEpoch, fill: CompositorRgb8) -> Self {
+        Self {
+            epoch,
+            fill,
+            images: Arc::default(),
         }
+    }
+
+    /// The display list of a locked output: the opaque fill over the whole
+    /// logical viewport and, above it, the provider's image for this output
+    /// if it has one, and nothing else. The image is placed in its own pixel
+    /// space, which the head planner scales to every head of the output.
+    /// Letterbox bars outside the viewport are the planner's black
+    /// background.
+    pub fn display_list(&self, output: OutputId, viewport: Rect) -> CompositorDisplayList {
+        let node = CompositorNodeId::SessionLock {
+            output,
+            epoch: self.epoch.raw(),
+        };
+        let mut commands = vec![CompositorDisplayCommand::Rect(CompositorRect {
+            opacity: u8::MAX,
+            node,
+            generation: self.epoch.raw(),
+            geometry: viewport,
+            color: self.fill,
+        })];
+        if let Some(placement) = self.images.get(&output)
+            && placement.image.identity.output == output
+        {
+            let node = CompositorNodeId::SessionLockImage {
+                output,
+                epoch: self.epoch.raw(),
+            };
+            let image = &placement.image;
+            let size = Size {
+                width: i32::try_from(image.width_px).unwrap_or(i32::MAX),
+                height: i32::try_from(image.height_px).unwrap_or(i32::MAX),
+            };
+            commands.push(CompositorDisplayCommand::ContentImage(
+                CompositorContentImage {
+                    node,
+                    generation: placement.generation,
+                    output_size_px: size,
+                    geometry_px: Rect {
+                        x: 0,
+                        y: 0,
+                        width: size.width,
+                        height: size.height,
+                    },
+                    size_px: size,
+                    stride: image.width_px.saturating_mul(4),
+                    format: u32::from_le_bytes(*b"AR24"),
+                    resource: CompositorImageSource::Lock(image.clone()),
+                },
+            ));
+        }
+        CompositorDisplayList { output, commands }
     }
 }
 
@@ -109,18 +207,32 @@ fn frame_session_lock(
         return None;
     }
     let mut epoch = None;
+    let mut filled = false;
     for command in &frame.compositor_display_list.commands {
-        let CompositorDisplayCommand::Rect(rect) = command else {
-            return None;
+        // The fill, and the provider's image above it, on this output's
+        // lock node; anything else voids the proof.
+        let (node_output, raw) = match command {
+            CompositorDisplayCommand::Rect(rect) => {
+                if rect.opacity != u8::MAX || rect.geometry.is_empty() {
+                    return None;
+                }
+                let CompositorNodeId::SessionLock { output, epoch } = rect.node else {
+                    return None;
+                };
+                filled = true;
+                (output, epoch)
+            }
+            CompositorDisplayCommand::ContentImage(image)
+                if matches!(image.resource, CompositorImageSourceIdentity::Lock(_)) =>
+            {
+                let CompositorNodeId::SessionLockImage { output, epoch } = image.node else {
+                    return None;
+                };
+                (output, epoch)
+            }
+            _ => return None,
         };
-        let CompositorNodeId::SessionLock {
-            output: node_output,
-            epoch: raw,
-        } = rect.node
-        else {
-            return None;
-        };
-        if node_output != output || rect.opacity != u8::MAX || rect.geometry.is_empty() {
+        if node_output != output {
             return None;
         }
         let drawn = SessionLockEpoch::from_raw(raw)?;
@@ -128,5 +240,34 @@ fn frame_session_lock(
             return None;
         }
     }
-    epoch
+    epoch.filter(|_| filled)
+}
+
+/// The provider image a whole output presents, and its candidate
+/// generation: every head of the output must have retired a locked frame
+/// showing the same one.
+pub fn presented_session_lock_image(
+    output: OutputId,
+    frames: &[Option<&OutputFrameDamageSnapshot>],
+) -> Option<(SessionLockImageIdentity, u64)> {
+    presented_session_lock(output, frames)?;
+    let mut shown = None;
+    for frame in frames {
+        let image =
+            (*frame)?.compositor_display_list.commands.iter().find_map(
+                |command| match command {
+                    CompositorDisplayCommand::ContentImage(image) => match &image.resource {
+                        CompositorImageSourceIdentity::Lock(identity) => {
+                            Some((*identity, image.generation))
+                        }
+                        CompositorImageSourceIdentity::Shell(_) => None,
+                    },
+                    _ => None,
+                },
+            )?;
+        if *shown.get_or_insert(image) != image {
+            return None;
+        }
+    }
+    shown
 }

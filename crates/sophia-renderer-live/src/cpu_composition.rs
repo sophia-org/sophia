@@ -1,7 +1,7 @@
 mod pixel_storage;
 mod scaled;
 mod solid;
-pub use pixel_storage::LiveCpuPixelStorage;
+pub use pixel_storage::{LiveCpuPixelStorage, lock_image_handle};
 use scaled::compose_scaled_layer;
 pub use solid::solid_color_buffer;
 use solid::{compose_solid_rect, compose_solid_rect_clipped};

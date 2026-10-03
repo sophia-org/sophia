@@ -504,7 +504,7 @@ fn worker_slot_damage_history_does_not_own_copied_shell_pixels() {
                     },
                     stride: 4,
                     format: u32::from_le_bytes(*b"AR24"),
-                    resource: resources.lease(grant, resource).unwrap(),
+                    resource: resources.lease(grant, resource).unwrap().into(),
                 },
             )],
         }

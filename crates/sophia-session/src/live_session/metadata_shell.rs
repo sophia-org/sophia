@@ -9,7 +9,7 @@ mod catalog_service;
 pub use catalog_service::CatalogComponentService;
 mod content_accounting;
 mod content_shutdown;
-mod gpu;
+pub(in crate::live_session) mod gpu;
 pub(crate) mod gpu_content_proof;
 pub(crate) mod indicators;
 

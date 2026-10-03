@@ -42,7 +42,7 @@ fn popout_withdrawal_preserves_parent_and_retains_old_pixels_until_replacement()
         placement: 1,
     };
     image.geometry_px.y = 3;
-    image.resource = popup.clone();
+    image.resource = popup.clone().into();
     frame.images.push(image);
     let mut popup_target = frame.targets[0].clone();
     popup_target.allocation = allocation;

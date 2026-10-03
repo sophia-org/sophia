@@ -93,7 +93,7 @@ pub(super) fn shell_frame(
             },
             stride: 16,
             format: u32::from_le_bytes(*b"AR24"),
-            resource: lease,
+            resource: lease.into(),
         }],
         targets: vec![PresentedContentTarget {
             continuity: sophia_engine::ContentTargetContinuity::mint(),
