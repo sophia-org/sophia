@@ -648,6 +648,7 @@ fn run_session_loop_inner(
     // The input epoch the last lock transition requested; it completes when
     // the X frontend has applied it.
     let mut session_lock_input_epoch = 0_u64;
+    let mut session_lock_cursor_hidden = false;
     // A lock is refused without an authenticator to end it.
     let mut session_unlock_authenticator =
         lock_authenticator::start_session_authenticator(config.factotum.as_ref(), owner_wake.notifier());

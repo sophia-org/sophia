@@ -99,6 +99,24 @@ impl LiveProductionNativeScanout {
         if !position.x.is_finite() || !position.y.is_finite() {
             return Ok(crate::ClassicHardwareCursorUpdate::Hidden);
         }
+        self.place_classic_hardware_cursor(Some(position), logical_viewports)
+    }
+
+    /// Hides the cursor on every head, as a pointer on no output would: each
+    /// head is told to hide, none is left alone. The session lock uses this,
+    /// since its cover is all a locked head may show.
+    pub fn hide_hardware_cursor(
+        &mut self,
+        logical_viewports: &[(OutputId, sophia_protocol::Rect)],
+    ) -> Result<crate::ClassicHardwareCursorUpdate, Box<dyn std::error::Error>> {
+        self.place_classic_hardware_cursor(None, logical_viewports)
+    }
+
+    fn place_classic_hardware_cursor(
+        &mut self,
+        position: Option<sophia_protocol::Point>,
+        logical_viewports: &[(OutputId, sophia_protocol::Rect)],
+    ) -> Result<crate::ClassicHardwareCursorUpdate, Box<dyn std::error::Error>> {
         let primary_in_flight = self.heads.iter().any(|head| head.submitted_at.is_some());
         let initialized = self
             .groups
@@ -169,9 +187,11 @@ impl LiveProductionNativeScanout {
             .ok_or("hardware cursor has no card group")?;
         let hotspot_x = i32::try_from(hotspot_x).map_err(|_| "cursor hotspot exceeds i32")?;
         let hotspot_y = i32::try_from(hotspot_y).map_err(|_| "cursor hotspot exceeds i32")?;
-        if let Some((output, logical_x, logical_y, logical_size)) =
-            project_native_cursor_logical_viewport(position, logical_viewports)?
-        {
+        let projected = match position {
+            Some(position) => project_native_cursor_logical_viewport(position, logical_viewports)?,
+            None => None,
+        };
+        if let Some((output, logical_x, logical_y, logical_size)) = projected {
             for head_index in self.head_indices(output) {
                 let head = &self.heads[head_index];
                 let Some((head_x, head_y)) = crate::project_mirror_coordinates(

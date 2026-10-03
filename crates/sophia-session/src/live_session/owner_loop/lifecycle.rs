@@ -466,6 +466,20 @@
                 cursor_updates.dirty = pointer.position().is_some();
             }
         }
+        // A locked head shows the cover and nothing else, the cursor
+        // included; a hide that fails, mid-topology say, is tried again.
+        if session_lock.holds_input() {
+            if !session_lock_cursor_hidden
+                && let (Some(native), Some(runtime)) = (native_scanout.as_mut(), runtime.as_ref())
+            {
+                session_lock_cursor_hidden =
+                    native.hide_hardware_cursor(&runtime.logical_viewports()).is_ok();
+            }
+            cursor_updates.dirty = false;
+        } else if session_lock_cursor_hidden {
+            session_lock_cursor_hidden = false;
+            cursor_updates.dirty = pointer.position().is_some();
+        }
         if cursor_updates.dirty
             && let (Some(native_scanout), Some(runtime), Some(position)) =
                 (native_scanout.as_mut(), runtime.as_ref(), pointer.position())

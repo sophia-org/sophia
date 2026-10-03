@@ -173,6 +173,19 @@ hiding, the control-bus lock request, egress gates (the screen-capture portal
 has no live executor yet; WM inspection while locked), and an owner-loop
 control driven by a fake authenticator once t293 defines it.
 
+Later on 2026-10-03: the cursor is hidden on every head while the lock holds
+the seat (`hide_hardware_cursor`) and redrawn at the pointer on unlock; it is
+checked physically in t297, since no headless target drives the cursor
+plane. The control-bus lock request is deferred to the separately authorized
+administrative 9P export (todo row 15), together with idle locking (t110):
+adding it to the socket control contract would extend the IPC the 9P
+migration retires. The screen-capture gate goes in with the portal's live
+executor, which does not exist yet; WM inspection carries metadata to the
+operator only and is left as it is. The end-to-end owner-loop control needs
+physical-origin keys, which the lock refuses from synthetic sources by
+design, so it belongs in the QEMU session harness, whose in-guest uinput
+injector produces them, or in t297.
+
 ### t293 sophia-factotum core, pam and pass
 
 Port 9front's factotum agent to `crates/sophia-factotum` under the
