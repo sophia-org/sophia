@@ -24,6 +24,7 @@ pub enum ProtectionDomainRole {
     PortalBroker,
     ApplicationFrontend,
     OutputAuthority,
+    LockProvider,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -496,6 +497,7 @@ fn required_role(process: SupervisedProcessKind) -> ProtectionDomainRole {
         SupervisedProcessKind::MetadataBroker => ProtectionDomainRole::MetadataBroker,
         SupervisedProcessKind::Shell => ProtectionDomainRole::MetadataShell,
         SupervisedProcessKind::OutputAuthority => ProtectionDomainRole::OutputAuthority,
+        SupervisedProcessKind::LockProvider => ProtectionDomainRole::LockProvider,
         SupervisedProcessKind::SophiaXAuthority => ProtectionDomainRole::ApplicationFrontend,
     }
 }

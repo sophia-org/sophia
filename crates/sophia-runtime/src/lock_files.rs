@@ -18,8 +18,12 @@ use sophia_protocol::lock_files::*;
 mod export;
 mod presentation;
 mod resources;
+#[cfg(target_os = "linux")]
+mod transport;
 
 pub use export::{LockFileExport, LockFileHandle, LockFileNode, LockFileQids};
+#[cfg(target_os = "linux")]
+pub use transport::{LockFileTransport, LockFileTransportError};
 
 use presentation::{CandidatePlan, Presentation};
 use resources::{ResourcePlan, Resources};
@@ -159,6 +163,11 @@ impl LockFileCustody {
 
     pub fn is_revoked(&self) -> bool {
         self.revoked
+    }
+
+    /// Whether negotiation has granted the provider its capabilities.
+    pub fn is_negotiated(&self) -> bool {
+        matches!(self.negotiation, Negotiation::Negotiated(_))
     }
 
     pub fn revoke(&mut self) {
