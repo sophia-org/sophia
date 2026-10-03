@@ -14,7 +14,10 @@
 //! `--test-mode` accepts a helper the user owns and lets PAM read a private
 //! configuration directory. Session never passes it.
 
-use sophia_factotum::agent::{AgentConfig, check_helper, harden, serve, session_is_parent};
+use sophia_factotum::agent::{
+    AgentConfig, PAM_SERVICE_DIRECTORIES, check_helper, check_service, harden, serve,
+    session_is_parent,
+};
 use sophia_factotum::pam_helper::PamHelper;
 use sophia_factotum::proto::Settings;
 use std::os::fd::AsFd;
@@ -90,6 +93,13 @@ fn main() -> ExitCode {
     }
     if !hardening.locked_future {
         eprintln!("sophia-factotum: memory locked for current pages only");
+    }
+    if !arguments.test_mode {
+        let directories = PAM_SERVICE_DIRECTORIES.map(std::path::Path::new);
+        if let Err(error) = check_service(&arguments.service, &directories) {
+            eprintln!("sophia-factotum: {error}");
+            return ExitCode::from(1);
+        }
     }
     let helper = if arguments.test_mode {
         eprintln!("sophia-factotum: TEST MODE: helper ownership and PAM confdir are not checked");
