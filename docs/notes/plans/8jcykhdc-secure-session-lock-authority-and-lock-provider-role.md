@@ -301,9 +301,21 @@ Checkpoint 2026-10-03 on `lock/t034-next`:
   root, a single admitted attach, lock objects pinned per generation, one
   staged candidate, and upload writers fenced by binding.
 - Controls: 13 custody, 7 export.
-- Open: the endpoint and pidfd admission, the profile's `lock-provider`
-  selection and supervision, Session's publication, entries and pacing,
-  Engine drawing provider images over the fill, and the C peer.
+- Since then, on the same branch:
+  - the endpoint (`PolicyRole::Lock`, pidfd admission, a fresh epoch per
+    connection) and its worker thread;
+  - the profile's `session { lock-provider }` selection, launched once a
+    topology is published, in its own domain, restarted with backoff;
+  - the lock object and the provider's limits derived from the topology;
+  - entries for the lock's edits and verdicts;
+  - content images given an owner-specific source, so a lock image has its
+    own identity and texture handles apart from shell content;
+  - the cover drawing each output's provider image over the fill, with the
+    coverage proof extended to it;
+  - candidates placed over their outputs, outcomes (presented, superseded,
+    rejected) and permits paced by presentation.
+- Open: granted chords reaching the lock keyboard, a direct GPU grant, the
+  independent C peer, and a live run with a real provider.
 
 ### t295 SDKs
 

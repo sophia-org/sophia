@@ -1,10 +1,14 @@
 # Lock provider file records — revision 1 (draft)
 
 **Draft.** The native codec, `sophia_protocol::lock_files`, is bound to
-`protocol/sophia-lock-files-v1.kdl` by `tests/lock_file_schema.rs`; no
-export, endpoint or admission serves it yet. It is the t294 design under the
+`protocol/sophia-lock-files-v1.kdl` by `tests/lock_file_schema.rs`.
+`sophia_runtime::lock_files` serves it (custody, the 9P export, the endpoint
+and a worker thread), and Session launches and supervises the provider and
+draws its images. It is the t294 design under the
 [proposed lock ADR](notes/decisions/w0seozxx-session-owns-lock-state-and-authentication-lock-providers-only-render.md);
-a layout change must change the KDL and the codec together.
+a layout change must change the KDL and the codec together. Not yet
+implemented: granted chords reaching the lock keyboard, a direct GPU grant,
+and the independent C peer.
 
 This document specifies the lock provider role over 9P2000.L. A lock provider
 draws what a locked session shows. It does nothing else: Session owns the lock
@@ -46,8 +50,13 @@ session {
 }
 ```
 
-Session launches the provider at session start, in its own protection domain,
-and supervises it with backoff. It receives only `SOPHIA_LOCK_9P_SOCKET`. Peer
+Session launches the provider once the first output topology is published,
+so its limits follow the real screens, and only when an authenticator is
+configured. It runs in its own protection domain with no network, its socket
+directory and configuration file read-only, and receives
+`SOPHIA_LOCK_9P_SOCKET` and, when the profile names one, `SOPHIA_LOCK_CONFIG`.
+A provider that exits is restarted after a delay doubling from 1 s to 60 s,
+reset once a replacement negotiates; it is never given up. Peer
 admission follows the output role: the endpoint retains the launched process's
 pidfd and compares it with `SO_PEERPIDFD` before and after credentials, and
 admits one attach per connection epoch. A replacement process gets a fresh
@@ -99,10 +108,12 @@ index.
 
 ## Limits and allocations
 
-`Limits` is fixed for the connection epoch. Its resource bounds follow the
-largest allocation the topology can grant, under a fixed ceiling of 16,384
-pixels a side and 1 GiB per resource. A topology change that would exceed them
-ends the epoch, and the replacement negotiates afresh. The lock budget is
+`Limits` is fixed for the connection epoch. A resource holds at most the
+largest allocation the topology at admission grants (an ordinary 1920x1080
+screen at least), under the contract's ceiling of 16,384 pixels a side and
+1 GiB, and two live resources per output are allowed, so a provider never
+holds more than twice the screens it covers. A later topology that needs more
+answers larger uploads with `budget`, and those outputs show the fill. The lock budget is
 separate from the shell content registry, whose per-resource and shared
 ceilings cannot hold whole-output surfaces.
 
@@ -134,8 +145,10 @@ belong to the connection epoch, so a provider may keep one across lock epochs;
 A provider asks for a frame with one standing `FrameDemand` per allocation; a
 newer demand replaces the standing one, and a demand for an allocation the
 current lock object does not grant fails the write. Session answers with a
-`FramePermit` paced to the slowest head of that output; the permit expires
-after at most 250 ms and grants one candidate. Candidate generations only
+`FramePermit` only while that allocation shows nothing unretired: a
+candidate is in flight until every head of its output has retired it, so
+presentation paces the provider at its slowest head. Session's permits expire
+after 100 ms (the contract allows up to 250 ms) and grant one candidate. Candidate generations only
 increase per allocation. Every forwarded candidate and standing demand holds
 room in the journal for its answer, so a full journal refuses new work rather
 than an answer. A
