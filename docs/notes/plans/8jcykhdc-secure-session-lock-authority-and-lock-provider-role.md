@@ -80,6 +80,19 @@ could release a parked first Present through a preview instance while locked,
 re-parking it every pass; t291 now releases nothing while locked and leaves
 the candidate to its expiry budget.
 
+pF added a W1 requirement on 2026-10-03. t289's cached clock-selection proof
+(`LivePresentClockSelectionSnapshot` with `present_clock_selection_matches` in
+`background_present.rs`) compares the exact selection inputs: geometry, order,
+routes, the WM tier, viewports and primary. The lock is a selection input too.
+Whichever branch merges second adds the cover's epoch,
+`session_lock: Option<SessionLockEpoch>` captured as
+`self.session_lock.map(|cover| cover.epoch)`, to both the snapshot and the
+match. Locking, relocking and unlocking then revoke every cached proof; without
+this, a proof taken before a lock could still bind an application to a locked
+head's clock. The snapshot's own requirement ("Lock integration must retain its
+empty visibility in this same snapshot") is met by `background_output_visibility`
+returning no output while locked, already on this branch.
+
 ## Task details
 
 ### t291 Engine lock cover
