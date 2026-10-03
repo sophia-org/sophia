@@ -55,8 +55,12 @@ pub mod resource_sampling;
 pub mod session_actions;
 pub mod session_control;
 pub mod session_keyboard;
+pub mod session_lock;
+pub mod session_lock_input;
 pub mod session_shutdown;
 pub mod session_startup;
+#[cfg(feature = "native-session")]
+pub mod session_unlock_supervisor;
 pub mod shell_component_connections;
 pub mod shell_component_processes;
 pub(crate) mod shell_indicator_projection;

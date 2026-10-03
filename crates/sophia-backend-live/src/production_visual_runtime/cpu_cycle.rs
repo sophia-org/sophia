@@ -129,6 +129,17 @@ impl LiveProductionVisualRuntime {
             .collect::<Vec<_>>();
         self.observe_content_ordered_resource_releases(authority_envelope);
         let head_plan_composition = output_composition::OutputCompositionSnapshot::capture(self);
+        let software_lock_list = match (self.session_lock, output_descriptors.first()) {
+            (Some(cover), Some(output)) => Some(
+                cover.display_list(
+                    output.id,
+                    self.outputs
+                        .logical_viewport(output.id)
+                        .ok_or("software lock cover targets an unknown output")?,
+                ),
+            ),
+            _ => None,
+        };
         let ordinary_repaints_pending = &mut self.ordinary_repaints_pending;
         let (production, outputs) = (&mut self.production, &mut self.outputs);
         let output_count = outputs.output_count();
@@ -158,6 +169,7 @@ impl LiveProductionVisualRuntime {
             create_native_frames,
             &self.cpu_buffer_residency,
             output_descriptors,
+            software_lock_list,
             move |cycle: u64,
                   committed: &[CommittedSurfaceState],
                   authority_commits: &[TransactionCommit],

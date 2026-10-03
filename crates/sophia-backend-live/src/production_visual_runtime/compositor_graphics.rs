@@ -114,6 +114,8 @@ pub enum LivePresentSampling {
     /// A WM presentation replaces the presenting surface on every applicable
     /// output: it may be sampled only by a preview there, or not at all.
     ReplacedByPolicy,
+    /// The session lock covers every output: no list samples the surface.
+    SessionLocked,
 }
 
 /// The sources a queued Present's plan requires, read from the candidate it plans.
@@ -618,13 +620,13 @@ impl LiveProductionVisualRuntime {
     pub(super) fn display_list_for_output(
         &self,
         output: OutputId,
-        _bounds: Rect,
+        viewport: Rect,
         committed_surfaces: &[CommittedSurfaceState],
         presentation_order: &[SurfaceId],
     ) -> Result<CompositorDisplayList, CompositorDisplayListError> {
         let owned = self.surface_order_for_output(output, presentation_order);
         self.output_composition()
-            .display_list(output, committed_surfaces, &owned)
+            .display_list(output, viewport, committed_surfaces, &owned)
     }
 
     /// A recovery frame owes the frozen client pixels, not a later WM tier.
@@ -635,20 +637,26 @@ impl LiveProductionVisualRuntime {
         committed_surfaces: &[CommittedSurfaceState],
         presentation_order: &[SurfaceId],
     ) -> Result<CompositorDisplayList, &'static str> {
-        self.display_list_without_policy(output, committed_surfaces, presentation_order)
+        let viewport = self
+            .outputs
+            .logical_viewport(output)
+            .ok_or("preview recovery targets an unknown output")?;
+        self.display_list_without_policy(output, viewport, committed_surfaces, presentation_order)
             .map_err(|_| "preview recovery display list invalid")
     }
 
+    /// The WM tier is omitted; the session lock never is.
     fn display_list_without_policy(
         &self,
         output: OutputId,
+        viewport: Rect,
         committed_surfaces: &[CommittedSurfaceState],
         presentation_order: &[SurfaceId],
     ) -> Result<CompositorDisplayList, CompositorDisplayListError> {
         let owned = self.surface_order_for_output(output, presentation_order);
         let mut composition = self.output_composition();
         composition.policy_presentation = None;
-        composition.display_list(output, committed_surfaces, &owned)
+        composition.display_list(output, viewport, committed_surfaces, &owned)
     }
 
     fn output_composition(&self) -> super::output_composition::OutputComposition<'_> {
@@ -662,6 +670,7 @@ impl LiveProductionVisualRuntime {
             shell_content: &self.shell_content,
             descriptor_overlay: self.descriptor_overlay.as_ref(),
             policy_presentation: self.policy_presentation.as_ref(),
+            session_lock: self.session_lock,
         }
     }
 

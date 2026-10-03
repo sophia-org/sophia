@@ -643,6 +643,15 @@ fn run_session_loop_inner(
     let mut pointer_cursor_checksum = None;
     let mut pointer_phase_started_at = None;
     let mut cursor_visible_reported = false;
+    let mut session_lock = crate::session_lock::SessionLockState::new();
+    let mut session_lock_input: Option<crate::session_lock_input::SessionLockInput> = None;
+    // The input epoch the last lock transition requested; it completes when
+    // the X frontend has applied it.
+    let mut session_lock_input_epoch = 0_u64;
+    let mut session_lock_cursor_hidden = false;
+    // A lock is refused without an authenticator to end it.
+    let mut session_unlock_authenticator =
+        lock_authenticator::start_session_authenticator(config.factotum.as_ref(), owner_wake.notifier());
     let mut pointer_pixel_change = false;
     let mut metrics = SessionLoopMetrics::new(initialize_empty_runtime);
     let mut input_batch_baseline = None;

@@ -1,7 +1,7 @@
 use crate::{LiveCpuBufferUpdate, LiveCpuCompositionReport, LiveProductionComposedFrame};
 use sophia_engine::{
-    HeadlessOutput, ProductionPresentationAdapter, ProductionRetirement, SurfaceChromeStyle,
-    surface_chrome_display_list_for_surfaces,
+    CompositorDisplayList, HeadlessOutput, ProductionPresentationAdapter, ProductionRetirement,
+    SurfaceChromeStyle, surface_chrome_display_list_for_surfaces,
 };
 use sophia_protocol::{CommittedSurfaceState, Point, SurfaceId, TransactionCommit};
 use sophia_renderer_live::{LiveCpuPresentationLayer, LiveProductionCpuScene};
@@ -45,6 +45,9 @@ pub struct LiveProductionCpuCycleAdapter<'scene, 'layout, Submit> {
     create_native_frames: bool,
     cpu_buffer_residency: &'layout [u64],
     output_descriptors: &'layout [HeadlessOutput],
+    /// The lock cover's list for the software output, when locked. It
+    /// replaces the frame's list whole, as it does on every native head.
+    session_lock_list: Option<CompositorDisplayList>,
     submit: Submit,
 }
 
@@ -63,6 +66,7 @@ impl<'scene, 'layout, Submit> LiveProductionCpuCycleAdapter<'scene, 'layout, Sub
         create_native_frames: bool,
         cpu_buffer_residency: &'layout [u64],
         output_descriptors: &'layout [HeadlessOutput],
+        session_lock_list: Option<CompositorDisplayList>,
         submit: Submit,
     ) -> Self {
         Self {
@@ -78,6 +82,7 @@ impl<'scene, 'layout, Submit> LiveProductionCpuCycleAdapter<'scene, 'layout, Sub
             create_native_frames,
             cpu_buffer_residency,
             output_descriptors,
+            session_lock_list,
             submit,
         }
     }
@@ -129,14 +134,18 @@ where
                 .output_descriptors
                 .first()
                 .ok_or("software composition has no output descriptor")?;
-            let display_list = surface_chrome_display_list_for_surfaces(
-                output.id,
-                &presentation_order,
-                self.chrome_surfaces,
-                committed,
-                self.focused_surface,
-                self.surface_chrome_style,
-            )?;
+            let display_list = match &self.session_lock_list {
+                Some(list) if list.output == output.id => list.clone(),
+                Some(_) => return Err("software lock cover names another output".into()),
+                None => surface_chrome_display_list_for_surfaces(
+                    output.id,
+                    &presentation_order,
+                    self.chrome_surfaces,
+                    committed,
+                    self.focused_surface,
+                    self.surface_chrome_style,
+                )?,
+            };
             self.scene
                 .compose_display_list(*output, committed, &display_list, self.cursor_position)?
                 .clone()

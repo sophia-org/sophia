@@ -8,6 +8,8 @@ mod presentation_geometry;
 mod presentation_instances;
 #[path = "presentation_present.rs"]
 mod presentation_present;
+#[path = "session_lock_coverage.rs"]
+mod session_lock_coverage;
 #[path = "mirrored_intake_tests.rs"]
 mod tests;
 

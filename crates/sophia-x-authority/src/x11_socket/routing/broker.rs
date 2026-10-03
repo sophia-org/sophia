@@ -21,7 +21,13 @@ pub struct XServerFrontendRouteBroker {
     routed_input_receiver: Receiver<XAuthorityEpochRoutedInput>,
     input_control_epoch: Arc<AtomicU64>,
     routed_input_capacity: usize,
-    applied_input_control_epoch: u64,
+    /// The epoch whose revocations this broker has finished applying. Shared
+    /// with routed-input senders so a security transition can wait for its
+    /// clearing rather than assume it from the request.
+    applied_input_control_epoch: Arc<AtomicU64>,
+    /// Whether synthetic input may reach clients at all. Session closes it
+    /// while the seat is locked; shared with every routed-input sender.
+    synthetic_admitted: Arc<AtomicBool>,
     /// Unset in ordinary mode, leaving every path below exactly as it was.
     control_gate: Arc<std::sync::OnceLock<crate::ControlEpochGate>>,
     /// Distinguishes this broker's receipts from another's.
@@ -433,7 +439,8 @@ impl XServerFrontendRouteBroker {
             routed_input_receiver,
             input_control_epoch,
             routed_input_capacity: capacities.input.get(),
-            applied_input_control_epoch: 1,
+            applied_input_control_epoch: Arc::new(AtomicU64::new(1)),
+            synthetic_admitted: Arc::new(AtomicBool::new(true)),
             route_lease_release_sender,
             route_lease_release_receiver,
             control_sender,
@@ -475,6 +482,8 @@ impl XServerFrontendRouteBroker {
             control_gate: Arc::clone(&self.control_gate),
             sender: self.routed_input_sender.clone(),
             control_epoch: self.input_control_epoch.clone(),
+            applied_control_epoch: self.applied_input_control_epoch.clone(),
+            synthetic_admitted: self.synthetic_admitted.clone(),
             capacity: self.routed_input_capacity,
             recovery: self.registry.input_recovery.clone(),
         }
@@ -632,6 +641,14 @@ impl XServerFrontendRouteBroker {
                 // and nothing that would need the other two.
                 match request.action {
                     crate::SyntheticAction::Press => {
+                        // A session lock closes synthetic admission; a press
+                        // is refused before any effect. Releases still run,
+                        // since they only end holds.
+                        if !self.synthetic_admitted.load(Ordering::Acquire) {
+                            return Err(
+                                sophia_input_authority::RegistrationError::RoutingUnavailable,
+                            );
+                        }
                         // The guard is held across BOTH the resolution and the
                         // application. Scoping it to the resolution alone left
                         // a window in which a writer could change the grab
@@ -705,9 +722,12 @@ impl XServerFrontendRouteBroker {
         // reach this application silently.
         if !self.is_gated() {
             let input_control_epoch = self.input_control_epoch.load(Ordering::Acquire);
-            if input_control_epoch != self.applied_input_control_epoch {
+            if input_control_epoch != self.applied_input_control_epoch.load(Ordering::Acquire) {
                 self.registry.advance_input_control_epoch()?;
-                self.applied_input_control_epoch = input_control_epoch;
+                // Published only after the grabs, frozen input and server
+                // grab of the old epoch are cleared.
+                self.applied_input_control_epoch
+                    .store(input_control_epoch, Ordering::Release);
             }
         }
         let mut routed = 0usize;
@@ -738,7 +758,11 @@ impl XServerFrontendRouteBroker {
                         None => {
                             route.control_epoch == self.input_control_epoch.load(Ordering::Acquire)
                         }
-                    };
+                    } && (route.route.origin != XAuthorityRoutedInputOrigin::Synthetic
+                        // Checked again here, after the epoch: an injection
+                        // that saw the switch open before a lock closed it is
+                        // still refused on delivery.
+                        || self.synthetic_admitted.load(Ordering::Acquire));
                     match self.registry.route_engine_input_admitted(
                         route.route,
                         crate::ControlStamp {

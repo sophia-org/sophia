@@ -1,0 +1,18 @@
+[package]
+name = "sophia-factotum"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Rust port of 9front's factotum authentication agent for Sophia"
+
+[dependencies]
+rustix = { workspace = true, features = ["event", "mm", "net", "process", "std"] }
+sophia-9p = { path = "../sophia-9p" }
+sophia-9p-client = { workspace = true }
+tracing.workspace = true
+zeroize = { version = "1.8", default-features = false, features = ["alloc"] }
+
+[lints]
+workspace = true

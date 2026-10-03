@@ -7,6 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+sophia-factotum = { path = "../sophia-factotum", optional = true }
 sophia-wake = { path = "../sophia-wake" }
 sophia-9p = { path = "../sophia-9p", optional = true }
 sophia-backend-live = { path = "../sophia-backend-live", optional = true, default-features = false }
@@ -14,6 +15,7 @@ sophia-broker = { path = "../sophia-broker" }
 sophia-config = { path = "../sophia-config" }
 sophia-engine = { path = "../sophia-engine" }
 sophia-input-authority = { path = "../sophia-input-authority" }
+sophia-factotum-pam = { path = "../sophia-factotum-pam" }
 sophia-portal = { path = "../sophia-portal" }
 sophia-protocol = { path = "../sophia-protocol" }
 sophia-runtime = { path = "../sophia-runtime" }
@@ -36,6 +38,7 @@ sophia-renderer-native-egl = { path = "../sophia-renderer-native-egl", features 
 default = []
 native-session = [
     "dep:sophia-9p",
+    "dep:sophia-factotum",
     "sophia-backend-live/gbm-probe",
     "sophia-backend-live/libdrm-events",
     "sophia-backend-live/drm-hotplug",

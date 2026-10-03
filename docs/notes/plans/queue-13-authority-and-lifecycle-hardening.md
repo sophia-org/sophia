@@ -47,3 +47,6 @@ coverage across topology changes, revoked old input/focus, and fail-closed
 provider loss/replacement. Controls must prove ordinary content cannot claim
 locked state or receive unlock input, and stale completion cannot unlock a new
 epoch. Worker exit or a full-screen shell image is not proof of a secure lock.
+
+The implementation plan and its tasks t291–t297 are in
+[the lock plan](8jcykhdc-secure-session-lock-authority-and-lock-provider-role.md).

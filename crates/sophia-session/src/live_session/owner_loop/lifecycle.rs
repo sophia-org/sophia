@@ -296,10 +296,14 @@
         // transition itself, before input or the chord timers run: no further
         // key or poller is needed for it.
         if let Some(wm) = wm_session.as_mut() {
-            wm.observe_keyboard_matching(!matches!(
-                input_routing_mode,
-                PhysicalInputRoutingMode::CursorOnly | PhysicalInputRoutingMode::Suppressed
-            ));
+            // A locked seat matches no WM chord: its keys belong to the lock.
+            wm.observe_keyboard_matching(
+                !session_lock.holds_input()
+                    && !matches!(
+                        input_routing_mode,
+                        PhysicalInputRoutingMode::CursorOnly | PhysicalInputRoutingMode::Suppressed
+                    ),
+            );
         }
         let explicit_controls = drain_explicit_pointer_grab_controls(
             explicit_pointer_grabs,
@@ -348,6 +352,7 @@
                 primary_frame_interval
             );
         metrics.max_input_phase = metrics.max_input_phase.max(input_phase_started.elapsed());
+        service_session_lock!();
         // Chords owe the WM whatever physical input is doing: Held falls due by
         // the clock, and seat resets, reloads and removals leave cancellations in
         // the router. Both join the same FIFO behind everything routed before,
@@ -460,6 +465,20 @@
                 );
                 cursor_updates.dirty = pointer.position().is_some();
             }
+        }
+        // A locked head shows the cover and nothing else, the cursor
+        // included; a hide that fails, mid-topology say, is tried again.
+        if session_lock.holds_input() {
+            if !session_lock_cursor_hidden
+                && let (Some(native), Some(runtime)) = (native_scanout.as_mut(), runtime.as_ref())
+            {
+                session_lock_cursor_hidden =
+                    native.hide_hardware_cursor(&runtime.logical_viewports()).is_ok();
+            }
+            cursor_updates.dirty = false;
+        } else if session_lock_cursor_hidden {
+            session_lock_cursor_hidden = false;
+            cursor_updates.dirty = pointer.position().is_some();
         }
         if cursor_updates.dirty
             && let (Some(native_scanout), Some(runtime), Some(position)) =

@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "repository": "https://github.com/sophia-org/sophia-desktop-sdk-rs",
-  "revision": "ed364d40b01a54749919b5a1928d40472db5456c",
+  "revision": "9e59d78ad0aa061ba2699f0636a9b291537ff2a1",
   "files": {
     ".gitignore": "44c92e3a70ad3307b7056871c2bdb096d8bfa9373f5bf06a79bb6324a20ff2fb",
     "Cargo.lock": "45e3d584c8ac3e2501d7a9390fa853ee9127c88595f4f70eb843dba01a2efcc5",
@@ -14,9 +14,9 @@
     "crates/sophia-9p-client/src/client.rs": "3d8c532cd950d9deaac3e55c47417f18803e4a179ad31b2cc941ab332331ef96",
     "crates/sophia-9p-client/src/client_codec.rs": "363bd17031685556ddc87cbfdc179e642c30240e69a249485f5a72de93d652f9",
     "crates/sophia-9p-client/src/lib.rs": "72015010d1ef21dfdfaafbdc3a931cb7e59db75f3e3f509c9a8b4e65040a495b",
-    "crates/sophia-9p-client/src/pipeline.rs": "0b0235391bacb02512507de65e653cdb3afb50b092d4c83e5e753e1c87972600",
+    "crates/sophia-9p-client/src/pipeline.rs": "35ebdef4a654edf12e5bd782b8f3c5962ea90a4a96efbf51edcdbd1c18b5eb0d",
     "crates/sophia-9p-client/tests/client.rs": "a490ffe2d58bd75cae361741da39d6c3d93bb23bd925304474ff2a449d55bc3b",
-    "crates/sophia-9p-client/tests/pipeline.rs": "d57472b03d6ad3341a91742366e29145da1ae943dbd140085b9419bbeb5a018f",
+    "crates/sophia-9p-client/tests/pipeline.rs": "0da0fa21f5fb6b443e67ef74fc28559a3f97c3f6b5800e1422f89f8344b35515",
     "crates/sophia-9p-records/Cargo.toml": "c8342fad697b41735e5508f79339c495216febfd191501427013f63eabbd3b89",
     "crates/sophia-9p-records/src/lib.rs": "19c576fdf71cdbd027fc0b9f00fc66d646b1ebecfd793a9f6d65f4d223e7890e",
     "crates/sophia-desktop-ids/Cargo.toml": "f42f81d51a3e754c163719f12de1fb788277ef54a29c9cff3e566107b159b654",

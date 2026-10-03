@@ -4,6 +4,9 @@ mod chrome;
 mod firefox_stage;
 #[path = "config/input_profile.rs"]
 mod input_profile;
+#[path = "config/lock.rs"]
+mod lock;
+use lock::SessionFactotum;
 #[path = "config/output.rs"]
 mod output;
 #[path = "config/output_proof.rs"]
@@ -106,6 +109,9 @@ struct PersistentXtermSessionConfig {
     shell_process: Option<String>,
     /// Resolved provider capability shared by startup and launch-only reloads.
     shell_shortcuts_enabled: bool,
+    /// The agent that alone can end a session lock; a lock is refused, and a
+    /// `session:lock` binding unavailable, without one.
+    factotum: Option<SessionFactotum>,
     shell_config: Option<std::path::PathBuf>,
     shell_panel_thickness: Option<u16>,
     shell_content_enabled: bool,

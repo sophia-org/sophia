@@ -143,6 +143,7 @@ impl SessionApplicationConfig {
         &self,
         shortcuts: &sophia_config::DesktopShortcutCandidate,
         shell_enabled: bool,
+        lock_available: bool,
         profile_is_compiled_default: bool,
     ) -> Result<Vec<sophia_config::DesktopSessionShortcut>, SessionApplicationConfigError> {
         let mut dropped = Vec::new();
@@ -178,6 +179,12 @@ impl SessionApplicationConfig {
                     sophia_config::DesktopSessionShortcut::ReloadProfile
                     | sophia_config::DesktopSessionShortcut::RestartWm,
                 ) => true,
+                // A lock needs an authenticator to end it: without the
+                // factotum agent a profile asking for one is refused rather
+                // than offered a lock nobody could open.
+                sophia_config::DesktopShortcutTarget::Session(
+                    sophia_config::DesktopSessionShortcut::Lock,
+                ) => lock_available,
             };
             if available {
                 continue;

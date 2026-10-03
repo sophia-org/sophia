@@ -415,6 +415,9 @@ impl LiveProductionVisualRuntime {
     /// (t246). The tier may still be withheld for a missing source, in which
     /// case the ordinary draw returns and samples it anyway.
     pub(super) fn present_sampling(&self, outputs: &[OutputId]) -> LivePresentSampling {
+        if self.session_lock.is_some() {
+            return LivePresentSampling::SessionLocked;
+        }
         match &self.policy_presentation {
             Some(presentation)
                 if !outputs.is_empty()
@@ -433,7 +436,13 @@ impl LiveProductionVisualRuntime {
     /// Present parked outside the head frames is not released by the
     /// surface's own geometry on such an output, or it would be released and
     /// re-parked every service pass without its budget ever expiring (t246).
-    pub(super) fn surface_hidden_by_policy(&self, surface: SurfaceId, output: OutputId) -> bool {
+    /// Whether `surface` is hidden on `output`: by the session lock, which
+    /// covers every output, or by a WM presentation as below.
+    pub(super) fn surface_hidden(&self, surface: SurfaceId, output: OutputId) -> bool {
+        self.session_lock.is_some() || self.surface_hidden_by_policy(surface, output)
+    }
+
+    fn surface_hidden_by_policy(&self, surface: SurfaceId, output: OutputId) -> bool {
         self.policy_presentation
             .as_ref()
             .is_some_and(|presentation| {
@@ -556,9 +565,11 @@ impl LiveProductionVisualRuntime {
                     &self.geometry_routed_surfaces,
                     *output,
                 )
-                && !self.surface_hidden_by_policy(surface, *output)
+                && !self.surface_hidden(surface, *output)
         });
+        // A lock draws no preview, so no instance output can retire it.
         if outputs.is_empty()
+            && self.session_lock.is_none()
             && let Some(output) = self.instance_outputs(surface).into_iter().next()
         {
             outputs.push(output);

@@ -88,7 +88,7 @@ pub(super) fn isolated_session_config(
 /// A test that lands there asserts against whatever desktop the machine
 /// happens to run: two of these passed on a machine with no Sophia config and
 /// failed on one with it.
-fn isolated_core_config_argument() -> String {
+pub(super) fn isolated_core_config_argument() -> String {
     let core =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/config/sophia/core.kdl");
     format!("--config={}", core.display())

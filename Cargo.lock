@@ -1070,6 +1070,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "sophia-factotum"
+version = "0.1.0"
+dependencies = [
+ "rustix",
+ "sophia-9p",
+ "sophia-9p-client",
+ "tracing",
+ "zeroize",
+]
+
+[[package]]
+name = "sophia-factotum-pam"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "rustix",
+ "sophia-factotum",
+]
+
+[[package]]
 name = "sophia-input-authority"
 version = "0.1.0"
 dependencies = [
@@ -1166,6 +1186,8 @@ dependencies = [
  "sophia-config",
  "sophia-conformance",
  "sophia-engine",
+ "sophia-factotum",
+ "sophia-factotum-pam",
  "sophia-input-authority",
  "sophia-portal",
  "sophia-protocol",
@@ -1709,6 +1731,12 @@ dependencies = [
  "syn 2.0.118",
  "synstructure",
 ]
+
+[[package]]
+name = "zeroize"
+version = "1.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e13c156562582aa81c60cb29407084cdb54c4164760106ab78e6c5b0858cf64e"
 
 [[package]]
 name = "zerotrie"

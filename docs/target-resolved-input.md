@@ -186,7 +186,10 @@ Engine applies this precedence for each physical event:
 1. A security-attention, lock, session-switch, or authority-revocation
    transition advances the control epoch, clears application leases and shell
    capture, and quarantines queued old-epoch input before new secure UI becomes
-   eligible.
+   eligible. For the session lock, the
+   [proposed lock ADR](notes/decisions/w0seozxx-session-owns-lock-state-and-authentication-lock-providers-only-render.md)
+   keeps item 2's reserved VT and emergency shortcuts active and sends every
+   other key to the Session lock capture.
 2. A statically reserved Engine shortcut is consumed locally and is not routed
    as application or shell input.
 3. One existing valid route lease or shell capture retains the seat. The two

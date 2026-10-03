@@ -19,6 +19,8 @@ mod grab_routing;
 use grab_routing::*;
 #[path = "input/device_lifecycle.rs"]
 mod device_lifecycle;
+#[path = "input/locked.rs"]
+mod locked;
 use device_lifecycle::*;
 
 type SessionPointerPlacement = sophia_engine::OutputUnionPointerState;
@@ -303,6 +305,9 @@ fn advance_application_input_security_epoch(
 }
 
 struct PhysicalInputRoutingContext<'a> {
+    /// Set while the session lock holds the seat; every event then goes to
+    /// the lock router and none of the fields below routes anything.
+    session_lock: Option<&'a mut crate::session_lock_input::SessionLockInput>,
     policy_presentation: Option<PolicyPresentedInputRouting<'a>>,
     focus: &'a InputFocusState,
     committed_surfaces: &'a [CommittedSurfaceState],
@@ -370,6 +375,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
 ) -> Result<PhysicalInputRouteReport, Box<dyn std::error::Error>> {
     let events = poller.poll_ready()?;
     let PhysicalInputRoutingContext {
+        session_lock,
         policy_presentation,
         focus,
         committed_surfaces,
@@ -416,6 +422,21 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         motion_held_since,
         frame_interval,
     } = context;
+    if let Some(lock) = session_lock {
+        return locked::route_locked_input(
+            events,
+            lock,
+            client_keys,
+            input_sender,
+            modifiers,
+            key_repeat,
+            emergency_chord,
+            virtual_terminal_chord,
+            keyboard_coverage,
+            next_input_delivery,
+            now_msec,
+        );
+    }
     route_input_events_with_launcher(
         events,
         focus,

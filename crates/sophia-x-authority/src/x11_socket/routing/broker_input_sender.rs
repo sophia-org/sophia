@@ -4,6 +4,8 @@
 pub struct XAuthorityRoutedInputSender {
     sender: sophia_wake::SignalSender<XAuthorityEpochRoutedInput>,
     control_epoch: Arc<AtomicU64>,
+    applied_control_epoch: Arc<AtomicU64>,
+    synthetic_admitted: Arc<std::sync::atomic::AtomicBool>,
     capacity: usize,
     recovery: InputRecovery,
     /// Shared with the broker rather than copied from it.
@@ -158,6 +160,27 @@ impl XAuthorityRoutedInputSender {
 
     pub fn control_epoch(&self) -> u64 {
         self.control_epoch.load(Ordering::Acquire)
+    }
+
+    /// Opens or closes the seat to synthetic input for every injector at
+    /// once. Session closes it before a lock's epoch advances and reopens it
+    /// only when the lock has ended.
+    pub fn set_synthetic_admitted(&self, admitted: bool) {
+        self.synthetic_admitted.store(admitted, Ordering::Release);
+    }
+
+    pub fn synthetic_admitted(&self) -> bool {
+        self.synthetic_admitted.load(Ordering::Acquire)
+    }
+
+    /// The epoch the frontend has finished applying: its grabs, frozen input
+    /// and server grab cleared. A security transition is complete only when
+    /// this reaches the epoch it requested; the request alone proves nothing.
+    pub fn applied_control_epoch(&self) -> u64 {
+        match self.control_gate.get() {
+            Some(gate) => gate.applied_control_epoch(),
+            None => self.applied_control_epoch.load(Ordering::Acquire),
+        }
     }
 
     pub fn advance_control_epoch(&self, next: u64) -> bool {

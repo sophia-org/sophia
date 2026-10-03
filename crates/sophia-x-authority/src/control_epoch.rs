@@ -607,6 +607,15 @@ impl ControlEpochGate {
             .stamp()
     }
 
+    /// The epoch the coordinator has finished applying. A poisoned guard
+    /// reports zero, which no requested epoch is ever below: a transition
+    /// waiting on it stays unproven rather than proven by an unknown state.
+    pub fn applied_control_epoch(&self) -> u64 {
+        self.coordinator
+            .lock()
+            .map_or(0, |coordinator| coordinator.applied_control_epoch())
+    }
+
     /// Whether work carrying this stamp may be delivered now.
     pub fn admits(&self, stamp: ControlStamp) -> Result<(), ControlEpochRefusal> {
         self.coordinator

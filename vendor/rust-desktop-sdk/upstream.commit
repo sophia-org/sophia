@@ -1,21 +1,26 @@
-tree d0d2787ed46e77ad24dc2bc4eb65ab3ba1507265
-parent fe5e09605e65316f4cd7435bccf0cf53d008d415
-author Mason Green <mason@greenm01.net> 1790949544 -0400
-committer Mason Green <mason@greenm01.net> 1790949544 -0400
+tree 52c87053547bde9700bf2fe35d562b6fb1845560
+parent 1cce77bbaa9c59cd233995dd6b7fc70a377b70b1
+author Mason Green <mason@greenm01.net> 1791039121 -0400
+committer Mason Green <mason@greenm01.net> 1791039121 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCar+4qBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGK4EAD/Vs8PpcvzgMFxzoo/hxEK
- 3tGxCiGjbA17fhe9LfyE+7oBAN7MxNKYifzjIVcEc9zZq2xc2aMPAVMP4fGixAVn
- WnQM
- =kahj
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCasEWkRsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJoRAD9E6/EcWxlaWsyP73001/4
+ aOMKLFshcbL7RnWrMBGyhjsBAPIVkyA4nMOiPlRGIz3vICKQ9QDWPqVZ8MWLF2Iq
+ 4asE
+ =BY1G
  -----END PGP SIGNATURE-----
 
-Import the WM held capture contract
+Reserve the output bound before a secret write is queued
 
-Copy spec/sophia-wm-files.md unmodified from signed Sophia contract
-ac04e1a7487e9be3a238075e3c624aff93705f2d and record its digest. The WM file
-contract adds the held_capture capability: an Overlay presentation may carry a
-keyboard output and bindings while modifier keys pass through. This SDK has no
-WM client; library sources, wire layouts and the other contract digests are
-unchanged.
+write_secret zeroed the output buffer's current allocation, but a later
+request could grow that buffer while the secret was still queued. The
+allocator would then free the old allocation, secret included, without
+zeroing it. Before a secret enters, the buffer now reserves the whole
+capacity its bound allows. Submit already refuses anything past that
+bound, so no later request can reallocate it.
+
+output_capacity exposes the allocation for the regression, which fills
+the buffer behind a queued secret until the bound refuses a request and
+checks that the capacity never changed. Reported in review by
+niltempus.

@@ -72,6 +72,7 @@ impl LiveProductionVisualRuntime {
             floating_outline: None,
             indicator_publication: None,
             descriptor_overlay: None,
+            session_lock: None,
             descriptor_overlay_interactive: false,
             policy_presentation: None,
             policy_presentation_revocation: None,

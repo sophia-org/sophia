@@ -64,14 +64,14 @@ shortcut {
     assert!(resolved.applications.contains_key("panel"));
     assert!(resolved.named_command("panel").is_none());
     resolved
-        .validate_shortcuts(&prepared.candidates.shortcut, false, false)
+        .validate_shortcuts(&prepared.candidates.shortcut, false, false, false)
         .unwrap();
     let mut implicit = prepared.candidates.shortcut.clone();
     implicit.bindings[0].target =
         sophia_config::DesktopShortcutTarget::LaunchApplication("panel".to_owned());
     assert!(
         resolved
-            .validate_shortcuts(&implicit, false, false)
+            .validate_shortcuts(&implicit, false, false, false)
             .is_err()
     );
     let mut missing = prepared.candidates.session.clone();

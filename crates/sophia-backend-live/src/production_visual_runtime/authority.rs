@@ -390,6 +390,12 @@ impl LiveProductionVisualRuntime {
             .present_scheduler
             .awaiting_first_visibility()
             .filter_map(|(surface, geometry, reason)| {
+                // The lock hides every surface and draws no preview, so no
+                // condition below can hold. Releasing on one anyway re-parks
+                // the candidate every pass and its budget never expires (t246).
+                if self.session_lock.is_some() {
+                    return None;
+                }
                 // Each candidate is released on the condition that parked it.
                 // Testing every one against visibility would leave a candidate
                 // parked for absence from the presentation order waiting on a
@@ -407,7 +413,7 @@ impl LiveProductionVisualRuntime {
                                 &self.surface_outputs,
                                 &self.geometry_routed_surfaces,
                                 output,
-                            ) && !self.surface_hidden_by_policy(surface, output)
+                            ) && !self.surface_hidden(surface, output)
                                 && !crate::presentation::intersect_rects(
                                     self.translations.geometry(surface, output, geometry, time),
                                     viewport,

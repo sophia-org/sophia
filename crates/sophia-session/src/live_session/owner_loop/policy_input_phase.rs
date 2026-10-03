@@ -107,6 +107,10 @@ macro_rules! dispatch_physical_policy_inputs {
                 };
 
                 let route = physical_action_route(action);
+                if route == PhysicalActionRoute::Lock {
+                    begin_session_lock!("shortcut");
+                    continue;
+                }
                 if route == PhysicalActionRoute::SessionCommand {
                     if let Some(wm) = wm_session.as_mut() {
                         wm.enqueue_command_shortcut(action, session_launches, secondary_children.len())?;
@@ -207,5 +211,5 @@ macro_rules! dispatch_physical_policy_inputs {
             }
     }};
 }
-include!("physical_input_phase.rs")
+include!("session_lock_phase.rs")
 }

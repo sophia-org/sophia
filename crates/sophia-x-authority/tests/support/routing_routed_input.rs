@@ -220,8 +220,11 @@ fn security_epoch_revokes_queued_input_and_clears_active_grabs() {
         })
         .unwrap();
     assert!(sender.advance_control_epoch(2));
+    // Requested is not applied: the grab still stands until the broker runs.
+    assert_eq!(sender.applied_control_epoch(), 1);
 
     assert_eq!(broker.route_pending(), Ok(1));
+    assert_eq!(sender.applied_control_epoch(), 2);
     assert_eq!(channels.input.try_recv(), Err(TryRecvError::Empty));
     assert_eq!(
         delivery_receiver.recv().unwrap(),
@@ -1209,4 +1212,78 @@ fn pending_control_gets_the_next_runtime_lock() {
     assert_eq!(order_receiver.recv().expect("second owner"), "request");
     control.join().expect("control owner");
     request.join().expect("request owner");
+}
+
+/// t292: a locked seat takes no synthetic input. Closing the switch refuses a
+/// synthetic route on delivery, whatever epoch it carries, while physical
+/// input still routes; reopening it admits synthetic input again.
+#[test]
+fn closed_synthetic_admission_refuses_synthetic_routes_only() {
+    let namespace = NamespaceId::from_raw(23);
+    let client = XServerFrontendClientId(19);
+    let surface = SurfaceId::new(33, 1);
+    let window = XResourceId::new(0x200030, 1);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, delivery_receiver) = channel();
+    let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+        NonZeroUsize::new(4).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+    );
+    let (_registration, channels) = broker.registry.register_client(client).unwrap();
+    broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+    let sender = broker.routed_input_sender();
+    let key = |delivery: u64, origin: XAuthorityRoutedInputOrigin| XAuthorityRoutedInput {
+        request: RoutedInputRequest {
+            serial: delivery,
+            seat: SeatId::from_raw(1),
+            device: DeviceId::from_raw(2),
+            time_msec: delivery,
+            target_surface: surface,
+            global_position: Point::default(),
+            local_position: Point::default(),
+            kind: InputEventKind::Key {
+                keycode: 38,
+                pressed: delivery % 2 == 1,
+            },
+        },
+        route_lease: None,
+        delivery: Some(XAuthorityInputDeliveryId::from_raw(delivery)),
+        mode: XAuthorityRoutedInputMode::Deliver,
+        origin,
+    };
+    assert!(sender.synthetic_admitted());
+    sender.set_synthetic_admitted(false);
+    sender
+        .send(key(1, XAuthorityRoutedInputOrigin::Synthetic))
+        .unwrap();
+    assert_eq!(broker.route_pending(), Ok(1));
+    assert_eq!(
+        delivery_receiver.recv().unwrap().outcome,
+        XAuthorityInputDeliveryOutcome::EpochRevoked,
+        "a synthetic key of a locked seat is refused as out of epoch"
+    );
+    assert_eq!(channels.input.try_recv(), Err(TryRecvError::Empty));
+
+    sender
+        .send(key(2, XAuthorityRoutedInputOrigin::Physical))
+        .unwrap();
+    assert_eq!(broker.route_pending(), Ok(1));
+    assert!(
+        channels.input.try_recv().is_ok(),
+        "physical input still routes"
+    );
+
+    sender.set_synthetic_admitted(true);
+    sender
+        .send(key(3, XAuthorityRoutedInputOrigin::Synthetic))
+        .unwrap();
+    assert_eq!(broker.route_pending(), Ok(1));
+    assert!(
+        channels.input.try_recv().is_ok(),
+        "reopened, synthetic input routes again"
+    );
 }
