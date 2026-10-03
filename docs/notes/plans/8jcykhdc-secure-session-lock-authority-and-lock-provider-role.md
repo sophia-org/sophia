@@ -284,6 +284,27 @@ with the export; the provider cannot claim or end locked state, see characters,
 draw outside its allocation, present into a newer lock epoch from an older
 connection or delay the cover; crash, stall and replacement leave the fill.
 
+Checkpoint 2026-10-03 on `lock/t034-next`:
+- `sophia_protocol::lock_files` is the record codec, bound to the KDL by
+  `lock_file_schema.rs`. Rules the contract states in prose are covered in
+  `lock_files.rs`.
+- `sophia_runtime::lock_files` holds one provider connection epoch:
+  - negotiation, which refuses chords that hold only Shift or that Session
+    reserves;
+  - uploads, which become images only once every byte has arrived;
+  - frame demands and permits;
+  - candidates, checked against the published lock object, the allocation,
+    the image's size and the permit, with journal room held for every
+    answer;
+  - revocation of what a new lock object no longer grants.
+- `LockFileExport` serves the files over the `sophia-9p` export: a fixed
+  root, a single admitted attach, lock objects pinned per generation, one
+  staged candidate, and upload writers fenced by binding.
+- Controls: 13 custody, 7 export.
+- Open: the endpoint and pidfd admission, the profile's `lock-provider`
+  selection and supervision, Session's publication, entries and pacing,
+  Engine drawing provider images over the fill, and the C peer.
+
 ### t295 SDKs
 
 Add a lock client to sophia-desktop-sdk-c and codecs to sophia-desktop-sdk-rs,
