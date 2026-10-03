@@ -11,7 +11,8 @@ tags: [plan, milestone, security, lock]
 Implement [t034](queue-13-authority-and-lifecycle-hardening.md#t034) under the
 proposed [lock ADR](../decisions/w0seozxx-session-owns-lock-state-and-authentication-lock-providers-only-render.md):
 an Engine-owned cover, Session lock state and input, a Session authenticator
-(`sophia-factotum`) that is the only unlock authority, and a separately admitted
+(`sophia-factotum`, a Rust port of 9front's factotum) that is the only unlock
+authority, and a separately admitted
 lock provider role that only renders. niltempus promoted t034 to the parallel
 lane on 2026-10-03 and reserved t291–t299 for its tasks.
 
@@ -106,23 +107,31 @@ X client or provider record can enter or leave locked state; a verdict for an
 earlier lock epoch or a superseded attempt never unlocks; relocking during
 authentication discards the in-flight verdict.
 
-### t293 sophia-factotum
+### t293 sophia-factotum core and pam
 
-Add `crates/sophia-factotum` with the secret buffer and a helper binary. The
-buffer is page-aligned, `mlock`ed, `MADV_DONTDUMP` and zeroed with volatile
-writes on every clear, backspace and submit. The helper is executed, not forked
-from the multithreaded Session, reads a length-prefixed request, runs PAM through
-a minimal in-tree binding with the configured service (default `sophia-lock`),
-closes inherited descriptors, clears dumpability and attempts `mlockall`. It does
-not set `NO_NEW_PRIVS`, because `unix_chkpwd` is setuid. Ship an example
-`sophia-lock` PAM file with `pam_faildelay` and `pam_unix` and no faillock;
-installation belongs to the desktop installer. Never log the text, its length or
-PAM prompts. lockme's `auth.nim` and `password.nim` are the reference design.
-The first scope is unlock only; any wider agent role needs its own decision.
+Port 9front's factotum agent to `crates/sophia-factotum` under the
+[factotum ADR](../decisions/hhbejm8k-port-9front-factotum-to-rust-as-sophia-factotum.md):
+the key ring with hidden `!` attributes; the protocol-independent conversation
+state machine with factotum's verbs, replies and phases; the `rpc`, `ctl`,
+`proto`, `confirm`, `needkey` and `log` files on `sophia-9p`; the agent process
+(supervised, not dumpable, memory locked, no cores) with socket, pidfd and same-UID
+admission; and the protocol module interface shaped for dp9ik's multi-phase
+conversations, authinfo secrets and auth-server dialing. Add the `pam` module:
+`role=login` runs PAM in an executed helper over a length-prefixed pipe, with the
+configured service (default `sophia-lock`), closed inherited descriptors, cleared
+dumpability and best-effort `mlockall`, and without `NO_NEW_PRIVS` because
+`unix_chkpwd` is setuid. Session's secret buffer is page-aligned, `mlock`ed,
+`MADV_DONTDUMP` and zeroed with volatile writes on every clear, backspace and
+submit. Ship an example `sophia-lock` PAM file with `pam_faildelay` and `pam_unix`
+and no faillock. Never log secrets, their length or PAM prompts. 9front's
+`factotum` sources and lockme's `auth.nim`/`password.nim` are the references;
+ported files carry 9front's MIT notice.
 
-Exit: deterministic real-PAM controls with `pam_start_confdir` against a
-private directory using `pam_permit` and `pam_deny`; helper crash and timeout
-leave the session locked; secret pages are locked and zeroed after each use.
+Exit: conversation and key-ring controls ported from factotum's behaviour,
+including hidden secrets on `ctl` reads and refused cross-UID peers;
+deterministic real-PAM controls with `pam_start_confdir` against a private
+directory using `pam_permit` and `pam_deny`; agent or helper crash and timeout
+leave the session locked; secret pages are locked and zeroed after use.
 
 ### t294 Lock provider role and contract
 
@@ -159,8 +168,25 @@ On an exact installed release with a lock provider: two outputs, hotplug while
 locked, a VT round trip, a provider kill, a wrong and a right password. Physical
 evidence stays separate from the deterministic checks.
 
+### t298 pass, p9any and dp9ik
+
+Add `pass`, `p9any` and `dp9ik` (client and server roles) to `sophia-factotum`,
+and port libauthsrv's ticket, authenticator and key formats, `passtokey`, `form1`
+and authpak into `crates/sophia-libauthsrv`, shared with the separately hosted
+auth-server port. Decide with niltempus, before starting, whether the libsec
+primitives and `mpc` field arithmetic are ported or taken from audited crates.
+Build an independent C oracle from 9front's libauthsrv and libsec sources,
+including the C that `mpc` generates, under `tools/`. Wiring `Tauth` into
+`sophia-9p` exports waits for t275's decision.
+
+Exit: byte-identical vectors against the oracle for `passtokey`, authpak, `form1`
+tickets and authenticators; live p9any/dp9ik exchanges between the Rust modules
+and the oracle in both roles, with a stub auth server driven by the oracle;
+malformed and replayed messages refused.
+
 ## Connections
 
+[Factotum ADR](../decisions/hhbejm8k-port-9front-factotum-to-rust-as-sophia-factotum.md),
 [Lock ADR](../decisions/w0seozxx-session-owns-lock-state-and-authentication-lock-providers-only-render.md),
 [synthetic input ADR](../decisions/htm85gg0-admission-ingress-and-provenance-for-synthetic-input.md),
 [launcher presented input ADR](../decisions/f64wqfh2-independent-native-launcher-admission-and-presented-input-contract.md),

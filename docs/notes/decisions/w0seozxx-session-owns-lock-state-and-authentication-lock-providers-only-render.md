@@ -60,13 +60,15 @@ client can unlock.
 **A Session authenticator, `sophia-factotum`, is the only unlock authority.**
 Engine's keyboard handling commits text into a Session-owned secret buffer that
 is page-aligned, locked in memory, excluded from core dumps and zeroed on every
-clear. On submit, Session hands it to a separately executed helper over a
-length-prefixed pipe. The helper runs PAM with a configured service name. A
+clear. On submit, Session runs a `proto=pam role=login` conversation on the
+agent's `rpc` file; the agent runs PAM with a configured service name in an
+executed helper. The agent itself is a Rust port of 9front's factotum, recorded
+in [its own ADR](hhbejm8k-port-9front-factotum-to-rust-as-sophia-factotum.md). A
 verdict unlocks only if it names the current lock epoch and the current attempt;
 any other verdict is discarded. Unlocking advances the input epoch again, so
 input typed while locked can never reach an application, and restores focus only
 to a still-authorized target. Password text, its length and PAM prompts are
-never logged. The name follows Plan 9's agent; its first scope is unlock only.
+never logged.
 
 **Lock providers only render.** A lock provider is a separately admitted role
 with its own native file contract, endpoint and pidfd-checked peer. It receives
@@ -102,7 +104,7 @@ cannot secure a Sophia session and this decision does not try to make them.
 ## Consequences
 
 Sophia gains a security authority that holds a secret, a PAM dependency in one
-helper binary and a new native role. The helper needs the host's PAM stack and
+helper binary and a new native role. The PAM helper needs the host's PAM stack and
 its setuid helpers, so it does not set `NO_NEW_PRIVS` and does not run in the
 component protection domain. Real-PAM controls use `pam_start_confdir` with a
 private configuration directory; ordinary checks never read `/etc/pam.d`.
