@@ -1185,6 +1185,7 @@ dependencies = [
  "sophia-config",
  "sophia-conformance",
  "sophia-engine",
+ "sophia-factotum",
  "sophia-input-authority",
  "sophia-portal",
  "sophia-protocol",

@@ -149,6 +149,7 @@ impl PreparedDesktopLaunch {
             // Provider changes require restart; validate against the same
             // resolved capability as startup, not the requested new profile.
             config.shell_shortcuts_enabled,
+            config.factotum.is_some(),
             false,
         )?;
         let commands = SessionCommandRegistry::prepare(generation, &applications)?;
@@ -474,6 +475,7 @@ impl LiveWmSession {
             let dropped = applications.validate_shortcuts(
                 &config.shortcut_profile_candidate,
                 config.shell_shortcuts_enabled,
+                config.factotum.is_some(),
                 config.desktop_profile_source.is_none(),
             )?;
             let commands = SessionCommandRegistry::prepare(

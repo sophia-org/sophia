@@ -662,10 +662,12 @@ impl PersistentXtermSessionConfig {
         // never told that a binding it carried could do nothing -- which is
         // most single-application proofs, and now the standalone and native
         // profiles too.
+        let factotum = lock::parse_factotum(args)?;
         let dropped_shortcuts = if normal_session {
             applications.validate_shortcuts(
                 &shortcut_profile_candidate,
                 live_shell_enabled,
+                factotum.is_some(),
                 profile_is_compiled_default,
             )?
         } else {
@@ -899,6 +901,7 @@ impl PersistentXtermSessionConfig {
             output_process_args,
             shell_process,
             shell_shortcuts_enabled: live_shell_enabled,
+            factotum,
             shell_config,
             shell_panel_thickness,
             shell_content_enabled,

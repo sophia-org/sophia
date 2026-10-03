@@ -88,7 +88,7 @@ pub(super) fn isolated_session_config(
 /// A test that lands there asserts against whatever desktop the machine
 /// happens to run: two of these passed on a machine with no Sophia config and
 /// failed on one with it.
-fn isolated_core_config_argument() -> String {
+pub(super) fn isolated_core_config_argument() -> String {
     let core =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/config/sophia/core.kdl");
     format!("--config={}", core.display())
@@ -1172,50 +1172,6 @@ fn an_explicit_profile_enabling_a_shell_still_refuses_without_one() {
         "an explicit profile enabling a shell started without one"
     );
     std::fs::remove_file(&profile).unwrap();
-}
-
-/// A lock needs an authenticator to end it. Until the Session authenticator
-/// lands (t293), a profile that binds one is refused rather than given a lock
-/// nobody could open.
-#[test]
-fn an_explicit_profile_binding_a_lock_is_refused_without_an_authenticator() {
-    let profile = std::env::temp_dir().join(format!(
-        "sophia-explicit-lock-{}-{}.kdl",
-        std::process::id(),
-        line!()
-    ));
-    std::fs::write(
-        &profile,
-        concat!(
-            "schema 1\n",
-            "shell { enabled #false; }\n",
-            "shortcut {\n",
-            "  profile \"explicit-lock\"\n",
-            "  bind \"Super+l\" \"session:lock\"\n",
-            "}\n",
-        ),
-    )
-    .unwrap();
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        std::fs::set_permissions(&profile, std::fs::Permissions::from_mode(0o600)).unwrap();
-    }
-
-    let refused = PersistentXtermSessionConfig::from_args(&[
-        isolated_core_config_argument(),
-        "--session-mode=normal".to_owned(),
-        format!("--desktop-profile={}", profile.display()),
-        "--session-app=standalone=/usr/bin/true".to_owned(),
-        "--session-start=standalone".to_owned(),
-        "--exit-when-startup-exits".to_owned(),
-    ]);
-    std::fs::remove_file(&profile).unwrap();
-
-    let error = refused.expect_err("a lock binding was accepted without an authenticator");
-    assert!(
-        error.to_string().contains("unavailable session capability"),
-        "{error}"
-    );
 }
 
 /// The argument vector the direct-scanout probe builds, with the fixtures it
