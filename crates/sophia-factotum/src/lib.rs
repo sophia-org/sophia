@@ -40,8 +40,11 @@
 pub mod attr;
 pub mod conversation;
 pub mod ctl;
+pub mod export;
+pub mod jobs;
 pub mod keyring;
 pub mod logbuf;
+pub mod pam_helper;
 pub mod pam_wire;
 pub mod proto;
 pub mod secret;

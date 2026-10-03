@@ -8,6 +8,8 @@ rust-version.workspace = true
 description = "Rust port of 9front's factotum authentication agent for Sophia"
 
 [dependencies]
+rustix = { workspace = true, features = ["event", "mm", "process", "std"] }
+sophia-9p = { path = "../sophia-9p" }
 tracing.workspace = true
 zeroize = { version = "1.8", default-features = false, features = ["alloc"] }
 

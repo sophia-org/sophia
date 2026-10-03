@@ -1073,6 +1073,8 @@ dependencies = [
 name = "sophia-factotum"
 version = "0.1.0"
 dependencies = [
+ "rustix",
+ "sophia-9p",
  "tracing",
  "zeroize",
 ]

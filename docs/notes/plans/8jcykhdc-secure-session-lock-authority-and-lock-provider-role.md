@@ -32,7 +32,12 @@ contract peers.
 pF and the t289 owner reported the overlap with t289 (CPU reductions,
 uncommitted on `performance/t289` in `~/dev/sophia-cpu-performance`, base
 `b6ad18cf`) on 2026-10-03. Send candidate diffs to the t289 owner before any
-merge; gates run in a shared slot. Agree the merge order before touching:
+merge, and agree the merge order before touching the files below. Builds,
+tests, Clippy and correctness gates need no shared slot: each lane runs them
+concurrently at normal priority in its own reusable target with bounded jobs
+(start at Cargo `-j8` and 8 test threads, adjusted to memory and I/O
+headroom), coordinating only quiet measurement or reproduction windows and
+exclusive hardware access (`docs/build-and-test-coordination.md`). The files:
 
 - backend-live native scanout (`native_scanout.rs`, `persistent_native_scanout.rs`,
   its `construction.rs` and `topology/preparation.rs`): t289 adds per-head
