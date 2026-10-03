@@ -17,9 +17,9 @@ RENDER_NODE="${SOPHIA_QEMU_RENDER_NODE:-/dev/dri/renderD128}"
 XTEST_ROW="${SOPHIA_QEMU_XTEST_ROW:-}"
 
 case "$SCENARIO" in
-    session|emergency-recovery|gtk-classic|gtk-confined|xtest-selection) ;;
+    session|emergency-recovery|gtk-classic|gtk-confined|session-lock|xtest-selection) ;;
     *)
-        echo "SOPHIA_QEMU_SCENARIO must be session, emergency-recovery, gtk-classic, gtk-confined, or xtest-selection" >&2
+        echo "SOPHIA_QEMU_SCENARIO must be session, emergency-recovery, gtk-classic, gtk-confined, session-lock, or xtest-selection" >&2
         exit 1
         ;;
 esac
@@ -54,7 +54,7 @@ fi
 
 case "$SCENARIO" in
     emergency-recovery) DEFAULT_EVIDENCE_FILE=/tmp/sophia-qemu-emergency-recovery.log ;;
-    gtk-*|xtest-selection) DEFAULT_EVIDENCE_FILE="/tmp/sophia-qemu-$SCENARIO.log" ;;
+    gtk-*|session-lock|xtest-selection) DEFAULT_EVIDENCE_FILE="/tmp/sophia-qemu-$SCENARIO.log" ;;
     *) DEFAULT_EVIDENCE_FILE=/tmp/sophia-qemu-session.log ;;
 esac
 
@@ -143,7 +143,7 @@ case "$SCENARIO" in
     emergency-recovery)
         echo "sophia_qemu_recovery schema=1 status=starting isolation=headless control=qmp-unix host_drm=none host_vt=none keyboard=virtio chord=ctrl-alt-backspace" | tee -a "$EVIDENCE_FILE"
         ;;
-    gtk-*)
+    gtk-*|session-lock)
         echo "sophia_qemu_gtk schema=1 status=starting isolation=headless control=qmp-unix host_drm=none host_vt=none keyboard=virtio mouse=virtio scenario=$SCENARIO" | tee -a "$EVIDENCE_FILE"
         ;;
     xtest-selection)
@@ -248,7 +248,33 @@ if [[ "$SCENARIO" == emergency-recovery ]]; then
     exit 0
 fi
 
-if [[ "$SCENARIO" == gtk-* ]]; then
+wait_for_evidence() {
+    local pattern="$1" reason="$2"
+    for _ in $(seq 1 600); do
+        if grep -Eq "$pattern" "$EVIDENCE_FILE"; then
+            return 0
+        fi
+        kill -0 "$QEMU_PID" 2>/dev/null || break
+        sleep 0.05
+    done
+    echo "sophia_qemu_gtk schema=1 status=failed reason=$reason scenario=$SCENARIO" | tee -a "$EVIDENCE_FILE"
+    exit 1
+}
+
+if [[ "$SCENARIO" == session-lock ]]; then
+    # The session locks itself once zenity is presented. Every key below is
+    # physical (virtio keyboard), the only kind a lock takes; none may reach
+    # zenity, whose stdout must later be exactly the post-unlock text.
+    wait_for_evidence '^sophia_live_session_lock schema=1 status=locked epoch=1$' lock_timeout
+    "$ROOT_DIR/tools/qemu_qmp_type.py" "$QMP_SOCKET" wrongpass
+    echo "sophia_qemu_lock_input schema=1 status=sent source=qmp secret=wrong" | tee -a "$EVIDENCE_FILE"
+    wait_for_evidence '^sophia_live_session_lock schema=1 status=failed epoch=1 attempt=1 ' failed_verdict_timeout
+    "$ROOT_DIR/tools/qemu_qmp_type.py" "$QMP_SOCKET" sophialock
+    echo "sophia_qemu_lock_input schema=1 status=sent source=qmp secret=right" | tee -a "$EVIDENCE_FILE"
+    wait_for_evidence '^sophia_live_session_lock schema=1 status=unlocked epoch=1$' unlock_timeout
+fi
+
+if [[ "$SCENARIO" == gtk-* || "$SCENARIO" == session-lock ]]; then
     input_ready=false
     for _ in $(seq 1 600); do
         if grep -q '^sophia_live_session_input schema=1 status=ready source=physical text=sophia$' "$EVIDENCE_FILE"; then
@@ -302,7 +328,9 @@ if [[ "$SCENARIO" == gtk-* ]]; then
         exit 1
     fi
     if ! grep -q "^sophia_qemu_guest schema=1 status=complete scenario=$SCENARIO$" "$EVIDENCE_FILE" \
-        || ! grep -q '^sophia_x_application_session schema=1 status=passed class=gtk3_software client=zenity .*protocol_errors=0 first_error=none physical_text=true pointer_button=true surface_resize=committed buffer_path=cpu_shm native_presentation=enabled cleanup=clean$' "$EVIDENCE_FILE"; then
+        || ! grep -q '^sophia_x_application_session schema=1 status=passed class=gtk3_software client=zenity .*protocol_errors=0 first_error=none physical_text=true pointer_button=true surface_resize=committed buffer_path=cpu_shm native_presentation=enabled cleanup=clean$' "$EVIDENCE_FILE" \
+        || { [[ "$SCENARIO" == session-lock ]] \
+            && ! "$ROOT_DIR/tools/verify_qemu_session_lock_evidence.sh" "$EVIDENCE_FILE"; }; then
         echo "sophia_qemu_gtk schema=1 status=failed reason=semantic_evidence scenario=$SCENARIO" | tee -a "$EVIDENCE_FILE"
         exit 1
     fi

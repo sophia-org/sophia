@@ -37,6 +37,8 @@ mkdir -p "$OUT_DIR" "$OUT_DIR/dracut-tmp"
 (
     cd "$ROOT_DIR"
     cargo build --release --offline -p sophia-cli --features native-session
+    # The session-lock scenario's authenticator: the agent and its PAM helper.
+    cargo build --release --offline -p sophia-factotum -p sophia-factotum-pam
     # The xtest-selection scenario's client: two real xterms driven by XTEST.
     cargo build --release --offline -p sophia-session --all-features \
         --example xtest_selection_driver
@@ -64,10 +66,16 @@ runtime_files=(
     /usr/lib/libinput.so.10
     /usr/lib/libudev.so.1
     /usr/bin/zenity
+    /usr/lib/libpam.so.0
+    /usr/lib/security/pam_unix.so
+    /usr/lib/security/pam_faildelay.so
 )
 extra_includes=(
     --include "$XTEST_SELECTION_DRIVER" /usr/bin/xtest_selection_driver
     --include "$DEJAVU_MONO" /usr/share/fonts/TTF/DejaVuSansMono.ttf
+    --include "$ROOT_DIR/target/release/sophia-factotum" /usr/bin/sophia-factotum
+    --include "$ROOT_DIR/target/release/sophia-factotum-pam" /usr/bin/sophia-factotum-pam
+    --include "$ROOT_DIR/examples/pam.d/sophia-lock" /usr/share/sophia/pam.d/sophia-lock
 )
 required_guest_paths=(
     /usr/bin/dbus-daemon
@@ -76,6 +84,10 @@ required_guest_paths=(
     /usr/bin/xtest_selection_driver
     /usr/bin/xterm
     /usr/share/fonts/TTF/DejaVuSansMono.ttf
+    /usr/bin/sophia-factotum
+    /usr/bin/sophia-factotum-pam
+    /usr/share/sophia/pam.d/sophia-lock
+    /usr/lib/security/pam_unix.so
 )
 install_files=()
 runtime_files+=("$(command -v xterm)")

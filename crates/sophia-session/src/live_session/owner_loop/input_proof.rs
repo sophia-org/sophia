@@ -150,6 +150,17 @@
                 std::io::stdout().flush()?;
             }
         }
+        // Proof only: lock once the physical proof is armed, so the keys
+        // typed while locked meet a seat routed in full and only the lock
+        // stands between them and the client. Once: a refused lock leaves
+        // the run to fail on its missing record.
+        if config.inject_session_lock
+            && !session_lock_proof_requested
+            && physical_input_ready_at.is_some()
+        {
+            session_lock_proof_requested = true;
+            begin_session_lock!("proof");
+        }
         if config.expect_physical_pointer
             && physical_input_completion_reported
             && input_pixel_change
