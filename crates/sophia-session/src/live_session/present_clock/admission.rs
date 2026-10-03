@@ -36,12 +36,38 @@ impl SessionPresentClocks {
                     *sample
                 } else {
                     let mut chosen = None;
+                    let mut unclocked = None;
                     // Query only on explicit admission demand. The backend
                     // prefers the mirror primary, then an active member.
-                    for (_, observation) in query(output) {
+                    for (head, observation) in query(output) {
                         self.queries = self.queries.saturating_add(1);
                         if let Some(lost) = observation.lost {
-                            frontend.lose_source(source(lost))?;
+                            lose_native_source(frontend, lost)?;
+                        }
+                        if let LiveNativePresentClockStatus::Unclocked(clock) = observation.status {
+                            // Prefer any working mirror member. Use the
+                            // first active clockless member only if none has
+                            // a real sample; unsupported is never Fake.
+                            unclocked.get_or_insert(XPresentClockSample {
+                                source: unclocked_source(clock),
+                                ust: now_usec,
+                                msc: 0,
+                            });
+                            if self.unclocked_reported.insert(head, clock.source)
+                                != Some(clock.source)
+                            {
+                                let sophia_backend_live::LiveNativeUnclockedReason::SequenceUnsupported { errno } = clock.reason;
+                                let reason = "sequence_unsupported";
+                                crate::session_println!(
+                                    "sophia_present_unclocked schema=1 head={} owner={} incarnation={} reason={} errno={} minimum_period_usec={}",
+                                    head.raw(),
+                                    clock.source.owner,
+                                    clock.source.incarnation,
+                                    reason,
+                                    errno,
+                                    clock.minimum_period_usec
+                                );
+                            }
                         }
                         if let Some(sample) = observation.current {
                             let sample = XPresentClockSample {
@@ -53,8 +79,9 @@ impl SessionPresentClocks {
                             chosen = Some(sample);
                         }
                     }
-                    let sample =
-                        chosen.unwrap_or_else(|| XPresentClockSample::background(now_usec));
+                    let sample = chosen
+                        .or(unclocked)
+                        .unwrap_or_else(|| XPresentClockSample::background(now_usec));
                     samples.insert(output, sample);
                     sample
                 }

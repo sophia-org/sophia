@@ -34,7 +34,15 @@ impl XServerFrontendPresentClockRouter {
         let runtime = self.registry.runtime.get().and_then(std::sync::Weak::upgrade)
             .ok_or_else(|| X11SetupSocketError::new("Present clock authority unavailable"))?;
         let mut runtime = runtime.lock().map_err(|_| X11SetupSocketError::new("Present clock runtime poisoned"))?;
-        let bound = runtime.resolve_present_clock_admission(request, sample, previous, now_usec);
+        let bound = if matches!(sample.source, crate::XPresentClockSource::Unclocked { .. }) {
+            // The bounded NotifyMSC wait starts when binding actually occurs,
+            // not at an earlier Session query that may have waited on runtime.
+            let now = now_usec();
+            runtime.resolve_present_clock_admission(request,
+                crate::XPresentClockSample { ust: now, msc: 0, ..sample }, previous, || now)
+        } else {
+            runtime.resolve_present_clock_admission(request, sample, previous, now_usec)
+        };
         // The private service delivers immediate scrap Idle and arms the
         // deadline under the same runtime->feedback ordering as execution.
         if bound { self.registry.service_wake.notify(); }

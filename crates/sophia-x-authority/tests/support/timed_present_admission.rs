@@ -8,6 +8,9 @@ mod rootless;
 #[path = "timed_present_admission_recovery.rs"]
 mod recovery;
 
+#[path = "timed_present_unclocked.rs"]
+mod unclocked;
+
 fn hardware(msc: u64) -> crate::XPresentClockSample {
     crate::XPresentClockSample {
         source: crate::XPresentClockSource::Hardware {
@@ -66,7 +69,7 @@ fn bind(f: &Fixture, request: TransactionId, sample: crate::XPresentClockSample)
 }
 
 fn turn(f: &Fixture, generated: &mut XGeneratedEgress, now: u64) -> bool {
-    service_timed_presents(&f.state, &f.broker.registry, generated, now).unwrap()
+    service_timed_presents(&f.state, &f.broker.registry, generated, || now).unwrap()
 }
 
 fn notification(f: &Fixture) -> (u32, u64, u64) {

@@ -7,7 +7,7 @@ fn turn(f: &Fixture, now: u64) -> bool {
         &f.state,
         &f.broker.registry,
         &mut XGeneratedEgress::default(),
-        now,
+        || now,
     )
     .unwrap()
 }
@@ -52,7 +52,7 @@ fn idle_timed_service_acquires_no_runtime_lock_and_keeps_transport_deadlines() {
                 &state,
                 &broker.registry,
                 &mut XGeneratedEgress::default(),
-                1_000_000
+                || 1_000_000
             )
             .unwrap()
         );
@@ -79,7 +79,7 @@ fn idle_timed_service_acquires_no_runtime_lock_and_keeps_transport_deadlines() {
             &state,
             &broker.registry,
             &mut XGeneratedEgress::default(),
-            1_000_000
+            || 1_000_000
         )
         .unwrap()
     );
@@ -141,12 +141,9 @@ fn concurrent_producer_and_service_clear_never_erase_new_demand() {
         std::thread::scope(|scope| {
             scope.spawn(|| {
                 start.wait();
-                service_timed_presents(
-                    state,
-                    registry,
-                    &mut XGeneratedEgress::default(),
-                    tick * 1_000_000,
-                )
+                service_timed_presents(state, registry, &mut XGeneratedEgress::default(), || {
+                    tick * 1_000_000
+                })
                 .unwrap();
             });
             start.wait();
@@ -209,7 +206,7 @@ fn executed_fake_feedback_keeps_service_alive_after_prepared_queue_empties() {
     f.schedule(crate::XPresentClockSample::background(1_000_000), 2);
     let mut generated = XGeneratedEgress::default();
     assert!(
-        service_timed_presents(&f.state, &f.broker.registry, &mut generated, 2_000_000).unwrap()
+        service_timed_presents(&f.state, &f.broker.registry, &mut generated, || 2_000_000).unwrap()
     );
     let execution = generated.take().next().unwrap().transaction;
     assert!(

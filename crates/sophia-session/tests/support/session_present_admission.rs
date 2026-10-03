@@ -1,4 +1,7 @@
 use super::*;
+
+#[path = "session_present_unclocked.rs"]
+mod unclocked;
 use sophia_protocol::{NamespaceId, Rect, SurfaceConstraints, SurfaceId};
 use sophia_x_authority::{
     XAuthorityRequestKind, XAuthorityRequestPacket, XAuthorityRuntime, XPresentMscTiming,
@@ -6,18 +9,18 @@ use sophia_x_authority::{
 };
 use std::cell::RefCell;
 
-const NS: NamespaceId = NamespaceId::from_raw(321);
-const WINDOW: XResourceId = XResourceId::new(0x400001, 1);
-const SURFACE: SurfaceId = SurfaceId::new(321, 1);
+pub(super) const NS: NamespaceId = NamespaceId::from_raw(321);
+pub(super) const WINDOW: XResourceId = XResourceId::new(0x400001, 1);
+pub(super) const SURFACE: SurfaceId = SurfaceId::new(321, 1);
 
 // Real admission/clock reducers with an injected transport and observations.
 // No KMS device or wire dispatch is needed to exercise the Session seam.
-struct AdmissionFrontend {
-    runtime: RefCell<XAuthorityRuntime>,
-    bound: RefCell<Vec<(TransactionId, XPresentClockSample)>>,
+pub(super) struct AdmissionFrontend {
+    pub(super) runtime: RefCell<XAuthorityRuntime>,
+    pub(super) bound: RefCell<Vec<(TransactionId, XPresentClockSample)>>,
 }
 impl AdmissionFrontend {
-    fn new(mapped: bool) -> Self {
+    pub(super) fn new(mapped: bool) -> Self {
         let mut runtime = XAuthorityRuntime::new();
         runtime.apply(XAuthorityRequestPacket {
             transaction: TransactionId::from_raw(1),
@@ -168,7 +171,7 @@ fn session_binds_admissions_without_a_native_owner_or_visual_runtime() {
         // This is the production service entry used before startup, after
         // owner release and outside the frame-service quarantine guard.
         bridge
-            .service(&frontend, None, None, None, Instant::now())
+            .service(&frontend, None, |_| BTreeMap::new(), Instant::now())
             .unwrap();
         assert!(frontend.admissions().unwrap().is_empty());
         assert_eq!(
@@ -192,7 +195,7 @@ fn session_binds_admissions_without_a_native_owner_or_visual_runtime() {
                 .is_some()
         );
         bridge
-            .service(&frontend, None, None, None, Instant::now())
+            .service(&frontend, None, |_| BTreeMap::new(), Instant::now())
             .unwrap();
         assert_eq!(frontend.bound.borrow().len(), 2); // no rebind
         assert_eq!(bridge.queries(), 0);

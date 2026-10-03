@@ -7,13 +7,16 @@ fn service_timed_presents(
     state: &X11CoreSocketServerState,
     routing: &XServerFrontendRouteRegistry,
     generated: &mut XGeneratedEgress,
-    now_usec: u64,
+    clock: impl FnOnce() -> u64,
 ) -> Result<bool, X11SetupSocketError> {
     if !state.present_service_demand.load(Ordering::Acquire) { return Ok(false); }
     let mut settled = false;
-    let ready = {
+    let (ready, now_usec) = {
         let mut runtime = state.runtime.lock()
             .map_err(|_| X11SetupSocketError::new("timed Present runtime lock poisoned"))?;
+        // Binding reads time under this same lock. Sample once after acquiring
+        // it so a newly bound request cannot see a pre-lock, stale observation.
+        let now_usec = clock();
         runtime.record_present_service_lock(false);
         runtime.advance_prepared_present_fake_clocks(now_usec).map_err(X11SetupSocketError::new)?;
         routing.observe_completion_clock(crate::XPresentClockSource::Fake,
@@ -39,6 +42,7 @@ fn service_timed_presents(
         for notify in runtime.ready_prepared_msc_notifies() {
             routing.route_present_msc_notify(notify.window, notify.serial, notify.ust, notify.msc)
                 .map_err(|_| X11SetupSocketError::new("timed NotifyMSC delivery failed"))?;
+            runtime.record_unclocked_notify_settled(notify.request);
             runtime.cancel_prepared_msc_notify(notify.request);
             settled = true;
         }
@@ -55,7 +59,7 @@ fn service_timed_presents(
                 state.present_service_demand.store(false, Ordering::Release);
             }
         }
-        ready
+        (ready, now_usec)
     };
     // At most one execution per pass and one outstanding generated Present
     // envelope. A fence-blocked request does not starve other windows.

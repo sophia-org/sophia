@@ -8,6 +8,78 @@ use sophia_x_authority::{
 use std::cell::RefCell;
 use std::num::NonZeroUsize;
 
+#[test]
+fn unclocked_notify_debt_never_polls_and_missing_native_owner_loses_it_once() {
+    let native_source = LiveNativePresentClockSource {
+        owner: 7,
+        incarnation: 9,
+    };
+    let bound = XPresentClockSource::Unclocked {
+        domain: native_source.owner,
+        incarnation: native_source.incarnation,
+        minimum_period_usec: 16_667,
+    };
+    let frontend = Frontend::new(bound);
+    {
+        let mut queue = frontend.queue.borrow_mut();
+        let mut request = queue.take(TransactionId::from_raw(1)).unwrap();
+        request.kind = XPresentScheduledKind::NotifyMsc;
+        queue.insert(request).unwrap();
+    }
+    assert!(!frontend.query_demands().unwrap().is_empty());
+    let live = BTreeMap::from([(
+        bound,
+        ClockHead {
+            head: RenderHeadId::from_raw(1),
+            interval: Duration::from_micros(16_667),
+            observed: None,
+        },
+    )]);
+    let mut bridge = SessionPresentClocks::default();
+    let now = Instant::now();
+    for _ in 0..100 {
+        bridge
+            .service_with(&frontend, live.clone(), now, |_| {
+                panic!("unsupported counter queried")
+            })
+            .unwrap();
+        assert_eq!(
+            bridge.cap_wait(now, Duration::from_secs(1)),
+            Duration::from_secs(1)
+        );
+    }
+    assert_eq!(bridge.queries(), 0);
+    assert!(frontend.losses.borrow().is_empty());
+    for _ in 0..2 {
+        bridge
+            .service_with(&frontend, BTreeMap::new(), now, |_| {
+                panic!("released owner queried")
+            })
+            .unwrap();
+    }
+    assert_eq!(*frontend.losses.borrow(), vec![bound]);
+    assert_eq!(frontend.queue.borrow().ready().count(), 1);
+}
+
+#[test]
+fn explicit_native_loss_keeps_an_unclocked_sources_type() {
+    let bound = XPresentClockSource::Unclocked {
+        domain: 7,
+        incarnation: 9,
+        minimum_period_usec: 16_667,
+    };
+    let frontend = Frontend::new(bound);
+    lose_native_source(
+        &frontend,
+        LiveNativePresentClockSource {
+            owner: 7,
+            incarnation: 9,
+        },
+    )
+    .unwrap();
+    assert_eq!(*frontend.losses.borrow(), vec![bound]);
+}
+
 struct Frontend {
     queue: RefCell<XPresentWindowSchedule>,
     losses: RefCell<Vec<XPresentClockSource>>,
@@ -179,9 +251,16 @@ fn empty_owner_startup_can_service_the_real_frontend_before_client_setup() {
     let frontend = broker.present_clock_router();
     let mut bridge = SessionPresentClocks::default();
     let now = Instant::now();
-    bridge.service(&frontend, None, None, None, now).unwrap();
     bridge
-        .service(&frontend, None, None, None, now + Duration::from_secs(1))
+        .service(&frontend, None, |_| BTreeMap::new(), now)
+        .unwrap();
+    bridge
+        .service(
+            &frontend,
+            None,
+            |_| BTreeMap::new(),
+            now + Duration::from_secs(1),
+        )
         .unwrap();
     assert_eq!(bridge.queries(), 0);
     assert_eq!(

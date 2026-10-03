@@ -53,6 +53,8 @@ pub struct XPresentTimingStatistics {
     pub wire_owner_notifications: u64,
     pub wire_bound: u64,
     pub wire_hardware_bound: u64,
+    pub unclocked_bound: u64,
+    pub unclocked_notify_settled: u64,
     pub wire_executions: u64,
     /// Preparation-to-execution delay, including target/fence/publication waits.
     /// No per-frame record; cumulative duration and maximum only.
@@ -194,6 +196,10 @@ impl XAuthorityRuntime {
             binding: clock.binding().map_err(XPreparedPresentScheduleError::Clock)?,
         }).map_err(XPreparedPresentScheduleError::Queue)?;
         state.clock = clock;
+        if matches!(sample.source, crate::XPresentClockSource::Unclocked { .. }) {
+            let count = &mut self.present_timing_statistics.unclocked_bound;
+            *count = count.saturating_add(1);
+        }
         state.rejections.retain(|source, _| *source == sample.source
             || state.queue.clock_sources().any(|bound| bound == *source));
         self.publish_present_clock_interest(window);
@@ -216,7 +222,30 @@ impl XAuthorityRuntime {
     }
 
     pub fn advance_prepared_present_fake_clocks(&mut self, now_usec: u64) -> Result<(), &'static str> {
-        self.observe_prepared_source_clock(crate::XPresentClockSample::background(now_usec)).map(|_| ())
+        self.observe_prepared_source_clock(crate::XPresentClockSample::background(now_usec))?;
+        // The ordinary clocked desktop does no additional queue scan.
+        if self.present_timing_statistics.unclocked_bound == 0 { return Ok(()); }
+        // Only queued obligations need a timer. An executed unclocked
+        // pixmap completes from actual retirement and creates no idle work.
+        let unclocked = self.prepared_present_schedules.values()
+            .flat_map(|state| state.queue.clock_sources())
+            .filter(|source| matches!(source, crate::XPresentClockSource::Unclocked { .. }))
+            .collect::<BTreeSet<_>>();
+        for source in unclocked {
+            self.observe_prepared_source_clock(crate::XPresentClockSample { source, ust: now_usec, msc: 0 })?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn record_unclocked_notify_settled(&mut self, request: TransactionId) {
+        if self.prepared_msc_notifies.get(&request).and_then(|notify|
+            self.prepared_present_schedules.get(&notify.window))
+            .and_then(|state| state.queue.get(request))
+            .is_some_and(|request| matches!(request.binding.source, crate::XPresentClockSource::Unclocked { .. }))
+        {
+            let count = &mut self.present_timing_statistics.unclocked_notify_settled;
+            *count = count.saturating_add(1);
+        }
     }
 
     /// Observing an old source never changes a window's currently selected

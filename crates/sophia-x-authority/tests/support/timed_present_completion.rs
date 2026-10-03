@@ -684,7 +684,7 @@ fn fake_bound_retirement_completes_without_waiting_for_frontend_service() {
         &f.state,
         &f.broker.registry,
         &mut XGeneratedEgress::default(),
-        3_000_000,
+        || 3_000_000,
     )
     .unwrap();
     assert!(f._channels.protocol.try_recv().is_err());

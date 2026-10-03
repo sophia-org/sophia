@@ -25,8 +25,19 @@ pub fn reduced_record(line: &str) -> Option<String> {
             }
             continue;
         }
+        if name == "sophia_present_unclocked" {
+            if (matches!(key, "schema" | "head" | "owner" | "incarnation" | "errno" | "minimum_period_usec")
+                && !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit())
+                && value.parse::<u64>().is_ok())
+                || (key == "reason" && value == "sequence_unsupported")
+            {
+                result.push(' ');
+                result.push_str(field);
+            }
+            continue;
+        }
         if name == "sophia_present_clock_service" {
-            if matches!(key, "schema" | "queries" | "completions" | "observations" | "observation_runtime_locks" | "completion_runtime_locks" | "completion_historical_samples" | "admission_errors" | "admission_fake_retries" | "admission_settled" | "idle_signal_failures" | "scrap_sample_fallbacks" | "service_runtime_locks" | "deadline_runtime_locks" | "wire_prepared" | "wire_published" | "wire_owner_notifications" | "wire_bound" | "wire_hardware_bound" | "wire_executions" | "wire_execution_wait_usec" | "wire_execution_wait_max_usec" | "owner_passes" | "owner_waits" | "owner_ring_ready" | "owner_fd_ready" | "owner_wait_deadlines" | "owner_immediate_items")
+            if matches!(key, "schema" | "queries" | "completions" | "observations" | "observation_runtime_locks" | "completion_runtime_locks" | "completion_historical_samples" | "admission_errors" | "admission_fake_retries" | "admission_settled" | "idle_signal_failures" | "scrap_sample_fallbacks" | "service_runtime_locks" | "deadline_runtime_locks" | "wire_prepared" | "wire_published" | "wire_owner_notifications" | "wire_bound" | "wire_hardware_bound" | "unclocked_bound" | "unclocked_notify_settled" | "wire_executions" | "wire_execution_wait_usec" | "wire_execution_wait_max_usec" | "owner_passes" | "owner_waits" | "owner_ring_ready" | "owner_fd_ready" | "owner_wait_deadlines" | "owner_immediate_items")
                 && !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit())
                 && value.parse::<u64>().is_ok()
             {

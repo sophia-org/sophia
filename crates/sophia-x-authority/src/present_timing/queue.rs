@@ -66,6 +66,21 @@ impl QueuedRequest {
     }
 
     fn ready(self) -> bool {
+        if let XPresentClockSource::Unclocked {
+            minimum_period_usec,
+            ..
+        } = self.request.binding.source
+        {
+            return self.source_lost
+                || self.request.kind != XPresentScheduledKind::NotifyMsc
+                || self.observed.ust
+                    >= self
+                        .request
+                        .target
+                        .source_anchor
+                        .ust
+                        .saturating_add(minimum_period_usec.max(1));
+        }
         let lead = u128::from(
             self.request.kind == XPresentScheduledKind::Pixmap
                 && matches!(
@@ -78,6 +93,19 @@ impl QueuedRequest {
     }
 
     fn background_deadline(self) -> Option<u64> {
+        if let XPresentClockSource::Unclocked {
+            minimum_period_usec,
+            ..
+        } = self.request.binding.source
+        {
+            return (self.request.kind == XPresentScheduledKind::NotifyMsc).then_some(
+                self.request
+                    .target
+                    .source_anchor
+                    .ust
+                    .saturating_add(minimum_period_usec.max(1)),
+            );
+        }
         if self.request.binding.source != XPresentClockSource::Fake {
             return None;
         }
@@ -141,7 +169,12 @@ impl XPresentWindowSchedule {
             observed: request.target.source_anchor,
             elapsed: 0,
             source_lost: false,
-            waiting_msc: true,
+            // No MSC event is pending on an unclocked head. A ready pixmap
+            // blocked on its fence is not eligible for equal-target scrap.
+            waiting_msc: !matches!(
+                request.binding.source,
+                XPresentClockSource::Unclocked { .. }
+            ),
         });
         self.requests
             .sort_by_key(|p| (p.request.target.position, p.request.request.raw()));
@@ -257,7 +290,13 @@ impl XPresentWindowSchedule {
             .requests
             .iter()
             .find(|p| p.request.request == request)?;
-        if !entry.source_lost && entry.elapsed < u128::from(entry.request.target.fields) {
+        if !entry.source_lost
+            && (entry.elapsed < u128::from(entry.request.target.fields)
+                || (matches!(
+                    entry.request.binding.source,
+                    XPresentClockSource::Unclocked { .. }
+                ) && !entry.ready()))
+        {
             return None;
         }
         entry.request.binding.window_sample(entry.observed).ok()

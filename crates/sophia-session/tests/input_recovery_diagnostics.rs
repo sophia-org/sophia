@@ -3,6 +3,22 @@ use sophia_session::diagnostics::{
 };
 
 #[test]
+fn unclocked_records_keep_the_failure_errno_and_only_scalar_counts() {
+    let line = "sophia_present_unclocked schema=1 head=2 owner=3 incarnation=4 reason=sequence_unsupported errno=95 minimum_period_usec=16667";
+    assert_eq!(reduced_record(line).as_deref(), Some(line));
+    assert_eq!(
+        reduced_record(&format!(
+            "{line} payload=secret errno=private reason=private"
+        ))
+        .as_deref(),
+        Some(line)
+    );
+    let counters =
+        "sophia_present_clock_service schema=1 unclocked_bound=5 unclocked_notify_settled=2";
+    assert_eq!(reduced_record(counters).as_deref(), Some(counters));
+}
+
+#[test]
 fn timed_present_execution_retains_only_the_scalar_request_join() {
     let line = "sophia_x_present_execution schema=1 request_transaction=7 execution_transaction=19 client=2 accepted=1";
     assert_eq!(reduced_record(line).as_deref(), Some(line));

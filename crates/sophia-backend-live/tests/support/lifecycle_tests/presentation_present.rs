@@ -37,6 +37,9 @@ use super::presentation_instances::{
 use super::*;
 use std::time::{Duration, Instant};
 
+#[path = "presentation_clock_placement.rs"]
+mod clock_placement;
+
 const PRESENT_IMAGE: u64 = 437;
 
 fn dma_frame() -> sophia_renderer_live::LiveOwnedMultiPlaneDmaBufFrame {

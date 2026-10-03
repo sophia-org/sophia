@@ -132,7 +132,7 @@ fn timed_present_one_windows_bad_sample_does_not_stop_another_window() {
             &fixture.state,
             &fixture.broker.registry,
             &mut generated,
-            45_000
+            || 45_000
         )
         .unwrap()
     );
@@ -152,7 +152,7 @@ fn timed_present_one_windows_bad_sample_does_not_stop_another_window() {
             &fixture.state,
             &fixture.broker.registry,
             &mut generated,
-            46_000
+            || 46_000
         )
         .unwrap()
     );
@@ -162,7 +162,7 @@ fn timed_present_one_windows_bad_sample_does_not_stop_another_window() {
             &fixture.state,
             &fixture.broker.registry,
             &mut generated,
-            59_000
+            || 59_000
         )
         .unwrap()
     );
@@ -221,7 +221,7 @@ fn timed_present_surface_observation_rejects_the_whole_window_update() {
             &fixture.state,
             &fixture.broker.registry,
             &mut generated,
-            19_000
+            || 19_000
         )
         .unwrap()
     );
@@ -277,7 +277,7 @@ fn timed_present_never_triggered_fence_backs_off_despite_other_wakes() {
                 &fixture.state,
                 &fixture.broker.registry,
                 &mut generated,
-                now
+                || now
             )
             .unwrap()
         );
@@ -304,7 +304,7 @@ fn timed_present_never_triggered_fence_backs_off_despite_other_wakes() {
             &fixture.state,
             &fixture.broker.registry,
             &mut generated,
-            1_042_000
+            || 1_042_000
         )
         .unwrap()
     );
@@ -321,7 +321,7 @@ fn timed_present_fence_waiter_is_not_scrapped_or_allowed_to_hide_a_future_deadli
             &fixture.state,
             &fixture.broker.registry,
             &mut generated,
-            1_000_000
+            || 1_000_000
         )
         .unwrap()
     );
@@ -349,7 +349,7 @@ fn timed_present_fence_waiter_is_not_scrapped_or_allowed_to_hide_a_future_deadli
             &fixture.state,
             &fixture.broker.registry,
             &mut generated,
-            1_000_000
+            || 1_000_000
         )
         .unwrap()
     );
@@ -375,7 +375,7 @@ fn timed_present_fence_waiter_is_not_scrapped_or_allowed_to_hide_a_future_deadli
                 &fixture.state,
                 &fixture.broker.registry,
                 &mut generated,
-                now
+                || now
             )
             .unwrap()
         );
@@ -398,7 +398,7 @@ fn timed_present_fence_waiter_is_not_scrapped_or_allowed_to_hide_a_future_deadli
             &fixture.state,
             &fixture.broker.registry,
             &mut generated,
-            1_999_500
+            || 1_999_500
         )
         .unwrap()
     );
@@ -408,7 +408,7 @@ fn timed_present_fence_waiter_is_not_scrapped_or_allowed_to_hide_a_future_deadli
             &fixture.state,
             &fixture.broker.registry,
             &mut generated,
-            2_000_000
+            || 2_000_000
         )
         .unwrap()
     );
@@ -652,7 +652,7 @@ fn timed_present_repeated_clock_rejections_settle_only_the_failed_binding_once()
                 &fixture.state,
                 &fixture.broker.registry,
                 &mut generated,
-                50_000
+                || 50_000
             )
             .unwrap()
         );
@@ -664,7 +664,7 @@ fn timed_present_repeated_clock_rejections_settle_only_the_failed_binding_once()
             &fixture.state,
             &fixture.broker.registry,
             &mut generated,
-            50_000
+            || 50_000
         )
         .unwrap()
     );
@@ -683,7 +683,7 @@ fn timed_present_repeated_clock_rejections_settle_only_the_failed_binding_once()
             &fixture.state,
             &fixture.broker.registry,
             &mut generated,
-            50_000
+            || 50_000
         )
         .unwrap()
     );
@@ -808,7 +808,7 @@ fn timed_present_msc_serviced_under_backpressure_is_not_scrappable() {
             &fixture.state,
             &fixture.broker.registry,
             &mut generated,
-            10_000
+            || 10_000
         )
         .unwrap()
     );
@@ -849,7 +849,7 @@ fn timed_present_losing_an_already_ready_fence_waiter_still_wakes_service() {
             &fixture.state,
             &fixture.broker.registry,
             &mut generated,
-            10_000
+            || 10_000
         )
         .unwrap()
     );
@@ -870,7 +870,7 @@ fn timed_present_losing_an_already_ready_fence_waiter_still_wakes_service() {
             &fixture.state,
             &fixture.broker.registry,
             &mut generated,
-            10_000
+            || 10_000
         )
         .unwrap()
     );

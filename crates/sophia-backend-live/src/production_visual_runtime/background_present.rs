@@ -4,6 +4,15 @@ use super::*;
 /// This delays Skip completion and Idle, not the physical MSC clock.
 pub(super) const BACKGROUND_PRESENT_INTERVAL: Duration = Duration::from_secs(1);
 
+/// An ordinary placement selected by Session's layout authority before pixels
+/// have necessarily reached the compositor. No output means geometry routing;
+/// an assigned output must never spill into a neighbouring output.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LivePresentClockPlacement {
+    pub geometry: Rect,
+    pub output: Option<OutputId>,
+}
+
 struct BackgroundOutputVisibility {
     output: OutputId,
     viewport: Rect,
@@ -137,30 +146,70 @@ impl LiveProductionVisualRuntime {
             .iter()
             .map(|state| (state.surface, state.geometry))
             .collect::<BTreeMap<_, _>>();
-        let outputs = self.background_output_visibility(&geometries);
+        self.select_present_clock_outputs(
+            candidates.into_iter().map(|(surface, fallback)| {
+                let visible = self.presentation_order.contains(&surface)
+                    && (self.surface_outputs.contains_key(&surface)
+                        || self.geometry_routed_surfaces.contains(&surface));
+                (
+                    surface,
+                    visible.then_some(LivePresentClockPlacement {
+                        geometry: geometries.get(&surface).copied().unwrap_or(fallback),
+                        output: self.surface_outputs.get(&surface).copied(),
+                    }),
+                )
+            }),
+            primary_output,
+            &geometries,
+        )
+    }
+
+    /// Select clocks for current policy/admission placements even before the
+    /// first composed frame updates presentation_order. None withholds only
+    /// ordinary sampling: an existing policy preview can still show it. Lock,
+    /// replacement tiers, clipping and output ownership remain authoritative.
+    pub fn present_clock_outputs_for_placements(
+        &self,
+        candidates: impl IntoIterator<Item = (SurfaceId, Option<LivePresentClockPlacement>)>,
+        primary_output: Option<OutputId>,
+    ) -> Vec<(SurfaceId, Option<OutputId>)> {
+        let geometries = self
+            .production
+            .committed_surfaces()
+            .iter()
+            .map(|state| (state.surface, state.geometry))
+            .collect();
+        self.select_present_clock_outputs(candidates, primary_output, &geometries)
+    }
+
+    fn select_present_clock_outputs(
+        &self,
+        candidates: impl IntoIterator<Item = (SurfaceId, Option<LivePresentClockPlacement>)>,
+        primary_output: Option<OutputId>,
+        geometries: &BTreeMap<SurfaceId, Rect>,
+    ) -> Vec<(SurfaceId, Option<OutputId>)> {
+        let outputs = self.background_output_visibility(geometries);
         let time = self.translation_time();
         candidates
             .into_iter()
             .collect::<BTreeMap<_, _>>()
             .into_iter()
-            .map(|(surface, fallback)| {
-                let geometry = geometries.get(&surface).copied().unwrap_or(fallback);
+            .map(|(surface, placement)| {
                 let selected = outputs
                     .iter()
                     .filter_map(|view| {
                         let mut rects = view.previewed.get(&surface).cloned().unwrap_or_default();
-                        if self.presentation_order.contains(&surface)
+                        if let Some(placement) = placement
                             && !view.replaces_applications
-                            && live_surface_routes_to_output(
-                                surface,
-                                &self.surface_outputs,
-                                &self.geometry_routed_surfaces,
-                                view.output,
-                            )
+                            && placement.output.is_none_or(|output| output == view.output)
                         {
                             let sampled = crate::presentation::intersect_rects(
-                                self.translations
-                                    .geometry(surface, view.output, geometry, time),
+                                self.translations.geometry(
+                                    surface,
+                                    view.output,
+                                    placement.geometry,
+                                    time,
+                                ),
                                 view.viewport,
                             );
                             if !sampled.is_empty() {

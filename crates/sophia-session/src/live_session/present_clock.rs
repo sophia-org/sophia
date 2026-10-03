@@ -1,8 +1,8 @@
 //! Demand-driven Session bridge. Backend counter lifetimes and frontend
 //! obligations are reconciled even when ordinary frame service is quarantined.
 use sophia_backend_live::{
-    LiveNativePresentClockObservation, LiveNativePresentClockSource, LiveProductionNativeScanout,
-    LiveProductionVisualRuntime,
+    LiveNativePresentClockObservation, LiveNativePresentClockSource, LiveNativePresentClockStatus,
+    LiveNativeUnclockedPresentClock, LiveProductionNativeScanout,
 };
 use sophia_engine::RenderHeadId;
 use sophia_protocol::{OutputId, TransactionId};
@@ -16,6 +16,8 @@ use std::time::{Duration, Instant};
 type ClockResult<T> = Result<T, X11SetupSocketError>;
 
 mod admission;
+mod selection;
+pub(super) use selection::select_outputs;
 
 pub(super) trait FrontendClocks {
     fn admissions(&self) -> ClockResult<Vec<XPresentClockAdmission>>;
@@ -65,6 +67,43 @@ fn source(source: LiveNativePresentClockSource) -> XPresentClockSource {
     }
 }
 
+fn unclocked_source(clock: LiveNativeUnclockedPresentClock) -> XPresentClockSource {
+    XPresentClockSource::Unclocked {
+        domain: clock.source.owner,
+        incarnation: clock.source.incarnation,
+        minimum_period_usec: clock.minimum_period_usec.max(1),
+    }
+}
+
+fn source_matches(native: LiveNativePresentClockSource, bound: XPresentClockSource) -> bool {
+    match bound {
+        XPresentClockSource::Hardware {
+            domain,
+            incarnation,
+        }
+        | XPresentClockSource::Unclocked {
+            domain,
+            incarnation,
+            ..
+        } => native.owner == domain && native.incarnation == incarnation,
+        XPresentClockSource::Fake => false,
+    }
+}
+
+fn lose_native_source(
+    frontend: &impl FrontendClocks,
+    lost: LiveNativePresentClockSource,
+) -> ClockResult<()> {
+    // Native identities are shared by clocked and unclocked lifetimes. Do
+    // not relabel an old Unclocked binding as Hardware when routing loss.
+    for bound in frontend.bound_sources()? {
+        if source_matches(lost, bound) {
+            frontend.lose_source(bound)?;
+        }
+    }
+    Ok(())
+}
+
 #[derive(Clone, Copy)]
 struct ClockHead {
     head: RenderHeadId,
@@ -87,6 +126,8 @@ pub(super) struct SessionPresentClocks {
     // Real flips still update ready/executed bindings, without arming queries.
     passive_observed: BTreeMap<XPresentClockSource, XPresentClockSample>,
     queries: u64,
+    // One diagnostic per head's native lifetime, bounded by physical heads.
+    unclocked_reported: BTreeMap<RenderHeadId, LiveNativePresentClockSource>,
 }
 
 impl SessionPresentClocks {
@@ -98,8 +139,9 @@ impl SessionPresentClocks {
         &mut self,
         frontend: &impl FrontendClocks,
         mut native: Option<&mut LiveProductionNativeScanout>,
-        runtime: Option<&LiveProductionVisualRuntime>,
-        primary_output: Option<OutputId>,
+        outputs: impl FnOnce(
+            &[XPresentClockAdmission],
+        ) -> BTreeMap<sophia_protocol::SurfaceId, Option<OutputId>>,
         now: Instant,
     ) -> ClockResult<()> {
         let live = native
@@ -129,6 +171,22 @@ impl SessionPresentClocks {
                                 )
                             })
                     })
+                    .chain(native.present_unclocked_heads().filter_map(|(id, clock)| {
+                        native
+                            .heads
+                            .iter()
+                            .find(|head| head.head == id && head.enabled)
+                            .map(|head| {
+                                (
+                                    unclocked_source(clock),
+                                    ClockHead {
+                                        head: id,
+                                        interval: head.present_clock_minimum_period(),
+                                        observed: None,
+                                    },
+                                )
+                            })
+                    }))
                     .collect()
             })
             .unwrap_or_default();
@@ -141,29 +199,12 @@ impl SessionPresentClocks {
         // New requests must bind even before native startup, during
         // quarantine and after owner release. Only source selection needs a
         // visual runtime/native owner; their absence selects the fake clock.
-        self.admit_with(
-            frontend,
-            admission::monotonic_usec()?,
-            |admissions| {
-                runtime
-                    .map(|runtime| {
-                        runtime
-                            .present_clock_outputs(
-                                admissions.iter().filter_map(|request| request.target),
-                                primary_output,
-                            )
-                            .into_iter()
-                            .collect()
-                    })
-                    .unwrap_or_default()
-            },
-            |output| {
-                native
-                    .as_mut()
-                    .map(|native| native.query_present_clock_for_output(output))
-                    .unwrap_or_default()
-            },
-        )
+        self.admit_with(frontend, admission::monotonic_usec()?, outputs, |output| {
+            native
+                .as_mut()
+                .map(|native| native.query_present_clock_for_output(output))
+                .unwrap_or_default()
+        })
     }
 
     fn service_with(
@@ -184,6 +225,8 @@ impl SessionPresentClocks {
         self.passive_observed.retain(|source, _| {
             live.contains_key(source) && bound.contains(source) && !demand.contains_key(source)
         });
+        self.unclocked_reported
+            .retain(|_, native| live.keys().any(|bound| source_matches(*native, *bound)));
         for bound in bound {
             if bound == XPresentClockSource::Fake {
                 continue;
@@ -195,6 +238,11 @@ impl SessionPresentClocks {
                 frontend.lose_source(bound)?;
                 continue;
             };
+            // The frontend arms only a NotifyMSC mode-period deadline. It
+            // never queries this unsupported counter or advances its MSC.
+            if matches!(bound, XPresentClockSource::Unclocked { .. }) {
+                continue;
+            }
             let Some(&fields) = demand.get(&bound) else {
                 if let Some(sample) = head.observed
                     && self.passive_observed.get(&bound) != Some(&sample)
@@ -231,7 +279,7 @@ impl SessionPresentClocks {
             self.queries = self.queries.saturating_add(1);
             let observation = query(head.head);
             if let Some(lost) = observation.lost {
-                frontend.lose_source(source(lost))?;
+                lose_native_source(frontend, lost)?;
             }
             if let Some(sample) = observation.current {
                 frontend.observe_source(XPresentClockSample {
@@ -253,7 +301,10 @@ impl SessionPresentClocks {
                 self.record_observation(observed, head.interval, fields, now);
                 updated.push(bound);
             } else {
-                if observation.lost.map(source) != Some(bound) {
+                if !observation
+                    .lost
+                    .is_some_and(|lost| source_matches(lost, bound))
+                {
                     frontend.lose_source(bound)?;
                 }
                 self.next.remove(&bound);
@@ -336,3 +387,7 @@ mod tests;
 #[cfg(test)]
 #[path = "../../tests/support/session_present_admission.rs"]
 mod admission_tests;
+
+#[cfg(test)]
+#[path = "../../tests/support/session_present_placement.rs"]
+mod placement_tests;

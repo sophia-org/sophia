@@ -35,12 +35,39 @@ pub struct LiveNativePresentClockKey {
     pub crtc_id: u32,
 }
 
+/// Why an active head has no present clock. Definite for its target
+/// lifetime: transient and permission errors are query failures instead.
+/// A card without monotonic timestamps is not unclocked: its retirement UST
+/// cannot be called monotonic, so it stays `UnsupportedClock`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveNativeUnclockedReason {
+    /// GET_SEQUENCE answered EOPNOTSUPP or ENOTTY on a card with monotonic
+    /// timestamps; the first errno is kept. EINVAL stays a query failure:
+    /// the kernel also gives it while a CRTC's vblank is off.
+    SequenceUnsupported { errno: i32 },
+}
+
+/// An active head that scans out without a counter: no UST/MSC is ever
+/// observed or predicted for it. Its source is stable for the target
+/// lifetime and distinct from every clocked source of the same owner; its
+/// period is the fastest field of the selected mode.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LiveNativeUnclockedPresentClock {
+    pub source: LiveNativePresentClockSource,
+    pub minimum_period_usec: u64,
+    pub reason: LiveNativeUnclockedReason,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LiveNativePresentClockStatus {
     Observed,
     Restarted,
     Inactive,
+    /// The card fd reports DRM_CAP_TIMESTAMP_MONOTONIC = 0: no clock, and
+    /// no unclocked source either.
     UnsupportedClock,
+    /// `current` stays `None`: the head is active but has no counter.
+    Unclocked(LiveNativeUnclockedPresentClock),
     QueryFailed,
     InvalidTarget,
     Capacity,
@@ -56,10 +83,12 @@ pub struct LiveNativePresentClockObservation {
 }
 
 /// Query one admitted logical output's active mirror members. Prefer its
-/// configured primary, then stable head order. A dead preferred clock does
-/// not bind a new request when an active sibling can serve it. Keep every
-/// observation so the caller retires failed old bindings before using the
-/// chosen one. Existing requests never migrate through this function.
+/// configured primary, then stable head order. A dead or unclocked preferred
+/// member does not bind a new request when an active sibling has a clock:
+/// querying stops only at the first clocked member. Keep every observation
+/// so the caller retires failed old bindings before using the chosen one,
+/// and falls back to the first unclocked member when none is clocked.
+/// Existing requests never migrate through this function.
 #[must_use]
 pub fn query_live_present_clock_candidates(
     heads: impl IntoIterator<Item = (RenderHeadId, bool)>,
@@ -84,20 +113,29 @@ pub fn query_live_present_clock_candidates(
 }
 
 #[derive(Clone, Copy, Debug)]
+struct UnclockedRecord {
+    key: LiveNativePresentClockKey,
+    clock: LiveNativeUnclockedPresentClock,
+}
+
+#[derive(Clone, Copy, Debug)]
 struct ClockRecord {
     key: LiveNativePresentClockKey,
     sample: LiveNativePresentClockSample,
     timestamp_nsec: u64,
 }
 
-/// At most one live record per admitted physical head. Incarnations never
-/// recycle within the native owner's domain, including after invalidation.
-/// A replacement native owner must supply a different process-unique domain.
+/// At most one live record per admitted physical head, clocked or
+/// unclocked. Incarnations never recycle within the native owner's domain,
+/// including after invalidation. A replacement native owner must supply a
+/// different process-unique domain, so its cache of unclocked heads starts
+/// empty too.
 #[derive(Debug)]
 pub struct LiveNativePresentClocks {
     owner: NonZeroU64,
     next_incarnation: u64,
     heads: BTreeMap<RenderHeadId, ClockRecord>,
+    unclocked: BTreeMap<RenderHeadId, UnclockedRecord>,
 }
 
 impl LiveNativePresentClocks {
@@ -106,6 +144,98 @@ impl LiveNativePresentClocks {
             owner,
             next_incarnation: 1,
             heads: BTreeMap::new(),
+            unclocked: BTreeMap::new(),
+        }
+    }
+
+    /// Active heads without a counter, each under its own stable source.
+    pub fn unclocked(
+        &self,
+    ) -> impl Iterator<Item = (RenderHeadId, LiveNativeUnclockedPresentClock)> + '_ {
+        self.unclocked
+            .iter()
+            .map(|(head, record)| (*head, record.clock))
+    }
+
+    /// The cached unclocked answer for this exact target lifetime: a later
+    /// query repeats it without another kernel query.
+    pub fn unclocked_for(
+        &self,
+        key: LiveNativePresentClockKey,
+    ) -> Option<LiveNativePresentClockObservation> {
+        self.unclocked
+            .get(&key.head)
+            .filter(|record| record.key == key)
+            .map(|record| LiveNativePresentClockObservation {
+                lost: None,
+                current: None,
+                status: LiveNativePresentClockStatus::Unclocked(record.clock),
+            })
+    }
+
+    fn records(&self) -> usize {
+        self.heads.len() + self.unclocked.len()
+    }
+
+    fn mint(&mut self) -> Result<LiveNativePresentClockSource, LiveNativePresentClockStatus> {
+        if self.records()
+            >= sophia_engine::MAX_DRM_KMS_OUTPUTS * sophia_engine::MAX_HEADS_PER_OUTPUT
+        {
+            return Err(LiveNativePresentClockStatus::Capacity);
+        }
+        let next = self
+            .next_incarnation
+            .checked_add(1)
+            .ok_or(LiveNativePresentClockStatus::IdentityExhausted)?;
+        let source = LiveNativePresentClockSource {
+            owner: self.owner.get(),
+            incarnation: self.next_incarnation,
+        };
+        self.next_incarnation = next;
+        Ok(source)
+    }
+
+    /// A definite answer that this active target has no clock. The first
+    /// answer for a target lifetime is kept, errno included; a different
+    /// target, or a head that had a counter, loses its old source first.
+    pub fn observe_unsupported(
+        &mut self,
+        key: LiveNativePresentClockKey,
+        reason: LiveNativeUnclockedReason,
+        minimum_period: std::time::Duration,
+    ) -> LiveNativePresentClockObservation {
+        if !key.head.is_valid() || key.target_generation == 0 || key.crtc_id == 0 {
+            return self.lose_head(key.head, LiveNativePresentClockStatus::InvalidTarget);
+        }
+        if let Some(cached) = self.unclocked_for(key) {
+            return cached;
+        }
+        let lost = self
+            .heads
+            .remove(&key.head)
+            .map(|r| r.sample.source)
+            .or_else(|| self.unclocked.remove(&key.head).map(|r| r.clock.source));
+        let source = match self.mint() {
+            Ok(source) => source,
+            Err(status) => {
+                return LiveNativePresentClockObservation {
+                    lost,
+                    current: None,
+                    status,
+                };
+            }
+        };
+        let clock = LiveNativeUnclockedPresentClock {
+            source,
+            minimum_period_usec: u64::try_from(minimum_period.as_micros()).unwrap_or(u64::MAX),
+            reason,
+        };
+        self.unclocked
+            .insert(key.head, UnclockedRecord { key, clock });
+        LiveNativePresentClockObservation {
+            lost,
+            current: None,
+            status: LiveNativePresentClockStatus::Unclocked(clock),
         }
     }
 
@@ -242,8 +372,10 @@ impl LiveNativePresentClocks {
         head: RenderHeadId,
         status: LiveNativePresentClockStatus,
     ) -> LiveNativePresentClockObservation {
+        let clocked = self.heads.remove(&head).map(|r| r.sample.source);
+        let unclocked = self.unclocked.remove(&head).map(|r| r.clock.source);
         LiveNativePresentClockObservation {
-            lost: self.heads.remove(&head).map(|r| r.sample.source),
+            lost: clocked.or(unclocked),
             current: None,
             status,
         }
@@ -253,10 +385,13 @@ impl LiveNativePresentClocks {
     /// old target before another query. Comparing target generations only
     /// would miss that A->B->A sequence. The caller routes each loss to users.
     pub fn invalidate(&mut self) -> Vec<LiveNativePresentClockSource> {
-        std::mem::take(&mut self.heads)
+        let clocked = std::mem::take(&mut self.heads)
             .into_values()
-            .map(|r| r.sample.source)
-            .collect()
+            .map(|r| r.sample.source);
+        let unclocked = std::mem::take(&mut self.unclocked)
+            .into_values()
+            .map(|r| r.clock.source);
+        clocked.chain(unclocked).collect()
     }
 
     pub fn observe(
@@ -271,6 +406,8 @@ impl LiveNativePresentClocks {
         if !sample.active {
             return self.lose_head(key.head, Inactive);
         }
+        // A counter supersedes an unclocked answer for the same head.
+        let was_unclocked = self.unclocked.remove(&key.head).map(|r| r.clock.source);
         let prior = self.heads.get(&key.head).copied();
         if let Some(record) = prior
             && record.key == key
@@ -295,32 +432,21 @@ impl LiveNativePresentClocks {
             self.heads.remove(&key.head).map(|r| r.sample.source)
         } else {
             None
-        };
+        }
+        .or(was_unclocked);
         let source = if let Some(record) = self.heads.get(&key.head) {
             record.sample.source
         } else {
-            if self.heads.len()
-                >= sophia_engine::MAX_DRM_KMS_OUTPUTS * sophia_engine::MAX_HEADS_PER_OUTPUT
-            {
-                return LiveNativePresentClockObservation {
-                    lost,
-                    current: None,
-                    status: Capacity,
-                };
+            match self.mint() {
+                Ok(source) => source,
+                Err(status) => {
+                    return LiveNativePresentClockObservation {
+                        lost,
+                        current: None,
+                        status,
+                    };
+                }
             }
-            let Some(next) = self.next_incarnation.checked_add(1) else {
-                return LiveNativePresentClockObservation {
-                    lost,
-                    current: None,
-                    status: IdentityExhausted,
-                };
-            };
-            let source = LiveNativePresentClockSource {
-                owner: self.owner.get(),
-                incarnation: self.next_incarnation,
-            };
-            self.next_incarnation = next;
-            source
         };
         let current = LiveNativePresentClockSample {
             source,
@@ -338,7 +464,42 @@ impl LiveNativePresentClocks {
         LiveNativePresentClockObservation {
             lost,
             current: Some(current),
-            status: if restarted { Restarted } else { Observed },
+            status: if restarted || was_unclocked.is_some() {
+                Restarted
+            } else {
+                Observed
+            },
         }
     }
+}
+
+/// Only a kernel that cannot answer GET_SEQUENCE for this device at all is
+/// definite: EOPNOTSUPP (no vblank support) or ENOTTY (no such ioctl).
+/// Permission, transient, stale-object and driver errors stay query
+/// failures and are asked again.
+pub fn unsupported_sequence_errno(error: &std::io::Error) -> Option<i32> {
+    let errno = error.raw_os_error()?;
+    [
+        rustix::io::Errno::OPNOTSUPP.raw_os_error(),
+        rustix::io::Errno::NOTTY.raw_os_error(),
+    ]
+    .contains(&errno)
+    .then_some(errno)
+}
+
+/// The card's monotonic-timestamp capability, cached per owned card fd.
+/// A definite answer, supported or not, is read once for the fd's lifetime;
+/// a failed query is not cached, so the next one asks again. `None` is a
+/// failed query.
+pub fn cached_monotonic_capability(
+    cache: &mut BTreeMap<usize, bool>,
+    card_group: usize,
+    query: impl FnOnce() -> std::io::Result<u64>,
+) -> Option<bool> {
+    if let Some(supported) = cache.get(&card_group) {
+        return Some(*supported);
+    }
+    let supported = query().ok()? != 0;
+    cache.insert(card_group, supported);
+    Some(supported)
 }

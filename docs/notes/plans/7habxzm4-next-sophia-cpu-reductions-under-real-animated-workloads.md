@@ -633,3 +633,135 @@ For the t034 lock-lane merge, whichever branch merges second must include
 `session_lock` in background visibility and Present source selection. Locked
 surfaces count hidden and new requests bind Fake; unlock must provide the
 hidden-to-visible release edge. The field exists only on the lock branch.
+
+### Visible heads without sequence counters (release prerequisite)
+
+The QEMU virtio probe exposed a correctness defect in the initial Part 2 timing
+path: a visible surface on an active head with `GET_SEQUENCE = EOPNOTSUPP` was
+bound to Fake. Synced Presents then waited for the 1 Hz background clock. The
+old guest binary reproduced this with two non-overlapping visible CPU-pixmap
+clients: 10 and 9 completions in a 10-second measured interval. This is a
+correctness experiment, not a W1 or CPU-performance qualification.
+
+An active head with monotonic timestamps and a definite unsupported sequence
+query (`EOPNOTSUPP` or `ENOTTY`) now has an **Unclocked** disposition. Its identity
+and first errno are cached for that native target lifetime. Modeset, owner loss
+and replacement invalidate the identity; it cannot revive. A working mirror
+member is preferred. Hidden surfaces, absent native owners and quarantined
+outputs keep Fake. Permission errors, transient failures and `EINVAL` remain
+query failures rather than cached unsupported answers.
+
+- Pixmaps are eligible immediately, regardless of target or modulus. Publication,
+  acquire fences, ordered egress and renderer/scanout custody still gate execution
+  and feedback. Complete takes its UST from actual retirement; MSC stays at the
+  window's accepted plateau through the existing frozen offset. A client's
+  `last_msc + interval` can remain numerically ahead forever on this source;
+  eligibility deliberately ignores that target. Idle remains independent.
+- NotifyMSC waits one minimum mode field period from its actual binding time.
+  The frontend arms a deadline only while work is queued. Settlement uses the
+  service's monotonic UST and the plateau MSC; no vblank is invented. This bound
+  avoids immediate-reply loops on idle heads. Executed Pixmaps create no timer.
+- Source switches use the existing window offset. This preserves switch
+  continuity; the earlier boundary for overlapping frozen requests on different
+  sources still applies. Loss settles queued work once. An already executed
+  Unclocked request retains actual retirement UST and its plateau even after
+  loss, without reviving the source.
+- The service reads time once, immediately after taking the runtime lock, and
+  reuses it for the entire visit. Reading before the lock could precede a newer
+  binding and falsely count three stale observations as source loss. The
+  deterministic negative control restores that ordering and counts three stale
+  observations; the corrected test counts zero, including on Fake.
+
+`DRM_CAP_TIMESTAMP_MONOTONIC = 0` is a distinct `UnsupportedClock` result:
+`current = None`, no Unclocked identity, and the existing Fake fallback. The
+capability answer is cached per owned card-fd lifetime. Raw realtime event UST
+must not enter this monotonic completion path. A pre-4.15 kernel that answers
+`EINVAL` for the absent sequence API still falls back to Fake at 1 Hz. That is
+an explicit kernel-floor residual: `EINVAL` is ambiguous with an invalid CRTC
+on newer kernels, so it is not treated as definite unsupported.
+
+The periodic evidence includes `unclocked_bound` and
+`unclocked_notify_settled`; the first unsupported answer per native head lifetime
+records its errno and minimum field period. The admission cache remains a
+separate change: Unclocked cannot satisfy its Hardware-only proof.
+
+Tests cover source selection, hidden Fake, a clocked mirror alternative, source
+replacement, mode deadlines, no query polling, loss before and after execution,
+exactly-once Complete/Idle, retained-pixmap release, and acquire-fence gating.
+Two full-content Unclocked requests remain independent when the first waits on
+a fence. Sophia's existing rule excludes requests already serviced for MSC
+from equal-target scrapping; XLibre can still scrap a fence-waiting vblank.
+This repair preserves that difference.
+
+Evidence and source manifests are under `t289-clockless-01`. Guest and final
+repository qualification results are recorded there as they complete. T289's
+CPU comparison, physical timing and live acceptance remain open; this repair
+does not close the task or qualify the W1 fast path.
+
+
+### First Present before composed coverage (release prerequisite)
+
+The guest comparison exposed a second timing regression: admission used the
+backend's presentation order before the first frame had populated it. A mapped
+visible window therefore bound Fake and waited zero to one second for its first
+Pixmap. The old guest showed about 720 ms between the preceding composition and
+the first warm-up frame; the pre-t289 comparison was about 55 ms. These are
+individual correctness observations, not a latency distribution.
+
+Session now supplies ordinary placement independently of pixel availability:
+
+- A managed window uses its committed WM projection and Session's reconciled
+  content layer, including the assigned output. Omitted or minimized is hidden.
+- An open layout epoch overlays that placement only for admissions it owns.
+  AdmitSurface can already have made such a window Viewable while a sibling
+  resize or presentation-state acknowledgment holds the epoch open. Its pending
+  layer supplies geometry and output. Expiry removes that choice; previously
+  bound requests keep their frozen source. Ordinary managed moves keep the
+  committed placement until the epoch commits.
+- Direct mode uses geometry. A client-positioned popup uses its fresh X Viewable
+  target for its own mapping, then follows known owner mapping and policy
+  visibility. A new Viewable target with no Session role is client-positioned:
+  externally managed windows must first pass Session's AdmitSurface. Unknown
+  ancestry is allowed only until the authority observation arrives; a known
+  hidden owner and ownership cycles are hidden.
+- The compositor still applies the lock cover, replacement tier, actual preview
+  union, viewport clipping, translation and explicit output routing. An off-edge
+  policy column cannot select a neighbouring output merely by intersection.
+
+There is no coverage hold: a readmitted surface with existing pixels can owe
+PresentedBuffer evidence to the same epoch that would supply its coverage. Such
+a hold would create a cycle. There is also no missing-pixels visibility heuristic:
+a mapped window can be hidden before its first frame retires.
+
+The component regression prepares a real Pixmap with the Fake boundary 900 ms
+away, selects both a hardware and an Unclocked head, and checks immediate timing
+eligibility for committed and sibling-held admission placements. Restoring the
+old selection fails with Fake (`28-first-placement-mutant`, exit 101); the source
+was restored byte-for-byte. Controls cover hidden/minimized windows, popup map
+and remap, hidden owners, expiry, lock, output ownership and replacing tiers.
+Final source, repository gate and guest checks remain in `t289-clockless-01`.
+
+
+<a id="t300"></a>
+### t300: fence-waiter scrapping parity (candidate)
+
+Source review of the clockless repair identified an existing ordering difference.
+Sophia marks a Pixmap serviced for MSC before its acquire fence signals. A later
+full-content Pixmap with the same source and target can therefore execute first;
+when the older fence signals, its older content can be shown last. Unclocked
+requests reach this state immediately. This requires a wait-fence user and is
+separate from the visible-head 1 Hz repair.
+
+XLibre keeps that fence-waiting vblank eligible for scrapping. A matching newer
+full update releases the older pixmap with Idle, leaves its completion obligation
+queued, and reports Skip at its target. Partial updates remain independent.
+
+Proposed scope: keep clocked and Unclocked fence waiters scrappable until actual
+execution, preserving frozen source/target equality, publication order, private
+fence custody and exactly-once feedback. Do not cancel an executed buffer or
+scrap NotifyMSC. Cover an unsignalled older full update followed by a newer one,
+a later fence trigger that executes nothing, partial updates, distinct targets
+and sources, and destroy/disconnect. The current
+`unclocked_full_updates_do_not_scrap_a_fence_blocked_request` control records the
+existing behavior and must change with the parity fix. No implementation is
+included here. Review: `t289-clockless-01/pF/FRONTEND-REVIEW-02.txt`.

@@ -241,7 +241,7 @@ fn timed_present_scrap_releases_only_pixels_and_idle_before_the_target() {
                 &fixture.state,
                 &fixture.broker.registry,
                 &mut generated,
-                sample.ust
+                || sample.ust
             )
             .unwrap(),
             visit == 0
@@ -472,7 +472,7 @@ fn timed_present_skip_waits_for_its_original_head_and_keeps_its_frozen_msc() {
             &fixture.state,
             &fixture.broker.registry,
             &mut generated,
-            12_000
+            || 12_000
         )
         .unwrap()
     );
@@ -493,7 +493,7 @@ fn timed_present_skip_waits_for_its_original_head_and_keeps_its_frozen_msc() {
                 &fixture.state,
                 &fixture.broker.registry,
                 &mut generated,
-                msc * 1000
+                || msc * 1000
             )
             .unwrap(),
             msc == 20
@@ -561,7 +561,7 @@ fn timed_present_lost_head_settles_skip_and_idle_once_without_execution() {
             &fixture.state,
             &fixture.broker.registry,
             &mut generated,
-            15_000
+            || 15_000
         )
         .unwrap()
     );
@@ -584,7 +584,7 @@ fn timed_present_lost_head_settles_skip_and_idle_once_without_execution() {
             &fixture.state,
             &fixture.broker.registry,
             &mut generated,
-            1_000_000
+            || 1_000_000
         )
         .unwrap()
     );
@@ -751,7 +751,7 @@ fn timed_present_rejection_publishes_an_empty_fresh_ticket() {
             &fixture.state,
             &fixture.broker.registry,
             &mut generated,
-            10_000
+            || 10_000
         )
         .unwrap()
     );
@@ -774,7 +774,7 @@ fn timed_present_rejection_publishes_an_empty_fresh_ticket() {
             &fixture.state,
             &fixture.broker.registry,
             &mut generated,
-            11_000
+            || 11_000
         )
         .unwrap()
     );
@@ -880,7 +880,7 @@ fn timed_present_fake_deadline_and_hardware_wake_are_obligations_only() {
             &fixture.state,
             &fixture.broker.registry,
             &mut generated,
-            999_999
+            || 999_999
         )
         .unwrap()
     );
@@ -889,7 +889,7 @@ fn timed_present_fake_deadline_and_hardware_wake_are_obligations_only() {
             &fixture.state,
             &fixture.broker.registry,
             &mut generated,
-            1_000_000
+            || 1_000_000
         )
         .unwrap()
     );

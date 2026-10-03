@@ -62,6 +62,20 @@ impl LiveProductionNativeScanout {
         })
     }
 
+    /// Active heads that scan out without a counter, each under a stable
+    /// source of its own. Like the clocked set, a source missing from here
+    /// after invalidation, disable or resume is retired.
+    pub fn present_unclocked_heads(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            sophia_engine::RenderHeadId,
+            crate::LiveNativeUnclockedPresentClock,
+        ),
+    > + '_ {
+        self.present_clocks.unclocked()
+    }
+
     /// Observed counter owners only. The frontend retains old queued bindings
     /// and retires a binding missing from this set after invalidation/resume.
     pub fn present_clock_heads(
@@ -111,20 +125,23 @@ impl LiveProductionNativeScanout {
             card_group: target.group,
             crtc_id: target.selection.crtc_id(),
         };
+        // A definite unclocked answer holds for this target lifetime and is
+        // repeated without another kernel query or vblank reference.
+        if let Some(cached) = self.present_clocks.unclocked_for(key) {
+            return cached;
+        }
+        let minimum_period = target.present_clock_minimum_period();
         let card = self.groups[target.group].session.card();
-        // A successful capability observation belongs to this owned card
-        // fd's lifetime. A failed ioctl is not cached as unsupported.
-        let monotonic = match self.present_clock_monotonic.get(&target.group).copied() {
-            Some(value) => value,
-            None => match card.get_driver_capability(::drm::DriverCapability::MonotonicTimestamp) {
-                Ok(value) => {
-                    let supported = value != 0;
-                    self.present_clock_monotonic.insert(target.group, supported);
-                    supported
-                }
-                Err(_) => return self.present_clocks.lose_head(head, QueryFailed),
-            },
+        let Some(monotonic) = crate::cached_monotonic_capability(
+            &mut self.present_clock_monotonic,
+            target.group,
+            || card.get_driver_capability(::drm::DriverCapability::MonotonicTimestamp),
+        ) else {
+            return self.present_clocks.lose_head(head, QueryFailed);
         };
+        // Without monotonic timestamps no UST can be trusted, so the head is
+        // neither clocked nor unclocked. The answer is already cached per
+        // card fd above; nothing is minted for it.
         if !monotonic {
             return self.present_clocks.lose_head(head, UnsupportedClock);
         }
@@ -140,7 +157,16 @@ impl LiveProductionNativeScanout {
         }
         match sophia_drm_clock::query(card, key.crtc_id) {
             Ok(sample) => self.present_clocks.observe(key, sample),
-            Err(_) => self.present_clocks.lose_head(head, QueryFailed),
+            Err(error) => match crate::unsupported_sequence_errno(&error) {
+                Some(errno) => self.present_clocks.observe_unsupported(
+                    key,
+                    crate::LiveNativeUnclockedReason::SequenceUnsupported { errno },
+                    minimum_period,
+                ),
+                // EINVAL included: the kernel also gives it while a CRTC's
+                // vblank is off, so it is asked again.
+                None => self.present_clocks.lose_head(head, QueryFailed),
+            },
         }
     }
 }

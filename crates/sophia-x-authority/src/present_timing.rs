@@ -11,7 +11,17 @@ pub use queue::*;
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum XPresentClockSource {
     Fake,
-    Hardware { domain: u64, incarnation: u64 },
+    Hardware {
+        domain: u64,
+        incarnation: u64,
+    },
+    /// An active sampling head without a usable vblank counter. The mode
+    /// period bounds NotifyMSC waits only; it never advances MSC.
+    Unclocked {
+        domain: u64,
+        incarnation: u64,
+        minimum_period_usec: u64,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -235,7 +245,14 @@ impl XPresentWindowClock {
     ) -> Result<XPresentClockTarget, XPresentTimingError> {
         let sample = self.sample.ok_or(XPresentTimingError::MissingClock)?;
         let current = sample.msc.wrapping_sub(self.offset);
-        let distance = timing.fields_after(current);
+        // A visible head with no counter cannot honour MSC targets. Execute
+        // pixmaps when fences permit and let real retirement pace the client.
+        // NotifyMSC uses a separate bounded time wait in the queue.
+        let distance = if matches!(sample.source, XPresentClockSource::Unclocked { .. }) {
+            0
+        } else {
+            timing.fields_after(current)
+        };
         Ok(XPresentClockTarget {
             window_msc: current.wrapping_add(distance),
             source_anchor: sample,

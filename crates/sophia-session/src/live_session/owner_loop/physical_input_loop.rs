@@ -103,9 +103,10 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
         // ordinary frame service is quarantined. A removed native owner must
         // settle old clock bindings even if there are no more DRM events.
         present_clocks.service(
-            &present_clock_router, native_scanout.as_mut(), runtime.as_ref(),
-            wm_session.as_ref().and_then(LiveWmSession::published_output_snapshot)
-                .map(|snapshot| snapshot.primary_output),
+            &present_clock_router, native_scanout.as_mut(),
+            |admissions| present_clock::select_outputs(
+                runtime.as_ref(), &layout, wm_session.as_ref(), admissions,
+            ),
             Instant::now(),
         )?;
         // Flush the preceding turn before any early-continue path.
@@ -153,9 +154,9 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
             let (completion_runtime_locks, completion_historical_samples) = present_clock_router.completion_observation_counts();
             let timing = present_clock_router.wire_timing_statistics()?;
             let owner_work = owner_wake.statistics();
-            crate::session_println!("sophia_present_clock_service schema=1 queries={} completions={} observations={} observation_runtime_locks={} completion_runtime_locks={} completion_historical_samples={} admission_errors={} admission_fake_retries={} admission_settled={} idle_signal_failures={} scrap_sample_fallbacks={} service_runtime_locks={} deadline_runtime_locks={} wire_prepared={} wire_published={} wire_owner_notifications={} wire_bound={} wire_hardware_bound={} wire_executions={} wire_execution_wait_usec={} wire_execution_wait_max_usec={} owner_passes={} owner_waits={} owner_ring_ready={} owner_fd_ready={} owner_wait_deadlines={} owner_immediate_items={}",
+            crate::session_println!("sophia_present_clock_service schema=1 queries={} completions={} observations={} observation_runtime_locks={} completion_runtime_locks={} completion_historical_samples={} admission_errors={} admission_fake_retries={} admission_settled={} idle_signal_failures={} scrap_sample_fallbacks={} service_runtime_locks={} deadline_runtime_locks={} wire_prepared={} wire_published={} wire_owner_notifications={} wire_bound={} wire_hardware_bound={} unclocked_bound={} unclocked_notify_settled={} wire_executions={} wire_execution_wait_usec={} wire_execution_wait_max_usec={} owner_passes={} owner_waits={} owner_ring_ready={} owner_fd_ready={} owner_wait_deadlines={} owner_immediate_items={}",
                 present_clocks.queries(), present_clock_router.completed_count(), observations, observation_runtime_locks, completion_runtime_locks, completion_historical_samples, timing.admission_errors, timing.admission_fake_retries, timing.admission_settled, timing.idle_signal_failures, timing.scrap_sample_fallbacks,
-                timing.service_runtime_locks, timing.deadline_runtime_locks, timing.wire_prepared, timing.wire_published, timing.wire_owner_notifications, timing.wire_bound, timing.wire_hardware_bound, timing.wire_executions, timing.wire_execution_wait_usec, timing.wire_execution_wait_max_usec, owner_work.passes, owner_work.waits, owner_work.ring_ready, owner_work.fd_ready, owner_work.wait_deadlines, owner_work.immediate_items);
+                timing.service_runtime_locks, timing.deadline_runtime_locks, timing.wire_prepared, timing.wire_published, timing.wire_owner_notifications, timing.wire_bound, timing.wire_hardware_bound, timing.unclocked_bound, timing.unclocked_notify_settled, timing.wire_executions, timing.wire_execution_wait_usec, timing.wire_execution_wait_max_usec, owner_work.passes, owner_work.waits, owner_work.ring_ready, owner_work.fd_ready, owner_work.wait_deadlines, owner_work.immediate_items);
             present_evidence.flush();
             sophia_x_authority::flush_present_evidence();
             // Scheduling counters on the same cadence as the resource gauges.
@@ -544,9 +545,10 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
         // Topology/seat changes in this pass invalidate sources before we
         // can sleep. The per-source deadline prevents a second query here.
         present_clocks.service(
-            &present_clock_router, native_scanout.as_mut(), runtime.as_ref(),
-            wm_session.as_ref().and_then(LiveWmSession::published_output_snapshot)
-                .map(|snapshot| snapshot.primary_output),
+            &present_clock_router, native_scanout.as_mut(),
+            |admissions| present_clock::select_outputs(
+                runtime.as_ref(), &layout, wm_session.as_ref(), admissions,
+            ),
             Instant::now(),
         )?;
         *failure_phase = crate::diagnostics::SessionFailurePhase::Authority;

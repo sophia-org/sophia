@@ -76,7 +76,12 @@ impl XServerFrontendRouteRegistry {
             let Some(p) = pending.get(&transaction) else { return Ok((no_delivery, None)); };
             if p.phases.completed() { return Ok((no_delivery, None)); }
             if let Some(clock) = &p.clock {
-                let selected = if clock.lost {
+                let selected = if matches!(clock.binding.source, crate::XPresentClockSource::Unclocked { .. }) {
+                    // Permission and UST come from real retirement. The
+                    // counter stays at its execution plateau, even if the
+                    // source was lost meanwhile; no clock is revived.
+                    crate::XPresentClockSample { ust: retirement.0, ..clock.executed }
+                } else if clock.lost {
                     clock.latest()
                 } else if let Some(sample) = samples.clone().find(|evidence| evidence.sample.source == clock.binding.source) {
                     sample.sample

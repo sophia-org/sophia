@@ -143,7 +143,7 @@ fn drive_routed_service(
             for kind in generated_egress.admission_order() {
                 if kind == XGeneratedEgressKind::Present {
                     progressed |= service_timed_presents(&frontend.state, &broker.broker()?.registry,
-                        generated_egress, present_monotonic_usec())?;
+                        generated_egress, present_monotonic_usec)?;
                     continue;
                 }
                 if !generated_egress.vacant(kind) { continue; }
