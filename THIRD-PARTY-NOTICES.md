@@ -127,3 +127,40 @@ the other files' differ only in their years.
     WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
     ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS
     SOFTWARE.
+
+## 9front — MIT
+
+Copyright © 2021 Plan 9 Foundation; copyright © 9front authors.
+<https://git.9front.org/plan9front/plan9front>
+
+`crates/sophia-factotum` is a Rust port of 9front's factotum, the
+authentication agent, and of the parts of 9front's libraries it relies on:
+
+- `src/attr/` — `sys/src/libauth/attr.c`, `sys/src/libc/port/tokenize.c`,
+  `sys/src/libc/port/needsrcquote.c`, the quoting rule of
+  `sys/src/libc/fmt/fmtquote.c`, and attribute matching, editing and sorting
+  from `sys/src/cmd/auth/factotum/util.c`.
+- `src/keyring.rs`, `src/conversation.rs`, `src/ctl.rs`, `src/logbuf.rs`,
+  `src/proto/pass.rs` — `sys/src/cmd/auth/factotum/{util,rpc,fs,log,pass}.c`.
+
+Each ported file names its sources in its header. The `pam` protocol and the
+`sophia-factotum-pam` helper are Sophia's own.
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the
+    "Software"), to deal in the Software without restriction, including
+    without limitation the rights to use, copy, modify, merge, publish,
+    distribute, sublicense, and/or sell copies of the Software, and to permit
+    persons to whom the Software is furnished to do so, subject to the
+    following conditions:
+
+    The above copyright notice and this permission notice shall be included
+    in all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+    OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+    NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+    DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+    OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+    USE OR OTHER DEALINGS IN THE SOFTWARE.

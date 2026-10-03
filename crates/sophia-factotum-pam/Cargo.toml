@@ -1,0 +1,20 @@
+[package]
+name = "sophia-factotum-pam"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "The PAM helper sophia-factotum executes for one login attempt"
+
+[dependencies]
+libc = "0.2"
+sophia-factotum = { path = "../sophia-factotum" }
+
+[lints.rust]
+# The minimal libpam binding needs FFI. The crate root denies unsafe code and
+# allows it only in its `ffi` module; consumers retain unsafe_code = forbid.
+unsafe_code = "allow"
+
+[lints.clippy]
+new_without_default = "allow"
