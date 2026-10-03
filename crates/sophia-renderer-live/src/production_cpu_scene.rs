@@ -532,6 +532,16 @@ impl LiveProductionCpuScene {
                 }
                 CompositorDisplayCommand::ContentImage(content) => {
                     if content.output_size_px != output.size {
+                        // A lock image sized for another head of a mirrored
+                        // output is left out here: the fill beneath it still
+                        // covers the head, and the cover never fails closed
+                        // into an error.
+                        if matches!(
+                            content.resource,
+                            sophia_engine::CompositorImageSource::Lock(_)
+                        ) {
+                            continue;
+                        }
                         return Err("shell content targets a stale output size".into());
                     }
                     elements.push(LiveCpuCompositionElementRef::Layer(

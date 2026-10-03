@@ -27,10 +27,11 @@ impl LiveProductionVisualRuntime {
         if self.session_lock == cover {
             return Ok(false);
         }
+        let clearing = cover.is_none();
         let previous = std::mem::replace(&mut self.session_lock, cover);
         if let Some(native) = native_scanout {
             if let Err(error) = self.queue_retained_projection(scene, native) {
-                if cover.is_none() {
+                if clearing {
                     self.session_lock = previous;
                 }
                 return Err(error);
@@ -42,7 +43,7 @@ impl LiveProductionVisualRuntime {
     }
 
     pub fn session_lock(&self) -> Option<sophia_engine::SessionLockCover> {
-        self.session_lock
+        self.session_lock.clone()
     }
 
     /// The lock every head of every output has presented: `Some` only when

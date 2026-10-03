@@ -14,10 +14,10 @@ const FILL: sophia_engine::CompositorRgb8 = sophia_engine::CompositorRgb8 {
 };
 
 fn cover(epoch: u64) -> sophia_engine::SessionLockCover {
-    sophia_engine::SessionLockCover {
-        epoch: sophia_engine::SessionLockEpoch::from_raw(epoch).unwrap(),
-        fill: FILL,
-    }
+    sophia_engine::SessionLockCover::fill(
+        sophia_engine::SessionLockEpoch::from_raw(epoch).unwrap(),
+        FILL,
+    )
 }
 
 /// A desktop with an application on each output and a WM presentation that

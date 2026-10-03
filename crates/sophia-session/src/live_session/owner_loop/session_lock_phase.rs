@@ -83,10 +83,7 @@ macro_rules! begin_session_lock {
                     // repaint that cannot be queued now still draws it next.
                     if let Some(runtime) = runtime.as_mut()
                         && let Err(error) = runtime.set_session_lock(
-                            Some(sophia_engine::SessionLockCover {
-                                epoch,
-                                fill: SESSION_LOCK_FILL,
-                            }),
+                            Some(sophia_engine::SessionLockCover::fill(epoch, SESSION_LOCK_FILL)),
                             &scene,
                             native_scanout.as_mut(),
                         )

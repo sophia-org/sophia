@@ -129,7 +129,7 @@ impl LiveProductionVisualRuntime {
             .collect::<Vec<_>>();
         self.observe_content_ordered_resource_releases(authority_envelope);
         let head_plan_composition = output_composition::OutputCompositionSnapshot::capture(self);
-        let software_lock_list = match (self.session_lock, output_descriptors.first()) {
+        let software_lock_list = match (&self.session_lock, output_descriptors.first()) {
             (Some(cover), Some(output)) => Some(
                 cover.display_list(
                     output.id,

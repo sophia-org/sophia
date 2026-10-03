@@ -23,7 +23,7 @@ fn lock_image(connection_epoch: u64, resource_generation: u64) -> SessionLockIma
 
 fn content(resource: CompositorImageSource) -> CompositorContentImage {
     CompositorContentImage {
-        node: CompositorNodeId::SessionLock {
+        node: CompositorNodeId::SessionLockImage {
             output: OutputId::from_raw(1),
             epoch: 3,
         },

@@ -77,6 +77,11 @@ pub enum CompositorNodeId {
         output: OutputId,
         epoch: u64,
     },
+    /// The lock provider's image over that fill, for the same lock.
+    SessionLockImage {
+        output: OutputId,
+        epoch: u64,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
