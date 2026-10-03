@@ -379,6 +379,11 @@ fn stale_target_acknowledgements_retire_without_rejection_debt() {
         XAuthorityControlKind::PublishMetadataRule,
         XAuthorityControlKind::ClearFocus,
         XAuthorityControlKind::FocusSurface,
+        XAuthorityControlKind::AdmitSurface,
+        XAuthorityControlKind::ConfigureSurface,
+        XAuthorityControlKind::SetPresentationState,
+        XAuthorityControlKind::RestorePresentationState,
+        XAuthorityControlKind::WithdrawSurface,
     ] {
         assert_stale_target_retires(kind);
     }
@@ -424,7 +429,7 @@ fn assert_stale_target_retires(kind: XAuthorityControlKind) {
         failure.is_stale_target_for(XAuthorityControlKind::PublishMetadataRule)
     }));
     assert!(completions[0].failure.is_some_and(|failure| {
-        !failure.is_stale_target_for(XAuthorityControlKind::ConfigureSurface)
+        failure.is_stale_target_for(XAuthorityControlKind::ConfigureSurface)
     }));
 
     let gone = control(1, 2, surface(2), XAuthorityControlKind::FocusSurface);
@@ -468,7 +473,7 @@ fn unexpected_target_rejection_remains_terminal_debt() {
         .unwrap();
     let _ = commands.recv().unwrap();
     let mut rejected = acknowledgement(command);
-    rejected.acknowledgement.outcome = XAuthorityControlOutcome::UnknownSurface;
+    rejected.acknowledgement.outcome = XAuthorityControlOutcome::AuthorityRejected;
     acknowledgements.send(rejected).unwrap();
     queue
         .service(
@@ -482,7 +487,7 @@ fn unexpected_target_rejection_remains_terminal_debt() {
     assert_eq!(
         completions[0].failure,
         Some(SessionControlFailure::Rejected(
-            XAuthorityControlOutcome::UnknownSurface
+            XAuthorityControlOutcome::AuthorityRejected
         ))
     );
     assert_eq!(queue.metrics().stale_targets_retired, 0);
@@ -647,4 +652,119 @@ fn quiescence_retires_pending_and_later_controls_without_failing_the_session() {
     assert_eq!(metrics.quiesced_before_dispatch, 2);
     assert!(metrics.is_settled(queue.pending_len()));
     assert!(metrics.is_drained(queue.pending_len()));
+}
+
+#[test]
+fn lifecycle_outcomes_are_specific_to_the_operation_they_can_retire() {
+    use XAuthorityControlKind as K;
+    use XAuthorityControlOutcome as O;
+    let kinds = [
+        K::PublishMetadataRule,
+        K::AdmitSurface,
+        K::ConfigureSurface,
+        K::SetPresentationState,
+        K::RestorePresentationState,
+        K::FocusSurface,
+        K::ClearFocus,
+        K::CloseSurface,
+        K::WithdrawSurface,
+    ];
+    for kind in kinds {
+        for (outcome, stale) in [
+            (O::TargetNotViewable, kind == K::FocusSurface),
+            (
+                O::AdmissionWithdrawn,
+                matches!(kind, K::AdmitSurface | K::FocusSurface | K::ClearFocus),
+            ),
+            (
+                O::Superseded,
+                matches!(kind, K::FocusSurface | K::ClearFocus),
+            ),
+            (O::AuthorityRejected, false),
+            (O::InvalidSize, false),
+            (O::UnsupportedProtocol, false),
+        ] {
+            assert_eq!(
+                SessionControlFailure::Rejected(outcome).is_stale_target_for(kind),
+                stale,
+                "{kind:?}: {outcome:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_late_focus_completion_does_not_own_a_newer_request_to_the_same_surface() {
+    let mut queue = SessionControlQueue::default();
+    let now = Instant::now();
+    let (sender, commands) = sync_channel(4);
+    let (acks, receiver) = sync_channel(4);
+    let first = control(1, 1, surface(1), XAuthorityControlKind::FocusSurface);
+    let newer = control(1, 2, surface(1), XAuthorityControlKind::FocusSurface);
+    let old_key = queue.enqueue(first, now).unwrap();
+    let new_key = queue.enqueue(newer, now).unwrap();
+    let mut completions = Vec::new();
+    queue
+        .service(&sender, &receiver, now, &mut completions)
+        .unwrap();
+    assert_eq!(commands.recv().unwrap(), first);
+    assert!(
+        commands.try_recv().is_err(),
+        "focus commands dispatch in order"
+    );
+    let mut stale = acknowledgement(first);
+    stale.acknowledgement.outcome = XAuthorityControlOutcome::TargetNotViewable;
+    acks.send(stale).unwrap();
+    queue
+        .service(&sender, &receiver, now, &mut completions)
+        .unwrap();
+    assert_eq!(commands.recv().unwrap(), newer);
+    assert_eq!(completions.len(), 1);
+    assert!(!queue.focus_control_is_current(completions[0].key));
+    acks.send(acknowledgement(newer)).unwrap();
+    queue
+        .service(&sender, &receiver, now, &mut completions)
+        .unwrap();
+    assert_eq!(completions.len(), 2);
+    assert!(queue.focus_control_is_current(new_key));
+    assert!(!queue.focus_control_is_current(old_key));
+    assert!(queue.metrics().is_drained(queue.pending_len()));
+}
+
+#[test]
+fn a_superseded_focus_completion_preserves_the_newer_request() {
+    let mut queue = SessionControlQueue::default();
+    let now = Instant::now();
+    let (sender, commands) = sync_channel(4);
+    let (acks, receiver) = sync_channel(4);
+    let first = control(1, 1, surface(1), XAuthorityControlKind::FocusSurface);
+    let newer = control(1, 2, surface(1), XAuthorityControlKind::FocusSurface);
+    let old_key = queue.enqueue(first, now).unwrap();
+    let new_key = queue.enqueue(newer, now).unwrap();
+    let mut completions = Vec::new();
+    queue
+        .service(&sender, &receiver, now, &mut completions)
+        .unwrap();
+    assert_eq!(commands.recv().unwrap(), first);
+    assert!(
+        commands.try_recv().is_err(),
+        "focus commands dispatch in order"
+    );
+    let mut stale = acknowledgement(first);
+    stale.acknowledgement.outcome = XAuthorityControlOutcome::Superseded;
+    acks.send(stale).unwrap();
+    queue
+        .service(&sender, &receiver, now, &mut completions)
+        .unwrap();
+    assert_eq!(commands.recv().unwrap(), newer);
+    assert_eq!(completions.len(), 1);
+    assert!(!queue.focus_control_is_current(completions[0].key));
+    acks.send(acknowledgement(newer)).unwrap();
+    queue
+        .service(&sender, &receiver, now, &mut completions)
+        .unwrap();
+    assert_eq!(completions.len(), 2);
+    assert!(queue.focus_control_is_current(new_key));
+    assert!(!queue.focus_control_is_current(old_key));
+    assert!(queue.metrics().is_drained(queue.pending_len()));
 }

@@ -1,4 +1,37 @@
 impl PersistentLiveLayout {
+    /// Retire only this transaction's unanswered obligations. The ordinary
+    /// authority observation owns withdrawal/removal of the surface itself.
+    fn retire_stale_control(&mut self, key: crate::session_control::SessionControlKey) {
+        use sophia_x_authority::XAuthorityControlKind as Kind;
+        if key.kind == Kind::AdmitSurface
+            && matches!(self.admissions.state(key.surface),
+                sophia_engine::SurfacePresentationAdmissionState::ControlPending { transaction, .. }
+                    if transaction == key.transaction)
+        {
+            self.admissions.remove(key.surface);
+        }
+        if self.focus_to_apply == Some((key.transaction, key.surface)) {
+            self.focus_to_apply = None;
+        }
+        let Some(pending) = self.pending.as_mut().filter(|p| p.transaction == key.transaction) else {
+            return;
+        };
+        if pending.focus == Some(key.surface) {
+            pending.focus = None;
+        }
+        if matches!(key.kind, Kind::AdmitSurface | Kind::ConfigureSurface |
+            Kind::SetPresentationState | Kind::RestorePresentationState | Kind::WithdrawSurface)
+        {
+            pending.layers.retain(|layer| layer.surface != key.surface);
+            pending.requested_sizes.remove(&key.surface);
+            pending.presentation_states.remove(&key.surface);
+            pending.presentation_settlements.remove(&key.surface);
+            pending.staged_transactions.remove(&key.surface);
+            pending.admission_surfaces.remove(&key.surface);
+            pending.update.commit.applied_surfaces.retain(|surface| *surface != key.surface);
+        }
+    }
+
     fn resolve_pending(&mut self) -> Option<LiveWmCommitResult> {
         if !self.pending_is_ready() {
             return None;

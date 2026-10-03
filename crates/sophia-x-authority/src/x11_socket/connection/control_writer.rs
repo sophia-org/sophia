@@ -51,36 +51,7 @@ impl Drop for X11ControlWriterSeal<'_> {
     }
 }
 
-/// The focus changes a control command noted, put on the root with the
-/// tables locked for exactly that and never under the runtime guard.
-#[cfg(unix)]
-fn publish_active_windows(
-    atoms: &Arc<Mutex<XAtomTable>>,
-    properties: &Arc<Mutex<XPropertyTable>>,
-    byte_order: XByteOrder,
-    changes: Vec<(NamespaceId, u32)>,
-) -> Result<(), X11SetupSocketError> {
-    if changes.is_empty() {
-        return Ok(());
-    }
-    let mut atoms = atoms
-        .lock()
-        .map_err(|_| X11SetupSocketError::new("X11 atom table lock poisoned"))?;
-    let mut properties = properties
-        .lock()
-        .map_err(|_| X11SetupSocketError::new("X11 property table lock poisoned"))?;
-    for (namespace, window) in changes {
-        if let Err(error) =
-            crate::publish_active_window(&mut properties, &mut atoms, namespace, byte_order, window)
-        {
-            tracing::warn!(
-                "sophia_x11_active_window status=unpublished namespace={} error={error:?}",
-                namespace.raw()
-            );
-        }
-    }
-    Ok(())
-}
+include!("writers/active_windows.rs");
 
 #[cfg(unix)]
 #[allow(clippy::too_many_arguments)]
@@ -356,21 +327,23 @@ fn spawn_x11_control_writer(
                     Vec::new()
                 }
                 XAuthorityControlCommand::AdmitSurface { geometry, .. } => {
-                    let geometry = match lock_x11_control_runtime(
-                        &runtime,
-                        &control_runtime_pending,
-                    )?
+                    let admitted = lock_x11_control_runtime(&runtime, &control_runtime_pending)?
                         .admit_window_from_engine(namespace, window, geometry)
-                    {
+                        .map_err(|error| match error {
+                            crate::XAuthorityRuntimeError::WindowNotViewable =>
+                                XAuthorityControlOutcome::AdmissionWithdrawn,
+                            error => control_runtime_outcome(error),
+                        });
+                    let geometry = match admitted {
                         Ok(geometry) => geometry,
-                        Err(_) => {
+                        Err(outcome) => {
                             channels.send_ack_for(
                                 client,
                                 XAuthorityControlAck {
                                     kind,
                                     transaction,
                                     surface,
-                                    outcome: XAuthorityControlOutcome::AuthorityRejected,
+                                    outcome,
                                 },
                                 completion,
                             )?;
@@ -448,14 +421,14 @@ fn spawn_x11_control_writer(
                         geometry,
                     ) {
                         Ok(geometry) => geometry,
-                        Err(_) => {
+                        Err(error) => {
                             channels.send_ack_for(
                                 client,
                                 XAuthorityControlAck {
                                     kind,
                                     transaction,
                                     surface,
-                                    outcome: XAuthorityControlOutcome::AuthorityRejected,
+                                    outcome: control_runtime_outcome(error),
                                 },
                                 completion,
                             )?;
@@ -656,9 +629,26 @@ fn spawn_x11_control_writer(
                     publish_active_windows(&atoms, &properties, byte_order, active_windows)?;
                     let applied = match applied {
                         Ok(applied) => applied,
-                        Err(X11FocusApplyError::Runtime(_) | X11FocusApplyError::Superseded
-                            | X11FocusApplyError::State(PrivateAppliedRegistryRefusal::MissingAdmission
-                                | PrivateAppliedRegistryRefusal::AdmissionClosed | PrivateAppliedRegistryRefusal::ForeignOrigin)) => {
+                        Err(X11FocusApplyError::Runtime(error)) => {
+                            channels.send_ack_for(client, XAuthorityControlAck {
+                                kind, transaction, surface, outcome: control_runtime_outcome(error),
+                            }, completion)?;
+                            continue;
+                        }
+                        Err(X11FocusApplyError::Superseded) => {
+                            channels.send_ack_for(client, XAuthorityControlAck {
+                                kind, transaction, surface, outcome: XAuthorityControlOutcome::Superseded,
+                            }, completion)?;
+                            continue;
+                        }
+                        Err(X11FocusApplyError::State(PrivateAppliedRegistryRefusal::MissingAdmission
+                            | PrivateAppliedRegistryRefusal::AdmissionClosed)) => {
+                            channels.send_ack_for(client, XAuthorityControlAck {
+                                kind, transaction, surface, outcome: XAuthorityControlOutcome::AdmissionWithdrawn,
+                            }, completion)?;
+                            continue;
+                        }
+                        Err(X11FocusApplyError::State(PrivateAppliedRegistryRefusal::ForeignOrigin)) => {
                             channels.send_ack_for(client, XAuthorityControlAck {
                                 kind, transaction, surface, outcome: XAuthorityControlOutcome::AuthorityRejected,
                             }, completion)?;
@@ -700,9 +690,26 @@ fn spawn_x11_control_writer(
                     publish_active_windows(&atoms, &properties, byte_order, active_windows)?;
                     let applied = match applied {
                         Ok(applied) => applied,
-                        Err(X11FocusApplyError::Runtime(_) | X11FocusApplyError::Superseded
-                            | X11FocusApplyError::State(PrivateAppliedRegistryRefusal::MissingAdmission
-                                | PrivateAppliedRegistryRefusal::AdmissionClosed | PrivateAppliedRegistryRefusal::ForeignOrigin)) => {
+                        Err(X11FocusApplyError::Runtime(error)) => {
+                            channels.send_ack_for(client, XAuthorityControlAck {
+                                kind, transaction, surface, outcome: control_runtime_outcome(error),
+                            }, completion)?;
+                            continue;
+                        }
+                        Err(X11FocusApplyError::Superseded) => {
+                            channels.send_ack_for(client, XAuthorityControlAck {
+                                kind, transaction, surface, outcome: XAuthorityControlOutcome::Superseded,
+                            }, completion)?;
+                            continue;
+                        }
+                        Err(X11FocusApplyError::State(PrivateAppliedRegistryRefusal::MissingAdmission
+                            | PrivateAppliedRegistryRefusal::AdmissionClosed)) => {
+                            channels.send_ack_for(client, XAuthorityControlAck {
+                                kind, transaction, surface, outcome: XAuthorityControlOutcome::AdmissionWithdrawn,
+                            }, completion)?;
+                            continue;
+                        }
+                        Err(X11FocusApplyError::State(PrivateAppliedRegistryRefusal::ForeignOrigin)) => {
                             channels.send_ack_for(client, XAuthorityControlAck {
                                 kind, transaction, surface, outcome: XAuthorityControlOutcome::AuthorityRejected,
                             }, completion)?;
@@ -737,14 +744,14 @@ fn spawn_x11_control_writer(
                         .unmap_window(namespace, window)
                     {
                         Ok(surface) => surface.is_some(),
-                        Err(_) => {
+                        Err(error) => {
                             channels.send_ack_for(
                                 client,
                                 XAuthorityControlAck {
                                     kind,
                                     transaction,
                                     surface,
-                                    outcome: XAuthorityControlOutcome::AuthorityRejected,
+                                    outcome: control_runtime_outcome(error),
                                 },
                                 completion,
                             )?;
@@ -969,3 +976,13 @@ include!("writers/input_targets.rs");
 include!("writers/input_crossings.rs");
 
 include!("writers/xi_source.rs");
+
+// Only a runtime's exact missing/not-viewable result proves obsolescence.
+// Other refusals must retain their authority-failure meaning.
+fn control_runtime_outcome(error: crate::XAuthorityRuntimeError) -> XAuthorityControlOutcome {
+    match error {
+        crate::XAuthorityRuntimeError::UnknownResource => XAuthorityControlOutcome::UnknownSurface,
+        crate::XAuthorityRuntimeError::WindowNotViewable => XAuthorityControlOutcome::TargetNotViewable,
+        _ => XAuthorityControlOutcome::AuthorityRejected,
+    }
+}

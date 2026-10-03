@@ -343,7 +343,7 @@ fn input_release_barrier_blocks_shutdown_without_extending_quiescence_deadline()
 
 #[test]
 fn missing_acknowledgements_and_rejections_remain_failed_terminal_accounting() {
-    for outcome in [None, Some(XAuthorityControlOutcome::UnknownSurface)] {
+    for outcome in [None, Some(XAuthorityControlOutcome::AuthorityRejected)] {
         let now = Instant::now();
         let (sender, commands) = sync_channel(4);
         let (acks, receiver) = sync_channel(4);

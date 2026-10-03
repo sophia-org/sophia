@@ -61,3 +61,13 @@ fn empty_active_output_focus_clear_has_a_distinct_sanitized_reason() {
     assert!(captured.contains("output=2"));
     assert!(!captured.contains("secret"));
 }
+
+#[test]
+fn a_refused_control_keeps_its_kind_and_typed_outcome_in_the_archive() {
+    let line = "sophia_live_session_control schema=1 status=control_refused kind=FocusSurface transaction=148 surface=6291460 generation=1 failure_code=control_rejected outcome=target_not_viewable";
+    assert_eq!(reduced_record(line).as_deref(), Some(line));
+    let spoof = reduced_record("sophia_live_session_control schema=1 status=secret kind=secret outcome=secret failure_code=secret title=secret").unwrap();
+    assert!(!spoof.contains("secret"));
+    assert_eq!(reduced_record("sophia_live_session_control schema=1 status=stale_target_retired kind=ConfigureSurface transaction=2 surface=3").unwrap(),
+        "sophia_live_session_control schema=1 status=stale_target_retired kind=ConfigureSurface transaction=2 surface=3");
+}

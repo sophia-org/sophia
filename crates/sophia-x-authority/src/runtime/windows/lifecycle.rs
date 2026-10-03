@@ -75,6 +75,9 @@ impl XAuthorityRuntime {
              .windows
              .get(window)
              .ok_or(XAuthorityRuntimeError::UnknownResource)?;
+         if !record.policy_map_pending && record.map_state == crate::XMapState::Unmapped {
+             return Err(XAuthorityRuntimeError::WindowNotViewable);
+         }
          if !record.policy_map_pending || record.map_state != crate::XMapState::Unmapped {
              return Err(XAuthorityRuntimeError::InvalidResource);
          }

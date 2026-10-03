@@ -362,6 +362,12 @@ pub enum XAuthorityControlOutcome {
     Delivered,
     ClientGone,
     UnknownSurface,
+    /// The exact focus target exists but is no longer viewable.
+    TargetNotViewable,
+    /// The window admission or issuing client's admission is no longer available.
+    AdmissionWithdrawn,
+    /// A newer focus claim already owns the authority.
+    Superseded,
     InvalidSize,
     AuthorityRejected,
     UnsupportedProtocol,

@@ -615,4 +615,6 @@ mod private_applied_focus {
         );
         assert_eq!(fixture.published(), before);
     }
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/private_focus_control_lifecycle.rs"));
+
 }

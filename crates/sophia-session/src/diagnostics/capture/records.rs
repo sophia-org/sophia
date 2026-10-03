@@ -392,7 +392,8 @@ pub fn reduced_record(line: &str) -> Option<String> {
                         value,
                         "not_found" | "permission_denied" | "resource_limit" | "spawn_failure"
                     )));
-        if interaction_field(name, key, value)
+        if session_control_field(name, key, value)
+            || interaction_field(name, key, value)
             || numeric
             || digest
             || fixed
@@ -680,6 +681,20 @@ fn visual_progress_field(key: &str, value: &str) -> bool {
                 && fields.next().is_some_and(|v| v == "none" || number(v))
                 && fields.next().is_none()
         }
+        _ => false,
+    }
+}
+
+fn session_control_field(record: &str, key: &str, value: &str) -> bool {
+    if record != "sophia_live_session_control" { return false; }
+    match key {
+        "status" => matches!(value, "control_quiesced" | "stale_target_retired" | "control_refused"),
+        "kind" => matches!(value, "PublishMetadataRule" | "AdmitSurface" | "ConfigureSurface"
+            | "SetPresentationState" | "RestorePresentationState" | "FocusSurface"
+            | "ClearFocus" | "CloseSurface" | "WithdrawSurface"),
+        "outcome" => matches!(value, "none" | "delivered" | "client_gone" | "unknown_surface"
+            | "target_not_viewable" | "admission_withdrawn" | "superseded" | "invalid_size"
+            | "authority_rejected" | "unsupported_protocol"),
         _ => false,
     }
 }

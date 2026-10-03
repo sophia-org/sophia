@@ -65,23 +65,48 @@ pub enum SessionControlFailure {
 }
 
 impl SessionControlFailure {
-    /// A target can disappear while its exact command is in flight. Retire
-    /// obsolete close, focus and metadata commands without reporting them as
-    /// applied. Admission and configuration still require a surviving target.
+    pub const fn outcome_code(self) -> &'static str {
+        match self {
+            Self::Rejected(outcome) => match outcome {
+                XAuthorityControlOutcome::Delivered => "delivered",
+                XAuthorityControlOutcome::ClientGone => "client_gone",
+                XAuthorityControlOutcome::UnknownSurface => "unknown_surface",
+                XAuthorityControlOutcome::TargetNotViewable => "target_not_viewable",
+                XAuthorityControlOutcome::AdmissionWithdrawn => "admission_withdrawn",
+                XAuthorityControlOutcome::Superseded => "superseded",
+                XAuthorityControlOutcome::InvalidSize => "invalid_size",
+                XAuthorityControlOutcome::AuthorityRejected => "authority_rejected",
+                XAuthorityControlOutcome::UnsupportedProtocol => "unsupported_protocol",
+            },
+            _ => "none",
+        }
+    }
+
+    /// The authority proved this exact command obsolete, without applying it.
+    /// Generic authority, size and protocol failures are never stale targets.
     pub const fn is_stale_target_for(self, kind: XAuthorityControlKind) -> bool {
-        matches!(
-            self,
-            Self::ClientDisconnected | Self::Rejected(XAuthorityControlOutcome::ClientGone)
-        ) || matches!(
-            kind,
-            XAuthorityControlKind::CloseSurface
-                | XAuthorityControlKind::FocusSurface
-                | XAuthorityControlKind::ClearFocus
-                | XAuthorityControlKind::PublishMetadataRule
-        ) && matches!(
-            self,
-            Self::Rejected(XAuthorityControlOutcome::UnknownSurface)
-        )
+        match self {
+            Self::ClientDisconnected
+            | Self::Rejected(
+                XAuthorityControlOutcome::ClientGone | XAuthorityControlOutcome::UnknownSurface,
+            ) => true,
+            Self::Rejected(XAuthorityControlOutcome::TargetNotViewable) => {
+                matches!(kind, XAuthorityControlKind::FocusSurface)
+            }
+            Self::Rejected(XAuthorityControlOutcome::AdmissionWithdrawn) => {
+                matches!(
+                    kind,
+                    XAuthorityControlKind::AdmitSurface
+                        | XAuthorityControlKind::FocusSurface
+                        | XAuthorityControlKind::ClearFocus
+                )
+            }
+            Self::Rejected(XAuthorityControlOutcome::Superseded) => matches!(
+                kind,
+                XAuthorityControlKind::FocusSurface | XAuthorityControlKind::ClearFocus
+            ),
+            _ => false,
+        }
     }
 }
 
@@ -163,6 +188,7 @@ pub struct SessionControlQueue {
     /// is enqueued afterwards completes at once, and a late acknowledgement
     /// for either is inert.
     quiescing: bool,
+    latest_focus: Option<SessionControlKey>,
     quiesced_keys: Vec<SessionControlKey>,
     quiesced_completions: Vec<SessionControlCompletion>,
 }
@@ -224,6 +250,9 @@ impl SessionControlQueue {
                 acknowledgement_latency: Duration::ZERO,
             });
             return Ok(key);
+        }
+        if key.is_focus() {
+            self.latest_focus = Some(key);
         }
         self.pending.push_back(PendingControl {
             command,
@@ -351,6 +380,11 @@ impl SessionControlQueue {
         self.pending
             .iter()
             .any(|pending| pending.key.kind != XAuthorityControlKind::ConfigureSurface)
+    }
+
+    /// Late answers must not undo a newer focus request, even for the same surface.
+    pub fn focus_control_is_current(&self, key: SessionControlKey) -> bool {
+        self.latest_focus == Some(key)
     }
 
     pub fn metrics(&self) -> SessionControlMetrics {

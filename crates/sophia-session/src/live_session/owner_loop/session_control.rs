@@ -61,8 +61,12 @@ macro_rules! service_session_controls {
                     continue;
                 }
                 if failure.is_stale_target_for(completion.key.kind) {
-                    if completion.key.kind == XAuthorityControlKind::FocusSurface {
-                        // This exact target no longer exists at the frontend.
+                    layout.retire_stale_control(completion.key);
+                    let current_focus = session_controls.focus_control_is_current(completion.key)
+                        && failure != crate::session_control::SessionControlFailure::Rejected(
+                            sophia_x_authority::XAuthorityControlOutcome::Superseded);
+                    if completion.key.kind == XAuthorityControlKind::FocusSurface && current_focus {
+                        // This exact target can no longer receive focus.
                         // Retire its claims even if destruction is still queued;
                         // no newer target or successful-focus state is changed.
                         release_surface_input_standing!(completion.key.surface, "focus_target_gone");
@@ -77,7 +81,8 @@ macro_rules! service_session_controls {
                             )?;
                         }
                     }
-                    if applied_client_focus == Some(completion.key.surface) {
+                    if applied_client_focus == Some(completion.key.surface)
+                        && current_focus {
                         applied_client_focus = None;
                         if let Some(public) = wm_session.as_ref().and_then(|wm| wm.public.as_ref())
                             && let Ok(mut origins) = public.launch_origins.lock() {
@@ -85,10 +90,11 @@ macro_rules! service_session_controls {
                         }
                     }
                     crate::session_println!(
-                        "sophia_live_session_control schema=1 status=stale_target_retired kind={:?} transaction={} surface={}",
+                        "sophia_live_session_control schema=1 status=stale_target_retired kind={:?} transaction={} surface={} generation={} outcome={}",
                         completion.key.kind,
                         completion.key.transaction.raw(),
-                        completion.key.surface.index(),
+                        completion.key.surface.index(), completion.key.surface.generation(),
+                        failure.outcome_code(),
                     );
                     continue;
                 }
@@ -98,14 +104,17 @@ macro_rules! service_session_controls {
                 // sequence, which cost two wrong hypotheses about this exact
                 // failure before anyone read it correctly.
                 crate::session_println!(
-                    "sophia_live_session_control schema=1 status=control_refused kind={:?} transaction={} surface={} failure={failure:?}",
+                    "sophia_live_session_control schema=1 status=control_refused kind={:?} transaction={} surface={} generation={} failure_code={} outcome={}",
                     completion.key.kind,
                     completion.key.transaction.raw(),
-                    completion.key.surface.index(),
+                    completion.key.surface.index(), completion.key.surface.generation(),
+                    crate::diagnostics::failure_code(&failure),
+                    failure.outcome_code(),
                 );
                 return Err(failure.into());
             }
             if completion.key.kind == XAuthorityControlKind::FocusSurface
+                && session_controls.focus_control_is_current(completion.key)
                 && focus.focused_surface(seat) == Some(completion.key.surface)
             {
                 applied_client_focus = Some(completion.key.surface);

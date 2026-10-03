@@ -333,3 +333,8 @@ mod private_control_peers;
 #[cfg(unix)]
 #[path = "../../tests/support/private_control_protocol.rs"]
 mod private_control_protocol;
+
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/control_target_lifecycle.rs"
+));

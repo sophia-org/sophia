@@ -1367,3 +1367,5 @@ mod work_area_recovery;
 
 #[path = "../withdrawn_policy_snapshot.rs"]
 mod withdrawn_policy_snapshot;
+
+include!("wm_session_tests/control_lifecycle.rs");
