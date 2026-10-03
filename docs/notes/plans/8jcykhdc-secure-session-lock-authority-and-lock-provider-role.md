@@ -242,9 +242,11 @@ availability and secret-handling defects, fixed on `lock/t034` before merge:
   physical-event metric, no keyboard coverage, and no per-edit log line.
 - The secret's copies are zeroed or locked: Session's secret is one locked,
   undumped page; the client builds the request once and sends it through the
-  SDK pipeline's `write_secret`, which zeroes the body and the output buffer's
-  vacated bytes (sophia-desktop-sdk-rs 1cce77b); the helper reads its request
-  straight into its locked page.
+  SDK pipeline's `write_secret`, which zeroes the body and the output
+  buffer's vacated bytes and reserves the buffer's whole bound before the
+  secret enters, so no later request reallocates it (sophia-desktop-sdk-rs
+  1cce77b, 9e59d78); the helper reads its request straight into its locked
+  page.
 - The helper's reply leaves on a private descriptor with stdout on
   `/dev/null`; the agent reads it and waits for the helper's exit under one
   deadline, killing and reaping it on overrun or cancel.

@@ -431,7 +431,9 @@ impl Pipeline {
     /// pipeline zeroes every copy it makes: the request body once it is
     /// queued, the output buffer's spare capacity after each send until the
     /// buffer has emptied, and the whole buffer if the pipeline is dropped
-    /// first. The caller zeroes its own `data`.
+    /// first. Before the secret enters, the output buffer is given the whole
+    /// capacity its bound allows, so no later request can reallocate it and
+    /// leave a copy in freed memory. The caller zeroes its own `data`.
     pub fn write_secret(
         &mut self,
         fid: Fid,
@@ -444,6 +446,18 @@ impl Pipeline {
     /// Whether the output buffer may still hold a secret write's bytes.
     pub const fn scrubbing_output(&self) -> bool {
         self.scrub_output
+    }
+
+    /// The output buffer's allocated capacity, in bytes.
+    pub fn output_capacity(&self) -> usize {
+        self.out_buf.capacity()
+    }
+
+    /// The most the output buffer can ever hold: its bound plus the
+    /// headroom reserved for flushes.
+    fn output_bound(&self) -> usize {
+        self.limits.max_buffered_output
+            + usize::from(self.limits.max_outstanding) * FLUSH_FRAME_SIZE
     }
 
     fn queue_write(
@@ -466,6 +480,14 @@ impl Pipeline {
         let bound = reply_bound(&outstanding);
         self.check_capacity(false, bound, false)?;
         let tag = self.candidate_tag();
+        if secret {
+            // Every later frame fits this allocation, since submit refuses
+            // anything past the bound; reserving now moves only bytes that
+            // are not secret, or none when a secret is already queued.
+            let bound = self.output_bound();
+            self.out_buf
+                .reserve_exact(bound.saturating_sub(self.out_buf.len()));
+        }
         let mut body = client_codec::write_body(fid.0, offset, sent, data);
         if secret {
             self.scrub_output = true;

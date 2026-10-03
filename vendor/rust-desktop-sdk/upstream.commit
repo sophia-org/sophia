@@ -1,24 +1,26 @@
-tree cc6636532f940cf5bd7f38a0e1a28a071780e54d
-parent ed364d40b01a54749919b5a1928d40472db5456c
-author Mason Green <mason@greenm01.net> 1791038109 -0400
-committer Mason Green <mason@greenm01.net> 1791038109 -0400
+tree 52c87053547bde9700bf2fe35d562b6fb1845560
+parent 1cce77bbaa9c59cd233995dd6b7fc70a377b70b1
+author Mason Green <mason@greenm01.net> 1791039121 -0400
+committer Mason Green <mason@greenm01.net> 1791039121 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCasESnRsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJDVQEApT51vJ+nvk3Sb0ul5oVg
- V94jLLPmZtxZarF5MIxCG5YA/RaxFsB1akjf2DcyzbVt6xuIJvrjg5j0WEP14bWs
- MdkO
- =NEl5
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCasEWkRsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJoRAD9E6/EcWxlaWsyP73001/4
+ aOMKLFshcbL7RnWrMBGyhjsBAPIVkyA4nMOiPlRGIz3vICKQ9QDWPqVZ8MWLF2Iq
+ 4asE
+ =BY1G
  -----END PGP SIGNATURE-----
 
-Zero the copies a secret pipeline write leaves behind
+Reserve the output bound before a secret write is queued
 
-Pipeline::write_secret queues the same Twrite frame as write, then
-zeroes the request body once it is queued and the output buffer's spare
-capacity after each send until the buffer has emptied; dropping the
-pipeline first zeroes the whole buffer. Draining sent bytes moves the
-unsent tail forward, so the vacated bytes would otherwise stay in the
-allocation for the life of the connection.
+write_secret zeroed the output buffer's current allocation, but a later
+request could grow that buffer while the secret was still queued. The
+allocator would then free the old allocation, secret included, without
+zeroing it. Before a secret enters, the buffer now reserves the whole
+capacity its bound allows. Submit already refuses anything past that
+bound, so no later request can reallocate it.
 
-Sophia's session lock sends the unlock password to its authentication
-agent through this pipeline (t034 security review, finding 3).
+output_capacity exposes the allocation for the regression, which fills
+the buffer behind a queued secret until the bound refuses a request and
+checks that the capacity never changed. Reported in review by
+niltempus.
