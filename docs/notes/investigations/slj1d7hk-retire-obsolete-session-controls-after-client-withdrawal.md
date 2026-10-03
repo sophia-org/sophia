@@ -2,7 +2,7 @@
 id: slj1d7hk
 date: 2026-10-02
 kind: investigation
-status: awaiting-physical-acceptance
+status: closed
 tags: [investigation, session, x11]
 ---
 # Retire obsolete session controls after client withdrawal
@@ -80,10 +80,35 @@ negative control's old UnknownSurface expectation, a test-only Clippy
 initializer, and the writer's source-layout overflow. The final source gate is
 green; later changes to this note only record its results.
 
-## Remaining acceptance
+## Operator acceptance, 2026-10-03
 
-No live process, profile, installed release or personal component was changed by
-this repair. Isolated gates do not prove native input, KMS behavior or an
-attended reproduction. The archive cannot establish which control kind caused
-the original exit. Task t290 remains open for release qualification and a
-separately recorded operator check of the repaired session.
+Task t290 is closed. niltempus confirmed the Ghostty test in the running repaired
+session and requested closure. Release qualification and the operator check
+complete the remaining acceptance recorded at implementation.
+
+- Installed release: `niltempus-3cd50bdb34d5092f5665`, Sophia
+  `b6ad18cff13f84ae05626bb060626cb01ab96699`, niltempus `0b5ce681`.
+  The release audit verified all 92 files, SDK identity, sealed profile and
+  private install checks. Hagia remains `03be1d1f` with the retained personal
+  binary; no WM contract or SDK change was required.
+- Running session: `00000001791024317688-8af3b9ce-6c28-4af3-ac60-c8b4e4661271`.
+  Its manifest names the repaired revision. The running executable hashes to
+  `105babb65ca06d251e6daf7b399e35ee0061eb07f59b08270a5902ab1b7b69de`, matching
+  the installed release and session manifest.
+- The preserved operator report records opening Helix in Ghostty, entering
+  text, pressing Super+Q and affirming Ghostty's confirmation. Ghostty closed
+  and the session survived. niltempus confirmed the live test again at closure.
+- The preserved control records show `stale_target_retired` for `ClearFocus`
+  with `unknown_surface` (sequence 139018), followed by `FocusSurface` with
+  `target_not_viewable` (sequence 139027). The excerpt reports zero fatal
+  records, and the same session was still running at closure.
+
+Evidence: `development-evidence/t290-release-01/release-audit-3cd50bdb.txt`
+and `live-acceptance-01/EXCERPT.txt`, `ACCEPTED.json`, and the copied session
+manifest and identity records in that directory. The current event files are
+rotated; the preserved excerpt retains the earlier control observations.
+
+This accepts recovery of the tested client-withdrawal race class. The original
+archive still cannot identify its rejected control kind, so this is not an
+exact replay claim. Genuine authority, renderer and device failures retain
+their handling. T289's CPU and Present-timing acceptance remains separate.
