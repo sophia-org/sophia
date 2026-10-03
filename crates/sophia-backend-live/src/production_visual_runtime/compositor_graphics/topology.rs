@@ -31,6 +31,7 @@ impl LiveProductionVisualRuntime {
             let display_list = self
                 .display_list_without_policy(
                     viewport.output,
+                    viewport.logical,
                     &source_set.committed,
                     &source_set.presentation_order,
                 )

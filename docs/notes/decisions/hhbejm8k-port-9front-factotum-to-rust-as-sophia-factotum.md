@@ -65,8 +65,8 @@ Port 9front's factotum to Rust as the in-tree crate `crates/sophia-factotum`
   `sophia-libauthsrv`, that factotum and the auth server share.
 - **Auth server outside Sophia.** authsrv and keyfs (and later secstore) are
   network identity infrastructure for an auth domain, which can include 9front
-  machines that never run Sophia. They are ported in their own repository and
-  share `sophia-libauthsrv`. Sophia's factotum only dials an auth server, whether
+  machines that never run Sophia. They are ported in their own repository,
+  `sophia-org/authsrv`, and share `sophia-libauthsrv`. Sophia's factotum only dials an auth server, whether
   that port or a real 9front one.
 - **Interoperability evidence.** An independent C oracle built from 9front's own
   libauthsrv and libsec sources, including the C that `mpc` generates, produces
@@ -96,10 +96,11 @@ non-Sophia consumers appear.
 
 ## Consequences
 
-Sophia gains cryptographic code for the first time. Whether to port 9front's
-libsec primitives and `mpc` field arithmetic or to use audited crates for them is
-decided with niltempus before t298 starts; either way the C oracle checks the
-bytes. Each new crate dependency needs that approval.
+Sophia gains cryptographic code for the first time. niltempus decided on
+2026-10-03 to take the primitives (SHA-256, HMAC, HKDF, PBKDF2-HMAC-SHA1,
+ChaCha20-Poly1305) from audited RustCrypto crates and to port only authpak's
+curve code: the Ed448 field arithmetic, decaf, Elligator2 and SPAKE2-EE that
+9front writes for `mpc`. The C oracle checks the bytes of both.
 
 Ported files carry 9front's MIT notice in their headers and an entry in
 `THIRD-PARTY-NOTICES.md`.

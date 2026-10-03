@@ -73,8 +73,7 @@ provider image above the fill only for an exact presented candidate of the
 current lock epoch on that head. Include it in every path that builds a head
 frame: `OutputComposition::display_list`, `display_list_without_policy` and
 `recovery_display_list_for_output`, `compose_output_topology_head_frames`,
-`resume_native_scanout`, preview recovery and the software-only cycle. Hide the
-cursor while locked. Stamp lock frames so Session can require the same stamp on
+`resume_native_scanout`, preview recovery and the software-only cycle. Stamp lock frames so Session can require the same stamp on
 every `presented_head_frames` entry before reporting locked. Expose the lock to
 visibility consumers as above.
 
@@ -97,7 +96,8 @@ action and a control request. Refuse screen-capture approval and revoke active
 grants while locked; publish locked inspection without window state. Unlock on a
 current verdict only: advance the epoch again, wait for it to apply, drop the
 cover after the next presentation and restore focus only to a still-authorized
-target. Keep the lock across VT switches and seat release. Use a test-support
+target. Hide the cursor while locked; its asset is Session's, so this is
+presentation, not coverage. Keep the lock across VT switches and seat release. Use a test-support
 authenticator seam.
 
 Exit: controls show that no physical or synthetic key reaches the X frontend,
@@ -173,8 +173,9 @@ evidence stays separate from the deterministic checks.
 Add `pass`, `p9any` and `dp9ik` (client and server roles) to `sophia-factotum`,
 and port libauthsrv's ticket, authenticator and key formats, `passtokey`, `form1`
 and authpak into `crates/sophia-libauthsrv`, shared with the separately hosted
-auth-server port. Decide with niltempus, before starting, whether the libsec
-primitives and `mpc` field arithmetic are ported or taken from audited crates.
+auth-server port. Take the primitives from audited RustCrypto crates and port
+only authpak's curve code (Ed448 field arithmetic, decaf, Elligator2, SPAKE2-EE),
+as niltempus decided on 2026-10-03.
 Build an independent C oracle from 9front's libauthsrv and libsec sources,
 including the C that `mpc` generates, under `tools/`. Wiring `Tauth` into
 `sophia-9p` exports waits for t275's decision.

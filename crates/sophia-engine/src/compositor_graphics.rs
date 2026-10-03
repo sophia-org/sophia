@@ -71,6 +71,12 @@ pub enum CompositorNodeId {
         owner_epoch: u64,
         id: u64,
     },
+    /// The session lock's opaque fill on one output. The epoch names the lock
+    /// the fill was drawn for, so a retired frame proves which lock it showed.
+    SessionLock {
+        output: OutputId,
+        epoch: u64,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

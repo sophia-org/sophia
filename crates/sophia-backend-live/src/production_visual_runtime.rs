@@ -52,6 +52,7 @@ mod present;
 mod projection;
 pub use projection::presented_keyboard_scope;
 mod service;
+mod session_lock;
 mod software_present;
 mod translation;
 pub use compositor_graphics::{
@@ -437,6 +438,9 @@ pub struct LiveProductionVisualRuntime {
     descriptor_overlay: Option<sophia_engine::DescriptorOverlayProjection>,
     descriptor_overlay_interactive: bool,
     policy_presentation: Option<LivePolicyPresentation>,
+    /// While set, every output's display list is the lock cover alone. Only
+    /// Session sets or clears it, and clearing it is the unlock's last step.
+    session_lock: Option<sophia_engine::SessionLockCover>,
     policy_presentation_revocation: Option<LivePolicyPresentationRevocation>,
     shell_content: BTreeMap<ShellContentKey, AdmittedShellContent>,
     tab_bars: Vec<sophia_engine::TabBarProjection>,
