@@ -91,12 +91,18 @@ fn main() -> ExitCode {
     if !hardening.locked_future {
         eprintln!("sophia-factotum: memory locked for current pages only");
     }
-    if arguments.test_mode {
+    let helper = if arguments.test_mode {
         eprintln!("sophia-factotum: TEST MODE: helper ownership and PAM confdir are not checked");
-    } else if let Err(error) = check_helper(&arguments.helper) {
-        eprintln!("sophia-factotum: {error}");
-        return ExitCode::from(1);
-    }
+        arguments.helper
+    } else {
+        match check_helper(&arguments.helper) {
+            Ok(canonical) => canonical,
+            Err(error) => {
+                eprintln!("sophia-factotum: {error}");
+                return ExitCode::from(1);
+            }
+        }
+    };
     let session = match std::io::stdin()
         .as_fd()
         .try_clone_to_owned()
@@ -118,7 +124,7 @@ fn main() -> ExitCode {
             pam_service: arguments.service,
         },
         helper: PamHelper {
-            path: arguments.helper,
+            path: helper,
             confdir: arguments.confdir,
             deadline: arguments.deadline,
         },

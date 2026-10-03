@@ -9,6 +9,7 @@ description = "The PAM helper sophia-factotum executes for one login attempt"
 
 [dependencies]
 libc = "0.2"
+rustix = { workspace = true, features = ["fs", "std", "stdio"] }
 sophia-factotum = { path = "../sophia-factotum" }
 
 [lints.rust]

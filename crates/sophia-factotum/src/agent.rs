@@ -9,7 +9,7 @@ use sophia_9p::records::Limits;
 use sophia_9p::unix::Server;
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::net::UnixStream;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// How the agent hardened itself; logged by name only.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -55,27 +55,36 @@ pub fn harden(budget: u64) -> Hardening {
 }
 
 /// The helper is executed with the user's password, so a helper the user
-/// could replace would be a password oracle of the user's choosing. It and
-/// its directory must belong to root and be writable by no one else.
-pub fn check_helper(path: &Path) -> Result<(), &'static str> {
+/// could replace would be a password oracle of the user's choosing. The
+/// path is resolved through every symlink, and the file and each directory
+/// above it up to `/` must belong to root and be writable by no one else.
+/// The agent then executes the returned canonical path: no component of it
+/// can be renamed or replaced by the user between this check and an exec.
+pub fn check_helper(path: &Path) -> Result<PathBuf, &'static str> {
     if !path.is_absolute() {
         return Err("pam helper path is not absolute");
     }
-    let metadata = std::fs::metadata(path).map_err(|_| "pam helper is missing")?;
+    let canonical = std::fs::canonicalize(path).map_err(|_| "pam helper is missing")?;
+    let metadata = std::fs::metadata(&canonical).map_err(|_| "pam helper is missing")?;
     if !metadata.is_file() || metadata.mode() & 0o111 == 0 {
         return Err("pam helper is not an executable file");
     }
-    if metadata.uid() != 0 || metadata.mode() & 0o022 != 0 {
+    if !protected(&metadata) {
         return Err("pam helper is not root-owned and protected");
     }
-    let parent = path
-        .parent()
-        .and_then(|parent| std::fs::metadata(parent).ok())
-        .ok_or("pam helper directory is missing")?;
-    if parent.uid() != 0 || parent.mode() & 0o022 != 0 {
-        return Err("pam helper directory is not root-owned and protected");
+    for ancestor in canonical.ancestors().skip(1) {
+        let directory =
+            std::fs::metadata(ancestor).map_err(|_| "pam helper directory is missing")?;
+        if !protected(&directory) {
+            return Err("a pam helper directory is not root-owned and protected");
+        }
     }
-    Ok(())
+    Ok(canonical)
+}
+
+/// Owned by root and writable by neither group nor others.
+fn protected(metadata: &std::fs::Metadata) -> bool {
+    metadata.uid() == 0 && metadata.mode() & 0o022 == 0
 }
 
 /// Whether the peer of Session's socket is this process's parent, running as
