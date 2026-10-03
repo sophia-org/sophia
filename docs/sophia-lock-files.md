@@ -6,9 +6,12 @@
 and a worker thread), and Session launches and supervises the provider and
 draws its images. It is the t294 design under the
 [proposed lock ADR](notes/decisions/w0seozxx-session-owns-lock-state-and-authentication-lock-providers-only-render.md);
-a layout change must change the KDL and the codec together. Not yet
-implemented: the independent C peer, and following a render-device change
-after a direct GPU grant (restarts reuse the device granted at start).
+a layout change must change the KDL and the codec together. An independent C
+peer (`tests/support/lock_files_peer.c`, the C SDK's generic 9P client and
+hand-encoded records) negotiates, uploads, demands, offers and is presented
+against the production export. Not yet implemented: following a
+render-device change after a direct GPU grant (restarts reuse the device
+granted at start).
 
 This document specifies the lock provider role over 9P2000.L. A lock provider
 draws what a locked session shows. It does nothing else: Session owns the lock

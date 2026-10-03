@@ -314,8 +314,10 @@ Checkpoint 2026-10-03 on `lock/t034-next`:
     coverage proof extended to it;
   - candidates placed over their outputs, outcomes (presented, superseded,
     rejected) and permits paced by presentation.
-- Open: granted chords reaching the lock keyboard, a direct GPU grant, the
-  independent C peer, and a live run with a real provider.
+  - granted chords reaching the lock keyboard, and a direct GPU grant;
+  - an independent C peer against the production export.
+- Open: following a render-device change after a direct grant, and a live
+  run with a real provider (kleis through the t295 C SDK client).
 
 ### t295 SDKs
 
