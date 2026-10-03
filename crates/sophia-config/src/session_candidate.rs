@@ -223,6 +223,12 @@ pub fn prepare_desktop_session_candidate(
                 }
                 components.push(component);
             }
+            "lock-provider" => {
+                if prepared.components.lock_provider.is_some() {
+                    return Err(schema_error("at most one lock-provider"));
+                }
+                prepared.components.lock_provider = Some(crate::lock_provider::parse(&node)?);
+            }
             "control" => {
                 if node.entries().len() != 1 || node.children().is_some() || node.ty().is_some() {
                     return Err(schema_error("control requires one access mode"));

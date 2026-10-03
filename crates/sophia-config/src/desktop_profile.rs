@@ -743,6 +743,7 @@ fn validate_setting(
             "shell-client",
             "shell-config",
             "shell-component",
+            "lock-provider",
             "application-catalog",
         ]
         .contains(&name),
