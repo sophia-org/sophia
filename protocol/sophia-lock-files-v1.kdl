@@ -1,6 +1,7 @@
-// Lock provider file byte contract for t294. DRAFT: no codec, export or
-// admission implements these records yet, and every layout below may change
-// until the codec is bound to this file by test. The export, custody and
+// Lock provider file byte contract for t294. DRAFT: the native codec
+// (crates/sophia-protocol/src/lock_files) is bound to this file by
+// tests/lock_file_schema.rs; no export or admission serves it yet, and a
+// layout change must change both together. The export, custody and
 // authority rules are in docs/sophia-lock-files.md; these records alone grant
 // no admission, lock or unlock authority. Integers are little endian.
 //

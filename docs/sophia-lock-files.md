@@ -1,10 +1,10 @@
 # Lock provider file records — revision 1 (draft)
 
-**Draft.** No codec, export, endpoint or admission implements this contract
-yet. It is the t294 design under the
+**Draft.** The native codec, `sophia_protocol::lock_files`, is bound to
+`protocol/sophia-lock-files-v1.kdl` by `tests/lock_file_schema.rs`; no
+export, endpoint or admission serves it yet. It is the t294 design under the
 [proposed lock ADR](notes/decisions/w0seozxx-session-owns-lock-state-and-authentication-lock-providers-only-render.md);
-the byte layouts in `protocol/sophia-lock-files-v1.kdl` may change until a
-codec is bound to that file by test.
+a layout change must change the KDL and the codec together.
 
 This document specifies the lock provider role over 9P2000.L. A lock provider
 draws what a locked session shows. It does nothing else: Session owns the lock
