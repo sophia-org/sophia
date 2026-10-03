@@ -73,4 +73,14 @@ impl LiveProductionVisualRuntime {
         }
         proven
     }
+
+    /// The provider image, and its candidate generation, that every head of
+    /// `output` retired under the current lock; `None` until they agree.
+    pub fn presented_session_lock_image(
+        &self,
+        native: &LiveProductionNativeScanout,
+        output: OutputId,
+    ) -> Option<(sophia_engine::SessionLockImageIdentity, u64)> {
+        sophia_engine::presented_session_lock_image(output, &native.presented_head_frames(output))
+    }
 }

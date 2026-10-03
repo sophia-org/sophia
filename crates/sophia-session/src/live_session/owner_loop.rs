@@ -657,6 +657,7 @@ fn run_session_loop_inner(
     let mut lock_provider: Option<lock_provider::LockProvider> = None;
     let mut lock_provider_tried = config.lock_provider.is_none();
     let mut lock_publication = lock_provider::LockPublication::default();
+    let mut lock_frames = crate::session_lock_frames::SessionLockFrames::default();
     let mut pointer_pixel_change = false;
     let mut metrics = SessionLoopMetrics::new(initialize_empty_runtime);
     let mut input_batch_baseline = None;

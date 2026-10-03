@@ -133,20 +133,29 @@ macro_rules! service_lock_provider {
             );
         }
         if let Some(provider) = lock_provider.as_mut() {
+            use sophia_runtime::lock_files::{LockFileServiceCommand, LockInbound};
+            // Images drawn for an earlier lock never show in this one.
+            let mut images_changed = lock_frames.lock(session_lock.cover_epoch());
             for event in provider.poll(Instant::now()) {
                 match event {
                     sophia_runtime::lock_files::LockFileServiceEvent::Connected {
                         connection_epoch,
                         chords,
-                    } => crate::session_println!(
-                        "sophia_live_lock_provider schema=1 status=connected connection_epoch={connection_epoch} chords={}",
-                        chords.len(),
-                    ),
+                    } => {
+                        images_changed |= lock_frames.connected(connection_epoch);
+                        crate::session_println!(
+                            "sophia_live_lock_provider schema=1 status=connected connection_epoch={connection_epoch} chords={}",
+                            chords.len(),
+                        )
+                    }
                     sophia_runtime::lock_files::LockFileServiceEvent::Disconnected {
                         connection_epoch,
-                    } => crate::session_println!(
-                        "sophia_live_lock_provider schema=1 status=disconnected connection_epoch={connection_epoch}",
-                    ),
+                    } => {
+                        images_changed |= lock_frames.disconnected(connection_epoch);
+                        crate::session_println!(
+                            "sophia_live_lock_provider schema=1 status=disconnected connection_epoch={connection_epoch}",
+                        )
+                    }
                     sophia_runtime::lock_files::LockFileServiceEvent::ConnectionRejected {
                         message,
                     }
@@ -155,10 +164,73 @@ macro_rules! service_lock_provider {
                             "sophia_live_lock_provider schema=1 status=connection_failed error={message}",
                         )
                     }
-                    // Images, candidates and frame demands wait for Engine to
-                    // draw provider images; without permits a provider offers
-                    // no candidate, so nothing is left owed.
-                    sophia_runtime::lock_files::LockFileServiceEvent::Inbound { .. } => {}
+                    sophia_runtime::lock_files::LockFileServiceEvent::Inbound {
+                        connection_epoch,
+                        inbound,
+                    } => match inbound {
+                        LockInbound::Negotiated { .. } => {}
+                        LockInbound::ResourceReady {
+                            resource,
+                            width_px,
+                            height_px,
+                            pixels,
+                        } => lock_frames.resource_ready(
+                            connection_epoch,
+                            resource,
+                            width_px,
+                            height_px,
+                            pixels,
+                        ),
+                        LockInbound::ResourceRetired(resource) => {
+                            lock_frames.resource_retired(connection_epoch, resource)
+                        }
+                        LockInbound::Demand(demand) => {
+                            lock_frames.demand(connection_epoch, demand)
+                        }
+                        LockInbound::Candidate { candidate, .. } => {
+                            let (changed, owed) =
+                                lock_frames.candidate(connection_epoch, candidate);
+                            images_changed |= changed;
+                            for outcome in owed {
+                                provider.command(LockFileServiceCommand::Outcome(outcome));
+                            }
+                        }
+                    },
+                }
+            }
+            // Presentation paces the provider: a permit only while its
+            // allocation shows nothing unretired.
+            for demand in lock_frames.permits() {
+                provider.command(LockFileServiceCommand::Permit {
+                    allocation_id: demand.allocation_id,
+                    demand_id: demand.demand_id,
+                    expires_after: Duration::from_millis(100),
+                });
+            }
+            if let (Some(runtime), Some(native)) = (runtime.as_ref(), native_scanout.as_ref()) {
+                for output in lock_frames.waiting().collect::<Vec<_>>() {
+                    let shown = runtime.presented_session_lock_image(native, output);
+                    if let Some(outcome) = lock_frames.presented(output, shown) {
+                        provider.command(LockFileServiceCommand::Outcome(outcome));
+                    }
+                }
+            }
+            if images_changed
+                && let Some(runtime) = runtime.as_mut()
+                && let Some(cover) = runtime.session_lock()
+            {
+                let cover = sophia_engine::SessionLockCover {
+                    images: lock_frames.images(),
+                    ..cover
+                };
+                if let Err(error) =
+                    runtime.set_session_lock(Some(cover), &scene, native_scanout.as_mut())
+                {
+                    // The cover stays drawn with its previous images; the
+                    // next change tries again.
+                    crate::session_eprintln!(
+                        "sophia_live_lock_provider schema=1 status=repaint_deferred error={error}",
+                    );
                 }
             }
             let topology_epoch =
