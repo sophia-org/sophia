@@ -249,3 +249,37 @@ fn a_cover_drawn_for_another_output_does_not_prove_this_one() {
         None
     );
 }
+
+#[test]
+fn a_client_drawn_beside_the_cover_voids_the_proof() {
+    // A head whose frame carries the cover and also a client: the cover is
+    // there, but so is something it should have hidden.
+    let desktop = output_scene_snapshot_from_committed_in_view(
+        OUTPUT,
+        11,
+        viewport(),
+        &[fullscreen_client()],
+        CompositorDisplayList {
+            output: OUTPUT,
+            commands: vec![CompositorDisplayCommand::Surface {
+                surface: SurfaceId::new(4, 1),
+            }],
+        },
+        None,
+    )
+    .unwrap();
+    let client =
+        head_output_damage_snapshot(&build_head_composition_plan(&desktop, heads()[0]).unwrap());
+    assert!(!client.surfaces.is_empty());
+
+    let mut frames = retired(&locked_plans(5));
+    frames[0].surfaces = client.surfaces.clone();
+    assert_eq!(proof(&frames), None, "a client surface beside the cover");
+
+    let mut frames = retired(&locked_plans(5));
+    frames[0]
+        .compositor_display_list
+        .commands
+        .extend(client.compositor_display_list.commands.iter().cloned());
+    assert_eq!(proof(&frames), None, "a client draw beside the cover");
+}

@@ -99,6 +99,19 @@ lock stamp, and reference sampling finds no application, shell, descriptor or WM
 pixel on any head through topology frames, resume, recovery and preview
 recovery. Direct scanout is never selected while locked.
 
+Checkpoint 2026-10-03 on `lock/t034` (rebased on t289's `5f55a71ca`): the cover,
+the presented proof, lock-aware Present sampling and t289 pacing, and the
+first-visibility guard are implemented. Controls: 10 Engine tests through the
+production planner and 6 runtime tests on the mirrored target. Bounded mutants
+on a separate source copy, each killed by a named assertion: no cover in
+`OutputComposition` (four coverage tests), proof ignoring client surfaces and
+proof ignoring non-rect draws (`a_client_drawn_beside_the_cover_voids_the_proof`,
+added after the first run let both survive), t289 pacing ignoring the lock, and
+Present sampling ignoring the lock. Device-hidden crate suites pass: Engine 552,
+backend-live 818 (8 ignored), Session 311 (17 ignored). Open: a runtime control
+for the first-visibility guard, which needs a queued-Present fixture, and the
+unlock rollback, which needs an injected repaint failure.
+
 ### t292 Session lock state and input
 
 Add `SessionLockState` with monotonically minted lock epochs; zero and
