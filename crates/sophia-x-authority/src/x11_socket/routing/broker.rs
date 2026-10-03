@@ -25,6 +25,9 @@ pub struct XServerFrontendRouteBroker {
     /// with routed-input senders so a security transition can wait for its
     /// clearing rather than assume it from the request.
     applied_input_control_epoch: Arc<AtomicU64>,
+    /// Whether synthetic input may reach clients at all. Session closes it
+    /// while the seat is locked; shared with every routed-input sender.
+    synthetic_admitted: Arc<AtomicBool>,
     /// Unset in ordinary mode, leaving every path below exactly as it was.
     control_gate: Arc<std::sync::OnceLock<crate::ControlEpochGate>>,
     /// Distinguishes this broker's receipts from another's.
@@ -437,6 +440,7 @@ impl XServerFrontendRouteBroker {
             input_control_epoch,
             routed_input_capacity: capacities.input.get(),
             applied_input_control_epoch: Arc::new(AtomicU64::new(1)),
+            synthetic_admitted: Arc::new(AtomicBool::new(true)),
             route_lease_release_sender,
             route_lease_release_receiver,
             control_sender,
@@ -479,6 +483,7 @@ impl XServerFrontendRouteBroker {
             sender: self.routed_input_sender.clone(),
             control_epoch: self.input_control_epoch.clone(),
             applied_control_epoch: self.applied_input_control_epoch.clone(),
+            synthetic_admitted: self.synthetic_admitted.clone(),
             capacity: self.routed_input_capacity,
             recovery: self.registry.input_recovery.clone(),
         }
@@ -745,7 +750,11 @@ impl XServerFrontendRouteBroker {
                         None => {
                             route.control_epoch == self.input_control_epoch.load(Ordering::Acquire)
                         }
-                    };
+                    } && (route.route.origin != XAuthorityRoutedInputOrigin::Synthetic
+                        // Checked again here, after the epoch: an injection
+                        // that saw the switch open before a lock closed it is
+                        // still refused on delivery.
+                        || self.synthetic_admitted.load(Ordering::Acquire));
                     match self.registry.route_engine_input_admitted(
                         route.route,
                         crate::ControlStamp {

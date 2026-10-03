@@ -24,6 +24,9 @@ macro_rules! begin_session_lock {
         } else {
             match session_lock.lock() {
                 Ok(crate::session_lock::SessionLockStart::Started(epoch)) => {
+                    // Synthetic input closes before the epoch moves, so no
+                    // injection can be stamped into the lock's epoch.
+                    input_sender.set_synthetic_admitted(false);
                     // Take the seat first: every lease, grab, capture, held
                     // key and chord of the unlocked desktop ends here.
                     let revoked = advance_application_input_security_epoch(
@@ -117,6 +120,7 @@ macro_rules! service_session_lock {
             crate::session_lock::SessionLockPhase::Unlocking { epoch } => {
                 if session_lock.observe_unlocked(applied) {
                     session_lock_input = None;
+                    input_sender.set_synthetic_admitted(true);
                     crate::session_println!(
                         "sophia_live_session_lock schema=1 status=unlocked epoch={}",
                         epoch.raw(),

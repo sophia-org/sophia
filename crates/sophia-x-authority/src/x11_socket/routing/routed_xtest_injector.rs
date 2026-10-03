@@ -60,6 +60,10 @@ impl RoutedXTestInjector {
         let Some(barrier) = self.barrier.get() else {
             return Err(crate::XTestInjectionRefusal::Unavailable);
         };
+        // A locked seat takes no synthetic input; delivery checks again.
+        if !self.sender.synthetic_admitted() {
+            return Err(crate::XTestInjectionRefusal::Denied);
+        }
         let serial = self
             .serial
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
