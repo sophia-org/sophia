@@ -55,6 +55,7 @@ pub mod resource_sampling;
 pub mod session_actions;
 pub mod session_control;
 pub mod session_keyboard;
+pub mod session_lock;
 pub mod session_shutdown;
 pub mod session_startup;
 pub mod shell_component_connections;
