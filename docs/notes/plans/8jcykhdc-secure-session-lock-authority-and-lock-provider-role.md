@@ -64,6 +64,22 @@ quarantined. The planned W1 cached admission lease (not yet implemented) must
 include the lock state. Locked routing must not leave timed Present or
 private-input admission waiting on a focus change.
 
+A read-only review of the t289 working tree on 2026-10-03 (against t291's
+`a56f3131e`) found three t289 functions in `background_present.rs` that
+re-derive visibility from the WM presentation instead of calling the runtime's
+`surface_hidden`: `background_output_visibility`,
+`background_visible_on_outputs` and `present_clock_outputs`. Whichever branch
+merges second makes them lock-aware: a locked session has no visible surface,
+so every Present binds to the fallback clock and is paced as hidden, and
+unlocking produces the hidden-to-visible edge that releases parked Presents
+promptly. Clock-debt reconciliation reads only native heads and stays active.
+No t289 path waits on focus. Textual overlap is limited to
+`production_visual_runtime.rs`, `authority.rs` and `todo.md`, in disjoint
+hunks. The same review found that `service_first_visibility_presentations`
+could release a parked first Present through a preview instance while locked,
+re-parking it every pass; t291 now releases nothing while locked and leaves
+the candidate to its expiry budget.
+
 ## Task details
 
 ### t291 Engine lock cover
