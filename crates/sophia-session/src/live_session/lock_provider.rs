@@ -189,17 +189,20 @@ pub(super) fn start_session_lock_provider(
     lockable: bool,
     snapshot: &sophia_protocol::OutputAuthoritySnapshot,
     phase: crate::session_lock::SessionLockPhase,
+    render_device: Option<sophia_backend_live::LiveRenderDeviceIdentitySnapshot>,
     wake: sophia_wake::Notifier,
 ) -> Option<LockProvider> {
     let selection = config.lock_provider.as_ref().filter(|_| lockable)?;
+    // Only a direct grant carries a device; a denied one must not.
+    let gpu_device = render_device.filter(|_| selection.gpu == sophia_config::ShellGpuMode::Direct);
     let lock = crate::session_lock_object::session_lock_object(phase, Some(snapshot));
     let limits = crate::session_lock_object::session_lock_file_limits(Some(snapshot));
     match LockProvider::start(
         selection,
         &config.wm_socket_path.with_extension("lock"),
-        // A direct GPU grant needs the render device coordinator's admitted
-        // device; until it is wired here, "direct" is refused and reported.
-        None,
+        // The admitted device at start. A later device change is not yet
+        // followed: restarts reuse the grant made at start.
+        gpu_device,
         lock,
         limits,
         Vec::new(),

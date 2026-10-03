@@ -131,6 +131,9 @@ macro_rules! service_lock_provider {
                 session_unlock_authenticator.is_some(),
                 &snapshot,
                 session_lock.phase(),
+                client_render_devices
+                    .as_ref()
+                    .and_then(|devices| devices.shell_gpu_device().ok()),
                 owner_wake.notifier(),
             );
         }
