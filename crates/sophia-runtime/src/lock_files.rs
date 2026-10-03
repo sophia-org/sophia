@@ -19,11 +19,15 @@ mod export;
 mod presentation;
 mod resources;
 #[cfg(target_os = "linux")]
+mod service;
+#[cfg(target_os = "linux")]
 mod transport;
 
 pub use export::{LockFileExport, LockFileHandle, LockFileNode, LockFileQids};
 #[cfg(target_os = "linux")]
-pub use transport::{LockFileTransport, LockFileTransportError};
+pub use service::{LockFileService, LockFileServiceCommand, LockFileServiceEvent};
+#[cfg(target_os = "linux")]
+pub use transport::{LockFileAssignee, LockFileTransport, LockFileTransportError};
 
 use presentation::{CandidatePlan, Presentation};
 use resources::{ResourcePlan, Resources};

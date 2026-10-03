@@ -13,6 +13,24 @@ use sophia_protocol::lock_files::*;
 use super::{LockFileExport, LockFileQids, LockFileSettings, LockInbound};
 use crate::{PolicyRole, PolicyRoleEndpoint, PolicyRoleEndpointError};
 
+/// A supervisor-checked provider captured before a worker handoff. Private
+/// fields keep a numeric PID from being paired with an unrelated pidfd.
+#[derive(Debug)]
+pub struct LockFileAssignee {
+    pid: u32,
+    pidfd: Option<OwnedFd>,
+}
+
+impl LockFileAssignee {
+    pub fn from_supervisor(
+        supervisor: &crate::ProcessSupervisor,
+    ) -> Result<Self, LockFileTransportError> {
+        let pidfd = supervisor.peer_pidfd()?;
+        let pid = supervisor.peer_id().ok_or(Errno::EINVAL)?;
+        Ok(Self { pid, pidfd })
+    }
+}
+
 #[derive(Debug)]
 pub enum LockFileTransportError {
     Endpoint(PolicyRoleEndpointError),
@@ -124,10 +142,15 @@ impl LockFileTransport {
         &mut self,
         supervisor: &crate::ProcessSupervisor,
     ) -> Result<(), LockFileTransportError> {
-        let pidfd = supervisor.peer_pidfd()?;
-        let pid = supervisor.peer_id().ok_or(Errno::EINVAL)?;
-        self.endpoint.authorize_supervised_pid(pid)?;
-        self.assignee = pidfd;
+        self.authorize_assignee(LockFileAssignee::from_supervisor(supervisor)?)
+    }
+
+    pub fn authorize_assignee(
+        &mut self,
+        assignee: LockFileAssignee,
+    ) -> Result<(), LockFileTransportError> {
+        self.endpoint.authorize_supervised_pid(assignee.pid)?;
+        self.assignee = assignee.pidfd;
         Ok(())
     }
 
