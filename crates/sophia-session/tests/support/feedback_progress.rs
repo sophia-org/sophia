@@ -510,6 +510,7 @@ fn feedback_progress_precedes_no_engine_work_with_a_disarmed_native_deadline() {
         false,
         0,
         deadline_armed,
+        false,
     ));
     // Stand in for an already settled retirement, not a frame submission.
     // The real router owns the transaction from the client's Present request.

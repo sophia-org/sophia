@@ -30,6 +30,14 @@ impl<Owner> LiveRenderedPrimaryPlaneScanoutSubmission<Owner> {
         self.primary_plane.completion_fence_status()
     }
 
+    pub(crate) fn completion_fence(&self) -> Option<std::os::fd::BorrowedFd<'_>> {
+        use std::os::fd::AsFd;
+        self.primary_plane
+            .completion_fence
+            .as_ref()
+            .map(AsFd::as_fd)
+    }
+
     pub(crate) fn clear_completion_fence(&mut self) {
         self.primary_plane.clear_completion_fence();
     }

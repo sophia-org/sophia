@@ -19,6 +19,9 @@
     );
     let maximum = runtime.as_ref().map_or(maximum, |r| r.frame_deadline_cap_wait(now, maximum));
     let maximum = present_clocks.cap_wait(now, maximum);
+    let maximum = native_wait.deadline.map_or(maximum, |deadline| {
+        maximum.min(deadline.saturating_duration_since(now))
+    });
     // Held, hold decisions and sequence timeouts use the same owner clock
     // as routing and per-turn service. Only an actual deadline caps idle;
     // the registry or an open chord alone never requires polling.
@@ -47,9 +50,14 @@
     } else {
         maximum
     };
-    owner_wake.receive_with_fds(
+    owner_wake.record_native_wait(held.frames, !native_wait.descriptors.is_empty());
+    owner_wake.receive_with_native(
         authority_receiver,
         paced_repaint_wait_cap(primary_frame_pacer, paced_repaint_runnable, now, maximum),
         shell_wires,
+        native_wait.descriptors.into_iter()
+            .map(|fd| rustix::event::PollFd::from_borrowed_fd(fd, rustix::event::PollFlags::IN))
+            .collect(),
+        native_scanout.as_ref().map(LiveProductionNativeScanout::completion_progress),
     )?
 }

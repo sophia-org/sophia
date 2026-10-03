@@ -13,12 +13,11 @@ OwnerHeldWork {
     input_receipts: !input_delivery.pending.is_empty()
         || !client_key_release_barrier.is_empty(),
     // A due paced repaint is a real deadline; the wait cap already ends on it.
-    frames: native_frame_service_deadline_armed
-        || native_frame_service_request
-            .as_ref()
-            .is_some_and(native_frame_service_requires_owner_progress)
-        || (cursor_updates.dirty_since.is_some() && native_scanout.is_some())
-        || native_retirement.pending(),
+    frames: native_wait.short_service || native_frame_short_service(
+        native_frame_service_request.as_ref(), native_wait_only,
+        cursor_updates.dirty_since.is_some() && native_scanout.is_some(),
+        native_retirement.pending(),
+    ),
     output_topology: active_output_topology_preparation.is_some()
         || topology_presentation_deadline.is_some()
         || output_topology_retry_at.is_some()

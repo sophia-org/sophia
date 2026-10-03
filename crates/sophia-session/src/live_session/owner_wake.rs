@@ -22,6 +22,8 @@ use rustix::event::{PollFd, PollFlags};
 pub(super) struct OwnerWake {
     wake: sophia_wake::Wake,
     statistics: Cell<OwnerWakeStatistics>,
+    native_fault: Cell<Option<u64>>,
+    native_progress_before_wait: Cell<Option<(u64, u64)>>,
 }
 
 /// Owner-thread observations, not scheduler wakeups or per-producer attribution.
@@ -34,6 +36,13 @@ pub(super) struct OwnerWakeStatistics {
     pub fd_ready: u64,
     pub wait_deadlines: u64,
     pub immediate_items: u64,
+    pub native_ready: u64,
+    pub native_ready_consumed: u64,
+    pub native_ready_idle: u64,
+    pub native_errors: u64,
+    pub native_event_waits: u64,
+    pub native_short_waits: u64,
+    pub service_waits: u64,
 }
 
 impl OwnerWake {
@@ -41,6 +50,8 @@ impl OwnerWake {
         Ok(Self {
             wake: sophia_wake::Wake::new()?,
             statistics: Cell::default(),
+            native_fault: Cell::new(None),
+            native_progress_before_wait: Cell::new(None),
         })
     }
 
@@ -83,11 +94,24 @@ impl OwnerWake {
     /// next pass serves the socket. Socket readiness is level-triggered, so a
     /// caller subscribes only what that pass consumes; anything else would end
     /// every wait at once.
-    pub(super) fn receive_with_fds<T>(
-        &self,
+    #[cfg(test)]
+    pub(super) fn receive_with_fds<'a, T>(
+        &'a self,
         receiver: &Receiver<T>,
         timeout: Duration,
-        fds: Vec<PollFd<'_>>,
+        fds: Vec<PollFd<'a>>,
+    ) -> io::Result<Result<T, RecvTimeoutError>> {
+        self.receive_with_native(receiver, timeout, fds, Vec::new(), None)
+    }
+
+    /// Native readiness is attributed separately; it grants no retirement.
+    pub(super) fn receive_with_native<'a, T>(
+        &'a self,
+        receiver: &Receiver<T>,
+        timeout: Duration,
+        fds: Vec<PollFd<'a>>,
+        native: Vec<PollFd<'a>>,
+        progress: Option<(u64, u64)>,
     ) -> io::Result<Result<T, RecvTimeoutError>> {
         match receiver.try_recv() {
             Ok(item) => {
@@ -99,12 +123,72 @@ impl OwnerWake {
             Err(TryRecvError::Disconnected) => return Ok(Err(RecvTimeoutError::Disconnected)),
             Err(TryRecvError::Empty) => {}
         }
+        self.wait(timeout, fds, native, progress)?;
+        Ok(match receiver.try_recv() {
+            Ok(item) => Ok(item),
+            Err(TryRecvError::Empty) => Err(RecvTimeoutError::Timeout),
+            Err(TryRecvError::Disconnected) => Err(RecvTimeoutError::Disconnected),
+        })
+    }
+    /// Fair service turns must not consume the authority queue. Rings and native
+    /// fds still wake this wait, unlike the old blind 1 ms sleep.
+    pub(super) fn wait_for_service<'a>(
+        &'a self,
+        timeout: Duration,
+        native: Vec<PollFd<'a>>,
+        progress: Option<(u64, u64)>,
+    ) -> io::Result<()> {
+        let mut stats = self.statistics.get();
+        stats.service_waits = stats.service_waits.saturating_add(1);
+        self.statistics.set(stats);
+        self.wait(timeout, Vec::new(), native, progress)
+    }
+
+    pub(super) fn record_native_wait(&self, short: bool, events: bool) {
+        let mut stats = self.statistics.get();
+        stats.native_short_waits = stats.native_short_waits.saturating_add(u64::from(short));
+        stats.native_event_waits = stats.native_event_waits.saturating_add(u64::from(events));
+        self.statistics.set(stats);
+    }
+
+    /// Called after seat/lifecycle service and before another subscription.
+    /// A revoked fd wakes once so seat handling can run. If it is still an
+    /// active owner, fail rather than resubscribe a permanently failing fd.
+    pub(super) fn observe_native_progress(
+        &self,
+        current: Option<(u64, u64)>,
+        active: bool,
+    ) -> io::Result<()> {
+        if let Some((owner, before)) = self.native_progress_before_wait.take() {
+            let consumed =
+                current.is_some_and(|(now_owner, after)| now_owner == owner && after > before);
+            let mut stats = self.statistics.get();
+            stats.native_ready_consumed = stats
+                .native_ready_consumed
+                .saturating_add(u64::from(consumed));
+            stats.native_ready_idle = stats.native_ready_idle.saturating_add(u64::from(!consumed));
+            self.statistics.set(stats);
+        }
+        if self.native_fault.take().is_some_and(|owner| {
+            active && current.is_some_and(|(current_owner, _)| current_owner == owner)
+        }) {
+            return Err(io::Error::other("native completion descriptor failed"));
+        }
+        Ok(())
+    }
+
+    fn wait<'a>(
+        &'a self,
+        timeout: Duration,
+        mut fds: Vec<PollFd<'a>>,
+        native: Vec<PollFd<'a>>,
+        progress: Option<(u64, u64)>,
+    ) -> io::Result<()> {
         let now = Instant::now();
-        let mut fds: Vec<PollFd<'_>> = fds;
+        let native_start = fds.len();
+        fds.extend(native);
         let ring_index = fds.len();
         fds.push(PollFd::new(&self.wake, PollFlags::IN));
-        // A failed wait is a Session error, not a delivered wake or a reason
-        // to silently fall back to polling with a fresh deadline.
         let ready = sophia_wake::wait(&mut fds, Some(now.checked_add(timeout).unwrap_or(now)))?;
         let mut stats = self.statistics.get();
         stats.waits = stats.waits.saturating_add(1);
@@ -112,15 +196,28 @@ impl OwnerWake {
             .ring_ready
             .saturating_add(u64::from(!fds[ring_index].revents().is_empty()));
         stats.fd_ready = stats.fd_ready.saturating_add(u64::from(
-            fds[..ring_index].iter().any(|fd| !fd.revents().is_empty()),
+            fds[..native_start]
+                .iter()
+                .any(|fd| !fd.revents().is_empty()),
         ));
+        let native_ready = fds[native_start..ring_index]
+            .iter()
+            .any(|fd| !fd.revents().is_empty());
+        let native_error = fds[native_start..ring_index].iter().any(|fd| {
+            fd.revents()
+                .intersects(PollFlags::ERR | PollFlags::HUP | PollFlags::NVAL)
+        });
+        if native_ready {
+            self.native_progress_before_wait.set(progress);
+            stats.native_ready = stats.native_ready.saturating_add(1);
+        }
+        if native_error {
+            self.native_fault.set(progress.map(|(owner, _)| owner));
+            stats.native_errors = stats.native_errors.saturating_add(1);
+        }
         stats.wait_deadlines = stats.wait_deadlines.saturating_add(u64::from(!ready));
         self.statistics.set(stats);
-        Ok(match receiver.try_recv() {
-            Ok(item) => Ok(item),
-            Err(TryRecvError::Empty) => Err(RecvTimeoutError::Timeout),
-            Err(TryRecvError::Disconnected) => Err(RecvTimeoutError::Disconnected),
-        })
+        Ok(())
     }
 }
 

@@ -251,3 +251,64 @@ fn topology_transfer_keeps_predecessor_cleanup_in_the_source_ledger() {
     );
     assert_eq!(*device.destroyed.borrow(), [40, 41]);
 }
+
+#[test]
+fn retiring_a_signalled_fence_removes_it_before_displayed_custody() {
+    use std::io::Write;
+    use std::os::unix::net::UnixStream;
+    let pool = Rc::new(RefCell::new(LiveRendererFrameSlotPool::new()));
+    let device = Device::default();
+    let mut custody = PersistentScanoutCustody::default();
+    let (fence, mut signal) = UnixStream::pair().unwrap();
+    signal.write_all(b"done").unwrap();
+    let mut frame = submission(&pool, 20);
+    frame.primary_plane.completion_fence = Some(fence.into());
+    custody.accept_submission(frame).unwrap();
+    assert!(custody.submitted().unwrap().completion_fence().is_some());
+    assert!(matches!(
+        custody.present(&device, &callback(4), None),
+        PersistentFlipOutcome::Presented { .. }
+    ));
+    assert!(custody.submitted().is_none());
+    assert!(
+        custody.displayed().unwrap().completion_fence().is_none(),
+        "a signalled sync_file stays readable until closed; never carry it into an idle wait"
+    );
+    assert!(!custody.cleanup_pending());
+}
+
+#[test]
+fn a_signalled_fence_with_a_refused_callback_uses_bounded_service() {
+    use std::io::Write;
+    use std::os::unix::net::UnixStream;
+    let pool = Rc::new(RefCell::new(LiveRendererFrameSlotPool::new()));
+    let device = Device::default();
+    let mut custody = PersistentScanoutCustody::default();
+    let (fence, mut signal) = UnixStream::pair().unwrap();
+    signal.write_all(b"done").unwrap();
+    let mut frame = submission(&pool, 21);
+    frame.primary_plane.completion_fence = Some(fence.into());
+    custody.accept_submission(frame).unwrap();
+    // Serial 3 is at the submission baseline, so the callback cannot retire it.
+    assert!(matches!(
+        custody.present(&device, &callback(3), None),
+        PersistentFlipOutcome::Waiting
+    ));
+    let submitted = custody.submitted().unwrap();
+    let observed = submitted.completion_fence_status().unwrap();
+    assert_eq!(observed, LibdrmNativeCompletionFenceStatus::Signaled);
+    let mut wait = crate::LiveNativeCompletionWait::default();
+    wait.observe_fence(submitted.completion_fence().unwrap(), observed);
+    assert!(
+        wait.descriptors.is_empty(),
+        "a refused signalled fence must not spin poll"
+    );
+    assert!(wait.short_service);
+    drop(wait);
+    assert!(custody.displayed().is_none());
+    assert!(matches!(
+        custody.present(&device, &callback(4), None),
+        PersistentFlipOutcome::Presented { .. }
+    ));
+    assert!(custody.displayed().unwrap().completion_fence().is_none());
+}

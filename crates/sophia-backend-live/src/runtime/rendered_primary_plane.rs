@@ -30,6 +30,17 @@ where
             )
     }
 
+    pub(crate) fn completion_fences(
+        &self,
+    ) -> impl Iterator<Item = (OutputId, std::os::fd::BorrowedFd<'_>)> {
+        self.outputs.outputs().filter_map(|state| {
+            Some((
+                state.output,
+                state.scanout_custody.submitted()?.completion_fence()?,
+            ))
+        })
+    }
+
     /// Arm from the current native head before callback intake or retirement.
     /// Absence invalidates authority; it never restores the legacy path.
     pub(crate) fn set_native_retirement_witness(

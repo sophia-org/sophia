@@ -392,6 +392,8 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                     );
                     self.heads[head_index].submitted_clock_source = self.clock_source_for_submission(head_index);
                     self.heads[head_index].submitted_at = Some(Instant::now());
+                    self.heads[head_index].completion_fence_status =
+                        crate::LibdrmNativeCompletionFenceStatus::Unsupported;
                     if let Some(placement) = self.heads[head_index].prepared_cursor_ride.take() {
                         if submit.cursor_dropped {
                             self.cursor_combined_drops =

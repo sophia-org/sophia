@@ -345,6 +345,7 @@ fn measurements_distinguish_coalesced_rings_ready_fds_deadlines_and_queued_work(
             fd_ready: 1,
             wait_deadlines: 0,
             immediate_items: 0,
+            ..OwnerWakeStatistics::default()
         }
     );
     // Clearing the coalesced ring, then waiting with no borrowed descriptors,
@@ -365,6 +366,133 @@ fn measurements_distinguish_coalesced_rings_ready_fds_deadlines_and_queued_work(
             fd_ready: 1,
             wait_deadlines: 1,
             immediate_items: 1,
+            ..OwnerWakeStatistics::default()
         }
     );
+}
+
+#[test]
+fn native_readiness_wakes_without_consuming_and_returns_to_idle_after_service() {
+    let owner = OwnerWake::new().unwrap();
+    let (_authority, queue) = sync_channel::<u32>(1);
+    let (mut card, mut kernel) = served();
+    let producer = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(30));
+        kernel.write_all(b"flip").unwrap();
+        kernel
+    });
+    owner.begin_pass().unwrap();
+    let started = Instant::now();
+    assert_eq!(
+        owner
+            .receive_with_native(&queue, LONG, vec![], readable(&card), Some((7, 0)))
+            .unwrap(),
+        Err(RecvTimeoutError::Timeout)
+    );
+    assert!(started.elapsed() < PROMPT);
+    let _kernel = producer.join().unwrap();
+    assert_eq!(owner.statistics().native_ready, 1);
+    assert_eq!(
+        owner.statistics().fd_ready,
+        0,
+        "shell readiness remains separate"
+    );
+    // Only the native service consumes the event. Readiness grants no retirement.
+    let mut event = [0; 4];
+    card.read_exact(&mut event).unwrap();
+    assert_eq!(&event, b"flip");
+    owner.observe_native_progress(Some((7, 1)), true).unwrap();
+    assert_eq!(owner.statistics().native_ready_consumed, 1);
+    owner.begin_pass().unwrap();
+    let idle = Duration::from_millis(25);
+    let started = Instant::now();
+    assert_eq!(
+        owner
+            .receive_with_native(&queue, idle, vec![], vec![], Some((7, 1)))
+            .unwrap(),
+        Err(RecvTimeoutError::Timeout)
+    );
+    assert!(started.elapsed() >= idle, "there must be no polling tail");
+    assert_eq!(owner.statistics().waits, 2);
+    assert_eq!(owner.statistics().wait_deadlines, 1);
+}
+
+#[test]
+fn native_ready_without_consumption_is_counted_separately() {
+    let owner = OwnerWake::new().unwrap();
+    let (card, mut kernel) = served();
+    kernel.write_all(b"flip").unwrap();
+    owner
+        .wait_for_service(LONG, readable(&card), Some((9, 3)))
+        .unwrap();
+    owner.observe_native_progress(Some((9, 3)), true).unwrap();
+    assert_eq!(owner.statistics().native_ready_idle, 1);
+    assert_eq!(owner.statistics().native_ready_consumed, 0);
+    owner.observe_native_progress(Some((9, 4)), true).unwrap();
+    assert_eq!(
+        owner.statistics().native_ready_idle,
+        1,
+        "count once per wake"
+    );
+}
+
+#[test]
+fn native_hup_is_a_state_change_before_the_next_subscription() {
+    for (active, next_owner, must_fail) in [(false, 7, false), (true, 7, true), (true, 8, false)] {
+        let owner = OwnerWake::new().unwrap();
+        let (card, kernel) = served();
+        drop(kernel);
+        owner
+            .wait_for_service(LONG, readable(&card), Some((7, 0)))
+            .unwrap();
+        assert_eq!(owner.statistics().native_errors, 1);
+        assert_eq!(
+            owner
+                .observe_native_progress(Some((next_owner, 0)), active)
+                .is_err(),
+            must_fail
+        );
+        // An inactive or replaced owner does not subscribe the revoked card again.
+        let idle = Duration::from_millis(20);
+        let started = Instant::now();
+        owner
+            .wait_for_service(idle, vec![], Some((next_owner, 0)))
+            .unwrap();
+        assert!(started.elapsed() >= idle);
+        assert_eq!(owner.statistics().native_errors, 1);
+    }
+}
+
+#[test]
+fn fair_service_wait_does_not_consume_busy_authority_and_is_interruptible() {
+    let owner = OwnerWake::new().unwrap();
+    let (authority, queue) = sync_channel(1);
+    authority.send(42).unwrap();
+    let notifier = owner.notifier();
+    let producer = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(30));
+        notifier.notify();
+    });
+    let started = Instant::now();
+    owner.wait_for_service(LONG, vec![], None).unwrap();
+    assert!(started.elapsed() < PROMPT);
+    assert_eq!(queue.try_recv(), Ok(42));
+    assert_eq!(owner.statistics().service_waits, 1);
+    assert_eq!(owner.statistics().ring_ready, 1);
+    producer.join().unwrap();
+}
+
+#[test]
+fn stalled_native_descriptor_sleeps_until_the_watchdog_budget() {
+    let owner = OwnerWake::new().unwrap();
+    let (card, _kernel) = served();
+    let bound = Duration::from_millis(25);
+    let started = Instant::now();
+    owner
+        .wait_for_service(bound, readable(&card), Some((3, 0)))
+        .unwrap();
+    assert!(started.elapsed() >= bound);
+    assert_eq!(owner.statistics().waits, 1);
+    assert_eq!(owner.statistics().native_ready, 0);
+    assert_eq!(owner.statistics().wait_deadlines, 1);
 }

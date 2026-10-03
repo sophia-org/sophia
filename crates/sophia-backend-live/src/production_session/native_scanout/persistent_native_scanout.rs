@@ -4,6 +4,8 @@ use sophia_protocol::{OutputId, TransactionId};
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 
+mod completion_wait;
+pub use completion_wait::LiveNativeCompletionWait;
 mod composition_admission;
 mod composition_installation;
 mod mirror_completion;
@@ -658,3 +660,7 @@ mod preview_inventory_tests;
 #[cfg(test)]
 #[path = "../../../tests/support/native_retirement_order.rs"]
 mod retirement_order_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/support/native_completion_wait.rs"]
+mod completion_wait_tests;

@@ -15,7 +15,7 @@ mod persistent_native_scanout;
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 pub use persistent_native_scanout::{
-    LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL, LiveOutputAllocationContext,
+    LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL, LiveNativeCompletionWait, LiveOutputAllocationContext,
     LiveOutputAllocationFormatPreference, LiveOutputAllocationPreference,
     LivePersistentRenderMetrics, LivePreviewFrameFailure, LivePreviewImageRefusal,
     LiveProductionCompletionTimestamp, LiveProductionCpuFrameQueueStatus,
