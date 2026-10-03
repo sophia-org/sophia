@@ -268,6 +268,7 @@ tools/run_sophia_input_latency_qemu.sh
 SOPHIA_QEMU_SCENARIO=emergency-recovery tools/qemu_session_harness.sh
 SOPHIA_QEMU_SCENARIO=gtk-classic tools/qemu_session_harness.sh
 SOPHIA_QEMU_SCENARIO=gtk-confined tools/qemu_session_harness.sh
+SOPHIA_QEMU_SCENARIO=session-lock tools/qemu_session_harness.sh
 SOPHIA_QEMU_SCENARIO=xtest-selection tools/qemu_session_harness.sh
 tools/audit_no_xlibre_runtime.sh
 tools/audit_xcentric_runtime.sh
@@ -423,6 +424,32 @@ driver's stdout matched and one bounded completion. The guest runs xterm in
 the C locale, so the driver asks for UTF8_STRING and falls back to STRING as
 a pasting client does. Rebuild the image after any change to the session or the driver;
 the harness runs whatever image is there.
+
+## Session lock in QEMU
+
+The `session-lock` scenario runs the whole lock on physical input, the only
+input a lock takes. The guest session is the GTK proof (zenity, classic
+profile) with the factotum agent, its PAM helper and real PAM: the guest init
+writes a root-owned `sophia-lock` stack (`examples/pam.d/sophia-lock`) and a
+test account whose password is `sophialock`. `--inject-session-lock`, a
+proof-only option, locks once the physical input proof is armed, because no
+in-tree WM can fire a `session:lock` binding; everything after the trigger is
+the shipped path. Arming first matters: before it, the proof routes no keys
+at all, so a leak could not show. The host types a wrong password, waits for
+real PAM to reject it, types the right one, and after the unlock completes
+the GTK proof:
+
+```sh
+tools/build_qemu_session_initramfs.sh   # carries sophia-factotum, its PAM helper and pam_unix
+SOPHIA_QEMU_SCENARIO=session-lock tools/qemu_session_harness.sh
+```
+
+zenity's stdout must be exactly the text typed after the unlock, so a key
+that leaked past the lock fails the run. `tools/verify_qemu_session_lock_evidence.sh`
+checks the record in order (the armed input proof, locking, locked, a
+rejected first attempt, an accepted second, unlocking, unlocked) and that
+neither password appears anywhere in the evidence. The binding itself and the
+attended checks (VT switch, hotplug, agent loss) are t297's.
 
 ## X11 conformance profiles and XTS5
 

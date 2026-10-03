@@ -186,6 +186,13 @@ physical-origin keys, which the lock refuses from synthetic sources by
 design, so it belongs in the QEMU session harness, whose in-guest uinput
 injector produces them, or in t297.
 
+Later still on 2026-10-03, on `lock/t034-egress`: the QEMU `session-lock`
+scenario is that control. A proof-only `--inject-session-lock` starts the
+lock once the GTK proof's physical input is armed; virtio-keyboard keys from QMP
+then reach the real factotum agent and PAM in the guest, a wrong password is
+rejected, the right one unlocks, and zenity's exact stdout shows no lock-time
+key reached it ([validation](../../validation.md#session-lock-in-qemu)).
+
 ### t293 sophia-factotum core, pam and pass
 
 Port 9front's factotum agent to `crates/sophia-factotum` under the

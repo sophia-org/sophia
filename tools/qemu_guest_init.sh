@@ -28,6 +28,7 @@ case " $cmdline " in
     *" sophia.scenario=emergency-recovery "*) scenario="emergency-recovery" ;;
     *" sophia.scenario=gtk-classic "*) scenario="gtk-classic" ;;
     *" sophia.scenario=gtk-confined "*) scenario="gtk-confined" ;;
+    *" sophia.scenario=session-lock "*) scenario="session-lock" ;;
     *" sophia.scenario=xtest-selection "*) scenario="xtest-selection" ;;
 esac
 xtest_row=""
@@ -54,7 +55,7 @@ esac
 if [ "$scenario" = "emergency-recovery" ]; then
     echo "sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu scenario=emergency-recovery"
 elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ] \
-    || [ "$scenario" = "xtest-selection" ]; then
+    || [ "$scenario" = "session-lock" ] || [ "$scenario" = "xtest-selection" ]; then
     echo "sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu scenario=$scenario"
 else
     echo "sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu ticks=300"
@@ -143,7 +144,8 @@ if [ "$scenario" = "emergency-recovery" ]; then
     fi
     set -- session run --display=:181 --native-scanout --max-runtime-ms=30000
     echo "sophia_qemu_guest_recovery schema=1 status=running chord=ctrl-alt-backspace"
-elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ]; then
+elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ] \
+    || [ "$scenario" = "session-lock" ]; then
     profile="classic"
     [ "$scenario" = "gtk-confined" ] && profile="confined"
     # Accessibility is outside this minimal image's GTK rendering/input proof.
@@ -151,7 +153,10 @@ elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ]; then
     export GTK_A11Y=none
     expected_stdout="$(printf 'sophia\n.')"
     expected_stdout="${expected_stdout%.}"
-    set -- session run --display=:181 --native-scanout --max-runtime-ms=30000 \
+    # The lock adds two typed passwords and PAM's failure delay.
+    runtime_ms=30000
+    [ "$scenario" = "session-lock" ] && runtime_ms=90000
+    set -- session run --display=:181 --native-scanout --max-runtime-ms="$runtime_ms" \
         --namespace-profile="$profile" --software-client-rendering \
         --client=zenity --client-arg=--entry --client-arg=--title \
         --client-arg='Sophia GTK proof' --client-arg=--text \
@@ -159,6 +164,23 @@ elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ]; then
         --expect-client-stdout="$expected_stdout" --require-client-normal-exit \
         --expect-physical-text=sophia --expect-physical-pointer \
         --inject-surface-resize=640x360 --exit-after-input-proof
+    if [ "$scenario" = "session-lock" ]; then
+        # Real PAM on a test account: root's password is "sophialock". The
+        # files are written here, as root, because the agent starts only on
+        # a root-owned stack nobody else can write.
+        umask 022
+        mkdir -p /etc/pam.d
+        cp /usr/share/sophia/pam.d/sophia-lock /etc/pam.d/sophia-lock
+        echo 'root:x:0:0:root:/root:/bin/sh' > /etc/passwd
+        echo 'root:x:0:' > /etc/group
+        printf 'passwd: files\ngroup: files\nshadow: files\n' > /etc/nsswitch.conf
+        echo 'root:$6$sophiaqemulock$0yAj5lhlkbYql3IR/RdeAxyKMuUneqNAuzv34feGFoNNv0K/XuBdCVIV3NTcHXc7/isi94OseMHhyTPDGjuJi0:20000:0:99999:7:::' > /etc/shadow
+        chmod 600 /etc/shadow
+        export LOGNAME=root USER=root
+        set -- "$@" --factotum-agent=/usr/bin/sophia-factotum \
+            --factotum-pam-helper=/usr/bin/sophia-factotum-pam --inject-session-lock \
+            --physical-sequence-timeout-ms=60000
+    fi
     echo "sophia_qemu_gtk schema=1 status=running profile=$profile"
 elif [ "$scenario" = "xtest-selection" ]; then
     # The headless gate's session, on a scanned-out head: XTEST admitted,
@@ -229,7 +251,8 @@ if [ "$scenario" = "emergency-recovery" ]; then
     else
         echo "sophia_qemu_guest_recovery schema=1 status=failed reason=recovery_exit exit_status=$status guard_exit_status=$guard_status"
     fi
-elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ]; then
+elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ] \
+    || [ "$scenario" = "session-lock" ]; then
     if [ "$status" -eq 0 ]; then
         echo "sophia_qemu_guest schema=1 status=complete scenario=$scenario"
     else

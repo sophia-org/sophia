@@ -115,6 +115,7 @@ impl PersistentXtermSessionConfig {
                 arg == "--secondary-terminal"
                     || arg == "--proof"
                     || arg.starts_with("--client=")
+                    || arg == "--inject-session-lock"
                     || arg.starts_with("--terminal=")
                     || arg.starts_with("--terminal-exec=")
                     || ((arg.starts_with("--inject-text=")
@@ -663,6 +664,18 @@ impl PersistentXtermSessionConfig {
         // most single-application proofs, and now the standalone and native
         // profiles too.
         let factotum = lock::parse_factotum(args)?;
+        let inject_session_lock = args.iter().any(|arg| arg == "--inject-session-lock");
+        // A proof of the whole lock on real input: physical keys are the
+        // only ones a lock takes, the authenticator is the real agent, and
+        // the cover's proof needs scanned-out heads.
+        if inject_session_lock
+            && (factotum.is_none() || expect_physical_text.is_none() || !native_scanout)
+        {
+            return Err(
+                "--inject-session-lock requires --factotum-agent, --expect-physical-text and --native-scanout"
+                    .into(),
+            );
+        }
         let dropped_shortcuts = if normal_session {
             applications.validate_shortcuts(
                 &shortcut_profile_candidate,
@@ -902,6 +915,7 @@ impl PersistentXtermSessionConfig {
             shell_process,
             shell_shortcuts_enabled: live_shell_enabled,
             factotum,
+            inject_session_lock,
             shell_config,
             shell_panel_thickness,
             shell_content_enabled,

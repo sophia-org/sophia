@@ -112,6 +112,8 @@ struct PersistentXtermSessionConfig {
     /// The agent that alone can end a session lock; a lock is refused, and a
     /// `session:lock` binding unavailable, without one.
     factotum: Option<SessionFactotum>,
+    /// Proof only: lock once the physical input proof is armed.
+    inject_session_lock: bool,
     shell_config: Option<std::path::PathBuf>,
     shell_panel_thickness: Option<u16>,
     shell_content_enabled: bool,

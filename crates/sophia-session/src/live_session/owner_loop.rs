@@ -626,6 +626,8 @@ fn run_session_loop_inner(
     let mut input_surface_generation = None;
     let mut input_surface_pixel_change = false;
     let mut input_proof_started_at = None;
+    // `--inject-session-lock` has started its one lock.
+    let mut session_lock_proof_requested = false;
     let mut input_change_submission_baseline = None;
     let mut input_change_frame_baseline = None;
     let mut input_presented_latency = None;
