@@ -136,6 +136,25 @@ X client or provider record can enter or leave locked state; a verdict for an
 earlier lock epoch or a superseded attempt never unlocks; relocking during
 authentication discards the in-flight verdict.
 
+Checkpoint 2026-10-03 on `lock/t034`: the `SessionLockState` reducer; the X
+frontend publishing its applied input epoch (requested is not applied until
+the broker clears grabs, frozen input and server grabs); Engine's
+`SessionLockKeyboard` and Session's `SessionLockInput` with its bounded,
+zeroing secret; the lock router in `route_physical_input` (VT and emergency
+recognizers first, devices still arrive and leave, no pointer delivery); the
+Session-direct `session:lock` shortcut, which the WM neither sees nor can
+delay; the owner-loop phase that takes the seat, installs the cover, reports
+locked only on every head's proof and an applied epoch, hands a submission to
+the authenticator seam and unlocks only on the current attempt's verdict; and a
+seat-wide synthetic-input switch that injectors and the broker both honour.
+Controls: 11 reducer, 6 keyboard, 8 lock-input, the applied-epoch and
+synthetic-admission broker tests, and the refused `session:lock` profile. Until
+t293 supplies the authenticator a lock is refused and a `session:lock` binding
+is an unavailable capability, so nothing here is live yet. Open: cursor
+hiding, the control-bus lock request, egress gates (the screen-capture portal
+has no live executor yet; WM inspection while locked), and an owner-loop
+control driven by a fake authenticator once t293 defines it.
+
 ### t293 sophia-factotum core, pam and pass
 
 Port 9front's factotum agent to `crates/sophia-factotum` under the
