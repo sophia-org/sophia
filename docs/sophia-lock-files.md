@@ -161,7 +161,10 @@ live resources (uploads included) than `max_live_resources`, is answered
 `upload/N` at exactly the upload's cursor and never past its declared size.
 `ResourceEnd` naming the declared total, after every byte arrived, makes the
 resource whole (`accepted`); anything short is `rejected` (`size_mismatch`).
-Either ends the binding, as `ResourceCancel` does (`cancelled`). Resources
+Either ends the binding, as `ResourceCancel` does (`cancelled`). An upload
+is one transaction: `ResourceEnd` and `ResourceCancel` carry the transaction
+of the `ResourceBegin` they end, and any other transaction fails the write;
+every status of the upload names it. Resources
 belong to the connection epoch, so a provider may keep one across lock epochs;
 `ResourceRetire` of a whole resource frees it and is answered
 `ResourceReleased`.
