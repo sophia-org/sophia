@@ -98,7 +98,7 @@ pub(super) fn project_render_bundle(
                 .checked_mul(4)
                 .ok_or("content stride overflow")?,
             format: DRM_FORMAT_ARGB8888,
-            resource,
+            resource: resource.into(),
         });
     }
     if images.is_empty() {

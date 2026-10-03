@@ -48,6 +48,38 @@ impl SessionLockEpoch {
     }
 }
 
+/// Which provider image a lock shows: its connection epoch, so a replaced
+/// provider's image is never the same identity as its successor's, and its
+/// resource. Comparable and pixel-free.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct SessionLockImageIdentity {
+    pub output: OutputId,
+    pub connection_epoch: u64,
+    pub resource_id: u64,
+    pub resource_generation: u64,
+}
+
+/// A lock provider's whole image for one output, premultiplied BGRA8, sized
+/// exactly to that output's allocation.
+#[derive(Clone)]
+pub struct SessionLockImage {
+    pub identity: SessionLockImageIdentity,
+    pub width_px: u32,
+    pub height_px: u32,
+    pub pixels: std::sync::Arc<[u8]>,
+}
+
+impl core::fmt::Debug for SessionLockImage {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("SessionLockImage")
+            .field("identity", &self.identity)
+            .field("width_px", &self.width_px)
+            .field("height_px", &self.height_px)
+            .finish_non_exhaustive()
+    }
+}
+
 /// What Engine draws on every head while the session is locked.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SessionLockCover {

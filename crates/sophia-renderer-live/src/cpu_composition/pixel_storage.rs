@@ -7,6 +7,8 @@ use std::sync::Arc;
 pub enum LiveCpuPixelStorage {
     Shared(Arc<Vec<u8>>),
     Content(sophia_runtime::ContentResourceLease),
+    /// A lock provider's image, shared with Session's custody.
+    Bytes(Arc<[u8]>),
 }
 
 impl LiveCpuPixelStorage {
@@ -18,6 +20,15 @@ impl LiveCpuPixelStorage {
 impl From<Arc<Vec<u8>>> for LiveCpuPixelStorage {
     fn from(bytes: Arc<Vec<u8>>) -> Self {
         Self::Shared(bytes)
+    }
+}
+
+impl From<sophia_engine::CompositorImageSource> for LiveCpuPixelStorage {
+    fn from(source: sophia_engine::CompositorImageSource) -> Self {
+        match source {
+            sophia_engine::CompositorImageSource::Shell(lease) => Self::Content(lease),
+            sophia_engine::CompositorImageSource::Lock(image) => Self::Bytes(image.pixels),
+        }
     }
 }
 
@@ -33,6 +44,7 @@ impl core::ops::Deref for LiveCpuPixelStorage {
         match self {
             Self::Shared(bytes) => bytes,
             Self::Content(lease) => lease.bytes(),
+            Self::Bytes(bytes) => bytes,
         }
     }
 }
@@ -51,3 +63,15 @@ impl PartialEq for LiveCpuPixelStorage {
     }
 }
 impl Eq for LiveCpuPixelStorage {}
+
+/// The texture handle of a lock provider image. Lock images take the space
+/// with both top bits set, apart from surface buffers and the shell's
+/// handles; every part of the identity moves it, so a replaced provider never
+/// reuses a texture.
+pub fn lock_image_handle(identity: sophia_engine::SessionLockImageIdentity) -> u64 {
+    let mixed = identity.output.raw().rotate_left(48)
+        ^ identity.connection_epoch.rotate_left(32)
+        ^ identity.resource_id.rotate_left(16)
+        ^ identity.resource_generation;
+    (0b11 << 62) | (mixed & ((1 << 62) - 1))
+}

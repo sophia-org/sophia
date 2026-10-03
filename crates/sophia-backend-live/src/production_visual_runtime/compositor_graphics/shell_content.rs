@@ -62,7 +62,7 @@ impl LiveProductionVisualRuntime {
                         candidate,
                         ..
                     } if grant == frame.grant && output == frame.output && candidate == frame.candidate_generation
-                        && image.resource.description().grant == grant
+                        && image.resource.shell().is_some_and(|lease| lease.description().grant == grant)
                 )
             })
         {

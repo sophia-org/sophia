@@ -538,7 +538,14 @@ impl LiveProductionCpuScene {
                         LiveCpuCompositionLayerRef {
                             geometry: content.geometry_px,
                             buffer: LiveCpuBufferSourceRef {
-                                handle: content.resource.description().resource.id,
+                                handle: match &content.resource {
+                                    sophia_engine::CompositorImageSource::Shell(lease) => {
+                                        lease.description().resource.id
+                                    }
+                                    sophia_engine::CompositorImageSource::Lock(image) => {
+                                        crate::lock_image_handle(image.identity)
+                                    }
+                                },
                                 size: content.size_px,
                                 stride: content.stride,
                                 format: content.format,

@@ -1,8 +1,67 @@
 use super::*;
 
-/// One immutable shell resource placed in output-local physical pixels.
-/// The lease is carried through every native frame clone so resource release
-/// cannot precede the last scanout reference.
+/// Where a content image's pixels come from. Each source keeps its own
+/// identity and its own texture handle space, so no source can name, or be
+/// drawn as, another's pixels.
+#[derive(Clone)]
+pub enum CompositorImageSource {
+    /// A shell component's accepted resource, under its content grant.
+    Shell(sophia_runtime::ContentResourceLease),
+    /// A lock provider's image, shown only while its lock covers the output.
+    Lock(crate::SessionLockImage),
+}
+
+/// The comparable, non-owning identity of a source: no pixels are retained.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CompositorImageSourceIdentity {
+    Shell(sophia_protocol::ContentResourceBegin),
+    Lock(crate::SessionLockImageIdentity),
+}
+
+impl CompositorImageSourceIdentity {
+    /// The shell resource this names, if it is shell content.
+    pub fn shell(&self) -> Option<&sophia_protocol::ContentResourceBegin> {
+        match self {
+            Self::Shell(begin) => Some(begin),
+            Self::Lock(_) => None,
+        }
+    }
+}
+
+impl From<sophia_runtime::ContentResourceLease> for CompositorImageSource {
+    fn from(lease: sophia_runtime::ContentResourceLease) -> Self {
+        Self::Shell(lease)
+    }
+}
+
+impl CompositorImageSource {
+    pub fn identity(&self) -> CompositorImageSourceIdentity {
+        match self {
+            Self::Shell(lease) => CompositorImageSourceIdentity::Shell(lease.description().clone()),
+            Self::Lock(image) => CompositorImageSourceIdentity::Lock(image.identity),
+        }
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        match self {
+            Self::Shell(lease) => lease.bytes(),
+            Self::Lock(image) => &image.pixels,
+        }
+    }
+
+    /// The shell lease, for shell content admission; a lock image is never
+    /// shell content.
+    pub fn shell(&self) -> Option<&sophia_runtime::ContentResourceLease> {
+        match self {
+            Self::Shell(lease) => Some(lease),
+            Self::Lock(_) => None,
+        }
+    }
+}
+
+/// One immutable image placed in output-local physical pixels. The source
+/// is carried through every native frame clone so its release cannot precede
+/// the last scanout reference.
 #[derive(Clone)]
 pub struct CompositorContentImage {
     pub node: CompositorNodeId,
@@ -12,7 +71,7 @@ pub struct CompositorContentImage {
     pub size_px: Size,
     pub stride: u32,
     pub format: u32,
-    pub resource: sophia_runtime::ContentResourceLease,
+    pub resource: CompositorImageSource,
 }
 
 impl core::fmt::Debug for CompositorContentImage {
@@ -39,7 +98,7 @@ impl PartialEq for CompositorContentImage {
             && self.size_px == other.size_px
             && self.stride == other.stride
             && self.format == other.format
-            && self.resource.description() == other.resource.description()
+            && self.resource.identity() == other.resource.identity()
     }
 }
 
@@ -56,7 +115,7 @@ pub struct CompositorContentIdentity {
     pub size_px: Size,
     pub stride: u32,
     pub format: u32,
-    pub resource: sophia_protocol::ContentResourceBegin,
+    pub resource: CompositorImageSourceIdentity,
     pub source_bytes: usize,
 }
 
@@ -75,7 +134,7 @@ impl CompositorContentMetadata for CompositorContentImage {
             size_px: self.size_px,
             stride: self.stride,
             format: self.format,
-            resource: self.resource.description().clone(),
+            resource: self.resource.identity(),
             source_bytes: self.resource.bytes().len(),
         }
     }

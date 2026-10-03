@@ -32,7 +32,7 @@ fn image(epoch: u64, generation: u64) -> CompositorContentIdentity {
         },
         stride: 32,
         format: u32::from_le_bytes(*b"AR24"),
-        resource: ContentResourceBegin {
+        resource: CompositorImageSourceIdentity::Shell(ContentResourceBegin {
             grant,
             resource: ContentResourceId { id: 1, generation },
             width_px: 8,
@@ -42,7 +42,7 @@ fn image(epoch: u64, generation: u64) -> CompositorContentIdentity {
             pixel_format: 1,
             chunk_count: 1,
             total_bytes: 256,
-        },
+        }),
         source_bytes: 256,
     }
 }

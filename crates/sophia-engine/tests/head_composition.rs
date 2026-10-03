@@ -965,7 +965,7 @@ fn shell_content_keeps_physical_geometry_and_forces_composition() {
                 },
                 stride: 16,
                 format: u32::from_le_bytes(*b"AR24"),
-                resource: content_resource(),
+                resource: content_resource().into(),
             },
         ));
 
