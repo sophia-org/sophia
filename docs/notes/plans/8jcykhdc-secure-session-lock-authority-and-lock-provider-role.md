@@ -203,6 +203,18 @@ deterministic real-PAM controls with `pam_start_confdir` against a private
 directory using `pam_permit` and `pam_deny`; agent or helper crash and timeout
 leave the session locked; secret pages are locked and zeroed after use.
 
+Checkpoint 2026-10-03 on `lock/t034`: `crates/sophia-factotum` (attributes,
+key ring, conversation, ctl, log, `pass`, `pam`, the 9P export, the job pool,
+the helper launcher, the agent binary and Session's `UnlockClient`) and
+`crates/sophia-factotum-pam` (the helper, `unsafe` only in `ffi`). Session
+starts the agent from `--factotum-agent` and `--factotum-pam-helper`, makes
+`session:lock` available with it, and installs it as the lock's
+authenticator. `examples/pam.d/sophia-lock` is the example stack. Controls:
+factotum and helper suites, including real PAM through a private confdir,
+a hung helper killed at its deadline, a forged acceptance with a failing
+exit refused, cancellation, and the agent's serve loop with Session's client
+end to end. Open: a live-session run; the user endpoint waits for t275.
+
 ### t294 Lock provider role and contract
 
 Specify `protocol/sophia-lock-files-v1.kdl` and `docs/sophia-lock-files.md` with

@@ -1,0 +1,13 @@
+# PAM service for the Sophia session lock (sophia-factotum's pam login).
+#
+# Install as /etc/pam.d/sophia-lock. It verifies a plain Unix password with a
+# two-second failure delay and no faillock, so mistyped passwords never lock
+# the account out of its own session. sophia-factotum calls only
+# pam_authenticate (and pam_setcred to refresh credentials), never
+# pam_acct_mgmt, so an expired account can still unlock a running session.
+#
+# To use the distribution's full chain instead (fingerprint, smartcard,
+# homed), replace both lines with:  auth include system-auth
+
+auth    optional    pam_faildelay.so delay=2000000
+auth    required    pam_unix.so
