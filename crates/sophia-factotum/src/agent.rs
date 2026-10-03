@@ -82,6 +82,37 @@ pub fn check_helper(path: &Path) -> Result<PathBuf, &'static str> {
     Ok(canonical)
 }
 
+/// Where Linux-PAM looks for a service's stack, in its order.
+pub const PAM_SERVICE_DIRECTORIES: [&str; 2] = ["/etc/pam.d", "/usr/lib/pam.d"];
+
+/// A service PAM would not find falls back to `other`, which commonly
+/// refuses everyone: a lock taken then could never be opened. The agent
+/// therefore starts only when the service's own stack exists, belongs to
+/// root and is writable by no one else, in the first directory PAM reads
+/// it from. `directories` is [`PAM_SERVICE_DIRECTORIES`] outside tests.
+pub fn check_service(service: &str, directories: &[&Path]) -> Result<PathBuf, &'static str> {
+    if service.is_empty()
+        || service.len() > 64
+        || !service
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+    {
+        return Err("pam service name is not a plain name");
+    }
+    for directory in directories {
+        let path = directory.join(service);
+        let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        // The first stack PAM finds is the one it uses; never look past it.
+        if !metadata.is_file() || !protected(&metadata) {
+            return Err("pam service file is not a root-owned, protected file");
+        }
+        return Ok(path);
+    }
+    Err("pam service file is missing; a lock could not be opened")
+}
+
 /// Owned by root and writable by neither group nor others.
 fn protected(metadata: &std::fs::Metadata) -> bool {
     metadata.uid() == 0 && metadata.mode() & 0o022 == 0
