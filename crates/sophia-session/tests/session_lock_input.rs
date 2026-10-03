@@ -7,7 +7,7 @@ use sophia_session::emergency_input::EmergencyChordState;
 use sophia_session::session_keyboard::VirtualTerminalChordState;
 use sophia_session::session_lock_input::{
     SESSION_LOCK_SECRET_CAPACITY, SessionLockEdit, SessionLockInput, SessionLockKeyOutcome,
-    SessionLockSecret,
+    SessionLockSecret, session_lock_chords,
 };
 
 const A: u32 = 30;
@@ -223,4 +223,57 @@ fn deleting_removes_a_whole_character() {
     assert!(secret.push_str("aé"));
     assert!(secret.pop_char());
     assert_eq!(secret.as_str(), "a");
+}
+
+#[test]
+fn a_providers_granted_chords_fire_by_index_and_never_edit_the_secret() {
+    use sophia_protocol::lock_files::LockChordRequest;
+    const ALT: u16 = 0b0100;
+    let granted = [
+        LockChordRequest {
+            keysym: 0x61, // a
+            modifiers: ALT,
+        },
+        LockChordRequest {
+            keysym: 0x62, // b
+            modifiers: ALT,
+        },
+    ];
+    let mut seat = Seat::new();
+    seat.lock.set_chords(session_lock_chords(&granted));
+    seat.key(LEFT_ALT, true);
+    seat.tap(B);
+    seat.key(LEFT_ALT, false);
+    assert_eq!(seat.lock.take_chords(), [1], "Alt+b is the second grant");
+    assert!(
+        seat.lock.take_edits().is_empty(),
+        "nothing reached the secret"
+    );
+    // A replacement provider's grants replace the old ones.
+    seat.lock.set_chords(session_lock_chords(&granted[1..]));
+    seat.key(LEFT_ALT, true);
+    seat.tap(B);
+    seat.key(LEFT_ALT, false);
+    assert_eq!(seat.lock.take_chords(), [0]);
+    // No provider: Alt+b is not a chord.
+    seat.lock.set_chords(Vec::new());
+    seat.key(LEFT_ALT, true);
+    seat.tap(B);
+    seat.key(LEFT_ALT, false);
+    assert!(seat.lock.take_chords().is_empty());
+}
+
+#[test]
+fn granted_chords_convert_all_or_none_so_ids_never_shift() {
+    use sophia_protocol::lock_files::LockChordRequest;
+    let good = LockChordRequest {
+        keysym: 0x62,
+        modifiers: 0b0100,
+    };
+    let shift_only = LockChordRequest {
+        keysym: 0x61,
+        modifiers: 0b0001,
+    };
+    assert_eq!(session_lock_chords(&[good, good]).len(), 2);
+    assert!(session_lock_chords(&[good, shift_only]).is_empty());
 }

@@ -198,6 +198,13 @@ impl SessionLockInput {
         std::mem::take(&mut self.edits)
     }
 
+    /// The chords the current provider was granted; a chord's ID is its
+    /// index. Replacing them drops any chord not yet reported.
+    pub fn set_chords(&mut self, chords: Vec<sophia_engine::SessionLockChord>) {
+        self.keyboard.set_chords(chords);
+        self.chords.clear();
+    }
+
     pub fn take_chords(&mut self) -> Vec<u16> {
         std::mem::take(&mut self.chords)
     }
@@ -246,3 +253,22 @@ pub trait SessionUnlockAuthenticator {
 /// replaced. The lock stays.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SessionUnlockUnavailable;
+
+/// The lock keyboard's chords for a provider's granted requests, in order,
+/// so each chord's ID stays its index. All or none: a request the keyboard
+/// cannot hold (custody refuses those at negotiation) grants no chord at all
+/// rather than shifting the others' IDs.
+pub fn session_lock_chords(
+    granted: &[sophia_protocol::lock_files::LockChordRequest],
+) -> Vec<sophia_engine::SessionLockChord> {
+    granted
+        .iter()
+        .map(|request| {
+            Some(sophia_engine::SessionLockChord {
+                keysym: request.keysym,
+                modifiers: sophia_engine::SessionLockModifiers::for_chord(request.modifiers)?,
+            })
+        })
+        .collect::<Option<Vec<_>>>()
+        .unwrap_or_default()
+}

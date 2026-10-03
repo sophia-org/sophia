@@ -78,6 +78,8 @@ macro_rules! begin_session_lock {
                     keyboard_coverage.forget_all_devices();
                     // Replacing the input zeroes any secret of a lock this
                     // one supersedes.
+                    let mut input = input;
+                    input.set_chords(lock_chords.clone());
                     session_lock_input = Some(input);
                     // The cover is runtime state that every list consults; a
                     // repaint that cannot be queued now still draws it next.
@@ -143,6 +145,10 @@ macro_rules! service_lock_provider {
                         chords,
                     } => {
                         images_changed |= lock_frames.connected(connection_epoch);
+                        lock_chords = crate::session_lock_input::session_lock_chords(&chords);
+                        if let Some(input) = session_lock_input.as_mut() {
+                            input.set_chords(lock_chords.clone());
+                        }
                         crate::session_println!(
                             "sophia_live_lock_provider schema=1 status=connected connection_epoch={connection_epoch} chords={}",
                             chords.len(),
@@ -152,6 +158,10 @@ macro_rules! service_lock_provider {
                         connection_epoch,
                     } => {
                         images_changed |= lock_frames.disconnected(connection_epoch);
+                        lock_chords.clear();
+                        if let Some(input) = session_lock_input.as_mut() {
+                            input.set_chords(Vec::new());
+                        }
                         crate::session_println!(
                             "sophia_live_lock_provider schema=1 status=disconnected connection_epoch={connection_epoch}",
                         )
@@ -303,9 +313,8 @@ macro_rules! service_session_lock {
             | crate::session_lock::SessionLockPhase::Unlocked => {}
         }
         if let Some(input) = session_lock_input.as_mut() {
-            // Edits reach the provider as entries, never logged: their count
-            // and timing would describe the secret. Chords wait for the
-            // provider's granted set to reach the lock keyboard.
+            // Edits reach the provider as entries and chords by their ID,
+            // never logged: their count and timing would describe the secret.
             for (edit, empty_after) in input.take_edits() {
                 match edit {
                     crate::session_lock_input::SessionLockEdit::Insert => lock_entry!(Insert, empty_after),
@@ -314,7 +323,18 @@ macro_rules! service_session_lock {
                     crate::session_lock_input::SessionLockEdit::Submit => lock_entry!(Submit, empty_after),
                 }
             }
-            input.take_chords();
+            for chord in input.take_chords() {
+                if let (Some(provider), Some(epoch)) =
+                    (lock_provider.as_ref(), session_lock.cover_epoch())
+                {
+                    provider.command(sophia_runtime::lock_files::LockFileServiceCommand::Chord(
+                        sophia_protocol::lock_files::LockChord {
+                            lock_epoch: epoch.raw(),
+                            chord,
+                        },
+                    ));
+                }
+            }
             if input.submission().is_some()
                 && let Some(authenticator) = session_unlock_authenticator.as_mut()
                 && let Some(attempt) = session_lock.begin_attempt()
