@@ -12,6 +12,7 @@ mod error;
 mod host_domain;
 #[cfg(target_os = "linux")]
 pub mod inspection;
+pub mod lock_files;
 mod output_connection;
 mod output_file_admission;
 #[cfg(target_os = "linux")]

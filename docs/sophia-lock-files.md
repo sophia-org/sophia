@@ -118,19 +118,34 @@ An allocation of an earlier lock epoch or topology generation is stale.
 
 ## Resources and candidates
 
-Resources are premultiplied BGRA8, uploaded through the fixed slots with the
-shell contract's canonical chunking. They belong to the connection epoch, so a
-provider may keep a resource across lock epochs; `ResourceRetire` and
-`ResourceReleased` follow the shell lifecycle.
+Resources are premultiplied BGRA8. `ResourceBegin` binds a free slot below
+`Limits.upload_slots` to a new resource; a busy or absent slot, or a resource
+already live or uploading, fails the write. A size over the limits, or more
+live resources (uploads included) than `max_live_resources`, is answered
+`rejected` with reason `budget`; otherwise `admitted`. Bytes are written to
+`upload/N` at exactly the upload's cursor and never past its declared size.
+`ResourceEnd` naming the declared total, after every byte arrived, makes the
+resource whole (`accepted`); anything short is `rejected` (`size_mismatch`).
+Either ends the binding, as `ResourceCancel` does (`cancelled`). Resources
+belong to the connection epoch, so a provider may keep one across lock epochs;
+`ResourceRetire` of a whole resource frees it and is answered
+`ResourceReleased`.
 
-A provider asks for a frame with one standing `FrameDemand` per allocation.
-Session answers with a `FramePermit` paced to the slowest head of that output;
-the permit expires after at most 250 ms and grants one candidate. A
+A provider asks for a frame with one standing `FrameDemand` per allocation; a
+newer demand replaces the standing one, and a demand for an allocation the
+current lock object does not grant fails the write. Session answers with a
+`FramePermit` paced to the slowest head of that output; the permit expires
+after at most 250 ms and grants one candidate. Candidate generations only
+increase per allocation. Every forwarded candidate and standing demand holds
+room in the journal for its answer, so a full journal refuses new work rather
+than an answer. A
 `Candidate` names the lock epoch, output, allocation, permit and one resource
 whose size equals the allocation exactly. It has no placements, targets or
 actions. `CandidateOutcome` reports prepared, presented, rejected, superseded or
-revoked. A candidate for a stale lock epoch, allocation or permit is rejected
-and changes nothing on screen.
+revoked. A candidate for a stale lock epoch, allocation, resource size or
+permit is rejected and changes nothing on screen. A new lock object revokes
+forwarded candidates, and lapses demands and permits, for allocations it no
+longer grants.
 
 ## Entry and chord events
 
