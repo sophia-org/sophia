@@ -21,7 +21,10 @@ pub struct XServerFrontendRouteBroker {
     routed_input_receiver: Receiver<XAuthorityEpochRoutedInput>,
     input_control_epoch: Arc<AtomicU64>,
     routed_input_capacity: usize,
-    applied_input_control_epoch: u64,
+    /// The epoch whose revocations this broker has finished applying. Shared
+    /// with routed-input senders so a security transition can wait for its
+    /// clearing rather than assume it from the request.
+    applied_input_control_epoch: Arc<AtomicU64>,
     /// Unset in ordinary mode, leaving every path below exactly as it was.
     control_gate: Arc<std::sync::OnceLock<crate::ControlEpochGate>>,
     /// Distinguishes this broker's receipts from another's.
@@ -433,7 +436,7 @@ impl XServerFrontendRouteBroker {
             routed_input_receiver,
             input_control_epoch,
             routed_input_capacity: capacities.input.get(),
-            applied_input_control_epoch: 1,
+            applied_input_control_epoch: Arc::new(AtomicU64::new(1)),
             route_lease_release_sender,
             route_lease_release_receiver,
             control_sender,
@@ -475,6 +478,7 @@ impl XServerFrontendRouteBroker {
             control_gate: Arc::clone(&self.control_gate),
             sender: self.routed_input_sender.clone(),
             control_epoch: self.input_control_epoch.clone(),
+            applied_control_epoch: self.applied_input_control_epoch.clone(),
             capacity: self.routed_input_capacity,
             recovery: self.registry.input_recovery.clone(),
         }
@@ -705,9 +709,12 @@ impl XServerFrontendRouteBroker {
         // reach this application silently.
         if !self.is_gated() {
             let input_control_epoch = self.input_control_epoch.load(Ordering::Acquire);
-            if input_control_epoch != self.applied_input_control_epoch {
+            if input_control_epoch != self.applied_input_control_epoch.load(Ordering::Acquire) {
                 self.registry.advance_input_control_epoch()?;
-                self.applied_input_control_epoch = input_control_epoch;
+                // Published only after the grabs, frozen input and server
+                // grab of the old epoch are cleared.
+                self.applied_input_control_epoch
+                    .store(input_control_epoch, Ordering::Release);
             }
         }
         let mut routed = 0usize;

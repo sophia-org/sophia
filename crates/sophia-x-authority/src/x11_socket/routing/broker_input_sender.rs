@@ -4,6 +4,7 @@
 pub struct XAuthorityRoutedInputSender {
     sender: sophia_wake::SignalSender<XAuthorityEpochRoutedInput>,
     control_epoch: Arc<AtomicU64>,
+    applied_control_epoch: Arc<AtomicU64>,
     capacity: usize,
     recovery: InputRecovery,
     /// Shared with the broker rather than copied from it.
@@ -158,6 +159,16 @@ impl XAuthorityRoutedInputSender {
 
     pub fn control_epoch(&self) -> u64 {
         self.control_epoch.load(Ordering::Acquire)
+    }
+
+    /// The epoch the frontend has finished applying: its grabs, frozen input
+    /// and server grab cleared. A security transition is complete only when
+    /// this reaches the epoch it requested; the request alone proves nothing.
+    pub fn applied_control_epoch(&self) -> u64 {
+        match self.control_gate.get() {
+            Some(gate) => gate.applied_control_epoch(),
+            None => self.applied_control_epoch.load(Ordering::Acquire),
+        }
     }
 
     pub fn advance_control_epoch(&self, next: u64) -> bool {

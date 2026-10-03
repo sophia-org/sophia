@@ -220,8 +220,11 @@ fn security_epoch_revokes_queued_input_and_clears_active_grabs() {
         })
         .unwrap();
     assert!(sender.advance_control_epoch(2));
+    // Requested is not applied: the grab still stands until the broker runs.
+    assert_eq!(sender.applied_control_epoch(), 1);
 
     assert_eq!(broker.route_pending(), Ok(1));
+    assert_eq!(sender.applied_control_epoch(), 2);
     assert_eq!(channels.input.try_recv(), Err(TryRecvError::Empty));
     assert_eq!(
         delivery_receiver.recv().unwrap(),
