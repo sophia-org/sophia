@@ -121,8 +121,78 @@ macro_rules! begin_session_lock {
     }};
 }
 
+macro_rules! service_lock_provider {
+    () => {{
+        if !lock_provider_tried
+            && let Some(snapshot) = wm_session.as_ref().and_then(|wm| wm.published_output_snapshot())
+        {
+            lock_provider_tried = true;
+            lock_provider = lock_provider::start_session_lock_provider(
+                &config,
+                session_unlock_authenticator.is_some(),
+                &snapshot,
+                session_lock.phase(),
+                owner_wake.notifier(),
+            );
+        }
+        if let Some(provider) = lock_provider.as_mut() {
+            for event in provider.poll(Instant::now()) {
+                match event {
+                    sophia_runtime::lock_files::LockFileServiceEvent::Connected {
+                        connection_epoch,
+                        chords,
+                    } => crate::session_println!(
+                        "sophia_live_lock_provider schema=1 status=connected connection_epoch={connection_epoch} chords={}",
+                        chords.len(),
+                    ),
+                    sophia_runtime::lock_files::LockFileServiceEvent::Disconnected {
+                        connection_epoch,
+                    } => crate::session_println!(
+                        "sophia_live_lock_provider schema=1 status=disconnected connection_epoch={connection_epoch}",
+                    ),
+                    sophia_runtime::lock_files::LockFileServiceEvent::ConnectionRejected {
+                        message,
+                    }
+                    | sophia_runtime::lock_files::LockFileServiceEvent::Failed { message } => {
+                        crate::session_eprintln!(
+                            "sophia_live_lock_provider schema=1 status=connection_failed error={message}",
+                        )
+                    }
+                    // Images, candidates and frame demands wait for Engine to
+                    // draw provider images; without permits a provider offers
+                    // no candidate, so nothing is left owed.
+                    sophia_runtime::lock_files::LockFileServiceEvent::Inbound { .. } => {}
+                }
+            }
+            let topology_epoch =
+                wm_session.as_ref().and_then(|wm| wm.output_authority_topology_epoch());
+            if let Some(object) = lock_publication.update(session_lock.phase(), topology_epoch, || {
+                wm_session.as_ref().and_then(|wm| wm.published_output_snapshot())
+            }) {
+                provider.command(sophia_runtime::lock_files::LockFileServiceCommand::PublishLock(object));
+            }
+        }
+    }};
+}
+
+/// Tells the provider what the secret did; never what it holds.
+macro_rules! lock_entry {
+    ($entry:ident, $empty_after:expr) => {{
+        if let (Some(provider), Some(epoch)) = (lock_provider.as_ref(), session_lock.cover_epoch()) {
+            provider.command(sophia_runtime::lock_files::LockFileServiceCommand::Entry(
+                sophia_protocol::lock_files::LockEntry {
+                    lock_epoch: epoch.raw(),
+                    entry: sophia_protocol::lock_files::LockEntryKind::$entry,
+                    empty_after: $empty_after,
+                },
+            ));
+        }
+    }};
+}
+
 macro_rules! service_session_lock {
     () => {{
+        service_lock_provider!();
         let applied = input_sender.applied_control_epoch() >= session_lock_input_epoch;
         match session_lock.phase() {
             crate::session_lock::SessionLockPhase::Locking { epoch, .. } => {
@@ -164,10 +234,17 @@ macro_rules! service_session_lock {
             | crate::session_lock::SessionLockPhase::Unlocked => {}
         }
         if let Some(input) = session_lock_input.as_mut() {
-            // Provider delivery is the lock role's (t294); until then the
-            // edits and chords are dropped. Neither is logged: their count
-            // and timing would describe the secret.
-            input.take_edits();
+            // Edits reach the provider as entries, never logged: their count
+            // and timing would describe the secret. Chords wait for the
+            // provider's granted set to reach the lock keyboard.
+            for (edit, empty_after) in input.take_edits() {
+                match edit {
+                    crate::session_lock_input::SessionLockEdit::Insert => lock_entry!(Insert, empty_after),
+                    crate::session_lock_input::SessionLockEdit::Delete => lock_entry!(Delete, empty_after),
+                    crate::session_lock_input::SessionLockEdit::Clear => lock_entry!(Clear, empty_after),
+                    crate::session_lock_input::SessionLockEdit::Submit => lock_entry!(Submit, empty_after),
+                }
+            }
             input.take_chords();
             if input.submission().is_some()
                 && let Some(authenticator) = session_unlock_authenticator.as_mut()
@@ -180,11 +257,14 @@ macro_rules! service_session_lock {
                 // The secret is the authenticator's now, or nobody's.
                 input.settle_submission();
                 match begun {
-                    Ok(()) => crate::session_println!(
-                        "sophia_live_session_lock schema=1 status=checking epoch={} attempt={}",
-                        attempt.epoch.raw(),
-                        attempt.serial,
-                    ),
+                    Ok(()) => {
+                        lock_entry!(Checking, true);
+                        crate::session_println!(
+                            "sophia_live_session_lock schema=1 status=checking epoch={} attempt={}",
+                            attempt.epoch.raw(),
+                            attempt.serial,
+                        )
+                    }
                     Err(crate::session_lock_input::SessionUnlockUnavailable) => {
                         let outcome = session_lock.settle(
                             attempt,
@@ -219,6 +299,12 @@ macro_rules! service_session_lock {
                     );
                 }
                 crate::session_lock::SessionVerdictOutcome::Failed(attempt, verdict) => {
+                    match verdict {
+                        crate::session_lock::SessionUnlockVerdict::Unavailable => {
+                            lock_entry!(Unavailable, true)
+                        }
+                        _ => lock_entry!(Failed, true),
+                    }
                     crate::session_println!(
                         "sophia_live_session_lock schema=1 status=failed epoch={} attempt={} verdict={verdict:?}",
                         attempt.epoch.raw(),

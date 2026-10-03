@@ -652,6 +652,11 @@ fn run_session_loop_inner(
     // A lock is refused without an authenticator to end it.
     let mut session_unlock_authenticator =
         lock_authenticator::start_session_authenticator(config.factotum.as_ref(), owner_wake.notifier());
+    // The lock's renderer, started once a topology is published. A lock
+    // never waits for it.
+    let mut lock_provider: Option<lock_provider::LockProvider> = None;
+    let mut lock_provider_tried = config.lock_provider.is_none();
+    let mut lock_publication = lock_provider::LockPublication::default();
     let mut pointer_pixel_change = false;
     let mut metrics = SessionLoopMetrics::new(initialize_empty_runtime);
     let mut input_batch_baseline = None;

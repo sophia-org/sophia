@@ -102,6 +102,7 @@ mod startup_barrier;
 use cpu_visual_progress::{CpuVisualProgress, presented_logical_checksum};
 use metadata_shell::live_shell_activation_surfaces;
 mod lock_authenticator;
+mod lock_provider;
 mod native_retirement;
 mod native_session_evidence;
 mod owner_wake;

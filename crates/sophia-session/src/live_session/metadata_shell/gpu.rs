@@ -18,7 +18,7 @@ pub(super) const GPU_PCI_DEVICE_ID_ENV: &str = "SOPHIA_SHELL_GPU_PCI_DEVICE_ID";
 pub(super) const PRIVATE_DRI_DIRECTORY: &str = "/dev/dri";
 
 #[derive(Clone, Debug)]
-pub(super) struct ShellGpuLaunchPolicy {
+pub(in crate::live_session) struct ShellGpuLaunchPolicy {
     mode: ShellGpuMode,
     device: Option<LiveRenderDeviceIdentitySnapshot>,
 }

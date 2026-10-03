@@ -112,6 +112,9 @@ struct PersistentXtermSessionConfig {
     /// The agent that alone can end a session lock; a lock is refused, and a
     /// `session:lock` binding unavailable, without one.
     factotum: Option<SessionFactotum>,
+    /// The lock's renderer, if the operator selected one. A lock never
+    /// depends on it: without it, or while it is down, the cover is a fill.
+    lock_provider: Option<sophia_config::LockProviderConfig>,
     shell_config: Option<std::path::PathBuf>,
     shell_panel_thickness: Option<u16>,
     shell_content_enabled: bool,
