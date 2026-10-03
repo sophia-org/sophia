@@ -12,6 +12,8 @@ use super::reason;
 
 /// One upload in progress, bound to its slot from Begin until End or Cancel.
 struct Upload {
+    /// Fences writers opened on an earlier binding of the same slot.
+    binding: u64,
     transaction: u64,
     resource: LockResourceId,
     width_px: u32,
@@ -132,6 +134,7 @@ pub(super) struct Resources {
     limits: LockFileLimits,
     slots: [Option<Upload>; 4],
     images: BTreeMap<LockResourceId, Image>,
+    next_binding: u64,
 }
 
 impl Resources {
@@ -140,6 +143,7 @@ impl Resources {
             limits,
             slots: Default::default(),
             images: BTreeMap::new(),
+            next_binding: 0,
         }
     }
 
@@ -236,7 +240,9 @@ impl Resources {
     pub(super) fn apply(&mut self, plan: ResourcePlan) -> Option<(LockResourceId, Image)> {
         match plan {
             ResourcePlan::Admit(begin) => {
+                self.next_binding += 1;
                 self.slots[usize::from(begin.slot)] = Some(Upload {
+                    binding: self.next_binding,
                     transaction: begin.transaction,
                     resource: begin.resource,
                     width_px: begin.width_px,
@@ -273,12 +279,20 @@ impl Resources {
         }
     }
 
-    /// Appends at the upload's exact cursor, within its declared size.
-    pub(super) fn write(&mut self, slot: u8, offset: u64, data: &[u8]) -> Result<u32, Errno> {
+    /// Appends at the upload's exact cursor, within its declared size. A
+    /// writer of an earlier binding of the slot is stale.
+    pub(super) fn write(
+        &mut self,
+        slot: u8,
+        binding: u64,
+        offset: u64,
+        data: &[u8],
+    ) -> Result<u32, Errno> {
         let upload = self
             .slots
             .get_mut(usize::from(slot))
             .and_then(Option::as_mut)
+            .filter(|upload| upload.binding == binding)
             .ok_or(Errno::ESTALE)?;
         let end = offset.checked_add(data.len() as u64).ok_or(Errno::EINVAL)?;
         if offset != upload.bytes.len() as u64 || end > upload.expected {
@@ -295,10 +309,11 @@ impl Resources {
         Ok(data.len() as u32)
     }
 
-    /// Whether `slot` holds an upload, for the export's directory.
-    pub(super) fn slot_bound(&self, slot: u8) -> bool {
+    /// The binding `slot` holds, if any.
+    pub(super) fn binding(&self, slot: u8) -> Option<u64> {
         self.slots
             .get(usize::from(slot))
-            .is_some_and(Option::is_some)
+            .and_then(Option::as_ref)
+            .map(|upload| upload.binding)
     }
 }

@@ -15,8 +15,11 @@ use sophia_9p::journal::{Journal, JournalBounds, JournalPosition};
 use sophia_9p::{Errno, ReadOutcome};
 use sophia_protocol::lock_files::*;
 
+mod export;
 mod presentation;
 mod resources;
+
+pub use export::{LockFileExport, LockFileHandle, LockFileNode, LockFileQids};
 
 use presentation::{CandidatePlan, Presentation};
 use resources::{ResourcePlan, Resources};
@@ -481,15 +484,22 @@ impl LockFileCustody {
         Ok(())
     }
 
-    /// Appends upload bytes for the resource bound to `slot`.
-    pub fn write_upload(&mut self, slot: u8, offset: u64, data: &[u8]) -> Result<u32, Errno> {
+    /// Appends upload bytes for `binding` of `slot`.
+    pub fn write_upload(
+        &mut self,
+        slot: u8,
+        binding: u64,
+        offset: u64,
+        data: &[u8],
+    ) -> Result<u32, Errno> {
         self.live()?;
         self.negotiated()?;
-        self.resources.write(slot, offset, data)
+        self.resources.write(slot, binding, offset, data)
     }
 
-    pub fn upload_bound(&self, slot: u8) -> bool {
-        self.resources.slot_bound(slot)
+    /// The binding `slot` holds: an upload fid opened now writes to it.
+    pub fn upload_binding(&self, slot: u8) -> Option<u64> {
+        self.resources.binding(slot)
     }
 
     fn publication_body(&self, generation: u64, qid: u64) -> Result<Vec<u8>, Errno> {

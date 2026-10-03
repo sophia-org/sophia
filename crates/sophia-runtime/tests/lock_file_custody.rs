@@ -129,6 +129,12 @@ impl Provider {
         events
     }
 
+    /// Writes through the slot's current binding, or a stale one.
+    fn write(&mut self, slot: u8, offset: u64, data: &[u8]) -> Result<u32, Errno> {
+        let binding = self.custody.upload_binding(slot).unwrap_or(u64::MAX);
+        self.custody.write_upload(slot, binding, offset, data)
+    }
+
     fn kinds(&mut self) -> Vec<LockFileKind> {
         self.events().into_iter().map(|(kind, _)| kind).collect()
     }
@@ -183,7 +189,7 @@ impl Provider {
     /// A whole 4x2 image in slot 0.
     fn upload(&mut self, id: u64) {
         self.begin(id, 4, 2, 0).unwrap();
-        assert_eq!(self.custody.write_upload(0, 0, &[7; 32]), Ok(32));
+        assert_eq!(self.write(0, 0, &[7; 32]), Ok(32));
         self.end(id, 32).unwrap();
         self.events();
         assert!(matches!(
@@ -391,22 +397,19 @@ fn an_upload_becomes_an_image_only_when_every_byte_arrived() {
     let status = LockResourceStatus::decode(&events[1].1).unwrap();
     assert_eq!(status.status, LockResourceState::Admitted);
     assert_eq!(status.admitted_bytes, 32);
-    assert!(provider.custody.upload_bound(0));
-    assert_eq!(provider.custody.write_upload(0, 0, &[1; 20]), Ok(20));
+    let first = provider.custody.upload_binding(0).unwrap();
+    assert_eq!(provider.write(0, 0, &[1; 20]), Ok(20));
     assert_eq!(
-        provider.custody.write_upload(0, 0, &[1; 4]),
+        provider.write(0, 0, &[1; 4]),
         Err(Errno::EINVAL),
         "only at the cursor"
     );
     assert_eq!(
-        provider.custody.write_upload(0, 20, &[1; 13]),
+        provider.write(0, 20, &[1; 13]),
         Err(Errno::EINVAL),
         "never past the declared size"
     );
-    assert_eq!(
-        provider.custody.write_upload(1, 0, &[1]),
-        Err(Errno::ESTALE)
-    );
+    assert_eq!(provider.write(1, 0, &[1]), Err(Errno::ESTALE));
     // Short: refused, and the slot is free again.
     provider.end(1, 32).unwrap();
     let status = LockResourceStatus::decode(&provider.events()[1].1).unwrap();
@@ -414,11 +417,16 @@ fn an_upload_becomes_an_image_only_when_every_byte_arrived() {
         (status.status, status.reason),
         (LockResourceState::Rejected, reason::SIZE_MISMATCH)
     );
-    assert!(!provider.custody.upload_bound(0));
+    assert!(provider.custody.upload_binding(0).is_none());
     assert!(provider.custody.take_inbound().is_none());
 
     provider.begin(2, 4, 2, 0).unwrap();
-    provider.custody.write_upload(0, 0, &[9; 32]).unwrap();
+    assert_eq!(
+        provider.custody.write_upload(0, first, 0, &[9; 32]),
+        Err(Errno::ESTALE),
+        "a writer of the earlier binding is fenced"
+    );
+    provider.write(0, 0, &[9; 32]).unwrap();
     provider.end(2, 32).unwrap();
     let events = provider.events();
     let status = LockResourceStatus::decode(&events.last().unwrap().1).unwrap();
@@ -462,7 +470,7 @@ fn uploads_are_bounded_by_the_epoch_limits() {
     );
     provider.events();
     // Three live resources at most, uploads included.
-    provider.custody.write_upload(0, 0, &[0; 32]).unwrap();
+    provider.write(0, 0, &[0; 32]).unwrap();
     provider.end(1, 32).unwrap();
     provider.upload(2);
     provider.upload(3);
@@ -536,7 +544,7 @@ fn a_candidate_that_does_not_match_what_session_granted_is_rejected() {
     let mut provider = Provider::ready(locked(LOCK, 1));
     provider.upload(1);
     provider.begin(2, 2, 2, 0).unwrap();
-    provider.custody.write_upload(0, 0, &[0; 16]).unwrap();
+    provider.write(0, 0, &[0; 16]).unwrap();
     provider.end(2, 16).unwrap();
     provider.events();
     while provider.custody.take_inbound().is_some() {}
@@ -839,7 +847,9 @@ fn a_provider_that_stops_acknowledging_is_revoked() {
             empty_after: false,
         })
         .unwrap();
-    provider.custody.expire(Instant::now() + Duration::from_millis(1_900));
+    provider
+        .custody
+        .expire(Instant::now() + Duration::from_millis(1_900));
     assert!(!provider.custody.is_revoked());
     let later = Instant::now() + Duration::from_millis(2_100);
     provider.custody.expire(later);
