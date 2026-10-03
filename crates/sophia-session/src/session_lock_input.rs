@@ -14,27 +14,27 @@ use sophia_protocol::DeviceId;
 /// refused whole, never truncated into a different secret.
 pub const SESSION_LOCK_SECRET_CAPACITY: usize = 1024;
 
-/// The secret being typed. Its storage is allocated once at full capacity,
-/// so it never reallocates and leaves no unzeroed copy behind; every clear
-/// and drop zeroes all of it. Memory locking belongs to the authenticator's
-/// hardening (t293).
+/// The secret being typed. Its storage is one page, allocated once at full
+/// capacity, locked in memory and left out of core dumps, so it is never
+/// swapped, never reallocated and never dumped; every clear and drop zeroes
+/// all of it.
 pub struct SessionLockSecret {
-    bytes: Box<[u8; SESSION_LOCK_SECRET_CAPACITY]>,
+    page: sophia_factotum_pam::LockedPage,
     len: usize,
 }
 
-impl Default for SessionLockSecret {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+/// No page could be both locked and left out of core dumps. A lock that
+/// could not keep its secret so is refused.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SessionLockSecretUnavailable;
 
 impl SessionLockSecret {
-    pub fn new() -> Self {
-        Self {
-            bytes: Box::new([0; SESSION_LOCK_SECRET_CAPACITY]),
-            len: 0,
-        }
+    pub fn new() -> Result<Self, SessionLockSecretUnavailable> {
+        let page = sophia_factotum_pam::LockedPage::new(
+            SESSION_LOCK_SECRET_CAPACITY.next_multiple_of(4096),
+        )
+        .ok_or(SessionLockSecretUnavailable)?;
+        Ok(Self { page, len: 0 })
     }
 
     pub const fn is_empty(&self) -> bool {
@@ -50,7 +50,7 @@ impl SessionLockSecret {
         else {
             return false;
         };
-        self.bytes[self.len..end].copy_from_slice(text.as_bytes());
+        self.page.as_mut_slice()[self.len..end].copy_from_slice(text.as_bytes());
         self.len = end;
         true
     }
@@ -61,16 +61,16 @@ impl SessionLockSecret {
             return false;
         };
         let start = self.len - last.len_utf8();
-        self.bytes[start..self.len].fill(0);
-        std::hint::black_box(&self.bytes[start..self.len]);
+        let removed = &mut self.page.as_mut_slice()[start..self.len];
+        removed.fill(0);
+        std::hint::black_box(removed);
         self.len = start;
         true
     }
 
-    /// Zeroes the whole buffer, not only its used prefix.
+    /// Zeroes the whole page, not only its used prefix.
     pub fn clear(&mut self) {
-        self.bytes.fill(0);
-        std::hint::black_box(&self.bytes);
+        self.page.zero();
         self.len = 0;
     }
 
@@ -78,13 +78,7 @@ impl SessionLockSecret {
     pub fn as_str(&self) -> &str {
         // Only whole UTF-8 strings are ever appended and only whole characters
         // removed, so the prefix is always valid; an empty secret otherwise.
-        std::str::from_utf8(&self.bytes[..self.len]).unwrap_or_default()
-    }
-}
-
-impl Drop for SessionLockSecret {
-    fn drop(&mut self) {
-        self.clear();
+        std::str::from_utf8(&self.page.as_slice()[..self.len]).unwrap_or_default()
     }
 }
 
@@ -131,14 +125,14 @@ pub struct SessionLockInput {
 }
 
 impl SessionLockInput {
-    pub fn new(keyboard: SessionLockKeyboard) -> Self {
-        Self {
+    pub fn new(keyboard: SessionLockKeyboard) -> Result<Self, SessionLockSecretUnavailable> {
+        Ok(Self {
             keyboard,
-            secret: SessionLockSecret::new(),
+            secret: SessionLockSecret::new()?,
             edits: Vec::new(),
             chords: Vec::new(),
             submitted: false,
-        }
+        })
     }
 
     pub fn observe_key(
@@ -227,6 +221,10 @@ impl SessionLockInput {
 /// the verdict; neither call blocks. A verdict names its attempt, and only
 /// the current attempt of the current lock can end the lock.
 pub trait SessionUnlockAuthenticator {
+    /// Whether an attempt begun now could be decided. Session locks only
+    /// while this holds.
+    fn available(&self) -> bool;
+
     /// Starts verifying `secret` for `attempt`. The secret is borrowed only
     /// for this call; an `Err` means the attempt cannot be decided.
     fn begin(

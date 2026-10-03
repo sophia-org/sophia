@@ -91,7 +91,7 @@ fn confdir_argument() -> Result<Option<CString>, ()> {
 }
 
 fn verify(confdir: Option<&std::ffi::CStr>) -> Option<HelperReply> {
-    let mut page = ffi::LockedPage::new(MAX_REQUEST.next_multiple_of(4096))?;
+    let mut page = sophia_factotum_pam::LockedPage::new(MAX_REQUEST.next_multiple_of(4096))?;
     let buffer = page.as_mut_slice();
     // Every byte of the request, the secret included, is read only into the
     // locked page: no reader buffers it anywhere else.
@@ -100,14 +100,20 @@ fn verify(confdir: Option<&std::ffi::CStr>) -> Option<HelperReply> {
     let length = RequestView::declared_length(prefix).ok()?;
     read_stdin(&mut buffer[4..length])?;
     let request = RequestView::decode(&buffer[..length]).ok()?;
-    let (verdict, pam_code) = ffi::authenticate(
-        request.service,
-        request.user,
-        request.secret,
-        request.flags & FLAG_DISALLOW_NULL != 0,
-        request.flags & FLAG_SETCRED != 0,
-        confdir,
-    );
+    // A private configuration directory is the deterministic checks' own,
+    // with made-up users; the system's services verify only the caller.
+    let (verdict, pam_code) = if confdir.is_none() && !ffi::names_caller(request.user) {
+        ffi::foreign_user()
+    } else {
+        ffi::authenticate(
+            request.service,
+            request.user,
+            request.secret,
+            request.flags & FLAG_DISALLOW_NULL != 0,
+            request.flags & FLAG_SETCRED != 0,
+            confdir,
+        )
+    };
     // The page, and the secret in it, is zeroed and unmapped when it drops.
     Some(HelperReply {
         verdict: match verdict {

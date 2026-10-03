@@ -1,21 +1,24 @@
-tree d0d2787ed46e77ad24dc2bc4eb65ab3ba1507265
-parent fe5e09605e65316f4cd7435bccf0cf53d008d415
-author Mason Green <mason@greenm01.net> 1790949544 -0400
-committer Mason Green <mason@greenm01.net> 1790949544 -0400
+tree cc6636532f940cf5bd7f38a0e1a28a071780e54d
+parent ed364d40b01a54749919b5a1928d40472db5456c
+author Mason Green <mason@greenm01.net> 1791038109 -0400
+committer Mason Green <mason@greenm01.net> 1791038109 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCar+4qBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGK4EAD/Vs8PpcvzgMFxzoo/hxEK
- 3tGxCiGjbA17fhe9LfyE+7oBAN7MxNKYifzjIVcEc9zZq2xc2aMPAVMP4fGixAVn
- WnQM
- =kahj
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCasESnRsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJDVQEApT51vJ+nvk3Sb0ul5oVg
+ V94jLLPmZtxZarF5MIxCG5YA/RaxFsB1akjf2DcyzbVt6xuIJvrjg5j0WEP14bWs
+ MdkO
+ =NEl5
  -----END PGP SIGNATURE-----
 
-Import the WM held capture contract
+Zero the copies a secret pipeline write leaves behind
 
-Copy spec/sophia-wm-files.md unmodified from signed Sophia contract
-ac04e1a7487e9be3a238075e3c624aff93705f2d and record its digest. The WM file
-contract adds the held_capture capability: an Overlay presentation may carry a
-keyboard output and bindings while modifier keys pass through. This SDK has no
-WM client; library sources, wire layouts and the other contract digests are
-unchanged.
+Pipeline::write_secret queues the same Twrite frame as write, then
+zeroes the request body once it is queued and the output buffer's spare
+capacity after each send until the buffer has emptied; dropping the
+pipeline first zeroes the whole buffer. Draining sent bytes moves the
+unsent tail forward, so the vacated bytes would otherwise stay in the
+allocation for the life of the connection.
+
+Sophia's session lock sends the unlock password to its authentication
+agent through this pipeline (t034 security review, finding 3).

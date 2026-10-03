@@ -38,7 +38,7 @@ impl Seat {
         )
         .unwrap();
         Self {
-            lock: SessionLockInput::new(keyboard),
+            lock: SessionLockInput::new(keyboard).unwrap(),
             emergency: EmergencyChordState::default(),
             terminal: VirtualTerminalChordState::default(),
             device: DeviceId::from_raw(3),
@@ -195,7 +195,7 @@ fn a_registered_chord_reaches_the_provider_and_not_the_secret() {
         keysym: 0x62,
         modifiers: SessionLockModifiers::for_chord(SessionLockModifiers::ALT.bits()).unwrap(),
     }]);
-    seat.lock = SessionLockInput::new(keyboard);
+    seat.lock = SessionLockInput::new(keyboard).unwrap();
     seat.key(LEFT_ALT, true);
     seat.tap(B);
     seat.key(LEFT_ALT, false);
@@ -205,7 +205,7 @@ fn a_registered_chord_reaches_the_provider_and_not_the_secret() {
 
 #[test]
 fn the_secret_refuses_text_past_its_capacity_whole() {
-    let mut secret = SessionLockSecret::new();
+    let mut secret = SessionLockSecret::new().unwrap();
     assert!(secret.push_str(&"x".repeat(SESSION_LOCK_SECRET_CAPACITY - 1)));
     assert!(!secret.push_str("é"), "two bytes do not fit in one");
     assert!(secret.push_str("y"));
@@ -219,7 +219,7 @@ fn the_secret_refuses_text_past_its_capacity_whole() {
 
 #[test]
 fn deleting_removes_a_whole_character() {
-    let mut secret = SessionLockSecret::new();
+    let mut secret = SessionLockSecret::new().unwrap();
     assert!(secret.push_str("aé"));
     assert!(secret.pop_char());
     assert_eq!(secret.as_str(), "a");

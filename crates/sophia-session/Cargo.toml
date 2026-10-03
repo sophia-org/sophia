@@ -15,6 +15,7 @@ sophia-broker = { path = "../sophia-broker" }
 sophia-config = { path = "../sophia-config" }
 sophia-engine = { path = "../sophia-engine" }
 sophia-input-authority = { path = "../sophia-input-authority" }
+sophia-factotum-pam = { path = "../sophia-factotum-pam" }
 sophia-portal = { path = "../sophia-portal" }
 sophia-protocol = { path = "../sophia-protocol" }
 sophia-runtime = { path = "../sophia-runtime" }

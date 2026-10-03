@@ -641,6 +641,14 @@ impl XServerFrontendRouteBroker {
                 // and nothing that would need the other two.
                 match request.action {
                     crate::SyntheticAction::Press => {
+                        // A session lock closes synthetic admission; a press
+                        // is refused before any effect. Releases still run,
+                        // since they only end holds.
+                        if !self.synthetic_admitted.load(Ordering::Acquire) {
+                            return Err(
+                                sophia_input_authority::RegistrationError::RoutingUnavailable,
+                            );
+                        }
                         // The guard is held across BOTH the resolution and the
                         // application. Scoping it to the resolution alone left
                         // a window in which a writer could change the grab

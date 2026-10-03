@@ -116,7 +116,10 @@ niltempus settled its open questions on 2026-10-03:
 - The PAM binding lives in one small package, `sophia-factotum-pam`: the
   executed helper and the only crate exempt from the workspace's
   `unsafe_code = "forbid"`, each unsafe block commented. The agent is safe Rust
-  and never links libpam.
+  and never links libpam. The package's library holds the locked page type
+  (mmap, `MADV_DONTDUMP`, `mlock`, volatile zeroing) that both the helper and
+  Session's lock secret use; the libpam binding stays in the binary, so
+  linking the library never links libpam.
 - `pam` is served only on the private channel Session holds with the agent, so
   no other same-UID process can test passwords through it. The user-facing
   endpoint stays closed in t293 and opens later under t275's namespace rules.

@@ -4,7 +4,8 @@ use crate::session_lock_input::{SessionLockInput, SessionLockKeyOutcome};
 /// Physical input while the session lock holds the seat.
 ///
 /// Keys go to the lock alone, after the VT and emergency recognizers, and
-/// pointer input goes nowhere. Devices still arrive and leave as they do
+/// pointer input goes nowhere. A key is never counted, timed or recorded in
+/// the report: how many there were, and when, would describe the secret. Devices still arrive and leave as they do
 /// unlocked, so a departing keyboard releases what it held in every
 /// recognizer. Nothing here reaches the X frontend, the WM, a shell or a
 /// launcher.
@@ -22,15 +23,13 @@ pub(super) fn route_locked_input(
     next_input_delivery: &mut u64,
     now_msec: u64,
 ) -> Result<PhysicalInputRouteReport, Box<dyn std::error::Error>> {
-    let mut report = PhysicalInputRouteReport {
-        events: events.len(),
-        ..PhysicalInputRouteReport::default()
-    };
+    let mut report = PhysicalInputRouteReport::default();
     for event in events {
+        if !matches!(event.kind, sophia_protocol::InputEventKind::Key { .. }) {
+            report.events = report.events.saturating_add(1);
+        }
         match event.kind {
             sophia_protocol::InputEventKind::Key { keycode, pressed } => {
-                report.keys_observed = report.keys_observed.saturating_add(1);
-                keyboard_coverage.observe_key_at_device(event.device, keycode, pressed);
                 match lock.observe_key(
                     event.device,
                     keycode,

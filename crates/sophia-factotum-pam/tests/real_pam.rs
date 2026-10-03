@@ -37,17 +37,28 @@ impl Drop for Confdir {
 }
 
 fn run(confdir: &Confdir, service: &str, secret: &[u8]) -> Option<HelperReply> {
+    run_as(Some(confdir), service, "sophia-test-user", secret)
+}
+
+fn run_as(
+    confdir: Option<&Confdir>,
+    service: &str,
+    user: &str,
+    secret: &[u8],
+) -> Option<HelperReply> {
     let request = HelperRequest {
         flags: FLAG_DISALLOW_NULL,
         service: service.into(),
-        user: "sophia-test-user".into(),
+        user: user.into(),
         secret: SecretBytes::from_slice(secret),
     }
     .encode()
     .unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_sophia-factotum-pam"))
-        .arg("--confdir")
-        .arg(&confdir.0)
+    let mut command = Command::new(env!("CARGO_BIN_EXE_sophia-factotum-pam"));
+    if let Some(confdir) = confdir {
+        command.arg("--confdir").arg(&confdir.0);
+    }
+    let mut child = command
         .env_clear()
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -114,4 +125,20 @@ fn a_malformed_request_gives_no_verdict() {
         output.stdout.is_empty(),
         "no verdict for a malformed request"
     );
+}
+
+/// The system's services verify only the caller's own account. A request
+/// naming anyone else is refused before PAM starts, so this check never
+/// reads `/etc/pam.d`: neither name below is the account running it.
+#[test]
+fn the_system_services_refuse_a_user_other_than_the_caller() {
+    for user in ["sophia-test-user-absent", "root"] {
+        let caller = std::os::unix::fs::MetadataExt::uid(&std::fs::metadata("/proc/self").unwrap());
+        if user == "root" && caller == 0 {
+            continue;
+        }
+        let reply = run_as(None, "sophia-lock", user, b"anything").unwrap();
+        assert_eq!(reply.verdict, PamVerdict::Rejected, "{user}");
+        assert_eq!(reply.pam_code, 10, "{user}: PAM_USER_UNKNOWN");
+    }
 }

@@ -24,18 +24,22 @@ pub enum SessionLockPhase {
     Unlocked,
     /// The cover is installed and input revoked; the session is not yet
     /// reported locked. That waits for every head to retire the cover and
-    /// for the X frontend to apply the security epoch.
+    /// for the X frontend to apply the security epoch. Input already belongs
+    /// to the lock, so an attempt may run: a head that never retires the
+    /// cover cannot keep the user from unlocking.
     Locking {
         epoch: SessionLockEpoch,
+        attempt: Option<SessionUnlockAttempt>,
     },
     /// Proven locked. At most one attempt is in flight.
     Locked {
         epoch: SessionLockEpoch,
         attempt: Option<SessionUnlockAttempt>,
     },
-    /// The verdict accepted; the cover is cleared. Input stays with the
-    /// lock, and is dropped, until the X frontend applies the epoch that
-    /// ends the lock, so nothing typed while locked reaches an application.
+    /// The verdict accepted. The cover and the lock's hold on input stay
+    /// until the X frontend applies the epoch that ends the lock, so nothing
+    /// typed while locked reaches an application and nothing is shown before
+    /// input can return.
     Unlocking {
         epoch: SessionLockEpoch,
     },
@@ -43,9 +47,12 @@ pub enum SessionLockPhase {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SessionLockStart {
-    /// A new lock: install its cover and revoke input now.
+    /// A new lock: install its cover and revoke input now. A lock requested
+    /// while an attempt was in flight is a new lock too, so that attempt's
+    /// verdict is void.
     Started(SessionLockEpoch),
-    /// The session is already covered by this lock; nothing changes.
+    /// The session is already covered by this lock and nothing is being
+    /// verified; nothing changes.
     AlreadyLocked(SessionLockEpoch),
 }
 
@@ -109,32 +116,44 @@ impl SessionLockState {
         !matches!(self.phase, SessionLockPhase::Unlocked)
     }
 
-    /// The lock whose cover Engine must draw, if any. An unlocking session
-    /// has had its cover cleared while it waits for the input epoch.
+    /// The lock whose cover Engine must draw, if any: until the unlock has
+    /// been applied.
     pub const fn cover_epoch(&self) -> Option<SessionLockEpoch> {
         match self.phase {
-            SessionLockPhase::Locking { epoch } | SessionLockPhase::Locked { epoch, .. } => {
-                Some(epoch)
-            }
-            SessionLockPhase::Unlocked | SessionLockPhase::Unlocking { .. } => None,
+            SessionLockPhase::Locking { epoch, .. }
+            | SessionLockPhase::Locked { epoch, .. }
+            | SessionLockPhase::Unlocking { epoch } => Some(epoch),
+            SessionLockPhase::Unlocked => None,
         }
     }
 
-    /// Locks the session. A lock in force is kept as it is. An unlock still
-    /// waiting for its input epoch is abandoned for a new lock, whose new
-    /// epoch voids anything issued for the old one.
+    /// Locks the session. A lock in force with nothing being verified is
+    /// kept as it is. Otherwise a new lock begins, whose new epoch voids
+    /// anything issued for the old one: an unlock still waiting for its
+    /// input epoch, or an attempt still being verified.
     pub fn lock(&mut self) -> Result<SessionLockStart, SessionLockError> {
         match self.phase {
-            SessionLockPhase::Locking { epoch } | SessionLockPhase::Locked { epoch, .. } => {
-                Ok(SessionLockStart::AlreadyLocked(epoch))
+            SessionLockPhase::Locking {
+                epoch,
+                attempt: None,
             }
-            SessionLockPhase::Unlocked | SessionLockPhase::Unlocking { .. } => {
+            | SessionLockPhase::Locked {
+                epoch,
+                attempt: None,
+            } => Ok(SessionLockStart::AlreadyLocked(epoch)),
+            SessionLockPhase::Unlocked
+            | SessionLockPhase::Locking { .. }
+            | SessionLockPhase::Locked { .. }
+            | SessionLockPhase::Unlocking { .. } => {
                 let epoch = match self.last_epoch {
                     None => SessionLockEpoch::FIRST,
                     Some(last) => last.next().ok_or(SessionLockError::EpochExhausted)?,
                 };
                 self.last_epoch = Some(epoch);
-                self.phase = SessionLockPhase::Locking { epoch };
+                self.phase = SessionLockPhase::Locking {
+                    epoch,
+                    attempt: None,
+                };
                 Ok(SessionLockStart::Started(epoch))
             }
         }
@@ -149,36 +168,44 @@ impl SessionLockState {
         frontend_applied: bool,
     ) -> bool {
         match self.phase {
-            SessionLockPhase::Locking { epoch } if presented == Some(epoch) && frontend_applied => {
-                self.phase = SessionLockPhase::Locked {
-                    epoch,
-                    attempt: None,
-                };
+            SessionLockPhase::Locking { epoch, attempt }
+                if presented == Some(epoch) && frontend_applied =>
+            {
+                self.phase = SessionLockPhase::Locked { epoch, attempt };
                 true
             }
             _ => false,
         }
     }
 
-    /// Opens an attempt for a submitted secret: only on a proven lock with
-    /// no attempt in flight. `None` otherwise, and the submission is not
-    /// authenticated.
+    /// Opens an attempt for a submitted secret: while the lock holds input
+    /// and no attempt is in flight. `None` otherwise, and the submission is
+    /// not authenticated.
     pub fn begin_attempt(&mut self) -> Option<SessionUnlockAttempt> {
-        let SessionLockPhase::Locked {
+        let (SessionLockPhase::Locking {
             epoch,
             attempt: None,
-        } = self.phase
+        }
+        | SessionLockPhase::Locked {
+            epoch,
+            attempt: None,
+        }) = self.phase
         else {
             return None;
         };
         let serial = NonZeroU64::new(self.last_serial.checked_add(1)?)?;
         self.last_serial = serial.get();
         let attempt = SessionUnlockAttempt { epoch, serial };
-        self.phase = SessionLockPhase::Locked {
-            epoch,
-            attempt: Some(attempt),
-        };
+        self.set_attempt(Some(attempt));
         Some(attempt)
+    }
+
+    fn set_attempt(&mut self, next: Option<SessionUnlockAttempt>) {
+        if let SessionLockPhase::Locking { attempt, .. }
+        | SessionLockPhase::Locked { attempt, .. } = &mut self.phase
+        {
+            *attempt = next;
+        }
     }
 
     /// Settles a verdict. Only the current attempt of the current lock can
@@ -189,7 +216,11 @@ impl SessionLockState {
         verdict: SessionUnlockVerdict,
     ) -> SessionVerdictOutcome {
         match self.phase {
-            SessionLockPhase::Locked {
+            SessionLockPhase::Locking {
+                epoch,
+                attempt: Some(current),
+            }
+            | SessionLockPhase::Locked {
                 epoch,
                 attempt: Some(current),
             } if current == attempt && attempt.epoch == epoch => match verdict {
@@ -198,10 +229,7 @@ impl SessionLockState {
                     SessionVerdictOutcome::Unlocking(epoch)
                 }
                 SessionUnlockVerdict::Rejected | SessionUnlockVerdict::Unavailable => {
-                    self.phase = SessionLockPhase::Locked {
-                        epoch,
-                        attempt: None,
-                    };
+                    self.set_attempt(None);
                     SessionVerdictOutcome::Failed(attempt, verdict)
                 }
             },
@@ -210,7 +238,8 @@ impl SessionLockState {
     }
 
     /// Completes the unlock once the X frontend has applied the epoch that
-    /// ends it. `true` on the transition, when input may return.
+    /// ends it and the cover has been withdrawn. `true` on the transition,
+    /// when input may return.
     pub fn observe_unlocked(&mut self, frontend_applied: bool) -> bool {
         match self.phase {
             SessionLockPhase::Unlocking { .. } if frontend_applied => {

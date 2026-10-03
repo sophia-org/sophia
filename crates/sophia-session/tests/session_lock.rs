@@ -40,7 +40,13 @@ fn locking_takes_input_and_the_cover_at_once_but_reports_only_on_proof() {
         !state.observe_covered(Some(epoch(1)), false),
         "the frontend has not applied the epoch"
     );
-    assert_eq!(state.phase(), SessionLockPhase::Locking { epoch: epoch(1) });
+    assert_eq!(
+        state.phase(),
+        SessionLockPhase::Locking {
+            epoch: epoch(1),
+            attempt: None
+        }
+    );
     assert!(state.observe_covered(Some(epoch(1)), true));
     assert_eq!(
         state.phase(),
@@ -59,10 +65,62 @@ fn locking_again_keeps_the_lock_in_force() {
 }
 
 #[test]
-fn no_attempt_opens_before_the_lock_is_proven() {
+fn an_attempt_may_run_before_the_lock_is_proven() {
+    // A head that never retires the cover must not keep the user locked out.
+    let mut state = SessionLockState::new();
+    assert_eq!(state.begin_attempt(), None, "nothing to unlock");
+    state.lock().unwrap();
+    let attempt = state.begin_attempt().unwrap();
+    assert_eq!(state.begin_attempt(), None, "one attempt at a time");
+    // Proof arriving mid-attempt keeps the attempt.
+    assert!(state.observe_covered(Some(epoch(1)), true));
+    assert_eq!(
+        state.phase(),
+        SessionLockPhase::Locked {
+            epoch: epoch(1),
+            attempt: Some(attempt)
+        }
+    );
     let mut state = SessionLockState::new();
     state.lock().unwrap();
-    assert_eq!(state.begin_attempt(), None);
+    let attempt = state.begin_attempt().unwrap();
+    assert_eq!(
+        state.settle(attempt, SessionUnlockVerdict::Rejected),
+        SessionVerdictOutcome::Failed(attempt, SessionUnlockVerdict::Rejected)
+    );
+    assert_eq!(
+        state.phase(),
+        SessionLockPhase::Locking {
+            epoch: epoch(1),
+            attempt: None
+        },
+        "a failure while locking stays locking"
+    );
+    let attempt = state.begin_attempt().unwrap();
+    assert_eq!(
+        state.settle(attempt, SessionUnlockVerdict::Accepted),
+        SessionVerdictOutcome::Unlocking(epoch(1))
+    );
+}
+
+#[test]
+fn locking_during_an_attempt_starts_a_new_lock_that_voids_it() {
+    for proven in [false, true] {
+        let mut state = SessionLockState::new();
+        state.lock().unwrap();
+        if proven {
+            assert!(state.observe_covered(Some(epoch(1)), true));
+        }
+        let attempt = state.begin_attempt().unwrap();
+        assert_eq!(state.lock(), Ok(SessionLockStart::Started(epoch(2))));
+        assert_eq!(
+            state.settle(attempt, SessionUnlockVerdict::Accepted),
+            SessionVerdictOutcome::Stale,
+            "proven={proven}"
+        );
+        assert_eq!(state.cover_epoch(), Some(epoch(2)));
+        assert!(state.begin_attempt().is_some());
+    }
 }
 
 #[test]
@@ -80,11 +138,17 @@ fn an_accepted_current_attempt_unlocks_but_input_waits_for_the_epoch() {
         state.settle(attempt, SessionUnlockVerdict::Accepted),
         SessionVerdictOutcome::Unlocking(epoch(1))
     );
-    assert_eq!(state.cover_epoch(), None, "the cover is cleared");
+    assert_eq!(
+        state.cover_epoch(),
+        Some(epoch(1)),
+        "the cover stays until the unlock epoch applies"
+    );
     assert!(state.holds_input(), "input waits for the unlock epoch");
+    assert_eq!(state.begin_attempt(), None, "nothing left to verify");
     assert!(!state.observe_unlocked(false));
     assert!(state.observe_unlocked(true));
     assert!(!state.holds_input());
+    assert_eq!(state.cover_epoch(), None);
 }
 
 #[test]
@@ -150,7 +214,13 @@ fn a_cover_proven_for_an_earlier_lock_does_not_prove_a_later_one() {
     assert!(state.observe_unlocked(true));
     assert_eq!(state.lock(), Ok(SessionLockStart::Started(epoch(2))));
     assert!(!state.observe_covered(Some(epoch(1)), true));
-    assert_eq!(state.phase(), SessionLockPhase::Locking { epoch: epoch(2) });
+    assert_eq!(
+        state.phase(),
+        SessionLockPhase::Locking {
+            epoch: epoch(2),
+            attempt: None
+        }
+    );
 }
 
 #[test]

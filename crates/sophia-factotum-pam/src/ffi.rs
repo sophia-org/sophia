@@ -97,62 +97,35 @@ pub fn harden() {
     }
 }
 
-/// An anonymous mapping that is locked in memory, excluded from core dumps
-/// and zeroed before it is unmapped. The request, and so the secret, is read
-/// only into this.
-pub struct LockedPage {
-    base: *mut u8,
-    len: usize,
+/// The verdict for a user other than the caller: never sent to PAM.
+pub fn foreign_user() -> (PamVerdict, i16) {
+    (PamVerdict::Rejected, code(PAM_USER_UNKNOWN))
 }
 
-impl LockedPage {
-    pub fn new(len: usize) -> Option<Self> {
-        // SAFETY: an anonymous private mapping takes no file or address; the
-        // result is checked before use.
-        let base = unsafe {
-            libc::mmap(
-                ptr::null_mut(),
-                len,
-                libc::PROT_READ | libc::PROT_WRITE,
-                libc::MAP_PRIVATE | libc::MAP_ANONYMOUS,
-                -1,
-                0,
-            )
-        };
-        if base == libc::MAP_FAILED {
-            return None;
-        }
-        // SAFETY: `base..base+len` is the mapping just created.
-        let locked = unsafe {
-            libc::madvise(base, len, libc::MADV_DONTDUMP) == 0 && libc::mlock(base, len) == 0
-        };
-        let page = Self {
-            base: base.cast(),
-            len,
-        };
-        locked.then_some(page)
-    }
-
-    pub fn as_mut_slice(&mut self) -> &mut [u8] {
-        // SAFETY: the mapping is `len` readable and writable bytes, owned by
-        // this value for its whole life.
-        unsafe { std::slice::from_raw_parts_mut(self.base, self.len) }
-    }
-}
-
-impl Drop for LockedPage {
-    fn drop(&mut self) {
-        let bytes = self.as_mut_slice();
-        for byte in bytes.iter_mut() {
-            // SAFETY: a valid, exclusively borrowed byte of the mapping; the
-            // volatile write cannot be elided.
-            unsafe { ptr::write_volatile(byte, 0) };
-        }
-        // SAFETY: unmaps exactly the mapping created in `new`.
-        unsafe {
-            libc::munmap(self.base.cast(), self.len);
-        }
-    }
+/// Whether `user` names the account this process runs as. Only that account
+/// is ever authenticated, whatever name a misconfigured environment gave
+/// the agent; a lookup that fails names nobody.
+pub fn names_caller(user: &str) -> bool {
+    let Ok(name) = CString::new(user) else {
+        return false;
+    };
+    // SAFETY: `passwd` is plain data; all zeroes is a valid value for it.
+    let mut entry: libc::passwd = unsafe { std::mem::zeroed() };
+    let mut strings = vec![0 as c_char; 16 * 1024];
+    let mut found = ptr::null_mut();
+    // SAFETY: every pointer names a live object of the right type, and
+    // `strings` is `strings.len()` writable bytes that outlive the call.
+    let status = unsafe {
+        libc::getpwnam_r(
+            name.as_ptr(),
+            &mut entry,
+            strings.as_mut_ptr(),
+            strings.len(),
+            &mut found,
+        )
+    };
+    // SAFETY: getuid has no failure mode.
+    status == 0 && !found.is_null() && entry.pw_uid == unsafe { libc::getuid() }
 }
 
 /// What the conversation callback reads and records. It lives on the stack

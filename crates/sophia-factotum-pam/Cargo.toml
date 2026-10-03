@@ -13,8 +13,10 @@ rustix = { workspace = true, features = ["fs", "std", "stdio"] }
 sophia-factotum = { path = "../sophia-factotum" }
 
 [lints.rust]
-# The minimal libpam binding needs FFI. The crate root denies unsafe code and
-# allows it only in its `ffi` module; consumers retain unsafe_code = forbid.
+# The minimal libpam binding needs FFI, and secret pages need mmap and mlock.
+# Both crate roots deny unsafe code and allow it only in the binary's `ffi`
+# module and the library's `locked_page`; consumers retain unsafe_code =
+# forbid.
 unsafe_code = "allow"
 
 [lints.clippy]

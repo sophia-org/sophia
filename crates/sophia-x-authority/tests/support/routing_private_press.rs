@@ -116,6 +116,64 @@ fn a_server_grab_does_not_make_its_holder_the_recipient() {
 }
 
 #[test]
+fn a_synthetic_press_while_admission_is_closed_is_refused_without_effect() {
+    let namespace = NamespaceId::from_raw(39);
+    let focused = XServerFrontendClientId(43);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, mut instance, issuer, submit) = control_gate_with_submit();
+    let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+        NonZeroUsize::new(4).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+    );
+    broker
+        .try_install_control_gate(gate.clone())
+        .expect("a fresh broker to accept its gate");
+    let connection = sophia_input_authority::ConnectionIdentity {
+        recipient: 95,
+        connection_generation: 12,
+    };
+    let press = |instance: &mut _, token| {
+        broker.execute_synthetic_input(
+            instance,
+            &issuer,
+            crate::SyntheticRequest {
+                token,
+                connection,
+                namespace,
+                connection_generation: 12,
+                action: crate::SyntheticAction::Press,
+                input: sophia_input_authority::Input::key(38).expect("a keycode"),
+            },
+            Some(focused.raw()),
+        )
+    };
+
+    // A session lock closed admission: the press that a focused client
+    // would otherwise receive is refused.
+    broker.routed_input_sender().set_synthetic_admitted(false);
+    let (token, _capability) = reserved_request(&mut instance, &issuer, &submit, connection);
+    let outcome = press(&mut instance, token).expect("the refusal to be reported");
+    assert_eq!(
+        outcome.completion,
+        sophia_input_authority::RequestCompletion::Refused(
+            sophia_input_authority::RegistrationError::RoutingUnavailable
+        )
+    );
+    assert!(outcome.record.is_none(), "nothing was pressed");
+
+    // Reopened at unlock, the same press reaches the focused client.
+    broker.routed_input_sender().set_synthetic_admitted(true);
+    let (token, _capability) = reserved_request(&mut instance, &issuer, &submit, connection);
+    let outcome = press(&mut instance, token).expect("the request to execute");
+    assert_eq!(
+        outcome.record.expect("a recorded press").incarnation.recipient,
+        focused.raw()
+    );
+}
+
+#[test]
 fn desired_release_after_focus_disappears_still_releases_recorded_hold() {
     let namespace = NamespaceId::from_raw(38);
     let grab_holder = XServerFrontendClientId(42);

@@ -1302,3 +1302,46 @@ fn an_empty_rwalk_clones_a_fid_but_poisons_a_nonempty_walk() {
     drop(pipeline);
     thread.join().unwrap();
 }
+
+// ---- secret writes ----
+
+#[test]
+fn a_secret_write_sends_the_same_frame_and_scrubs_until_it_has_gone() {
+    let (client, thread) = scripted(
+        |stream| {
+            versioned(stream);
+            let (plain_kind, plain_tag, plain) = request(stream);
+            let (secret_kind, secret_tag, secret) = request(stream);
+            assert_eq!((plain_kind, secret_kind), (118, 118));
+            assert_eq!(plain, secret, "the same Twrite body");
+            stream
+                .write_all(&reply(119, secret_tag, &6u32.to_le_bytes()))
+                .unwrap();
+            stream
+                .write_all(&reply(119, plain_tag, &6u32.to_le_bytes()))
+                .unwrap();
+            hold(stream);
+        },
+        PipelineLimits::default(),
+    );
+    let mut pipeline = client.unwrap();
+    assert!(!pipeline.scrubbing_output());
+    // A refused secret queues nothing and leaves nothing to scrub.
+    assert_eq!(
+        pipeline.write_secret(Fid(0), 0, &vec![0; pipeline.msize() as usize]),
+        Err(PipelineError::Limit("request larger than msize"))
+    );
+    assert!(!pipeline.scrubbing_output());
+    let plain = pipeline.write(Fid(3), 0, b"secret").unwrap();
+    assert!(
+        !pipeline.scrubbing_output(),
+        "an ordinary write is not scrubbed"
+    );
+    let secret = pipeline.write_secret(Fid(3), 0, b"secret").unwrap();
+    assert!(pipeline.scrubbing_output(), "queued, not yet sent");
+    assert_eq!(pipeline.wait(secret, deadline()).unwrap(), Reply::Write(6));
+    assert!(!pipeline.scrubbing_output(), "sent, so nothing is left");
+    assert_eq!(pipeline.wait(plain, deadline()).unwrap(), Reply::Write(6));
+    drop(pipeline);
+    thread.join().unwrap();
+}

@@ -215,6 +215,42 @@ a hung helper killed at its deadline, a forged acceptance with a failing
 exit refused, cancellation, and the agent's serve loop with Session's client
 end to end. Open: a live-session run; the user endpoint waits for t275.
 
+Review 2026-10-03 of `lock/t034` at 266ccc1fc (read-only, security and
+correctness) found no unlock without a current verdict, no desktop pixel under
+the cover and no lock-time key or XTEST press reaching a client. It found
+availability and secret-handling defects, fixed on `lock/t034` before merge:
+
+- The authenticator is supervised (`session_unlock_supervisor`): reported
+  available only after the agent answers its handshake, replaced with a
+  bounded backoff after a failed launch, a broken login or an exit while
+  idle, and every attempt made while none is up answers `Unavailable`.
+  Session refuses to lock while nothing is available.
+- Locked keys are never counted, timed or recorded: no `keys_observed`, no
+  physical-event metric, no keyboard coverage, and no per-edit log line.
+- The secret's copies are zeroed or locked: Session's secret is one locked,
+  undumped page; the client builds the request once and sends it through the
+  SDK pipeline's `write_secret`, which zeroes the body and the output buffer's
+  vacated bytes (sophia-desktop-sdk-rs 1cce77b); the helper reads its request
+  straight into its locked page.
+- The helper's reply leaves on a private descriptor with stdout on
+  `/dev/null`; the agent reads it and waits for the helper's exit under one
+  deadline, killing and reaping it on overrun or cancel.
+- The helper path is canonicalized and every ancestor must be root-owned and
+  writable by no one else; the system's services verify only the caller's
+  own account, whatever `LOGNAME` said.
+- The lock input (keymap and secret page) is built before the lock is taken,
+  so a failure refuses the lock instead of ending the session.
+- An attempt may run while locking, so a head that never retires the cover
+  cannot lock the user out; a lock request during an attempt starts a new
+  lock that voids it; the cover stays through unlocking until the frontend
+  applies the new epoch; the broker's synthetic executor refuses presses
+  while admission is closed.
+
+Accepted residuals: the agent's 9P server keeps consumed request bytes until
+reused (the agent is undumpable and its memory locked); Session itself stays
+dumpable, with its secret page excluded; the helper's stdout redirect has no
+deterministic control, since only a module inside the helper can write there.
+
 ### t294 Lock provider role and contract
 
 Specify `protocol/sophia-lock-files-v1.kdl` and `docs/sophia-lock-files.md` with

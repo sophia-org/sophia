@@ -8,7 +8,30 @@ const SESSION_LOCK_FILL: sophia_engine::CompositorRgb8 =
 
 macro_rules! begin_session_lock {
     ($reason:literal) => {{
-        if session_unlock_authenticator.is_none() {
+        let k = &config.xkb_config;
+        // Built before anything changes, so a keymap that cannot load or a
+        // secret page that cannot be locked refuses the lock instead of
+        // leaving one half taken.
+        let input = sophia_engine::SessionLockKeyboard::new(
+            &k.rules,
+            &k.model,
+            &k.layout,
+            &k.variant,
+            &k.options,
+            &std::env::var_os("LC_ALL")
+                .or_else(|| std::env::var_os("LC_CTYPE"))
+                .or_else(|| std::env::var_os("LANG"))
+                .unwrap_or_else(|| "C".into()),
+        )
+        .map_err(|error| error.to_string())
+        .and_then(|keyboard| {
+            crate::session_lock_input::SessionLockInput::new(keyboard)
+                .map_err(|_| "secret memory could not be locked".to_owned())
+        });
+        if !session_unlock_authenticator
+            .as_ref()
+            .is_some_and(|authenticator| authenticator.available())
+        {
             // A lock nobody could open is refused, not offered.
             crate::session_eprintln!(
                 "sophia_live_session_lock schema=1 status=refused reason=no_authenticator source={}",
@@ -21,7 +44,12 @@ macro_rules! begin_session_lock {
                 "sophia_live_session_lock schema=1 status=refused reason=no_native_presentation source={}",
                 $reason,
             );
-        } else {
+        } else if let Err(error) = &input {
+            crate::session_eprintln!(
+                "sophia_live_session_lock schema=1 status=refused reason=lock_input source={} error={error}",
+                $reason,
+            );
+        } else if let Ok(input) = input {
             match session_lock.lock() {
                 Ok(crate::session_lock::SessionLockStart::Started(epoch)) => {
                     // Synthetic input closes before the epoch moves, so no
@@ -45,20 +73,12 @@ macro_rules! begin_session_lock {
                     if let Some(wm) = wm_session.as_mut() {
                         wm.observe_keyboard_matching(false);
                     }
-                    let k = &config.xkb_config;
-                    let keyboard = sophia_engine::SessionLockKeyboard::new(
-                        &k.rules,
-                        &k.model,
-                        &k.layout,
-                        &k.variant,
-                        &k.options,
-                        &std::env::var_os("LC_ALL")
-                            .or_else(|| std::env::var_os("LC_CTYPE"))
-                            .or_else(|| std::env::var_os("LANG"))
-                            .unwrap_or_else(|| "C".into()),
-                    )?;
-                    session_lock_input =
-                        Some(crate::session_lock_input::SessionLockInput::new(keyboard));
+                    // Keys the lock takes are never counted; what was held
+                    // before it is forgotten rather than left stale.
+                    keyboard_coverage.forget_all_devices();
+                    // Replacing the input zeroes any secret of a lock this
+                    // one supersedes.
+                    session_lock_input = Some(input);
                     // The cover is runtime state that every list consults; a
                     // repaint that cannot be queued now still draws it next.
                     if let Some(runtime) = runtime.as_mut()
@@ -105,7 +125,7 @@ macro_rules! service_session_lock {
     () => {{
         let applied = input_sender.applied_control_epoch() >= session_lock_input_epoch;
         match session_lock.phase() {
-            crate::session_lock::SessionLockPhase::Locking { epoch } => {
+            crate::session_lock::SessionLockPhase::Locking { epoch, .. } => {
                 let presented = match (runtime.as_ref(), native_scanout.as_ref()) {
                     (Some(runtime), Some(native)) => runtime.presented_session_lock(native),
                     _ => None,
@@ -117,8 +137,20 @@ macro_rules! service_session_lock {
                     );
                 }
             }
-            crate::session_lock::SessionLockPhase::Unlocking { epoch } => {
-                if session_lock.observe_unlocked(applied) {
+            crate::session_lock::SessionLockPhase::Unlocking { epoch } if applied => {
+                // The cover goes only once input can return with it.
+                let cleared = runtime.as_mut().map_or(Ok(true), |runtime| {
+                    runtime.set_session_lock(None, &scene, native_scanout.as_mut())
+                });
+                if let Err(error) = cleared {
+                    // The cover could not be withdrawn, so the session is
+                    // not shown unlocked: it locks again under a new epoch.
+                    crate::session_eprintln!(
+                        "sophia_live_session_lock schema=1 status=unlock_repaint_failed epoch={} error={error}",
+                        epoch.raw(),
+                    );
+                    begin_session_lock!("unlock_repaint_failed");
+                } else if session_lock.observe_unlocked(applied) {
                     session_lock_input = None;
                     input_sender.set_synthetic_admitted(true);
                     crate::session_println!(
@@ -128,18 +160,15 @@ macro_rules! service_session_lock {
                 }
             }
             crate::session_lock::SessionLockPhase::Locked { .. }
+            | crate::session_lock::SessionLockPhase::Unlocking { .. }
             | crate::session_lock::SessionLockPhase::Unlocked => {}
         }
         if let Some(input) = session_lock_input.as_mut() {
             // Provider delivery is the lock role's (t294); until then the
-            // edits and chords are only counted, never retained.
-            let edits = input.take_edits().len();
-            let chords = input.take_chords().len();
-            if edits != 0 || chords != 0 {
-                crate::session_println!(
-                    "sophia_live_session_lock schema=1 status=input edits={edits} chords={chords}",
-                );
-            }
+            // edits and chords are dropped. Neither is logged: their count
+            // and timing would describe the secret.
+            input.take_edits();
+            input.take_chords();
             if input.submission().is_some()
                 && let Some(authenticator) = session_unlock_authenticator.as_mut()
                 && let Some(attempt) = session_lock.begin_attempt()
@@ -183,24 +212,11 @@ macro_rules! service_session_lock {
                         route_lease_release_sender,
                     )?;
                     session_lock_input_epoch = application_route_leases.control_epoch();
-                    let cleared = runtime.as_mut().map_or(Ok(true), |runtime| {
-                        runtime.set_session_lock(None, &scene, native_scanout.as_mut())
-                    });
-                    if let Err(error) = cleared {
-                        // The cover could not be withdrawn, so the session is
-                        // not shown unlocked: it locks again under a new epoch.
-                        crate::session_eprintln!(
-                            "sophia_live_session_lock schema=1 status=unlock_repaint_failed epoch={} error={error}",
-                            epoch.raw(),
-                        );
-                        begin_session_lock!("unlock_repaint_failed");
-                    } else {
-                        crate::session_println!(
-                            "sophia_live_session_lock schema=1 status=unlocking epoch={} input_epoch={} revoked_leases={revoked}",
-                            epoch.raw(),
-                            session_lock_input_epoch,
-                        );
-                    }
+                    crate::session_println!(
+                        "sophia_live_session_lock schema=1 status=unlocking epoch={} input_epoch={} revoked_leases={revoked}",
+                        epoch.raw(),
+                        session_lock_input_epoch,
+                    );
                 }
                 crate::session_lock::SessionVerdictOutcome::Failed(attempt, verdict) => {
                     crate::session_println!(

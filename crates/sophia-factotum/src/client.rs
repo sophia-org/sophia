@@ -101,21 +101,22 @@ impl UnlockClient {
             "start proto=pam role=login service={}",
             crate::attr::quote(service)
         );
-        if let Some(refused) = self.step(rpc, start.as_bytes(), deadline)? {
+        if let Some(refused) = self.step(rpc, start.as_bytes(), Bytes::Plain, deadline)? {
             return Ok(refused);
         }
-        let mut request = zeroize::Zeroizing::new(b"write ".to_vec());
-        request.extend_from_slice(user.as_bytes());
-        if let Some(refused) = self.step(rpc, &request, deadline)? {
+        let request = [b"write ".as_slice(), user.as_bytes()].concat();
+        if let Some(refused) = self.step(rpc, &request, Bytes::Plain, deadline)? {
             return Ok(refused);
         }
-        let mut request = zeroize::Zeroizing::new(b"write ".to_vec());
+        // Sized once, so no reallocation leaves part of the secret behind.
+        let mut request = zeroize::Zeroizing::new(Vec::with_capacity(6 + secret.len()));
+        request.extend_from_slice(b"write ");
         request.extend_from_slice(secret);
-        if let Some(refused) = self.step(rpc, &request, deadline)? {
+        if let Some(refused) = self.step(rpc, &request, Bytes::Secret, deadline)? {
             return Ok(refused);
         }
         drop(request);
-        let info = self.exchange(rpc, b"authinfo", deadline)?;
+        let info = self.exchange(rpc, b"authinfo", Bytes::Plain, deadline)?;
         let Some(encoded) = info.strip_prefix(b"ok ") else {
             return Ok(LoginVerdict::Refused("no authinfo".into()));
         };
@@ -130,9 +131,10 @@ impl UnlockClient {
         &mut self,
         rpc: Fid,
         request: &[u8],
+        bytes: Bytes,
         deadline: Instant,
     ) -> Result<Option<LoginVerdict>, ClientError> {
-        let reply = self.exchange(rpc, request, deadline)?;
+        let reply = self.exchange(rpc, request, bytes, deadline)?;
         if reply == b"ok" {
             return Ok(None);
         }
@@ -147,9 +149,14 @@ impl UnlockClient {
         &mut self,
         rpc: Fid,
         request: &[u8],
+        bytes: Bytes,
         deadline: Instant,
     ) -> Result<Vec<u8>, ClientError> {
-        let tag = self.pipeline.write(rpc, 0, request)?;
+        let tag = match bytes {
+            Bytes::Plain => self.pipeline.write(rpc, 0, request)?,
+            // The pipeline zeroes every copy of the frame it makes.
+            Bytes::Secret => self.pipeline.write_secret(rpc, 0, request)?,
+        };
         match self.pipeline.wait(tag, deadline)? {
             Reply::Write(count) if usize::try_from(count).ok() == Some(request.len()) => {}
             Reply::Error(errno) => return Err(ClientError::Remote(errno)),
@@ -162,6 +169,12 @@ impl UnlockClient {
             _ => Err(ClientError::Unexpected("read")),
         }
     }
+}
+
+#[derive(Clone, Copy)]
+enum Bytes {
+    Plain,
+    Secret,
 }
 
 /// The first length-prefixed field of an encoded AuthInfo: `cuid`.

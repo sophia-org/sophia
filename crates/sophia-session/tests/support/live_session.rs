@@ -188,6 +188,8 @@ mod public_policy_recovery_tests;
 mod session_config_tests;
 #[path = "live_session/session_lock_config_tests.rs"]
 mod session_lock_config_tests;
+#[path = "live_session/session_lock_route_tests.rs"]
+mod session_lock_route_tests;
 #[path = "live_session/startup_output_tests.rs"]
 mod startup_output_tests;
 #[path = "live_session/visual_candidate_tests.rs"]
