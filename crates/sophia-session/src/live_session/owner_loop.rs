@@ -63,6 +63,10 @@ struct SessionLoopStartup<'a> {
     xtest_scene: Arc<x_frontend::xtest::LiveXTestPointerScene>,
 }
 
+// Fallback for renderer/cursor cleanup, topology and retirement work that has
+// no fd readiness contract. Ordinary submitted scanout does not use this timer.
+const OWNER_SHORT_SERVICE_INTERVAL: Duration = Duration::from_millis(1);
+
 /// The longest the owner sleeps for authority work before servicing itself.
 ///
 /// The 25 ms budget is maintenance only: child reaping, config and topology
@@ -107,8 +111,8 @@ struct OwnerHeldWork {
     /// Input receipts and the release barriers and handoffs they advance.
     /// Arrivals ring the owner; locally held transitions keep a short budget.
     input_receipts: bool,
-    /// A native frame, cursor completion or retirement in progress. Page flips
-    /// are observed by polling, not delivered.
+    /// Native work without a readiness contract: rendering, cursor completion,
+    /// cleanup or worker retirement. KMS completion waits use borrowed fds.
     frames: bool,
     /// Topology preparation, application, presentation wait, rollback, retry
     /// or a parked notice or publication.
@@ -146,18 +150,7 @@ fn owner_input_work_pending(
     physical_input && (proof_session || held.any())
 }
 
-fn native_frame_service_requires_owner_progress(request: &OutputFrameServiceRequest) -> bool {
-    // A waiting software present is owed work too. It stopped being visible in
-    // the per-output flags once those became native-only, and without it here
-    // the owner would drop to its idle pacing while a present still needed
-    // lowering.
-    request.presentation_queued
-        || request.software_frame_waiting
-        || request.preparation_pending
-        || request.outputs.iter().any(|output| {
-            output.pending_frame || output.native_phase != OutputNativeFramePhase::Idle
-        })
-}
+include!("owner_loop/native_progress.rs");
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ProductionCycleNativeOwnerPolicy {
@@ -235,25 +228,6 @@ fn paced_repaint_wait_cap(
     } else {
         maximum
     }
-}
-
-fn native_frame_service_should_preempt_authority(
-    request: &OutputFrameServiceRequest,
-    preempted_previous_cycle: bool,
-    control_pending: bool,
-    control_priority_cycles: u8,
-    service_due: bool,
-) -> bool {
-    // Controls get several owner turns first, but no control class may block
-    // renderer polling indefinitely. An armed service deadline also covers
-    // work whose instantaneous output hint has gone idle, so worker watchdogs
-    // keep making progress through resize-recovery traffic. The following
-    // owner turn returns to authority traffic.
-    const CONTROL_PRIORITY_CYCLES: u8 = 4;
-
-    (!control_pending || control_priority_cycles >= CONTROL_PRIORITY_CYCLES)
-        && !preempted_previous_cycle
-        && (service_due || native_frame_service_requires_owner_progress(request))
 }
 
 fn synchronize_runtime_surface_chrome_style(

@@ -115,6 +115,10 @@ const PREVIEW_REFUSAL_CODES: &[&str] = &[
 
 const INVARIANT_CODES: &[(&str, &str)] = &[
     (
+        "native completion descriptor failed",
+        "native_completion_descriptor_failed",
+    ),
+    (
         "topology composition display list invalid",
         "topology_composition_invariant",
     ),

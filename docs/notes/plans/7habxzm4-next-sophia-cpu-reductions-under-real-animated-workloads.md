@@ -36,6 +36,190 @@ Exit:
   hand-run live samples. The operator's live check remains the final
   acceptance.
 
+## Three next priorities from the niri/XLibre comparison (2026-10-03)
+
+The operator approved proceeding with priority 1 and recording all three here.
+They remain slices of t289. Priority 1 is being implemented; priorities 2 and 3
+need the attribution below before changing rendering or buffer custody.
+
+### Evidence and scope
+
+The installed Sophia is `53b283370`, release
+`niltempus-8eaea15d0d13f4a0be09`. Three active Kitty/Herdr/Codex samples with btop
+on DP2 (`t289-live-cpu-02/SUMMARY.json`) give median Sophia CPU of **8.05% of one
+core**, owner **3.64%**, render threads **2.23%**, and about 41 completions/s.
+Gross process CPU is 1.96–1.97 ms per completion, not a render duration or a
+keystroke cost. There is no valid same-session empty-DP1 subtraction: series 03
+was interrupted and remains invalid. These are current-release observations,
+not paired T289 acceptance or measurements of niri/XLibre.
+
+Read-only comparison identities: niri `5f4469b6`, its pinned Smithay
+`79bbed5e`, and XLibre `dd5edd03`. Full paths, digests, derived measurements and
+pF's reviews are in `development-evidence/t289-niri-comparison-01/`:
+`REPORT.txt`, `source-identities.json`, `derived-metrics.json`,
+`smithay-sources.json`, and `pF/`. The local proof-only lock merge `c3e054585`
+adds no rendering changes and is separate from the measured installed revision.
+No speedup or cross-compositor superiority follows from source inspection.
+
+### Priority 1: native completion readiness and bounded owner progress
+
+**Finding.** Sophia's native work selects a 1 ms owner wait. The wait subscribes
+shell descriptors and the owner ring, but no DRM descriptors. Page flips are
+read by the owner during service. After work ends, a four-visit idle tail keeps
+the short wait armed. Run 01 recorded 29,745 owner passes and 13,672 deadline
+wakes for 2,484 completions: about 12 passes and 5.5 deadline wakes per completion.
+The counters do not separate polling, the idle tail and other held work.
+
+[Owner wait selection](../../../crates/sophia-session/src/live_session/owner_loop/authority_receive.rs),
+[service and idle tail](../../../crates/sophia-session/src/live_session/owner_loop/authority.rs),
+and the separate [service wait](../../../crates/sophia-session/src/live_session/owner_loop/authority_service_wait.rs)
+are the implementation seams. The last also sleeps up to 1 ms, outside the
+ordinary wait counters. Niri registers its DRM notifier with calloop; XLibre
+modesetting registers DRM readability with `SetNotifyFd` and requests kernel
+sequence events. Their existing mechanisms motivate this change.
+
+**Implementation.** Subscribe borrowed native completion descriptors, retaining
+one event consumer. Separate runnable work, event waits and deadline waits.
+Preserve watchdogs, rendering, cursor, recovery and topology deadlines. Remove
+the four-visit tail only when every successor obligation has a wake, immediate
+service turn or deadline. Keep an explicit short fallback for fd-less work.
+
+**Correctness constraints.** Subscribe only when the next pass consumes the
+source; quarantine and paused/revoked devices must not leave a permanently ready
+fd in the wait. Handle POLLERR/HUP/NVAL as a state transition, and remove a
+signalled out-fence when consumed. Preserve service preemption under saturated
+authority ingress: queued authority work bypasses poll, so descriptor readiness
+alone cannot guarantee progress. The retired-owner path must retain its own
+bounded shutdown contract. Include lock cover and VT release in validation.
+
+**Validation.** Cover readiness before/during wait, multiple cards and mirror
+heads, out-fence cleanup, lost-event watchdogs, renderer-only and cursor work,
+quarantine/rollback/VT transitions, saturated ingress and hidden/Fake/clockless
+Present progress. Count readiness with and without consumption, fallback/deadline
+reasons and service waits. Idle must return to the 25 ms maintenance cadence
+without a polling tail. Negative controls restore polling/tail or retain a
+stale fence and must fail the relevant assertions. Compare owner CPU, passes,
+wakes and latency per completion at unchanged throughput; savings are unmeasured.
+
+**Native-readiness implementation checkpoint (2026-10-03).** The isolated
+`performance/t289-native-readiness` worktree starts at `c3e054585`, including the
+lock proof delta from installed `53b283370`. The later T294 merge is separate.
+The implementation borrows one card fd per group with submitted work, plus
+submitted singleton and mirror out-fences. Already-collected callbacks,
+rendering, recovery and cleanup keep short service. Session subscribes only with
+an active seat, an available runtime and frame service permitted by topology.
+The completion pump remains the only reader; readiness grants no presentation,
+Complete or Idle permission.
+
+The wait list is built once per owner pass and dropped before native mutation.
+Its deadline is the earliest outstanding 500 ms page-flip watchdog. Cursor and
+worker retirement keep the named 1 ms fallback; `NativeRetirement::poll` only
+finishes renderer shutdown after KMS ownership has drained, so it does not
+subscribe retiring card fds. The service-only wait now listens to the owner ring
+and native readiness without consuming authority traffic. Periodic preemption
+still services native work when queued authority bypasses poll. Completed work
+has no four-visit tail.
+
+A native descriptor error wakes once. After seat/lifecycle processing, an error
+on the same still-active owner is classified as
+`native_completion_descriptor_failed`; suspension or replacement discards that
+old owner's fault. A signalled out-fence is closed on presentation before its
+submission becomes displayed custody. This prevents permanently readable
+fences from entering the next idle wait. If a signalled fence remains submitted
+because its synthesized callback was refused, its cached Signaled status selects
+short service instead of another fd subscription. The watchdog and custody stay
+unchanged. New singleton and mirror submissions reset the cached observation,
+so the predecessor's signal cannot suppress their readiness. This adds no poll
+syscall to wait construction (pF review F1).
+
+The existing periodic `sophia_present_clock_service` record now also carries
+`native_ready`, `native_ready_consumed`, `native_ready_idle`, `native_errors`,
+`native_event_waits`, `native_short_waits` and `native_service_waits`.
+“Consumed” means a successful card drain or an out-fence retirement on the same
+native owner before the next observation; it is not a presented-frame count.
+Wait classifications count attempts, and readiness counters count poll returns.
+Shell fd readiness stays separate. A ready-but-idle count exposes repeated
+readiness without progress. No new per-frame records are added.
+
+Evidence is in `development-evidence/t289-native-readiness-01/`. Unit tests use
+socket descriptors and real custody transitions without opening DRM devices.
+They cover wake ownership, revoked fds, watchdog waiting, no polling tail,
+ingress fairness, multiple card/mirror membership and out-fence closure. These
+are component proofs; attended VT switching, hardware timing and CPU savings
+remain unmeasured. The earlier selector-only test invocation that ran zero tests
+is preserved as a non-result; named test runs supply coverage.
+
+### Priority 2: explain full-repaint decisions, then improve damage
+
+**Finding.** Run 01 composed 2,747 full frames and zero partial frames. All full
+outcomes were `PlanFull`; missing/unknown buffer age and history counters were
+zero. All 2,391 stable-geometry frames were full too. Output composition repainted
+about 163 million pixels/s, excluding the additional capture copies.
+
+This does **not** prove a damage bug. An absent X Present update region means the
+whole pixmap. A broken precise-history chain, rebased candidate, noncanonical
+variant, clipping, transform or the coverage/rectangle thresholds can also
+legitimately produce full damage. Stable geometry is not a pixel-provenance proof.
+See [source damage](../../../crates/sophia-x-authority/src/runtime/render_resources.rs),
+[history](../../../crates/sophia-engine/src/frame/damage_history.rs),
+[Present rebase](../../../crates/sophia-engine/src/runtime_driver/production.rs),
+and [repaint planning](../../../crates/sophia-engine/src/compositor_graphics/frame_presentation.rs).
+Smithay uses element identity/commit damage, opaque-region subtraction and buffer
+age, and skips elements with no damaged visible area; Sophia already has history.
+
+**Next step.** Add bounded aggregate reasons for absent/full/partial/empty client
+regions, area, rebase, precision restrictions, missing predecessor/terminal
+identity, rectangle pressure and coverage threshold. Attribute the age actually
+rendered, not every precomputed age. Then repair only a measured avoidable cause.
+If the client provides full damage, record that outcome without inventing a
+smaller region or disabling its animation. Preserve all identity checks.
+
+**Validation.** Pixel equivalence on both render nodes for buffer reuse, partial
+updates, rejected/coalesced candidates, history exhaustion, scaling/clipping,
+rotation, transparency, mirrors and previews. Track repaint-area ratios and
+per-reason deltas with reset handling. A measured no-change decision is valid.
+
+### Priority 3: reduce capture/import setup while preserving immutable pixels
+
+**Finding.** Each measured Present created one fresh owned snapshot surface.
+Run 01 recorded 2,484 captures, 5,228 imports and only three cache hits; capture
+contexts already reused. The renderer probes a client DMA-BUF import, destroys
+that EGLImage, captures through a fresh one-entry cache, clears that cache, then
+imports the owned snapshot for output composition. Distinct Present transactions
+name distinct snapshot images. Low hits therefore fit the ownership design.
+
+See [capture](../../../crates/sophia-renderer-native-egl/src/gbm_platform/scanout/context/image_capture.rs)
+and [owned composition](../../../crates/sophia-renderer-live/src/native_scanout/owned_mixed_export.rs).
+Smithay retains imported textures by DMA-BUF lifetime; XLibre glamor attaches
+imports to pixmaps. Sophia's owned images keep retained content immutable after
+the client can reuse its buffer. A different cache key alone cannot replace that.
+
+**Next step.** Measure existing capture setup/copy/cleanup timing counters, which
+were disabled in these samples. Evaluate reusing the validated import for capture
+and a bounded source-import cache tied to backing lifetime, descriptors and
+device identity. Pixel generation remains distinct from storage identity; fence
+and transfer semantics stay intact. Destination BO pooling or capture removal
+needs a separate proof covering every local/foreign reader and GPU operation.
+
+**Validation.** Client buffer and XID reuse, changed plane descriptors, eviction
+with foreign readers, reset, capture errors, fences, mirrors and cross-device
+transfer. Preserve exactly-once Complete/Idle and memory bounds. Measure imports,
+allocations, copy cost and total CPU at fixed completed throughput.
+
+A secondary opportunity is unchanged CPU-layer upload: raster reuse does not
+mean GPU upload reuse. The current scratch texture uploads each CPU layer again,
+and each damage rectangle visits the layer stack. Measure uploaded bytes and
+empty intersections before introducing a bounded content-generation texture cache.
+
+### Comparison and acceptance rules
+
+Implement and qualify one slice at a time. Use the same offered workload and
+client features, plus generic fixed-rate fixtures. Keep completed throughput,
+Copy/Flip/Skip mix, latency, errors and memory occupancy beside CPU and counters.
+Cross-compositor comparisons require equivalent visuals and include any separate
+X compositor's CPU. QEMU is a correctness/relative signal; hardware acceptance
+stays with the operator. No live install or configuration change is implicit.
+
 ## Task details
 
 <a id="t289"></a>

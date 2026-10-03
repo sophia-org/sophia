@@ -5,13 +5,28 @@
             }
             _ => None,
         };
-        if runtime.as_ref().is_some_and(|r| r.frame_deadlines_pending()) || native_frame_service_request
-            .as_ref()
-            .is_some_and(native_frame_service_requires_owner_progress)
-        {
-            native_frame_service_deadline_armed = true;
-            native_frame_idle_service_cycles = 0;
-        }
+        owner_wake.observe_native_progress(
+            native_scanout.as_ref().map(LiveProductionNativeScanout::completion_progress),
+            seat_state == sophia_backend_live::LiveSeatState::Active && native_scanout.is_some(),
+        )?;
+        let native_wait = match (
+            runtime.as_ref(), native_scanout.as_ref(), native_frame_service_request.as_ref(),
+        ) {
+            (Some(runtime), Some(native), Some(request))
+                if seat_state == sophia_backend_live::LiveSeatState::Active => {
+                runtime.native_completion_wait(native, request)
+            }
+            _ => sophia_backend_live::LiveNativeCompletionWait::default(),
+        };
+        let native_wait_only = native_wait.submissions && !native_wait.short_service;
+        let native_frame_service_required = native_wait.short_service || runtime.as_ref()
+            .is_some_and(|r| r.frame_deadlines_pending())
+            || native_frame_service_request.as_ref()
+                .is_some_and(native_frame_service_requires_owner_progress);
+        // Queued authority can bypass the wait altogether. Keep service due
+        // independently of the wait classification and without an idle tail.
+        let native_service_due = native_frame_service_required
+            && last_native_frame_service.elapsed() >= primary_frame_interval;
         // No consecutive-cycle guard here, deliberately. The request-driven
         // path below keeps one, because that is what it was written for: a
         // continuously busy renderer must not starve X control and focus
@@ -50,8 +65,8 @@
                     // watchdog before per-refresh pacing existed; on a 120Hz
                     // head that is two frame intervals, so it could not
                     // recover a tick the alternation had already lost.
-                    native_frame_service_deadline_armed
-                        && last_native_frame_service.elapsed() >= primary_frame_interval,
+                    native_service_due,
+                    native_wait_only,
                 )
             });
         let wm_only_cycle = initial_authority_batch.is_none()
@@ -859,20 +874,6 @@
                     }
                     let service = runtime.service_native(native_scanout, scene)?;
                     last_native_frame_service = Instant::now();
-                    let native_work_remains = native_frame_service_requires_owner_progress(
-                        &runtime.native_output_service_request(native_scanout)?,
-                    );
-                    if native_work_remains || runtime.frame_deadlines_pending() {
-                        native_frame_service_deadline_armed = true;
-                        native_frame_idle_service_cycles = 0;
-                    } else if native_frame_service_deadline_armed {
-                        native_frame_idle_service_cycles =
-                            native_frame_idle_service_cycles.saturating_add(1);
-                        if native_frame_idle_service_cycles >= 4 {
-                            native_frame_service_deadline_armed = false;
-                            native_frame_idle_service_cycles = 0;
-                        }
-                    }
                     record_discarded_presents(&service.discarded_presents);
                     if let Some(retired) = service.retired_present {
                         let NativePresentRetirementObservation {

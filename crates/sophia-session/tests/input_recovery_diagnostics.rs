@@ -127,3 +127,13 @@ fn aggregate_present_records_keep_numeric_counts_and_observation_times() {
         }
     }
 }
+
+#[test]
+fn native_readiness_counters_survive_reduction_without_fd_identities() {
+    let line = "sophia_present_clock_service schema=1 native_ready=8 native_ready_consumed=6 native_ready_idle=2 native_errors=1 native_event_waits=9 native_short_waits=3 native_service_waits=4";
+    assert_eq!(reduced_record(line).as_deref(), Some(line));
+    assert_eq!(
+        reduced_record(&format!("{line} native_fd=37 path=/dev/secret")).as_deref(),
+        Some(line)
+    );
+}
