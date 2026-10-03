@@ -28,13 +28,7 @@ impl LiveProductionVisualRuntime {
         };
         native_scanout
             .set_translation_motion_active(self.translations.active(self.translation_time()));
-        // The cadence an unpresentable candidate is paced to, read from the
-        // head that paces everything else rather than from a constant.
-        let paced_interval = crate::head_refresh_interval(
-            native_scanout
-                .cadence_head(self.outputs.primary_output())
-                .map_or(0, |head| head.refresh_millihz),
-        );
+        let paced_interval = super::background_present::BACKGROUND_PRESENT_INTERVAL;
         let queued = self
             .present_scheduler
             .front()
@@ -67,6 +61,7 @@ impl LiveProductionVisualRuntime {
                 queued_surface,
                 crate::LiveProductionFirstVisibilityReason::OutsidePresentationOrder,
                 paced_interval,
+                Instant::now(),
             );
             return self.run_observation_tick();
         }
@@ -115,6 +110,7 @@ impl LiveProductionVisualRuntime {
                 queued_surface,
                 crate::LiveProductionFirstVisibilityReason::NoApplicableOutput,
                 paced_interval,
+                Instant::now(),
             );
             return self.run_observation_tick();
         }
@@ -472,7 +468,7 @@ impl LiveProductionVisualRuntime {
 }
 
 impl LiveProductionVisualRuntime {
-    /// Settle a Present no head can carry, paced to the head's refresh.
+    /// Settle a Present no head can carry, paced to the background interval.
     ///
     /// An onscreen client is paced by retirement: its Present completes from a
     /// real page flip, so it redraws at the head's rate. A client whose window
@@ -482,11 +478,11 @@ impl LiveProductionVisualRuntime {
     /// them cost owner-loop present handling, a protocol completion and its
     /// evidence. Parking the candidate withholds the Idle that frees its
     /// buffer, so the client blocks on its own back buffers exactly as a
-    /// visible one does, and the completion is delivered one tick later.
+    /// visible one does. Completion waits at most one background interval.
     ///
     /// The verdict is not revisited at the tick. A surface that becomes
-    /// visible again presents a newer buffer, which enters the queue runnable
-    /// and is composed normally.
+    /// visible again releases its parked buffers early and presents a newer
+    /// buffer, which enters the queue runnable and is composed normally.
     ///
     /// A candidate that has already spent its first-visibility budget is not
     /// made to wait a second time; the budget exists to bound exactly this
@@ -498,11 +494,21 @@ impl LiveProductionVisualRuntime {
         surface: SurfaceId,
         reason: crate::LiveProductionFirstVisibilityReason,
         interval: std::time::Duration,
+        now: Instant,
     ) {
+        let fallback = self
+            .present_scheduler
+            .front()
+            .map(|queued| queued.candidate.target_geometry);
+        let visible_at_park = fallback.is_some_and(|geometry| {
+            !self
+                .background_visible_surfaces([(surface, geometry)])
+                .is_empty()
+        });
         if !self.present_scheduler.front_first_visibility_exhausted()
             && self
                 .present_scheduler
-                .defer_to_frame_tick(candidate, Instant::now(), interval)
+                .defer_to_frame_tick(candidate, now, interval, visible_at_park)
         {
             // Coalesced on powers of two, like the busy-output defer above: a
             // paced client produces one of these per frame, and a line each
@@ -516,7 +522,7 @@ impl LiveProductionVisualRuntime {
                     interval.as_micros(),
                 );
             }
-            for overflowed in self.present_scheduler.bound_frame_tick_parking(surface) {
+            for overflowed in self.present_scheduler.bound_frame_tick_parking() {
                 self.reject_gpu_presentation(overflowed);
             }
             return;
@@ -529,8 +535,8 @@ impl LiveProductionVisualRuntime {
     /// out of every head, or a WM presentation replaced it on every
     /// applicable output without a preview of it (t246). A first Present is
     /// parked for first visibility, within that budget; any other takes the
-    /// clearing repaint to the heads and is skipped, parked to the next frame
-    /// tick while the pacing allows, else rejected. The driver's own branch,
+    /// clearing repaint to the heads and is skipped, parked until the background
+    /// deadline while the pacing allows, else rejected. The driver's own branch,
     /// moved here unchanged so the lifecycle target can execute it.
     pub(super) fn settle_uncaptured_present<T: NativeCompositionTarget>(
         &mut self,
@@ -567,6 +573,7 @@ impl LiveProductionVisualRuntime {
             present.surface,
             crate::LiveProductionFirstVisibilityReason::OutsideHeadFrames,
             present.paced_interval,
+            now,
         );
         Ok(())
     }

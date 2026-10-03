@@ -345,9 +345,8 @@ impl ShellComponentConnections {
         })
     }
 
-    /// One nonblocking turn of every connected wire. Role services turn a
-    /// wire only when they have work for it, so without this, requests the
-    /// owner was woken for could stay unread and keep every wait short.
+    /// Start one owner pass for every connected wire. Subsequent role visits
+    /// share the buffered input and flush only their new publications.
     /// A failure is reported once for its exact owner; neighbors still turn.
     pub fn turn_connected(
         &mut self,
@@ -362,7 +361,7 @@ impl ShellComponentConnections {
             let Some((grant, ComponentConnectionPhase::Connected)) = connection.attempt else {
                 continue;
             };
-            if let Err(error) = connection.transport.poll_io(&mut self.epochs) {
+            if let Err(error) = connection.transport.service_owner_turn(&mut self.epochs) {
                 *failure = Some((ComponentConnectionKey { slot, grant }, error));
             }
         }

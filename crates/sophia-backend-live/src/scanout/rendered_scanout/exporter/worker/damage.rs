@@ -86,7 +86,9 @@ impl WorkerSlotDamage {
         size: sophia_protocol::Size,
     ) -> Option<sophia_renderer_live::NativeCompositionRepaintTable> {
         if !self.enabled {
-            return None;
+            return Some(sophia_renderer_live::NativeCompositionRepaintTable::full(
+                sophia_renderer_live::NativeFullRepaintReason::Disabled,
+            ));
         }
         slot_repaint_table(&mut self.history, slot, snapshot, size)
     }
@@ -128,48 +130,41 @@ impl WorkerSlotDamage {
 ///
 /// The renderer discovers the buffer's age; Engine's reducer lives here. So
 /// every age the history could answer is reduced up front and the renderer
-/// selects, rather than either side calling into the other. `None` means the
-/// whole table is full repaints and there is nothing worth sending.
+/// selects, rather than either side calling into the other. Full-only tables
+/// retain their reasons for actual-render accounting.
 fn slot_repaint_table(
     history: &mut LiveRendererSlotDamageHistory,
     slot: LiveRendererFrameSlotId,
     snapshot: Option<&sophia_engine::OutputFrameDamageSnapshot>,
     size: sophia_protocol::Size,
 ) -> Option<sophia_renderer_live::NativeCompositionRepaintTable> {
+    use sophia_renderer_live::{NativeCompositionRepaintTable as Table, NativeFullRepaintReason as R, NativeRepaintPlan as Plan};
     let depth = history.depth(slot);
-    if depth == 0 || snapshot.is_none() {
-        return None;
-    }
-    let mut by_age = Vec::with_capacity(depth);
-    let mut any_partial = false;
-    for age in 1..=depth {
-        let plan = history.plan(
+    let Some(snapshot) = snapshot else { return Some(Table::full(R::DamageUnavailable)); };
+    if depth == 0 { return Some(Table::full(R::NoHistory)); }
+    let stable_geometry = history.stable_geometry(slot, snapshot);
+    let by_age = (1..=depth).map(|age| {
+        match history.plan(
             slot,
             LiveRendererSlotBufferAge::new(u32::try_from(age).unwrap_or(u32::MAX)),
-            snapshot,
+            Some(snapshot),
             size,
-        );
-        match plan {
-            LiveRendererSlotRepaint::Partial { damage } => {
-                any_partial = true;
-                by_age.push(Some(
-                    damage
-                        .into_iter()
-                        .map(|rect| sophia_renderer_live::NativeCompositionDamageRect {
-                            x: rect.x,
-                            y: rect.y,
-                            width: rect.width,
-                            height: rect.height,
-                        })
-                        .collect(),
-                ));
-            }
-            LiveRendererSlotRepaint::Full { .. } => by_age.push(None),
+        ) {
+            LiveRendererSlotRepaint::Partial { damage } => Plan::Partial(damage.into_iter().map(|rect|
+                sophia_renderer_live::NativeCompositionDamageRect {
+                    x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+                }
+            ).collect()),
+            LiveRendererSlotRepaint::Full { reason } => Plan::Full(match reason {
+                LiveRendererSlotFullRepaintReason::UnknownBufferAge => R::UnknownAge,
+                LiveRendererSlotFullRepaintReason::NoHistory => R::NoHistory,
+                LiveRendererSlotFullRepaintReason::BeyondHistoryDepth => R::BeyondHistory,
+                LiveRendererSlotFullRepaintReason::DamageUnavailable => R::DamageUnavailable,
+                LiveRendererSlotFullRepaintReason::PlanChoseFull => R::PlanFull,
+            }),
         }
-    }
-    any_partial.then(|| {
-        sophia_renderer_live::NativeCompositionRepaintTable::from_ages(by_age)
-    })
+    }).collect();
+    Some(Table::with_evidence(by_age, stable_geometry))
 }
 
 /// Notice a rebuilt target bundle and drop what the slot remembered.

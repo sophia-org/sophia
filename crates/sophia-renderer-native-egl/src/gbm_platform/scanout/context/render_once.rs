@@ -86,6 +86,7 @@ where
                 }
                 self.stats.composition_repaint_pixels = self.stats.composition_repaint_pixels.saturating_add(evidence.repaint_pixels);
                 self.stats.composition_target_pixels = self.stats.composition_target_pixels.saturating_add(u64::from(frame.width) * u64::from(frame.height));
+                self.stats.composition_damage.observe(evidence.full_reason, evidence.stable_geometry, evidence.repaint_pixels, u64::from(frame.width) * u64::from(frame.height));
             }
             let render_evidence = rendered
                 .as_ref()
@@ -205,6 +206,7 @@ where
                 }
                 self.stats.composition_repaint_pixels = self.stats.composition_repaint_pixels.saturating_add(evidence.repaint_pixels);
                 self.stats.composition_target_pixels = self.stats.composition_target_pixels.saturating_add(u64::from(frame.width) * u64::from(frame.height));
+                self.stats.composition_damage.observe(evidence.full_reason, evidence.stable_geometry, evidence.repaint_pixels, u64::from(frame.width) * u64::from(frame.height));
             }
             let generation = self.allocate_target_generation();
             let render_evidence = rendered

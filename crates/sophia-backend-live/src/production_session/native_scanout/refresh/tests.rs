@@ -8,6 +8,24 @@
 
 use super::{fallback_cadence_index, head_refresh_interval, head_refresh_millihz};
 
+#[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
+#[test]
+fn a_clock_wake_uses_exact_mode_timing_and_the_fast_interlaced_field() {
+    use super::mode_field_interval;
+    use std::time::Duration;
+    // 60.4Hz rounded to a 60Hz nominal value must not postpone a long target.
+    let exact = mode_field_interval(60_400, 1_000, 1_000, false).unwrap();
+    assert_eq!(exact, Duration::from_nanos(16_556_291));
+    assert!(exact < head_refresh_interval(60_000));
+    assert_eq!(
+        mode_field_interval(60_400, 1_000, 1_000, true),
+        Some(Duration::from_nanos(8_278_145))
+    );
+    assert_eq!(mode_field_interval(0, 1_000, 1_000, false), None);
+    assert_eq!(mode_field_interval(60_400, 0, 1_000, false), None);
+    assert_eq!(mode_field_interval(60_400, 1_000, 0, false), None);
+}
+
 #[test]
 fn a_discovered_mode_supplies_the_refresh() {
     // The case that was broken: the record says sixty because sysfs always

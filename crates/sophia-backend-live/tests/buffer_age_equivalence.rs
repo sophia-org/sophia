@@ -231,6 +231,35 @@ struct Run {
     partial_frames: usize,
 }
 
+fn assert_render_accounting(
+    stats: sophia_renderer_live::LiveNativePersistentRenderStats,
+    frames: usize,
+    partial: usize,
+) {
+    let damage = stats.composition_damage;
+    assert_eq!(
+        stats.composition_full_frames + stats.composition_partial_frames,
+        frames as u64
+    );
+    assert_eq!(stats.composition_partial_frames, partial as u64);
+    assert_eq!(
+        damage.full_no_table
+            + damage.full_disabled
+            + damage.full_unknown_age
+            + damage.full_no_history
+            + damage.full_beyond_history
+            + damage.full_damage_unavailable
+            + damage.full_plan,
+        stats.composition_full_frames
+    );
+    assert_eq!(
+        damage.stable_geometry_full + damage.stable_geometry_partial,
+        damage.stable_geometry_frames
+    );
+    assert!(damage.stable_geometry_full <= stats.composition_full_frames);
+    assert!(damage.stable_geometry_partial <= stats.composition_partial_frames);
+}
+
 fn render_sequence(node: &std::path::Path, damage_enabled: bool) -> Run {
     let report =
         NativeGbmRenderedScanoutContext::from_backend_device_result(open_render_node(node));
@@ -282,6 +311,7 @@ fn render_sequence(node: &std::path::Path, damage_enabled: bool) -> Run {
             .expect("forced capture reads every frame");
         checksums.push(metrics.checksum);
     }
+    assert_render_accounting(context.persistent_render_stats(), FRAMES, partial_frames);
     Run {
         checksums,
         partial_frames,
@@ -525,6 +555,7 @@ fn journal_sequence(node: &std::path::Path, damage_enabled: bool) -> Run {
             committed_pixels = pixels;
         }
     }
+    assert_render_accounting(context.persistent_render_stats(), 40, result.partial_frames);
     result
 }
 

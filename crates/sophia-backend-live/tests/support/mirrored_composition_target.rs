@@ -28,7 +28,7 @@ pub(super) struct MirroredTarget {
     pub(super) queue: crate::DeferredNativeCompositions,
     pub(super) next: u64,
     pub(super) groups: BTreeMap<OutputId, LiveProductionMirrorGroupLifecycle>,
-    pub(super) cohorts: BTreeMap<(OutputId, u64), sophia_engine::OutputPresentationCohort>,
+    pub(super) cohorts: BTreeMap<(OutputId, u64), crate::NativeOutputCohort>,
     pub(super) device: Device,
     pub(super) owners: Rc<Cell<usize>>,
     pub(super) wrong_target: Option<usize>,
@@ -236,6 +236,7 @@ impl MirroredTarget {
             self.groups.get_mut(&output).unwrap(),
             self.cohorts.get_mut(&(output, frame.raw())),
             crate::MirrorCompletionWitness {
+                clock: None,
                 expected: self.owner.frame(
                     output,
                     head.target.head,
@@ -362,8 +363,10 @@ impl CompositionInstaller for MirroredTarget {
         if let Some(cohort) =
             crate::reserve_composition_lifecycle(installation, current, lifecycle)?
         {
-            self.cohorts
-                .insert((installation.output, installation.frame.raw()), cohort);
+            self.cohorts.insert(
+                (installation.output, installation.frame.raw()),
+                cohort.into(),
+            );
         }
         Ok(())
     }

@@ -172,6 +172,7 @@ impl LiveProductionNativeScanout {
                     trace_live_native_lifecycle("kms_submit_accepted");
                     self.submissions = self.submissions.saturating_add(1);
                     self.heads[index].submissions = self.heads[index].submissions.saturating_add(1);
+                    self.heads[index].submitted_clock_source = self.clock_source_for_submission(index);
                     self.heads[index].submitted_at = Some(Instant::now());
                     self.heads[index].submitted_ust_usec = Some(Self::monotonic_ust_usec());
                     self.heads[index].submitted_checksum = Some(self.heads[index].last_checksum);

@@ -4,7 +4,8 @@ impl LiveProductionNativeScanout {
             output: OutputId,
             runtime: &mut crate::LiveBackendRuntimeAssembly,
         ) -> LiveProductionMirrorRetirementReport {
-            let indices = self.head_indices(output);
+            let mut indices = self.head_indices(output);
+            indices.sort_by_key(|index| self.pending_head_retirement_ust(*index).unwrap_or(u64::MAX));
             let mut errors = Vec::new();
             // The card pump has already routed at most one completion into
             // each head's ledger. Admit those physical callbacks without
@@ -133,6 +134,7 @@ impl LiveProductionNativeScanout {
                         callback,
                         last_callback_serial,
                         ust_usec: callback_ust,
+                        clock: callback_timestamp.clock,
                     },
                 );
                 let presented = completion.physical;
@@ -287,6 +289,8 @@ impl LiveProductionNativeScanout {
                                     .unwrap_or(u64::MAX),
                                     direct: false,
                                     layout_witness: None,
+                                    clocks: self.output_cohorts.get(&(output, frame))
+                                        .map_or_else(Default::default, |cohort| cohort.clocks()),
                                 }
                             });
                         if let Err(error) = self.production_page_flips.observe_native_page_flip(

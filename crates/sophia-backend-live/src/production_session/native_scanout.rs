@@ -1,3 +1,12 @@
+#[cfg(feature = "libdrm-events")]
+mod present_clock;
+#[cfg(feature = "libdrm-events")]
+pub use present_clock::*;
+#[cfg(feature = "libdrm-events")]
+mod retirement_clocks;
+#[cfg(feature = "libdrm-events")]
+pub use retirement_clocks::*;
+
 mod refresh;
 pub use refresh::head_refresh_interval;
 
@@ -52,7 +61,7 @@ pub(crate) use persistent_native_scanout::{PresentedTimingHead, completed_timing
 ))]
 pub(crate) use persistent_native_scanout::{
     CompositionInstallation, CompositionInstaller, LiveProductionQueuedMirrorHeadFrame,
-    MirrorCompletionWitness, SettledMirrorHead, complete_mirror_head,
+    MirrorCompletionWitness, NativeOutputCohort, SettledMirrorHead, complete_mirror_head,
     install_composition_generation, reserve_composition_lifecycle, settled_mirror_checksum,
 };
 

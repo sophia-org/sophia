@@ -47,7 +47,7 @@ fn drive_routed_service(
     service_commands: &Receiver<XServerFrontendServiceCommand>,
     ordered_egress: &XAuthorityOrderedEgress,
     observer: &Arc<X11CoreTraceObserver>,
-    pending_raster_egress: &mut Option<XAuthorityBoundedEgressEnvelope>,
+    generated_egress: &mut XGeneratedEgress,
 ) -> Result<(), X11SetupSocketError> {
     let mut accepting = true;
     let mut raster_fallbacks = XRasterFallbackCoalescer::default();
@@ -99,8 +99,9 @@ fn drive_routed_service(
                     // batch stay in the caller's slot for the caller to
                     // account for. Taking it out here destroyed an unsent
                     // batch on every ordinary stop.
-                    if let Some(envelope) = pending_raster_egress.as_mut() {
-                        ordered_egress.cancel_envelope(envelope)?;
+                    let errors = generated_egress.cancel(ordered_egress);
+                    if !errors.is_empty() {
+                        return Err(X11SetupSocketError::new(errors.join("; ")));
                     }
                     frontend.shutdown_all_client_workers()?;
                     progressed = true;
@@ -139,7 +140,14 @@ fn drive_routed_service(
         }
 
         if !ordered_egress.cancelled() {
-            if pending_raster_egress.is_none() {
+            for kind in generated_egress.admission_order() {
+                if kind == XGeneratedEgressKind::Present {
+                    progressed |= service_timed_presents(&frontend.state, &broker.broker()?.registry,
+                        generated_egress, present_monotonic_usec())?;
+                    continue;
+                }
+                if !generated_egress.vacant(kind) { continue; }
+
                 match broker.broker()?.try_recv_raster_requirements() {
                     Ok(requirements) => {
                         let transaction = frontend.state.allocate_transaction()?;
@@ -161,19 +169,15 @@ fn drive_routed_service(
                                     XAuthorityObservedTransactionBatch::from_raster_response(
                                         *response,
                                     );
-                                *pending_raster_egress =
-                                    Some(XAuthorityBoundedEgressEnvelope::new(
-                                        transaction,
-                                        Some(batch),
-                                    ));
+                                generated_egress.insert(kind,
+                                    XAuthorityBoundedEgressEnvelope::new(transaction, Some(batch)));
                             }
                             Ok(crate::XSurfaceRasterOutcome::SampledFallback {
                                 cause,
                                 observed_content_generation,
                             }) => {
-                                *pending_raster_egress = Some(
-                                    XAuthorityBoundedEgressEnvelope::new(transaction, None),
-                                );
+                                generated_egress.insert(kind,
+                                    XAuthorityBoundedEgressEnvelope::new(transaction, None));
                                 raster_fallbacks.report(
                                     &requirements,
                                     cause,
@@ -181,9 +185,8 @@ fn drive_routed_service(
                                 );
                             }
                             Err(error) => {
-                                *pending_raster_egress = Some(
-                                    XAuthorityBoundedEgressEnvelope::new(transaction, None),
-                                );
+                                generated_egress.insert(kind,
+                                    XAuthorityBoundedEgressEnvelope::new(transaction, None));
                                 tracing::warn!(
                                     "sophia_x11_raster_requirement schema=1 status=refused surface={:?} content_generation={} requirement_generation={} error={error:?}",
                                     requirements.surface,
@@ -197,16 +200,7 @@ fn drive_routed_service(
                     Err(TryRecvError::Empty | TryRecvError::Disconnected) => {}
                 }
             }
-            if pending_raster_egress.is_some() {
-                // IN PLACE: the envelope stays in the caller's slot while the
-                // observer is consulted, so an unwind there leaves it where
-                // its owner can still reach it.
-                let was_waiting = pending_raster_egress
-                    .as_ref()
-                    .is_some_and(|envelope| envelope.waiting_since.is_some());
-                ordered_egress.try_submit(pending_raster_egress)?;
-                progressed |= !was_waiting && pending_raster_egress.is_none();
-            }
+            progressed |= generated_egress.try_submit(ordered_egress)?;
         }
 
         if accepting {
@@ -258,22 +252,18 @@ fn drive_routed_service(
         // for; it does not keep this loop open.
         if !accepting
             && frontend.active_client_worker_count() == 0
-            && pending_raster_egress
-                .as_ref()
-                .is_none_or(|envelope| envelope.cancelled)
+            && !generated_egress.pending()
         {
             return Ok(());
         }
         if !progressed {
             // Legacy raw producers and the private budgeted runner retain
             // their service cadence until all their ingress can notify.
-            if frontend.config.service_wake.is_none() || !broker.event_driven_idle() {
-                std::thread::sleep(Duration::from_millis(1));
-                continue;
-            }
-            let timed = pending_raster_egress.is_some()
+            let legacy_maintenance = frontend.config.service_wake.is_none() || !broker.event_driven_idle();
+            let timed = legacy_maintenance || generated_egress.pending()
                 || !frontend.pending_admission_revocations.is_empty();
-            let deadline = timed.then(|| Instant::now() + Duration::from_millis(1));
+            let deadline = timed_present_service_deadline(&frontend.state, present_monotonic_usec(),
+                Instant::now(), timed, generated_egress.vacant(XGeneratedEgressKind::Present))?;
             let mut fds = vec![rustix::event::PollFd::new(&wake, rustix::event::PollFlags::IN)];
             // A readable backlog at capacity is not runnable work. Departing
             // workers ring the owner when an admission slot becomes available.
@@ -409,10 +399,9 @@ struct PrivateServiceCollection<'s, 'o> {
     connections: Option<PrivateConnectionsCollected>,
     frontend: XServerFrontend,
     egress: Arc<XAuthorityOrderedEgress>,
-    /// The one raster envelope that can be waiting to leave. It lives HERE,
-    /// in the guard, and is submitted in place, so that neither a return nor
-    /// an unwind finds it in a local that has gone.
-    pending_raster_egress: Option<XAuthorityBoundedEgressEnvelope>,
+    /// Both bounded generated envelopes live in this guard and are submitted
+    /// in place. Every exit retains unsent batches on the caller's shelf.
+    generated_egress: XGeneratedEgress,
     /// Where unresolved egress goes when this frame ends: the store the
     /// leased owner is established over, which outlives the invocation.
     store: &'s PrivateSettlementOwner,
@@ -481,17 +470,15 @@ impl PrivateServiceCollection<'_, '_> {
     /// was not delivered; shelving grants no replay; nothing takes it back
     /// out, and its charge stays on the store while it is there.
     fn retain_pending(&mut self) -> Vec<PrivateUnresolvedEgress> {
-        if let Some(envelope) = self.pending_raster_egress.take()
-            && envelope.batch.is_some()
-        {
-            let obligation = PrivateUnresolvedEgress {
+        let mut unresolved = Vec::new();
+        for envelope in self.generated_egress.take().filter(|e| e.batch.is_some()) {
+            unresolved.push(PrivateUnresolvedEgress {
                 instance: self.instance,
                 transaction: envelope.transaction,
-            };
+            });
             self.store.retain_unresolved_egress(self.instance, envelope);
-            return vec![obligation];
         }
-        Vec::new()
+        unresolved
     }
     /// Stop admission, unblock what a worker could be parked in, stop every
     /// current worker, then wait for every one.
@@ -508,11 +495,7 @@ impl PrivateServiceCollection<'_, '_> {
         self.close_producer_admission();
         if unblock {
             self.egress.cancel();
-            if let Some(envelope) = self.pending_raster_egress.as_mut()
-                && let Err(error) = self.egress.cancel_envelope(envelope)
-            {
-                failures.push(format!("pending raster cancellation failed: {error}"));
-            }
+            failures.extend(self.generated_egress.cancel(&self.egress));
         }
         // ON EVERY EXIT. An ordinary stop cancelled the envelope's wait in
         // the loop and left it here; an error cancels it above. Either way an
@@ -849,7 +832,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
         connections: None,
         frontend,
         egress: ordered_egress.clone(),
-        pending_raster_egress: None,
+        generated_egress: XGeneratedEgress::default(),
         store: service.store(),
         instance,
         collected: false,
@@ -870,7 +853,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
     let service_result = {
         let PrivateServiceCollection {
             frontend,
-            pending_raster_egress,
+            generated_egress,
             runner,
             port,
             order,
@@ -888,7 +871,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
             &service_commands,
             &ordered_egress,
             &observer,
-            pending_raster_egress,
+            generated_egress,
         )
     };
 

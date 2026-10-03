@@ -243,15 +243,13 @@ fn a_held_press_is_retained_exactly_through_an_unwind() {
     // THE UNWIND, as the egress controls arrange it: a raster requirement
     // behind a parked worker on a full transport makes the service report
     // a wait, and the observer unwinds on the service thread.
-    let surface = draw_and_learn_surface(&mut client, &launched.transactions);
-    assert!(
-        waited_for(|| saw_kind(&seen_telemetry, XAuthorityBackpressureTelemetryKind::Wait, true)),
-        "the connection worker reached its egress wait"
-    );
+    let drawn = draw_and_learn_surface(&mut client, &launched.transactions, &seen_telemetry);
+    let waits_before = seen_telemetry.lock().expect("readable").len();
     launched
         .raster
-        .try_route(raster_requirement_for(surface))
+        .try_route(raster_requirement_for(drawn))
         .expect("the requirement is queued");
+    assert_service_wait(&seen_telemetry, waits_before);
     let client_ended = eof_within(&mut client, 3);
     let registry = launched.registry.clone();
     let outcome = produced_outcome(launched, "held press, unwind");
@@ -364,15 +362,13 @@ fn producers_refuse_during_collection(unwind: bool) {
     let control = launched.access.control_producer(&lease).expect("the control producer");
     let release = pause_after_registration_drop(&launched.registry, client_id);
     if unwind {
-        let surface = draw_and_learn_surface(&mut client, &launched.transactions);
-        assert!(
-            waited_for(|| saw_kind(&seen_telemetry, XAuthorityBackpressureTelemetryKind::Wait, true)),
-            "the connection worker reached its egress wait"
-        );
+        let drawn = draw_and_learn_surface(&mut client, &launched.transactions, &seen_telemetry);
+    let waits_before = seen_telemetry.lock().expect("readable").len();
         launched
             .raster
-            .try_route(raster_requirement_for(surface))
+            .try_route(raster_requirement_for(drawn))
             .expect("the requirement is queued");
+    assert_service_wait(&seen_telemetry, waits_before);
     } else {
         // The error path: the loop returns with the frame alive, so the
         // guard's explicit collection is what stops and waits for it. (An

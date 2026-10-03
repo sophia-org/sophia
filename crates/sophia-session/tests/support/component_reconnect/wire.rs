@@ -1,5 +1,7 @@
 //! Resource and candidate lifecycle over the public 9P SDK. Assertions from
 //! the IPC fixture at ec56ef5eb are retained; typed custody replaces writes.
+//! Each synchronous fixture loop models a fresh owner pass: input turn first,
+//! then resource/role service and publication flush, as in the Session owner.
 use super::*;
 use sophia_shell_client::{Admission, Custody, ShellClientOptions, ShellConnection};
 
@@ -9,6 +11,7 @@ pub(super) fn read(
 ) -> (TransactionId, ShellContentRecord) {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
+        transport.service_owner_turn().unwrap();
         transport.service_content_resources(0).unwrap();
         transport.poll_io().unwrap();
         if let Some(record) = peer.poll_content().unwrap() {
@@ -27,6 +30,7 @@ fn flush(
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         peer.poll_io().unwrap();
+        transport.service_owner_turn().unwrap();
         transport.service_content_resources(0).unwrap();
         transport.poll_io().unwrap();
         let mut complete = true;
@@ -125,7 +129,7 @@ pub(super) fn connect(
     };
     while !worker.is_finished() {
         owner
-            .with_service(key, |_, t| t.poll_io().unwrap())
+            .with_service(key, |_, t| t.service_owner_turn().unwrap())
             .unwrap();
         assert!(Instant::now() < deadline, "client handshake missing");
         std::thread::yield_now();
@@ -185,6 +189,7 @@ pub(super) fn upload_id(
     ] {
         send(transport, peer, record);
     }
+    transport.service_owner_turn().unwrap();
     transport.service_content_resources(0).unwrap();
     transport.poll_io().unwrap();
     for status in [1, 2] {
@@ -226,6 +231,7 @@ pub(super) fn upload_maximum(
         peer,
         ShellContentRecord::ResourceBegin(description.clone()),
     );
+    transport.service_owner_turn().unwrap();
     transport.service_content_resources(0).unwrap();
     transport.poll_io().unwrap();
     let (_, ShellContentRecord::ResourceStatus(status)) = read(transport, peer) else {
@@ -247,6 +253,7 @@ pub(super) fn upload_maximum(
                 bytes: vec![0; bytes as usize],
             }),
         );
+        transport.service_owner_turn().unwrap();
         transport.service_content_resources(0).unwrap();
         transport.poll_io().unwrap();
         offset += bytes;
@@ -261,6 +268,7 @@ pub(super) fn upload_maximum(
             chunk_count: layout.chunk_count,
         }),
     );
+    transport.service_owner_turn().unwrap();
     transport.service_content_resources(0).unwrap();
     transport.poll_io().unwrap();
     let (_, ShellContentRecord::ResourceStatus(status)) = read(transport, peer) else {

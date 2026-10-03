@@ -31,13 +31,14 @@ impl LiveProductionVisualRuntime {
                 .to_string()
                 .into());
         }
-        let terminal =
-            self.present_scheduler
-                .mark_output_retired(LiveProductionPageFlipRetirement {
-                    output,
-                    ust: retirement.ust,
-                    msc: retirement.msc,
-                })?;
+        let terminal = self.present_scheduler.mark_output_retired_with_clocks(
+            LiveProductionPageFlipRetirement {
+                output,
+                ust: retirement.ust,
+                msc: retirement.msc,
+            },
+            retirement.clocks.clone(),
+        )?;
         let Some(sophia_engine::TransactionPresentationTerminal::Presented { .. }) = terminal
         else {
             return Ok(None);
@@ -92,6 +93,7 @@ impl LiveProductionVisualRuntime {
             .take_submitted()
             .ok_or("joined native retirement lost its submitted DMA Present")?;
         let layout_identity = layout_witness::SubmittedLayoutIdentity::from_submitted(&submitted);
+        let clocks = submitted.retirement_clocks();
         let clock = submitted
             .presentation_clock()
             .ok_or("joined native retirement retained no physical presentation clock")?;
@@ -129,10 +131,11 @@ impl LiveProductionVisualRuntime {
             })
             .map_err(|error| format!("page flip protocol settlement failed: {error:?}"))?;
         let layout_witness = layout_identity.and_then(|identity| {
-            identity.settle_feedback(retirement, &completion.commit, &mut completion.evidence)
+            identity.settle_feedback(&retirement, &completion.commit, &mut completion.evidence)
         });
         self.outputs
             .project_committed(&completion.committed_surfaces);
+        completion.evidence.clocks = clocks;
         self.route_present_feedback(completion.evidence);
         if completion.commit.outcome != TransactionOutcome::Committed {
             self.present_rejections = self.present_rejections.saturating_add(1);

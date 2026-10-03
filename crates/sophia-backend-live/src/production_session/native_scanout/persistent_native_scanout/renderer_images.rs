@@ -751,6 +751,7 @@ impl LiveProductionNativeScanout {
                 metrics.composition_target_pixels = metrics
                     .composition_target_pixels
                     .saturating_add(stats.composition_target_pixels);
+                metrics.composition_damage.add(stats.composition_damage);
                 metrics.capture_setup_elapsed = metrics
                     .capture_setup_elapsed
                     .saturating_add(stats.capture_setup_elapsed);

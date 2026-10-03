@@ -38,9 +38,32 @@ impl LiveProductionNativeScanout {
                     // regrouping changes only the logical output, so normalize
                     // that policy identity through the current opaque head.
                     timestamp.output = head.output.id;
+                    // Only queried, monotonic clocks may accept raw flip
+                    // observations. No extra ioctl on ordinary frame service,
+                    // no synthetic out-fence/normalized serial used as MSC.
+                    let clock = if self.output_topology_preparation.is_none()
+                        && self.present_clock_monotonic.get(&group) == Some(&true)
+                        && let Some(sequence) = timestamp.kernel_sequence
+                    {
+                        self.present_clocks.observe_submitted_page_flip(
+                            crate::LiveNativePresentClockKey {
+                                head: head.head,
+                                target_generation: head.target_generation,
+                                card_group: group,
+                                crtc_id: head.selection.crtc_id(),
+                            },
+                            head.submitted_clock_source,
+                            sequence,
+                            timestamp.ust_usec,
+                            crate::LiveNativePresentClockEventSupport {
+                                monotonic: self.present_clock_monotonic.get(&group) == Some(&true),
+                                crtc_id: self.present_clock_crtc_events.get(&group) == Some(&true),
+                            },
+                        )
+                    } else { None };
                     self.kernel_page_flip_ust.insert(
                         (timestamp.output, timestamp.head, timestamp.frame_serial),
-                        timestamp.ust_usec,
+                        (timestamp.ust_usec, clock),
                     );
                 }
                 for callback in &mut callbacks {
@@ -98,4 +121,39 @@ impl LiveProductionNativeScanout {
             }
             Ok(())
         }
+}
+
+impl LiveProductionNativeScanout {
+    /// Stable UST order for the logical retirements collected in this pump.
+    /// A mirror's primary grants permission; sibling samples travel with that
+    /// cohort but cannot move the permission to another head's timestamp.
+    /// No watermark or ordering claim about events still unread on another fd.
+    pub(crate) fn collected_retirement_outputs(&self) -> Vec<OutputId> {
+        order_collected_retirements(self.heads.iter().filter_map(|head| {
+            let callback = head.pending_callback?;
+            let (ust, _) = self.kernel_page_flip_ust.get(
+                &(callback.output, callback.head, callback.frame_serial))?;
+            let primary = self.output_lifecycles.get(&callback.output)
+                .is_none_or(|group| group.primary_head() == callback.head);
+            Some((callback.output, primary, *ust))
+        }))
+    }
+
+    fn pending_head_retirement_ust(&self, index: usize) -> Option<u64> {
+        let callback = self.heads[index].pending_callback?;
+        self.kernel_page_flip_ust.get(&(callback.output, callback.head, callback.frame_serial))
+            .map(|(ust, _)| *ust)
+    }
+}
+
+fn order_collected_retirements(events: impl Iterator<Item = (OutputId, bool, u64)>) -> Vec<OutputId> {
+    let mut outputs = BTreeMap::<OutputId, (bool, u64)>::new();
+    for (output, primary, ust) in events {
+        let entry = outputs.entry(output).or_insert((primary, ust));
+        if primary || (!entry.0 && ust < entry.1) { *entry = (primary, ust); }
+    }
+    let mut outputs = outputs.into_iter().map(|(output, (_, ust))| (output, ust)).collect::<Vec<_>>();
+    // Ties retain the pre-existing output-id service order.
+    outputs.sort_by_key(|(_, ust)| *ust);
+    outputs.into_iter().map(|(output, _)| output).collect()
 }

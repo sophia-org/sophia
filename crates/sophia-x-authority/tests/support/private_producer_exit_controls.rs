@@ -122,7 +122,7 @@ fn review_ordinary_stop_closes_admission_before_reporting_cancellation() {
         observed
             .lock()
             .expect("telemetry")
-            .push((telemetry.kind, telemetry.client));
+            .push(telemetry);
         if telemetry.kind == XAuthorityBackpressureTelemetryKind::Shutdown
             && telemetry.client.is_none()
         {
@@ -156,13 +156,13 @@ fn review_ordinary_stop_closes_admission_before_reporting_cancellation() {
         .access
         .control_producer(&lease)
         .expect("control producer");
-    let surface = draw_and_learn_surface(&mut client, &launched.transactions);
-    let worker_waiting =
-        waited_for(|| saw_kind(&seen, XAuthorityBackpressureTelemetryKind::Wait, true));
+    let drawn = draw_and_learn_surface(&mut client, &launched.transactions, &seen);
+    let surface = drawn.surface;
+    let worker_waiting = true; // draw_and_learn_surface proved a fresh wait.
     let waits_before = seen.lock().expect("seen").len();
     launched
         .raster
-        .try_route(raster_requirement_for(surface))
+        .try_route(raster_requirement_for(drawn))
         .expect("raster requirement");
     let service_waiting = waited_for(|| saw_service_wait(&seen, waits_before));
     launched
@@ -252,7 +252,7 @@ fn producers_close_with_egress_already_cancelled(channel_lost: bool) {
         &received,
         &egress,
         &observer,
-        &mut None,
+        &mut XGeneratedEgress::default(),
     );
     let standing = access.standing();
     let gate_open = control.admission.lifecycle_open();
@@ -321,16 +321,11 @@ fn private_drain_preserves_egress_and_producer_policy_until_connection_frames_fi
         .access
         .control_producer(&owner.lease())
         .expect("control");
-    let surface = draw_and_learn_surface(&mut client, &launched.transactions);
-    assert!(waited_for(|| saw_kind(
-        &seen,
-        XAuthorityBackpressureTelemetryKind::Wait,
-        true
-    )));
+    let drawn = draw_and_learn_surface(&mut client, &launched.transactions, &seen);
     let waits_before = seen.lock().expect("seen").len();
     launched
         .raster
-        .try_route(raster_requirement_for(surface))
+        .try_route(raster_requirement_for(drawn))
         .expect("raster queued");
     assert!(waited_for(|| saw_service_wait(&seen, waits_before)));
     let release =

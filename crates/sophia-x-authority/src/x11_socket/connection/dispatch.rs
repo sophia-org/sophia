@@ -1161,6 +1161,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 server_reply_fd_count: 0,
             });
             let mut pending_msc_deliveries = Vec::new();
+            let mut pending_timed_admission = false;
             let mut pending_metadata_candidate = None;
             let mut explicit_pointer_completion = None;
             let mut explicit_pointer_release_completion = None;
@@ -1432,6 +1433,8 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         }) => Some((*event_id, *window, *event_mask)),
                         _ => None,
                     };
+                    let timed_present = protocol_routing.as_ref()
+                        .is_some_and(|routing| routing.present_clock_owner.is_some());
                     let present_msc_notify = match &request {
                         crate::XWireRequest::Present(crate::XPresentRequest::PresentNotifyMsc {
                             window,
@@ -1570,6 +1573,8 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     // client that silently stopped drawing. One request was
                     // wrong; the conversation is not over.
                     let mut present_queue_refused = None;
+                    // Reserve before taking runtime: a full client's queue
+                    // waits for execution/feedback, which needs that lock.
                     let queued_present = if let Some((window, pixmap, serial, idle_fence, suboptimal)) =
                         pending_present
                         && let Some(routing) = protocol_routing.as_ref()
@@ -1590,7 +1595,9 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                                     client.raw(),
                                     window.local.raw(),
                                 );
-                                present_queue_refused = Some(window);
+                                present_queue_refused = Some((window, if matches!(error, XServerFrontendRouteError::ClientQueueFull { .. }) {
+                                    crate::XErrorCode::BadAlloc
+                                } else { crate::XErrorCode::BadWindow }));
                                 false
                             }
                         }
@@ -2015,12 +2022,12 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                             }
                         }
                         _ if present_queue_refused.is_some() => {
-                            let window = present_queue_refused.expect("guarded by the match arm");
+                            let (window, code) = present_queue_refused.expect("guarded by the match arm");
                             runtime.begin_dispatch();
                             XDispatchResult {
                                 response: None,
                                 outputs: vec![crate::XClientOutput::Error(crate::XClientError {
-                                    code: crate::XErrorCode::BadWindow,
+                                    code,
                                     sequence: dispatch_context.sequence,
                                     resource_id: u32::try_from(window.local.raw()).unwrap_or(0),
                                     minor_code: u16::from(crate::X_PRESENT_PIXMAP_MINOR_OPCODE),
@@ -2031,7 +2038,8 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         }
                         _ => {
                             dispatch_started = true;
-                            dispatch_x11_wire_request(dispatch_context, request, &mut runtime, &mut atoms, &mut properties)
+                            crate::dispatch::dispatch_x11_wire_request_with_present_timing(
+                                dispatch_context, request, &mut runtime, &mut atoms, &mut properties, timed_present)
                         },
                     };
                     if let Some(event) = resize_request {
@@ -2503,6 +2511,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                                 })?;
                         }
                         if let Some((window, serial, target_msc)) = present_msc_notify
+                            && !timed_present
                             && let Some(routing) = protocol_routing.as_ref()
                         {
                             // Mesa blocks on the answer, so this runs only after
@@ -2521,6 +2530,11 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                                 &xkb_state_details, affect_which, clear, select_all, state,
                             );
                         }
+                    }
+                    if dispatch_succeeded && timed_present
+                        && (pending_present.is_some() || present_msc_notify.is_some())
+                    {
+                        pending_timed_admission = true;
                     }
                     if queued_present
                         && !dispatch_succeeded
@@ -2580,6 +2594,13 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                                     initially_triggered,
                                 })
                         });
+                    if let Some(import) = dri3_fence_import {
+                        let fd = received_fds.first().ok_or_else(||
+                            X11SetupSocketError::new("accepted DRI3 fence has no descriptor"))?;
+                        runtime.retain_present_fence_descriptor(import.handle,
+                            Arc::new(fd.try_clone().map_err(|_| X11SetupSocketError::new("cannot retain DRI3 fence descriptor"))?))
+                            .map_err(|_| X11SetupSocketError::new("cannot retain private DRI3 fence"))?;
+                    }
                     let present_submission = dispatch_succeeded
                         .then_some(present_request)
                         .flatten()
@@ -3188,18 +3209,11 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         events.into_iter().map(crate::XClientOutput::Event),
                     );
                 }
-                route_x11_dispatch_protocol_outputs(
-                    state,
-                    routing,
-                    namespace,
-                    client,
-                    output,
-                )?;
-
                 // The destroyed window is named by the notification that was
-                // just routed, which keeps this independent of where the
+                // about to be routed, which keeps this independent of where the
                 // request was decoded. Retiring the entries now stops a reused
                 // XID from inheriting a previous window's subscribers.
+                // Collect before routing filters out unsubscribed events.
                 let retired = output
                     .outputs
                     .iter()
@@ -3212,7 +3226,18 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         _ => None,
                     })
                     .collect::<Vec<_>>();
+                route_x11_dispatch_protocol_outputs(
+                    state,
+                    routing,
+                    namespace,
+                    client,
+                    output,
+                )?;
+
                 for window in retired {
+                    routing.cancel_present_window(window).map_err(|error| {
+                        X11SetupSocketError::new(format!("failed to cancel destroyed window Presents: {error}"))
+                    })?;
                     routing
                         .remove_window_parent(client, window)
                         .map_err(|error| {
@@ -3305,6 +3330,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     .then(|| setup.byte_order.u16(&request[22..24])),
                 output,
             );
+            let timed_admission_accepted = !output.outputs.iter().any(|o| matches!(o, crate::XClientOutput::Error(_)));
             let encoded_outputs = output.encoded_outputs(setup.byte_order);
             let receipt = observer(pending_observation.take().expect("one observation per allocated ticket"))?;
             if let Some(receipt) = receipt { last_published_observation = Some(receipt); }
@@ -3404,6 +3430,22 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     watermark.wait_drained(watermark.mark(), std::time::Duration::from_millis(250));
                 }
             }
+            if pending_timed_admission && let Some(routing) = protocol_routing.as_ref() {
+                let mut runtime = state.runtime.lock()
+                    .map_err(|_| X11SetupSocketError::new("Present publication runtime poisoned"))?;
+                if timed_admission_accepted {
+                    if runtime.publish_prepared_present_wire(transaction)
+                        && let Some(wake) = &routing.present_clock_owner
+                    {
+                        runtime.note_present_admission_owner_notification();
+                        wake.notify();
+                    }
+                } else {
+                    runtime.cancel_prepared_standard_pixmap(transaction);
+                    runtime.cancel_prepared_msc_notify(transaction);
+                    routing.cancel_present(transaction).map_err(|_| X11SetupSocketError::new("Present publication cancellation failed"))?;
+                }
+            }
             for delivery in peer_msc_deliveries {
                 protocol_routing
                     .as_ref()
@@ -3450,9 +3492,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             pointers.retain(|(owner, _), _| *owner != namespace);
         }
     }
-    state.runtime.lock()
-        .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?
-        .release_client_device_bundle(client.raw());
+    release_x11_connection_obligations(state, client)?;
     let client_lease = state.release_client(client)?;
     debug_assert_eq!(client_lease.resource_id_range, resource_id_range);
     let save_set = state.take_save_set(client)?.into_iter().collect::<Vec<_>>();
@@ -3652,6 +3692,9 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         "failed to retire a disconnected peer's XFixes selection subscriptions: {error}"
                     ))
                 })?;
+            routing.cancel_present_window(*window).map_err(|error| {
+                X11SetupSocketError::new(format!("failed to cancel disconnected window Presents: {error}"))
+            })?;
             routing
                 .remove_core_event_window(*window)
                 .map_err(|error| {

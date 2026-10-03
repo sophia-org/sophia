@@ -1,0 +1,18 @@
+[package]
+name = "sophia-drm-clock"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+drm-ffi = "0.9.1"
+rustix = { version = "1.1", default-features = false, features = ["std"] }
+
+[lints.rust]
+# Keep the kernel ABI adapter isolated from the unsafe-free backend.
+unsafe_code = "allow"
+
+[lints.clippy]
+new_without_default = "allow"

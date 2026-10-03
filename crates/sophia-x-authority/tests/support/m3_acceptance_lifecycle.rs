@@ -463,16 +463,13 @@ fn d_service_exit() {
                 });
             }
             "unwind" => {
-                let drawn = draw_and_learn_surface(&mut peer, &service.transactions);
-                assert!(waited_for(|| saw_kind(
-                    &service.telemetry,
-                    XAuthorityBackpressureTelemetryKind::Wait,
-                    true
-                )));
+                let drawn = draw_and_learn_surface(&mut peer, &service.transactions, &service.telemetry);
+                let from_route = service.telemetry.lock().unwrap().len();
                 service
                     .raster
                     .try_route(raster_requirement_for(drawn))
                     .unwrap();
+                assert_service_wait(&service.telemetry, from_route);
             }
             _ => unreachable!(),
         }

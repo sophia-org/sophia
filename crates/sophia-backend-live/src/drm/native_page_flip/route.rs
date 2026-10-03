@@ -75,6 +75,7 @@ pub struct LibdrmNativePageFlipCallback {
     pub output_slot: LibdrmNativeOutputSlot,
     pub frame_serial: u64,
     kernel_ust_usec: Option<u64>,
+    kernel_sequence: Option<u32>,
 }
 
 #[cfg(feature = "libdrm-events")]
@@ -84,6 +85,7 @@ impl LibdrmNativePageFlipCallback {
             output_slot,
             frame_serial,
             kernel_ust_usec: None,
+            kernel_sequence: None,
         }
     }
 
@@ -96,7 +98,24 @@ impl LibdrmNativePageFlipCallback {
             output_slot,
             frame_serial,
             kernel_ust_usec: Some(u64::try_from(timestamp.as_micros()).unwrap_or(u64::MAX)),
+            kernel_sequence: None,
         }
+    }
+
+    pub fn new_with_kernel_clock(
+        output_slot: LibdrmNativeOutputSlot,
+        frame_serial: u64,
+        sequence: u32,
+        timestamp: std::time::Duration,
+    ) -> Self {
+        Self {
+            kernel_sequence: Some(sequence),
+            ..Self::new_with_kernel_timestamp(output_slot, frame_serial, timestamp)
+        }
+    }
+
+    pub const fn kernel_sequence(self) -> Option<u32> {
+        self.kernel_sequence
     }
 
     pub const fn kernel_ust_usec(self) -> Option<u64> {
@@ -141,9 +160,10 @@ pub fn reduce_native_page_flip_event(
     let route = routes.iter_mut().find(|route| route.crtc == event.crtc)?;
     let slot = route.slot();
     let frame_serial = route.observe_frame(event.frame);
-    Some(LibdrmNativePageFlipCallback::new_with_kernel_timestamp(
+    Some(LibdrmNativePageFlipCallback::new_with_kernel_clock(
         slot,
         frame_serial,
+        event.frame,
         event.duration,
     ))
 }
@@ -156,5 +176,8 @@ pub struct LibdrmKernelPageFlipTimestamp {
     /// a mirror group because two CRTCs may report the same kernel sequence.
     pub head: sophia_engine::RenderHeadId,
     pub frame_serial: u64,
+    /// Raw kernel counter, distinct from the normalized retirement serial.
+    /// Absent on synthetic callbacks; those must never advance Present MSC.
+    pub kernel_sequence: Option<u32>,
     pub ust_usec: u64,
 }

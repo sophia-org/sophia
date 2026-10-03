@@ -16,11 +16,19 @@
 //! for it and running it again would commit the same work a second time.
 //!
 //! EVERY FALLIBLE ACQUISITION HAPPENS BEFORE THE IRREVERSIBLE STEP. The
-//! producer is acquired before any Session state lock, the boundary is read
-//! once into a snapshot before the bridge is locked, and the assembly lock is
-//! taken before the batch is popped. After a command has been handed to the
-//! order there is no fallible acquisition left that could fail and make an
-//! accepted command look like one worth retrying.
+//! producer is acquired before any Session state lock, the boundary is never
+//! read while the bridge is held, and the assembly lock is taken before the
+//! batch is popped. After a command has been handed to the order there is no
+//! fallible acquisition left that could fail and make an accepted command look
+//! like one worth retrying.
+//!
+//! A BATCH IS JUDGED AGAINST A BOUNDARY READ AFTER IT WAS RECEIVED. A client is
+//! admitted at setup, before any of its requests is served, so its admission
+//! happens before its first batch can be sent. A reading taken before a bounded
+//! drain has no such edge: a client admitted while the drain waited would have
+//! its first batches rejected as stale and consumed. Received batches enter
+//! intake under the bridge first; only then is the bridge released and the
+//! boundary read again for staging.
 
 use sophia_protocol::{Rect, SurfaceId, TransactionId, TransactionOutcome};
 use sophia_x_authority::{
@@ -122,6 +130,22 @@ impl PrivateInputBridge {
                 .unwrap_or(0)
             + self.entries.len()
     }
+
+    /// The transactions taken from the channel and not yet committed, in the
+    /// order staging will take them. Read by controls only.
+    #[cfg(test)]
+    pub(super) fn intake_transactions(&self) -> Vec<TransactionId> {
+        self.intake.iter().map(|batch| batch.transaction).collect()
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Fail exactly the next post-receipt boundary reading made on this
+    /// thread. Thread-local, so a control cannot reach another test's service;
+    /// the reading clears it, so a retry is never failed by the same flag.
+    pub(super) static FAIL_NEXT_POST_RECEIPT_READING: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
 }
 
 /// Whether refusing this now says anything about refusing it later.
@@ -170,36 +194,63 @@ impl PrivateInputHandle {
                 None
             }
         };
-        // ONE READING OF THE BOUNDARY FOR THE WHOLE CALL, taken before the
-        // bridge is held so the boundary's lock is never waited on underneath
-        // this one.
-        let live = self
+        // A READING FOR THE ENTRIES ALREADY MINTED, taken before the bridge is
+        // held so the boundary's lock is never waited on underneath this one.
+        // It decides only whether an already staged connection has ended;
+        // staging required that connection to be present.
+        let before = self
             .runtime
             .participant
             .admitted()
             .map_err(|_| PrivateInputUnavailable)?;
 
+        {
+            let mut bridge = self
+                .runtime
+                .bridge
+                .lock()
+                .map_err(|_| PrivateInputUnavailable)?;
+
+            if let Some(producer) = producer.as_ref() {
+                pump_bridge(&mut bridge, producer, &lease, &before, &mut report);
+            }
+
+            // NEW WORK ONLY INTO THE ROOM THAT ACTUALLY REMAINS. Asking whether
+            // intake was under its bound and then taking a whole drain bound's
+            // worth let a queue bounded at 256 reach 511. Whatever is left
+            // unread stays in its own channel, which is a queue already and
+            // does not need a second copy of itself here.
+            //
+            // CUSTODY FIRST. What the drain returns goes into intake before
+            // the bridge is released, so neither later fallible acquisition --
+            // the boundary reading or the bridge again -- can drop it. A
+            // failure below leaves it in intake for the next call to stage.
+            let room = PRIVATE_INPUT_BRIDGE_BOUND.saturating_sub(bridge.intake.len());
+            if room > 0 {
+                let batches = self.try_drain_transactions_limited(within, room)?;
+                report.batches_observed = batches.len();
+                bridge.intake.extend(batches);
+            }
+        }
+
+        // THE READING THIS CALL STAGES AGAINST, taken after receipt and with
+        // the bridge released. Every client whose batch is now in intake was
+        // admitted before that batch was sent, so it is in this reading unless
+        // it has genuinely ended since.
+        let live = self.post_receipt_admitted()?;
+
+        // THIS HANDLE IS INTAKE'S ONLY WRITER (`&mut self`), and only staging
+        // removes from it, so nothing arrived or left while the bridge was
+        // released. Staging takes from intake in order, as before.
         let mut bridge = self
             .runtime
             .bridge
             .lock()
             .map_err(|_| PrivateInputUnavailable)?;
-
-        if let Some(producer) = producer.as_ref() {
-            pump_bridge(&mut bridge, producer, &lease, &live, &mut report);
-        }
-
-        // NEW WORK ONLY INTO THE ROOM THAT ACTUALLY REMAINS. Asking whether
-        // intake was under its bound and then taking a whole drain bound's
-        // worth let a queue bounded at 256 reach 511. Whatever is left unread
-        // stays in its own channel, which is a queue already and does not need
-        // a second copy of itself here.
-        let room = PRIVATE_INPUT_BRIDGE_BOUND.saturating_sub(bridge.intake.len());
-        if room > 0 {
-            let batches = self.try_drain_transactions_limited(within, room)?;
-            report.batches_observed = batches.len();
-            bridge.intake.extend(batches);
-        }
+        debug_assert!(
+            bridge.intake.len() <= PRIVATE_INPUT_BRIDGE_BOUND,
+            "intake grew past its bound while the bridge was released"
+        );
 
         self.advance_staging(&mut bridge, &live, &mut report)?;
 
@@ -207,6 +258,24 @@ impl PrivateInputHandle {
             pump_bridge(&mut bridge, producer, &lease, &live, &mut report);
         }
         Ok(report)
+    }
+
+    /// The boundary as it stands after this call's receipt.
+    ///
+    /// A test may fail exactly one such reading on its own thread, to prove a
+    /// failure here leaves received work in intake. The flag is thread-local,
+    /// so it cannot reach another test's service.
+    fn post_receipt_admitted(
+        &self,
+    ) -> Result<Vec<PrivateAdmittedConnection>, PrivateInputUnavailable> {
+        #[cfg(test)]
+        if FAIL_NEXT_POST_RECEIPT_READING.with(|fail| fail.replace(false)) {
+            return Err(PrivateInputUnavailable);
+        }
+        self.runtime
+            .participant
+            .admitted()
+            .map_err(|_| PrivateInputUnavailable)
     }
 
     /// How much work this service has taken and not yet handed on.

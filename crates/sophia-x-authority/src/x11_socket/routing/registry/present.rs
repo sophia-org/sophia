@@ -6,6 +6,12 @@
 // the other about the frames they are waiting on, and they change for
 // different reasons.
 
+#[derive(Clone, Copy)]
+enum XPresentCompletionClock {
+    Legacy { ust: u64, msc: u64 },
+    Bound(crate::XPresentClockSample),
+}
+
 #[cfg(unix)]
 impl XServerFrontendRouteRegistry {
     fn select_present_input(
@@ -61,17 +67,28 @@ impl XServerFrontendRouteRegistry {
         idle_fence: Option<XResourceId>,
         suboptimal: bool,
     ) -> Result<(), XServerFrontendRouteError> {
+        // Admission precedes the runtime lock. Capacity waits must never
+        // hold runtime (execution needs it to release reservations). When
+        // nested elsewhere, the order is runtime -> clients -> pending;
+        // each lookup here releases its guard before acquiring the next.
         // The window decides which surface a present reaches; the presenting
         // client does not have to be the one that created it. A browser's GPU
         // process presents to a window its browser process owns, which X
         // permits -- requiring creator == presenter here silently locked out
         // every client that splits the two across connections.
-        self.surfaces
-            .lock()
+        if self.present_clock_owner.is_none() {
+            self.surfaces
+                .lock()
+                .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+                .iter()
+                .find_map(|(surface, route)| (route.window == window).then_some(*surface))
+                .ok_or(XServerFrontendRouteError::UnknownPresentWindow { window })?;
+        }
+        // Timed requests may name an unmapped/rootless window. Validate it
+        // under runtime at preparation, after this capacity wait.
+        let admission = self.clients.lock()
             .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
-            .iter()
-            .find_map(|(surface, route)| (route.window == window).then_some(*surface))
-            .ok_or(XServerFrontendRouteError::UnknownPresentWindow { window })?;
+            .get(&client).and_then(|entry| entry.admission);
         let deadline = Instant::now() + Duration::from_secs(2);
         let mut pending = self
             .pending_presentations
@@ -85,12 +102,14 @@ impl XServerFrontendRouteRegistry {
             .values()
             .filter(|presentation| presentation.client == client)
             .count()
-            >= self.per_client_presentation_capacity.get()
+            >= self.per_client_presentation_capacity.get().min(crate::X_PRESENT_PER_CLIENT_CAPACITY)
         {
             let now = Instant::now();
             if now >= deadline {
                 return Err(XServerFrontendRouteError::ClientQueueFull { client });
             }
+            let _ = self.pending_presentations.capacity_waits.fetch_update(
+                Ordering::Relaxed, Ordering::Relaxed, |count| Some(count.saturating_add(1)));
             let (next, wait) = self
                 .pending_presentations
                 .capacity_changed
@@ -102,7 +121,7 @@ impl XServerFrontendRouteRegistry {
                     .values()
                     .filter(|presentation| presentation.client == client)
                     .count()
-                    >= self.per_client_presentation_capacity.get()
+                    >= self.per_client_presentation_capacity.get().min(crate::X_PRESENT_PER_CLIENT_CAPACITY)
             {
                 return Err(XServerFrontendRouteError::ClientQueueFull { client });
             }
@@ -111,12 +130,14 @@ impl XServerFrontendRouteRegistry {
             transaction,
             XPendingPresent {
                 client,
+                admission,
                 window,
                 pixmap,
                 serial,
                 idle_fence,
                 suboptimal,
                 phases: crate::XPresentFeedbackPhases::default(),
+                clock: None,
                 allocation_subject: None,
             },
         );
@@ -150,13 +171,24 @@ impl XServerFrontendRouteRegistry {
         mode: XPresentCompletionMode,
         comparison: Option<crate::XPresentLayoutComparison>,
     ) -> Result<crate::XPresentCompleteRouteOutcome, XServerFrontendRouteError> {
+        self.route_present_complete_on_clock(transaction,
+            XPresentCompletionClock::Legacy { ust, msc }, mode, comparison)
+    }
+
+    fn route_present_complete_on_clock(
+        &self,
+        transaction: TransactionId,
+        clock: XPresentCompletionClock,
+        mode: XPresentCompletionMode,
+        comparison: Option<crate::XPresentLayoutComparison>,
+    ) -> Result<crate::XPresentCompleteRouteOutcome, XServerFrontendRouteError> {
         // Reallocation advice is decided here from the current transaction and
         // preference state. A caller-supplied mode cannot replace that decision.
         let mode = match mode {
             XPresentCompletionMode::SuboptimalCopy => XPresentCompletionMode::Copy,
             mode => mode,
         };
-        let (presentation, layout_comparison, mode) = {
+        let (presentation, layout_comparison, mode, ust, msc) = {
             let authority = comparison
                 .and_then(|_| self.runtime.get())
                 .and_then(std::sync::Weak::upgrade);
@@ -172,6 +204,13 @@ impl XServerFrontendRouteRegistry {
                     mode,
                     layout_comparison: None,
                 });
+            };
+            let (ust, msc) = match (presentation.clock.as_ref().map(|clock| clock.binding), clock) {
+                (None, XPresentCompletionClock::Legacy { ust, msc }) => (ust, msc),
+                (Some(binding), XPresentCompletionClock::Bound(sample)) => binding
+                    .window_sample(sample)
+                    .map_err(|_| XServerFrontendRouteError::PresentClockMismatch { transaction })?,
+                _ => return Err(XServerFrontendRouteError::PresentClockMismatch { transaction }),
             };
             let layout_comparison = comparison.map(|comparison| {
                 let matched = mode == XPresentCompletionMode::Copy
@@ -193,6 +232,8 @@ impl XServerFrontendRouteRegistry {
                     layout_comparison: None,
                 });
             }
+            let _ = self.pending_presentations.completed.fetch_update(
+                Ordering::Relaxed, Ordering::Relaxed, |n| Some(n.saturating_add(1)));
             let advise = presentation.suboptimal
                 && layout_comparison == Some(crate::XPresentLayoutComparisonResult::Matched)
                 && comparison.zip(presentation.allocation_subject).is_some_and(
@@ -212,28 +253,30 @@ impl XServerFrontendRouteRegistry {
                 pending.remove(&transaction);
                 self.pending_presentations.capacity_changed.notify_all();
             }
-            (presentation, layout_comparison, mode)
+            (presentation, layout_comparison, mode, ust, msc)
         };
-        // Every completion advances the presentation clock, and the clock is
-        // what answers a NotifyMSC. Ripened deferrals flush here because this
-        // is the only place the clock moves.
-        *self
-            .present_clock
-            .lock()
-            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)? = Some((ust, msc));
-        let ripe = {
-            let mut pending = self
-                .pending_msc_notifies
+        // This legacy observer is removed when NotifyMSC admission is wired
+        // to the per-window schedule. Never feed a window-relative completion
+        // from the new path into its global clock in the meantime.
+        if matches!(clock, XPresentCompletionClock::Legacy { .. }) {
+            *self
+                .present_clock
                 .lock()
-                .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
-            let (ripe, waiting) = pending
-                .drain(..)
-                .partition::<Vec<_>, _>(|(_, _, target)| *target <= msc);
-            *pending = waiting;
-            ripe
-        };
-        for (window, serial, _) in ripe {
-            self.route_present_msc_notify(window, serial, ust, msc)?;
+                .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)? = Some((ust, msc));
+            let ripe = {
+                let mut pending = self
+                    .pending_msc_notifies
+                    .lock()
+                    .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+                let (ripe, waiting) = pending
+                    .drain(..)
+                    .partition::<Vec<_>, _>(|(_, _, target)| *target <= msc);
+                *pending = waiting;
+                ripe
+            };
+            for (window, serial, _) in ripe {
+                self.route_present_msc_notify(window, serial, ust, msc)?;
+            }
         }
         let subscriptions = self
             .present_subscriptions
@@ -289,6 +332,20 @@ impl XServerFrontendRouteRegistry {
             .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
             .remove(&transaction);
         self.pending_presentations.capacity_changed.notify_all();
+        Ok(())
+    }
+
+    fn cancel_present_window(&self, window: XResourceId) -> Result<(), XServerFrontendRouteError> {
+        self.pending_presentations.entries.lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+            .retain(|_, p| p.window != window);
+        self.pending_presentations.capacity_changed.notify_all();
+        self.pending_msc_notifies.lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+            .retain(|(target, _, _)| *target != window);
+        self.present_subscriptions.lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+            .retain(|_, subscription| subscription.window != window);
         Ok(())
     }
 

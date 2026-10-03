@@ -104,6 +104,9 @@ impl LiveProductionNativeScanout {
         }
 
         let affected_heads = plan.heads.len();
+        // No old request may follow a modeset and rollback into a reused
+        // counter. The frontend will retire bindings absent from this set.
+        self.invalidate_present_clocks();
         self.output_topology_preparation = Some(LiveProductionNativeTopologyPreparation {
             apply: LiveProductionNativeTopologyApplyCoordinator::new(&plan)
                 .ok_or("native output topology apply coordinator is invalid")?,

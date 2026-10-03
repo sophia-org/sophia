@@ -10,6 +10,8 @@ impl LiveProductionVisualRuntime {
         wm_update: Option<WmTransactionUpdate>,
     ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
         batch.validate()?;
+        self.reclaim_background_presentation_capacity(batch.groups.iter().map(|group|
+            group.present_submissions.len() + group.software_present_submissions.len()).sum());
         self.presentation_feedback
             .observe_authority_resource_registrations(batch)?;
         let _ = self.reject_superseded_surface_content()?;
@@ -24,6 +26,7 @@ impl LiveProductionVisualRuntime {
                 authority_groups.push(group.clone());
             } else {
                 has_present_submissions = true;
+                self.reclaim_background_presentation_capacity(group.present_submissions.len());
                 let superseded = self.present_scheduler.enqueue_group(
                     group,
                     presentation_layout,

@@ -117,6 +117,51 @@ fn a_request_is_ready_until_one_turn_serves_it() {
 }
 
 #[test]
+fn a_publication_flush_keeps_new_socket_input_ready_for_the_owner() {
+    let (mut server, mut ours) = adopted(Limits::default());
+    ours.write_all(&tversion(NOTAG, 8192, b"9P2000.L")).unwrap();
+    server.wake().wake();
+    assert!(server.flush().unwrap());
+    assert!(ready(&server, Duration::ZERO));
+    ours.set_nonblocking(true).unwrap();
+    assert_eq!(
+        ours.read(&mut [0; 1]).unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+    ours.set_nonblocking(false).unwrap();
+    turn(&mut server);
+    assert_eq!(reply(&mut ours).version(), (8192, b"9P2000.L".to_vec()));
+    assert!(!ready(&server, Duration::ZERO));
+    server.wake().stop();
+    assert!(!server.flush().unwrap());
+    assert_eq!(server.connection_count(), 0);
+}
+
+#[test]
+fn a_burst_larger_than_the_read_room_keeps_its_suffix_ready() {
+    let (mut server, mut ours) = adopted(Limits::default());
+    exchange(&mut server, &mut ours, &tversion(NOTAG, 8192, b"9P2000.L"));
+    let requests = (0..1024u16)
+        .flat_map(|tag| tflush(tag, NOTAG))
+        .collect::<Vec<_>>();
+    assert!(requests.len() > 8192);
+    ours.write_all(&requests).unwrap();
+    turn(&mut server);
+    assert!(
+        ready(&server, Duration::ZERO),
+        "unread suffix lost its wake"
+    );
+    settle(&mut server);
+    for tag in 0..1024u16 {
+        let answer = reply(&mut ours);
+        assert_eq!(answer.kind, 109);
+        assert_eq!(answer.tag, tag);
+    }
+    assert_eq!(server.connection_count(), 1);
+    assert!(!ready(&server, Duration::ZERO));
+}
+
+#[test]
 fn an_export_wake_is_ready_until_a_turn_drains_it() {
     let (mut server, _ours) = adopted(Limits::default());
     // What an owner does after changing the export outside a request, such

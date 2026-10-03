@@ -4,32 +4,33 @@ use super::{
 };
 use std::time::{Duration, Instant};
 
-/// How many candidates one surface may hold parked before the oldest are
-/// settled immediately.
-///
-/// Mesa's DRI3 loader keeps at most four back buffers for a drawable, so a
-/// conforming client cannot have more than that outstanding and never reaches
-/// this. It bounds a client that does not wait for its buffers, without
-/// inventing a second way to unwind a candidate: the overflow takes the
-/// ordinary rejection the tick would have given it, only sooner.
-const FRAME_TICK_PARKED_PER_SURFACE: usize = 8;
+/// Background pacing may occupy at most one quarter of the default global
+/// presentation registry. Pressure releases oldest background debt; it must
+/// not consume the capacity needed by visible and first-visibility work.
+const FRAME_TICK_PARKED_CAPACITY: usize = 64;
 
 impl LiveProductionPresentScheduler {
-    /// Hold a candidate that cannot reach a screen until the head's next
-    /// refresh, rather than settling it in the pass its Present arrived in.
+    /// Hold a candidate that cannot reach a screen until the caller's pacing
+    /// interval, rather than settling it in the pass its Present arrived in.
     ///
     /// An onscreen client is paced by retirement: its Present completes from a
     /// real page flip, so it draws at the head's rate. A client whose window no
     /// head can carry was settled synchronously instead, which paced it by
     /// nothing at all -- it redrew as fast as it could render, and every one of
     /// those frames cost owner-loop present handling, a protocol completion and
-    /// its evidence. Parking to the tick gives the invisible client the same
-    /// cadence as the visible one.
+    /// its evidence. Parking bounds this background work independently of refresh.
     ///
     /// The deadline is shared. Candidates parked inside one interval settle
     /// together at that tick in queue order, which is how a burst behaves on a
     /// vblank, rather than each starting an interval of its own and stretching
     /// a flood across many ticks.
+    ///
+    /// Every queued candidate already owns a registration in the bounded
+    /// presentation resource registry (256 by default). The X frontend also
+    /// backpressures each client at 64 pending Presents in a live Session.
+    /// A separate global pressure bound reserves room for visible work. A
+    /// many-buffer client below that bound cannot bypass the pacing merely
+    /// by crossing an arbitrary per-surface count.
     ///
     /// Returns whether the front candidate was the one named and was parked.
     pub fn defer_to_frame_tick(
@@ -37,6 +38,7 @@ impl LiveProductionPresentScheduler {
         candidate: SurfaceTransactionKey,
         now: Instant,
         interval: Duration,
+        visible_at_park: bool,
     ) -> bool {
         let deadline = match self.frame_tick {
             Some(deadline) if deadline > now => deadline,
@@ -52,7 +54,10 @@ impl LiveProductionPresentScheduler {
             .queued
             .pop_front()
             .expect("the front candidate was just inspected");
-        queued.layout_state = LiveProductionPresentLayoutState::AwaitingFrameTick { deadline };
+        queued.layout_state = LiveProductionPresentLayoutState::AwaitingFrameTick {
+            deadline,
+            observed_hidden: !visible_at_park,
+        };
         // To the back, because `poll_gate` moves each newly eligible candidate
         // to the front: left in place, parked candidates would stack up in
         // reverse arrival order, and both the tick and the overflow bound
@@ -75,23 +80,49 @@ impl LiveProductionPresentScheduler {
     /// that becomes visible presents a *newer* buffer, which enters the queue
     /// runnable and is composed normally.
     pub fn release_frame_tick(&mut self, now: Instant) -> Vec<TransactionId> {
-        let Some(deadline) = self.frame_tick else {
-            return Vec::new();
-        };
-        if now < deadline {
+        self.release_frame_tick_after_visibility(now, None)
+    }
+
+    /// Visibility removes background pacing immediately. These candidates
+    /// already had a Skip verdict: settle it once and free their buffers so
+    /// the client can produce a current visible frame. First-admission debt
+    /// uses the separate first-visibility queue and is never skipped here.
+    pub fn release_frame_tick_or_visible(
+        &mut self,
+        now: Instant,
+        visible: &[SurfaceId],
+    ) -> Vec<TransactionId> {
+        self.release_frame_tick_after_visibility(now, Some(visible))
+    }
+
+    fn release_frame_tick_after_visibility(
+        &mut self,
+        now: Instant,
+        visible: Option<&[SurfaceId]>,
+    ) -> Vec<TransactionId> {
+        if self.frame_tick.is_none_or(|deadline| now < deadline) && visible.is_none() {
             return Vec::new();
         }
         let mut released = Vec::new();
         let mut retained = std::collections::VecDeque::with_capacity(self.queued.len());
-        for queued in self.queued.drain(..) {
-            match queued.layout_state {
-                LiveProductionPresentLayoutState::AwaitingFrameTick { deadline }
-                    if now >= deadline =>
-                {
+        for mut queued in self.queued.drain(..) {
+            if let LiveProductionPresentLayoutState::AwaitingFrameTick {
+                deadline,
+                observed_hidden,
+            } = &mut queued.layout_state
+            {
+                let visible_now = visible.map(|surfaces| surfaces.contains(&queued.surface));
+                // Parking is decided by actual capture, while this predicate
+                // observes scene visibility. A disagreement must not turn
+                // every owner pass into an immediate completion. Only an
+                // observed hidden -> visible edge releases before the tick.
+                if now >= *deadline || (*observed_hidden && visible_now == Some(true)) {
                     released.push(queued.submission.transaction);
+                    continue;
                 }
-                _ => retained.push_back(queued),
+                *observed_hidden |= visible_now == Some(false);
             }
+            retained.push_back(queued);
         }
         self.queued = retained;
         self.frame_tick = self.earliest_frame_tick();
@@ -101,38 +132,36 @@ impl LiveProductionPresentScheduler {
         released
     }
 
-    /// Settle the oldest parked candidates of a surface that has accumulated
-    /// more than one refresh interval's worth of them.
-    ///
-    /// A client that keeps presenting without waiting for its buffers would
-    /// otherwise grow the queue for as long as it stays invisible. The X-side
-    /// per-client pending bound already refuses such a client, but that bound
-    /// is reached by stalling its next request; this keeps the scheduler's own
-    /// queue proportional to what the pacing actually holds.
-    pub fn bound_frame_tick_parking(&mut self, surface: SurfaceId) -> Vec<TransactionId> {
-        let parked = self
-            .queued
+    pub fn awaiting_frame_tick(
+        &self,
+    ) -> impl Iterator<Item = (SurfaceId, sophia_protocol::Rect)> + '_ {
+        self.queued
             .iter()
-            .filter(|queued| queued.surface == surface && queued.awaiting_frame_tick())
-            .count();
-        let Some(excess) = parked.checked_sub(FRAME_TICK_PARKED_PER_SURFACE) else {
-            return Vec::new();
-        };
-        if excess == 0 {
-            return Vec::new();
-        }
-        let mut remaining = excess;
+            .filter(|queued| queued.awaiting_frame_tick())
+            .map(|queued| (queued.surface, queued.candidate.target_geometry))
+    }
+
+    /// Release only excess global background debt. This is an explicit
+    /// overload exception to pacing, not a claim to rate-limit an unlimited
+    /// producer. Keep every remaining candidate's original deadline.
+    pub fn bound_frame_tick_parking(&mut self) -> Vec<TransactionId> {
+        let excess = self
+            .frame_tick_parked()
+            .saturating_sub(FRAME_TICK_PARKED_CAPACITY);
+        self.release_frame_tick_pressure(excess)
+    }
+
+    pub fn release_frame_tick_pressure(&mut self, mut excess: usize) -> Vec<TransactionId> {
         let mut released = Vec::new();
-        let mut retained = std::collections::VecDeque::with_capacity(self.queued.len());
-        for queued in self.queued.drain(..) {
-            if remaining != 0 && queued.surface == surface && queued.awaiting_frame_tick() {
-                remaining -= 1;
+        self.queued.retain(|queued| {
+            if excess != 0 && queued.awaiting_frame_tick() {
+                excess -= 1;
                 released.push(queued.submission.transaction);
+                false
             } else {
-                retained.push_back(queued);
+                true
             }
-        }
-        self.queued = retained;
+        });
         self.frame_tick = self.earliest_frame_tick();
         self.frame_tick_overflows = self.frame_tick_overflows.saturating_add(released.len());
         self.observe_queue_depth();
@@ -167,7 +196,9 @@ impl LiveProductionPresentScheduler {
         self.queued
             .iter()
             .filter_map(|queued| match queued.layout_state {
-                LiveProductionPresentLayoutState::AwaitingFrameTick { deadline } => Some(deadline),
+                LiveProductionPresentLayoutState::AwaitingFrameTick { deadline, .. } => {
+                    Some(deadline)
+                }
                 _ => None,
             })
             .min()

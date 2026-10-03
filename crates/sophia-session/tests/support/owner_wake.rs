@@ -320,3 +320,51 @@ fn either_sender_drives_session_helpers() {
     assert!(!rung());
     assert_eq!(notifying_queue.try_recv(), Ok(1));
 }
+
+#[test]
+fn measurements_distinguish_coalesced_rings_ready_fds_deadlines_and_queued_work() {
+    let owner = OwnerWake::new().unwrap();
+    let (authority, queue) = sync_channel::<u32>(1);
+    let (socket, mut peer) = served();
+    owner.begin_pass().unwrap();
+    owner.notifier().notify();
+    owner.notifier().notify();
+    peer.write_all(b"ready").unwrap();
+    assert_eq!(
+        owner
+            .receive_with_fds(&queue, Duration::ZERO, readable(&socket))
+            .unwrap(),
+        Err(RecvTimeoutError::Timeout)
+    );
+    assert_eq!(
+        owner.statistics(),
+        OwnerWakeStatistics {
+            passes: 1,
+            waits: 1,
+            ring_ready: 1,
+            fd_ready: 1,
+            wait_deadlines: 0,
+            immediate_items: 0,
+        }
+    );
+    // Clearing the coalesced ring, then waiting with no borrowed descriptors,
+    // gives a deadline. Readiness is counted per poll return, not per notify.
+    owner.begin_pass().unwrap();
+    assert_eq!(
+        owner.receive(&queue, Duration::ZERO),
+        Err(RecvTimeoutError::Timeout)
+    );
+    authority.send(7).unwrap();
+    assert_eq!(owner.receive(&queue, Duration::ZERO), Ok(7));
+    assert_eq!(
+        owner.statistics(),
+        OwnerWakeStatistics {
+            passes: 2,
+            waits: 2,
+            ring_ready: 1,
+            fd_ready: 1,
+            wait_deadlines: 1,
+            immediate_items: 1,
+        }
+    );
+}

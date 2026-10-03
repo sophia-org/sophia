@@ -703,6 +703,7 @@ impl XAuthorityRuntime {
              crate::XSelectionChangeKind::SelectionWindowDestroyed,
          );
          self.retired_selection_ownerships.extend(cleared);
+         self.cancel_window_prepared_presents(window);
          self.retire_pixmap_export_drawable(window);
          self.windows
              .apply(XWindowLifecycleEvent::Destroyed { id: window })?;
@@ -899,10 +900,7 @@ impl XAuthorityRuntime {
                      self.resources.remove(record.id);
                  }
                  XResourceKind::Fence => {
-                     self.resources.remove(record.id);
-                     if let Some(handle) = self.dri3_fences.remove(&record.id) {
-                         release.released_fences.push(handle);
-                     }
+                     release.released_fences.push(self.destroy_dri3_fence(namespace, record.id)?);
                  }
                  XResourceKind::Region => {
                      self.resources.remove(record.id);

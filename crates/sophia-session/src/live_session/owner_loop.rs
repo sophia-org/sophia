@@ -53,6 +53,7 @@ struct SessionLoopStartup<'a> {
     output_topology_monitor: Option<sophia_backend_live::LiveDrmTopologyMonitor>,
     xauthority: &'a std::path::Path,
     protocol_router: XServerFrontendProtocolRouter,
+    present_clock_router: sophia_x_authority::XServerFrontendPresentClockRouter,
     input_proof_result: Option<&'a LiveInputProofResult>,
     client_stdout_capture: Option<&'a LiveClientStdoutCapture>,
     require_startup_focus: bool,
@@ -462,6 +463,7 @@ fn run_session_loop_inner(
         mut client_render_devices,
         xauthority,
         protocol_router,
+        present_clock_router,
         input_proof_result,
         client_stdout_capture,
         require_startup_focus,
@@ -471,6 +473,16 @@ fn run_session_loop_inner(
         xtest_scene,
     } = startup;
     let started = Instant::now();
+    // Physical verifiers still depend on a complete, in-order retirement log.
+    // Keep the experiment opt-in until their launch and verification contract
+    // explicitly selects full evidence. Diagnostic/proof modes always win.
+    let aggregate_present_evidence = std::env::var("SOPHIA_PRESENT_EVIDENCE").is_ok_and(|mode| mode == "aggregate")
+        && config.normal_session && !config.verbose_diagnostics
+        && std::env::var_os("SOPHIA_LIVE_SESSION_DIAGNOSTIC").is_none()
+        && std::env::var_os("SOPHIA_LIVE_VISUAL_PROGRESS").is_none();
+    crate::session_println!("sophia_present_evidence schema=1 mode={}", if aggregate_present_evidence { "aggregate" } else { "full" });
+    let _x_present_evidence = sophia_x_authority::aggregate_present_evidence(aggregate_present_evidence);
+    let mut present_evidence = NativePresentEvidence::new(aggregate_present_evidence);
     let mut render_inventory_service_at = started;
     let config_watcher = config
         .core_config_source
@@ -555,6 +567,7 @@ fn run_session_loop_inner(
     let mut committed_session_actions = VecDeque::new();
     let mut launch_admission_started_at: Option<Instant> = None;
     let mut present_observer = XPresentSessionObserver::new(protocol_router);
+    let mut present_clocks = present_clock::SessionPresentClocks::default();
     let mut present_feedback = Vec::new();
     let mut visual_progress = visual_progress::VisualProgress::new();
     let initial_border_style = wm_session

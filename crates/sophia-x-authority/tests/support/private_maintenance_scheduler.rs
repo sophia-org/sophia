@@ -286,16 +286,14 @@ fn maintained_exit(exit: Exit) {
                 .unwrap();
         }
         Exit::Unwind => {
-            let surface = draw_and_learn_surface(&mut client, &service.transactions);
-            assert!(waited_for(|| saw_kind(
-                &service.telemetry,
-                XAuthorityBackpressureTelemetryKind::Wait,
-                true
-            )));
+            let surface =
+                draw_and_learn_surface(&mut client, &service.transactions, &service.telemetry);
+            let from_route = service.telemetry.lock().unwrap().len();
             service
                 .raster
                 .try_route(raster_requirement_for(surface))
                 .unwrap();
+            assert_service_wait(&service.telemetry, from_route);
         }
     }
     let (unwound, succeeded, collected) =

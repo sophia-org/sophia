@@ -468,6 +468,11 @@ pub enum XServerFrontendRouteError {
     DuplicatePresentation {
         transaction: TransactionId,
     },
+    /// Completion must use the exact source frozen for this request. A
+    /// rejected sample leaves both feedback phases and the reservation intact.
+    PresentClockMismatch {
+        transaction: TransactionId,
+    },
     ClientQueueDisconnected {
         client: XServerFrontendClientId,
     },
@@ -584,11 +589,20 @@ impl XPresentFeedbackPhases {
     pub const fn finished(self) -> bool {
         self.complete && self.idle
     }
+
+    pub const fn completed(self) -> bool {
+        self.complete
+    }
 }
 
 impl core::fmt::Display for XServerFrontendRouteError {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
+            Self::PresentClockMismatch { transaction } => write!(
+                formatter,
+                "X11 Present completion has no matching clock for transaction {}",
+                transaction.raw()
+            ),
             Self::SyntheticChordRefused => write!(
                 formatter,
                 "synthetic press of the reserved emergency chord refused"

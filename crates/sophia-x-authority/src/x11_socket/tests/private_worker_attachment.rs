@@ -667,16 +667,14 @@ fn an_unwind_after_a_worker_started_collects_it_through_the_guard() {
     let mut client = connect_private_client(&socket_path);
     handshake(&mut client);
     let custody = wait_attached(&launched.handles.registry);
-    let surface = draw_and_learn_surface(&mut client, &launched.transactions);
-    assert!(
-        waited_for(|| saw_kind(&seen_telemetry, XAuthorityBackpressureTelemetryKind::Wait, true)),
-        "the connection worker reached its egress wait"
-    );
+    let drawn = draw_and_learn_surface(&mut client, &launched.transactions, &seen_telemetry);
+    let waits_before = seen_telemetry.lock().expect("readable").len();
     launched
         .handles
         .raster
-        .try_route(raster_requirement_for(surface))
+        .try_route(raster_requirement_for(drawn))
         .expect("the requirement is queued");
+    assert_service_wait(&seen_telemetry, waits_before);
     let client_ended = eof_within(&mut client, 3);
     let outcome = launch_outcome(launched.handle, &launched.finished, false, "attached unwind");
     let seen = observe_worker(&custody, &launched.handles.registry);

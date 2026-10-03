@@ -47,6 +47,26 @@ pub fn head_refresh_interval(refresh_millihz: u32) -> std::time::Duration {
     std::time::Duration::from_micros((1_000_000_000_u64 / u64::from(refresh_millihz)).max(1))
 }
 
+/// Earliest field from the selected mode's pixel clock, without whole-Hz
+/// rounding. VRR may stretch this period; it must not shorten it. Ignoring
+/// double-scan/vscan is conservative for a wake (earlier, never later).
+#[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
+pub(super) fn mode_field_interval(
+    clock_khz: u32,
+    htotal: u16,
+    vtotal: u16,
+    interlaced: bool,
+) -> Option<std::time::Duration> {
+    if clock_khz == 0 || htotal == 0 || vtotal == 0 {
+        return None;
+    }
+    let pixels = u64::from(htotal) * u64::from(vtotal);
+    let fields = if interlaced { 2 } else { 1 };
+    Some(std::time::Duration::from_nanos(
+        (pixels * 1_000_000 / (u64::from(clock_khz) * fields)).max(1),
+    ))
+}
+
 /// The head a cadence falls back to when no desktop primary is published yet.
 ///
 /// Lowest *enabled*, not lowest. A head that has been disabled keeps whatever

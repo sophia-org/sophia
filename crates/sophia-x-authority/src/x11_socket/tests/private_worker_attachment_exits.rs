@@ -619,17 +619,14 @@ fn an_unwind_over_an_uncollected_actor_retains_the_instance_rather_than_settling
     let handle = hand_worker_to_joiner(custody.worker_slot())
         .handle
         .expect("the handle was in the slot");
-    let surface = draw_and_learn_surface(&mut client, &launched.transactions);
-    assert!(waited_for(|| saw_kind(
-        &seen_telemetry,
-        XAuthorityBackpressureTelemetryKind::Wait,
-        true
-    )));
+    let drawn = draw_and_learn_surface(&mut client, &launched.transactions, &seen_telemetry);
+    let waits_before = seen_telemetry.lock().expect("readable").len();
     launched
         .handles
         .raster
-        .try_route(raster_requirement_for(surface))
+        .try_route(raster_requirement_for(drawn))
         .expect("the requirement is queued");
+    assert_service_wait(&seen_telemetry, waits_before);
     let client_ended = eof_within(&mut client, 3);
     let outcome = launch_outcome(launched.handle, &launched.finished, false, "uncollected unwind");
     handle.join().expect("the worker returned");

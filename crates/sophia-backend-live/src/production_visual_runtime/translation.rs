@@ -5,7 +5,7 @@ impl LiveProductionVisualRuntime {
     ///
     /// Two sources, deliberately answered together. An animating translation
     /// owes a frame at its deadline, and a Present parked for pacing owes its
-    /// client a completion at the head's next refresh. The owner has one wait
+    /// client a completion at its background deadline. The owner has one wait
     /// to bound and one preemption to decide, so it asks one question; keeping
     /// them apart is what would let a session with no animation sleep through
     /// a parked candidate's tick.

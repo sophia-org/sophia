@@ -3,7 +3,7 @@
 use super::*;
 
 #[test]
-fn wire_present_advice_permission_belongs_only_to_its_accepted_transaction() {
+fn wire_present_reservations_follow_acceptance_destroy_and_disconnect() {
     let path = std::env::temp_dir().join(format!(
         "sophia-present-suboptimal-{}.sock",
         std::process::id()
@@ -14,7 +14,9 @@ fn wire_present_advice_permission_belongs_only_to_its_accepted_transaction() {
             XServerFrontendDeviceBundle::new(1, Arc::new(Provider(identity())), None).unwrap(),
         ));
     let mut frontend = XServerFrontend::bind(config).unwrap();
-    let broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(16).unwrap());
+    let broker = XServerFrontendRouteBroker::new(
+        NonZeroUsize::new(crate::X_PRESENT_PER_CLIENT_CAPACITY).unwrap(),
+    );
     let (sender, observed) = std::sync::mpsc::channel();
     let mut socket = UnixStream::connect(&path).unwrap();
     socket
@@ -92,8 +94,10 @@ fn wire_present_advice_permission_belongs_only_to_its_accepted_transaction() {
         (0x00, Some(false)),
         (0x02, Some(false)),
         (0x0a, Some(false)),
-        (0x0d, Some(true)),
-        (0x05, Some(false)),
+        (0x09, Some(true)),
+        (0x01, Some(false)),
+        (0x0d, None),
+        (0x05, None),
         (0x18, None),
         (0x00, Some(false)),
     ]
@@ -135,7 +139,7 @@ fn wire_present_advice_permission_belongs_only_to_its_accepted_transaction() {
             let mut error = [0; 32];
             socket.read_exact(&mut error).unwrap();
             assert_eq!(error[0], 0);
-            assert_eq!(error[1], crate::XErrorCode::BadWindow.wire_code());
+            assert_eq!(error[1], crate::XErrorCode::BadValue.wire_code());
         }
         for (transaction, permission) in &accepted {
             assert_eq!(pending.get(transaction).unwrap().suboptimal, *permission);
@@ -176,8 +180,146 @@ fn wire_present_advice_permission_belongs_only_to_its_accepted_transaction() {
             .unwrap()[&cancelled]
             .suboptimal
     );
+    for (transaction, _) in accepted {
+        broker.registry.cancel_present(transaction).unwrap();
+    }
+    broker.registry.cancel_present(cancelled).unwrap();
+    let window_id = XResourceId::new(u64::from(window), 1);
+    let pixmap_id = XResourceId::new(u64::from(pixmap), 1);
+    // Exercise the real destruction/connection cleanup seams with the same
+    // reservations and preparations that timed admission will own. The wire
+    // deadline scheduler is separate; no completion is injected here.
+    for round in 0..2 {
+        let transactions: Vec<_> = (0..crate::X_PRESENT_PER_CLIENT_CAPACITY)
+            .map(|i| TransactionId::from_raw(10_000 + round * 100 + i as u64))
+            .collect();
+        for transaction in &transactions {
+            broker
+                .registry
+                .queue_present(
+                    *transaction,
+                    created.client,
+                    window_id,
+                    pixmap_id,
+                    1,
+                    None,
+                    false,
+                )
+                .unwrap();
+            frontend
+                .state
+                .runtime
+                .lock()
+                .unwrap()
+                .prepare_standard_pixmap(
+                    created.client.raw(),
+                    *transaction,
+                    NS,
+                    window_id,
+                    pixmap_id,
+                    (0, 0),
+                    None,
+                    None,
+                    crate::XPresentFenceResources::default(),
+                )
+                .unwrap();
+        }
+        if round == 1 {
+            break;
+        }
+        broker
+            .registry
+            .select_present_input(
+                created.client,
+                XResourceId::new(u64::from(base | 3), 1),
+                window_id,
+                6,
+            )
+            .unwrap();
+        broker
+            .registry
+            .prepare_present_msc_notify(window_id, 3, 99)
+            .unwrap();
+        let mut destroy = vec![4, 0, 2, 0];
+        destroy.extend(window.to_le_bytes());
+        socket.write_all(&destroy).unwrap();
+        let destroyed = observed.recv_timeout(Duration::from_secs(3)).unwrap();
+        assert_eq!(destroyed.major_opcode, 4);
+        assert!(destroyed.failure.is_none());
+        assert_eq!(
+            frontend
+                .state
+                .runtime
+                .lock()
+                .unwrap()
+                .prepared_present_count(),
+            0
+        );
+        assert!(
+            broker
+                .registry
+                .pending_presentations
+                .entries
+                .lock()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            broker
+                .registry
+                .pending_msc_notifies
+                .lock()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            broker
+                .registry
+                .present_subscriptions
+                .lock()
+                .unwrap()
+                .is_empty()
+        );
+        // Late backend feedback must be ignored; no Complete or Idle can be
+        // delivered to the destroyed window or a later user of its XID.
+        for transaction in transactions {
+            assert!(
+                !broker
+                    .registry
+                    .route_present_complete(transaction, 100, 1, XPresentCompletionMode::Skip)
+                    .unwrap()
+            );
+            assert!(!broker.registry.route_present_idle(transaction).unwrap());
+        }
+        socket.write_all(&create).unwrap();
+        assert!(
+            observed
+                .recv_timeout(Duration::from_secs(3))
+                .unwrap()
+                .failure
+                .is_none()
+        );
+        socket.write_all(&map).unwrap();
+        assert!(
+            observed
+                .recv_timeout(Duration::from_secs(3))
+                .unwrap()
+                .failure
+                .is_none()
+        );
+        // The next iteration reserves all 64 slots again on this connection.
+    }
     drop(socket);
     frontend.wait_for_clients().unwrap();
+    assert_eq!(
+        frontend
+            .state
+            .runtime
+            .lock()
+            .unwrap()
+            .prepared_present_count(),
+        0
+    );
     assert!(
         broker
             .registry

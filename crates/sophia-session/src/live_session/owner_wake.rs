@@ -10,6 +10,7 @@
 //! same wait as borrowed descriptors. Their readiness is a reason to look
 //! again in the same sense.
 
+use std::cell::Cell;
 use std::io;
 use std::sync::mpsc::{
     Receiver, RecvTimeoutError, SendError, SyncSender, TryRecvError, TrySendError,
@@ -20,12 +21,26 @@ use rustix::event::{PollFd, PollFlags};
 
 pub(super) struct OwnerWake {
     wake: sophia_wake::Wake,
+    statistics: Cell<OwnerWakeStatistics>,
+}
+
+/// Owner-thread observations, not scheduler wakeups or per-producer attribution.
+/// Ring and descriptor readiness can overlap on one poll return.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) struct OwnerWakeStatistics {
+    pub passes: u64,
+    pub waits: u64,
+    pub ring_ready: u64,
+    pub fd_ready: u64,
+    pub wait_deadlines: u64,
+    pub immediate_items: u64,
 }
 
 impl OwnerWake {
     pub(super) fn new() -> io::Result<Self> {
         Ok(Self {
             wake: sophia_wake::Wake::new()?,
+            statistics: Cell::default(),
         })
     }
 
@@ -33,10 +48,18 @@ impl OwnerWake {
         self.wake.notifier()
     }
 
+    pub(super) fn statistics(&self) -> OwnerWakeStatistics {
+        self.statistics.get()
+    }
+
     /// Consumes the rings delivered so far. Call before inspecting any
     /// producer; never between an inspection and the wait that follows it.
     pub(super) fn begin_pass(&self) -> io::Result<()> {
-        self.wake.clear()
+        self.wake.clear()?;
+        let mut stats = self.statistics.get();
+        stats.passes = stats.passes.saturating_add(1);
+        self.statistics.set(stats);
+        Ok(())
     }
 
     /// Takes one item, or sleeps until any producer rings or `timeout` ends.
@@ -67,16 +90,32 @@ impl OwnerWake {
         fds: Vec<PollFd<'_>>,
     ) -> io::Result<Result<T, RecvTimeoutError>> {
         match receiver.try_recv() {
-            Ok(item) => return Ok(Ok(item)),
+            Ok(item) => {
+                let mut stats = self.statistics.get();
+                stats.immediate_items = stats.immediate_items.saturating_add(1);
+                self.statistics.set(stats);
+                return Ok(Ok(item));
+            }
             Err(TryRecvError::Disconnected) => return Ok(Err(RecvTimeoutError::Disconnected)),
             Err(TryRecvError::Empty) => {}
         }
         let now = Instant::now();
         let mut fds: Vec<PollFd<'_>> = fds;
+        let ring_index = fds.len();
         fds.push(PollFd::new(&self.wake, PollFlags::IN));
         // A failed wait is a Session error, not a delivered wake or a reason
         // to silently fall back to polling with a fresh deadline.
-        sophia_wake::wait(&mut fds, Some(now.checked_add(timeout).unwrap_or(now)))?;
+        let ready = sophia_wake::wait(&mut fds, Some(now.checked_add(timeout).unwrap_or(now)))?;
+        let mut stats = self.statistics.get();
+        stats.waits = stats.waits.saturating_add(1);
+        stats.ring_ready = stats
+            .ring_ready
+            .saturating_add(u64::from(!fds[ring_index].revents().is_empty()));
+        stats.fd_ready = stats.fd_ready.saturating_add(u64::from(
+            fds[..ring_index].iter().any(|fd| !fd.revents().is_empty()),
+        ));
+        stats.wait_deadlines = stats.wait_deadlines.saturating_add(u64::from(!ready));
+        self.statistics.set(stats);
         Ok(match receiver.try_recv() {
             Ok(item) => Ok(item),
             Err(TryRecvError::Empty) => Err(RecvTimeoutError::Timeout),

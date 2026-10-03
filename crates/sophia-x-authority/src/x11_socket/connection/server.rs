@@ -278,6 +278,8 @@ pub fn run_x_server_frontend_routed_until_stopped(
 }
 
 include!("server/ordered_egress.rs");
+#[cfg(unix)]
+include!("server/generated_egress.rs");
 
 #[cfg(unix)]
 pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
@@ -314,7 +316,7 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
         worker_egress.submit_blocking(XAuthorityBoundedEgressEnvelope::new(trace.transaction, batch))?;
         Ok(receipt)
     });
-    let mut pending_raster_egress = None::<XAuthorityBoundedEgressEnvelope>;
+    let mut generated_egress = XGeneratedEgress::default();
     // Shared with the private service through the owned public broker. Its
     // private producer hooks are no-ops on this public path.
     let service_result = drive_routed_service(
@@ -323,17 +325,13 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
         &service_commands,
         &ordered_egress,
         &observer,
-        &mut pending_raster_egress,
+        &mut generated_egress,
     );
 
     let mut cleanup_failures = Vec::new();
     if service_result.is_err() {
         ordered_egress.cancel();
-        if let Some(mut envelope) = pending_raster_egress.take()
-            && let Err(error) = ordered_egress.cancel_envelope(&mut envelope)
-        {
-            cleanup_failures.push(format!("pending raster cancellation failed: {error}"));
-        }
+        cleanup_failures.extend(generated_egress.cancel(&ordered_egress));
         if let Err(error) = frontend.shutdown_all_client_workers() {
             cleanup_failures.push(format!("worker shutdown failed: {error}"));
         }

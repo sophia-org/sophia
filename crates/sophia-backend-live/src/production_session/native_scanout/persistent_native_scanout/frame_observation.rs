@@ -15,6 +15,7 @@ impl LiveProductionNativeScanout {
             layout_witness: native.layout_witness,
             ust: retirement.retirement.ust,
             msc: retirement.retirement.msc,
+            clocks: native.clocks,
         })
     }
 

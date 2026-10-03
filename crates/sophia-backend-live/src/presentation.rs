@@ -432,6 +432,10 @@ impl LivePresentationResourceSession {
         self.registry.fence_count()
     }
 
+    pub fn presentation_capacity(&self) -> usize {
+        self.registry.presentation_capacity()
+    }
+
     pub fn presentation_count(&self) -> usize {
         self.registry.presentation_count()
     }

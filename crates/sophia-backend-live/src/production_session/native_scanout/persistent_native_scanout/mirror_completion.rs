@@ -7,6 +7,7 @@ pub(crate) struct MirrorCompletionWitness {
     pub callback: crate::LivePageFlipCallback,
     pub last_callback_serial: Option<u64>,
     pub ust_usec: u64,
+    pub clock: Option<crate::LiveNativeRetirementClock>,
 }
 
 pub(crate) struct MirrorCompletionResult {
@@ -20,7 +21,7 @@ pub(crate) fn complete_mirror_head<D: crate::LibdrmNativePrimaryPlaneResourceDev
     device: &D,
     custody: &mut crate::PersistentScanoutCustody,
     lifecycle: &mut LiveProductionMirrorGroupLifecycle,
-    cohort: Option<&mut sophia_engine::OutputPresentationCohort>,
+    cohort: Option<&mut super::retirement_evidence::NativeOutputCohort>,
     witness: MirrorCompletionWitness,
 ) -> MirrorCompletionResult {
     let MirrorCompletionWitness {
@@ -28,6 +29,7 @@ pub(crate) fn complete_mirror_head<D: crate::LibdrmNativePrimaryPlaneResourceDev
         callback,
         last_callback_serial,
         ust_usec,
+        clock,
     } = witness;
     let mut result = MirrorCompletionResult {
         physical: crate::PersistentFlipOutcome::IdentityMismatch,
@@ -87,6 +89,7 @@ pub(crate) fn complete_mirror_head<D: crate::LibdrmNativePrimaryPlaneResourceDev
             // a fresh logical success. fail() preserves any existing terminal.
             cohort.fail(sophia_engine::OutputPresentationFailure::Invariant);
         }
+        cohort.record_clock(callback.head, clock);
         cohort.mark_flipped(callback.head, ust_usec)
     });
     if !lifecycle.failed() {

@@ -15,6 +15,7 @@ struct XRetainedPixmapBacking {
     pixmap: XPixmapRecord,
     pictures: usize,
     glx_pixmaps: usize,
+    presents: usize,
     /// The renderer registration this backing owes a release for, once no
     /// referent remains.
     release_handle: Option<sophia_protocol::BufferHandle>,
@@ -27,7 +28,7 @@ struct XRetainedPixmapBacking {
 
 impl XRetainedPixmapBacking {
     const fn referents(&self) -> usize {
-        self.pictures + self.glx_pixmaps
+        self.pictures + self.glx_pixmaps + self.presents
     }
 }
 
@@ -55,7 +56,8 @@ impl XAuthorityRuntime {
             })
             .count();
         let held_by_graphics_context = self.graphics_contexts.holds_pixmap(pixmap);
-        if pictures + glx_pixmaps == 0
+        let presents = self.prepared_presents.values().filter(|p| p.backing_live && p.request.pixmap == pixmap).count();
+        if pictures + glx_pixmaps + presents == 0
             && !held_by_graphics_context
             && !self.pixmap_export_holds_backing(pixmap)
         {
@@ -79,7 +81,7 @@ impl XAuthorityRuntime {
         };
         self.software_buffers.rekey_pixmap(pixmap, backing);
         self.rekey_pixmap_publication(pixmap, backing);
-        if pictures + glx_pixmaps == 0
+        if pictures + glx_pixmaps + presents == 0
             && let Some(handle) = self.pixmap_export_handles.get(&backing)
             && let Some(state) = self.pixmap_publications.get_mut(handle)
         {
@@ -92,6 +94,7 @@ impl XAuthorityRuntime {
                 pixmap: metadata,
                 pictures,
                 glx_pixmaps,
+                presents,
                 release_handle,
                 _shm: self.shm_pixmaps.remove(&pixmap),
                 _dri3: self.dri3_pixmaps.remove(&pixmap),
@@ -103,6 +106,9 @@ impl XAuthorityRuntime {
             }
         }
         self.graphics_contexts.rekey_held_pixmap(pixmap, backing);
+        for prepared in self.prepared_presents.values_mut() {
+            if prepared.backing_live && prepared.request.pixmap == pixmap { prepared.request.pixmap = backing; }
+        }
         for record in self.glx_drawables.values_mut() {
             if let XGlxDrawableBacking::Pixmap {
                 pixmap: current,

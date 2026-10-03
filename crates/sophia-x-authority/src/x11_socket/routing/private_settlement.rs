@@ -278,7 +278,7 @@ impl PrivateSettlementOwner {
             inner: Arc::new(Mutex::new(AbandonedSettlements {
                 obligation_epoch: Some(0),
                 held: Vec::with_capacity(capacity),
-                unresolved_egress: Vec::with_capacity(capacity),
+                unresolved_egress: Vec::with_capacity(capacity.checked_mul(2).expect("generated egress capacity overflow")),
                 next_instance: 1,
                 in_flight: Vec::with_capacity(capacity),
                 outstanding_in_flight: Vec::with_capacity(capacity),
@@ -358,8 +358,9 @@ impl PrivateSettlementOwner {
     ///
     /// NEVER REFUSED, AND NEVER ALLOCATING. The shelf was sized to this
     /// store's failure capacity when the store was made, and a service
-    /// shelves only while it still holds the failure slot it reserved at
-    /// construction -- so there is always room for what it shelves. From
+    /// shelves at most two envelopes (raster and Present) while it still
+    /// holds the failure slot it reserved at construction. The shelf reserves
+    /// two entries per slot, so there is always room for both. From
     /// then on the shelved envelope keeps that charge: `reserve_failure_slot`
     /// counts it. NOTHING HERE RELEASES IT: no reader takes the work out, so
     /// no reader uncharges it. Accounting for retained egress is a
@@ -400,8 +401,8 @@ impl PrivateSettlementOwner {
         )
     }
 
-    /// How much unresolved egress this store can keep at once: its failure
-    /// capacity, reserved when the store was made and never grown.
+    /// How many envelopes this store can retain: two per failure slot,
+    /// reserved when the store was made and never grown.
     pub fn unresolved_egress_capacity(&self) -> Option<usize> {
         Some(self.inner.lock().ok()?.unresolved_egress.capacity())
     }
@@ -487,10 +488,13 @@ impl PrivateSettlementOwner {
         // the instance closes, but the envelope still counts here until a
         // reader takes it. Otherwise every bound this store declares would be
         // reused while its shelf grew without one.
-        if held
-            .failure_slots
-            .saturating_add(held.unresolved_egress.len())
-            >= held.failed_capacity
+        // Both envelopes from one invocation keep that invocation's single
+        // slot charged. Count distinct instances without allocating.
+        let retained_instances = held.unresolved_egress.iter().enumerate()
+            .filter(|(i, (instance, _))| !held.unresolved_egress[..*i].iter()
+                .any(|(earlier, _)| earlier == instance))
+            .count();
+        if held.failure_slots.saturating_add(retained_instances) >= held.failed_capacity
         {
             return Err(AdmissionRefusal::Saturated);
         }

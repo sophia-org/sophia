@@ -156,16 +156,20 @@ impl LiveProductionNativeScanout {
             // Always consume a matching timestamp record. An out-fence is
             // authoritative once selected, so a late kernel event must not
             // leave timing evidence resident after its physical owner retires.
-            let kernel_ust = self.kernel_page_flip_ust.remove(&(output, head, sequence));
+            let kernel = self.kernel_page_flip_ust.remove(&(output, head, sequence));
+            let kernel_ust = kernel.map(|(ust, _)| ust);
             let needs_fallback =
                 source == LiveProductionKmsCompletionSource::OutFence || kernel_ust.is_none();
-            let timestamp = reduce_live_production_completion_timestamp(
+            let mut timestamp = reduce_live_production_completion_timestamp(
                 source,
                 kernel_ust,
                 needs_fallback
                     .then(Self::monotonic_ust_usec)
                     .unwrap_or_default(),
             );
+            if timestamp.used_kernel_timestamp {
+                timestamp.clock = kernel.and_then(|(_, clock)| clock);
+            }
             if timestamp.used_kernel_timestamp {
                 self.kernel_page_flip_timestamps =
                     self.kernel_page_flip_timestamps.saturating_add(1);

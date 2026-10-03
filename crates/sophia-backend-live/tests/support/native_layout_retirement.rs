@@ -289,6 +289,7 @@ fn tracker() -> crate::LiveProductionPageFlipTracker {
 
 fn payload(frame: u64, direct: bool) -> LiveProductionNativeRetirementContent {
     LiveProductionNativeRetirementContent {
+        clocks: Default::default(),
         content: content(frame),
         submission: frame - 1,
         direct,
@@ -336,6 +337,7 @@ fn invalidating_queued_evidence_preserves_required_retirement_content() {
     assert_eq!(
         native,
         Some(LiveProductionNativeRetirementContent {
+            clocks: Default::default(),
             layout_witness: None,
             ..payload(9, false)
         })
@@ -367,7 +369,7 @@ fn a_different_native_submission_withholds_evidence_without_losing_retirement() 
     tracker.submit(context().output, 8).unwrap();
     let native = payload(10, false);
     tracker
-        .observe_native_page_flip(context().output, 10, 12_345, Some(native))
+        .observe_native_page_flip(context().output, 10, 12_345, Some(native.clone()))
         .unwrap();
     let (retirement, queued) = tracker.take_native_retirement(context().output).unwrap();
     assert_eq!(retirement.cycle, 8);
@@ -375,6 +377,7 @@ fn a_different_native_submission_withholds_evidence_without_losing_retirement() 
     assert_eq!(
         queued,
         Some(LiveProductionNativeRetirementContent {
+            clocks: Default::default(),
             layout_witness: None,
             ..native
         })

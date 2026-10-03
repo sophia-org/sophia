@@ -219,6 +219,16 @@ impl XPresentSessionObserver {
         if outcome.idle_fence_triggered {
             self.idle_fence_triggers = self.idle_fence_triggers.saturating_add(1);
         }
+        let clocks = outcome.clocks.evidence().iter().map(|evidence| sophia_x_authority::XPresentRetirementClock {
+            sample: sophia_x_authority::XPresentClockSample {
+                source: sophia_x_authority::XPresentClockSource::Hardware {
+                    domain: evidence.sample.source.owner, incarnation: evidence.sample.source.incarnation,
+                },
+                ust: evidence.sample.ust_usec,
+                msc: evidence.sample.msc,
+            },
+            historical: evidence.historical,
+        });
         for feedback in outcome.feedback {
             match feedback {
                 sophia_backend_live::LivePresentProtocolFeedback::Complete {
@@ -257,11 +267,12 @@ impl XPresentSessionObserver {
                         .map(|(_, comparison)| comparison);
                     match self
                         .router
-                        .route_present_complete_with_layout(
-                            transaction, ust, msc, mode, comparison,
+                        .route_present_complete_with_evidence(
+                            transaction, (ust, msc), clocks.clone(), mode, comparison,
                         )
                     {
-                        Ok(route) => {
+                        Ok((route, reported)) => {
+                            let (ust, msc) = reported.unwrap_or((ust, msc));
                             let routed = route.routed;
                             let mode = route.mode;
                             if matches!(

@@ -133,6 +133,7 @@ fn skipped_admission_control(early_successor: bool) {
         ],
         idle_fence_triggered: false,
         layout_comparison: None,
+        clocks: Default::default(),
     });
     client
         .observer
@@ -240,6 +241,7 @@ fn skipped_admission_control(early_successor: bool) {
         }],
         idle_fence_triggered: false,
         layout_comparison: None,
+        clocks: Default::default(),
     };
     layout.observe_terminal_present_feedback(&stale);
     assert!(
@@ -523,6 +525,7 @@ fn feedback_progress_precedes_no_engine_work_with_a_disarmed_native_deadline() {
         ],
         idle_fence_triggered: false,
         layout_comparison: None,
+        clocks: Default::default(),
     });
     let mut pending = Vec::new();
     let mut skipped = 0;
@@ -658,6 +661,7 @@ fn disposition_feedback_preserves_wire_modes_ownership_counters_and_cadence() {
                 feedback,
                 idle_fence_triggered: disposition == Copied,
                 layout_comparison: None,
+                clocks: Default::default(),
             },
             comparison,
         );
@@ -683,6 +687,7 @@ fn disposition_feedback_preserves_wire_modes_ownership_counters_and_cadence() {
                     feedback: vec![idle],
                     idle_fence_triggered: false,
                     layout_comparison: None,
+                    clocks: Default::default(),
                 },
                 None,
             );

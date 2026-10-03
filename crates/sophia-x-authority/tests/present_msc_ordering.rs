@@ -411,6 +411,40 @@ fn notify_msc_bad_window_reports_an_error_without_a_notification() {
 }
 
 #[test]
+fn invalid_notify_msc_remainders_report_bad_value_without_a_notification() {
+    for order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+        let fixture = Fixture::new();
+        let mut client = fixture.connect(order);
+        let window = client.create_window();
+        let event_id = client.subscribe(window);
+        fixture.release();
+        for (divisor, remainder) in [(0u64, 1u64), (4, 4), (4, 5), (u64::MAX, u64::MAX)] {
+            let mut request = client.notify_request(window, 75);
+            let encode = |value: u64| match order {
+                XByteOrder::LittleEndian => value.to_le_bytes(),
+                XByteOrder::BigEndian => value.to_be_bytes(),
+            };
+            request[24..32].copy_from_slice(&encode(divisor));
+            request[32..40].copy_from_slice(&encode(remainder));
+            let sequence = client.send(&request);
+            let error = client.record();
+            assert_eq!(&error[..2], &[0, XErrorCode::BadValue.wire_code()]);
+            assert_eq!(get16(order, &error[2..4]), sequence);
+            assert_eq!(get32(order, &error[4..8]), remainder as u32);
+            assert_eq!(
+                get16(order, &error[8..10]),
+                u16::from(X_PRESENT_NOTIFY_MSC_MINOR_OPCODE)
+            );
+            client.barrier();
+            assert!(client.record_with_timeout(SILENCE).is_none());
+        }
+        // Refusals leave the subscription and connection usable.
+        let sequence = client.send(&client.notify_request(window, 76));
+        client.assert_notify(sequence, event_id, window, 76);
+    }
+}
+
+#[test]
 fn notify_msc_uses_each_subscribers_own_connection_sequence() {
     for order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
         let fixture = Fixture::new();

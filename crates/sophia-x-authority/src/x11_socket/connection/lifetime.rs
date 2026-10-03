@@ -127,6 +127,9 @@ fn route_x11_retained_destroys(
         routing.remove_xfixes_selection_window(*window).map_err(|error| {
             X11SetupSocketError::new(format!("failed to retire a freed window's XFixes subscriptions: {error}"))
         })?;
+        routing.cancel_present_window(*window).map_err(|error| {
+            X11SetupSocketError::new(format!("failed to cancel a freed window's Presents: {error}"))
+        })?;
         routing.remove_core_event_window(*window).map_err(|error| {
             X11SetupSocketError::new(format!("failed to retire a freed window's subscriptions: {error}"))
         })?;
@@ -214,5 +217,19 @@ fn route_x11_save_set_reparents(
             )?;
         }
     }
+    Ok(())
+}
+
+/// Connection obligations end even when SetCloseDownMode retains resources.
+/// Keep cancellation under runtime before the retain/destroy fork, matching
+/// execution's lock order. Completed buffer custody still follows feedback.
+#[cfg(unix)]
+fn release_x11_connection_obligations(state: &X11CoreSocketServerState,
+    client: XServerFrontendClientId) -> Result<(), X11SetupSocketError>
+{
+    let mut runtime = state.runtime.lock()
+        .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?;
+    runtime.cancel_client_prepared_presents(client.raw());
+    runtime.release_client_device_bundle(client.raw());
     Ok(())
 }

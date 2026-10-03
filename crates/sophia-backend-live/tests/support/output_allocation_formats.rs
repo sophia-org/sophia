@@ -158,6 +158,7 @@ fn head(id: u32, output: u64, modifier: u64) -> LiveProductionNativeHead {
         output,
         target_generation: 1,
         submitted_at: None,
+        submitted_clock_source: None,
         submitted_ust_usec: None,
         pending_nonzero_pixel_bytes: 0,
         last_checksum: 0,

@@ -675,6 +675,10 @@ impl LiveDmaBufPresentationRegistry {
         self.fences.len()
     }
 
+    pub fn presentation_capacity(&self) -> usize {
+        self.limits.presentations
+    }
+
     pub fn presentation_count(&self) -> usize {
         self.presentations.len()
     }

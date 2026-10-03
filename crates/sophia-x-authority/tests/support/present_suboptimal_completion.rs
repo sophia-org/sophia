@@ -149,6 +149,65 @@ fn suboptimal_completion_is_once_per_accepted_generation() {
 }
 
 #[test]
+fn clocked_completion_keeps_layout_advice_without_waiting_on_runtime() {
+    for runtime_busy in [false, true] {
+        let fixture = fixture();
+        let transaction = queue(&fixture, 212, true);
+        let sample = crate::XPresentClockSample {
+            source: crate::XPresentClockSource::Hardware {
+                domain: 1,
+                incarnation: 1,
+            },
+            ust: 11,
+            msc: 22,
+        };
+        let mut clock = crate::XPresentWindowClock::default();
+        clock.observe(sample, None).unwrap();
+        fixture
+            .broker
+            .registry
+            .pending_presentations
+            .entries
+            .lock()
+            .unwrap()
+            .get_mut(&transaction)
+            .unwrap()
+            .clock = Some(XPresentCompletionState::new(
+            clock.binding().unwrap(),
+            sample,
+        ));
+        // This is a routing/component test with a real admitted allocation
+        // subject. Timed execution/reservation transfer is covered separately.
+        let _held = runtime_busy.then(|| fixture.state.runtime.lock().unwrap());
+        let result = fixture
+            .broker
+            .protocol_router()
+            .route_clocked_present_complete(
+                transaction,
+                sample,
+                XPresentCompletionMode::Copy,
+                Some(fixture.comparison),
+            )
+            .unwrap();
+        assert_eq!(
+            result.layout_comparison,
+            Some(if runtime_busy {
+                XPresentLayoutComparisonResult::Rejected
+            } else {
+                XPresentLayoutComparisonResult::Matched
+            })
+        );
+        let mode = if runtime_busy {
+            XPresentCompletionMode::Copy
+        } else {
+            XPresentCompletionMode::SuboptimalCopy
+        };
+        assert_eq!(result.mode, mode);
+        expect_complete(&fixture, 212, mode);
+    }
+}
+
+#[test]
 fn suboptimal_completion_nonqualifying_inputs_do_not_consume_the_claim() {
     for case in 0..8 {
         let fixture = fixture();

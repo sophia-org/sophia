@@ -4,6 +4,7 @@
 #[derive(Clone)]
 pub struct X11CoreSocketServerState {
     runtime: Arc<Mutex<XAuthorityRuntime>>,
+    present_service_demand: Arc<AtomicBool>,
     atoms: Arc<Mutex<XAtomTable>>,
     properties: Arc<Mutex<XPropertyTable>>,
     control_runtime_pending: Arc<AtomicUsize>,
@@ -62,8 +63,11 @@ struct X11CoreClientLeaseState {
 #[cfg(unix)]
 impl Default for X11CoreSocketServerState {
     fn default() -> Self {
+        let runtime = XAuthorityRuntime::default();
+        let present_service_demand = runtime.present_service_demand();
         Self {
-            runtime: Default::default(),
+            runtime: Arc::new(Mutex::new(runtime)),
+            present_service_demand,
             atoms: Default::default(),
             properties: Default::default(),
             control_runtime_pending: Default::default(),
@@ -227,6 +231,7 @@ impl X11CoreSocketServerState {
                 X11SetupSocketError::new(format!("invalid Engine output topology: {error:?}"))
             })?;
         Ok(Self {
+            present_service_demand: runtime.present_service_demand(),
             runtime: Arc::new(Mutex::new(runtime)),
             ..Self::default()
         })
@@ -249,6 +254,7 @@ impl X11CoreSocketServerState {
                 .map_err(|error| X11SetupSocketError::new(error.to_string()))?;
         runtime.index_font_path(font_path);
         Ok(Self {
+            present_service_demand: runtime.present_service_demand(),
             runtime: Arc::new(Mutex::new(runtime)),
             ..Self::default()
         })
@@ -478,6 +484,7 @@ fn release_x11_client_lease_with_control(
         .lock()
         .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?;
     runtime.release_client_colors(namespace, lease.client.raw());
+    runtime.cancel_client_prepared_presents(lease.client.raw());
     let release = runtime
         .release_client_resource_range_with_save_set(namespace, lease.resource_id_range, save_set)
         .map_err(|error| {

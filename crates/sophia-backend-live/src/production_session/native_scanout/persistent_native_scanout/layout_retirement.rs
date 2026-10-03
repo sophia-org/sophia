@@ -10,12 +10,13 @@ pub struct LiveProductionRetiredLayoutWitness {
     pub context_generation: u64,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct LiveProductionNativeRetirementContent {
     pub content: LiveProductionScanoutContent,
     pub submission: u64,
     pub direct: bool,
     pub layout_witness: Option<LiveProductionRetiredLayoutWitness>,
+    pub clocks: crate::LiveNativeRetirementClocks,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -185,6 +186,10 @@ impl LiveProductionNativeScanout {
             submission: u64::try_from(head.presented_submissions).ok()?,
             direct: head.presented_direct,
             layout_witness,
+            clocks: crate::LiveNativeRetirementClocks::from_evidence(
+                head.presented_completion_timestamp
+                    .and_then(|timestamp| timestamp.clock),
+            ),
         })
     }
 }

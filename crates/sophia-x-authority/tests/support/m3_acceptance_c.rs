@@ -787,13 +787,7 @@ fn c_interrupted_ownership() {
         // The unwind is armed from the recipient's own drawn surface before
         // the runner is held: the service must reach its raster wait itself.
         let drawn = (kind == "unwind").then(|| {
-            let drawn = draw_and_learn_surface(&mut peer, &service.transactions);
-            assert!(waited_for(|| saw_kind(
-                &service.telemetry,
-                XAuthorityBackpressureTelemetryKind::Wait,
-                true
-            )));
-            drawn
+            draw_and_learn_surface(&mut peer, &service.transactions, &service.telemetry)
         });
 
         let identity = custody_identity(&custody);
@@ -826,6 +820,7 @@ fn c_interrupted_ownership() {
         let charged_before_exit = store.reserved();
         assert_eq!(charged_before_exit, Some(C_RESERVATION_BOUND));
 
+        let from_route = service.telemetry.lock().unwrap().len();
         match kind {
             "return" => service.command(XServerFrontendServiceCommand::StopAndDisconnect),
             "error" => {
@@ -849,6 +844,7 @@ fn c_interrupted_ownership() {
             _ => unreachable!(),
         }
         held.release();
+        if kind == "unwind" { assert_service_wait(&service.telemetry, from_route); }
         let closed = service.closed();
         assert_eq!(closed.unwound, kind == "unwind");
         assert_eq!(closed.error.is_some(), kind == "error");

@@ -443,6 +443,7 @@ impl XAuthorityRuntime {
                         pixmap,
                         pictures: 0,
                         glx_pixmaps: 0,
+                        presents: 0,
                         release_handle,
                         _shm: self.shm_pixmaps.remove(&drawable),
                         _dri3: self.dri3_pixmaps.remove(&drawable),

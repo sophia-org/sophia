@@ -12,6 +12,7 @@ sophia-engine = { path = "../sophia-engine" }
 sophia-protocol = { path = "../sophia-protocol" }
 sophia-renderer-live = { path = "../sophia-renderer-live" }
 sophia-drm-out-fence = { path = "../sophia-drm-out-fence", optional = true }
+sophia-drm-clock = { path = "../sophia-drm-clock", optional = true }
 drm = { version = "0.15", optional = true, default-features = false }
 input = { version = "0.10", optional = true, default-features = false, features = ["libinput_1_19", "udev"] }
 libseat = { version = "0.2.4", optional = true, default-features = false }
@@ -30,7 +31,7 @@ default = []
 test-support = ["gbm-probe", "libdrm-events"]
 gbm-probe = ["sophia-renderer-live/gbm-probe"]
 egl-probe = ["sophia-renderer-live/egl-probe"]
-libdrm-events = ["dep:drm", "dep:rustix", "dep:sophia-drm-out-fence"]
+libdrm-events = ["dep:drm", "dep:rustix", "dep:sophia-drm-out-fence", "dep:sophia-drm-clock"]
 drm-hotplug = ["dep:rustix", "dep:udev"]
 libinput-events = ["dep:input", "dep:rustix"]
 seat-control = ["dep:libseat", "dep:rustix"]

@@ -576,6 +576,7 @@ pub struct LiveNativePersistentRenderStats {
     pub composition_partial_frames: u64,
     pub composition_repaint_pixels: u64,
     pub composition_target_pixels: u64,
+    pub composition_damage: crate::NativeCompositionDamageStats,
     pub capture_setup_elapsed: std::time::Duration,
     pub capture_copy_elapsed: std::time::Duration,
     pub capture_cleanup_elapsed: std::time::Duration,

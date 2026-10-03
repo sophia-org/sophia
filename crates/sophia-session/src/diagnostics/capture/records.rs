@@ -15,6 +15,33 @@ pub fn reduced_record(line: &str) -> Option<String> {
         if !key.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_') {
             continue;
         }
+        if name == "sophia_x_present_execution" {
+            if matches!(key, "schema" | "request_transaction" | "execution_transaction" | "client" | "accepted")
+                && !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit())
+                && value.parse::<u64>().is_ok()
+            {
+                result.push(' ');
+                result.push_str(field);
+            }
+            continue;
+        }
+        if name == "sophia_present_clock_service" {
+            if matches!(key, "schema" | "queries" | "completions" | "observations" | "observation_runtime_locks" | "completion_runtime_locks" | "completion_historical_samples" | "admission_errors" | "admission_fake_retries" | "admission_settled" | "idle_signal_failures" | "scrap_sample_fallbacks" | "service_runtime_locks" | "deadline_runtime_locks" | "wire_prepared" | "wire_published" | "wire_owner_notifications" | "wire_bound" | "wire_hardware_bound" | "wire_executions" | "wire_execution_wait_usec" | "wire_execution_wait_max_usec" | "owner_passes" | "owner_waits" | "owner_ring_ready" | "owner_fd_ready" | "owner_wait_deadlines" | "owner_immediate_items")
+                && !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit())
+                && value.parse::<u64>().is_ok()
+            {
+                result.push(' ');
+                result.push_str(field);
+            }
+            continue;
+        }
+        if name == "sophia_present_evidence" {
+            if (key == "schema" && value == "1") || (key == "mode" && matches!(value, "full" | "aggregate")) {
+                result.push(' ');
+                result.push_str(field);
+            }
+            continue;
+        }
         // Context counters contain "text" but carry no client text. Admit only
         // the exact numeric vocabulary of the renderer measurement record.
         if name == "sophia_live_render_work" {
@@ -32,6 +59,18 @@ pub fn reduced_record(line: &str) -> Option<String> {
                 | "capture_copy_cpu_nsec"
                 | "capture_cleanup_cpu_nsec"
                 | "composition_cpu_nsec"
+                | "damage_full_no_table_count"
+                | "damage_full_disabled_count"
+                | "damage_full_unknown_age_count"
+                | "damage_full_no_history_count"
+                | "damage_full_beyond_history_count"
+                | "damage_full_damage_unavailable_count"
+                | "damage_full_plan_count"
+                | "damage_stable_geometry_frames_count"
+                | "damage_stable_geometry_full_count"
+                | "damage_stable_geometry_partial_count"
+                | "damage_stable_geometry_repaint_pixels_count"
+                | "damage_stable_geometry_target_pixels_count"
 )
                 && !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
                 && value.parse::<u128>().is_ok()
@@ -537,7 +576,7 @@ fn interaction_field(record: &str, key: &str, value: &str) -> bool {
                 | "primitives"
                 | "clearance"
         ),
-        "sophia_live_session_present_feedback" => matches!(key, "ust" | "msc"),
+        "sophia_live_session_present_feedback" | "sophia_live_session_present" => matches!(key, "ust" | "msc"),
         _ => false,
     };
     if measurement {

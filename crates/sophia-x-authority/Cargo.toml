@@ -14,6 +14,7 @@ sophia-input-authority = { path = "../sophia-input-authority" }
 sophia-portal = { path = "../sophia-portal" }
 sophia-protocol = { path = "../sophia-protocol" }
 sophia-sysv-shm = { path = "../sophia-sysv-shm" }
+sophia-xshmfence = { path = "../sophia-xshmfence" }
 xkbcommon = "0.8"
 tracing.workspace = true
 

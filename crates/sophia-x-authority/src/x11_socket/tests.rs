@@ -1,6 +1,13 @@
 #![cfg(all(test, unix))]
 
 use super::*;
+
+#[path = "../../tests/support/generated_egress.rs"]
+mod generated_egress;
+#[path = "../../tests/support/timed_present_service.rs"]
+mod timed_present_service;
+#[path = "../../tests/support/timed_present_wire.rs"]
+mod timed_present_wire;
 use crate::XAuthorityControlKind;
 use sophia_protocol::{DeviceId, Point};
 use std::sync::mpsc::sync_channel;

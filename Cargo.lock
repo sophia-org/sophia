@@ -971,6 +971,7 @@ dependencies = [
  "input",
  "libseat",
  "rustix",
+ "sophia-drm-clock",
  "sophia-drm-out-fence",
  "sophia-engine",
  "sophia-protocol",
@@ -1039,6 +1040,14 @@ dependencies = [
 [[package]]
 name = "sophia-desktop-ids"
 version = "0.2.0"
+
+[[package]]
+name = "sophia-drm-clock"
+version = "0.1.0"
+dependencies = [
+ "drm-ffi",
+ "rustix",
+]
 
 [[package]]
 name = "sophia-drm-out-fence"
@@ -1215,6 +1224,7 @@ dependencies = [
  "sophia-protocol",
  "sophia-sysv-shm",
  "sophia-wake",
+ "sophia-xshmfence",
  "tracing",
  "xkbcommon",
 ]

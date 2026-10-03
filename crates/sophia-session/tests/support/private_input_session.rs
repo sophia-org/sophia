@@ -511,6 +511,8 @@ include!("private_input_session/admission_refusal.rs");
 
 include!("private_input_session/receipt_custody.rs");
 
+include!("private_input_session/post_receipt_admission.rs");
+
 /// Record one exit's actors from custody, not from a counter.
 ///
 /// The service thread is one actor and every custody place that started a

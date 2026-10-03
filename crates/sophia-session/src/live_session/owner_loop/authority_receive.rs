@@ -18,6 +18,7 @@
             || explicit_pointer_grabs.pending() != 0,
     );
     let maximum = runtime.as_ref().map_or(maximum, |r| r.frame_deadline_cap_wait(now, maximum));
+    let maximum = present_clocks.cap_wait(now, maximum);
     // Held, hold decisions and sequence timeouts use the same owner clock
     // as routing and per-turn service. Only an actual deadline caps idle;
     // the registry or an open chord alone never requires polling.

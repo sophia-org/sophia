@@ -882,7 +882,7 @@
                             msc: _,
                         } =
                             record_native_present_retirement(
-                                &mut layout,
+                                NativePresentRecording { layout: &mut layout, evidence: &mut present_evidence },
                                 runtime,
                                 native_scanout,
                                 retired,
@@ -900,7 +900,7 @@
                         }
                     }
                     for retired in service.retired_software_presents {
-                        record_native_software_present_retirement(&mut layout, retired);
+                        record_native_software_present_retirement(NativePresentRecording { layout: &mut layout, evidence: &mut present_evidence }, retired);
                     }
                     correlate_physical_input_page_flip(
                         input_proof_started_at.is_some(),

@@ -65,7 +65,7 @@ if let (Some(runtime), Some(native_scanout)) = (runtime.as_mut(), native_scanout
             };
             if let Some(service) = service {
                 for retired in service.retired_software_presents {
-                    record_native_software_present_retirement(&mut layout, retired);
+                    record_native_software_present_retirement(NativePresentRecording { layout: &mut layout, evidence: &mut present_evidence }, retired);
                 }
                 record_discarded_presents(&service.discarded_presents);
                 if let Some(retired) = service.retired_present {
@@ -75,7 +75,7 @@ if let (Some(runtime), Some(native_scanout)) = (runtime.as_mut(), native_scanout
                         ust_usec: _,
                         msc: _,
                     } = record_native_present_retirement(
-                        &mut layout,
+                        NativePresentRecording { layout: &mut layout, evidence: &mut present_evidence },
                         runtime,
                         native_scanout,
                         retired,

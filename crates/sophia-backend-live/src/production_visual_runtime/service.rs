@@ -328,6 +328,7 @@ impl LiveProductionVisualRuntime {
         // One readiness pass per card, before any output can retire, submit a
         // successor, or declare its outstanding request stalled.
         native_scanout.pump_native_completions()?;
+        let collected_retirements = native_scanout.collected_retirement_outputs();
         // Optional evidence owns resources even when no frame is pending.
         native_scanout.service_layout_probe_cleanup();
         native_scanout.service_renderer_image_evictions()?;
@@ -336,6 +337,14 @@ impl LiveProductionVisualRuntime {
         // installation may prepare hot previews separately, never cold copies.
         native_scanout.prepare_retained_images()?;
         self.prepare_policy_preview_images(native_scanout)?;
+        let mut retired_present = None;
+        let mut effects = Vec::new();
+        for output in collected_retirements {
+            effects.push(OutputFrameServiceEffect::PollRetirement { output });
+            if let Some(retired) = self.retire_native_scanout_output(native_scanout, output)? {
+                retired_present = Some(retired);
+            }
+        }
         if self.retained_projection_pending {
             self.queue_retained_projection(scene, native_scanout)?;
         }
@@ -345,8 +354,6 @@ impl LiveProductionVisualRuntime {
         let mut reducer = OutputFrameServiceReducer::begin(&initial)
             .map_err(|error| format!("invalid output frame service state: {error:?}"))?;
         let mut ticks = Vec::new();
-        let mut retired_present = None;
-        let mut effects = Vec::new();
         loop {
             let observation = self.native_output_service_request(native_scanout)?;
             let Some(effect) = reducer

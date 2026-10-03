@@ -139,7 +139,7 @@ impl LiveMetadataShell {
                 // The wire turns on every pass, so the readiness the owner's
                 // wait subscribed is consumed even when no service below has
                 // work for it.
-                self.transport.poll_io()?;
+                self.transport.service_owner_turn()?;
                 return Ok(LiveMetadataShellPoll::Healthy);
             }
             self.connected = false;

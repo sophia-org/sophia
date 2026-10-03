@@ -151,7 +151,7 @@ impl CompositionInstaller for LiveProductionNativeScanout {
             self.output_lifecycles.get_mut(&installation.output),
         )? {
             self.output_cohorts
-                .insert((installation.output, installation.frame), cohort);
+                .insert((installation.output, installation.frame), cohort.into());
         }
         Ok(())
     }

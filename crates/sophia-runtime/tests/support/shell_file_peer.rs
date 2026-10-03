@@ -260,6 +260,12 @@ impl Peer {
         self.try_ack(bytes).unwrap();
     }
 
+    /// The next journal byte after all events already fetched by this peer.
+    pub fn event_offset(&self) -> u64 {
+        assert!(self.queued.is_empty());
+        self.offset
+    }
+
     pub fn try_ack(&mut self, bytes: &[u8]) -> io::Result<()> {
         let record = decode_shell_file_record(bytes, ShellFileClass::Event).unwrap();
         let ack = encode_shell_file_ack(ShellFileAck {

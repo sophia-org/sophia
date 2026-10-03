@@ -757,9 +757,14 @@ impl LiveProductionVisualRuntime {
         &mut self,
         native_scanout: &mut LiveProductionNativeScanout,
     ) -> Result<Option<LiveProductionRetiredPresent>, Box<dyn std::error::Error>> {
-        let outputs = (0..self.outputs.output_count())
-            .filter_map(|index| self.outputs.output_id(index))
-            .collect::<Vec<_>>();
+        let mut outputs = native_scanout.collected_retirement_outputs();
+        for output in
+            (0..self.outputs.output_count()).filter_map(|index| self.outputs.output_id(index))
+        {
+            if !outputs.contains(&output) {
+                outputs.push(output);
+            }
+        }
         let mut retired_present = None;
         for output in outputs {
             if let Some(retired) =
@@ -775,9 +780,14 @@ impl LiveProductionVisualRuntime {
         &mut self,
         native_scanout: &mut LiveProductionNativeScanout,
     ) -> Result<Option<LiveProductionRetiredPresent>, Box<dyn std::error::Error>> {
-        let outputs = (0..self.outputs.output_count())
-            .filter_map(|index| self.outputs.output_id(index))
-            .collect::<Vec<_>>();
+        let mut outputs = native_scanout.collected_retirement_outputs();
+        for output in
+            (0..self.outputs.output_count()).filter_map(|index| self.outputs.output_id(index))
+        {
+            if !outputs.contains(&output) {
+                outputs.push(output);
+            }
+        }
         let mut retired_present = None;
         for output in outputs {
             if let Some(retired) =

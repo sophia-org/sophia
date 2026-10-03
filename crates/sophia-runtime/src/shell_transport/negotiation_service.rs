@@ -152,6 +152,7 @@ impl ShellComponentTransport {
         self.content_limits = limits;
         self.reserved_limits = None;
         self.peer_closed = false;
+        self.owner_serviced = false;
         self.output.clear();
         self.output_blocked = false;
         self.action_cancellations.clear();

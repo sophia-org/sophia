@@ -11,6 +11,7 @@ struct XPointerRouteMemory {
 struct XServerFrontendRouteRegistry {
     input_recovery: InputRecovery,
     runtime: Arc<std::sync::OnceLock<std::sync::Weak<Mutex<XAuthorityRuntime>>>>,
+    present_clock_interests: Arc<std::sync::OnceLock<crate::runtime::XPresentClockInterests>>,
     private_applied: Arc<std::sync::OnceLock<PrivateAppliedRegistryOwner>>,
     /// Where a connection's ordered continuation will go if it ever needs one.
     ///
@@ -79,6 +80,9 @@ struct XServerFrontendRouteRegistry {
     input_delivery_sender: Option<Sender<XAuthorityClientInputDelivery>>,
     metadata_candidate_sender: sophia_wake::SignalSender<XAuthorityClientMetadataCandidate>,
     route_lease_update_sender: Option<sophia_wake::SignalSender<XAuthorityRouteLeaseUpdate>>,
+    /// Configured before serving clients, only by a caller that services the
+    /// per-window admission clock. Standalone frontends keep immediate Present.
+    present_clock_owner: Option<sophia_wake::Notifier>,
     owner_wake: sophia_wake::WakeSlot,
     service_wake: sophia_wake::WakeSlot,
     explicit_pointer_grabs: Option<crate::XAuthorityExplicitPointerGrabClient>,
@@ -115,6 +119,7 @@ struct XPresentSubscription {
 #[derive(Clone, Copy, Debug)]
 struct XPendingPresent {
     client: XServerFrontendClientId,
+    admission: Option<ClientAdmissionContext>,
     window: XResourceId,
     pixmap: XResourceId,
     serial: u32,
@@ -122,6 +127,9 @@ struct XPendingPresent {
     // Advice is permitted only when opted in without forced copying.
     suboptimal: bool,
     phases: crate::XPresentFeedbackPhases,
+    // Set when timed execution transfers the preparation's reservation.
+    // Later source selection or a mirror sibling cannot replace this binding.
+    clock: Option<XPresentCompletionState>,
     allocation_subject: Option<crate::runtime::XPresentAllocationSubject>,
 }
 
@@ -129,7 +137,18 @@ struct XPendingPresent {
 #[derive(Default)]
 struct XPendingPresentRegistry {
     entries: Mutex<BTreeMap<TransactionId, XPendingPresent>>,
+    // Clocked completion selection AND enqueue are serialized. Marking phases
+    // under entries alone prevents duplicates but can still reorder events
+    // after that lock is released. Never wait on runtime while holding this.
+    completion_delivery: Mutex<()>,
     capacity_changed: Condvar,
+    capacity_waits: std::sync::atomic::AtomicU64,
+    rejected_clock_samples: std::sync::atomic::AtomicU64,
+    completed: std::sync::atomic::AtomicU64,
+    source_observations: std::sync::atomic::AtomicU64,
+    observation_runtime_locks: std::sync::atomic::AtomicU64,
+    completion_runtime_locks: std::sync::atomic::AtomicU64,
+    completion_historical_samples: std::sync::atomic::AtomicU64,
 }
 
 #[cfg(unix)]
@@ -876,6 +895,7 @@ impl XServerFrontendRouteRegistry {
     }
 }
 include!("registry/present.rs");
+include!("registry/present_clock_completion.rs");
 include!("registry/ordered.rs");
 include!("registry/delivery.rs");
 include!("registry/delivery_control.rs");

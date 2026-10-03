@@ -4,13 +4,29 @@
 // keeps. The harness, admission and lifetime controls live in
 // private_service.rs; this file shares them.
 
-/// Draw enough that a raster requirement for the window is SATISFIED with an
-/// observed batch, and return that surface. Drains the transport only up to
-/// the batch that names it.
+#[derive(Clone, Copy, Debug)]
+struct RasterFixture {
+    surface: SurfaceId,
+    generation: u64,
+    transaction: TransactionId,
+    client: XServerFrontendClientId,
+}
+
+fn saw_draw_wait(seen: &SeenTelemetry, from: usize, drawn: RasterFixture) -> bool {
+    seen.lock().expect("readable telemetry").iter().skip(from).any(|event|
+        event.kind == XAuthorityBackpressureTelemetryKind::Wait
+            && event.client == Some(drawn.client) && event.transaction > drawn.transaction)
+}
+
+/// Drain through the first draw, then prove a NEW draw is parked. Routing a
+/// raster requirement after that observation gives it a later ticket, so
+/// ordered egress must wait. An older Wait may have already resumed and is
+/// no evidence of present backpressure. Do not drain after observing this.
 fn draw_and_learn_surface(
     client: &mut UnixStream,
     transactions: &Receiver<XAuthorityObservedTransactionBatch>,
-) -> SurfaceId {
+    seen: &SeenTelemetry,
+) -> RasterFixture {
     let window: u32 = 0x0020_0d01;
     let gc: u32 = 0x0020_0d02;
     create_window(client, 0);
@@ -23,26 +39,55 @@ fn draw_and_learn_surface(
             .filter(|batch| batch.cpu_buffer_updates.len() == 1 && batch.transactions.len() == 1)
     })
     .expect("the draw is observed as one CPU buffer update");
-    // Two more draws: one lands and fills the transport, one parks the worker.
+    let drawn = RasterFixture {
+        surface: drawn.transactions[0].surface,
+        generation: drawn.transactions[0].previous_committed_generation.checked_add(1).expect("generation"),
+        transaction: drawn.transaction,
+        client: drawn.client.expect("a worker draw names its client"),
+    };
+    let from = seen.lock().expect("readable telemetry").len();
     image_text8(client, window, gc, b"AaZz");
     image_text8(client, window, gc, b"AaZz");
-    drawn.transactions[0].surface
+    assert!(waited_for(|| saw_draw_wait(seen, from, drawn)),
+        "new draw must wait after {drawn:?}; telemetry: {:?}", seen.lock().unwrap());
+    drawn
 }
 
-fn raster_requirement_for(surface: SurfaceId) -> sophia_protocol::SurfaceRasterRequirements {
+fn assert_service_wait(seen: &SeenTelemetry, from: usize) {
+    assert!(waited_for(|| saw_service_wait(seen, from)),
+        "raster egress must wait after the parked worker; telemetry: {:?}", seen.lock().unwrap());
+}
+
+fn raster_requirement_for(drawn: RasterFixture) -> sophia_protocol::SurfaceRasterRequirements {
     sophia_protocol::SurfaceRasterRequirements {
-        surface,
-        committed_content_generation: 2,
+        surface: drawn.surface,
+        committed_content_generation: drawn.generation,
         requirement_generation: 1,
-        logical_extent: Size {
-            width: 8,
-            height: 8,
-        },
+        logical_extent: Size { width: 8, height: 8 },
         classes: vec![sophia_protocol::SurfaceRasterClass {
             density_millis: 1000,
             transform: sophia_protocol::SurfaceRasterTransform::Normal,
         }],
     }
+}
+
+#[test]
+fn a_raster_fixture_requires_a_fresh_wait_from_its_own_client_and_later_ticket() {
+    let drawn = RasterFixture { surface: SurfaceId::new(1, 1), generation: 7,
+        transaction: TransactionId::from_raw(8), client: XServerFrontendClientId::from_raw(1) };
+    let event = |client, ticket| XAuthorityBackpressureTelemetry {
+        kind: XAuthorityBackpressureTelemetryKind::Wait, client: Some(client),
+        transaction: TransactionId::from_raw(ticket), waited: Duration::ZERO, failure: None,
+    };
+    let seen = Arc::new(Mutex::new(vec![event(drawn.client, 9)]));
+    let from = 1;
+    assert!(!saw_draw_wait(&seen, from, drawn), "historical wait is not proof");
+    seen.lock().unwrap().push(event(drawn.client, 8));
+    seen.lock().unwrap().push(event(XServerFrontendClientId::from_raw(2), 10));
+    assert!(!saw_draw_wait(&seen, from, drawn), "old ticket or another client is not proof");
+    seen.lock().unwrap().push(event(drawn.client, 10));
+    assert!(saw_draw_wait(&seen, from, drawn));
+    assert_eq!(raster_requirement_for(drawn).committed_content_generation, 7);
 }
 
 #[test]
@@ -84,15 +129,14 @@ fn an_unwind_inside_the_private_service_keeps_the_unsent_raster_envelope() {
                     .is_some_and(|keeper| keeper.inventory.upgrade().is_some())
             )
         });
-    let surface = draw_and_learn_surface(&mut client, &transactions);
-    assert!(
-        waited_for(|| saw_kind(&seen, XAuthorityBackpressureTelemetryKind::Wait, true)),
-        "the worker's own wait is reported (and does not unwind: wrong thread)"
-    );
+    let drawn = draw_and_learn_surface(&mut client, &transactions, &seen);
+    let surface = drawn.surface;
+    let waits_before = seen.lock().expect("readable").len();
     handles
         .raster
-        .try_route(raster_requirement_for(surface))
+        .try_route(raster_requirement_for(drawn))
         .expect("the requirement is queued");
+    assert_service_wait(&seen, waits_before);
     let client_ended = eof_within(&mut client, 3);
     let (unwound, _error, reported, after) = launch_outcome(handle, &finished, false, "unwind retains");
     assert!(unwound, "the injected panic unwound the operation");
@@ -141,14 +185,14 @@ fn an_unwind_after_the_transport_accepted_the_batch_retains_nothing_as_unsent() 
     } = launch_held(socket_path.clone(), namespace, 1, observer, service_thread);
     let mut client = connect_private_client(&socket_path);
     handshake(&mut client);
-    let surface = draw_and_learn_surface(&mut client, &transactions);
-    assert!(waited_for(|| saw_kind(&seen, XAuthorityBackpressureTelemetryKind::Wait, true)));
+    let drawn = draw_and_learn_surface(&mut client, &transactions, &seen);
+    let surface = drawn.surface;
     let waits_before = seen.lock().expect("readable").len();
     handles
         .raster
-        .try_route(raster_requirement_for(surface))
+        .try_route(raster_requirement_for(drawn))
         .expect("the requirement is queued");
-    assert!(waited_for(|| saw_service_wait(&seen, waits_before)), "the service's own raster wait");
+    assert_service_wait(&seen, waits_before);
     // Now the transport is drained, bounded, until the launch scope returns:
     // the parked worker lands its remaining batches in ticket order, then the
     // service's envelope is accepted and its Resume report unwinds the
@@ -201,14 +245,14 @@ fn an_error_while_a_raster_envelope_waits_cancels_its_wait_and_retains_it() {
     } = launch_held(socket_path.clone(), namespace, 1, observer, Arc::new(Mutex::new(None)));
     let mut client = connect_private_client(&socket_path);
     handshake(&mut client);
-    let surface = draw_and_learn_surface(&mut client, &transactions);
-    assert!(waited_for(|| saw_kind(&seen, XAuthorityBackpressureTelemetryKind::Wait, true)));
+    let drawn = draw_and_learn_surface(&mut client, &transactions, &seen);
+    let surface = drawn.surface;
     let waits_before = seen.lock().expect("readable").len();
     handles
         .raster
-        .try_route(raster_requirement_for(surface))
+        .try_route(raster_requirement_for(drawn))
         .expect("the requirement is queued");
-    assert!(waited_for(|| saw_service_wait(&seen, waits_before)), "the service's own raster wait");
+    assert_service_wait(&seen, waits_before);
     let (acknowledgement, acknowledged) = sync_channel(1);
     drop(acknowledged);
     commands
@@ -349,14 +393,14 @@ fn stop_with_a_waiting_envelope(
                     .is_some_and(|keeper| keeper.inventory.upgrade().is_some())
             )
         });
-    let surface = draw_and_learn_surface(&mut client, &transactions);
-    assert!(waited_for(|| saw_kind(&seen, XAuthorityBackpressureTelemetryKind::Wait, true)));
+    let drawn = draw_and_learn_surface(&mut client, &transactions, &seen);
+    let surface = drawn.surface;
     let waits_before = seen.lock().expect("readable").len();
     handles
         .raster
-        .try_route(raster_requirement_for(surface))
+        .try_route(raster_requirement_for(drawn))
         .expect("the requirement is queued");
-    assert!(waited_for(|| saw_service_wait(&seen, waits_before)), "the service's own raster wait");
+    assert_service_wait(&seen, waits_before);
     stop(commands);
     let client_ended = eof_within(&mut client, 3);
     let (unwound, error, reported, after) = launch_outcome(handle, &finished, false, tag);
@@ -436,14 +480,14 @@ fn a_shutdown_report_that_unwinds_during_a_stop_still_keeps_the_envelope() {
                     .is_some_and(|keeper| keeper.inventory.upgrade().is_some())
             )
         });
-    let surface = draw_and_learn_surface(&mut client, &transactions);
-    assert!(waited_for(|| saw_kind(&seen, XAuthorityBackpressureTelemetryKind::Wait, true)));
+    let drawn = draw_and_learn_surface(&mut client, &transactions, &seen);
+    let surface = drawn.surface;
     let waits_before = seen.lock().expect("readable").len();
     handles
         .raster
-        .try_route(raster_requirement_for(surface))
+        .try_route(raster_requirement_for(drawn))
         .expect("the requirement is queued");
-    assert!(waited_for(|| saw_service_wait(&seen, waits_before)));
+    assert_service_wait(&seen, waits_before);
     commands
         .send(XServerFrontendServiceCommand::StopAndDisconnect)
         .expect("the service is listening for commands");
@@ -519,7 +563,7 @@ fn a_cancelled_submission_keeps_its_batch_in_the_slot() {
         .lock()
         .expect("readable")
         .iter()
-        .filter(|(kind, _)| *kind == XAuthorityBackpressureTelemetryKind::Shutdown)
+        .filter(|event| event.kind == XAuthorityBackpressureTelemetryKind::Shutdown)
         .count();
     assert_eq!(shutdowns, 1, "a cancelled wait is reported once");
 }
@@ -535,7 +579,7 @@ fn the_shelf_keeps_its_charge_on_the_store_while_it_is_retained() {
     // allocates past its capacity.
     let namespace = NamespaceId::from_raw(9315);
     let durable = Arc::new(PrivateSettlementOwner::with_capacity(1));
-    assert_eq!(durable.unresolved_egress_capacity(), Some(1));
+    assert_eq!(durable.unresolved_egress_capacity(), Some(2));
 
     // First invocation: a real error while the raster envelope waits.
     let socket_path = private_service_socket("charge-1");
@@ -573,11 +617,11 @@ fn the_shelf_keeps_its_charge_on_the_store_while_it_is_retained() {
     let handles = handles_in.recv_timeout(Duration::from_secs(15)).expect("built");
     let mut client = connect_private_client(&socket_path);
     handshake(&mut client);
-    let surface = draw_and_learn_surface(&mut client, &transactions);
-    assert!(waited_for(|| saw_kind(&seen, XAuthorityBackpressureTelemetryKind::Wait, true)));
+    let drawn = draw_and_learn_surface(&mut client, &transactions, &seen);
+    let surface = drawn.surface;
     let waits_before = seen.lock().expect("readable").len();
-    handles.raster.try_route(raster_requirement_for(surface)).expect("queued");
-    assert!(waited_for(|| saw_service_wait(&seen, waits_before)));
+    handles.raster.try_route(raster_requirement_for(drawn)).expect("queued");
+    assert_service_wait(&seen, waits_before);
     let (acknowledgement, acknowledged) = sync_channel(1);
     drop(acknowledged);
     commands
@@ -596,7 +640,7 @@ fn the_shelf_keeps_its_charge_on_the_store_while_it_is_retained() {
     drop(handles);
     let _ = std::fs::remove_file(&socket_path);
     assert_eq!(durable.unresolved_egress(), Some(1));
-    assert_eq!(durable.unresolved_egress_capacity(), Some(1), "no allocation past the reserved capacity");
+    assert_eq!(durable.unresolved_egress_capacity(), Some(2), "no allocation past the reserved capacity");
 
     // Second invocation: refused at construction, before any exposure, with
     // the exact work still on the shelf under the first invocation's number.
@@ -618,7 +662,7 @@ fn the_shelf_keeps_its_charge_on_the_store_while_it_is_retained() {
     // Reading the shelf changed nothing: still charged, still refused.
     assert_eq!(read_shelf(&durable), shelf);
     assert_eq!(durable.unresolved_egress(), Some(1));
-    assert_eq!(durable.unresolved_egress_capacity(), Some(1));
+    assert_eq!(durable.unresolved_egress_capacity(), Some(2));
     let owner_again = service_owner(&durable, 4);
     assert!(
         crate::PrivateXServerFrontend::new(private_service_parts(4), &owner_again).is_err(),
@@ -678,11 +722,10 @@ fn obligations_from_two_invocations_stay_distinct_after_their_frames_are_gone() 
         let handles = handles_in.recv_timeout(Duration::from_secs(15)).expect("built");
         let mut client = connect_private_client(&socket_path);
         handshake(&mut client);
-        let surface = draw_and_learn_surface(&mut client, &transactions);
-        assert!(waited_for(|| saw_kind(&seen, XAuthorityBackpressureTelemetryKind::Wait, true)));
+        let drawn = draw_and_learn_surface(&mut client, &transactions, &seen);
         let waits_before = seen.lock().expect("readable").len();
-        handles.raster.try_route(raster_requirement_for(surface)).expect("queued");
-        assert!(waited_for(|| saw_service_wait(&seen, waits_before)));
+        handles.raster.try_route(raster_requirement_for(drawn)).expect("queued");
+        assert_service_wait(&seen, waits_before);
         let (acknowledgement, acknowledged) = sync_channel(1);
         drop(acknowledged);
         commands

@@ -10,7 +10,7 @@ struct Mirror {
     device: Device,
     owners: Rc<Cell<usize>>,
     last: [Option<u64>; 2],
-    cohorts: BTreeMap<u64, sophia_engine::OutputPresentationCohort>,
+    cohorts: BTreeMap<u64, crate::NativeOutputCohort>,
 }
 
 impl Mirror {
@@ -63,7 +63,7 @@ impl Mirror {
                     | sophia_engine::OutputPresentationTransition::PhaseReady
             ));
         }
-        self.cohorts.insert(frame, cohort);
+        self.cohorts.insert(frame, cohort.into());
     }
 
     fn submit(&mut self, index: usize, frame: u64) {
@@ -127,6 +127,17 @@ impl Mirror {
             &mut self.group,
             self.cohorts.get_mut(&frame),
             MirrorCompletionWitness {
+                clock: Some(
+                    crate::LiveNativePresentClockSample {
+                        source: crate::LiveNativePresentClockSource {
+                            owner: 1,
+                            incarnation: index as u64 + 1,
+                        },
+                        ust_usec: serial * 1000,
+                        msc: serial,
+                    }
+                    .into(),
+                ),
                 expected: self
                     .owner
                     .frame(OutputId::from_raw(1), head(index), 1, frame),
@@ -245,6 +256,7 @@ fn wrong_native_witness_and_stale_callback_do_not_advance_physical_or_logical_cu
             &mut mirror.group,
             mirror.cohorts.get_mut(&1),
             MirrorCompletionWitness {
+                clock: None,
                 expected,
                 callback: crate::LivePageFlipCallback {
                     output: OutputId::from_raw(1),
@@ -338,6 +350,7 @@ fn poisoned_mirror_still_retires_its_physical_owner_without_logical_success() {
         &mut mirror.group,
         mirror.cohorts.get_mut(&1),
         MirrorCompletionWitness {
+            clock: None,
             expected,
             callback: crate::LivePageFlipCallback {
                 output: OutputId::from_raw(1),
@@ -398,6 +411,7 @@ fn newer_abort_cannot_publish_an_older_inflight_cohort_or_retract_an_old_termina
             &mut mirror.group,
             mirror.cohorts.get_mut(&1),
             MirrorCompletionWitness {
+                clock: None,
                 expected,
                 callback: crate::LivePageFlipCallback {
                     output: OutputId::from_raw(1),
@@ -495,7 +509,7 @@ fn mismatched_supplied_cohort_refuses_before_any_owner_or_cohort_mutation() {
     });
     let mut already_flipped = supplied_cohort(1, 1, 0, 1, 2);
     already_flipped.mark_flipped(head(0), 1000);
-    for mut cohort in [
+    for cohort in [
         supplied_cohort(2, 1, 0, 1, 2),
         supplied_cohort(1, 2, 0, 1, 2),
         supplied_cohort(1, 1, 1, 1, 2),
@@ -504,6 +518,7 @@ fn mismatched_supplied_cohort_refuses_before_any_owner_or_cohort_mutation() {
         not_submitted,
         already_flipped,
     ] {
+        let mut cohort = crate::NativeOutputCohort::from(cohort);
         let before_cohort = cohort.clone();
         let before_group = mirror.group.clone();
         let result = complete_mirror_head(
@@ -512,6 +527,7 @@ fn mismatched_supplied_cohort_refuses_before_any_owner_or_cohort_mutation() {
             &mut mirror.group,
             Some(&mut cohort),
             MirrorCompletionWitness {
+                clock: None,
                 expected,
                 callback: crate::LivePageFlipCallback {
                     output: OutputId::from_raw(1),
@@ -664,4 +680,33 @@ fn singleton_timing_refuses_missing_wrong_and_duplicate_completion_identity() {
         ),
         None
     );
+}
+
+#[test]
+fn slow_primary_retirement_keeps_each_members_own_event_clock() {
+    let mut mirror = Mirror::new();
+    mirror.begin(1);
+    mirror.submit(0, 1);
+    mirror.submit(1, 1);
+    mirror.flip(1, 1, 10); // fast sibling, no logical permission
+    assert_eq!(mirror.group.completed_frame(), None);
+    assert!(mirror.cohorts[&1].terminal().is_none());
+    mirror.flip(0, 1, 20); // slow primary grants existing permission
+    assert_eq!(mirror.group.completed_frame().unwrap().raw(), 1);
+    let frozen = mirror.cohorts[&1].clocks();
+    let primary = crate::LiveNativePresentClockSource {
+        owner: 1,
+        incarnation: 1,
+    };
+    let sibling = crate::LiveNativePresentClockSource {
+        owner: 1,
+        incarnation: 2,
+    };
+    assert_eq!(frozen.sample(primary).unwrap().msc, 20);
+    assert_eq!(frozen.sample(sibling).unwrap().msc, 10);
+    mirror.begin(2);
+    mirror.submit(1, 2);
+    mirror.flip(1, 2, 30);
+    assert_eq!(frozen.sample(sibling).unwrap().msc, 10);
+    assert_eq!(mirror.cohorts[&1].clocks(), frozen);
 }

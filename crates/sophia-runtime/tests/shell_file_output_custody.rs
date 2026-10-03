@@ -58,6 +58,15 @@ fn facts() -> Vec<ContentOutputFactsEntry> {
 
 #[test]
 fn a_record_the_journal_refused_stays_charged_and_leaves_once_in_order() {
+    queued_record_custody(false);
+}
+
+#[test]
+fn owner_turns_preserve_fifo_and_charge_when_role_visits_share_input() {
+    queued_record_custody(true);
+}
+
+fn queued_record_custody(owner_turns: bool) {
     let mut registry = ContentEpochRegistry::new(64 * MIB).unwrap();
     let (mut transport, directory) = transport();
     let grant = ContentGrant {
@@ -128,6 +137,9 @@ fn a_record_the_journal_refused_stays_charged_and_leaves_once_in_order() {
         transport.poll_io(&mut registry).unwrap();
         std::thread::yield_now();
     }
+    if owner_turns {
+        transport.service_owner_turn(&mut registry).unwrap();
+    }
     for generation in 1..=UNSOLICITED + 1 {
         transport
             .publish_content_output_facts(
@@ -149,6 +161,9 @@ fn a_record_the_journal_refused_stays_charged_and_leaves_once_in_order() {
     assert_eq!(transport.content_accounting(&registry), retained);
     resume_tx.send(()).unwrap();
     while !peer.is_finished() {
+        if owner_turns {
+            transport.service_owner_turn(&mut registry).unwrap();
+        }
         transport.poll_io(&mut registry).unwrap();
         assert!(
             start.elapsed() < Duration::from_secs(5),

@@ -34,6 +34,12 @@ include!("runtime/drawing/window_background.rs");
 include!("runtime/drawing/include_inferiors.rs");
 include!("runtime/drawing/presentation.rs");
 include!("runtime/render_resources.rs");
+include!("runtime/present_pixmap.rs");
+include!("runtime/prepared_present.rs");
+include!("runtime/present_schedule.rs");
+include!("runtime/present_service_demand.rs");
+include!("runtime/present_admission.rs");
+include!("runtime/present_admission_recovery.rs");
 include!("runtime/dmabuf_capabilities.rs");
 include!("runtime/device_connections.rs");
 include!("runtime/render_pictures.rs");
@@ -240,6 +246,13 @@ pub struct XAuthorityRuntime {
     xfixes_regions: BTreeMap<crate::XResourceId, Region>,
     render_pictures: BTreeMap<crate::XResourceId, XRenderPictureRecord>,
     retained_pixmap_backings: BTreeMap<crate::XResourceId, XRetainedPixmapBacking>,
+    prepared_presents: BTreeMap<TransactionId, XQueuedPresent>,
+    prepared_msc_notifies: BTreeMap<TransactionId, XQueuedMscNotify>,
+    prepared_present_schedules: BTreeMap<crate::XResourceId, XPreparedWindowSchedule>,
+    present_clock_interests: XPresentClockInterests,
+    present_timing_statistics: XPresentTimingStatistics,
+    present_service_demand: Arc<std::sync::atomic::AtomicBool>,
+    present_fence_descriptors: BTreeMap<sophia_protocol::FenceHandle, Arc<OwnedFd>>,
     next_render_backing: u64,
     /// Renderer registrations owed a release once their backing was dropped.
     ///
@@ -376,6 +389,13 @@ impl Default for XAuthorityRuntime {
             xfixes_regions: Default::default(),
             render_pictures: Default::default(),
             retained_pixmap_backings: Default::default(),
+            prepared_presents: Default::default(),
+            prepared_msc_notifies: Default::default(),
+            prepared_present_schedules: Default::default(),
+            present_clock_interests: Default::default(),
+            present_timing_statistics: Default::default(),
+            present_service_demand: Default::default(),
+            present_fence_descriptors: Default::default(),
             pending_backing_releases: Default::default(),
             provider_pixmap_backings: Default::default(),
             pixmap_publications: Default::default(),

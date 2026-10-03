@@ -204,6 +204,7 @@ fn completion_sources_share_one_monotonic_timestamp_domain() {
     assert_eq!(
         page_flip,
         LiveProductionCompletionTimestamp {
+            clock: None,
             ust_usec: kernel_ust,
             used_kernel_timestamp: true,
             missing_kernel_timestamp: false,
@@ -212,6 +213,7 @@ fn completion_sources_share_one_monotonic_timestamp_domain() {
     assert_eq!(
         out_fence,
         LiveProductionCompletionTimestamp {
+            clock: None,
             ust_usec: out_fence_ust,
             used_kernel_timestamp: false,
             missing_kernel_timestamp: false,
@@ -220,6 +222,7 @@ fn completion_sources_share_one_monotonic_timestamp_domain() {
     assert_eq!(
         missing_kernel,
         LiveProductionCompletionTimestamp {
+            clock: None,
             ust_usec: missing_kernel_ust,
             used_kernel_timestamp: false,
             missing_kernel_timestamp: true,

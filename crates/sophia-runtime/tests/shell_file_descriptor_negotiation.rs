@@ -151,6 +151,32 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn reconnect_mid_pass_starts_a_fresh_wire_with_input_service_enabled() {
+    let mut f = Fixture::new();
+    f.start(ShellContentAdmissionPolicy::Unavailable);
+    let client = f.connect(8, BASE);
+    f.transport.service_owner_turn(&mut f.epochs).unwrap();
+    let turns = f.transport.wire_turn_count();
+    f.transport.poll_io(&mut f.epochs).unwrap();
+    assert_eq!(f.transport.wire_turn_count(), turns);
+    f.transport.disconnect(&mut f.epochs).unwrap();
+    drop(client);
+    assert!(f.transport.poll_fds().is_empty());
+    f.transport
+        .begin_descriptor_file_negotiation(
+            &f.epochs,
+            EPOCH + 1,
+            WAIT,
+            ShellContentAdmissionPolicy::Unavailable,
+        )
+        .unwrap();
+    let _replacement = f.connect_at(8, BASE, EPOCH + 1);
+    let turns = f.transport.wire_turn_count();
+    f.transport.poll_io(&mut f.epochs).unwrap();
+    assert_eq!(f.transport.wire_turn_count(), turns + 1);
+}
+
+#[test]
 fn metadata_only_sdk_bootstrap_accepts_each_revision_without_content() {
     for revision in 1..=8 {
         let mut f = Fixture::new();

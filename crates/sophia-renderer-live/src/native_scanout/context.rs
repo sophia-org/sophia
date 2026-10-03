@@ -48,6 +48,7 @@ where
             composition_partial_frames: stats.composition_partial_frames,
             composition_repaint_pixels: stats.composition_repaint_pixels,
             composition_target_pixels: stats.composition_target_pixels,
+            composition_damage: stats.composition_damage,
             capture_setup_elapsed: stats.capture_setup_elapsed,
             capture_copy_elapsed: stats.capture_copy_elapsed,
             capture_cleanup_elapsed: stats.capture_cleanup_elapsed,

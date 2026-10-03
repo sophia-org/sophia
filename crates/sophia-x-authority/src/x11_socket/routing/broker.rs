@@ -157,6 +157,40 @@ impl XServerFrontendControlRouter {
 
 #[cfg(unix)]
 impl XServerFrontendProtocolRouter {
+    /// The backend still owns completion/Idle readiness. This only translates
+    /// its retained sample through the request's frozen window binding; it
+    /// neither queries a clock nor releases any physical buffer ownership.
+    /// A foreign sample uses the latest retained bound observation no newer
+    /// than the event, or the execution observation; it never waits for a tick.
+    /// Callers deliver retirements in event order, not client serial order.
+    pub fn route_clocked_present_complete(
+        &self,
+        transaction: TransactionId,
+        sample: crate::XPresentClockSample,
+        mode: XPresentCompletionMode,
+        comparison: Option<crate::XPresentLayoutComparison>,
+    ) -> Result<crate::XPresentCompleteRouteOutcome, XServerFrontendRouteError> {
+        self.registry.route_bound_present_complete(transaction, sample, mode, comparison)
+    }
+
+    /// Already-authorized native retirement, with real samples from all
+    /// member heads and output cohorts. Select by the request's full frozen
+    /// source; absent evidence uses its no-wait fallback. Legacy requests keep
+    /// their existing clock. Empty evidence never manufactures a native MSC.
+    /// Returns the routed window UST/MSC for diagnostics and cadence accounting.
+    pub fn route_present_complete_with_evidence(
+        &self,
+        transaction: TransactionId,
+        retirement: (u64, u64),
+        samples: impl Iterator<Item = crate::XPresentRetirementClock> + Clone,
+        mode: XPresentCompletionMode,
+        comparison: Option<crate::XPresentLayoutComparison>,
+    ) -> Result<(crate::XPresentCompleteRouteOutcome, Option<(u64, u64)>), XServerFrontendRouteError> {
+        self.registry.retain_retirement_clock(transaction, samples.clone())?;
+        self.registry.route_retired_present_complete(transaction,
+            (retirement.0, Some(retirement.1)), samples, mode, comparison)
+    }
+
     pub fn route_present_complete_with_layout(
         &self,
         transaction: TransactionId,
@@ -329,6 +363,7 @@ impl XServerFrontendRouteBroker {
             registry_identity: Arc::new(()),
             raw_ingress_exposed: Arc::new(AtomicBool::new(false)),
             registry: XServerFrontendRouteRegistry {
+                present_clock_owner: None,
                 owner_wake: owner_wake.clone(),
                 service_wake: service_wake.clone(),
                 // Ingress + frozen + every possible client's private queue and
@@ -343,6 +378,7 @@ impl XServerFrontendRouteBroker {
                     input_authority.clone(),
                 ),
                 runtime: Arc::new(std::sync::OnceLock::new()),
+                present_clock_interests: Arc::new(std::sync::OnceLock::new()),
                 last_pointer_route: Arc::new(Mutex::new(BTreeMap::new())),
                 pointer_replay: Arc::new(std::sync::OnceLock::new()),
                 replay_serial: Arc::new(AtomicU64::new(1)),
@@ -464,6 +500,10 @@ impl XServerFrontendRouteBroker {
         &mut self,
     ) -> Option<Receiver<XAuthorityClientMetadataCandidate>> {
         self.metadata_candidate_receiver.take()
+    }
+
+    pub fn present_clock_router(&self) -> XServerFrontendPresentClockRouter {
+        XServerFrontendPresentClockRouter { registry: self.registry.clone() }
     }
 
     pub fn raster_router(&self) -> XServerFrontendRasterRouter {

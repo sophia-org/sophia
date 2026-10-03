@@ -128,7 +128,7 @@ impl LiveProductionNativeScanout {
                 if !self
                     .output_cohorts
                     .get(&(output, logical_frame))
-                    .is_some_and(sophia_engine::OutputPresentationCohort::all_prepared)
+                    .is_some_and(|cohort| cohort.all_prepared())
                 {
                     self.heads[head_index].prepared_scanout = Some(prepared);
                     continue;
@@ -175,7 +175,7 @@ impl LiveProductionNativeScanout {
                         indices.iter().map(|index| self.heads[*index].head),
                     )
                     .ok_or("mirror generation could not create a preparation cohort")?;
-                    self.output_cohorts.insert((output, logical_frame), cohort);
+                    self.output_cohorts.insert((output, logical_frame), cohort.into());
                 }
                 // Each mirror head carries its own cursor contribution:
                 // the pointer projects differently per head, and a head
@@ -291,7 +291,7 @@ impl LiveProductionNativeScanout {
                         logical_frame.raw(),
                         self.output_cohorts
                             .get(&(output, logical_frame))
-                            .is_some_and(sophia_engine::OutputPresentationCohort::all_prepared),
+                            .is_some_and(|cohort| cohort.all_prepared()),
                     );
                     if tick.rendered_primary_plane_scanout_submit.is_none() {
                         tick.rendered_primary_plane_scanout_submit = Some(report);
@@ -390,6 +390,7 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                             .and_then(LiveProductionScanoutContent::cpu_checksum)
                             .unwrap_or(self.heads[head_index].last_checksum),
                     );
+                    self.heads[head_index].submitted_clock_source = self.clock_source_for_submission(head_index);
                     self.heads[head_index].submitted_at = Some(Instant::now());
                     if let Some(placement) = self.heads[head_index].prepared_cursor_ride.take() {
                         if submit.cursor_dropped {
@@ -523,7 +524,7 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                     let cohort_failure = if self
                         .output_cohorts
                         .get(&(output, logical_frame))
-                        .is_some_and(sophia_engine::OutputPresentationCohort::all_prepared)
+                        .is_some_and(|cohort| cohort.all_prepared())
                     {
                         sophia_engine::OutputPresentationFailure::Submission
                     } else {

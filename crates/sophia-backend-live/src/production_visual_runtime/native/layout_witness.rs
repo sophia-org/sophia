@@ -35,7 +35,7 @@ impl SubmittedLayoutIdentity {
 
     pub(super) fn settle(
         self,
-        retirement: LiveProductionNativeFrameRetirement,
+        retirement: &LiveProductionNativeFrameRetirement,
         commit: &TransactionCommit,
     ) -> Option<LiveProductionRetiredLayoutWitness> {
         let retired = retirement.layout_witness?;
@@ -59,7 +59,7 @@ impl SubmittedLayoutIdentity {
 
     pub(super) fn settle_feedback(
         self,
-        retirement: LiveProductionNativeFrameRetirement,
+        retirement: &LiveProductionNativeFrameRetirement,
         commit: &TransactionCommit,
         feedback: &mut crate::LivePresentFeedbackOutcome,
     ) -> Option<LiveProductionRetiredLayoutWitness> {

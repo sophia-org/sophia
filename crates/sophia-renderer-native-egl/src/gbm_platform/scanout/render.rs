@@ -401,6 +401,8 @@ struct NativeCompositionRenderEvidence {
     /// Whether this render repainted the whole target or only its damage.
     repaint: NativeCompositionRepaintOutcome,
     repaint_pixels: u64,
+    full_reason: Option<NativeFullRepaintReason>,
+    stable_geometry: bool,
 }
 
 /// Ask the surface how old the buffer it just handed back is, in renders into
@@ -702,6 +704,8 @@ fn render_native_target_composition(
         buffer_age,
         repaint,
         repaint_pixels,
+        full_reason: frame.repaint.map_or(Some(NativeFullRepaintReason::NoTable), |table| table.full_reason_for_age(buffer_age.unwrap_or(0))),
+        stable_geometry: frame.repaint.is_some_and(NativeCompositionRepaintTable::stable_geometry),
         ..NativeCompositionRenderEvidence::default()
     };
     let result = draw_result

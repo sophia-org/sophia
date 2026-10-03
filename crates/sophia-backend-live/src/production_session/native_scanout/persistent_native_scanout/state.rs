@@ -684,7 +684,7 @@ pub fn advance_live_production_renderer_content(
     Ok(true)
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LiveProductionNativeFrameRetirement {
     pub output: OutputId,
     pub frame: LiveProductionNativeFrameId,
@@ -699,6 +699,7 @@ pub struct LiveProductionNativeFrameRetirement {
     pub layout_witness: Option<super::LiveProductionRetiredLayoutWitness>,
     pub ust: u64,
     pub msc: u64,
+    pub clocks: crate::LiveNativeRetirementClocks,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

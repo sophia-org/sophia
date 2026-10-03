@@ -2,6 +2,7 @@ fn dispatch_present_request(
     context: XDispatchContext,
     request: XWireRequest,
     runtime: &mut XAuthorityRuntime,
+    timed: bool,
 ) -> XDispatchFamilyResult {
     if !matches!(
         &request,
@@ -65,7 +66,7 @@ fn dispatch_present_request(
                             major_code: context.major_opcode,
                         })]
                     } else if let Err(error) =
-                        runtime.validate_dri3_drawable_access(context.namespace, window)
+                        runtime.validate_present_window(context.namespace, window)
                     {
                         vec![XClientOutput::Error(x_error_from_runtime(
                             error,
@@ -83,13 +84,13 @@ fn dispatch_present_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::Present(crate::XPresentRequest::PresentNotifyMsc { window, .. }) => {
+                XWireRequest::Present(crate::XPresentRequest::PresentNotifyMsc { window, serial, target_msc, divisor, remainder }) => {
                     // Void, like SelectInput: the answer is a CompleteNotify of
                     // kind NotifyMSC, delivered by the socket layer from the
-                    // presentation clock once this dispatch has validated the
-                    // window. Only the validation happens here.
+                    // presentation clock. Session retains timing here; a
+                    // standalone caller without clock service only validates.
                     let outputs = if let Err(error) =
-                        runtime.validate_dri3_drawable_access(context.namespace, window)
+                        runtime.validate_present_window(context.namespace, window)
                     {
                         vec![XClientOutput::Error(x_error_from_runtime(
                             error,
@@ -98,6 +99,22 @@ fn dispatch_present_request(
                             u16::from(crate::X_PRESENT_NOTIFY_MSC_MINOR_OPCODE),
                             u32::try_from(window.local.raw()).unwrap_or(0),
                         ))]
+                    } else if present_remainder_is_invalid(divisor, remainder) {
+                        vec![XClientOutput::Error(crate::XClientError {
+                            code: XErrorCode::BadValue,
+                            sequence: context.sequence,
+                            resource_id: remainder as u32,
+                            minor_code: u16::from(crate::X_PRESENT_NOTIFY_MSC_MINOR_OPCODE),
+                            major_code: context.major_opcode,
+                        })]
+                    } else if timed {
+                        let timing = crate::XPresentMscTiming::notify(target_msc, divisor, remainder)
+                            .expect("validated Present modulus");
+                        runtime.prepare_present_msc_notify_with_publication(context.client_id, context.transaction,
+                            context.namespace, window, serial, timing, crate::runtime::XPresentPublication::PendingWire)
+                            .err().map(|error| XClientOutput::Error(present_preparation_error(
+                                context, error, window, crate::X_PRESENT_NOTIFY_MSC_MINOR_OPCODE)))
+                            .into_iter().collect()
                     } else {
                         Vec::new()
                     };
@@ -135,70 +152,61 @@ fn dispatch_present_request(
                     x_offset,
                     y_offset,
                     options,
+                    target_msc,
                     divisor,
                     remainder,
                     ..
                 }) => {
-                    let invalid_value = target_crtc != 0
-                        || options & !0x0f != 0
-                        || (divisor == 0 && remainder != 0)
-                        || (divisor != 0 && remainder >= divisor);
-                    let validation = if invalid_value {
-                        Err(XAuthorityRuntimeError::InvalidResource)
-                    } else {
-                        let valid_region = XResourceId::new(u64::from(valid_region), 1);
-                        let update_region = XResourceId::new(u64::from(update_region), 1);
-                        runtime
-                            .validate_window_access(context.namespace, window)
-                            .and_then(|()| {
-                                valid_region
-                                    .is_valid()
-                                    .then_some(valid_region)
-                                    .map_or(Ok(()), |region| {
-                                        runtime.validate_xfixes_region_access(context.namespace, region)
-                                    })
-                            })
-                            .and_then(|()| {
-                                update_region
-                                    .is_valid()
-                                    .then_some(update_region)
-                                    .map_or(Ok(()), |region| {
-                                        runtime.validate_xfixes_region_access(context.namespace, region)
-                                    })
-                            })
-                            .and_then(|()| runtime.validate_pixmap_access(context.namespace, pixmap))
-                            .and_then(|()| {
-                                wait_fence.map_or(Ok(()), |fence| {
-                                    runtime.validate_dri3_fence_access(context.namespace, fence)
-                                })
-                            })
-                            .and_then(|()| {
-                                idle_fence.map_or(Ok(()), |fence| {
-                                    runtime.validate_dri3_fence_access(context.namespace, fence)
-                                })
-                            })
+                    let value_error = |value| crate::XClientError {
+                        code: XErrorCode::BadValue,
+                        sequence: context.sequence,
+                        resource_id: value,
+                        minor_code: u16::from(crate::X_PRESENT_PIXMAP_MINOR_OPCODE),
+                        major_code: context.major_opcode,
                     };
-                    if let Err(error) = validation {
-                        if std::env::var_os("SOPHIA_X11_AUTHORITY_TRACE").is_some() {
-                            tracing::warn!(
-                                "sophia_present_validation schema=1 sequence={} status=rejected invalid_field={} has_valid_region={} has_update_region={} has_wait_fence={} has_idle_fence={}",
-                                context.sequence,
-                                invalid_value,
-                                valid_region != 0,
-                                update_region != 0,
-                                wait_fence.is_some(),
-                                idle_fence.is_some(),
-                            );
+                    let resource_error = |error, id: XResourceId, missing| {
+                        let mut error = x_error_from_runtime(error, context.sequence,
+                            context.major_opcode, u16::from(crate::X_PRESENT_PIXMAP_MINOR_OPCODE),
+                            id.local.raw() as u32);
+                        if error.code == XErrorCode::BadWindow { error.code = missing; }
+                        error
+                    };
+                    // Match request validation order: window, pixmap, regions,
+                    // CRTC, fences, options, remainder. A bad scalar must not
+                    // conceal an earlier invalid resource.
+                    let validation = (|| {
+                        runtime.validate_present_window(context.namespace, window)
+                            .map_err(|e| resource_error(e, window, XErrorCode::BadWindow))?;
+                        runtime.validate_pixmap_access(context.namespace, pixmap)
+                            .map_err(|e| resource_error(e, pixmap, XErrorCode::BadPixmap))?;
+                        for region in [valid_region, update_region] {
+                            if region != 0 {
+                                let id = XResourceId::new(u64::from(region), 1);
+                                runtime.validate_xfixes_region_access(context.namespace, id)
+                                    .map_err(|e| resource_error(e, id, XErrorCode::BadValue))?;
+                            }
                         }
+                        // Explicit CRTC selection remains unsupported.
+                        if target_crtc != 0 { return Err(value_error(target_crtc)); }
+                        for fence in [wait_fence, idle_fence].into_iter().flatten() {
+                            runtime.validate_dri3_fence_access(context.namespace, fence)
+                                .map_err(|e| resource_error(e, fence, XErrorCode::BadValue))?;
+                        }
+                        // Version 1.2 has no AsyncMayTear. UST conversion is
+                        // required even without CapabilityUST; until supplied,
+                        // refuse it rather than interpreting microseconds as MSC.
+                        if options & !0x0f != 0 || options & (1 << 2) != 0 {
+                            return Err(value_error(options));
+                        }
+                        if present_remainder_is_invalid(divisor, remainder) {
+                            return Err(value_error(remainder as u32));
+                        }
+                        Ok(())
+                    })();
+                    if let Err(error) = validation {
                         return Handled(XDispatchResult {
                             response: None,
-                            outputs: vec![XClientOutput::Error(x_error_from_runtime(
-                                error,
-                                context.sequence,
-                                context.major_opcode,
-                                u16::from(crate::X_PRESENT_PIXMAP_MINOR_OPCODE),
-                                u32::try_from(pixmap.local.raw()).unwrap_or(0),
-                            ))],
+                            outputs: vec![XClientOutput::Error(error)],
                             metadata_candidates: Vec::new(),
                         });
                     }
@@ -220,6 +228,28 @@ fn dispatch_present_request(
                         })
                         .transpose()
                         .expect("validated Present update region must remain available");
+                    if timed {
+                        let prepared = runtime.prepare_standard_pixmap_with_publication(context.client_id, transaction,
+                            context.namespace, window, pixmap, (x_offset, y_offset), (valid_region,
+                            update_region), crate::XPresentFenceResources { wait: wait_fence, idle: idle_fence },
+                            crate::runtime::XPresentPublication::PendingWire);
+                        let outputs = if let Err(error) = prepared {
+                            vec![XClientOutput::Error(present_preparation_error(
+                                context, error, window, crate::X_PRESENT_PIXMAP_MINOR_OPCODE))]
+                        } else {
+                            let timing = crate::XPresentMscTiming::new(target_msc, divisor, remainder, options & 1 != 0)
+                                .expect("validated Present modulus");
+                            // This fresh, unscheduled preparation has a unique ticket.
+                            if let Err(error) = runtime.request_prepared_present_clock(transaction, timing) {
+                                runtime.cancel_prepared_standard_pixmap(transaction);
+                                debug_assert!(false, "fresh Present timing admission failed: {error:?}");
+                                vec![XClientOutput::Error(crate::XClientError {
+                                    code: XErrorCode::BadAlloc, ..value_error(window.local.raw() as u32)
+                                })]
+                            } else { Vec::new() }
+                        };
+                        return Handled(XDispatchResult { response: None, outputs, metadata_candidates: Vec::new() });
+                    }
                     let response = runtime.present_standard_pixmap(
                         transaction,
                         context.namespace,
@@ -250,4 +280,24 @@ fn dispatch_present_request(
                 }
         _ => unreachable!("request family checked before dispatch"),
     })
+}
+
+fn present_remainder_is_invalid(divisor: u64, remainder: u64) -> bool {
+    if divisor == 0 { remainder != 0 } else { remainder >= divisor }
+}
+
+fn present_preparation_error(context: XDispatchContext, error: crate::XPresentPreparationError,
+    window: XResourceId, minor: u8) -> crate::XClientError
+{
+    if let crate::XPresentPreparationError::Invalid(error) = error {
+        return x_error_from_runtime(error, context.sequence, context.major_opcode,
+            u16::from(minor), window.local.raw() as u32);
+    }
+    debug_assert_ne!(error, crate::XPresentPreparationError::DuplicateTransaction,
+        "fresh Present request reused an authority ticket");
+    crate::XClientError {
+        code: XErrorCode::BadAlloc, sequence: context.sequence,
+        resource_id: window.local.raw() as u32, minor_code: u16::from(minor),
+        major_code: context.major_opcode,
+    }
 }

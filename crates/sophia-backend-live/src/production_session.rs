@@ -329,6 +329,8 @@ pub struct LivePresentFeedbackOutcome {
     pub idle_fence_triggered: bool,
     /// Historical evidence attached to this outcome's exact Complete, never a permit.
     pub layout_comparison: Option<Box<LivePresentLayoutComparison>>,
+    /// Real samples belonging to this request, across every retiring output.
+    pub clocks: crate::LiveNativeRetirementClocks,
 }
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
@@ -455,6 +457,7 @@ impl LiveProductionPresentFeedbackCoordinator {
             }],
             idle_fence_triggered: false,
             layout_comparison: None,
+            clocks: Default::default(),
         })
     }
 
@@ -486,6 +489,7 @@ impl LiveProductionPresentFeedbackCoordinator {
             }],
             idle_fence_triggered: false,
             layout_comparison: None,
+            clocks: Default::default(),
         })
     }
 
@@ -502,6 +506,7 @@ impl LiveProductionPresentFeedbackCoordinator {
             idle_fence_triggered: retirement.idle_fence
                 == sophia_renderer_live::LiveIdleFenceStatus::Triggered,
             layout_comparison: None,
+            clocks: Default::default(),
         })
     }
 
@@ -564,6 +569,7 @@ impl LiveProductionPresentFeedbackCoordinator {
             },
             idle_fence_triggered,
             layout_comparison: None,
+            clocks: Default::default(),
         }
     }
 }

@@ -142,7 +142,29 @@ pub fn dispatch_x11_wire_request(
     atoms: &mut XAtomTable,
     properties: &mut XPropertyTable,
 ) -> XDispatchResult {
-    let mut result = dispatch_x11_wire_request_inner(context, request, runtime, atoms, properties);
+    dispatch_x11_wire_request_with_present_timing(
+        context, request, runtime, atoms, properties, false,
+    )
+}
+
+/// Routed Session callers supply the clock service; standalone dispatch keeps
+/// its immediate behavior. The decision is fixed before a request is served.
+pub(crate) fn dispatch_x11_wire_request_with_present_timing(
+    context: XDispatchContext,
+    request: XWireRequest,
+    runtime: &mut XAuthorityRuntime,
+    atoms: &mut XAtomTable,
+    properties: &mut XPropertyTable,
+    timed_present: bool,
+) -> XDispatchResult {
+    let mut result = dispatch_x11_wire_request_inner(
+        context,
+        request,
+        runtime,
+        atoms,
+        properties,
+        timed_present,
+    );
     // A request that made the focus window unviewable moved the focus by
     // itself. What that owes belongs with this request's own output, because
     // the protocol orders a reversion's FocusOut after the UnmapNotify that
@@ -162,6 +184,7 @@ fn dispatch_x11_wire_request_inner(
     runtime: &mut XAuthorityRuntime,
     atoms: &mut XAtomTable,
     properties: &mut XPropertyTable,
+    timed_present: bool,
 ) -> XDispatchResult {
     runtime.begin_dispatch();
     let request = match dispatch_xfixes_request(context, request, runtime, atoms) {
@@ -200,7 +223,7 @@ fn dispatch_x11_wire_request_inner(
         Handled(result) => return result,
         Unhandled(request) => request,
     };
-    let request = match dispatch_present_request(context, request, runtime) {
+    let request = match dispatch_present_request(context, request, runtime, timed_present) {
         Handled(result) => return result,
         Unhandled(request) => request,
     };

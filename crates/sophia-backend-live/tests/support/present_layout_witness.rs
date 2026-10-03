@@ -75,6 +75,7 @@ fn submitted(
 fn retirement() -> LiveProductionNativeFrameRetirement {
     let head = RenderHeadId::from_raw(2);
     LiveProductionNativeFrameRetirement {
+        clocks: Default::default(),
         output: OUTPUT,
         frame: FRAME,
         submission: 3,
@@ -130,6 +131,7 @@ fn copied_feedback() -> crate::LivePresentFeedbackOutcome {
         ],
         idle_fence_triggered: true,
         layout_comparison: None,
+        clocks: Default::default(),
     }
 }
 
@@ -146,7 +148,7 @@ fn a_copied_layout_comparison_belongs_to_its_exact_committed_present() {
     let mut feedback = copied_feedback();
     let before = feedback.clone();
     assert_eq!(
-        identity.settle_feedback(retired, &commit, &mut feedback),
+        identity.settle_feedback(&retired, &commit, &mut feedback),
         retired.layout_witness
     );
     assert_eq!(feedback.feedback, before.feedback);
@@ -179,7 +181,7 @@ fn retirement_of_a_stale_engine_candidate_cannot_publish_a_layout_comparison() {
     let before = feedback.clone();
     assert!(
         identity
-            .settle_feedback(retirement(), &stale, &mut feedback)
+            .settle_feedback(&retirement(), &stale, &mut feedback)
             .is_none()
     );
     assert_eq!(feedback, before);
@@ -217,7 +219,7 @@ fn layout_evidence_never_relabels_an_unrelated_or_noncopy_completion() {
         let before = feedback.clone();
         assert!(
             identity
-                .settle_feedback(retirement(), &commit, &mut feedback)
+                .settle_feedback(&retirement(), &commit, &mut feedback)
                 .is_none(),
             "case {case}"
         );
@@ -280,7 +282,7 @@ fn mismatched_retirement_image_transaction_output_or_disposition_is_inconclusive
             12 => commit.outcome = TransactionOutcome::TimedOut,
             _ => unreachable!(),
         }
-        assert!(identity.settle(retired, &commit).is_none(), "case {case}");
+        assert!(identity.settle(&retired, &commit).is_none(), "case {case}");
     }
 }
 
@@ -300,7 +302,7 @@ fn a_retained_image_cannot_impersonate_another_presents_source() {
         .unwrap()
         .witness
         .source_image = LiveRendererImageId::from_raw(72);
-    assert!(identity.settle(retired, &commit).is_none());
+    assert!(identity.settle(&retired, &commit).is_none());
 }
 
 #[test]

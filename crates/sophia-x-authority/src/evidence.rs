@@ -49,57 +49,7 @@ pub(crate) fn window_dispatch(
     }
 }
 
-pub(crate) fn present_accepted(
-    client: XServerFrontendClientId,
-    transaction: sophia_protocol::TransactionId,
-    window: XResourceId,
-    pixmap: XResourceId,
-    serial: u32,
-    pending: usize,
-) {
-    tracing::debug!(target: "sophia_application_evidence",
-        "sophia_x_present_submission schema=1 client={} transaction={} window_token={} pixmap_token={} serial={} pending_count={} status=accepted",
-        client.raw(), transaction.raw(), token(window), token(pixmap), serial, pending,
-    );
-}
+pub(crate) use present::{accepted as present_accepted, delivery as present_event};
 
-/// A writer records `written` only after write_all and flush succeed. Queue
-/// admission is a separate observation, never a claim of peer consumption.
-pub(crate) fn present_event(
-    client: XServerFrontendClientId,
-    transaction: Option<sophia_protocol::TransactionId>,
-    status: &'static str,
-    event: XClientEvent,
-) {
-    let (sequence, event_id, window, serial, kind, pixmap) = match event {
-        XClientEvent::PresentCompleteNotify {
-            sequence,
-            event_id,
-            window,
-            serial,
-            kind,
-            ..
-        } => (
-            sequence,
-            event_id,
-            window,
-            serial,
-            if kind == 0 { "complete" } else { "msc" },
-            None,
-        ),
-        XClientEvent::PresentIdleNotify {
-            sequence,
-            event_id,
-            window,
-            serial,
-            pixmap,
-            ..
-        } => (sequence, event_id, window, serial, "idle", Some(pixmap)),
-        _ => return,
-    };
-    tracing::debug!(target: "sophia_application_evidence",
-        "sophia_x_present_delivery schema=1 client={} transaction={} sequence={} window_token={} subscription_token={} pixmap_token={} serial={} kind={} status={}",
-        client.raw(), transaction.map_or(0, |id| id.raw()), sequence,
-        token(window), token(event_id), pixmap.map_or(0, token), serial, kind, status,
-    );
-}
+mod present;
+pub use present::{PresentEvidenceScope, aggregate_present_evidence, flush_present_evidence};

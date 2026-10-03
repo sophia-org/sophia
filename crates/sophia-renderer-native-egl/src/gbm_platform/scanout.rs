@@ -15,6 +15,7 @@ mod output_format;
 use output_format::CompositionFormatAdmission;
 mod snapshot_custody;
 mod types;
+use super::{NativeCompositionRepaintTable, NativeFullRepaintReason};
 use output_candidates::{RenderedScanoutCandidate, rendered_scanout_candidates};
 pub use snapshot_custody::*;
 

@@ -119,6 +119,9 @@ pub struct ShellComponentTransport {
     negotiation: Option<negotiation_service::PendingNegotiation>,
     capabilities: u64,
     peer_closed: bool,
+    /// Session explicitly services input once at the start of each owner pass.
+    /// Later role visits share that input and only flush new publications.
+    owner_serviced: bool,
     /// Typed Session-to-client records not yet in a wire's custody.
     output: outbox::ShellOutbox,
     /// The last turn left records queued because the journal was full. Only
@@ -155,6 +158,7 @@ impl ShellComponentTransport {
             negotiation: None,
             capabilities: 0,
             peer_closed: false,
+            owner_serviced: false,
             output: outbox::ShellOutbox::default(),
             output_blocked: false,
             action_cancellations: Vec::with_capacity(16),
@@ -205,6 +209,7 @@ impl ShellComponentTransport {
             self.file_qids = next;
         }
         self.negotiation = None;
+        self.owner_serviced = false;
         self.output.clear();
         self.output_blocked = false;
         self.action_cancellations.clear();
@@ -305,7 +310,28 @@ impl ShellComponentTransport {
             .map_err(Into::into)
     }
 
-    /// Bounded, nonblocking 9P turns around FIFO-to-journal handoff.
+    /// Starts an owner pass. Call once per pass, before visiting any roles.
+    /// Requests arriving afterwards remain level-ready for the next pass.
+    pub fn service_owner_turn(
+        &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
+    ) -> Result<(), ShellTransportError> {
+        self.owner_serviced = false;
+        self.poll_io(epochs)?;
+        self.owner_serviced = true;
+        Ok(())
+    }
+
+    /// Number of actual 9P services (input turns and publication flushes) in
+    /// the current connection, including negotiation.
+    /// This measures transport work, independently of the number of role visits.
+    pub fn wire_turn_count(&self) -> u64 {
+        self.wire.as_ref().map_or(0, |files| files.turn_count())
+    }
+
+    /// Bounded, nonblocking FIFO-to-journal handoff. After `service_owner_turn`
+    /// opts into owner passes, role visits consume buffered input and flush new
+    /// publications. Standalone callers continue to serve input on every call.
     pub fn poll_io(
         &mut self,
         epochs: &mut crate::ContentEpochRegistry,
@@ -320,7 +346,12 @@ impl ShellComponentTransport {
         self.flush_native_accept(epochs)?;
         let (closed, blocked) = match self.wire.as_mut() {
             None => return Err(ShellTransportError::NotConnected),
-            Some(files) => Self::turn_files(files, &mut self.output)?,
+            Some(files) => Self::turn_files(
+                files,
+                &mut self.output,
+                !self.owner_serviced,
+                std::time::Instant::now(),
+            )?,
         };
         self.output_blocked = blocked;
         if closed {
@@ -389,22 +420,34 @@ impl ShellComponentTransport {
         Ok(true)
     }
 
-    /// File wire service: serve ready 9P requests, move queued records into
-    /// the journal in FIFO order, then serve again so waiting reads see them.
+    /// File wire service: optionally serve ready 9P requests, move queued
+    /// records into the journal, and flush only when a publication needs it.
     /// Returns whether the peer ended its connection, and whether records
     /// remain queued behind a full journal.
     fn turn_files(
         files: &mut files::ShellFileWire,
         output: &mut outbox::ShellOutbox,
+        serve_input: bool,
+        now: std::time::Instant,
     ) -> Result<(bool, bool), ShellTransportError> {
-        match files.turn() {
-            Err(ShellTransportError::NotConnected) => return Ok((true, false)),
-            Err(error) => return Err(error),
-            Ok(()) => {}
+        if serve_input {
+            match files.turn() {
+                Err(ShellTransportError::NotConnected) => return Ok((true, false)),
+                Err(error) => return Err(error),
+                Ok(()) => {}
+            }
         }
         let blocked = !Self::drain_file_output(files, output)?;
-        files.check_ack_progress(blocked, std::time::Instant::now())?;
-        match files.turn() {
+        // A role-only visit cannot decide that a peer stopped acknowledging:
+        // its next acknowledgement may still be waiting in the socket. Judge
+        // the deadline only after the owner has serviced input.
+        if serve_input {
+            files.check_ack_progress(blocked, now)?;
+        }
+        if !files.publication_pending() {
+            return Ok((false, blocked));
+        }
+        match files.flush() {
             Err(ShellTransportError::NotConnected) => Ok((true, blocked)),
             Err(error) => Err(error),
             Ok(()) => Ok((false, blocked)),

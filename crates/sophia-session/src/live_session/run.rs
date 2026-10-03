@@ -356,7 +356,7 @@ pub(crate) fn run_persistent_xterm_session(
                 .expect("session control route capacity is nonzero"),
             NonZeroUsize::new(SESSION_PRESENT_PROTOCOL_CAPACITY)
                 .expect("session protocol route capacity is nonzero"),
-            NonZeroUsize::new(SESSION_KEY_CAPACITY)
+            NonZeroUsize::new(sophia_x_authority::X_PRESENT_PER_CLIENT_CAPACITY)
                 .expect("session presentation route capacity is nonzero"),
         ),
         control_ack_sender,
@@ -364,7 +364,11 @@ pub(crate) fn run_persistent_xterm_session(
         route_lease_update_sender,
         config.xkb_config.clone(),
     )?
-    .with_explicit_pointer_grab_client(explicit_pointer_grab_client);
+    .with_explicit_pointer_grab_client(explicit_pointer_grab_client)
+    // Session binds timed requests even before native startup or while frame
+    // service is quarantined. Publication wakes the owner only after its
+    // authority ticket is committed; binding then wakes the frontend.
+    .with_present_clock_admission(owner_wake.notifier());
     // Control receipts, metadata candidates and lease updates ring the owner.
     broker.set_owner_wake(owner_wake.notifier());
     let metadata_candidate_receiver = broker
@@ -375,7 +379,7 @@ pub(crate) fn run_persistent_xterm_session(
         SESSION_KEY_CAPACITY,
         SESSION_CONTROL_CAPACITY,
         SESSION_PRESENT_PROTOCOL_CAPACITY,
-        SESSION_KEY_CAPACITY,
+        sophia_x_authority::X_PRESENT_PER_CLIENT_CAPACITY,
     );
     let input_sender = broker.routed_input_sender();
     let xtest_evidence = Arc::new(x_frontend::xtest::LiveXTestEvidence::default());
@@ -400,6 +404,7 @@ pub(crate) fn run_persistent_xterm_session(
     let control_sender = broker.control_router();
     let raster_sender = broker.raster_router();
     let protocol_router = broker.protocol_router();
+    let present_clock_router = broker.present_clock_router();
     let (service_command_sender, service_command_receiver) = sync_channel(1);
     let service_command_sender =
         sophia_wake::SignalSender::new(service_command_sender, frontend_service_wake);
@@ -833,6 +838,7 @@ pub(crate) fn run_persistent_xterm_session(
             client_render_devices,
             xauthority: xauthority.path(),
             protocol_router,
+            present_clock_router,
             input_proof_result: input_proof_result.as_ref(),
             client_stdout_capture: client_stdout_capture.as_ref(),
             require_startup_focus: false,

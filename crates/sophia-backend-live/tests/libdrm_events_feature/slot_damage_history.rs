@@ -290,29 +290,25 @@ fn slot_damage_history_owes_nothing_for_a_scene_its_buffer_already_holds() {
 }
 
 #[test]
-fn worker_slot_damage_disabled_offers_no_table() {
+fn worker_slot_damage_disabled_records_a_full_reason() {
     let mut damage = WorkerSlotDamage::with_enabled(false);
     let snapshot = slot_damage_snapshot([1, 1, 1, 1]);
     damage.settle(slot(0), true, Some(7), Some(snapshot.clone()));
 
-    assert!(
-        damage
-            .repaint_table(slot(0), Some(&snapshot), SLOT_DAMAGE_OUTPUT)
-            .is_none()
-    );
+    let table = damage.repaint_table(slot(0), Some(&snapshot), SLOT_DAMAGE_OUTPUT).unwrap();
+    assert_eq!(table.full_reason_for_age(1), Some(sophia_renderer_live::NativeFullRepaintReason::Disabled));
+    assert!(table.damage_for_age(1).is_none());
 }
 
 #[test]
-fn worker_slot_damage_offers_a_table_only_with_history() {
+fn worker_slot_damage_preserves_missing_history_in_the_table() {
     let mut damage = WorkerSlotDamage::with_enabled(true);
     let first = slot_damage_snapshot([1, 1, 1, 1]);
     let second = slot_damage_snapshot([2, 1, 1, 1]);
 
-    assert!(
-        damage
-            .repaint_table(slot(0), Some(&first), SLOT_DAMAGE_OUTPUT)
-            .is_none()
-    );
+    let table = damage.repaint_table(slot(0), Some(&first), SLOT_DAMAGE_OUTPUT).unwrap();
+    assert_eq!(table.full_reason_for_age(1), Some(sophia_renderer_live::NativeFullRepaintReason::NoHistory));
+    assert!(table.damage_for_age(1).is_none());
 
     damage.settle(slot(0), true, Some(7), Some(first.clone()));
     let table = damage
@@ -357,12 +353,62 @@ fn worker_slot_damage_invalidates_a_failed_write() {
 
     damage.settle(slot(0), false, Some(7), Some(snapshot.clone()));
 
-    assert!(
-        damage
-            .repaint_table(slot(0), Some(&snapshot), SLOT_DAMAGE_OUTPUT)
-            .is_none(),
-        "a write that did not complete leaves nothing to repaint against"
-    );
+    let table = damage.repaint_table(slot(0), Some(&snapshot), SLOT_DAMAGE_OUTPUT).unwrap();
+    assert_eq!(table.full_reason_for_age(1), Some(sophia_renderer_live::NativeFullRepaintReason::NoHistory));
+    assert!(table.damage_for_age(1).is_none(), "a failed write leaves nothing to repaint against");
+}
+
+#[test]
+fn stable_geometry_cohort_is_independent_of_client_damage_and_buffer_age() {
+    let mut damage = WorkerSlotDamage::with_enabled(true);
+    let first = slot_damage_snapshot([1, 1, 1, 1]);
+    let current = slot_damage_snapshot([2, 1, 1, 1]);
+    damage.settle(slot(0), true, Some(7), Some(first));
+    let table = damage.repaint_table(slot(0), Some(&current), SLOT_DAMAGE_OUTPUT).unwrap();
+    assert!(table.stable_geometry());
+    assert!(table.damage_for_age(0).is_none());
+    assert_eq!(table.full_reason_for_age(0), Some(sophia_renderer_live::NativeFullRepaintReason::UnknownAge));
+
+    for change in 0..6 {
+        let mut changed = current.clone();
+        match change {
+            0 => changed.surfaces[0].geometry.x += 1,
+            1 => changed.surfaces[0].logical_geometry.x += 1,
+            2 => changed.surfaces[0].source_size.width *= 2,
+            3 => changed.surfaces.swap(0, 1),
+            4 => changed.software_cursor = Some(tile(0)),
+            5 => changed.output.scale = 2,
+            _ => unreachable!(),
+        }
+        assert!(!damage.repaint_table(slot(0), Some(&changed), SLOT_DAMAGE_OUTPUT).unwrap().stable_geometry());
+    }
+}
+
+#[test]
+#[ignore = "qualification: measure the metadata comparison in a release build"]
+fn stable_geometry_comparison_cost() {
+    use std::{hint::black_box, time::Instant};
+    for surfaces in [4, 1024] {
+        let mut snapshot = slot_damage_snapshot([1, 1, 1, 1]);
+        let prototype = snapshot.surfaces[0];
+        snapshot.surfaces = (1..=surfaces).map(|index| sophia_engine::OutputFrameSurfaceState {
+            surface: sophia_protocol::SurfaceId::new(index, 1), ..prototype
+        }).collect();
+        snapshot.compositor_display_list = sophia_engine::CompositorDamageList {
+            output: snapshot.output.id,
+            commands: snapshot.surfaces.iter().map(|surface| sophia_engine::CompositorDisplayCommand::Surface { surface: surface.surface }).collect(),
+        };
+        let mut history = LiveRendererSlotDamageHistory::new();
+        history.record(slot(0), snapshot.clone());
+        let iterations = 100_000u32;
+        for run in 0..3 {
+            let start = Instant::now();
+            for _ in 0..iterations {
+                assert!(black_box(&history).stable_geometry(slot(0), black_box(&snapshot)));
+            }
+            println!("stable_geometry_cost run={run} surfaces={surfaces} iterations={iterations} elapsed_nsec={}", start.elapsed().as_nanos());
+        }
+    }
 }
 
 #[test]

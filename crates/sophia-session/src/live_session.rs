@@ -104,6 +104,7 @@ use metadata_shell::live_shell_activation_surfaces;
 mod native_retirement;
 mod native_session_evidence;
 mod owner_wake;
+mod present_clock;
 use owner_wake::{OwnerWake, SessionSender};
 mod visual_progress;
 use native_session_evidence::{NativeEvidenceSnapshot, NativeSessionEvidence};
@@ -119,9 +120,9 @@ use authority_file::{LiveXAuthorityFile, fill_session_random};
 use metadata_broker::LiveMetadataBroker;
 use metadata_shell::{LiveMetadataShell, LiveMetadataShellPoll};
 use native_retirement::{
-    NativePresentRetirementObservation, correlate_physical_input_page_flip,
-    record_discarded_presents, record_native_present_retirement,
-    record_native_software_present_retirement,
+    NativePresentEvidence, NativePresentRecording, NativePresentRetirementObservation,
+    correlate_physical_input_page_flip, record_discarded_presents,
+    record_native_present_retirement, record_native_software_present_retirement,
 };
 use policy_transport_worker::{
     PolicyTransportCommand, PolicyTransportEvent, PolicyTransportWorker,

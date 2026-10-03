@@ -21,6 +21,7 @@ fn feedback(transaction: u64) -> LivePresentFeedbackOutcome {
         ],
         idle_fence_triggered: false,
         layout_comparison: None,
+        clocks: Default::default(),
     }
 }
 

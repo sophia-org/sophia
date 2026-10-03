@@ -350,9 +350,9 @@ fn launch_outcome<T>(
     handle.join().expect("the launch thread returned")
 }
 
-/// Every telemetry report an observer saw: its kind and the client it named.
+/// Full flow-control evidence, including the ticket that actually waited.
 type SeenTelemetry =
-    Arc<Mutex<Vec<(XAuthorityBackpressureTelemetryKind, Option<XServerFrontendClientId>)>>>;
+    Arc<Mutex<Vec<XAuthorityBackpressureTelemetry>>>;
 
 /// A production-typed observer that records every telemetry kind it sees and
 /// panics for one kind, only on one thread.
@@ -364,7 +364,7 @@ fn recording_observer(
     Arc::new(move |telemetry: XAuthorityBackpressureTelemetry| {
         seen.lock()
             .expect("a writable record")
-            .push((telemetry.kind, telemetry.client));
+            .push(telemetry);
         let here = only_on
             .lock()
             .ok()
@@ -384,7 +384,7 @@ fn saw_kind(
     seen.lock()
         .expect("a readable record")
         .iter()
-        .any(|(seen, client)| *seen == kind && (!with_client || client.is_some()))
+        .any(|event| event.kind == kind && (!with_client || event.client.is_some()))
 }
 
 /// The SERVICE's own raster wait: kind Wait with no client, reported after
@@ -394,7 +394,7 @@ fn saw_service_wait(seen: &SeenTelemetry, from: usize) -> bool {
         .expect("a readable record")
         .iter()
         .skip(from)
-        .any(|(kind, client)| *kind == XAuthorityBackpressureTelemetryKind::Wait && client.is_none())
+        .any(|event| event.kind == XAuthorityBackpressureTelemetryKind::Wait && event.client.is_none())
 }
 
 /// The parts of a launch the test thread needs while a pre-built frontend
@@ -848,8 +848,8 @@ fn an_unwind_joins_every_worker_before_the_private_frontend_is_finalised() {
     } = launch_held(socket_path.clone(), namespace, 1, observer, service_thread);
     let mut client = connect_private_client(&socket_path);
     handshake(&mut client);
-    let surface = draw_and_learn_surface(&mut client, &transactions);
-    assert!(waited_for(|| saw_kind(&seen, XAuthorityBackpressureTelemetryKind::Wait, true)));
+    let drawn = draw_and_learn_surface(&mut client, &transactions, &seen);
+    let waits_before = seen.lock().expect("readable").len();
     // As in the error case: the attached worker's home is held, so its
     // departure visit cannot finish while the hold stands.
     let custody = wait_attached(&handles.registry);
@@ -861,8 +861,9 @@ fn an_unwind_joins_every_worker_before_the_private_frontend_is_finalised() {
         .expect("a readable home");
     handles
         .raster
-        .try_route(raster_requirement_for(surface))
+        .try_route(raster_requirement_for(drawn))
         .expect("the requirement is queued");
+    assert_service_wait(&seen, waits_before);
     let client_ended = eof_within(&mut client, 3);
     let returned_while_held = finished.recv_timeout(Duration::from_secs(1)).is_ok();
     let accepting_while_held = lifecycle_still_accepting(&handles.registry);

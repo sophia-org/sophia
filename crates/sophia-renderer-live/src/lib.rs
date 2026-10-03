@@ -12,8 +12,9 @@ pub use sophia_protocol::{BufferSource, Size};
 /// with the renderer itself, which is optional.
 #[cfg(feature = "gbm-probe")]
 pub use sophia_renderer_native_egl::{
-    NATIVE_IMAGE_IMPORT_DEVICE_CAPACITY, NativeCompositionDamageRect,
-    NativeCompositionRepaintTable, NativeFrameTargetSetId, NativeImageTransferStats,
+    NATIVE_IMAGE_IMPORT_DEVICE_CAPACITY, NativeCompositionDamageRect, NativeCompositionDamageStats,
+    NativeCompositionRepaintTable, NativeFrameTargetSetId, NativeFullRepaintReason,
+    NativeImageTransferStats, NativeRepaintPlan,
 };
 #[cfg(feature = "gbm-probe")]
 pub use sophia_renderer_native_egl::{

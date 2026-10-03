@@ -14,6 +14,7 @@ type CpuCycleOutcome = (
 );
 
 mod authority;
+mod background_present;
 mod composition_target;
 #[cfg(any(test, feature = "test-support"))]
 #[allow(dead_code)]

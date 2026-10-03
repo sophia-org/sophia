@@ -442,7 +442,7 @@ impl PresentScene {
                     surface: self.application,
                     image: sophia_renderer_live::LiveRendererImageId::from_raw(PRESENT_IMAGE),
                     first_presentation,
-                    paced_interval: Duration::from_millis(16),
+                    paced_interval: super::super::background_present::BACKGROUND_PRESENT_INTERVAL,
                 },
                 &committed,
                 frames,
@@ -557,9 +557,9 @@ fn assert_skipped_and_released(scene: &mut PresentScene, transaction: Transactio
 /// Production owner path, existing visible surface: a displayed application
 /// whose output a presentation replaces, without a preview of it, Presents.
 /// The driver's settlement queues the clearing repaint on the target and
-/// parks the Present to the next frame tick, where the runtime's service
+/// parks the Present to the background deadline, where the runtime's service
 /// rejects it as Skipped and retires it; each repeated hidden Present takes
-/// the same one-frame path; withdrawal restores capture.
+/// the same bounded path; withdrawal restores capture.
 #[test]
 fn a_hidden_present_of_a_visible_surface_repaints_parks_and_retires_until_restored() {
     let mut scene = present_scene();
@@ -567,7 +567,7 @@ fn a_hidden_present_of_a_visible_surface_repaints_parks_and_retires_until_restor
     let preview = shown_instance(scene.output, 2, 1, scene.previewed, rect(40, 4, 8, 8));
     scene.replace_with(vec![preview]);
     for (round, id) in [900_u64, 901].into_iter().enumerate() {
-        let now = start + Duration::from_millis(40 * round as u64);
+        let now = start + Duration::from_secs(2 * round as u64);
         let (transaction, candidate) = scene.queue_present(id, now);
         scene.settle(transaction, candidate, false, now);
         if round == 0 {
@@ -584,7 +584,19 @@ fn a_hidden_present_of_a_visible_surface_repaints_parks_and_retires_until_restor
         scene.target.drain();
         scene
             .runtime
-            .service_first_visibility_presentations(now + Duration::from_millis(20));
+            .service_first_visibility_presentations(now + Duration::from_millis(999));
+        assert_eq!(scene.runtime.present_scheduler.frame_tick_parked(), 1);
+        assert!(
+            scene
+                .runtime
+                .presentation_feedback
+                .resources()
+                .state(transaction)
+                .is_some()
+        );
+        scene
+            .runtime
+            .service_first_visibility_presentations(now + Duration::from_secs(1));
         assert_skipped_and_released(&mut scene, transaction);
     }
     scene
@@ -596,6 +608,248 @@ fn a_hidden_present_of_a_visible_surface_repaints_parks_and_retires_until_restor
         restored,
         "withdrawn, the application's Present is captured again"
     );
+}
+
+#[test]
+fn an_uncaptured_present_with_old_visible_geometry_does_not_release_each_pass() {
+    let mut scene = present_scene();
+    let now = Instant::now();
+    let (transaction, key) = scene.queue_present(980, now);
+    let committed = scene.runtime.committed_surfaces().to_vec();
+    // Simulate the driver's no-capture result for a candidate that scrolled
+    // out, while the scene still retains its last committed onscreen geometry.
+    // The predicate is deliberately true: the capture verdict is authoritative.
+    assert!(
+        !scene
+            .runtime
+            .background_visible_surfaces([(scene.application, rect(-1000, 0, 16, 16))])
+            .is_empty()
+    );
+    scene
+        .runtime
+        .settle_uncaptured_present(
+            &mut scene.target,
+            crate::production_visual_runtime::present::UncapturedPresent {
+                transaction,
+                candidate: key,
+                surface: scene.application,
+                image: sophia_renderer_live::LiveRendererImageId::from_raw(PRESENT_IMAGE),
+                first_presentation: false,
+                paced_interval: super::super::background_present::BACKGROUND_PRESENT_INTERVAL,
+            },
+            &committed,
+            Vec::new(),
+            now,
+        )
+        .unwrap();
+    for ms in [1, 10, 100, 999] {
+        scene
+            .runtime
+            .service_first_visibility_presentations(now + Duration::from_millis(ms));
+        assert_eq!(scene.runtime.present_scheduler.frame_tick_parked(), 1);
+        assert!(
+            scene
+                .runtime
+                .presentation_feedback
+                .resources()
+                .state(transaction)
+                .is_some()
+        );
+    }
+    scene
+        .runtime
+        .service_first_visibility_presentations(now + Duration::from_secs(1));
+    assert_skipped_and_released(&mut scene, transaction);
+}
+
+#[test]
+fn background_visibility_respects_clipping_routing_and_withheld_tiers() {
+    let mut scene = present_scene();
+    let geometry = rect(0, 0, 16, 16);
+    assert!(
+        scene
+            .runtime
+            .background_surface_is_visible(scene.application, geometry, 0.0)
+    );
+    // Merely overlapping the neighbour does not route a managed window there.
+    let neighbour = scene
+        .runtime
+        .outputs
+        .logical_viewport(OutputId::from_raw(2))
+        .unwrap();
+    assert!(
+        !scene
+            .runtime
+            .background_surface_is_visible(scene.application, neighbour, 0.0)
+    );
+    scene.runtime.surface_outputs.remove(&scene.application);
+    scene
+        .runtime
+        .geometry_routed_surfaces
+        .insert(scene.application);
+    assert!(
+        scene
+            .runtime
+            .background_surface_is_visible(scene.application, neighbour, 0.0)
+    );
+    scene.runtime.geometry_routed_surfaces.clear();
+    scene
+        .runtime
+        .surface_outputs
+        .insert(scene.application, scene.output);
+
+    let mut instance = shown_instance(scene.output, 2, 1, scene.application, rect(2, 2, 8, 8));
+    for (opacity, clip, expected) in [
+        (1_000, rect(2, 2, 8, 8), true),
+        (0, rect(2, 2, 8, 8), false),
+        (1_000, rect(40, 2, 8, 8), false),
+    ] {
+        instance.opacity_millis = opacity;
+        instance.clip = clip;
+        // Use the already admitted shape to isolate the lowerer's visibility
+        // decision; invalid/offscreen clips do not make a hidden source visible.
+        scene.runtime.policy_presentation = Some(published(
+            2,
+            vec![presentation_output(
+                scene.output,
+                PolicyPresentationMode::ReplaceApplications,
+            )],
+            vec![instance],
+            vec![],
+        ));
+        assert_eq!(
+            scene
+                .runtime
+                .background_surface_is_visible(scene.application, geometry, 0.0),
+            expected
+        );
+    }
+    // A transient missing source withholds the whole tier in OutputComposition.
+    // Its requested replacement must not hide the restored ordinary draw.
+    scene
+        .runtime
+        .policy_presentation
+        .as_mut()
+        .unwrap()
+        .presentation
+        .instances[0]
+        .source = SurfaceId::new(99, 1);
+    let list = super::presentation_instances::output_list(&scene.runtime, scene.output);
+    assert!(list.commands.iter().any(|command| matches!(command,
+        CompositorDisplayCommand::Surface { surface } if *surface == scene.application)));
+    assert!(
+        scene
+            .runtime
+            .background_surface_is_visible(scene.application, geometry, 0.0)
+    );
+}
+
+#[test]
+fn background_visibility_uses_the_sampled_translation_position() {
+    let mut scene = present_scene();
+    let mut layer = sophia_protocol::LayerSnapshot {
+        translation: Some(sophia_protocol::LayerTranslation {
+            connection_epoch: 1,
+            group: 1,
+            x: 0,
+            y: 0,
+        }),
+        surface: scene.application,
+        authority_local_id: None,
+        namespace: None,
+        stack_rank: 0,
+        geometry: rect(0, 0, 16, 16),
+        source: BufferSource::DmaBuf { handle: 77 },
+        source_size: Size {
+            width: 16,
+            height: 16,
+        },
+        damage: Region::empty(),
+        opacity: 1.0,
+        crop: None,
+        transform: sophia_protocol::Transform::IDENTITY,
+        generation: 1,
+        resize_sync: sophia_protocol::ResizeSyncCapability::ImplicitOnly,
+        output: Some(scene.output),
+        input_region: None,
+    };
+    scene
+        .runtime
+        .translations
+        .replace_targets(std::slice::from_ref(&layer), 0.0);
+    layer.geometry.x = -1000;
+    layer.translation.as_mut().unwrap().x = -1000;
+    scene
+        .runtime
+        .translations
+        .replace_targets(std::slice::from_ref(&layer), 1.0);
+    assert!(
+        scene
+            .runtime
+            .background_surface_is_visible(scene.application, layer.geometry, 1.0)
+    );
+    assert!(
+        !scene
+            .runtime
+            .background_surface_is_visible(scene.application, layer.geometry, 3.0)
+    );
+}
+
+#[test]
+fn visibility_on_any_output_releases_background_buffers_before_the_deadline() {
+    for preview_on_other_output in [false, true] {
+        let mut scene = present_scene();
+        let now = Instant::now();
+        scene.replace_with(vec![]);
+        let (transaction, candidate) = scene.queue_present(940, now);
+        scene.settle(transaction, candidate, false, now);
+        scene.target.drain();
+        assert_eq!(scene.runtime.present_scheduler.frame_tick_parked(), 1);
+        if preview_on_other_output {
+            let other = OutputId::from_raw(2);
+            let viewport = scene.runtime.outputs.logical_viewport(other).unwrap();
+            let mut record = presentation_output(other, PolicyPresentationMode::Overlay);
+            record.coverage = viewport;
+            scene
+                .runtime
+                .set_policy_presentation(
+                    Some(published(
+                        2,
+                        vec![
+                            presentation_output(
+                                scene.output,
+                                PolicyPresentationMode::ReplaceApplications,
+                            ),
+                            record,
+                        ],
+                        vec![shown_instance(other, 5, 1, scene.application, viewport)],
+                        vec![],
+                    )),
+                    &scene.scene,
+                    None,
+                )
+                .unwrap();
+        } else {
+            scene
+                .runtime
+                .set_policy_presentation(None, &scene.scene, None)
+                .unwrap();
+        }
+        scene
+            .runtime
+            .service_first_visibility_presentations(now + Duration::from_millis(1));
+        assert_eq!(scene.runtime.present_scheduler.frame_tick_parked(), 0);
+        assert_skipped_and_released(&mut scene, transaction);
+        scene
+            .runtime
+            .service_first_visibility_presentations(now + Duration::from_secs(1));
+        let mut duplicate = Vec::new();
+        scene
+            .runtime
+            .drain_present_feedback_into(&mut duplicate)
+            .unwrap();
+        assert!(duplicate.is_empty());
+    }
 }
 
 /// Production owner path, first Present: an application whose first
@@ -706,5 +960,90 @@ fn a_hidden_first_present_is_released_when_the_presentation_withdraws() {
     assert!(captured, "and its next composition captures it");
 }
 
+#[path = "background_pressure.rs"]
+mod background_pressure;
 #[path = "preview_recovery.rs"]
 mod preview_recovery;
+
+#[test]
+fn present_clock_selection_uses_largest_sample_and_primary_tie() {
+    let mut scene = present_scene();
+    let second = OutputId::from_raw(2);
+    scene.runtime.surface_outputs.remove(&scene.application);
+    scene
+        .runtime
+        .geometry_routed_surfaces
+        .insert(scene.application);
+    // First output is x=0..64, second x=64..128. The committed geometry,
+    // rather than the caller's fallback, chooses the larger sampled area.
+    for (generation, x, primary, expected) in [
+        (2, 60, scene.output, second),
+        (3, 52, second, scene.output),
+        (4, 56, scene.output, scene.output),
+        (5, 56, second, second),
+    ] {
+        commit_dma_surface(
+            &mut scene.runtime,
+            scene.application,
+            generation,
+            rect(x, 0, 16, 16),
+        );
+        assert_eq!(
+            scene
+                .runtime
+                .present_clock_outputs([(scene.application, rect(-100, 0, 16, 16))], Some(primary)),
+            vec![(scene.application, Some(expected))]
+        );
+    }
+}
+
+#[test]
+fn present_clock_selection_counts_visible_previews_once_and_hidden_windows_are_fake() {
+    let mut scene = present_scene();
+    let second = OutputId::from_raw(2);
+    scene.runtime.presentation_order.clear();
+    assert_eq!(
+        scene.runtime.present_clock_outputs(
+            [(scene.application, rect(0, 0, 16, 16))],
+            Some(scene.output)
+        ),
+        vec![(scene.application, None)]
+    );
+    let a = shown_instance(scene.output, 1, 1, scene.application, rect(0, 0, 8, 8));
+    let b = shown_instance(second, 2, 1, scene.application, rect(64, 0, 9, 8));
+    // Duplicate coverage on the first head must not outweigh the genuinely
+    // larger preview on the second. Selection does not need an ordinary draw.
+    scene.runtime.policy_presentation = Some(published(
+        2,
+        vec![
+            presentation_output(scene.output, PolicyPresentationMode::Overlay),
+            presentation_output(second, PolicyPresentationMode::Overlay),
+        ],
+        vec![a, PolicySurfaceInstance { id: 3, ..a }, b],
+        vec![],
+    ));
+    assert_eq!(
+        scene.runtime.present_clock_outputs(
+            [(scene.application, rect(0, 0, 16, 16))],
+            Some(scene.output)
+        ),
+        vec![(scene.application, Some(second))]
+    );
+    for instance in &mut scene
+        .runtime
+        .policy_presentation
+        .as_mut()
+        .unwrap()
+        .presentation
+        .instances
+    {
+        instance.opacity_millis = 0;
+    }
+    assert_eq!(
+        scene.runtime.present_clock_outputs(
+            [(scene.application, rect(0, 0, 16, 16))],
+            Some(scene.output)
+        ),
+        vec![(scene.application, None)]
+    );
+}

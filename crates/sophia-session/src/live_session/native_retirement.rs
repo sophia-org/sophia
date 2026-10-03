@@ -1,4 +1,11 @@
 use super::*;
+mod evidence;
+pub(crate) use evidence::NativePresentEvidence;
+
+pub(super) struct NativePresentRecording<'a> {
+    pub layout: &'a mut PersistentLiveLayout,
+    pub evidence: &'a mut NativePresentEvidence,
+}
 
 /// Records each retired Present the Engine refused to apply. The screen shows
 /// that candidate while the committed set does not, which is the state a
@@ -32,7 +39,7 @@ pub(super) struct NativePresentRetirementObservation {
 }
 
 pub(super) fn record_native_present_retirement(
-    layout: &mut PersistentLiveLayout,
+    recording: NativePresentRecording<'_>,
     runtime: &LiveProductionVisualRuntime,
     native_scanout: &LiveProductionNativeScanout,
     retired: LiveProductionRetiredPresent,
@@ -40,6 +47,7 @@ pub(super) fn record_native_present_retirement(
     startup_surface_presentations: &mut StartupSurfacePresentationEvidence,
     startup_readiness: &mut SessionStartupReadiness,
 ) -> NativePresentRetirementObservation {
+    let NativePresentRecording { layout, evidence } = recording;
     let _ = layout.complete_visual_commit(retired.candidate, retired.source_size);
     layout.complete_admission_retirement(retired.candidate);
     let stable = runtime.stable_present(native_scanout, retired.transaction, &retired.outputs);
@@ -53,31 +61,19 @@ pub(super) fn record_native_present_retirement(
         );
     }
 
-    let clip = retired.clip.map_or_else(
-        || "none".to_owned(),
-        |clip| format!("{}x{}_{}_{}", clip.width, clip.height, clip.x, clip.y),
-    );
-    crate::session_println!(
-        "sophia_live_session_present schema=2 status=retired transaction={} surface={} source={}x{} target={}x{}_{}_{} clip={} unit_scale={}",
-        retired.transaction.raw(),
-        retired.surface.index(),
-        retired.source_size.width,
-        retired.source_size.height,
-        retired.target.width,
-        retired.target.height,
-        retired.target.x,
-        retired.target.y,
-        clip,
-        retired.source_size.width == retired.target.width
-            && retired.source_size.height == retired.target.height,
-    );
-    // `pending_primary` was `!stable` restated, and stability no longer has
-    // anything to do with what is queued behind this flip. The pixel count is
-    // what a reader actually needs to tell "shown but blank" from "not shown".
-    crate::session_println!(
-        "sophia_live_session_scanout schema=2 status={} kind=mixed transaction={} nonzero_rgb_pixels={nonzero_rgb_pixels}",
-        if stable { "stable" } else { "superseded" },
-        retired.transaction.raw(),
+    evidence.record(
+        evidence::Record::Mixed {
+            transaction: retired.transaction,
+            surface: retired.surface,
+            source: retired.source_size,
+            target: retired.target,
+            clip: retired.clip,
+            stable,
+            nonzero_rgb_pixels,
+            ust: retired.ust_usec,
+            msc: retired.msc,
+        },
+        retired.layout_witness.is_some(),
     );
 
     if let Some(layout) = retired.layout_witness
@@ -106,22 +102,13 @@ pub(super) fn record_native_present_retirement(
 }
 
 pub(super) fn record_native_software_present_retirement(
-    layout: &mut PersistentLiveLayout,
+    recording: NativePresentRecording<'_>,
     retired: sophia_backend_live::LiveProductionRetiredSoftwarePresent,
 ) {
+    let NativePresentRecording { layout, evidence } = recording;
     let _ = layout.complete_visual_commit(retired.candidate, retired.source_size);
     layout.complete_admission_retirement(retired.candidate);
-    crate::session_println!(
-        "sophia_live_session_present schema=4 status=retired transaction={} surface={} source={}x{} kind=software frame={} native_submission={} ust={} msc={}",
-        retired.candidate.transaction.raw(),
-        retired.candidate.surface.index(),
-        retired.source_size.width,
-        retired.source_size.height,
-        retired.frame.raw(),
-        retired.native_submission,
-        retired.ust_usec,
-        retired.msc,
-    );
+    evidence.record(evidence::Record::Software(retired), false);
 }
 
 pub(super) fn correlate_physical_input_page_flip(

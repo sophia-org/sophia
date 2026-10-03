@@ -277,6 +277,7 @@ impl LiveProductionNativeScanout {
                     },
                     target_generation: 1,
                     submitted_at: None,
+                    submitted_clock_source: None,
                     submitted_ust_usec: None,
                     pending_nonzero_pixel_bytes: 0,
                     last_checksum: 0,
@@ -379,6 +380,7 @@ impl LiveProductionNativeScanout {
                 .expect("a native logical output has at least one physical head");
             output_lifecycles.insert(output, lifecycle);
         }
+        let native_frame_owner = crate::NativeFrameOwner::new();
         Ok(Self {
             groups,
             heads,
@@ -414,7 +416,11 @@ impl LiveProductionNativeScanout {
             output_topology_preparation: None,
             output_topology_cleanup: Vec::new(),
             head_table,
-            native_frame_owner: crate::NativeFrameOwner::new(),
+            native_frame_owner,
+            present_clocks: crate::LiveNativePresentClocks::new(
+                std::num::NonZeroU64::new(native_frame_owner.raw()).expect("nonzero native owner")),
+            present_clock_monotonic: BTreeMap::new(),
+            present_clock_crtc_events: BTreeMap::new(),
             next_frame_id: 1,
             next_head_candidate_id: 1,
             production_page_flips,

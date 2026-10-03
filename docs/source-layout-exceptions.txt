@@ -1,6 +1,9 @@
 # Temporary legacy exceptions. Remove each entry when its domain split lands.
 large-source crates/sophia-x-authority/src/x11_socket/connection/dispatch.rs
 
+# External ioctl ABI/descriptor fixtures; no device access or inline test bodies.
+inline-tests crates/sophia-drm-clock/src/lib.rs
+
 # One external raw 9P peer shared by shell and output unit fixtures; no test bodies.
 inline-tests crates/sophia-runtime/src/lib.rs
 
@@ -16,6 +19,13 @@ inline-tests crates/sophia-backend-live/src/production_session/native_scanout.rs
 inline-tests crates/sophia-backend-live/src/production_session/native_scanout/persistent_native_scanout.rs
 inline-tests crates/sophia-backend-live/src/production_session/native_scanout/persistent_native_scanout/composition_queue.rs
 inline-tests crates/sophia-backend-live/src/production_visual_runtime.rs
+# t289: a test-only visibility adapter; assertions live in lifecycle_tests.
+inline-tests crates/sophia-backend-live/src/production_visual_runtime/background_present.rs
+# t289: external bounded-evidence fixtures, no inline test bodies.
+inline-tests crates/sophia-session/src/live_session/native_retirement/evidence.rs
+# t289: external injected-clock/loss fixtures; no inline test bodies or device access.
+inline-tests crates/sophia-session/src/live_session/present_clock.rs
+inline-tests crates/sophia-x-authority/src/evidence/present.rs
 inline-tests crates/sophia-runtime/src/shell_transport/control_budget.rs
 inline-tests crates/sophia-runtime/src/shell_transport/outbox.rs
 inline-tests crates/sophia-runtime/src/shell_transport/files/journal.rs
@@ -73,3 +83,11 @@ inline-tests crates/sophia-x-authority/src/x11_socket/routing/input.rs
 inline-tests crates/sophia-renderer-native-egl/src/gbm_platform/scanout/snapshot_custody.rs
 inline-tests crates/sophia-backend-live/src/production_session/native_scanout/persistent_native_scanout/preview_recovery.rs
 inline-tests crates/sophia-backend-live/src/production_session/native_scanout/persistent_native_scanout/preview_preparation.rs
+
+# t289: test-only completion-history snapshot accessor; regression assertions live in tests/support.
+inline-tests crates/sophia-x-authority/src/x11_socket/routing/registry/present_clock_completion.rs
+# t289: bounded missing-sample fault controls; assertions live in tests/support.
+inline-tests crates/sophia-x-authority/src/runtime/present_admission_recovery.rs
+
+# Thread-local, one-shot post-receipt fault and intake inspection; tests live in support/private_input_session.
+inline-tests crates/sophia-session/src/private_input/committed.rs

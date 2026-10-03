@@ -246,6 +246,7 @@ impl Harness {
             .with_service(key, |_, transport| {
                 let deadline = Instant::now() + Duration::from_secs(5);
                 loop {
+                    transport.service_owner_turn().unwrap();
                     transport.poll_io().unwrap();
                     if let Some((_, received)) = peer.poll_indicators().unwrap() {
                         assert_eq!(received, snapshot);

@@ -206,7 +206,14 @@ impl XAuthorityObservedTransactionBatch {
             return None;
         }
 
-        Some(Self {
+        Some(Self::from_authority_response(response))
+    }
+
+    /// Service-generated execution may also owe resource releases when its
+    /// response has no surface change. The caller decides whether this empty
+    /// base acquires effects or the execution publishes only an empty ticket.
+    pub(crate) fn from_authority_response(response: &crate::XAuthorityResponsePacket) -> Self {
+        Self {
             client: None,
             admission: None,
             surface_routes: Vec::new(),
@@ -244,7 +251,7 @@ impl XAuthorityObservedTransactionBatch {
             metadata: Vec::new(),
             selection_owner_change: false,
             selection_conversion: false,
-        })
+        }
     }
 
     pub fn from_dispatch_observation(trace: &X11DispatchObservation) -> Option<Self> {

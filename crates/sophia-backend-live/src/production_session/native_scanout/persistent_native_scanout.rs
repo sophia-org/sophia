@@ -7,6 +7,10 @@ use std::time::{Duration, Instant};
 mod composition_admission;
 mod composition_installation;
 mod mirror_completion;
+mod retirement_evidence;
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) use retirement_evidence::NativeOutputCohort;
+mod present_clock;
 mod presentation_timing;
 #[cfg(test)]
 pub(crate) use presentation_timing::{PresentedTimingHead, completed_timing};
@@ -145,7 +149,7 @@ pub struct LiveProductionNativeScanout {
     /// Engine-owned prepare/submit/flip barrier for the active generation
     /// of each multi-head logical output.
     output_cohorts:
-        BTreeMap<(OutputId, LiveProductionNativeFrameId), sophia_engine::OutputPresentationCohort>,
+        BTreeMap<(OutputId, LiveProductionNativeFrameId), retirement_evidence::NativeOutputCohort>,
     /// Latest ordinary successor held behind a Present generation until
     /// the primary head owns that Present in KMS.
     deferred_mirror_generations: composition_queue::DeferredNativeCompositions,
@@ -162,12 +166,18 @@ pub struct LiveProductionNativeScanout {
     /// The only place a head's card, connector, and CRTC identity lives.
     pub head_table: crate::LiveProductionNativeHeadTable,
     native_frame_owner: crate::NativeFrameOwner,
+    present_clocks: crate::LiveNativePresentClocks,
+    present_clock_monotonic: BTreeMap<usize, bool>,
+    present_clock_crtc_events: BTreeMap<usize, bool>,
     next_frame_id: u64,
     next_head_candidate_id: u64,
     pub production_page_flips: crate::LiveProductionPageFlipTracker,
     pub kernel_page_flip_timestamps: usize,
     pub kernel_page_flip_timestamp_missing: usize,
-    kernel_page_flip_ust: BTreeMap<(OutputId, sophia_engine::RenderHeadId, u64), u64>,
+    kernel_page_flip_ust: BTreeMap<
+        (OutputId, sophia_engine::RenderHeadId, u64),
+        (u64, Option<crate::LiveNativeRetirementClock>),
+    >,
     pub vsync_overlap_rejections: usize,
     pub page_flip_phase_rejections: usize,
     pub cursor_updates: usize,
@@ -257,6 +267,9 @@ pub struct LiveProductionCompletionTimestamp {
     pub ust_usec: u64,
     pub used_kernel_timestamp: bool,
     pub missing_kernel_timestamp: bool,
+    /// Exact accepted event sample. Observation-time or out-fence fallback
+    /// never fabricates a CRTC counter.
+    pub clock: Option<crate::LiveNativeRetirementClock>,
 }
 
 pub const fn reduce_live_production_completion_timestamp(
@@ -270,6 +283,7 @@ pub const fn reduce_live_production_completion_timestamp(
                 ust_usec,
                 used_kernel_timestamp: true,
                 missing_kernel_timestamp: false,
+                clock: None,
             }
         }
         (LiveProductionKmsCompletionSource::PageFlipEvent, None) => {
@@ -277,12 +291,14 @@ pub const fn reduce_live_production_completion_timestamp(
                 ust_usec: monotonic_fallback_ust_usec,
                 used_kernel_timestamp: false,
                 missing_kernel_timestamp: true,
+                clock: None,
             }
         }
         (LiveProductionKmsCompletionSource::OutFence, _) => LiveProductionCompletionTimestamp {
             ust_usec: monotonic_fallback_ust_usec,
             used_kernel_timestamp: false,
             missing_kernel_timestamp: false,
+            clock: None,
         },
     }
 }
@@ -344,6 +360,8 @@ pub struct LiveProductionNativeHead {
     pub output: sophia_engine::HeadlessOutput,
     pub target_generation: u64,
     pub submitted_at: Option<Instant>,
+    /// Clock incarnation retained by this exact KMS submission, never rebound.
+    pub submitted_clock_source: Option<crate::LiveNativePresentClockSource>,
     pub submitted_ust_usec: Option<u64>,
     pub pending_nonzero_pixel_bytes: usize,
     pub last_checksum: u64,
@@ -547,6 +565,7 @@ pub struct LivePersistentRenderMetrics {
     pub composition_partial_frames: u64,
     pub composition_repaint_pixels: u64,
     pub composition_target_pixels: u64,
+    pub composition_damage: sophia_renderer_live::NativeCompositionDamageStats,
     pub capture_setup_elapsed: std::time::Duration,
     pub capture_copy_elapsed: std::time::Duration,
     pub capture_cleanup_elapsed: std::time::Duration,
@@ -635,3 +654,7 @@ fn trace_live_native_lifecycle(stage: &str) {
 #[cfg(test)]
 #[path = "../../../tests/support/preview_inventory.rs"]
 mod preview_inventory_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/support/native_retirement_order.rs"]
+mod retirement_order_tests;

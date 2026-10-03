@@ -68,6 +68,8 @@ pub(super) fn role_bounds(profile: Option<ContentStoreProfile>) -> (&'static str
 
 pub(super) struct ShellFileWire {
     server: Server<ShellFiles>,
+    publication_pending: bool,
+    turns: u64,
 }
 
 impl ShellFileWire {
@@ -84,7 +86,11 @@ impl ShellFileWire {
             .adopt(stream)
             .map_err(|refused| io_error(refused.error))?;
         server.export_mut().bind_connection(connection);
-        Ok(Self { server })
+        Ok(Self {
+            server,
+            publication_pending: false,
+            turns: 0,
+        })
     }
 
     pub(super) fn export(&self) -> &ShellFiles {
@@ -103,14 +109,36 @@ impl ShellFileWire {
 
     /// One nonblocking turn: whatever requests are ready, no waiting.
     pub(super) fn turn(&mut self) -> Result<(), ShellTransportError> {
-        if !self.server.turn(Some(Duration::ZERO)).map_err(io_error)?
-            || self.server.connection_count() == 0
-        {
+        self.service(false)
+    }
+
+    pub(super) fn flush(&mut self) -> Result<(), ShellTransportError> {
+        self.service(true)
+    }
+
+    fn service(&mut self, flush_only: bool) -> Result<(), ShellTransportError> {
+        self.turns = self.turns.saturating_add(1);
+        self.publication_pending = false;
+        let live = if flush_only {
+            self.server.flush()
+        } else {
+            self.server.turn(Some(Duration::ZERO))
+        }
+        .map_err(io_error)?;
+        if !live || self.server.connection_count() == 0 {
             self.server.export_mut().revoke();
             return Err(ShellTransportError::NotConnected);
         }
         self.server.export_mut().expire();
         Ok(())
+    }
+
+    pub(super) const fn publication_pending(&self) -> bool {
+        self.publication_pending
+    }
+
+    pub(super) const fn turn_count(&self) -> u64 {
+        self.turns
     }
 
     /// Appends one queued event if the journal has room for its class, and
@@ -123,6 +151,7 @@ impl ShellFileWire {
     ) -> Result<bool, ShellTransportError> {
         match self.server.export_mut().append_event(kind, body, credited) {
             Ok(_) => {
+                self.publication_pending = true;
                 self.server.wake().wake();
                 Ok(true)
             }
@@ -145,6 +174,7 @@ impl ShellFileWire {
             .publish_object(kind, body, credited)
             .map_err(|error| ShellTransportError::Io(format!("shell object: {error:?}")))?;
         if published {
+            self.publication_pending = true;
             self.server.wake().wake();
         }
         Ok(published)

@@ -178,8 +178,9 @@ fn native_libdrm_page_flip_event_reducer_uses_private_crtc_routes() {
 
     assert_eq!(
         reduce_native_page_flip_event(&event, &mut routes),
-        Some(LibdrmNativePageFlipCallback::new_with_kernel_timestamp(
+        Some(LibdrmNativePageFlipCallback::new_with_kernel_clock(
             slot,
+            91,
             91,
             std::time::Duration::from_millis(16),
         ))
@@ -193,17 +194,19 @@ fn native_libdrm_page_flip_event_reducer_uses_private_crtc_routes() {
     let mut initial_route = [LibdrmNativeCrtcRoute::new(crtc, slot)];
     assert_eq!(
         reduce_native_page_flip_event(&initial_event, &mut initial_route),
-        Some(LibdrmNativePageFlipCallback::new_with_kernel_timestamp(
+        Some(LibdrmNativePageFlipCallback::new_with_kernel_clock(
             slot,
             1,
+            0,
             std::time::Duration::from_millis(16),
         ))
     );
     assert_eq!(
         reduce_native_page_flip_event(&initial_event, &mut initial_route),
-        Some(LibdrmNativePageFlipCallback::new_with_kernel_timestamp(
+        Some(LibdrmNativePageFlipCallback::new_with_kernel_clock(
             slot,
             2,
+            0,
             std::time::Duration::from_millis(16),
         ))
     );
@@ -280,8 +283,60 @@ fn native_libdrm_poller_reads_and_polls_bounded_callbacks() {
             head: sophia_engine::RenderHeadId::from_raw(1),
             frame_serial: 81,
             ust_usec: 123_456,
+            kernel_sequence: None,
         }]
     );
+}
+
+#[test]
+fn native_libdrm_collect_preserves_zero_kernel_sequence_beside_normalized_serial() {
+    let authority = LibdrmBackendFdAuthority::new(24).unwrap();
+    let slot = LibdrmNativeOutputSlot::new(2).unwrap();
+    let crtc = drm::control::from_u32::<drm::control::crtc::Handle>(44).unwrap();
+    let mut routes = [LibdrmNativeCrtcRoute::new(crtc, slot)];
+    let event = drm::control::PageFlipEvent {
+        frame: 0, duration: std::time::Duration::from_micros(123_456), crtc,
+    };
+    let callback = reduce_native_page_flip_event(&event, &mut routes).unwrap();
+    assert_eq!(callback.frame_serial, 1);
+    assert_eq!(callback.kernel_sequence(), Some(0));
+    let second_crtc = drm::control::from_u32::<drm::control::crtc::Handle>(45).unwrap();
+    let second_slot = LibdrmNativeOutputSlot::new(3).unwrap();
+    let mut routes = [
+        LibdrmNativeCrtcRoute::new(crtc, slot),
+        LibdrmNativeCrtcRoute::new(second_crtc, second_slot),
+    ];
+    let second = reduce_native_page_flip_event(
+        &drm::control::PageFlipEvent { frame: 700, crtc: second_crtc, ..event },
+        &mut routes,
+    ).unwrap();
+    let mut reader = FakeLibdrmNativePageFlipReader::new([callback, second]);
+    let source = LibdrmNativePageFlipSource::from_authority(authority);
+    let mut poller = NativeLibdrmPageFlipEventPoller::new(source).with_routes([
+        LibdrmNativeOutputRoute {
+            slot,
+            output: OutputId::from_raw(7),
+            head: sophia_engine::RenderHeadId::from_raw(1),
+        },
+        LibdrmNativeOutputRoute {
+            slot: second_slot,
+            output: OutputId::from_raw(7), // mirror, same logical output
+            head: sophia_engine::RenderHeadId::from_raw(2),
+        },
+    ]);
+    let mut callbacks = Vec::new();
+    let mut timestamps = Vec::new();
+    poller.read_and_collect_page_flip_events(&mut reader, &mut callbacks, &mut timestamps, 2, 2);
+    assert_eq!(callbacks.len(), 2);
+    assert_eq!(callbacks[0].frame_serial, 1);
+    assert_eq!(timestamps.len(), 2);
+    assert_eq!(timestamps[0].frame_serial, 1);
+    assert_eq!(timestamps[0].kernel_sequence, Some(0));
+    assert_eq!(timestamps[0].ust_usec, 123_456);
+    assert_eq!(timestamps[0].head.raw(), 1);
+    assert_eq!(timestamps[1].head.raw(), 2);
+    assert_eq!(timestamps[1].kernel_sequence, Some(700));
+    assert_eq!(timestamps[1].frame_serial, 700);
 }
 
 #[test]

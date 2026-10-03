@@ -92,6 +92,38 @@ impl LiveRendererSlotDamageHistory {
             .map_or(0, std::collections::VecDeque::len)
     }
 
+    /// An opportunity cohort independent of whether client damage is usable.
+    /// Compare consecutive renders, not the buffer-age-selected older image.
+    /// Identity and provenance still decide the actual repaint separately.
+    pub fn stable_geometry(
+        &self,
+        slot: LiveRendererFrameSlotId,
+        current: &sophia_engine::OutputFrameDamageSnapshot,
+    ) -> bool {
+        self.slots
+            .get(slot.index())
+            .and_then(|history| history.front())
+            .is_some_and(|previous| {
+                previous.output == current.output
+                    && previous.compositor_display_list == current.compositor_display_list
+                    && previous.software_cursor == current.software_cursor
+                    && !current.surfaces.is_empty()
+                    && previous.surfaces.len() == current.surfaces.len()
+                    && previous
+                        .surfaces
+                        .iter()
+                        .zip(&current.surfaces)
+                        .all(|(a, b)| {
+                            a.surface == b.surface
+                                && a.logical_geometry == b.logical_geometry
+                                && a.geometry == b.geometry
+                                && a.source_size == b.source_size
+                                && b.source_size.width == b.geometry.width
+                                && b.source_size.height == b.geometry.height
+                        })
+            })
+    }
+
     /// Decide what a repaint into `slot` owes, given the age its surface
     /// reported and the scene it is being brought up to.
     pub fn plan(

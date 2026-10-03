@@ -1412,3 +1412,68 @@ fn preview_recovery_replaces_only_unsubmitted_frames_without_changing_the_clock(
         );
     }
 }
+
+#[test]
+fn straddled_present_keeps_samples_from_both_output_cohorts() {
+    use sophia_backend_live::{
+        LiveNativePresentClockSample as Sample, LiveNativePresentClockSource as Source,
+        LiveNativeRetirementClocks,
+    };
+    let a = OutputId::from_raw(3);
+    let b = OutputId::from_raw(9);
+    let mut scheduler = LiveProductionPresentScheduler::default();
+    scheduler.mark_rendering(in_flight_present_for_outputs(
+        TransactionId::from_raw(880),
+        SurfaceId::new(881, 1),
+        [a, b],
+    ));
+    scheduler.mark_output_submitted(a).unwrap();
+    scheduler.mark_output_submitted(b).unwrap();
+    let first = Sample {
+        source: Source {
+            owner: 1,
+            incarnation: 1,
+        },
+        ust_usec: 100,
+        msc: 500,
+    };
+    let second = Sample {
+        source: Source {
+            owner: 2,
+            incarnation: 1,
+        },
+        ust_usec: 200,
+        msc: 17,
+    };
+    assert!(
+        scheduler
+            .mark_output_retired_with_clocks(
+                LiveProductionPageFlipRetirement {
+                    output: a,
+                    ust: 100,
+                    msc: 9
+                },
+                LiveNativeRetirementClocks::from_samples([first])
+            )
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        scheduler
+            .mark_output_retired_with_clocks(
+                LiveProductionPageFlipRetirement {
+                    output: b,
+                    ust: 200,
+                    msc: 20
+                },
+                LiveNativeRetirementClocks::from_samples([second])
+            )
+            .unwrap()
+            .is_some()
+    );
+    let submitted = scheduler.take_submitted().unwrap();
+    let evidence = submitted.retirement_clocks();
+    assert_eq!(evidence.sample(first.source), Some(first));
+    assert_eq!(evidence.sample(second.source), Some(second));
+    assert_eq!(submitted.presentation_clock().unwrap().msc, 9); // legacy clock unchanged
+}

@@ -13,6 +13,61 @@ fn attach_files(transport: &mut ShellSessionTransport) -> Peer {
     )
 }
 
+#[test]
+fn a_role_visit_cannot_timeout_an_acknowledgement_it_did_not_service() {
+    let mut fixture = Fixture::new(7);
+    let transport = &mut fixture.transport;
+    let _peer = attach_files(transport);
+    let record = transport
+        .state
+        .admit_record(
+            OutboundRecord::Content(
+                TransactionId::from_raw(1),
+                ShellContentRecord::Action(ContentAction {
+                    grant: transport.state.content_grant.unwrap(),
+                    output: ContentOutputId {
+                        id: 1,
+                        generation: 1,
+                    },
+                    candidate_generation: 1,
+                    presentation_epoch: 1,
+                    interaction_generation: 1,
+                    allocation: ContentAllocationId {
+                        id: 1,
+                        generation: 1,
+                    },
+                    target_id: 1,
+                    target_generation: 1,
+                    action_id: 1,
+                    event_id: 1,
+                    kind: 1,
+                    reason: 0,
+                }),
+            ),
+            super::Class::Control {
+                limit: CONTROL_RECORD_BYTES,
+                oversize: ShellTransportError::WrongContentRecord,
+            },
+        )
+        .unwrap();
+    Peer::fill_journal(&mut transport.state, &record.record);
+    transport.state.output.push(record);
+    let now = std::time::Instant::now() + std::time::Duration::from_secs(120);
+    let state = &mut transport.state;
+    let files = state.wire.as_mut().unwrap();
+    assert_eq!(
+        ShellComponentTransport::turn_files(files, &mut state.output, false, now).unwrap(),
+        (false, true)
+    );
+    assert_eq!(state.output.records(), 1);
+    // Once input was served, a peer that really never acknowledges is still
+    // refused. Sharing role input must not disable the existing deadline.
+    assert!(matches!(
+        ShellComponentTransport::turn_files(files, &mut state.output, true, now),
+        Err(ShellTransportError::ContentQueueSaturated)
+    ));
+}
+
 /// A real typed bulk record: output facts with `outputs` rows, admitted as
 /// the owners admit one. Its charge is its native body, 40 + 40 per row.
 fn output_facts(transport: &ShellSessionTransport, outputs: usize) -> Admitted {

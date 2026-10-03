@@ -187,6 +187,7 @@ impl NativeLibdrmPageFlipEventPoller {
                     output: callback.output,
                     head: callback.head,
                     frame_serial: callback.frame_serial,
+                    kernel_sequence: native.kernel_sequence(),
                     ust_usec,
                 });
             }
@@ -250,6 +251,7 @@ impl LibdrmPageFlipEventPoller for NativeLibdrmPageFlipEventPoller {
                     output: callback.output,
                     head: callback.head,
                     frame_serial: callback.frame_serial,
+                    kernel_sequence: native.kernel_sequence(),
                     ust_usec,
                 });
         }

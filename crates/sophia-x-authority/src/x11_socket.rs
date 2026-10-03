@@ -53,9 +53,9 @@ use crate::{
     XServerFrontendRouteError, XServerFrontendServiceCommand, XServerFrontendSetupAuthorization,
     XSetupFailure, XSetupRequest, XSetupSuccess, XWireClientContext,
     apply_engine_presentation_state, decode_x11_core_request, dispatch_x11_parse_error,
-    dispatch_x11_wire_request, encode_x_client_event, encode_x11_setup_failure,
-    encode_x11_setup_success, parse_x11_setup_request, try_emit_x_authority_observation,
-    x_output_reservations_for_window, x11_setup_request_total_len,
+    encode_x_client_event, encode_x11_setup_failure, encode_x11_setup_success,
+    parse_x11_setup_request, try_emit_x_authority_observation, x_output_reservations_for_window,
+    x11_setup_request_total_len,
 };
 #[cfg(all(unix, test))]
 use sophia_protocol::RoutedInputRequest;
@@ -66,6 +66,8 @@ use sophia_protocol::{
 };
 
 include!("x11_socket/routing/broker.rs");
+#[cfg(unix)]
+include!("x11_socket/routing/present_clock.rs");
 include!("x11_socket/routing/private_admission.rs");
 include!("x11_socket/routing/control_transition.rs");
 include!("x11_socket/routing/private_producer_surface.rs");
@@ -168,6 +170,8 @@ include!("x11_socket/connection/raster_telemetry.rs");
 include!("x11_socket/connection/server.rs");
 include!("x11_socket/connection/private_service_order.rs");
 include!("x11_socket/connection/private_service.rs");
+#[cfg(unix)]
+include!("x11_socket/connection/timed_present.rs");
 include!("x11_socket/connection/protocol_routing.rs");
 include!("x11_socket/connection/colormap_routing.rs");
 include!("x11_socket/connection/lifetime.rs");

@@ -72,6 +72,8 @@ pub struct Server<E: Export> {
     reader: OwnedFd,
     wake: Wake,
     next_id: u64,
+    /// Shared by sequential connection reads, bounded by their input limits.
+    read_buffer: Vec<u8>,
 }
 
 impl<E: Export> Server<E> {
@@ -90,6 +92,7 @@ impl<E: Export> Server<E> {
                 }),
             },
             next_id: 1,
+            read_buffer: Vec::new(),
         })
     }
 
@@ -155,29 +158,49 @@ impl<E: Export> Server<E> {
     /// with every connection closed.
     pub fn turn(&mut self, timeout: Option<Duration>) -> io::Result<bool> {
         let readiness = self.wait(timeout)?;
-        if readiness.wake.contains(PollFlags::IN) {
-            self.drain_wake()?;
-            if self.wake.inner.stop.load(Ordering::SeqCst) {
-                for slot in &mut self.slots {
-                    slot.connection.close(&mut self.export);
-                }
-                self.slots.clear();
-                return Ok(false);
-            }
-            for slot in &mut self.slots {
-                if slot.connection.retry_waiting(&mut self.export).is_err() {
-                    slot.ended = true;
-                }
-            }
+        if readiness.wake.contains(PollFlags::IN) && !self.service_wake()? {
+            return Ok(false);
         }
         if readiness.listener.contains(PollFlags::IN) {
             self.accept()?;
         }
         for (slot, flags) in self.slots.iter_mut().zip(readiness.slots) {
             if flags.intersects(PollFlags::IN | PollFlags::HUP | PollFlags::ERR) {
-                Self::read(&mut self.export, slot);
+                Self::read(&mut self.export, slot, &mut self.read_buffer);
             }
         }
+        self.write_ready();
+        Ok(true)
+    }
+
+    /// Flush a local export change without accepting or reading new requests.
+    /// Readable sockets stay level-ready for the owner's next input pass.
+    pub fn flush(&mut self) -> io::Result<bool> {
+        if !self.service_wake()? {
+            return Ok(false);
+        }
+        self.write_ready();
+        Ok(true)
+    }
+
+    fn service_wake(&mut self) -> io::Result<bool> {
+        self.drain_wake()?;
+        if self.wake.inner.stop.load(Ordering::SeqCst) {
+            for slot in &mut self.slots {
+                slot.connection.close(&mut self.export);
+            }
+            self.slots.clear();
+            return Ok(false);
+        }
+        for slot in &mut self.slots {
+            if slot.connection.retry_waiting(&mut self.export).is_err() {
+                slot.ended = true;
+            }
+        }
+        Ok(true)
+    }
+
+    fn write_ready(&mut self) {
         for slot in &mut self.slots {
             Self::write(&mut self.export, slot);
         }
@@ -188,7 +211,6 @@ impl<E: Export> Server<E> {
             }
             !slot.ended
         });
-        Ok(true)
     }
 
     /// The descriptors and interest [`Self::turn`] waits on, for an owner
@@ -265,13 +287,15 @@ impl<E: Export> Server<E> {
         Ok(())
     }
 
-    fn read(export: &mut E, slot: &mut Slot<E>) {
+    fn read(export: &mut E, slot: &mut Slot<E>, buffer: &mut Vec<u8>) {
         let room = slot.connection.input_room();
         if room == 0 {
             return;
         }
-        let mut buffer = vec![0; room];
-        match slot.stream.read(&mut buffer) {
+        if buffer.len() < room {
+            buffer.resize(room, 0);
+        }
+        match slot.stream.read(&mut buffer[..room]) {
             Ok(0) => slot.ended = true,
             // The buffer is sized to the room, so every byte read is taken.
             Ok(count) => match slot.connection.receive(export, &buffer[..count]) {

@@ -514,6 +514,16 @@ fn software_retirement(
     frame: crate::LiveProductionNativeFrameId,
 ) -> crate::LiveProductionNativeFrameRetirement {
     crate::LiveProductionNativeFrameRetirement {
+        clocks: crate::LiveNativeRetirementClocks::from_samples([
+            crate::LiveNativePresentClockSample {
+                source: crate::LiveNativePresentClockSource {
+                    owner: 9,
+                    incarnation: output.raw(),
+                },
+                ust_usec: 1000 + output.raw(),
+                msc: 500 + output.raw(),
+            },
+        ]),
         output,
         frame,
         submission: frame.raw(),
@@ -676,7 +686,9 @@ fn software_preview_recovery_keeps_frozen_pixels_root_binding_and_clock() {
             .unwrap();
         let retirement = software_retirement(failed, replacement);
         assert!(matches!(
-            f.runtime.settle_software_present_frame(retirement).unwrap(),
+            f.runtime
+                .settle_software_present_frame(retirement.clone())
+                .unwrap(),
             software_present::LiveProductionSoftwarePresentSettlement::Settled
         ));
         assert!(matches!(
@@ -693,6 +705,22 @@ fn software_preview_recovery_keeps_frozen_pixels_root_binding_and_clock() {
         assert_eq!(receipts.len(), 1);
         assert_eq!(receipts[0].msc, 500 + a.raw());
         assert_eq!(receipts[0].ust_usec, 1000 + a.raw());
+        let mut feedback = Vec::new();
+        f.runtime
+            .drain_present_feedback_into(&mut feedback)
+            .unwrap();
+        let completion = feedback.iter().find(|outcome| outcome.feedback.iter().any(|item|
+            matches!(item, crate::LivePresentProtocolFeedback::Complete { transaction: found, .. } if *found == transaction))).unwrap();
+        for output in [a, b] {
+            let sample = completion
+                .clocks
+                .sample(crate::LiveNativePresentClockSource {
+                    owner: 9,
+                    incarnation: output.raw(),
+                })
+                .unwrap();
+            assert_eq!(sample.msc, 500 + output.raw());
+        }
     }
 }
 

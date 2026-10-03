@@ -33,6 +33,7 @@ impl<S: Subscriber> Layer<S> for ScanoutDiagnostics {
                     "sophia_x_window_lifecycle"
                         | "sophia_x_present_submission"
                         | "sophia_x_present_delivery"
+                        | "sophia_x_present_work"
                 )
             ))
             || (event.metadata().target() == SCANOUT_TARGET

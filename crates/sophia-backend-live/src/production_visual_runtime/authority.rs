@@ -209,6 +209,7 @@ impl LiveProductionVisualRuntime {
             return Ok(());
         }
         for submission in &submissions {
+            self.reclaim_background_presentation_capacity(1);
             self.presentation_feedback.resources_mut().begin_software(
                 submission.transaction,
                 submission.acquire_fence,
@@ -270,6 +271,7 @@ impl LiveProductionVisualRuntime {
     ) -> Result<usize, Box<dyn std::error::Error>> {
         let mut rejected = 0usize;
         for submission in &group.present_submissions {
+            self.reclaim_background_presentation_capacity(1);
             self.presentation_feedback.resources_mut().begin(
                 crate::LivePresentationSubmission {
                     transaction: submission.transaction,
@@ -286,6 +288,7 @@ impl LiveProductionVisualRuntime {
             self.present_rejections = self.present_rejections.saturating_add(1);
         }
         for submission in &group.software_present_submissions {
+            self.reclaim_background_presentation_capacity(1);
             self.presentation_feedback.resources_mut().begin_software(
                 submission.transaction,
                 submission.acquire_fence,
@@ -417,13 +420,7 @@ impl LiveProductionVisualRuntime {
             })
             .collect::<Vec<_>>();
         self.present_scheduler.release_first_visibility(&visible);
-        // Candidates paced to the head's refresh settle here too. One pass
-        // over the parked set per owner cycle is what turns an invisible
-        // client's free-running Presents into frame-rate ones; without it the
-        // park would be an unbounded wait rather than a tick.
-        for transaction in self.present_scheduler.release_frame_tick(now) {
-            self.reject_gpu_presentation(transaction);
-        }
+        self.service_background_presentations(now);
         for (surface, reason) in self.present_scheduler.expire_first_visibility(now) {
             // A first candidate that waits silently is indistinguishable from
             // one that is merely slow, which is what made this expensive to

@@ -237,8 +237,9 @@ impl LiveProductionVisualRuntime {
                 .iter()
                 .find_map(|(output, frame)| (*frame == retirement.frame).then_some(*output))
                 .ok_or("software Present cohort does not own retired frame")?;
+            let ust = retirement.ust;
             binding.retirements.insert(output, retirement);
-            binding.output_cohort.mark_retired(output, retirement.ust)
+            binding.output_cohort.mark_retired(output, ust)
         };
         use sophia_engine::TransactionPresentationTransition as Transition;
         if !matches!(terminal, Transition::PhaseReady) {
@@ -266,14 +267,20 @@ impl LiveProductionVisualRuntime {
         let evidence = binding
             .retirements
             .get(&binding.clock_output)
-            .copied()
             .ok_or("software Present cohort retained no retirement evidence")?;
+        let clocks = crate::LiveNativeRetirementClocks::from_evidence(
+            binding
+                .retirements
+                .values()
+                .flat_map(|retirement| retirement.clocks.evidence().iter().copied()),
+        );
         for submission in binding.submissions {
-            let outcome = self.presentation_feedback.complete_copy(
+            let mut outcome = self.presentation_feedback.complete_copy(
                 submission.transaction,
                 evidence.ust,
                 evidence.msc,
             )?;
+            outcome.clocks = clocks.clone();
             self.route_present_feedback(outcome);
             if self.retired_software_presents.len() == PRESENT_FEEDBACK_CAPACITY {
                 self.retired_software_presents_overflowed = true;
