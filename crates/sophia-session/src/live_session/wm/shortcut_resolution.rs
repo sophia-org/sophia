@@ -4,6 +4,11 @@ const SHELL_HELP_SHORTCUT_ACTION: sophia_protocol::WmActionId =
 const SHELL_SWITCHER_SHORTCUT_ACTION: sophia_protocol::WmActionId =
     sophia_protocol::WmActionId::from_raw(u64::MAX);
 
+/// The session lock, handled by Session itself: the WM neither sees nor
+/// can delay it.
+const SESSION_LOCK_SHORTCUT_ACTION: sophia_protocol::WmActionId =
+    sophia_protocol::WmActionId::from_raw(u64::MAX - 2);
+
 const fn is_shell_switcher_shortcut(action: sophia_protocol::WmActionId) -> bool {
     action.raw() == SHELL_SWITCHER_SHORTCUT_ACTION.raw()
 }
@@ -16,6 +21,7 @@ enum PhysicalActionRoute {
     SessionCommand,
     Help,
     Switcher,
+    Lock,
     Policy,
 }
 
@@ -24,6 +30,8 @@ const fn physical_action_route(action: sophia_protocol::WmActionId) -> PhysicalA
         PhysicalActionRoute::Help
     } else if is_shell_switcher_shortcut(action) {
         PhysicalActionRoute::Switcher
+    } else if action.raw() == SESSION_LOCK_SHORTCUT_ACTION.raw() {
+        PhysicalActionRoute::Lock
     } else if is_reserved_session_action(action) {
         PhysicalActionRoute::SessionCommand
     } else {
@@ -42,7 +50,9 @@ fn session_shortcut_identity(
         sophia_config::DesktopSessionShortcut::ReloadProfile => Some((5, "reload-profile")),
         sophia_config::DesktopSessionShortcut::RestartWm => Some((6, "restart-wm")),
         sophia_config::DesktopSessionShortcut::ApplicationLauncher => Some((7, "application-launcher")),
-        sophia_config::DesktopSessionShortcut::WindowSwitcher | sophia_config::DesktopSessionShortcut::ShortcutHelp => None,
+        sophia_config::DesktopSessionShortcut::WindowSwitcher
+        | sophia_config::DesktopSessionShortcut::ShortcutHelp
+        | sophia_config::DesktopSessionShortcut::Lock => None,
     }
 }
 
@@ -160,6 +170,9 @@ fn resolve_shortcut_plan(
             sophia_config::DesktopShortcutTarget::Session(
                 sophia_config::DesktopSessionShortcut::ShortcutHelp,
             ) => SHELL_HELP_SHORTCUT_ACTION,
+            sophia_config::DesktopShortcutTarget::Session(
+                sophia_config::DesktopSessionShortcut::Lock,
+            ) => SESSION_LOCK_SHORTCUT_ACTION,
             sophia_config::DesktopShortcutTarget::Session(sophia_config::DesktopSessionShortcut::LaunchTerminal)
                 if commands.roles.contains_key(&TERMINAL_APPLICATION_ID) => commands.roles[&TERMINAL_APPLICATION_ID],
             sophia_config::DesktopShortcutTarget::Session(sophia_config::DesktopSessionShortcut::LaunchBrowser)

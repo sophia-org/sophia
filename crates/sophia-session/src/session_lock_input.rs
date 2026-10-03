@@ -220,3 +220,31 @@ impl SessionLockInput {
         self.secret.clear();
     }
 }
+
+/// The authority that alone decides an unlock (`sophia-factotum`, t293).
+///
+/// Session hands it a submitted secret for one attempt and later polls for
+/// the verdict; neither call blocks. A verdict names its attempt, and only
+/// the current attempt of the current lock can end the lock.
+pub trait SessionUnlockAuthenticator {
+    /// Starts verifying `secret` for `attempt`. The secret is borrowed only
+    /// for this call; an `Err` means the attempt cannot be decided.
+    fn begin(
+        &mut self,
+        attempt: crate::session_lock::SessionUnlockAttempt,
+        secret: &str,
+    ) -> Result<(), SessionUnlockUnavailable>;
+
+    /// A verdict that has arrived, if any.
+    fn poll(
+        &mut self,
+    ) -> Option<(
+        crate::session_lock::SessionUnlockAttempt,
+        crate::session_lock::SessionUnlockVerdict,
+    )>;
+}
+
+/// The authenticator could not take the attempt: it is absent, failed or
+/// replaced. The lock stays.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SessionUnlockUnavailable;

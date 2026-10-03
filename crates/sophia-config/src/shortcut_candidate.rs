@@ -112,6 +112,8 @@ pub enum DesktopSessionShortcut {
     ReloadProfile,
     /// Replace the policy client with a fresh process, keeping the windows.
     RestartWm,
+    /// Lock the session. Session handles it directly; the WM never sees it.
+    Lock,
 }
 
 impl DesktopSessionShortcut {
@@ -129,6 +131,7 @@ impl DesktopSessionShortcut {
             Self::ApplicationLauncher => "application-launcher",
             Self::ReloadProfile => "reload-profile",
             Self::RestartWm => "restart-wm",
+            Self::Lock => "lock",
         }
     }
 }
@@ -523,6 +526,7 @@ fn parse_target(
                 "application-launcher" => DesktopSessionShortcut::ApplicationLauncher,
                 "reload-profile" => DesktopSessionShortcut::ReloadProfile,
                 "restart-wm" => DesktopSessionShortcut::RestartWm,
+                "lock" => DesktopSessionShortcut::Lock,
                 _ => return Err(schema_error("unknown session shortcut capability")),
             };
             Ok(DesktopShortcutTarget::Session(shortcut))

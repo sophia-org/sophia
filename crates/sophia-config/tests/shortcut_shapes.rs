@@ -8,9 +8,10 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use sophia_config::{
-    ConfigGeneration, DesktopAuthority, DesktopProfileError, DesktopShortcutCandidate,
-    DesktopShortcutModifiers, DesktopShortcutTiming, desktop_shortcut_evdev_keycode,
-    load_desktop_profile, prepare_desktop_shortcut_candidate,
+    ConfigGeneration, DesktopAuthority, DesktopProfileError, DesktopSessionShortcut,
+    DesktopShortcutCandidate, DesktopShortcutModifiers, DesktopShortcutTarget,
+    DesktopShortcutTiming, desktop_shortcut_evdev_keycode, load_desktop_profile,
+    prepare_desktop_shortcut_candidate,
 };
 
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(1);
@@ -469,4 +470,17 @@ fn enter_and_return_are_one_physical_shape() {
             .collect::<Vec<_>>(),
         ["Super+Enter", "Super+Enter (hold)"]
     );
+}
+
+#[test]
+fn session_lock_is_a_session_shortcut() {
+    let profile = Profile::new();
+    let candidate = profile
+        .load("profile \"daily\"\nbind \"Super+l\" \"session:lock\"")
+        .unwrap();
+    assert_eq!(
+        candidate.bindings[0].target,
+        DesktopShortcutTarget::Session(DesktopSessionShortcut::Lock)
+    );
+    assert_eq!(DesktopSessionShortcut::Lock.profile_name(), "lock");
 }

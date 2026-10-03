@@ -51,6 +51,7 @@ macro_rules! drain_physical_input {
             let report = route_physical_input(
                 poller,
                 PhysicalInputRoutingContext {
+                    session_lock: session_lock_input.as_mut(),
                     policy_presentation,
                     focus: &focus,
                     committed_surfaces,

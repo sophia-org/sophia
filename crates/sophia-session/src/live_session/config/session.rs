@@ -178,6 +178,12 @@ impl SessionApplicationConfig {
                     sophia_config::DesktopSessionShortcut::ReloadProfile
                     | sophia_config::DesktopSessionShortcut::RestartWm,
                 ) => true,
+                // A lock needs an authenticator to end it. Until the Session
+                // authenticator lands (t293) a profile asking for one is
+                // refused rather than offered a lock nobody could open.
+                sophia_config::DesktopShortcutTarget::Session(
+                    sophia_config::DesktopSessionShortcut::Lock,
+                ) => false,
             };
             if available {
                 continue;

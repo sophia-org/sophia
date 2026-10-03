@@ -296,10 +296,14 @@
         // transition itself, before input or the chord timers run: no further
         // key or poller is needed for it.
         if let Some(wm) = wm_session.as_mut() {
-            wm.observe_keyboard_matching(!matches!(
-                input_routing_mode,
-                PhysicalInputRoutingMode::CursorOnly | PhysicalInputRoutingMode::Suppressed
-            ));
+            // A locked seat matches no WM chord: its keys belong to the lock.
+            wm.observe_keyboard_matching(
+                !session_lock.holds_input()
+                    && !matches!(
+                        input_routing_mode,
+                        PhysicalInputRoutingMode::CursorOnly | PhysicalInputRoutingMode::Suppressed
+                    ),
+            );
         }
         let explicit_controls = drain_explicit_pointer_grab_controls(
             explicit_pointer_grabs,
@@ -348,6 +352,7 @@
                 primary_frame_interval
             );
         metrics.max_input_phase = metrics.max_input_phase.max(input_phase_started.elapsed());
+        service_session_lock!();
         // Chords owe the WM whatever physical input is doing: Held falls due by
         // the clock, and seat resets, reloads and removals leave cancellations in
         // the router. Both join the same FIFO behind everything routed before,
