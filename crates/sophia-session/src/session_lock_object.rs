@@ -8,7 +8,8 @@
 //! mirror head, so a smaller mirror shows it reduced rather than cropped. The
 //! scale is the nearest ratio the contract allows to pixels per logical unit.
 use sophia_protocol::lock_files::{
-    LOCK_FILE_MAX_OUTPUTS, LOCK_FILE_MAX_PIXELS_PER_SIDE, LockAllocation, LockObject, LockPhase,
+    LOCK_FILE_MAX_OUTPUTS, LOCK_FILE_MAX_PIXELS_PER_SIDE, LockAllocation, LockFileLimits,
+    LockObject, LockPhase,
 };
 use sophia_protocol::{OutputAuthoritySnapshot, OutputLogicalGroupState, Size};
 
@@ -107,4 +108,59 @@ fn allocation(
         scale_numerator,
         scale_denominator,
     })
+}
+
+/// The smallest screen a provider's limits admit when no topology is known,
+/// so a provider started before the first output can still draw once one
+/// appears at an ordinary size.
+const FLOOR_SIDE: u32 = 1920;
+const FLOOR_OTHER_SIDE: u32 = 1080;
+
+/// A provider's transfer limits for one connection epoch, from the topology
+/// it is admitted under. Each resource holds at most the largest allocation
+/// any output grants, and two per output may live at once (one shown, one
+/// arriving), so the provider can never hold more memory than the screens
+/// it covers twice over. A later topology that needs more rejects larger
+/// resources with `budget`, and the cover alone is shown there.
+pub fn session_lock_file_limits(topology: Option<&OutputAuthoritySnapshot>) -> LockFileLimits {
+    let locked = topology.map(|topology| {
+        topology
+            .groups
+            .iter()
+            .filter_map(|group| allocation(topology, group))
+            .collect::<Vec<_>>()
+    });
+    let allocations = locked.unwrap_or_default();
+    let width = allocations
+        .iter()
+        .map(|allocation| allocation.pixel_width)
+        .max()
+        .unwrap_or(FLOOR_SIDE)
+        .max(FLOOR_SIDE);
+    let height = allocations
+        .iter()
+        .map(|allocation| allocation.pixel_height)
+        .max()
+        .unwrap_or(FLOOR_OTHER_SIDE)
+        .max(FLOOR_OTHER_SIDE);
+    let largest = allocations
+        .iter()
+        .map(|allocation| u64::from(allocation.pixel_width) * u64::from(allocation.pixel_height))
+        .max()
+        .unwrap_or(0)
+        .max(u64::from(FLOOR_SIDE) * u64::from(FLOOR_OTHER_SIDE));
+    let outputs = allocations.len().clamp(1, LOCK_FILE_MAX_OUTPUTS);
+    LockFileLimits {
+        max_outputs: LOCK_FILE_MAX_OUTPUTS as u16,
+        upload_slots: 2,
+        max_chords: sophia_protocol::lock_files::LOCK_FILE_MAX_CHORDS as u16,
+        max_width_px: width,
+        max_height_px: height,
+        max_resource_bytes: largest * 4,
+        max_live_resources: (outputs * 2).clamp(2, 32) as u16,
+        journal_records: 128,
+        journal_bytes: 32_768,
+        assembly_timeout_ms: 2_000,
+        ack_progress_timeout_ms: 2_000,
+    }
 }

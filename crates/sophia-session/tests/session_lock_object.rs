@@ -4,10 +4,10 @@
 use std::num::NonZeroU64;
 
 use sophia_engine::SessionLockEpoch;
-use sophia_protocol::lock_files::{LockObject, LockPhase};
+use sophia_protocol::lock_files::{LockFileLimits, LockObject, LockPhase};
 use sophia_protocol::*;
 use sophia_session::session_lock::{SessionLockPhase, SessionUnlockAttempt};
-use sophia_session::session_lock_object::session_lock_object;
+use sophia_session::session_lock_object::{session_lock_file_limits, session_lock_object};
 
 fn epoch(raw: u64) -> SessionLockEpoch {
     SessionLockEpoch::from_raw(raw).unwrap()
@@ -208,4 +208,24 @@ fn fractional_scales_take_the_nearest_allowed_ratio() {
             "{pixels}/{logical}"
         );
     }
+}
+
+#[test]
+fn provider_limits_follow_the_screens_it_covers() {
+    let limits = session_lock_file_limits(Some(&topology(7, 2)));
+    // The largest allocation is 2880x1620; two live resources per output.
+    assert_eq!((limits.max_width_px, limits.max_height_px), (2880, 1620));
+    assert_eq!(limits.max_resource_bytes, 2880 * 1620 * 4);
+    assert_eq!(limits.max_live_resources, 4);
+    assert_eq!(
+        LockFileLimits::decode(&limits.encode().unwrap()).unwrap(),
+        limits,
+        "the contract accepts them"
+    );
+    // Without a topology, an ordinary screen still fits.
+    let blind = session_lock_file_limits(None);
+    assert_eq!((blind.max_width_px, blind.max_height_px), (1920, 1080));
+    assert_eq!(blind.max_resource_bytes, 1920 * 1080 * 4);
+    assert_eq!(blind.max_live_resources, 2);
+    assert!(blind.encode().is_ok());
 }
