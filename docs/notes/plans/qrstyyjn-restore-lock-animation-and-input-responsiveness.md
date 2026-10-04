@@ -205,5 +205,34 @@ The integrated gate reached its final tool checks, then refused two unregistered
 completion readers. The narrow inventory correction and its controls passed,
 as did every remaining check; the original failure and resumed results are kept
 in `GATE-05-DISPOSITION.json`. No production code changed after that gate.
-Physical acceptance and the audited one-command release remain held until the
-native-retirement failure has a supported disposition.
+Physical acceptance and deployment of this candidate remain held until the
+native-retirement failure has a supported disposition. Claude owns the separate
+Nix/niltempus delivery work; changing the build path does not change this hold.
+
+## Completion invariant audit (2026-10-04)
+
+The installed, operator-accepted `316d9695` line is now in local master through
+signed merge `b1af37e2c`, with an identical tree. That reconciliation includes
+the keyboard repair and earlier SDK integration, not the newer t302 candidate.
+
+The native completion audit found no new production defect. Service collects
+each card before reducing output work, then makes a final collect-and-retire
+attempt before declaring a hard stall. Singleton shutdown drain uses the same
+fence-polling retirement path. A late signal therefore needs no cancellation,
+disable or detach to become visible. This source result does not identify why
+the guest fence remained pending for 500 ms.
+
+A new deterministic control retains two independent submitted owners with real
+socket readiness descriptors. It signals, retires and cleans up one while the
+other stays pending through repeated inspection; a later signal on the retained
+descriptor then retires exactly that owner. It tests descriptor and buffer
+custody, not DRM hardware or the kernel's delayed worker. Existing controls cover
+refused/stale callbacks, mirror identity, event collection across cards, saturated
+authority ingress, no idle polling tail, descriptor errors and the hard boundary.
+
+All 42 selected tests passed (20 backend, 19 owner-wake, two scheduling and one
+watchdog test), along with layout and strict backend Clippy. Exact per-test names,
+commands and the source audit are in `t302-sophia-forward-01`. No production
+completion code or timeout changed. The earlier stall remains open; further
+ordinary screening is stopped. A recurrence with a blocked-task stack or a
+deterministic source reproduction would provide new evidence.

@@ -312,3 +312,83 @@ fn a_signalled_fence_with_a_refused_callback_uses_bounded_service() {
     ));
     assert!(custody.displayed().unwrap().completion_fence().is_none());
 }
+
+#[test]
+fn another_heads_progress_cannot_signal_or_release_a_pending_fence() {
+    use std::io::Write;
+    use std::os::unix::net::UnixStream;
+    let device = Device::default();
+    let pools = [
+        Rc::new(RefCell::new(LiveRendererFrameSlotPool::new())),
+        Rc::new(RefCell::new(LiveRendererFrameSlotPool::new())),
+    ];
+    let mut heads: [PersistentScanoutCustody; 2] = Default::default();
+    let mut signals = Vec::new();
+    for (index, head) in heads.iter_mut().enumerate() {
+        let (fence, signal) = UnixStream::pair().unwrap();
+        let mut frame = submission(&pools[index], 30 + index as u32);
+        frame.primary_plane.completion_fence = Some(fence.into());
+        head.accept_submission(frame).unwrap();
+        signals.push(signal);
+    }
+    signals[1].write_all(b"ready").unwrap();
+    assert_eq!(
+        heads[1]
+            .submitted()
+            .unwrap()
+            .completion_fence_status()
+            .unwrap(),
+        LibdrmNativeCompletionFenceStatus::Signaled
+    );
+    assert!(matches!(
+        heads[1].present(&device, &callback(4), None),
+        PersistentFlipOutcome::Presented { .. }
+    ));
+    assert!(
+        heads[1]
+            .retire_displayed(&device)
+            .unwrap()
+            .unwrap()
+            .released
+    );
+    assert_eq!(*device.destroyed.borrow(), [31]);
+
+    // Repeated inspection and other-head cleanup leave the delayed head's
+    // descriptor and submission intact. Readiness is not a retirement proof.
+    for _ in 0..3 {
+        let submitted = heads[0].submitted().unwrap();
+        let status = submitted.completion_fence_status().unwrap();
+        assert_eq!(status, LibdrmNativeCompletionFenceStatus::Pending);
+        let mut wait = crate::LiveNativeCompletionWait::default();
+        wait.observe_fence(submitted.completion_fence().unwrap(), status);
+        assert_eq!(wait.descriptors.len(), 1);
+        assert!(!wait.short_service);
+        assert!(heads[0].displayed().is_none());
+        assert_eq!(*device.destroyed.borrow(), [31]);
+    }
+    // The same retained fd sees a later signal, without cancellation, detach,
+    // replacement or framebuffer destruction making it ready first.
+    signals[0].write_all(b"late").unwrap();
+    assert_eq!(
+        heads[0]
+            .submitted()
+            .unwrap()
+            .completion_fence_status()
+            .unwrap(),
+        LibdrmNativeCompletionFenceStatus::Signaled
+    );
+    assert!(matches!(
+        heads[0].present(&device, &callback(4), None),
+        PersistentFlipOutcome::Presented { .. }
+    ));
+    assert!(heads[0].submitted().is_none());
+    assert!(heads[0].displayed().unwrap().completion_fence().is_none());
+    assert!(
+        heads[0]
+            .retire_displayed(&device)
+            .unwrap()
+            .unwrap()
+            .released
+    );
+    assert_eq!(*device.destroyed.borrow(), [31, 30]);
+}
