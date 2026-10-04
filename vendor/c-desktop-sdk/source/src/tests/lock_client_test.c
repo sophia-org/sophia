@@ -56,6 +56,9 @@ struct peer {
   unsigned events_pending, negotiated, upload_bound;
   /* Faults. */
   unsigned submit_again, reject_begin, stale_events, hold_acks;
+  uint16_t upload_tags[16];
+  uint32_t upload_counts[16], upload_errors[16], upload_iounit;
+  unsigned hold_upload, held_uploads, upload_short, upload_error, upload_ends;
   uint16_t held_tag;
   uint64_t held_sequence;
   uint32_t submit_error, extra_grant;
@@ -250,6 +253,7 @@ static void accept_candidate(struct peer *p, const struct sophia_lf_record *c) {
     resource_status(p, p->begin.transaction, SOPHIA_LF_ADMITTED, 0);
     return;
   case SOPHIA_LF_RESOURCE_END:
+    ++p->upload_ends;
     p->upload_bound = 0;
     if (p->upload_cursor == p->upload_total &&
         c->value.resource_step.total_bytes == p->upload_total)
@@ -390,6 +394,8 @@ static void request(struct peer *p, const uint8_t *m) {
     } else
       assert(flags == (file == F_SUBMIT || file == F_ACK ? 1u : 0u));
     qid(b, 0, file == F_LOCK ? p->qid : file);
+    if (file >= F_UPLOAD)
+      put(b + 13, p->upload_iounit, 4);
     send_reply(p, 13, tag, b, 17);
   } else if (type == 116) {
     uint64_t offset = get(q + 4, 8);
@@ -424,10 +430,32 @@ static void request(struct peer *p, const uint8_t *m) {
       count(p, tag, n);
     } else if (file >= F_UPLOAD) {
       assert(p->upload_fid == fid && p->upload_bound);
-      assert(offset == p->upload_cursor && n <= p->upload_total - offset);
-      memcpy(p->pixels + offset, d, n);
-      p->upload_cursor += n;
-      count(p, tag, n);
+      uint32_t err = 0;
+      assert(n <= p->upload_total - offset);
+      if (p->upload_error) {
+        err = p->upload_error;
+        p->upload_error = 0;
+      } else if (offset != p->upload_cursor) {
+        err = 22; /* The cursor did not advance across a short/failed write. */
+      } else {
+        if (p->upload_short) {
+          assert(n > 1);
+          --n;
+          p->upload_short = 0;
+        }
+        memcpy(p->pixels + offset, d, n);
+        p->upload_cursor += n;
+      }
+      if (p->hold_upload) {
+        unsigned at = p->held_uploads++;
+        assert(at < 16);
+        p->upload_tags[at] = tag;
+        p->upload_counts[at] = n;
+        p->upload_errors[at] = err;
+      } else if (err)
+        error(p, tag, err);
+      else
+        count(p, tag, n);
     } else if (file == F_ACK) {
       uint64_t sequence = get(d + 8, 8);
       assert(!offset && n == 16 && get(d, 8) == EPOCH);
@@ -498,11 +526,11 @@ static struct sophia_lf_negotiate offer(void) {
   o.chords[1].modifiers = SOPHIA_LF_MOD_SUPER | SOPHIA_LF_MOD_SHIFT;
   return o;
 }
-static struct rig *rig_new(const struct sophia_lf_negotiate *o,
-                           const char *api) {
+static struct rig *rig_new_capacity(const struct sophia_lf_negotiate *o,
+                                    const char *api, uint16_t capacity) {
   struct rig *r = calloc(1, sizeof(*r));
   struct sophia_lf_record l;
-  size_t bytes = sophia_9p_storage_bytes(8192, 8);
+  size_t bytes = sophia_9p_storage_bytes(8192, capacity);
   int sockets[2];
   assert(r && !socketpair(AF_UNIX, SOCK_STREAM, 0, sockets));
   r->client_fd = sockets[0];
@@ -517,10 +545,13 @@ static struct rig *rig_new(const struct sophia_lf_negotiate *o,
   publish(&r->peer, SOPHIA_LF_UNLOCKED, 0, 0);
   r->storage = malloc(bytes);
   assert(r->storage);
-  assert(!sophia_9p_init(&r->wire, r->client_fd, 8192, 8, 32, r->storage,
+  assert(!sophia_9p_init(&r->wire, r->client_fd, 8192, capacity, 32, r->storage,
                          bytes));
   assert(!sophia_lc_init(&r->client, &r->wire, o));
   return r;
+}
+static struct rig *rig_new(const struct sophia_lf_negotiate *o, const char *api) {
+  return rig_new_capacity(o, api, 8);
 }
 static void rig_free(struct rig *r) {
   close(r->client_fd);
@@ -882,11 +913,14 @@ static void refuses_bad_offers(void) {
   free(storage);
 }
 
+#include "lock_upload_pipeline.h"
+
 int main(void) {
   bootstrap_and_lock();
   superseded_announcement();
   entry_and_chord();
   upload_and_present();
+  upload_pipeline_tests();
   rejected_and_refused_uploads();
   again_then_retry();
   custody_waits_for_ack();

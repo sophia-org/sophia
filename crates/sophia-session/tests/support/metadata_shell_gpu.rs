@@ -122,3 +122,60 @@ fn only_direct_policy_observes_device_replacement() {
     assert!(direct.replace_device(None));
     assert!(!direct.replace_device(None));
 }
+
+/// The external conformance client must exit successfully only after rendering
+/// through the exact grant. It must refuse an absent grant, without probing
+/// other devices. This exercises Session's actual sysfs projection and the
+/// runtime's LockProvider protection domain, without an input or card device.
+#[test]
+#[ignore = "requires an explicit render node and external GPU conformance client"]
+fn granted_gpu_client_runs_inside_the_lock_provider_domain() {
+    use sophia_runtime::{ProcessSupervisor, SupervisedProcessKind, SupervisorCommand};
+    use std::time::{Duration, Instant};
+
+    let node = std::env::var_os("SOPHIA_TEST_GPU_RENDER_NODE").unwrap();
+    let client = std::env::var_os("SOPHIA_TEST_GPU_CLIENT").unwrap();
+    assert!(Path::new(&node).is_absolute());
+    assert!(Path::new(&client).is_absolute());
+    let metadata = std::fs::symlink_metadata(&node).unwrap();
+    assert!(metadata.file_type().is_char_device());
+    let device = LiveRenderDeviceIdentitySnapshot {
+        node: node.into(),
+        device: metadata.dev(),
+        inode: metadata.ino(),
+        device_number: metadata.rdev(),
+        physical_device: std::fs::canonicalize(format!(
+            "/sys/dev/char/{}:{}/device",
+            rustix::fs::major(metadata.rdev()),
+            rustix::fs::minor(metadata.rdev()),
+        ))
+        .unwrap(),
+    };
+    let launch = ProcessLaunchSpec::new(client).protection_domain(
+        ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::LockProvider]).unwrap(),
+    );
+    for direct in [false, true] {
+        let mode = if direct {
+            ShellGpuMode::Direct
+        } else {
+            ShellGpuMode::Denied
+        };
+        let policy = ShellGpuLaunchPolicy::new(mode, direct.then(|| device.clone())).unwrap();
+        let (prepared, evidence) = policy.prepare(&launch, 1).unwrap();
+        assert_eq!(evidence.is_some(), direct);
+        let mut supervisor = ProcessSupervisor::new(SupervisedProcessKind::LockProvider, prepared);
+        supervisor
+            .apply(SupervisorCommand::StartProcess {
+                process: SupervisedProcessKind::LockProvider,
+                delay: Duration::ZERO,
+            })
+            .unwrap();
+        assert!(supervisor.protection_evidence().is_some());
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while supervisor.poll().unwrap().is_none() {
+            assert!(Instant::now() < deadline, "GPU client did not exit");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(supervisor.exit_status().unwrap().success(), direct);
+    }
+}

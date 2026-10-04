@@ -87,6 +87,8 @@ int sophia_lc_internal_object_reply(struct sophia_lc_client *,
 int sophia_lc_internal_upload_drive(struct sophia_lc_client *);
 int sophia_lc_internal_upload_reply(struct sophia_lc_client *,
                                     const struct sophia_9p_reply *);
+int sophia_lc_internal_upload_write_reply(struct sophia_lc_client *,
+                                          const struct sophia_9p_reply *);
 void sophia_lc_internal_upload_status(struct sophia_lc_client *,
                                       const struct sophia_lf_resource_status *);
 void sophia_lc_internal_upload_refused(struct sophia_lc_client *,

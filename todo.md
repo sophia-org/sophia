@@ -200,3 +200,5 @@ Let shell components animate placements (next shell capability bit): Sophia-inte
 Extend window motion beyond the existing positional translation (bit 12): animated resizes synchronised with configure and commit, scale, clip and opacity of committed windows, and workspace-switch effects. +candidate @planning id:t288 order:288 [details](docs/notes/plans/bzofyaco-compositor-driven-transitions-for-wm-presentations-and-shell-components.md#t288)
 
 Keep fence-waiting Present pixmaps eligible for equal-target full-update scrapping until execution, on clocked and Unclocked sources, with truthful Idle and target-time Skip. +candidate @planning id:t300 order:300 [details](docs/notes/plans/7habxzm4-next-sophia-cpu-reductions-under-real-animated-workloads.md#t300)
+
+(A) Restore lock animation, upload throughput and input responsiveness +critical @development id:t302 order:034.302 [details](docs/notes/plans/qrstyyjn-restore-lock-animation-and-input-responsiveness.md#t302)

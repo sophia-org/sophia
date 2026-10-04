@@ -33,6 +33,7 @@ pub(super) struct LockProvider {
     supervisor: ProcessSupervisor,
     restart_at: Option<Instant>,
     backoff: Duration,
+    owner_wake: sophia_wake::Notifier,
 }
 
 impl LockProvider {
@@ -74,12 +75,13 @@ impl LockProvider {
             .ok_or("the lock provider did not start")?;
         transport.authorize_supervised_process(&supervisor)?;
         let service = LockFileService::spawn(transport, lock, reserved_chords)?;
-        service.set_owner_wake(wake);
+        service.set_owner_wake(wake.clone());
         Ok(Self {
             service,
             supervisor,
             restart_at: None,
             backoff: FIRST_RESTART,
+            owner_wake: wake,
         })
     }
 
@@ -87,13 +89,21 @@ impl LockProvider {
     /// its delay has passed. Never blocks.
     pub(super) fn poll(&mut self, now: Instant) -> Vec<LockFileServiceEvent> {
         let mut events = Vec::new();
-        while let Ok(Some(event)) = self.service.try_event() {
+        // A provider cannot extend the owner pass by refilling its handoff.
+        // Every publication rings the owner; another pass drains the remainder.
+        for _ in 0..8 {
+            let Ok(Some(event)) = self.service.try_event() else {
+                break;
+            };
             if matches!(event, LockFileServiceEvent::Connected { .. }) {
                 // A provider that got as far as negotiating restarts promptly
                 // if it fails later.
                 self.backoff = FIRST_RESTART;
             }
             events.push(event);
+        }
+        if events.len() == 8 {
+            self.owner_wake.notify();
         }
         if self.restart_at.is_none() && matches!(self.supervisor.poll(), Ok(Some(_))) {
             crate::session_eprintln!(

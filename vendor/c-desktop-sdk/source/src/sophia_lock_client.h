@@ -36,6 +36,11 @@ struct sophia_lc_operation {
   struct sophia_9p_handle handle;
   uint8_t active;
 };
+#define SOPHIA_LC_MAX_UPLOAD_WRITES 8
+struct sophia_lc_upload_write {
+  struct sophia_lc_operation op;
+  uint32_t count;
+};
 /* Private state exposed for caller-owned allocation. Do not modify it. */
 struct sophia_lc_client {
   struct sophia_9p_client *wire;
@@ -47,6 +52,7 @@ struct sophia_lc_client {
   struct sophia_lf_resource_begin upload;
   struct sophia_lc_operation boot_op, event_op, submit_op, ack_op, object_op,
       upload_op;
+  struct sophia_lc_upload_write upload_writes[SOPHIA_LC_MAX_UPLOAD_WRITES];
   uint64_t epoch, next_submission, sequence, consumed, acked, ack_pending;
   uint64_t submitted_sequence, event_offset, lock_generation;
   uint64_t object_generation, object_qid, upload_offset;
@@ -58,8 +64,9 @@ struct sophia_lc_client {
       submitted, submit_replied, submit_wait, submit_sent, object_stage,
       object_probe, upload_stage, upload_closing, stale;
   size_t tx_size, tx_offset, event_used, object_used, boot_used;
-  size_t upload_size, upload_sent;
-  /* An upload chunk is borrowed until its Twrite reply is processed. */
+  size_t upload_size, upload_sent, upload_issued;
+  uint8_t upload_window, upload_cancel_requested;
+  /* Borrowed until every issued Twrite has settled, including cancellation. */
   const uint8_t *upload_data;
   uint8_t tx[SOPHIA_LF_MAX_CANDIDATE], events[1024], object[1024], boot[128];
 };
@@ -112,11 +119,19 @@ int sophia_lc_submit_retry(struct sophia_lc_client *);
  * byte (width * height * 4) was written; End and Cancel are submissions. The
  * upload ends on the resource's Accepted, Rejected or Cancelled status, or on
  * a refused begin, end or cancel. Statuses are presented as events too. */
+/* Opt in to 1..8 writes in flight (default 1), only between uploads. The
+ * wire must have at least writes + 5 request slots, reserving control capacity.
+ * The wire format and ordered upload cursor are unchanged. A short write in
+ * a pipelined upload cancels it after draining replies; it never publishes a
+ * partial resource. Single-write mode continues a positive short write. */
+int sophia_lc_upload_window(struct sophia_lc_client *, unsigned writes);
 int sophia_lc_upload_begin(struct sophia_lc_client *,
                            const struct sophia_lf_resource_begin *);
 int sophia_lc_upload_chunk(struct sophia_lc_client *, const void *, size_t);
 int sophia_lc_upload_ready(const struct sophia_lc_client *);
 int sophia_lc_upload_pending(const struct sophia_lc_client *);
 int sophia_lc_upload_end(struct sophia_lc_client *);
+/* May be requested during a chunk. Stops issuing bytes, drains already issued
+ * writes, then submits Cancel. The borrow remains until pending ends. */
 int sophia_lc_upload_cancel(struct sophia_lc_client *);
 #endif

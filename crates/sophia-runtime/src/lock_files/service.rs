@@ -5,7 +5,7 @@
 use std::collections::VecDeque;
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError},
 };
 use std::thread::JoinHandle;
@@ -17,6 +17,20 @@ use sophia_protocol::lock_files::*;
 use super::{LockFileAssignee, LockFileTransport, LockFileTransportError, LockInbound};
 
 const HANDOFF_CAPACITY: usize = 32;
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct LockFileServiceStats {
+    pub passes: u64,
+    pub waits: u64,
+    pub handoff_waits: u64,
+}
+
+#[derive(Default)]
+struct ServiceCounters {
+    passes: AtomicU64,
+    waits: AtomicU64,
+    handoff_waits: AtomicU64,
+}
 
 #[derive(Debug)]
 pub enum LockFileServiceCommand {
@@ -65,6 +79,8 @@ pub struct LockFileService {
     stopped: Arc<AtomicBool>,
     owner_wake: sophia_wake::WakeSlot,
     thread: Option<JoinHandle<()>>,
+    service_wake: sophia_wake::Notifier,
+    counters: Arc<ServiceCounters>,
 }
 
 impl LockFileService {
@@ -83,6 +99,10 @@ impl LockFileService {
         let stop = stopped.clone();
         let owner_wake = sophia_wake::WakeSlot::default();
         let worker_wake = owner_wake.clone();
+        let service_wake = sophia_wake::Wake::new()?;
+        let notifier = service_wake.notifier();
+        let counters = Arc::new(ServiceCounters::default());
+        let worker_counters = counters.clone();
         let thread = std::thread::Builder::new()
             .name("sophia-lock-files".into())
             .spawn(move || {
@@ -93,11 +113,16 @@ impl LockFileService {
                     publish_pending: false,
                     pending: VecDeque::new(),
                     owner_wake: worker_wake,
+                    service_wake,
+                    counters: worker_counters,
                 };
                 if let Err(message) = worker.run(&incoming, &outgoing, &stop) {
                     let _ = worker.transport.disconnect();
                     let mut failed = LockFileServiceEvent::Failed { message };
                     while !stop.load(Ordering::Acquire) {
+                        if worker.service_wake.clear().is_err() {
+                            break;
+                        }
                         match outgoing.try_send(failed) {
                             Ok(()) => {
                                 worker.owner_wake.notify();
@@ -106,7 +131,12 @@ impl LockFileService {
                             Err(TrySendError::Disconnected(_)) => break,
                             Err(TrySendError::Full(event)) => failed = event,
                         }
-                        std::thread::sleep(Duration::from_millis(1));
+                        if stop.load(Ordering::Acquire) {
+                            break;
+                        }
+                        if worker.service_wake.wait(None).is_err() {
+                            break;
+                        }
                     }
                 }
                 let _ = worker.transport.disconnect();
@@ -119,7 +149,17 @@ impl LockFileService {
             stopped,
             owner_wake,
             thread: Some(thread),
+            service_wake: notifier,
+            counters,
         })
+    }
+
+    pub fn stats(&self) -> LockFileServiceStats {
+        LockFileServiceStats {
+            passes: self.counters.passes.load(Ordering::Relaxed),
+            waits: self.counters.waits.load(Ordering::Relaxed),
+            handoff_waits: self.counters.handoff_waits.load(Ordering::Relaxed),
+        }
     }
 
     /// Installs the owner's wake; installation rings once.
@@ -138,12 +178,17 @@ impl LockFileService {
             .try_send(command)
             .map_err(|error| match error {
                 TrySendError::Full(command) | TrySendError::Disconnected(command) => command,
-            })
+            })?;
+        self.service_wake.notify();
+        Ok(())
     }
 
     pub fn try_event(&self) -> Result<Option<LockFileServiceEvent>, TryRecvError> {
         match self.events.try_recv() {
-            Ok(event) => Ok(Some(event)),
+            Ok(event) => {
+                self.service_wake.notify(); // Space in the bounded owner handoff.
+                Ok(Some(event))
+            }
             Err(TryRecvError::Empty) => Ok(None),
             Err(error) => Err(error),
         }
@@ -153,13 +198,18 @@ impl LockFileService {
         &self,
         timeout: Duration,
     ) -> Result<LockFileServiceEvent, mpsc::RecvTimeoutError> {
-        self.events.recv_timeout(timeout)
+        let result = self.events.recv_timeout(timeout);
+        if result.is_ok() {
+            self.service_wake.notify();
+        }
+        result
     }
 }
 
 impl Drop for LockFileService {
     fn drop(&mut self) {
         self.stopped.store(true, Ordering::Release);
+        self.service_wake.notify();
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
@@ -173,6 +223,8 @@ struct Worker {
     publish_pending: bool,
     pending: VecDeque<LockFileServiceEvent>,
     owner_wake: sophia_wake::WakeSlot,
+    service_wake: sophia_wake::Wake,
+    counters: Arc<ServiceCounters>,
 }
 
 impl Worker {
@@ -183,9 +235,19 @@ impl Worker {
         stopped: &AtomicBool,
     ) -> Result<(), String> {
         while !stopped.load(Ordering::Acquire) {
+            // Clear before inspecting queues. Publications after the check
+            // remain readable, including commands, stop and freed handoff space.
+            self.service_wake
+                .clear()
+                .map_err(|error| error.to_string())?;
+            self.counters.passes.fetch_add(1, Ordering::Relaxed);
+            let mut progressed = false;
             while let Some(event) = self.pending.pop_front() {
                 match events.try_send(event) {
-                    Ok(()) => self.owner_wake.notify(),
+                    Ok(()) => {
+                        self.owner_wake.notify();
+                        progressed = true;
+                    }
                     Err(TrySendError::Disconnected(_)) => return Ok(()),
                     Err(TrySendError::Full(event)) => {
                         self.pending.push_front(event);
@@ -196,7 +258,10 @@ impl Worker {
             let mut commands_drained = false;
             if self.pending.is_empty() {
                 match commands.try_recv() {
-                    Ok(command) => self.command(command).map_err(|error| error.to_string())?,
+                    Ok(command) => {
+                        self.command(command).map_err(|error| error.to_string())?;
+                        progressed = true;
+                    }
                     Err(TryRecvError::Empty) => commands_drained = true,
                     Err(TryRecvError::Disconnected) => return Ok(()),
                 }
@@ -205,6 +270,7 @@ impl Worker {
                 if !self.transport.turn().map_err(|error| error.to_string())? {
                     self.retire_connection()
                         .map_err(|error| error.to_string())?;
+                    progressed = true;
                 } else {
                     // Inbound waits while events are unsent, so the owner's
                     // queue bounds what the provider can have in flight.
@@ -212,6 +278,7 @@ impl Worker {
                         && let Some(inbound) = self.transport.take_inbound()
                     {
                         self.deliver(inbound);
+                        progressed = true;
                     }
                     if self.publish_pending && self.negotiated() {
                         self.publish().map_err(|error| error.to_string())?;
@@ -223,9 +290,13 @@ impl Worker {
                     .transport
                     .poll_accept(&self.lock, &self.reserved_chords)
                 {
-                    Ok(true) => self.publish_pending = false,
+                    Ok(true) => {
+                        self.publish_pending = false;
+                        progressed = true;
+                    }
                     Ok(false) => {}
                     Err(error) => {
+                        progressed = true;
                         self.pending
                             .push_back(LockFileServiceEvent::ConnectionRejected {
                                 message: error.to_string(),
@@ -233,7 +304,15 @@ impl Worker {
                     }
                 }
             }
-            std::thread::sleep(Duration::from_millis(1));
+            if !progressed && !stopped.load(Ordering::Acquire) {
+                self.counters.waits.fetch_add(1, Ordering::Relaxed);
+                if !self.pending.is_empty() {
+                    self.counters.handoff_waits.fetch_add(1, Ordering::Relaxed);
+                }
+                self.transport
+                    .wait_for_work(&self.service_wake, self.pending.is_empty())
+                    .map_err(|error| error.to_string())?;
+            }
         }
         Ok(())
     }
