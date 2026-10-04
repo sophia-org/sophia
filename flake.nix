@@ -53,6 +53,34 @@
       };
       cargoArtifacts = craneLib.buildDepsOnly common;
 
+      # Sophia's GPU stack, scoped to Sophia alone. Nixpkgs' libgbm and
+      # libglvnd look for Mesa under /run/opengl-driver, and libglvnd also
+      # under /usr/share, whose vendor files name the host's Mesa. Neither
+      # suits a non-NixOS host. These copies look only at the pinned Mesa,
+      # with no environment variables and no global state, so programs that
+      # Sophia starts keep the host's own graphics stack.
+      mesa = pkgs.mesa;
+      gbmBackendsFlag = "-Dgbm-backends-path=${pkgs.addDriverRunpath.driverLink}/lib/gbm";
+      sophiaGbm = pkgs.libgbm.overrideAttrs (old: {
+        # Built from the pinned Mesa's source, matching its GBM backend.
+        inherit (mesa) version src;
+        mesonFlags =
+          assert lib.assertMsg (builtins.elem gbmBackendsFlag old.mesonFlags)
+            "libgbm no longer sets ${gbmBackendsFlag}";
+          map (flag: if flag == gbmBackendsFlag then "-Dgbm-backends-path=${mesa}/lib/gbm" else flag)
+            old.mesonFlags;
+      });
+      eglVendorDirs = "${pkgs.addDriverRunpath.driverLink}/share/glvnd/egl_vendor.d:/etc/glvnd/egl_vendor.d:/usr/share/glvnd/egl_vendor.d";
+      sophiaGlvnd = pkgs.libglvnd.overrideAttrs (old: {
+        env = old.env // {
+          NIX_CFLAGS_COMPILE =
+            assert lib.assertMsg (lib.hasInfix eglVendorDirs old.env.NIX_CFLAGS_COMPILE)
+              "libglvnd no longer sets its EGL vendor directories as expected";
+            builtins.replaceStrings [ eglVendorDirs ] [ "${mesa}/share/glvnd/egl_vendor.d" ]
+              old.env.NIX_CFLAGS_COMPILE;
+        };
+      });
+
       sophia = craneLib.buildPackage (common // {
         inherit cargoArtifacts;
         doCheck = false;
@@ -66,6 +94,9 @@
         # sophia-xshmfence loads libxshmfence for DRI3 X clients; give it the
         # pinned one.
         postFixup = ''
+          # The scoped GPU stack comes first, ahead of the libgbm Sophia
+          # links (same soname and ABI); libEGL.so.1 is loaded at run time.
+          patchelf --set-rpath "${sophiaGbm}/lib:${sophiaGlvnd}/lib:$(patchelf --print-rpath $out/bin/sophia)" $out/bin/sophia
           patchelf --add-rpath ${pkgs.libxshmfence}/lib $out/bin/sophia
           helper=$out/bin/sophia-factotum-pam
           kept=$(patchelf --print-rpath "$helper" | tr ':' '\n' | grep -v '${pkgs.linux-pam}' | paste -sd: -)
@@ -91,6 +122,9 @@
       packages.${system} = {
         inherit sophia;
         default = sophia;
+        # Sophia's scoped GPU stack, exported for inspection and host checks.
+        sophia-gbm = sophiaGbm;
+        sophia-glvnd = sophiaGlvnd;
         # Not yet a check: the gate's workspace tests assume a host with
         # /usr/bin/bwrap, /usr/bin/true, sleep, sh, xterm, Go and a C compiler,
         # and protection domains that see only /usr. Under Nix's build sandbox
