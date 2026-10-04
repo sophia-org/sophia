@@ -138,11 +138,28 @@ impl<E: Export> Connection<E> {
     /// Starts receiving in place the write `partial` begins, a frame of
     /// `length` bytes not yet whole, once its header is here and checked:
     /// the protocol's header rules, an exact count, room for the reply, a
-    /// fid open for writing, and the export's check. Anything short of that
-    /// leaves the request to be buffered and answered whole, as any other.
+    /// fid open for writing, the export's check, and the owner's acceptance.
+    /// Anything short of that leaves the request to be buffered and answered
+    /// whole, as any other. That is decided once per request, when its
+    /// header is whole: a request not received in place then is buffered
+    /// however the rest of it arrives, and the owner is not asked again.
     /// True when started: what `partial` holds of the data has gone to the
     /// destination, or been discarded if the owner refused at once.
     pub(super) fn start_in_place(
+        &mut self,
+        export: &mut E,
+        partial: &[u8],
+        length: usize,
+    ) -> Result<bool, Fatal> {
+        if self.buffered_frame || partial.len() < WRITE_HEADER {
+            return Ok(false);
+        }
+        let started = self.offer_in_place(export, partial, length)?;
+        self.buffered_frame = !started;
+        Ok(started)
+    }
+
+    fn offer_in_place(
         &mut self,
         export: &mut E,
         partial: &[u8],

@@ -553,3 +553,71 @@ fn real_sockets_receive_in_place_across_split_writes() {
     assert_eq!(ledger.committed, [&first[..], &second[..]].concat());
     assert_eq!((ledger.writes, ledger.commits), (0, 2));
 }
+
+/// Codex's regression (REVIEW-CODEX-direct-decline-regression.rs).
+#[test]
+fn an_initial_decline_keeps_this_write_buffered() {
+    let mut h = harness::<true>(limits());
+    let write = twrite(40, 1, 0, &data(3000, 21));
+    h.export.ledger().none_at = Some(0);
+    assert!(h.feed(&write[..23], 23).unwrap().is_empty());
+    assert_eq!(h.export.ledger().destinations, 1);
+    // Staging becomes available after this request was already declined.
+    h.export.ledger().none_at = None;
+    let replies = h.feed(&write[23..], 500).unwrap();
+    assert_eq!(replies[0].written(), 3000);
+    let ledger = h.export.ledger();
+    assert_eq!(ledger.committed, data(3000, 21));
+    assert_eq!(
+        (ledger.writes, ledger.commits),
+        (1, 0),
+        "a receipt declined at its header must stay buffered"
+    );
+    assert_eq!(
+        ledger.destinations, 1,
+        "do not offer the same declined receipt again"
+    );
+}
+
+#[test]
+fn a_write_after_a_declined_one_is_offered_afresh() {
+    let mut h = harness::<true>(limits());
+    let (first, second) = (data(3000, 22), data(2000, 23));
+    let stream = [twrite(41, 1, 0, &first), twrite(42, 1, 3000, &second)].concat();
+    h.export.ledger().none_at = Some(0);
+    assert!(h.feed(&stream[..23], 23).unwrap().is_empty());
+    h.export.ledger().none_at = None;
+    let replies = h.feed(&stream[23..], 500).unwrap();
+    assert_eq!((replies[0].written(), replies[1].written()), (3000, 2000));
+    let ledger = h.export.ledger();
+    assert_eq!(ledger.committed, [&first[..], &second[..]].concat());
+    // The first was buffered; the second, offered afresh, went in place.
+    assert_eq!((ledger.writes, ledger.commits), (1, 1));
+}
+
+/// Codex's control (REVIEW-CODEX-direct-commit-revocation.rs): the epoch
+/// ends after the last read and before the write is accepted.
+#[test]
+fn revocation_after_the_last_read_prevents_commit() {
+    let mut h = harness::<true>(limits());
+    let payload = data(3000, 22);
+    let write = twrite(41, 1, 0, &payload);
+    assert!(h.feed(&write[..23], 23).unwrap().is_empty());
+    match h.connection.in_place_target(&mut h.export).unwrap() {
+        sophia_9p::InPlaceTarget::Destination(destination) => {
+            destination.copy_from_slice(&payload);
+        }
+        sophia_9p::InPlaceTarget::Discard(_) => panic!("write unexpectedly refused"),
+    }
+    // Like an epoch expiring after read() returns but before its receipt commits.
+    h.export.ledger().revoked = true;
+    h.connection
+        .received_in_place(&mut h.export, payload.len())
+        .unwrap();
+    let replies = h.take();
+    assert_eq!(replies.len(), 1);
+    assert_eq!(replies[0].errno(), Some(ESTALE));
+    let ledger = h.export.ledger();
+    assert_eq!((ledger.writes, ledger.commits), (0, 0));
+    assert!(ledger.committed.is_empty());
+}

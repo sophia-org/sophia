@@ -179,9 +179,11 @@ pub trait Export {
     /// [`Export::WRITES_IN_PLACE`] is asked.
     ///
     /// The core asks first with `received` zero, once the request's header
-    /// has arrived whole and been checked, and before its data has. `None`
-    /// then declines: the request is buffered and given to [`Export::write`]
-    /// as usual. Having accepted, the core asks again before each later read
+    /// has arrived whole and been checked, and before all of its data has
+    /// (some may already be buffered behind an earlier request; the core
+    /// copies that part in). `None` then declines, for good: the request is
+    /// buffered and given to [`Export::write`] as usual, and the owner is not
+    /// asked about it again. Having accepted, the core asks again before each later read
     /// of the data, each time after [`Export::check`], so the owner may
     /// refuse partway. `None` or an error then ends the receipt: the core
     /// reads and discards the rest of the request's data and answers the

@@ -13,8 +13,8 @@
 //! be kept. The same holds for every retried read.
 //!
 //! WRITES IN PLACE. For an export with [`Export::WRITES_IN_PLACE`], a write
-//! whose header has arrived and been checked, but whose data has not, may be
-//! received straight into the export's destination
+//! whose header has arrived and been checked, but not all of whose data has,
+//! may be received straight into the export's destination
 //! ([`Export::write_destination`]): [`Connection::in_place_target`] names
 //! where the next bytes go and [`Connection::received_in_place`] accounts for
 //! them. Room for its reply is kept from the start. Only the declared data is
@@ -127,6 +127,9 @@ pub struct Connection<E: Export> {
     stalled: bool,
     closed: bool,
     in_place: Option<InPlace>,
+    /// The request at the front of the input was not received in place
+    /// when its header was whole, so it is buffered whole.
+    buffered_frame: bool,
 }
 
 impl<E: Export> Connection<E> {
@@ -144,6 +147,7 @@ impl<E: Export> Connection<E> {
             stalled: false,
             closed: false,
             in_place: None,
+            buffered_frame: false,
         }
     }
 
@@ -189,8 +193,10 @@ impl<E: Export> Connection<E> {
     /// a complete request waits for output room, so a driver stops reading.
     /// While a write is received in place, the rest of its data. For an
     /// export that writes in place, at most the rest of a request's header
-    /// while that header is incomplete, so a write's data is never
-    /// buffered before the write is checked.
+    /// while that header is incomplete, so a write's data mostly arrives
+    /// after the write is checked. Some may already be buffered when the
+    /// write followed another request in the same read; that part is copied
+    /// to the destination.
     pub fn input_room(&self) -> usize {
         if self.closed {
             return 0;
@@ -328,6 +334,7 @@ impl<E: Export> Connection<E> {
                 return Ok(());
             }
             *consumed += length;
+            self.buffered_frame = false;
             match decoded {
                 Err(malformed) => self.send(tag, &Reply::Lerror(malformed.errno))?,
                 Ok((_, request)) => {
@@ -453,6 +460,7 @@ impl<E: Export> Connection<E> {
     }
 
     fn reset(&mut self, export: &mut E) {
+        self.buffered_frame = false;
         self.waiting.clear();
         self.msize = None;
         for (_, state) in std::mem::take(&mut self.fids) {
