@@ -111,6 +111,58 @@ They do not qualify Kitty's DMA-BUF path, W1, multiple physical cards or final
 vblank/VT acceptance. Shared workers merit a matched hardware trial. There
 has been no live restart, installation or configuration change for this work.
 
+## Renderer completion notification experiment (2026-10-04)
+
+Implemented on `performance/t289-renderer-wake`, based on master `21d2a482e`.
+Each output publishes persistent reply readiness before notifying the owner;
+worker exit and inventory acknowledgements notify it too. A cleared or coalesced
+ring cannot erase a sibling's readiness. Only renderer work with this notification
+contract can leave the short-poll path. Work blocked by scanout custody keeps a
+bounded retry, as do cursor, topology, cleanup and other uncovered work. Existing
+stall deadlines and the 25 ms maintenance budget remain unchanged.
+
+The full isolated gate passes, including strict workspace Clippy, layout and
+evidence readers. Six named mutation controls fail for premature notification,
+missing publication notification, lost persistent readiness, restored polling,
+bypassed custody and missing worker-exit notification. The first gate stopped
+at a standalone fixture's unused notification fields after its tests passed;
+a test-module lint expectation resolved it without changing production.
+
+Evidence: `development-evidence/t289-renderer-wake-01`. Freeze 02 is `89b648d5`;
+the only changes from the built freeze are tests and the fixture annotation.
+The clean baseline binary is `fe6ae6d3`, candidate `5133a7fb`, and both use client
+`237f4d1e`. Six ten-second probes pass, including shared-worker controls. All
+sixteen measured runs are valid: four alternating baseline/candidate pairs for
+each workload, with 60 seconds measured after ten seconds of grace. Every result
+is retained; none was replaced. The source stayed frozen throughout.
+
+| Workload | Sophia CPU ms / Complete | Whole-guest CPU ms / Complete | p95 latency |
+| --- | ---: | ---: | ---: |
+| Open, 10 Completes/s | 5.061 -> 5.328 (+5.27%) | 7.457 -> 7.823 (+4.90%) | 10.076 -> 8.539 ms (-15.25%) |
+| Closed, about 275 Completes/s | 3.689 -> 3.781 (+2.49%) | 5.750 -> 6.198 (+7.80%) | 7.641 -> 7.668 ms (+0.36%) |
+
+These are medians per completed Present. Open p95 ranges separate downward;
+closed guest-CPU ranges separate upward, with an increase in all four pairs.
+Sophia CPU ranges overlap in both workloads. The existing regression ceilings
+pass, but neither workload meets the stronger CPU-savings criterion.
+
+Frame/service timer expiries fall from 2.24 to 0.81 per Complete in the open
+workload and 2.01 to 1.63 when closed. Open maintenance stays at about 3.51.
+Notifications replace timer returns without reducing total owner work: owner
+CPU is nearly flat when open and rises about 1.8% when closed. Recorded kernel
+worker CPU rises from 1.88 to 2.23 ms/Complete when closed. This locates some of
+the extra cost; it does not prove its cause. All completion modes remain Copy,
+and no worker failure, result misroute or retained frame-slot lease occurs.
+
+**Disposition: preserve the candidate unmerged.** Fewer expired timers are not
+a CPU saving. The latency result may justify a separate hardware investigation,
+but does not qualify a default scheduling change. The next scheduling candidate
+must reduce total work or redundant passes and retain whole-guest accounting.
+Do not remove the remaining short retries merely because they are still counted.
+The guest uses core pixmaps, software-rendered Unclocked virtio and one card with
+two heads; it does not qualify Kitty DMA-BUFs, physical vblank, VT transitions or
+whole-desktop savings. There was no push, install, restart or live config change.
+
 ## Current assessment (2026-10-04)
 
 T289 remains active. The CPU harness and repaint attribution are qualified, and
@@ -129,11 +181,11 @@ so it neither establishes a regression nor closes the animated-workload target.
 
 | Original part | Completed work | Remaining evidence or decision |
 | --- | --- | --- |
-| 1. Profile and reduce owner work | Profile-guided shell service once per pass; native fd readiness and removal of the polling tail are on master. | Measure the combined savings and remaining deadline wakes; physical VT acceptance. |
+| 1. Profile and reduce owner work | Profile-guided shell service once per pass; native fd readiness and removal of the polling tail are on master. Renderer notifications were tested and remain unmerged because they did not save CPU. | Reduce total owner work, then measure combined savings; physical VT acceptance. |
 | 2. Hidden Present pacing | Bounded pacing, clock scheduling, race repairs, clockless recovery and first-frame selection are on master; hardware binds were observed live. | Matched CPU and first-visible/timing acceptance on the final release. |
-| 3. Aggregate diagnostics | Opt-in aggregation is on master; full evidence remains the default. | Off/on CPU comparison and verifier compatibility before any default change. |
+| 3. Aggregate diagnostics | Opt-in aggregation and verifier controls are on master; the guest comparison found no CPU benefit. Full evidence remains the default. | A matched hardware saving would be needed before a default change. |
 | 4. Partial damage | Actual-age repaint causes and client-damage counters passed component, pixel and guest checks. | Reproduce the full-screen terminal case and identify an avoidable cause, or record a measured no-change result. |
-| 5. Shared renderer worker | The optional path exists. | Compare private and shared workers, including fairness, latency, resources and recovery; no default promotion yet. |
+| 5. Shared renderer worker | The optional path and guest comparison pass; shared-worker renderer-notification controls also pass. | Matched hardware CPU, fairness, latency, resources and recovery; no default promotion yet. |
 | 6. CPU regression gates | Valid normal-session QEMU baseline, deterministic analyzer checks, and render-node capture/pixel comparisons. | Use these gates for subsequent candidates; keep final hardware acceptance. |
 
 The three priorities below now have concrete outcomes: native readiness is
