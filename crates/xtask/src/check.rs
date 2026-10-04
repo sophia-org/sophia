@@ -100,7 +100,12 @@ fn all(repo: &Path) -> Result<Vec<String>, String> {
     layout(repo)?;
     command(repo, "sh", &["tools/check_shell_c_wire.sh"])?;
     anchored_readers(repo)?;
-    for pattern in ["layout_comparison_test.py", "dri3_layout_probe_test.py"] {
+    for pattern in [
+        "layout_comparison_test.py",
+        "dri3_layout_probe_test.py",
+        "qemu_lock_provider_verifier_test.py",
+        "qemu_evidence_barrier_test.py",
+    ] {
         command(
             repo,
             "python3",

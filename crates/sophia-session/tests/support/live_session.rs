@@ -188,6 +188,8 @@ mod presentation_tests;
 mod profile_preparation_tests;
 #[path = "live_session/public_policy_recovery_tests.rs"]
 mod public_policy_recovery_tests;
+#[path = "live_session/qemu_lock_provider_argv_tests.rs"]
+mod qemu_lock_provider_argv_tests;
 #[path = "live_session/session_config_tests.rs"]
 mod session_config_tests;
 #[path = "live_session/session_lock_config_tests.rs"]

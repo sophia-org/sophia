@@ -29,14 +29,60 @@ case " $cmdline " in
     *" sophia.scenario=gtk-classic "*) scenario="gtk-classic" ;;
     *" sophia.scenario=gtk-confined "*) scenario="gtk-confined" ;;
     *" sophia.scenario=session-lock "*) scenario="session-lock" ;;
+    *" sophia.scenario=session-lock-provider "*) scenario="session-lock-provider" ;;
     *" sophia.scenario=cpu "*) scenario="cpu" ;;
     *" sophia.scenario=xtest-selection "*) scenario="xtest-selection" ;;
 esac
+# The kernel refuses bubblewrap's pivot_root(2) while / is the initramfs rootfs.
+# This scenario starts protection domains, so PID 1 first re-roots onto a bind
+# of the same rootfs (tools/qemu_reroot.c: no copy, no cleanup) and runs again
+# from the top, remounting its filesystems there. The bind is not recursive,
+# so they are unmounted first.
+if [ "$scenario" = "session-lock-provider" ]; then
+    if [ "${1:-}" != "--rerooted" ]; then
+        if ! umount /run /dev/pts /dev /sys /proc; then
+            echo "sophia_qemu_guest schema=1 status=failed reason=reroot_umount"
+            poweroff -f
+        fi
+        exec /usr/bin/sophia-qemu-reroot /newroot /sbin/sophia-qemu-init --rerooted
+    fi
+    # Our root must now be a mount with a parent, not the namespace's root.
+    root_count=0
+    root_id=""
+    root_parent=""
+    root_source=""
+    mount_ids=" "
+    while read -r id parent _ mount_root mount_point _; do
+        mount_ids="$mount_ids$id "
+        if [ "$mount_point" = / ]; then
+            root_count=$((root_count + 1))
+            root_id="$id"
+            root_parent="$parent"
+            root_source="$mount_root"
+        fi
+    done < /proc/self/mountinfo
+    case "$mount_ids" in
+        *" $root_parent "*) root_parent_visible=true ;;
+        *) root_parent_visible=false ;;
+    esac
+    if [ "$$" != 1 ] || [ "$root_count" != 1 ] || [ "$root_id" = "$root_parent" ] \
+        || [ "$root_parent_visible" != false ] || [ "$root_source" != / ]; then
+        echo "sophia_qemu_guest schema=1 status=failed reason=reroot pid=$$ root_mounts=$root_count root_mount=$root_id parent=$root_parent"
+        cat /proc/self/mountinfo
+        poweroff -f
+    fi
+    if ! bwrap --ro-bind / / --dev /dev --proc /proc /bin/sh -c 'exit 0'; then
+        echo "sophia_qemu_guest schema=1 status=failed reason=bwrap_smoke"
+        poweroff -f
+    fi
+    echo "sophia_qemu_guest schema=1 status=rerooted pid=1 root_mount=$root_id parent=$root_parent bwrap_smoke=pass"
+fi
 cpu_mode=open
 cpu_seconds=60
 cpu_grace=10
 cpu_rate=5
 cpu_target=zero
+lock_provider_mode=""
 for arg in $cmdline; do
     case "$arg" in
         sophia.cpu_mode=*) cpu_mode="${arg#*=}" ;;
@@ -44,6 +90,7 @@ for arg in $cmdline; do
         sophia.cpu_grace=*) cpu_grace="${arg#*=}" ;;
         sophia.cpu_rate=*) cpu_rate="${arg#*=}" ;;
         sophia.cpu_target=*) cpu_target="${arg#*=}" ;;
+        sophia.lock_provider_mode=*) lock_provider_mode="${arg#*=}" ;;
     esac
 done
 xtest_row=""
@@ -70,7 +117,8 @@ esac
 if [ "$scenario" = "emergency-recovery" ]; then
     echo "sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu scenario=emergency-recovery"
 elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ] \
-    || [ "$scenario" = "session-lock" ] || [ "$scenario" = "xtest-selection" ]; then
+    || [ "$scenario" = "session-lock" ] || [ "$scenario" = "xtest-selection" ] \
+    || [ "$scenario" = "session-lock-provider" ]; then
     echo "sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu scenario=$scenario"
 else
     echo "sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu ticks=300"
@@ -164,7 +212,7 @@ if [ "$scenario" = "emergency-recovery" ]; then
     set -- session run --display=:181 --native-scanout --max-runtime-ms=30000
     echo "sophia_qemu_guest_recovery schema=1 status=running chord=ctrl-alt-backspace"
 elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ] \
-    || [ "$scenario" = "session-lock" ]; then
+    || [ "$scenario" = "session-lock" ] || [ "$scenario" = "session-lock-provider" ]; then
     profile="classic"
     [ "$scenario" = "gtk-confined" ] && profile="confined"
     # Accessibility is outside this minimal image's GTK rendering/input proof.
@@ -175,6 +223,15 @@ elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ] \
     # The lock adds two typed passwords and PAM's failure delay.
     runtime_ms=30000
     [ "$scenario" = "session-lock" ] && runtime_ms=90000
+    [ "$scenario" = "session-lock-provider" ] && runtime_ms=90000
+    # The session-authored resize proof bypasses a public-policy WM, which owns
+    # geometry, so Session cannot settle it there: the provider scenario, the
+    # only one with a public WM, runs without it. Every other scenario's argv
+    # is unchanged.
+    resize_proof=--inject-surface-resize=640x360
+    if [ "$scenario" = "session-lock-provider" ]; then
+        resize_proof=""
+    fi
     set -- session run --display=:181 --native-scanout --max-runtime-ms="$runtime_ms" \
         --namespace-profile="$profile" --software-client-rendering \
         --client=zenity --client-arg=--entry --client-arg=--title \
@@ -182,8 +239,8 @@ elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ] \
         --client-arg='Type sophia, then click OK' \
         --expect-client-stdout="$expected_stdout" --require-client-normal-exit \
         --expect-physical-text=sophia --expect-physical-pointer \
-        --inject-surface-resize=640x360 --exit-after-input-proof
-    if [ "$scenario" = "session-lock" ]; then
+        ${resize_proof:+"$resize_proof"} --exit-after-input-proof
+    if [ "$scenario" = "session-lock" ] || [ "$scenario" = "session-lock-provider" ]; then
         # Real PAM on a test account: root's password is "sophialock". The
         # files are written here, as root, because the agent starts only on
         # a root-owned stack nobody else can write.
@@ -199,6 +256,34 @@ elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ] \
         set -- "$@" --factotum-agent=/usr/bin/sophia-factotum \
             --factotum-pam-helper=/usr/bin/sophia-factotum-pam --inject-session-lock \
             --physical-sequence-timeout-ms=60000
+    fi
+    if [ "$scenario" = "session-lock-provider" ]; then
+        # A generic stand-in lock provider (tools/qemu_lock_provider_standin.c)
+        # in one of three modes; the session starts it in its protection domain.
+        case "$lock_provider_mode" in
+            baseline|flood|stall) ;;
+            *)
+                echo "sophia_qemu_guest schema=1 status=failed reason=lock_provider_mode scenario=$scenario"
+                poweroff -f
+                ;;
+        esac
+        mkdir -p -m 0700 /run/sophia-qemu-lock
+        echo "$lock_provider_mode" > /run/sophia-qemu-lock/mode
+        printf 'schema 1\nsession {\n    lock-provider {\n        executable "/usr/bin/sophia-qemu-lock-provider"\n        config "/run/sophia-qemu-lock/mode"\n    }\n}\n' \
+            > /run/sophia-qemu-lock/desktop.kdl
+        chmod 600 /run/sophia-qemu-lock/desktop.kdl /run/sophia-qemu-lock/mode
+        # A three-letter synthetic password ("qzv"): typed at the harness's
+        # 0.2 s per key, the whole entry fits well inside Session's 2 s
+        # provider acknowledgement timeout, which a stalled provider's first
+        # unacknowledged entry event starts.
+        echo 'root:$6$sophiaqemuprov$D9.j/TYuwhc29grNkukfTUrAZOqFdKQee8kxtPS1vZINOghlo12imqt2aULJPSo0rI5XGlXPlCMANBarSXL5X0:20000:0:99999:7:::' > /etc/shadow
+        chmod 600 /etc/shadow
+        # Session starts a lock provider only beside a WM that publishes the
+        # output snapshot: the generic test WM (tools/qemu_generic_wm.c).
+        set -- "$@" --desktop-profile=/run/sophia-qemu-lock/desktop.kdl \
+            --wm-process=/usr/bin/sophia-qemu-generic-wm \
+            --wm-interface=sophia_wm_v1 --wm-transport=9p2000.L
+        echo "sophia_qemu_lock_provider_guest schema=1 status=configured mode=$lock_provider_mode"
     fi
     echo "sophia_qemu_gtk schema=1 status=running profile=$profile"
 elif [ "$scenario" = "cpu" ]; then
@@ -271,6 +356,16 @@ if [ "$scenario" = "cpu" ]; then
         /usr/bin/dbus-run-session -- /usr/bin/sophia "$@" > /run/present-cpu/session.log 2>&1
     status=$?
     cat /proc/interrupts > /run/present-cpu/interrupts-after
+elif [ "$scenario" = "session-lock-provider" ]; then
+    # Every lock and provider line is stamped where the guest observed it
+    # (tools/qemu_line_stamp.c); the session's exit status stays its own.
+    mkfifo /run/sophia-qemu-lock/output
+    /usr/bin/sophia-qemu-line-stamp < /run/sophia-qemu-lock/output &
+    stamp_pid=$!
+    SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1 \
+        /usr/bin/dbus-run-session -- /usr/bin/sophia "$@" > /run/sophia-qemu-lock/output 2>&1
+    status=$?
+    wait "$stamp_pid"
 else
     SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1 \
         /usr/bin/dbus-run-session -- /usr/bin/sophia "$@"
@@ -320,7 +415,7 @@ if [ "$scenario" = "emergency-recovery" ]; then
         echo "sophia_qemu_guest_recovery schema=1 status=failed reason=recovery_exit exit_status=$status guard_exit_status=$guard_status"
     fi
 elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ] \
-    || [ "$scenario" = "session-lock" ]; then
+    || [ "$scenario" = "session-lock" ] || [ "$scenario" = "session-lock-provider" ]; then
     if [ "$status" -eq 0 ]; then
         echo "sophia_qemu_guest schema=1 status=complete scenario=$scenario"
     else

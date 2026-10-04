@@ -24,6 +24,8 @@ use super::super::startup::tests::array_fixture as fixture;
 
 #[path = "policy_file_c_sdk.rs"]
 mod c_sdk;
+#[path = "generic_wm_c_sdk.rs"]
+mod generic_wm_c_sdk;
 
 fn enqueue(worker: &PolicyTransportWorker, mut command: PolicyTransportCommand) {
     let deadline = Instant::now() + Duration::from_secs(2);
