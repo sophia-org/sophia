@@ -109,7 +109,7 @@ cc -std=c11 -O2 -Wall -Wextra -Werror "$ROOT_DIR/tools/qemu_reroot.c" \
 {
     echo "sdk=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$ROOT_DIR/vendor/c-desktop-sdk/source/compatibility.json" | head -1)"
     echo "sdk_upstream=$(sha256sum "$ROOT_DIR/vendor/c-desktop-sdk/upstream.commit" | cut -d' ' -f1) (upstream.commit)"
-    echo "sources=$(cd "$ROOT_DIR" && sha256sum tools/qemu_lock_provider_standin.c tools/qemu_line_stamp.c tools/qemu_generic_wm.c tools/qemu_reroot.c | tr '\n' ' ')"
+    echo "sources=$(cd "$ROOT_DIR" && sha256sum tools/qemu_lock_provider_standin.c tools/qemu_lock_provider_service.h tools/qemu_line_stamp.c tools/qemu_generic_wm.c tools/qemu_reroot.c | tr '\n' ' ')"
     echo "bwrap=/usr/bin/bwrap $(/usr/bin/bwrap --version) sha256=$(sha256sum /usr/bin/bwrap | cut -d' ' -f1)"
 } > "$GUEST_TOOLS/FIXTURE.txt"
 XTEST_SELECTION_DRIVER="$TARGET_DIR/release/examples/xtest_selection_driver"
