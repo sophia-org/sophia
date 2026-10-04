@@ -801,6 +801,7 @@ fn public_policy_launch_spec(
     );
     let roles = [sophia_runtime::ProtectionDomainRole::SpatialPolicy];
     let mut domain = sophia_runtime::ProtectionDomainSpec::bubblewrap(roles)?
+        .bubblewrap_path(&config.bubblewrap)
         .path(sophia_runtime::ProtectionPath::read_only(candidate_path))?
         .path(sophia_runtime::ProtectionPath::read_only(
             socket_path

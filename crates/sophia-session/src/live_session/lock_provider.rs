@@ -39,6 +39,7 @@ impl LockProvider {
     pub(super) fn start(
         selection: &sophia_config::LockProviderConfig,
         directory: &Path,
+        bubblewrap: &Path,
         gpu_device: Option<sophia_backend_live::LiveRenderDeviceIdentitySnapshot>,
         lock: LockObject,
         limits: LockFileLimits,
@@ -52,6 +53,7 @@ impl LockProvider {
             limits,
         )?;
         let mut domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::LockProvider])?
+            .bubblewrap_path(bubblewrap)
             .path(ProtectionPath::read_only(directory))?;
         let mut base = ProcessLaunchSpec::new(&selection.executable)
             .env(
@@ -200,6 +202,7 @@ pub(super) fn start_session_lock_provider(
     match LockProvider::start(
         selection,
         &config.wm_socket_path.with_extension("lock"),
+        &config.bubblewrap,
         // The admitted device at start. A later device change is not yet
         // followed: restarts reuse the grant made at start.
         gpu_device,

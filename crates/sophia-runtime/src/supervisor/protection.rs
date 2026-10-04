@@ -13,6 +13,9 @@ use owned_filesystem::OwnedProtectionFilesystem;
 pub use owned_filesystem::{ProtectionFilesystemEntry, ProtectionFilesystemManifest};
 
 pub const DEFAULT_BUBBLEWRAP_PATH: &str = "/usr/bin/bwrap";
+/// A host's Nix store. Programs built there load their interpreter and
+/// libraries from it, so every domain sees it read-only when it exists.
+const NIX_STORE: &str = "/nix/store";
 const BUBBLEWRAP_STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
 const MINIMUM_BUBBLEWRAP_VERSION: (u32, u32, u32) = (0, 11, 2);
 
@@ -384,6 +387,7 @@ pub enum ProtectionDomainLaunchError {
         required: ProtectionDomainRole,
     },
     InvalidExecutable(PathBuf),
+    InvalidBubblewrap(PathBuf),
     InvalidBinding(PathBuf),
     Spawn(String),
     StartupTimedOut,
@@ -443,7 +447,17 @@ pub(crate) fn spawn_bubblewrap(
             ));
         }
     }
-    let observed_version = bubblewrap_version(&domain.bubblewrap)?;
+    // Never a name looked up on PATH: the launcher runs exactly the file the
+    // trusted configuration named.
+    let bubblewrap = &domain.bubblewrap;
+    let executable = std::fs::metadata(bubblewrap)
+        .is_ok_and(|metadata| metadata.is_file() && metadata.mode() & 0o111 != 0);
+    if !bubblewrap.is_absolute() || !executable {
+        return Err(ProtectionDomainLaunchError::InvalidBubblewrap(
+            bubblewrap.clone(),
+        ));
+    }
+    let observed_version = bubblewrap_version(bubblewrap)?;
     let parsed_version = parse_bubblewrap_version(&observed_version)
         .ok_or_else(|| ProtectionDomainLaunchError::UnsupportedVersion(observed_version.clone()))?;
     if parsed_version < MINIMUM_BUBBLEWRAP_VERSION {
@@ -452,7 +466,7 @@ pub(crate) fn spawn_bubblewrap(
         ));
     }
 
-    let args = bubblewrap_arguments(launch, domain, &program)?;
+    let args = bubblewrap_arguments(launch, domain, &program, visible_store())?;
     let mut command = Command::new(&domain.bubblewrap);
     command.args(args);
     if launch.process_group {
@@ -515,11 +529,33 @@ fn network_arguments(network: ProtectionNetworkAccess) -> Vec<OsString> {
     }
 }
 
+/// The store to show read-only, when the host has a real one. A symlink is
+/// not followed: the binding must name the directory the loader resolves.
+fn visible_store() -> Option<&'static Path> {
+    let store = Path::new(NIX_STORE);
+    std::fs::symlink_metadata(store)
+        .is_ok_and(|metadata| metadata.is_dir())
+        .then_some(store)
+}
+
 fn bubblewrap_arguments(
     launch: &ProcessLaunchSpec,
     domain: &ProtectionDomainSpec,
     program: &Path,
+    store: Option<&Path>,
 ) -> Result<Vec<OsString>, ProtectionDomainLaunchError> {
+    // A grant at, above or inside the store would replace or shadow part of
+    // it, possibly writable; the store stays exactly the host's, read-only.
+    if let Some(store) = store
+        && let Some(binding) = domain
+            .paths
+            .iter()
+            .find(|binding| paths_overlap(&binding.destination, store))
+    {
+        return Err(ProtectionDomainLaunchError::InvalidBinding(
+            binding.destination.clone(),
+        ));
+    }
     let mut args: Vec<OsString> = vec![
         "--unshare-user".into(),
         "--unshare-ipc".into(),
@@ -582,7 +618,11 @@ fn bubblewrap_arguments(
         PathBuf::from("/run"),
         PathBuf::from("/home"),
     ]);
-    if !program.starts_with("/usr/") {
+    if let Some(store) = store {
+        append_parent_directories(&mut args, &mut created, store, false)?;
+        args.extend(["--ro-bind".into(), store.into(), store.into()]);
+    }
+    if !program.starts_with("/usr/") && !store.is_some_and(|store| program.starts_with(store)) {
         append_parent_directories(&mut args, &mut created, program, true)?;
         args.extend(["--ro-bind".into(), program.into(), program.into()]);
     }
@@ -722,3 +762,6 @@ fn parse_bubblewrap_version(value: &str) -> Option<(u32, u32, u32)> {
     }
     Some((major, minor, patch))
 }
+
+#[path = "../../tests/support/protection_store.rs"]
+mod protection_store;

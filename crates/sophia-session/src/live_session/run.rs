@@ -420,7 +420,7 @@ pub(crate) fn run_persistent_xterm_session(
     let mut metadata_broker = config
         .wm_process
         .is_some()
-        .then(LiveMetadataBroker::start)
+        .then(|| LiveMetadataBroker::start(&config.bubblewrap))
         .transpose()?;
     let mut component_catalog = component_catalog::ComponentCatalog::default();
     let mut session_launches = SessionLaunchQueue::default();
@@ -452,6 +452,7 @@ pub(crate) fn run_persistent_xterm_session(
                 config.shell_gpu_mode,
                 gpu_device,
                 config.shell_config.as_deref(),
+                &config.bubblewrap,
             )
         })
         .transpose()?;

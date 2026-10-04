@@ -24,6 +24,7 @@ impl PreparedOutputTransport {
         let domain = sophia_runtime::ProtectionDomainSpec::bubblewrap([
             sophia_runtime::ProtectionDomainRole::OutputAuthority,
         ])?
+        .bubblewrap_path(&config.bubblewrap)
         .path(sophia_runtime::ProtectionPath::read_only(directory))?;
         let mut spec = ProcessLaunchSpec::new(process)
             .env(

@@ -468,6 +468,7 @@ fn native_shell_preparation_does_not_execute_or_negotiate() {
         sophia_config::ShellGpuMode::Denied,
         None,
         None,
+        std::path::Path::new(sophia_runtime::DEFAULT_BUBBLEWRAP_PATH),
     )
     .unwrap();
     for _ in 0..3 {

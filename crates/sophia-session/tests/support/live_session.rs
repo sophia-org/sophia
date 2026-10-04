@@ -168,6 +168,8 @@ mod metadata_shell_tests;
 #[path = "live_session/output_proof_tests.rs"]
 mod output_proof_tests;
 
+#[path = "live_session/bubblewrap_config_tests.rs"]
+mod bubblewrap_config_tests;
 #[path = "live_session/lock_publication_tests.rs"]
 mod lock_publication_tests;
 #[path = "live_session/output_readback_tests.rs"]

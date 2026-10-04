@@ -10,6 +10,7 @@ impl LiveMetadataShell {
         gpu_mode: sophia_config::ShellGpuMode,
         gpu_device: Option<sophia_backend_live::LiveRenderDeviceIdentitySnapshot>,
         selected_config: Option<&std::path::Path>,
+        bubblewrap: &std::path::Path,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let mut shell = Self::prepare(
             executable,
@@ -19,6 +20,7 @@ impl LiveMetadataShell {
             gpu_mode,
             gpu_device,
             selected_config,
+            bubblewrap,
         )?;
         shell.presentation_paused = false;
         let (peer_pid, revision, connection_epoch) = shell.launch_and_negotiate()?;
@@ -34,6 +36,7 @@ impl LiveMetadataShell {
         gpu_mode: sophia_config::ShellGpuMode,
         gpu_device: Option<sophia_backend_live::LiveRenderDeviceIdentitySnapshot>,
         selected_config: Option<&std::path::Path>,
+        bubblewrap: &std::path::Path,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let directory = std::env::temp_dir().join(format!(
             "sophia-live-metadata-shell-{}-{}",
@@ -51,6 +54,7 @@ impl LiveMetadataShell {
             sophia_config::ShellTransportSelection::NineP2000L,
             panel_thickness,
             selected_config,
+            bubblewrap,
         )?;
         let gpu = gpu::ShellGpuLaunchPolicy::new(gpu_mode, gpu_device)?;
         let supervisor = ProcessSupervisor::new(SupervisedProcessKind::Shell, spec.clone());

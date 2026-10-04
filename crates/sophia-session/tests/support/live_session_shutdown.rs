@@ -333,6 +333,7 @@ fn component_outer_cleanup_retains_owner_until_native_disposition_and_prior_erro
             ShellContentAdmissionPolicy::Granted {
                 discrete_input: true,
             },
+            std::path::Path::new(sophia_runtime::DEFAULT_BUBBLEWRAP_PATH),
         )
         .unwrap(),
     );
@@ -396,6 +397,7 @@ fn component_endpoint_survives_inside_actual_terminal_error_carrier() {
         None,
         &root,
         sophia_runtime::ShellContentAdmissionPolicy::Denied,
+        std::path::Path::new(sophia_runtime::DEFAULT_BUBBLEWRAP_PATH),
     )
     .unwrap();
     let retirement: NativeRetirement = NativeRetirement::default();

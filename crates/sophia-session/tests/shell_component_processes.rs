@@ -225,6 +225,7 @@ fn component_scheduler_spaces_a_service_failure_like_a_refused_start() {
         ShellContentAdmissionPolicy::Granted {
             discrete_input: true,
         },
+        std::path::Path::new(sophia_runtime::DEFAULT_BUBBLEWRAP_PATH),
     )
     .unwrap();
     owner.set_presentation_available(true).unwrap();
@@ -329,6 +330,7 @@ fn selected_component_launches_bind_only_their_socket_and_config() {
             },
             Some(28),
             None,
+            std::path::Path::new(sophia_runtime::DEFAULT_BUBBLEWRAP_PATH),
         )
         .unwrap();
         // Reserve through the real process owner; inspect its actual closure
@@ -428,6 +430,7 @@ fn a_file_selected_component_is_told_only_its_9p_endpoint() {
         },
         Some(28),
         None,
+        std::path::Path::new(sophia_runtime::DEFAULT_BUBBLEWRAP_PATH),
     )
     .unwrap();
     let result = owner.start(
@@ -471,12 +474,34 @@ fn component_launch_refuses_unadmitted_gpu_and_unbounded_panel() {
         transport: sophia_config::ShellTransportSelection::NineP2000L,
     };
     for thickness in [None, Some(0)] {
-        assert!(ShellComponentLaunch::new(selection.clone(), thickness, None).is_err());
+        assert!(
+            ShellComponentLaunch::new(
+                selection.clone(),
+                thickness,
+                None,
+                std::path::Path::new(sophia_runtime::DEFAULT_BUBBLEWRAP_PATH)
+            )
+            .is_err()
+        );
     }
     let mut direct = selection.clone();
     direct.gpu = sophia_config::ShellGpuMode::Direct;
-    assert!(ShellComponentLaunch::new(direct, Some(28), None).is_err());
-    let plan = ShellComponentLaunch::new(selection, Some(28), None).unwrap();
+    assert!(
+        ShellComponentLaunch::new(
+            direct,
+            Some(28),
+            None,
+            std::path::Path::new(sophia_runtime::DEFAULT_BUBBLEWRAP_PATH)
+        )
+        .is_err()
+    );
+    let plan = ShellComponentLaunch::new(
+        selection,
+        Some(28),
+        None,
+        std::path::Path::new(sophia_runtime::DEFAULT_BUBBLEWRAP_PATH),
+    )
+    .unwrap();
     assert!(
         plan.prepare(
             sophia_session::shell_component_connections::ComponentConnectionKey {
@@ -516,6 +541,7 @@ fn joined_session_retains_failed_attempt_until_reap_and_exact_cleanup() {
         ShellContentAdmissionPolicy::Granted {
             discrete_input: true,
         },
+        std::path::Path::new(sophia_runtime::DEFAULT_BUBBLEWRAP_PATH),
     )
     .unwrap();
     assert!(owner.start(0).is_err());
@@ -611,6 +637,7 @@ fn component_scheduler_skips_unready_role_and_bounds_retries() {
         ShellContentAdmissionPolicy::Granted {
             discrete_input: true,
         },
+        std::path::Path::new(sophia_runtime::DEFAULT_BUBBLEWRAP_PATH),
     )
     .unwrap();
     let now = Instant::now();
@@ -702,6 +729,7 @@ fn joined_launcher_evidence_requires_exact_current_negotiation() {
         ShellContentAdmissionPolicy::Granted {
             discrete_input: true,
         },
+        std::path::Path::new(sophia_runtime::DEFAULT_BUBBLEWRAP_PATH),
     )
     .unwrap();
     // The production launcher supplies --serve and binds only the executable

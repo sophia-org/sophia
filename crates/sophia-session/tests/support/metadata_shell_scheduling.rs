@@ -26,6 +26,7 @@ fn session(root: &Path) -> ShellComponentSession {
         ShellContentAdmissionPolicy::Granted {
             discrete_input: true,
         },
+        std::path::Path::new(sophia_runtime::DEFAULT_BUBBLEWRAP_PATH),
     )
     .unwrap();
     owner.set_presentation_available(true).unwrap();
