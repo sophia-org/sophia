@@ -29,8 +29,23 @@ case " $cmdline " in
     *" sophia.scenario=gtk-classic "*) scenario="gtk-classic" ;;
     *" sophia.scenario=gtk-confined "*) scenario="gtk-confined" ;;
     *" sophia.scenario=session-lock "*) scenario="session-lock" ;;
+    *" sophia.scenario=cpu "*) scenario="cpu" ;;
     *" sophia.scenario=xtest-selection "*) scenario="xtest-selection" ;;
 esac
+cpu_mode=open
+cpu_seconds=60
+cpu_grace=10
+cpu_rate=5
+cpu_target=zero
+for arg in $cmdline; do
+    case "$arg" in
+        sophia.cpu_mode=*) cpu_mode="${arg#*=}" ;;
+        sophia.cpu_seconds=*) cpu_seconds="${arg#*=}" ;;
+        sophia.cpu_grace=*) cpu_grace="${arg#*=}" ;;
+        sophia.cpu_rate=*) cpu_rate="${arg#*=}" ;;
+        sophia.cpu_target=*) cpu_target="${arg#*=}" ;;
+    esac
+done
 xtest_row=""
 case " $cmdline " in
     *" sophia.xtest_row="*)
@@ -68,6 +83,10 @@ modprobe virtio_pci
 modprobe virtio_gpu
 modprobe virtio_input
 modprobe evdev
+if [ "$scenario" = "cpu" ] && ! modprobe virtio_console; then
+    echo 'sophia_qemu_cpu schema=1 status=failed reason=export_device_module'
+    poweroff -f
+fi
 udevadm trigger --action=add
 udevadm settle --timeout=5
 
@@ -182,6 +201,37 @@ elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ] \
             --physical-sequence-timeout-ms=60000
     fi
     echo "sophia_qemu_gtk schema=1 status=running profile=$profile"
+elif [ "$scenario" = "cpu" ]; then
+    # Per-CPU nanosecond runtime avoids guest tick-sampling error. Guest only;
+    # fixed for every revision and enabled before warm-up or any measurements.
+    if ! { echo 1 > /proc/sys/kernel/sched_schedstats &&
+        mkdir -p /run/present-cpu &&
+        mount -t tmpfs -o size=256m,mode=0700 tmpfs /run/present-cpu; }; then
+        echo 'sophia_qemu_cpu schema=1 status=failed reason=measurement_setup'
+        poweroff -f
+    fi
+    cpu_export_device=""
+    for port in /sys/class/virtio-ports/*; do
+        [ -r "$port/name" ] || continue
+        read -r port_name < "$port/name"
+        if [ "$port_name" = sophia.cpu.evidence ]; then
+            cpu_export_device="/dev/${port##*/}"
+        fi
+    done
+    if [ ! -c "$cpu_export_device" ]; then
+        echo 'sophia_qemu_cpu schema=1 status=failed reason=export_device_missing'
+        poweroff -f
+    fi
+    runtime_ms=$(((cpu_seconds + cpu_grace + 30) * 1000))
+    set -- session run --no-config --session-mode=normal --display=:181 --native-scanout \
+        "--max-runtime-ms=$runtime_ms" --session-app=cpu=/usr/bin/present_cpu_workload \
+        --session-start=cpu --exit-when-startup-exits \
+        "--session-app-arg=cpu=--mode=$cpu_mode" "--session-app-arg=cpu=--seconds=$cpu_seconds" \
+        "--session-app-arg=cpu=--grace=$cpu_grace" "--session-app-arg=cpu=--rate=$cpu_rate" \
+        "--session-app-arg=cpu=--target=$cpu_target" --session-app-arg=cpu=--clients=2 \
+        --session-app-arg=cpu=--sample-pid=parent --session-app-arg=cpu=--guest-process-accounting=true \
+        --session-app-arg=cpu=--output=/run/present-cpu/workload.json
+    echo "sophia_qemu_cpu schema=1 status=running mode=$cpu_mode"
 elif [ "$scenario" = "xtest-selection" ]; then
     # The headless gate's session, on a scanned-out head: XTEST admitted,
     # the driver as the only client, its exact pass line required. Physical
@@ -213,10 +263,28 @@ set +e
 # Give every application in the guest one session-scoped bus. Modern GTK
 # acquires the bus before opening X, so a bus-less image can strand launchers
 # without ever reaching the authority listener.
-SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1 \
-    /usr/bin/dbus-run-session -- /usr/bin/sophia "$@"
-status=$?
+if [ "$scenario" = "cpu" ]; then
+    # Serial port I/O and its IRQ work would dominate the measured guest CPU.
+    # Preserve every record in tmpfs, then export only after the client snapshots.
+    cat /proc/interrupts > /run/present-cpu/interrupts-before
+    SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1 \
+        /usr/bin/dbus-run-session -- /usr/bin/sophia "$@" > /run/present-cpu/session.log 2>&1
+    status=$?
+    cat /proc/interrupts > /run/present-cpu/interrupts-after
+else
+    SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1 \
+        /usr/bin/dbus-run-session -- /usr/bin/sophia "$@"
+    status=$?
+fi
 set -e
+if [ "$scenario" = "cpu" ]; then
+    # Preserve the result even if bulk-log export fails. Failure must not exit
+    # PID 1 under set -e and replace the actual reason with a kernel panic.
+    export_status=0
+    /bin/sh /usr/bin/sophia-cpu-export /run/present-cpu > "$cpu_export_device" || export_status=$?
+    echo "sophia_qemu_cpu schema=1 status=exited session_exit=$status export_exit=$export_status"
+    if [ "$export_status" -ne 0 ]; then status=1; fi
+fi
 
 if [ "$scenario" = "emergency-recovery" ]; then
     guard_done=false

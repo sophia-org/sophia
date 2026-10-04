@@ -402,6 +402,7 @@ struct NativeCompositionRenderEvidence {
     repaint: NativeCompositionRepaintOutcome,
     repaint_pixels: u64,
     full_reason: Option<NativeFullRepaintReason>,
+    damage_causes: crate::NativeDamageCauses,
     stable_geometry: bool,
 }
 
@@ -705,6 +706,7 @@ fn render_native_target_composition(
         repaint,
         repaint_pixels,
         full_reason: frame.repaint.map_or(Some(NativeFullRepaintReason::NoTable), |table| table.full_reason_for_age(buffer_age.unwrap_or(0))),
+        damage_causes: frame.repaint.map_or_else(crate::NativeDamageCauses::default, |table| table.causes_for_age(buffer_age.unwrap_or(0))),
         stable_geometry: frame.repaint.is_some_and(NativeCompositionRepaintTable::stable_geometry),
         ..NativeCompositionRenderEvidence::default()
     };

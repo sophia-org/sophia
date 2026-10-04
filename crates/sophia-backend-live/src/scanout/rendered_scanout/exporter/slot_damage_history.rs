@@ -56,7 +56,9 @@ pub enum LiveRendererSlotFullRepaintReason {
     DamageUnavailable,
     /// The reduced damage covered enough of the output that a full repaint is
     /// the cheaper honest answer.
-    PlanChoseFull,
+    PlanDamageCapacity,
+    PlanRectLimit,
+    PlanCoverage,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -133,12 +135,22 @@ impl LiveRendererSlotDamageHistory {
         current: Option<&sophia_engine::OutputFrameDamageSnapshot>,
         size: sophia_protocol::Size,
     ) -> LiveRendererSlotRepaint {
-        let plan = self.evaluate(slot, age, current, size);
+        self.plan_with_causes(slot, age, current, size).0
+    }
+
+    pub fn plan_with_causes(
+        &mut self,
+        slot: LiveRendererFrameSlotId,
+        age: LiveRendererSlotBufferAge,
+        current: Option<&sophia_engine::OutputFrameDamageSnapshot>,
+        size: sophia_protocol::Size,
+    ) -> (LiveRendererSlotRepaint, sophia_engine::OutputDamageCauses) {
+        let (plan, causes) = self.evaluate(slot, age, current, size);
         match &plan {
             LiveRendererSlotRepaint::Partial { .. } => self.metrics.partial_repaints += 1,
             LiveRendererSlotRepaint::Full { .. } => self.metrics.full_repaints += 1,
         }
-        plan
+        (plan, causes)
     }
 
     fn evaluate(
@@ -147,8 +159,8 @@ impl LiveRendererSlotDamageHistory {
         age: LiveRendererSlotBufferAge,
         current: Option<&sophia_engine::OutputFrameDamageSnapshot>,
         size: sophia_protocol::Size,
-    ) -> LiveRendererSlotRepaint {
-        let full = |reason| LiveRendererSlotRepaint::Full { reason };
+    ) -> (LiveRendererSlotRepaint, sophia_engine::OutputDamageCauses) {
+        let full = |reason| (LiveRendererSlotRepaint::Full { reason }, Default::default());
         if !age.is_known() {
             return full(LiveRendererSlotFullRepaintReason::UnknownBufferAge);
         }
@@ -168,10 +180,12 @@ impl LiveRendererSlotDamageHistory {
         let Some(current) = current else {
             return full(LiveRendererSlotFullRepaintReason::DamageUnavailable);
         };
-        let Ok(damage) = sophia_engine::output_frame_damage(Some(previous), current) else {
+        let Ok((damage, causes)) =
+            sophia_engine::output_frame_damage_with_causes(Some(previous), current)
+        else {
             return full(LiveRendererSlotFullRepaintReason::DamageUnavailable);
         };
-        match sophia_engine::plan_output_repaint(
+        let plan = match sophia_engine::plan_output_repaint(
             size,
             &damage,
             sophia_engine::OutputRepaintPolicy::default(),
@@ -186,11 +200,27 @@ impl LiveRendererSlotDamageHistory {
             Ok(sophia_engine::OutputRepaintPlan::Skip) => {
                 LiveRendererSlotRepaint::Partial { damage: Vec::new() }
             }
-            Ok(sophia_engine::OutputRepaintPlan::Full { .. }) => {
-                full(LiveRendererSlotFullRepaintReason::PlanChoseFull)
+            Ok(sophia_engine::OutputRepaintPlan::Full { reason, .. }) => {
+                use sophia_engine::OutputFullRepaintReason as R;
+                LiveRendererSlotRepaint::Full {
+                    reason: match reason {
+                        R::DamageCapacityExceeded => {
+                            LiveRendererSlotFullRepaintReason::PlanDamageCapacity
+                        }
+                        R::PartialRectLimitExceeded => {
+                            LiveRendererSlotFullRepaintReason::PlanRectLimit
+                        }
+                        R::CoverageThresholdReached => {
+                            LiveRendererSlotFullRepaintReason::PlanCoverage
+                        }
+                    },
+                }
             }
-            Err(_) => full(LiveRendererSlotFullRepaintReason::DamageUnavailable),
-        }
+            Err(_) => LiveRendererSlotRepaint::Full {
+                reason: LiveRendererSlotFullRepaintReason::DamageUnavailable,
+            },
+        };
+        (plan, causes)
     }
 
     /// Record a completed write. Only a complete write may be recorded: a slot

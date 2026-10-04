@@ -16,8 +16,11 @@ pub fn reduced_record(line: &str) -> Option<String> {
             continue;
         }
         if name == "sophia_x_present_execution" {
-            if matches!(key, "schema" | "request_transaction" | "execution_transaction" | "client" | "accepted")
-                && !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit())
+            if matches!(
+                key,
+                "schema" | "request_transaction" | "execution_transaction" | "client" | "accepted"
+            ) && !value.is_empty()
+                && value.bytes().all(|b| b.is_ascii_digit())
                 && value.parse::<u64>().is_ok()
             {
                 result.push(' ');
@@ -26,8 +29,11 @@ pub fn reduced_record(line: &str) -> Option<String> {
             continue;
         }
         if name == "sophia_present_unclocked" {
-            if (matches!(key, "schema" | "head" | "owner" | "incarnation" | "errno" | "minimum_period_usec")
-                && !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit())
+            if (matches!(
+                key,
+                "schema" | "head" | "owner" | "incarnation" | "errno" | "minimum_period_usec"
+            ) && !value.is_empty()
+                && value.bytes().all(|b| b.is_ascii_digit())
                 && value.parse::<u64>().is_ok())
                 || (key == "reason" && value == "sequence_unsupported")
             {
@@ -36,9 +42,106 @@ pub fn reduced_record(line: &str) -> Option<String> {
             }
             continue;
         }
+        if name == "sophia_live_damage_causes" {
+            if !matches!(key, "full_schema" | "full_observed_monotonic_usec")
+                && matches!(
+                key.strip_prefix("full_").unwrap_or(key),
+                "schema"
+                    | "observed_monotonic_usec"
+                    | "new_output"
+                    | "output_changed"
+                    | "compositor"
+                    | "order"
+                    | "geometry"
+                    | "sampling"
+                    | "generation"
+                    | "missing_identity"
+                    | "no_matching_transition"
+                    | "invalid_transition"
+                    | "origin"
+                    | "rect_limit"
+                    | "precision_restricted"
+                    | "coordinate_overflow"
+                    | "terminal_identity"
+                    | "history_limit"
+                    | "rebased"
+                    | "precise_surface"
+                    | "preview_identity"
+                    | "cursor"
+            ) && !value.is_empty()
+                && value.bytes().all(|b| b.is_ascii_digit())
+                && value.parse::<u64>().is_ok()
+            {
+                result.push(' ');
+                result.push_str(field);
+            }
+            continue;
+        }
+        if name == "sophia_present_damage" {
+            if matches!(
+                key,
+                "schema"
+                    | "observed_monotonic_usec"
+                    | "absent"
+                    | "explicit_full_rect"
+                    | "explicit_regions"
+                    | "effective_empty"
+                    | "source_pixels"
+                    | "rect_pixels"
+                    | "rects"
+            ) && !value.is_empty()
+                && value.bytes().all(|b| b.is_ascii_digit())
+                && value.parse::<u64>().is_ok()
+            {
+                result.push(' ');
+                result.push_str(field);
+            }
+            continue;
+        }
         if name == "sophia_present_clock_service" {
-            if matches!(key, "schema" | "queries" | "completions" | "observations" | "observation_runtime_locks" | "completion_runtime_locks" | "completion_historical_samples" | "admission_errors" | "admission_fake_retries" | "admission_settled" | "idle_signal_failures" | "scrap_sample_fallbacks" | "service_runtime_locks" | "deadline_runtime_locks" | "wire_prepared" | "wire_published" | "wire_owner_notifications" | "wire_bound" | "wire_hardware_bound" | "unclocked_bound" | "unclocked_notify_settled" | "wire_executions" | "wire_execution_wait_usec" | "wire_execution_wait_max_usec" | "owner_passes" | "owner_waits" | "owner_ring_ready" | "owner_fd_ready" | "owner_wait_deadlines" | "owner_immediate_items" | "native_ready" | "native_ready_consumed" | "native_ready_idle" | "native_errors" | "native_event_waits" | "native_short_waits" | "native_service_waits")
-                && !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit())
+            if matches!(
+                key,
+                "schema"
+                    | "observed_monotonic_usec"
+                    | "owner_tid"
+                    | "queries"
+                    | "completions"
+                    | "observations"
+                    | "observation_runtime_locks"
+                    | "completion_runtime_locks"
+                    | "completion_historical_samples"
+                    | "admission_errors"
+                    | "admission_fake_retries"
+                    | "admission_settled"
+                    | "idle_signal_failures"
+                    | "scrap_sample_fallbacks"
+                    | "service_runtime_locks"
+                    | "deadline_runtime_locks"
+                    | "wire_prepared"
+                    | "wire_published"
+                    | "wire_owner_notifications"
+                    | "wire_bound"
+                    | "wire_hardware_bound"
+                    | "unclocked_bound"
+                    | "unclocked_notify_settled"
+                    | "wire_executions"
+                    | "wire_execution_wait_usec"
+                    | "wire_execution_wait_max_usec"
+                    | "owner_passes"
+                    | "owner_waits"
+                    | "owner_ring_ready"
+                    | "owner_fd_ready"
+                    | "owner_wait_deadlines"
+                    | "owner_immediate_items"
+                    | "native_ready"
+                    | "native_ready_consumed"
+                    | "native_ready_idle"
+                    | "native_errors"
+                    | "native_event_waits"
+                    | "native_short_waits"
+                    | "native_service_waits"
+            ) && !value.is_empty()
+                && value.bytes().all(|b| b.is_ascii_digit())
                 && value.parse::<u64>().is_ok()
             {
                 result.push(' ');
@@ -47,7 +150,9 @@ pub fn reduced_record(line: &str) -> Option<String> {
             continue;
         }
         if name == "sophia_present_evidence" {
-            if (key == "schema" && value == "1") || (key == "mode" && matches!(value, "full" | "aggregate")) {
+            if (key == "schema" && value == "1")
+                || (key == "mode" && matches!(value, "full" | "aggregate"))
+            {
                 result.push(' ');
                 result.push_str(field);
             }
@@ -56,34 +161,57 @@ pub fn reduced_record(line: &str) -> Option<String> {
         // Context counters contain "text" but carry no client text. Admit only
         // the exact numeric vocabulary of the renderer measurement record.
         if name == "sophia_live_render_work" {
-            if matches!(key, "schema" | "uptime_msec" | "timing_enabled" | "cpu_scene_elapsed_nsec" | "cpu_scene_cpu_nsec"
-                | "transfer_captures_count" | "transfer_attempts_count" | "transfer_failures_count" | "cpu_raster_count" | "cpu_raster_reuse_count"
-                | "capture_context_creations_count" | "capture_context_reuses_count"
-                | "capture_surface_creations_count" | "capture_failures_count"
-                | "composition_full_frames_count" | "composition_partial_frames_count"
-                | "composition_repaint_pixels_count" | "composition_target_pixels_count"
-                | "pipeline_creations_count" | "snapshot_captures_count"
-                | "import_cache_imports_count" | "import_cache_hits_count"
-                | "capture_setup_elapsed_nsec" | "capture_copy_elapsed_nsec"
-                | "capture_cleanup_elapsed_nsec" | "composition_elapsed_nsec"
-                | "capture_setup_cpu_nsec"
-                | "capture_copy_cpu_nsec"
-                | "capture_cleanup_cpu_nsec"
-                | "composition_cpu_nsec"
-                | "damage_full_no_table_count"
-                | "damage_full_disabled_count"
-                | "damage_full_unknown_age_count"
-                | "damage_full_no_history_count"
-                | "damage_full_beyond_history_count"
-                | "damage_full_damage_unavailable_count"
-                | "damage_full_plan_count"
-                | "damage_stable_geometry_frames_count"
-                | "damage_stable_geometry_full_count"
-                | "damage_stable_geometry_partial_count"
-                | "damage_stable_geometry_repaint_pixels_count"
-                | "damage_stable_geometry_target_pixels_count"
-)
-                && !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
+            if matches!(
+                key,
+                "schema"
+                    | "observed_monotonic_usec"
+                    | "uptime_msec"
+                    | "timing_enabled"
+                    | "cpu_scene_elapsed_nsec"
+                    | "cpu_scene_cpu_nsec"
+                    | "transfer_captures_count"
+                    | "transfer_attempts_count"
+                    | "transfer_failures_count"
+                    | "cpu_raster_count"
+                    | "cpu_raster_reuse_count"
+                    | "capture_context_creations_count"
+                    | "capture_context_reuses_count"
+                    | "capture_surface_creations_count"
+                    | "capture_failures_count"
+                    | "composition_full_frames_count"
+                    | "composition_partial_frames_count"
+                    | "composition_repaint_pixels_count"
+                    | "composition_target_pixels_count"
+                    | "pipeline_creations_count"
+                    | "snapshot_captures_count"
+                    | "import_cache_imports_count"
+                    | "import_cache_hits_count"
+                    | "capture_setup_elapsed_nsec"
+                    | "capture_copy_elapsed_nsec"
+                    | "capture_cleanup_elapsed_nsec"
+                    | "composition_elapsed_nsec"
+                    | "capture_setup_cpu_nsec"
+                    | "capture_copy_cpu_nsec"
+                    | "capture_cleanup_cpu_nsec"
+                    | "composition_cpu_nsec"
+                    | "damage_full_no_table_count"
+                    | "damage_full_disabled_count"
+                    | "damage_full_unknown_age_count"
+                    | "damage_full_no_history_count"
+                    | "damage_full_beyond_history_count"
+                    | "damage_full_damage_unavailable_count"
+                    | "damage_full_plan_count"
+                    | "damage_full_plan_unspecified_count"
+                    | "damage_full_plan_capacity_count"
+                    | "damage_full_plan_rect_limit_count"
+                    | "damage_full_plan_coverage_count"
+                    | "damage_stable_geometry_frames_count"
+                    | "damage_stable_geometry_full_count"
+                    | "damage_stable_geometry_partial_count"
+                    | "damage_stable_geometry_repaint_pixels_count"
+                    | "damage_stable_geometry_target_pixels_count"
+            ) && !value.is_empty()
+                && value.bytes().all(|byte| byte.is_ascii_digit())
                 && value.parse::<u128>().is_ok()
             {
                 result.push(' ');
@@ -587,7 +715,9 @@ fn interaction_field(record: &str, key: &str, value: &str) -> bool {
                 | "primitives"
                 | "clearance"
         ),
-        "sophia_live_session_present_feedback" | "sophia_live_session_present" => matches!(key, "ust" | "msc"),
+        "sophia_live_session_present_feedback" | "sophia_live_session_present" => {
+            matches!(key, "ust" | "msc")
+        }
         _ => false,
     };
     if measurement {
@@ -736,15 +866,39 @@ fn visual_progress_field(key: &str, value: &str) -> bool {
 }
 
 fn session_control_field(record: &str, key: &str, value: &str) -> bool {
-    if record != "sophia_live_session_control" { return false; }
+    if record != "sophia_live_session_control" {
+        return false;
+    }
     match key {
-        "status" => matches!(value, "control_quiesced" | "stale_target_retired" | "control_refused"),
-        "kind" => matches!(value, "PublishMetadataRule" | "AdmitSurface" | "ConfigureSurface"
-            | "SetPresentationState" | "RestorePresentationState" | "FocusSurface"
-            | "ClearFocus" | "CloseSurface" | "WithdrawSurface"),
-        "outcome" => matches!(value, "none" | "delivered" | "client_gone" | "unknown_surface"
-            | "target_not_viewable" | "admission_withdrawn" | "superseded" | "invalid_size"
-            | "authority_rejected" | "unsupported_protocol"),
+        "status" => matches!(
+            value,
+            "control_quiesced" | "stale_target_retired" | "control_refused"
+        ),
+        "kind" => matches!(
+            value,
+            "PublishMetadataRule"
+                | "AdmitSurface"
+                | "ConfigureSurface"
+                | "SetPresentationState"
+                | "RestorePresentationState"
+                | "FocusSurface"
+                | "ClearFocus"
+                | "CloseSurface"
+                | "WithdrawSurface"
+        ),
+        "outcome" => matches!(
+            value,
+            "none"
+                | "delivered"
+                | "client_gone"
+                | "unknown_surface"
+                | "target_not_viewable"
+                | "admission_withdrawn"
+                | "superseded"
+                | "invalid_size"
+                | "authority_rejected"
+                | "unsupported_protocol"
+        ),
         _ => false,
     }
 }

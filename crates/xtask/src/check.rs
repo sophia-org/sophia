@@ -49,9 +49,29 @@ pub fn run(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> {
         [subject] if subject == "rust-desktop-sdk" => crate::rust_desktop_sdk::run(repo),
         [subject] if subject == "layout" => layout(repo).map(|()| Vec::new()),
         [subject] if subject == "c-desktop-sdk" => crate::c_desktop_sdk::run(repo),
+        [subject] if subject == "present-cpu" => present_cpu(repo).map(|()| Vec::new()),
         [subject] => Err(format!("unknown check subject {subject:?}")),
         _ => Err("check accepts at most one subject".to_owned()),
     }
+}
+
+/// Deterministic accounting/validity tests only. QEMU CPU samples require a
+/// separately recorded quiet window and never run as ordinary workspace tests.
+fn present_cpu(repo: &Path) -> Result<(), String> {
+    command(
+        repo,
+        "python3",
+        &[
+            "-B",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tools/present_cpu",
+            "-p",
+            "test_*.py",
+        ],
+    )
 }
 
 fn all(repo: &Path) -> Result<Vec<String>, String> {
@@ -96,6 +116,7 @@ fn all(repo: &Path) -> Result<Vec<String>, String> {
             ],
         )?;
     }
+    present_cpu(repo)?;
     let mut report = vec![archives(repo)?];
     report.push(hardware_proof(
         repo,

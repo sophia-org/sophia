@@ -1178,6 +1178,7 @@ name = "sophia-session"
 version = "0.1.0"
 dependencies = [
  "rustix",
+ "serde_json",
  "sha2",
  "sophia-9p",
  "sophia-9p-client",

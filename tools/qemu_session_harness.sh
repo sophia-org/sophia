@@ -16,10 +16,32 @@ GPU_MODE="${SOPHIA_QEMU_GPU_MODE:-software}"
 RENDER_NODE="${SOPHIA_QEMU_RENDER_NODE:-/dev/dri/renderD128}"
 XTEST_ROW="${SOPHIA_QEMU_XTEST_ROW:-}"
 
+CPU_MODE="${SOPHIA_QEMU_CPU_MODE:-open}"
+CPU_SECONDS="${SOPHIA_QEMU_CPU_SECONDS:-60}"
+CPU_GRACE="${SOPHIA_QEMU_CPU_GRACE:-10}"
+CPU_RATE="${SOPHIA_QEMU_CPU_RATE:-5}"
+CPU_TARGET="${SOPHIA_QEMU_CPU_TARGET:-zero}"
+cpu_cmdline=""
+if [[ "$SCENARIO" == cpu ]]; then
+    if [[ "$CPU_MODE" != open && "$CPU_MODE" != closed ]] \
+        || [[ "$CPU_TARGET" != zero && "$CPU_TARGET" != next ]]; then
+        echo "invalid CPU workload switch" >&2; exit 1
+    fi
+    for value in "$CPU_SECONDS" "$CPU_GRACE" "$CPU_RATE"; do
+        if [[ ! "$value" =~ ^[1-9][0-9]{0,2}$ ]]; then
+            echo "invalid CPU numeric bound" >&2; exit 1
+        fi
+    done
+    if (( CPU_SECONDS < 10 || CPU_SECONDS > 120 || CPU_GRACE < 5 || CPU_GRACE > 30 || CPU_RATE > 240 )); then
+        echo "CPU bounds: seconds 10..120, grace 5..30, rate 1..240" >&2; exit 1
+    fi
+    cpu_cmdline=" sophia.cpu_mode=$CPU_MODE sophia.cpu_seconds=$CPU_SECONDS sophia.cpu_grace=$CPU_GRACE sophia.cpu_rate=$CPU_RATE sophia.cpu_target=$CPU_TARGET"
+fi
+
 case "$SCENARIO" in
-    session|emergency-recovery|gtk-classic|gtk-confined|session-lock|xtest-selection) ;;
+    session|emergency-recovery|gtk-classic|gtk-confined|session-lock|xtest-selection|cpu) ;;
     *)
-        echo "SOPHIA_QEMU_SCENARIO must be session, emergency-recovery, gtk-classic, gtk-confined, session-lock, or xtest-selection" >&2
+        echo "SOPHIA_QEMU_SCENARIO must be session, emergency-recovery, gtk-classic, gtk-confined, session-lock, xtest-selection, or cpu" >&2
         exit 1
         ;;
 esac
@@ -53,6 +75,7 @@ if [[ "$GPU_MODE" != software && "$GPU_MODE" != virgl ]]; then
 fi
 
 case "$SCENARIO" in
+    cpu) DEFAULT_EVIDENCE_FILE=/tmp/sophia-qemu-cpu.log ;;
     emergency-recovery) DEFAULT_EVIDENCE_FILE=/tmp/sophia-qemu-emergency-recovery.log ;;
     gtk-*|session-lock|xtest-selection) DEFAULT_EVIDENCE_FILE="/tmp/sophia-qemu-$SCENARIO.log" ;;
     *) DEFAULT_EVIDENCE_FILE=/tmp/sophia-qemu-session.log ;;
@@ -60,6 +83,11 @@ esac
 
 EVIDENCE_FILE="${SOPHIA_QEMU_EVIDENCE:-$DEFAULT_EVIDENCE_FILE}"
 QEMU_BIN="${SOPHIA_QEMU_BIN:-qemu-system-x86_64}"
+QEMU_ACCEL="${SOPHIA_QEMU_ACCEL:-kvm:tcg}"
+if [[ "$QEMU_ACCEL" != kvm && "$QEMU_ACCEL" != tcg && "$QEMU_ACCEL" != kvm:tcg ]]; then
+    echo "SOPHIA_QEMU_ACCEL must be kvm, tcg, or kvm:tcg" >&2
+    exit 1
+fi
 MEMORY_MIB="${SOPHIA_QEMU_MEMORY_MIB:-2048}"
 VIRTUAL_CPUS="${SOPHIA_QEMU_CPUS:-2}"
 VNC_SOCKET="${SOPHIA_QEMU_VNC_SOCKET:-$OUT_DIR/display.sock}"
@@ -159,8 +187,16 @@ while IFS= read -r line || [[ -n "$line" ]]; do
 done < "$SERIAL_FIFO" | tee -a "$EVIDENCE_FILE" &
 LOGGER_PID=$!
 
+cpu_export_args=()
+if [[ "$SCENARIO" == cpu ]]; then
+    CPU_EXPORT_FILE="$OUT_DIR/cpu-export.log"
+    cpu_export_args=(-device virtio-serial-pci
+        -chardev "file,id=cpuevidence,path=$CPU_EXPORT_FILE"
+        -device virtserialport,chardev=cpuevidence,name=sophia.cpu.evidence)
+fi
+
 "$QEMU_BIN" \
-    -machine q35,accel=kvm:tcg \
+    -machine "q35,accel=$QEMU_ACCEL" \
     -smp "$VIRTUAL_CPUS" \
     -m "$MEMORY_MIB" \
     -nodefaults \
@@ -169,14 +205,32 @@ LOGGER_PID=$!
     -monitor none \
     -qmp "unix:$QMP_SOCKET,server=on,wait=off" \
     -serial stdio \
+    "${cpu_export_args[@]}" \
     "${gpu_args[@]}" \
     -device virtio-keyboard-pci \
     -device virtio-mouse-pci \
     -kernel "$KERNEL_IMAGE" \
     -initrd "$INITRAMFS" \
-    -append "console=ttyS0 quiet loglevel=3 rdinit=/sbin/sophia-qemu-init rd.driver.pre=virtio_pci rd.driver.pre=virtio_gpu rd.driver.pre=virtio_input panic=-1 sophia.scenario=$SCENARIO sophia.two_xterm=$TWO_XTERM sophia.shared_renderer_worker=$SHARED_RENDERER_WORKER sophia.direct_scanout=$DIRECT_SCANOUT$forced_connector${XTEST_ROW:+ sophia.xtest_row=$XTEST_ROW}" \
+    -append "console=ttyS0 quiet loglevel=3 rdinit=/sbin/sophia-qemu-init rd.driver.pre=virtio_pci rd.driver.pre=virtio_gpu rd.driver.pre=virtio_input panic=-1 sophia.scenario=$SCENARIO sophia.two_xterm=$TWO_XTERM sophia.shared_renderer_worker=$SHARED_RENDERER_WORKER sophia.direct_scanout=$DIRECT_SCANOUT$cpu_cmdline$forced_connector${XTEST_ROW:+ sophia.xtest_row=$XTEST_ROW}" \
     > "$SERIAL_FIFO" 2>&1 &
 QEMU_PID=$!
+
+if [[ "$SCENARIO" == cpu ]]; then
+    # Guest input is autonomous. A host bound also covers a hung teardown.
+    deadline=$((SECONDS + CPU_GRACE + CPU_SECONDS + 90))
+    while kill -0 "$QEMU_PID" 2>/dev/null && (( SECONDS < deadline )); do sleep 0.2; done
+    if kill -0 "$QEMU_PID" 2>/dev/null; then
+        echo "sophia_qemu_cpu schema=1 status=failed reason=host_timeout" | tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    wait "$QEMU_PID"
+    QEMU_PID=""
+    wait "$LOGGER_PID"
+    LOGGER_PID=""
+    grep -q '^sophia_qemu_cpu schema=1 status=exited session_exit=0 export_exit=0$' "$EVIDENCE_FILE"
+    grep -q '^sophia_present_cpu_result ' "$CPU_EXPORT_FILE"
+    exit 0
+fi
 
 if [[ "$SCENARIO" == emergency-recovery ]]; then
     guard_ready=false

@@ -30,6 +30,7 @@ pub enum XPreparedPresentScheduleError {
 /// observations are refused per window, never returned as a server failure.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct XPresentTimingStatistics {
+    pub damage: XPresentDamageStatistics,
     pub clock_stale_samples: u64,
     pub clock_wrong_sources: u64,
     pub clock_counter_exhausted: u64,
@@ -479,5 +480,60 @@ impl XAuthorityRuntime {
         }
         self.scrap_clock_lost_preparations(idle)?;
         Ok(ready)
+    }
+}
+
+/// Successfully executed Pixmaps, distinct from composed frames and from
+/// queued or scrapped requests. Rectangle areas are clipped sums, not unions.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct XPresentDamageStatistics {
+    pub absent: u64,
+    pub explicit_full_rect: u64,
+    pub explicit_regions: u64,
+    pub effective_empty: u64,
+    pub source_pixels: u64,
+    pub rect_pixels: u64,
+    pub rects: u64,
+}
+
+impl XPresentDamageStatistics {
+    fn from_request(request: &XPreparedPresent) -> Self {
+        let mut result = Self::default();
+        let full = Rect {
+            x: 0,
+            y: 0,
+            width: request.pixmap_size.width,
+            height: request.pixmap_size.height,
+        };
+        if !request.has_update_region {
+            result.absent = 1;
+        } else if request.source_damage.is_empty() {
+            result.effective_empty = 1;
+        } else if request.source_damage.contains(&full) {
+            result.explicit_full_rect = 1;
+        } else {
+            result.explicit_regions = 1;
+        }
+        result.source_pixels = (full.width as u64).saturating_mul(full.height as u64);
+        for rect in &request.source_damage {
+            result.rect_pixels = result
+                .rect_pixels
+                .saturating_add((rect.width as u64).saturating_mul(rect.height as u64));
+            result.rects = result.rects.saturating_add(1);
+        }
+        result
+    }
+
+    fn add(&mut self, other: Self) {
+        macro_rules! add { ($($field:ident),+ $(,)?) => { $(self.$field = self.$field.saturating_add(other.$field);)+ }; }
+        add!(
+            absent,
+            explicit_full_rect,
+            explicit_regions,
+            effective_empty,
+            source_pixels,
+            rect_pixels,
+            rects
+        );
     }
 }

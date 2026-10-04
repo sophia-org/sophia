@@ -24,10 +24,14 @@ sophia-x-authority = { path = "../sophia-x-authority" }
 sophia-xshmfence = { path = "../sophia-xshmfence" }
 tracing.workspace = true
 sha2.workspace = true
-rustix = { version = "1.1", default-features = false, features = ["process", "rand", "system", "fs", "time", "pipe", "event"] }
+rustix = { version = "1.1", default-features = false, features = ["process", "rand", "system", "fs", "time", "pipe", "event", "thread"] }
 x11rb = { version = "0.13.1", features = ["xtest"] }
 
 [dev-dependencies]
+# Present in x11rb imports dri3 even for this core-pixmap test client.
+x11rb = { version = "0.13.1", features = ["present", "randr", "dri3"] }
+rustix = { version = "1.1", default-features = false, features = ["param"] }
+serde_json = "1"
 sophia-backend-live = { path = "../sophia-backend-live", default-features = false, features = ["test-support"] }
 sophia-conformance = { path = "../sophia-conformance" }
 sophia-9p-client = { workspace = true }

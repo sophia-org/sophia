@@ -41,11 +41,13 @@ mkdir -p "$OUT_DIR" "$OUT_DIR/dracut-tmp"
     cargo build --release --offline -p sophia-factotum -p sophia-factotum-pam
     # The xtest-selection scenario's client: two real xterms driven by XTEST.
     cargo build --release --offline -p sophia-session --all-features \
-        --example xtest_selection_driver
+        --example xtest_selection_driver --example present_cpu_workload
 )
 
-SOPHIA_BIN="$ROOT_DIR/target/release/sophia"
-XTEST_SELECTION_DRIVER="$ROOT_DIR/target/release/examples/xtest_selection_driver"
+TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT_DIR/target}"
+[[ "$TARGET_DIR" = /* ]] || TARGET_DIR="$ROOT_DIR/$TARGET_DIR"
+SOPHIA_BIN="$TARGET_DIR/release/sophia"
+XTEST_SELECTION_DRIVER="$TARGET_DIR/release/examples/xtest_selection_driver"
 # The driver asks xterm for DejaVu Sans Mono; a proportional fallback would
 # move the text row it aims at.
 DEJAVU_MONO="$(fc-match -f '%{file}' 'DejaVu Sans Mono' 2>/dev/null || true)"
@@ -71,13 +73,16 @@ runtime_files=(
     /usr/lib/security/pam_faildelay.so
 )
 extra_includes=(
+    --include "$ROOT_DIR/tools/present_cpu/export_guest_log.sh" /usr/bin/sophia-cpu-export
+    --include "$TARGET_DIR/release/examples/present_cpu_workload" /usr/bin/present_cpu_workload
     --include "$XTEST_SELECTION_DRIVER" /usr/bin/xtest_selection_driver
     --include "$DEJAVU_MONO" /usr/share/fonts/TTF/DejaVuSansMono.ttf
-    --include "$ROOT_DIR/target/release/sophia-factotum" /usr/bin/sophia-factotum
-    --include "$ROOT_DIR/target/release/sophia-factotum-pam" /usr/bin/sophia-factotum-pam
+    --include "$TARGET_DIR/release/sophia-factotum" /usr/bin/sophia-factotum
+    --include "$TARGET_DIR/release/sophia-factotum-pam" /usr/bin/sophia-factotum-pam
     --include "$ROOT_DIR/examples/pam.d/sophia-lock" /usr/share/sophia/pam.d/sophia-lock
 )
 required_guest_paths=(
+    /usr/bin/present_cpu_workload
     /usr/bin/dbus-daemon
     /usr/bin/dbus-run-session
     /usr/share/dbus-1/session.conf
@@ -105,8 +110,8 @@ fi
 dracut --force --no-hostonly --no-hostonly-cmdline --no-early-microcode \
     --kver "$KERNEL_VERSION" \
     --tmpdir "$OUT_DIR/dracut-tmp" \
-    --force-drivers "virtio_pci virtio_gpu virtio_input evdev" \
-    --install "/bin/sh /usr/bin/chmod /usr/bin/mount /usr/bin/modprobe /usr/bin/pidof /usr/bin/poweroff /usr/bin/sleep /usr/bin/sync ${install_files[*]}" \
+    --force-drivers "virtio_pci virtio_gpu virtio_input virtio_console evdev" \
+    --install "/bin/sh /usr/bin/cat /usr/bin/gzip /usr/bin/base64 /usr/bin/sha256sum /usr/bin/wc /usr/bin/du /usr/bin/chmod /usr/bin/mount /usr/bin/modprobe /usr/bin/pidof /usr/bin/poweroff /usr/bin/sleep /usr/bin/sync ${install_files[*]}" \
     --include "$ROOT_DIR/tools/qemu_guest_init.sh" /sbin/sophia-qemu-init \
     --include "$SOPHIA_BIN" /usr/bin/sophia \
     "${extra_includes[@]}" \

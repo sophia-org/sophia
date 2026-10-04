@@ -14,6 +14,8 @@ mod focus_candidate;
 mod production_test_helpers;
 use production_test_helpers::{completed_pointer_gesture_geometry, observe_public_output_topology};
 
+#[path = "cpu_harness_config.rs"]
+mod cpu_harness_config;
 #[path = "mirror_gate_session_config.rs"]
 mod mirror_gate_session_config;
 

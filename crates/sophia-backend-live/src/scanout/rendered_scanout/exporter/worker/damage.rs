@@ -138,33 +138,52 @@ fn slot_repaint_table(
     snapshot: Option<&sophia_engine::OutputFrameDamageSnapshot>,
     size: sophia_protocol::Size,
 ) -> Option<sophia_renderer_live::NativeCompositionRepaintTable> {
-    use sophia_renderer_live::{NativeCompositionRepaintTable as Table, NativeFullRepaintReason as R, NativeRepaintPlan as Plan};
+    use sophia_renderer_live::{
+        NativeCompositionRepaintTable as Table, NativeFullRepaintReason as R,
+        NativeRepaintPlan as Plan,
+    };
     let depth = history.depth(slot);
-    let Some(snapshot) = snapshot else { return Some(Table::full(R::DamageUnavailable)); };
-    if depth == 0 { return Some(Table::full(R::NoHistory)); }
+    let Some(snapshot) = snapshot else {
+        return Some(Table::full(R::DamageUnavailable));
+    };
+    if depth == 0 {
+        return Some(Table::full(R::NoHistory));
+    }
     let stable_geometry = history.stable_geometry(slot, snapshot);
-    let by_age = (1..=depth).map(|age| {
-        match history.plan(
-            slot,
-            LiveRendererSlotBufferAge::new(u32::try_from(age).unwrap_or(u32::MAX)),
-            Some(snapshot),
-            size,
-        ) {
-            LiveRendererSlotRepaint::Partial { damage } => Plan::Partial(damage.into_iter().map(|rect|
-                sophia_renderer_live::NativeCompositionDamageRect {
-                    x: rect.x, y: rect.y, width: rect.width, height: rect.height,
-                }
-            ).collect()),
-            LiveRendererSlotRepaint::Full { reason } => Plan::Full(match reason {
-                LiveRendererSlotFullRepaintReason::UnknownBufferAge => R::UnknownAge,
-                LiveRendererSlotFullRepaintReason::NoHistory => R::NoHistory,
-                LiveRendererSlotFullRepaintReason::BeyondHistoryDepth => R::BeyondHistory,
-                LiveRendererSlotFullRepaintReason::DamageUnavailable => R::DamageUnavailable,
-                LiveRendererSlotFullRepaintReason::PlanChoseFull => R::PlanFull,
-            }),
-        }
-    }).collect();
-    Some(Table::with_evidence(by_age, stable_geometry))
+    let by_age = (1..=depth)
+        .map(|age| {
+            let (plan, causes) = history.plan_with_causes(
+                slot,
+                LiveRendererSlotBufferAge::new(u32::try_from(age).unwrap_or(u32::MAX)),
+                Some(snapshot),
+                size,
+            );
+            let plan = match plan {
+                LiveRendererSlotRepaint::Partial { damage } => Plan::Partial(
+                    damage
+                        .into_iter()
+                        .map(|rect| sophia_renderer_live::NativeCompositionDamageRect {
+                            x: rect.x,
+                            y: rect.y,
+                            width: rect.width,
+                            height: rect.height,
+                        })
+                        .collect(),
+                ),
+                LiveRendererSlotRepaint::Full { reason } => Plan::Full(match reason {
+                    LiveRendererSlotFullRepaintReason::UnknownBufferAge => R::UnknownAge,
+                    LiveRendererSlotFullRepaintReason::NoHistory => R::NoHistory,
+                    LiveRendererSlotFullRepaintReason::BeyondHistoryDepth => R::BeyondHistory,
+                    LiveRendererSlotFullRepaintReason::DamageUnavailable => R::DamageUnavailable,
+                    LiveRendererSlotFullRepaintReason::PlanDamageCapacity => R::PlanDamageCapacity,
+                    LiveRendererSlotFullRepaintReason::PlanRectLimit => R::PlanRectLimit,
+                    LiveRendererSlotFullRepaintReason::PlanCoverage => R::PlanCoverage,
+                }),
+            };
+            (plan, native_damage_causes(causes))
+        })
+        .collect();
+    Some(Table::with_attribution(by_age, stable_geometry))
 }
 
 /// Notice a rebuilt target bundle and drop what the slot remembered.
@@ -194,4 +213,39 @@ fn observe_slot_target_generation(
             *slot_generation = None;
         }
     }
+}
+
+fn native_damage_causes(
+    causes: sophia_engine::OutputDamageCauses,
+) -> sophia_renderer_live::NativeDamageCauses {
+    use sophia_engine::OutputDamageCause as E;
+    use sophia_renderer_live::NativeDamageCause as N;
+    let mut result = sophia_renderer_live::NativeDamageCauses::default();
+    for cause in E::ALL {
+        if causes.contains(cause) {
+            result.insert(match cause {
+                E::NewOutput => N::NewOutput,
+                E::OutputChanged => N::OutputChanged,
+                E::Compositor => N::Compositor,
+                E::Order => N::Order,
+                E::Geometry => N::Geometry,
+                E::Sampling => N::Sampling,
+                E::Generation => N::Generation,
+                E::MissingIdentity => N::MissingIdentity,
+                E::NoMatchingTransition => N::NoMatchingTransition,
+                E::InvalidTransition => N::InvalidTransition,
+                E::Origin => N::Origin,
+                E::RectLimit => N::RectLimit,
+                E::PrecisionRestricted => N::PrecisionRestricted,
+                E::CoordinateOverflow => N::CoordinateOverflow,
+                E::TerminalIdentity => N::TerminalIdentity,
+                E::HistoryLimit => N::HistoryLimit,
+                E::Rebased => N::Rebased,
+                E::PreciseSurface => N::PreciseSurface,
+                E::PreviewIdentity => N::PreviewIdentity,
+                E::Cursor => N::Cursor,
+            });
+        }
+    }
+    result
 }

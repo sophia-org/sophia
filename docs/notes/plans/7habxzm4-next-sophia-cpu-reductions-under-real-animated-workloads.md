@@ -2,7 +2,7 @@
 id: 7habxzm4
 date: 2026-10-02
 kind: plan
-status: proposed
+status: active
 tags: [plan, milestone]
 ---
 # Next Sophia CPU reductions under real animated workloads
@@ -36,11 +36,53 @@ Exit:
   hand-run live samples. The operator's live check remains the final
   acceptance.
 
-## Three next priorities from the niri/XLibre comparison (2026-10-03)
+## Current assessment (2026-10-03)
+
+T289 remains active. The CPU harness and repaint attribution are qualified, and
+retained capture-config reuse has a measured benefit on both render nodes.
+Capture process CPU fell 39–40% at unchanged 60 captures/s in three paired
+samples per node. Whole-desktop savings remain unmeasured. The qualified CPU
+branch starts at master `ae5999940`; integration and release are still pending.
+
+| Original part | Completed work | Remaining evidence or decision |
+| --- | --- | --- |
+| 1. Profile and reduce owner work | Profile-guided shell service once per pass; native fd readiness and removal of the polling tail are on master. | Measure the combined savings and remaining deadline wakes; physical VT acceptance. |
+| 2. Hidden Present pacing | Bounded pacing, clock scheduling, race repairs, clockless recovery and first-frame selection are on master; hardware binds were observed live. | Matched CPU and first-visible/timing acceptance on the final release. |
+| 3. Aggregate diagnostics | Opt-in aggregation is on master; full evidence remains the default. | Off/on CPU comparison and verifier compatibility before any default change. |
+| 4. Partial damage | Actual-age repaint causes and client-damage counters passed component, pixel and guest checks. | Reproduce the full-screen terminal case and identify an avoidable cause, or record a measured no-change result. |
+| 5. Shared renderer worker | The optional path exists. | Compare private and shared workers, including fairness, latency, resources and recovery; no default promotion yet. |
+| 6. CPU regression gates | Valid normal-session QEMU baseline, deterministic analyzer checks, and render-node capture/pixel comparisons. | Use these gates for subsequent candidates; keep final hardware acceptance. |
+
+The three priorities below now have concrete outcomes: native readiness is
+merged, repaint attribution is qualified, and capture configuration reuse is
+qualified with separated before/after CPU and latency ranges. Source-import
+reuse or destination pooling would need separate ownership proofs.
+
+**Next experiment:** use the new attribution with a generic near-output-size
+Present workload, comparing absent/full damage with small explicit regions.
+The small-window guest already proves partial repaint works; it cannot explain
+the terminal's full frames. Qualify any resulting change with pixel proofs and
+matched CPU/throughput results. Remaining owner-wake attribution, aggregation
+and shared-worker comparisons can also proceed unattended.
+
+The separate W1 hardware admission cache still needs integration with lock and
+the pending/committed placement rules, then real-vblank measurement. The current
+virtio guest uses Unclocked and cannot qualify that benefit. Final matched live
+CPU, latency and VT checks remain acceptance work after an audited release.
+The fence-waiter scrap parity issue is tracked separately as t300.
+
+Earlier checkpoints below retain their original evidence and decisions; this
+assessment is the current status. Nothing here closes T289 or authorizes a live
+install or configuration change.
+
+## Three priorities from the niri/XLibre comparison (2026-10-03)
 
 The operator approved proceeding with priority 1 and recording all three here.
-They remain slices of t289. Priority 1 is being implemented; priorities 2 and 3
-need the attribution below before changing rendering or buffer custody.
+They remain slices of t289. Priority 1 is merged in local master as `ae5999940`;
+its combined-tree gate passed. CPU savings and physical VT acceptance remain
+unmeasured. Priority 2 now has qualified attribution; priority 3 has qualified
+capture-config reuse. The full-screen repaint cause and whole-session savings
+remain open.
 
 ### Evidence and scope
 
@@ -167,10 +209,10 @@ and [repaint planning](../../../crates/sophia-engine/src/compositor_graphics/fra
 Smithay uses element identity/commit damage, opaque-region subtraction and buffer
 age, and skips elements with no damaged visible area; Sophia already has history.
 
-**Next step.** Add bounded aggregate reasons for absent/full/partial/empty client
-regions, area, rebase, precision restrictions, missing predecessor/terminal
-identity, rectangle pressure and coverage threshold. Attribute the age actually
-rendered, not every precomputed age. Then repair only a measured avoidable cause.
+**Next step.** Use the implemented aggregate reasons for client damage, area,
+rebase, precision restrictions, history identity and repaint thresholds on a
+near-output-size workload. The counters attribute the age actually rendered.
+Repair only a measured avoidable cause.
 If the client provides full damage, record that outcome without inventing a
 smaller region or disabling its animation. Preserve all identity checks.
 
@@ -178,6 +220,63 @@ smaller region or disabling its animation. Preserve all identity checks.
 updates, rejected/coalesced candidates, history exhaustion, scaling/clipping,
 rotation, transparency, mirrors and previews. Track repaint-area ratios and
 per-reason deltas with reset handling. A measured no-change decision is valid.
+
+#### Repaint attribution implementation (2026-10-03)
+
+This slice preserves the existing reduction, identity checks and repaint
+thresholds. Engine carries a bounded set of causes through the same reduction:
+geometry/order/compositor/cursor changes; sampling restrictions; missing or
+nonmatching history; generation, terminal identity and coordinate failures;
+rectangle pressure; and Present rebase. A failed precision proof reports its
+first refusal for that surface. Several surfaces can contribute different causes.
+`rebased` means a rebased edge was walked, even if a later check refused
+precision; it is not a successful-precision counter. The preparation identity
+retains a rebase marker only for its affected surface.
+Client generations or buffer handles still cannot substitute for pixel identity.
+
+The native per-age table carries these causes plus the exact full-plan threshold
+(capacity, rectangle limit or coverage). Counters advance only after a successful
+render, for the EGL age actually selected. Unknown/unretained ages have no Engine
+cause evidence. Each cause counts at most once per output frame, with a separate subset
+for full frames; causes overlap and must not be summed as a frame partition.
+The existing `damage_full_plan_count` is retained and equals its three new
+subreasons plus the legacy unspecified subreason. Planning unused ages counts
+neither rendered causes nor rendered frames; the older slot planning metrics
+still count planned ages and remain a distinct measure.
+
+At the existing five-second cadence, `sophia_live_damage_causes` reports those
+rendered causes. `sophia_present_damage` reports an independent cohort of
+successfully executed Pixmaps: absent update region, explicit region containing
+a full clipped rectangle, other explicit regions, or empty effective damage.
+It also reports pixmap area and clipped rectangle count/area. Rectangle area is
+a sum, including overlap; fragmented regions that together cover a whole pixmap
+remain in `explicit_regions`. No extra union calculation or per-frame log is
+added. Prepared, scrapped, cancelled and rejected requests do not count as executed.
+
+`tools/present_cpu/damage_attribution.py` compares records with identical
+observation times in an explicit interval, rejects resets/missing fields and
+checks frame/subreason accounting. Full frames without a usable reduction are
+reported as a separate reason bucket, not inferred from an empty cause mask.
+The caller must select a single uninterrupted Session/native-owner lifetime;
+monotone counters alone do not prove owner continuity. It reports coverage and keeps the executed
+Pixmap cohort distinct from composition. No compositor or client behavior is
+changed to make the workload cheaper. The small core-pixmap guest is a control;
+full-screen terminal damage and DMA-BUF capture still need their own evidence.
+Qualification is recorded in `development-evidence/t289-repaint-attribution-01/`.
+
+Qualification passed on freeze-02 `6ae323ac`: the full gate, 28 Python tool
+checks, and partial/full pixel equivalence on both render nodes. Final build
+`sophia c6edfe34` passed two ten-second normal-session QEMU probes. The aligned
+five-second counter intervals contain 100 and 2,732 partial frames, zero full
+frames, and 50 and 1,366 executed absent-region Presents respectively. The
+only nonzero cause is `precise_surface`; repaint pixels are 1.27% of the summed
+output target pixels. That denominator includes the unchanged second output;
+its zero-damage partial frames carry no `precise_surface` flag. Causes count
+output frames, independently of the executed-Pixmap count.
+The three record streams agree, and one native-owner lifetime spans each run.
+These small core-pixmap windows do not reproduce the full-screen terminal
+finding. They establish the attribution path, with no CPU saving or capture
+claim. `SUMMARY.json` and `GUEST-ATTRIBUTION.json` retain the scope and identities.
 
 ### Priority 3: reduce capture/import setup while preserving immutable pixels
 
@@ -194,10 +293,10 @@ Smithay retains imported textures by DMA-BUF lifetime; XLibre glamor attaches
 imports to pixmaps. Sophia's owned images keep retained content immutable after
 the client can reuse its buffer. A different cache key alone cannot replace that.
 
-**Next step.** Measure existing capture setup/copy/cleanup timing counters, which
-were disabled in these samples. Evaluate reusing the validated import for capture
-and a bounded source-import cache tied to backing lifetime, descriptors and
-device identity. Pixel generation remains distinct from storage identity; fence
+**Outcome and follow-up.** The measurements below identified configuration lookup,
+and reuse removes most of that cost. A further experiment could evaluate reusing
+the validated import for capture or a bounded source-import cache tied to backing
+lifetime, descriptors and device identity. Pixel generation remains distinct from storage identity; fence
 and transfer semantics stay intact. Destination BO pooling or capture removal
 needs a separate proof covering every local/foreign reader and GPU operation.
 
@@ -205,6 +304,73 @@ needs a separate proof covering every local/foreign reader and GPU operation.
 with foreign readers, reset, capture errors, fences, mirrors and cross-device
 transfer. Preserve exactly-once Complete/Idle and memory bounds. Measure imports,
 allocations, copy cost and total CPU at fixed completed throughput.
+
+#### Capture cost attribution and config reuse (2026-10-03)
+
+`capture_cost.rs` now enables the existing stage timers in the offscreen fixture
+and reports calls, setup/copy/cleanup, context reuse, imports and deadline misses.
+Each capture still allocates a fresh image, promotes it and evicts it. The test
+requires no surviving images or imports, exact capture/promote/evict counts,
+and no capture or transfer failures. Comparison requires this exact instrumented
+fixture; historical timing-off results are not comparable.
+
+`t289-capture-attribution-01/` contains three ten-second samples per render node
+at 60 captures/s after 120 warm-up captures. Both nodes passed, with zero late
+completions. At 1280x1440 XR24, median calling-thread CPU was 320.19 and 319.94
+microseconds/capture (`renderD128` and `renderD129`); process CPU was 340.20 and
+337.29. Setup cost about 4 microseconds, copy 123–124, cleanup 30–32. Every image
+still had a fresh surface and one counted import/eviction. Validation-probe
+imports are outside that import counter and remain included in total CPU.
+
+`t289-capture-attribution-02/` separates the public calls: promotion was about
+0.6 microseconds and eviction 3.5–3.7, with 3.7–4.0 of fixture-loop CPU. The
+uncovered 153–160 microseconds lay inside capture. Other process threads added
+about 18–19 microseconds; kernel/GPU work and deferred driver cost are not
+assigned by these calling-thread brackets. The two diagnostic probes are not a
+before/after comparison. A permitted 30-second userspace profile of the offscreen
+fixture collected 446 samples, none lost: `choose_scanout_config_for_format`
+accounted for 55.38% inclusive. Inclusive shares overlap; the profile includes
+initialization and warm-up and establishes a target, not a predicted saving.
+
+The candidate in `t289-capture-config-01/` reuses the chosen EGLConfig from the
+existing two retained execution contexts. The key includes format and the exact
+13 config attributes, with the EGLDisplay fixed for that native owner. Equality
+performs no EGL call. The slot dies before its display terminates; failed capture
+cleanup does not retain it. Cold selection and modifier/surface fallbacks remain.
+The attribute guard is defensive: current candidates use fixed attributes per
+format, so ordinary tests do not exercise a changed attribute array.
+
+This caches configuration only. Actual source-descriptor validation, source
+imports, fresh destination surfaces/BOs, copy/flush, fences, transfers and immutable
+snapshot custody are unchanged. The candidate was qualified against the
+saved instrumented baseline binary with an unchanged timing fixture. The warm-path
+regression requires zero extra selector calls after both format slots succeed;
+cold attempts vary by device and are not incorrectly pinned to two calls.
+
+The combined full gate passed on freeze `baba6daa`. Capture/custody, lifetime
+and transfer pixel tests passed on both render nodes. Forcing a selector search
+on every capture failed the named warm-cache assertion; the original source
+was restored byte-for-byte. The first cold-count assertion and a missing
+lifecycle-test environment variable remain in the evidence with their corrections.
+
+Three ten-second baseline/candidate pairs per node (baseline first in two of
+three pairs) all sustained 60 captures/s with zero late completions. Each sample
+retained 600 new surfaces, imports and evictions, zero new pipelines or contexts,
+and no remaining images/imports. Medians from `COMPARISON-METRICS.json`:
+
+| Render node | Process CPU/capture before | After | Reduction | p99 wall time before → after |
+| --- | ---: | ---: | ---: | ---: |
+| renderD128 | 346.25 µs | 207.08 µs | 40.19% | 478.07 → 332.41 µs |
+| renderD129 | 344.79 µs | 209.10 µs | 39.35% | 521.85 → 303.81 µs |
+
+Calling-thread CPU fell 41.8–42.5%. All candidate samples were below all baseline
+samples for thread/process CPU and p95/p99 wall time on both nodes. The uncovered
+capture cost fell from about 160 to 21 microseconds. Configuration lookup is now
+a measured optimization; source-import reuse and destination pooling remain
+separate proposals. These are instrumented local capture results, not GPU time,
+whole-session CPU savings, cross-device throughput or live acceptance. The
+existing desktop was neither profiled nor reconfigured for these runs. This
+slice is qualified on the CPU branch; master integration and release remain pending.
 
 A secondary opportunity is unchanged CPU-layer upload: raster reuse does not
 mean GPU upload reuse. The current scratch texture uploads each CPU layer again,
@@ -219,6 +385,108 @@ Copy/Flip/Skip mix, latency, errors and memory occupancy beside CPU and counters
 Cross-compositor comparisons require equivalent visuals and include any separate
 X compositor's CPU. QEMU is a correctness/relative signal; hardware acceptance
 stays with the operator. No live install or configuration change is implicit.
+
+### Unattended qualification approved (2026-10-03)
+
+The operator approved implementing the remaining slices without a live check
+between each change. Build the repeatable headless CPU gate first, then attribute
+full repaint decisions, measure capture/import setup, and qualify each justified
+change. W1, aggregation and shared-worker experiments follow with their stated
+boundaries. A valid measured no-change outcome remains allowed. The final live
+acceptance is deferred until a tested release is ready; it does not block ordinary
+implementation or unattended component/guest qualification.
+
+The first slice reuses the reviewed generic core-pixmap client and proc sampler
+from the W1 worktree without its cache implementation or hardware-only validity
+rule. `tools/present_cpu/` adds a general CPU scenario with fixed-rate and
+Complete/Idle-paced workloads. Two ten-second probes precede three 60-second
+samples per workload. Store the kernel, guest, client, source and environment
+identities. Comparisons require matching offered work and report throughput,
+latency and event modes beside CPU. Missing counters, resets and protocol loss
+invalidate a run; median CPU/Complete growth over 10%, throughput loss over 2%,
+or p95 latency growth over 10% flag a valid comparison for review. These bounds
+are declared before running the campaign, not chosen to accept its result.
+Read-only review added whole-guest CPU and steal accounting: over 1% steal or
+over 20% unaccounted CPU invalidates a run; unaccounted-share growth above five
+percentage points invalidates a comparison. The preliminary campaign is retained
+as diagnostic-only because it lacked these controls. Owner attribution uses an
+explicit emitted TID; image packaging requires a source-bound build receipt.
+
+Harness qualification exposed measurement and transport faults, preserved in
+`t289-cpu-gates-01/`. Streaming full records through the emulated UART added
+4.44 seconds of IRQ work in a ten-second probe. Direct tmpfs logging reduced
+that to 0.07 seconds; all records are now exported losslessly after measurement.
+An uncompressed export then timed out, so the export is bounded gzip/base64 with
+host-side integrity checks. Neither change reduces the offered client workload.
+The first long closed run then exhausted space on the unpacked initramfs during
+export and panicked its test init. It remains INVALID. Log artifacts now have a
+separate 256 MiB tmpfs; compression streams without a second copy. Workload and
+size/hash metadata precede bulk export, and an export failure returns a failed
+result without exiting PID 1. Both CPU snapshots record guest memory and log size;
+less than 256 MiB MemAvailable or more than 128 MiB of logs invalidates a run.
+Export wall time and final tmpfs usage are retained. A long export subsequently
+showed console watchdog messages interleaved into the encoded payload. Bulk
+evidence now uses a dedicated virtio-serial host file, separate from the kernel
+console. Any kernel stall invalidates the run. These are harness changes;
+the Session tracing volume and offered workload remain unchanged.
+
+The guest's tick-sampled CPU totals also disagreed with task runtime: one closed
+probe reported 37.44 seconds across four vCPUs during a ten-second interval.
+All task ticks summed to 15.42 seconds, exceeding the guest's 13.26-second busy
+tick sum. The harness now captures per-CPU and per-task scheduler nanoseconds,
+using capacity minus idle, iowait and steal as the whole-guest busy estimate,
+with scheduler totals as a cross-check and tick totals retained as diagnostics. Kernel workers and interrupts remain part of guest cost.
+Attribution follows PID/TID plus start time, so changing a workqueue name does
+not lose its CPU. The 20% unattributed limit is unchanged; a comparison also
+rejects growth over five percentage points outside Session/client, attributed
+or otherwise. A saving claim requires both Session and guest CPU to improve.
+The first full open sample also exposed intentional proof-mode 1 ms owner
+polling. The recipe now uses the existing normal-session startup/exit lifecycle;
+the analyzer requires Session-emitted normal mode and successful app exit.
+No production scheduler bypass is added.
+Qualification is recorded in `t289-cpu-gates-01/baseline-05/SUMMARY.json`
+(`BASELINE_RECORDED`): both probes and three 60-second samples per arm passed on
+freeze-04 `057f36ed`, build-07 and image-09. All measured binds were Unclocked,
+all completions Copy, with Complete/Idle custody and no outstanding buffers.
+The earlier attempts remain rejected or diagnostic-only; none supplies a saving
+claim.
+
+Baseline medians for the two 320x240 core-pixmap windows:
+
+| Workload | Completed/s | Session CPU ms/Complete | Whole-guest CPU ms/Complete | p95 latency |
+| --- | ---: | ---: | ---: | ---: |
+| Fixed offer, 5/s per window | 10.00 | 5.256 | 7.604 | 10.04 ms |
+| Complete/Idle-paced | 272.95 | 3.833 | 5.854 | 7.71 ms |
+
+These are reference costs, not physical display rates or a before/after result.
+Whole-guest accounting retains kernel cost: 1.14–1.91% of busy CPU was
+unattributed across the full samples, maximum per-vCPU steal was 0.0334%, and
+minimum guest MemAvailable exceeded 740 MiB. Long closed logs were about 64 MB
+and exported through virtio in about 0.1 seconds. Readiness with nothing consumed
+was zero. The deterministic accounting/comparison/export tests now run in
+`xtask check` and `xtask check present-cpu`; measured QEMU trials stay explicit.
+
+Priority 2 attribution is implemented and qualified above: it distinguishes client
+damage, precision/history restrictions and the exact repaint-plan threshold at
+the age actually rendered. This guest already repaints its small ordinary surfaces
+partially, so it does not reproduce the full-screen terminal finding. Priority 3
+has separate DMA-BUF capture timing and pixel proofs above; this core-pixmap
+baseline records no snapshot captures/imports. W1 hardware-cache benefit and
+final live acceptance remain open.
+
+The periodic clock and renderer records gain a monotonic observation timestamp
+on their existing cadence, preserving schema and prefixes. This lets the analyzer
+exclude startup counters. No frame-service or rendering behavior changes in this
+slice. A software virtio guest can qualify the Unclocked path and relative CPU
+changes; it cannot establish W1 hardware-cache benefit. GPU pixel/capture checks
+use separate offscreen render-node proofs. Physical VT, mixed-refresh timing and
+final desktop acceptance remain later checks. No live configuration or install
+is part of this approval.
+
+Evidence starts at `development-evidence/t289-cpu-gates-01/`; baseline-05 records
+the qualified reference above. Future measurements use coordinated quiet windows;
+source/build work follows the ordinary parallel build policy. Existing Cargo
+targets and guest dependencies are reused because available disk space is limited.
 
 ## Task details
 
@@ -368,7 +636,7 @@ requires investigation. QEMU is a relative signal. Keep hardware orchestration
 in niltempus and generic fixtures in Sophia. Operator live acceptance remains
 required. No client configuration, live install or session restart is implicit.
 
-### Current experiments and boundaries
+### Historical experiments and boundaries at the 2026-10-02 checkpoint
 
 - Part 2 includes a Present timing repair before its slower interval can ship.
   At the baseline, the completion clock was global, hidden NotifyMSC had no

@@ -1,3 +1,9 @@
+struct NativeCaptureTarget {
+    config: khronos_egl::Config,
+    config_attributes: [khronos_egl::Int; 13],
+    target: NativeRenderTarget,
+}
+
 impl<T: std::os::fd::AsFd> NativeGbmRenderedScanoutContext<T> {
     fn probe_renderer_image_import(
         &self,
@@ -82,12 +88,29 @@ impl<T: std::os::fd::AsFd> NativeGbmRenderedScanoutContext<T> {
         };
         let mut import_failure = None;
         for candidate in candidates {
-            let Some(config) = choose_scanout_config_for_format(
-                &self.egl,
-                self.display,
-                candidate.config_attributes,
-                candidate.format,
-            ) else {
+            // The retained execution context belongs to this EGLDisplay. Its
+            // configuration is reusable only for the selector's exact inputs;
+            // modifiers still go through fresh surface allocation below.
+            let slot = usize::from(candidate.format == gbm::Format::Argb8888);
+            let attributes = candidate.config_attributes;
+            let config = self.capture_targets[slot]
+                .as_ref()
+                .filter(|cached| {
+                    cached.target.surface_format == candidate.format
+                        && cached.config_attributes == attributes
+                })
+                .map(|cached| cached.config)
+                .or_else(|| {
+                    self.stats.capture_config_selections =
+                        self.stats.capture_config_selections.saturating_add(1);
+                    choose_scanout_config_for_format(
+                        &self.egl,
+                        self.display,
+                        attributes,
+                        candidate.format,
+                    )
+                });
+            let Some(config) = config else {
                 continue;
             };
             let setup_started = self.render_timing_enabled.then(RenderStageTimer::start);
@@ -169,7 +192,7 @@ impl<T: std::os::fd::AsFd> NativeGbmRenderedScanoutContext<T> {
                     };
                     let retained = completion.is_ok();
                     if let Err(error) =
-                        self.finish_renderer_image_capture(persistent, config, retained)
+                        self.finish_renderer_image_capture(persistent, config, attributes, retained)
                     {
                         if let Ok(Some(sync)) = completion {
                             let _ = unsafe { self.egl.destroy_sync(self.display, sync) };
@@ -193,7 +216,7 @@ impl<T: std::os::fd::AsFd> NativeGbmRenderedScanoutContext<T> {
             // execution cache, but must not hide the import error or prevent
             // the remaining format/modifier candidates from being tried.
             if self
-                .finish_renderer_image_capture(persistent, config, false)
+                .finish_renderer_image_capture(persistent, config, attributes, false)
                 .is_err()
             {
                 self.stats.capture_failures = self.stats.capture_failures.saturating_add(1);
@@ -251,8 +274,16 @@ impl<T: std::os::fd::AsFd> NativeGbmRenderedScanoutContext<T> {
         NativeGbmScanoutBufferExportDetail,
     > {
         let slot = usize::from(spec.candidate.format == gbm::Format::Argb8888);
-        if let Some((config, mut target)) = self.capture_targets[slot].take() {
-            if config == spec.config && target.surface_format == spec.candidate.format {
+        if let Some(cached) = self.capture_targets[slot].take() {
+            let NativeCaptureTarget {
+                config,
+                config_attributes,
+                mut target,
+            } = cached;
+            if config == spec.config
+                && target.surface_format == spec.candidate.format
+                && config_attributes == spec.candidate.config_attributes
+            {
                 let started = Instant::now();
                 // Never recycle the previous image's surface or BO. Its exported
                 // FDs may still be in use even after local image-store eviction.
@@ -271,7 +302,11 @@ impl<T: std::os::fd::AsFd> NativeGbmRenderedScanoutContext<T> {
                         // Surface allocation has not bound or used the context.
                         // Preserve it for the next modifier candidate; failed
                         // allocation says nothing about execution validity.
-                        self.capture_targets[slot] = Some((config, target));
+                        self.capture_targets[slot] = Some(NativeCaptureTarget {
+                            config,
+                            config_attributes,
+                            target,
+                        });
                         return Err(error);
                     }
                 };
@@ -303,6 +338,7 @@ impl<T: std::os::fd::AsFd> NativeGbmRenderedScanoutContext<T> {
         &mut self,
         mut persistent: PersistentCompositionTarget,
         config: khronos_egl::Config,
+        config_attributes: [khronos_egl::Int; 13],
         retain: bool,
     ) -> Result<(), NativeGbmScanoutBufferExportDetail> {
         let started = self.render_timing_enabled.then(RenderStageTimer::start);
@@ -337,7 +373,11 @@ impl<T: std::os::fd::AsFd> NativeGbmRenderedScanoutContext<T> {
         let _ = self.egl.make_current(self.display, None, None, None);
         let slot = usize::from(persistent.target.surface_format == gbm::Format::Argb8888);
         if retain && cleaned.is_ok() {
-            self.capture_targets[slot] = Some((config, persistent.target));
+            self.capture_targets[slot] = Some(NativeCaptureTarget {
+                config,
+                config_attributes,
+                target: persistent.target,
+            });
         } else {
             self.stats.sampling = self
                 .stats

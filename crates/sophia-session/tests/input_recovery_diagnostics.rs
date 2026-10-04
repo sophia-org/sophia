@@ -3,6 +3,22 @@ use sophia_session::diagnostics::{
 };
 
 #[test]
+fn cpu_counter_samples_keep_their_monotonic_measurement_boundary() {
+    let owner = "sophia_present_clock_service schema=1 owner_tid=88";
+    assert_eq!(reduced_record(owner).as_deref(), Some(owner));
+    assert_eq!(
+        reduced_record(&format!("{owner} owner_tid=secret")).as_deref(),
+        Some(owner)
+    );
+    for record in ["sophia_present_clock_service", "sophia_live_render_work"] {
+        let line = format!("{record} schema=1 observed_monotonic_usec=123456");
+        assert_eq!(reduced_record(&line).as_deref(), Some(line.as_str()));
+        let spoof = format!("{line} observed_monotonic_usec=secret payload=private");
+        assert_eq!(reduced_record(&spoof).as_deref(), Some(line.as_str()));
+    }
+}
+
+#[test]
 fn unclocked_records_keep_the_failure_errno_and_only_scalar_counts() {
     let line = "sophia_present_unclocked schema=1 head=2 owner=3 incarnation=4 reason=sequence_unsupported errno=95 minimum_period_usec=16667";
     assert_eq!(reduced_record(line).as_deref(), Some(line));

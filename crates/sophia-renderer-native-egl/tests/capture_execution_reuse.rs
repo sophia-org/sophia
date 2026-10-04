@@ -55,6 +55,7 @@ fn fresh_images_reuse_execution_across_resize_and_survive_local_eviction() {
     let allocator = gbm::Device::new(open(&path)).unwrap();
     let mut capture = context(&path);
     let mut snapshots = Vec::new();
+    let mut cold_config_selections = 0;
     for (index, (width, height, format)) in [
         (2, 1, gbm::Format::Xrgb8888),
         (11, 7, gbm::Format::Argb8888),
@@ -112,6 +113,17 @@ fn fresh_images_reuse_execution_across_resize_and_survive_local_eviction() {
                 },
             )
             .unwrap();
+        let selections = capture.persistent_render_stats().capture_config_selections;
+        if index < 2 {
+            // A cold format may reject several modifier/surface candidates.
+            assert!(selections > cold_config_selections);
+            cold_config_selections = selections;
+        } else {
+            assert_eq!(
+                selections, cold_config_selections,
+                "both format slots stay warm across resize and local eviction"
+            );
+        }
         capture.promote_renderer_image(image).unwrap();
         let snapshot = capture
             .export_promoted_renderer_image(image)
@@ -135,6 +147,7 @@ fn fresh_images_reuse_execution_across_resize_and_survive_local_eviction() {
         "one execution context per format"
     );
     assert_eq!(stats.capture_context_reuses, 4);
+    assert_eq!(stats.capture_config_selections, cold_config_selections);
     assert_eq!(stats.gl_pipeline_creations, 2);
     assert_eq!(stats.import_cache.imports, 6);
     assert_eq!(stats.import_cache.evictions, 6);
