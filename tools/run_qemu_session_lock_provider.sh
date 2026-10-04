@@ -39,6 +39,7 @@ if [[ "$PHASE" != run ]]; then
         > "$OUT/build.log" 2>&1 || { echo "guest build failed: $OUT/build.log" >&2; exit 1; }
     cp "$OUT/qemu/guest-tools/SHA256SUMS" "$OUT/guest-tools.SHA256SUMS"
     cp "$OUT/qemu/guest-tools/FIXTURE.txt" "$OUT/guest-tools.FIXTURE.txt"
+    cp "$OUT/qemu/IMAGE-IDENTITY.SHA256SUMS" "$OUT/image-identity.SHA256SUMS"
     sha256sum "$MANIFEST" > "$OUT/manifest.SHA256SUM"
     cp "$MANIFEST" "$OUT/pinned.SHA256SUMS"
     sha256sum "$OUT"/qemu/*.img > "$OUT/image.SHA256SUM"

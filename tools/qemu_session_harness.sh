@@ -37,6 +37,24 @@ elif [[ -n "$LOCK_PROVIDER_MODE" ]]; then
     echo "SOPHIA_QEMU_LOCK_PROVIDER_MODE is only for the session-lock-provider scenario" >&2
     exit 1
 fi
+# Diagnostic only, off by default: on the first native page-flip hard stall
+# the guest's stamper asks the guest kernel for its blocked tasks (SysRq w)
+# and copies that report into the evidence (tools/qemu_line_stamp.c).
+SYSRQ_ON_HARD_STALL="${SOPHIA_QEMU_SYSRQ_ON_HARD_STALL:-0}"
+case "$SYSRQ_ON_HARD_STALL" in
+    0) ;;
+    1)
+        [[ "$SCENARIO" == session-lock-provider ]] || {
+            echo "SOPHIA_QEMU_SYSRQ_ON_HARD_STALL is only for the session-lock-provider scenario" >&2
+            exit 1
+        }
+        lock_provider_cmdline+=" sophia.sysrq_on_hard_stall=1"
+        ;;
+    *)
+        echo "SOPHIA_QEMU_SYSRQ_ON_HARD_STALL must be 0 or 1" >&2
+        exit 1
+        ;;
+esac
 
 cpu_cmdline=""
 if [[ "$SCENARIO" == cpu ]]; then

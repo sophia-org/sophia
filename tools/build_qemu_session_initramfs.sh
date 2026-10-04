@@ -36,8 +36,8 @@ mkdir -p "$OUT_DIR" "$OUT_DIR/dracut-tmp"
 
 # Candidate binaries supplied by their owner instead of built here: a
 # sha256sum manifest naming sophia, sophia-factotum and sophia-factotum-pam,
-# by absolute path or relative to the manifest's directory. They are verified, copied, and the copies verified again,
-# so the image holds exactly the bytes the manifest pins.
+# by absolute path or relative to the manifest's directory. They are verified, copied, and the copies verified again;
+# dracut runs with --nostrip, and the built image is checked to hold exactly the bytes the manifest pins.
 PINNED_MANIFEST="${SOPHIA_QEMU_PINNED_MANIFEST:-}"
 if [[ -n "$PINNED_MANIFEST" ]]; then
     pinned_dir="$OUT_DIR/pinned"
@@ -189,7 +189,7 @@ if [[ ! -d "$XKB_DATA_DIR" ]]; then
     echo "xkeyboard-config data is missing: /usr/share/X11/xkb" >&2
     exit 1
 fi
-dracut --force --no-hostonly --no-hostonly-cmdline --no-early-microcode \
+dracut --force --nostrip --no-hostonly --no-hostonly-cmdline --no-early-microcode \
     --kver "$KERNEL_VERSION" \
     --tmpdir "$OUT_DIR/dracut-tmp" \
     --force-drivers "virtio_pci virtio_gpu virtio_input virtio_console evdev" \
@@ -213,13 +213,23 @@ dracut --force --no-hostonly --no-hostonly-cmdline --no-early-microcode \
     "$INITRAMFS"
 
 initramfs_listing="$(lsinitrd "$INITRAMFS")"
-# The guest's protection domains run the host's /usr/bin/bwrap, byte for byte.
-guest_bwrap="$(lsinitrd -f usr/bin/bwrap "$INITRAMFS" | sha256sum | cut -d' ' -f1)"
-if [[ "$guest_bwrap" != "$(sha256sum /usr/bin/bwrap | cut -d' ' -f1)" ]]; then
-    echo "initramfs bwrap differs from /usr/bin/bwrap" >&2
-    exit 1
-fi
-echo "guest_bwrap_sha256=$guest_bwrap" >> "$GUEST_TOOLS/FIXTURE.txt"
+# The guest runs exactly these bytes: Session and its authenticator (pinned or
+# built here), the scenario's guest tools, and the host's /usr/bin/bwrap for
+# its protection domains. One decompression unpacks them for comparison.
+{
+    echo "$(sha256sum "$SOPHIA_BIN" | cut -d' ' -f1)  usr/bin/sophia"
+    echo "$(sha256sum "$FACTOTUM_BIN" | cut -d' ' -f1)  usr/bin/sophia-factotum"
+    echo "$(sha256sum "$FACTOTUM_PAM_BIN" | cut -d' ' -f1)  usr/bin/sophia-factotum-pam"
+    while read -r digest name; do
+        echo "$digest  usr/bin/$name"
+    done < "$GUEST_TOOLS/SHA256SUMS"
+    echo "$(sha256sum /usr/bin/bwrap | cut -d' ' -f1)  usr/bin/bwrap"
+} > "$OUT_DIR/IMAGE-EXPECTED.SHA256SUMS"
+"$ROOT_DIR/tools/qemu_image_identity.sh" "$INITRAMFS" "$OUT_DIR/IMAGE-EXPECTED.SHA256SUMS" \
+    "$OUT_DIR/IMAGE-IDENTITY.SHA256SUMS" \
+    || { echo "initramfs does not hold the expected bytes" >&2; exit 1; }
+echo "guest_bwrap_sha256=$(sed -n 's|  usr/bin/bwrap$||p' "$OUT_DIR/IMAGE-IDENTITY.SHA256SUMS")" \
+    >> "$GUEST_TOOLS/FIXTURE.txt"
 for guest_path in "${required_guest_paths[@]}"; do
     if ! grep -Fq " ${guest_path#/}" <<<"$initramfs_listing"; then
         echo "initramfs is missing required path: $guest_path" >&2

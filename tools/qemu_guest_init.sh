@@ -83,6 +83,7 @@ cpu_grace=10
 cpu_rate=5
 cpu_target=zero
 lock_provider_mode=""
+stamp_args=""
 for arg in $cmdline; do
     case "$arg" in
         sophia.cpu_mode=*) cpu_mode="${arg#*=}" ;;
@@ -91,6 +92,8 @@ for arg in $cmdline; do
         sophia.cpu_rate=*) cpu_rate="${arg#*=}" ;;
         sophia.cpu_target=*) cpu_target="${arg#*=}" ;;
         sophia.lock_provider_mode=*) lock_provider_mode="${arg#*=}" ;;
+        # Diagnostic: the stamper requests SysRq w on the first hard stall.
+        sophia.sysrq_on_hard_stall=1) stamp_args="--sysrq-on-hard-stall" ;;
     esac
 done
 xtest_row=""
@@ -359,8 +362,11 @@ if [ "$scenario" = "cpu" ]; then
 elif [ "$scenario" = "session-lock-provider" ]; then
     # Every lock and provider line is stamped where the guest observed it
     # (tools/qemu_line_stamp.c); the session's exit status stays its own.
+    # The kernel's own records reach the evidence through the stamper's
+    # /dev/kmsg copy, not the console, which "quiet loglevel=3" keeps terse.
     mkfifo /run/sophia-qemu-lock/output
-    /usr/bin/sophia-qemu-line-stamp < /run/sophia-qemu-lock/output &
+    # shellcheck disable=SC2086 # empty, or the one diagnostic flag
+    /usr/bin/sophia-qemu-line-stamp $stamp_args < /run/sophia-qemu-lock/output &
     stamp_pid=$!
     SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1 \
         /usr/bin/dbus-run-session -- /usr/bin/sophia "$@" > /run/sophia-qemu-lock/output 2>&1
