@@ -303,6 +303,20 @@ impl LiveProductionOutputRuntimeSet {
         })
     }
 
+    /// Singleton custody lives in the backend runtime, not the mirror head.
+    /// A displayed identity proves reuse only after newer work and cleanup end.
+    pub(crate) fn idle_presented_native_frame(
+        &self,
+        output: OutputId,
+    ) -> Option<crate::LiveNativeFrameIdentity> {
+        let runtime = &self.outputs.get(&output)?.runtime;
+        let custody = &runtime.primary_output_state().scanout_custody;
+        if custody.submitted().is_some() || custody.cleanup_pending() {
+            return None;
+        }
+        custody.displayed()?.correlation()?.native
+    }
+
     pub fn native_cleanup_pending(&self) -> bool {
         self.outputs.values().any(|output| {
             output

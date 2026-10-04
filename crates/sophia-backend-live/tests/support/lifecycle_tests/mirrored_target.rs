@@ -10,6 +10,8 @@ mod presentation_instances;
 mod presentation_present;
 #[path = "session_lock_coverage.rs"]
 mod session_lock_coverage;
+#[path = "software_output_idle.rs"]
+mod software_output_idle;
 #[path = "mirrored_intake_tests.rs"]
 mod tests;
 
