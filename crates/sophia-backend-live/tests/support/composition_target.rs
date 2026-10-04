@@ -20,8 +20,8 @@ pub(super) struct Target {
         ),
     >,
     submitted: BTreeMap<OutputId, crate::LiveProductionScanoutContent>,
-    newest: BTreeMap<OutputId, crate::LiveProductionScanoutContent>,
-    custody: BTreeMap<OutputId, crate::PersistentScanoutCustody>,
+    pub newest: BTreeMap<OutputId, crate::LiveProductionScanoutContent>,
+    pub custody: BTreeMap<OutputId, crate::PersistentScanoutCustody>,
     serial: u64,
     device: Device,
     history: crate::LiveRendererSlotDamageHistory,
@@ -304,6 +304,29 @@ impl NativeCompositionTarget for Target {
     }
     fn retained_repaint_deferred(&self) -> bool {
         !self.recovering.is_empty() || self.outputs.keys().any(|output| self.protected(*output))
+    }
+    fn idle_presented_frame(
+        &self,
+        output: OutputId,
+        _outputs: &LiveProductionOutputRuntimeSet,
+    ) -> Option<composition_target::IdleNativePresentation<'_>> {
+        if !self.ready(output)
+            || self.recovering.contains(&output)
+            || self.queue.pending(output)
+            || self.rendering.contains_key(&output)
+            || self.submitted.contains_key(&output)
+        {
+            return None;
+        }
+        let custody = self.custody.get(&output)?;
+        if custody.cleanup_pending() {
+            return None;
+        }
+        Some(composition_target::IdleNativePresentation {
+            identity: custody.displayed()?.correlation()?.native?,
+            content: *self.newest.get(&output)?,
+            snapshot: self.frames.get(&output)?.presented()?,
+        })
     }
     fn presented_frame_id(&self, output: OutputId) -> Option<crate::LiveProductionNativeFrameId> {
         self.custody

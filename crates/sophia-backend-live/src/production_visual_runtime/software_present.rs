@@ -1,5 +1,7 @@
 use super::*;
 
+mod idle_output;
+
 pub(super) enum LiveProductionSoftwarePresentSettlement {
     NotOwned,
     Waiting,
@@ -123,10 +125,22 @@ impl LiveProductionVisualRuntime {
         let Some(waiting) = self.software_present_frames_waiting.front() else {
             return Ok(false);
         };
-        let batches = self.retained_output_head_composition_frames_from_sources(
+        let mut batches = self.retained_output_head_composition_frames_from_sources(
             native_scanout,
             &waiting.source_set,
         )?;
+        // The clock output still owes a fresh physical retirement, even for
+        // identical pixels. Unrelated settled outputs can keep scanning their
+        // displayed frame; they do not acquire a synthetic retirement.
+        batches.retain(|(candidate, frames)| {
+            *candidate == output
+                || !self.software_present_output_is_idle(
+                    native_scanout,
+                    *candidate,
+                    frames,
+                    &waiting.submissions,
+                )
+        });
         let cohort_transaction = waiting
             .submissions
             .first()
@@ -141,6 +155,7 @@ impl LiveProductionVisualRuntime {
             return Err("software Present cohort omitted its selected clock output".into());
         }
         let frames = native_scanout.queue_software_batch(batches)?;
+        let output_count = frames.len();
         let root = frames
             .values()
             .next()
@@ -177,7 +192,8 @@ impl LiveProductionVisualRuntime {
         );
         debug_assert!(replaced.is_none(), "software Present owner checked above");
         tracing::debug!(
-            outputs = required_outputs.len(),
+            outputs = output_count,
+            idle_outputs = required_outputs.len().saturating_sub(output_count),
             frame = root.raw(),
             "bound software Present work to an immutable native output cohort"
         );

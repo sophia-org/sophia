@@ -3,6 +3,12 @@
 //! and completion input while using the production planner, queue and custody.
 use super::*;
 
+pub(crate) struct IdleNativePresentation<'a> {
+    pub identity: crate::LiveNativeFrameIdentity,
+    pub content: crate::LiveProductionScanoutContent,
+    pub snapshot: &'a OutputFrameDamageSnapshot,
+}
+
 pub(crate) trait NativeCompositionTarget {
     fn frame_owner(&self) -> crate::NativeFrameOwner;
     fn frame_service_available(&self) -> bool;
@@ -35,6 +41,15 @@ pub(crate) trait NativeCompositionTarget {
     fn retained_repaint_deferred(&self) -> bool;
     fn presented_frame_id(&self, output: OutputId) -> Option<crate::LiveProductionNativeFrameId>;
     fn presented_frame(&self, output: OutputId) -> Option<&OutputFrameDamageSnapshot>;
+    /// An idle singleton's actual displayed custody and retired snapshot.
+    /// Missing evidence, mirrors and any newer native work decline reuse.
+    fn idle_presented_frame(
+        &self,
+        _output: OutputId,
+        _outputs: &LiveProductionOutputRuntimeSet,
+    ) -> Option<IdleNativePresentation<'_>> {
+        None
+    }
     /// The frame each of this output's heads last retired, one entry per
     /// head, primary first. A mirror head that has retired nothing yet is
     /// None. What a whole output has presented is only what every head has.
@@ -98,6 +113,27 @@ impl NativeCompositionTarget for LiveProductionNativeScanout {
     }
     fn presented_frame(&self, output: OutputId) -> Option<&OutputFrameDamageSnapshot> {
         self.presented_output_frame(output)
+    }
+    fn idle_presented_frame(
+        &self,
+        output: OutputId,
+        outputs: &LiveProductionOutputRuntimeSet,
+    ) -> Option<IdleNativePresentation<'_>> {
+        if !self.output_topology_allows_frame_service()
+            || self.head_render_targets(output).len() != 1
+            || self.has_preview_frame_failure(output)
+            || self.pending_frame(output)
+            || self.output_in_flight(output)
+            || self.output_cleanup_pending(output)
+        {
+            return None;
+        }
+        let head = &self.heads[self.primary_head_index(output)?];
+        Some(IdleNativePresentation {
+            identity: outputs.idle_presented_native_frame(output)?,
+            content: head.presented_content?,
+            snapshot: head.output_frames.presented()?,
+        })
     }
     fn presented_head_frames(&self, output: OutputId) -> Vec<Option<&OutputFrameDamageSnapshot>> {
         self.presented_output_head_frames(output)
