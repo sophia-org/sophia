@@ -95,7 +95,7 @@ class VerifierTest(unittest.TestCase):
             path = Path(directory) / "evidence.log"
             path.write_text(render(pairs) if isinstance(pairs, list) else pairs)
             return subprocess.run([sys.executable, "-B", str(VERIFIER), str(path), mode],
-                                  capture_output=True, text=True, check=False)
+                                  capture_output=True, text=True, check=False, timeout=60)
 
     def assert_fails(self, pairs, mode, reason):
         result = self.verify(pairs, mode)
@@ -164,7 +164,16 @@ class VerifierTest(unittest.TestCase):
                 self.assert_fails(text, "flood", "no clean Session cleanup after the provider's teardown")
             with self.subTest(kind=kind, missing="guest completion"):
                 pairs = [pair for pair in evidence("flood", kind) if pair[1] != GUEST_COMPLETE]
-                self.assert_fails(pairs, "flood", "the guest did not complete after the provider's teardown")
+                self.assert_fails(pairs, "flood", "the guest did not complete after Session's cleanup")
+            with self.subTest(kind=kind, order="guest completion before cleanup"):
+                pairs = evidence("flood", kind)
+                pairs.insert(index(pairs, CLEANUP), pairs.pop(index(pairs, GUEST_COMPLETE)))
+                self.assert_fails(pairs, "flood", "the guest did not complete after Session's cleanup")
+            with self.subTest(kind=kind, order="cleanup before teardown"):
+                pairs = evidence("flood", kind)
+                cleanup = pairs.pop(index(pairs, CLEANUP))
+                pairs.insert(index(pairs, provider("flood", TEARDOWNS[kind])), cleanup)
+                self.assert_fails(pairs, "flood", "no clean Session cleanup after the provider's teardown")
 
     def test_teardown_without_completion_fails(self):
         for kind in TEARDOWNS:

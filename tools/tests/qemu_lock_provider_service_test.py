@@ -32,8 +32,8 @@ class ServiceControlTest(unittest.TestCase):
             sorted(str(p) for p in (SDK / "nine_p").glob("*.c"))
         subprocess.run(["cc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror", f"-I{SDK}", f"-I{TOOLS}",
                         str(TOOLS / "tests/qemu_lock_provider_service_control.c"), *sources,
-                        "-o", str(binary)], check=True)
-        result = subprocess.run([str(binary)], capture_output=True, text=True, check=True)
+                        "-o", str(binary)], check=True, timeout=300)
+        result = subprocess.run([str(binary)], capture_output=True, text=True, check=True, timeout=60)
         cls.lines = {}
         for line in result.stdout.splitlines():
             fields = dict(word.split("=", 1) for word in line.split() if "=" in word)
@@ -48,7 +48,7 @@ class ServiceControlTest(unittest.TestCase):
             path = Path(directory) / "evidence.log"
             path.write_text(text)
             return subprocess.run([sys.executable, "-B", str(VERIFIER), str(path), "flood"],
-                                  capture_output=True, text=True, check=False)
+                                  capture_output=True, text=True, check=False, timeout=60)
 
     def test_each_peer_ending_is_recorded_as_itself(self):
         self.assertEqual(set(self.lines), set(EXPECTED))

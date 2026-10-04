@@ -189,11 +189,13 @@ def main():
     if len(teardown) > 1:
         fail("the provider's connection ended more than once")
     if teardown:
+        # Teardown, then Session's clean cleanup, then the guest's completion.
         end = teardown[0][0]
-        if not any(line.startswith(CLEANUP) for line in lines[end:]):
+        cleanup = next((i for i in range(end, len(lines)) if lines[i].startswith(CLEANUP)), None)
+        if cleanup is None:
             fail("no clean Session cleanup after the provider's teardown")
-        if GUEST_COMPLETE not in lines[end:]:
-            fail("the guest did not complete after the provider's teardown")
+        if GUEST_COMPLETE not in lines[cleanup:]:
+            fail("the guest did not complete after Session's cleanup")
 
     if mode == "stall":
         stalled = [r for r in reports if r[1] == "stalled"]
