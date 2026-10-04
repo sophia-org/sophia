@@ -446,6 +446,51 @@ fn an_upload_becomes_an_image_only_when_every_byte_arrived() {
 }
 
 #[test]
+fn image_storage_is_reused_only_after_session_lets_it_go() {
+    let mut provider = Provider::ready(locked(LOCK, 1));
+    let ready = |provider: &mut Provider, id: u64, fill: u8| {
+        provider.begin(id, 4, 2, 0).unwrap();
+        assert_eq!(provider.write(0, 0, &[fill; 32]), Ok(32));
+        provider.end(id, 32).unwrap();
+        provider.events();
+        loop {
+            match provider.custody.take_inbound() {
+                Some(LockInbound::ResourceReady { pixels, .. }) => break pixels,
+                Some(_) => continue,
+                None => panic!("upload {id} became no image"),
+            }
+        }
+    };
+    let retire = |provider: &mut Provider, id: u64| {
+        let step = LockResourceStep {
+            transaction: 200 + id,
+            resource: resource(id),
+            total_bytes: None,
+        }
+        .encode()
+        .unwrap();
+        provider
+            .submit(LockFileKind::ResourceRetire, &step)
+            .unwrap();
+        provider.events();
+        while provider.custody.take_inbound().is_some() {}
+    };
+    let first = ready(&mut provider, 1, 1);
+    let shown = first.as_ptr();
+    retire(&mut provider, 1);
+    // Session still shows the retired image: its storage is not reused.
+    let second = ready(&mut provider, 2, 2);
+    assert_ne!(second.as_ptr(), shown);
+    assert_eq!(&*first, &[1; 32], "a shown image never changes");
+    drop(first);
+    // Once Session lets it go, the next upload of that size writes in place.
+    let third = ready(&mut provider, 3, 3);
+    assert_eq!(third.as_ptr(), shown);
+    assert_eq!(&*third, &[3; 32]);
+    assert_eq!(&*second, &[2; 32]);
+}
+
+#[test]
 fn uploads_are_bounded_by_the_epoch_limits() {
     let mut provider = Provider::ready(locked(LOCK, 1));
     for (width, height) in [(65, 1), (1, 65)] {

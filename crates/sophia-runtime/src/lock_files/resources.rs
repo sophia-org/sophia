@@ -19,7 +19,10 @@ struct Upload {
     width_px: u32,
     height_px: u32,
     expected: u64,
-    bytes: Vec<u8>,
+    /// The image's final storage, held only here until End: written in
+    /// place at the cursor and handed on without another copy.
+    pixels: Option<Arc<[u8]>>,
+    written: u64,
 }
 
 /// A whole image the provider may name in a candidate.
@@ -135,6 +138,10 @@ pub(super) struct Resources {
     slots: [Option<Upload>; 4],
     images: BTreeMap<LockResourceId, Image>,
     next_binding: u64,
+    /// Storage of retired, cancelled and rejected uploads, reused once
+    /// nothing else holds it. A provider uploads whole frames continuously;
+    /// fresh storage for each one costs a page fault per page.
+    spare: Vec<Arc<[u8]>>,
 }
 
 impl Resources {
@@ -144,6 +151,44 @@ impl Resources {
             slots: Default::default(),
             images: BTreeMap::new(),
             next_binding: 0,
+            spare: Vec::new(),
+        }
+    }
+
+    /// Unshared storage of exactly `len` bytes: spare storage nothing else
+    /// holds any more, or new storage.
+    fn storage(&mut self, len: usize) -> Arc<[u8]> {
+        let reusable = self
+            .spare
+            .iter_mut()
+            .position(|spare| spare.len() == len && Arc::get_mut(spare).is_some());
+        match reusable {
+            Some(index) => self.spare.swap_remove(index),
+            None => std::iter::repeat_n(0, len).collect(),
+        }
+    }
+
+    /// Keeps `pixels` for reuse. The spare list is bounded by the epoch's
+    /// live resources, so it never holds more than an epoch may.
+    fn recycle(&mut self, pixels: Arc<[u8]>) {
+        let bound = usize::from(self.limits.max_live_resources);
+        if self.spare.len() >= bound {
+            // Drop the storage least likely to be reused: one still shared.
+            match self
+                .spare
+                .iter_mut()
+                .position(|s| Arc::get_mut(s).is_none())
+            {
+                Some(index) => {
+                    self.spare.swap_remove(index);
+                }
+                None => {
+                    self.spare.swap_remove(0);
+                }
+            }
+        }
+        if bound > 0 {
+            self.spare.push(pixels);
         }
     }
 
@@ -190,8 +235,7 @@ impl Resources {
     pub(super) fn plan_end(&self, step: LockResourceStep) -> Result<ResourcePlan, Errno> {
         let slot = self.slot_of(step)?;
         let upload = self.slots[slot].as_ref().ok_or(Errno::EINVAL)?;
-        let whole = step.total_bytes == Some(upload.expected)
-            && upload.bytes.len() as u64 == upload.expected;
+        let whole = step.total_bytes == Some(upload.expected) && upload.written == upload.expected;
         Ok(if whole {
             ResourcePlan::Accept {
                 transaction: step.transaction,
@@ -248,18 +292,21 @@ impl Resources {
                     width_px: begin.width_px,
                     height_px: begin.height_px,
                     expected: begin.total_bytes(),
-                    bytes: Vec::new(),
+                    pixels: None,
+                    written: 0,
                 });
                 None
             }
             ResourcePlan::Reject { slot, .. } => {
-                if let Some(slot) = slot {
-                    self.slots[slot] = None;
+                if let Some(pixels) = slot.and_then(|slot| self.slots[slot].take()?.pixels) {
+                    self.recycle(pixels);
                 }
                 None
             }
             ResourcePlan::Cancel { slot, .. } => {
-                self.slots[slot] = None;
+                if let Some(pixels) = self.slots[slot].take().and_then(|upload| upload.pixels) {
+                    self.recycle(pixels);
+                }
                 None
             }
             ResourcePlan::Accept { slot, resource, .. } => {
@@ -267,13 +314,19 @@ impl Resources {
                 let image = Image {
                     width_px: upload.width_px,
                     height_px: upload.height_px,
-                    pixels: upload.bytes.into(),
+                    // Every byte arrived (plan_end), so storage exists unless
+                    // the image is empty.
+                    pixels: upload.pixels.unwrap_or_else(|| Arc::from([])),
                 };
                 self.images.insert(resource, image.clone());
                 Some((resource, image))
             }
             ResourcePlan::Retire { resource, .. } => {
-                self.images.remove(&resource);
+                // Session may still show it; the storage is reused only once
+                // every other holder has let it go.
+                if let Some(image) = self.images.remove(&resource) {
+                    self.recycle(image.pixels);
+                }
                 None
             }
         }
@@ -295,17 +348,26 @@ impl Resources {
             .filter(|upload| upload.binding == binding)
             .ok_or(Errno::ESTALE)?;
         let end = offset.checked_add(data.len() as u64).ok_or(Errno::EINVAL)?;
-        if offset != upload.bytes.len() as u64 || end > upload.expected {
+        if offset != upload.written || end > upload.expected {
             return Err(Errno::EINVAL);
         }
-        if upload.bytes.capacity() == 0 && !data.is_empty() {
-            // Admitted under the epoch's limits, so the whole size is bounded.
-            upload
-                .bytes
-                .try_reserve_exact(upload.expected as usize)
-                .map_err(|_| Errno::ENOSPC)?;
+        if data.is_empty() {
+            return Ok(0);
         }
-        upload.bytes.extend_from_slice(data);
+        if upload.pixels.is_none() {
+            // Admitted under the epoch's limits, so the whole size is bounded.
+            let len = usize::try_from(upload.expected).map_err(|_| Errno::ENOSPC)?;
+            let pixels = self.storage(len);
+            upload_mut(&mut self.slots, slot)?.pixels = Some(pixels);
+        }
+        let upload = upload_mut(&mut self.slots, slot)?;
+        let storage = upload
+            .pixels
+            .as_mut()
+            .and_then(Arc::get_mut)
+            .ok_or(Errno::EINVAL)?;
+        storage[offset as usize..end as usize].copy_from_slice(data);
+        upload.written = end;
         Ok(data.len() as u32)
     }
 
@@ -316,4 +378,11 @@ impl Resources {
             .and_then(Option::as_ref)
             .map(|upload| upload.binding)
     }
+}
+
+fn upload_mut(slots: &mut [Option<Upload>; 4], slot: u8) -> Result<&mut Upload, Errno> {
+    slots
+        .get_mut(usize::from(slot))
+        .and_then(Option::as_mut)
+        .ok_or(Errno::ESTALE)
 }
