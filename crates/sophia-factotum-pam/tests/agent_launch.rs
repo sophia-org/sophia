@@ -288,6 +288,13 @@ fn cancelling_while_awaiting_the_exit_discards_the_reply() {
             &flag,
         )
     });
+    // Cancel only once the helper is running and has replied: a fixed sleep
+    // alone raced a slow helper start under load, leaving no pid to reap.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !scratch.0.join("pid").exists() {
+        assert!(Instant::now() < deadline, "the helper never started");
+        std::thread::sleep(Duration::from_millis(10));
+    }
     std::thread::sleep(Duration::from_millis(300));
     let started = Instant::now();
     cancelled.store(true, Ordering::Release);
