@@ -10,6 +10,84 @@ struct ShapeFixture {
     sequence: u16,
 }
 
+#[test]
+fn shaped_cpu_presents_keep_full_damage_until_an_unshaped_predecessor_exists() {
+    let mut fixture = ShapeFixture::new();
+    let window = XResourceId::new(ShapeFixture::WINDOW.into(), 1);
+    let pixmap = XResourceId::new(0x0020_0422, 1);
+    let full = Rect {
+        x: 0,
+        y: 0,
+        width: 10,
+        height: 10,
+    };
+    let patch = Rect {
+        x: 1,
+        y: 1,
+        width: 2,
+        height: 2,
+    };
+    fixture
+        .runtime
+        .create_pixmap(
+            ShapeFixture::NS,
+            pixmap,
+            Size {
+                width: 10,
+                height: 10,
+            },
+            24,
+            1,
+        )
+        .unwrap();
+    let response = fixture.runtime.apply_put_image(
+        TransactionId::from_raw(1600),
+        ShapeFixture::NS,
+        pixmap,
+        Region::single(full),
+        Some(&[0x55; 400]),
+        None,
+    );
+    assert_eq!(response.outcome, XAuthorityResponseOutcome::Accepted);
+    assert_eq!(
+        ShapeFixture::error_of(&fixture.set(X_SHAPE_KIND_BOUNDING, &[Rect { width: 5, ..full }],)),
+        None
+    );
+    let present = |fixture: &mut ShapeFixture, ticket| {
+        fixture.runtime.begin_dispatch();
+        let response = fixture.runtime.present_standard_pixmap(
+            TransactionId::from_raw(ticket),
+            ShapeFixture::NS,
+            window,
+            pixmap,
+            0,
+            0,
+            None,
+            Some(Region::single(patch)),
+        );
+        assert_eq!(response.outcome, XAuthorityResponseOutcome::Accepted);
+        response.transactions[0]
+            .content
+            .canonical_variant()
+            .damage
+            .clone()
+    };
+    assert_eq!(present(&mut fixture, 1601), Region::single(full));
+    assert_eq!(present(&mut fixture, 1602), Region::single(full));
+    let result = fixture.send(&shape_mask_request(
+        ShapeFixture::ORDER,
+        X_SHAPE_OP_SET,
+        X_SHAPE_KIND_BOUNDING,
+        ShapeFixture::WINDOW,
+        0,
+        0,
+        0,
+    ));
+    assert_eq!(ShapeFixture::error_of(&result), None);
+    assert_eq!(present(&mut fixture, 1603), Region::single(full));
+    assert_eq!(present(&mut fixture, 1604), Region::single(patch));
+}
+
 impl ShapeFixture {
     const NS: NamespaceId = NamespaceId::from_raw(93);
     const ORDER: XByteOrder = XByteOrder::LittleEndian;

@@ -84,6 +84,11 @@ def _analyze(work, text):
         raise ValueError("workload did not complete")
     start, end = work["measure_start_usec"], work["measure_end_usec"]
     config = work["config"]
+    if work.get("schema", 1) == 2:
+        check("damage_workload", config["pattern"] == "fixed_patch_v1" and
+              config["size"] in ("small", "head") and
+              config["damage"] in ("absent", "full", "patch") and
+              (config["size"] != "head" or config["clients"] == 1))
     duration = (end - start) / 1e6
     check("sample_duration", config["seconds"] <= duration <= config["seconds"] + .5)
     clock, clock_span = interval(text, "sophia_present_clock_service", start, end, CLOCK_FIELDS)
@@ -122,6 +127,21 @@ def _analyze(work, text):
     for i, window in enumerate(windows):
         expected = {k: window["initial"][k] for k in ("x", "y", "width", "height")}
         check(f"geometry_{i}", expected == window["before"] == window["after"])
+        if work.get("schema", 1) == 2:
+            check(f"source_pixel_checks_{i}", window["source_pixel_checks_before_grace"] == 9)
+            check(f"changed_pixels_{i}", window["unchanged_presents"] == 0)
+            head, patch = window["initial"]["head"], window["initial"]["patch"]
+            layout = window["initial"]["output_layout"]
+            check(f"output_layout_{i}", bool(layout) and head in layout and
+                  layout == windows[0]["initial"]["output_layout"] and
+                  all(h["width"] > 0 and h["height"] > 0 for h in layout))
+            check(f"patch_{i}", patch == {"x": 40, "y": 40, "width": 120, "height": 120})
+            check(f"head_bounds_{i}", expected["x"] >= head["x"] and expected["y"] >= head["y"] and
+                  expected["x"] + expected["width"] <= head["x"] + head["width"] and
+                  expected["y"] + expected["height"] <= head["y"] + head["height"])
+            if config["size"] == "head":
+                check(f"head_size_{i}", expected == {"x": head["x"] + 16, "y": head["y"] + 16,
+                                                    "width": head["width"] - 32, "height": head["height"] - 32})
         sent = window["sent"]
         check(f"events_{i}", sent > 0 and sent == window["completed"] == window["idle"] and
               window["outstanding_at_exit"] == window["unexpected_events"] == window["msc_regressions"] == 0)
@@ -192,6 +212,7 @@ def _analyze(work, text):
     return {"schema": 1, "status": "VALID" if all(c["pass"] for c in checks) else "INVALID",
             "accounting_method": ACCOUNTING_METHOD,
             "checks": checks, "config": config, "source": source, "cpu": cpu, "guest": guest, "metrics": metrics,
+            "output_layout": windows[0]["initial"].get("output_layout"),
             "guest_processes": guest_processes,
             "guest_memory": {name: {"meminfo": snapshot["guest_meminfo"],
                                      "log_bytes": snapshot["guest_log_bytes"]}
@@ -206,18 +227,25 @@ def _analyze(work, text):
 def summarize(reports):
     if not reports or any(r["status"] != "VALID" for r in reports):
         return {"status": "INVALID", "benefit": "unmeasured"}
-    keys = ("mode", "target", "rate_per_window", "clients", "seconds", "grace_seconds", "buffer_kind")
+    keys = ("mode", "target", "rate_per_window", "clients", "seconds", "grace_seconds", "buffer_kind",
+            "size", "damage", "pattern")
+    # Earlier archived samples used alternating full backgrounds. Retain their
+    # identity, but never compare them with the new fixed-patch pixel stream.
+    configs = [{"size": "small", "damage": "absent", "pattern": "alternating_background_v1",
+                **r["config"]} for r in reports]
     first = reports[0]
-    if any(r["source"] != first["source"] or r.get("accounting_method") != ACCOUNTING_METHOD or
-           any(r["config"][k] != first["config"][k] for k in keys)
-           for r in reports):
+    if any(r["source"] != first["source"] or r.get("output_layout") != first.get("output_layout") or
+           r.get("accounting_method") != ACCOUNTING_METHOD or
+           any(config[k] != configs[0][k] for k in keys)
+           for r, config in zip(reports, configs)):
         return {"status": "INVALID", "error": "workload or clock source changed"}
     mode_set = [n > 0 for n in first["mode_mix"]]
     if any([n > 0 for n in r["mode_mix"]] != mode_set for r in reports):
         return {"status": "INVALID", "error": "completion mode set changed"}
     return {"status": "VALID", "runs": len(reports), "source": first["source"],
+            "output_layout": first.get("output_layout"),
             "accounting_method": ACCOUNTING_METHOD,
-            "config": {k: first["config"][k] for k in keys},
+            "config": {k: configs[0][k] for k in keys},
             "mode_set": mode_set, "mode_counts": [r["mode_mix"] for r in reports],
             "metrics": {k: {"median": statistics.median(r["metrics"][k] for r in reports),
                             "min": min(r["metrics"][k] for r in reports),
@@ -229,6 +257,7 @@ def compare(baseline, candidate):
     if (baseline["status"] != "VALID" or candidate["status"] != "VALID" or
             min(baseline["runs"], candidate["runs"]) < 3 or
             baseline["config"] != candidate["config"] or baseline["source"] != candidate["source"] or
+            baseline.get("output_layout") != candidate.get("output_layout") or
             baseline["mode_set"] != candidate["mode_set"] or
             baseline.get("accounting_method") != ACCOUNTING_METHOD or
             candidate.get("accounting_method") != ACCOUNTING_METHOD):

@@ -28,6 +28,18 @@ class Attribution(unittest.TestCase):
         self.assertEqual(result['frames'], {'full': 1, 'partial': 0})
         self.assertEqual(result['causes']['full_precise_surface'], 1)
         self.assertEqual(result['present']['source_pixels'], 100)
+        self.assertEqual(result['executed_presents'], 1)
+        self.assertEqual(result['per_executed_present']['full_output_frames'], 1)
+        self.assertEqual(result['per_executed_present']['declared_rect_pixels'], 100)
+
+    def test_no_present_denominator_is_reported_without_inventing_progress(self):
+        text = records()
+        for n in (1, 2):
+            text = text.replace(f'absent={n}', 'absent=0')
+        result = attribute(text, 0, 10_000_000)
+        self.assertEqual(result['status'], 'VALID')
+        self.assertEqual(result['executed_presents'], 0)
+        self.assertIsNone(result['per_executed_present'])
 
     def test_missing_reset_wrong_subreasons_and_misaligned_records_fail(self):
         for old, new in [('absent=2', 'absent=0'),

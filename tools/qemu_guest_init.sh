@@ -37,6 +37,9 @@ cpu_seconds=60
 cpu_grace=10
 cpu_rate=5
 cpu_target=zero
+cpu_clients=2
+cpu_size=small
+cpu_damage=absent
 for arg in $cmdline; do
     case "$arg" in
         sophia.cpu_mode=*) cpu_mode="${arg#*=}" ;;
@@ -44,6 +47,9 @@ for arg in $cmdline; do
         sophia.cpu_grace=*) cpu_grace="${arg#*=}" ;;
         sophia.cpu_rate=*) cpu_rate="${arg#*=}" ;;
         sophia.cpu_target=*) cpu_target="${arg#*=}" ;;
+        sophia.cpu_clients=*) cpu_clients="${arg#*=}" ;;
+        sophia.cpu_size=*) cpu_size="${arg#*=}" ;;
+        sophia.cpu_damage=*) cpu_damage="${arg#*=}" ;;
     esac
 done
 xtest_row=""
@@ -228,7 +234,8 @@ elif [ "$scenario" = "cpu" ]; then
         --session-start=cpu --exit-when-startup-exits \
         "--session-app-arg=cpu=--mode=$cpu_mode" "--session-app-arg=cpu=--seconds=$cpu_seconds" \
         "--session-app-arg=cpu=--grace=$cpu_grace" "--session-app-arg=cpu=--rate=$cpu_rate" \
-        "--session-app-arg=cpu=--target=$cpu_target" --session-app-arg=cpu=--clients=2 \
+        "--session-app-arg=cpu=--target=$cpu_target" "--session-app-arg=cpu=--clients=$cpu_clients" \
+        "--session-app-arg=cpu=--size=$cpu_size" "--session-app-arg=cpu=--damage=$cpu_damage" \
         --session-app-arg=cpu=--sample-pid=parent --session-app-arg=cpu=--guest-process-accounting=true \
         --session-app-arg=cpu=--output=/run/present-cpu/workload.json
     echo "sophia_qemu_cpu schema=1 status=running mode=$cpu_mode"

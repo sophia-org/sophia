@@ -133,8 +133,9 @@ no outstanding buffers after drain, monotonic clocks on each fixed source, no
 counter resets or admission/render errors, and real progress. Counter gates
 require no new capture contexts or pipelines after grace, exact full-repaint
 reason totals, the stable-geometry partition, and bounded repaint area. This
-fixture currently supplies full damage: it does not prove partial-damage pixels
-or DMA-BUF import reuse. Those need their own workloads and render-node proofs.
+fixture defaults to absent damage (the full pixmap). Explicit damage options
+are described below. These core pixmaps do not prove DMA-BUF import reuse or
+physical scanout pixels; those still need render-node proofs.
 
 CPU snapshots bracket the sample. Five-second counter records use monotonic
 timestamps and only records inside that sample; their shorter spans are reported
@@ -206,3 +207,53 @@ do not carry an owner identity; counter monotonicity alone cannot prove it.
 `full_without_usable_reduction` is the sum of unavailable/disabled/unknown-history
 full reasons, not a claim that those frames carry no flags. `rebased` means an
 edge marked as rebased was walked, including when a later precision check failed.
+
+### Near-output-sized damage experiment
+
+Use `run_qemu.py --clients=1 --size=head --damage=absent`, then separate runs
+with `--damage=full` and `--damage=patch`, keeping the binary, head, cadence and
+other options fixed. `head` leaves a 16-pixel margin inside one active RandR
+CRTC. It refuses two clients, which would overlap. The default `small` case
+retains the two disjoint 320 by 240 windows.
+
+All three damage cases use the same pixels: a constant background and a 120 by
+120 patch whose color alternates across an eight-pixmap pool. `absent` supplies
+no update region, `full` supplies one full-size XFixes rectangle, and `patch`
+supplies only the changed rectangle. The first Present always initializes the
+full window. Before grace, nine completed Presents check every source pixmap
+with GetImage against the expected background and patch, including pixels
+outside the update region and one pool reuse. These reads are outside the
+measured interval.
+Window GetImage reads Sophia's separate core-drawing backing and cannot check
+the Present raster. A component regression compares the whole renderer payload
+after absent, full and patch updates, including an empty-update negative control.
+Neither check is native framebuffer readback.
+
+The result records the head and window geometry, patch, damage kind,
+`source_pixel_checks_before_grace=9` and `pattern=fixed_patch_v1`. Older samples
+alternated the whole background. The analyzer refuses comparisons across those patterns, sizes or
+damage kinds; record repaint attribution separately for this experiment rather
+than calling a workload change a Sophia speedup. Preserve every first failure.
+Pixmap selection follows a fixed cursor, regardless of reply order; an unavailable
+entry counts as starvation. A drained green frame after grace makes every arm
+start with yellow. `unchanged_presents` must be zero. Comparison identity also
+includes every active head's size and position: two composited heads with one
+window must not be compared with a one-head run. Normalize attribution by the
+recorded executed/completed Presents, reporting offered and starved counts;
+frame cause counts describe output frames and can exceed the Present count.
+
+Expected result: absent and explicit full damage may select full repaint because
+the window nearly fills its head. Patch damage should retain precision when the
+existing history proof permits it. Inspect the recorded refusal or threshold
+before proposing a production change. Neither outcome alone explains a terminal
+that uses DMA-BUF pixmaps.
+
+The first valid series (`t289-damage-workload-01/probe-03-*`) found full repaint
+through `PlanCoverage` in all three cases. The patch reached the executed-Present
+counter as 14,400 pixels, but the CPU Present path supplied full canonical raster
+damage. Precise canonical damage currently requires DMA-BUF in both
+`runtime/present_pixmap.rs` and `drawing.rs`. The resulting 958,464 pixels cover
+93.6% of the 1280 by 800 head, exceeding the 60% repaint threshold. This locates
+a conservative producer limit; it does not justify changing the threshold or
+establish the cause of a DMA-BUF terminal's full frames. The complete-payload
+regression proves content equivalence separately, without native readback.

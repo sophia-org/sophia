@@ -183,8 +183,10 @@ pub fn surface_transaction_from_drawing_update(
     }
 
     let mut content = sophia_protocol::SurfaceContentSet::singleton(update.buffer, raster_extent);
-    if matches!(update.buffer, BufferSource::DmaBuf { .. })
-        && raster_extent == presentation_extent
+    if matches!(
+        update.buffer,
+        BufferSource::DmaBuf { .. } | BufferSource::CpuBuffer { .. }
+    ) && raster_extent == presentation_extent
         && window.interior_geometry().width == raster_extent.width
         && window.interior_geometry().height == raster_extent.height
         && let Some(raster_damage) = update.raster_damage.as_ref()

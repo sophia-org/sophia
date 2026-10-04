@@ -59,6 +59,8 @@ def trial(args, payload, name, mode, seconds):
                SOPHIA_QEMU_MEMORY_MIB="2048", SOPHIA_QEMU_SINGLE_CARD="1",
                SOPHIA_QEMU_CPU_MODE=mode, SOPHIA_QEMU_CPU_SECONDS=str(seconds),
                SOPHIA_QEMU_CPU_GRACE="10", SOPHIA_QEMU_CPU_RATE=str(args.rate),
+               SOPHIA_QEMU_CPU_CLIENTS=str(args.clients), SOPHIA_QEMU_CPU_SIZE=args.size,
+               SOPHIA_QEMU_CPU_DAMAGE=args.damage,
                SOPHIA_QEMU_CPU_TARGET=args.target, SOPHIA_QEMU_GPU_MODE="software",
                SOPHIA_QEMU_ACCEL="kvm")
     for key, path in (("kernel", args.kernel), ("initramfs", args.initramfs)):
@@ -182,6 +184,12 @@ if __name__ == "__main__":
     parser.add_argument("--cpus", type=int, choices=range(1, 17), default=4)
     parser.add_argument("--rate", type=int, choices=range(1, 241), default=5)
     parser.add_argument("--target", choices=("zero", "next"), default="next")
+    parser.add_argument("--clients", type=int, choices=(1, 2), default=2)
+    parser.add_argument("--size", choices=("small", "head"), default="small")
+    parser.add_argument("--damage", choices=("absent", "full", "patch"), default="absent")
     parser.add_argument("--modes", choices=("open", "closed"), nargs="+", default=["open", "closed"])
     parser.add_argument("--probe-only", action="store_true")
-    raise SystemExit(run(parser.parse_args()))
+    args = parser.parse_args()
+    if args.size == "head" and args.clients != 1:
+        parser.error("--size=head requires --clients=1")
+    raise SystemExit(run(args))

@@ -29,7 +29,8 @@ fn cpu_guest_uses_the_normal_startup_lifecycle_without_proof_polling() {
         .0;
     let script = format!(
         "runtime_ms=100000; cpu_seconds=60; cpu_grace=10; cpu_rate=5; \
-         cpu_target=next; cpu_mode=open; {construction}\nprintf '%s\\0' \"$@\""
+         cpu_target=next; cpu_mode=open; cpu_clients=1; cpu_size=head; cpu_damage=patch; \
+         {construction}\nprintf '%s\\0' \"$@\""
     );
     let output = std::process::Command::new("/bin/sh")
         .args(["-c", &script])
@@ -56,4 +57,7 @@ fn cpu_guest_uses_the_normal_startup_lifecycle_without_proof_polling() {
     );
     assert!(app.arguments.iter().any(|arg| arg == "--sample-pid=parent"));
     assert!(app.arguments.iter().any(|arg| arg == "--seconds=60"));
+    for argument in ["--clients=1", "--size=head", "--damage=patch"] {
+        assert!(app.arguments.iter().any(|arg| arg == argument));
+    }
 }

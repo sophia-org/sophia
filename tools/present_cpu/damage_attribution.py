@@ -59,6 +59,7 @@ def attribute(text, start, end):
         without_reduction = sum(render['damage_full_' + reason + '_count'] for reason in
                                 ('no_table', 'disabled', 'unknown_age', 'no_history',
                                  'beyond_history', 'damage_unavailable'))
+        executed = sum(present[k] for k in ('absent', 'explicit_full_rect', 'explicit_regions', 'effective_empty'))
         return {'status': 'VALID', 'counter_span_seconds': span,
                 'counter_coverage': span / ((end - start) / 1e6),
                 'frames': {'full': full, 'partial': partial},
@@ -66,6 +67,14 @@ def attribute(text, start, end):
                 'full_plan_unspecified': render['damage_full_plan_unspecified_count'],
                 'render': render,
                 'causes': causes, 'present': present,
+                'executed_presents': executed,
+                'per_executed_present': ({
+                    'full_output_frames': full / executed,
+                    'partial_output_frames': partial / executed,
+                    'repaint_pixels': render['composition_repaint_pixels_count'] / executed,
+                    'declared_rect_pixels': present['rect_pixels'] / executed,
+                    'causes': {k: v / executed for k, v in causes.items()},
+                } if executed else None),
                 'owner_continuity': 'Caller must select one uninterrupted Session/native-owner lifetime. '
                                     'Counter monotonicity alone does not prove that identity.',
                 'scope': 'Overlapping causes at the rendered age; independent executed-Pixmap cohort. '
