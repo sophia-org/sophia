@@ -181,12 +181,25 @@ all candidate-03 baseline guest runs, the retained record is one hard stall in
 Evidence: `t302-qemu-unlock-01/p1` and
 `t302-lock-performance-01/PAIRED-DIAGNOSTIC-01.json`.
 
-Dracut stripped debug sections from both arms. Their in-image executables were
-independently verified as the `strip -g` derivatives of the pinned files; they
-were not byte-identical to those files. Future images must disable stripping
-and verify the included executables. A guest-only blocked-task dump on a hard
-stall will help distinguish a kernel command-queue wait from scheduling delay.
-No watchdog threshold changes follow from these results.
+Dracut stripped debug sections from both arms, including the guest tools. Their
+in-image executables were independently verified as the `strip -g` derivatives
+of their sources; they were not byte-identical to those files. The builder now
+disables stripping and checks all eight included executables in one selective
+unpack. A missing file, symlink or changed digest fails the build. Controls on
+the older image reject the raw pins and accept their verified stripped forms.
+
+The guest stamper has an opt-in blocked-task diagnostic. After forwarding the
+first hard-stall record, it requests SysRq `w` inside the guest and copies new
+kernel log records with bounded reads, reporting errors, lost records and
+truncation. It does nothing on passing runs; tests use fake trigger files.
+Series `s11` used exact pinned candidate-03 binaries with this option enabled
+and stopped at the predeclared limit of 20 runs. All passed, with observed
+verdict-to-unlock intervals of 0.011–11.034 ms. No stall occurred, so no stack was
+captured. Screening ends here. The historical count is now one hard stall in
+36 candidate baseline runs and none in ten control runs; those cohorts have
+different fixture revisions and do not establish causation or equal rates.
+The original failure stays open. No watchdog threshold changes follow from
+these results. Evidence: `t302-lock-performance-01/STACK-DIAGNOSTIC-11.json`.
 
 The integrated gate reached its final tool checks, then refused two unregistered
 completion readers. The narrow inventory correction and its controls passed,
