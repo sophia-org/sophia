@@ -19,8 +19,8 @@ struct Upload {
     width_px: u32,
     height_px: u32,
     expected: u64,
-    /// The image's final storage, held only here until End: written in
-    /// place at the cursor and handed on without another copy.
+    /// The image's final storage, taken at Begin and held only here until
+    /// End: written in place at the cursor and handed on without another copy.
     pixels: Option<Arc<[u8]>>,
     written: u64,
 }
@@ -140,7 +140,9 @@ pub(super) struct Resources {
     next_binding: u64,
     /// Storage of retired, cancelled and rejected uploads, reused once
     /// nothing else holds it. A provider uploads whole frames continuously;
-    /// fresh storage for each one costs a page fault per page.
+    /// fresh storage for each one costs a page fault per page. Live
+    /// resources and spare storage together stay within the epoch's
+    /// live-resource limit.
     spare: Vec<Arc<[u8]>>,
 }
 
@@ -168,27 +170,25 @@ impl Resources {
         }
     }
 
-    /// Keeps `pixels` for reuse. The spare list is bounded by the epoch's
-    /// live resources, so it never holds more than an epoch may.
+    /// Keeps `pixels` for reuse, within the room the live resources leave.
     fn recycle(&mut self, pixels: Arc<[u8]>) {
-        let bound = usize::from(self.limits.max_live_resources);
-        if self.spare.len() >= bound {
-            // Drop the storage least likely to be reused: one still shared.
-            match self
+        self.spare.push(pixels);
+        self.trim_spare();
+    }
+
+    /// Drops spare storage beyond what the live resources leave of the
+    /// epoch's limit, so storage held for reuse never adds to what an epoch
+    /// may hold. Storage still shared goes first: it is the least likely to
+    /// be reused.
+    fn trim_spare(&mut self) {
+        let room = usize::from(self.limits.max_live_resources).saturating_sub(self.live());
+        while self.spare.len() > room {
+            let index = self
                 .spare
                 .iter_mut()
-                .position(|s| Arc::get_mut(s).is_none())
-            {
-                Some(index) => {
-                    self.spare.swap_remove(index);
-                }
-                None => {
-                    self.spare.swap_remove(0);
-                }
-            }
-        }
-        if bound > 0 {
-            self.spare.push(pixels);
+                .position(|spare| Arc::get_mut(spare).is_none())
+                .unwrap_or(0);
+            self.spare.swap_remove(index);
         }
     }
 
@@ -225,6 +225,7 @@ impl Resources {
         if begin.width_px > self.limits.max_width_px
             || begin.height_px > self.limits.max_height_px
             || begin.total_bytes() > self.limits.max_resource_bytes
+            || usize::try_from(begin.total_bytes()).is_err()
             || self.live() >= usize::from(self.limits.max_live_resources)
         {
             return Ok(reject(reason::BUDGET));
@@ -285,6 +286,10 @@ impl Resources {
         match plan {
             ResourcePlan::Admit(begin) => {
                 self.next_binding += 1;
+                // plan_begin admitted the size, so it fits in memory's index.
+                let pixels = usize::try_from(begin.total_bytes())
+                    .ok()
+                    .map(|len| self.storage(len));
                 self.slots[usize::from(begin.slot)] = Some(Upload {
                     binding: self.next_binding,
                     transaction: begin.transaction,
@@ -292,9 +297,10 @@ impl Resources {
                     width_px: begin.width_px,
                     height_px: begin.height_px,
                     expected: begin.total_bytes(),
-                    pixels: None,
+                    pixels,
                     written: 0,
                 });
+                self.trim_spare();
                 None
             }
             ResourcePlan::Reject { slot, .. } => {
@@ -314,8 +320,7 @@ impl Resources {
                 let image = Image {
                     width_px: upload.width_px,
                     height_px: upload.height_px,
-                    // Every byte arrived (plan_end), so storage exists unless
-                    // the image is empty.
+                    // Admit took the storage and every byte arrived (plan_end).
                     pixels: upload.pixels.unwrap_or_else(|| Arc::from([])),
                 };
                 self.images.insert(resource, image.clone());
@@ -354,13 +359,6 @@ impl Resources {
         if data.is_empty() {
             return Ok(0);
         }
-        if upload.pixels.is_none() {
-            // Admitted under the epoch's limits, so the whole size is bounded.
-            let len = usize::try_from(upload.expected).map_err(|_| Errno::ENOSPC)?;
-            let pixels = self.storage(len);
-            upload_mut(&mut self.slots, slot)?.pixels = Some(pixels);
-        }
-        let upload = upload_mut(&mut self.slots, slot)?;
         let storage = upload
             .pixels
             .as_mut()
@@ -378,11 +376,4 @@ impl Resources {
             .and_then(Option::as_ref)
             .map(|upload| upload.binding)
     }
-}
-
-fn upload_mut(slots: &mut [Option<Upload>; 4], slot: u8) -> Result<&mut Upload, Errno> {
-    slots
-        .get_mut(usize::from(slot))
-        .and_then(Option::as_mut)
-        .ok_or(Errno::ESTALE)
 }

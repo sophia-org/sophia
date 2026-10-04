@@ -491,6 +491,60 @@ fn image_storage_is_reused_only_after_session_lets_it_go() {
 }
 
 #[test]
+fn storage_kept_for_reuse_stays_within_the_live_limit() {
+    let mut provider = Provider::ready(locked(LOCK, 1));
+    let ready = |provider: &mut Provider, id: u64, width_px: u32| {
+        let len = width_px as usize * 2 * 4;
+        provider.begin(id, width_px, 2, 0).unwrap();
+        assert_eq!(provider.write(0, 0, &vec![1; len]), Ok(len as u32));
+        provider.end(id, len as u64).unwrap();
+        provider.events();
+        loop {
+            match provider.custody.take_inbound() {
+                Some(LockInbound::ResourceReady { pixels, .. }) => break pixels,
+                Some(_) => continue,
+                None => panic!("upload {id} became no image"),
+            }
+        }
+    };
+    let retire = |provider: &mut Provider, id: u64| {
+        let step = LockResourceStep {
+            transaction: 200 + id,
+            resource: resource(id),
+            total_bytes: None,
+        }
+        .encode()
+        .unwrap();
+        provider
+            .submit(LockFileKind::ResourceRetire, &step)
+            .unwrap();
+        provider.events();
+        while provider.custody.take_inbound().is_some() {}
+    };
+    // Three retired images, released by Session, all kept for reuse. The
+    // weak references only observe them.
+    let kept: Vec<_> = (1..=3)
+        .map(|id| {
+            let pixels = ready(&mut provider, id, 4);
+            let observed = std::sync::Arc::downgrade(&pixels);
+            drop(pixels);
+            retire(&mut provider, id);
+            observed
+        })
+        .collect();
+    assert!(kept.iter().all(|storage| storage.strong_count() == 1));
+    // Three live images of another size fill the limit: none of the kept
+    // storage may stay beside them.
+    for id in 4..=6 {
+        drop(ready(&mut provider, id, 2));
+    }
+    assert!(
+        kept.iter().all(|storage| storage.strong_count() == 0),
+        "spare storage beyond the live limit was kept"
+    );
+}
+
+#[test]
 fn uploads_are_bounded_by_the_epoch_limits() {
     let mut provider = Provider::ready(locked(LOCK, 1));
     for (width, height) in [(65, 1), (1, 65)] {
