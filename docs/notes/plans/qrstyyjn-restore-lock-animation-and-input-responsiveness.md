@@ -125,13 +125,52 @@ denied case refused the missing grant; the direct case rendered and read back
 on the sole granted Radeon node, with card and input devices absent. Evidence:
 `previews/MANIFEST.json` and `GPU-DOMAIN.json` in that directory.
 
-The remaining owner-loop check uses the pinned Session, factotum and PAM
-binaries in QEMU, with a generic provider that serves, floods or stops reading.
-It reports log-observed authentication and unlock intervals separately. Physical
-acceptance and the audited one-command release remain after these checks.
+## QEMU startup and qualification
 
-The first guest attempt was an invalid fixture: its proof session disabled the
-WM, so there was no published output authority and the provider never started.
-The run is preserved. The replacement fixture adds a generic C SDK WM peer;
-production startup is unchanged. An external output process is unnecessary:
-the native bootstrap creates the authority even without its exported service.
+The owner-loop fixture uses pinned Session, factotum and PAM binaries, a generic
+C SDK WM and providers that serve, flood or stop reading. It reports observed
+log intervals for authentication and unlock separately. It has no host display
+or input access and does not replace attended acceptance.
+
+The fixture exposed two startup defects in proof sessions with a public WM:
+
+- An empty WM projection could queue before the CPU scene had a composition
+  report. Preserving that native projection then failed on the missing report.
+  Startup now seeds the empty CPU scene in both modes, as normal sessions already
+  did. Runtime initialization stays mode-dependent. The seed submits no native
+  frame, changes no nonzero-pixel counters and consumes no exact-pixel proof.
+- That retained projection could also submit an ordinary flip before an output's
+  first modeset. The primary virtio display inherited an active CRTC; the second
+  had none and rejected the flip. Retained admission now keeps the entire batch
+  pending until all outputs are initialized. No queued prefix can hide native
+  scanout from the CPU cycle that must initialize the remaining outputs. Topology
+  adoption and resume already initialize every output.
+
+The failures are preserved in `t302-qemu-unlock-01/series-03`, `series-03b` and
+`series-04`. The first binary was the t302 candidate based on 316d9695, not an
+unchanged build of that revision. Pinned candidate 03 (Sophia `87f3c034`) proves
+both initial modesets and successful startup. The permanent regression tests
+both output orders, repeated admission without a queued prefix or allocated
+frame, and admission after initialization. The no-guard and prefix-filter
+mutants fail; the restored source passes. Full gate 04 passes on freeze 05.
+
+Fixture repairs keep injected resize out of the public-WM scenario, wait for a
+fresh routed-click acknowledgment before Enter, and tolerate exactly one service
+ESTALE only after Session completes and the required post-unlock report exists.
+Pre-completion or other errors remain fatal. Earlier failed runs are retained.
+
+Final series 10 stopped at its first failure: all three stalled-provider runs,
+all three flooding-provider runs and two baseline runs passed. Their observed
+verdict-to-unlock intervals were 2.0–10.3 ms, 10.6–10.8 ms and 1.6–10.3 ms,
+respectively. The last baseline also unlocked and passed physical input, but its
+primary head later exceeded the unchanged 500 ms page-flip watchdog. Its fence
+was pending, the DRM reader had no errors or rejected callbacks, and the second
+head kept retiring. An ordinary drain poll accepted the primary completion
+25 ms after the fatal record, before any detach or disable. No intervening
+submit or device teardown explains the signal. This is an unresolved native
+retirement failure, not an accepted release or a reason to loosen the watchdog.
+
+The next discriminator runs the same fixture on 316d9695 plus only these two
+startup fixes versus candidate 03. Keep per-run identities and failures, and
+record host activity. Physical acceptance and the audited one-command release
+remain held until the qualification has a supported disposition.

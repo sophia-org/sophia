@@ -127,6 +127,8 @@ fn only_direct_policy_observes_device_replacement() {
 /// through the exact grant. It must refuse an absent grant, without probing
 /// other devices. This exercises Session's actual sysfs projection and the
 /// runtime's LockProvider protection domain, without an input or card device.
+/// The outer fixture exposes /dev/null sentinels at card0, renderD999 and
+/// input/event0 so an accidental broad device bind is observable by the client.
 #[test]
 #[ignore = "requires an explicit render node and external GPU conformance client"]
 fn granted_gpu_client_runs_inside_the_lock_provider_domain() {
@@ -137,6 +139,12 @@ fn granted_gpu_client_runs_inside_the_lock_provider_domain() {
     let client = std::env::var_os("SOPHIA_TEST_GPU_CLIENT").unwrap();
     assert!(Path::new(&node).is_absolute());
     assert!(Path::new(&client).is_absolute());
+    let sentinel_device = std::fs::metadata("/dev/null").unwrap().rdev();
+    for sentinel in ["/dev/dri/card0", "/dev/dri/renderD999", "/dev/input/event0"] {
+        let metadata = std::fs::metadata(sentinel).expect("outer device sentinel missing");
+        assert!(metadata.file_type().is_char_device());
+        assert_eq!(metadata.rdev(), sentinel_device);
+    }
     let metadata = std::fs::symlink_metadata(&node).unwrap();
     assert!(metadata.file_type().is_char_device());
     let device = LiveRenderDeviceIdentitySnapshot {
@@ -176,6 +184,9 @@ fn granted_gpu_client_runs_inside_the_lock_provider_domain() {
             assert!(Instant::now() < deadline, "GPU client did not exit");
             std::thread::sleep(Duration::from_millis(5));
         }
-        assert_eq!(supervisor.exit_status().unwrap().success(), direct);
+        assert_eq!(
+            supervisor.exit_status().unwrap().code(),
+            Some(if direct { 0 } else { 2 })
+        );
     }
 }

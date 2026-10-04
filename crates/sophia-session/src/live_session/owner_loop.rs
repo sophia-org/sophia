@@ -515,9 +515,11 @@ fn run_session_loop_inner(
         config.cursor_resolution.ignored_animation_frames,
         cursor_fallback,
     );
-    if initialize_empty_runtime {
-        scene.compose(&[], None, None)?;
-    }
+    // A public WM may queue the empty native projection before the first
+    // authority batch. Preserving that projection then defers CPU composition,
+    // which needs a prior report even in a proof session. Seed only the CPU
+    // scene here; this does not submit a native frame or initialize the runtime.
+    scene.compose(&[], None, None)?;
     let mut layout = PersistentLiveLayout::new(
         LivePolicyMapMode::from_external_wm(wm_session.is_some()),
         output.size,
