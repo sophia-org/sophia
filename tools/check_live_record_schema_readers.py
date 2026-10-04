@@ -24,6 +24,10 @@ NORMAL_READERS = (
     'run_qt_popup_probe.py',
     'verify_qemu_emergency_recovery_evidence.sh',
     'verify_qemu_xtest_selection_evidence.sh',
+    # Lock-provider fixture: check resize is disabled, not startup-proof status.
+    'qemu_session_harness.sh',
+    # Bound the single allowed teardown ESTALE after completion, not proof status.
+    'verify_qemu_session_lock_provider.py',
 )
 ARCHIVE_READERS = {
     'verify_live_session_two_xterm_evidence.sh': 'historical two-xterm startup/CPU budgets',

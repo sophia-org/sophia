@@ -38,7 +38,7 @@ import sys
 
 LOCK = "sophia_live_session_lock schema=1 "
 STAMP = re.compile(r"^sophia_qemu_stamp schema=1 mono_ns=(\d+)$")
-COMPLETE = re.compile(r"^sophia_live_session schema=\d+ status=bounded_complete ")
+COMPLETE = re.compile(r"^sophia_live_session schema=[0-9]+ status=bounded_complete ")
 TEARDOWN = "state=failed step=service client=3 remote=116 refusal=0"
 REPORT = re.compile(
     r"^sophia_qemu_lock_provider schema=1 mode=(\w+) state=(\w+) events=(\d+) "
