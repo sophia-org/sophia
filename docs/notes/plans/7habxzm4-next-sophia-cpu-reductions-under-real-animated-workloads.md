@@ -163,6 +163,91 @@ The guest uses core pixmaps, software-rendered Unclocked virtio and one card wit
 two heads; it does not qualify Kitty DMA-BUFs, physical vblank, VT transitions or
 whole-desktop savings. There was no push, install, restart or live config change.
 
+## Unchanged secondary output experiment (2026-10-04)
+
+Implemented on `performance/t289-output-idle`, based on master
+`bf4a7a71d`, with evidence in `development-evidence/t289-output-idle-01`.
+The previous software Present staging path required every logical output to
+retire every frame. A baseline closed-workload log queues 19,379 frames on output
+1 and 19,374 on output 2, although only output 1 contains the two changing test
+windows. Those are whole-log counts, including grace and startup. Earlier damage
+attribution shows zero-damage partial frames on the unchanged output.
+
+The candidate keeps the selected clock output's fresh physical retirement on
+every Present, including identical pixels. This preserves the September 4
+Firefox correction: an existing displayed frame cannot complete a new Present.
+Only an unrelated secondary with one fully settled head may be omitted. Its
+displayed custody must match the current native owner, output, head and target
+generation. Its output, surfaces, display list (including publication stamps),
+cursor and sampled damage identities must still match. A Present sampled there,
+including a preview or the surface's previous placement, keeps that output in
+the cohort. Lock coverage and outstanding ordinary or shell retirement work also
+keep it. Startup, mirrors, pending/rendering/submitted work, recovery and missing
+evidence retain the old behavior. All included frames keep normal queueing and
+retirement; skipped outputs acquire no fabricated feedback.
+
+Legacy CPU scanout is also excluded: a frame without a damage snapshot clears
+pending damage but can leave the presented snapshot from an older frame. The
+shared proof therefore accepts only validated head-composition content and
+checks that its frame ID equals displayed custody. The regression supplies a
+matching native identity with legacy CPU content and an old snapshot; the
+secondary must still join the new retirement cohort.
+
+The source regression is red on the base: two output frames instead of one.
+It requires repeated identical Presents to receive distinct primary frame IDs
+and Complete receipts from their real simulated retirements. Controls cover
+static and changing secondary content, moves, preview sampling, lock and shell
+claims, cursor and publication changes, native target changes and unfinished
+work. The first implementation still lowers both outputs; it aims to remove
+the extra renderer submission and flip before considering earlier filtering.
+Keep the existing all-output readiness barrier and selected clock policy in this
+slice. Qualification and the matched guest comparison below cover this change.
+
+Freeze 03 passed its full gate and all four short guest probes, but the probes
+queued both outputs: no optimization was exercised. Temporary refusal tracing
+showed that singleton displayed custody belongs to the backend output runtime,
+while the native head's separate custody is used for mirrors. Reading the latter
+always declined. The corrected adapter reads the actual runtime's displayed
+correlation, refusing submitted work and failed cleanup there too. A control
+transfers real simulated scanout custody into the backend runtime and checks
+empty, displayed, submitted, failed-cleanup and recovered states. The original
+probes and diagnostic build are retained; neither establishes a CPU saving.
+
+**Qualified result: land the output-idle slice.** Freeze 04 (`3c312b40`, eight
+paths) passes the full isolated gate, strict Clippy and layout. Thirteen named
+regressions pass; thirteen targeted mutation controls fail at their intended
+assertions. The exact release binary is `d76e1db2`, baseline `fe6ae6d3`, and both
+use client `237f4d1e`. The baseline and this branch's base differ only in docs.
+
+All sixteen measured runs are valid: four alternating revision pairs per
+workload, 60 seconds measured after ten seconds of grace. The source stayed
+frozen, every result is retained, and no sample was replaced. Both workloads
+meet the stronger savings criterion: the candidate's entire measured ranges
+are below baseline for both Sophia and whole-guest CPU per completed Present.
+
+| Workload | Sophia CPU ms / Complete | Guest CPU ms / Complete | p95 latency | Completes/s |
+| --- | ---: | ---: | ---: | ---: |
+| Open | 4.970 -> 4.467 (-10.13%) | 7.363 -> 4.923 (-33.14%) | 9.965 -> 5.788 ms (-41.92%) | 10 -> 10 |
+| Closed | 3.749 -> 3.235 (-13.71%) | 5.738 -> 3.379 (-41.11%) | 7.579 -> 3.633 ms (-52.06%) | 278.1 -> 611.4 |
+
+These are medians normalized by completed Present, not an absolute CPU decrease
+under saturation. All completion modes remain Copy, and each open run completes
+all 600 requests. In every candidate's aligned owner-record interval the
+secondary queues zero frames; every baseline queues both outputs equally.
+Rendered output frames fall from two to approximately one per executed Present
+(one-frame interval-boundary differences remain). Actual repaint work stays
+about 153,600 pixels per Present: this removes empty secondary compositions and
+flips, not painted pixels. Unaccounted guest CPU is 1.1-2.7%; maximum per-vCPU
+steal is below 0.04%. The guest-wide saving includes avoided kernel work.
+
+Records: `GATE-03.json`, `COVERAGE-04.json`, `COMPARISON-INPUTS.json`,
+`comparison-01/COMPARISON.json` and `COMPARISON-ATTRIBUTION.json` in the evidence
+directory above. Scope remains two same-head core-pixmap clients, Unclocked
+virtio software rendering, one card and two outputs. This does not qualify
+Kitty DMA-BUFs, physical vblank, VT transitions or whole-desktop savings. T289's
+matched live acceptance remains open. No live configuration or installation
+changed during this experiment.
+
 ## Current assessment (2026-10-04)
 
 T289 remains active. The CPU harness and repaint attribution are qualified, and
