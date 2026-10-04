@@ -514,6 +514,24 @@ impl PersistentXtermSessionConfig {
                 .into());
             }
         }
+        // A named Bubblewrap is checked now; the default keeps the launch-time
+        // checks every protected process already gets.
+        let bubblewrap = match arg_value(args, "--bubblewrap") {
+            None => std::path::PathBuf::from(sophia_runtime::DEFAULT_BUBBLEWRAP_PATH),
+            Some(path) => {
+                let path = std::path::PathBuf::from(path);
+                if !path.is_absolute() {
+                    return Err("--bubblewrap requires an absolute path".into());
+                }
+                let metadata = std::fs::metadata(&path).map_err(|error| {
+                    format!("--bubblewrap cannot inspect {}: {error}", path.display())
+                })?;
+                if !metadata.is_file() || metadata.permissions().mode() & 0o111 == 0 {
+                    return Err(format!("--bubblewrap is not an executable file: {}", path.display()).into());
+                }
+                path
+            }
+        };
         let wm_interface = match arg_value(args, "--wm-interface").as_deref() {
             Some("sophia_wm_v1") => sophia_config::ExternalWmInterface::SophiaWmV1,
             Some(other) => {
@@ -911,6 +929,7 @@ impl PersistentXtermSessionConfig {
             wm_process,
             wm_process_args,
             wm_process_executable_grants,
+            bubblewrap,
             output_process,
             output_process_args,
             shell_process,

@@ -105,6 +105,7 @@ impl Harness {
             ShellContentAdmissionPolicy::Granted {
                 discrete_input: true,
             },
+            std::path::Path::new(sophia_runtime::DEFAULT_BUBBLEWRAP_PATH),
         )
         .unwrap();
         owner.set_presentation_available(true).unwrap();
@@ -669,6 +670,7 @@ fn legacy_disconnect_keeps_its_distinct_revocation_join_and_deferred_claim() {
         ShellGpuMode::Denied,
         None,
         None,
+        std::path::Path::new(sophia_runtime::DEFAULT_BUBBLEWRAP_PATH),
     )
     .unwrap();
     // Independent fixtures use disjoint grant identities in this shared backend.

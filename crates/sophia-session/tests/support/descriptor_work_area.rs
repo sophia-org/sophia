@@ -133,6 +133,7 @@ fn protected_c_descriptor_work_area_changes_only_after_matching_presentation() {
         config.shell_gpu_mode,
         None,
         config.shell_config.as_deref(),
+        std::path::Path::new(sophia_runtime::DEFAULT_BUBBLEWRAP_PATH),
     )
     .unwrap();
     let output = HeadlessOutput::deterministic();

@@ -18,6 +18,7 @@ pub struct ShellComponentLaunch {
     selection: ShellComponentConfig,
     panel_thickness: Option<u16>,
     gpu: ShellGpuLaunchPolicy,
+    bubblewrap: PathBuf,
 }
 
 impl ShellComponentLaunch {
@@ -25,6 +26,7 @@ impl ShellComponentLaunch {
         mut selection: ShellComponentConfig,
         panel_thickness: Option<u16>,
         device: Option<LiveRenderDeviceIdentitySnapshot>,
+        bubblewrap: &Path,
     ) -> LaunchResult<Self> {
         if !selection.executable.is_absolute() {
             return Err("component executable must be absolute".into());
@@ -59,6 +61,7 @@ impl ShellComponentLaunch {
             panel_thickness,
             selection,
             gpu,
+            bubblewrap: bubblewrap.to_path_buf(),
         })
     }
 
@@ -82,6 +85,7 @@ impl ShellComponentLaunch {
             self.selection.transport,
             self.panel_thickness,
             self.selection.config.as_deref(),
+            &self.bubblewrap,
         )?;
         Ok(self.gpu.prepare(&base, key.grant.connection_epoch)?)
     }
@@ -93,12 +97,14 @@ pub(super) fn base_launch_spec(
     wire: sophia_config::ShellTransportSelection,
     panel_thickness: Option<u16>,
     selected_config: Option<&Path>,
+    bubblewrap: &Path,
 ) -> LaunchResult<ProcessLaunchSpec> {
     let parent = socket
         .parent()
         .filter(|p| p.is_absolute())
         .ok_or("metadata shell socket requires an absolute parent")?;
     let mut domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::MetadataShell])?
+        .bubblewrap_path(bubblewrap)
         .path(ProtectionPath::read_only(parent))?;
     let private_config: Option<PathBuf> = selected_config.map(Path::canonicalize).transpose()?;
     if let Some(path) = private_config.as_ref() {

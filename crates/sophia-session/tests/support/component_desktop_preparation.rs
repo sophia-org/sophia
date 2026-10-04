@@ -98,7 +98,13 @@ fn component_desktop_profile_keeps_private_assets_distinct_from_artifact_admissi
     // This denied copy is a fixture, not the selected desktop's GPU policy.
     let mut denied = panel.clone();
     denied.gpu = ShellGpuMode::Denied;
-    let plan = ShellComponentLaunch::new(denied.clone(), Some(24), None).unwrap();
+    let plan = ShellComponentLaunch::new(
+        denied.clone(),
+        Some(24),
+        None,
+        std::path::Path::new(sophia_runtime::DEFAULT_BUBBLEWRAP_PATH),
+    )
+    .unwrap();
     assert_eq!(plan.selection().config, panel.config);
     std::fs::remove_file(fixture.0.join("lom.kdl")).unwrap();
     assert_eq!(
@@ -110,8 +116,24 @@ fn component_desktop_profile_keeps_private_assets_distinct_from_artifact_admissi
             .shell_components,
         *components
     );
-    assert!(ShellComponentLaunch::new(denied, Some(24), None).is_err());
-    assert!(ShellComponentLaunch::new(menu.clone(), None, None).is_ok());
+    assert!(
+        ShellComponentLaunch::new(
+            denied,
+            Some(24),
+            None,
+            std::path::Path::new(sophia_runtime::DEFAULT_BUBBLEWRAP_PATH)
+        )
+        .is_err()
+    );
+    assert!(
+        ShellComponentLaunch::new(
+            menu.clone(),
+            None,
+            None,
+            std::path::Path::new(sophia_runtime::DEFAULT_BUBBLEWRAP_PATH)
+        )
+        .is_ok()
+    );
 }
 
 #[test]

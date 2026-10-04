@@ -17,7 +17,7 @@ pub(super) struct LiveMetadataBroker {
 }
 
 impl LiveMetadataBroker {
-    pub(super) fn start() -> Result<Self, Box<dyn std::error::Error>> {
+    pub(super) fn start(bubblewrap: &std::path::Path) -> Result<Self, Box<dyn std::error::Error>> {
         let executable = std::env::current_exe()?;
         let directory = std::env::temp_dir().join(format!(
             "sophia-live-metadata-broker-{}-{}",
@@ -33,6 +33,7 @@ impl LiveMetadataBroker {
         let domain = sophia_runtime::ProtectionDomainSpec::bubblewrap([
             sophia_runtime::ProtectionDomainRole::MetadataBroker,
         ])?
+        .bubblewrap_path(bubblewrap)
         .path(sophia_runtime::ProtectionPath::read_only(
             socket
                 .parent()

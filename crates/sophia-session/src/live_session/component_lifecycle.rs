@@ -134,6 +134,7 @@ pub(super) fn prepare(
                 } else {
                     sophia_runtime::ShellContentAdmissionPolicy::Denied
                 },
+                &config.bubblewrap,
             );
             let owner = match prepared {
                 Ok(owner) => owner,

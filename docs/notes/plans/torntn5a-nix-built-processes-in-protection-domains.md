@@ -44,9 +44,15 @@ Two reviewable commits:
    An opt-in smoke (`SOPHIA_RUN_PROTECTION_DOMAIN_SMOKE`) launches every role
    and proves the store read-only by its mount flags, that a write fails, and
    that a Nix-built executable from the host store runs.
-2. **Session**: one trusted `session run` option names the Bubblewrap
-   executable, validated at argument parsing. It reaches every live-session
-   domain through the existing builder method.
+2. **Session**: the trusted `session run --bubblewrap=/absolute/path` option
+   names the Bubblewrap executable. A named one is validated at argument
+   parsing; the default keeps the launch-time checks. It reaches every
+   live-session domain through the existing builder method: the WM, the
+   output authority, shell components, the legacy shell, the metadata broker
+   and the lock provider. The standalone GPU content proof and the CLI
+   broker smoke start no session, so they keep the default. A structural test
+   names every domain construction in sophia-session and each forward of the
+   session's choice.
 
 Bounded mutants (each removing the binding, the read-only flag, the
 shadowing refusal or the executable validation) must each fail a named test.

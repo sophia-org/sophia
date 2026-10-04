@@ -23,6 +23,7 @@ fn descriptor_launch_uses_only_files_without_changing_content_grants() {
             sophia_config::ShellGpuMode::Denied,
             None,
             None,
+            std::path::Path::new(sophia_runtime::DEFAULT_BUBBLEWRAP_PATH),
         )
         .unwrap();
         let endpoints = shell
@@ -60,6 +61,7 @@ fn deferred_first_negotiation_is_ready_and_only_later_connection_is_reconnected(
         sophia_config::ShellGpuMode::Denied,
         None,
         None,
+        std::path::Path::new(sophia_runtime::DEFAULT_BUBBLEWRAP_PATH),
     )
     .unwrap();
     assert!(matches!(
@@ -184,6 +186,7 @@ fn protected_descriptor_shell() -> LiveMetadataShell {
         sophia_config::ShellGpuMode::Denied,
         None,
         None,
+        std::path::Path::new(sophia_runtime::DEFAULT_BUBBLEWRAP_PATH),
     )
     .unwrap();
     // The real launch plan and supervisor are retained; only the fixture's

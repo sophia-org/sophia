@@ -85,6 +85,7 @@ impl ShellComponentSession {
         device: Option<LiveRenderDeviceIdentitySnapshot>,
         directory: &Path,
         policy: ShellContentAdmissionPolicy,
+        bubblewrap: &Path,
     ) -> Result<Self> {
         if selections.is_empty() || selections.len() > MAX_SHELL_COMPONENTS {
             return Err("component session requires one through three selected roles".into());
@@ -101,6 +102,7 @@ impl ShellComponentSession {
                     (selection.gpu == ShellGpuMode::Direct)
                         .then(|| device.clone())
                         .flatten(),
+                    bubblewrap,
                 )
             })
             .collect::<Result<Vec<_>>>()?;

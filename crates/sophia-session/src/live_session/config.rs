@@ -104,6 +104,9 @@ struct PersistentXtermSessionConfig {
     wm_process: Option<String>,
     wm_process_args: Vec<String>,
     wm_process_executable_grants: Vec<std::path::PathBuf>,
+    /// The Bubblewrap executable for every protection domain this session
+    /// starts: `/usr/bin/bwrap` unless the session's launcher names another.
+    bubblewrap: std::path::PathBuf,
     output_process: Option<String>,
     output_process_args: Vec<String>,
     shell_process: Option<String>,
