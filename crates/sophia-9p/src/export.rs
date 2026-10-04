@@ -131,6 +131,12 @@ pub trait Export {
     type Node: Clone + Eq;
     type Handle;
 
+    /// Whether this owner receives writes in place, through
+    /// [`Export::write_destination`]. The core then reads each request's
+    /// header before the rest of it, so a write's data can go straight from
+    /// the peer's stream to where the owner keeps it.
+    const WRITES_IN_PLACE: bool = false;
+
     fn attach(&mut self, context: &AttachContext<'_>) -> Result<Attachment<Self::Node>, Errno>;
 
     /// Whether this operation may proceed under its epoch. Asked before every
@@ -166,6 +172,50 @@ pub trait Export {
         offset: u64,
         data: &[u8],
     ) -> Result<u32, Errno>;
+
+    /// Where a write of `len` bytes at `offset` is received in place: its
+    /// bytes from `received` on, at least `len - received` of them, which
+    /// the core fills straight from the peer's stream. Only an owner with
+    /// [`Export::WRITES_IN_PLACE`] is asked.
+    ///
+    /// The core asks first with `received` zero, once the request's header
+    /// has arrived whole and been checked, and before its data has. `None`
+    /// then declines: the request is buffered and given to [`Export::write`]
+    /// as usual. Having accepted, the core asks again before each later read
+    /// of the data, each time after [`Export::check`], so the owner may
+    /// refuse partway. `None` or an error then ends the receipt: the core
+    /// reads and discards the rest of the request's data and answers the
+    /// error (`EIO` for `None`). It never falls back to buffering.
+    ///
+    /// The destination is private staging. Nothing received there counts,
+    /// and no reader may see it, until [`Export::write_received`] accepts
+    /// it; a receipt ended any other way, refused, discarded or cut off by
+    /// the connection's end, has no further call and must leave nothing
+    /// committed.
+    fn write_destination(
+        &mut self,
+        _node: &Self::Node,
+        _handle: &mut Self::Handle,
+        _offset: u64,
+        _len: u32,
+        _received: u32,
+    ) -> Result<Option<&mut [u8]>, Errno> {
+        Ok(None)
+    }
+
+    /// Accepts a write received whole through [`Export::write_destination`],
+    /// as [`Export::write`] would have accepted the same bytes: the number
+    /// of bytes accepted, at most `len`. Called once per receipt, after
+    /// [`Export::check`] and with room for its reply already kept.
+    fn write_received(
+        &mut self,
+        _node: &Self::Node,
+        _handle: &mut Self::Handle,
+        _offset: u64,
+        _len: u32,
+    ) -> Result<u32, Errno> {
+        Err(Errno::EIO)
+    }
 
     /// The entries of an open directory from `cookie` on, at most
     /// `max_entries` and at least one unless the listing has ended: an empty

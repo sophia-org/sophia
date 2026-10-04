@@ -28,7 +28,7 @@ pub mod wire;
 
 pub use sophia_9p_records as records;
 
-pub use connection::{Connection, ConnectionId, Fatal};
+pub use connection::{Connection, ConnectionId, Fatal, InPlaceTarget};
 pub use export::{
     Access, AttachContext, Attachment, DirEntry, Entry, Epoch, Export, NodeKind, Operation,
     PeerCredentials, ReadOutcome, WalkName,

@@ -383,6 +383,64 @@ impl Resources {
         Ok(data.len() as u32)
     }
 
+    /// Where a write of `len` bytes at `offset` is received in place: the
+    /// upload's own storage from `offset + received` to the write's end. It
+    /// is held only here, so bytes put there are seen by no one, and count
+    /// only once [`Self::write_received`] moves the cursor past them. The
+    /// write must start at the cursor and end within the declared size.
+    pub(super) fn write_destination(
+        &mut self,
+        slot: u8,
+        binding: u64,
+        offset: u64,
+        len: u32,
+        received: u32,
+    ) -> Result<&mut [u8], Errno> {
+        let (upload, end) = self.writable(slot, binding, offset, len)?;
+        let start = offset + u64::from(received.min(len));
+        let storage = upload
+            .pixels
+            .as_mut()
+            .and_then(Arc::get_mut)
+            .ok_or(Errno::EINVAL)?;
+        Ok(&mut storage[start as usize..end as usize])
+    }
+
+    /// Accepts a write received whole in place: the cursor moves past it.
+    pub(super) fn write_received(
+        &mut self,
+        slot: u8,
+        binding: u64,
+        offset: u64,
+        len: u32,
+    ) -> Result<u32, Errno> {
+        let (upload, end) = self.writable(slot, binding, offset, len)?;
+        upload.written = end;
+        Ok(len)
+    }
+
+    /// The upload a write of `len` at `offset` may go to, and the write's
+    /// end: the slot's current binding, at its exact cursor, within size.
+    fn writable(
+        &mut self,
+        slot: u8,
+        binding: u64,
+        offset: u64,
+        len: u32,
+    ) -> Result<(&mut Upload, u64), Errno> {
+        let upload = self
+            .slots
+            .get_mut(usize::from(slot))
+            .and_then(Option::as_mut)
+            .filter(|upload| upload.binding == binding)
+            .ok_or(Errno::ESTALE)?;
+        let end = offset.checked_add(u64::from(len)).ok_or(Errno::EINVAL)?;
+        if offset != upload.written || end > upload.expected {
+            return Err(Errno::EINVAL);
+        }
+        Ok((upload, end))
+    }
+
     /// The binding `slot` holds, if any.
     pub(super) fn binding(&self, slot: u8) -> Option<u64> {
         self.slots

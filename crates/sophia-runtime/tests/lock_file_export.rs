@@ -291,6 +291,85 @@ fn an_upload_writer_is_fenced_from_a_later_binding_of_its_slot() {
 }
 
 #[test]
+fn an_upload_received_in_place_counts_only_once_accepted() {
+    let mut export = attached();
+    negotiate(&mut export);
+    let begin = |id| {
+        LockResourceBegin {
+            transaction: id,
+            resource: LockResourceId { id, generation: 1 },
+            width_px: 2,
+            height_px: 1,
+            slot: 0,
+        }
+        .encode()
+        .unwrap()
+    };
+    submit(&mut export, 2, LockFileKind::ResourceBegin, &begin(1));
+    let mut upload = export.open(&Node::Upload(0), WRITE).unwrap();
+    let node = Node::Upload(0);
+    // Other files are never received in place.
+    let mut ack = export.open(&Node::Ack, WRITE).unwrap();
+    assert_eq!(
+        export.write_destination(&Node::Ack, &mut ack, 0, 16, 0),
+        Ok(None)
+    );
+    // Only at the cursor, and only within the declared size.
+    assert_eq!(
+        export.write_destination(&node, &mut upload, 4, 4, 0),
+        Err(Errno::EINVAL)
+    );
+    assert_eq!(
+        export.write_destination(&node, &mut upload, 0, 9, 0),
+        Err(Errno::EINVAL)
+    );
+    let first = export
+        .write_destination(&node, &mut upload, 0, 8, 0)
+        .unwrap()
+        .unwrap();
+    assert_eq!(first.len(), 8);
+    first[..4].fill(5);
+    let rest = export
+        .write_destination(&node, &mut upload, 0, 8, 4)
+        .unwrap()
+        .unwrap();
+    assert_eq!(rest.len(), 4);
+    rest.fill(6);
+    // Nothing counts yet: the cursor has not moved.
+    assert_eq!(
+        export.write(&node, &mut upload, 8, &[0]),
+        Err(Errno::EINVAL)
+    );
+    assert_eq!(export.write_received(&node, &mut upload, 0, 8), Ok(8));
+    // Accepted once: the cursor has moved past it.
+    assert_eq!(
+        export.write_received(&node, &mut upload, 0, 8),
+        Err(Errno::EINVAL)
+    );
+    // A later binding of the slot fences the old writer.
+    let cancel = LockResourceStep {
+        transaction: 1,
+        resource: LockResourceId {
+            id: 1,
+            generation: 1,
+        },
+        total_bytes: None,
+    }
+    .encode()
+    .unwrap();
+    submit(&mut export, 3, LockFileKind::ResourceCancel, &cancel);
+    submit(&mut export, 4, LockFileKind::ResourceBegin, &begin(2));
+    assert_eq!(
+        export.write_destination(&node, &mut upload, 0, 8, 0),
+        Err(Errno::ESTALE)
+    );
+    assert_eq!(
+        export.write_received(&node, &mut upload, 0, 8),
+        Err(Errno::ESTALE)
+    );
+}
+
+#[test]
 fn events_are_read_and_acknowledged_through_the_files() {
     let mut export = attached();
     negotiate(&mut export);

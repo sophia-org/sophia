@@ -22,7 +22,7 @@ use std::time::Duration;
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
 use rustix::pipe::{PipeFlags, pipe_with};
 
-use crate::connection::{Connection, ConnectionId};
+use crate::connection::{Connection, ConnectionId, InPlaceTarget};
 use crate::export::{Export, PeerCredentials};
 use crate::records::Limits;
 
@@ -288,6 +288,33 @@ impl<E: Export> Server<E> {
     }
 
     fn read(export: &mut E, slot: &mut Slot<E>, buffer: &mut Vec<u8>) {
+        // A write received in place reads straight into its destination.
+        if let Some(target) = slot.connection.in_place_target(export) {
+            let result = match target {
+                InPlaceTarget::Destination(destination) => slot.stream.read(destination),
+                InPlaceTarget::Discard(rest) => {
+                    if buffer.len() < rest {
+                        buffer.resize(rest, 0);
+                    }
+                    slot.stream.read(&mut buffer[..rest])
+                }
+            };
+            match result {
+                Ok(0) => slot.ended = true,
+                Ok(count) => {
+                    if slot.connection.received_in_place(export, count).is_err() {
+                        slot.ended = true;
+                    }
+                }
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                    ) => {}
+                Err(_) => slot.ended = true,
+            }
+            return;
+        }
         let room = slot.connection.input_room();
         if room == 0 {
             return;

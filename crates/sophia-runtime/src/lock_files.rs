@@ -512,6 +512,36 @@ impl LockFileCustody {
         self.resources.write(slot, binding, offset, data)
     }
 
+    /// Where a write of `len` bytes at `offset` to `slot` is received in
+    /// place: the image's own storage from `received` on. It counts only
+    /// once [`Self::upload_received`] accepts it.
+    pub fn upload_destination(
+        &mut self,
+        slot: u8,
+        binding: u64,
+        offset: u64,
+        len: u32,
+        received: u32,
+    ) -> Result<&mut [u8], Errno> {
+        self.live()?;
+        self.negotiated()?;
+        self.resources
+            .write_destination(slot, binding, offset, len, received)
+    }
+
+    /// Accepts a write received whole through [`Self::upload_destination`].
+    pub fn upload_received(
+        &mut self,
+        slot: u8,
+        binding: u64,
+        offset: u64,
+        len: u32,
+    ) -> Result<u32, Errno> {
+        self.live()?;
+        self.negotiated()?;
+        self.resources.write_received(slot, binding, offset, len)
+    }
+
     /// The binding `slot` holds: an upload fid opened now writes to it.
     pub fn upload_binding(&self, slot: u8) -> Option<u64> {
         self.resources.binding(slot)

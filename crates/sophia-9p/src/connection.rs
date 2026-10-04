@@ -11,6 +11,18 @@
 //! stays in the input, unprocessed, until the peer reads, so no export
 //! operation is ever performed, and no event consumed, whose reply could not
 //! be kept. The same holds for every retried read.
+//!
+//! WRITES IN PLACE. For an export with [`Export::WRITES_IN_PLACE`], a write
+//! whose header has arrived and been checked, but whose data has not, may be
+//! received straight into the export's destination
+//! ([`Export::write_destination`]): [`Connection::in_place_target`] names
+//! where the next bytes go and [`Connection::received_in_place`] accounts for
+//! them. Room for its reply is kept from the start. Only the declared data is
+//! read that way, never past the frame's end, so bytes inside it are data,
+//! whatever they look like. The write is accepted once, when all of it has
+//! arrived ([`Export::write_received`]); a refusal partway discards the rest
+//! of its data and answers the error; a connection that ends first commits
+//! nothing.
 
 use std::collections::{BTreeMap, VecDeque};
 
@@ -20,6 +32,10 @@ use crate::export::{
 };
 use crate::records::{Attr, Errno, Fid, Limits, OpenAccess, OpenFlags, Reply, Request, Tag};
 use crate::wire::{self, DIRENT_FIXED, FrameError, IO_HEADER, READ_OVERHEAD};
+
+mod in_place;
+pub use in_place::InPlaceTarget;
+use in_place::{InPlace, WRITE_HEADER, WRITE_REPLY};
 
 /// Identifies a connection to the export, for as long as it lives.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -110,6 +126,7 @@ pub struct Connection<E: Export> {
     /// A complete request is buffered and waits for output room.
     stalled: bool,
     closed: bool,
+    in_place: Option<InPlace>,
 }
 
 impl<E: Export> Connection<E> {
@@ -126,6 +143,7 @@ impl<E: Export> Connection<E> {
             unwritten: VecDeque::new(),
             stalled: false,
             closed: false,
+            in_place: None,
         }
     }
 
@@ -167,13 +185,30 @@ impl<E: Export> Connection<E> {
         }
     }
 
-    /// How many more input bytes this connection will buffer now. Zero while
+    /// How many more input bytes this connection will take now. Zero while
     /// a complete request waits for output room, so a driver stops reading.
+    /// While a write is received in place, the rest of its data. For an
+    /// export that writes in place, at most the rest of a request's header
+    /// while that header is incomplete, so a write's data is never
+    /// buffered before the write is checked.
     pub fn input_room(&self) -> usize {
-        if self.closed || self.stalled {
+        if self.closed {
             return 0;
         }
-        (self.frame_limit() as usize).saturating_sub(self.input.len())
+        if let Some(place) = &self.in_place {
+            return (place.len - place.received) as usize;
+        }
+        if self.stalled {
+            return 0;
+        }
+        let room = (self.frame_limit() as usize).saturating_sub(self.input.len());
+        let held = self.input.len();
+        if E::WRITES_IN_PLACE
+            && (held < wire::HEADER || (self.input[4] == wire::kind::TWRITE && held < WRITE_HEADER))
+        {
+            return room.min(WRITE_HEADER - held);
+        }
+        room
     }
 
     /// Takes bytes from the peer and answers every complete request that has
@@ -182,6 +217,16 @@ impl<E: Export> Connection<E> {
     /// once there is room; nothing offered is lost.
     pub fn receive(&mut self, export: &mut E, bytes: &[u8]) -> Result<usize, Fatal> {
         let accepted = bytes.len().min(self.input_room());
+        if self.in_place.is_some() {
+            if accepted > 0 {
+                if let Some(InPlaceTarget::Destination(destination)) = self.in_place_target(export)
+                {
+                    destination[..accepted].copy_from_slice(&bytes[..accepted]);
+                }
+                self.received_in_place(export, accepted)?;
+            }
+            return Ok(accepted);
+        }
         self.input.extend_from_slice(&bytes[..accepted]);
         self.resume(export)?;
         Ok(accepted)
@@ -191,6 +236,17 @@ impl<E: Export> Connection<E> {
     pub fn resume(&mut self, export: &mut E) -> Result<(), Fatal> {
         if self.closed {
             return Ok(());
+        }
+        if let Some(place) = &self.in_place {
+            if place.received < place.len {
+                // Everything buffered belongs to the write: nothing to parse.
+                return Ok(());
+            }
+            self.stalled = false;
+            self.finish_in_place(export)?;
+            if self.in_place.is_some() {
+                return Ok(());
+            }
         }
         let input = std::mem::take(&mut self.input);
         let mut consumed = 0;
@@ -224,6 +280,8 @@ impl<E: Export> Connection<E> {
     /// Ends the connection: waiting reads are dropped unanswered and every
     /// fid is released to the export.
     pub fn close(&mut self, export: &mut E) {
+        // A write received in place is cut off: nothing of it is committed.
+        self.in_place = None;
         self.reset(export);
         self.input.clear();
         self.output.clear();
@@ -235,8 +293,15 @@ impl<E: Export> Connection<E> {
         self.msize.unwrap_or(self.limits.max_msize())
     }
 
+    /// Room for `reply` beside the room a write received in place keeps
+    /// for its own.
     fn has_room(&self, reply: usize) -> bool {
-        self.output.len() + reply <= self.limits.max_unsent()
+        let kept = if self.in_place.is_some() {
+            WRITE_REPLY
+        } else {
+            0
+        };
+        self.output.len() + reply + kept <= self.limits.max_unsent()
     }
 
     fn process(&mut self, export: &mut E, input: &[u8], consumed: &mut usize) -> Result<(), Fatal> {
@@ -248,27 +313,15 @@ impl<E: Export> Connection<E> {
             };
             let length = wire::frame_length(*prefix, self.frame_limit()).map_err(Fatal::Frame)?;
             let Some(frame) = rest.get(..length) else {
+                if E::WRITES_IN_PLACE && self.start_in_place(export, rest, length)? {
+                    *consumed += rest.len();
+                }
                 return Ok(());
             };
             let Some((kind, tag)) = wire::header(frame) else {
                 return Err(Fatal::Frame(FrameError::Short(length as u32)));
             };
-            if kind != wire::kind::TVERSION {
-                if tag == Tag::NOTAG {
-                    return Err(Fatal::NoTag { kind });
-                }
-                if self.msize.is_none() {
-                    return Err(Fatal::BeforeVersion { kind });
-                }
-                if self.waiting.iter().any(|waiting| waiting.tag == tag)
-                    || self
-                        .unwritten
-                        .iter()
-                        .any(|(unwritten, _)| *unwritten == tag)
-                {
-                    return Err(Fatal::DuplicateTag(tag));
-                }
-            }
+            self.admit(kind, tag)?;
             let decoded = wire::decode(frame);
             if !self.has_room(self.reply_bound(&decoded)) {
                 self.stalled = true;
@@ -284,6 +337,27 @@ impl<E: Export> Connection<E> {
                 }
             }
         }
+    }
+
+    /// The protocol's rules on a request's header, before anything else.
+    fn admit(&self, kind: u8, tag: Tag) -> Result<(), Fatal> {
+        if kind != wire::kind::TVERSION {
+            if tag == Tag::NOTAG {
+                return Err(Fatal::NoTag { kind });
+            }
+            if self.msize.is_none() {
+                return Err(Fatal::BeforeVersion { kind });
+            }
+            if self.waiting.iter().any(|waiting| waiting.tag == tag)
+                || self
+                    .unwritten
+                    .iter()
+                    .any(|(unwritten, _)| *unwritten == tag)
+            {
+                return Err(Fatal::DuplicateTag(tag));
+            }
+        }
+        Ok(())
     }
 
     /// The largest reply a request can need, including the errors a clunk

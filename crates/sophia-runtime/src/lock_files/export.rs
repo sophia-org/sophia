@@ -290,6 +290,10 @@ impl Export for LockFileExport {
     type Node = Node;
     type Handle = LockFileHandle;
 
+    /// An upload's data goes straight from the provider's stream into the
+    /// image's own storage, which nothing else sees before its cursor moves.
+    const WRITES_IN_PLACE: bool = true;
+
     fn attach(&mut self, context: &AttachContext<'_>) -> Result<Attachment<Node>, Errno> {
         self.live()?;
         // One attach per admitted epoch; a replacement needs a fresh stream.
@@ -468,6 +472,38 @@ impl Export for LockFileExport {
             }
             _ => Err(Errno::EINVAL),
         }
+    }
+
+    fn write_destination(
+        &mut self,
+        node: &Node,
+        handle: &mut LockFileHandle,
+        offset: u64,
+        len: u32,
+        received: u32,
+    ) -> Result<Option<&mut [u8]>, Errno> {
+        // Only uploads are received in place; other writes are buffered.
+        let (Node::Upload(slot), Handle::Upload(binding)) = (node, &handle.0) else {
+            return Ok(None);
+        };
+        self.live()?;
+        self.custody
+            .upload_destination(*slot, *binding, offset, len, received)
+            .map(Some)
+    }
+
+    fn write_received(
+        &mut self,
+        node: &Node,
+        handle: &mut LockFileHandle,
+        offset: u64,
+        len: u32,
+    ) -> Result<u32, Errno> {
+        let (Node::Upload(slot), Handle::Upload(binding)) = (node, &handle.0) else {
+            return Err(Errno::EIO);
+        };
+        self.live()?;
+        self.custody.upload_received(*slot, *binding, offset, len)
     }
 
     fn readdir(
