@@ -424,6 +424,107 @@ fn bubblewrap_mounts_owned_filesystems_read_only_without_host_tree_disclosure() 
     std::fs::remove_dir_all(evidence).unwrap();
 }
 
+/// A Nix-built executable from the host's store, when there is one.
+fn host_store_executable() -> Option<std::path::PathBuf> {
+    std::fs::read_dir("/nix/store")
+        .ok()?
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_name().to_string_lossy().contains("-coreutils-"))
+        .map(|entry| entry.path().join("bin/true"))
+        .find(|path| path.is_file())
+}
+
+#[test]
+fn every_role_sees_a_present_store_read_only_and_runs_from_it() {
+    if std::env::var_os("SOPHIA_RUN_PROTECTION_DOMAIN_SMOKE").is_none() {
+        return;
+    }
+    let store = std::path::Path::new("/nix/store").is_dir();
+    // The last /nix/store mount is the one the domain sees; it must be
+    // read-only by its mount flags, not merely by ownership.
+    let script = if store {
+        "set -eu; test -d /nix/store; \
+         if touch /nix/store/.sophia-write-probe 2>/dev/null; then exit 1; fi; \
+         ro=0; while read -r _ _ _ _ mount options _; do \
+         if [ \"$mount\" = /nix/store ]; then \
+         case \"$options\" in ro|ro,*) ro=1 ;; *) ro=0 ;; esac; fi; \
+         done < /proc/self/mountinfo; test \"$ro\" = 1; \
+         \"$1\"; printf pass > /evidence/result"
+    } else {
+        "set -eu; test ! -e /nix; printf pass > /evidence/result"
+    };
+    let executable = host_store_executable();
+    assert_eq!(
+        executable.is_some(),
+        store,
+        "a host store needs a Nix-built executable"
+    );
+    for (kind, role) in [
+        (
+            SupervisedProcessKind::WindowManager,
+            ProtectionDomainRole::SpatialPolicy,
+        ),
+        (
+            SupervisedProcessKind::PortalBroker,
+            ProtectionDomainRole::PortalBroker,
+        ),
+        (
+            SupervisedProcessKind::MetadataBroker,
+            ProtectionDomainRole::MetadataBroker,
+        ),
+        (
+            SupervisedProcessKind::Shell,
+            ProtectionDomainRole::MetadataShell,
+        ),
+        (
+            SupervisedProcessKind::OutputAuthority,
+            ProtectionDomainRole::OutputAuthority,
+        ),
+        (
+            SupervisedProcessKind::SophiaXAuthority,
+            ProtectionDomainRole::ApplicationFrontend,
+        ),
+        (
+            SupervisedProcessKind::LockProvider,
+            ProtectionDomainRole::LockProvider,
+        ),
+    ] {
+        let evidence = std::env::temp_dir().join(format!(
+            "sophia-protection-store-{}-{role:?}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&evidence);
+        std::fs::create_dir(&evidence).unwrap();
+        let domain = ProtectionDomainSpec::bubblewrap([role])
+            .unwrap()
+            .path(ProtectionPath::read_write_at(&evidence, "/evidence"))
+            .unwrap();
+        let mut spec = ProcessLaunchSpec::new("/usr/bin/sh")
+            .arg("-c")
+            .arg(script)
+            .arg("probe");
+        if let Some(executable) = &executable {
+            spec = spec.arg(executable);
+        }
+        let mut supervisor = ProcessSupervisor::new(kind, spec.protection_domain(domain));
+        supervisor
+            .apply(SupervisorCommand::StartProcess {
+                process: kind,
+                delay: Duration::ZERO,
+            })
+            .unwrap();
+        reap_for_exit_status(&mut supervisor);
+        assert_eq!(
+            std::fs::read_to_string(evidence.join("result"))
+                .ok()
+                .as_deref(),
+            Some("pass"),
+            "{role:?}"
+        );
+        std::fs::remove_dir_all(evidence).unwrap();
+    }
+}
+
 #[test]
 fn nonblocking_termination_retains_child_while_neighbor_progresses() {
     let ready = std::env::temp_dir().join(format!("supervisor-stop-ready-{}", std::process::id()));
