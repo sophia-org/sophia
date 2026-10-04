@@ -19,6 +19,8 @@ from analyze import ACCOUNTING_METHOD, analyze, compare, summarize
 from build_overlay import digest
 from build_record import source_identity
 from log_transport import unpack
+from owner_wait import attribute as attribute_waits
+from settings import comparison_settings, verify_settings
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -61,6 +63,8 @@ def trial(args, payload, name, mode, seconds):
                SOPHIA_QEMU_CPU_GRACE="10", SOPHIA_QEMU_CPU_RATE=str(args.rate),
                SOPHIA_QEMU_CPU_CLIENTS=str(args.clients), SOPHIA_QEMU_CPU_SIZE=args.size,
                SOPHIA_QEMU_CPU_DAMAGE=args.damage,
+               SOPHIA_QEMU_CPU_EVIDENCE=args.present_evidence,
+               SOPHIA_ENABLE_SHARED_RENDERER_WORKER="1" if args.renderer_worker == "shared" else "0",
                SOPHIA_QEMU_CPU_TARGET=args.target, SOPHIA_QEMU_GPU_MODE="software",
                SOPHIA_QEMU_ACCEL="kvm")
     for key, path in (("kernel", args.kernel), ("initramfs", args.initramfs)):
@@ -101,6 +105,11 @@ def trial(args, payload, name, mode, seconds):
             work = json.loads(records[0])
             write(directory / "workload.json", work)
             report = analyze(work, text)
+            report["owner_wait"] = attribute_waits(
+                text, work["measure_start_usec"], work["measure_end_usec"])
+            report["experiment_settings"] = {
+                "present_evidence": args.present_evidence, "renderer_worker": args.renderer_worker}
+            report["renderer_resources"] = verify_settings(text, report["experiment_settings"])
             report["session_log"] = log_record
         except (ValueError, KeyError, TypeError) as error:
             report = {"status": "INVALID", "error": str(error)}
@@ -120,6 +129,8 @@ def run(args):
                 "vcpus": args.cpus, "memory_mib": 2048, "accelerator": "kvm",
                 "gpu": "software virtio, one card/two outputs", "quiet_window": args.quiet_note,
                 "session_mode": "normal", "export_transport": "virtio-serial-file",
+                "experiment_settings": {"present_evidence": args.present_evidence,
+                                        "renderer_worker": args.renderer_worker},
                 "host_before": before}
     write(args.out / "IDENTITY.json", identity)
     # Compatibility excludes only the revision under test and its image digest.
@@ -134,6 +145,11 @@ def run(args):
     baseline = json.loads(args.baseline.read_text()) if args.baseline else None
     if baseline and baseline.get("compatibility") != compatibility:
         raise ValueError("baseline environment, kernel, client or guest recipe differs")
+    if baseline:
+        comparison_settings(baseline["identity"]["experiment_settings"],
+                            identity["experiment_settings"], args.compare_setting)
+        if args.compare_setting and baseline["identity"]["payload"]["files"]["sophia"]["sha256"] != payload["files"]["sophia"]["sha256"]:
+            raise ValueError("mode comparisons require the same Session binary")
     reports = {mode: [] for mode in args.modes}
     summary = {"schema": 1, "status": "RUNNING", "compatibility": compatibility,
                "identity": identity, "modes": {}, "scope": "Guest relative signal; no live or W1 acceptance"}
@@ -189,7 +205,12 @@ if __name__ == "__main__":
     parser.add_argument("--damage", choices=("absent", "full", "patch"), default="absent")
     parser.add_argument("--modes", choices=("open", "closed"), nargs="+", default=["open", "closed"])
     parser.add_argument("--probe-only", action="store_true")
+    parser.add_argument("--present-evidence", choices=("full", "aggregate"), default="full")
+    parser.add_argument("--renderer-worker", choices=("private", "shared"), default="private")
+    parser.add_argument("--compare-setting", choices=("present_evidence", "renderer_worker"))
     args = parser.parse_args()
     if args.size == "head" and args.clients != 1:
         parser.error("--size=head requires --clients=1")
+    if args.compare_setting and not args.baseline:
+        parser.error("--compare-setting requires --baseline")
     raise SystemExit(run(args))

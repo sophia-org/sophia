@@ -150,6 +150,8 @@ fn owner_input_work_pending(
     physical_input && (proof_session || held.any())
 }
 
+include!("owner_loop/wait_plan.rs");
+
 include!("owner_loop/native_progress.rs");
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

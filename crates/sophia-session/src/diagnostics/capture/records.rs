@@ -98,6 +98,23 @@ pub fn reduced_record(line: &str) -> Option<String> {
             }
             continue;
         }
+        if name == "sophia_owner_wait" {
+            let counter = ["selected_", "expired_", "pending_"]
+                .iter().find_map(|prefix| key.strip_prefix(prefix));
+            let known = matches!(key, "schema" | "owner_tid" | "observed_monotonic_usec")
+                || counter.is_some_and(|reason| matches!(reason,
+                    "maintenance" | "input" | "input_receipts" | "frames" | "topology"
+                    | "seat" | "shell_interaction" | "lifecycle" | "cursor" | "controls"
+                    | "proof" | "frame_deadline" | "present" | "native_deadline"
+                    | "shortcut" | "shell_output" | "pacer" | "service"));
+            if known && !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit())
+                && value.parse::<u64>().is_ok()
+            {
+                result.push(' ');
+                result.push_str(field);
+            }
+            continue;
+        }
         if name == "sophia_present_clock_service" {
             if matches!(
                 key,

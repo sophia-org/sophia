@@ -19,11 +19,16 @@ use std::time::{Duration, Instant};
 
 use rustix::event::{PollFd, PollFlags};
 
+mod attribution;
+pub(super) use attribution::{WaitPlan, WaitReason};
+
 pub(super) struct OwnerWake {
     wake: sophia_wake::Wake,
     statistics: Cell<OwnerWakeStatistics>,
     native_fault: Cell<Option<u64>>,
     native_progress_before_wait: Cell<Option<(u64, u64)>>,
+    wait_plan: Cell<Option<WaitPlan>>,
+    wait_attribution: Cell<attribution::WaitAttribution>,
 }
 
 /// Owner-thread observations, not scheduler wakeups or per-producer attribution.
@@ -52,6 +57,8 @@ impl OwnerWake {
             statistics: Cell::default(),
             native_fault: Cell::new(None),
             native_progress_before_wait: Cell::new(None),
+            wait_plan: Cell::new(None),
+            wait_attribution: Cell::default(),
         })
     }
 
@@ -61,6 +68,14 @@ impl OwnerWake {
 
     pub(super) fn statistics(&self) -> OwnerWakeStatistics {
         self.statistics.get()
+    }
+
+    pub(super) fn plan_wait(&self, plan: WaitPlan) {
+        self.wait_plan.set(Some(plan));
+    }
+
+    pub(super) fn wait_attribution(&self) -> attribution::WaitAttribution {
+        self.wait_attribution.get()
     }
 
     /// Consumes the rings delivered so far. Call before inspecting any
@@ -115,12 +130,16 @@ impl OwnerWake {
     ) -> io::Result<Result<T, RecvTimeoutError>> {
         match receiver.try_recv() {
             Ok(item) => {
+                self.wait_plan.set(None);
                 let mut stats = self.statistics.get();
                 stats.immediate_items = stats.immediate_items.saturating_add(1);
                 self.statistics.set(stats);
                 return Ok(Ok(item));
             }
-            Err(TryRecvError::Disconnected) => return Ok(Err(RecvTimeoutError::Disconnected)),
+            Err(TryRecvError::Disconnected) => {
+                self.wait_plan.set(None);
+                return Ok(Err(RecvTimeoutError::Disconnected));
+            }
             Err(TryRecvError::Empty) => {}
         }
         self.wait(timeout, fds, native, progress)?;
@@ -141,6 +160,7 @@ impl OwnerWake {
         let mut stats = self.statistics.get();
         stats.service_waits = stats.service_waits.saturating_add(1);
         self.statistics.set(stats);
+        self.plan_wait(WaitPlan::new(timeout, WaitReason::Service));
         self.wait(timeout, Vec::new(), native, progress)
     }
 
@@ -185,6 +205,11 @@ impl OwnerWake {
         progress: Option<(u64, u64)>,
     ) -> io::Result<()> {
         let now = Instant::now();
+        let plan = self
+            .wait_plan
+            .take()
+            .unwrap_or_else(|| WaitPlan::new(timeout, WaitReason::Maintenance));
+        debug_assert_eq!(plan.timeout, timeout);
         let native_start = fds.len();
         fds.extend(native);
         let ring_index = fds.len();
@@ -216,6 +241,9 @@ impl OwnerWake {
             stats.native_errors = stats.native_errors.saturating_add(1);
         }
         stats.wait_deadlines = stats.wait_deadlines.saturating_add(u64::from(!ready));
+        let mut attribution = self.wait_attribution.get();
+        attribution.observe(plan, !ready);
+        self.wait_attribution.set(attribution);
         self.statistics.set(stats);
         Ok(())
     }

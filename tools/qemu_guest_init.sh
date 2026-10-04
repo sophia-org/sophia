@@ -40,6 +40,7 @@ cpu_target=zero
 cpu_clients=2
 cpu_size=small
 cpu_damage=absent
+cpu_evidence=full
 for arg in $cmdline; do
     case "$arg" in
         sophia.cpu_mode=*) cpu_mode="${arg#*=}" ;;
@@ -50,8 +51,14 @@ for arg in $cmdline; do
         sophia.cpu_clients=*) cpu_clients="${arg#*=}" ;;
         sophia.cpu_size=*) cpu_size="${arg#*=}" ;;
         sophia.cpu_damage=*) cpu_damage="${arg#*=}" ;;
+        sophia.cpu_evidence=*) cpu_evidence="${arg#*=}" ;;
     esac
 done
+if [ "$scenario" = cpu ]; then
+    case "$cpu_evidence" in full|aggregate) export SOPHIA_PRESENT_EVIDENCE="$cpu_evidence" ;;
+        *) echo 'sophia_qemu_cpu status=failed reason=evidence_mode'; poweroff -f; exit 1 ;;
+    esac
+fi
 xtest_row=""
 case " $cmdline " in
     *" sophia.xtest_row="*)

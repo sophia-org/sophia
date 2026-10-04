@@ -13,6 +13,53 @@ use std::thread;
 const LONG: Duration = Duration::from_secs(30);
 const PROMPT: Duration = Duration::from_secs(5);
 
+#[test]
+fn wait_attribution_separates_queued_work_readiness_and_expiry() {
+    let owner = OwnerWake::new().unwrap();
+    let (sender, queue) = sync_channel::<u32>(1);
+    let mut plan = WaitPlan::new(Duration::ZERO, WaitReason::Frames);
+    plan.pending(WaitReason::Frames);
+    plan.pending(WaitReason::Lifecycle);
+    sender.send(7).unwrap();
+    owner.plan_wait(plan);
+    assert_eq!(owner.receive(&queue, Duration::ZERO), Ok(7));
+    assert_eq!(
+        owner.wait_attribution(),
+        attribution::WaitAttribution::default()
+    );
+
+    owner.plan_wait(plan);
+    assert_eq!(
+        owner.receive(&queue, Duration::ZERO),
+        Err(RecvTimeoutError::Timeout)
+    );
+    let row = owner.wait_attribution().to_string();
+    assert!(row.contains(" selected_frames=1 expired_frames=1 pending_frames=1"));
+    assert!(row.contains(" selected_lifecycle=0 expired_lifecycle=0 pending_lifecycle=1"));
+
+    owner.notifier().notify();
+    owner.plan_wait(WaitPlan::new(LONG, WaitReason::Present));
+    assert_eq!(owner.receive(&queue, LONG), Err(RecvTimeoutError::Timeout));
+    let row = owner.wait_attribution().to_string();
+    assert!(row.contains(" selected_present=1 expired_present=0 pending_present=0"));
+    let reduced = crate::diagnostics::reduced_record(&format!(
+        "sophia_owner_wait schema=1 owner_tid=123 observed_monotonic_usec=456{row}"
+    ))
+    .unwrap();
+    assert!(reduced.ends_with(&row));
+}
+
+#[test]
+fn wait_caps_keep_the_first_tie_and_then_the_earliest_deadline() {
+    let mut plan = WaitPlan::new(Duration::from_millis(25), WaitReason::Maintenance);
+    plan.cap(Duration::from_millis(1), WaitReason::Frames);
+    plan.cap(Duration::from_millis(1), WaitReason::Controls);
+    assert_eq!(plan.reason, WaitReason::Frames);
+    plan.cap(Duration::ZERO, WaitReason::Present);
+    assert_eq!(plan.reason, WaitReason::Present);
+    assert_eq!(plan.timeout, Duration::ZERO);
+}
+
 /// A producer's view of the owner, as Session hands it to each worker.
 fn attached(owner: &OwnerWake) -> sophia_wake::WakeSlot {
     let slot = sophia_wake::WakeSlot::default();
