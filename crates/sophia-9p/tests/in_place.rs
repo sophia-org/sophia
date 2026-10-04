@@ -621,3 +621,45 @@ fn revocation_after_the_last_read_prevents_commit() {
     assert_eq!((ledger.writes, ledger.commits), (0, 0));
     assert!(ledger.committed.is_empty());
 }
+
+/// A write whose header and data are both waiting is read, received in
+/// place and answered in a single server turn: the header and the data are
+/// read apart, back to back.
+#[test]
+fn a_waiting_write_is_received_in_place_in_one_turn() {
+    let (mut client, server_side) = UnixStream::pair().unwrap();
+    let export = Staging::<true>::new();
+    let ledger = Arc::clone(&export.ledger);
+    let mut server = Server::new(export, limits()).unwrap();
+    assert!(server.adopt(server_side).is_ok());
+    client.set_nonblocking(true).unwrap();
+    let mut buffer = [0; 4096];
+    // Setup takes as many turns as it takes.
+    for request in [
+        tversion(u16::MAX, 8192, b"9P2000.L"),
+        tattach(1, 0, NOFID, b"", b""),
+        twalk(2, 0, 1, &[b"upload"]),
+        tlopen(3, 1, 1),
+    ] {
+        client.write_all(&request).unwrap();
+        let mut turns = 0;
+        loop {
+            server.turn(Some(Duration::from_millis(10))).unwrap();
+            if let Ok(count) = client.read(&mut buffer) {
+                assert_eq!(frames(&buffer[..count]).len(), 1);
+                break;
+            }
+            turns += 1;
+            assert!(turns < 100, "setup request unanswered");
+        }
+    }
+    let payload = data(4000, 30);
+    client.write_all(&twrite(10, 1, 0, &payload)).unwrap();
+    server.turn(Some(Duration::from_millis(100))).unwrap();
+    let count = client.read(&mut buffer).expect("answered in the same turn");
+    let replies = frames(&buffer[..count]);
+    assert_eq!((replies.len(), replies[0].written()), (1, 4000));
+    let ledger = ledger.lock().unwrap();
+    assert_eq!(ledger.committed, payload);
+    assert_eq!((ledger.writes, ledger.commits), (0, 1));
+}

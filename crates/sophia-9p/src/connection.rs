@@ -217,6 +217,12 @@ impl<E: Export> Connection<E> {
         room
     }
 
+    /// The bytes a driver reads for this connection in one turn at most:
+    /// one message's worth.
+    pub fn read_budget(&self) -> usize {
+        self.frame_limit() as usize
+    }
+
     /// Takes bytes from the peer and answers every complete request that has
     /// room for its reply. Returns how many of `bytes` were taken: at most
     /// [`Self::input_room`]. The caller keeps the rest and offers it again

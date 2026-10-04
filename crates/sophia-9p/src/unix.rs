@@ -287,54 +287,104 @@ impl<E: Export> Server<E> {
         Ok(())
     }
 
+    /// Reads up to one message's worth for the connection. A read that
+    /// fills what it asked for is followed by another, so the header and the
+    /// data of a write received in place, read apart, arrive in one turn.
     fn read(export: &mut E, slot: &mut Slot<E>, buffer: &mut Vec<u8>) {
+        let budget = slot.connection.read_budget();
+        let mut taken = 0;
+        while !slot.ended && taken < budget {
+            match Self::read_once(export, slot, buffer) {
+                Some((count, asked)) => {
+                    taken += count;
+                    if count < asked {
+                        break;
+                    }
+                }
+                None => break,
+            }
+        }
+    }
+
+    /// One read: how many bytes it took and how many it asked for, or
+    /// `None` when it took none.
+    fn read_once(
+        export: &mut E,
+        slot: &mut Slot<E>,
+        buffer: &mut Vec<u8>,
+    ) -> Option<(usize, usize)> {
         // A write received in place reads straight into its destination.
         if let Some(target) = slot.connection.in_place_target(export) {
-            let result = match target {
-                InPlaceTarget::Destination(destination) => slot.stream.read(destination),
+            let (result, asked) = match target {
+                InPlaceTarget::Destination(destination) => {
+                    let asked = destination.len();
+                    (slot.stream.read(destination), asked)
+                }
                 InPlaceTarget::Discard(rest) => {
                     if buffer.len() < rest {
                         buffer.resize(rest, 0);
                     }
-                    slot.stream.read(&mut buffer[..rest])
+                    (slot.stream.read(&mut buffer[..rest]), rest)
                 }
             };
-            match result {
-                Ok(0) => slot.ended = true,
+            return match result {
+                Ok(0) => {
+                    slot.ended = true;
+                    None
+                }
                 Ok(count) => {
                     if slot.connection.received_in_place(export, count).is_err() {
                         slot.ended = true;
+                        return None;
                     }
+                    Some((count, asked))
                 }
                 Err(error)
                     if matches!(
                         error.kind(),
                         io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
-                    ) => {}
-                Err(_) => slot.ended = true,
-            }
-            return;
+                    ) =>
+                {
+                    None
+                }
+                Err(_) => {
+                    slot.ended = true;
+                    None
+                }
+            };
         }
         let room = slot.connection.input_room();
         if room == 0 {
-            return;
+            return None;
         }
         if buffer.len() < room {
             buffer.resize(room, 0);
         }
         match slot.stream.read(&mut buffer[..room]) {
-            Ok(0) => slot.ended = true,
+            Ok(0) => {
+                slot.ended = true;
+                None
+            }
             // The buffer is sized to the room, so every byte read is taken.
             Ok(count) => match slot.connection.receive(export, &buffer[..count]) {
-                Ok(taken) if taken == count => {}
-                Ok(_) | Err(_) => slot.ended = true,
+                Ok(taken) if taken == count => Some((count, room)),
+                Ok(_) | Err(_) => {
+                    slot.ended = true;
+                    None
+                }
             },
             Err(error)
                 if matches!(
                     error.kind(),
                     io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
-                ) => {}
-            Err(_) => slot.ended = true,
+                ) =>
+            {
+                None
+            }
+            Err(_) => {
+                slot.ended = true;
+                None
+            }
         }
     }
 
