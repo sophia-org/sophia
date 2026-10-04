@@ -1,7 +1,7 @@
 # Unattended Present CPU regression checks
 
-This harness starts new headless QEMU sessions and samples only their Session
-process and generic X11 client. It neither connects to the installed desktop nor
+This harness starts new headless QEMU sessions and samples their Session,
+generic X11 client and whole-guest CPU. It neither connects to the installed desktop nor
 opens host DRM/input devices. Guest input is autonomous; no operator window
 arrangement is required. KVM is mandatory for CPU comparisons.
 
@@ -84,6 +84,25 @@ visible workload. Unclocked virtio is legitimate: it uses real retirement and
 does not wait for a synthetic 1 Hz field. It cannot measure W1 cache benefits.
 
 ## Evidence and gates
+
+The `sophia_owner_wait` record attributes actual polls to the shortest selected
+cap. Equal caps keep the first reason in the owner loop's existing order. The
+selected reasons must sum to `owner_waits`; expired reasons must sum to
+`owner_wait_deadlines`. Queued authority items that bypass polling count in
+neither. Pending work flags overlap and are reported separately. The analyzer
+requires identical timestamps and owner TIDs for wait and Present counters and
+normalizes both by completions inside that counter interval. No wait budget or
+readiness rule is changed by this instrumentation.
+
+`--present-evidence full|aggregate` and `--renderer-worker private|shared` select
+the existing opt-in modes. The guest must confirm the evidence mode and the
+expected final worker count (two private workers or one shared worker for this
+one-card, two-head fixture). Final worker errors and leased slots invalidate the
+run. A baseline comparison must keep these settings equal unless
+`--compare-setting present_evidence|renderer_worker` names the one changed
+setting. Such a mode comparison also requires the exact same Session binary.
+Pair the arm order in measurement campaigns; changing both settings cannot
+attribute a benefit to either one. These experiments do not change defaults.
 
 Each trial retains whole-guest CPU/steal and process/thread CPU and runqueue time, context switches, raw
 send-to-Complete latency and UST/MSC pairs, event counts/modes, periodic clock and

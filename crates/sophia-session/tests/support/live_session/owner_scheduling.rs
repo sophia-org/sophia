@@ -1,4 +1,30 @@
 #[test]
+fn wait_attribution_preserves_all_existing_owner_budgets() {
+    for bits in 0u16..2048 {
+        let flag = |i: u32| bits & (1u16 << i) != 0u16;
+        let held = OwnerHeldWork {
+            input: flag(0),
+            input_receipts: flag(1),
+            frames: flag(2),
+            output_topology: flag(3),
+            seat: flag(4),
+            shell_interaction: flag(5),
+            lifecycle: flag(6),
+        };
+        let (physical, proof, cursor, control) = (flag(7), flag(8), flag(9), flag(10));
+        assert_eq!(
+            authority_wait_plan(physical, proof, held, cursor, control).timeout,
+            authority_wait_timeout(
+                owner_input_work_pending(physical, proof, held),
+                cursor,
+                control
+            ),
+            "budget changed for {bits}",
+        );
+    }
+}
+
+#[test]
 fn held_owner_work_selects_the_low_latency_owner_wait_budget() {
     assert_eq!(
         authority_wait_timeout(true, false, false),

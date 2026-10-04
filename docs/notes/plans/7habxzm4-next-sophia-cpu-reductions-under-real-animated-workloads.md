@@ -36,6 +36,81 @@ Exit:
   hand-run live samples. The operator's live check remains the final
   acceptance.
 
+## Direct-capture import experiment (2026-10-04)
+
+On installed master `1f35fb527`, the renderer imports a source for validation,
+destroys that image, then imports the same source again for its immutable
+capture. The isolated candidate retains the validated EGLImage only for that
+capture call. Each context still creates and releases its own texture; source
+identity includes display, image ID and every plane descriptor. Capture storage
+remains fresh. The cross-device bridge is unchanged.
+
+Pixel, lifetime and cross-device proofs passed on both render nodes, as did
+strict Clippy and independent source review. Three alternating pairs per node
+(12 valid samples, 600 captures per sample at 60/s) reduced median process CPU
+from 216.35 to 215.04 us/capture on renderD128 and 220.07 to 211.02 on renderD129.
+CPU ranges overlap on both nodes, so this is **not a qualified saving**. The
+candidate is preserved on `performance/t289-capture-import` and is not promoted.
+No default or live configuration changes follow from it. Evidence:
+`development-evidence/t289-capture-import-01`.
+
+The next measured targets are owner-wait reasons and the existing aggregate
+Present-evidence and shared-renderer modes, independently. These experiments
+keep throughput, latency and whole-guest accounting gates; a reduced frame rate
+or work moved to another thread/process cannot count as a saving.
+
+## Owner waits and existing opt-in modes (2026-10-04)
+
+The owner now records the reason for each actual poll and timeout. Queued
+items are excluded, equal deadlines retain the existing order, and overlapping
+held-work flags are separate from the selected reason. The analyzer requires
+same-time, same-owner records and exact reconciliation with the existing wait
+counts. Scheduling budgets and readiness rules are unchanged.
+
+Evidence: `development-evidence/t289-owner-wait-01`, source freeze 02,
+binary `fe6ae6d3`, `PROBE-ATTRIBUTION-01.json`, and
+`comparison-01/COMPARISON.json`. Six ten-second probes and all eighteen
+60-second measurements were valid. Three rounds rotate full/private,
+aggregate/private and full/shared through every arm position, in both open
+and closed workloads, using one binary. Every failure would have stopped the
+campaign; no samples were replaced. The source remained frozen throughout.
+
+The open baseline runs at ten Presents/s. Its first measured interval has
+about 3.5 maintenance, 0.8 frame-work and 1.4 service timeouts per completion.
+Under saturation, maintenance disappears and frame/service timeouts are each
+about one per completion. The short waits still cover work without notification:
+renderer results arrive over ordinary channels. Deleting the timer alone could
+delay frame preparation. The next scheduling candidate is a notification on
+renderer completion and worker termination, with lost-wake, shared-worker,
+replacement, cancellation and watchdog controls. The independent cursor,
+cleanup and topology fallbacks must remain until separately covered. Replacing
+the 25 ms maintenance budget likewise needs events or exact deadlines for its
+child, config, topology and protocol work. See `OWNER-WAKE-FINDING-01.txt`.
+
+Changes below compare medians against full evidence with private workers;
+negative CPU/latency values mean lower cost. All comparisons pass the existing
+regression gates. None meets the stronger savings test, which requires
+separated decreases in both Session and whole-guest CPU ranges.
+
+| Setting | Workload | Session CPU / Complete | Guest CPU / Complete | p95 latency |
+| --- | --- | ---: | ---: | ---: |
+| Aggregate evidence | Open | +0.73% | +0.88% | +0.26% |
+| Aggregate evidence | Closed | -0.12% | +0.04% | +0.79% |
+| Shared renderer | Open | -6.90% | -22.95% | -29.39% |
+| Shared renderer | Closed | -1.47% | -1.58% | -2.28% |
+
+Aggregate evidence has no demonstrated CPU benefit here. Shared workers have
+separated guest-CPU and latency ranges in the open workload, but Session CPU
+ranges overlap in both workloads. Much of the guest reduction is in kernel
+workers; it must not be described as the same reduction in Sophia CPU. Closed
+throughput increases about 1.3%. No worker failure, result misroute or retained
+frame-slot lease occurred. Both settings remain opt-in, with no default change.
+
+These are core-pixmap, Unclocked virtio results on one card with two heads.
+They do not qualify Kitty's DMA-BUF path, W1, multiple physical cards or final
+vblank/VT acceptance. Shared workers merit a matched hardware trial. There
+has been no live restart, installation or configuration change for this work.
+
 ## Current assessment (2026-10-04)
 
 T289 remains active. The CPU harness and repaint attribution are qualified, and

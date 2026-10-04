@@ -7,29 +7,34 @@
     }
     let held: OwnerHeldWork = include!("owner_held_work.rs");
     let now = Instant::now();
-    let maximum = authority_wait_timeout(
-        owner_input_work_pending(
-            physical_input.is_some(),
-            !config.normal_session,
-            held,
-        ),
+    use owner_wake::WaitReason as R;
+    let mut plan = authority_wait_plan(
+        physical_input.is_some(),
+        !config.normal_session,
+        held,
         cursor_updates.dirty,
         session_controls.pending_len() != 0
             || explicit_pointer_grabs.pending() != 0,
     );
-    let maximum = runtime.as_ref().map_or(maximum, |r| r.frame_deadline_cap_wait(now, maximum));
-    let maximum = present_clocks.cap_wait(now, maximum);
-    let maximum = native_wait.deadline.map_or(maximum, |deadline| {
-        maximum.min(deadline.saturating_duration_since(now))
-    });
+    plan.cap(
+        runtime.as_ref().map_or(plan.timeout, |r| {
+            r.frame_deadline_cap_wait(now, plan.timeout)
+        }),
+        R::FrameDeadline,
+    );
+    plan.cap(present_clocks.cap_wait(now, plan.timeout), R::Present);
+    if let Some(deadline) = native_wait.deadline {
+        plan.cap(deadline.saturating_duration_since(now), R::NativeDeadline);
+    }
     // Held, hold decisions and sequence timeouts use the same owner clock
     // as routing and per-turn service. Only an actual deadline caps idle;
     // the registry or an open chord alone never requires polling.
-    let maximum = shortcut_wait_cap(
+    let shortcut = shortcut_wait_cap(
         wm_session.as_ref().and_then(|wm| wm.shortcuts.as_ref()),
         u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
-        maximum,
+        plan.timeout,
     );
+    plan.cap(shortcut, R::Shortcut);
     // Shell wires are served inline and cannot ring, so their own
     // readiness ends this wait. Each is subscribed only when the
     // next pass turns it: components are visited only while a
@@ -45,15 +50,19 @@
         shell_wires.extend(components.poll_fds());
         shell_output_pending |= components.output_pending();
     }
-    let maximum = if shell_output_pending {
-        maximum.min(Duration::from_millis(1))
-    } else {
-        maximum
-    };
+    if shell_output_pending {
+        plan.pending(R::ShellOutput);
+        plan.cap(Duration::from_millis(1), R::ShellOutput);
+    }
+    plan.cap(
+        paced_repaint_wait_cap(primary_frame_pacer, paced_repaint_runnable, now, plan.timeout),
+        R::Pacer,
+    );
+    owner_wake.plan_wait(plan);
     owner_wake.record_native_wait(held.frames, !native_wait.descriptors.is_empty());
     owner_wake.receive_with_native(
         authority_receiver,
-        paced_repaint_wait_cap(primary_frame_pacer, paced_repaint_runnable, now, maximum),
+        plan.timeout,
         shell_wires,
         native_wait.descriptors.into_iter()
             .map(|fd| rustix::event::PollFd::from_borrowed_fd(fd, rustix::event::PollFlags::IN))

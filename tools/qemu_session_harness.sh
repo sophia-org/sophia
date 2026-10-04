@@ -24,8 +24,12 @@ CPU_TARGET="${SOPHIA_QEMU_CPU_TARGET:-zero}"
 CPU_CLIENTS="${SOPHIA_QEMU_CPU_CLIENTS:-2}"
 CPU_SIZE="${SOPHIA_QEMU_CPU_SIZE:-small}"
 CPU_DAMAGE="${SOPHIA_QEMU_CPU_DAMAGE:-absent}"
+CPU_EVIDENCE="${SOPHIA_QEMU_CPU_EVIDENCE:-full}"
 cpu_cmdline=""
 if [[ "$SCENARIO" == cpu ]]; then
+    if [[ "$CPU_EVIDENCE" != full && "$CPU_EVIDENCE" != aggregate ]]; then
+        echo "invalid CPU evidence mode" >&2; exit 1
+    fi
     if [[ "$CPU_MODE" != open && "$CPU_MODE" != closed ]] \
         || [[ "$CPU_TARGET" != zero && "$CPU_TARGET" != next ]]; then
         echo "invalid CPU workload switch" >&2; exit 1
@@ -46,6 +50,7 @@ if [[ "$SCENARIO" == cpu ]]; then
     fi
     cpu_cmdline=" sophia.cpu_mode=$CPU_MODE sophia.cpu_seconds=$CPU_SECONDS sophia.cpu_grace=$CPU_GRACE sophia.cpu_rate=$CPU_RATE sophia.cpu_target=$CPU_TARGET"
     cpu_cmdline+=" sophia.cpu_clients=$CPU_CLIENTS sophia.cpu_size=$CPU_SIZE sophia.cpu_damage=$CPU_DAMAGE"
+    cpu_cmdline+=" sophia.cpu_evidence=$CPU_EVIDENCE"
 fi
 
 case "$SCENARIO" in
