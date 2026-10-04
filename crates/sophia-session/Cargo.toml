@@ -29,7 +29,7 @@ x11rb = { version = "0.13.1", features = ["xtest"] }
 
 [dev-dependencies]
 # Present in x11rb imports dri3 even for this core-pixmap test client.
-x11rb = { version = "0.13.1", features = ["present", "randr", "dri3"] }
+x11rb = { version = "0.13.1", features = ["present", "randr", "dri3", "xfixes"] }
 rustix = { version = "1.1", default-features = false, features = ["param"] }
 serde_json = "1"
 sophia-backend-live = { path = "../sophia-backend-live", default-features = false, features = ["test-support"] }

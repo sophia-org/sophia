@@ -11,9 +11,14 @@ pub struct Config {
     pub output: String,
     pub sample_pid: Option<u32>,
     pub guest_process_accounting: bool,
+    pub size: String,
+    pub damage: String,
 }
 impl Config {
     pub fn parse() -> Result<Self> {
+        Self::from_args(std::env::args().skip(1))
+    }
+    pub fn from_args(args: impl IntoIterator<Item = String>) -> Result<Self> {
         let mut c = Self {
             mode: "open".into(),
             target: "zero".into(),
@@ -24,8 +29,10 @@ impl Config {
             output: String::new(),
             sample_pid: None,
             guest_process_accounting: false,
+            size: "small".into(),
+            damage: "absent".into(),
         };
-        for arg in std::env::args().skip(1) {
+        for arg in args {
             let (key, value) = arg.split_once('=').ok_or("arguments require --key=value")?;
             match key {
                 "--mode" => c.mode = value.into(),
@@ -35,6 +42,8 @@ impl Config {
                 "--grace" => c.grace = value.parse()?,
                 "--seconds" => c.seconds = value.parse()?,
                 "--output" => c.output = value.into(),
+                "--size" => c.size = value.into(),
+                "--damage" => c.damage = value.into(),
                 "--guest-process-accounting" => c.guest_process_accounting = value.parse()?,
                 "--sample-pid" => {
                     c.sample_pid = Some(if value == "parent" {
@@ -56,6 +65,9 @@ impl Config {
             || !(1..=120).contains(&c.seconds)
             || c.grace > 30
             || c.output.is_empty()
+            || !matches!(c.size.as_str(), "small" | "head")
+            || !matches!(c.damage.as_str(), "absent" | "full" | "patch")
+            || (c.size == "head" && c.clients != 1)
         {
             return Err("invalid workload bounds or missing --output".into());
         }
@@ -65,6 +77,7 @@ impl Config {
         json!({"mode": self.mode, "target": self.target, "rate_per_window": self.rate,
             "clients": self.clients, "grace_seconds": self.grace, "seconds": self.seconds,
             "buffer_kind": "core_pixmap_cpu", "pool_per_window": 8, "options": 0,
+            "size": self.size, "damage": self.damage, "pattern": "fixed_patch_v1",
             "divisor": 0, "remainder": 0, "sample_pid": self.sample_pid,
             "guest_process_accounting": self.guest_process_accounting})
     }

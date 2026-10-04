@@ -36,13 +36,21 @@ Exit:
   hand-run live samples. The operator's live check remains the final
   acceptance.
 
-## Current assessment (2026-10-03)
+## Current assessment (2026-10-04)
 
 T289 remains active. The CPU harness and repaint attribution are qualified, and
 retained capture-config reuse has a measured benefit on both render nodes.
 Capture process CPU fell 39–40% at unchanged 60 captures/s in three paired
-samples per node. Whole-desktop savings remain unmeasured. The qualified CPU
-branch starts at master `ae5999940`; integration and release are still pending.
+samples per node. Whole-desktop savings remain unmeasured. These changes are
+merged and installed in release `niltempus-0f597d9fc3e6fbf64838`, Sophia
+`316d9695`. The accepted live line was reconciled into local master as signed
+merge `b1af37e2c`; its tree is byte-identical to `316d9695`. The operator confirmed
+keyboard recovery after unlock. This is separate from the newer t302 candidate,
+whose native-stall disposition remains open.
+
+The operator reports about 0.2% Sophia CPU with Kitty/Herdr/Codex open. That is
+an uncontrolled observation with no retirement rate or matched idle subtraction,
+so it neither establishes a regression nor closes the animated-workload target.
 
 | Original part | Completed work | Remaining evidence or decision |
 | --- | --- | --- |
@@ -58,12 +66,18 @@ merged, repaint attribution is qualified, and capture configuration reuse is
 qualified with separated before/after CPU and latency ranges. Source-import
 reuse or destination pooling would need separate ownership proofs.
 
-**Next experiment:** use the new attribution with a generic near-output-size
-Present workload, comparing absent/full damage with small explicit regions.
-The small-window guest already proves partial repaint works; it cannot explain
-the terminal's full frames. Qualify any resulting change with pixel proofs and
-matched CPU/throughput results. Remaining owner-wake attribution, aggregation
-and shared-worker comparisons can also proceed unattended.
+**Damage experiment:** the generic Present harness now supports a near-output-size
+window with identical pixels under absent, full or small explicit damage.
+It checks all eight source pixmaps and one reuse before grace. A separate
+component regression checks the full renderer payload for every damage kind;
+window GetImage reads the core backing and is not a Present readback oracle.
+The workload records the head, region and pixel-stream identity.
+Comparisons across damage kinds or the earlier alternating-background workload
+are refused as performance acceptance. The three correctness probes below locate
+a CPU-Present precision limit. The DMA-BUF terminal path remains a separate
+question. Qualify any resulting change with pixel proofs and matched
+CPU/throughput results. Remaining owner-wake attribution, aggregation and
+shared-worker comparisons can also proceed unattended.
 
 The separate W1 hardware admission cache still needs integration with lock and
 the pending/committed placement rules, then real-vblank measurement. The current
@@ -74,6 +88,52 @@ The fence-waiter scrap parity issue is tracked separately as t300.
 Earlier checkpoints below retain their original evidence and decisions; this
 assessment is the current status. Nothing here closes T289 or authorizes a live
 install or configuration change.
+
+### Near-head damage result (2026-10-04)
+
+Evidence: `development-evidence/t289-damage-workload-01`, freeze 03,
+`PROBES-03.json` and `ATTRIBUTION-03.json`. The production source is accepted
+master `b1af37e2`; the changed client, analysis and tests are bound by the build
+receipt. These are three single correctness/attribution samples, with no CPU
+acceptance claim and no t302 candidate code.
+
+All three cases completed 50 of 50 offered Presents and 50 Idle events in ten
+seconds, with no starvation, unchanged consecutive frames, MSC regression or
+outstanding work. Nine source-pixmap checks preceded grace in each run. The
+window is 1248 by 768 inside a 1280 by 800 head; a second, empty 5120 by 2160 head
+also participates in composition. Both heads are part of the comparison identity.
+The source is Unclocked; these guests cannot qualify W1.
+
+The aligned counter intervals cover about five seconds and 25 executed Presents
+each. Counts below use that interval, not the 50-completion client interval:
+
+| Update description | Declared pixels per Present | Full / partial output frames | Coverage-triggered full frames | Repaint pixels per Present |
+| --- | ---: | ---: | ---: | ---: |
+| Absent | 958,464 | 25 / 25 | 25 | 1,024,000 |
+| Explicit full | 958,464 | 25 / 25 | 25 | 1,024,000 |
+| 120 by 120 patch | 14,400 | 25 / 25 | 25 | 1,024,000 |
+
+Each interval has 25 `precise_surface` flags, all on full frames, with no geometry,
+order, sampling or history-refusal flag. Precision here means the retained edge
+was usable; it does not mean its region was small. The CPU Present path does not
+set `raster_damage`, and the drawing transaction's canonical-raster override is
+also DMA-BUF-only (`runtime/present_pixmap.rs:209-219`, `drawing.rs:185-199`). Its
+singleton therefore declares full raster damage. That covers 93.6% of the head,
+so the existing 60% threshold selects a full repaint even for the small patch.
+The other 25 output frames carry no precise-surface flag. These are per-output
+counts, not 50 distinct client updates.
+
+Next candidate: prove when a CPU presentation raster's changed region can be
+carried into canonical damage, including shape, child offsets, resize and
+predecessor continuity. Keep conservative full damage where that proof is
+missing. Do not lower the repaint threshold or infer the same cause for DMA-BUF
+clients. This experiment makes no production change.
+
+The earlier `probe-02-absent` failure is retained as an invalid oracle: window
+GetImage reads the core-drawing backing, not the Present raster. Freeze 03 checks
+source pixmaps and adds complete renderer-payload equivalence for absent, full
+and patch updates. The empty-update negative control detects stale pixels on
+every odd Present. Neither oracle reads native scanout pixels.
 
 ## Three priorities from the niri/XLibre comparison (2026-10-03)
 
@@ -86,14 +146,15 @@ remain open.
 
 ### Evidence and scope
 
-The installed Sophia is `53b283370`, release
+At the time of these samples Sophia was `53b283370`, release
 `niltempus-8eaea15d0d13f4a0be09`. Three active Kitty/Herdr/Codex samples with btop
 on DP2 (`t289-live-cpu-02/SUMMARY.json`) give median Sophia CPU of **8.05% of one
 core**, owner **3.64%**, render threads **2.23%**, and about 41 completions/s.
 Gross process CPU is 1.96–1.97 ms per completion, not a render duration or a
 keystroke cost. There is no valid same-session empty-DP1 subtraction: series 03
-was interrupted and remains invalid. These are current-release observations,
-not paired T289 acceptance or measurements of niri/XLibre.
+was interrupted and remains invalid. These are observations of that earlier
+release, not paired T289 acceptance, measurements of niri/XLibre, or measurements
+of the currently installed keyboard-repaired release.
 
 Read-only comparison identities: niri `5f4469b6`, its pinned Smithay
 `79bbed5e`, and XLibre `dd5edd03`. Full paths, digests, derived measurements and

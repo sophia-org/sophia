@@ -1,4 +1,4 @@
-//! Generic core-pixmap Present workload. Run as a new test Session's --client.
+//! Generic core-pixmap Present workload. Run as a new test Session's startup app.
 //! Open mode has an absolute offered schedule; closed mode waits for Complete
 //! AND Idle, with no rate cap. Outputs raw samples for independent analysis.
 #[path = "present_cpu_workload/client.rs"]
@@ -7,6 +7,9 @@ mod client;
 mod config;
 #[path = "present_cpu_workload/proc_sample.rs"]
 mod proc_sample;
+#[cfg(test)]
+#[path = "../tests/support/present_cpu_workload.rs"]
+mod tests;
 use client::Client;
 use config::Config;
 use serde_json::json;
@@ -83,12 +86,26 @@ fn drain(clients: &mut [Client]) -> Result<()> {
     }
 }
 fn run(c: &Config) -> Result<serde_json::Value> {
-    let mut clients: Vec<_> = (0..c.clients).map(Client::new).collect::<Result<_>>()?;
-    for client in &mut clients {
-        client.offer(false, false, 0, 1)?;
+    let mut clients: Vec<_> = (0..c.clients)
+        .map(|index| Client::new(index, c))
+        .collect::<Result<_>>()?;
+    // Check every source pixmap and one reuse before grace, outside CPU sampling.
+    // Window GetImage reads core backing, not the separate Present raster;
+    // renderer-payload equivalence is checked by present_damage_accounting.
+    for _ in 0..9 {
+        for client in &mut clients {
+            client.offer(false, false, 0, 1)?;
+        }
+        drain(&mut clients)?;
+        for client in &mut clients {
+            client.verify_pixels()?;
+        }
     }
-    drain(&mut clients)?;
     phase(&mut clients, c, c.grace, false)?;
+    drain(&mut clients)?;
+    for client in &mut clients {
+        client.prime_measurement()?;
+    }
     drain(&mut clients)?;
     let geometry_before = clients
         .iter()
@@ -105,7 +122,7 @@ fn run(c: &Config) -> Result<serde_json::Value> {
         .map(|(client, before)| Ok(client.report(before, client.geometry()?)))
         .collect::<Result<Vec<_>>>()?;
     Ok(
-        json!({"schema": 1, "status": "complete", "config": c.json(),
+        json!({"schema": 2, "status": "complete", "config": c.json(),
         "measure_start_usec": start, "measure_end_usec": end,
         "proc_before": before, "proc_after": after, "windows": windows,
         "completed_at_measure_end": completed_at_end,

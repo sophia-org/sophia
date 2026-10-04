@@ -160,3 +160,101 @@ fn prepared_or_cancelled_damage_is_not_counted_as_executed() {
     assert_eq!(runtime.present_timing_statistics().damage.absent, 1);
     assert_eq!(runtime.present_timing_statistics().damage.source_pixels, 64);
 }
+
+fn present_pattern(region: Option<Region>, correct: bool) {
+    use sophia_protocol::{BufferSource, Size};
+    use std::collections::BTreeMap;
+    let size = Size {
+        width: 1248,
+        height: 768,
+    };
+    let full = Rect {
+        x: 0,
+        y: 0,
+        width: size.width,
+        height: size.height,
+    };
+    let mut runtime = fixture(size.width, size.height, 0);
+    let pixmaps = [PIXMAP, XResourceId::new(0x400011, 1)];
+    let mut expected = Vec::new();
+    for (index, pixmap) in pixmaps.into_iter().enumerate() {
+        runtime.create_pixmap(NS, pixmap, size, 24, 1).unwrap();
+        let mut pixels = [0x66, 0x44, 0x22, 0xff].repeat((size.width * size.height) as usize);
+        let color = if index == 0 {
+            [0x60, 0xd0, 0xf0, 0xff]
+        } else {
+            [0x22, 0x88, 0x66, 0xff]
+        };
+        for y in 40..160 {
+            for x in 40..160 {
+                let offset = ((y * size.width + x) * 4) as usize;
+                pixels[offset..offset + 4].copy_from_slice(&color);
+            }
+        }
+        assert_eq!(
+            runtime
+                .apply_put_image(
+                    TransactionId::from_raw(800 + index as u64),
+                    NS,
+                    pixmap,
+                    Region::single(full),
+                    Some(&pixels),
+                    None,
+                )
+                .outcome,
+            XAuthorityResponseOutcome::Accepted
+        );
+        expected.push(pixels);
+    }
+    let mut buffers = BTreeMap::new();
+    for index in 0..9 {
+        runtime.begin_dispatch();
+        let response = runtime.present_standard_pixmap(
+            TransactionId::from_raw(900 + index),
+            NS,
+            PARENT,
+            pixmaps[index as usize % 2],
+            0,
+            0,
+            None,
+            if index == 0 { None } else { region.clone() },
+        );
+        assert_eq!(response.outcome, XAuthorityResponseOutcome::Accepted);
+        let BufferSource::CpuBuffer { handle } = response.transactions[0].target_buffer() else {
+            panic!("software Present must export CPU pixels");
+        };
+        for update in runtime.take_cpu_buffer_updates() {
+            update.apply_to(&mut buffers).unwrap();
+        }
+        let equal = buffers[&handle].bytes.as_slice() == expected[index as usize % 2];
+        // An empty update intentionally retains yellow while the odd source
+        // turns green: the full-payload oracle must detect the omitted patch.
+        assert_eq!(equal, correct || index % 2 == 0, "present {index}");
+    }
+}
+
+#[test]
+fn near_head_absent_full_and_patch_presents_export_identical_complete_pixels() {
+    for region in [
+        None,
+        Some(Region::single(Rect {
+            x: 0,
+            y: 0,
+            width: 1248,
+            height: 768,
+        })),
+        Some(Region::single(Rect {
+            x: 40,
+            y: 40,
+            width: 120,
+            height: 120,
+        })),
+    ] {
+        present_pattern(region, true);
+    }
+}
+
+#[test]
+fn full_renderer_payload_comparison_detects_an_omitted_patch() {
+    present_pattern(Some(Region::empty()), false);
+}

@@ -21,11 +21,20 @@ CPU_SECONDS="${SOPHIA_QEMU_CPU_SECONDS:-60}"
 CPU_GRACE="${SOPHIA_QEMU_CPU_GRACE:-10}"
 CPU_RATE="${SOPHIA_QEMU_CPU_RATE:-5}"
 CPU_TARGET="${SOPHIA_QEMU_CPU_TARGET:-zero}"
+CPU_CLIENTS="${SOPHIA_QEMU_CPU_CLIENTS:-2}"
+CPU_SIZE="${SOPHIA_QEMU_CPU_SIZE:-small}"
+CPU_DAMAGE="${SOPHIA_QEMU_CPU_DAMAGE:-absent}"
 cpu_cmdline=""
 if [[ "$SCENARIO" == cpu ]]; then
     if [[ "$CPU_MODE" != open && "$CPU_MODE" != closed ]] \
         || [[ "$CPU_TARGET" != zero && "$CPU_TARGET" != next ]]; then
         echo "invalid CPU workload switch" >&2; exit 1
+    fi
+    if [[ "$CPU_CLIENTS" != 1 && "$CPU_CLIENTS" != 2 ]] \
+        || [[ "$CPU_SIZE" != small && "$CPU_SIZE" != head ]] \
+        || [[ "$CPU_DAMAGE" != absent && "$CPU_DAMAGE" != full && "$CPU_DAMAGE" != patch ]] \
+        || [[ "$CPU_SIZE" == head && "$CPU_CLIENTS" != 1 ]]; then
+        echo "invalid CPU size/damage or overlapping head-sized windows" >&2; exit 1
     fi
     for value in "$CPU_SECONDS" "$CPU_GRACE" "$CPU_RATE"; do
         if [[ ! "$value" =~ ^[1-9][0-9]{0,2}$ ]]; then
@@ -36,6 +45,7 @@ if [[ "$SCENARIO" == cpu ]]; then
         echo "CPU bounds: seconds 10..120, grace 5..30, rate 1..240" >&2; exit 1
     fi
     cpu_cmdline=" sophia.cpu_mode=$CPU_MODE sophia.cpu_seconds=$CPU_SECONDS sophia.cpu_grace=$CPU_GRACE sophia.cpu_rate=$CPU_RATE sophia.cpu_target=$CPU_TARGET"
+    cpu_cmdline+=" sophia.cpu_clients=$CPU_CLIENTS sophia.cpu_size=$CPU_SIZE sophia.cpu_damage=$CPU_DAMAGE"
 fi
 
 case "$SCENARIO" in
