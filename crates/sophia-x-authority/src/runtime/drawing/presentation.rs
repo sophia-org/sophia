@@ -196,6 +196,9 @@ impl XAuthorityRuntime {
         }
         let window = update.target_window;
         let previous_generation = update.previous_committed_generation;
+        let cpu_present = update.kind == crate::XDrawingUpdateKind::PresentPixmap
+            && matches!(update.buffer, sophia_protocol::BufferSource::CpuBuffer { .. });
+        let precise_cpu_present = cpu_present && update.raster_damage.is_some();
         let mut transaction = match surface_transaction_from_drawing_update(&self.windows, update) {
             Ok(transaction) => transaction,
             Err(error) => {
@@ -211,6 +214,7 @@ impl XAuthorityRuntime {
         if let Err(error) = self.windows.advance_generation(window, previous_generation) {
             return XAuthorityResponsePacket::rejected(transaction_id, error.into());
         }
+        self.cpu_present_predecessors.remove(&window);
         // A retained CPU background is not the source of a later DRI3 Present.
         // Expand density variants only for the exact backing this draw chose;
         // changing the source here also changes Present's routing and fences.
@@ -220,7 +224,21 @@ impl XAuthorityRuntime {
                     handle: canonical.handle,
                 })
         {
-            transaction.content = self.raster_store.content_set(window, canonical);
+            let damage =
+                precise_cpu_present.then(|| transaction.content.canonical_variant().damage.clone());
+            transaction.content = self
+                .raster_store
+                .content_set_with_canonical_damage(window, canonical, damage);
+            if cpu_present {
+                self.cpu_present_predecessors.insert(
+                    window,
+                    (
+                        self.windows.get(window).expect("accepted drawing window").generation,
+                        canonical.handle,
+                        canonical.generation,
+                    ),
+                );
+            }
         }
         self.last_cpu_buffer_updates.extend(cpu_buffer_updates);
         let mut response = XAuthorityResponsePacket::accepted(transaction_id);

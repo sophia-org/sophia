@@ -712,6 +712,7 @@ impl XAuthorityRuntime {
          self.window_allocation.preferences.remove(&surface);
          self.input_authority_mut().forget_query_window(namespace, window);
          self.software_buffers.remove(window);
+         self.cpu_present_predecessors.remove(&window);
          self.raster_store.remove(window);
          self.render_drop_pictures_of_drawable(window);
          self.forget_window_shapes(window);

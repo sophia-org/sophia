@@ -310,6 +310,10 @@ pub struct XAuthorityRuntime {
     glx_contexts: BTreeMap<crate::XResourceId, (NamespaceId, u32, bool)>,
     glx_drawables: BTreeMap<crate::XResourceId, XGlxDrawableRecord>,
     last_cpu_buffer_updates: Vec<XAuthorityCpuBufferUpdate>,
+    /// The last accepted CPU Present's window generation, handle and CPU
+    /// generation. A patch is precise only against this exact predecessor;
+    /// an intervening draw or DMA-BUF Present invalidates the proof.
+    cpu_present_predecessors: BTreeMap<crate::XResourceId, (u64, u64, u64)>,
     output_topology: OutputTopologySnapshot,
     input_focus: BTreeMap<NamespaceId, (crate::XResourceId, u8)>,
     /// The last-focus-change time, kept per namespace beside the focus it
@@ -426,6 +430,7 @@ impl Default for XAuthorityRuntime {
             glx_contexts: Default::default(),
             glx_drawables: Default::default(),
             last_cpu_buffer_updates: Vec::new(),
+            cpu_present_predecessors: BTreeMap::new(),
             output_topology: OutputTopologySnapshot::deterministic(),
             input_focus: Default::default(),
             last_focus_change: Default::default(),

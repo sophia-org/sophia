@@ -207,6 +207,7 @@ fn present_pattern(region: Option<Region>, correct: bool) {
         expected.push(pixels);
     }
     let mut buffers = BTreeMap::new();
+    let mut repainted = vec![0; (size.width * size.height * 4) as usize];
     for index in 0..9 {
         runtime.begin_dispatch();
         let response = runtime.present_standard_pixmap(
@@ -226,6 +227,27 @@ fn present_pattern(region: Option<Region>, correct: bool) {
         for update in runtime.take_cpu_buffer_updates() {
             update.apply_to(&mut buffers).unwrap();
         }
+        let raster = &buffers[&handle];
+        let damage = &response.transactions[0].content.canonical_variant().damage;
+        let expected_damage = if index == 0 {
+            Region::single(full)
+        } else {
+            region.clone().unwrap_or_else(|| Region::single(full))
+        };
+        assert_eq!(
+            *damage, expected_damage,
+            "canonical damage at present {index}"
+        );
+        // Replay only the advertised damage, then compare the entire result.
+        // This catches missing damage independently of the CPU patch transport.
+        for rect in &damage.rects {
+            for y in rect.y..rect.y + rect.height {
+                let start = ((y * size.width + rect.x) * 4) as usize;
+                let end = start + (rect.width * 4) as usize;
+                repainted[start..end].copy_from_slice(&raster.bytes[start..end]);
+            }
+        }
+        assert_eq!(repainted, *raster.bytes, "whole raster at present {index}");
         let equal = buffers[&handle].bytes.as_slice() == expected[index as usize % 2];
         // An empty update intentionally retains yellow while the odd source
         // turns green: the full-payload oracle must detect the omitted patch.

@@ -123,17 +123,60 @@ so the existing 60% threshold selects a full repaint even for the small patch.
 The other 25 output frames carry no precise-surface flag. These are per-output
 counts, not 50 distinct client updates.
 
-Next candidate: prove when a CPU presentation raster's changed region can be
-carried into canonical damage, including shape, child offsets, resize and
-predecessor continuity. Keep conservative full damage where that proof is
-missing. Do not lower the repaint threshold or infer the same cause for DMA-BUF
-clients. This experiment makes no production change.
+The attribution experiment above makes no production change. The follow-up
+candidate below carries CPU damage where its predecessor can be proved. The
+repaint threshold stays unchanged; the finding does not establish the same
+cause for DMA-BUF clients.
 
 The earlier `probe-02-absent` failure is retained as an invalid oracle: window
 GetImage reads the core-drawing backing, not the Present raster. Freeze 03 checks
 source pixmaps and adds complete renderer-payload equivalence for absent, full
 and patch updates. The empty-update negative control detects stale pixels on
 every odd Present. Neither oracle reads native scanout pixels.
+
+### CPU Present damage candidate (2026-10-04)
+
+Branch `performance/t289-cpu-present-damage`, on the signed damage harness
+`dfc332094`. Evidence: `development-evidence/t289-cpu-present-damage-01`.
+The CPU raster publisher also rebuilt canonical content with full damage,
+after the drawing transaction was created. Precision must survive both steps.
+
+The candidate retains the actual copied destination rectangles, after clipping
+and coalescing, for consecutive CPU Presents to an unshaped top-level window.
+The pixmap and window sizes must agree, with no child projection, offset or
+valid region. The preceding accepted CPU Present must match the current window
+generation, CPU handle and CPU generation. An intervening draw, DMA-BUF Present,
+replacement or incompatible geometry keeps full damage. Destruction discards
+the predecessor. Only the canonical raster receives precise damage; derived
+density variants retain full damage.
+
+The baseline fails the warm-patch regression at the damage assertion. The
+candidate passes controls for first frames, DMA-BUF switches, intervening core
+draws, resize, children, offsets, valid regions, clipping and shape transitions.
+The near-head fixture alternates real pixels and checks the entire raster after
+repainting only advertised damage. Its empty-update negative control still
+detects stale pixels. Removing the predecessor or shape guard fails a named
+test; both mutations were restored byte-for-byte.
+
+The isolated XAuthority suite, strict Clippy, formatting and layout checks pass.
+The frozen release binary (`c624147d`) passed three headless guest probes with
+the baseline's identical workload binary. Each completed 50 Presents and 50 Idle
+events, with no starvation, MSC regression or outstanding work. In the aligned
+counter interval, the patch case has 0 full and 50 partial output frames and
+14,400 repaint pixels per Present, versus the baseline's 1,024,000. Absent and
+full retain 25 full / 25 partial frames and 1,024,000 pixels per Present. These
+counts include the second, empty output; they are not distinct client updates.
+Records: `PROBE-PLAN.json`, `PROBES-01.json` and the three preserved guest logs.
+
+This proves the damage reduction for this workload. A matched CPU comparison is
+still required for a savings claim. The guest has no scanout readback; the full
+pixel oracle is the component fixture. This candidate does not change Kitty's
+DMA-BUF path or the installed session.
+
+The attempted live Codex/Claude comparison is retained under
+`t289-live-pane-01/INTERRUPTED-WORKLOAD.json`: focus changed during the first
+Codex arm and Claude resumed work. It is invalid for comparison; no replacement
+samples or CPU conclusion were drawn from it.
 
 ## Three priorities from the niri/XLibre comparison (2026-10-03)
 

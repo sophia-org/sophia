@@ -828,6 +828,17 @@ impl XAuthorityRasterStore {
         presentation: XResourceId,
         canonical: &XAuthorityCpuBufferSnapshot,
     ) -> SurfaceContentSet {
+        self.content_set_with_canonical_damage(presentation, canonical, None)
+    }
+
+    /// Only the canonical raster inherits the validated CPU Present damage.
+    /// Derived density variants retain their existing full-damage contract.
+    pub(crate) fn content_set_with_canonical_damage(
+        &self,
+        presentation: XResourceId,
+        canonical: &XAuthorityCpuBufferSnapshot,
+        damage: Option<Region>,
+    ) -> SurfaceContentSet {
         let mut variants = vec![SurfaceContentVariant {
             variant: 1,
             source: sophia_protocol::BufferSource::CpuBuffer {
@@ -837,7 +848,7 @@ impl XAuthorityRasterStore {
             density_millis: SURFACE_CONTENT_DENSITY_1X_MILLIS,
             transform: SurfaceRasterTransform::Normal,
             fidelity: SurfaceContentFidelity::AuthorityRaster,
-            damage: full_damage(canonical.size),
+            damage: damage.unwrap_or_else(|| full_damage(canonical.size)),
         }];
         if let Some(state) = self.surfaces.get(&presentation) {
             variants.extend(

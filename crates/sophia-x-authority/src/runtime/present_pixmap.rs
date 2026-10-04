@@ -48,6 +48,7 @@ impl XAuthorityRuntime {
             width: record.geometry.width,
             height: record.geometry.height,
         };
+        let mut cpu_raster_damage = None;
         let (buffer, damage, presentation_extent, raster_extent) = if let Some(descriptor) = self
             .dri3_pixmaps
             .get(&pixmap)
@@ -134,6 +135,11 @@ impl XAuthorityRuntime {
                 (true, rects) => Some(rects),
                 (false, _) => None,
             };
+            let predecessor = self.software_buffers
+                .presentation_snapshot(target_window)
+                .map(|snapshot| (target_generation, snapshot.handle, snapshot.generation));
+            let consecutive_cpu_present = predecessor.is_some()
+                && self.cpu_present_predecessors.get(&target_window).copied() == predecessor;
             let Some(update) = self.software_buffers.present_window_damage(
                 target_window,
                 target_size,
@@ -151,6 +157,19 @@ impl XAuthorityRuntime {
             };
             let handle = update.handle();
             let extent = update.size();
+            // Use the rectangles actually copied into the retained raster,
+            // after clipping/coalescing. Replacement, format and shape changes
+            // keep full damage. The common gate below also excludes offsets,
+            // children and valid-region requests.
+            if consecutive_cpu_present && shape.is_none() && pixmap_size == drawing_extent {
+                cpu_raster_damage = match &update {
+                    XAuthorityCpuBufferUpdate::PatchBatch(batch) => Some(Region {
+                        rects: batch.patches.iter().map(|patch| patch.rect).collect(),
+                    }),
+                    XAuthorityCpuBufferUpdate::Patch(patch) => Some(Region::single(patch.rect)),
+                    XAuthorityCpuBufferUpdate::Replace(_) => None,
+                };
+            }
             if std::env::var("SOPHIA_X11_PIXEL_TRACE").as_deref() == Ok("1")
                 && let Some(snapshot) = self.software_buffers.presentation_snapshot(target_window)
             {
@@ -211,11 +230,14 @@ impl XAuthorityRuntime {
             && child_x == 0
             && child_y == 0
             && !has_valid_region
-            && matches!(buffer, sophia_protocol::BufferSource::DmaBuf { .. })
         {
-            update.raster_damage = Some(Region {
-                rects: source_damage,
-            });
+            update.raster_damage = match buffer {
+                sophia_protocol::BufferSource::DmaBuf { .. } => Some(Region {
+                    rects: source_damage,
+                }),
+                sophia_protocol::BufferSource::CpuBuffer { .. } => cpu_raster_damage,
+                _ => None,
+            };
         }
         let response = self.finish_drawing_update(update);
         if response.outcome == crate::XAuthorityResponseOutcome::Accepted {
