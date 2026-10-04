@@ -663,3 +663,45 @@ fn a_waiting_write_is_received_in_place_in_one_turn() {
     assert_eq!(ledger.committed, payload);
     assert_eq!((ledger.writes, ledger.commits), (0, 1));
 }
+
+/// However much is waiting, one turn reads at most one message's worth for a
+/// connection: a read after a short one asks only for what the turn has left.
+#[test]
+fn a_turn_reads_at_most_one_message_worth() {
+    let (mut client, server_side) = UnixStream::pair().unwrap();
+    let mut server = Server::new(Staging::<false>::new(), limits()).unwrap();
+    assert!(server.adopt(server_side).is_ok());
+    client.set_nonblocking(true).unwrap();
+    let mut buffer = vec![0; 1 << 16];
+    client
+        .write_all(&tversion(u16::MAX, 8192, b"9P2000.L"))
+        .unwrap();
+    for _ in 0..100 {
+        server.turn(Some(Duration::from_millis(10))).unwrap();
+        if client.read(&mut buffer).is_ok() {
+            break;
+        }
+    }
+    // Clunks of a fid that does not exist: 11 bytes each, each answered with
+    // an 11-byte error, so a turn's replies count the bytes it read. 8192 is
+    // no multiple of 11, so turns after the first start with a partial one.
+    let clunks: Vec<u8> = (0..2000u16).flat_map(|tag| tclunk(tag, 77)).collect();
+    client.write_all(&clunks).unwrap();
+    let mut answered = 0;
+    let mut turns = 0;
+    while answered < 2000 {
+        server.turn(Some(Duration::from_millis(10))).unwrap();
+        let replies = match client.read(&mut buffer) {
+            Ok(count) => frames(&buffer[..count]).len(),
+            Err(_) => 0,
+        };
+        assert!(
+            replies * 11 <= 8192 + 11,
+            "one turn read {} bytes of requests",
+            replies * 11
+        );
+        answered += replies;
+        turns += 1;
+        assert!(turns < 100, "the requests were not all answered");
+    }
+}

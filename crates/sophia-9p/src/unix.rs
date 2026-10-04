@@ -294,7 +294,7 @@ impl<E: Export> Server<E> {
         let budget = slot.connection.read_budget();
         let mut taken = 0;
         while !slot.ended && taken < budget {
-            match Self::read_once(export, slot, buffer) {
+            match Self::read_once(export, slot, buffer, budget - taken) {
                 Some((count, asked)) => {
                     taken += count;
                     if count < asked {
@@ -306,25 +306,27 @@ impl<E: Export> Server<E> {
         }
     }
 
-    /// One read: how many bytes it took and how many it asked for, or
-    /// `None` when it took none.
+    /// One read of at most `limit` bytes: how many it took and how many it
+    /// asked for, or `None` when it took none.
     fn read_once(
         export: &mut E,
         slot: &mut Slot<E>,
         buffer: &mut Vec<u8>,
+        limit: usize,
     ) -> Option<(usize, usize)> {
         // A write received in place reads straight into its destination.
         if let Some(target) = slot.connection.in_place_target(export) {
             let (result, asked) = match target {
                 InPlaceTarget::Destination(destination) => {
-                    let asked = destination.len();
-                    (slot.stream.read(destination), asked)
+                    let asked = destination.len().min(limit);
+                    (slot.stream.read(&mut destination[..asked]), asked)
                 }
                 InPlaceTarget::Discard(rest) => {
-                    if buffer.len() < rest {
-                        buffer.resize(rest, 0);
+                    let asked = rest.min(limit);
+                    if buffer.len() < asked {
+                        buffer.resize(asked, 0);
                     }
-                    (slot.stream.read(&mut buffer[..rest]), rest)
+                    (slot.stream.read(&mut buffer[..asked]), asked)
                 }
             };
             return match result {
@@ -353,7 +355,7 @@ impl<E: Export> Server<E> {
                 }
             };
         }
-        let room = slot.connection.input_room();
+        let room = slot.connection.input_room().min(limit);
         if room == 0 {
             return None;
         }
