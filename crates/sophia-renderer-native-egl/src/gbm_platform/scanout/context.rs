@@ -35,7 +35,7 @@ pub struct NativeGbmRenderedScanoutContext<T: std::os::fd::AsFd> {
     composition_target: Option<PersistentCompositionTarget>,
     // Execution only: no client import or captured pixel storage survives here.
     // One compatible context per supported capture format (XR24 and AR24).
-    capture_targets: [Option<(khronos_egl::Config, NativeRenderTarget)>; 2],
+    capture_targets: [Option<NativeCaptureTarget>; 2],
     /// Target slots and pixel-proof state, one set per output the context
     /// serves. A device-shared context renders for several outputs, and a
     /// slot index alone does not identify a bundle across them: two outputs
@@ -289,10 +289,10 @@ where
                 .sampling
                 .saturating_add(persistent.target.pipeline.sampling_stats());
         }
-        for (_, target) in self.capture_targets.iter().flatten() {
+        for cached in self.capture_targets.iter().flatten() {
             stats.sampling = stats
                 .sampling
-                .saturating_add(target.pipeline.sampling_stats());
+                .saturating_add(cached.target.pipeline.sampling_stats());
         }
         stats
     }
@@ -784,11 +784,11 @@ where
                 }
             }
         }
-        for (_, target) in std::mem::take(&mut self.capture_targets)
+        for cached in std::mem::take(&mut self.capture_targets)
             .into_iter()
             .flatten()
         {
-            self.destroy_native_render_target(target);
+            self.destroy_native_render_target(cached.target);
         }
         // Target imports are gone; release retained buffer surfaces while their
         // EGL display and its dynamically loaded entry points still exist.

@@ -152,9 +152,12 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
             let (completion_runtime_locks, completion_historical_samples) = present_clock_router.completion_observation_counts();
             let timing = present_clock_router.wire_timing_statistics()?;
             let owner_work = owner_wake.statistics();
-            crate::session_println!("sophia_present_clock_service schema=1 queries={} completions={} observations={} observation_runtime_locks={} completion_runtime_locks={} completion_historical_samples={} admission_errors={} admission_fake_retries={} admission_settled={} idle_signal_failures={} scrap_sample_fallbacks={} service_runtime_locks={} deadline_runtime_locks={} wire_prepared={} wire_published={} wire_owner_notifications={} wire_bound={} wire_hardware_bound={} unclocked_bound={} unclocked_notify_settled={} wire_executions={} wire_execution_wait_usec={} wire_execution_wait_max_usec={} owner_passes={} owner_waits={} owner_ring_ready={} owner_fd_ready={} owner_wait_deadlines={} owner_immediate_items={} native_ready={} native_ready_consumed={} native_ready_idle={} native_errors={} native_event_waits={} native_short_waits={} native_service_waits={}",
+            let observed = rustix::time::clock_gettime(rustix::time::ClockId::Monotonic);
+            let observed_monotonic_usec = observed.tv_sec as u64 * 1_000_000
+                + observed.tv_nsec as u64 / 1_000;
+            crate::session_println!("sophia_present_clock_service schema=1 queries={} completions={} observations={} observation_runtime_locks={} completion_runtime_locks={} completion_historical_samples={} admission_errors={} admission_fake_retries={} admission_settled={} idle_signal_failures={} scrap_sample_fallbacks={} service_runtime_locks={} deadline_runtime_locks={} wire_prepared={} wire_published={} wire_owner_notifications={} wire_bound={} wire_hardware_bound={} unclocked_bound={} unclocked_notify_settled={} wire_executions={} wire_execution_wait_usec={} wire_execution_wait_max_usec={} owner_passes={} owner_waits={} owner_ring_ready={} owner_fd_ready={} owner_wait_deadlines={} owner_immediate_items={} native_ready={} native_ready_consumed={} native_ready_idle={} native_errors={} native_event_waits={} native_short_waits={} native_service_waits={} observed_monotonic_usec={} owner_tid={}",
                 present_clocks.queries(), present_clock_router.completed_count(), observations, observation_runtime_locks, completion_runtime_locks, completion_historical_samples, timing.admission_errors, timing.admission_fake_retries, timing.admission_settled, timing.idle_signal_failures, timing.scrap_sample_fallbacks,
-                timing.service_runtime_locks, timing.deadline_runtime_locks, timing.wire_prepared, timing.wire_published, timing.wire_owner_notifications, timing.wire_bound, timing.wire_hardware_bound, timing.unclocked_bound, timing.unclocked_notify_settled, timing.wire_executions, timing.wire_execution_wait_usec, timing.wire_execution_wait_max_usec, owner_work.passes, owner_work.waits, owner_work.ring_ready, owner_work.fd_ready, owner_work.wait_deadlines, owner_work.immediate_items, owner_work.native_ready, owner_work.native_ready_consumed, owner_work.native_ready_idle, owner_work.native_errors, owner_work.native_event_waits, owner_work.native_short_waits, owner_work.service_waits);
+                timing.service_runtime_locks, timing.deadline_runtime_locks, timing.wire_prepared, timing.wire_published, timing.wire_owner_notifications, timing.wire_bound, timing.wire_hardware_bound, timing.unclocked_bound, timing.unclocked_notify_settled, timing.wire_executions, timing.wire_execution_wait_usec, timing.wire_execution_wait_max_usec, owner_work.passes, owner_work.waits, owner_work.ring_ready, owner_work.fd_ready, owner_work.wait_deadlines, owner_work.immediate_items, owner_work.native_ready, owner_work.native_ready_consumed, owner_work.native_ready_idle, owner_work.native_errors, owner_work.native_event_waits, owner_work.native_short_waits, owner_work.service_waits, observed_monotonic_usec, rustix::thread::gettid().as_raw_nonzero());
             present_evidence.flush();
             sophia_x_authority::flush_present_evidence();
             // Scheduling counters on the same cadence as the resource gauges.
@@ -182,7 +185,7 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                 LiveProductionNativeScanout::persistent_render_metrics,
             );
             crate::session_println!(
-                "sophia_live_render_work schema=1 timing_enabled={} cpu_scene_elapsed_nsec={} cpu_scene_cpu_nsec={} transfer_captures_count={} transfer_attempts_count={} transfer_failures_count={} uptime_msec={} cpu_raster_count={} cpu_raster_reuse_count={} capture_context_creations_count={} capture_context_reuses_count={} capture_surface_creations_count={} capture_failures_count={} composition_full_frames_count={} composition_partial_frames_count={} composition_repaint_pixels_count={} composition_target_pixels_count={} pipeline_creations_count={} snapshot_captures_count={} import_cache_imports_count={} import_cache_hits_count={} capture_setup_elapsed_nsec={} capture_copy_elapsed_nsec={} capture_cleanup_elapsed_nsec={} composition_elapsed_nsec={} capture_setup_cpu_nsec={} capture_copy_cpu_nsec={} capture_cleanup_cpu_nsec={} composition_cpu_nsec={} damage_full_no_table_count={} damage_full_disabled_count={} damage_full_unknown_age_count={} damage_full_no_history_count={} damage_full_beyond_history_count={} damage_full_damage_unavailable_count={} damage_full_plan_count={} damage_stable_geometry_frames_count={} damage_stable_geometry_full_count={} damage_stable_geometry_partial_count={} damage_stable_geometry_repaint_pixels_count={} damage_stable_geometry_target_pixels_count={}",
+                "sophia_live_render_work schema=1 timing_enabled={} cpu_scene_elapsed_nsec={} cpu_scene_cpu_nsec={} transfer_captures_count={} transfer_attempts_count={} transfer_failures_count={} uptime_msec={} cpu_raster_count={} cpu_raster_reuse_count={} capture_context_creations_count={} capture_context_reuses_count={} capture_surface_creations_count={} capture_failures_count={} composition_full_frames_count={} composition_partial_frames_count={} composition_repaint_pixels_count={} composition_target_pixels_count={} pipeline_creations_count={} snapshot_captures_count={} import_cache_imports_count={} import_cache_hits_count={} capture_setup_elapsed_nsec={} capture_copy_elapsed_nsec={} capture_cleanup_elapsed_nsec={} composition_elapsed_nsec={} capture_setup_cpu_nsec={} capture_copy_cpu_nsec={} capture_cleanup_cpu_nsec={} composition_cpu_nsec={} damage_full_no_table_count={} damage_full_disabled_count={} damage_full_unknown_age_count={} damage_full_no_history_count={} damage_full_beyond_history_count={} damage_full_damage_unavailable_count={} damage_full_plan_count={} damage_full_plan_unspecified_count={} damage_full_plan_capacity_count={} damage_full_plan_rect_limit_count={} damage_full_plan_coverage_count={} damage_stable_geometry_frames_count={} damage_stable_geometry_full_count={} damage_stable_geometry_partial_count={} damage_stable_geometry_repaint_pixels_count={} damage_stable_geometry_target_pixels_count={} observed_monotonic_usec={}",
                 u8::from(scene.render_timing_enabled()),
                 scene.cpu_scene_timing().0.as_nanos(),
                 scene.cpu_scene_timing().1.as_nanos(),
@@ -219,13 +222,34 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                 native_resources.composition_damage.full_beyond_history,
                 native_resources.composition_damage.full_damage_unavailable,
                 native_resources.composition_damage.full_plan,
+                native_resources.composition_damage.full_plan_unspecified,
+                native_resources.composition_damage.full_plan_capacity,
+                native_resources.composition_damage.full_plan_rect_limit,
+                native_resources.composition_damage.full_plan_coverage,
                 native_resources.composition_damage.stable_geometry_frames,
                 native_resources.composition_damage.stable_geometry_full,
                 native_resources.composition_damage.stable_geometry_partial,
                 native_resources.composition_damage.stable_geometry_repaint_pixels,
                 native_resources.composition_damage.stable_geometry_target_pixels,
+                observed_monotonic_usec,
 
 
+            );
+            // Once per existing sample, never per frame. Each cause is a
+            // successful-render count and may overlap with the other causes.
+            {
+                use std::fmt::Write as _;
+                let mut record = format!("sophia_live_damage_causes schema=1 observed_monotonic_usec={observed_monotonic_usec}");
+                for cause in sophia_renderer_live::NativeDamageCause::ALL {
+                    let _ = write!(record, " {}={} full_{}={}", cause.code(), native_resources.composition_damage.causes[cause as usize], cause.code(), native_resources.composition_damage.full_causes[cause as usize]);
+                }
+                crate::session_println!("{record}");
+            }
+            crate::session_println!(
+                "sophia_present_damage schema=1 observed_monotonic_usec={} absent={} explicit_full_rect={} explicit_regions={} effective_empty={} source_pixels={} rect_pixels={} rects={}",
+                observed_monotonic_usec, timing.damage.absent, timing.damage.explicit_full_rect,
+                timing.damage.explicit_regions, timing.damage.effective_empty,
+                timing.damage.source_pixels, timing.damage.rect_pixels, timing.damage.rects,
             );
             resource_sampler.record(
                 sample_now,

@@ -202,11 +202,15 @@ impl ProductionSessionCoordinator {
                 sophia_protocol::SurfaceContentSet::new(rebased.content.logical_extent(), variants)
                     .expect("replacing valid damage with the full raster remains valid");
         }
-        self.engine.prepare_surface_transactions(
+        let mut prepared = self.engine.prepare_surface_transactions(
             rebased.transaction,
             std::slice::from_ref(&rebased),
             &self.committed_surfaces,
-        )
+        );
+        if rebased.previous_committed_generation != transaction.previous_committed_generation {
+            prepared.damage_identity.mark_rebased(rebased.surface);
+        }
+        prepared
     }
 
     pub fn apply_prepared_surface_commit(

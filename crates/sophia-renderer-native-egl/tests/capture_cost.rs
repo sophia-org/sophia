@@ -51,10 +51,14 @@ fn capture_cost_at_fixed_cadence() {
     let mut context = NativeGbmRenderedScanoutContext::from_backend_device_result(Ok(open()))
         .context
         .unwrap();
+    // Qualification only. These existing CPU/wall clocks stay off in ordinary
+    // rendering. Copy includes import and submission, not a GPU-duration query.
+    context.set_render_timing_enabled(true);
     let mut serial = 0;
     let mut capture = |context: &mut NativeGbmRenderedScanoutContext<_>| {
         serial += 1;
         let image = NativeRendererImageId::from_raw(serial);
+        let capture_started = cpu(rustix::time::ClockId::ThreadCPUTime);
         context
             .capture_renderer_image(
                 image,
@@ -77,8 +81,16 @@ fn capture_cost_at_fixed_cadence() {
                 },
             )
             .unwrap();
+        let promote_started = cpu(rustix::time::ClockId::ThreadCPUTime);
         context.promote_renderer_image(image).unwrap();
+        let evict_started = cpu(rustix::time::ClockId::ThreadCPUTime);
         context.evict_renderer_image(image).unwrap();
+        let finished = cpu(rustix::time::ClockId::ThreadCPUTime);
+        [
+            promote_started - capture_started,
+            evict_started - promote_started,
+            finished - evict_started,
+        ]
     };
     for _ in 0..120 {
         capture(&mut context);
@@ -89,11 +101,16 @@ fn capture_cost_at_fixed_cadence() {
     let process_start = cpu(rustix::time::ClockId::ProcessCPUTime);
     let frames = seconds * 60;
     let mut samples = Vec::with_capacity(frames as usize);
+    let mut late_frames = 0;
+    let mut calls_cpu = [0u128; 3];
     for index in 0..frames {
         let before = Instant::now();
-        capture(&mut context);
+        for (total, elapsed) in calls_cpu.iter_mut().zip(capture(&mut context)) {
+            *total += elapsed;
+        }
         samples.push(before.elapsed().as_nanos());
         let next = start + Duration::from_nanos((index + 1) * 1_000_000_000 / 60);
+        late_frames += usize::from(Instant::now() > next);
         std::thread::sleep(next.saturating_duration_since(Instant::now()));
     }
     let thread_ns = cpu(rustix::time::ClockId::ThreadCPUTime) - thread_start;
@@ -101,9 +118,50 @@ fn capture_cost_at_fixed_cadence() {
     let elapsed = start.elapsed().as_nanos();
     let stats = context.persistent_render_stats();
     assert_eq!(stats.snapshot_live_entries, 0);
+    assert_eq!(stats.snapshot_live_bytes, 0);
+    assert_eq!(stats.import_cache.live_entries, 0);
     assert_eq!(
         stats.snapshot_captures - warm.snapshot_captures,
         frames as usize
+    );
+    assert_eq!(
+        stats.snapshot_promotions - warm.snapshot_promotions,
+        frames as usize
+    );
+    assert_eq!(
+        stats.snapshot_evictions - warm.snapshot_evictions,
+        frames as usize
+    );
+    assert_eq!(stats.capture_failures, warm.capture_failures);
+    assert_eq!(stats.transfer_failures, warm.transfer_failures);
+    let setup_cpu = (stats.capture_setup_cpu - warm.capture_setup_cpu).as_nanos();
+    let copy_cpu = (stats.capture_copy_cpu - warm.capture_copy_cpu).as_nanos();
+    let cleanup_cpu = (stats.capture_cleanup_cpu - warm.capture_cleanup_cpu).as_nanos();
+    assert!(setup_cpu > 0 && copy_cpu > 0 && cleanup_cpu > 0);
+    assert!(setup_cpu + copy_cpu + cleanup_cpu <= thread_ns);
+    assert!(setup_cpu + copy_cpu + cleanup_cpu <= calls_cpu[0]);
+    assert!(calls_cpu.iter().sum::<u128>() <= thread_ns);
+    println!(
+        "capture_calls capture_cpu_ns={} promote_cpu_ns={} evict_cpu_ns={}",
+        calls_cpu[0], calls_cpu[1], calls_cpu[2]
+    );
+    // The validation probe import is outside these stage counters and outside
+    // import_cache.imports. It remains included in total thread/process CPU.
+    println!(
+        "capture_stages timing=true setup_cpu_ns={setup_cpu} copy_cpu_ns={copy_cpu} \
+         cleanup_cpu_ns={cleanup_cpu} setup_elapsed_ns={} copy_elapsed_ns={} \
+         cleanup_elapsed_ns={} contexts={} context_reuses={} surfaces={} imports={} \
+         hits={} evictions={} transfers={} late_frames={late_frames}",
+        (stats.capture_setup_elapsed - warm.capture_setup_elapsed).as_nanos(),
+        (stats.capture_copy_elapsed - warm.capture_copy_elapsed).as_nanos(),
+        (stats.capture_cleanup_elapsed - warm.capture_cleanup_elapsed).as_nanos(),
+        stats.capture_context_creations - warm.capture_context_creations,
+        stats.capture_context_reuses - warm.capture_context_reuses,
+        stats.capture_surface_creations - warm.capture_surface_creations,
+        stats.import_cache.imports - warm.import_cache.imports,
+        stats.import_cache.hits - warm.import_cache.hits,
+        stats.import_cache.evictions - warm.import_cache.evictions,
+        stats.transfer_captures - warm.transfer_captures,
     );
     println!(
         "capture_cost frames={frames} elapsed_ns={elapsed} thread_cpu_ns={thread_ns} process_cpu_ns={process_ns} pipelines={} samples_ns={samples:?}",

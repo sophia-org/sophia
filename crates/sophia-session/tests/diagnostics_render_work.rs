@@ -19,6 +19,10 @@ fn damage_reasons_and_geometry_cohort_are_numeric_only() {
         "damage_full_beyond_history_count",
         "damage_full_damage_unavailable_count",
         "damage_full_plan_count",
+        "damage_full_plan_unspecified_count",
+        "damage_full_plan_capacity_count",
+        "damage_full_plan_rect_limit_count",
+        "damage_full_plan_coverage_count",
         "damage_stable_geometry_frames_count",
         "damage_stable_geometry_full_count",
         "damage_stable_geometry_partial_count",
@@ -92,6 +96,71 @@ fn wire_admission_measurements_preserve_only_numeric_values() {
                 )),
                 Some("sophia_present_clock_service schema=1".to_owned())
             );
+        }
+    }
+}
+
+#[test]
+fn damage_attribution_keeps_every_named_counter_and_rejects_payloads() {
+    let records = [
+        (
+            "sophia_live_damage_causes",
+            vec![
+                "new_output",
+                "output_changed",
+                "compositor",
+                "order",
+                "geometry",
+                "sampling",
+                "generation",
+                "missing_identity",
+                "no_matching_transition",
+                "invalid_transition",
+                "origin",
+                "rect_limit",
+                "precision_restricted",
+                "coordinate_overflow",
+                "terminal_identity",
+                "history_limit",
+                "rebased",
+                "precise_surface",
+                "preview_identity",
+                "cursor",
+            ],
+        ),
+        (
+            "sophia_present_damage",
+            vec![
+                "absent",
+                "explicit_full_rect",
+                "explicit_regions",
+                "effective_empty",
+                "source_pixels",
+                "rect_pixels",
+                "rects",
+            ],
+        ),
+    ];
+    for (name, fields) in records {
+        let mut fields: Vec<String> = fields.into_iter().map(str::to_owned).collect();
+        if name == "sophia_live_damage_causes" {
+            fields.extend(fields.clone().into_iter().map(|key| format!("full_{key}")));
+        }
+        for key in fields
+            .into_iter()
+            .chain(["observed_monotonic_usec".to_owned()])
+        {
+            let line = format!("{name} schema=1 {key}=42");
+            assert_eq!(
+                reduced_record(&format!("{line} surface=99 title=secret")),
+                Some(line)
+            );
+            for invalid in ["-1", "secret", "18446744073709551616"] {
+                assert_eq!(
+                    reduced_record(&format!("{name} schema=1 {key}={invalid}")),
+                    Some(format!("{name} schema=1"))
+                );
+            }
         }
     }
 }

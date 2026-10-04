@@ -275,6 +275,8 @@ pub struct NativeGbmPersistentRenderStats {
     pub composition_cpu: std::time::Duration,
 
     pub capture_context_creations: u64,
+    /// Cold capture selector calls; a retained context carries its exact config key.
+    pub capture_config_selections: u64,
     pub capture_context_reuses: u64,
     pub capture_surface_creations: u64,
     pub capture_failures: u64,

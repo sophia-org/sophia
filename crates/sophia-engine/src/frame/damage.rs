@@ -134,9 +134,21 @@ pub fn output_frame_damage(
     previous: Option<&OutputFrameDamageSnapshot>,
     current: &OutputFrameDamageSnapshot,
 ) -> Result<Region, OutputFrameDamageError> {
+    output_frame_damage_with_causes(previous, current).map(|(damage, _)| damage)
+}
+
+/// The same reduction with bounded evidence. Each fallback reports its first
+/// failed proof; distinct changed surfaces can contribute distinct causes.
+pub fn output_frame_damage_with_causes(
+    previous: Option<&OutputFrameDamageSnapshot>,
+    current: &OutputFrameDamageSnapshot,
+) -> Result<(Region, super::OutputDamageCauses), OutputFrameDamageError> {
+    use super::OutputDamageCause as C;
+    let mut causes = super::OutputDamageCauses::default();
     validate_snapshot(current)?;
     let Some(previous) = previous else {
-        return Ok(full_output_damage(current.output.size));
+        causes.insert(C::NewOutput);
+        return Ok((full_output_damage(current.output.size), causes));
     };
     validate_snapshot(previous)?;
     if previous.output.id != current.output.id {
@@ -144,13 +156,17 @@ pub fn output_frame_damage(
     }
     if previous.output.size != current.output.size || previous.output.scale != current.output.scale
     {
-        return Ok(full_output_damage(current.output.size));
+        causes.insert(C::OutputChanged);
+        return Ok((full_output_damage(current.output.size), causes));
     }
 
     let mut damage = compositor_display_list_damage(
         &previous.compositor_display_list,
         &current.compositor_display_list,
     );
+    if !damage.rects.is_empty() {
+        causes.insert(C::Compositor);
+    }
     let previous_order = previous
         .surfaces
         .iter()
@@ -162,6 +178,7 @@ pub fn output_frame_damage(
         .map(|surface| surface.surface)
         .collect::<Vec<_>>();
     if previous_order != current_order {
+        causes.insert(C::Order);
         extend_surface_extents(&mut damage, &previous.surfaces);
         extend_surface_extents(&mut damage, &current.surfaces);
     } else {
@@ -173,16 +190,22 @@ pub fn output_frame_damage(
                         &current.damage_history,
                     )
             {
-                if let Some(precise) = super::damage_history::accumulated_surface_damage(
+                match super::damage_history::accumulated_surface_damage(
                     before,
                     after,
                     &previous.damage_history,
                     &current.damage_history,
+                    &mut causes,
                 ) {
-                    damage.rects.extend(precise.rects);
-                } else {
-                    damage.push(before.geometry);
-                    damage.push(after.geometry);
+                    Ok(precise) => {
+                        causes.insert(C::PreciseSurface);
+                        damage.rects.extend(precise.rects);
+                    }
+                    Err(cause) => {
+                        causes.insert(cause);
+                        damage.push(before.geometry);
+                        damage.push(after.geometry);
+                    }
                 }
             }
         }
@@ -206,10 +229,12 @@ pub fn output_frame_damage(
             &current.damage_history,
         );
         if old != new {
+            causes.insert(C::PreviewIdentity);
             damage.push(instance.visible());
         }
     }
     if previous.software_cursor != current.software_cursor {
+        causes.insert(C::Cursor);
         if let Some(before) = previous.software_cursor {
             damage.push(before);
         }
@@ -217,7 +242,7 @@ pub fn output_frame_damage(
             damage.push(after);
         }
     }
-    Ok(damage)
+    Ok((damage, causes))
 }
 
 fn validate_snapshot(snapshot: &OutputFrameDamageSnapshot) -> Result<(), OutputFrameDamageError> {

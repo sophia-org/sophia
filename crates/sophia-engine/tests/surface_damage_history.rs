@@ -449,6 +449,23 @@ fn prepared_commit_identity_survives_commit_but_not_repreparation_or_restore() {
         stable_history
     );
     let rebased = coordinator.prepare_present_transaction(&transaction);
+    let old_state = &coordinator.committed_surfaces()[0];
+    let mut old_snapshot = snapshot(old_state);
+    old_snapshot.damage_history = coordinator
+        .damage_history_for_candidate(coordinator.committed_surfaces(), None)
+        .unwrap();
+    let mut rebased_snapshot = snapshot(&rebased.candidate()[0]);
+    rebased_snapshot.damage_history = coordinator
+        .damage_history_for_candidate(rebased.candidate(), Some(&rebased))
+        .unwrap();
+    let (_, causes) =
+        sophia_engine::output_frame_damage_with_causes(Some(&old_snapshot), &rebased_snapshot)
+            .unwrap();
+    assert!(causes.contains(sophia_engine::OutputDamageCause::Rebased));
+
+    // A rebase is carried by this preparation's identity; the region is still
+    // the conservative full raster already chosen by preparation.
+
     assert_eq!(
         rebased.candidate()[0].content.canonical_variant().damage,
         Region::single(Rect {
@@ -566,4 +583,72 @@ fn noncanonical_variant_keeps_the_identity_of_its_prepared_content_set() {
             .is_empty(),
         "the same accepted variant may still reuse pixels"
     );
+}
+
+#[test]
+fn damage_attribution_preserves_regions_and_names_precision_refusals() {
+    use sophia_engine::{OutputDamageCause as C, output_frame_damage_with_causes as explain};
+    let a = state(1, vec![rect(1)]);
+    let history = primed_history(&a);
+    let before = tracked_snapshot(&history, &a);
+    let candidate = |state: &CommittedSurfaceState| {
+        let mut snap = snapshot(state);
+        snap.damage_history = history
+            .for_candidate(std::slice::from_ref(&a), std::slice::from_ref(state), None)
+            .unwrap();
+        snap
+    };
+    let b = state(2, vec![rect(4)]);
+    let after = candidate(&b);
+    let (region, causes) = explain(Some(&before), &after).unwrap();
+    assert_eq!(
+        region.rects,
+        vec![Rect {
+            x: 14,
+            y: 21,
+            width: 2,
+            height: 3
+        }]
+    );
+    assert!(causes.contains(C::PreciseSurface));
+    assert_eq!(region, output_frame_damage(Some(&before), &after).unwrap());
+    let mut cases = Vec::new();
+    let mut missing = before.clone();
+    missing.damage_history = Default::default();
+    cases.push((missing, after.clone(), C::MissingIdentity));
+    let mut moved = after.clone();
+    moved.surfaces[0].geometry.x += 1;
+    cases.push((before.clone(), moved, C::Geometry));
+    let mut scaled = after.clone();
+    scaled.surfaces[0].source_size.width /= 2;
+    cases.push((before.clone(), scaled, C::Sampling));
+    let mut restricted = after.clone();
+    restricted.damage_history =
+        sophia_engine::restrict_surface_damage_precision(restricted.damage_history, &[]);
+    cases.push((before.clone(), restricted, C::PrecisionRestricted));
+    cases.push((
+        before.clone(),
+        candidate(&state(2, vec![rect(1); 33])),
+        C::RectLimit,
+    ));
+    cases.push((
+        before.clone(),
+        candidate(&state(3, vec![rect(1)])),
+        C::Generation,
+    ));
+    let mut missing = after.clone();
+    missing.damage_history = Default::default();
+    cases.push((before.clone(), missing, C::NoMatchingTransition));
+    for (old, new, expected) in cases {
+        let (region, causes) = explain(Some(&old), &new).unwrap();
+        assert!(causes.contains(expected), "{expected:?}: {causes:?}");
+        assert_eq!(
+            region.rects,
+            vec![old.surfaces[0].geometry, new.surfaces[0].geometry]
+        );
+        assert!(!causes.contains(C::PreciseSurface));
+    }
+    let (empty, causes) = explain(Some(&after), &after).unwrap();
+    assert!(empty.rects.is_empty());
+    assert_eq!(causes, Default::default());
 }

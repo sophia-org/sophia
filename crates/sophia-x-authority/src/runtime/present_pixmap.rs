@@ -3,6 +3,7 @@ impl XAuthorityRuntime {
         &mut self,
         request: XPreparedPresent,
     ) -> XAuthorityResponsePacket {
+        let damage_statistics = XPresentDamageStatistics::from_request(&request);
         let XPreparedPresent {
             transaction,
             namespace,
@@ -216,6 +217,10 @@ impl XAuthorityRuntime {
                 rects: source_damage,
             });
         }
-        self.finish_drawing_update(update)
+        let response = self.finish_drawing_update(update);
+        if response.outcome == crate::XAuthorityResponseOutcome::Accepted {
+            self.present_timing_statistics.damage.add(damage_statistics);
+        }
+        response
     }
 }

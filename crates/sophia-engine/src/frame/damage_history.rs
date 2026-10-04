@@ -1,6 +1,6 @@
 //! Bounded, immutable damage facts. Recording is a commit operation; constructing
 //! a candidate view does not advance or evict the authoritative history.
-use super::OutputFrameSurfaceState;
+use super::{OutputDamageCause, OutputFrameSurfaceState};
 use sophia_protocol::{
     BufferSource, CommittedSurfaceState, Rect, Region, Size, SurfaceId, SurfaceRasterTransform,
 };
@@ -15,11 +15,17 @@ pub const SURFACE_DAMAGE_BYTES: usize = 8 * 1024 * 1024;
 
 /// Opaque identity of one preparation, preserved by clones and by its commit.
 /// Equal generation numbers or client buffer handles do not prove equal pixels.
-#[derive(Clone, Debug)]
-pub struct SurfaceDamageIdentity(Arc<()>);
-impl Default for SurfaceDamageIdentity {
-    fn default() -> Self {
-        Self(Arc::new(()))
+#[derive(Clone, Debug, Default)]
+pub struct SurfaceDamageIdentity(Arc<DamagePreparation>);
+#[derive(Clone, Debug, Default)]
+struct DamagePreparation {
+    rebased_surface: Option<SurfaceId>,
+}
+impl SurfaceDamageIdentity {
+    pub(crate) fn mark_rebased(&mut self, surface: SurfaceId) {
+        // The just-created preparation is uniquely owned. Preserve that
+        // allocation; copy-on-write also keeps any prior clones immutable.
+        Arc::make_mut(&mut self.0).rebased_surface = Some(surface);
     }
 }
 impl PartialEq for SurfaceDamageIdentity {
@@ -41,6 +47,7 @@ pub struct SurfaceDamageTransition {
     size: Size,
     // None is an explicit full-damage marker, not an empty update.
     rects: Option<Vec<Rect>>,
+    full_reason: Option<OutputDamageCause>,
 }
 impl SurfaceDamageTransition {
     fn between(
@@ -51,15 +58,24 @@ impl SurfaceDamageTransition {
     ) -> Self {
         let old = before.content.canonical_variant();
         let new = after.content.canonical_variant();
-        let precise = before.surface == after.surface
-            && before.committed_generation.checked_add(1) == Some(after.committed_generation)
-            && before.geometry == after.geometry
-            && old.variant == new.variant
-            && old.pixel_size == new.pixel_size
-            && old.transform == SurfaceRasterTransform::Normal
-            && new.transform == SurfaceRasterTransform::Normal
-            && old.density_millis == new.density_millis
-            && new.damage.rects.len() <= SURFACE_DAMAGE_RECTS;
+        let full_reason = if before.surface != after.surface
+            || before.committed_generation.checked_add(1) != Some(after.committed_generation)
+        {
+            Some(OutputDamageCause::Generation)
+        } else if before.geometry != after.geometry {
+            Some(OutputDamageCause::Geometry)
+        } else if old.variant != new.variant
+            || old.pixel_size != new.pixel_size
+            || old.transform != SurfaceRasterTransform::Normal
+            || new.transform != SurfaceRasterTransform::Normal
+            || old.density_millis != new.density_millis
+        {
+            Some(OutputDamageCause::Sampling)
+        } else if new.damage.rects.len() > SURFACE_DAMAGE_RECTS {
+            Some(OutputDamageCause::RectLimit)
+        } else {
+            None
+        };
         Self {
             before_identity,
             after_identity,
@@ -69,7 +85,8 @@ impl SurfaceDamageTransition {
             before: old.source,
             after: new.source,
             size: new.pixel_size,
-            rects: precise.then(|| new.damage.rects.clone()),
+            rects: full_reason.is_none().then(|| new.damage.rects.clone()),
+            full_reason,
         }
     }
     fn origin(after: &CommittedSurfaceState, identity: SurfaceDamageIdentity) -> Self {
@@ -77,6 +94,7 @@ impl SurfaceDamageTransition {
         before.committed_generation = 0;
         let mut edge = Self::between(&before, after, None, identity);
         edge.rects = None;
+        edge.full_reason = Some(OutputDamageCause::Origin);
         edge
     }
     fn bytes(&self) -> usize {
@@ -282,6 +300,7 @@ pub fn restrict_surface_damage_precision(
             } else {
                 let mut full = (**edge).clone();
                 full.rects = None;
+                full.full_reason = Some(OutputDamageCause::PrecisionRestricted);
                 Arc::new(full)
             }
         })
@@ -320,35 +339,60 @@ pub(super) fn accumulated_surface_damage(
     after: &OutputFrameSurfaceState,
     before_history: &[Arc<SurfaceDamageTransition>],
     history: &[Arc<SurfaceDamageTransition>],
-) -> Option<Region> {
+    causes: &mut super::OutputDamageCauses,
+) -> Result<Region, OutputDamageCause> {
+    use OutputDamageCause as C;
     if before.surface != after.surface
         || before.geometry != after.geometry
         || before.logical_geometry != after.logical_geometry
-        || before.source_size != after.source_size
+    {
+        return Err(C::Geometry);
+    }
+    if before.source_size != after.source_size
         || after.geometry.width != after.source_size.width
         || after.geometry.height != after.source_size.height
-        || before.committed_generation >= after.committed_generation
     {
-        return None;
+        return Err(C::Sampling);
+    }
+    if before.committed_generation >= after.committed_generation {
+        return Err(C::Generation);
     }
     let mut generation = before.committed_generation;
     let mut source = before.buffer;
-    let mut identity = surface_damage_identity(before, before_history)?;
+    let mut identity = surface_damage_identity(before, before_history).ok_or(C::MissingIdentity)?;
     let mut damage = Region::empty();
     for _ in 0..=SURFACE_DAMAGE_TRANSITIONS {
-        let edge = history.iter().find(|edge| {
-            edge.surface == after.surface
-                && edge.predecessor == generation
-                && edge.before == source
-                && edge.before_identity.as_ref() == Some(identity)
-        })?;
-        if edge.size != after.source_size || edge.successor <= generation {
-            return None;
+        let edge = history
+            .iter()
+            .find(|edge| {
+                edge.surface == after.surface
+                    && edge.predecessor == generation
+                    && edge.before == source
+                    && edge.before_identity.as_ref() == Some(identity)
+            })
+            .ok_or(C::NoMatchingTransition)?;
+        if edge.after_identity.0.rebased_surface == Some(after.surface) {
+            causes.insert(C::Rebased);
         }
-        for rect in edge.rects.as_ref()? {
+        if edge.size != after.source_size || edge.successor <= generation {
+            return Err(C::InvalidTransition);
+        }
+        for rect in edge
+            .rects
+            .as_ref()
+            .ok_or(edge.full_reason.unwrap_or(C::InvalidTransition))?
+        {
             damage.push(Rect {
-                x: after.geometry.x.checked_add(rect.x)?,
-                y: after.geometry.y.checked_add(rect.y)?,
+                x: after
+                    .geometry
+                    .x
+                    .checked_add(rect.x)
+                    .ok_or(C::CoordinateOverflow)?,
+                y: after
+                    .geometry
+                    .y
+                    .checked_add(rect.y)
+                    .ok_or(C::CoordinateOverflow)?,
                 ..*rect
             });
         }
@@ -356,13 +400,15 @@ pub(super) fn accumulated_surface_damage(
         source = edge.after;
         identity = &edge.after_identity;
         if generation == after.committed_generation && source == after.buffer {
-            // An unassociated view can reuse a committed generation and buffer
-            // while naming different pixels. Reach its identity as well.
-            return (identity == surface_damage_identity(after, history)?).then_some(damage);
+            // Equal public generation/source do not prove the prepared pixels.
+            if Some(identity) == surface_damage_identity(after, history) {
+                return Ok(damage);
+            }
+            return Err(C::TerminalIdentity);
         }
         if generation >= after.committed_generation {
-            return None;
+            return Err(C::TerminalIdentity);
         }
     }
-    None
+    Err(C::HistoryLimit)
 }
