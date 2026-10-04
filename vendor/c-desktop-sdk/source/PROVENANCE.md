@@ -386,3 +386,56 @@ capabilities.
 
 Held capture is qualified only by scripted-peer tests: Session does not
 implement it yet.
+
+## Release 0.8.0: experimental lock provider role
+
+The lock provider contract is copied unmodified from Sophia `fd6ea7538` on
+`lock/t034-next`, the branch that became Sophia's lock provider role (t294):
+
+- `protocol/sophia-lock-files-v1.kdl` → `spec/sophia-lock-files-v1.kdl`
+- `docs/sophia-lock-files.md` → `spec/sophia-lock-files.md`
+- `protocol/golden/sophia-lock-files-v1.records` →
+  `spec/golden/sophia-lock-files-v1.records`
+
+The three copies are byte-identical at Sophia's signed master merge
+`61d545c9087a685c5161f0d5f3132436aa82d31e` ("Merge the lock provider role
+(t294)"), which this release names as their contract revision. Merging the
+implementation did not accept the contract: the copied text still marks
+itself revision 1 (draft), and the bytes are kept unchanged. The lock API is
+therefore experimental in this release and can change incompatibly until
+Sophia accepts the contract explicitly. Every other
+`spec/` copy is unchanged and also matches that master. The three new digests
+are added to `spec/SHA256SUMS`.
+
+The release adds two headers and changes none:
+
+- `sophia_lock_files.h` (`sophia_lf_*`): the record codec (decoding, encoding,
+  submission and acknowledgement framing), checked against Sophia's golden
+  records and the contract's refusal rules.
+- `sophia_lock_client.h` (`sophia_lc_*`): a nonblocking lock provider client
+  over the existing 9P client. It reads `api` and `limits`, negotiates with
+  any UI chords, keeps one submission and one upload in flight, and
+  acknowledges an event only after the caller consumes it. ObjectPublished is
+  presented only after that exact lock object has been read. A superseded
+  announcement is consumed unread. End and Cancel carry their Begin's
+  transaction. The client neither discovers the socket nor reconnects.
+
+`struct sophia_lc_client` is declared in full for caller allocation, so its
+layout is part of this release's surface. It holds the 9P client by pointer,
+its operation slots (`struct sophia_lc_operation`) embed the existing
+`struct sophia_9p_handle`, and its other members are new lock record types.
+No existing header, structure or symbol changes. The client's cross-file
+helpers are named `sophia_lc_internal_*`. `lock_client_test` defines the
+generic `lc_*` names to prove that a consumer may use them.
+
+Tests: `lock_files_test` holds literal round trips of the golden records and
+the refusal rules. `lock_client_test` runs scripted 9P peers through bootstrap,
+negotiation and refusal, lock object fetches including a superseded
+announcement, uploads (admitted, rejected, refused, cancelled), demands,
+candidates, EAGAIN retry, custody held until acknowledged, and ESTALE.
+
+One scratch run against Sophia's production lock export passed (Sophia
+`fd6ea7538`). The permanent harness belongs in Sophia once this release is
+vendored. Until it passes, `compatibility.json` declares `lock_files` false.
+Upload throughput is bound by the single upload write in flight. Pipelining
+uploads is a follow-up that needs no contract change.

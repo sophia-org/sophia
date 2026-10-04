@@ -35,6 +35,16 @@ pub const CONTRACTS: &[(&str, &str)] = &[
         "spec/references/diod-9p2000L-protocol.md",
         "docs/references/diod-9p2000L-protocol.md",
     ),
+    // The lock provider codec renders Sophia's golden records byte for byte.
+    (
+        "spec/sophia-lock-files-v1.kdl",
+        "protocol/sophia-lock-files-v1.kdl",
+    ),
+    ("spec/sophia-lock-files.md", "docs/sophia-lock-files.md"),
+    (
+        "spec/golden/sophia-lock-files-v1.records",
+        "protocol/golden/sophia-lock-files-v1.records",
+    ),
 ];
 
 #[derive(Deserialize, Serialize)]

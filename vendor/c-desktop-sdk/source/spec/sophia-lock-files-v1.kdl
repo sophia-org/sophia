@@ -1,0 +1,314 @@
+// Lock provider file byte contract for t294. DRAFT: the native codec
+// (crates/sophia-protocol/src/lock_files) is bound to this file by
+// tests/lock_file_schema.rs; no export or admission serves it yet, and a
+// layout change must change both together. The export, custody and
+// authority rules are in docs/sophia-lock-files.md; these records alone grant
+// no admission, lock or unlock authority. Integers are little endian.
+//
+// A lock provider only renders. It never receives characters, never decides
+// an unlock and cannot enter or leave the locked state; no record here has
+// that meaning in either direction.
+protocol "sophia_lock_fs_v1" api-version=1 byte-order="little" max-record-bytes=65536 max-candidate-bytes=128 {
+    // Exact first line of the api file; the line continues with the epoch.
+    api "sophia-lock-files version=1"
+
+    // Fixed root vocabulary. upload/0 .. upload/N-1 are the fixed transfer
+    // slots, N being Limits.upload_slots.
+    file "api" access="read"
+    file "limits" access="read"
+    file "lock" access="read"
+    file "events" access="read"
+    file "transaction" access="read-write"
+    file "submit" access="write"
+    file "ack" access="write"
+    file "upload" access="write" slots="Limits.upload_slots"
+
+    header size=32 {
+        field "total_bytes" type="u32" offset=0 min=32 max=65536
+        field "api_version" type="u16" offset=4 value=1
+        field "kind" type="u16" offset=6
+        field "connection_epoch" type="u64" offset=8 nonzero=#true
+        field "submission_id" type="u64" offset=16
+        field "sequence" type="u64" offset=24
+    }
+
+    // Objects have submission_id=sequence=0. Candidates have submission_id>0
+    // and sequence=0. Events have submission_id=0 and sequence>0. Unknown
+    // kinds and versions are refused.
+    object "Limits" kind=1
+    object "Lock" kind=2
+    event "Negotiated" kind=16
+    event "Refused" kind=17
+    event "Submitted" kind=18
+    event "ObjectPublished" kind=19
+    event "ResourceStatus" kind=33
+    event "ResourceReleased" kind=34
+    event "CandidateOutcome" kind=35
+    event "FramePermit" kind=36
+    event "Entry" kind=40
+    event "Chord" kind=41
+    candidate "Negotiate" kind=256
+    candidate "ResourceBegin" kind=258
+    candidate "ResourceEnd" kind=259
+    candidate "ResourceCancel" kind=260
+    candidate "ResourceRetire" kind=261
+    candidate "Candidate" kind=262
+    candidate "FrameDemand" kind=263
+
+    capability "present" bit=0 required=#true
+    capability "chords" bit=1
+
+    refusal "unsupported_revision" value=1
+    refusal "presentation_required" value=2
+    refusal "invalid_chord" value=3
+
+    // Session's lock phase as the provider sees it. A provider draws for
+    // locking and locked; it stops at unlocking and unlocked.
+    phase "unlocked" value=1
+    phase "locking" value=2
+    phase "locked" value=3
+    phase "unlocking" value=4
+
+    // Entry events carry no character, keycode or length. Insert, delete
+    // and clear describe the secret's edits; empty_after says whether it is
+    // now empty. Checking, failed and unavailable follow a submit.
+    entry "insert" value=1
+    entry "delete" value=2
+    entry "clear" value=3
+    entry "submit" value=4
+    entry "checking" value=5
+    entry "failed" value=6
+    entry "unavailable" value=7
+
+    // Chord modifiers. A registered chord holds at least one modifier other
+    // than shift; reserved session chords are refused.
+    modifier "shift" bit=0
+    modifier "control" bit=1
+    modifier "alt" bit=2
+    modifier "super" bit=3
+
+    resource-status "admitted" value=1
+    resource-status "accepted" value=2
+    resource-status "rejected" value=3
+    resource-status "cancelled" value=4
+
+    candidate-status "prepared" value=1
+    candidate-status "presented" value=2
+    candidate-status "rejected" value=3
+    candidate-status "superseded" value=4
+    candidate-status "revoked" value=5
+
+    // Open vocabulary: unknown reasons are preserved and never imply success.
+    reason "none" value=0
+    reason "stale_lock" value=1
+    reason "stale_allocation" value=2
+    reason "unknown_resource" value=3
+    reason "size_mismatch" value=4
+    reason "permit" value=5
+    reason "budget" value=6
+    reason "topology" value=7
+    reason "provider_replaced" value=8
+
+    // Limits are fixed for one connection epoch. The resource bounds follow
+    // the largest allocation the current topology can grant, under a fixed
+    // ceiling; a topology change that would exceed them ends the epoch.
+    body "Limits" size=48 {
+        field "interface_revision" type="u16" offset=0 value=1
+        field "max_outputs" type="u16" offset=2 min=1 max=16
+        field "upload_slots" type="u16" offset=4 min=1 max=4
+        field "max_chords" type="u16" offset=6 max=8
+        field "max_width_px" type="u32" offset=8 min=1 max=16384
+        field "max_height_px" type="u32" offset=12 min=1 max=16384
+        field "max_resource_bytes" type="u64" offset=16 min=4 max=1073741824
+        field "max_live_resources" type="u16" offset=24 min=2 max=32
+        field "pixel_format_mask" type="u16" offset=26 value=1
+        field "journal_records" type="u32" offset=28 min=8 max=256
+        field "journal_bytes" type="u32" offset=32 min=2048 max=65536
+        field "assembly_timeout_ms" type="u32" offset=36 min=1 max=12000
+        field "ack_progress_timeout_ms" type="u32" offset=40 min=1 max=2000
+        field "reserved" type="u32" offset=44 value=0
+    }
+
+    // The lock object is republished on every phase, epoch and topology
+    // change. A zero lock_epoch is unlocked and carries no allocation.
+    body-prefix "Lock" size=32 {
+        field "lock_epoch" type="u64" offset=0
+        field "topology_generation" type="u64" offset=8 nonzero=#true
+        field "phase" type="u16" offset=16 min=1 max=4
+        field "allocation_count" type="u16" offset=18 max=16
+        field "reserved" type="bytes" offset=20 size=12 value=0
+    }
+    // One whole-output allocation. Its pixel size is the output's logical
+    // size times its scale; a resource for it must be exactly that size.
+    row "Allocation" size=56 {
+        field "output_id" type="u64" offset=0 nonzero=#true
+        field "output_generation" type="u64" offset=8 nonzero=#true
+        field "allocation_id" type="u64" offset=16 nonzero=#true
+        field "allocation_generation" type="u64" offset=24 nonzero=#true
+        field "pixel_width" type="u32" offset=32 min=1 max=16384
+        field "pixel_height" type="u32" offset=36 min=1 max=16384
+        field "scale_numerator" type="u32" offset=40 min=1 max=32
+        field "scale_denominator" type="u32" offset=44 min=1 max=4
+        field "reserved" type="u64" offset=48 value=0
+    }
+    rows "Lock" {
+        row "Allocation" count="allocation_count"
+    }
+
+    // A chord the provider asks to receive while locked, by XKB keysym.
+    row "ChordRequest" size=8 {
+        field "keysym" type="u32" offset=0 nonzero=#true
+        field "modifiers" type="u16" offset=4 mask=15 nonzero=#true
+        field "reserved" type="u16" offset=6 value=0
+    }
+    body-prefix "Negotiate" size=16 {
+        field "minimum_revision" type="u16" offset=0
+        field "maximum_revision" type="u16" offset=2
+        field "chord_count" type="u16" offset=4 max=8
+        field "reserved" type="u16" offset=6 value=0
+        field "requested_capabilities" type="u64" offset=8
+    }
+    rows "Negotiate" {
+        row "ChordRequest" count="chord_count"
+    }
+    // Granted chords keep their request order; a chord's id is its index.
+    body "Negotiated" size=16 {
+        field "selected_revision" type="u16" offset=0 value=1
+        field "granted_chords" type="u16" offset=2 max=8
+        field "reserved" type="u32" offset=4 value=0
+        field "granted_capabilities" type="u64" offset=8 mask=3 required=1
+    }
+    body "Refused" size=8 {
+        field "reason" type="u16" offset=0 min=1 max=3
+        field "reserved" type="bytes" offset=2 size=6 value=0
+    }
+    body "Submitted" size=16 {
+        field "submission_id" type="u64" offset=0 nonzero=#true
+        field "candidate_kind" type="u16" offset=8 min=256 max=263
+        field "reserved" type="bytes" offset=10 size=6 value=0
+    }
+    body "ObjectPublished" size=24 {
+        field "object_kind" type="u16" offset=0 value=2
+        field "reserved" type="bytes" offset=2 size=6 value=0
+        field "object_generation" type="u64" offset=8 nonzero=#true
+        field "qid_path" type="u64" offset=16 nonzero=#true
+    }
+
+    // Resources belong to the connection epoch and may be reused across
+    // lock epochs. pixel_format 1 is premultiplied BGRA8; row_bytes is
+    // width_px * 4 and total_bytes is row_bytes * height_px.
+    body "ResourceBegin" size=40 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "resource_id" type="u64" offset=8 nonzero=#true
+        field "resource_generation" type="u64" offset=16 nonzero=#true
+        field "width_px" type="u32" offset=24 min=1 max=16384
+        field "height_px" type="u32" offset=28 min=1 max=16384
+        field "slot" type="u16" offset=32 max=3
+        field "pixel_format" type="u16" offset=34 value=1
+        field "reserved" type="u32" offset=36 value=0
+    }
+    body "ResourceEnd" size=32 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "resource_id" type="u64" offset=8 nonzero=#true
+        field "resource_generation" type="u64" offset=16 nonzero=#true
+        field "total_bytes" type="u64" offset=24 nonzero=#true
+    }
+    body "ResourceCancel" size=24 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "resource_id" type="u64" offset=8 nonzero=#true
+        field "resource_generation" type="u64" offset=16 nonzero=#true
+    }
+    body "ResourceRetire" size=24 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "resource_id" type="u64" offset=8 nonzero=#true
+        field "resource_generation" type="u64" offset=16 nonzero=#true
+    }
+    body "ResourceStatus" size=40 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "resource_id" type="u64" offset=8 nonzero=#true
+        field "resource_generation" type="u64" offset=16 nonzero=#true
+        field "status" type="u16" offset=24 min=1 max=4
+        field "reason" type="u16" offset=26
+        field "reserved" type="u32" offset=28 value=0
+        field "admitted_bytes" type="u64" offset=32
+    }
+    body "ResourceReleased" size=32 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "resource_id" type="u64" offset=8 nonzero=#true
+        field "resource_generation" type="u64" offset=16 nonzero=#true
+        field "reason" type="u16" offset=24
+        field "reserved" type="bytes" offset=26 size=6 value=0
+    }
+
+    // One image for one output's allocation in one lock. The resource
+    // covers the allocation exactly; there are no placements or targets.
+    body "Candidate" size=96 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "lock_epoch" type="u64" offset=8 nonzero=#true
+        field "output_id" type="u64" offset=16 nonzero=#true
+        field "output_generation" type="u64" offset=24 nonzero=#true
+        field "allocation_id" type="u64" offset=32 nonzero=#true
+        field "allocation_generation" type="u64" offset=40 nonzero=#true
+        field "candidate_generation" type="u64" offset=48 nonzero=#true
+        field "pacing_permit" type="u64" offset=56 nonzero=#true
+        field "resource_id" type="u64" offset=64 nonzero=#true
+        field "resource_generation" type="u64" offset=72 nonzero=#true
+        field "reserved" type="bytes" offset=80 size=16 value=0
+    }
+    body "CandidateOutcome" size=56 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "lock_epoch" type="u64" offset=8 nonzero=#true
+        field "output_id" type="u64" offset=16 nonzero=#true
+        field "allocation_id" type="u64" offset=24 nonzero=#true
+        field "candidate_generation" type="u64" offset=32 nonzero=#true
+        field "status" type="u16" offset=40 min=1 max=5
+        field "reason" type="u16" offset=42
+        field "reserved" type="bytes" offset=44 size=12 value=0
+    }
+
+    // One standing demand per allocation. Session answers with a permit
+    // paced to the slowest head of that output; a permit expires and grants
+    // one candidate.
+    body "FrameDemand" size=40 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "lock_epoch" type="u64" offset=8 nonzero=#true
+        field "allocation_id" type="u64" offset=16 nonzero=#true
+        field "allocation_generation" type="u64" offset=24 nonzero=#true
+        field "demand_id" type="u64" offset=32 nonzero=#true
+    }
+    body "FramePermit" size=48 {
+        field "lock_epoch" type="u64" offset=0 nonzero=#true
+        field "allocation_id" type="u64" offset=8 nonzero=#true
+        field "allocation_generation" type="u64" offset=16 nonzero=#true
+        field "demand_id" type="u64" offset=24 nonzero=#true
+        field "pacing_permit" type="u64" offset=32 nonzero=#true
+        field "expires_after_ms" type="u32" offset=40 min=1 max=250
+        field "reserved" type="u32" offset=44 value=0
+    }
+
+    // What the lock's secret did, never what it holds.
+    body "Entry" size=16 {
+        field "lock_epoch" type="u64" offset=0 nonzero=#true
+        field "entry" type="u16" offset=8 min=1 max=7
+        field "empty_after" type="u16" offset=10 min=0 max=1
+        field "reserved" type="u32" offset=12 value=0
+    }
+    // A granted chord, by its id; the keys themselves never reach the secret.
+    body "Chord" size=16 {
+        field "lock_epoch" type="u64" offset=0 nonzero=#true
+        field "chord" type="u16" offset=8 max=7
+        field "reserved" type="bytes" offset=10 size=6 value=0
+    }
+
+    // Written at offset zero; the same shapes as the output contract.
+    submit size=24 {
+        field "connection_epoch" type="u64" offset=0 nonzero=#true
+        field "submission_id" type="u64" offset=8 nonzero=#true
+        field "candidate_bytes" type="u32" offset=16 min=48 max=128
+        field "reserved" type="u32" offset=20 value=0
+    }
+    ack size=16 {
+        field "connection_epoch" type="u64" offset=0 nonzero=#true
+        field "sequence" type="u64" offset=8 nonzero=#true
+    }
+}

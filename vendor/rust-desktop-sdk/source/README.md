@@ -11,10 +11,12 @@ Sophia checkout to build.
 | `sophia-desktop-ids` | Identifiers every role contract shares. |
 | `sophia-shell-protocol` | The shell's typed records and the `sophia_shell_fs_v1` file contract codec. |
 | `sophia-shell-client` | The shell client over the file contract. |
+| `sophia-lock-protocol` | The lock provider's `sophia_lock_fs_v1` file contract codec (experimental; see Contracts). |
 
-Only the shell role is here today. WM, output and admin modules arrive as their
-file contracts are implemented; nothing here claims a contract Sophia does not
-serve.
+The shell role is the only one with a client here. The lock provider role has
+an experimental codec and no client. WM, output and admin modules arrive as
+their file contracts are implemented; nothing here claims a contract Sophia
+does not serve.
 
 The protocol crate also carries the descriptor, tabs, shortcut/reference and
 revision-4 launcher records, native file codecs and pure validation. This
@@ -32,11 +34,25 @@ implements, `spec/sophia-wm-files.md` the envelope, custody and retry rules
 it adopts, `spec/sophia-9p-profile.md` Sophia's 9P2000.L subset, and
 `spec/references/diod-9p2000L-protocol.md` the pinned dialect text, which is
 GPL-licensed and kept for reference only under its own notice.
+`spec/sophia-lock-files-v1.kdl`, `spec/sophia-lock-files.md` and
+`spec/golden/sophia-lock-files-v1.records` are the lock provider contract, its
+text and Sophia's golden records, which `sophia-lock-protocol` must render
+byte for byte. They are pinned from Sophia's signed master merge `61d545c90`,
+but the contract still marks itself revision 1 (draft): the lock codec is
+experimental and can change incompatibly until Sophia accepts the contract
+explicitly. A lock provider only renders: the contract carries no secret and no
+unlock.
 `spec/SHA256SUMS` holds every digest; Sophia's gate refuses a vendored SDK
 whose copies differ from its own.
 
 The dialect is plain 9P2000.L; wire error numbers are the Linux values
 9P2000.L defines, whatever the host (see `PLATFORMS.md`).
+
+## Release 0.3.0
+
+Adds `sophia-lock-protocol`, the lock provider's experimental file contract
+codec (no client), and `Pipeline::write_secret` in `sophia-9p-client`, which zeroes
+every copy of a secret request it leaves behind. Both are additive.
 
 ## Release 0.2.0
 

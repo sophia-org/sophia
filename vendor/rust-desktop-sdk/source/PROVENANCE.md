@@ -20,6 +20,9 @@ merge). Later changes are made here first; Sophia vendors a pinned snapshot.
 | `spec/references/diod-9p2000L-protocol.md` | `docs/references/diod-9p2000L-protocol.md` (GPL; reference only, see its notice) |
 | `spec/golden/sophia-shell-*.frames` | `protocol/golden/` (content, content-malformed, catalog-actions, indicators, launcher, v1, v1-malformed) |
 
+| `sophia-lock-protocol` | `crates/sophia-protocol/src/{lock_files,byte_cursor.rs,codec_error.rs}` and tests `lock_files.rs`, `lock_file_schema.rs`, `lock_file_golden.rs`, `support/file_schema.rs`, at `fd6ea7538` (branch `lock/t034-next`, unmerged) |
+| `spec/sophia-lock-files-v1.kdl`, `spec/sophia-lock-files.md`, `spec/golden/sophia-lock-files-v1.records` | `protocol/sophia-lock-files-v1.kdl`, `docs/sophia-lock-files.md`, `protocol/golden/sophia-lock-files-v1.records` at `fd6ea7538` |
+
 Edits made on extraction: crate paths, crate roots and manifests, doc links
 that named server modules, the socket wire behind `ipc-compat`, and the KDL
 path in the conformance tests.
@@ -239,3 +242,46 @@ digests are unchanged.
 carry a keyboard output and bindings while modifier keys pass through. This
 SDK has no WM client, so none of that is implemented here. Library sources,
 wire layouts and the other spec digests are unchanged.
+
+## Lock provider codec (draft)
+
+`sophia-lock-protocol` is extracted from Sophia `fd6ea7538` on
+`lock/t034-next` (t294), which is not merged: the lock contract is a draft and
+can change until Sophia merges it. The lock codec files are unmodified. Edits
+on extraction: `codec_error.rs` drops the conversions from Sophia's shell
+`ValueError` and `InvalidRecord`, which the lock codec never uses;
+`byte_cursor.rs` drops the `u8`/`i32` reads and writes, which it never uses;
+the tests take the KDL and golden records from `spec/`, and the golden test
+only checks Sophia's file, never regenerates it. The C SDK's lock files pin
+the same three contract copies.
+
+## Release 0.3.0
+
+This release brings two additive changes and the WM contract documentation
+imported since 0.2.0 (see the four WM sections above). Every `spec/` copy is
+byte-identical at Sophia's signed master merge
+`61d545c9087a685c5161f0d5f3132436aa82d31e` ("Merge the lock provider role
+(t294)").
+
+- **`sophia-lock-protocol`** (new crate): the lock provider codec extracted
+  from Sophia `fd6ea7538` (see "Lock provider codec (draft)" above). The three
+  lock contract copies are unchanged at that master merge, which this release
+  names as their contract revision. Merging the implementation did not accept
+  the contract: the copied text still marks itself revision 1 (draft), so the
+  crate is experimental and can change incompatibly until Sophia accepts the
+  contract explicitly. The crate renders all of Sophia's golden
+  lock records byte for byte. It has no client.
+- **`sophia-9p-client`**: `Pipeline::write_secret` queues the same Twrite
+  frame as `write`, then zeroes the request body once it is queued, and the
+  output buffer's spare capacity after each send until the buffer empties.
+  Dropping the pipeline zeroes the whole buffer. Before a secret is queued,
+  the buffer reserves the full capacity its bound allows, so no later
+  request can reallocate and free a copy unzeroed. `scrubbing_output` and
+  `output_capacity` report that state for tests. Sophia's session lock sends
+  the unlock password to its authentication agent through this path (t034
+  security review, finding 3).
+
+API compatibility with 0.2.0: no public item was removed or changed. The
+additions are the new crate and `write_secret`, `scrubbing_output` and
+`output_capacity`. `Pipeline` gains a `Drop` impl, but its fields are
+private, so no caller can move out of it and no existing code breaks.
