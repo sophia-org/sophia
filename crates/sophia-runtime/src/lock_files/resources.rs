@@ -157,17 +157,26 @@ impl Resources {
         }
     }
 
-    /// Unshared storage of exactly `len` bytes: spare storage nothing else
-    /// holds any more, or new storage.
+    /// Unshared storage of exactly `len` bytes for an upload about to take
+    /// a live place: spare storage nothing else holds any more, or new
+    /// storage. New storage is made only once the spare storage has left
+    /// room for it, so live and spare storage stay within the epoch's limit
+    /// even while it is made.
     fn storage(&mut self, len: usize) -> Arc<[u8]> {
         let reusable = self
             .spare
             .iter_mut()
             .position(|spare| spare.len() == len && Arc::get_mut(spare).is_some());
-        match reusable {
-            Some(index) => self.spare.swap_remove(index),
-            None => std::iter::repeat_n(0, len).collect(),
+        if let Some(index) = reusable {
+            return self.spare.swap_remove(index);
         }
+        let limit = usize::from(self.limits.max_live_resources);
+        self.trim_spare_to(limit.saturating_sub(self.live() + 1));
+        debug_assert!(
+            self.live() + self.spare.len() < limit,
+            "new storage would exceed the live-resource limit"
+        );
+        std::iter::repeat_n(0, len).collect()
     }
 
     /// Keeps `pixels` for reuse, within the room the live resources leave.
@@ -181,7 +190,12 @@ impl Resources {
     /// may hold. Storage still shared goes first: it is the least likely to
     /// be reused.
     fn trim_spare(&mut self) {
-        let room = usize::from(self.limits.max_live_resources).saturating_sub(self.live());
+        self.trim_spare_to(usize::from(self.limits.max_live_resources).saturating_sub(self.live()));
+    }
+
+    /// Drops spare storage until at most `room` remains, storage still
+    /// shared first.
+    fn trim_spare_to(&mut self, room: usize) {
         while self.spare.len() > room {
             let index = self
                 .spare
