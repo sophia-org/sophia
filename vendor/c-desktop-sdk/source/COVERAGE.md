@@ -17,7 +17,7 @@ Clients retain their own policy and UI logic. No missing file operation falls
 back to IPC. Former descriptor-based operations require a reviewed file or
 protected-grant contract, rather than a hidden ancillary-data channel.
 
-## Release 0.7.0
+## Release 0.8.0
 
 | Role | File contract | Client status |
 | --- | --- | --- |
@@ -26,6 +26,7 @@ protected-grant contract, rather than a hidden ancillary-data channel.
 | WM chord lifecycle: `action_lifecycle` Configuration rows and ActionLifecycle cause; `chord_actions` ChordAction cause | Additive contracts (`86bf6504`, generated rows `3a1dce11`; ChordAction `b0a2b030`) | Codec and negotiation, with literal and scripted-peer tests only; Session's implementation, production export gate and Hagia use are pending |
 | WM held capture: `held_capture` (bit 22) keyboard output and bindings on an Overlay presentation | Additive contract (`ac04e1a7`) | Negotiation dependency with scripted-peer tests only; the codec is unchanged; Session's implementation and Hagia use are pending |
 | Output authority: negotiation, topology publication, validate/apply proposals, outcomes | Sophia output file API 1, revision 1 (`b0721d0de`) | Codec/session, literal and scripted-peer tests, independent C exchange against the production export, and Sophia's attended native acceptance (`ddd27bd6d`; one card, two heads, refresh-only change) |
+| Lock provider: negotiation and chords, the lock object, uploads, frame demands and permits, candidates and outcomes, entry and chord events | Sophia lock file API 1, revision 1, experimental: the contract still marks itself draft (imported from `fd6ea7538`; byte-identical at the signed master merge `61d545c90`) | Record codec: literal round trips of Sophia's golden records and the contract's refusal rules. Client (`sophia_lock_client.h`): tested against a scripted 9P peer for bootstrap, negotiation and refusal, lock object fetches including a superseded announcement, uploads (admitted, rejected, refused, cancelled), demands, candidates, EAGAIN retry, custody held until acknowledged, and ESTALE. One scratch run against Sophia's production export (fd6ea7538): negotiation with a chord, lock fetches, a two-chunk upload, demand and permit, a presented candidate, entry and chord events, and the republish to unlocking. `lock_files` stays false until the contract is accepted and Sophia's permanent production export harness passes with this SDK vendored |
 | Admin/control: the public control operations and their results | Existing control schema does not establish a 9P file contract | File contract and SDK client gap |
 
 This table does not claim that a transport codec provides a session client, or

@@ -158,3 +158,70 @@ fn engine_text_is_focus_scoped_and_shift_aware() {
     keyboard.observe(29, true, true);
     assert_eq!(keyboard.observe(22, true, true), (None, true));
 }
+
+#[test]
+fn ownership_reset_clears_held_modifiers_and_accepts_fresh_presses() {
+    for modifier in [42, 54, 29, 97, 56, 100, 125, 126] {
+        let mut keyboard = LauncherKeyboard::new(
+            "evdev",
+            "pc105",
+            "us",
+            "",
+            "",
+            std::ffi::OsStr::new("C.UTF-8"),
+        )
+        .unwrap();
+        keyboard.observe(modifier, true, false);
+        keyboard.reset_pressed();
+        assert!(!keyboard.command_modifier_active(), "modifier {modifier}");
+        assert_eq!(keyboard.observe(30, true, true).0.as_deref(), Some("a"));
+        keyboard.observe(30, false, true);
+        // A release that crosses the boundary must not poison a later press.
+        keyboard.observe(modifier, false, false);
+        keyboard.observe(42, true, true);
+        assert_eq!(keyboard.observe(30, true, true).0.as_deref(), Some("A"));
+    }
+}
+
+#[test]
+fn ownership_reset_preserves_caps_lock_and_discards_dead_key_composition() {
+    let mut keyboard = LauncherKeyboard::new(
+        "evdev",
+        "pc105",
+        "us",
+        "intl",
+        "",
+        std::ffi::OsStr::new("C.UTF-8"),
+    )
+    .unwrap();
+    keyboard.observe(58, true, false);
+    keyboard.observe(58, false, false);
+    assert_eq!(keyboard.observe(40, true, true).0, None);
+    keyboard.observe(40, false, true);
+    keyboard.reset_pressed();
+    assert_eq!(keyboard.observe(30, true, true).0.as_deref(), Some("A"));
+    keyboard.observe(30, false, true);
+    keyboard.observe(58, true, false);
+    keyboard.observe(58, false, false);
+    assert_eq!(keyboard.observe(30, true, true).0.as_deref(), Some("a"));
+}
+
+#[test]
+fn ownership_reset_keeps_the_selected_layout() {
+    let mut keyboard = LauncherKeyboard::new(
+        "evdev",
+        "pc105",
+        "us,de",
+        "",
+        "grp:alt_shift_toggle",
+        std::ffi::OsStr::new("C.UTF-8"),
+    )
+    .unwrap();
+    for (keycode, pressed) in [(56, true), (42, true), (42, false), (56, false)] {
+        keyboard.observe(keycode, pressed, false);
+    }
+    assert_eq!(keyboard.observe(21, true, true).0.as_deref(), Some("z"));
+    keyboard.observe(21, false, true);
+    keyboard.reset_pressed();
+    assert_eq!(keyboard.observe(21, true, true).0.as_deref(), Some("z"));
+}

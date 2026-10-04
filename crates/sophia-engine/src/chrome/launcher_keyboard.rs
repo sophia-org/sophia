@@ -59,6 +59,22 @@ impl LauncherKeyboard {
                     .mod_name_is_active(name, xkb::STATE_MODS_EFFECTIVE)
             })
     }
+
+    /// End a keyboard ownership interval whose releases will go elsewhere.
+    /// Keep persistent locks and the selected layout, but forget depressed or
+    /// latched keys and incomplete composition. A fresh state also removes
+    /// XKB's internal press counts, which clearing modifier masks alone cannot.
+    pub fn reset_pressed(&mut self) {
+        let locked_mods = self.state.serialize_mods(xkb::STATE_MODS_LOCKED);
+        let locked_layout = self.state.serialize_layout(xkb::STATE_LAYOUT_LOCKED);
+        self.state = xkb::State::new(&self.state.get_keymap());
+        self.state
+            .update_mask(0, 0, locked_mods, 0, 0, locked_layout);
+        if let Some(compose) = self.compose.as_mut() {
+            compose.reset();
+        }
+    }
+
     pub fn observe(&mut self, keycode: u32, pressed: bool, active: bool) -> (Option<String>, bool) {
         let key = xkb::Keycode::new(keycode.saturating_add(8));
         self.state.update_key(

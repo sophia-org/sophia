@@ -1,6 +1,26 @@
 use super::*;
 use crate::session_lock_input::{SessionLockInput, SessionLockKeyOutcome};
 
+/// Forget desktop key state before its releases become private lock input.
+/// Cancelling chords alone keeps the router's down-key ledger. No lock-time
+/// event may be replayed into either desktop keyboard to repair that ledger.
+pub(super) fn reset_desktop_keyboard_for_lock(
+    seat: SeatId,
+    shortcuts: Option<&mut WmShortcutRouter>,
+    modifiers: &mut XCoreKeyboardMapper,
+    launcher_keyboard: &mut sophia_engine::LauncherKeyboard,
+) {
+    if let Some(shortcuts) = shortcuts {
+        shortcuts.clear_seat(seat);
+    }
+    // Release both sides even when a shortcut or capture consumed the press
+    // before it entered the client ledger. Keep CapsLock and NumLock intact.
+    for keycode in [42, 54, 29, 97, 56, 100] {
+        let _ = modifiers.map_evdev_key(keycode, false);
+    }
+    launcher_keyboard.reset_pressed();
+}
+
 /// Physical input while the session lock holds the seat.
 ///
 /// Keys go to the lock alone, after the VT and emergency recognizers, and

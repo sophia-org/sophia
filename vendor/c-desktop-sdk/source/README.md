@@ -18,9 +18,10 @@ to tunnel the old socket protocol through a file.
 
 ## Current coverage
 
-Release 0.7.0 provides a generic nonblocking 9P2000.L client, shell file
+Release 0.8.0 provides a generic nonblocking 9P2000.L client, shell file
 records and sessions for bar (r6), native launcher (r7) and persistent
-catalog/dock (r8), and WM and output file codecs and sessions. WM and shell socket
+catalog/dock (r8), WM and output file codecs and sessions, and an experimental
+lock provider codec and client. WM and shell socket
 compatibility is removed; recovery uses a complete compatible older desktop release.
 WM file record codecs and a bounded WM session pass scripted-peer tests and
 Sophia's production WM export gate, and Hagia uses them through thin Nim
@@ -153,3 +154,26 @@ refuses the retired `SOPHIA_OUTPUT_SOCKET`.
 Revision 1 does not publish a head's current transform or VRR policy, and a
 proposal restates them for every enabled head. Callers must obtain explicit
 values rather than defaulting them.
+
+## Lock provider role (experimental)
+
+The lock API is experimental. The pinned contract (Sophia's signed master
+merge `61d545c90`, see PROVENANCE.md) still marks itself as revision 1
+(draft), and Sophia has not yet accepted it explicitly. It can change
+incompatibly before that acceptance. `compatibility.json` sets
+`lock_files=false` until the contract is accepted and Sophia's production
+lock export gate passes with this SDK vendored.
+`sophia_lock_files.h` encodes and decodes the records in
+`spec/sophia-lock-files-v1.kdl`, checked against Sophia's golden records.
+
+`sophia_lock_client.h` owns one lock provider attach: it reads `api` and
+`limits`, negotiates (with any UI chords), and handles submission custody,
+cumulative acknowledgements, lock object fetches and uploads to
+`upload/<slot>`. Negotiated, Refused and Submitted are consumed internally;
+every other event is acknowledged only after the caller consumes it. An
+ObjectPublished is presented only after the SDK has read that exact lock
+object. One whose object was already replaced is consumed unread, because
+the newer object's announcement follows it. A provider renders only: it never
+sees the secret's characters and cannot enter or leave the locked state. The
+client does not discover the socket (`SOPHIA_LOCK_9P_SOCKET`) or reconnect;
+a replacement process gets a new connection and a new client.

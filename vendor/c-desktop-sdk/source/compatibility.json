@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sdk": "sophia-desktop-sdk-c",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "release": true,
   "dialect": "9P2000.L",
   "shell_file_api": 1,
@@ -15,6 +15,8 @@
   "wm_file_api": 1,
   "output_files": true,
   "output_file_api": 1,
+  "lock_files": false,
+  "lock_file_api": 1,
   "admin_files": false,
   "tested_platforms": ["linux"],
   "next_qualification_target": "freebsd",

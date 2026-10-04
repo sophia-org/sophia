@@ -1,26 +1,24 @@
-tree 52c87053547bde9700bf2fe35d562b6fb1845560
-parent 1cce77bbaa9c59cd233995dd6b7fc70a377b70b1
-author Mason Green <mason@greenm01.net> 1791039121 -0400
-committer Mason Green <mason@greenm01.net> 1791039121 -0400
+tree e2aacd58ebed6eee294f838e5e7414abe43b6596
+parent 0538cade3da286a7607cdeacb7305a99b8034528
+author Mason Green <mason@greenm01.net> 1791072228 -0400
+committer Mason Green <mason@greenm01.net> 1791072584 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCasEWkRsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJoRAD9E6/EcWxlaWsyP73001/4
- aOMKLFshcbL7RnWrMBGyhjsBAPIVkyA4nMOiPlRGIz3vICKQ9QDWPqVZ8MWLF2Iq
- 4asE
- =BY1G
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCasGZSBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGISNAD9GHlE9K9ZZcpjZ6bJQAVk
+ /nsWu+ZFwnAx9QEcWhMyThAA/1wcJKNKp59NsjqVjcjg6j5wbpepd7iOSGPjkRDN
+ zysL
+ =urq6
  -----END PGP SIGNATURE-----
 
-Reserve the output bound before a secret write is queued
+Release Rust SDK 0.3.0 with an experimental lock provider codec
 
-write_secret zeroed the output buffer's current allocation, but a later
-request could grow that buffer while the secret was still queued. The
-allocator would then free the old allocation, secret included, without
-zeroing it. Before a secret enters, the buffer now reserves the whole
-capacity its bound allows. Submit already refuses anything past that
-bound, so no later request can reallocate it.
+Adds the sophia-lock-protocol crate, a codec with no client, and
+Pipeline::write_secret with its zeroing guarantees in sophia-9p-client.
+The release also carries the WM contract documents imported since 0.2.0.
+Every spec copy is byte-identical at Sophia's signed master merge
+61d545c90 (t294). The lock contract still marks itself revision 1 (draft),
+so the lock codec is experimental until Sophia accepts it explicitly.
 
-output_capacity exposes the allocation for the regression, which fills
-the buffer behind a queued secret until the bound refuses a request and
-checks that the capacity never changed. Reported in review by
-niltempus.
+No public item was removed or changed. Pipeline gains a Drop impl, but its
+fields are private.

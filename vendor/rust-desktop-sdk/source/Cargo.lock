@@ -93,7 +93,7 @@ dependencies = [
 
 [[package]]
 name = "sophia-9p-client"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "rustix",
  "sophia-9p-records",
@@ -101,15 +101,22 @@ dependencies = [
 
 [[package]]
 name = "sophia-9p-records"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "sophia-desktop-ids"
-version = "0.2.0"
+version = "0.3.0"
+
+[[package]]
+name = "sophia-lock-protocol"
+version = "0.3.0"
+dependencies = [
+ "kdl",
+]
 
 [[package]]
 name = "sophia-shell-client"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "rustix",
  "sophia-9p-client",
@@ -119,7 +126,7 @@ dependencies = [
 
 [[package]]
 name = "sophia-shell-protocol"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "kdl",
  "sophia-desktop-ids",

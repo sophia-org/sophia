@@ -89,6 +89,15 @@ pub fn verify(snapshot: &Path, repo: &Path) -> Result<String, String> {
             "protocol/golden/sophia-wm-v1.records",
         ),
         (
+            "spec/sophia-lock-files-v1.kdl",
+            "protocol/sophia-lock-files-v1.kdl",
+        ),
+        ("spec/sophia-lock-files.md", "docs/sophia-lock-files.md"),
+        (
+            "spec/golden/sophia-lock-files-v1.records",
+            "protocol/golden/sophia-lock-files-v1.records",
+        ),
+        (
             "spec/references/diod-9p2000L-protocol.md",
             "docs/references/diod-9p2000L-protocol.md",
         ),

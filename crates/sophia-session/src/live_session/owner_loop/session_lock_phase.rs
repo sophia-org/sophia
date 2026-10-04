@@ -73,6 +73,12 @@ macro_rules! begin_session_lock {
                     if let Some(wm) = wm_session.as_mut() {
                         wm.observe_keyboard_matching(false);
                     }
+                    locked::reset_desktop_keyboard_for_lock(
+                        seat,
+                        wm_session.as_mut().and_then(|wm| wm.shortcuts.as_mut()),
+                        &mut modifiers,
+                        &mut launcher_keyboard,
+                    );
                     // Keys the lock takes are never counted; what was held
                     // before it is forgotten rather than left stale.
                     keyboard_coverage.forget_all_devices();
@@ -303,6 +309,14 @@ macro_rules! service_session_lock {
                     );
                     begin_session_lock!("unlock_repaint_failed");
                 } else if session_lock.observe_unlocked(applied) {
+                    // Start a fresh desktop interval; never import the lock's
+                    // pressed keys, compose state or lock-toggle changes.
+                    locked::reset_desktop_keyboard_for_lock(
+                        seat,
+                        wm_session.as_mut().and_then(|wm| wm.shortcuts.as_mut()),
+                        &mut modifiers,
+                        &mut launcher_keyboard,
+                    );
                     session_lock_input = None;
                     input_sender.set_synthetic_admitted(true);
                     crate::session_println!(
