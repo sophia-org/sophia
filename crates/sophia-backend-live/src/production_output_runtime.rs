@@ -8,6 +8,10 @@ use sophia_protocol::{CommittedSurfaceState, OutputId, Rect};
 use std::collections::BTreeMap;
 use std::error::Error;
 
+#[cfg(test)]
+#[path = "../tests/support/output_runtime_startup.rs"]
+mod startup_test_support;
+
 pub struct LiveProductionOutputRuntime {
     pub runtime: LiveBackendRuntimeAssembly,
     native_initialized: bool,

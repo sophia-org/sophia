@@ -1,32 +1,14 @@
-tree b36aade0539d2e03c2298ef071cd14ca6bb46a5c
-parent 955a18c093fb003321fc67a624ba0478c11697de
-author Mason Green <mason@greenm01.net> 1791072228 -0400
-committer Mason Green <mason@greenm01.net> 1791072568 -0400
+tree f39def9534e725898e69b551a464a68261a2feb9
+parent 3f2185ea73738ea4e755599d67517510fc55c502
+author Mason Green <mason@greenm01.net> 1791088387 -0400
+committer Mason Green <mason@greenm01.net> 1791088387 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCasGZOBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIC7AEAt6Lq9vDu6ohxZuPhP/vU
- tMQ3LUDoX52pcvYWbiofobEBAOeYeOI/s32tcA0QLZE3i2Y6Wt6dJ0hHDn0FQ9Sd
- YhgG
- =XdO6
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCasHXAxsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJ5MgEAurNDlxdGdzwq8fLKuj0v
+ dei6kZk0DQpWAilEmgQ+gkYBAOKxqRgKqI4ICViHLj0D3iX9R6qBrSZOnF7ISiHF
+ JWIL
+ =Bdmi
  -----END PGP SIGNATURE-----
 
-Release C SDK 0.8.0 with an experimental lock provider role
-
-The lock provider contract (sophia-lock-files-v1.kdl, sophia-lock-files.md
-and its golden records) was imported unmodified from Sophia fd6ea7538. It is
-byte-identical at Sophia's signed master merge
-61d545c9087a685c5161f0d5f3132436aa82d31e, which this release names as its
-contract revision. Every other spec copy also matches that master. The
-copied contract still marks itself revision 1 (draft), so the lock API is
-experimental until Sophia accepts it explicitly.
-
-The release adds sophia_lock_files.h (sophia_lf_*, the record codec) and
-sophia_lock_client.h (sophia_lc_*, a nonblocking provider client). No
-existing header, structure or symbol changes. struct sophia_lc_client holds
-the 9P client by pointer, embeds the existing sophia_9p_handle in its
-operation slots, and otherwise embeds new lock record types.
-
-compatibility.json declares lock_files false until the contract is accepted
-and Sophia's permanent production lock export harness passes with this
-release vendored. Upload pipelining remains a follow-up.
+Expose queued upload cancellation to the caller poll loop

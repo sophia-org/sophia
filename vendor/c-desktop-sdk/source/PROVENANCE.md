@@ -439,3 +439,33 @@ One scratch run against Sophia's production lock export passed (Sophia
 vendored. Until it passes, `compatibility.json` declares `lock_files` false.
 Upload throughput is bound by the single upload write in flight. Pipelining
 uploads is a follow-up that needs no contract change.
+
+## Release candidate 0.9.0: bounded lock upload pipelining
+
+All contract copies remain byte-identical to 0.8.0. The experimental lock
+client adds opt-in windows of one to eight Twrites on the existing upload
+cursor. Default one-write behavior remains. Five request slots are reserved
+for non-upload work; kleis uses sixteen slots and a window of eight. The
+caller-allocated client grows, so consumers must rebuild for this 0.x release.
+
+Each write has a distinct handle and count. Reply reordering preserves issued
+offsets, and End requires all bytes acknowledged. Cancel stops new writes and
+drains outstanding replies before releasing the borrowed frame. A short write
+in a pipeline cancels the resource instead of guessing the remote cursor.
+A terminal resource status also drains outstanding writes before closing its
+fid. A terminal connection is disposed rather than replayed.
+An upload Rerror now cancels the resource in single-write mode too, rather
+than only closing its fid. The peer's errno is retained; a pipelined short
+reply requests cancellation without inventing a remote errno.
+After the last outstanding reply, an internally queued Cancel creates its
+wire request in that same service call. Poll interest exposes the write
+immediately; applications do not need a timer to advance local SDK work.
+
+Local scripted controls cover a withheld first reply, reverse replies, input
+and ack progress with eight writes held, cancellation during an upload, short
+and failed writes, resource rejection while writes remain, disconnect, and
+single-write short-write retry. Four mutants (serializing the window, early
+borrow release, wrong offsets and ignoring cancellation) fail named assertions.
+The strict C suites, generator checks and all suites under clang ASan/UBSan
+pass. Production integration and device throughput are separate Sophia gates;
+this record makes no throughput claim.

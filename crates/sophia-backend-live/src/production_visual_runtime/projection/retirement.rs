@@ -17,6 +17,17 @@ impl LiveProductionVisualRuntime {
             }
         }
         self.retained_projection_pending = true;
+        // A retained projection submits ordinary flips, not initial modesets.
+        // Leave the whole projection pending until every output is initialized;
+        // otherwise preserving a queued prefix hides native_scanout from the
+        // CPU cycle that must establish the remaining outputs first.
+        if self
+            .outputs
+            .logical_viewports()
+            .any(|(output, _)| !self.outputs.native_initialized(output))
+        {
+            return Ok(false);
+        }
         if self.native_publication_blocked() || !native.frame_service_available() {
             return Ok(false);
         }

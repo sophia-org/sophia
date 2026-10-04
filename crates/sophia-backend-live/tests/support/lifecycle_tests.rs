@@ -13,6 +13,8 @@ mod policy_composition;
 mod popout_removal;
 #[path = "lifecycle_tests/resources.rs"]
 mod resources;
+#[path = "lifecycle_tests/startup.rs"]
+mod startup;
 #[path = "lifecycle_tests/target.rs"]
 mod target;
 use resources::*;

@@ -18,7 +18,7 @@ to tunnel the old socket protocol through a file.
 
 ## Current coverage
 
-Release 0.8.0 provides a generic nonblocking 9P2000.L client, shell file
+Release 0.9.0 provides a generic nonblocking 9P2000.L client, shell file
 records and sessions for bar (r6), native launcher (r7) and persistent
 catalog/dock (r8), WM and output file codecs and sessions, and an experimental
 lock provider codec and client. WM and shell socket
@@ -177,3 +177,19 @@ the newer object's announcement follows it. A provider renders only: it never
 sees the secret's characters and cannot enter or leave the locked state. The
 client does not discover the socket (`SOPHIA_LOCK_9P_SOCKET`) or reconnect;
 a replacement process gets a new connection and a new client.
+
+### Bounded lock uploads
+
+`sophia_lc_upload_window(client, writes)` opts into up to eight ordered Twrites
+on the same upload fid. The default remains one. Reserve at least five wire
+request slots beyond the upload window for event reads, acknowledgements,
+submission custody and object reads. The caller still supplies one borrowed
+chunk; ready means every byte was acknowledged, never merely queued.
+
+Cancellation can interrupt a chunk: no further writes are issued, outstanding
+replies drain, and Cancel follows on the same transaction. Keep the chunk alive
+until pending ends (or dispose a terminal connection). A positive short write
+is retried in single-write mode. In pipelined mode it cancels that resource,
+because later requests may already name offsets beyond the peer's cursor. It
+never replays an ambiguous write or publishes incomplete pixels. No wire
+contract changed. Callers must recompile for the enlarged 0.x client struct.

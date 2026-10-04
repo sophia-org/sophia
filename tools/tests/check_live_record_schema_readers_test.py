@@ -68,6 +68,19 @@ class SchemaReaderChecks(unittest.TestCase):
         self.readers[name] = self.readers[name].replace('schema=16', 'schema=(16|17)')
         self.assertTrue(any('unrequested-proof schema' in f for f in self.failures()))
 
+    def test_lock_fixture_readers_accept_both_completion_branches(self):
+        for name in ('qemu_session_harness.sh', 'verify_qemu_session_lock_provider.py'):
+            path = 'tools/' + name
+            with self.subTest(reader=name):
+                original = self.readers[path]
+                self.readers[path] = original.replace('(16|17)', '[0-9]+')
+                self.assertEqual(self.failures(), [])
+                self.readers[path] = original.replace('(16|17)', '16')
+                self.assertTrue(any(path in f and 'cannot read' in f for f in self.failures()))
+                del self.readers[path]
+                self.assertTrue(any(path in f and 'disappeared' in f for f in self.failures()))
+                self.readers[path] = original
+
     def test_unresolved_or_ambiguous_emitter_fails(self):
         source = self.sources['emitter.rs']
         for changed in [source.replace('{ 17 }', '{ normal_schema }'), source + source,

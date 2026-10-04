@@ -91,3 +91,6 @@ inline-tests crates/sophia-x-authority/src/runtime/present_admission_recovery.rs
 
 # Thread-local, one-shot post-receipt fault and intake inspection; tests live in support/private_input_session.
 inline-tests crates/sophia-session/src/private_input/committed.rs
+
+# External inactive-CRTC fixture; no inline test bodies or device access.
+inline-tests crates/sophia-backend-live/src/production_output_runtime.rs

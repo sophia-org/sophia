@@ -280,7 +280,6 @@ macro_rules! lock_entry {
 
 macro_rules! service_session_lock {
     () => {{
-        service_lock_provider!();
         let applied = input_sender.applied_control_epoch() >= session_lock_input_epoch;
         match session_lock.phase() {
             crate::session_lock::SessionLockPhase::Locking { epoch, .. } => {
@@ -425,6 +424,10 @@ macro_rules! service_session_lock {
                     );
                 }
             }
+        }
+        if !matches!(session_lock.phase(),
+            crate::session_lock::SessionLockPhase::Unlocking { .. }) {
+            service_lock_provider!();
         }
     }};
 }

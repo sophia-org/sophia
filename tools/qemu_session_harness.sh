@@ -25,6 +25,41 @@ CPU_CLIENTS="${SOPHIA_QEMU_CPU_CLIENTS:-2}"
 CPU_SIZE="${SOPHIA_QEMU_CPU_SIZE:-small}"
 CPU_DAMAGE="${SOPHIA_QEMU_CPU_DAMAGE:-absent}"
 CPU_EVIDENCE="${SOPHIA_QEMU_CPU_EVIDENCE:-full}"
+# The session-lock-provider scenario's stand-in provider: baseline, flood or stall.
+LOCK_PROVIDER_MODE="${SOPHIA_QEMU_LOCK_PROVIDER_MODE:-}"
+lock_provider_cmdline=""
+if [[ "$SCENARIO" == session-lock-provider ]]; then
+    case "$LOCK_PROVIDER_MODE" in
+        baseline|flood|stall) ;;
+        *)
+            echo "SOPHIA_QEMU_LOCK_PROVIDER_MODE must be baseline, flood or stall" >&2
+            exit 1
+            ;;
+    esac
+    lock_provider_cmdline=" sophia.lock_provider_mode=$LOCK_PROVIDER_MODE"
+elif [[ -n "$LOCK_PROVIDER_MODE" ]]; then
+    echo "SOPHIA_QEMU_LOCK_PROVIDER_MODE is only for the session-lock-provider scenario" >&2
+    exit 1
+fi
+# Diagnostic only, off by default: on the first native page-flip hard stall
+# the guest's stamper asks the guest kernel for its blocked tasks (SysRq w)
+# and copies that report into the evidence (tools/qemu_line_stamp.c).
+SYSRQ_ON_HARD_STALL="${SOPHIA_QEMU_SYSRQ_ON_HARD_STALL:-0}"
+case "$SYSRQ_ON_HARD_STALL" in
+    0) ;;
+    1)
+        [[ "$SCENARIO" == session-lock-provider ]] || {
+            echo "SOPHIA_QEMU_SYSRQ_ON_HARD_STALL is only for the session-lock-provider scenario" >&2
+            exit 1
+        }
+        lock_provider_cmdline+=" sophia.sysrq_on_hard_stall=1"
+        ;;
+    *)
+        echo "SOPHIA_QEMU_SYSRQ_ON_HARD_STALL must be 0 or 1" >&2
+        exit 1
+        ;;
+esac
+
 cpu_cmdline=""
 if [[ "$SCENARIO" == cpu ]]; then
     if [[ "$CPU_EVIDENCE" != full && "$CPU_EVIDENCE" != aggregate ]]; then
@@ -54,9 +89,9 @@ if [[ "$SCENARIO" == cpu ]]; then
 fi
 
 case "$SCENARIO" in
-    session|emergency-recovery|gtk-classic|gtk-confined|session-lock|xtest-selection|cpu) ;;
+    session|emergency-recovery|gtk-classic|gtk-confined|session-lock|session-lock-provider|xtest-selection|cpu) ;;
     *)
-        echo "SOPHIA_QEMU_SCENARIO must be session, emergency-recovery, gtk-classic, gtk-confined, session-lock, xtest-selection, or cpu" >&2
+        echo "SOPHIA_QEMU_SCENARIO must be session, emergency-recovery, gtk-classic, gtk-confined, session-lock, session-lock-provider, xtest-selection, or cpu" >&2
         exit 1
         ;;
 esac
@@ -92,7 +127,7 @@ fi
 case "$SCENARIO" in
     cpu) DEFAULT_EVIDENCE_FILE=/tmp/sophia-qemu-cpu.log ;;
     emergency-recovery) DEFAULT_EVIDENCE_FILE=/tmp/sophia-qemu-emergency-recovery.log ;;
-    gtk-*|session-lock|xtest-selection) DEFAULT_EVIDENCE_FILE="/tmp/sophia-qemu-$SCENARIO.log" ;;
+    gtk-*|session-lock|session-lock-provider|xtest-selection) DEFAULT_EVIDENCE_FILE="/tmp/sophia-qemu-$SCENARIO.log" ;;
     *) DEFAULT_EVIDENCE_FILE=/tmp/sophia-qemu-session.log ;;
 esac
 
@@ -186,7 +221,7 @@ case "$SCENARIO" in
     emergency-recovery)
         echo "sophia_qemu_recovery schema=1 status=starting isolation=headless control=qmp-unix host_drm=none host_vt=none keyboard=virtio chord=ctrl-alt-backspace" | tee -a "$EVIDENCE_FILE"
         ;;
-    gtk-*|session-lock)
+    gtk-*|session-lock|session-lock-provider)
         echo "sophia_qemu_gtk schema=1 status=starting isolation=headless control=qmp-unix host_drm=none host_vt=none keyboard=virtio mouse=virtio scenario=$SCENARIO" | tee -a "$EVIDENCE_FILE"
         ;;
     xtest-selection)
@@ -226,7 +261,7 @@ fi
     -device virtio-mouse-pci \
     -kernel "$KERNEL_IMAGE" \
     -initrd "$INITRAMFS" \
-    -append "console=ttyS0 quiet loglevel=3 rdinit=/sbin/sophia-qemu-init rd.driver.pre=virtio_pci rd.driver.pre=virtio_gpu rd.driver.pre=virtio_input panic=-1 sophia.scenario=$SCENARIO sophia.two_xterm=$TWO_XTERM sophia.shared_renderer_worker=$SHARED_RENDERER_WORKER sophia.direct_scanout=$DIRECT_SCANOUT$cpu_cmdline$forced_connector${XTEST_ROW:+ sophia.xtest_row=$XTEST_ROW}" \
+    -append "console=ttyS0 quiet loglevel=3 rdinit=/sbin/sophia-qemu-init rd.driver.pre=virtio_pci rd.driver.pre=virtio_gpu rd.driver.pre=virtio_input panic=-1 sophia.scenario=$SCENARIO sophia.two_xterm=$TWO_XTERM sophia.shared_renderer_worker=$SHARED_RENDERER_WORKER sophia.direct_scanout=$DIRECT_SCANOUT$cpu_cmdline$lock_provider_cmdline$forced_connector${XTEST_ROW:+ sophia.xtest_row=$XTEST_ROW}" \
     > "$SERIAL_FIFO" 2>&1 &
 QEMU_PID=$!
 
@@ -343,7 +378,44 @@ if [[ "$SCENARIO" == session-lock ]]; then
     wait_for_evidence '^sophia_live_session_lock schema=1 status=unlocked epoch=1$' unlock_timeout
 fi
 
-if [[ "$SCENARIO" == gtk-* || "$SCENARIO" == session-lock ]]; then
+# Whether a line matching `pattern` follows the first line matching `anchor`.
+# shellcheck source=tools/qemu_evidence_barrier.sh
+. "$ROOT_DIR/tools/qemu_evidence_barrier.sh"
+
+wait_for_after() {
+    local anchor="$1" pattern="$2" reason="$3"
+    for _ in $(seq 1 600); do
+        if awk -v a="$anchor" -v p="$pattern" \
+            'found { next } $0 ~ a { seen = 1; next } seen && $0 ~ p { found = 1 } END { exit !found }' \
+            "$EVIDENCE_FILE"; then
+            return 0
+        fi
+        kill -0 "$QEMU_PID" 2>/dev/null || break
+        sleep 0.05
+    done
+    echo "sophia_qemu_gtk schema=1 status=failed reason=$reason scenario=$SCENARIO" | tee -a "$EVIDENCE_FILE"
+    exit 1
+}
+
+if [[ "$SCENARIO" == session-lock-provider ]]; then
+    # As session-lock, with a stand-in lock provider and only the right
+    # password, so PAM's failure delay is not in the run. The provider's own
+    # state is established after the lock and before any key is typed: a
+    # stalled provider has stopped, a flooding one is submitting.
+    locked='^sophia_live_session_lock schema=1 status=locked epoch=1$'
+    wait_for_evidence "$locked" lock_timeout
+    case "$LOCK_PROVIDER_MODE" in
+        stall) provider_state='^sophia_qemu_lock_provider schema=1 mode=stall state=stalled ' ;;
+        flood) provider_state='^sophia_qemu_lock_provider schema=1 mode=flood state=serving .* submitted=[1-9]' ;;
+        baseline) provider_state='^sophia_qemu_lock_provider schema=1 mode=baseline state=serving ' ;;
+    esac
+    wait_for_after "$locked" "$provider_state" provider_state_timeout
+    "$ROOT_DIR/tools/qemu_qmp_type.py" "$QMP_SOCKET" qzv
+    echo "sophia_qemu_lock_input schema=1 status=sent source=qmp secret=right" | tee -a "$EVIDENCE_FILE"
+    wait_for_evidence '^sophia_live_session_lock schema=1 status=unlocked epoch=1$' unlock_timeout
+fi
+
+if [[ "$SCENARIO" == gtk-* || "$SCENARIO" == session-lock || "$SCENARIO" == session-lock-provider ]]; then
     input_ready=false
     for _ in $(seq 1 600); do
         if grep -q '^sophia_live_session_input schema=1 status=ready source=physical text=sophia$' "$EVIDENCE_FILE"; then
@@ -377,8 +449,21 @@ if [[ "$SCENARIO" == gtk-* || "$SCENARIO" == session-lock ]]; then
         exit 1
     fi
 
+    if [[ "$SCENARIO" == session-lock-provider ]]; then
+        # Session decides whether the pointer proof still holds Return back
+        # once per input batch, before the batch is routed, so a Return in
+        # the select click's batch is suppressed for good. Send it only
+        # after the click has been routed: a button_routed record written
+        # after this pre-click line count, never an earlier one.
+        select_anchor="$(wc -l < "$EVIDENCE_FILE")"
+    fi
     "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" 0 0 1
     echo "sophia_qemu_gtk_pointer schema=1 status=sent phase=focused_select source=qmp clicks=1" | tee -a "$EVIDENCE_FILE"
+    if [[ "$SCENARIO" == session-lock-provider ]]; then
+        wait_for_after_line "$select_anchor" \
+            '^sophia_live_session_pointer schema=2 status=button_routed count=[1-9][0-9]*$' \
+            select_route_timeout
+    fi
     "$ROOT_DIR/tools/qemu_qmp_type.py" "$QMP_SOCKET"
     echo "sophia_qemu_gtk_input schema=1 status=sent source=qmp action=submit events=2" | tee -a "$EVIDENCE_FILE"
 
@@ -396,10 +481,31 @@ if [[ "$SCENARIO" == gtk-* || "$SCENARIO" == session-lock ]]; then
         echo "sophia_qemu_gtk schema=1 status=failed reason=guest_exit scenario=$SCENARIO qemu_exit=$qemu_status logger_exit=$logger_status" | tee -a "$EVIDENCE_FILE"
         exit 1
     fi
+    # Every GTK scenario proves a committed resize except the provider one,
+    # whose public WM owns geometry. Session reports an unproven resize as
+    # "disabled" whether or not one was asked for, so the provider scenario
+    # also requires that Session never logged a resize request: it logs one
+    # for every injected resize.
+    surface_resize=committed
+    if [[ "$SCENARIO" == session-lock-provider ]]; then
+        surface_resize=disabled
+    fi
+    # Only a completed guest can show it; any other ending is reported below
+    # as semantic evidence rather than as a resize.
+    if [[ "$SCENARIO" == session-lock-provider ]] \
+        && grep -q "^sophia_qemu_guest schema=1 status=complete scenario=$SCENARIO$" "$EVIDENCE_FILE"; then
+        if ! grep -Eq '^sophia_live_session schema=[0-9]+ status=bounded_complete .* surface_resize=disabled ' "$EVIDENCE_FILE" \
+            || grep -q '^sophia_live_resize ' "$EVIDENCE_FILE"; then
+            echo "sophia_qemu_gtk schema=1 status=failed reason=resize_requested scenario=$SCENARIO" | tee -a "$EVIDENCE_FILE"
+            exit 1
+        fi
+    fi
     if ! grep -q "^sophia_qemu_guest schema=1 status=complete scenario=$SCENARIO$" "$EVIDENCE_FILE" \
-        || ! grep -q '^sophia_x_application_session schema=1 status=passed class=gtk3_software client=zenity .*protocol_errors=0 first_error=none physical_text=true pointer_button=true surface_resize=committed buffer_path=cpu_shm native_presentation=enabled cleanup=clean$' "$EVIDENCE_FILE" \
+        || ! grep -q "^sophia_x_application_session schema=1 status=passed class=gtk3_software client=zenity .*protocol_errors=0 first_error=none physical_text=true pointer_button=true surface_resize=$surface_resize buffer_path=cpu_shm native_presentation=enabled cleanup=clean\$" "$EVIDENCE_FILE" \
         || { [[ "$SCENARIO" == session-lock ]] \
-            && ! "$ROOT_DIR/tools/verify_qemu_session_lock_evidence.sh" "$EVIDENCE_FILE"; }; then
+            && ! "$ROOT_DIR/tools/verify_qemu_session_lock_evidence.sh" "$EVIDENCE_FILE"; } \
+        || { [[ "$SCENARIO" == session-lock-provider ]] \
+            && ! "$ROOT_DIR/tools/verify_qemu_session_lock_provider.py" "$EVIDENCE_FILE" "$LOCK_PROVIDER_MODE"; }; then
         echo "sophia_qemu_gtk schema=1 status=failed reason=semantic_evidence scenario=$SCENARIO" | tee -a "$EVIDENCE_FILE"
         exit 1
     fi

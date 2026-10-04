@@ -25,7 +25,9 @@ mod transport;
 
 pub use export::{LockFileExport, LockFileHandle, LockFileNode, LockFileQids};
 #[cfg(target_os = "linux")]
-pub use service::{LockFileService, LockFileServiceCommand, LockFileServiceEvent};
+pub use service::{
+    LockFileService, LockFileServiceCommand, LockFileServiceEvent, LockFileServiceStats,
+};
 #[cfg(target_os = "linux")]
 pub use transport::{LockFileAssignee, LockFileTransport, LockFileTransportError};
 

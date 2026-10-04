@@ -317,3 +317,6 @@ impl LockFileTransport {
         Ok(())
     }
 }
+
+#[path = "transport_wait.rs"]
+mod wait;
