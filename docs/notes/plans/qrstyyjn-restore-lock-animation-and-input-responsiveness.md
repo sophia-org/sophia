@@ -170,7 +170,27 @@ head kept retiring. An ordinary drain poll accepted the primary completion
 submit or device teardown explains the signal. This is an unresolved native
 retirement failure, not an accepted release or a reason to loosen the watchdog.
 
-The next discriminator runs the same fixture on 316d9695 plus only these two
-startup fixes versus candidate 03. Keep per-run identities and failures, and
-record host activity. Physical acceptance and the audited one-command release
-remain held until the qualification has a supported disposition.
+The paired discriminator ran the same fixture on 316d9695 plus only these two
+startup fixes versus candidate 03, alternating order over ten pairs. Both arms
+passed all ten runs without a page-flip stall. Observed verdict-to-unlock ranges
+were 0.175–11.236 ms for the control and 0.004–18.003 ms for the candidate. These
+are log-observation intervals, not physical latency measurements. The result
+neither establishes nor rules out a t302 cause for the earlier failure. Across
+all candidate-03 baseline guest runs, the retained record is one hard stall in
+16 runs; the control has none in ten. The older fixture failures stay recorded.
+Evidence: `t302-qemu-unlock-01/p1` and
+`t302-lock-performance-01/PAIRED-DIAGNOSTIC-01.json`.
+
+Dracut stripped debug sections from both arms. Their in-image executables were
+independently verified as the `strip -g` derivatives of the pinned files; they
+were not byte-identical to those files. Future images must disable stripping
+and verify the included executables. A guest-only blocked-task dump on a hard
+stall will help distinguish a kernel command-queue wait from scheduling delay.
+No watchdog threshold changes follow from these results.
+
+The integrated gate reached its final tool checks, then refused two unregistered
+completion readers. The narrow inventory correction and its controls passed,
+as did every remaining check; the original failure and resumed results are kept
+in `GATE-05-DISPOSITION.json`. No production code changed after that gate.
+Physical acceptance and the audited one-command release remain held until the
+native-retirement failure has a supported disposition.
