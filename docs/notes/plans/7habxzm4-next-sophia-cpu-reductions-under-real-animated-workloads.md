@@ -1626,3 +1626,59 @@ Evidence: `t289-snapshot-reuse-01/comparison-01/RESULT.txt`, `GATE-03.json`,
 `CANDIDATE-ARTIFACT.json`, and `LIVE-WORKLOAD-ADAPTER-01.json`. The subsequent
 documentation commit does not change the frozen production candidate or its
 packaged binary.
+
+### Matched live result and integration disposition (2026-10-05)
+
+The operator installed `niltempus-10a4145c1c3074a9624f` and started a new
+session. The running Sophia hash equals the candidate artifact. Three valid
+60-second baseline trials on `6ae5df00a` and three candidate trials on
+`ba763f0c4` used the same frozen generic DMA-BUF client. Each completed all
+3,600 offered Presents and received all Idle events, without starvation,
+late slots, recovery or rendering errors. The workspaces, display layout,
+loaded libraries, profile, shell configuration and buffer layouts matched.
+These were sequential arms across logins, not alternating A/B trials.
+
+The client used eight immutable LINEAR XR24 buffers, alternating a 16×32 cursor
+patch with full-source damage, at 60 offers/s. Hagia placed the window at
+1266×1398 on the 2560×1440, 120 Hz head. Managed placement settled before
+allocation. The unchanged bar and background work remained in the total
+Session CPU; there was no empty-workspace subtraction or system-wide CPU claim.
+
+| Metric | Baseline median (range) | Candidate median (range) |
+| --- | ---: | ---: |
+| Whole Sophia CPU/completion | 1.46575 ms (1.46337–1.47428) | 1.39403 ms (1.39398–1.39446) |
+| Sophia, percent of one core | 8.794% (8.780–8.845) | 8.364% (8.363–8.366) |
+| Owner CPU/completion | 0.70884 ms (0.69272–0.71387) | 0.73739 ms (0.73488–0.74464) |
+| Client CPU/completion | 0.03422 ms (0.03374–0.03529) | 0.03617 ms (0.03595–0.03757) |
+| Send-to-Complete p95 | 6.391 ms (6.013–6.819) | 6.772 ms (6.765–6.843) |
+
+Throughput remained 60 completions/s. Whole Sophia CPU fell **4.89%**, with
+separated ranges; the approximately 2 µs extra client CPU does not account for
+the 71.7 µs Sophia saving. This is a smaller benefit than the separate 60.15%
+capture-only result. The renderer worker's grouped median CPU fell from
+0.41680 to 0.26469 ms/completion; costs elsewhere offset part of that reduction.
+
+**Disposition:** integrate the reviewed, gated storage/import change as a
+limited whole-Session CPU improvement. This is a manual tradeoff, not a clean
+pass of the desired no-latency-regression condition. Owner CPU rose 4.03%, and
+p95's median rose 0.381 ms (5.96%). Overlapping latency ranges do not establish
+equivalence. Keep both results visible in t289 and investigate them before
+claiming a latency or owner-loop improvement. No further measurement tonight
+is needed for this limited integration decision; t289 remains open.
+
+Two earlier attempts remain INVALID. Baseline01 exposed an incorrect reporter
+assumption: global bindings include hidden-window 1 Hz clocks. The prospective
+reporter separates those bindings and checks the measured client's completion
+cadence against its actual physical head, using timestamp and printed-refresh
+precision. It makes no per-request clock-source identity claim. Baseline02
+crossed log rotation; all 19,766 expected written records were present. The
+successor reader permits rotation only when observed raw record count equals
+the health sequence delta minus suppression delta, with a health checkpoint
+after workload exit. It still refuses actual loss, duplicates, malformed
+records, storage errors or lock activity. Fourteen pure controls passed before
+the fresh series. Neither invalid attempt enters the comparison.
+
+Evidence: `t289-snapshot-reuse-01/LIVE-COMPARISON.json`, `LIVE-BASELINE.json`,
+`live-baseline-03` through `05`, `live-candidate-01` through `03`, and
+`LIVE-WORKLOAD-ADAPTER-06.json`. The production source remains the exact gated
+`ba763f0c4` content; result documentation does not change the installed binary.
