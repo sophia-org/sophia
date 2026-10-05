@@ -402,13 +402,19 @@ impl SeatBrokerBackend for LibseatBroker {
             LiveSeatCommand::Open(path, reply) => {
                 let result = sophia_seat_device::SeatDevice::open(&mut self.seat, &path)
                     .map_err(|error| format!("libseat open {} failed: {error}", path.display()))
-                    .and_then(|device| {
-                        let fd = duplicate_cloexec(&device)
-                            .map_err(|error| format!("libseat device dup failed: {error}"))?;
-                        let token = self.next_token;
-                        self.next_token = self.next_token.saturating_add(1);
-                        self.devices.insert(token, device);
-                        Ok((token, fd))
+                    .and_then(|device| match duplicate_cloexec(&device) {
+                        Ok(fd) => {
+                            let token = self.next_token;
+                            self.next_token = self.next_token.saturating_add(1);
+                            self.devices.insert(token, device);
+                            Ok((token, fd))
+                        }
+                        Err(error) => {
+                            // Release the device on its seat as well as its
+                            // descriptor; dropping it would do only the latter.
+                            let _ = device.close(&mut self.seat);
+                            Err(format!("libseat device dup failed: {error}"))
+                        }
                     });
                 let _ = reply.send(result);
             }
