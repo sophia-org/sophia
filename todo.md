@@ -2,6 +2,8 @@
 
 (A) 2026-10-04 Diagnose and repair KVM output/USB hotplug ending the desktop session; retain the topology error, prove safe loss/return and repeat on the operator's devices. +critical +topology @development id:t306 order:000.0000029 [details](docs/notes/investigations/kdleagg3-kvm-output-and-usb-loss-returns-the-desktop-to-greetd.md#t306)
 
+(A) 2026-10-05 Diagnose intermittent black sampling of an unchanged retained DMA-BUF image in virgl, including a correct-to-black frame on master before hotplug; separate producer, snapshot and consumer synchronization, and keep unstable pixel baselines from passing recovery checks. +important +renderer @development id:t307 order:000.00000295 [details](docs/notes/investigations/r2m9cx6v-static-retained-dma-buf-images-can-sample-black-before-hotplug.md#t307)
+
 (A) 2026-09-25 Complete remaining WM file lifecycle acceptance and reproducible transport measurements with independent Hagia and existing Session owners; retain explicit opt-in while output stays current IPC. +critical +9p @development id:t249 order:000.000003 depends:t247,t248 peer:hagia/h006 [details](docs/notes/plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249)
 
 (A) 2026-09-26 Qualify a pinned 9P WM daily-driver configuration with classified validation gates, drag-latency budgets, attended recovery and verified compatible whole-release rollback. +critical +9p @physical id:t250 order:000.000004 depends:t249 [details](docs/notes/plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md#t250--qualify-the-wm-daily-configuration)
