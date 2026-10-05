@@ -202,3 +202,9 @@ Extend window motion beyond the existing positional translation (bit 12): animat
 Keep fence-waiting Present pixmaps eligible for equal-target full-update scrapping until execution, on clocked and Unclocked sources, with truthful Idle and target-time Skip. +candidate @planning id:t300 order:300 [details](docs/notes/plans/7habxzm4-next-sophia-cpu-reductions-under-real-animated-workloads.md#t300)
 
 (B) 2026-10-03 Let Nix-built processes run in protection domains: bind a host /nix/store read-only in every role, refuse grants that would shadow it, and take the Bubblewrap executable from trusted session configuration (default /usr/bin/bwrap). +parallel @development id:t301 order:301 peer:niltempus/n002 [details](docs/notes/plans/torntn5a-nix-built-processes-in-protection-domains.md#t301)
+
+2026-10-04 Design headless Sophia DRM/KMS operation and composed-output capture with VKMS/writeback for CI and remote inspection; identify backend changes and reuse existing QEMU controls. +candidate +renderer @planning id:t303 order:303 [details](docs/notes/investigations/jweorh0z-headless-sophia-validation-and-capture-with-vkms-writeback.md#t303)
+
+2026-10-04 Review and qualify negotiated DMA-BUF lock images with bounded capture, source release and byte fallback; renderer integration follows t289 snapshot reuse. +candidate +lock @planning id:t304 order:304 [details](docs/notes/plans/r8z5a3sk-negotiated-dma-buf-lock-images-with-bounded-capture-and-release.md#t304)
+
+2026-10-04 Diagnose the rare QEMU page-flip hard stall from series-10 baseline-3; preserve failed evidence and obtain a discriminating trace or reproduction before changing completion behavior. +candidate +renderer @development id:t305 order:305 [details](docs/notes/investigations/3v4qwldr-rare-qemu-native-page-flip-hard-stall-after-successful-unlock.md#t305)

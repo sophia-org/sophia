@@ -262,3 +262,8 @@ beside the lock files, is a new contract under review
 stall seen once in 36 QEMU baseline runs on the candidate has not recurred and
 has no stack; it is unresolved.
 
+
+Follow-up scope:
+
+- [t304, negotiated lock images](r8z5a3sk-negotiated-dma-buf-lock-images-with-bounded-capture-and-release.md#t304)
+- [t305, the rare page-flip stall](../investigations/3v4qwldr-rare-qemu-native-page-flip-hard-stall-after-successful-unlock.md#t305)
