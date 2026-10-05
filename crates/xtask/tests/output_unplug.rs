@@ -283,3 +283,85 @@ fn every_way_the_static_content_can_fail_is_refused() {
         assert!(error.contains(expected), "case {index}: {error}");
     }
 }
+
+/// REVIEW-CODEX-07: a replacement reuses frame and generation identities.
+/// Before the loss frame 4 at generation 1 was queued, drawn and retired;
+/// the replacement owner queues and draws its bootstrap frame 1 at
+/// generation 1 again, then `post` says what presented it, if anything.
+fn replacement_case(post: &str) -> String {
+    let start = START
+        .replace(
+            "status=running mode=MODE",
+            "status=running mode=MODE wm=false client=dri3",
+        )
+        .replace("MODE", "one");
+    let before = "\
+sophia_live_session_present schema=2 status=retired transaction=26 surface=2097153 source=400x300 target=400x300_100_100 clip=400x300_100_100 unit_scale=true ust=1 msc=1
+sophia_live_head_composition_queue schema=1 status=queued output=1 head=1 frame=4 scene_generation=1 target_generation=1
+sophia_native_composition_region_frame schema=1 status=read output=1 head=1 scene_generation=1 layer=0 source_stage=renderer_image target=400x300_100_100 region_pixels=120000 nonzero_rgb_pixels=120000 checksum=777
+sophia_live_native_head_page_flip schema=2 status=retired output=1 head=1 submission=2 frame=4
+sophia_qemu_unplug schema=1 status=static_barrier present=retired client=holding
+";
+    let loss = "\
+sophia_qemu_unplug schema=1 status=sent action=off target=Console_1
+sophia_live_output_topology schema=1 status=quiesced transition=1 outcome=drained abandoned_scanouts=0
+sophia_live_native_owner schema=1 status=closed epoch=1 reason=topology_rebuild settled=true
+sophia_live_head_composition_queue schema=1 status=queued output=1 head=1 frame=1 scene_generation=1 target_generation=1
+sophia_native_composition_region_frame schema=1 status=read output=1 head=1 scene_generation=1 layer=0 source_stage=renderer_image target=400x300_100_100 region_pixels=120000 nonzero_rgb_pixels=120000 checksum=777
+";
+    let settled = "\
+sophia_live_output_topology schema=1 status=published transition=1 topology_epoch=2 generation=2 outputs=1 changed=true restored_images=1 policy_required=false input=quarantined
+sophia_live_output_topology schema=2 status=presentation_timed_out transition=1 retirements=0 presentation_baseline=0 timeout_msec=2000 input=enabled
+";
+    let post = post.replace("PUBLISHED", settled);
+    format!("{start}{before}{loss}{post}{}{END}", uevents(1, 0, 0))
+}
+
+#[test]
+fn only_the_replacement_owners_own_presentation_counts() {
+    // The bootstrap frame's synchronous first modeset, then publication.
+    let bootstrap = "sophia_live_head_bootstrap schema=1 status=worker_composed output=1 head=1 frame=1 scene_generation=1 target_generation=1 mapping=fit exports=1\nsophia_live_native_owner schema=1 status=opened epoch=2 reason=topology_rebuild\nPUBLISHED";
+    let summary = verify(&replacement_case(bootstrap), Mode::One).unwrap();
+    assert!(
+        summary
+            .last()
+            .unwrap()
+            .contains("status=static_content_retained"),
+        "{summary:?}"
+    );
+    // A page flip of the same frame after the region, in the same owner.
+    let flipped = "PUBLISHED\nsophia_live_native_head_page_flip schema=2 status=retired output=1 head=1 submission=1 frame=1\n";
+    assert!(verify(&replacement_case(flipped), Mode::One).is_ok());
+}
+
+#[test]
+fn a_borrowed_or_misordered_presentation_is_refused() {
+    let cases = [
+        // Only the old owner's frame 4 retired; it matches the region's
+        // output, head and generation but belongs to the previous owner.
+        "PUBLISHED",
+        // Another frame of the replacement retired.
+        "PUBLISHED\nsophia_live_native_head_page_flip schema=2 status=retired output=1 head=1 submission=3 frame=2\n",
+        // A publication before the bootstrap composed says nothing about that
+        // frame's modeset; only one after it does.
+        "PUBLISHED\nsophia_live_head_bootstrap schema=1 status=worker_composed output=1 head=1 frame=1 scene_generation=1 target_generation=1 mapping=fit exports=1\n",
+    ];
+    for (index, post) in cases.into_iter().enumerate() {
+        let error = verify(&replacement_case(post), Mode::One).unwrap_err();
+        assert!(
+            error.contains("not drawn from a retained image"),
+            "case {index}: {error}"
+        );
+    }
+    // A retirement of frame 1 before the region, in the same owner, is not
+    // the region's presentation.
+    let early = replacement_case("PUBLISHED").replace(
+        "sophia_live_head_composition_queue schema=1 status=queued output=1 head=1 frame=1 scene_generation=1 target_generation=1\n",
+        "sophia_live_head_composition_queue schema=1 status=queued output=1 head=1 frame=1 scene_generation=1 target_generation=1\nsophia_live_native_head_page_flip schema=2 status=retired output=1 head=1 submission=1 frame=1\n",
+    );
+    assert!(
+        verify(&early, Mode::One)
+            .unwrap_err()
+            .contains("not drawn from a retained image")
+    );
+}

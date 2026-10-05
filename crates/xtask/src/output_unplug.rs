@@ -303,9 +303,10 @@ fn published_and_settled(records: &[Record], outputs: u32) -> Option<(&str, &str
 /// retired before any head was taken away, and none after. After the last
 /// action the window's content must still be drawn from its retained image:
 /// a final composition region of the same size and checksum as before the
-/// loss, read from a renderer image, in a frame that was queued and then
-/// retired on a head. Region readback proves rendered content and its
-/// retirement, not a physical scanout.
+/// loss, read from a renderer image, in a frame the same native owner then
+/// presented (a page flip of that frame, or its synchronous first modeset).
+/// Region readback proves rendered content and its presentation, not a
+/// physical scanout.
 fn verify_static_client(
     records: &[Record],
     first_off: usize,
@@ -358,38 +359,71 @@ fn verify_static_client(
     let checksum = before
         .get("checksum")
         .ok_or("static client: region without checksum")?;
-    let retired = |record: &Record| -> bool {
+    // Presented by the native owner that composed it: the frame this region
+    // was queued as, within one owner (owner closings bound it), then either
+    // that frame's page flip retiring after the region, or that frame's
+    // bootstrap composition followed by the owner's publication, which
+    // follows only its synchronous first modeset. Never a frame of another
+    // owner, a retirement before the region, or another frame's.
+    let closed = |record: &Record| record.is("sophia_live_native_owner", "closed");
+    let presented = |at: usize| -> bool {
+        let region = &records[at];
         let (Some(output), Some(head), Some(generation)) = (
-            record.get("output"),
-            record.get("head"),
-            record.get("scene_generation"),
+            region.get("output"),
+            region.get("head"),
+            region.get("scene_generation"),
         ) else {
             return false;
         };
-        let frames = records
+        let start = records[..at]
             .iter()
-            .filter(|queued| {
+            .rposition(closed)
+            .map_or(0, |index| index + 1);
+        let end = records[at..]
+            .iter()
+            .position(closed)
+            .map_or(records.len(), |index| at + index);
+        let Some(frame) = records[start..at]
+            .iter()
+            .rev()
+            .find(|queued| {
                 queued.is("sophia_live_head_composition_queue", "queued")
                     && queued.get("output") == Some(output)
                     && queued.get("head") == Some(head)
                     && queued.get("scene_generation") == Some(generation)
             })
-            .filter_map(|queued| queued.get("frame"))
-            .collect::<Vec<_>>();
-        records.iter().any(|flip| {
-            flip.is("sophia_live_native_head_page_flip", "retired")
-                && flip.get("output") == Some(output)
-                && flip.get("head") == Some(head)
-                && flip
-                    .get("frame")
-                    .is_some_and(|frame| frames.contains(&frame))
-        })
+            .and_then(|queued| queued.get("frame"))
+        else {
+            return false;
+        };
+        let same_frame = |record: &Record| {
+            record.get("output") == Some(output)
+                && record.get("head") == Some(head)
+                && record.get("frame") == Some(frame)
+        };
+        let after = &records[at + 1..end];
+        let flipped = after.iter().any(|record| {
+            record.is("sophia_live_native_head_page_flip", "retired") && same_frame(record)
+        });
+        let bootstrapped = after
+            .iter()
+            .position(|record| {
+                record.is("sophia_live_head_bootstrap", "worker_composed") && same_frame(record)
+            })
+            .is_some_and(|composed| {
+                after[composed..]
+                    .iter()
+                    .any(|record| record.is(TOPOLOGY, "published"))
+            });
+        flipped || bootstrapped
     };
-    let after = records[last_action..]
-        .iter()
-        .find(|record| {
-            is_window(record) && record.get("checksum") == Some(checksum) && retired(record)
+    let after = (last_action..records.len())
+        .find(|&at| {
+            is_window(&records[at])
+                && records[at].get("checksum") == Some(checksum)
+                && presented(at)
         })
+        .map(|at| &records[at])
         .ok_or(
             "static client: its content was not drawn from a retained image after the last action",
         )?;
