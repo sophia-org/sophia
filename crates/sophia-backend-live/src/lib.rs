@@ -31,6 +31,8 @@ mod production_output_runtime;
 mod production_present_scheduler;
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 mod production_renderer_image_handoff;
+#[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
+mod production_renderer_image_restore_plan;
 mod production_session;
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 mod production_visual_runtime;
@@ -68,6 +70,8 @@ pub use production_output_runtime::*;
 pub use production_present_scheduler::*;
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 pub use production_renderer_image_handoff::*;
+#[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
+pub use production_renderer_image_restore_plan::*;
 pub use production_session::*;
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 pub use production_visual_runtime::*;
