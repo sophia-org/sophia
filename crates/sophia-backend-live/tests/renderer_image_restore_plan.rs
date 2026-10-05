@@ -4,11 +4,14 @@
 //! many imports there are.
 
 use sophia_backend_live::{
-    LiveRendererImageImport, LiveRendererImageRestoreImport, LiveRendererImageRestoreSource,
-    LiveRendererImageRestoreStore, classify_live_renderer_image_import,
-    live_renderer_image_handoff_same_devices, plan_live_renderer_image_restore_destinations,
+    LiveRendererImageImport, LiveRendererImageRestoreExecution, LiveRendererImageRestoreImport,
+    LiveRendererImageRestorePlan, LiveRendererImageRestoreSource, LiveRendererImageRestoreStore,
+    LiveRendererImageRetryGate, LiveRendererImageStoreAttempt, classify_live_renderer_image_import,
+    execute_live_renderer_image_restore_plan, live_renderer_image_handoff_same_devices,
+    plan_live_renderer_image_restore_destinations,
 };
 use sophia_renderer_live::LiveRendererImageId;
+use std::collections::{BTreeMap, BTreeSet};
 
 const MIB: u64 = 1024 * 1024;
 const BUDGET: u64 = 512 * MIB;
@@ -303,4 +306,211 @@ fn an_existing_id_is_reported_for_confirmation_not_counted_as_placed() {
         classify_live_renderer_image_import(Ok(true)),
         LiveRendererImageImport::Placed
     );
+}
+
+const BUSY: LiveRendererImageStoreAttempt = LiveRendererImageStoreAttempt::Deferred { busy: true };
+const FULL: LiveRendererImageStoreAttempt = LiveRendererImageStoreAttempt::Deferred { busy: false };
+const REFUSED: LiveRendererImageStoreAttempt = LiveRendererImageStoreAttempt::Refused;
+const PLACED: LiveRendererImageStoreAttempt = LiveRendererImageStoreAttempt::Placed;
+
+fn planned(store: usize, raw: u64) -> LiveRendererImageRestoreImport {
+    LiveRendererImageRestoreImport {
+        store,
+        image: image(raw),
+        source: 0,
+        alternates: Vec::new(),
+    }
+}
+
+/// Carries out `imports` with each (store, image) answering as `answers`
+/// says, and returns what was left plus every (store, image) asked, in order.
+fn execute(
+    stores: &[LiveRendererImageRestoreStore<u32>],
+    imports: Vec<LiveRendererImageRestoreImport>,
+    demand: &[(usize, u64)],
+    answers: &[((usize, u64), LiveRendererImageStoreAttempt)],
+) -> (LiveRendererImageRestoreExecution, Vec<(usize, u64)>) {
+    let plan = LiveRendererImageRestorePlan {
+        imports,
+        ..LiveRendererImageRestorePlan::default()
+    };
+    let demand = demand
+        .iter()
+        .map(|&(store, raw)| (store, image(raw)))
+        .collect::<BTreeSet<_>>();
+    let answers = answers.iter().copied().collect::<BTreeMap<_, _>>();
+    let mut asked = Vec::new();
+    let execution = execute_live_renderer_image_restore_plan::<_, ()>(
+        &plan,
+        stores,
+        &demand,
+        |import, store| {
+            let key = (store, import.image.raw());
+            asked.push(key);
+            Ok(answers[&key])
+        },
+    )
+    .unwrap();
+    (execution, asked)
+}
+
+/// Whether the owner offers the pending images again before storage changes.
+fn retried_before_storage_changes(execution: &LiveRendererImageRestoreExecution) -> bool {
+    let mut gate = LiveRendererImageRetryGate::default();
+    gate.observe(11, execution.busy);
+    gate.due(11)
+}
+
+fn missing(execution: &LiveRendererImageRestoreExecution) -> Vec<(usize, u64)> {
+    execution
+        .missing
+        .iter()
+        .map(|(store, image)| (*store, image.raw()))
+        .collect()
+}
+
+fn held(execution: &LiveRendererImageRestoreExecution) -> Vec<(usize, u64)> {
+    execution
+        .held
+        .iter()
+        .map(|(store, image)| (*store, image.raw()))
+        .collect()
+}
+
+#[test]
+fn a_busy_store_keeps_its_retry_whatever_the_alternate_store_answers() {
+    // REVIEW-CODEX-08: the chosen store is behind GPU work; the alternate is
+    // full, refuses, or is itself the busy one. The image stays pending and
+    // is retried when the work settles, not only when storage changes.
+    let stores = [store(Some(1)), store(Some(1))];
+    for (first, second) in [(BUSY, FULL), (BUSY, REFUSED), (FULL, BUSY)] {
+        let (execution, asked) = execute(
+            &stores,
+            vec![planned(0, 7)],
+            &[],
+            &[((0, 7), first), ((1, 7), second)],
+        );
+        assert_eq!(asked, [(0, 7), (1, 7)], "{first:?} then {second:?}");
+        assert!(held(&execution).is_empty(), "{first:?} then {second:?}");
+        assert_eq!(missing(&execution), [(0, 7)], "{first:?} then {second:?}");
+        assert!(execution.busy, "{first:?} then {second:?}");
+        assert!(
+            retried_before_storage_changes(&execution),
+            "{first:?} then {second:?}"
+        );
+    }
+}
+
+#[test]
+fn an_alternate_store_that_keeps_the_image_leaves_no_retry_behind() {
+    let stores = [store(Some(1)), store(Some(1))];
+    for first in [BUSY, FULL] {
+        let (execution, asked) = execute(
+            &stores,
+            vec![planned(0, 7)],
+            &[],
+            &[((0, 7), first), ((1, 7), PLACED)],
+        );
+        assert_eq!(asked, [(0, 7), (1, 7)], "{first:?}");
+        assert_eq!(held(&execution), [(1, 7)], "{first:?}");
+        assert!(missing(&execution).is_empty(), "{first:?}");
+        assert!(!execution.busy, "{first:?}");
+        assert!(!retried_before_storage_changes(&execution), "{first:?}");
+    }
+}
+
+#[test]
+fn stores_that_are_all_full_sleep_until_storage_changes() {
+    let stores = [store(Some(1)), store(Some(1))];
+    let (execution, asked) = execute(
+        &stores,
+        vec![planned(0, 7)],
+        &[],
+        &[((0, 7), FULL), ((1, 7), FULL)],
+    );
+    assert_eq!(asked, [(0, 7), (1, 7)]);
+    assert_eq!(missing(&execution), [(0, 7)]);
+    assert!(!execution.busy);
+    assert!(!retried_before_storage_changes(&execution));
+}
+
+#[test]
+fn a_placed_image_does_not_settle_another_images_busy_store() {
+    let stores = [store(Some(1)), store(Some(1))];
+    let (execution, _) = execute(
+        &stores,
+        vec![planned(0, 7), planned(0, 8)],
+        &[],
+        &[
+            ((0, 7), BUSY),
+            ((1, 7), PLACED),
+            ((0, 8), BUSY),
+            ((1, 8), FULL),
+        ],
+    );
+    assert_eq!(held(&execution), [(1, 7)]);
+    assert_eq!(missing(&execution), [(0, 8)]);
+    assert!(execution.busy);
+    // The image placed second does not hide the first image's busy store.
+    let (execution, _) = execute(
+        &stores,
+        vec![planned(0, 8), planned(0, 7)],
+        &[],
+        &[
+            ((0, 8), BUSY),
+            ((1, 8), FULL),
+            ((0, 7), FULL),
+            ((1, 7), PLACED),
+        ],
+    );
+    assert_eq!(held(&execution), [(1, 7)]);
+    assert!(execution.busy);
+}
+
+#[test]
+fn a_demanded_destination_is_not_traded_for_another_store() {
+    let stores = [store(Some(1)), store(Some(1))];
+    let (execution, asked) = execute(
+        &stores,
+        vec![planned(0, 7)],
+        &[(0, 7)],
+        &[((0, 7), BUSY), ((1, 7), PLACED)],
+    );
+    assert_eq!(asked, [(0, 7)]);
+    assert!(held(&execution).is_empty());
+    assert_eq!(missing(&execution), [(0, 7)]);
+    assert!(execution.busy);
+}
+
+#[test]
+fn alternate_stores_are_tried_same_device_first_and_never_twice_for_one_image() {
+    let stores = [store(Some(1)), store(Some(2)), store(Some(1)), store(None)];
+    let (execution, asked) = execute(
+        &stores,
+        vec![planned(0, 7)],
+        &[],
+        &[
+            ((0, 7), FULL),
+            ((2, 7), REFUSED),
+            ((1, 7), FULL),
+            ((3, 7), PLACED),
+        ],
+    );
+    assert_eq!(asked, [(0, 7), (2, 7), (1, 7), (3, 7)]);
+    assert_eq!(held(&execution), [(3, 7)]);
+    // A store already holding the image from an earlier import is skipped.
+    let (execution, asked) = execute(
+        &stores,
+        vec![planned(3, 7), planned(0, 7)],
+        &[(3, 7)],
+        &[
+            ((3, 7), PLACED),
+            ((0, 7), FULL),
+            ((2, 7), FULL),
+            ((1, 7), FULL),
+        ],
+    );
+    assert_eq!(asked, [(3, 7), (0, 7), (2, 7), (1, 7)]);
+    assert_eq!(held(&execution), [(3, 7)]);
+    assert_eq!(missing(&execution), [(0, 7)]);
 }

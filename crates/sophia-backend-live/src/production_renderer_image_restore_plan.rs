@@ -214,3 +214,99 @@ pub fn classify_live_renderer_image_import(
         Err(detail) => LiveRendererImageImport::Failed(detail),
     }
 }
+
+/// How one attempt to import an image into one store ended, after every
+/// snapshot the import names was offered to it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveRendererImageStoreAttempt {
+    Placed,
+    /// The store's device refused every snapshot offered.
+    Refused,
+    /// Not now: `busy` is GPU work still in flight; otherwise no room.
+    Deferred {
+        busy: bool,
+    },
+}
+
+/// What carrying out a plan left behind.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct LiveRendererImageRestoreExecution {
+    /// (store, image) for every import a store kept.
+    pub held: BTreeSet<(usize, LiveRendererImageId)>,
+    /// Demanded or planned destinations that do not hold their image.
+    pub missing: BTreeSet<(usize, LiveRendererImageId)>,
+    /// Some image no store kept was deferred behind GPU work in flight at
+    /// one of the stores tried for it, so it is retried when that work
+    /// settles rather than only when storage changes. An image a store kept
+    /// leaves no such obligation.
+    pub busy: bool,
+}
+
+impl LiveRendererImageRestoreExecution {
+    pub fn placed(&self, image: LiveRendererImageId) -> bool {
+        self.held.iter().any(|(_, held)| *held == image)
+    }
+}
+
+/// Carries out `plan`. `attempt(import, store)` imports `import.image` into
+/// `store`. A demanded destination is fixed: it is where the image is
+/// sampled. A destination the plan only chose to keep the image in may be
+/// fuller than planned, as the plan assumes free stores, so the other stores
+/// are tried in turn, same device first, until one keeps it
+/// (REVIEW-CODEX-06 R2). Whether any store tried was busy is kept for every
+/// image that ends unplaced (REVIEW-CODEX-08).
+pub fn execute_live_renderer_image_restore_plan<D: Copy + Eq, E>(
+    plan: &LiveRendererImageRestorePlan,
+    stores: &[LiveRendererImageRestoreStore<D>],
+    demand: &BTreeSet<(usize, LiveRendererImageId)>,
+    mut attempt: impl FnMut(
+        &LiveRendererImageRestoreImport,
+        usize,
+    ) -> Result<LiveRendererImageStoreAttempt, E>,
+) -> Result<LiveRendererImageRestoreExecution, E> {
+    let mut execution = LiveRendererImageRestoreExecution {
+        missing: plan.refused_demand.iter().copied().collect(),
+        ..LiveRendererImageRestoreExecution::default()
+    };
+    let mut busy = BTreeSet::new();
+    for import in &plan.imports {
+        let mut order = vec![import.store];
+        if !demand.contains(&(import.store, import.image)) {
+            let device = stores[import.store].device;
+            let mut others = (0..stores.len())
+                .filter(|other| {
+                    *other != import.store && !execution.held.contains(&(*other, import.image))
+                })
+                .collect::<Vec<_>>();
+            others.sort_by_key(|other| {
+                let same = matches!((stores[*other].device, device), (Some(a), Some(b)) if a == b);
+                (!same, *other)
+            });
+            order.extend(others);
+        }
+        let mut kept = None;
+        for store in order {
+            match attempt(import, store)? {
+                LiveRendererImageStoreAttempt::Placed => {
+                    kept = Some(store);
+                    break;
+                }
+                LiveRendererImageStoreAttempt::Refused => {}
+                LiveRendererImageStoreAttempt::Deferred { busy: true } => {
+                    busy.insert(import.image);
+                }
+                LiveRendererImageStoreAttempt::Deferred { busy: false } => {}
+            }
+        }
+        match kept {
+            Some(store) => {
+                execution.held.insert((store, import.image));
+            }
+            None => {
+                execution.missing.insert((import.store, import.image));
+            }
+        }
+    }
+    execution.busy = busy.iter().any(|image| !execution.placed(*image));
+    Ok(execution)
+}

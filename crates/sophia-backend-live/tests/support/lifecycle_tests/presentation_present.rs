@@ -969,6 +969,8 @@ mod background_pressure;
 mod lock_first_visibility;
 #[path = "preview_recovery.rs"]
 mod preview_recovery;
+#[path = "source_availability_admission.rs"]
+mod source_availability_admission;
 
 #[test]
 fn present_clock_selection_uses_largest_sample_and_primary_tie() {

@@ -1,4 +1,7 @@
 use super::*;
+// Only a refused import moves on to another snapshot; a store that is full
+// or busy may take the image later and is not asked again in this restore.
+use crate::LiveRendererImageStoreAttempt as ImportAttempt;
 
 type Image = sophia_renderer_live::LiveRendererImageId;
 
@@ -85,18 +88,6 @@ fn validate_renderer_image_handoff_ids(
             Err("renderer-image handoff is unexpectedly missing")
         }
     }
-}
-
-/// How one import attempt into one store ended. Only a refused import moves
-/// on to another snapshot; a store that is full or busy may take the image
-/// later and is not asked again in this restore.
-enum ImportAttempt {
-    Placed,
-    Refused,
-    /// `busy`: behind GPU work in flight; otherwise the store had no room.
-    Deferred {
-        busy: bool,
-    },
 }
 
 fn import_attempt(
@@ -352,6 +343,7 @@ impl LiveProductionNativeScanout {
         let plan = crate::plan_live_renderer_image_restore(&owners)
             .map_err(|_| "renderer-image handoff contains invalid owner coverage")?;
         let mut restore = LiveProductionRendererImageRestore::default();
+        let mut busy = BTreeSet::new();
         for ((&index, source), selected) in indices.iter().zip(&handoff.heads).zip(plan) {
             for position in selected {
                 let snapshot = &source.snapshots[position];
@@ -362,8 +354,10 @@ impl LiveProductionNativeScanout {
                     }
                     // A full or busy store may take it later: the image stays
                     // pending, and the outputs that sample it wait for it.
-                    ImportAttempt::Deferred { busy } => {
-                        restore.busy |= busy;
+                    ImportAttempt::Deferred { busy: deferred } => {
+                        if deferred {
+                            busy.insert(image);
+                        }
                         let output = self.heads[index].output.id;
                         if demand
                             .get(&output)
@@ -387,6 +381,8 @@ impl LiveProductionNativeScanout {
                 restore.pending.insert(image);
             }
         }
+        // Another head's store holding the image settles its busy deferral.
+        restore.busy = busy.iter().any(|image| restore.pending.contains(image));
         Ok(restore)
     }
 
@@ -459,73 +455,36 @@ impl LiveProductionNativeScanout {
             &planned_demand,
         )?;
 
-        let mut restore = LiveProductionRendererImageRestore::default();
-        let mut missing: BTreeSet<(usize, Image)> = plan.refused_demand.iter().copied().collect();
         let demanded = planned_demand.iter().copied().collect::<BTreeSet<_>>();
-        let mut held: BTreeSet<(usize, Image)> = BTreeSet::new();
-        for import in &plan.imports {
-            let sources = std::iter::once(import.source)
-                .chain(import.alternates.iter().copied())
-                .collect::<Vec<_>>();
-            let mut outcome = self.import_into_store(
-                handoff,
-                store_heads[&store_keys[import.store]],
-                import.image,
-                &sources,
-            )?;
-            let mut store = import.store;
-            // A store the plan only chose to keep the image in may be fuller
-            // than planned (the plan assumes free stores). The store's own
-            // admission decides: try the others, same device first, until
-            // one keeps it (REVIEW-CODEX-06 R2). Demanded destinations are
-            // fixed; they are where the image is sampled.
-            if !matches!(outcome, ImportAttempt::Placed)
-                && !demanded.contains(&(import.store, import.image))
-            {
-                let device = stores[import.store].device;
-                let mut others = (0..stores.len())
-                    .filter(|other| {
-                        *other != import.store && !held.contains(&(*other, import.image))
-                    })
+        let execution = crate::execute_live_renderer_image_restore_plan(
+            &plan,
+            &stores,
+            &demanded,
+            |import, store| {
+                let sources = std::iter::once(import.source)
+                    .chain(import.alternates.iter().copied())
                     .collect::<Vec<_>>();
-                others.sort_by_key(|other| {
-                    let same =
-                        matches!((stores[*other].device, device), (Some(a), Some(b)) if a == b);
-                    (!same, *other)
-                });
-                for other in others {
-                    outcome = self.import_into_store(
-                        handoff,
-                        store_heads[&store_keys[other]],
-                        import.image,
-                        &sources,
-                    )?;
-                    if matches!(outcome, ImportAttempt::Placed) {
-                        store = other;
-                        break;
-                    }
-                }
-            }
-            match outcome {
-                ImportAttempt::Placed => {
-                    held.insert((store, import.image));
-                    restore.restored.insert(import.image);
-                }
-                ImportAttempt::Refused => {
-                    missing.insert((import.store, import.image));
-                }
-                ImportAttempt::Deferred { busy } => {
-                    restore.busy |= busy;
-                    missing.insert((import.store, import.image));
-                }
-            }
-        }
+                self.import_into_store(
+                    handoff,
+                    store_heads[&store_keys[store]],
+                    import.image,
+                    &sources,
+                )
+            },
+        )?;
+        let mut restore = LiveProductionRendererImageRestore {
+            busy: execution.busy,
+            ..LiveProductionRendererImageRestore::default()
+        };
+        restore
+            .restored
+            .extend(execution.held.iter().map(|(_, image)| *image));
         for image in &all_images(handoff) {
             if !restore.restored.contains(image) {
                 restore.pending.insert(*image);
             }
         }
-        for (store, image) in missing {
+        for (store, image) in execution.missing {
             for output in &outputs_by_store[store] {
                 if demand
                     .get(output)
