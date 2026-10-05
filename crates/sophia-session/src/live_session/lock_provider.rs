@@ -25,6 +25,9 @@ use super::metadata_shell::gpu::ShellGpuLaunchPolicy;
 
 /// The provider's configuration file, when the profile names one.
 pub(super) const SOPHIA_LOCK_CONFIG_ENV: &str = "SOPHIA_LOCK_CONFIG";
+/// The diagnostic pacing sample's opt-in, exactly "1".
+const SOPHIA_DIAGNOSTIC_LOCK_PACING_ENV: &str = "SOPHIA_DIAGNOSTIC_LOCK_PACING";
+const PACING_SAMPLE_INTERVAL: Duration = Duration::from_secs(5);
 const FIRST_RESTART: Duration = Duration::from_secs(1);
 const LONGEST_RESTART: Duration = Duration::from_secs(60);
 
@@ -34,6 +37,9 @@ pub(super) struct LockProvider {
     restart_at: Option<Instant>,
     backoff: Duration,
     owner_wake: sophia_wake::Notifier,
+    drops: std::cell::Cell<crate::session_lock_frames::SessionLockCommandDrops>,
+    /// The next diagnostic pacing sample, when the opt-in is set.
+    pacing_sample_at: Option<Instant>,
 }
 
 impl LockProvider {
@@ -84,6 +90,13 @@ impl LockProvider {
             restart_at: None,
             backoff: FIRST_RESTART,
             owner_wake: wake,
+            drops: Default::default(),
+            pacing_sample_at: crate::session_lock_frames::session_lock_pacing_enabled(
+                std::env::var(SOPHIA_DIAGNOSTIC_LOCK_PACING_ENV)
+                    .ok()
+                    .as_deref(),
+            )
+            .then(Instant::now),
         })
     }
 
@@ -156,9 +169,37 @@ impl LockProvider {
     // longer than its 25 ms maintenance budget, and restarts wait seconds.
 
     /// Session's lock state, entries, permits and outcomes. A full queue
-    /// drops the command: the provider only renders.
+    /// drops the command: the provider only renders. A dropped permit or
+    /// outcome leaves that allocation waiting, so every drop is counted and
+    /// the first and each power of two of a kind is recorded.
     pub(super) fn command(&self, command: LockFileServiceCommand) {
-        let _ = self.service.command(command);
+        use crate::session_lock_frames::SessionLockCommandKind as Kind;
+        let kind = match &command {
+            LockFileServiceCommand::Permit { .. } => Kind::Permit,
+            LockFileServiceCommand::Outcome(_) => Kind::Outcome,
+            _ => Kind::Other,
+        };
+        if self.service.command(command).is_err() {
+            let mut drops = self.drops.get();
+            let record = drops.dropped(kind);
+            self.drops.set(drops);
+            if let Some(record) = record {
+                crate::session_eprintln!("{record}");
+            }
+        }
+    }
+
+    /// Whether a diagnostic pacing sample is due: never without the opt-in,
+    /// otherwise every five seconds.
+    pub(super) fn pacing_sample_due(&mut self, now: Instant) -> bool {
+        let Some(at) = self.pacing_sample_at else {
+            return false;
+        };
+        if now < at {
+            return false;
+        }
+        self.pacing_sample_at = Some(now + PACING_SAMPLE_INTERVAL);
+        true
     }
 }
 

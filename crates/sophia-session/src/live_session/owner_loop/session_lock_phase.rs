@@ -234,6 +234,16 @@ macro_rules! service_lock_provider {
                     }
                 }
             }
+            // Diagnostic only (SOPHIA_DIAGNOSTIC_LOCK_PACING=1): where each
+            // allocation's frames stand, every five seconds.
+            if provider.pacing_sample_due(Instant::now()) {
+                for pacing in lock_frames.pacing() {
+                    crate::session_println!(
+                        "{}",
+                        crate::session_lock_frames::session_lock_pacing_record(&pacing)
+                    );
+                }
+            }
             if images_changed
                 && let Some(runtime) = runtime.as_mut()
                 && let Some(cover) = runtime.session_lock()

@@ -153,3 +153,113 @@ fn a_departed_provider_or_a_new_lock_leaves_the_fill() {
         LockCandidateStatus::Rejected
     );
 }
+
+/// t308: the diagnostic pacing sample follows one allocation through demand,
+/// permit, candidate and outcome, and names its lock, connection and
+/// allocation generation so a restart is not read as no progress.
+#[test]
+fn the_pacing_sample_follows_an_allocation_through_its_handshake() {
+    use sophia_session::session_lock_frames::{
+        SessionLockPacing, SessionLockPacingCounts, session_lock_pacing_record,
+    };
+    let mut frames = frames();
+    assert!(frames.pacing().is_empty(), "nothing seen yet");
+    frames.demand(CONNECTION, demand(1));
+    let _ = frames.permits();
+    frames.candidate(CONNECTION, candidate(1, 1));
+    frames.demand(CONNECTION, demand(2));
+    let stuck = SessionLockPacing {
+        lock_epoch: Some(3),
+        connection_epoch: Some(CONNECTION),
+        allocation_id: 1,
+        allocation_generation: Some(1),
+        output: Some(OutputId::from_raw(1)),
+        demand_held: true,
+        in_flight_generation: Some(1),
+        counts: SessionLockPacingCounts {
+            demands: 2,
+            permits: 1,
+            candidates: 1,
+            ..SessionLockPacingCounts::default()
+        },
+    };
+    // Unretired: the demand waits and the same generation stays in flight.
+    assert!(frames.permits().is_empty());
+    assert_eq!(frames.pacing(), [stuck]);
+    assert_eq!(
+        session_lock_pacing_record(&stuck),
+        "sophia_live_lock_pacing schema=1 lock_epoch=3 connection_epoch=7 allocation=1 allocation_generation=1 output=1 demand=held in_flight_generation=1 demands=2 permits=1 candidates=1 presented=0 superseded=0 rejected=0"
+    );
+    frames
+        .presented(OutputId::from_raw(1), shown(1, 1))
+        .unwrap();
+    let _ = frames.permits();
+    frames.candidate(CONNECTION, candidate(2, 2));
+    frames.candidate(CONNECTION, candidate(3, 1));
+    frames.candidate(CONNECTION + 1, candidate(4, 1));
+    let counts = frames.pacing()[0].counts;
+    assert_eq!(
+        counts,
+        SessionLockPacingCounts {
+            demands: 2,
+            permits: 2,
+            candidates: 3,
+            presented: 1,
+            superseded: 1,
+            rejected: 1,
+        }
+    );
+    assert_eq!(frames.pacing()[0].in_flight_generation, Some(3));
+    assert!(!frames.pacing()[0].demand_held);
+}
+
+/// A new lock, a reconnect or a departed provider starts the counts again.
+#[test]
+fn the_pacing_counts_restart_with_a_new_lock_or_connection() {
+    let restarts: [fn(&mut SessionLockFrames); 3] = [
+        |frames: &mut SessionLockFrames| {
+            frames.lock(SessionLockEpoch::from_raw(4));
+        },
+        |frames: &mut SessionLockFrames| {
+            frames.connected(CONNECTION + 1);
+        },
+        |frames: &mut SessionLockFrames| {
+            frames.disconnected(CONNECTION);
+        },
+    ];
+    for restart in restarts {
+        let mut frames = frames();
+        frames.demand(CONNECTION, demand(1));
+        assert_eq!(frames.pacing().len(), 1);
+        restart(&mut frames);
+        assert!(frames.pacing().is_empty());
+    }
+}
+
+/// A dropped permit or outcome is counted every time and recorded the first
+/// time and at each power of two of its kind.
+#[test]
+fn dropped_provider_commands_are_counted_and_recorded_sparsely() {
+    use sophia_session::session_lock_frames::{
+        SessionLockCommandDrops, SessionLockCommandKind as Kind, session_lock_pacing_enabled,
+    };
+    let mut drops = SessionLockCommandDrops::default();
+    let recorded = (1..=9)
+        .filter_map(|_| drops.dropped(Kind::Permit))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        recorded,
+        [1, 2, 4, 8].map(|count| format!(
+            "sophia_live_lock_provider schema=1 status=command_dropped kind=permit dropped={count}"
+        ))
+    );
+    assert_eq!(
+        drops.dropped(Kind::Outcome).as_deref(),
+        Some("sophia_live_lock_provider schema=1 status=command_dropped kind=outcome dropped=1")
+    );
+    assert_eq!((drops.permits, drops.outcomes, drops.others), (9, 1, 0));
+    assert!(session_lock_pacing_enabled(Some("1")));
+    for opt_in in [None, Some("0"), Some("true"), Some(" 1")] {
+        assert!(!session_lock_pacing_enabled(opt_in), "{opt_in:?}");
+    }
+}
