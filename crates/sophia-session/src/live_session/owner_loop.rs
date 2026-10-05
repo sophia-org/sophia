@@ -259,6 +259,22 @@ fn resume_native_scanout_from_scene(
     scene: &mut LiveProductionCpuScene,
     handoff: &mut Option<sophia_backend_live::LiveProductionRendererImageHandoff>,
 ) -> Result<usize, Box<dyn std::error::Error>> {
+    // Images were captured per head of the retired owner. When a head went
+    // away, came back or changed connector meanwhile (a hotplug, or a monitor
+    // unplugged while the seat was away), the handoff has nowhere to restore
+    // into. It is dropped with the retained images, as the forced-detach
+    // branch does, and surfaces render again from their next frames. Every
+    // caller has retired the old owner, so nothing still samples them.
+    if let Some(captured) = handoff.as_ref()
+        && !native.renderer_image_handoff_fits(captured)
+    {
+        let captured = captured.len();
+        *handoff = None;
+        let discarded = runtime.discard_retained_renderer_images();
+        tracing::info!(
+            "sophia_live_renderer_image_handoff schema=1 status=discarded reason=heads_changed captured_images={captured} discarded_images={discarded}"
+        );
+    }
     native_owner_retirement::restore_retained_handoff(handoff, |handoff| {
         runtime.resume_native_scanout(native, outputs, scene, handoff)
     })

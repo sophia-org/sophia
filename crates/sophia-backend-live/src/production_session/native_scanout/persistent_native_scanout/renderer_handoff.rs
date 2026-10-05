@@ -85,11 +85,21 @@ impl LiveProductionNativeScanout {
         })
     }
 
-    pub fn restore_renderer_image_handoff(
-        &mut self,
+    /// Whether every head the handoff was captured from is a head of this
+    /// owner. A topology that lost, gained or swapped a head cannot take the
+    /// handoff; restoring it would be refused.
+    pub fn renderer_image_handoff_fits(
+        &self,
         handoff: &LiveProductionRendererImageHandoff,
-    ) -> Result<usize, Box<dyn std::error::Error>> {
-        let expected_count = handoff.expected.len();
+    ) -> bool {
+        self.renderer_image_handoff_targets(handoff).is_ok()
+    }
+
+    /// The enabled head each handoff entry restores into, in handoff order.
+    fn renderer_image_handoff_targets(
+        &self,
+        handoff: &LiveProductionRendererImageHandoff,
+    ) -> Result<Vec<usize>, &'static str> {
         let active = self
             .heads
             .iter()
@@ -98,14 +108,12 @@ impl LiveProductionNativeScanout {
             .map(|(index, _)| index)
             .collect::<Vec<_>>();
         if active.len() != handoff.heads.len() {
-            return Err("renderer-image handoff head coverage changed during replacement".into());
+            return Err("renderer-image handoff head coverage changed during replacement");
         }
-        // Resolve all owners before importing anything. Connector numbers are
-        // card-local; neither vector order nor a connector alone identifies a head.
+        // Connector numbers are card-local; neither vector order nor a
+        // connector alone identifies a head.
         let mut mapped = BTreeSet::new();
         let mut indices = Vec::with_capacity(active.len());
-        let mut owners = Vec::with_capacity(active.len());
-        let mut images = BTreeSet::new();
         for source in &handoff.heads {
             let index = active
                 .iter()
@@ -118,8 +126,23 @@ impl LiveProductionNativeScanout {
                 })
                 .ok_or("renderer-image handoff names an unavailable connector")?;
             if !mapped.insert(index) {
-                return Err("renderer-image handoff contains a duplicate head".into());
+                return Err("renderer-image handoff contains a duplicate head");
             }
+            indices.push(index);
+        }
+        Ok(indices)
+    }
+
+    pub fn restore_renderer_image_handoff(
+        &mut self,
+        handoff: &LiveProductionRendererImageHandoff,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
+        let expected_count = handoff.expected.len();
+        // Resolve all owners before importing anything.
+        let indices = self.renderer_image_handoff_targets(handoff)?;
+        let mut owners = Vec::with_capacity(indices.len());
+        let mut images = BTreeSet::new();
+        for (&index, source) in indices.iter().zip(&handoff.heads) {
             if !self.exporters[index].renderer_image_owner_initialized() {
                 return Err("replacement renderer image owner is not initialized".into());
             }
@@ -138,7 +161,6 @@ impl LiveProductionNativeScanout {
                 index
             };
             owners.push((owner, ids));
-            indices.push(index);
         }
         validate_renderer_image_handoff_ids(
             &handoff.expected,

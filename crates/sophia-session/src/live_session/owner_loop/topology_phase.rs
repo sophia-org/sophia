@@ -237,6 +237,13 @@
                 let presentation_baseline = replacement.retirements;
                 output_topology_owner
                     .mark_published(presentation_baseline, policy_required)?;
+                // The replacement's first frame is a blocking modeset, which
+                // retires no page flip. With no policy commit to force another,
+                // a still screen would hold input quarantined until some client
+                // repaints, so wait the same bounded time a policy commit does.
+                topology_presentation_deadline = (output_topology_owner.phase
+                    == LiveOutputTopologyPhase::AwaitingPresentation)
+                    .then(|| Instant::now() + OUTPUT_TOPOLOGY_PRESENTATION_TIMEOUT);
                 pending_hardware_output_publication =
                     Some((replacement_authority, replacement_capabilities));
                 // A replacement snapshot owes its own presentation before it
