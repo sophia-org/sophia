@@ -343,6 +343,8 @@ fn measure_warm_captures(
     let target_allocations = target.persistent_render_stats().dmabuf_target_creations;
     let captures = warm_captures();
     let live_images = target.persistent_render_stats().snapshot_live_entries;
+    let retained_allocations = target.snapshot_reuse_stats().live_count;
+    let retained_bytes = target.snapshot_reuse_stats().live_bytes;
     let mut capture_us = Vec::new();
     let mut through_readback_us = Vec::new();
     for sequence in 1..=captures {
@@ -372,6 +374,11 @@ fn measure_warm_captures(
         assert_eq!(
             target.image_transfer_stats().captures,
             baseline.captures + u64::from(sequence)
+        );
+        let reuse = target.snapshot_reuse_stats();
+        assert!(
+            reuse.live_count <= retained_allocations && reuse.live_bytes <= retained_bytes,
+            "refused direct imports must not accumulate unused destination storage"
         );
     }
     assert_eq!(

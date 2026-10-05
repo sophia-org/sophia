@@ -36,6 +36,11 @@ pub struct NativeGbmRenderedScanoutContext<T: std::os::fd::AsFd> {
     // Execution only: no client import or captured pixel storage survives here.
     // One compatible context per supported capture format (XR24 and AR24).
     capture_targets: [Option<NativeCaptureTarget>; 2],
+    capture_reuse: NativeCaptureReuse,
+    snapshot_fences: Vec<NativeSnapshotFence>,
+    snapshot_quarantine: Vec<std::rc::Rc<NativeCaptureAllocation>>,
+    snapshot_reuse_enabled: bool,
+    snapshot_import_reuse_enabled: bool,
     /// Target slots and pixel-proof state, one set per output the context
     /// serves. A device-shared context renders for several outputs, and a
     /// slot index alone does not identify a bundle across them: two outputs
@@ -83,7 +88,8 @@ enum NativeRendererImageState {
 }
 
 struct NativeRendererImage {
-    buffer: NativeGbmOwnedScanoutBuffer,
+    buffer: std::rc::Rc<NativeGbmOwnedScanoutBuffer>,
+    pooled: Option<NativePooledCapture>,
     state: NativeRendererImageState,
     bytes: u64,
 }
@@ -235,6 +241,11 @@ where
             stats: NativeGbmPersistentRenderStats::default(),
             composition_target: None,
             capture_targets: [None, None],
+            capture_reuse: NativeCaptureReuse::default(),
+            snapshot_fences: Vec::new(),
+            snapshot_quarantine: Vec::new(),
+            snapshot_reuse_enabled: true,
+            snapshot_import_reuse_enabled: true,
             target_sets: std::collections::BTreeMap::new(),
             current_target_set: NativeFrameTargetSetId::DEFAULT,
             import_cache_capacity,
@@ -266,10 +277,46 @@ where
     /// Qualification-only wall-clock timings; normal rendering counts work only.
     pub fn set_render_timing_enabled(&mut self, enabled: bool) {
         self.render_timing_enabled = enabled;
+        self.capture_reuse.set_render_timing_enabled(enabled);
+    }
+
+    /// Qualification control: changes only future captures, never live pixels.
+    pub fn set_snapshot_reuse_enabled(&mut self, enabled: bool) {
+        self.snapshot_reuse_enabled = enabled;
+        self.snapshot_import_reuse_enabled = enabled;
+        self.capture_reuse.set_source_reuse_enabled(enabled);
+    }
+
+    /// Select reuse slices for matched attribution runs. Source and output
+    /// reuse apply only to pooled captures; pool=false uses the legacy path.
+    pub fn set_snapshot_reuse_modes(&mut self, pool: bool, source: bool, output: bool) {
+        self.snapshot_reuse_enabled = pool;
+        self.snapshot_import_reuse_enabled = output;
+        self.capture_reuse.set_source_reuse_enabled(source);
+    }
+
+    pub fn snapshot_reuse_stats(&self) -> NativeCaptureReuseStats {
+        self.capture_reuse.stats()
     }
 
     pub fn persistent_render_stats(&self) -> NativeGbmPersistentRenderStats {
         let mut stats = self.stats;
+        let reuse = self.capture_reuse.stats();
+        stats.sampling = stats.sampling.saturating_add(reuse.sampling);
+        stats.capture_context_creations = stats
+            .capture_context_creations
+            .saturating_add(reuse.context_creations as u64);
+        stats.capture_config_selections = stats.capture_config_selections.saturating_add(reuse.config_selections as u64);
+        stats.capture_context_reuses = stats.capture_context_reuses.saturating_add(reuse.context_reuses as u64);
+        stats.gl_pipeline_creations = stats
+            .gl_pipeline_creations
+            .saturating_add(reuse.context_creations);
+        stats.capture_setup_cpu = stats.capture_setup_cpu.saturating_add(reuse.setup_cpu);
+        stats.capture_copy_cpu = stats.capture_copy_cpu.saturating_add(reuse.copy_cpu);
+        stats.capture_cleanup_cpu = stats.capture_cleanup_cpu.saturating_add(reuse.cleanup_cpu);
+        stats.capture_setup_elapsed = stats.capture_setup_elapsed.saturating_add(reuse.setup_elapsed);
+        stats.capture_copy_elapsed = stats.capture_copy_elapsed.saturating_add(reuse.copy_elapsed);
+        stats.capture_cleanup_elapsed = stats.capture_cleanup_elapsed.saturating_add(reuse.cleanup_elapsed);
         stats.transfer_captures = self.transfer_stats.captures;
         stats.transfer_attempts = self.transfer_stats.attempts;
         stats.transfer_failures = self.transfer_stats.failures;
@@ -517,6 +564,7 @@ where
         frame: NativeCompositionFrame<'_>,
         request: NativeCompositionOutputRequest<'_>,
     ) -> NativeGbmOwnedScanoutBufferExportReport {
+        self.poll_snapshot_fences();
         if !request.is_valid()
             || frame.width == 0
             || frame.height == 0
@@ -723,6 +771,16 @@ include!("context/image_capture.rs");
 include!("context/timing.rs");
 include!("context/image_transfer.rs");
 include!("context/image_bridge.rs");
+include!("context/snapshot_lifetime.rs");
+include!("context/snapshot_fences.rs");
+include!("context/source_imports.rs");
+include!("context/capture_pool.rs");
+
+#[cfg(test)]
+mod snapshot_lifetime_tests {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/snapshot_lifetime.rs"));
+}
+
 impl<T> NativeGbmRenderedScanoutContext<T>
 where
     T: std::os::fd::AsFd,
@@ -792,11 +850,18 @@ where
         }
         // Target imports are gone; release retained buffer surfaces while their
         // EGL display and its dynamically loaded entry points still exist.
+        self.abandon_snapshot_fences();
         self.renderer_images.clear();
+        // Final teardown admits no more work; release quarantine while EGL
+        // cleanup is still possible. Runtime clears retain these allocations.
+        self.snapshot_quarantine.clear();
+        self.capture_reuse.clear();
+        self.capture_reuse.destroy_quarantine();
         self.renderer_image_bytes = 0;
         self.destroy_image_bridges();
         self.import_devices.take();
         let _ = self.egl.terminate(self.display);
+        self.capture_reuse.release_display_graveyards();
         trace_native_lifecycle("egl_display_terminated");
     }
 }

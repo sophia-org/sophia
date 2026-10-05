@@ -54,6 +54,8 @@ fn fresh_images_reuse_execution_across_resize_and_survive_local_eviction() {
         std::path::PathBuf::from(std::env::var_os("SOPHIA_TEST_RENDER_NODE").expect("render node"));
     let allocator = gbm::Device::new(open(&path)).unwrap();
     let mut capture = context(&path);
+    // Keep coverage of the retained-EGLSurface fallback alongside pool tests.
+    capture.set_snapshot_reuse_enabled(false);
     let mut snapshots = Vec::new();
     let mut cold_config_selections = 0;
     for (index, (width, height, format)) in [

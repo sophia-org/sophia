@@ -124,6 +124,8 @@ struct NativeDmaBufImport {
 
 pub(crate) struct NativeDmaBufImportCache {
     entries: Vec<Option<NativeDmaBufImport>>,
+    snapshot_entries: std::collections::VecDeque<NativeSnapshotImport>,
+    snapshot_cleanup_failed: bool,
     stats: NativeDmaBufImportCacheStats,
 }
 
@@ -134,6 +136,8 @@ impl NativeDmaBufImportCache {
     ) -> Self {
         Self {
             entries: std::iter::repeat_with(|| None).take(capacity).collect(),
+            snapshot_entries: std::collections::VecDeque::new(),
+            snapshot_cleanup_failed: false,
             stats,
         }
     }
@@ -149,6 +153,9 @@ impl NativeDmaBufImportCache {
         pipeline: &PersistentXrgb8888GlPipeline,
         layer: NativeDmaBufCompositionLayer<'_>,
     ) -> Result<glow::NativeTexture, NativeGbmScanoutBufferExportDetail> {
+        if self.snapshot_cleanup_failed {
+            return Err(NativeGbmScanoutBufferExportDetail::EglImageDestroyFailed);
+        }
         // One immutable image can have copies in several stores. A snapshot
         // from a replacement donor is a new backing even when its image ID
         // still names the same pixels. Old custody never authenticates it.
@@ -194,6 +201,7 @@ impl NativeDmaBufImportCache {
             }
             NativeRendererImageCacheAdmission::Hit { .. } => unreachable!(),
         };
+        self.make_snapshot_room(egl, display, pipeline)?;
         let image = create_dma_buf_image(egl, display, layer.frame)?;
         let texture = match unsafe { pipeline.create_egl_image_texture(egl, image.as_ptr()) } {
             Ok(texture) => texture,
@@ -221,12 +229,13 @@ impl NativeDmaBufImportCache {
         pipeline: &PersistentXrgb8888GlPipeline,
         image_id: NativeRendererImageId,
     ) -> Result<bool, NativeGbmScanoutBufferExportDetail> {
+        let snapshot_evicted = self.evict_snapshot_imports(egl, display, pipeline, image_id)?;
         let Some(index) = self.entries.iter().position(|entry| {
             entry
                 .as_ref()
                 .is_some_and(|entry| entry.image_id == image_id)
         }) else {
-            return Ok(false);
+            return Ok(snapshot_evicted);
         };
         let entry = self.entries[index]
             .take()
@@ -250,6 +259,12 @@ impl NativeDmaBufImportCache {
     ) -> Result<usize, NativeGbmScanoutBufferExportDetail> {
         let mut cleared = 0usize;
         let mut image_destroy_failed = false;
+        while let Some(entry) = self.snapshot_entries.pop_front() {
+            image_destroy_failed |= self
+                .destroy_snapshot_import(entry, egl, display, pipeline)
+                .is_err();
+            cleared += 1;
+        }
         for entry in &mut self.entries {
             let Some(entry) = entry.take() else {
                 continue;
@@ -273,6 +288,13 @@ impl NativeDmaBufImportCache {
         display: khronos_egl::Display,
     ) {
         let mut cleared = 0usize;
+        for entry in self.snapshot_entries.drain(..) {
+            // With no current context the texture was not deleted. Even an
+            // EGLImage success would not prove its sibling released storage.
+            entry.allocation.quarantine_output_image(entry.image);
+            self.snapshot_cleanup_failed = true;
+            cleared += 1;
+        }
         for entry in &mut self.entries {
             let Some(entry) = entry.take() else {
                 continue;
@@ -284,6 +306,8 @@ impl NativeDmaBufImportCache {
         self.stats.live_entries = 0;
     }
 }
+
+include!("import_cache/snapshots.rs");
 
 pub(crate) fn create_dma_buf_image(
     egl: &khronos_egl::DynamicInstance<khronos_egl::EGL1_5>,

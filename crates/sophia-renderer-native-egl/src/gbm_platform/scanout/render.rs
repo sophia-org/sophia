@@ -434,7 +434,7 @@ fn render_native_target_composition(
     target: &mut NativeRenderTarget,
     surface: std::rc::Rc<NativeFrameSurface>,
     import_cache: &mut NativeDmaBufImportCache,
-    renderer_images: &std::collections::BTreeMap<NativeRendererImageId, NativeRendererImage>,
+    snapshots: NativeSnapshotCompositionResources<'_>,
     frame: NativeCompositionFrame<'_>,
     capture_pixels: bool,
     preserve_target_alpha: bool,
@@ -456,6 +456,7 @@ fn render_native_target_composition(
         return Err(NativeGbmScanoutBufferExportDetail::EglMakeCurrentFailed);
     }
 
+    let snapshot_uses = collect_snapshot_uses(frame, snapshots.images);
     trace_native_lifecycle("composition_surface_current");
     // The age belongs to the buffer this context just made current, so it can
     // only be read here -- and only before anything is drawn into it.
@@ -615,7 +616,7 @@ fn render_native_target_composition(
                 NativeCompositionLayer::RendererImage(layer) => {
                     trace_native_lifecycle("composition_renderer_image_layer_started");
                     let result = (|| {
-                        let image = renderer_images
+                        let image = snapshots.images
                             .get(&layer.image_id)
                             .ok_or(NativeGbmScanoutBufferExportDetail::InvalidRendererImageId)?;
                         let plane_count = image.buffer.plane_count();
@@ -648,8 +649,11 @@ fn render_native_target_composition(
                             alpha: layer.alpha,
                             sampling: layer.sampling,
                         };
-                        let texture =
-                            import_cache.texture(egl, display, &target.pipeline, imported)?;
+                        let texture = if let Some(captured) = &image.pooled {
+                            import_cache.snapshot_texture(egl, display, &target.pipeline, captured, imported, snapshots.import_reuse)?
+                        } else {
+                            import_cache.texture(egl, display, &target.pipeline, imported)?
+                        };
                         target
                             .pipeline
                             .draw_texture_layer(
@@ -785,127 +789,13 @@ fn render_native_target_composition(
             buffer._frame_surface = Some(surface.clone());
             Ok((buffer, evidence))
         });
+    finish_snapshot_batch(egl, display, snapshot_uses, snapshots.fences, snapshots.quarantine);
     let _ = egl.make_current(display, None, None, None);
     result
 }
 
-fn trace_composition_pixels(
-    pipeline: &PersistentXrgb8888GlPipeline,
-    stage: &str,
-    layer: usize,
-    target: NativeCompositionRect,
-    format: u32,
-    modifier: u64,
-    stride: u32,
-) {
-    let region_metrics = pipeline.read_composition_region_pixels(target.into());
-    match (pipeline.read_composition_pixels(), region_metrics) {
-        (Ok(metrics), Ok(region)) => tracing::info!(
-            "sophia_native_composition_pixels schema=3 status=read stage={stage} layer={layer} target={}x{}_{}_{} format={format:#x} modifier={modifier:#x} stride={stride} pixels={} nonzero_rgb_pixels={} alpha_zero_pixels={} alpha_partial_pixels={} alpha_opaque_pixels={} luminance_sum={} luminance_mean_millis={} checksum={} region_pixels={} region_nonzero_rgb_pixels={} region_red_pixels={} region_green_pixels={} region_blue_pixels={} region_yellow_pixels={} region_cyan_pixels={} region_magenta_pixels={} region_gray_pixels={} region_other_pixels={} region_luminance_sum={} region_luminance_mean_millis={} region_luminance_histogram={} region_checksum={}",
-            target.width,
-            target.height,
-            target.x,
-            target.y,
-            metrics.pixels,
-            metrics.nonzero_rgb_pixels,
-            metrics.alpha_zero_pixels,
-            metrics.alpha_partial_pixels,
-            metrics.alpha_opaque_pixels,
-            metrics.luminance_sum,
-            metrics.luminance_mean_millis(),
-            metrics.checksum,
-            region.pixels,
-            region.nonzero_rgb_pixels,
-            region.red_pixels,
-            region.green_pixels,
-            region.blue_pixels,
-            region.yellow_pixels,
-            region.cyan_pixels,
-            region.magenta_pixels,
-            region.gray_pixels,
-            region.other_pixels,
-            region.luminance_sum,
-            region.luminance_mean_millis(),
-            region.luminance_histogram_field(),
-            region.checksum,
-        ),
-        _ => tracing::warn!(
-            "sophia_native_composition_pixels schema=3 status=unavailable stage={stage} layer={layer} target={}x{}_{}_{} format={format:#x} modifier={modifier:#x} stride={stride}",
-            target.width,
-            target.height,
-            target.x,
-            target.y,
-        ),
-    }
-}
-
-fn trace_final_composition_region(
-    pipeline: &PersistentXrgb8888GlPipeline,
-    source_stage: &str,
-    layer: usize,
-    target: NativeCompositionRect,
-    output: (u32, u32),
-    trace: Option<NativeCompositionTrace>,
-) -> Option<usize> {
-    match pipeline.read_composition_region_pixels(target.into()) {
-        Ok(region) => {
-            // Keep the existing region schema for historical gates. This
-            // additive identity record ties the same readback to an opaque
-            // head scene, which the backend maps to an exact retired frame.
-            if let Some(trace) = trace {
-                tracing::info!(
-                    "sophia_native_composition_region_frame schema=1 status=read output={} head={} scene_generation={} layer={layer} source_stage={source_stage} target={}x{}_{}_{} region_pixels={} nonzero_rgb_pixels={} checksum={}",
-                    trace.output,
-                    trace.head,
-                    trace.scene_generation,
-                    target.width,
-                    target.height,
-                    target.x,
-                    target.y,
-                    region.pixels,
-                    region.nonzero_rgb_pixels,
-                    region.checksum,
-                );
-            }
-            tracing::info!(
-                "sophia_native_composition_region schema=3 status=read composition=final source_stage={source_stage} layer={layer} output={}x{} target={}x{}_{}_{} region_pixels={} region_nonzero_rgb_pixels={} region_red_pixels={} region_green_pixels={} region_blue_pixels={} region_yellow_pixels={} region_cyan_pixels={} region_magenta_pixels={} region_gray_pixels={} region_other_pixels={} region_luminance_sum={} region_luminance_mean_millis={} region_luminance_histogram={} region_checksum={}",
-                output.0,
-                output.1,
-                target.width,
-                target.height,
-                target.x,
-                target.y,
-                region.pixels,
-                region.nonzero_rgb_pixels,
-                region.red_pixels,
-                region.green_pixels,
-                region.blue_pixels,
-                region.yellow_pixels,
-                region.cyan_pixels,
-                region.magenta_pixels,
-                region.gray_pixels,
-                region.other_pixels,
-                region.luminance_sum,
-                region.luminance_mean_millis(),
-                region.luminance_histogram_field(),
-                region.checksum,
-            );
-            Some(region.nonzero_rgb_pixels)
-        }
-        Err(_) => {
-            tracing::warn!(
-                "sophia_native_composition_region schema=3 status=unavailable composition=final source_stage={source_stage} layer={layer} output={}x{} target={}x{}_{}_{}",
-                output.0,
-                output.1,
-                target.width,
-                target.height,
-                target.x,
-                target.y,
-            );
-            None
-        }
-    }
-}
+include!("render/snapshot_uses.rs");
+include!("render/pixel_trace.rs");
 
 fn trace_dmabuf_lifecycle(stage: &str) {
     if std::env::var_os("SOPHIA_WAYLAND_DMABUF_DIAGNOSTIC").is_some() {

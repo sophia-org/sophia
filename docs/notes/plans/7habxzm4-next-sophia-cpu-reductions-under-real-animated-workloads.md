@@ -1533,3 +1533,152 @@ and sources, and destroy/disconnect. The current
 `unclocked_full_updates_do_not_scrap_a_fence_blocked_request` control records the
 existing behavior and must change with the parity fix. No implementation is
 included here. Review: `t289-clockless-01/pF/FRONTEND-REVIEW-02.txt`.
+
+## Snapshot storage and import reuse (2026-10-04 implementation)
+
+The t289 candidate keeps the full compositor-owned GPU snapshot and the current
+Present Copy/Idle protocol. It reuses storage only after the old image is evicted
+and all capture/consumer GPU fences have completed. Allocation keepalive,
+content generation and outstanding GPU use are separate rights. A public raw-FD
+export permanently excludes its allocation from recycling, including independent
+FD duplicates that outlive the snapshot wrapper.
+
+The implementation has three parts: explicit GBM allocation/EGLImage/FBO reuse,
+source import reuse with a fresh texture binding on every accepted frame, and
+output imports keyed by allocation plus content generation. Persistent imports
+hold storage, not permission to read a retired generation. A rejected KMS frame
+still leaves its GL read covered by a consuming-context fence. Unknown completion
+or failed resource cleanup retains the charge and prevents recycling.
+
+The renderer's existing 256-image / 512 MiB limits remain. Idle storage is bounded
+to eight allocations / 64 MiB, and retained source imports to sixteen entries /
+128 MiB within the renderer budget. Draining images, cached imports and quarantined
+allocations stay charged. Source plane aliases are deduplicated within a descriptor;
+different layouts or format contexts can conservatively charge the same backing
+more than once. This is an upper bound, not a measurement of physical RSS. GBM
+padding is learned from actual allocation size and remembered for later admissions;
+one cold speculative allocation may exceed its estimate before being refused.
+
+The legacy fresh-surface path remains the fallback and a qualification control.
+Source/output reuse controls apply to pooled captures. The old EGLSurface lifetime
+fixtures explicitly exercise the fallback; new controls cover pooled pixel
+immutability, independently duplicated exports surviving churn and context death,
+and a GPU producer rewriting a cached source without intervening CPU synchronization.
+Device checks and a full gate must pass before promotion. The performance decision
+still requires matched end-to-end Sophia CPU per completion, throughput and p95
+latency; allocation/import plateaus explain a result but cannot replace it.
+
+Evidence: `t289-snapshot-reuse-01`. Source evaluation and the snapshot rationale:
+`t289-buffer-lifetime-comparison-01/REUSE-EVALUATION.txt`. This section records a
+candidate under development, not an accepted CPU saving or a deployed change.
+
+The snapshot candidate's final review found that a source-import refusal could
+retain a destination allocation even though no destination work had started.
+The successor distinguishes failures before the first clear from failures after
+GPU work may have been submitted. Only the latter retain uncertain storage.
+Repeated refused EGL imports and the transfer-path accounting check guard
+against exhausting the store through otherwise valid fallback. The source
+cleanup poison remains a separate refusal. Evidence is retained in
+`t289-snapshot-reuse-01/REVIEW-02-FALLBACK.txt`; no performance conclusion follows
+from this correction.
+
+### Capture comparison and live candidate (2026-10-05)
+
+The final production candidate is `ba763f0c4`. Its full gate passed with the
+source clean before and after. Both render nodes passed the snapshot lifetime
+and pixel checks, and the cross-device fallback check passed in both directions.
+Four recorded negative controls failed at their intended assertions; the frozen
+source was restored before the final build and checks.
+
+Nine capture trials used the same release binary, with each of three modes
+appearing once in each position. The workload was one immutable LINEAR XR24
+buffer at 2542×1398, 60 captures/s, with 120 warmup captures and 600 measured
+captures per trial on renderD128. Median process CPU per capture was:
+
+| Mode | Median | Range |
+| --- | ---: | ---: |
+| Fresh storage and imports | 227.36 µs | 226.22–234.75 µs |
+| Pooled storage | 106.81 µs | 102.02–110.30 µs |
+| Pooled storage and source imports | 90.61 µs | 80.52–93.85 µs |
+
+All trials passed their timing and custody checks. Full reuse reduced this
+capture cost by 60.15%; the three ranges are separated. The pooled arms made no
+new snapshot allocation after warmup. Full reuse also had 600 source import hits
+and 600 fresh texture bindings per trial. The full GPU snapshot copy remains.
+This fixture does not exercise output import reuse, the owner loop or scanout.
+It is evidence for advancing the candidate, not a total Sophia CPU saving.
+
+Local niltempus candidate `1a09179` pins that exact Sophia revision and builds
+release `niltempus-10a4145c1c3074a9624f`. Its device-free normal session and
+protected metadata checks pass. All other component binaries equal installed
+`niltempus-99bb041fe3535b5d265d`; only Sophia, the manifest/checksums and profile
+release paths differ. No install or publication follows from these checks.
+
+The remaining decision uses the same generic DRI3/GBM workload binary on the
+installed baseline and candidate, measuring whole Sophia CPU per completed
+Present, throughput and p95 latency. A visible setup smoke must first establish
+stable geometry under Hagia. Three 60-second runs per arm, with other visible
+surfaces static and matching heads, profile and libraries, form the comparison.
+Separate logins mean sequential arms; do not describe that as balanced A/B order.
+The candidate remains unpromoted until that result is assessed.
+
+Evidence: `t289-snapshot-reuse-01/comparison-01/RESULT.txt`, `GATE-03.json`,
+`CANDIDATE-ARTIFACT.json`, and `LIVE-WORKLOAD-ADAPTER-01.json`. The subsequent
+documentation commit does not change the frozen production candidate or its
+packaged binary.
+
+### Matched live result and integration disposition (2026-10-05)
+
+The operator installed `niltempus-10a4145c1c3074a9624f` and started a new
+session. The running Sophia hash equals the candidate artifact. Three valid
+60-second baseline trials on `6ae5df00a` and three candidate trials on
+`ba763f0c4` used the same frozen generic DMA-BUF client. Each completed all
+3,600 offered Presents and received all Idle events, without starvation,
+late slots, recovery or rendering errors. The workspaces, display layout,
+loaded libraries, profile, shell configuration and buffer layouts matched.
+These were sequential arms across logins, not alternating A/B trials.
+
+The client used eight immutable LINEAR XR24 buffers, alternating a 16×32 cursor
+patch with full-source damage, at 60 offers/s. Hagia placed the window at
+1266×1398 on the 2560×1440, 120 Hz head. Managed placement settled before
+allocation. The unchanged bar and background work remained in the total
+Session CPU; there was no empty-workspace subtraction or system-wide CPU claim.
+
+| Metric | Baseline median (range) | Candidate median (range) |
+| --- | ---: | ---: |
+| Whole Sophia CPU/completion | 1.46575 ms (1.46337–1.47428) | 1.39403 ms (1.39398–1.39446) |
+| Sophia, percent of one core | 8.794% (8.780–8.845) | 8.364% (8.363–8.366) |
+| Owner CPU/completion | 0.70884 ms (0.69272–0.71387) | 0.73739 ms (0.73488–0.74464) |
+| Client CPU/completion | 0.03422 ms (0.03374–0.03529) | 0.03617 ms (0.03595–0.03757) |
+| Send-to-Complete p95 | 6.391 ms (6.013–6.819) | 6.772 ms (6.765–6.843) |
+
+Throughput remained 60 completions/s. Whole Sophia CPU fell **4.89%**, with
+separated ranges; the approximately 2 µs extra client CPU does not account for
+the 71.7 µs Sophia saving. This is a smaller benefit than the separate 60.15%
+capture-only result. The renderer worker's grouped median CPU fell from
+0.41680 to 0.26469 ms/completion; costs elsewhere offset part of that reduction.
+
+**Disposition:** integrate the reviewed, gated storage/import change as a
+limited whole-Session CPU improvement. This is a manual tradeoff, not a clean
+pass of the desired no-latency-regression condition. Owner CPU rose 4.03%, and
+p95's median rose 0.381 ms (5.96%). Overlapping latency ranges do not establish
+equivalence. Keep both results visible in t289 and investigate them before
+claiming a latency or owner-loop improvement. No further measurement tonight
+is needed for this limited integration decision; t289 remains open.
+
+Two earlier attempts remain INVALID. Baseline01 exposed an incorrect reporter
+assumption: global bindings include hidden-window 1 Hz clocks. The prospective
+reporter separates those bindings and checks the measured client's completion
+cadence against its actual physical head, using timestamp and printed-refresh
+precision. It makes no per-request clock-source identity claim. Baseline02
+crossed log rotation; all 19,766 expected written records were present. The
+successor reader permits rotation only when observed raw record count equals
+the health sequence delta minus suppression delta, with a health checkpoint
+after workload exit. It still refuses actual loss, duplicates, malformed
+records, storage errors or lock activity. Fourteen pure controls passed before
+the fresh series. Neither invalid attempt enters the comparison.
+
+Evidence: `t289-snapshot-reuse-01/LIVE-COMPARISON.json`, `LIVE-BASELINE.json`,
+`live-baseline-03` through `05`, `live-candidate-01` through `03`, and
+`LIVE-WORKLOAD-ADAPTER-06.json`. The production source remains the exact gated
+`ba763f0c4` content; result documentation does not change the installed binary.

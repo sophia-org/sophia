@@ -7,11 +7,13 @@ use std::io::Read;
 use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const HOST: &str = env!("CARGO_BIN_EXE_shell_descriptor_conformance_host");
 const LAUNCHER_HOST: &str = env!("CARGO_BIN_EXE_shell_launcher_conformance_host");
 const LOG_CAP: u64 = 64 * 1024;
+static NEXT_SCRATCH: AtomicU64 = AtomicU64::new(0);
 
 #[path = "support/c_file_peer.rs"]
 mod c_file_peer;
@@ -55,10 +57,11 @@ fn run(
     fault: Option<&str>,
 ) -> (std::process::ExitStatus, String, String) {
     let scratch = Scratch(std::env::temp_dir().join(format!(
-        "sophia-descriptor-modes-{}-{}-{}",
+        "sophia-descriptor-modes-{}-{}-{}-{}",
         std::process::id(),
         mode,
         SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(),
+        NEXT_SCRATCH.fetch_add(1, Ordering::Relaxed),
     )));
     DirBuilder::new().mode(0o700).create(&scratch.0).unwrap();
     let peer = c_file_peer::build(&scratch.0, "shell_descriptor_file_peer", 0);

@@ -106,6 +106,8 @@ fn retained_image_surfaces_are_released_before_their_display_terminates() {
         let mut context = created
             .context
             .unwrap_or_else(|| panic!("create native context: {:?}", created.status));
+        // This witness covers EGLSurface-backed fallback destruction.
+        context.set_snapshot_reuse_enabled(false);
         let image_id = NativeRendererImageId::from_raw(71);
         assert!(
             context

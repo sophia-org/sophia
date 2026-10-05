@@ -94,3 +94,8 @@ inline-tests crates/sophia-session/src/private_input/committed.rs
 
 # External inactive-CRTC fixture; no inline test bodies or device access.
 inline-tests crates/sophia-backend-live/src/production_output_runtime.rs
+
+# External snapshot generation and source-allocation fixtures; no inline bodies.
+inline-tests crates/sophia-renderer-native-egl/src/gbm_platform/scanout/context.rs
+inline-tests crates/sophia-renderer-native-egl/src/gbm_platform/scanout/context/source_imports.rs
+inline-tests crates/sophia-renderer-native-egl/src/gbm_platform/scanout/context/capture_pool.rs
