@@ -20,6 +20,7 @@
  * the file named by SOPHIA_LOCK_CONFIG. Once a second it reports its counters
  * on stderr. It makes no timing claims; the scenario's verifier does. */
 #define _GNU_SOURCE
+#include "qemu_lock_provider_service.h"
 #include "sophia_lock_client.h"
 #include <fcntl.h>
 #include <poll.h>
@@ -39,6 +40,8 @@ static int fd = -1;
 static enum mode mode;
 static int stall_armed, stalled;
 static uint64_t events, submitted, custodied, again, permits, last_custodied;
+/* The last service pass, reported with any failure. */
+static struct standin_service pass;
 
 static const char *mode_name(void) {
   return mode == FLOOD ? "flood" : mode == STALL ? "stall" : "baseline";
@@ -60,11 +63,9 @@ static void report(const char *state) {
 }
 
 static void die(const char *step) {
-  fprintf(stderr,
-          "sophia_qemu_lock_provider schema=1 mode=%s state=failed step=%s "
-          "client=%d remote=%u refusal=%u\n",
-          mode_name(), step, (int)sophia_lc_state(&client),
-          sophia_lc_remote_error(&client), sophia_lc_refusal(&client));
+  char line[256];
+  standin_failure(line, sizeof line, mode_name(), step, &client, &pass);
+  fputs(line, stderr);
   exit(1);
 }
 
@@ -91,7 +92,7 @@ static void turn(int timeout_ms) {
   if (sophia_9p_wants_write(&wire))
     p.events |= POLLOUT;
   (void)poll(&p, 1, timeout_ms);
-  if (sophia_lc_service(&client, 65536))
+  if (standin_service(&client, &wire, 65536, &pass))
     die("service");
   switch (sophia_lc_state(&client)) {
   case SOPHIA_LC_STALE:

@@ -1,7 +1,7 @@
 """The session-lock-provider verifier must pass each mode's evidence and fail
 each broken variant by name: lock order, guest stamps, provider health through
-the unlock, the one teardown read allowed after Session's completion, and
-reconnects or restarts."""
+the unlock, the one recognized teardown allowed after Session's completion (and the
+cleanup and guest completion after it), and reconnects or restarts."""
 from pathlib import Path
 import subprocess
 import sys
@@ -16,7 +16,20 @@ LOCKED = LOCK + "status=locked epoch=1"
 UNLOCKED = LOCK + "status=unlocked epoch=1"
 QUIESCENCE = "sophia_live_session_quiescence schema=3 status=started reason=input_proof_complete timeout_msec=2000"
 COMPLETE = "sophia_live_session schema=18 status=bounded_complete display=:181 surface_resize=disabled present_complete_copy=0"
-TEARDOWN = "state=failed step=service client=3 remote=116 refusal=0"
+CLEANUP = "sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed"
+GUEST_COMPLETE = "sophia_qemu_guest schema=1 status=complete scenario=session-lock-provider"
+PASS = "state=failed step=service client={client} remote={remote} refusal=0 service_rc={rc} wire={wire} errno={errno}"
+# Each recognized teardown, as the stand-in prints it (the io lines are the
+# controls' real EPIPE and ECONNRESET passes).
+TEARDOWNS = {
+    "estale": PASS.format(client=3, remote=116, rc=-1, wire=0, errno=11),
+    "closed": PASS.format(client=4, remote=0, rc=-3, wire=-3, errno=0),
+    "io_epipe": PASS.format(client=4, remote=0, rc=-2, wire=-2, errno=32),
+    "io_reset": PASS.format(client=4, remote=0, rc=-2, wire=-2, errno=104),
+}
+COUNTED = {"estale": "estale", "closed": "closed", "io_epipe": "io", "io_reset": "io"}
+# The sq1 flood-6 line, from before the stand-in recorded its pass.
+SQ1 = "state=failed step=service client=4 remote=0 refusal=0"
 
 
 def report(mode, state, events, submitted=0):
@@ -24,8 +37,13 @@ def report(mode, state, events, submitted=0):
             f"submitted={submitted} custodied={submitted} again=0 permits=0")
 
 
-def evidence(mode, teardown=True):
-    """One run's evidence as (stamped, line) pairs, in order."""
+def provider(mode, text):
+    return f"sophia_qemu_lock_provider schema=1 mode={mode} {text}"
+
+
+def evidence(mode, teardown="estale"):
+    """One run's evidence as (stamped, line) pairs, in order. `teardown` names
+    a TEARDOWNS entry, raw teardown text, or None for no teardown."""
     held = {"stall": ("stalled", 1, 0), "flood": ("serving", 5, 5), "baseline": ("serving", 2, 0)}
     after = {"stall": ("stalled", 1, 0), "flood": ("serving", 9, 9), "baseline": ("serving", 2, 0)}
     lines = [
@@ -45,7 +63,8 @@ def evidence(mode, teardown=True):
         (False, COMPLETE),
     ]
     if teardown:
-        lines.append((True, f"sophia_qemu_lock_provider schema=1 mode={mode} {TEARDOWN}"))
+        lines.append((True, provider(mode, TEARDOWNS.get(teardown, teardown))))
+    lines += [(False, CLEANUP), (False, GUEST_COMPLETE)]
     return lines
 
 
@@ -63,10 +82,10 @@ def index(pairs, line):
     return next(i for i, (_, text) in enumerate(pairs) if text == line)
 
 
-def moved_teardown(mode, before):
-    """The teardown read moved to just before the line `before`."""
-    pairs = evidence(mode, teardown=False)
-    pairs.insert(index(pairs, before), (True, f"sophia_qemu_lock_provider schema=1 mode={mode} {TEARDOWN}"))
+def moved_teardown(mode, kind, before):
+    """The teardown moved to just before the line `before`."""
+    pairs = evidence(mode, teardown=None)
+    pairs.insert(index(pairs, before), (True, provider(mode, TEARDOWNS[kind])))
     return pairs
 
 
@@ -76,43 +95,97 @@ class VerifierTest(unittest.TestCase):
             path = Path(directory) / "evidence.log"
             path.write_text(render(pairs) if isinstance(pairs, list) else pairs)
             return subprocess.run([sys.executable, "-B", str(VERIFIER), str(path), mode],
-                                  capture_output=True, text=True, check=False)
+                                  capture_output=True, text=True, check=False, timeout=60)
 
     def assert_fails(self, pairs, mode, reason):
         result = self.verify(pairs, mode)
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn(reason, result.stderr)
 
-    def test_each_mode_passes_with_and_without_the_teardown_read(self):
+    def test_each_mode_passes_with_no_or_one_recognized_teardown(self):
         for mode in ("stall", "flood", "baseline"):
-            for teardown in (True, False):
+            for teardown in (None, *TEARDOWNS):
                 with self.subTest(mode=mode, teardown=teardown):
                     result = self.verify(evidence(mode, teardown), mode)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertIn(f"status=pass mode={mode} ", result.stdout)
-                    self.assertIn(f"teardown_estale={int(teardown)} ", result.stdout)
+                    for kind in ("estale", "closed", "io"):
+                        count = int(teardown is not None and COUNTED[teardown] == kind)
+                        self.assertIn(f"teardown_{kind}={count} ", result.stdout)
                     self.assertIn("basis=guest_log_observed", result.stdout)
 
-    def test_teardown_read_before_completion_fails(self):
+    def test_a_recognized_teardown_before_completion_fails(self):
         failed = "provider failed or reported malformed state"
-        for before in (COMPLETE, QUIESCENCE, UNLOCKED, LOCKED):
-            with self.subTest(before=before):
-                self.assert_fails(moved_teardown("baseline", before), "baseline", failed)
+        # In flood the post-unlock report differs from the one held before.
+        after_unlock = report("flood", "serving", 9, 9)
+        for kind in TEARDOWNS:
+            for before in (COMPLETE, QUIESCENCE, after_unlock, UNLOCKED, LOCKED):
+                with self.subTest(kind=kind, before=before):
+                    self.assert_fails(moved_teardown("flood", kind, before), "flood", failed)
 
-    def test_other_teardown_errors_fail(self):
-        for wrong in ("remote=5 refusal=0", "remote=116 refusal=1"):
-            with self.subTest(wrong=wrong):
-                text = render(evidence("baseline")).replace("remote=116 refusal=0", wrong)
-                self.assert_fails(text, "baseline", "provider failed or reported malformed state")
+    def test_unrecognized_failures_after_completion_fail(self):
+        wrong = {
+            "invalid": PASS.format(client=4, remote=0, rc=-1, wire=-1, errno=0),
+            "argument": PASS.format(client=4, remote=0, rc=-4, wire=0, errno=0),
+            "io_eio": PASS.format(client=4, remote=0, rc=-2, wire=-2, errno=5),
+            "io_no_errno": PASS.format(client=4, remote=0, rc=-2, wire=-2, errno=0),
+            "io_eagain": PASS.format(client=4, remote=0, rc=-2, wire=-2, errno=11),
+            "rc_disagrees_with_wire": PASS.format(client=4, remote=0, rc=-2, wire=-3, errno=32),
+            "closed_without_wire": PASS.format(client=4, remote=0, rc=-3, wire=0, errno=0),
+            "closed_with_remote": PASS.format(client=4, remote=5, rc=-3, wire=-3, errno=0),
+            "closed_refused": PASS.format(client=4, remote=0, rc=-3, wire=-3, errno=0).replace(
+                "refusal=0", "refusal=1"),
+            "estale_with_wire": PASS.format(client=3, remote=116, rc=-1, wire=-3, errno=0),
+            "other_remote": PASS.format(client=3, remote=5, rc=-1, wire=0, errno=0),
+            "other_step": TEARDOWNS["closed"].replace("step=service", "step=connection"),
+            "missing_pass": "state=failed step=service client=3 remote=116 refusal=0",
+            "sq1_flood_6": SQ1,
+        }
+        for name, text in wrong.items():
+            for mode in ("baseline", "flood"):
+                with self.subTest(name=name, mode=mode):
+                    self.assert_fails(evidence(mode, text), mode, "provider failed or reported malformed state")
 
-    def test_second_teardown_read_fails(self):
-        pairs = evidence("baseline")
-        pairs.append(pairs[-1])
-        self.assert_fails(pairs, "baseline", "the provider's connection ended more than once")
+    def test_a_second_teardown_fails_whatever_its_kind(self):
+        for first, second in (("estale", "estale"), ("estale", "closed"), ("closed", "io_epipe"),
+                              ("io_reset", "estale")):
+            with self.subTest(first=first, second=second):
+                pairs = evidence("baseline", first)
+                pairs.insert(index(pairs, CLEANUP), (True, provider("baseline", TEARDOWNS[second])))
+                self.assert_fails(pairs, "baseline", "the provider's connection ended more than once")
 
-    def test_teardown_read_without_completion_fails(self):
-        pairs = [pair for pair in evidence("baseline") if pair[1] != COMPLETE]
-        self.assert_fails(pairs, "baseline", "provider failed or reported malformed state")
+    def test_a_teardown_needs_session_cleanup_and_guest_completion(self):
+        for kind in TEARDOWNS:
+            with self.subTest(kind=kind, missing="cleanup"):
+                pairs = [pair for pair in evidence("flood", kind) if pair[1] != CLEANUP]
+                self.assert_fails(pairs, "flood", "no clean Session cleanup after the provider's teardown")
+            with self.subTest(kind=kind, failed="cleanup"):
+                text = render(evidence("flood", kind)).replace(CLEANUP, CLEANUP.replace("clean", "failed", 1))
+                self.assert_fails(text, "flood", "no clean Session cleanup after the provider's teardown")
+            with self.subTest(kind=kind, missing="guest completion"):
+                pairs = [pair for pair in evidence("flood", kind) if pair[1] != GUEST_COMPLETE]
+                self.assert_fails(pairs, "flood", "the guest did not complete after Session's cleanup")
+            with self.subTest(kind=kind, order="guest completion before cleanup"):
+                pairs = evidence("flood", kind)
+                pairs.insert(index(pairs, CLEANUP), pairs.pop(index(pairs, GUEST_COMPLETE)))
+                self.assert_fails(pairs, "flood", "the guest did not complete after Session's cleanup")
+            with self.subTest(kind=kind, order="cleanup before teardown"):
+                pairs = evidence("flood", kind)
+                cleanup = pairs.pop(index(pairs, CLEANUP))
+                pairs.insert(index(pairs, provider("flood", TEARDOWNS[kind])), cleanup)
+                self.assert_fails(pairs, "flood", "no clean Session cleanup after the provider's teardown")
+
+    def test_teardown_without_completion_fails(self):
+        for kind in TEARDOWNS:
+            with self.subTest(kind=kind):
+                pairs = [pair for pair in evidence("baseline", kind) if pair[1] != COMPLETE]
+                self.assert_fails(pairs, "baseline", "provider failed or reported malformed state")
+
+    def test_missing_post_unlock_report_fails(self):
+        after = report("baseline", "serving", 2, 0)
+        pairs = evidence("baseline", "closed")
+        del pairs[[i for i, (_, text) in enumerate(pairs) if text == after][-1]]
+        self.assert_fails(pairs, "baseline", "no provider report after the unlock")
 
     def test_completion_before_the_post_unlock_report_fails(self):
         pairs = [pair for pair in evidence("baseline") if pair[1] != COMPLETE]

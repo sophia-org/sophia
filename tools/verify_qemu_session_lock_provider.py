@@ -19,9 +19,24 @@ Provider health is bounded: from its start through the unlock and the first
 report after it, every provider report must be healthy. Only after Session's
 own completion record ("sophia_live_session ... status=bounded_complete"),
 which must follow that post-unlock report, may the provider's connection
-end, and then only as one expected teardown read (TEARDOWN below: the
-closing lock service answers ESTALE). Any other failure, a second one, or
-that one anywhere earlier, fails; so does a reconnection or a restart.
+end, and then only as one recognized teardown (TEARDOWN below), followed by
+Session's clean cleanup and the guest's completion. The stand-in reports the
+service pass that failed (tools/qemu_lock_provider_service.h): its return,
+the wire's terminal value and errno. A teardown is recognized only when all
+of them agree with one of:
+
+  estale  the closing lock service answered ESTALE; the wire is intact
+  closed  the service closed the connection: a clean end of stream
+  io      the service closed it under a send or receive: EPIPE or
+          ECONNRESET, as the controls show a closed peer produces
+          (tools/tests/qemu_lock_provider_service_control.c)
+
+Session's lock service stops before its supervisor ends the provider, and
+its disconnect drains the export only briefly, so which of the three a
+provider sees is not fixed. Any other failure, a malformed or unrecognized
+line (an invalid reply, a bad argument, another errno, no recorded pass), a
+second teardown, or one anywhere earlier, fails; so does a reconnection or a
+restart.
 
 Latencies come from the guest's stamps (tools/qemu_line_stamp.c), which
 record when the stamper observed each line on the session's output pipe:
@@ -39,11 +54,27 @@ import sys
 LOCK = "sophia_live_session_lock schema=1 "
 STAMP = re.compile(r"^sophia_qemu_stamp schema=1 mono_ns=(\d+)$")
 COMPLETE = re.compile(r"^sophia_live_session schema=[0-9]+ status=bounded_complete ")
-TEARDOWN = "state=failed step=service client=3 remote=116 refusal=0"
+# errno means something only for io; a pass may end a receive on EAGAIN
+# before it fails another way.
+TEARDOWN = {
+    "estale": re.compile(r"state=failed step=service client=3 remote=116 refusal=0 service_rc=-1 wire=0 errno=\d+"),
+    "closed": re.compile(r"state=failed step=service client=4 remote=0 refusal=0 service_rc=-3 wire=-3 errno=\d+"),
+    "io": re.compile(r"state=failed step=service client=4 remote=0 refusal=0 service_rc=-2 wire=-2 errno=(32|104)"),
+}
+CLEANUP = "sophia_live_session_cleanup schema=1 status=clean "
+GUEST_COMPLETE = "sophia_qemu_guest schema=1 status=complete scenario=session-lock-provider"
 REPORT = re.compile(
     r"^sophia_qemu_lock_provider schema=1 mode=(\w+) state=(\w+) events=(\d+) "
     r"submitted=(\d+) custodied=(\d+) again=(\d+) permits=(\d+)$"
 )
+
+
+def teardown_kind(text):
+    """The recognized teardown `text` is, or None."""
+    for kind, shape in TEARDOWN.items():
+        if shape.fullmatch(text):
+            return kind
+    return None
 
 
 def fail(message):
@@ -120,10 +151,12 @@ def main():
     stopping = completes[0] if completes else len(lines)
     reports = []
     teardown = []
+    prefix = f"sophia_qemu_lock_provider schema=1 mode={mode} "
     for i, line in enumerate(lines):
         if line.startswith("sophia_qemu_lock_provider "):
-            if line == f"sophia_qemu_lock_provider schema=1 mode={mode} {TEARDOWN}" and i > stopping:
-                teardown.append(i)
+            kind = teardown_kind(line[len(prefix):]) if line.startswith(prefix) else None
+            if kind and i > stopping:
+                teardown.append((i, kind))
                 continue
             match = REPORT.match(line)
             if not match:
@@ -155,6 +188,14 @@ def main():
         fail("Session completed before the provider reported after the unlock")
     if len(teardown) > 1:
         fail("the provider's connection ended more than once")
+    if teardown:
+        # Teardown, then Session's clean cleanup, then the guest's completion.
+        end = teardown[0][0]
+        cleanup = next((i for i in range(end, len(lines)) if lines[i].startswith(CLEANUP)), None)
+        if cleanup is None:
+            fail("no clean Session cleanup after the provider's teardown")
+        if GUEST_COMPLETE not in lines[cleanup:]:
+            fail("the guest did not complete after Session's cleanup")
 
     if mode == "stall":
         stalled = [r for r in reports if r[1] == "stalled"]
@@ -193,7 +234,8 @@ def main():
         f"sophia_qemu_session_lock_provider_evidence schema=1 status=pass mode={mode} "
         f"pam_ms={pam_ms:.3f} verdict_to_unlocked_ms={unlock_ms:.3f} "
         f"basis=guest_log_observed provider_disconnects={revoked} "
-        f"teardown_estale={len(teardown)} {detail}"
+        + " ".join(f"teardown_{kind}={sum(k == kind for _, k in teardown)}" for kind in TEARDOWN)
+        + f" {detail}"
     )
 
 
