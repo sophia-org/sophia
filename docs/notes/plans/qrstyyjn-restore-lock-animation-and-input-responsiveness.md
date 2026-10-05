@@ -236,3 +236,29 @@ commands and the source audit are in `t302-sophia-forward-01`. No production
 completion code or timeout changed. The earlier stall remains open; further
 ordinary screening is stopped. A recurrence with a blocked-task stack or a
 deterministic source reproduction would provide new evidence.
+
+## Closed 2026-10-05
+
+t302 is published and accepted. The C desktop SDK is v0.10.0 (3ef80c3), with
+pipelined lock uploads and payloads sent from the provider's frame. Sophia master
+6ae5df00a reuses lock image storage, receives upload data in place, reads one
+turn per write within a capped budget, and carries the bounded teardown
+diagnostics. kleis master 271c810 renders the Matrix rain on the granted render
+node, hands its mapped readback to the SDK, takes `matrix-fps` (default 30) and
+blanks after five idle minutes by default. niltempus master bcc51c2 grants the
+lock provider `gpu "direct"` and pins those releases.
+
+The operator installed niltempus-99bb041fe3535b5d265d, locked and unlocked, and
+found the keys normal afterwards. At `matrix-fps 60` on two outputs the lock
+screen costs Sophia and kleis 70.5% of one core together, against 128.9% before
+this work; the figures compare whole releases, not single changes
+(`t302-integration-01` profiles 19 and 61). The diagnostic QEMU smoke on the
+published code passed (sq2); the earlier sq1 series stays recorded as failed on
+a fixture gap.
+
+Two items leave with their own tasks. Zero-copy lock images, a DMA-BUF channel
+beside the lock files, is a new contract under review
+(`t302-integration-01/DESIGN-lock-dmabuf-phase1-01.txt`). The page-flip hard
+stall seen once in 36 QEMU baseline runs on the candidate has not recurred and
+has no stack; it is unresolved.
+
