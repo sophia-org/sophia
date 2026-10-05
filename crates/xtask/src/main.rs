@@ -20,6 +20,7 @@ mod native_protocol_family;
 mod nine_p_conformance;
 mod output_file_native_proof;
 mod output_file_performance;
+mod output_unplug;
 mod rust_desktop_sdk;
 mod xterm_pointer_oracle;
 mod xtest_selection;
@@ -120,6 +121,9 @@ fn run_conformance(arguments: &[String]) -> Result<(), String> {
         {
             verify_direct_scanout_archive(rest)
         }
+        [command, subject, mode, log] if command == "verify" && subject == "output-unplug" => {
+            verify_output_unplug(mode, log)
+        }
         [command, subject, rest @ ..] if command == "bind" && subject == "direct-scanout" => {
             bind_direct_scanout(rest)
         }
@@ -135,6 +139,14 @@ fn run_conformance(arguments: &[String]) -> Result<(), String> {
         [command] => Err(format!("conformance command {command:?} needs a subject")),
         [] => Err("conformance needs a command".to_owned()),
     }
+}
+
+fn verify_output_unplug(mode: &str, log: &str) -> Result<(), String> {
+    let mode = output_unplug::Mode::parse(mode)?;
+    let text = std::fs::read_to_string(log).map_err(|error| format!("{log}: {error}"))?;
+    output_unplug::verify(&text, mode)
+        .map(print_lines)
+        .map_err(|error| format!("QEMU output-unplug evidence {error}"))
 }
 
 fn verify_direct_scanout_standalone(arguments: &[String]) -> Result<(), String> {
@@ -305,6 +317,10 @@ usage: cargo xtask <command>
   conformance verify direct-scanout-{overlay,cost,cursor} <log>...
       Verify the effect-fallback, direct-versus-composed cost, and hardware
       cursor evidence a probe run produces.
+
+  conformance verify output-unplug one|one-return|all-return|input-return <log>
+      Judge a QEMU output-unplug run (tools/qemu_session_harness.sh): the
+      session lives through the loss and, in the return modes, the return.
 
   conformance bind direct-scanout SESSION_LOG EVIDENCE COMMIT SOPHIA CLIENT CORE DESKTOP
       Copy session evidence and append its typed source/binary identity.

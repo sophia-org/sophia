@@ -32,6 +32,7 @@ case " $cmdline " in
     *" sophia.scenario=session-lock-provider "*) scenario="session-lock-provider" ;;
     *" sophia.scenario=cpu "*) scenario="cpu" ;;
     *" sophia.scenario=xtest-selection "*) scenario="xtest-selection" ;;
+    *" sophia.scenario=output-unplug "*) scenario="output-unplug" ;;
 esac
 # The kernel refuses bubblewrap's pivot_root(2) while / is the initramfs rootfs.
 # This scenario starts protection domains, so PID 1 first re-roots onto a bind
@@ -87,6 +88,8 @@ cpu_size=small
 cpu_damage=absent
 cpu_evidence=full
 lock_provider_mode=""
+unplug_mode=""
+unplug_kmsg=false
 stamp_args=""
 for arg in $cmdline; do
     case "$arg" in
@@ -100,6 +103,8 @@ for arg in $cmdline; do
         sophia.cpu_damage=*) cpu_damage="${arg#*=}" ;;
         sophia.cpu_evidence=*) cpu_evidence="${arg#*=}" ;;
         sophia.lock_provider_mode=*) lock_provider_mode="${arg#*=}" ;;
+        sophia.unplug_mode=*) unplug_mode="${arg#*=}" ;;
+        sophia.unplug_kmsg=1) unplug_kmsg=true ;;
         # Diagnostic: the stamper requests SysRq w on the first hard stall.
         sophia.sysrq_on_hard_stall=1) stamp_args="--sysrq-on-hard-stall" ;;
     esac
@@ -134,7 +139,7 @@ if [ "$scenario" = "emergency-recovery" ]; then
     echo "sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu scenario=emergency-recovery"
 elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ] \
     || [ "$scenario" = "session-lock" ] || [ "$scenario" = "xtest-selection" ] \
-    || [ "$scenario" = "session-lock-provider" ]; then
+    || [ "$scenario" = "session-lock-provider" ] || [ "$scenario" = "output-unplug" ]; then
     echo "sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu scenario=$scenario"
 else
     echo "sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu ticks=300"
@@ -349,6 +354,24 @@ elif [ "$scenario" = "xtest-selection" ]; then
         set -- "$@" "--client-arg=--row=$xtest_row"
     fi
     echo "sophia_qemu_xtest_selection schema=1 status=running row=${xtest_row:-0}"
+elif [ "$scenario" = "output-unplug" ]; then
+    # t306: the session runs on scanned-out heads with udev-managed input, as
+    # an installed desktop does, while the guest takes away one connector,
+    # every connector or the keyboard and, in the return modes, gives it back
+    # (unplug_drive). No client: the verdict is read from the session's own
+    # topology records and its bounded completion.
+    case "$unplug_mode" in
+        one|one-return|all-return|input-return) ;;
+        *)
+            echo "sophia_qemu_guest schema=1 status=failed reason=unplug_mode scenario=$scenario"
+            poweroff -f
+            ;;
+    esac
+    input_devices=""
+    # Records written through tracing then carry no colour in the evidence.
+    export NO_COLOR=1
+    set -- session run --display=:181 --native-scanout --max-runtime-ms=40000 --input-seat=seat0
+    echo "sophia_qemu_unplug schema=1 status=running mode=$unplug_mode"
 else
     set -- session run --display=:181 --native-scanout --max-ticks=300 \
         --expect-physical-text=sophia --expect-physical-pointer
@@ -360,6 +383,106 @@ fi
 if [ -n "$input_devices" ]; then
     set -- "$@" "--input-devices=$input_devices"
 fi
+
+# The output-unplug scenario's guest side. The host takes heads away through
+# QEMU's display (tools/qemu_session_harness.sh); the guest takes the keyboard
+# away through its virtio driver's unbind and gives it back with bind. Either
+# way the guest counts its own DRM and input uevents, so a run whose action
+# never reached Sophia is named as such instead of passing or failing.
+unplug_keyboard() {
+    action="$1"
+    keyboard=""
+    for input in /sys/class/input/input[0-9]*; do
+        name=""
+        IFS= read -r name < "$input/name" || true
+        if [ "$name" = "QEMU Virtio Keyboard" ]; then
+            keyboard="$(cd "$input/device" && pwd -P)" || keyboard=""
+        fi
+    done
+    if [ "$action" = on ]; then
+        keyboard="$unplug_keyboard_device"
+        control=/sys/bus/virtio/drivers/virtio_input/bind
+    else
+        unplug_keyboard_device="$keyboard"
+        control=/sys/bus/virtio/drivers/virtio_input/unbind
+    fi
+    if [ -n "$keyboard" ] && echo "${keyboard##*/}" > "$control"; then
+        echo "sophia_qemu_unplug schema=1 status=sent action=$action target=${keyboard##*/}"
+    else
+        echo "sophia_qemu_unplug schema=1 status=failed reason=keyboard_$action"
+    fi
+}
+
+unplug_drive() {
+    udevadm monitor --kernel --property --subsystem-match=drm --subsystem-match=input \
+        > /run/sophia-qemu-unplug/uevents 2>/dev/null &
+    monitor_pid=$!
+    kmsg_pid=""
+    if [ "$unplug_kmsg" = true ]; then
+        # From here on only: the log before the action is the boot's.
+        echo "sophia_qemu_unplug schema=1 status=kmsg_window" > /dev/kmsg
+        cat /dev/kmsg > /run/sophia-qemu-unplug/kmsg &
+        kmsg_pid=$!
+    fi
+    sleep 1
+    echo "sophia_qemu_unplug schema=1 status=monitoring"
+    if [ "$unplug_mode" = input-return ]; then
+        unplug_keyboard off
+        sleep 5
+        unplug_keyboard on
+        sleep 6
+    else
+        # The host's removal, wait and return, with room to settle.
+        sleep 18
+    fi
+    kill "$monitor_pid" 2>/dev/null || true
+    wait "$monitor_pid" 2>/dev/null || true
+    hotplug=0
+    removed=0
+    added=0
+    while IFS= read -r line; do
+        case "$line" in
+            HOTPLUG=1) hotplug=$((hotplug + 1)) ;;
+            "KERNEL["*"] remove "*"(input)") removed=$((removed + 1)) ;;
+            "KERNEL["*"] add "*"(input)") added=$((added + 1)) ;;
+        esac
+    done < /run/sophia-qemu-unplug/uevents
+    echo "sophia_qemu_unplug schema=1 status=uevents drm_hotplug=$hotplug input_remove=$removed input_add=$added"
+    if [ -n "$kmsg_pid" ]; then
+        kill "$kmsg_pid" 2>/dev/null || true
+        wait "$kmsg_pid" 2>/dev/null || true
+        window=false
+        copied=0
+        while IFS= read -r line; do
+            case "$line" in
+                *"sophia_qemu_unplug schema=1 status=kmsg_window"*) window=true; continue ;;
+            esac
+            if [ "$window" = true ] && [ "$copied" -lt 40000 ]; then
+                echo "sophia_qemu_kmsg ${line#*;}"
+                copied=$((copied + 1))
+            fi
+        done < /run/sophia-qemu-unplug/kmsg
+        echo "sophia_qemu_unplug schema=1 status=kmsg_copied lines=$copied"
+    fi
+}
+
+# Copies the session's output to the console and starts the guest actions
+# once the session has presented on every head.
+unplug_watch() {
+    driving=false
+    while IFS= read -r line; do
+        printf '%s\n' "$line"
+        case "$line" in
+            "sophia_live_session_startup schema=2 status=ready "*)
+                if [ "$driving" = false ]; then
+                    driving=true
+                    unplug_drive &
+                fi
+                ;;
+        esac
+    done
+    wait
+}
 
 set +e
 # Give every application in the guest one session-scoped bus. Modern GTK
@@ -386,6 +509,15 @@ elif [ "$scenario" = "session-lock-provider" ]; then
         /usr/bin/dbus-run-session -- /usr/bin/sophia "$@" > /run/sophia-qemu-lock/output 2>&1
     status=$?
     wait "$stamp_pid"
+elif [ "$scenario" = "output-unplug" ]; then
+    mkdir -p -m 0700 /run/sophia-qemu-unplug
+    mkfifo /run/sophia-qemu-unplug/output
+    unplug_watch < /run/sophia-qemu-unplug/output &
+    watch_pid=$!
+    SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1 \
+        /usr/bin/dbus-run-session -- /usr/bin/sophia "$@" > /run/sophia-qemu-unplug/output 2>&1
+    status=$?
+    wait "$watch_pid"
 else
     SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1 \
         /usr/bin/dbus-run-session -- /usr/bin/sophia "$@"
@@ -440,6 +572,12 @@ elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ] \
         echo "sophia_qemu_guest schema=1 status=complete scenario=$scenario"
     else
         echo "sophia_qemu_guest schema=1 status=failed reason=gtk_session_exit scenario=$scenario exit_status=$status"
+    fi
+elif [ "$scenario" = "output-unplug" ]; then
+    if [ "$status" -eq 0 ]; then
+        echo "sophia_qemu_guest schema=1 status=complete scenario=$scenario"
+    else
+        echo "sophia_qemu_guest schema=1 status=failed reason=unplug_session_exit scenario=$scenario exit_status=$status"
     fi
 elif [ "$scenario" = "xtest-selection" ]; then
     if [ "$status" -eq 0 ]; then
