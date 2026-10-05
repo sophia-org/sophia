@@ -212,6 +212,15 @@ pub fn verify(log: &str, mode: Mode) -> Result<Vec<String>, String> {
     if mode.returns() == ons.is_empty() || ons.first().is_some_and(|&on| on < last_off) {
         return Err("has its removals and returns out of order".to_owned());
     }
+    // A removal sent after the session began to stop asked it nothing.
+    if records[..first_off].iter().any(|record| {
+        record.is("sophia_live_session_quiescence", "started")
+            || record.is("sophia_live_session", "bounded_complete")
+    }) {
+        return Err(
+            "fixture unreached: the removal came after the session began to stop".to_owned(),
+        );
+    }
     let loss_end = ons.first().copied().unwrap_or(records.len());
 
     let mut summary = vec![format!(

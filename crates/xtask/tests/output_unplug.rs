@@ -202,6 +202,18 @@ sophia_live_output_topology schema=2 status=presentation_timed_out transition=2 
 }
 
 #[test]
+fn a_removal_after_the_session_began_to_stop_is_an_unreached_fixture() {
+    // The session's startup took its whole runtime, so the host's removal
+    // reached a session that was already stopping.
+    let log = one().replace(
+        "sophia_qemu_unplug schema=1 status=sent action=off",
+        "sophia_live_session_quiescence schema=3 status=started reason=runtime_deadline timeout_msec=2000\nsophia_qemu_unplug schema=1 status=sent action=off",
+    );
+    let error = verify(&log, Mode::One).unwrap_err();
+    assert!(error.starts_with("fixture unreached"), "{error}");
+}
+
+#[test]
 fn modes_parse_by_name_only() {
     assert_eq!(Mode::parse("all-return"), Ok(Mode::AllReturn));
     assert!(Mode::parse("all").is_err());

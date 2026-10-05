@@ -61,6 +61,13 @@ if [[ "$SCENARIO" == output-unplug ]]; then
     # atomic checks and probes (drm.debug core, atomic and KMS bits), so a
     # refused commit names its errno, and the guest copies its kernel log from
     # the action window into the evidence.
+    # With 1, the session runs the generic test WM, so a loss settles through
+    # a WM relayout and policy commit rather than the presentation deadline.
+    case "${SOPHIA_QEMU_UNPLUG_WM:-0}" in
+        0) ;;
+        1) unplug_cmdline+=" sophia.unplug_wm=1" ;;
+        *) echo "SOPHIA_QEMU_UNPLUG_WM must be 0 or 1" >&2; exit 1 ;;
+    esac
     case "${SOPHIA_QEMU_UNPLUG_KMSG:-0}" in
         0) ;;
         1) unplug_cmdline+=" drm.debug=0x15 log_buf_len=16M sophia.unplug_kmsg=1" ;;

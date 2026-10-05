@@ -35,11 +35,15 @@ case " $cmdline " in
     *" sophia.scenario=output-unplug "*) scenario="output-unplug" ;;
 esac
 # The kernel refuses bubblewrap's pivot_root(2) while / is the initramfs rootfs.
-# This scenario starts protection domains, so PID 1 first re-roots onto a bind
+# These scenarios start protection domains, so PID 1 first re-roots onto a bind
 # of the same rootfs (tools/qemu_reroot.c: no copy, no cleanup) and runs again
 # from the top, remounting its filesystems there. The bind is not recursive,
 # so they are unmounted first.
-if [ "$scenario" = "session-lock-provider" ]; then
+protection_domains=false
+case " $cmdline " in
+    *" sophia.scenario=session-lock-provider "*|*" sophia.unplug_wm=1 "*) protection_domains=true ;;
+esac
+if [ "$protection_domains" = true ]; then
     if [ "${1:-}" != "--rerooted" ]; then
         if ! umount /run /dev/pts /dev /sys /proc; then
             echo "sophia_qemu_guest schema=1 status=failed reason=reroot_umount"
@@ -90,6 +94,7 @@ cpu_evidence=full
 lock_provider_mode=""
 unplug_mode=""
 unplug_kmsg=false
+unplug_wm=false
 stamp_args=""
 for arg in $cmdline; do
     case "$arg" in
@@ -105,6 +110,7 @@ for arg in $cmdline; do
         sophia.lock_provider_mode=*) lock_provider_mode="${arg#*=}" ;;
         sophia.unplug_mode=*) unplug_mode="${arg#*=}" ;;
         sophia.unplug_kmsg=1) unplug_kmsg=true ;;
+        sophia.unplug_wm=1) unplug_wm=true ;;
         # Diagnostic: the stamper requests SysRq w on the first hard stall.
         sophia.sysrq_on_hard_stall=1) stamp_args="--sysrq-on-hard-stall" ;;
     esac
@@ -371,7 +377,19 @@ elif [ "$scenario" = "output-unplug" ]; then
     # Records written through tracing then carry no colour in the evidence.
     export NO_COLOR=1
     set -- session run --display=:181 --native-scanout --max-runtime-ms=40000 --input-seat=seat0
-    echo "sophia_qemu_unplug schema=1 status=running mode=$unplug_mode"
+    if [ "$unplug_wm" = true ]; then
+        # The generic test WM (tools/qemu_generic_wm.c) answers each relayout,
+        # so a loss settles through a policy commit, as with a desktop WM. An
+        # empty desktop profile replaces the default shortcuts, whose launchers
+        # name applications this guest does not have.
+        mkdir -p -m 0700 /run/sophia-qemu-unplug
+        echo 'schema 1' > /run/sophia-qemu-unplug/desktop.kdl
+        chmod 600 /run/sophia-qemu-unplug/desktop.kdl
+        set -- "$@" --desktop-profile=/run/sophia-qemu-unplug/desktop.kdl \
+            --wm-process=/usr/bin/sophia-qemu-generic-wm \
+            --wm-interface=sophia_wm_v1 --wm-transport=9p2000.L
+    fi
+    echo "sophia_qemu_unplug schema=1 status=running mode=$unplug_mode wm=$unplug_wm"
 else
     set -- session run --display=:181 --native-scanout --max-ticks=300 \
         --expect-physical-text=sophia --expect-physical-pointer
@@ -466,12 +484,53 @@ unplug_drive() {
     fi
 }
 
+# Where every session thread is blocked when a renderer worker hard-stalls
+# (name, wait channel, current syscall and kernel stack), printed once. It
+# costs nothing unless a stall happens, and unlike the kernel-log switch it
+# does not slow the guest down.
+unplug_threads() {
+    for task in /proc/[0-9]*/task/[0-9]*; do
+        comm=""
+        IFS= read -r comm < "$task/comm" 2>/dev/null || continue
+        case "$comm" in sophia*) ;; *) continue ;; esac
+        wchan=""
+        IFS= read -r wchan < "$task/wchan" 2>/dev/null || true
+        syscall=""
+        IFS= read -r syscall < "$task/syscall" 2>/dev/null || true
+        echo "sophia_qemu_thread task=${task#/proc/} comm=$comm wchan=$wchan syscall=$syscall"
+        while IFS= read -r frame; do
+            echo "sophia_qemu_thread_stack task=${task#/proc/} $frame"
+        done < "$task/stack" 2>/dev/null || true
+    done
+    # Userspace stacks, when the image carries gdb (a diagnostic build).
+    if command -v gdb > /dev/null 2>&1; then
+        for process in /proc/[0-9]*; do
+            comm=""
+            IFS= read -r comm < "$process/comm" 2>/dev/null || continue
+            [ "$comm" = sophia ] || continue
+            gdb -p "${process#/proc/}" -batch -nx -ex 'thread apply all bt 30' 2>&1 \
+                | while IFS= read -r frame; do
+                    echo "sophia_qemu_gdb pid=${process#/proc/} $frame"
+                done
+        done
+    fi
+}
+
 # Copies the session's output to the console and starts the guest actions
 # once the session has presented on every head.
 unplug_watch() {
     driving=false
+    threads_dumped=false
     while IFS= read -r line; do
         printf '%s\n' "$line"
+        case "$line" in
+            *"sophia_renderer_worker schema=1 status=hard_stall"*)
+                if [ "$threads_dumped" = false ]; then
+                    threads_dumped=true
+                    unplug_threads
+                fi
+                ;;
+        esac
         case "$line" in
             "sophia_live_session_startup schema=2 status=ready "*)
                 if [ "$driving" = false ]; then

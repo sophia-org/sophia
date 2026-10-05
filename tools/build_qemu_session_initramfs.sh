@@ -178,6 +178,12 @@ fi
 runtime_files+=(/usr/bin/bwrap)
 install_files=()
 runtime_files+=("$(command -v xterm)")
+# Diagnostic only, off by default: gdb in the guest, so a scenario can take
+# userspace stacks of a stalled session (the output-unplug scenario does on a
+# renderer worker hard stall).
+if [[ "${SOPHIA_QEMU_DIAGNOSTIC_GDB:-0}" == 1 ]]; then
+    runtime_files+=("$(command -v gdb)")
+fi
 for file in "${runtime_files[@]}"; do
     if [[ -e "$file" ]]; then
         install_files+=("$file")
