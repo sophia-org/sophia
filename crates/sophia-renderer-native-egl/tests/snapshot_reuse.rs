@@ -224,6 +224,56 @@ fn compose(
 
 #[test]
 #[ignore = "requires SOPHIA_TEST_RENDER_NODE; uses render node only"]
+fn refused_source_imports_do_not_exhaust_snapshot_storage() {
+    let path = device_path();
+    let mut capture = context(&path, true);
+    // A regular memfd has a stable identity and valid frame geometry, but is
+    // not a DMA-BUF. EGL must refuse it before any destination pixels are used.
+    let fd = rustix::fs::memfd_create("refused-snapshot-source", rustix::fs::MemfdFlags::CLOEXEC)
+        .unwrap();
+    let file = File::from(fd);
+    file.set_len(u64::from(WIDTH * HEIGHT * 4)).unwrap();
+    let refused = Descriptors {
+        width: WIDTH,
+        height: HEIGHT,
+        format: gbm::Format::Xrgb8888 as u32,
+        modifier: 0,
+        plane_count: 1,
+        planes: [Some((file.into(), 0, WIDTH * 4)), None, None, None],
+    };
+    for id in 1..=257 {
+        let error = capture
+            .capture_renderer_image(NativeRendererImageId::from_raw(id), refused.frame())
+            .unwrap_err();
+        assert_eq!(
+            error,
+            sophia_renderer_native_egl::NativeGbmScanoutBufferExportDetail::DmaBufImageCreateFailed
+        );
+        assert_eq!(
+            capture.snapshot_reuse_stats().live_count,
+            0,
+            "a refused import submitted no destination work and must release its allocation"
+        );
+    }
+    let allocator = gbm::Device::new(open(&path)).unwrap();
+    let (mut buffer, valid) = source(&allocator);
+    write_source(&mut buffer, &valid, 31);
+    let image = NativeRendererImageId::from_raw(258);
+    assert!(
+        capture
+            .capture_renderer_image(image, valid.frame())
+            .unwrap()
+    );
+    assert!(capture.promote_renderer_image(image).unwrap());
+    assert_eq!(
+        Descriptors::from_buffer(&compose(&mut capture, image)).read(&path),
+        expected(31)
+    );
+    assert!(capture.evict_renderer_image(image).unwrap());
+}
+
+#[test]
+#[ignore = "requires SOPHIA_TEST_RENDER_NODE; uses render node only"]
 fn local_snapshots_reuse_storage_without_reading_rewritten_client_pixels() {
     let path = device_path();
     let allocator = gbm::Device::new(open(&path)).unwrap();

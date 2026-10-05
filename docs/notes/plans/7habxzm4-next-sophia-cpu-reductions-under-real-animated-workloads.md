@@ -1571,3 +1571,13 @@ latency; allocation/import plateaus explain a result but cannot replace it.
 Evidence: `t289-snapshot-reuse-01`. Source evaluation and the snapshot rationale:
 `t289-buffer-lifetime-comparison-01/REUSE-EVALUATION.txt`. This section records a
 candidate under development, not an accepted CPU saving or a deployed change.
+
+The snapshot candidate's final review found that a source-import refusal could
+retain a destination allocation even though no destination work had started.
+The successor distinguishes failures before the first clear from failures after
+GPU work may have been submitted. Only the latter retain uncertain storage.
+Repeated refused EGL imports and the transfer-path accounting check guard
+against exhausting the store through otherwise valid fallback. The source
+cleanup poison remains a separate refusal. Evidence is retained in
+`t289-snapshot-reuse-01/REVIEW-02-FALLBACK.txt`; no performance conclusion follows
+from this correction.

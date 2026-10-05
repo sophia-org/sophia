@@ -356,18 +356,22 @@ impl NativeCaptureAllocation {
         self: &std::rc::Rc<Self>,
         frame: NativeMultiPlaneDmaBufFrame<'_>,
         source_budget: u64,
-    ) -> Result<Option<NativePooledCapture>, NativeGbmScanoutBufferExportDetail> {
+    ) -> Result<Option<NativePooledCapture>, NativeCaptureDrawFailure> {
+        use NativeCaptureDrawFailure::{BeforeDestinationWork, DestinationMayHaveWork};
         use NativeGbmScanoutBufferExportDetail as E;
         use glow::HasContext;
         let next = self.next_generation.get();
-        self.next_generation
-            .set(next.checked_add(1).ok_or(E::InvalidTarget)?);
+        self.next_generation.set(
+            next.checked_add(1)
+                .ok_or(BeforeDestinationWork(E::InvalidTarget))?,
+        );
         let generation = NativeSnapshotGeneration::new(self.id, next);
         let execution = &self.execution;
         if !execution.reusable() {
-            return Err(E::EglImageDestroyFailed);
+            return Err(BeforeDestinationWork(E::EglImageDestroyFailed));
         }
-        execution.make_current()?;
+        execution.make_current().map_err(BeforeDestinationWork)?;
+        let mut destination_may_have_work = false;
         let result = (|| {
             let mut pipeline = execution.pipeline.borrow_mut();
             let pipeline = pipeline.as_mut().expect("live capture pipeline");
@@ -384,6 +388,9 @@ impl NativeCaptureAllocation {
                     .gl
                     .bind_framebuffer(glow::FRAMEBUFFER, self.framebuffer);
             }
+            // The clear is the first command which can write this allocation.
+            // Source import/binding failures above have submitted no such work.
+            destination_may_have_work = true;
             pipeline.begin_composition_with_clear_alpha(0.0);
             let rendered = pipeline
                 .draw_texture_layer(
@@ -466,9 +473,13 @@ impl NativeCaptureAllocation {
             }
             Err(error) => {
                 generation.abandon_reuse();
-                // The manager retains this allocation in its uncertain-work
-                // quarantine. It cannot be reused or lose its budget charge.
-                Err(error)
+                Err(if destination_may_have_work {
+                    // Retain the charge until final teardown when completion
+                    // cannot be proved after any destination work.
+                    DestinationMayHaveWork(error)
+                } else {
+                    BeforeDestinationWork(error)
+                })
             }
         }
     }
@@ -491,7 +502,11 @@ impl Drop for NativeCaptureAllocation {
             }
         }
         if let Some(image) = self.image
-            && self.execution.egl.destroy_image(self.execution.display, image).is_ok()
+            && self
+                .execution
+                .egl
+                .destroy_image(self.execution.display, image)
+                .is_ok()
         {
             self.image = None;
         }

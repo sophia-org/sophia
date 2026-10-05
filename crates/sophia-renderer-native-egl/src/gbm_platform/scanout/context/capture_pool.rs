@@ -4,6 +4,29 @@
 const NATIVE_CAPTURE_IDLE_CAPACITY: usize = 8;
 const NATIVE_CAPTURE_IDLE_BYTES: u64 = 64 * 1024 * 1024;
 
+enum NativeCaptureDrawFailure {
+    BeforeDestinationWork(NativeGbmScanoutBufferExportDetail),
+    DestinationMayHaveWork(NativeGbmScanoutBufferExportDetail),
+}
+
+// Only submitted work needs an allocation owner beyond this attempt. A source
+// import refusal happens before the destination clear and must release its
+// unused storage, otherwise repeated successful transfers exhaust the pool.
+fn finish_native_capture_attempt<A, R>(
+    allocation: std::rc::Rc<A>,
+    result: Result<R, NativeCaptureDrawFailure>,
+    uncertain: &mut Vec<std::rc::Rc<A>>,
+) -> Result<R, NativeGbmScanoutBufferExportDetail> {
+    match result {
+        Ok(captured) => Ok(captured),
+        Err(NativeCaptureDrawFailure::BeforeDestinationWork(error)) => Err(error),
+        Err(NativeCaptureDrawFailure::DestinationMayHaveWork(error)) => {
+            uncertain.push(allocation);
+            Err(error)
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NativeCaptureReuseStats {
     pub allocations: usize,
@@ -483,19 +506,17 @@ impl NativeCaptureReuse {
         };
         drop(setup);
         let _copy = NativeCaptureTimingSpan::start(&self.accounting, NativeCaptureTimingKind::Copy);
-        match allocation.draw(frame, source_allowance) {
-            Ok(captured) => Ok(captured),
-            Err(error) => {
-                self.uncertain.push(allocation);
-                Err(error)
-            }
-        }
+        let result = allocation.draw(frame, source_allowance);
+        finish_native_capture_attempt(allocation, result, &mut self.uncertain)
     }
 
     fn clear(&mut self) {
         for execution in self.execution.iter().flatten() {
             if let Some(pipeline) = execution.pipeline.borrow().as_ref() {
-                self.stats.sampling = self.stats.sampling.saturating_add(pipeline.sampling_stats());
+                self.stats.sampling = self
+                    .stats
+                    .sampling
+                    .saturating_add(pipeline.sampling_stats());
             }
             let source = execution.sources.borrow().stats();
             self.stats.source_imports = self.stats.source_imports.saturating_add(source.imports);
