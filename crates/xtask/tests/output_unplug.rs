@@ -365,3 +365,93 @@ fn a_borrowed_or_misordered_presentation_is_refused() {
             .contains("not drawn from a retained image")
     );
 }
+
+/// REVIEW-CODEX-14: the reference is the client's frame as first presented.
+/// A region of the window before the removal that shows other pixels fails
+/// the run as an unstable baseline, and says whether the content was then
+/// seen preserved after the loss.
+#[test]
+fn a_baseline_that_changes_before_the_removal_fails_and_says_what_followed() {
+    let log = static_client();
+    let barrier = "sophia_qemu_unplug schema=1 status=static_barrier";
+    let second = |checksum: &str, nonzero: &str| {
+        format!(
+            "sophia_live_head_composition_queue schema=1 status=queued output=1 head=1 frame=4 scene_generation=1 target_generation=1\n\
+             sophia_native_composition_region_frame schema=1 status=read output=1 head=1 scene_generation=1 layer=0 source_stage=renderer_image target=400x300_100_100 region_pixels=120000 nonzero_rgb_pixels={nonzero} checksum={checksum}\n\
+             sophia_live_native_head_page_flip schema=2 status=retired output=1 head=1 submission=3 frame=4\n{barrier}"
+        )
+    };
+    let lost = "target=400x300_0_0 region_pixels=120000 nonzero_rgb_pixels=120000 checksum=777";
+    let cases = [
+        // Good, then black, then good again after the loss.
+        (
+            log.replace(barrier, &second("555", "0")),
+            "checksum=555 nonzero_rgb_pixels=0, not the first presented checksum=777; preserved_content=observed",
+        ),
+        // Good, then other non-black pixels.
+        (
+            log.replace(barrier, &second("779", "120000")),
+            "checksum=779 nonzero_rgb_pixels=120000, not the first presented checksum=777; preserved_content=observed",
+        ),
+        // Good, then black, and nothing preserved after the loss.
+        (
+            log.replace(barrier, &second("555", "0")).replace(
+                lost,
+                "target=400x300_0_0 region_pixels=120000 nonzero_rgb_pixels=0 checksum=555",
+            ),
+            "checksum=555 nonzero_rgb_pixels=0, not the first presented checksum=777; preserved_content=not_observed",
+        ),
+    ];
+    for (index, (log, expected)) in cases.into_iter().enumerate() {
+        let error = verify(&log, Mode::OneReturn).unwrap_err();
+        assert!(
+            error.contains("unstable_baseline") && error.contains(expected),
+            "case {index}: {error}"
+        );
+    }
+}
+
+#[test]
+fn the_reference_is_the_first_presented_frame_and_must_be_the_clients() {
+    let log = static_client();
+    // Black from the first presented region on, before and after: no
+    // frame of the client was ever shown, so nothing is preserved.
+    let black = log.replace(
+        "nonzero_rgb_pixels=120000 checksum=777",
+        "nonzero_rgb_pixels=0 checksum=555",
+    );
+    assert!(
+        verify(&black, Mode::OneReturn)
+            .unwrap_err()
+            .contains("first presented region is not the client's frame: nonzero_rgb_pixels=0 of region_pixels=120000 checksum=555")
+    );
+    // Only partly drawn.
+    let partial = log.replacen(
+        "nonzero_rgb_pixels=120000 checksum=777",
+        "nonzero_rgb_pixels=60000 checksum=556",
+        1,
+    );
+    assert!(
+        verify(&partial, Mode::OneReturn)
+            .unwrap_err()
+            .contains("not the client's frame: nonzero_rgb_pixels=60000")
+    );
+    // The only region before the removal belongs to a frame that never
+    // retired: there is no presented reference.
+    let unpresented = log.replacen("submission=2 frame=3", "submission=2 frame=8", 1);
+    assert!(
+        verify(&unpresented, Mode::OneReturn)
+            .unwrap_err()
+            .contains("no presented region of its window before the removal")
+    );
+    // An unpresented region with other pixels before the presented one is
+    // still a contradiction: the reference is not chosen to pass.
+    let earlier = log.replacen(
+        "sophia_live_head_composition_queue schema=1 status=queued output=1 head=1 frame=3",
+        "sophia_native_composition_region_frame schema=1 status=read output=1 head=1 scene_generation=25 layer=0 source_stage=renderer_image target=400x300_100_100 region_pixels=120000 nonzero_rgb_pixels=0 checksum=555\nsophia_live_head_composition_queue schema=1 status=queued output=1 head=1 frame=3",
+        1,
+    );
+    assert!(verify(&earlier, Mode::OneReturn).unwrap_err().contains(
+        "unstable_baseline: a region of its window before the removal shows checksum=555"
+    ));
+}

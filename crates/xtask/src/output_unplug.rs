@@ -300,13 +300,14 @@ fn published_and_settled(records: &[Record], outputs: u32) -> Option<(&str, &str
 }
 
 /// The static DMA-BUF client (t306): one Present, captured, promoted and
-/// retired before any head was taken away, and none after. After the last
-/// action the window's content must still be drawn from its retained image:
-/// a final composition region of the same size and checksum as before the
-/// loss, read from a renderer image, in a frame the same native owner then
-/// presented (a page flip of that frame, or its synchronous first modeset).
-/// Region readback proves rendered content and its presentation, not a
-/// physical scanout.
+/// retired before any head was taken away, and none after. Before the loss
+/// its window must show that frame, the first presented region of it, in
+/// every region read. After the last action the window's content must still
+/// be drawn from its retained image: a final composition region of the same
+/// size and checksum, read from a renderer image, in a frame the same native
+/// owner then presented (a page flip of that frame, or its synchronous first
+/// modeset). Region readback proves rendered content and its presentation,
+/// not a physical scanout.
 fn verify_static_client(
     records: &[Record],
     first_off: usize,
@@ -351,14 +352,6 @@ fn verify_static_client(
             && record.get("source_stage") == Some("renderer_image")
             && region_size(record) == Some(size)
     };
-    let before = records[..first_off]
-        .iter()
-        .rev()
-        .find(|record| is_window(record))
-        .ok_or("static client: no region of its window before the removal")?;
-    let checksum = before
-        .get("checksum")
-        .ok_or("static client: region without checksum")?;
     // Presented by the native owner that composed it: the frame this region
     // was queued as, within one owner (owner closings bound it), then either
     // that frame's page flip retiring after the region, or that frame's
@@ -417,18 +410,55 @@ fn verify_static_client(
             });
         flipped || bootstrapped
     };
-    let after = (last_action..records.len())
-        .find(|&at| {
-            is_window(&records[at])
-                && records[at].get("checksum") == Some(checksum)
-                && presented(at)
-        })
+    // The reference is the one submitted frame as first presented, before
+    // the removal: never a later sample chosen because it matches. Every
+    // other region of the window before the removal must show the same
+    // pixels; a contradiction fails the run as an unstable baseline, whatever
+    // is seen after the loss, and says whether that content was preserved.
+    let before = (0..first_off)
+        .filter(|&at| is_window(&records[at]))
+        .collect::<Vec<_>>();
+    let reference = before
+        .iter()
+        .copied()
+        .find(|&at| presented(at))
         .map(|at| &records[at])
-        .ok_or(
-            "static client: its content was not drawn from a retained image after the last action",
-        )?;
+        .ok_or("static client: no presented region of its window before the removal")?;
+    let checksum = reference
+        .get("checksum")
+        .ok_or("static client: region without checksum")?;
+    // The probe fills every pixel with one of four non-black colours
+    // (tools/probes/dri3_layout.c, fill), so its frame has no black pixel.
+    if reference.get("nonzero_rgb_pixels") != Some(reference.get("region_pixels").unwrap_or("")) {
+        return Err(format!(
+            "static client: its first presented region is not the client's frame: nonzero_rgb_pixels={} of region_pixels={} checksum={checksum}",
+            reference.get("nonzero_rgb_pixels").unwrap_or("?"),
+            reference.get("region_pixels").unwrap_or("?"),
+        ));
+    }
+    let preserved = (last_action..records.len()).find(|&at| {
+        is_window(&records[at]) && records[at].get("checksum") == Some(checksum) && presented(at)
+    });
+    if let Some(&unstable) = before
+        .iter()
+        .find(|&&at| records[at].get("checksum") != Some(checksum))
+    {
+        return Err(format!(
+            "static client: unstable_baseline: a region of its window before the removal shows checksum={} nonzero_rgb_pixels={}, not the first presented checksum={checksum}; preserved_content={}",
+            records[unstable].get("checksum").unwrap_or("?"),
+            records[unstable].get("nonzero_rgb_pixels").unwrap_or("?"),
+            if preserved.is_some() {
+                "observed"
+            } else {
+                "not_observed"
+            },
+        ));
+    }
+    let after = preserved.map(|at| &records[at]).ok_or(
+        "static client: its content was not drawn from a retained image after the last action",
+    )?;
     Ok(format!(
-        "sophia_qemu_output_unplug_verdict schema=1 status=static_content_retained size={size} checksum={checksum} target_after={}",
+        "sophia_qemu_output_unplug_verdict schema=1 status=static_content_retained size={size} checksum={checksum} baseline=stable target_after={}",
         after.get("target").unwrap_or("?")
     ))
 }
