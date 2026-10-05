@@ -95,6 +95,7 @@ lock_provider_mode=""
 unplug_mode=""
 unplug_kmsg=false
 unplug_wm=false
+unplug_client=""
 stamp_args=""
 for arg in $cmdline; do
     case "$arg" in
@@ -111,6 +112,7 @@ for arg in $cmdline; do
         sophia.unplug_mode=*) unplug_mode="${arg#*=}" ;;
         sophia.unplug_kmsg=1) unplug_kmsg=true ;;
         sophia.unplug_wm=1) unplug_wm=true ;;
+        sophia.unplug_client=dri3) unplug_client=dri3 ;;
         # Diagnostic: the stamper requests SysRq w on the first hard stall.
         sophia.sysrq_on_hard_stall=1) stamp_args="--sysrq-on-hard-stall" ;;
     esac
@@ -389,7 +391,19 @@ elif [ "$scenario" = "output-unplug" ]; then
             --wm-process=/usr/bin/sophia-qemu-generic-wm \
             --wm-interface=sophia_wm_v1 --wm-transport=9p2000.L
     fi
-    echo "sophia_qemu_unplug schema=1 status=running mode=$unplug_mode wm=$unplug_wm"
+    if [ "$unplug_client" = dri3 ]; then
+        # A DMA-BUF client: one explicit DRI3 frame, then the window stays
+        # mapped with no next frame across the removal and return. Every
+        # final composition reports each layer's region, the pixel oracle.
+        export SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=final-regions
+        set -- "$@" --client=/usr/bin/sophia-qemu-dri3-layout \
+            --client-arg=--geometry --client-arg=100,100,400,300 \
+            --client-arg=--format --client-arg=XR24 \
+            --client-arg=--modifier --client-arg=0 \
+            --client-arg=--frames --client-arg=1 \
+            --client-arg=--hold-ms --client-arg=35000
+    fi
+    echo "sophia_qemu_unplug schema=1 status=running mode=$unplug_mode wm=$unplug_wm client=${unplug_client:-none}"
 else
     set -- session run --display=:181 --native-scanout --max-ticks=300 \
         --expect-physical-text=sophia --expect-physical-pointer

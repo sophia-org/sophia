@@ -68,6 +68,13 @@ if [[ "$SCENARIO" == output-unplug ]]; then
         1) unplug_cmdline+=" sophia.unplug_wm=1" ;;
         *) echo "SOPHIA_QEMU_UNPLUG_WM must be 0 or 1" >&2; exit 1 ;;
     esac
+    # dri3 adds a client that presents one DMA-BUF frame and then holds its
+    # window still, so the removal meets content with no next frame.
+    case "${SOPHIA_QEMU_UNPLUG_CLIENT:-none}" in
+        none) ;;
+        dri3) unplug_cmdline+=" sophia.unplug_client=dri3" ;;
+        *) echo "SOPHIA_QEMU_UNPLUG_CLIENT must be none or dri3" >&2; exit 1 ;;
+    esac
     case "${SOPHIA_QEMU_UNPLUG_KMSG:-0}" in
         0) ;;
         1) unplug_cmdline+=" drm.debug=0x15 log_buf_len=16M sophia.unplug_kmsg=1" ;;
@@ -77,8 +84,11 @@ elif [[ -n "$UNPLUG_MODE" ]]; then
     echo "SOPHIA_QEMU_UNPLUG_MODE is only for the output-unplug scenario" >&2
     exit 1
 fi
-if [[ "$SCENARIO" == output-unplug && "${SOPHIA_QEMU_GPU_MODE:-software}" != software ]]; then
-    echo "the output-unplug scenario runs only in software GPU mode" >&2
+# virgl (a DMA-BUF client needs a 3D-capable guest GPU) is supported on one
+# card with two heads only.
+if [[ "$SCENARIO" == output-unplug && "${SOPHIA_QEMU_GPU_MODE:-software}" == virgl \
+    && "${SOPHIA_QEMU_SINGLE_CARD:-0}" != 1 ]]; then
+    echo "the output-unplug scenario runs virgl only with SOPHIA_QEMU_SINGLE_CARD=1" >&2
     exit 1
 fi
 # Diagnostic only, off by default: on the first native page-flip hard stall
@@ -265,7 +275,11 @@ fi
 # the guest is still paused (-S).
 pause_args=()
 if [[ "$SCENARIO" == output-unplug ]]; then
-    display_args=(-display "dbus,addr=unix:path=$DISPLAY_BUS_SOCKET,gl=off")
+    if [[ "$GPU_MODE" == virgl ]]; then
+        display_args=(-display "dbus,addr=unix:path=$DISPLAY_BUS_SOCKET,gl=on,rendernode=$RENDER_NODE")
+    else
+        display_args=(-display "dbus,addr=unix:path=$DISPLAY_BUS_SOCKET,gl=off")
+    fi
     pause_args=(-S)
 fi
 
@@ -304,7 +318,11 @@ case "$SCENARIO" in
         echo "sophia_qemu_gtk schema=1 status=starting isolation=headless control=qmp-unix host_drm=none host_vt=none keyboard=virtio mouse=virtio scenario=$SCENARIO" | tee -a "$EVIDENCE_FILE"
         ;;
     output-unplug)
-        echo "sophia_qemu_unplug schema=1 status=starting isolation=headless control=none host_drm=none host_vt=none gpu=virtio-gpu mode=$UNPLUG_MODE single_card=$SINGLE_CARD" | tee -a "$EVIDENCE_FILE"
+        echo "sophia_qemu_unplug schema=1 status=starting isolation=headless control=none host_drm=none host_vt=none gpu=virtio-gpu mode=$UNPLUG_MODE single_card=$SINGLE_CARD gpu_mode=$GPU_MODE" | tee -a "$EVIDENCE_FILE"
+        if [[ "$GPU_MODE" == virgl ]]; then
+            # Which host GPU the guest renders on.
+            echo "sophia_qemu_unplug schema=1 status=render_node node=$RENDER_NODE rdev=$(stat -c '%t:%T' "$RENDER_NODE") device=$(readlink -f "/sys/class/drm/$(basename "$RENDER_NODE")/device")" | tee -a "$EVIDENCE_FILE"
+        fi
         ;;
     xtest-selection)
         echo "sophia_qemu_xtest_selection schema=1 status=starting isolation=headless control=none host_drm=none host_vt=none gpu=virtio-gpu input=xtest row=${XTEST_ROW:-0}" | tee -a "$EVIDENCE_FILE"
@@ -634,6 +652,23 @@ if [[ "$SCENARIO" == output-unplug ]]; then
             sleep 0.05
         done
         [[ "$monitoring" == true ]] || unplug_failed monitoring_timeout
+        if [[ "${SOPHIA_QEMU_UNPLUG_CLIENT:-none}" == dri3 ]]; then
+            # The static client's barrier: its DMA-BUF Present was captured,
+            # promoted and retired (a mixed retirement), and the client now
+            # holds without presenting. Only then is a head taken away.
+            barrier=false
+            for _ in $(seq 1 600); do
+                if grep -q '^sophia_live_session_present schema=2 status=retired ' "$EVIDENCE_FILE" \
+                    && grep -q '^dri3_layout stage=holding ' "$EVIDENCE_FILE"; then
+                    barrier=true
+                    break
+                fi
+                kill -0 "$QEMU_PID" 2>/dev/null || break
+                sleep 0.05
+            done
+            [[ "$barrier" == true ]] || unplug_failed static_barrier_timeout
+            echo "sophia_qemu_unplug schema=1 status=static_barrier present=retired client=holding" | tee -a "$EVIDENCE_FILE"
+        fi
         consoles=(1)
         [[ "$UNPLUG_MODE" == all-return ]] && consoles=(0 1)
         for console in "${consoles[@]}"; do

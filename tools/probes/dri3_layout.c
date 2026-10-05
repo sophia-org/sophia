@@ -30,7 +30,7 @@ enum { MAX_PLANES = 4, MAX_MODIFIERS = 16384, MAX_FRAMES = 120 };
 
 struct options {
     int x, y, width, height;
-    uint32_t format, frames, timeout_ms;
+    uint32_t format, frames, timeout_ms, hold_ms;
     uint64_t modifier;
     bool list_only, has_geometry, has_format, has_modifier, suboptimal;
 };
@@ -213,7 +213,7 @@ static void usage(FILE *output)
 {
     fprintf(output, "usage: dri3_layout --geometry X,Y,W,H --format XR24|AR24\n"
                     "       [--modifier VALUE] [--list-only] [--frames 1..120] [--timeout-ms 100..10000]\n"
-                    "       [--suboptimal]\n"
+                    "       [--suboptimal] [--hold-ms 0..60000]\n"
                     "Present requires --modifier. List-only never maps or presents a window.\n"
                     "Geometry: signed 16-bit position, positive dimensions <=4096.\n");
 }
@@ -257,6 +257,8 @@ static bool parse(int argc, char **argv, struct options *options)
                 options->frames = (uint32_t)parsed;
             } else if (!strcmp(arg, "--timeout-ms") && parsed >= 100 && parsed <= 10000) {
                 options->timeout_ms = (uint32_t)parsed;
+            } else if (!strcmp(arg, "--hold-ms") && parsed <= 60000) {
+                options->hold_ms = (uint32_t)parsed;
             } else {
                 return false;
             }
@@ -746,6 +748,22 @@ int main(int argc, char **argv)
         ok = allocate(&probe, &probe.buffers[0], 0) && export_planes(&probe, &probe.buffers[0], 0, false);
     if (ok && !probe.options.list_only)
         ok = run_frames(&probe);
+    if (ok && !probe.options.list_only && probe.options.hold_ms) {
+        /* The window stays mapped with its last frame and presents nothing
+         * more: a client whose content is static. The deadline bounded the
+         * frames; the hold has its own bound. */
+        timer = (struct itimerval){0};
+        (void)setitimer(ITIMER_REAL, &timer, NULL);
+        /* On stderr: a session that captures its client's stdout still
+         * shows a harness that the hold has begun. */
+        fprintf(stderr, "dri3_layout stage=holding hold_ms=%" PRIu32 "\n", probe.options.hold_ms);
+        struct timespec rest = {
+            .tv_sec = probe.options.hold_ms / 1000,
+            .tv_nsec = (long)(probe.options.hold_ms % 1000) * 1000000L,
+        };
+        while (nanosleep(&rest, &rest) != 0 && errno == EINTR) {
+        }
+    }
     cleanup(&probe);
     timer = (struct itimerval){0};
     (void)setitimer(ITIMER_REAL, &timer, NULL);
