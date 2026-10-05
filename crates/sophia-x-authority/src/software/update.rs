@@ -7,6 +7,8 @@ use crate::XResourceId;
 
 use super::raster_ops::clipped_bounds;
 
+mod tests;
+
 pub const X_AUTHORITY_CPU_PATCH_BATCH_MAX_RECTS: usize = 32;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -70,13 +72,15 @@ pub struct XAuthorityCpuBufferPatch {
     pub format: u32,
     pub generation: u64,
     pub rect: Rect,
-    pub bytes: Vec<u8>,
+    /// Owned packed pixels, shared across forwarding and admission queues.
+    /// They never alias the drawable that subsequent requests can modify.
+    pub bytes: Arc<Vec<u8>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct XAuthorityCpuBufferPatchRegion {
     pub rect: Rect,
-    pub bytes: Vec<u8>,
+    pub bytes: Arc<Vec<u8>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -270,7 +274,7 @@ pub(super) fn packed_patch(
             width: i32::try_from(width).ok()?,
             height: i32::try_from(height).ok()?,
         },
-        bytes,
+        bytes: Arc::new(bytes),
     })
 }
 

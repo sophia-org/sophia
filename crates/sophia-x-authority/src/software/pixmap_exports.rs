@@ -49,7 +49,7 @@ impl XSoftwareBufferStore {
                 let patch = packed_patch_region(buffer, *rect)?;
                 Some(crate::XServerFrontendPixmapPatch {
                     rect: patch.rect,
-                    bytes: patch.bytes,
+                    bytes: Arc::unwrap_or_clone(patch.bytes),
                 })
             })
             .collect::<Option<Vec<_>>>()?;

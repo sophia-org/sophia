@@ -932,7 +932,7 @@ fn backing_admission_releases_cpu_replacement_before_selected_patch() {
             generation: 2,
             patches: vec![sophia_x_authority::XAuthorityCpuBufferPatchRegion {
                 rect: geometry,
-                bytes: vec![1; 64],
+                bytes: vec![1; 64].into(),
             }],
         },
     );

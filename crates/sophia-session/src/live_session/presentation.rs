@@ -629,7 +629,7 @@ fn renderer_cpu_buffer_update(
                     format: patch.format,
                     generation: patch.generation,
                     rect: patch.rect,
-                    bytes: patch.bytes.clone(),
+                    bytes: std::sync::Arc::clone(&patch.bytes),
                 },
             )
         }
@@ -646,7 +646,7 @@ fn renderer_cpu_buffer_update(
                         .iter()
                         .map(|patch| sophia_backend_live::LiveCpuBufferPatchRegion {
                             rect: patch.rect,
-                            bytes: patch.bytes.clone(),
+                            bytes: std::sync::Arc::clone(&patch.bytes),
                         })
                         .collect(),
                 },

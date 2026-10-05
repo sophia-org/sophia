@@ -118,7 +118,7 @@ fn production_scene_discards_late_patch_but_reports_missing_committed_base() {
                 width: 1,
                 height: 1,
             },
-            bytes: vec![1, 2, 3, 4],
+            bytes: vec![1, 2, 3, 4].into(),
         })])
         .unwrap();
 

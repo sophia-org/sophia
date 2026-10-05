@@ -199,6 +199,8 @@ mod session_config_tests;
 mod session_lock_config_tests;
 #[path = "live_session/session_lock_route_tests.rs"]
 mod session_lock_route_tests;
+#[path = "live_session/shared_cpu_patch_tests.rs"]
+mod shared_cpu_patch_tests;
 #[path = "live_session/startup_output_tests.rs"]
 mod startup_output_tests;
 #[path = "live_session/visual_candidate_tests.rs"]

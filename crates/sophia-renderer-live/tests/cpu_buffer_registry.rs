@@ -44,7 +44,7 @@ fn replacement_and_patch_preserve_generation_order() {
                     width: 1,
                     height: 2
                 },
-                bytes: vec![1, 2, 3, 4, 5, 6, 7, 8],
+                bytes: vec![1, 2, 3, 4, 5, 6, 7, 8].into(),
             }))
             .unwrap()
     );
@@ -96,7 +96,7 @@ fn malformed_patch_fails_closed_without_mutating_base() {
                 width: 2,
                 height: 1,
             },
-            bytes: vec![1; 8],
+            bytes: vec![1; 8].into(),
         }))
         .unwrap_err();
     assert_eq!(error, LiveCpuBufferRegistryError::InvalidPatchBounds);
@@ -126,7 +126,7 @@ fn patch_batch_applies_atomically_at_one_generation() {
                     width: 1,
                     height: 1,
                 },
-                bytes: vec![1, 2, 3, 4],
+                bytes: vec![1, 2, 3, 4].into(),
             },
             LiveCpuBufferPatchRegion {
                 rect: Rect {
@@ -135,7 +135,7 @@ fn patch_batch_applies_atomically_at_one_generation() {
                     width: 1,
                     height: 1,
                 },
-                bytes: vec![5, 6, 7, 8],
+                bytes: vec![5, 6, 7, 8].into(),
             },
         ],
     });
@@ -168,7 +168,7 @@ fn malformed_patch_batch_does_not_apply_valid_prefix() {
                         width: 1,
                         height: 1,
                     },
-                    bytes: vec![9; 4],
+                    bytes: vec![9; 4].into(),
                 },
                 LiveCpuBufferPatchRegion {
                     rect: Rect {
@@ -177,7 +177,7 @@ fn malformed_patch_batch_does_not_apply_valid_prefix() {
                         width: 1,
                         height: 1,
                     },
-                    bytes: vec![7; 4],
+                    bytes: vec![7; 4].into(),
                 },
             ],
         }))
@@ -240,7 +240,7 @@ fn cow_split_preserves_leased_bytes() {
                     width: 2,
                     height: 1,
                 },
-                bytes: vec![0xbb; 8],
+                bytes: vec![0xbb; 8].into(),
             }],
         }))
         .expect("the patch must be admitted");
@@ -295,7 +295,7 @@ fn patch_after_lease_release_mutates_in_place() {
                     width: 2,
                     height: 1,
                 },
-                bytes: vec![fill; 8],
+                bytes: vec![fill; 8].into(),
             }],
         })
     };
@@ -350,7 +350,7 @@ fn a_refused_patch_neither_mutates_nor_copies_the_base() {
                     height: 1,
                 },
                 // One byte short of the rectangle it claims.
-                bytes: vec![0xcc; 7],
+                bytes: vec![0xcc; 7].into(),
             }],
         })),
         Err(LiveCpuBufferRegistryError::InvalidPatchBytes)
@@ -444,7 +444,7 @@ fn a_warmed_registry_neither_grows_nor_reallocates() {
                     width: 2,
                     height: 1,
                 },
-                bytes: vec![fill; 8],
+                bytes: vec![fill; 8].into(),
             }],
         })
     };

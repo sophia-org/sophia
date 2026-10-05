@@ -348,7 +348,7 @@ fn recent_cpu_update_residency_bridges_patch_gaps_and_remains_bounded() {
                 width: 1,
                 height: 1,
             },
-            bytes: vec![1, 2, 3, 4],
+            bytes: vec![1, 2, 3, 4].into(),
         })],
     )
     .unwrap();

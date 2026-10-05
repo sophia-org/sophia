@@ -805,7 +805,7 @@ fn shaped_presentation_bytes(updates: &[XAuthorityCpuBufferUpdate]) -> Option<Ve
         XAuthorityCpuBufferUpdate::PatchBatch(batch)
             if batch.format == X_AUTHORITY_CPU_BUFFER_FORMAT_ARGB8888 =>
         {
-            batch.patches.first().map(|patch| patch.bytes.clone())
+            batch.patches.first().map(|patch| patch.bytes.to_vec())
         }
         _ => None,
     })

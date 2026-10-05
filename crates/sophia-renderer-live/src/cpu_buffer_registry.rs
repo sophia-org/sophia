@@ -15,13 +15,14 @@ pub struct LiveCpuBufferPatch {
     pub format: u32,
     pub generation: u64,
     pub rect: Rect,
-    pub bytes: Vec<u8>,
+    /// Immutable packed pixels; forwarding an update shares its allocation.
+    pub bytes: Arc<Vec<u8>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LiveCpuBufferPatchRegion {
     pub rect: Rect,
-    pub bytes: Vec<u8>,
+    pub bytes: Arc<Vec<u8>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
