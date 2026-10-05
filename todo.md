@@ -1,5 +1,7 @@
 # One task per line, a blank line between tasks: keep it that way so the file reads as a list. A row is `(priority) date text ... @context id:tNNN order:NNN [details](note)`; closed rows move to done-YYYY-MM.md.
 
+(A) 2026-10-04 Diagnose and repair KVM output/USB hotplug ending the desktop session; retain the topology error, prove safe loss/return and repeat on the operator's devices. +critical +topology @development id:t306 order:000.0000029 [details](docs/notes/investigations/kdleagg3-kvm-output-and-usb-loss-returns-the-desktop-to-greetd.md#t306)
+
 (A) 2026-09-25 Complete remaining WM file lifecycle acceptance and reproducible transport measurements with independent Hagia and existing Session owners; retain explicit opt-in while output stays current IPC. +critical +9p @development id:t249 order:000.000003 depends:t247,t248 peer:hagia/h006 [details](docs/notes/plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249)
 
 (A) 2026-09-26 Qualify a pinned 9P WM daily-driver configuration with classified validation gates, drag-latency budgets, attended recovery and verified compatible whole-release rollback. +critical +9p @physical id:t250 order:000.000004 depends:t249 [details](docs/notes/plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md#t250--qualify-the-wm-daily-configuration)
