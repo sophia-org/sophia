@@ -37,18 +37,71 @@ pub struct SessionLockFrames {
     in_flight: BTreeMap<OutputId, LockCandidate>,
     /// Standing demands by allocation, waiting for a permit.
     demands: BTreeMap<u64, LockFrameDemand>,
-    /// Counts since the lock or the provider connection began, by allocation
-    /// (diagnostic only).
-    pacing: BTreeMap<u64, PacingEntry>,
+    /// The diagnostic pacing sample's state (t308); empty unless enabled.
+    pacing: PacingDiagnostics,
 }
 
-#[derive(Clone, Copy, Default)]
+/// The most allocations the diagnostic tracks at once. A lock object names one
+/// allocation per output, so this is far above any real topology; past it new
+/// allocations are counted as untracked, never silently relabeled.
+pub const SESSION_LOCK_PACING_ALLOCATIONS: usize = 64;
+
+/// Diagnostic only: per-allocation counts for the current lock and provider
+/// connection, kept only while enabled, one generation per allocation id.
+#[derive(Default)]
+struct PacingDiagnostics {
+    enabled: bool,
+    entries: BTreeMap<u64, PacingEntry>,
+    /// Allocations refused because the bound was full.
+    untracked: u64,
+}
+
+#[derive(Clone, Copy)]
 struct PacingEntry {
-    /// The output the allocation's last candidate named.
+    allocation_generation: u64,
+    /// The output the generation's last candidate named.
     output: Option<OutputId>,
-    /// The allocation generation its last demand or candidate carried.
-    allocation_generation: Option<u64>,
     counts: SessionLockPacingCounts,
+}
+
+impl PacingDiagnostics {
+    fn clear(&mut self) {
+        self.entries.clear();
+        self.untracked = 0;
+    }
+
+    /// The entry for this allocation generation: none while disabled, none for
+    /// an older generation than the one tracked, a fresh one (counts restart)
+    /// for a newer generation, and none past the bound.
+    fn observe(&mut self, allocation: u64, generation: u64) -> Option<&mut PacingEntry> {
+        if !self.enabled {
+            return None;
+        }
+        let fresh = PacingEntry {
+            allocation_generation: generation,
+            output: None,
+            counts: SessionLockPacingCounts::default(),
+        };
+        match self
+            .entries
+            .get(&allocation)
+            .map(|entry| entry.allocation_generation)
+        {
+            Some(tracked) if tracked > generation => return None,
+            Some(tracked) if tracked < generation => {
+                self.entries.insert(allocation, fresh);
+            }
+            Some(_) => {}
+            None if self.entries.len() >= SESSION_LOCK_PACING_ALLOCATIONS => {
+                self.untracked = self.untracked.saturating_add(1);
+                return None;
+            }
+            None => {
+                self.entries.insert(allocation, fresh);
+            }
+        }
+        self.entries.get_mut(&allocation)
+    }
 }
 
 /// How far each allocation's frames got through demand, permit, candidate and
@@ -63,17 +116,18 @@ pub struct SessionLockPacingCounts {
     pub rejected: u64,
 }
 
-/// One allocation's pacing as it stands. A provider that stopped asking shows
-/// no demand and nothing in flight; a candidate that never retired shows the
-/// same in-flight generation in every sample. The lock, connection and
-/// allocation generation tell a new lock, a reconnect or a recycled
-/// allocation (counts restart) from an allocation that made no progress.
+/// One allocation generation's pacing as it stands. A provider that stopped
+/// asking shows no demand and nothing in flight; a candidate that never retired
+/// shows the same in-flight generation in every sample. Counts cover only this
+/// lock, provider connection and allocation generation: a new lock, a reconnect
+/// or a newer allocation generation starts them again, and events from an
+/// earlier one are not counted.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SessionLockPacing {
     pub lock_epoch: Option<u64>,
     pub connection_epoch: Option<u64>,
     pub allocation_id: u64,
-    pub allocation_generation: Option<u64>,
+    pub allocation_generation: u64,
     pub output: Option<OutputId>,
     pub demand_held: bool,
     pub in_flight_generation: Option<u64>,
@@ -93,7 +147,7 @@ pub fn session_lock_pacing_record(pacing: &SessionLockPacing) -> String {
         optional(pacing.lock_epoch),
         optional(pacing.connection_epoch),
         pacing.allocation_id,
-        optional(pacing.allocation_generation),
+        pacing.allocation_generation,
         optional(pacing.output.map(OutputId::raw)),
         if pacing.demand_held { "held" } else { "none" },
         optional(pacing.in_flight_generation),
@@ -103,6 +157,14 @@ pub fn session_lock_pacing_record(pacing: &SessionLockPacing) -> String {
         counts.presented,
         counts.superseded,
         counts.rejected,
+    )
+}
+
+/// Allocations the bounded diagnostic did not track since the lock or
+/// connection began.
+pub fn session_lock_pacing_untracked_record(untracked: u64) -> String {
+    format!(
+        "sophia_live_lock_pacing schema=1 status=untracked allocations_over_bound={untracked} bound={SESSION_LOCK_PACING_ALLOCATIONS}"
     )
 }
 
@@ -176,6 +238,35 @@ impl SessionLockFrames {
         changed
     }
 
+    /// Turns the diagnostic pacing sample on or off. Off keeps nothing.
+    pub fn set_pacing_diagnostics(&mut self, enabled: bool) {
+        if !enabled {
+            self.pacing.clear();
+        }
+        self.pacing.enabled = enabled;
+    }
+
+    /// Keeps diagnostic entries only for allocation generations the lock
+    /// object still names, so topology churn cannot accumulate history.
+    pub fn retain_pacing(&mut self, live: &[sophia_protocol::lock_files::LockAllocation]) {
+        self.pacing.entries.retain(|allocation, entry| {
+            live.iter().any(|live| {
+                live.allocation_id == *allocation
+                    && live.allocation_generation == entry.allocation_generation
+            })
+        });
+    }
+
+    /// Allocations the bounded diagnostic refused since the lock or
+    /// connection began.
+    pub fn pacing_untracked(&self) -> u64 {
+        self.pacing.untracked
+    }
+
+    fn current_lock(&self, lock_epoch: u64) -> bool {
+        self.epoch.is_some_and(|epoch| epoch.raw() == lock_epoch)
+    }
+
     /// A provider connection began. Its predecessor's images, resources and
     /// demands are gone with it.
     pub fn connected(&mut self, connection_epoch: u64) -> bool {
@@ -202,27 +293,34 @@ impl SessionLockFrames {
         changed
     }
 
-    fn entry(&mut self, allocation: u64) -> &mut PacingEntry {
-        self.pacing.entry(allocation).or_default()
-    }
-
-    /// Every allocation seen since the lock or connection began, as it stands.
+    /// Every tracked allocation generation, as it stands. Empty unless the
+    /// diagnostic is enabled.
     pub fn pacing(&self) -> Vec<SessionLockPacing> {
         self.pacing
+            .entries
             .iter()
-            .map(|(&allocation_id, entry)| SessionLockPacing {
-                lock_epoch: self.epoch.map(SessionLockEpoch::raw),
-                connection_epoch: self.connection,
-                allocation_id,
-                allocation_generation: entry.allocation_generation,
-                output: entry.output,
-                demand_held: self.demands.contains_key(&allocation_id),
-                in_flight_generation: self
-                    .in_flight
-                    .values()
-                    .find(|candidate| candidate.allocation_id == allocation_id)
-                    .map(|candidate| candidate.candidate_generation),
-                counts: entry.counts,
+            .map(|(&allocation_id, entry)| {
+                let generation = entry.allocation_generation;
+                SessionLockPacing {
+                    lock_epoch: self.epoch.map(SessionLockEpoch::raw),
+                    connection_epoch: self.connection,
+                    allocation_id,
+                    allocation_generation: generation,
+                    output: entry.output,
+                    demand_held: self
+                        .demands
+                        .get(&allocation_id)
+                        .is_some_and(|demand| demand.allocation_generation == generation),
+                    in_flight_generation: self
+                        .in_flight
+                        .values()
+                        .find(|candidate| {
+                            candidate.allocation_id == allocation_id
+                                && candidate.allocation_generation == generation
+                        })
+                        .map(|candidate| candidate.candidate_generation),
+                    counts: entry.counts,
+                }
             })
             .collect()
     }
@@ -262,9 +360,13 @@ impl SessionLockFrames {
     pub fn demand(&mut self, connection_epoch: u64, demand: LockFrameDemand) {
         if self.current(connection_epoch) {
             self.demands.insert(demand.allocation_id, demand);
-            let entry = self.entry(demand.allocation_id);
-            entry.allocation_generation = Some(demand.allocation_generation);
-            entry.counts.demands = entry.counts.demands.saturating_add(1);
+            if self.current_lock(demand.lock_epoch)
+                && let Some(entry) = self
+                    .pacing
+                    .observe(demand.allocation_id, demand.allocation_generation)
+            {
+                entry.counts.demands = entry.counts.demands.saturating_add(1);
+            }
         }
     }
 
@@ -284,8 +386,13 @@ impl SessionLockFrames {
             .collect();
         for demand in &ready {
             self.demands.remove(&demand.allocation_id);
-            let counts = &mut self.entry(demand.allocation_id).counts;
-            counts.permits = counts.permits.saturating_add(1);
+            if self.current_lock(demand.lock_epoch)
+                && let Some(entry) = self
+                    .pacing
+                    .observe(demand.allocation_id, demand.allocation_generation)
+            {
+                entry.counts.permits = entry.counts.permits.saturating_add(1);
+            }
         }
         ready
     }
@@ -299,14 +406,19 @@ impl SessionLockFrames {
         connection_epoch: u64,
         candidate: LockCandidate,
     ) -> (bool, Vec<LockCandidateOutcome>) {
-        let current_lock = self
-            .epoch
-            .is_some_and(|epoch| epoch.raw() == candidate.lock_epoch);
+        let current_lock = self.current_lock(candidate.lock_epoch);
+        let current = self.current(connection_epoch) && current_lock;
         let resource = self.resources.get(&candidate.resource);
-        let (Some(resource), true, true) = (resource, self.current(connection_epoch), current_lock)
-        else {
-            let counts = &mut self.entry(candidate.allocation_id).counts;
-            counts.rejected = counts.rejected.saturating_add(1);
+        let (Some(resource), true) = (resource, current) else {
+            // Only this lock and connection's own allocations are counted; a
+            // stale candidate is rejected without touching the diagnostic.
+            if current
+                && let Some(entry) = self
+                    .pacing
+                    .observe(candidate.allocation_id, candidate.allocation_generation)
+            {
+                entry.counts.rejected = entry.counts.rejected.saturating_add(1);
+            }
             return (
                 false,
                 vec![outcome(&candidate, LockCandidateStatus::Rejected)],
@@ -325,13 +437,20 @@ impl SessionLockFrames {
             pixels: Arc::clone(&resource.pixels),
         };
         let mut owed = Vec::new();
-        let entry = self.entry(candidate.allocation_id);
-        entry.output = Some(output);
-        entry.allocation_generation = Some(candidate.allocation_generation);
-        entry.counts.candidates = entry.counts.candidates.saturating_add(1);
+        if let Some(entry) = self
+            .pacing
+            .observe(candidate.allocation_id, candidate.allocation_generation)
+        {
+            entry.output = Some(output);
+            entry.counts.candidates = entry.counts.candidates.saturating_add(1);
+        }
         if let Some(previous) = self.in_flight.insert(output, candidate) {
-            let counts = &mut self.entry(previous.allocation_id).counts;
-            counts.superseded = counts.superseded.saturating_add(1);
+            if let Some(entry) = self
+                .pacing
+                .observe(previous.allocation_id, previous.allocation_generation)
+            {
+                entry.counts.superseded = entry.counts.superseded.saturating_add(1);
+            }
             owed.push(outcome(&previous, LockCandidateStatus::Superseded));
         }
         self.shown.insert(
@@ -367,8 +486,12 @@ impl SessionLockFrames {
             return None;
         }
         let candidate = self.in_flight.remove(&output)?;
-        let counts = &mut self.entry(candidate.allocation_id).counts;
-        counts.presented = counts.presented.saturating_add(1);
+        if let Some(entry) = self
+            .pacing
+            .observe(candidate.allocation_id, candidate.allocation_generation)
+        {
+            entry.counts.presented = entry.counts.presented.saturating_add(1);
+        }
         Some(outcome(&candidate, LockCandidateStatus::Presented))
     }
 }

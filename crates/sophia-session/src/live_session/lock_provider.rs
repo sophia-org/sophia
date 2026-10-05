@@ -189,6 +189,11 @@ impl LockProvider {
         }
     }
 
+    /// Whether the diagnostic pacing sample was opted in at start.
+    pub(super) fn pacing_enabled(&self) -> bool {
+        self.pacing_sample_at.is_some()
+    }
+
     /// Whether a diagnostic pacing sample is due: never without the opt-in,
     /// otherwise every five seconds.
     pub(super) fn pacing_sample_due(&mut self, now: Instant) -> bool {

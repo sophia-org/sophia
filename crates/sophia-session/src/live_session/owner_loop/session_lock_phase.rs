@@ -147,6 +147,7 @@ macro_rules! service_lock_provider {
             use sophia_runtime::lock_files::{LockFileServiceCommand, LockInbound};
             // Images drawn for an earlier lock never show in this one.
             let mut images_changed = lock_frames.lock(session_lock.cover_epoch());
+            lock_frames.set_pacing_diagnostics(provider.pacing_enabled());
             for event in provider.poll(Instant::now()) {
                 match event {
                     sophia_runtime::lock_files::LockFileServiceEvent::Connected {
@@ -243,6 +244,13 @@ macro_rules! service_lock_provider {
                         crate::session_lock_frames::session_lock_pacing_record(&pacing)
                     );
                 }
+                let untracked = lock_frames.pacing_untracked();
+                if untracked != 0 {
+                    crate::session_println!(
+                        "{}",
+                        crate::session_lock_frames::session_lock_pacing_untracked_record(untracked)
+                    );
+                }
             }
             if images_changed
                 && let Some(runtime) = runtime.as_mut()
@@ -267,6 +275,8 @@ macro_rules! service_lock_provider {
             if let Some(object) = lock_publication.update(session_lock.phase(), topology_epoch, || {
                 wm_session.as_ref().and_then(|wm| wm.published_output_snapshot())
             }) {
+                // The diagnostic keeps only allocations the new object names.
+                lock_frames.retain_pacing(&object.allocations);
                 provider.command(sophia_runtime::lock_files::LockFileServiceCommand::PublishLock(object));
             }
         }

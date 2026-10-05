@@ -17,7 +17,8 @@ other kept animating, with no error record, until the session was unlocked?
 Read-only evidence is under
 `~/.local/state/sophia/development-evidence/dp2-frozen-lock-20261005/`
 (`SUMMARY.txt`, thread samples and the operator's kernel-stack capture). The
-operator's desktop locked at 22:42 local on 2026-10-04 with the kleis provider.
+operator's desktop, running Sophia ba763f0c4, locked at 22:42 local on 2026-10-04
+with the kleis provider.
 The ratio of composed target pixels to composed frames in
 `sophia_live_render_work` was the mean of both heads until about 00:04, exactly
 DP-1's 2560x1440 from about 00:06 to 06:15, and DP-2's 1920x1080 again after the
@@ -42,8 +43,11 @@ rendered, and the provider marking the output blocked. None is established.
 2. Behind a default-off opt-in, sample each allocation's pacing: lock and
    connection identity, allocation generation, output, held demand, in-flight
    candidate generation, and saturating counts of demands, permits, candidates
-   and outcomes. A repeated in-flight generation, an idle allocation with drops,
-   and an idle allocation without them then name different causes.
+   and outcomes. Count only events of the current lock, connection and
+   allocation generation, keep only allocations the current lock object names,
+   and bound the rest with an explicit untracked count. A repeated in-flight
+   generation, an idle allocation with drops, and an idle allocation without
+   them then name different causes.
 3. Reproduce the stall under the opt-in, or capture it on the operator's
    desktop, before changing pacing. A repair needs a regression that fails
    without it and keeps presentation pacing the provider at its slowest head.

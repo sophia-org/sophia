@@ -154,15 +154,16 @@ fn a_departed_provider_or_a_new_lock_leaves_the_fill() {
     );
 }
 
-/// t308: the diagnostic pacing sample follows one allocation through demand,
-/// permit, candidate and outcome, and names its lock, connection and
-/// allocation generation so a restart is not read as no progress.
+/// t308: with the diagnostic enabled, the pacing sample follows one
+/// allocation through demand, permit, candidate and outcome, and names its
+/// lock, connection and allocation generation.
 #[test]
 fn the_pacing_sample_follows_an_allocation_through_its_handshake() {
     use sophia_session::session_lock_frames::{
         SessionLockPacing, SessionLockPacingCounts, session_lock_pacing_record,
     };
     let mut frames = frames();
+    frames.set_pacing_diagnostics(true);
     assert!(frames.pacing().is_empty(), "nothing seen yet");
     frames.demand(CONNECTION, demand(1));
     let _ = frames.permits();
@@ -172,7 +173,7 @@ fn the_pacing_sample_follows_an_allocation_through_its_handshake() {
         lock_epoch: Some(3),
         connection_epoch: Some(CONNECTION),
         allocation_id: 1,
-        allocation_generation: Some(1),
+        allocation_generation: 1,
         output: Some(OutputId::from_raw(1)),
         demand_held: true,
         in_flight_generation: Some(1),
@@ -196,10 +197,10 @@ fn the_pacing_sample_follows_an_allocation_through_its_handshake() {
     let _ = frames.permits();
     frames.candidate(CONNECTION, candidate(2, 2));
     frames.candidate(CONNECTION, candidate(3, 1));
-    frames.candidate(CONNECTION + 1, candidate(4, 1));
-    let counts = frames.pacing()[0].counts;
+    // This lock and connection, but a resource never offered: rejected here.
+    frames.candidate(CONNECTION, candidate(4, 9));
     assert_eq!(
-        counts,
+        frames.pacing()[0].counts,
         SessionLockPacingCounts {
             demands: 2,
             permits: 2,
@@ -213,27 +214,145 @@ fn the_pacing_sample_follows_an_allocation_through_its_handshake() {
     assert!(!frames.pacing()[0].demand_held);
 }
 
-/// A new lock, a reconnect or a departed provider starts the counts again.
+/// Off (the default), the handshake works exactly as before and keeps no
+/// diagnostic state.
 #[test]
-fn the_pacing_counts_restart_with_a_new_lock_or_connection() {
-    let restarts: [fn(&mut SessionLockFrames); 3] = [
-        |frames: &mut SessionLockFrames| {
-            frames.lock(SessionLockEpoch::from_raw(4));
+fn the_pacing_diagnostic_keeps_nothing_unless_enabled() {
+    let mut frames = frames();
+    frames.demand(CONNECTION, demand(1));
+    assert_eq!(frames.permits(), [demand(1)]);
+    frames.candidate(CONNECTION, candidate(1, 1));
+    frames
+        .presented(OutputId::from_raw(1), shown(1, 1))
+        .unwrap();
+    assert!(frames.pacing().is_empty());
+    frames.set_pacing_diagnostics(true);
+    frames.demand(CONNECTION, demand(2));
+    assert_eq!(frames.pacing().len(), 1);
+    frames.set_pacing_diagnostics(false);
+    assert!(
+        frames.pacing().is_empty(),
+        "turning it off drops what it kept"
+    );
+}
+
+/// Events from an earlier lock or provider connection are handled as before
+/// but never counted against the current one.
+#[test]
+fn stale_lock_or_connection_events_do_not_reach_the_current_sample() {
+    let mut frames = frames();
+    frames.set_pacing_diagnostics(true);
+    frames.demand(CONNECTION, demand(1));
+    frames.lock(SessionLockEpoch::from_raw(4));
+    assert!(frames.pacing().is_empty(), "a new lock starts again");
+    // A demand and a candidate for lock 3 after lock 4 began.
+    frames.demand(CONNECTION, demand(5));
+    frames.candidate(CONNECTION, candidate(5, 1));
+    // A candidate from the departed connection, for the current lock.
+    frames.candidate(
+        CONNECTION + 1,
+        LockCandidate {
+            lock_epoch: 4,
+            ..candidate(6, 1)
         },
-        |frames: &mut SessionLockFrames| {
-            frames.connected(CONNECTION + 1);
+    );
+    assert!(frames.pacing().is_empty(), "{:?}", frames.pacing());
+    frames.connected(CONNECTION + 2);
+    frames.candidate(CONNECTION, candidate(7, 1));
+    assert!(frames.pacing().is_empty());
+}
+
+/// A newer allocation generation starts its counts again, and a late event
+/// for the generation it replaced does not count against it.
+#[test]
+fn a_new_allocation_generation_restarts_and_ignores_its_predecessor() {
+    use sophia_session::session_lock_frames::SessionLockPacingCounts;
+    let mut frames = frames();
+    frames.set_pacing_diagnostics(true);
+    frames.demand(CONNECTION, demand(1));
+    let _ = frames.permits();
+    frames.candidate(CONNECTION, candidate(1, 1));
+    assert_eq!(frames.pacing()[0].counts.candidates, 1);
+    let renewed = LockFrameDemand {
+        allocation_generation: 2,
+        ..demand(2)
+    };
+    frames.demand(CONNECTION, renewed);
+    // The generation-1 candidate retires late and is superseded late.
+    frames
+        .presented(OutputId::from_raw(1), shown(1, 1))
+        .unwrap();
+    frames.candidate(CONNECTION, candidate(3, 2));
+    frames.candidate(CONNECTION, candidate(4, 1));
+    let sample = frames.pacing();
+    assert_eq!(sample.len(), 1);
+    assert_eq!(sample[0].allocation_generation, 2);
+    assert_eq!(
+        sample[0].counts,
+        SessionLockPacingCounts {
+            demands: 1,
+            ..SessionLockPacingCounts::default()
         },
-        |frames: &mut SessionLockFrames| {
-            frames.disconnected(CONNECTION);
-        },
-    ];
-    for restart in restarts {
-        let mut frames = frames();
-        frames.demand(CONNECTION, demand(1));
-        assert_eq!(frames.pacing().len(), 1);
-        restart(&mut frames);
-        assert!(frames.pacing().is_empty());
+        "only generation 2's own demand"
+    );
+    assert!(sample[0].demand_held);
+    assert_eq!(
+        sample[0].in_flight_generation, None,
+        "generation 1's candidate"
+    );
+}
+
+/// Allocation churn is bounded: past the bound new allocations are counted as
+/// untracked, a current stuck allocation is kept, and a published lock object
+/// keeps only the allocations it names.
+#[test]
+fn the_pacing_history_is_bounded_and_keeps_current_allocations() {
+    use sophia_session::session_lock_frames::{
+        SESSION_LOCK_PACING_ALLOCATIONS, session_lock_pacing_untracked_record,
+    };
+    let mut frames = frames();
+    frames.set_pacing_diagnostics(true);
+    frames.demand(CONNECTION, demand(1));
+    let _ = frames.permits();
+    frames.candidate(CONNECTION, candidate(1, 1));
+    let churn = SESSION_LOCK_PACING_ALLOCATIONS as u64 + 10;
+    for allocation in 100..100 + churn {
+        frames.demand(
+            CONNECTION,
+            LockFrameDemand {
+                allocation_id: allocation,
+                ..demand(allocation)
+            },
+        );
     }
+    let sample = frames.pacing();
+    assert_eq!(sample.len(), SESSION_LOCK_PACING_ALLOCATIONS);
+    assert_eq!(
+        sample[0].in_flight_generation,
+        Some(1),
+        "the stuck allocation stays tracked"
+    );
+    assert_eq!(frames.pacing_untracked(), 11);
+    assert_eq!(
+        session_lock_pacing_untracked_record(11),
+        format!(
+            "sophia_live_lock_pacing schema=1 status=untracked allocations_over_bound=11 bound={SESSION_LOCK_PACING_ALLOCATIONS}"
+        )
+    );
+    let live = |allocation_id, allocation_generation| LockAllocation {
+        output_id: 1,
+        output_generation: 1,
+        allocation_id,
+        allocation_generation,
+        pixel_width: 2,
+        pixel_height: 1,
+        scale_numerator: 1,
+        scale_denominator: 1,
+    };
+    frames.retain_pacing(&[live(1, 1), live(100, 2)]);
+    let kept = frames.pacing();
+    assert_eq!(kept.len(), 1, "allocation 100 is now another generation");
+    assert_eq!(kept[0].allocation_id, 1);
 }
 
 /// A dropped permit or outcome is counted every time and recorded the first
