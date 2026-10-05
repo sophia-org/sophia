@@ -32,7 +32,7 @@ struct options {
     int x, y, width, height;
     uint32_t format, frames, timeout_ms, hold_ms;
     uint64_t modifier;
-    bool list_only, has_geometry, has_format, has_modifier, suboptimal;
+    bool list_only, has_geometry, has_format, has_modifier, suboptimal, managed;
 };
 
 struct buffer {
@@ -139,6 +139,33 @@ static void *reply(struct probe *probe, unsigned sequence, const char *stage)
     }
 }
 
+/* Whether the window's geometry is the requested one. An override-redirect
+ * window is placed by its client, so any change is refused. A managed window
+ * (--managed) is placed by the window manager: its position may differ, its
+ * size may not. */
+static bool geometry_matches(const struct options *options, int x, int y, int width, int height)
+{
+    return width == options->width && height == options->height &&
+        (options->managed || (x == options->x && y == options->y));
+}
+
+/* The window's creation attributes in mask order; returns the mask. Only an
+ * unmanaged window is override-redirect, which keeps it out of every policy
+ * the window manager applies. */
+static uint32_t window_attributes(const struct options *options, xcb_colormap_t colormap, uint32_t values[4])
+{
+    unsigned count = 0;
+    uint32_t mask = XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK | XCB_CW_COLORMAP;
+    values[count++] = 0xff304038;
+    if (!options->managed) {
+        mask |= XCB_CW_OVERRIDE_REDIRECT;
+        values[count++] = 1;
+    }
+    values[count++] = XCB_EVENT_MASK_STRUCTURE_NOTIFY;
+    values[count++] = colormap;
+    return mask;
+}
+
 /* Unchecked void requests report their errors on the ordinary event queue.
  * Present events use a separate XGE queue and cannot be consumed here. */
 static bool ordinary_events(struct probe *probe, bool queued_only)
@@ -152,8 +179,7 @@ static bool ordinary_events(struct probe *probe, bool queued_only)
         if ((event->response_type & 127) == XCB_CONFIGURE_NOTIFY) {
             xcb_configure_notify_event_t *configure = (void *)event;
             if (configure->window == probe->window &&
-                (configure->x != probe->options.x || configure->y != probe->options.y ||
-                 configure->width != probe->options.width || configure->height != probe->options.height)) {
+                !geometry_matches(&probe->options, configure->x, configure->y, configure->width, configure->height)) {
                 errno = EINVAL;
                 ok = fail("geometry_changed");
             }
@@ -213,8 +239,9 @@ static void usage(FILE *output)
 {
     fprintf(output, "usage: dri3_layout --geometry X,Y,W,H --format XR24|AR24\n"
                     "       [--modifier VALUE] [--list-only] [--frames 1..120] [--timeout-ms 100..10000]\n"
-                    "       [--suboptimal] [--hold-ms 0..60000]\n"
+                    "       [--suboptimal] [--hold-ms 0..60000] [--managed]\n"
                     "Present requires --modifier. List-only never maps or presents a window.\n"
+                    "Managed windows are placed by the window manager; their size still must not change.\n"
                     "Geometry: signed 16-bit position, positive dimensions <=4096.\n");
 }
 
@@ -229,6 +256,10 @@ static bool parse(int argc, char **argv, struct options *options)
         }
         if (!strcmp(arg, "--suboptimal")) {
             options->suboptimal = true;
+            continue;
+        }
+        if (!strcmp(arg, "--managed")) {
+            options->managed = true;
             continue;
         }
         if (index + 1 >= argc)
@@ -343,12 +374,12 @@ static bool open_window_and_device(struct probe *probe, const xcb_screen_t *scre
     probe->colormap = xcb_generate_id(probe->connection);
     xcb_create_colormap(probe->connection, XCB_COLORMAP_ALLOC_NONE, probe->colormap, screen->root, chosen);
     probe->window = xcb_generate_id(probe->connection);
-    uint32_t values[] = { 0xff304038, 1, XCB_EVENT_MASK_STRUCTURE_NOTIFY, probe->colormap };
+    uint32_t values[4];
+    uint32_t mask = window_attributes(&probe->options, probe->colormap, values);
     xcb_create_window(probe->connection, depth, probe->window, screen->root,
         (int16_t)probe->options.x, (int16_t)probe->options.y,
         (uint16_t)probe->options.width, (uint16_t)probe->options.height, 0,
-        XCB_WINDOW_CLASS_INPUT_OUTPUT, chosen,
-        XCB_CW_BACK_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK | XCB_CW_COLORMAP, values);
+        XCB_WINDOW_CLASS_INPUT_OUTPUT, chosen, mask, values);
     if (!barrier(probe, "create_window"))
         return false;
     xcb_dri3_open_reply_t *opened = reply(probe,
@@ -626,8 +657,7 @@ static bool run_frames(struct probe *probe)
         xcb_get_geometry(probe->connection, probe->window).sequence, "window_geometry");
     if (!geometry)
         return false;
-    bool exact = geometry->x == probe->options.x && geometry->y == probe->options.y &&
-                 geometry->width == probe->options.width && geometry->height == probe->options.height;
+    bool exact = geometry_matches(&probe->options, geometry->x, geometry->y, geometry->width, geometry->height);
     free(geometry);
     if (!exact) {
         errno = EINVAL;
@@ -739,9 +769,9 @@ int main(int argc, char **argv)
         errno = ENODEV;
         ok = fail("screen");
     }
-    printf("dri3_layout stage=start list_only=%u x=%d y=%d width=%d height=%d format=0x%08" PRIx32 " frames=%" PRIu32 " timeout_ms=%" PRIu32 "\n",
+    printf("dri3_layout stage=start list_only=%u x=%d y=%d width=%d height=%d format=0x%08" PRIx32 " frames=%" PRIu32 " timeout_ms=%" PRIu32 " managed=%u\n",
         probe.options.list_only, probe.options.x, probe.options.y, probe.options.width, probe.options.height,
-        probe.options.format, probe.options.frames, probe.options.timeout_ms);
+        probe.options.format, probe.options.frames, probe.options.timeout_ms, probe.options.managed);
     if (ok)
         ok = versions(&probe) && open_window_and_device(&probe, screens.data) && modifiers(&probe, "unmapped");
     if (ok && probe.options.list_only && probe.options.has_modifier)

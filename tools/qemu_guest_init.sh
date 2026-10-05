@@ -402,6 +402,12 @@ elif [ "$scenario" = "output-unplug" ]; then
             --client-arg=--modifier --client-arg=0 \
             --client-arg=--frames --client-arg=1 \
             --client-arg=--hold-ms --client-arg=35000
+        # Under the WM the window is managed, not override-redirect, so the
+        # WM places it and relocates it when its output is lost; its size and
+        # pixels are still checked.
+        if [ "$unplug_wm" = true ]; then
+            set -- "$@" --client-arg=--managed
+        fi
     fi
     echo "sophia_qemu_unplug schema=1 status=running mode=$unplug_mode wm=$unplug_wm client=${unplug_client:-none}"
 else
