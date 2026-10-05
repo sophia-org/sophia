@@ -1732,3 +1732,38 @@ Evidence: `t289-shm-uploads-01/mapping-RESULT.txt`, `mapping-comparison-02`,
 mapping comparison remains failed because its benchmark identity changed;
 it was excluded before the corrected, frozen-bundle comparison. No live install
 was performed as part of these SHM changes.
+
+### Shared CPU patch payloads (2026-10-05)
+
+Accepted production commit `aed2dd8d9` packs each patch's pixels once and shares
+that owned allocation through authority queues, Session conversion and renderer
+forwarding. Full snapshots already used this ownership model; patches still
+deep-copied their `Vec<u8>` on every clone. Applying a patch still validates it
+and copies its rows into the separate COW destination. Generation order, damage,
+queue limits and byte accounting are unchanged. Patches never alias mutable
+client or drawable memory.
+
+Three allocation-identity tests fail on the old forwarding paths and pass with
+sharing. Additional tests cover later drawable writes, retained generations and
+last-reader release. The full isolated gate passed on the signed, unchanged
+candidate, including malformed-patch, atomic-batch, shape and pixmap-publication
+cases. Read-only peer review found no blockers.
+
+The same frozen wmbench workload above compared mapping retention alone against
+shared patches. The inconclusive whole-image crop candidate was excluded. All
+ten guests passed; the four unprofiled CPU pairs were 2.23→2.00, 2.24→2.10,
+2.23→1.97 and 2.25→1.95 seconds per 300 frames. Median Sophia CPU fell from
+**2.235 to 1.985 seconds (11.2%)**, with every pair improving and separated
+ranges. This meets the predeclared criterion. Elapsed times stayed within
+39.0–39.9 seconds; no latency improvement is claimed.
+
+The attribution pair supports the intended mechanism: owner memmove samples
+fell from 113 to 47, and X11-worker memmove from 201 to 167. Process user ticks
+fell from 168 to 147 while system ticks stayed at 59. Minor faults did not fall.
+Software-renderer workers still account for about 59% of candidate samples,
+so composition remains the next large cost. These are software-guest results,
+not hardware DMA-BUF, whole-machine CPU or battery measurements.
+
+Evidence: `t289-shared-cpu-patches-01/RESULT.txt`, `comparison-01`,
+`09-attribution.json`, `05-gate.json` and `REVIEW-w9pX.txt`. No live install was
+performed. The earlier copy candidate remains separate; t289 stays open.
