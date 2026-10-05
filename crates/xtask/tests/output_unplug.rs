@@ -4,7 +4,7 @@
 #[path = "../src/output_unplug.rs"]
 mod output_unplug;
 
-use output_unplug::{Mode, verify};
+use output_unplug::{Mode, probe_frame_checksum, verify};
 
 const START: &str = "\
 sophia_qemu_unplug schema=1 status=starting isolation=headless control=none host_drm=none host_vt=none gpu=virtio-gpu mode=MODE single_card=1
@@ -234,13 +234,13 @@ fn static_client() -> String {
     let before = "\
 sophia_live_session_present schema=2 status=retired transaction=26 surface=2097153 source=400x300 target=400x300_100_100 clip=400x300_100_100 unit_scale=true ust=1 msc=1
 sophia_live_head_composition_queue schema=1 status=queued output=1 head=1 frame=3 scene_generation=26 target_generation=1
-sophia_native_composition_region_frame schema=1 status=read output=1 head=1 scene_generation=26 layer=0 source_stage=renderer_image target=400x300_100_100 region_pixels=120000 nonzero_rgb_pixels=120000 checksum=777
+sophia_native_composition_region_frame schema=1 status=read output=1 head=1 scene_generation=26 layer=0 source_stage=renderer_image target=400x300_100_100 region_pixels=120000 nonzero_rgb_pixels=120000 checksum=15913682524319544229
 sophia_live_native_head_page_flip schema=2 status=retired output=1 head=1 submission=2 frame=3
 sophia_qemu_unplug schema=1 status=static_barrier present=retired client=holding
 ";
     let after = "\
 sophia_live_head_composition_queue schema=1 status=queued output=1 head=1 frame=9 scene_generation=40 target_generation=1
-sophia_native_composition_region_frame schema=1 status=read output=1 head=1 scene_generation=40 layer=0 source_stage=renderer_image target=400x300_0_0 region_pixels=120000 nonzero_rgb_pixels=120000 checksum=777
+sophia_native_composition_region_frame schema=1 status=read output=1 head=1 scene_generation=40 layer=0 source_stage=renderer_image target=400x300_0_0 region_pixels=120000 nonzero_rgb_pixels=120000 checksum=15913682524319544229
 sophia_live_native_head_page_flip schema=2 status=retired output=1 head=1 submission=5 frame=9
 ";
     format!(
@@ -272,7 +272,7 @@ fn every_way_the_static_content_can_fail_is_refused() {
         (log.replace("sophia_qemu_unplug schema=1 status=static_barrier present=retired client=holding\n", ""), "no barrier"),
         (log.replace("sophia_qemu_unplug schema=1 status=sent action=off", "sophia_live_renderer_image_handoff schema=1 status=discarded reason=heads_changed captured_images=1 discarded_images=1\nsophia_qemu_unplug schema=1 status=sent action=off"), "discarded"),
         // Other content in the window's place after the return.
-        (log.replace("target=400x300_0_0 region_pixels=120000 nonzero_rgb_pixels=120000 checksum=777", "target=400x300_0_0 region_pixels=120000 nonzero_rgb_pixels=120000 checksum=778"), "not drawn from a retained image"),
+        (log.replace("target=400x300_0_0 region_pixels=120000 nonzero_rgb_pixels=120000 checksum=15913682524319544229", "target=400x300_0_0 region_pixels=120000 nonzero_rgb_pixels=120000 checksum=778"), "not drawn from a retained image"),
         // Rendered but never retired.
         (log.replace("submission=5 frame=9", "submission=5 frame=10"), "not drawn from a retained image"),
         // Drawn from the client buffer, not a retained image.
@@ -298,7 +298,7 @@ fn replacement_case(post: &str) -> String {
     let before = "\
 sophia_live_session_present schema=2 status=retired transaction=26 surface=2097153 source=400x300 target=400x300_100_100 clip=400x300_100_100 unit_scale=true ust=1 msc=1
 sophia_live_head_composition_queue schema=1 status=queued output=1 head=1 frame=4 scene_generation=1 target_generation=1
-sophia_native_composition_region_frame schema=1 status=read output=1 head=1 scene_generation=1 layer=0 source_stage=renderer_image target=400x300_100_100 region_pixels=120000 nonzero_rgb_pixels=120000 checksum=777
+sophia_native_composition_region_frame schema=1 status=read output=1 head=1 scene_generation=1 layer=0 source_stage=renderer_image target=400x300_100_100 region_pixels=120000 nonzero_rgb_pixels=120000 checksum=15913682524319544229
 sophia_live_native_head_page_flip schema=2 status=retired output=1 head=1 submission=2 frame=4
 sophia_qemu_unplug schema=1 status=static_barrier present=retired client=holding
 ";
@@ -307,7 +307,7 @@ sophia_qemu_unplug schema=1 status=sent action=off target=Console_1
 sophia_live_output_topology schema=1 status=quiesced transition=1 outcome=drained abandoned_scanouts=0
 sophia_live_native_owner schema=1 status=closed epoch=1 reason=topology_rebuild settled=true
 sophia_live_head_composition_queue schema=1 status=queued output=1 head=1 frame=1 scene_generation=1 target_generation=1
-sophia_native_composition_region_frame schema=1 status=read output=1 head=1 scene_generation=1 layer=0 source_stage=renderer_image target=400x300_100_100 region_pixels=120000 nonzero_rgb_pixels=120000 checksum=777
+sophia_native_composition_region_frame schema=1 status=read output=1 head=1 scene_generation=1 layer=0 source_stage=renderer_image target=400x300_100_100 region_pixels=120000 nonzero_rgb_pixels=120000 checksum=15913682524319544229
 ";
     let settled = "\
 sophia_live_output_topology schema=1 status=published transition=1 topology_epoch=2 generation=2 outputs=1 changed=true restored_images=1 policy_required=false input=quarantined
@@ -381,17 +381,17 @@ fn a_baseline_that_changes_before_the_removal_fails_and_says_what_followed() {
              sophia_live_native_head_page_flip schema=2 status=retired output=1 head=1 submission=3 frame=4\n{barrier}"
         )
     };
-    let lost = "target=400x300_0_0 region_pixels=120000 nonzero_rgb_pixels=120000 checksum=777";
+    let lost = "target=400x300_0_0 region_pixels=120000 nonzero_rgb_pixels=120000 checksum=15913682524319544229";
     let cases = [
         // Good, then black, then good again after the loss.
         (
             log.replace(barrier, &second("555", "0")),
-            "checksum=555 nonzero_rgb_pixels=0, not the first presented checksum=777; preserved_content=observed",
+            "checksum=555 nonzero_rgb_pixels=0, not the first presented checksum=15913682524319544229; preserved_content=observed",
         ),
         // Good, then other non-black pixels.
         (
             log.replace(barrier, &second("779", "120000")),
-            "checksum=779 nonzero_rgb_pixels=120000, not the first presented checksum=777; preserved_content=observed",
+            "checksum=779 nonzero_rgb_pixels=120000, not the first presented checksum=15913682524319544229; preserved_content=observed",
         ),
         // Good, then black, and nothing preserved after the loss.
         (
@@ -399,7 +399,7 @@ fn a_baseline_that_changes_before_the_removal_fails_and_says_what_followed() {
                 lost,
                 "target=400x300_0_0 region_pixels=120000 nonzero_rgb_pixels=0 checksum=555",
             ),
-            "checksum=555 nonzero_rgb_pixels=0, not the first presented checksum=777; preserved_content=not_observed",
+            "checksum=555 nonzero_rgb_pixels=0, not the first presented checksum=15913682524319544229; preserved_content=not_observed",
         ),
     ];
     for (index, (log, expected)) in cases.into_iter().enumerate() {
@@ -414,27 +414,34 @@ fn a_baseline_that_changes_before_the_removal_fails_and_says_what_followed() {
 #[test]
 fn the_reference_is_the_first_presented_frame_and_must_be_the_clients() {
     let log = static_client();
-    // Black from the first presented region on, before and after: no
-    // frame of the client was ever shown, so nothing is preserved.
-    let black = log.replace(
-        "nonzero_rgb_pixels=120000 checksum=777",
-        "nonzero_rgb_pixels=0 checksum=555",
-    );
+    let frame = "region_pixels=120000 nonzero_rgb_pixels=120000 checksum=15913682524319544229";
+    let refused = |log: &str| verify(log, Mode::OneReturn).unwrap_err();
+    // Black from the first presented region on, before and after: no frame
+    // of the client was ever shown, so nothing is preserved.
+    assert!(refused(&log.replace(frame, "region_pixels=120000 nonzero_rgb_pixels=0 checksum=555")).contains(
+        "not the client's frame: region_pixels=120000 checksum=555, expected region_pixels=120000 checksum=15913682524319544229"
+    ));
+    // Stable, fully non-black and still not the probe's pattern
+    // (REVIEW-CODEX-15 control 1).
     assert!(
-        verify(&black, Mode::OneReturn)
-            .unwrap_err()
-            .contains("first presented region is not the client's frame: nonzero_rgb_pixels=0 of region_pixels=120000 checksum=555")
+        refused(&log.replace(
+            frame,
+            "region_pixels=120000 nonzero_rgb_pixels=120000 checksum=999"
+        ))
+        .contains("not the client's frame: region_pixels=120000 checksum=999")
     );
+    // A 400x300 target that read no pixels (REVIEW-CODEX-15 control 2).
+    assert!(refused(&log.replace(frame, "region_pixels=0 nonzero_rgb_pixels=0 checksum=15913682524319544229")).contains(
+        "not the client's frame: region_pixels=0 checksum=15913682524319544229, expected region_pixels=120000"
+    ));
     // Only partly drawn.
-    let partial = log.replacen(
-        "nonzero_rgb_pixels=120000 checksum=777",
-        "nonzero_rgb_pixels=60000 checksum=556",
-        1,
-    );
     assert!(
-        verify(&partial, Mode::OneReturn)
-            .unwrap_err()
-            .contains("not the client's frame: nonzero_rgb_pixels=60000")
+        refused(&log.replacen(
+            frame,
+            "region_pixels=120000 nonzero_rgb_pixels=60000 checksum=556",
+            1
+        ))
+        .contains("not the client's frame: region_pixels=120000 checksum=556")
     );
     // The only region before the removal belongs to a frame that never
     // retired: there is no presented reference.
@@ -454,4 +461,16 @@ fn the_reference_is_the_first_presented_frame_and_must_be_the_clients() {
     assert!(verify(&earlier, Mode::OneReturn).unwrap_err().contains(
         "unstable_baseline: a region of its window before the removal shows checksum=555"
     ));
+}
+
+/// The expected frame is derived from the probe's fill and the trace's
+/// readback, never taken from a run. These values were computed separately
+/// from the four quadrant colours, opaque alpha and bottom-up RGBA order; the
+/// same pattern read top-down would hash to 8975981465688749989.
+#[test]
+fn the_expected_frame_is_the_probes_pattern_read_bottom_up() {
+    assert_eq!(probe_frame_checksum(400, 300), 15913682524319544229);
+    assert_ne!(probe_frame_checksum(400, 300), 8975981465688749989);
+    assert_eq!(probe_frame_checksum(2, 2), 2471897560895143411);
+    assert_eq!(probe_frame_checksum(3, 1), 8974295684228261135);
 }

@@ -427,12 +427,20 @@ fn verify_static_client(
     let checksum = reference
         .get("checksum")
         .ok_or("static client: region without checksum")?;
-    // The probe fills every pixel with one of four non-black colours
-    // (tools/probes/dri3_layout.c, fill), so its frame has no black pixel.
-    if reference.get("nonzero_rgb_pixels") != Some(reference.get("region_pixels").unwrap_or("")) {
+    // The reference must be the probe's frame itself, judged against what
+    // that frame is, never against another sample of the run.
+    let expected = size
+        .split_once('x')
+        .and_then(|(width, height)| Some((width.parse().ok()?, height.parse().ok()?)))
+        .filter(|&(width, height): &(u32, u32)| width > 0 && height > 0)
+        .ok_or("static client: its Present names no source size")?;
+    let pixels = u64::from(expected.0) * u64::from(expected.1);
+    let expected_checksum = probe_frame_checksum(expected.0, expected.1).to_string();
+    if reference.get("region_pixels") != Some(pixels.to_string().as_str())
+        || checksum != expected_checksum
+    {
         return Err(format!(
-            "static client: its first presented region is not the client's frame: nonzero_rgb_pixels={} of region_pixels={} checksum={checksum}",
-            reference.get("nonzero_rgb_pixels").unwrap_or("?"),
+            "static client: its first presented region is not the client's frame: region_pixels={} checksum={checksum}, expected region_pixels={pixels} checksum={expected_checksum}",
             reference.get("region_pixels").unwrap_or("?"),
         ));
     }
@@ -461,6 +469,28 @@ fn verify_static_client(
         "sophia_qemu_output_unplug_verdict schema=1 status=static_content_retained size={size} checksum={checksum} baseline=stable target_after={}",
         after.get("target").unwrap_or("?")
     ))
+}
+
+/// The checksum the composition trace reports for the probe's first frame
+/// drawn 1:1 at `width`x`height`: the probe's fill (tools/probes/dri3_layout.c,
+/// buffer 0: four quadrant colours, split at `width / 2` and `height / 2`),
+/// composed opaque (alpha forced to 1.0), read back by glReadPixels as RGBA
+/// bytes from the region's bottom row up, and hashed 64-bit FNV-1a over every
+/// byte (sophia-renderer-native-egl pixel_evidence.rs).
+pub fn probe_frame_checksum(width: u32, height: u32) -> u64 {
+    const COLOURS: [u32; 4] = [0xff26_384a, 0xff4a_3826, 0xff30_4538, 0xff43_344a];
+    let mut checksum: u64 = 0xcbf2_9ce4_8422_2325;
+    for y in (0..height).rev() {
+        for x in 0..width {
+            let quadrant = usize::from(x >= width / 2) + 2 * usize::from(y >= height / 2);
+            let [_, red, green, blue] = COLOURS[quadrant].to_be_bytes();
+            for byte in [red, green, blue, 0xff] {
+                checksum ^= u64::from(byte);
+                checksum = checksum.wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        }
+    }
+    checksum
 }
 
 /// A region record's size, `WxH`, from its `target=WxH_X_Y`.
