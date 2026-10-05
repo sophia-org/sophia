@@ -239,46 +239,7 @@ fn synchronize_runtime_surface_chrome_style(
     runtime.set_surface_chrome_style(style)
 }
 
-fn capture_renderer_image_handoff(
-    runtime: &LiveProductionVisualRuntime,
-    native_scanout: &mut LiveProductionNativeScanout,
-) -> Result<sophia_backend_live::LiveProductionRendererImageHandoff, Box<dyn std::error::Error>> {
-    let retained = runtime.retained_renderer_image_ids();
-    native_scanout.export_renderer_image_handoff(&retained).inspect_err(|error| {
-        crate::session_eprintln!(
-            "sophia_live_renderer_handoff schema=1 status=failed phase=export_images failure_code={} retained_count={}",
-            crate::diagnostics::failure_code(error.as_ref()), retained.len(),
-        );
-    })
-}
-
-fn resume_native_scanout_from_scene(
-    runtime: &mut LiveProductionVisualRuntime,
-    native: &mut LiveProductionNativeScanout,
-    outputs: &[sophia_engine::HeadlessOutput],
-    scene: &mut LiveProductionCpuScene,
-    handoff: &mut Option<sophia_backend_live::LiveProductionRendererImageHandoff>,
-) -> Result<usize, Box<dyn std::error::Error>> {
-    // Images were captured per head of the retired owner. When a head went
-    // away, came back or changed connector meanwhile (a hotplug, or a monitor
-    // unplugged while the seat was away), the handoff has nowhere to restore
-    // into. It is dropped with the retained images, as the forced-detach
-    // branch does, and surfaces render again from their next frames. Every
-    // caller has retired the old owner, so nothing still samples them.
-    if let Some(captured) = handoff.as_ref()
-        && !native.renderer_image_handoff_fits(captured)
-    {
-        let captured = captured.len();
-        *handoff = None;
-        let discarded = runtime.discard_retained_renderer_images();
-        tracing::info!(
-            "sophia_live_renderer_image_handoff schema=1 status=discarded reason=heads_changed captured_images={captured} discarded_images={discarded}"
-        );
-    }
-    native_owner_retirement::restore_retained_handoff(handoff, |handoff| {
-        runtime.resume_native_scanout(native, outputs, scene, handoff)
-    })
-}
+include!("owner_loop/renderer_image_handoff.rs");
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum LiveOutputTopologyExecutionPhase {

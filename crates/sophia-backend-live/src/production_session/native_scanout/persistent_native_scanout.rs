@@ -73,7 +73,9 @@ pub use frame_damage::project_mirror_output_damage_snapshot;
 use frame_damage::{
     trace_native_head_retirement, trace_presented_mirror_head_damage, trace_presented_output_damage,
 };
-pub use renderer_handoff::LiveProductionRendererImageHandoff;
+pub use renderer_handoff::{
+    LiveProductionRendererImageHandoff, LiveProductionRendererImageRestore,
+};
 pub use renderer_images::{
     LiveProductionHeadCompositionFrame, live_topology_frame_renderer_image_requirements,
     validate_live_head_composition_frame_batch,

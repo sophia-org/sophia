@@ -127,7 +127,12 @@ fn every_list_of_a_locked_runtime_is_the_cover_alone() {
             .unwrap();
         assert!(only_the_cover(&retained, output.id, 3), "retained list");
         let recovery = runtime
-            .recovery_display_list_for_output(output.id, &committed, &runtime.presentation_order)
+            .recovery_display_list_for_output(
+                output.id,
+                &committed,
+                &runtime.presentation_order,
+                None,
+            )
             .unwrap();
         assert!(only_the_cover(&recovery, output.id, 3), "recovery list");
     }

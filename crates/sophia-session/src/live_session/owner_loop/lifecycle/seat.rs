@@ -69,7 +69,7 @@ if let Some(controller) = seat_controller.as_mut() {
                 match quiesced {
                     Ok(report) => {
                         native_evidence.observe_settlement(report.outcome.drained(), report.abandoned_scanouts);
-                        *suspended_renderer_images = match (runtime.as_ref(), native_scanout.as_mut())
+                        *suspended_renderer_images = match (runtime.as_mut(), native_scanout.as_mut())
                         {
                             (Some(runtime), Some(native)) => {
                                 Some(capture_renderer_image_handoff(runtime, native)?)

@@ -99,6 +99,7 @@ impl LiveProductionVisualRuntime {
         }
         self.displayed_surfaces
             .retain(|surface, _| !removed_surfaces.contains(surface));
+        self.source_availability.prune(&removed_surfaces);
         let preserve_gpu_scanout = live_production_should_preserve_gpu_output(
             native_scanout.is_some(),
             self.present_scheduler.has_in_flight(),
