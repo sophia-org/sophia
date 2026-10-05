@@ -1682,3 +1682,53 @@ Evidence: `t289-snapshot-reuse-01/LIVE-COMPARISON.json`, `LIVE-BASELINE.json`,
 `live-baseline-03` through `05`, `live-candidate-01` through `03`, and
 `LIVE-WORKLOAD-ADAPTER-06.json`. The production source remains the exact gated
 `ba763f0c4` content; result documentation does not change the installed binary.
+
+### SHM upload costs in the wmbench guest (2026-10-05)
+
+Two changes were implemented and measured separately. The fixed workload used
+wmbench `47fdb6b`, an unchanged benchmark bundle, 120 warmup and 300 measured
+frames, a 1160×680 client on a 1280×800 output, llvmpipe, four guest CPUs and
+3072 MiB. Each comparison used four pairs in BC CB CB BC order, then one profile
+per arm. The host desktop was logged out and other development work paused.
+This workload has no DMA-BUF snapshot captures; it measures the SHM/software
+path, not Kitty's hardware rendering path or laptop battery use.
+
+**Mapping retention is accepted and published as `2f3f6e9c6`.** The attached
+SHM segment retains its mapping across requests. Detach, replacement and client
+departure release the attachment's reference; pixmaps keep their own reference.
+Four lifetime regressions fail on the old implementation and pass with the
+change. The full isolated gate passed, and source review found no blockers.
+
+Sophia CPU seconds per 300 frames fell in every pair: 2.49→2.26, 2.49→2.22,
+2.51→2.21 and 2.48→2.24. The median fell from **2.49 to 2.23 seconds (10.4%)**.
+The attribution pair recorded 812,592→563,283 minor faults (30.7% fewer) and
+81→55 system CPU ticks at 100 Hz. The owner and software renderer sample counts
+were essentially unchanged. These results locate the saving in repeated SHM
+mapping work, rather than composition.
+
+**Whole-image copy reduction remains a local candidate, `b7f8074b6`.** It reuses
+the owned snapshot or converted buffer when the requested crop is the entire
+image, preserving validation and isolation from later client writes. Its full
+gate passed and source review found no blockers. Signing after the experiment
+produced the exact tested tree and measured Nix package.
+
+Against mapping retention alone, the CPU pairs were 2.22→2.18, 2.21→2.20,
+2.26→2.22 and 2.22→2.23 seconds. The median was 2.22→2.21, but the last pair
+reversed by one accounting tick. This **does not meet the predeclared requirement
+that all four pairs improve**. All ten guests passed their compatibility and
+frame-count checks; that validates the experiment, not a CPU saving. No extra
+trials were added and this candidate was not promoted.
+
+The copy attribution pair showed fewer X11-worker memmove samples (215→180),
+with owner memmove unchanged (111→112) and minor faults essentially unchanged.
+Software renderer threads still accounted for about half of Sophia's samples.
+These single profiles explain possible local savings but do not override the
+unprofiled result. The next investigation should target CPU composition and
+remaining owned-buffer clones on the accepted baseline, using this same workload
+and a bounded before/after comparison. t289 remains open.
+
+Evidence: `t289-shm-uploads-01/mapping-RESULT.txt`, `mapping-comparison-02`,
+`copy-RESULT.txt`, `copy-comparison`, and `copy-SIGNED-IDENTITY.json`. The first
+mapping comparison remains failed because its benchmark identity changed;
+it was excluded before the corrected, frozen-bundle comparison. No live install
+was performed as part of these SHM changes.
