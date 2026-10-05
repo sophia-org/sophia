@@ -14,7 +14,7 @@ pub(super) fn try_run(args: &[String]) -> Result<bool, Error> {
     };
     if !matches!(
         command,
-        "mark" | "inspect" | "keep" | "list" | "launches" | "stderr" | "_supervise"
+        "mark" | "inspect" | "keep" | "list" | "launches" | "stderr" | "cause" | "_supervise"
     ) {
         return Ok(false);
     }
@@ -133,6 +133,15 @@ pub(super) fn try_run(args: &[String]) -> Result<bool, Error> {
                 "incomplete_tail={} rotated or dropped records may be absent; queued bytes are not persistence acknowledgements",
                 records.incomplete_tail
             );
+        }
+        "cause" => {
+            if tail.len() != 1 {
+                return Err("usage: sophia session cause ID|latest".into());
+            }
+            match store.failure_cause(&tail[0])? {
+                Some(cause) => print!("{cause}"),
+                None => println!("no failure cause recorded"),
+            }
         }
         "stderr" => {
             use std::io::Write;
