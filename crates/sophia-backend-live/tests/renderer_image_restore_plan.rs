@@ -148,6 +148,24 @@ fn when_one_store_survives_the_overflow_is_reported_not_an_error() {
 }
 
 #[test]
+fn larger_optional_images_are_placed_first_so_a_feasible_scene_fits() {
+    // REVIEW-CODEX-05 R1: two same-GPU stores of 512 MiB, nothing demanded.
+    // Images 1 and 2 (200 MiB each) came from one store, image 3 (400 MiB)
+    // from the other. Placing by id spread the 200s and stranded the 400.
+    let sources = [
+        source(Some(1), &[(1, 200 * MIB), (2, 200 * MIB)]),
+        source(Some(1), &[(3, 400 * MIB)]),
+    ];
+    let stores = [store(Some(1)), store(Some(1))];
+    let plan = plan_live_renderer_image_restore_destinations(&sources, &stores, &[]).unwrap();
+    assert!(plan.unplaced.is_empty(), "{plan:?}");
+    assert_eq!(
+        imports(&plan.imports),
+        vec![(0, 3, 1), (1, 1, 0), (1, 2, 0)]
+    );
+}
+
+#[test]
 fn a_demand_that_does_not_fit_is_refused_and_the_image_still_kept_elsewhere() {
     let sources = [source(Some(1), &[(1, 400 * MIB)])];
     let full = LiveRendererImageRestoreStore {
@@ -194,9 +212,10 @@ fn a_refused_import_has_the_other_snapshots_to_try_same_device_first() {
 
 #[test]
 fn an_unknown_device_is_never_the_same_device() {
-    // Neither source is known to share the store's device, so source order
-    // decides; an unknown identity on both sides is not a match.
-    let sources = [source(None, &[(1, MIB)]), source(Some(5), &[(1, MIB)])];
+    // An unknown destination shares a device with neither source, so source
+    // order decides. The known source comes first: a planner that wrongly
+    // matched None with None would pick the second.
+    let sources = [source(Some(5), &[(1, MIB)]), source(None, &[(1, MIB)])];
     let stores = [store(None)];
     let plan =
         plan_live_renderer_image_restore_destinations(&sources, &stores, &[(0, image(1))]).unwrap();

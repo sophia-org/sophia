@@ -53,6 +53,11 @@ pub struct LiveRendererImageRestorePlan {
 
 /// Plans the imports for a changed head set. `demand` names, by store index,
 /// the images each store's first frames sample; duplicates are one demand.
+///
+/// The plan is advice. Sizes are the sources' and a destination may charge
+/// more (pitch, pool, bridge); the store's own admission decides. An image
+/// the plan leaves unplaced still owns its snapshots: the caller keeps them
+/// rather than treating the plan as proof that the image cannot be held.
 pub fn plan_live_renderer_image_restore_destinations<D: Copy + Eq>(
     sources: &[LiveRendererImageRestoreSource<D>],
     stores: &[LiveRendererImageRestoreStore<D>],
@@ -128,10 +133,17 @@ pub fn plan_live_renderer_image_restore_destinations<D: Copy + Eq>(
             plan.refused_demand.push((store, image));
         }
     }
-    for &image in images.keys() {
-        if owned.contains(&image) {
-            continue;
-        }
+    // Largest first, then by id: placing small images first can strand a
+    // large one a store had room for (two 200 MiB images spread over two
+    // stores leave neither the 400 MiB the third needs). This is a planning
+    // order, not a proof: an image left unplaced is not shown not to fit.
+    let mut optional = images
+        .iter()
+        .filter(|(image, _)| !owned.contains(*image))
+        .map(|(&image, &(bytes, _))| (std::cmp::Reverse(bytes), image))
+        .collect::<Vec<_>>();
+    optional.sort_unstable();
+    for (_, image) in optional {
         let holders = &images[&image].1;
         // Same device as a snapshot of the image first, then the most room,
         // then the lowest index, so equal inputs give equal plans.
