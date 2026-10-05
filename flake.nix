@@ -108,7 +108,7 @@
       workspaceCommon = common // {
         pname = "sophia-workspace";
         cargoExtraArgs = "--locked";
-        nativeBuildInputs = common.nativeBuildInputs ++ [ pkgs.python3 pkgs.git ];
+        nativeBuildInputs = common.nativeBuildInputs ++ [ pkgs.python3 pkgs.git pkgs.util-linux ];
         buildInputs = common.buildInputs ++ [ pkgs.libdrm ];
       };
       workspaceArgs = workspaceCommon // {

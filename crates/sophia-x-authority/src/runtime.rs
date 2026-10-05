@@ -230,12 +230,12 @@ pub struct XAuthorityRuntime {
     font_catalog: crate::XFontCatalog,
     shm_pixmaps: BTreeMap<crate::XResourceId, XShmPixmapBinding>,
     shm_mappings: BTreeMap<u32, Weak<sophia_sysv_shm::ClientMapping>>,
-    /// The live mapping for each descriptor-backed segment.
+    /// The live mapping for each attached segment (SysV is mapped lazily).
     ///
     /// Held here rather than on the segment record because a record is cloned
     /// and compared, and a mapping is neither. Dropped when the segment is
     /// detached or its client goes away, which is what unmaps it.
-    shm_descriptor_mappings: BTreeMap<crate::XResourceId, Arc<sophia_sysv_shm::ClientMapping>>,
+    shm_segment_mappings: BTreeMap<crate::XResourceId, Arc<sophia_sysv_shm::ClientMapping>>,
     /// Descriptors a `CreateSegment` reply still owes its client, held only
     /// until the socket layer puts them on the wire.
     shm_reply_descriptors: BTreeMap<crate::XResourceId, std::os::fd::OwnedFd>,
@@ -384,7 +384,7 @@ impl Default for XAuthorityRuntime {
             font_catalog: crate::XFontCatalog::builtin_only(),
             shm_pixmaps: Default::default(),
             shm_mappings: Default::default(),
-            shm_descriptor_mappings: Default::default(),
+            shm_segment_mappings: Default::default(),
             shm_reply_descriptors: Default::default(),
             dri3_pixmaps: Default::default(),
             next_dma_buf_handle: 1,

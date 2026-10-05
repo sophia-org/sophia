@@ -56,7 +56,12 @@ impl XAuthorityRuntime {
                  read_only,
                  generation,
              )
-             .map_err(Into::into)
+             .map_err(XAuthorityRuntimeError::from)?;
+         // The runtime permits replacing a record. Its old mapping cannot
+         // answer requests for the new backing, even with the same XID.
+         self.shm_segment_mappings.remove(&segment);
+         self.shm_mappings.retain(|_, mapping| mapping.strong_count() != 0);
+         Ok(())
      }
 
      /// Records a segment the client named with a descriptor.
@@ -81,7 +86,8 @@ impl XAuthorityRuntime {
                  generation,
              )
              .map_err(XAuthorityRuntimeError::from)?;
-         self.shm_descriptor_mappings.insert(segment, mapping);
+         self.shm_segment_mappings.insert(segment, mapping);
+         self.shm_mappings.retain(|_, mapping| mapping.strong_count() != 0);
          Ok(())
      }
 
@@ -129,23 +135,26 @@ impl XAuthorityRuntime {
          segment: crate::XResourceId,
      ) -> Result<std::sync::Arc<sophia_sysv_shm::ClientMapping>, XAuthorityRuntimeError> {
          let record = self.shm_segments.lookup(namespace, segment)?;
-         match record.backing {
-             crate::XShmBacking::Descriptor => self
-                 .shm_descriptor_mappings
-                 .get(&segment)
-                 .cloned()
-                 .ok_or(XAuthorityRuntimeError::UnknownResource),
+         if let Some(mapping) = self.shm_segment_mappings.get(&segment) {
+             return Ok(Arc::clone(mapping));
+         }
+         let mapping = match record.backing {
+             crate::XShmBacking::Descriptor => return Err(XAuthorityRuntimeError::UnknownResource),
              crate::XShmBacking::Sysv(shmid) => {
                  if let Some(mapping) = self.shm_mappings.get(&shmid).and_then(Weak::upgrade) {
-                     return Ok(mapping);
+                     mapping
+                 } else {
+                     let mapping = sophia_sysv_shm::ClientMapping::attach_sysv(shmid)
+                         .map(Arc::new)
+                         .map_err(|_| XAuthorityRuntimeError::InvalidResource)?;
+                     self.shm_mappings.insert(shmid, Arc::downgrade(&mapping));
+                     mapping
                  }
-                 let mapping = sophia_sysv_shm::ClientMapping::attach_sysv(shmid)
-                     .map(std::sync::Arc::new)
-                     .map_err(|_| XAuthorityRuntimeError::InvalidResource)?;
-                 self.shm_mappings.insert(shmid, Arc::downgrade(&mapping));
-                 Ok(mapping)
              }
-         }
+         };
+         // Requests borrow the mapping; the attachment owns it between them.
+         self.shm_segment_mappings.insert(segment, Arc::clone(&mapping));
+         Ok(mapping)
      }
  
      pub fn detach_shm_segment(
@@ -157,7 +166,8 @@ impl XAuthorityRuntime {
          // Dropping the mapping is what unmaps it. A pixmap still bound to the
          // same memory holds its own reference, so this detaches the segment
          // without pulling the memory out from under it.
-         self.shm_descriptor_mappings.remove(&segment);
+         self.shm_segment_mappings.remove(&segment);
+         self.shm_mappings.retain(|_, mapping| mapping.strong_count() != 0);
          Ok(())
      }
  
