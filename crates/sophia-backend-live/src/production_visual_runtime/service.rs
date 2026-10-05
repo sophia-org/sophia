@@ -316,7 +316,8 @@ impl LiveProductionVisualRuntime {
             outputs,
             presentation_queued,
             software_frame_waiting: software_frame_waiting.is_some(),
-            preparation_pending: native_scanout.cold_preparation_ready(),
+            preparation_pending: native_scanout.cold_preparation_ready()
+                || self.pending_renderer_images_due(native_scanout),
         })
     }
 

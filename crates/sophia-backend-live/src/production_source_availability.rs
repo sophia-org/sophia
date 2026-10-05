@@ -202,3 +202,30 @@ impl LiveSourceAvailability {
         self.entries.keys().copied()
     }
 }
+
+/// When pending renderer images are offered a store again (REVIEW-CODEX-06
+/// R1). A deferral behind GPU work in flight is retried on the owner's short
+/// service until it settles; a store that had no room waits until storage
+/// progress changes, so a store that stays full is not asked again and keeps
+/// the owner asleep. The token is recorded after each attempt, so an attempt
+/// never wakes itself.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LiveRendererImageRetryGate {
+    token: Option<u64>,
+    busy: bool,
+}
+
+impl LiveRendererImageRetryGate {
+    pub fn due(&self, token: u64) -> bool {
+        self.busy || self.token != Some(token)
+    }
+
+    pub fn observe(&mut self, token_after: u64, busy: bool) {
+        self.token = Some(token_after);
+        self.busy = busy;
+    }
+
+    pub fn clear(&mut self) {
+        *self = Self::default();
+    }
+}

@@ -1,7 +1,9 @@
 #![cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 //! Which retained surfaces have no drawable source, where, and why (t306).
 
-use sophia_backend_live::{LiveSourceAvailability, LiveSourceUnavailableReason};
+use sophia_backend_live::{
+    LiveRendererImageRetryGate, LiveSourceAvailability, LiveSourceUnavailableReason,
+};
 use sophia_protocol::{OutputId, SurfaceId};
 use sophia_renderer_live::LiveRendererImageId;
 use std::collections::BTreeSet;
@@ -201,4 +203,29 @@ fn a_rebound_topology_drops_output_scopes_but_keeps_every_all_scope_entry() {
     assert!(availability.available_on(surface(1), output(2), None));
     assert!(!availability.available_on(surface(2), output(1), None));
     assert!(!availability.available_on(surface(3), output(1), None));
+}
+
+#[test]
+fn a_full_store_sleeps_until_storage_changes_and_busy_work_is_retried() {
+    let mut gate = LiveRendererImageRetryGate::default();
+    // Never tried: due.
+    assert!(gate.due(7));
+    // Deferred because the store had no room, at storage progress 7: not due
+    // again until progress moves, however many passes the owner makes.
+    gate.observe(7, false);
+    for _ in 0..3 {
+        assert!(!gate.due(7));
+    }
+    // An eviction or a released allocation changes progress at the same
+    // native retirement count: due.
+    assert!(gate.due(8));
+    // Deferred behind GPU work in flight: due on every pass until it settles.
+    gate.observe(8, true);
+    assert!(gate.due(8));
+    // The attempt recorded the progress it left behind, so it does not wake
+    // itself; only a new change or a busy deferral does.
+    gate.observe(9, false);
+    assert!(!gate.due(9));
+    gate.clear();
+    assert!(gate.due(9));
 }

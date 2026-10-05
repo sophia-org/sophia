@@ -307,12 +307,28 @@ impl LiveProductionVisualRuntime {
         &self,
         candidate: &LivePolicyPresentation,
     ) -> Result<(), LivePolicyPresentationRefusal> {
-        match candidate.sources().find(|source| {
+        if let Some(source) = candidate.sources().find(|source| {
             ![self.displayed_surface_view(), self.committed_surfaces()]
                 .iter()
                 .all(|scene| scene.iter().any(|state| state.surface == *source))
         }) {
-            Some(source) => Err(LivePolicyPresentationRefusal::MissingSource { source }),
+            return Err(LivePolicyPresentationRefusal::MissingSource { source });
+        }
+        // Committed is not drawable: a DMA-BUF source whose retained image is
+        // unavailable on an instance's output has nothing to sample there, and
+        // the whole candidate is refused as for a missing source (t306).
+        match candidate.presentation.instances.iter().find(|instance| {
+            !self
+                .source_availability
+                .available_on(instance.source, instance.output, None)
+                && self.committed_surfaces().iter().any(|state| {
+                    state.surface == instance.source
+                        && matches!(state.buffer(), BufferSource::DmaBuf { .. })
+                })
+        }) {
+            Some(instance) => Err(LivePolicyPresentationRefusal::MissingSource {
+                source: instance.source,
+            }),
             None => Ok(()),
         }
     }
@@ -504,6 +520,7 @@ impl LiveProductionVisualRuntime {
         // device failure must retain its ordinary fatal classification.
         if matches!(refusal, crate::LivePreviewImageRefusal::Renderer { detail, .. }
             if !matches!(detail, crate::LiveRendererScanoutBufferExportDetail::RendererImageStoreFull
+                | crate::LiveRendererScanoutBufferExportDetail::RendererImageTransferBusy
                 | crate::LiveRendererScanoutBufferExportDetail::InvalidRendererImageId))
         {
             return false;

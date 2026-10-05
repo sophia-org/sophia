@@ -900,5 +900,8 @@ fn reduced_native_owned_scanout_buffer_export_detail(
         sophia_renderer_native_egl::NativeGbmScanoutBufferExportDetail::RendererImageStoreFull => {
             LiveRendererScanoutBufferExportDetail::RendererImageStoreFull
         }
+        sophia_renderer_native_egl::NativeGbmScanoutBufferExportDetail::RendererImageTransferBusy => {
+            LiveRendererScanoutBufferExportDetail::RendererImageTransferBusy
+        }
     }
 }

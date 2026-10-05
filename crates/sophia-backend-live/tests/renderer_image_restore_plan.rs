@@ -4,7 +4,8 @@
 //! many imports there are.
 
 use sophia_backend_live::{
-    LiveRendererImageRestoreImport, LiveRendererImageRestoreSource, LiveRendererImageRestoreStore,
+    LiveRendererImageImport, LiveRendererImageRestoreImport, LiveRendererImageRestoreSource,
+    LiveRendererImageRestoreStore, classify_live_renderer_image_import,
     live_renderer_image_handoff_same_devices, plan_live_renderer_image_restore_destinations,
 };
 use sophia_renderer_live::LiveRendererImageId;
@@ -252,4 +253,54 @@ fn a_plan_against_inconsistent_inputs_is_refused() {
             "{sources:?} {demand:?}"
         );
     }
+}
+
+#[test]
+fn only_a_refused_import_tries_another_snapshot_and_busy_is_told_from_full() {
+    use sophia_renderer_live::LiveRendererScanoutBufferExportDetail as D;
+    let classify = |detail| classify_live_renderer_image_import(Err(detail));
+    for detail in [
+        D::DmaBufImageCreateFailed,
+        D::DmaBufImageBindFailed,
+        D::DmaBufImportFailed,
+    ] {
+        assert_eq!(classify(detail), LiveRendererImageImport::Refused);
+    }
+    // A store with no room waits for storage to change.
+    assert_eq!(
+        classify(D::RendererImageStoreFull),
+        LiveRendererImageImport::Deferred { busy: false }
+    );
+    // GPU work in flight is retried soon (REVIEW-CODEX-06 R1, -07).
+    for detail in [
+        D::RendererImageTransferBusy,
+        D::WorkerPending,
+        D::WorkerQueueFull,
+    ] {
+        assert_eq!(
+            classify(detail),
+            LiveRendererImageImport::Deferred { busy: true }
+        );
+    }
+    for detail in [
+        D::EglMakeCurrentFailed,
+        D::InvalidRendererImageId,
+        D::WorkerDisconnected,
+    ] {
+        assert_eq!(classify(detail), LiveRendererImageImport::Failed(detail));
+    }
+}
+
+#[test]
+fn an_existing_id_is_reported_for_confirmation_not_counted_as_placed() {
+    // REVIEW-CODEX-06 R4: false means the store already had the id, possibly
+    // only staged; the caller confirms promotion before counting it.
+    assert_eq!(
+        classify_live_renderer_image_import(Ok(false)),
+        LiveRendererImageImport::Existing
+    );
+    assert_eq!(
+        classify_live_renderer_image_import(Ok(true)),
+        LiveRendererImageImport::Placed
+    );
 }

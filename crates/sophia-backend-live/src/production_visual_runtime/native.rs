@@ -950,6 +950,7 @@ pub(super) fn check_frame_service_submission(
                     Some(
                         crate::LiveRendererScanoutBufferExportDetail::InvalidRendererImageId
                             | crate::LiveRendererScanoutBufferExportDetail::RendererImageStoreFull
+                            | crate::LiveRendererScanoutBufferExportDetail::RendererImageTransferBusy
                     )
                 ) =>
         {

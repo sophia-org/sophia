@@ -57,7 +57,7 @@ impl LiveProductionVisualRuntime {
             displayed_surfaces: BTreeMap::new(),
             source_availability: crate::LiveSourceAvailability::default(),
             pending_renderer_handoff: None,
-            pending_renderer_retry_retirements: None,
+            pending_renderer_retry: crate::LiveRendererImageRetryGate::default(),
             presentation_order: Vec::new(),
             surface_outputs: BTreeMap::new(),
             geometry_routed_surfaces: BTreeSet::new(),

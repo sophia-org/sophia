@@ -420,9 +420,8 @@ pub struct LiveProductionVisualRuntime {
     /// Snapshots of retained images no store holds yet, kept from the last
     /// resume until a store takes them or the next handoff absorbs them.
     pending_renderer_handoff: Option<crate::LiveProductionRendererImageHandoff>,
-    /// Native retirements when pending images were last offered a store, so
-    /// a retry waits for progress instead of repeating every pass.
-    pending_renderer_retry_retirements: Option<usize>,
+    /// When pending images are next offered a store.
+    pending_renderer_retry: crate::LiveRendererImageRetryGate,
     presentation_order: Vec<SurfaceId>,
     surface_outputs: BTreeMap<SurfaceId, OutputId>,
     geometry_routed_surfaces: BTreeSet<SurfaceId>,

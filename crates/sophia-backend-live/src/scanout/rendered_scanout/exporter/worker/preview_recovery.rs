@@ -19,7 +19,11 @@ impl NativeGbmRendererWorker {
         match self.poll() {
             WorkerPoll::Pending { .. } => Ok(false),
             WorkerPoll::HardStalled(_) | WorkerPoll::Stalled { .. } => Err(D::WorkerStalled),
-            WorkerPoll::Failed(D::InvalidRendererImageId | D::RendererImageStoreFull) => Ok(true),
+            WorkerPoll::Failed(
+                D::InvalidRendererImageId
+                | D::RendererImageStoreFull
+                | D::RendererImageTransferBusy,
+            ) => Ok(true),
             WorkerPoll::Failed(detail) => Err(detail),
             WorkerPoll::Exported(lease) => {
                 if lease.correlation().native != Some(expected) {

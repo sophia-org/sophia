@@ -269,6 +269,8 @@ pub enum LiveRendererScanoutBufferExportDetail {
     DmaBufImportCacheFull,
     RendererImageStoreFull,
     RetainedBufferMissing,
+    /// Every image bridge is still behind a GPU completion (transient).
+    RendererImageTransferBusy,
 }
 
 impl std::fmt::Display for LiveRendererScanoutBufferExportDetail {

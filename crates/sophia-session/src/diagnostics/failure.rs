@@ -103,6 +103,10 @@ const RENDERER_CODES: &[(Detail, &str)] = &[
         "renderer_renderer_image_store_full",
     ),
     (
+        Detail::RendererImageTransferBusy,
+        "renderer_renderer_image_transfer_busy",
+    ),
+    (
         Detail::RetainedBufferMissing,
         "renderer_retained_buffer_missing",
     ),

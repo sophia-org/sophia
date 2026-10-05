@@ -39,14 +39,27 @@ impl LiveProductionVisualRuntime {
     /// The snapshots of retained images no store holds, for the next handoff
     /// to absorb. Images no longer retained are dropped with their surfaces.
     pub fn take_pending_renderer_handoff(&mut self) -> Option<LiveProductionRendererImageHandoff> {
-        self.pending_renderer_retry_retirements = None;
-        let mut handoff = self.pending_renderer_handoff.take()?;
+        self.prune_pending_renderer_handoff();
+        self.pending_renderer_retry.clear();
+        self.pending_renderer_handoff.take()
+    }
+
+    /// Drops pending snapshots of images no surface retains any more, at any
+    /// time, gate or not; an empty residual and its gate go with them.
+    fn prune_pending_renderer_handoff(&mut self) {
+        let Some(handoff) = self.pending_renderer_handoff.as_mut() else {
+            return;
+        };
         let retained = self
-            .retained_renderer_image_ids()
-            .into_iter()
+            .displayed_surfaces
+            .values()
+            .map(|displayed| displayed.layer.image_id)
             .collect::<BTreeSet<_>>();
         handoff.retain_only(&retained);
-        (!handoff.is_empty()).then_some(handoff)
+        if handoff.is_empty() {
+            self.pending_renderer_handoff = None;
+            self.pending_renderer_retry.clear();
+        }
     }
 
     /// Returns snapshots taken for a handoff whose export then failed.
@@ -60,36 +73,46 @@ impl LiveProductionVisualRuntime {
     }
 
     /// Keeps the snapshots of images a resume left without a store, after the
-    /// replacement published. `retirements` is the owner's count then, so the
-    /// first retry waits for progress.
+    /// replacement published. `progress` is the owner's storage progress then
+    /// and `busy` whether a deferral waited on GPU work, so the first retry
+    /// waits for the right change.
     pub fn keep_pending_renderer_handoff(
         &mut self,
         handoff: LiveProductionRendererImageHandoff,
-        retirements: usize,
+        progress: u64,
+        busy: bool,
     ) {
         if !handoff.is_empty() {
             self.pending_renderer_handoff = Some(handoff);
-            self.pending_renderer_retry_retirements = Some(retirements);
+            self.pending_renderer_retry.observe(progress, busy);
         }
     }
 
-    /// Offers pending snapshots to the stores again, once per native
-    /// retirement count: a store that was full or busy can only have changed
-    /// after some work retired, so with no progress nothing repeats.
+    /// Whether pending images are due another offer: the owner then services
+    /// native work on its short pacing instead of idling.
+    pub fn pending_renderer_images_due(
+        &self,
+        native_scanout: &LiveProductionNativeScanout,
+    ) -> bool {
+        self.pending_renderer_handoff.is_some()
+            && self
+                .pending_renderer_retry
+                .due(native_scanout.renderer_storage_progress())
+    }
+
+    /// Offers pending snapshots to the stores again when the retry gate says
+    /// something may have changed (REVIEW-CODEX-06 R1).
     pub fn place_pending_renderer_images(
         &mut self,
         native_scanout: &mut LiveProductionNativeScanout,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        if self.pending_renderer_handoff.is_none()
-            || self.pending_renderer_retry_retirements == Some(native_scanout.retirements)
-        {
+        self.prune_pending_renderer_handoff();
+        if !self.pending_renderer_images_due(native_scanout) {
             return Ok(());
         }
-        self.pending_renderer_retry_retirements = Some(native_scanout.retirements);
-        let Some(mut handoff) = self.take_pending_renderer_handoff() else {
+        let Some(mut handoff) = self.pending_renderer_handoff.take() else {
             return Ok(());
         };
-        self.pending_renderer_retry_retirements = Some(native_scanout.retirements);
         let restore = match native_scanout.place_pending_renderer_images(&handoff) {
             Ok(restore) => restore,
             Err(error) => {
@@ -97,6 +120,8 @@ impl LiveProductionVisualRuntime {
                 return Err(error);
             }
         };
+        self.pending_renderer_retry
+            .observe(native_scanout.renderer_storage_progress(), restore.busy);
         for image in &restore.restored {
             if !self.source_availability.image_placed(*image).is_empty() {
                 self.ordinary_repaints_pending
@@ -104,7 +129,9 @@ impl LiveProductionVisualRuntime {
             }
         }
         handoff.retain_only(&restore.pending);
-        if !handoff.is_empty() {
+        if handoff.is_empty() {
+            self.pending_renderer_retry.clear();
+        } else {
             self.pending_renderer_handoff = Some(handoff);
         }
         if !restore.restored.is_empty() {

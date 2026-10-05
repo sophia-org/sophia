@@ -28,6 +28,10 @@ pub struct LiveProductionRendererImageRestore {
     pub restored: BTreeSet<Image>,
     pub pending: BTreeSet<Image>,
     pub unavailable: BTreeSet<(Image, OutputId)>,
+    /// Some import waited on GPU work still in flight (a busy bridge or
+    /// worker), which may finish without any store changing; a retry is due
+    /// soon rather than on the next storage change.
+    pub busy: bool,
 }
 
 impl LiveProductionRendererImageHandoff {
@@ -89,25 +93,23 @@ fn validate_renderer_image_handoff_ids(
 enum ImportAttempt {
     Placed,
     Refused,
-    Deferred,
+    /// `busy`: behind GPU work in flight; otherwise the store had no room.
+    Deferred {
+        busy: bool,
+    },
 }
 
-fn classify_import(
-    result: Result<bool, sophia_renderer_live::LiveRendererScanoutBufferExportDetail>,
+fn import_attempt(
+    import: crate::LiveRendererImageImport,
 ) -> Result<ImportAttempt, Box<dyn std::error::Error>> {
-    use sophia_renderer_live::LiveRendererScanoutBufferExportDetail as D;
-    match result {
-        // `false` is a store that already held the image.
-        Ok(_) => Ok(ImportAttempt::Placed),
-        Err(D::DmaBufImageCreateFailed | D::DmaBufImageBindFailed | D::DmaBufImportFailed) => {
-            Ok(ImportAttempt::Refused)
+    match import {
+        crate::LiveRendererImageImport::Placed => Ok(ImportAttempt::Placed),
+        crate::LiveRendererImageImport::Refused => Ok(ImportAttempt::Refused),
+        crate::LiveRendererImageImport::Deferred { busy } => Ok(ImportAttempt::Deferred { busy }),
+        crate::LiveRendererImageImport::Failed(detail) => Err(detail.into()),
+        crate::LiveRendererImageImport::Existing => {
+            Err("renderer-image import left an existing id unconfirmed".into())
         }
-        // Store-full also stands for bridges or pooled storage still behind
-        // GPU completions, which is not a lasting refusal (REVIEW-CODEX-05 R2).
-        Err(D::RendererImageStoreFull | D::WorkerPending | D::WorkerQueueFull) => {
-            Ok(ImportAttempt::Deferred)
-        }
-        Err(detail) => Err(detail.into()),
     }
 }
 
@@ -211,13 +213,77 @@ impl LiveProductionNativeScanout {
         if !self.exporters[index].renderer_image_owner_initialized() {
             return Err("replacement renderer image owner is not initialized".into());
         }
-        let attempt = classify_import(
+        let import = crate::classify_live_renderer_image_import(
             self.exporters[index].restore_promoted_renderer_image(snapshot.try_clone()?),
-        )?;
+        );
+        // As the cold path does: an existing id counts only once promoted; a
+        // staged one is waited for, never claimed (REVIEW-CODEX-06 R4).
+        let attempt = match import {
+            crate::LiveRendererImageImport::Existing => {
+                match self.exporters[index].try_export_promoted_renderer_image(snapshot.image_id())
+                {
+                    Ok(Some(_)) => ImportAttempt::Placed,
+                    Ok(None) => ImportAttempt::Deferred { busy: true },
+                    Err(detail) => {
+                        import_attempt(crate::classify_live_renderer_image_import(Err(detail)))?
+                    }
+                }
+            }
+            import => import_attempt(import)?,
+        };
         if matches!(attempt, ImportAttempt::Placed) {
             self.record_image_owner(index, snapshot.image_id());
         }
         Ok(attempt)
+    }
+
+    /// Changes when a store may have room again or deferred GPU work may have
+    /// finished, page flip or not: native retirements, and each store's
+    /// snapshot promotions, rollbacks and evictions and live entries and
+    /// bytes. A retry gated on it waits for real progress instead of
+    /// repeating, and is not held back by a still screen (REVIEW-CODEX-06 R1).
+    pub fn renderer_storage_progress(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.retirements.hash(&mut hasher);
+        for exporter in &self.exporters {
+            let stats = exporter.persistent_render_stats();
+            // A replaced store is new storage even with equal counters.
+            exporter.image_store_identity().hash(&mut hasher);
+            (
+                stats.snapshot_promotions,
+                stats.snapshot_rollbacks,
+                stats.snapshot_evictions,
+                stats.snapshot_live_entries,
+                stats.snapshot_live_bytes,
+            )
+                .hash(&mut hasher);
+        }
+        hasher.finish()
+    }
+
+    /// Imports `image` into the store at head `index`, from each snapshot in
+    /// `sources` in turn until one is not refused.
+    fn import_into_store(
+        &mut self,
+        handoff: &LiveProductionRendererImageHandoff,
+        index: usize,
+        image: Image,
+        sources: &[usize],
+    ) -> Result<ImportAttempt, Box<dyn std::error::Error>> {
+        let mut outcome = ImportAttempt::Refused;
+        for &source in sources {
+            let snapshot = handoff.heads[source]
+                .snapshots
+                .iter()
+                .find(|snapshot| snapshot.image_id() == image)
+                .ok_or("renderer-image restore plan names a snapshot the handoff lacks")?;
+            outcome = self.import_renderer_image(index, snapshot)?;
+            if !matches!(outcome, ImportAttempt::Refused) {
+                break;
+            }
+        }
+        Ok(outcome)
     }
 
     /// Restores a retired owner's renderer images into this replacement.
@@ -296,7 +362,8 @@ impl LiveProductionNativeScanout {
                     }
                     // A full or busy store may take it later: the image stays
                     // pending, and the outputs that sample it wait for it.
-                    ImportAttempt::Deferred => {
+                    ImportAttempt::Deferred { busy } => {
+                        restore.busy |= busy;
                         let output = self.heads[index].output.id;
                         if demand
                             .get(&output)
@@ -394,25 +461,61 @@ impl LiveProductionNativeScanout {
 
         let mut restore = LiveProductionRendererImageRestore::default();
         let mut missing: BTreeSet<(usize, Image)> = plan.refused_demand.iter().copied().collect();
+        let demanded = planned_demand.iter().copied().collect::<BTreeSet<_>>();
+        let mut held: BTreeSet<(usize, Image)> = BTreeSet::new();
         for import in &plan.imports {
-            let index = store_heads[&store_keys[import.store]];
-            let mut outcome = ImportAttempt::Refused;
-            for source in std::iter::once(import.source).chain(import.alternates.iter().copied()) {
-                let snapshot = handoff.heads[source]
-                    .snapshots
-                    .iter()
-                    .find(|snapshot| snapshot.image_id() == import.image)
-                    .ok_or("renderer-image restore plan names a snapshot the handoff lacks")?;
-                outcome = self.import_renderer_image(index, snapshot)?;
-                if !matches!(outcome, ImportAttempt::Refused) {
-                    break;
+            let sources = std::iter::once(import.source)
+                .chain(import.alternates.iter().copied())
+                .collect::<Vec<_>>();
+            let mut outcome = self.import_into_store(
+                handoff,
+                store_heads[&store_keys[import.store]],
+                import.image,
+                &sources,
+            )?;
+            let mut store = import.store;
+            // A store the plan only chose to keep the image in may be fuller
+            // than planned (the plan assumes free stores). The store's own
+            // admission decides: try the others, same device first, until
+            // one keeps it (REVIEW-CODEX-06 R2). Demanded destinations are
+            // fixed; they are where the image is sampled.
+            if !matches!(outcome, ImportAttempt::Placed)
+                && !demanded.contains(&(import.store, import.image))
+            {
+                let device = stores[import.store].device;
+                let mut others = (0..stores.len())
+                    .filter(|other| {
+                        *other != import.store && !held.contains(&(*other, import.image))
+                    })
+                    .collect::<Vec<_>>();
+                others.sort_by_key(|other| {
+                    let same =
+                        matches!((stores[*other].device, device), (Some(a), Some(b)) if a == b);
+                    (!same, *other)
+                });
+                for other in others {
+                    outcome = self.import_into_store(
+                        handoff,
+                        store_heads[&store_keys[other]],
+                        import.image,
+                        &sources,
+                    )?;
+                    if matches!(outcome, ImportAttempt::Placed) {
+                        store = other;
+                        break;
+                    }
                 }
             }
             match outcome {
                 ImportAttempt::Placed => {
+                    held.insert((store, import.image));
                     restore.restored.insert(import.image);
                 }
-                ImportAttempt::Refused | ImportAttempt::Deferred => {
+                ImportAttempt::Refused => {
+                    missing.insert((import.store, import.image));
+                }
+                ImportAttempt::Deferred { busy } => {
+                    restore.busy |= busy;
                     missing.insert((import.store, import.image));
                 }
             }

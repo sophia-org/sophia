@@ -303,3 +303,23 @@ fn one_output_refusing_leaves_another_outputs_restored_copy() {
     assert_eq!(owners[&image], BTreeSet::from([11, 12]));
     assert!(demand.is_empty());
 }
+
+#[test]
+fn a_busy_bridge_is_retried_on_the_next_pass_and_not_gated() {
+    use crate::LiveRendererScanoutBufferExportDetail as D;
+    let image = Image::from_raw(1);
+    let stores = [store(0, 0, false), store(1, 0, false)];
+    let mut owners = BTreeMap::from([(image, BTreeSet::from([11]))]);
+    let mut demand = BTreeMap::from([(image, BTreeSet::from([stores[1].output]))]);
+    let mut gate = BTreeMap::new();
+    prepare_cold_images(&mut demand, &mut owners, &stores, &mut gate, 5, |_, _, _| {
+        Err(D::RendererImageTransferBusy)
+    })
+    .unwrap();
+    assert!(gate.is_empty());
+    // Still owed and ready at the same storage progress: the owner's short
+    // service retries while the GPU work is in flight.
+    assert!(cold_preparation_ready(&demand, &owners, &stores, &gate, 5));
+    prepare_cold_images(&mut demand, &mut owners, &stores, &mut gate, 5, |_, _, _| Ok(())).unwrap();
+    assert!(demand.is_empty());
+}

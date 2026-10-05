@@ -176,3 +176,41 @@ pub fn live_renderer_image_handoff_same_devices<D: Copy + Eq>(
         .into_iter()
         .all(|pair| matches!(pair, (Some(retired), Some(replacement)) if retired == replacement))
 }
+
+/// How one import of a snapshot into a store ended (t306).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveRendererImageImport {
+    Placed,
+    /// The store already had the id, perhaps only staged; promotion must be
+    /// confirmed before it counts.
+    Existing,
+    /// The store's device refused the snapshot; another snapshot may do.
+    Refused,
+    /// Not now: `busy` is GPU work still in flight, retried soon; otherwise
+    /// the store had no room and waits for storage to change.
+    Deferred {
+        busy: bool,
+    },
+    /// Not an ordinary cost of a topology change.
+    Failed(sophia_renderer_live::LiveRendererScanoutBufferExportDetail),
+}
+
+pub fn classify_live_renderer_image_import(
+    result: Result<bool, sophia_renderer_live::LiveRendererScanoutBufferExportDetail>,
+) -> LiveRendererImageImport {
+    use sophia_renderer_live::LiveRendererScanoutBufferExportDetail as D;
+    match result {
+        Ok(true) => LiveRendererImageImport::Placed,
+        Ok(false) => LiveRendererImageImport::Existing,
+        Err(D::DmaBufImageCreateFailed | D::DmaBufImageBindFailed | D::DmaBufImportFailed) => {
+            LiveRendererImageImport::Refused
+        }
+        // Store-full may also be pooled storage still charged behind GPU
+        // completions the renderer reports as busy; what remains full waits.
+        Err(D::RendererImageStoreFull) => LiveRendererImageImport::Deferred { busy: false },
+        Err(D::RendererImageTransferBusy | D::WorkerPending | D::WorkerQueueFull) => {
+            LiveRendererImageImport::Deferred { busy: true }
+        }
+        Err(detail) => LiveRendererImageImport::Failed(detail),
+    }
+}

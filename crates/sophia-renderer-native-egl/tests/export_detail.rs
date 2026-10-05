@@ -63,3 +63,29 @@ fn import_cache_rejections_preserve_the_current_render_target() {
         );
     }
 }
+
+#[test]
+fn a_restore_refused_for_capacity_is_busy_only_while_gpu_uses_are_outstanding() {
+    use NativeGbmScanoutBufferExportDetail as D;
+    assert_eq!(
+        D::RendererImageStoreFull.restore_capacity(true),
+        D::RendererImageTransferBusy
+    );
+    // Nothing in flight: full or quarantined storage stays full and waits.
+    assert_eq!(
+        D::RendererImageStoreFull.restore_capacity(false),
+        D::RendererImageStoreFull
+    );
+    // Other refusals are not reclassified.
+    for detail in [
+        D::DmaBufImportFailed,
+        D::InvalidRendererImageId,
+        D::RendererImageTransferBusy,
+    ] {
+        assert_eq!(detail.restore_capacity(true), detail);
+    }
+    assert_eq!(
+        D::RendererImageTransferBusy.status(),
+        NativeGbmScanoutBufferExportStatus::Degraded
+    );
+}

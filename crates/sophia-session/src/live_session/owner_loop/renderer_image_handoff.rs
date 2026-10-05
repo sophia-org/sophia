@@ -49,7 +49,11 @@ fn resume_native_scanout_from_scene(
     })?;
     if let Some(mut taken) = taken {
         taken.retain_only(&restore.pending);
-        runtime.keep_pending_renderer_handoff(taken, native.retirements);
+        runtime.keep_pending_renderer_handoff(
+            taken,
+            native.renderer_storage_progress(),
+            restore.busy,
+        );
     }
     Ok(restore.restored.len())
 }

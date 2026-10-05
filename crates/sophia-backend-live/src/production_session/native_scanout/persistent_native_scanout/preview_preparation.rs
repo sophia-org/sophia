@@ -22,7 +22,7 @@ impl LiveProductionNativeScanout {
         self.synchronize_preview_epochs();
         if self.preview_images.cold_misses.is_empty() { return Ok(Vec::new()); }
         let stores = self.cold_image_stores();
-        let progress = self.retirements;
+        let progress = self.renderer_storage_progress();
         let exporters = &mut self.exporters;
         prepare_cold_images(
             &mut self.preview_images.cold_misses,
@@ -48,7 +48,7 @@ impl LiveProductionNativeScanout {
             &self.preview_images.owners,
             &self.cold_image_stores(),
             &self.preview_images.cold_gate,
-            self.retirements,
+            self.renderer_storage_progress(),
         )
     }
 
@@ -334,14 +334,15 @@ struct ColdImageStore {
 /// (image, output) pairs whose import was refused outright; those leave the
 /// demand and the donor keeps its copy. A full store may be waiting on GPU
 /// completions rather than out of room (REVIEW-CODEX-05 R2): the pair is gated
-/// at `progress`, the caller's native retirement count, and neither tried nor
-/// reported ready again until that count moves, so nothing spins.
+/// at `progress`, the owner's storage progress, and neither tried nor
+/// reported ready again until it moves, so nothing spins. A busy bridge is
+/// tried again on the next pass, while its GPU work is in flight.
 fn prepare_cold_images(
     demand: &mut BTreeMap<Image, BTreeSet<OutputId>>,
     owners: &mut BTreeMap<Image, BTreeSet<u64>>,
     stores: &[ColdImageStore],
-    gate: &mut BTreeMap<(Image, OutputId), usize>,
-    progress: usize,
+    gate: &mut BTreeMap<(Image, OutputId), u64>,
+    progress: u64,
     mut transfer: impl FnMut(
         usize,
         usize,
@@ -386,7 +387,7 @@ fn prepare_cold_images(
                     Ok(()) => {
                         owners.entry(image).or_default().insert(target.identity);
                     }
-                    Err(D::WorkerPending | D::WorkerQueueFull) => {
+                    Err(D::WorkerPending | D::WorkerQueueFull | D::RendererImageTransferBusy) => {
                         ready = false;
                     }
                     Err(D::RendererImageStoreFull) => {
@@ -418,8 +419,8 @@ fn cold_preparation_ready(
     demand: &BTreeMap<Image, BTreeSet<OutputId>>,
     owners: &BTreeMap<Image, BTreeSet<u64>>,
     stores: &[ColdImageStore],
-    gate: &BTreeMap<(Image, OutputId), usize>,
-    progress: usize,
+    gate: &BTreeMap<(Image, OutputId), u64>,
+    progress: u64,
 ) -> bool {
     demand.iter().any(|(image, outputs)| {
         let owned = owners.get(image);
