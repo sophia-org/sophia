@@ -68,6 +68,10 @@ if [[ "$SCENARIO" == output-unplug ]]; then
         1) unplug_cmdline+=" sophia.unplug_wm=1" ;;
         *) echo "SOPHIA_QEMU_UNPLUG_WM must be 0 or 1" >&2; exit 1 ;;
     esac
+    case "${SOPHIA_QEMU_UNPLUG_CONSOLE:-1}" in
+        0|1) ;;
+        *) echo "SOPHIA_QEMU_UNPLUG_CONSOLE must be 0 or 1" >&2; exit 1 ;;
+    esac
     # dri3 adds a client that presents one DMA-BUF frame and then holds its
     # window still, so the removal meets content with no next frame.
     case "${SOPHIA_QEMU_UNPLUG_CLIENT:-none}" in
@@ -318,7 +322,11 @@ case "$SCENARIO" in
         echo "sophia_qemu_gtk schema=1 status=starting isolation=headless control=qmp-unix host_drm=none host_vt=none keyboard=virtio mouse=virtio scenario=$SCENARIO" | tee -a "$EVIDENCE_FILE"
         ;;
     output-unplug)
-        echo "sophia_qemu_unplug schema=1 status=starting isolation=headless control=none host_drm=none host_vt=none gpu=virtio-gpu mode=$UNPLUG_MODE single_card=$SINGLE_CARD gpu_mode=$GPU_MODE" | tee -a "$EVIDENCE_FILE"
+        # virgl renders the guest on a host render node; no host card or
+        # input device is passed through either way.
+        host_drm=none
+        [[ "$GPU_MODE" == virgl ]] && host_drm=render_node
+        echo "sophia_qemu_unplug schema=1 status=starting isolation=headless control=none host_drm=$host_drm host_vt=none gpu=virtio-gpu mode=$UNPLUG_MODE single_card=$SINGLE_CARD gpu_mode=$GPU_MODE console=${SOPHIA_QEMU_UNPLUG_CONSOLE:-1}" | tee -a "$EVIDENCE_FILE"
         if [[ "$GPU_MODE" == virgl ]]; then
             # Which host GPU the guest renders on.
             echo "sophia_qemu_unplug schema=1 status=render_node node=$RENDER_NODE rdev=$(stat -c '%t:%T' "$RENDER_NODE") device=$(readlink -f "/sys/class/drm/$(basename "$RENDER_NODE")/device")" | tee -a "$EVIDENCE_FILE"
@@ -669,7 +677,9 @@ if [[ "$SCENARIO" == output-unplug ]]; then
             [[ "$barrier" == true ]] || unplug_failed static_barrier_timeout
             echo "sophia_qemu_unplug schema=1 status=static_barrier present=retired client=holding" | tee -a "$EVIDENCE_FILE"
         fi
-        consoles=(1)
+        # One head modes take away SOPHIA_QEMU_UNPLUG_CONSOLE (default 1, the
+        # second head); 0 takes away the first, where new windows open.
+        consoles=("${SOPHIA_QEMU_UNPLUG_CONSOLE:-1}")
         [[ "$UNPLUG_MODE" == all-return ]] && consoles=(0 1)
         for console in "${consoles[@]}"; do
             head_size "$console" 0 0 || unplug_failed head_disable

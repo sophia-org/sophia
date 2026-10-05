@@ -220,3 +220,66 @@ fn modes_parse_by_name_only() {
     let error = verify(&one(), Mode::AllReturn).unwrap_err();
     assert!(error.contains("another mode"), "{error}");
 }
+
+/// A static DMA-BUF client across a loss and return: one mixed Present
+/// before the barrier, the window's region before the removal, and the same
+/// region (same size and checksum, moved) queued and retired after the return.
+fn static_client() -> String {
+    let start = START
+        .replace(
+            "status=running mode=MODE",
+            "status=running mode=MODE wm=true client=dri3",
+        )
+        .replace("MODE", "one-return");
+    let before = "\
+sophia_live_session_present schema=2 status=retired transaction=26 surface=2097153 source=400x300 target=400x300_100_100 clip=400x300_100_100 unit_scale=true ust=1 msc=1
+sophia_live_head_composition_queue schema=1 status=queued output=1 head=1 frame=3 scene_generation=26 target_generation=1
+sophia_native_composition_region_frame schema=1 status=read output=1 head=1 scene_generation=26 layer=0 source_stage=renderer_image target=400x300_100_100 region_pixels=120000 nonzero_rgb_pixels=120000 checksum=777
+sophia_live_native_head_page_flip schema=2 status=retired output=1 head=1 submission=2 frame=3
+sophia_qemu_unplug schema=1 status=static_barrier present=retired client=holding
+";
+    let after = "\
+sophia_live_head_composition_queue schema=1 status=queued output=1 head=1 frame=9 scene_generation=40 target_generation=1
+sophia_native_composition_region_frame schema=1 status=read output=1 head=1 scene_generation=40 layer=0 source_stage=renderer_image target=400x300_0_0 region_pixels=120000 nonzero_rgb_pixels=120000 checksum=777
+sophia_live_native_head_page_flip schema=2 status=retired output=1 head=1 submission=5 frame=9
+";
+    format!(
+        "{start}{before}{LOSS}{RETURN}{after}{}{END}",
+        uevents(2, 0, 0)
+    )
+}
+
+#[test]
+fn a_static_client_whose_content_survives_passes() {
+    let summary = verify(&static_client(), Mode::OneReturn).unwrap();
+    assert!(
+        summary
+            .last()
+            .is_some_and(|line| line.contains("status=static_content_retained")
+                && line.contains("target_after=400x300_0_0")),
+        "{summary:?}"
+    );
+}
+
+#[test]
+fn every_way_the_static_content_can_fail_is_refused() {
+    let log = static_client();
+    let cases = [
+        // A second Present: the client was not static.
+        (log.replace("sophia_qemu_unplug schema=1 status=static_barrier", "sophia_live_session_present schema=2 status=retired transaction=30 surface=2097153 source=400x300 target=400x300_100_100 clip=x unit_scale=true ust=2 msc=2\nsophia_qemu_unplug schema=1 status=static_barrier"), "exactly one retired Present"),
+        // A software Present is not the DMA-BUF path.
+        (log.replace("sophia_live_session_present schema=2", "sophia_live_session_present schema=4"), "mixed (DMA-BUF) path"),
+        (log.replace("sophia_qemu_unplug schema=1 status=static_barrier present=retired client=holding\n", ""), "no barrier"),
+        (log.replace("sophia_qemu_unplug schema=1 status=sent action=off", "sophia_live_renderer_image_handoff schema=1 status=discarded reason=heads_changed captured_images=1 discarded_images=1\nsophia_qemu_unplug schema=1 status=sent action=off"), "discarded"),
+        // Other content in the window's place after the return.
+        (log.replace("target=400x300_0_0 region_pixels=120000 nonzero_rgb_pixels=120000 checksum=777", "target=400x300_0_0 region_pixels=120000 nonzero_rgb_pixels=120000 checksum=778"), "not drawn from a retained image"),
+        // Rendered but never retired.
+        (log.replace("submission=5 frame=9", "submission=5 frame=10"), "not drawn from a retained image"),
+        // Drawn from the client buffer, not a retained image.
+        (log.replace("scene_generation=40 layer=0 source_stage=renderer_image", "scene_generation=40 layer=0 source_stage=dmabuf"), "not drawn from a retained image"),
+    ];
+    for (index, (log, expected)) in cases.into_iter().enumerate() {
+        let error = verify(&log, Mode::OneReturn).unwrap_err();
+        assert!(error.contains(expected), "case {index}: {error}");
+    }
+}

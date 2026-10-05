@@ -258,6 +258,9 @@ pub fn verify(log: &str, mode: Mode) -> Result<Vec<String>, String> {
     }) {
         return Err("has no bounded completion after the last action".to_owned());
     }
+    if records[running].get("client") == Some("dri3") {
+        summary.push(verify_static_client(&records, first_off, last_action)?);
+    }
     only("sophia_qemu_guest", "complete")?;
     only("sophia_qemu_unplug", "guest_exited")?;
     Ok(summary)
@@ -294,4 +297,111 @@ fn published_and_settled(records: &[Record], outputs: u32) -> Option<(&str, &str
             .map(|status| (transition, status))
     })
     .flatten()
+}
+
+/// The static DMA-BUF client (t306): one Present, captured, promoted and
+/// retired before any head was taken away, and none after. After the last
+/// action the window's content must still be drawn from its retained image:
+/// a final composition region of the same size and checksum as before the
+/// loss, read from a renderer image, in a frame that was queued and then
+/// retired on a head. Region readback proves rendered content and its
+/// retirement, not a physical scanout.
+fn verify_static_client(
+    records: &[Record],
+    first_off: usize,
+    last_action: usize,
+) -> Result<String, String> {
+    let presents = records
+        .iter()
+        .enumerate()
+        .filter(|(_, record)| {
+            record.name == "sophia_live_session_present" && record.get("status") == Some("retired")
+        })
+        .collect::<Vec<_>>();
+    let [(present_at, present)] = presents.as_slice() else {
+        return Err(format!(
+            "static client: expected exactly one retired Present, found {}",
+            presents.len()
+        ));
+    };
+    if present.get("schema") != Some("2") {
+        return Err(
+            "static client: its Present did not retire on the mixed (DMA-BUF) path".to_owned(),
+        );
+    }
+    let barrier = records
+        .iter()
+        .position(|record| record.is("sophia_qemu_unplug", "static_barrier"))
+        .ok_or("static client: no barrier before the removal")?;
+    if !(*present_at < barrier && barrier < first_off) {
+        return Err("static client: the removal did not follow its retired Present".to_owned());
+    }
+    if records.iter().any(|record| {
+        record.name == "sophia_live_renderer_image_handoff"
+            && record.get("status") == Some("discarded")
+    }) {
+        return Err("static client: a handoff was discarded".to_owned());
+    }
+    let size = present
+        .get("source")
+        .ok_or("static client: its Present names no source size")?;
+    let is_window = |record: &Record| {
+        record.is("sophia_native_composition_region_frame", "read")
+            && record.get("source_stage") == Some("renderer_image")
+            && region_size(record) == Some(size)
+    };
+    let before = records[..first_off]
+        .iter()
+        .rev()
+        .find(|record| is_window(record))
+        .ok_or("static client: no region of its window before the removal")?;
+    let checksum = before
+        .get("checksum")
+        .ok_or("static client: region without checksum")?;
+    let retired = |record: &Record| -> bool {
+        let (Some(output), Some(head), Some(generation)) = (
+            record.get("output"),
+            record.get("head"),
+            record.get("scene_generation"),
+        ) else {
+            return false;
+        };
+        let frames = records
+            .iter()
+            .filter(|queued| {
+                queued.is("sophia_live_head_composition_queue", "queued")
+                    && queued.get("output") == Some(output)
+                    && queued.get("head") == Some(head)
+                    && queued.get("scene_generation") == Some(generation)
+            })
+            .filter_map(|queued| queued.get("frame"))
+            .collect::<Vec<_>>();
+        records.iter().any(|flip| {
+            flip.is("sophia_live_native_head_page_flip", "retired")
+                && flip.get("output") == Some(output)
+                && flip.get("head") == Some(head)
+                && flip
+                    .get("frame")
+                    .is_some_and(|frame| frames.contains(&frame))
+        })
+    };
+    let after = records[last_action..]
+        .iter()
+        .find(|record| {
+            is_window(record) && record.get("checksum") == Some(checksum) && retired(record)
+        })
+        .ok_or(
+            "static client: its content was not drawn from a retained image after the last action",
+        )?;
+    Ok(format!(
+        "sophia_qemu_output_unplug_verdict schema=1 status=static_content_retained size={size} checksum={checksum} target_after={}",
+        after.get("target").unwrap_or("?")
+    ))
+}
+
+/// A region record's size, `WxH`, from its `target=WxH_X_Y`.
+fn region_size(record: &Record) -> Option<&str> {
+    record
+        .get("target")
+        .and_then(|target| target.split('_').next())
 }
