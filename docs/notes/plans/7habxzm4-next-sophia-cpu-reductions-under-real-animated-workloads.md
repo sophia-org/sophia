@@ -1581,3 +1581,48 @@ against exhausting the store through otherwise valid fallback. The source
 cleanup poison remains a separate refusal. Evidence is retained in
 `t289-snapshot-reuse-01/REVIEW-02-FALLBACK.txt`; no performance conclusion follows
 from this correction.
+
+### Capture comparison and live candidate (2026-10-05)
+
+The final production candidate is `ba763f0c4`. Its full gate passed with the
+source clean before and after. Both render nodes passed the snapshot lifetime
+and pixel checks, and the cross-device fallback check passed in both directions.
+Four recorded negative controls failed at their intended assertions; the frozen
+source was restored before the final build and checks.
+
+Nine capture trials used the same release binary, with each of three modes
+appearing once in each position. The workload was one immutable LINEAR XR24
+buffer at 2542×1398, 60 captures/s, with 120 warmup captures and 600 measured
+captures per trial on renderD128. Median process CPU per capture was:
+
+| Mode | Median | Range |
+| --- | ---: | ---: |
+| Fresh storage and imports | 227.36 µs | 226.22–234.75 µs |
+| Pooled storage | 106.81 µs | 102.02–110.30 µs |
+| Pooled storage and source imports | 90.61 µs | 80.52–93.85 µs |
+
+All trials passed their timing and custody checks. Full reuse reduced this
+capture cost by 60.15%; the three ranges are separated. The pooled arms made no
+new snapshot allocation after warmup. Full reuse also had 600 source import hits
+and 600 fresh texture bindings per trial. The full GPU snapshot copy remains.
+This fixture does not exercise output import reuse, the owner loop or scanout.
+It is evidence for advancing the candidate, not a total Sophia CPU saving.
+
+Local niltempus candidate `1a09179` pins that exact Sophia revision and builds
+release `niltempus-10a4145c1c3074a9624f`. Its device-free normal session and
+protected metadata checks pass. All other component binaries equal installed
+`niltempus-99bb041fe3535b5d265d`; only Sophia, the manifest/checksums and profile
+release paths differ. No install or publication follows from these checks.
+
+The remaining decision uses the same generic DRI3/GBM workload binary on the
+installed baseline and candidate, measuring whole Sophia CPU per completed
+Present, throughput and p95 latency. A visible setup smoke must first establish
+stable geometry under Hagia. Three 60-second runs per arm, with other visible
+surfaces static and matching heads, profile and libraries, form the comparison.
+Separate logins mean sequential arms; do not describe that as balanced A/B order.
+The candidate remains unpromoted until that result is assessed.
+
+Evidence: `t289-snapshot-reuse-01/comparison-01/RESULT.txt`, `GATE-03.json`,
+`CANDIDATE-ARTIFACT.json`, and `LIVE-WORKLOAD-ADAPTER-01.json`. The subsequent
+documentation commit does not change the frozen production candidate or its
+packaged binary.
