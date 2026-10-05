@@ -1533,3 +1533,41 @@ and sources, and destroy/disconnect. The current
 `unclocked_full_updates_do_not_scrap_a_fence_blocked_request` control records the
 existing behavior and must change with the parity fix. No implementation is
 included here. Review: `t289-clockless-01/pF/FRONTEND-REVIEW-02.txt`.
+
+## Snapshot storage and import reuse (2026-10-04 implementation)
+
+The t289 candidate keeps the full compositor-owned GPU snapshot and the current
+Present Copy/Idle protocol. It reuses storage only after the old image is evicted
+and all capture/consumer GPU fences have completed. Allocation keepalive,
+content generation and outstanding GPU use are separate rights. A public raw-FD
+export permanently excludes its allocation from recycling, including independent
+FD duplicates that outlive the snapshot wrapper.
+
+The implementation has three parts: explicit GBM allocation/EGLImage/FBO reuse,
+source import reuse with a fresh texture binding on every accepted frame, and
+output imports keyed by allocation plus content generation. Persistent imports
+hold storage, not permission to read a retired generation. A rejected KMS frame
+still leaves its GL read covered by a consuming-context fence. Unknown completion
+or failed resource cleanup retains the charge and prevents recycling.
+
+The renderer's existing 256-image / 512 MiB limits remain. Idle storage is bounded
+to eight allocations / 64 MiB, and retained source imports to sixteen entries /
+128 MiB within the renderer budget. Draining images, cached imports and quarantined
+allocations stay charged. Source plane aliases are deduplicated within a descriptor;
+different layouts or format contexts can conservatively charge the same backing
+more than once. This is an upper bound, not a measurement of physical RSS. GBM
+padding is learned from actual allocation size and remembered for later admissions;
+one cold speculative allocation may exceed its estimate before being refused.
+
+The legacy fresh-surface path remains the fallback and a qualification control.
+Source/output reuse controls apply to pooled captures. The old EGLSurface lifetime
+fixtures explicitly exercise the fallback; new controls cover pooled pixel
+immutability, independently duplicated exports surviving churn and context death,
+and a GPU producer rewriting a cached source without intervening CPU synchronization.
+Device checks and a full gate must pass before promotion. The performance decision
+still requires matched end-to-end Sophia CPU per completion, throughput and p95
+latency; allocation/import plateaus explain a result but cannot replace it.
+
+Evidence: `t289-snapshot-reuse-01`. Source evaluation and the snapshot rationale:
+`t289-buffer-lifetime-comparison-01/REUSE-EVALUATION.txt`. This section records a
+candidate under development, not an accepted CPU saving or a deployed change.

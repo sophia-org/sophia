@@ -125,7 +125,7 @@ impl<T: AsFd> NativeGbmRenderedScanoutContext<T> {
         self.poll_image_bridges()?;
         let minimum_bytes = u64::from(source.width) * u64::from(source.height) * 4;
         if minimum_bytes
-            .saturating_add(self.renderer_image_bytes)
+            .saturating_add(self.retained_renderer_image_bytes())
             .saturating_add(self.image_bridge_bytes())
             > DEFAULT_NATIVE_RENDERER_IMAGE_BYTE_BUDGET
         {
@@ -186,7 +186,7 @@ impl<T: AsFd> NativeGbmRenderedScanoutContext<T> {
                     self.image_bridges.swap_remove(slot);
                     if minimum_bytes
                         .saturating_mul(2)
-                        .saturating_add(self.renderer_image_bytes)
+                        .saturating_add(self.retained_renderer_image_bytes())
                         .saturating_add(self.image_bridge_bytes())
                         > DEFAULT_NATIVE_RENDERER_IMAGE_BYTE_BUDGET
                     {
@@ -200,7 +200,7 @@ impl<T: AsFd> NativeGbmRenderedScanoutContext<T> {
                 image_transfer_policy::BridgeSelection::Allocate => {
                     if minimum_bytes
                         .saturating_mul(2)
-                        .saturating_add(self.renderer_image_bytes)
+                        .saturating_add(self.retained_renderer_image_bytes())
                         .saturating_add(self.image_bridge_bytes())
                         > DEFAULT_NATIVE_RENDERER_IMAGE_BYTE_BUDGET
                     {
@@ -215,7 +215,7 @@ impl<T: AsFd> NativeGbmRenderedScanoutContext<T> {
             let bridge_bytes = bridge.bytes;
             if bridge_bytes
                 .saturating_add(minimum_bytes)
-                .saturating_add(self.renderer_image_bytes)
+                .saturating_add(self.retained_renderer_image_bytes())
                 .saturating_add(self.image_bridge_bytes())
                 > DEFAULT_NATIVE_RENDERER_IMAGE_BYTE_BUDGET
             {
@@ -254,7 +254,7 @@ impl<T: AsFd> NativeGbmRenderedScanoutContext<T> {
                     let bytes = u64::from(buffer.pitch()) * u64::from(buffer.height());
                     if bytes
                         .saturating_add(self.image_bridge_bytes())
-                        .saturating_add(self.renderer_image_bytes)
+                        .saturating_add(self.retained_renderer_image_bytes())
                         > DEFAULT_NATIVE_RENDERER_IMAGE_BYTE_BUDGET
                     {
                         return Err(NativeGbmScanoutBufferExportDetail::RendererImageStoreFull);

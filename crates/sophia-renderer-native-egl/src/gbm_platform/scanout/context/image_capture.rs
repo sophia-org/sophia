@@ -152,7 +152,12 @@ impl<T: std::os::fd::AsFd> NativeGbmRenderedScanoutContext<T> {
                 &mut target,
                 surface.clone(),
                 &mut import_cache,
-                &empty_images,
+                NativeSnapshotCompositionResources {
+                    images: &empty_images,
+                    fences: &mut self.snapshot_fences,
+                    quarantine: &mut self.snapshot_quarantine,
+                    import_reuse: false,
+                },
                 frame,
                 false,
                 true,

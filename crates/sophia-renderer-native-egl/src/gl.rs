@@ -603,15 +603,6 @@ impl PersistentXrgb8888GlPipeline {
         egl: &khronos_egl::DynamicInstance<khronos_egl::EGL1_5>,
         image: *const c_void,
     ) -> Result<glow::NativeTexture, NativeGbmScanoutBufferExportDetail> {
-        let image_target = egl
-            .get_proc_address("glEGLImageTargetTexture2DOES")
-            .ok_or(NativeGbmScanoutBufferExportDetail::DmaBufImageBindFailed)
-            .map(|image_target| unsafe {
-                std::mem::transmute::<
-                    extern "system" fn(),
-                    unsafe extern "system" fn(u32, *const c_void),
-                >(image_target)
-            })?;
         let texture = unsafe {
             self.gl
                 .create_texture()
@@ -629,13 +620,41 @@ impl PersistentXrgb8888GlPipeline {
                 self.gl
                     .tex_parameter_i32(glow::TEXTURE_2D, parameter, value as i32);
             }
-            image_target(glow::TEXTURE_2D, image);
-            if self.gl.get_error() != glow::NO_ERROR {
+            if let Err(error) = self.rebind_egl_image_texture(egl, texture, image) {
                 self.gl.delete_texture(texture);
-                return Err(NativeGbmScanoutBufferExportDetail::DmaBufImageBindFailed);
+                return Err(error);
             }
         }
         Ok(texture)
+    }
+
+    /// Refresh an imported texture after an external producer changed its
+    /// pixels. Retaining its allocation does not make the old GL view current.
+    /// The caller still owes per-frame producer/consumer synchronization.
+    pub(crate) unsafe fn rebind_egl_image_texture(
+        &self,
+        egl: &khronos_egl::DynamicInstance<khronos_egl::EGL1_5>,
+        texture: glow::NativeTexture,
+        image: *const c_void,
+    ) -> Result<(), NativeGbmScanoutBufferExportDetail> {
+        let image_target = egl
+            .get_proc_address("glEGLImageTargetTexture2DOES")
+            .ok_or(NativeGbmScanoutBufferExportDetail::DmaBufImageBindFailed)
+            .map(|image_target| unsafe {
+                std::mem::transmute::<
+                    extern "system" fn(),
+                    unsafe extern "system" fn(u32, *const c_void),
+                >(image_target)
+            })?;
+        unsafe {
+            self.gl.active_texture(glow::TEXTURE0);
+            self.gl.bind_texture(glow::TEXTURE_2D, Some(texture));
+            image_target(glow::TEXTURE_2D, image);
+            if self.gl.get_error() != glow::NO_ERROR {
+                return Err(NativeGbmScanoutBufferExportDetail::DmaBufImageBindFailed);
+            }
+        }
+        Ok(())
     }
 
     pub(crate) fn draw_texture_layer(
