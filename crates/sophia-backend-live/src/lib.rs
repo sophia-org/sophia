@@ -35,6 +35,8 @@ mod production_renderer_image_handoff;
 mod production_renderer_image_restore_plan;
 mod production_session;
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
+mod production_source_availability;
+#[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 mod production_visual_runtime;
 mod runtime;
 mod scanout;
@@ -73,6 +75,8 @@ pub use production_renderer_image_handoff::*;
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 pub use production_renderer_image_restore_plan::*;
 pub use production_session::*;
+#[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
+pub use production_source_availability::*;
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 pub use production_visual_runtime::*;
 #[cfg(feature = "seat-control")]
