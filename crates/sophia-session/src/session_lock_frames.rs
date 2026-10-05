@@ -52,8 +52,13 @@ pub const SESSION_LOCK_PACING_ALLOCATIONS: usize = 64;
 struct PacingDiagnostics {
     enabled: bool,
     entries: BTreeMap<u64, PacingEntry>,
-    /// Allocations refused because the bound was full.
-    untracked: u64,
+    /// The allocation generations the last published lock object names. Once
+    /// a lock object is published, no other allocation or generation is
+    /// observed, so a late event cannot recreate a withdrawn one.
+    live: Option<BTreeMap<u64, u64>>,
+    /// Observations refused because the bound was full; one allocation can
+    /// add several.
+    untracked_observations: u64,
 }
 
 #[derive(Clone, Copy)]
@@ -67,14 +72,19 @@ struct PacingEntry {
 impl PacingDiagnostics {
     fn clear(&mut self) {
         self.entries.clear();
-        self.untracked = 0;
+        self.untracked_observations = 0;
     }
 
     /// The entry for this allocation generation: none while disabled, none for
     /// an older generation than the one tracked, a fresh one (counts restart)
     /// for a newer generation, and none past the bound.
     fn observe(&mut self, allocation: u64, generation: u64) -> Option<&mut PacingEntry> {
-        if !self.enabled {
+        if !self.enabled
+            || self
+                .live
+                .as_ref()
+                .is_some_and(|live| live.get(&allocation) != Some(&generation))
+        {
             return None;
         }
         let fresh = PacingEntry {
@@ -93,7 +103,7 @@ impl PacingDiagnostics {
             }
             Some(_) => {}
             None if self.entries.len() >= SESSION_LOCK_PACING_ALLOCATIONS => {
-                self.untracked = self.untracked.saturating_add(1);
+                self.untracked_observations = self.untracked_observations.saturating_add(1);
                 return None;
             }
             None => {
@@ -160,11 +170,11 @@ pub fn session_lock_pacing_record(pacing: &SessionLockPacing) -> String {
     )
 }
 
-/// Allocations the bounded diagnostic did not track since the lock or
-/// connection began.
-pub fn session_lock_pacing_untracked_record(untracked: u64) -> String {
+/// Observations the bounded diagnostic refused since the lock or connection
+/// began; one allocation past the bound can be refused several times.
+pub fn session_lock_pacing_untracked_record(untracked_observations: u64) -> String {
     format!(
-        "sophia_live_lock_pacing schema=1 status=untracked allocations_over_bound={untracked} bound={SESSION_LOCK_PACING_ALLOCATIONS}"
+        "sophia_live_lock_pacing schema=1 status=untracked observations_over_bound={untracked_observations} bound={SESSION_LOCK_PACING_ALLOCATIONS}"
     )
 }
 
@@ -246,21 +256,26 @@ impl SessionLockFrames {
         self.pacing.enabled = enabled;
     }
 
-    /// Keeps diagnostic entries only for allocation generations the lock
-    /// object still names, so topology churn cannot accumulate history.
+    /// Makes a published lock object's allocations the only ones the
+    /// diagnostic observes, and drops entries for any it no longer names, so
+    /// topology churn cannot accumulate history and a late event cannot bring
+    /// a withdrawn allocation or generation back. The set is the object's own,
+    /// as bounded as the outputs it names.
     pub fn retain_pacing(&mut self, live: &[sophia_protocol::lock_files::LockAllocation]) {
-        self.pacing.entries.retain(|allocation, entry| {
-            live.iter().any(|live| {
-                live.allocation_id == *allocation
-                    && live.allocation_generation == entry.allocation_generation
-            })
-        });
+        let live: BTreeMap<u64, u64> = live
+            .iter()
+            .map(|allocation| (allocation.allocation_id, allocation.allocation_generation))
+            .collect();
+        self.pacing
+            .entries
+            .retain(|allocation, entry| live.get(allocation) == Some(&entry.allocation_generation));
+        self.pacing.live = Some(live);
     }
 
-    /// Allocations the bounded diagnostic refused since the lock or
+    /// Observations the bounded diagnostic refused since the lock or
     /// connection began.
-    pub fn pacing_untracked(&self) -> u64 {
-        self.pacing.untracked
+    pub fn pacing_untracked_observations(&self) -> u64 {
+        self.pacing.untracked_observations
     }
 
     fn current_lock(&self, lock_epoch: u64) -> bool {
@@ -307,16 +322,19 @@ impl SessionLockFrames {
                     allocation_id,
                     allocation_generation: generation,
                     output: entry.output,
-                    demand_held: self
-                        .demands
-                        .get(&allocation_id)
-                        .is_some_and(|demand| demand.allocation_generation == generation),
+                    // Joined on the whole identity: a demand or candidate for
+                    // another lock or generation is not this sample's.
+                    demand_held: self.demands.get(&allocation_id).is_some_and(|demand| {
+                        demand.allocation_generation == generation
+                            && self.current_lock(demand.lock_epoch)
+                    }),
                     in_flight_generation: self
                         .in_flight
                         .values()
                         .find(|candidate| {
                             candidate.allocation_id == allocation_id
                                 && candidate.allocation_generation == generation
+                                && self.current_lock(candidate.lock_epoch)
                         })
                         .map(|candidate| candidate.candidate_generation),
                     counts: entry.counts,

@@ -244,7 +244,7 @@ macro_rules! service_lock_provider {
                         crate::session_lock_frames::session_lock_pacing_record(&pacing)
                     );
                 }
-                let untracked = lock_frames.pacing_untracked();
+                let untracked = lock_frames.pacing_untracked_observations();
                 if untracked != 0 {
                     crate::session_println!(
                         "{}",

@@ -332,11 +332,11 @@ fn the_pacing_history_is_bounded_and_keeps_current_allocations() {
         Some(1),
         "the stuck allocation stays tracked"
     );
-    assert_eq!(frames.pacing_untracked(), 11);
+    assert_eq!(frames.pacing_untracked_observations(), 11);
     assert_eq!(
         session_lock_pacing_untracked_record(11),
         format!(
-            "sophia_live_lock_pacing schema=1 status=untracked allocations_over_bound=11 bound={SESSION_LOCK_PACING_ALLOCATIONS}"
+            "sophia_live_lock_pacing schema=1 status=untracked observations_over_bound=11 bound={SESSION_LOCK_PACING_ALLOCATIONS}"
         )
     );
     let live = |allocation_id, allocation_generation| LockAllocation {
@@ -353,6 +353,120 @@ fn the_pacing_history_is_bounded_and_keeps_current_allocations() {
     let kept = frames.pacing();
     assert_eq!(kept.len(), 1, "allocation 100 is now another generation");
     assert_eq!(kept[0].allocation_id, 1);
+}
+
+fn live_allocation(allocation_id: u64, allocation_generation: u64) -> LockAllocation {
+    LockAllocation {
+        output_id: 1,
+        output_generation: 1,
+        allocation_id,
+        allocation_generation,
+        pixel_width: 2,
+        pixel_height: 1,
+        scale_numerator: 1,
+        scale_denominator: 1,
+    }
+}
+
+// REVIEW-CODEX-02 controls, verbatim.
+#[test]
+fn reconciliation_does_not_let_a_late_retirement_recreate_an_old_generation() {
+    let mut frames = frames();
+    frames.set_pacing_diagnostics(true);
+    frames.demand(CONNECTION, demand(1));
+    let _ = frames.permits();
+    frames.candidate(CONNECTION, candidate(1, 1));
+    frames.retain_pacing(&[live_allocation(1, 2)]);
+    assert!(frames.pacing().is_empty());
+    frames
+        .presented(OutputId::from_raw(1), shown(1, 1))
+        .unwrap();
+    assert!(
+        frames.pacing().iter().all(|s| s.allocation_generation == 2),
+        "late retirement recreated the withdrawn generation: {:?}",
+        frames.pacing()
+    );
+}
+
+#[test]
+fn removed_allocation_stays_removed_after_a_late_retirement() {
+    let mut frames = frames();
+    frames.set_pacing_diagnostics(true);
+    frames.candidate(CONNECTION, candidate(1, 1));
+    frames.retain_pacing(&[]);
+    frames
+        .presented(OutputId::from_raw(1), shown(1, 1))
+        .unwrap();
+    assert!(
+        frames.pacing().is_empty(),
+        "removed allocation returned in the sample: {:?}",
+        frames.pacing()
+    );
+}
+
+#[test]
+fn an_old_lock_demand_does_not_appear_held_under_current_lock_identity() {
+    let mut frames = frames();
+    frames.set_pacing_diagnostics(true);
+    frames.lock(SessionLockEpoch::from_raw(4));
+    frames.candidate(
+        CONNECTION,
+        LockCandidate {
+            lock_epoch: 4,
+            ..candidate(1, 1)
+        },
+    );
+    frames.demand(CONNECTION, demand(2)); // Same allocation/generation, old lock 3.
+    assert!(frames.permits().is_empty()); // The current candidate is still in flight.
+    let sample = frames.pacing();
+    assert_eq!(sample[0].lock_epoch, Some(4));
+    assert!(
+        !sample[0].demand_held,
+        "old-lock demand shown as current: {sample:?}"
+    );
+}
+
+/// After a publication, late demands and candidates for an allocation or
+/// generation the object does not name are not observed, and the published
+/// set outlives a reconnect, which clears only the counts.
+#[test]
+fn the_published_allocations_bound_what_is_observed_across_a_reconnect() {
+    let mut frames = frames();
+    frames.set_pacing_diagnostics(true);
+    frames.retain_pacing(&[live_allocation(1, 2)]);
+    frames.demand(CONNECTION, demand(1)); // generation 1: withdrawn
+    frames.candidate(CONNECTION, candidate(1, 1));
+    frames.demand(
+        CONNECTION,
+        LockFrameDemand {
+            allocation_id: 5,
+            ..demand(2)
+        },
+    ); // never published
+    assert!(frames.pacing().is_empty(), "{:?}", frames.pacing());
+    frames.connected(CONNECTION + 1);
+    frames.demand(CONNECTION + 1, demand(3));
+    assert!(
+        frames.pacing().is_empty(),
+        "generation 1 is still withdrawn"
+    );
+    frames.demand(
+        CONNECTION + 1,
+        LockFrameDemand {
+            allocation_generation: 2,
+            ..demand(4)
+        },
+    );
+    let sample = frames.pacing();
+    assert_eq!(sample.len(), 1);
+    assert_eq!(
+        (
+            sample[0].connection_epoch,
+            sample[0].allocation_generation,
+            sample[0].counts.demands
+        ),
+        (Some(CONNECTION + 1), 2, 1)
+    );
 }
 
 /// A dropped permit or outcome is counted every time and recorded the first
