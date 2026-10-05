@@ -517,9 +517,13 @@ fn workspace_tests(repo: &Path) -> Result<(), String> {
     // card it was never going to get, and the gate's result depends on which
     // terminal invoked it. Ask for that smoke deliberately through
     // tools/atomic_scanout_smoke.sh instead.
+    // Stdin is null whatever launched the gate: a test that hands its stdio
+    // to a protected child must not pass or fail by the invoker's terminal or
+    // socket (REVIEW-CODEX-17). Stdout and stderr stay the gate's log.
     let result = Command::new("cargo")
         .current_dir(repo)
         .args(["test", "--offline", "--workspace", "--all-features"])
+        .stdin(Stdio::null())
         .env("XDG_CONFIG_HOME", &config)
         .env_remove("SOPHIA_SHELL_CONFIG")
         .env_remove("SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE")
