@@ -1767,3 +1767,19 @@ not hardware DMA-BUF, whole-machine CPU or battery measurements.
 Evidence: `t289-shared-cpu-patches-01/RESULT.txt`, `comparison-01`,
 `09-attribution.json`, `05-gate.json` and `REVIEW-w9pX.txt`. No live install was
 performed. The earlier copy candidate remains separate; t289 stays open.
+
+### KMS software mapping lifetime (2026-10-05)
+
+The next target is documented in the [framebuffer fault investigation](../investigations/djo84ohx-repeated-kms-software-mappings-account-for-the-wmbench-fault-storm.md).
+The bounded diagnostic pair completed 300 frames on both desktops. All 2,208
+sampled Sophia faults followed unmap/remap of three DRM buffers, despite only
+three target creations across the session. Mesa's llvmpipe/KMS software path
+releases CPU mappings between scenes. XLibre rejects llvmpipe for glamor and
+retains its software framebuffer mapping, so this is not hardware GPU parity.
+
+The operator approved a Mesa-only mapping-retention experiment after recording
+the finding. Keep borrowed/imported memory and logical access semantics intact;
+prove cleanup and pixels, then measure CPU and faults on the fixed workload.
+The clear-coverage candidate remains rejected, and no retention saving or live
+change is claimed yet. Evidence: `t289-framebuffer-faults-01/PAIR-03-RESULT.txt`;
+candidate work: `t289-kms-map-retention-01`.

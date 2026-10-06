@@ -17,6 +17,10 @@ and the [decision to separate desktop readiness from application proofs](../deci
 
 ## Desktop composition
 
+The [wmbench fault investigation](../investigations/djo84ohx-repeated-kms-software-mappings-account-for-the-wmbench-fault-storm.md)
+distinguishes retained rendering targets from repeated Mesa software mappings
+and explains the limits of the XLibre/Sophia guest comparison.
+
 The [Session ownership decision](../decisions/adr0002-session-owns-desktop-composition.md)
 explains where users choose the WM, shell, and startup applications. It links to
 the operator guide and its original implementation evidence.
