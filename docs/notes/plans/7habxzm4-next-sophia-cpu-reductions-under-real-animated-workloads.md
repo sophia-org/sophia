@@ -1834,3 +1834,23 @@ attribution to a specific generated or scalar loop first. The rejected clear
 slice and inconclusive whole-image crop candidate remain separate. Evidence:
 `t289-remaining-hotpath-01/RESULT.txt`, `ANALYSIS.json` and `SOURCE-RECEIPT.json`.
 This is documentation and offline analysis only; no live change. t289 stays open.
+
+### Owned raster journal move accepted (2026-10-06)
+
+Production commit `97a9e4ce6` finishes the command's coverage/replay borrows,
+then moves it into the journal. Allocation-identity and replay regressions,
+the full isolated gate and peer source review pass. The
+[attribution investigation](../investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#owned-journal-move-accepted-2026-10-06)
+records the four balanced pairs: median desktop CPU **1.42 → 1.33 seconds
+(6.3% lower)** per 300 frames. Every pair improves and every run performs
+432 worker compositions; elapsed median is 39.2 seconds in both arms.
+One profile pair shows fewer X11-worker copy samples, with no faults in either
+arm. All ten guests pass. Two earlier validator failures remain excluded and
+documented under their original identities.
+
+Next inspect immutable upload ownership across `from_put_image` and retained
+journal readers, preserving the client-memory snapshot, format/stride/crop and
+graphics-context rules, budgets and atomic variant updates. Measure that slice
+alone on this accepted baseline. This is still the software SHM workload with
+the same opt-in Mesa retention in both arms; no hardware DMA-BUF, XLibre parity
+or battery claim follows. No live install. t289 remains open.

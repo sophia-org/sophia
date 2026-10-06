@@ -13,10 +13,11 @@ After retaining Mesa's software framebuffer mappings, what accounts for the
 remaining desktop CPU cost? Does the evidence justify SIMD or assembly work,
 or is there still unnecessary work to remove?
 
-**Start with the owned raster command's journal insertion.** It receives an
-owned command but clones its pixel payload before storing it. Reordering the
-last borrows should let it move that command instead. This is a source-backed
-candidate in a measured hot path; its CPU saving has not been measured.
+**Moving the owned raster command into its journal reduced median CPU by 6.3%**
+in the fixed software workload, accepted on October 6. The
+[measured result below](#owned-journal-move-accepted-2026-10-06) records the four
+pairs and their limits. Next inspect immutable upload ownership at the earlier
+retention boundary; keep the initial snapshot of client memory.
 
 ## Evidence
 
@@ -133,9 +134,9 @@ The last periodic record attributes 419 full repaints to the coverage decision;
 the client covers 77.0% of the output. This is not evidence of an incorrect
 damage decision. The measured clear-coverage candidate remains rejected.
 
-## Validation and remaining work
+## Original validation plan
 
-Next slice under t289:
+The October 5 profile proposed this slice under t289:
 
 1. Implement only the owned-command move. Test allocation identity in both
    journal paths, exact variant replay, full opaque baseline resets, partial
@@ -150,7 +151,7 @@ Next slice under t289:
    that result and move to the next measured cost. Source simplicity alone
    does not establish a performance gain.
 
-No new implementation was made for this profile. Reviewed production crates
+The profile itself changed no implementation. Reviewed production crates
 on master `a7e4aedf9` are identical to measured `825d91460`.
 
 Limits: 468 samples have no callchain and 54 have only one frame; the remaining
@@ -164,6 +165,81 @@ Evidence: `~/.local/state/sophia/development-evidence/t289-remaining-hotpath-01/
 `perf.data`, self/callchain reports and disassembly. `python3 analyze.py`
 rechecks identities and recomputes the attribution. `RESULT.txt` SHA256:
 `584dbc7b9b05e444e24aeac9d59ff0004d7c40c6f45a6e2bd7a3d9c857998232`.
+
+## Owned journal move accepted (2026-10-06)
+
+Signed production commit `97a9e4ce6` moves the command after its last coverage
+or variant-replay borrow in both journal paths. Allocation-identity controls
+fail on the old clone and pass with the move; they also check replay pixels,
+generations, prior snapshot independence, partial coverage and full-baseline
+reset. Focused tests, strict clippy, formatting, layout and the full isolated
+`cargo xtask check` pass on the clean candidate. Peer source review accepted it.
+
+The comparison used the recipe above, unchanged `wmbench 47fdb6b` and the same
+Mesa mapping-retention candidate ON in both arms. Baseline Sophia `825d91460`
+has the same production crates as the candidate's parent, `650e5c62b`.
+Only Sophia changed in the two VM settings; companion binaries and the loaded
+Mesa hashes match. The host remained logged out at greetd with competing work
+paused. All ten fresh guests passed their workload, identity and Mesa
+pixel/cleanup checks. Four unprofiled pairs ran in BC, CB, CB, BC order:
+
+| Pair | Baseline CPU | Candidate CPU | Baseline elapsed | Candidate elapsed |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 1.44 s | 1.33 s | 39.0 s | 39.3 s |
+| 2 | 1.42 s | 1.30 s | 39.2 s | 39.2 s |
+| 3 | 1.42 s | 1.33 s | 39.2 s | 39.2 s |
+| 4 | 1.42 s | 1.34 s | 39.2 s | 39.2 s |
+
+Median desktop CPU per 300 measured frames fell **1.42 → 1.33 seconds (6.3%)**,
+or 4.73 → 4.43 ms per frame. Every pair improved, with separated ranges and
+exactly 432 worker compositions in every run. Both elapsed medians are 39.2
+seconds; this establishes no throughput or latency improvement.
+
+Whole-session work also matches: 420 CPU updates, comprising one replacement
+and 419 patches, 1,325,184,000 payload bytes, three targets and 429 reuses,
+421 exact-nearest draws and no captures, imports or COW splits. Every update
+was bound and accounted for. Two runs per arm presented all 420 updates; the
+other two presented 419 and released one at teardown. That terminal split is
+balanced across arms and did not reduce rendering work. There were no pending
+worker supersessions, slot deferrals, worker failures/hard stalls, exporter
+replacements, topology events or direct-scanout work.
+
+The separate attribution pair measured 1.44 → 1.40 seconds CPU and zero minor
+or major faults. CPU-clock profiles contain 695 → 685 samples, none lost.
+X11-worker samples fell 182 → 160 and its `memmove` samples 168 → 139.
+Total `memmove` samples fell 232 → 219, while owner and renderer copy samples
+varied upward. This supports removing an X11 copy, but one sampled pair does
+not assign an exact CPU share to the journal callsite.
+
+### Failed measurement attempts retained
+
+`comparison-01` and `comparison-02` remain **FAILED** and contribute no CPU
+observations to acceptance. Their guests passed; the added validator made two
+overly specific assumptions. The first required 429 target reuses even when
+one pending frame was replaced before reaching a worker (431 requests and
+428 reuses). The second required 419 presented plus one lifecycle-superseded
+update, and refused a baseline that presented all 420.
+
+The successor checks source-backed accounting and records both terminal counts.
+It excludes direct scanout, worker deferrals, exporter churn and topology
+changes before checking requests plus pending replacements. It conservatively
+requires 432 offered frames and at most three terminal lifecycle outcomes for
+this recipe; those are qualification bounds, not generic source invariants.
+Thirty-nine controls pass. Offline archive checking accepted eleven matching
+logs and explicitly excluded one with 433 offered frames. The final fresh
+series used these frozen checks, stopped on any failure and allowed no
+replacement runs. It met the stricter criterion that every CPU pair improve
+with candidate worker compositions at or above baseline.
+
+Evidence: `~/.local/state/sophia/development-evidence/t289-raster-journal-move-01/`:
+`RESULT.txt`, `comparison-03/RESULT.json`, `12-attribution.json`,
+`07-preflight4.json`, `05-gate.json`, RED/GREEN controls, peer review and both
+failed-series dispositions. `attribution3.py` recomputes the sampled attribution.
+
+This result is limited to the SHM/software guest path, with Mesa retention ON.
+There is no new XLibre comparison, hardware DMA-BUF, battery or live-session
+claim. No install was performed. t289 remains open; the next candidate is the
+immutable upload-sharing boundary described above, measured separately.
 
 ## Connections
 

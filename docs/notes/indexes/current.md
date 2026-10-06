@@ -23,8 +23,9 @@ records a 30.6% CPU reduction from retaining those mappings in the fixed guest
 workload, and explains the limits of the XLibre/Sophia comparison.
 
 The [remaining hot-path profile](../investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md)
-locates CPU time after mapping retention, identifies an avoidable raster-journal
-payload clone, and sets the next ownership experiment before SIMD work.
+locates CPU time after mapping retention, records a further 6.3% CPU reduction
+from moving owned raster commands into their journal, and identifies the next
+upload-ownership boundary to inspect before SIMD work.
 
 The [Session ownership decision](../decisions/adr0002-session-owns-desktop-composition.md)
 explains where users choose the WM, shell, and startup applications. It links to
