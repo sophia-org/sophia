@@ -18,6 +18,8 @@ use super::{
     XAuthorityCpuBufferPatchBatch, XAuthorityCpuBufferSnapshot, XAuthorityCpuBufferUpdate,
 };
 
+mod tests;
+
 pub(crate) const X_AUTHORITY_RASTER_JOURNAL_MAX_COMMANDS: usize = 4_096;
 pub(crate) const X_AUTHORITY_RASTER_JOURNAL_MAX_PAYLOAD_BYTES: usize = 4 * 1024 * 1024;
 
@@ -657,8 +659,8 @@ impl XAuthorityRasterStore {
                 return Vec::new();
             }
             state.journal_payload_bytes = state.journal_payload_bytes.saturating_add(payload);
-            state.journal.push(command.clone());
             state.coverage = union(&state.coverage, &command.opaque_region());
+            state.journal.push(command);
             let whole = Rect {
                 x: 0,
                 y: 0,
@@ -673,7 +675,6 @@ impl XAuthorityRasterStore {
             return Vec::new();
         }
         state.journal_payload_bytes = state.journal_payload_bytes.saturating_add(payload);
-        state.journal.push(command.clone());
         let mut updates = Vec::new();
         for (class, backing) in &mut state.variants {
             // Where the replay painted, in this variant's own density space.
@@ -709,6 +710,9 @@ impl XAuthorityRasterStore {
             };
             updates.push(update);
         }
+        // Replay only borrows the owned command. Retain it after the last use
+        // so an image upload does not need another copy of its pixel payload.
+        state.journal.push(command);
         updates
     }
 
