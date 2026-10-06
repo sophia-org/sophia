@@ -1866,8 +1866,8 @@ records the failed run, clean TTY restoration, source correction and regression
 limits. Keep this failure; no performance result came from it.
 
 Next qualify the corrected binary with the same private two-monitor profile,
-then capture a native baseline and profile. Actual window size is 1800×960 on
-DP-2 at 60 Hz, beside DP-1 at 120 Hz; do not compare its CPU numbers directly
+then capture a native baseline and profile. The fixture requires a window of
+1800×960 on DP-2 at 60 Hz, beside DP-1 at 120 Hz; do not compare its CPU numbers directly
 with the smaller software guest workload. Use that profile to choose between
 the remaining upload copies and owner/composition work. Immutable upload
 sharing stays a candidate until hardware attribution supports it.
