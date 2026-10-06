@@ -1780,6 +1780,17 @@ retains its software framebuffer mapping, so this is not hardware GPU parity.
 The operator approved a Mesa-only mapping-retention experiment after recording
 the finding. Keep borrowed/imported memory and logical access semantics intact;
 prove cleanup and pixels, then measure CPU and faults on the fixed workload.
-The clear-coverage candidate remains rejected, and no retention saving or live
-change is claimed yet. Evidence: `t289-framebuffer-faults-01/PAIR-03-RESULT.txt`;
-candidate work: `t289-kms-map-retention-01`.
+The completed Mesa-only experiment (`wmbench 69bda56`) removes 568,893 minor
+faults and 602 framebuffer mapping cycles from the 300-frame diagnostic gate.
+Four unprofiled pairs all improve: median desktop CPU 2.040→1.415 seconds,
+**30.6% lower**, with the same Sophia binary, workload and renderer work counts.
+Every guest passes pixel, cleanup and loaded-library checks. Elapsed medians
+are 39.2→39.3 seconds; two ON guests retain brief initial-content soft-stall
+warnings. There is no latency or native-GPU saving claim.
+
+The local measurement candidate retains only owned dumb-buffer mappings and
+releases them at final destruction; logical access and borrowed/imported memory
+remain unchanged. Wider Mesa/device-lifetime review precedes promotion. No live
+change was made, and the clear-coverage candidate remains rejected. Evidence:
+`t289-framebuffer-faults-01/PAIR-03-RESULT.txt` and
+`t289-kms-map-retention-01/RESULT.txt`. t289 stays open.

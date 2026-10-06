@@ -92,11 +92,77 @@ unprofiled before/after result must establish savings before any promotion.
 No live install is part of this experiment. Candidate evidence belongs in
 `development-evidence/t289-kms-map-retention-01`.
 
-The source review used files fetched from the official Mesa 26.2.3 tag. The
-first full Nix source fetch stalled and was cancelled; its complete NAR was not
-verified. Candidate construction must realize the locked source normally.
-This limitation and the file hashes are in `25-source-review.json` beside the
-pair-03 report. No saving from mapping retention has yet been measured.
+The initial source review used files fetched from the official Mesa 26.2.3 tag.
+Its first full Nix source fetch stalled and was cancelled, leaving the complete
+NAR unverified at that point.
+This historical limitation and the file hashes remain in
+`25-source-review.json` beside the pair-03 report. The candidate and its measured
+result follow below.
+
+### Candidate construction, 2026-10-05
+
+The complete source is now verified. The Mesa mirror archive produces exactly
+the locked NAR hash `sha256-vhoX4anFe68PNpkOsdtme1fnGSCmKit+dyNYq6ox9AM=`
+and store path `/nix/store/6pnvm1jkh0a144pmcsbkykq5crhn695a-source`.
+Receipt: `t289-kms-map-retention-01/04-source-verified.json`. This resolves the
+source limitation for the candidate; the cancelled fetch remains recorded.
+
+wmbench measurement branch `measurement/kms-map-retention`, commit `18fb200`,
+contains the default-off Mesa patch, an actual-winsys lifetime fixture, and the
+guest loader and pixel checks. Lifetime checks cover nested and read-only maps,
+map failure, borrowed/imported memory, shared handles and destruction churn.
+Four negative controls fail their named assertions; 45 harness tests pass.
+The software-only package initially failed configuration because the VA video
+frontend needed a hardware driver. Successor `69bda56` disables that frontend;
+the driver and VM build pass, including the lifetime fixture compiled with
+Mesa's actual flags. Failed and cancelled build attempts remain in the evidence.
+
+### Measured result, 2026-10-05
+
+The diagnostic OFF/ON pair confirms the mechanism. During the same 300-frame
+workload, minor faults fall from **568,893 to zero**, and framebuffer mapping
+cycles from **602 to zero**. These counts exclude startup first-touch work.
+Diagnostic CPU is 2.25→1.53 seconds, including profiler overhead; the unprofiled
+pairs below provide the CPU result.
+
+Both arms use one Mesa binary and the unchanged Sophia binary. Every guest
+checks the loaded libraries and switch, 48 pixel-exact helper frames through
+three contexts/surfaces, and no helper DRM mappings after destruction. The
+benchmark client retains its original loader settings. The diagnostic controls
+for retained mappings, remapping and explicit page discard pass in both arms.
+
+Four unprofiled pairs ran in the fixed order OFF/ON, ON/OFF, ON/OFF, OFF/ON:
+
+| Pair | OFF CPU, seconds | ON CPU, seconds | Reduction |
+| --- | ---: | ---: | ---: |
+| 1 | 2.05 | 1.41 | 31.2% |
+| 2 | 2.05 | 1.44 | 29.8% |
+| 3 | 2.01 | 1.42 | 29.4% |
+| 4 | 2.03 | 1.41 | 30.5% |
+| Median | 2.040 | 1.415 | **30.6%** |
+
+Every pair improves, with 300 completed frames each. Median CPU per frame is
+6.80→4.72 ms. Elapsed medians are 39.2→39.3 seconds, with overlapping ranges;
+this is a CPU reduction, not a throughput or latency qualification. Two ON
+guests log a 100/101 ms soft-stall warning near their initial content frames.
+Those warnings are kept; no worker failure or hard stall occurred.
+
+Whole-session work matches across all eight guests: three targets, pipelines
+and frame surfaces; 429 target reuses; 432 worker requests and completions;
+421 exact-nearest draws; zero captures or imports; no leased slots at exit.
+All ten guests passed without replacement. Evidence:
+`t289-kms-map-retention-01/RESULT.txt`, `diagnostic-01/RESULT.json`,
+`comparison-01/RESULT.json` and `28-resource-check.json`.
+The report SHA256 is
+`7031c486c888de2471caf60672cb40195a306a1ee483affeeb0a842812952360`;
+its receipt verifies all 1,562 retained evidence files.
+
+This is a demonstrated saving in the **QEMU software rendering path**. It does
+not measure Kitty DMA-BUF capture, radeonsi, or laptop battery consumption.
+XLibre was not rerun in this slice, so no new cross-server ratio is claimed.
+The candidate stays on the local wmbench measurement branch. A wider Mesa
+change needs review of real-device lifetime, resize, suspend and reset behavior.
+No live driver, installed desktop or Sophia production code changed.
 
 ## Connections
 
