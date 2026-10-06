@@ -513,7 +513,7 @@
                                 .copied()
                                 .or_else(|| rollback_outputs.first().copied())
                                 .ok_or("output rollback restored no logical output")?;
-                            if scene.reconfigure_output_size(rollback_primary.size)? {
+                            if scene.reconfigure_output_descriptors(&rollback_outputs)? {
                                 let committed = runtime
                                     .as_ref()
                                     .map(|runtime| runtime.committed_surfaces().to_vec())
@@ -695,7 +695,7 @@
                             )?;
                             execution.phase = LiveOutputTopologyExecutionPhase::RollingBack;
                         } else {
-                            if scene.reconfigure_output_size(candidate_primary.size)? {
+                            if scene.reconfigure_output_descriptors(&candidate_outputs)? {
                                 let committed = runtime
                                     .as_ref()
                                     .map(|runtime| runtime.committed_surfaces().to_vec())

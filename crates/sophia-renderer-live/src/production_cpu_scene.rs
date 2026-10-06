@@ -124,6 +124,19 @@ impl LiveProductionCpuScene {
         Ok(true)
     }
 
+    /// Match the descriptor used by CPU cycles and ordinary repaints. The
+    /// policy's primary output can be another monitor; it controls placement
+    /// and focus, not the order of these composition descriptors.
+    pub fn reconfigure_output_descriptors(
+        &mut self,
+        outputs: &[HeadlessOutput],
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        let output = outputs
+            .first()
+            .ok_or("CPU scene replacement has no output descriptor")?;
+        self.reconfigure_output_size(output.size)
+    }
+
     pub fn resident_buffer_count(&self) -> usize {
         self.buffers.len()
     }

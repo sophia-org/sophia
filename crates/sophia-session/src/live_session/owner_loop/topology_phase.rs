@@ -169,7 +169,7 @@
                     output_topology_owner.topology_epoch,
                 )?;
                 let replacement_primary = replacement_outputs[0];
-                if scene.reconfigure_output_size(replacement_primary.size)? {
+                if scene.reconfigure_output_descriptors(&replacement_outputs)? {
                     let committed = runtime
                         .as_ref()
                         .map(|runtime| runtime.committed_surfaces().to_vec())

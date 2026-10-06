@@ -241,6 +241,49 @@ There is no new XLibre comparison, hardware DMA-BUF, battery or live-session
 claim. No install was performed. t289 remains open; the next candidate is the
 immutable upload-sharing boundary described above, measured separately.
 
+## Native qualification started (2026-10-06)
+
+The operator asked to move as much measurement as possible onto crunch's real
+hardware. Both DP-1 (2560×1440) and DP-2 (1920×1080) are connected on the discrete
+GPU; the desktop is logged out at greetd. The earlier software guest percentages
+do not establish the cost distribution on this hardware.
+
+One bounded render-node invocation passed all six ignored `snapshot_reuse`
+tests in 1.67 seconds on renderD128 (PCI 0000:03:00.0, AMD Navi31). The sandbox
+exposed only that render node. This checks snapshot independence, imports,
+reuse and resource reclamation on the physical GPU; it measures no Session CPU,
+KMS presentation, latency or power. Evidence:
+`~/.local/state/sophia/development-evidence/t289-native-render-node-01/`
+(`RUN.json`, `test.log`).
+
+A native wmbench compatibility fixture is prepared in
+`t289-native-wmbench-01`, using the published `97a9e4ce6` binary and unchanged
+wmbench. Its private profile keeps both physical heads active, with the benchmark
+on DP-2. It checks the actual client geometry after 120 warmup frames, before the
+upstream measurement gate opens for 300 frames. The intended client is 1800×960;
+the output rates are 60 Hz and 120 Hz. These differ from the software guest
+recipe, so native CPU results will form a new baseline.
+
+The exact profile and Session arguments pass parser-only checks. Native launch
+uses the existing TTY wrapper with a real seat, independent input recovery and
+a 270-second watchdog; Session is bounded to 240 seconds. Configuration and
+runtime state are private to the attempt. A surviving benchmark application
+group is cleaned up and fails qualification. Nothing is installed, no service
+is stopped, and a failed attempt is retained rather than silently repeated.
+
+The first native Session ran from the operator's tty3 and failed after applying
+the output layout, before wmbench began. Selecting DP-2 as primary made the CPU
+scene size disagree with the first composition descriptor. The
+[startup mismatch investigation](bxeem6rg-changing-the-primary-monitor-mismatched-the-cpu-scene-descriptor.md)
+owns that repair and its CPU regression. Console recovery passed, and the failed
+run is preserved. It provides no native CPU measurement.
+
+After qualification, profile the same hardware workload and use its largest
+costs to select the next source change. Keep real DMA-BUF and software upload
+results separate, based on the renderer and transport actually observed. The
+remote control process remains outside the local seat, so a fresh native launch
+still needs a process started from an active local TTY.
+
 ## Connections
 
 The [framebuffer mapping investigation](djo84ohx-repeated-kms-software-mappings-account-for-the-wmbench-fault-storm.md)

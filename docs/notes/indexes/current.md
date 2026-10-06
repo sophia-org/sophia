@@ -27,6 +27,11 @@ locates CPU time after mapping retention, records a further 6.3% CPU reduction
 from moving owned raster commands into their journal, and identifies the next
 upload-ownership boundary to inspect before SIMD work.
 
+The first two-monitor hardware baseline stopped at a
+[CPU scene descriptor mismatch](../investigations/bxeem6rg-changing-the-primary-monitor-mismatched-the-cpu-scene-descriptor.md)
+when the policy selected the second monitor as primary. The workload never ran;
+the repair needs a fresh native qualification before profiling continues.
+
 The [Session ownership decision](../decisions/adr0002-session-owns-desktop-composition.md)
 explains where users choose the WM, shell, and startup applications. It links to
 the operator guide and its original implementation evidence.
