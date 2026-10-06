@@ -65,6 +65,61 @@ or EGL context used by each render. Guest renderer readback is evidence
 of composed pixels, not physical scanout. No equivalent live-hardware
 failure has been established here.
 
+## Narrowing to the reused slot
+
+Series 53, 55, 57 and 60 traced ten first client draws. Every black one
+was composition 7 in frame slot 0, at buffer age 1, into the buffer that
+slot's empty composition 1 had drawn. Every correct one was drawn into a
+fresh buffer of a newly created target. Series 60 repainted the reused
+buffer in full with damage disabled and still read black twice, so a
+partial repaint is not required. Focused device tests did not reproduce
+it. In series 59 a captured image drew correctly into a reused age-1
+buffer on the host GPU and under virgl, with the capture made before the
+slot was warmed. In series 61 the capture came after slot 0 was warmed and
+the image, still staged, was drawn at once into that pre-existing target:
+buffer age 1, target generation unchanged, no target created. It read
+exact before and after the swap, in both orders and on both machines
+(`61-late-capture/RESULT.txt`, `guest.log` lines 29 to 35). QEMU crashed
+on teardown after the guest had written its result in both series; that
+fault is in the harness and leaves the guest observations intact.
+
+The setup gate on the t306 branch holds the probe's pixmap import, its
+MapWindow and its Present until Session records release each one. With
+it, the client's first draw reaches the reused slot-0 buffer at age 1 in
+every run, through the composed path rather than the original paced one.
+In pair 68, a readback of the capture destination held the exact client
+image while the output region of the same draw read black.
+
+Pair 77 also read the imported texture in the output context, through a
+temporary read framebuffer, just before the draw. Image `0b861919`, source
+`2d5a73cd9`. The comparator boot without either read reproduced the black
+region. In the boot with both reads, `77-on2-pair/boot2.log` lines 106 to
+116 chain one occurrence: the capture destination for allocation 2,
+generation 1 held 120000 nonzero pixels, checksum `8975981465688749989`;
+the copy completed before first use; texture 3, imported fresh in the
+slot-0 context, read back the same image with the same checksum; the layer
+was reported drawn; the window region then read black, checksum
+`8572701038929191205`, and the whole 1280x800 frame read black before the
+swap. Both reads are interventions on the run they observe.
+
+The discrepancy therefore lies after the imported texture's contents: in
+sampling, in the draw, or in the output target. A framebuffer read does
+not prove that sampling of the texture is complete or correctly
+configured. A reading of the source finds no GL state that differs between
+the warmed slot and a fresh one at the draw. The draw sets its viewport,
+blend, scissor, texture unit and binding, filter, vertex buffer, program,
+uniforms and attribute arrays itself. Output contexts keep the default
+framebuffer bound for drawing and reading; the diagnostic import read
+binds a temporary read framebuffer and restores the prior bindings before
+the draw. No output context changes its colour mask, depth, stencil,
+culling or sampler objects. The focused tests reproduced the reused age-1
+buffer and the late capture into an existing slot under virgl, and drew
+correctly. What only Session has remains open: the client's DRI3 buffer
+written by another process, capture and lowering inside one mixed export
+on the renderer worker, two heads composing concurrently, KMS scanout and
+retirement of the reused buffer before its reuse, and the slot's startup
+history.
+
 ## t307
 
 1. Trace the successful mixed Present and subsequent retained composition:
