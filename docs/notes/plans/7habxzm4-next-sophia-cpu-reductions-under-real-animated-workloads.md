@@ -1804,3 +1804,33 @@ the OFF control rebooted in deep sleep and timed out in suspend-to-idle. Failed
 attempts remain recorded. The [investigation](../investigations/djo84ohx-repeated-kms-software-mappings-account-for-the-wmbench-fault-storm.md#lifetime-qualification-and-opt-in-package-2026-10-05)
 contains the identities and limits. The measured Mesa patch is unchanged and
 default-off; ordinary desktop packages and the live session are unchanged.
+
+### Remaining hot path after mapping retention (2026-10-05)
+
+The [new attribution note](../investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md)
+records one optimized Sophia profile plus an unprofiled control, on the same
+300-frame software workload with Mesa retention ON. Both pass, with desktop
+CPU 1.47 seconds profiled and 1.42 seconds unprofiled. The measured interval has
+zero desktop minor/major faults. No new optimization or XLibre comparison is
+claimed by this pair.
+
+Of 713 CPU-clock samples, llvmpipe workers account for 43.1%, the X11 worker
+26.4%, the owner 22.3% and the renderer worker 8.3%. Across those groups,
+memmove accounts for 32.7% and already executes AVX-512 loads/stores. Missing
+callchains and unresolved JIT code limit finer attribution.
+
+**Next candidate: move the owned raster command into its journal.**
+`SurfaceRasterStore::record` consumes a command but deep-clones its pixel Vec
+before retaining it. Finish coverage/replay borrows, then move the command;
+keep validation, poisoning, budgets and replay unchanged. Allocation-identity
+and pixel/lifetime controls must cover both retained paths. Freeze and gate
+that slice alone, then use the same Mesa ON and benchmark in four balanced
+pairs, with the existing all-pairs-improve criterion and no correctness or
+work-count regression. No saving percentage is predicted.
+
+After that result, consider sharing immutable owned upload payloads through
+retention, preserving the initial client snapshot. Renderer SIMD work needs
+attribution to a specific generated or scalar loop first. The rejected clear
+slice and inconclusive whole-image crop candidate remain separate. Evidence:
+`t289-remaining-hotpath-01/RESULT.txt`, `ANALYSIS.json` and `SOURCE-RECEIPT.json`.
+This is documentation and offline analysis only; no live change. t289 stays open.

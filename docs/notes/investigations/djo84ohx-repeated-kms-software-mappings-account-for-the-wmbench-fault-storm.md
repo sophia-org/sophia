@@ -212,6 +212,10 @@ t289 stays open and no live install was made.
 
 ## Connections
 
+The [follow-up hot-path profile](ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md)
+finds zero desktop faults with retention enabled, substantial copy and software
+raster costs, and a concrete owned-command move to measure next.
+
 The [SHM and patch results](../plans/7habxzm4-next-sophia-cpu-reductions-under-real-animated-workloads.md#shm-upload-costs-in-the-wmbench-guest-2026-10-05)
 explain the accepted reductions leading to this baseline. The remaining task
 stays [t289](../../../todo.md); this note does not create a separate queue.
