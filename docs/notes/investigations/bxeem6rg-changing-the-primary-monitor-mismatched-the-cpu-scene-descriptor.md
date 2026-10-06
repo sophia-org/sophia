@@ -69,6 +69,28 @@ successful hardware retry is claimed.
 Development checks and mutant receipts are in
 `~/.local/state/sophia/development-evidence/t289-native-primary-scene-01/`.
 
+Signed repair `cb2cc176b` passed the full isolated `cargo xtask check` gate
+(exit 0, unchanged clean tree, 283 seconds). The log prints 7,172 Rust test
+passes and zero failures, including child-test output; the successful gate
+exit also covers the non-test checks. The Nix release build passed in 51
+seconds. Candidate Sophia SHA256 is
+`61b8ec422dbed189281a87f19bdf78004be1fcdd365e098b8c0f278263b05e11`.
+
+The separately frozen `t289-native-wmbench-02` fixture pins that binary and
+retains the same profile, two heads, client window and bounds. Its `--check`
+passes without opening devices. No candidate Session has run or been installed.
+The remote agent remains outside the active local seat; a native retry still
+needs a launch from the seated local TTY.
+
+The first fixture also had an evidence-routing gap: `SOPHIA_DIAGNOSTIC_DIR`
+made Session consume its records into reduced capture files, while the
+validator expected full records in the raw log. The second fixture unsets it
+only in the bounded Session/check-launch environment. The wrapper retains it
+for recovery logs. A shell control executes the actual command vector and
+checks both environments; removing the unset fails that control. Peer source
+review accepts this fixture-only change. The original fixture and failed
+attempt remain intact. No production logging behavior changed.
+
 ## Connections
 
 This blocks the hardware baseline in the
