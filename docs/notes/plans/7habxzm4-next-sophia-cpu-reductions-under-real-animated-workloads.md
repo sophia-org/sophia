@@ -1794,3 +1794,13 @@ remain unchanged. Wider Mesa/device-lifetime review precedes promotion. No live
 change was made, and the clear-coverage candidate remains rejected. Evidence:
 `t289-framebuffer-faults-01/PAIR-03-RESULT.txt` and
 `t289-kms-map-retention-01/RESULT.txt`. t289 stays open.
+
+The approved lifetime follow-up is published as an opt-in wmbench package at
+`51488da291` on `qualification/kms-map-lifecycle`. Source review, actual-winsys
+controls, sanitizers, 49 Python tests and the final Nix check pass. A fresh OFF/ON
+virtio guest pair passes resize with held buffers, driver-removal cleanup and
+reopen with exact pixels and zero mappings left. Sleep is still unqualified:
+the OFF control rebooted in deep sleep and timed out in suspend-to-idle. Failed
+attempts remain recorded. The [investigation](../investigations/djo84ohx-repeated-kms-software-mappings-account-for-the-wmbench-fault-storm.md#lifetime-qualification-and-opt-in-package-2026-10-05)
+contains the identities and limits. The measured Mesa patch is unchanged and
+default-off; ordinary desktop packages and the live session are unchanged.

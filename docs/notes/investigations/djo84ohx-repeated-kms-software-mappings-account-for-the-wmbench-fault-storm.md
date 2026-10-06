@@ -164,6 +164,52 @@ The candidate stays on the local wmbench measurement branch. A wider Mesa
 change needs review of real-device lifetime, resize, suspend and reset behavior.
 No live driver, installed desktop or Sophia production code changed.
 
+### Lifetime qualification and opt-in package, 2026-10-05
+
+The follow-up is published on wmbench
+[`qualification/kms-map-lifecycle` at `51488da291`](https://github.com/sophia-org/wmbench/tree/51488da291aaafc8e666ab95d56af9a7062010e5/packaging/mesa).
+It exposes `.#mesa-software`, `.#mesa-lifecycle-vm` and a device-free lifetime
+check. The Mesa patch is byte-identical to the measured candidate and remains
+off unless `MESA_KMS_SW_RETAIN_MAPPINGS=1`. Ordinary benchmark and Sophia
+packages keep their original Mesa. This publishes an opt-in software candidate;
+it does not enable the change in the desktop.
+
+The source audit checks owned versus borrowed/imported storage, shared plane
+offsets, logical map counts, separate read/write mappings, final-reference
+cleanup and kernel refusal after retention. Every logical map still asks the
+kernel for permission. Retention adds at most two VMAs per owned backing object,
+lasting until destruction; it does not add a global memory bound.
+
+Actual patched-winsys tests pass on the host, under ASan/UBSan and in the Nix
+sandbox. Two additional mutants fail named lifetime assertions. The full
+software package builds; the final clean-head `nix flake check` passes, including
+49 Python tests. The rebuilt Gallium library has the same `.text` hash as the
+measured one, with a different full ELF hash. No new performance claim follows.
+
+The final cleanup pair (`guest-07`, fixture `1256ca815`) passes OFF and ON with
+both VM exits zero. Helpers check 12 resizes while holding a previous front
+buffer, destruction after guest PCI/virtio driver removal, and exact pixels
+after rebind/reopen. Every helper leaves zero DRM mappings. These are
+software/virtio device checks with no host GPU passed through.
+
+**Suspend remains unqualified.** The OFF deep-sleep control rebooted; the OFF
+suspend-to-idle control did not return within 240 seconds. Neither reached ON.
+Earlier device-selector, test-expression closure and virtiofs setup failures
+are kept. `guest-06` also stays FAILED: both guest payloads passed, but ON timed
+out in ordinary Nix shutdown. Its premature END and attempted termination of
+the previous OFF process are recorded. The final fixture syncs evidence and
+powers off directly after object cleanup, as the existing benchmark does.
+Both final results explicitly say `suspend_tested=false`.
+
+Evidence: `t289-kms-map-lifecycle-01/RESULT.txt` (SHA256
+`fe05e2a71a25ac4da0b2bfe3c4e8a174f0a3b04f264ebfda62af6e453709a4db`),
+`guest-07/RESULT.json`, `16-mutants.json`, `24-package-identity.json`, and
+`41-final-check.log`. The package's `REVIEW.md` records the source review and
+distribution boundary. Wider enablement still needs a working OFF sleep
+control and matching ON result, plus qualification on the intended device.
+The established 30.6% saving remains limited to the measured software workload;
+t289 stays open and no live install was made.
+
 ## Connections
 
 The [SHM and patch results](../plans/7habxzm4-next-sophia-cpu-reductions-under-real-animated-workloads.md#shm-upload-costs-in-the-wmbench-guest-2026-10-05)
