@@ -31,6 +31,36 @@ the gate clears the inherited destructive scanout-smoke opt-in. Explicitly
 ignored hardware and component-acceptance tests remain separate; enabling
 the feature is not permission to access live input or display devices.
 
+### Offscreen renderer tests on a selected GPU
+
+Use `tools/run_render_node_test.py` for an already-built test that accepts
+`SOPHIA_TEST_RENDER_NODE`. It selects one GPU by PCI identity and gives the
+test only that render node. Primary DRM cards, physical input, VTs and live
+session sockets are absent; home, runtime and temporary directories are private.
+Both agents can run correctness tests on different GPUs. Performance results
+still need a quiet host, and display/KMS tests need separate ownership.
+
+```sh
+python3 -B tools/run_render_node_test.py \
+  --pci 0000:16:00.0 --sha256 FROZEN_TEST_SHA256 \
+  --output /absolute/new/receipt --timeout 60 \
+  -- /absolute/frozen/test --ignored --nocapture --test-threads=1
+```
+
+The output directory must be new. It keeps the executable, its hash, command,
+device and namespace admission, stdout/stderr and exit/timeout result. Runs on
+one GPU serialize through a nonblocking lock. There is no unconfined fallback.
+A zero exit only means the admitted executable finished; use a test that
+asserts it exercised hardware and checked pixels, rather than silently skipping.
+The runner deliberately strips ambient graphics/loader flags, so select a
+frozen executable with the runtime libraries it needs available in `/usr` or
+the Nix store. It does not build or install anything.
+
+The runner is trusted host tooling, not a defense against a hostile process
+of the same host UID. Private namespaces and descriptor cleanup confine the
+test and its children; the two agents also keep separate source/build owners.
+See the [GPU development plan](notes/plans/b0yjm547-separate-gpu-development-from-the-live-desktop.md).
+
 ### Shader Sources
 
 The renderer's GLSL lives in its own files under
