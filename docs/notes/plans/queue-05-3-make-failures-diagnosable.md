@@ -89,3 +89,27 @@ records have the separate priority queue. Extend the controls above to a
 spent Present quota and queue pressure, and verify the approved failure kind
 and phase survive record reduction. Keep terminal-cause storage bounded and
 TTY recovery independent of a wedged diagnostic writer.
+
+t309 closed on 2026-10-07 (d24340115, rebased onto ed316c579). A failure that
+leaves a session before the owner loop starts, or after the loop has finished
+cleanly, now writes `sophia_session_failure` with phase `startup` or
+`cleanup`; the loop still records its own failures, once. A refused output
+profile keeps only its kind, such as `output_profile_unknown_connector`; every
+reconcile refusal has its own code, and connector names stay out of ordinary
+records, as they already do for output records. The failure, result and panic
+records share the identity records' priority queue, so a full ordinary queue
+cannot refuse them, and a spent Present share does not touch them. The
+supervised-route control found that the record writer read the stop request
+only after an empty wait on the ordinary queue, which abandoned a priority
+record accepted just before the stop. The stop is now read first. The priority
+queue's capacity, the per-name budget, storage failures and the 500 ms bound on
+shutdown still apply. The controls are in
+`crates/sophia-session/tests/startup_failure_diagnostics.rs` (every refusal
+kind, the stage rule, and a real capture holding the cause through a spent
+Present share and a full queue) and `crates/sophia-cli/tests/startup_failure_record.rs`
+(a supervised `session run` refused at startup, and an owner-loop failure
+recorded once). No harness reaches the native reconcile without KMS, so the
+missing monitor itself is covered in parts rather than reproduced; no
+installed or native reproduction is claimed. The failed daily login and the
+proof-route retry remain separate evidence. Codex accepted the source in
+`t309-startup-refusal-01/REVIEW-CODEX-01.txt`.

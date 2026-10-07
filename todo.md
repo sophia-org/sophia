@@ -188,8 +188,6 @@ Keep fence-waiting Present pixmaps eligible for equal-target full-update scrappi
 
 2026-10-04 Diagnose the rare QEMU page-flip hard stall from series-10 baseline-3; preserve failed evidence and obtain a discriminating trace or reproduction before changing completion behavior. +candidate +renderer @development id:t305 order:305 [details](docs/notes/investigations/3v4qwldr-rare-qemu-native-page-flip-hard-stall-after-successful-unlock.md#t305)
 
-(B) 2026-10-07 Preserve a classified startup output-profile refusal in ordinary session diagnostics, so a missing named monitor is explained after returning to greetd without a raw-output retry. +parallel +diagnostics @development id:t309 order:309 [details](docs/notes/plans/queue-05-3-make-failures-diagnosable.md#t309)
-
 2026-10-07 Make ordinary desktop output policy adapt to available monitors at login and loss/return, preserving reachable workspaces and explicit device exclusions; define fallback separately from strict proof profiles and qualify retained DMA-BUF continuity with t306. +candidate +topology @planning id:t310 order:310 [details](docs/notes/investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#t310)
 
 (B) 2026-10-07 Enable an independently owned iGPU development Session while the dGPU desktop remains active; scope discovery and lifecycle to admitted devices, use private endpoints and recovery, and prove no cross-seat display or input effects. +parallel +topology @planning id:t312 order:312 depends:t311 [details](docs/notes/plans/b0yjm547-separate-gpu-development-from-the-live-desktop.md#t312)

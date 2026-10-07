@@ -177,8 +177,8 @@ impl Capture {
                     // Read before looking. The wait is on the ordinary queue
                     // alone, so a priority record can arrive during it; when
                     // the stop is read only after a wait that found nothing,
-                    // that record is abandoned. Read first, a record sent
-                    // before the stop is always found by a later pass.
+                    // that record is abandoned. Read first, a priority record
+                    // accepted before the stop is found by a later pass.
                     let stopping = worker_stop.load(Ordering::Acquire);
                     let event = match priority_rx.try_recv() {
                         Ok(event) => Some(event),
