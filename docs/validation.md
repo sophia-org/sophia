@@ -50,11 +50,21 @@ python3 -B tools/run_render_node_test.py \
 The output directory must be new. It keeps the executable, its hash, command,
 device and namespace admission, stdout/stderr and exit/timeout result. Runs on
 one GPU serialize through a nonblocking lock. There is no unconfined fallback.
+That lock coordinates these runners; it does not exclude the live desktop or
+other programs that already use the device.
 A zero exit only means the admitted executable finished; use a test that
 asserts it exercised hardware and checked pixels, rather than silently skipping.
 The runner deliberately strips ambient graphics/loader flags, so select a
 frozen executable with the runtime libraries it needs available in `/usr` or
 the Nix store. It does not build or install anything.
+
+The executable and runner are frozen, but shared libraries and the host
+`bwrap` are not. Record their scope and the confinement tool's identity when
+qualifying a recipe. The minimal `/etc` contains only the loader cache; tests
+that need other host configuration must account for its absence. Negative child
+exit values in the receipt denote POSIX signals. The admission file is in the
+test's writable artifacts directory, so it is evidence from a reviewed test,
+not an immutable audit against a test that rewrites its own results.
 
 The runner is trusted host tooling, not a defense against a hostile process
 of the same host UID. Private namespaces and descriptor cleanup confine the

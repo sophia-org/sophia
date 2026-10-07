@@ -57,6 +57,49 @@ VTs and host session sockets. A bounded renderer correctness invocation on
 each GPU passes while the daily desktop remains alive. No KMS, seat change,
 lock, install or hotplug is part of this exit.
 
+### Qualification, 2026-10-07
+
+Runner source `68c75b1064269360674a0c4b746d77bac97529ff` passed the
+isolated full `cargo xtask check` gate with devices hidden. Its 17 Python
+controls are part of that gate. Claude's read-only source review found no
+blocking admission or confinement issue.
+
+The actual sandbox control denied opens of the other render node, both primary
+cards, physical input, physical VTs and session sockets. `/dev/tty` had no
+controlling terminal, and the live abstract X11 endpoint was unreachable.
+The first preflight attempt stopped before launch because bubblewrap required
+explicit `--unshare-user` alongside `--unshare-all`; its failed receipt is kept.
+
+Both agents then used the same frozen `snapshot_reuse` executable, SHA-256
+`20b714f10418a1316d181f9938fa9ba0621e4ff6cab78eb5b527e04f43b44352`,
+for one invocation per GPU with a 60-second limit:
+
+| Agent | PCI GPU | Snapshot tests | Exit |
+| --- | --- | --- | --- |
+| Codex | 0000:16:00.0 | 6 passed, none skipped | 0 |
+| Claude | 0000:03:00.0 | 6 passed, none skipped | 0 |
+
+The tests assert immutable pixels after producer rewrites, bounded allocation
+and import reuse, descriptor lifetime through donor destruction, and eviction
+and cleanup. Each namespace exposed only its selected render node and inherited
+no descriptor above standard streams. No test process remained afterwards.
+The live desktop's PID and start time, its helper processes, and connector
+states were unchanged: DP-1 enabled, HDMI-A-2 disabled.
+
+Evidence is retained under `development-evidence/igpu-development-01`:
+`runner-gate.log`, `runner-boundary-01`, `SNAPSHOT-QUALIFICATION.json`,
+`igpu-snapshot-01`, `dgpu-snapshot-01`, `desktop-before.json`,
+`desktop-after.json`, and `RESULT.txt`. `RUNNER-REVIEW-LIMITS.json` records
+bubblewrap identity and receipt limitations. One optional mutation harness
+stopped on a selection exception; it is retained without a mutation-score claim.
+
+These are bounded offscreen correctness results while the desktop remained
+alive. They establish neither performance nor exclusive GPU ownership. The
+desktop still opens both render nodes; the runner lock coordinates cooperating
+test runners only. Libraries are read-only but not frozen, and the reviewed
+test can write its artifacts, including the admission file. This qualification
+does not clear t306/t307 or establish the independent visible Session in t312.
+
 ## t312
 
 An independent visible native development Session needs more than output
