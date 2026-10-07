@@ -52,7 +52,6 @@ Bound the page-flip callback read without losing retirement, then close the brok
 
 Decide whether blind spatial/output roles require Bubblewrap protection by default and define fail-closed behavior on hosts without bwrap. +candidate @planning id:t033 order:033 [details](docs/notes/plans/queue-13-authority-and-lifecycle-hardening.md#t033)
 
-(B) 2026-10-03 Specify and implement the secure session lock: Engine cover, Session lock state and input, the sophia-factotum unlock authority and a lock provider role that only renders; no lock-screen UI project. +parallel @development id:t034 order:034 depends:t291,t292,t293,t294,t295,t296 [details](docs/notes/plans/8jcykhdc-secure-session-lock-authority-and-lock-provider-role.md)
 (B) 2026-10-03 Accept the session lock physically on an exact installed release: two outputs, hotplug, VT round trip, provider kill, wrong and right password. +parallel @physical id:t297 order:034.07 depends:t034 [details](docs/notes/plans/8jcykhdc-secure-session-lock-authority-and-lock-provider-role.md#t297-attended-acceptance)
 (B) 2026-10-03 Add p9any and dp9ik to sophia-factotum and the shared sophia-libauthsrv crate, byte-checked against a C oracle built from 9front's sources. +parallel @development id:t298 order:034.08 depends:t293 [details](docs/notes/plans/8jcykhdc-secure-session-lock-authority-and-lock-provider-role.md#t298-p9any-and-dp9ik)
 

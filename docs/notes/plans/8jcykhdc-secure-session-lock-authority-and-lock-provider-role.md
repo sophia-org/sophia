@@ -23,6 +23,35 @@ controls proving that ordinary content cannot claim locked state or receive
 unlock input and that a stale completion cannot unlock a new epoch. t297's
 attended acceptance is separate physical evidence.
 
+t034 closed on 2026-10-07 with t291–t296 closed, and its original exit was
+checked against their controls. Authority: only Session enters and leaves
+locked state, and the t292 reducer controls show that no WM, shell, X client or
+provider record can do either. The provider is admitted only through the lock
+role's pidfd-checked endpoint, in its own protection domain, and cannot claim
+or end the lock (t294); the C and Rust SDK clients speak that contract (t295).
+Unlock is trusted to sophia-factotum behind PAM alone (t293), whose controls run
+real PAM through a private configuration directory, kill a hung helper at its
+deadline and refuse a forged acceptance. In the QEMU `session-lock` scenario,
+physical keys reach it, a wrong password is refused and the right one unlocks
+(t292). Input: at lock entry Session revokes input and focus and waits for the
+X frontend to apply the new epoch; while locked, the VT and emergency
+recognizers run first, synthetic input is refused and no key reaches the X
+frontend, WM, shell, launcher or provider as text; unlock restores focus only
+to a still-authorized target (t292). Cover: Engine draws the cover last on
+every head through every path that builds a head frame, Session reports locked
+only on every head's proof, a first Present waits for the unlock and an unlock
+whose repaint cannot be queued keeps the cover (t291). These are CPU controls
+on the mirrored target that add and remove outputs and heads while locked; they
+are not topology continuity on the operator's hardware. Replacement: a provider
+that crashes, stalls, is replaced or follows a render-device change leaves the
+fill, and old feedback cannot settle a successor's image (t294). Stale
+completion: a verdict for an earlier epoch or a superseded attempt never
+unlocks, and relocking during authentication discards the one in flight; the
+reducer controls cover this, and so does `NoStaleUnlock` in
+`SessionLock.tla` (t296). Two things stay open. t297's physical acceptance on
+an installed release has not passed. A monitor unplugged while locked ends the
+session on the operator's hardware; that failure is t306's.
+
 Sophia stays independent of any particular locker. Kleis is the first consumer;
 its behaviour is tested in its own repository. Sophia's controls use generic
 contract peers.

@@ -50,3 +50,6 @@ epoch. Worker exit or a full-screen shell image is not proof of a secure lock.
 
 The implementation plan and its tasks t291–t297 are in
 [the lock plan](8jcykhdc-secure-session-lock-authority-and-lock-provider-role.md).
+t034 closed on 2026-10-07. The lock plan records how this exit was checked
+and what stays open: t297's physical acceptance and t306's locked hotplug
+failure.
