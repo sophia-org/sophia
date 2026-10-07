@@ -106,8 +106,6 @@ Runtime effect plug-ins or a sandboxed effect host until the private build-linke
 
 2026-09-07 Restore application-selected cursor shapes, including the hand pointer when hovering over hyperlinks. +candidate @development id:t067 order:067 [details](docs/notes/investigations/lv26isrv-application-cursor-shapes-do-not-follow-hyperlink-hover.md)
 
-(B) Implement optional Hagia focus-follows-mouse with default-off behavior and committed presented-target routing +parallel +policy @development id:t078 order:078 [details](docs/notes/investigations/nsu4a0n2-optional-pointer-focus-follows-presented-targets-through-committed-policy.md)
-
 Measure CPU content costs before admitting shared-memory or DMA-BUF image transport with immutable acceptance and final release. +candidate +lom @planning id:t102 order:102 peer:lom/t016 [details](docs/notes/plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md#t102)
 
 Evaluate an optional renderer-independent GPU bridge only against a named isolation or performance need and enforceable limits. +candidate +lom @planning id:t103 order:103 peer:lom/t019 [details](docs/notes/plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md#t103)

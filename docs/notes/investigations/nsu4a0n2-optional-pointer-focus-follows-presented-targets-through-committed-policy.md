@@ -2,7 +2,7 @@
 id: nsu4a0n2
 date: 2026-09-11
 kind: investigation
-status: awaiting-physical-acceptance
+status: accepted
 tags: [policy, input, session]
 ---
 # Optional pointer focus follows presented targets through committed policy
@@ -275,6 +275,23 @@ subsequent process inspection still found the old executable. The linked
 investigation records that activation correction and the subsequent discovery
 that Ctrl+Alt+F5 was intercepted for virtual-terminal switching. The replacement
 restart binding is Ctrl+Alt+Shift+R, after Ctrl+Alt+R loads the edited profile.
+
+## Installed acceptance completed — 2026-10-07
+
+On the installed release `niltempus-44f76a7d05b2b8264a63` (Sophia `825d9146`,
+Hagia `155daab6`, focus-follows-mouse on in its profile), on two monitors,
+niltempus confirmed the three checks this note still owed. A new browser
+window landed where expected and took typing. Super-dragging and resizing a
+floating window with windows on both monitors, the original crash trigger,
+left the session up. Keyboard focus moved into the right monitor and back. The
+session's recovery log stayed empty with no fatal record. The record is
+`attended-closures-01/RESULTS.json` in the development evidence.
+
+Disabling through reload was not repeated. This release renders its profile
+into a root-owned directory and reads nothing from the user's state, so the
+setting cannot be turned off there. niltempus accepted the default-off
+behaviour recorded on 2026-09-11 as covering it (decision of 2026-10-06).
+t078 is closed.
 
 ## Related repair
 
