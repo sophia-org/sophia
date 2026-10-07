@@ -130,6 +130,22 @@ backend-live 818 (8 ignored), Session 311 (17 ignored). Open: a runtime control
 for the first-visibility guard, which needs a queued-Present fixture, and the
 unlock rollback, which needs an injected repaint failure.
 
+t291 closed on 2026-10-06 with both open controls in place (534eda08b). They
+are CPU runtime controls on the mirrored target. In
+`a_first_present_parked_while_locked_waits_for_the_unlock`, a first Present
+deferred before the lock is still parked 10 ms and 20 ms later while locked,
+well inside its 2000 ms first-visibility expiry, and is released by the unlock.
+In `an_unlock_whose_repaint_cannot_be_queued_keeps_the_cover`, the test target
+refuses the batch before admission: a lock whose repaint cannot be queued keeps
+the cover, an unlock whose repaint cannot be queued rolls back and leaves only
+the cover in the head lists, and a retry unlocks. Three bounded mutants on a
+separate source copy were each killed by the named assertion. The full gate
+passed with 7174 tests, none failed and 100 ignored. Codex accepted the change
+in a read-only review. The evidence is in
+`development-evidence/t291-controls-01/`, with the review in
+`REVIEW-CODEX-01.txt`. Attended acceptance stays with t297, and the hardware
+hotplug failure while locked stays with t306.
+
 ### t292 Session lock state and input
 
 Add `SessionLockState` with monotonically minted lock epochs; zero and
