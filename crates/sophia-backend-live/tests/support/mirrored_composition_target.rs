@@ -33,6 +33,9 @@ pub(super) struct MirroredTarget {
     pub(super) owners: Rc<Cell<usize>>,
     pub(super) wrong_target: Option<usize>,
     pub(super) refuse_reservation: bool,
+    /// Refuse every batch at queueing, as a target whose repaint cannot be
+    /// admitted does.
+    pub(super) refuse_queue: bool,
     pub(super) installed_heads: usize,
     pub(super) serial: u64,
     pub(super) recovering: BTreeSet<OutputId>,
@@ -99,6 +102,7 @@ impl MirroredTarget {
             owners: Rc::new(Cell::new(0)),
             wrong_target: None,
             refuse_reservation: false,
+            refuse_queue: false,
             installed_heads: 0,
             serial: 0,
             recovering: BTreeSet::new(),
@@ -471,6 +475,9 @@ impl MirroredTarget {
         content: crate::LiveProductionHeadCompositionContent,
     ) -> Result<BTreeMap<OutputId, crate::LiveProductionNativeFrameId>, Box<dyn std::error::Error>>
     {
+        if self.refuse_queue {
+            return Err("test target refuses the batch".into());
+        }
         let states = self
             .outputs
             .iter()

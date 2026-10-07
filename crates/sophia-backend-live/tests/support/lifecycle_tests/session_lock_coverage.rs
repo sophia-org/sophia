@@ -348,3 +348,48 @@ fn a_locked_session_paces_every_client_as_hidden_and_binds_the_fallback_clock() 
     assert!(runtime.background_surface_is_visible(right, geometry, 0.0));
     assert_eq!(clock(&runtime), vec![(right, Some(outputs[1].id))]);
 }
+
+/// Locking never rolls back: the cover is runtime state every later frame
+/// consults, so a lock whose repaint could not be queued still covers.
+/// Unlocking does roll back: heads that never drew the desktop must not
+/// report an unlock, so a session whose unlock repaint fails stays covered.
+#[test]
+fn an_unlock_whose_repaint_cannot_be_queued_keeps_the_cover() {
+    let (outputs, mut runtime, scene, mut target) = desktop();
+    target.refuse_queue = true;
+    assert!(
+        runtime
+            .set_session_lock_on(Some(cover(5)), &scene, Some(&mut target))
+            .is_err()
+    );
+    assert_eq!(
+        runtime.session_lock(),
+        Some(cover(5)),
+        "a lock whose repaint failed still covers"
+    );
+    assert!(
+        runtime
+            .set_session_lock_on(None, &scene, Some(&mut target))
+            .is_err()
+    );
+    assert_eq!(
+        runtime.session_lock(),
+        Some(cover(5)),
+        "a failed unlock keeps the cover"
+    );
+    for output in &outputs {
+        assert!(
+            only_the_cover(&output_list(&runtime, output.id), output.id, 5),
+            "{:?} still draws the cover alone",
+            output.id
+        );
+    }
+    target.refuse_queue = false;
+    assert!(
+        runtime
+            .set_session_lock_on(None, &scene, Some(&mut target))
+            .unwrap()
+    );
+    assert_eq!(runtime.session_lock(), None);
+    target.teardown();
+}

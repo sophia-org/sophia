@@ -965,6 +965,8 @@ fn a_hidden_first_present_is_released_when_the_presentation_withdraws() {
 
 #[path = "background_pressure.rs"]
 mod background_pressure;
+#[path = "lock_first_visibility.rs"]
+mod lock_first_visibility;
 #[path = "preview_recovery.rs"]
 mod preview_recovery;
 
