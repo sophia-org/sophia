@@ -193,6 +193,13 @@ then reach the real factotum agent and PAM in the guest, a wrong password is
 rejected, the right one unlocks, and zenity's exact stdout shows no lock-time
 key reached it ([validation](../../validation.md#session-lock-in-qemu)).
 
+t292 closed on 2026-10-06, with each item it had left open now owned
+elsewhere. Cursor hiding is checked physically in t297. The control-bus lock
+request belongs to the administrative 9P export (t254) and idle locking to
+t110. The screen-capture gate is part of the capture slice of t046, the portal
+work that builds the executor it needs. WM inspection while locked is left as
+it is, and the owner-loop control is the QEMU `session-lock` scenario above.
+
 ### t293 sophia-factotum core, pam and pass
 
 Port 9front's factotum agent to `crates/sophia-factotum` under the
@@ -325,6 +332,11 @@ Checkpoint 2026-10-03 on `lock/t034-next`:
   - an independent C peer against the production export.
 - Open: following a render-device change after a direct grant, and a live
   run with a real provider (kleis through the t295 C SDK client).
+- The live run with a real provider has happened: the operator installed
+  `niltempus-99bb041fe3535b5d265d` with kleis on the granted render node,
+  locked and unlocked on two outputs and found the keys normal afterwards
+  ([lock performance plan](qrstyyjn-restore-lock-animation-and-input-responsiveness.md)).
+  Following a render-device change after a direct grant remains open.
 
 ### t295 SDKs
 

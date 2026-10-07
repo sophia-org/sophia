@@ -2,7 +2,7 @@
 id: qrmqf4gy
 date: 2026-10-02
 kind: investigation
-status: investigating
+status: accepted
 tags: [investigation, rendering, session]
 ---
 # Alt-Tab exposes missing cross-head retained image custody
@@ -96,7 +96,8 @@ arbitrary error text or client data.
 ## Repair design and exit criteria
 
 Task t284 owns the implementation below. Code qualification is complete;
-release assembly is recorded separately. Attended acceptance remains open.
+release assembly is recorded separately. Attended acceptance is recorded in
+the acceptance section after the release criteria.
 
 A queued frame must own the immutable image it actually references. A donor
 lookup performed later is insufficient: a later Present can replace and
@@ -154,6 +155,26 @@ Release criteria (status at final code qualification):
    are recorded under `t284-release-01`; release assembly follows this commit.
 6. Attended multi-head Alt-Tab acceptance, including hold/release, navigation,
    cancellation and source updates. Existing acceptance remains open.
+
+## Acceptance
+
+On 2026-10-02 the operator ran the installed release
+`niltempus-9de41ea905db10201b9e` (Sophia `f650e688`, Hagia `03be1d1f`) on two
+monitors and confirmed four attended checks: Alt+Tab held for about a second
+and released switched focus with a preview; Escape while Alt was held closed
+the strip without changing focus; Left and Right changed the selection and
+releasing Alt focused it; and a window on the other monitor kept updating
+while the switcher was held. The session did not end, the recovery log stayed
+empty and the event log held no error matches. The record is
+`t284-release-01/live-acceptance-01/RESULTS.json` in the development
+evidence. It covers that session and output arrangement; hotplug, mirrors,
+GPU reset and exhaustive switcher behaviour are not claimed. This settles
+criterion 6.
+
+On 2026-10-06 niltempus accepted criterion 3's refusal paths (preview budget,
+failed import, missing image) on the runtime fixture tests and the 35 named
+mutant controls. A live desktop has no safe way to force those refusals, so
+no physical trigger was built. t284 is closed on that basis.
 
 ## Implemented recovery boundaries
 

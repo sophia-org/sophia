@@ -38,3 +38,9 @@ transfer, cancellation, revocation and owner replacement; a minimal independent
 provider proves the complete wire/owner route, including denied/stale/foreign
 requests and backpressure. Use t109 presentation admission where needed. No
 notification center, clipboard manager or prompt UI product is required.
+
+The capture slice also carries the session lock's screen-capture gate, which
+t292 left here because no portal executor existed: while the session is
+locked, a capture or frame handoff is refused and none in flight completes
+after the lock is applied
+([lock plan](8jcykhdc-secure-session-lock-authority-and-lock-provider-role.md#t292-session-lock-state-and-input)).
