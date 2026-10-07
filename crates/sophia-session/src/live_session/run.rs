@@ -1,5 +1,6 @@
 pub(crate) fn run_persistent_xterm_session(
     args: &[String],
+    stage: &mut crate::diagnostics::SessionRunStage,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Answer whether these arguments would be accepted, and stop.
     //
@@ -797,6 +798,7 @@ pub(crate) fn run_persistent_xterm_session(
     };
     let primary_diagnostic = process.diagnostic;
     let (primary_child, secondary_children) = process.children_mut();
+    *stage = crate::diagnostics::SessionRunStage::OwnerLoop;
     let result = run_session_loop(
         &mut config,
         SessionLoopChannels {
@@ -849,6 +851,9 @@ pub(crate) fn run_persistent_xterm_session(
             xtest_scene: Arc::clone(&xtest_scene),
         },
     );
+    if result.is_ok() {
+        *stage = crate::diagnostics::SessionRunStage::Finished;
+    }
     let session_error = result.err();
     let mut outer_cleanup_failures = Vec::new();
     if let Some(wm) = wm_session.as_mut() {

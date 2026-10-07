@@ -100,9 +100,22 @@ fn identity_record(line: &str) -> bool {
     .any(|prefix| line.starts_with(prefix))
 }
 
+/// Why the session ended. These are the last records a failed login leaves,
+/// written as the owner is already returning, so they must not wait behind a
+/// burst of ordinary records or be dropped when that burst fills the queue.
+fn terminal_record(line: &str) -> bool {
+    [
+        "sophia_session_failure ",
+        "sophia_session_result ",
+        "sophia_session_panic ",
+    ]
+    .iter()
+    .any(|prefix| line.starts_with(prefix))
+}
+
 fn send(sink: &Sink, event: Event) {
     let Event::Line(_, line) = &event;
-    let sender = if identity_record(line) {
+    let sender = if identity_record(line) || terminal_record(line) {
         &sink.priority
     } else {
         &sink.sender
@@ -161,14 +174,19 @@ impl Capture {
                 let mut budget = SegmentBudget::default();
                 let mut synced = Instant::now();
                 loop {
-                    let event = match priority_rx
-                        .try_recv()
-                        .map_err(|_| mpsc::RecvTimeoutError::Timeout)
-                        .or_else(|_| receiver.recv_timeout(Duration::from_millis(100)))
-                    {
+                    // Read before looking. The wait is on the ordinary queue
+                    // alone, so a priority record can arrive during it; when
+                    // the stop is read only after a wait that found nothing,
+                    // that record is abandoned. Read first, a record sent
+                    // before the stop is always found by a later pass.
+                    let stopping = worker_stop.load(Ordering::Acquire);
+                    let event = match priority_rx.try_recv() {
                         Ok(event) => Some(event),
-                        Err(mpsc::RecvTimeoutError::Timeout) => None,
-                        Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                        Err(_) => match receiver.recv_timeout(Duration::from_millis(100)) {
+                            Ok(event) => Some(event),
+                            Err(mpsc::RecvTimeoutError::Timeout) => None,
+                            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                        },
                     };
                     let empty = event.is_none();
                     let result = (|| -> io::Result<()> {
@@ -196,9 +214,7 @@ impl Capture {
                                 directory.append("identity.log", &entry, METADATA_LIMIT)?;
                             }
                         }
-                        if synced.elapsed() >= Duration::from_secs(5)
-                            || (empty && worker_stop.load(Ordering::Acquire))
-                        {
+                        if synced.elapsed() >= Duration::from_secs(5) || (empty && stopping) {
                             for name in ["events.0.log", "identity.log"] {
                                 match directory.sync(name) {
                                     Ok(()) => {}
@@ -213,11 +229,7 @@ impl Capture {
                                 rotated,
                                 budget.total_suppressed(),
                                 errors,
-                                if worker_stop.load(Ordering::Acquire) {
-                                    "stopped"
-                                } else {
-                                    "running"
-                                },
+                                if stopping { "stopped" } else { "running" },
                             )?;
                             synced = Instant::now();
                         }
@@ -229,7 +241,7 @@ impl Capture {
                             discarded.fetch_add(1, Ordering::Relaxed);
                         }
                     }
-                    if empty && worker_stop.load(Ordering::Acquire) {
+                    if empty && stopping {
                         break;
                     }
                 }

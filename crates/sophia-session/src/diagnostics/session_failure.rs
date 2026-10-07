@@ -55,6 +55,32 @@ pub fn session_failure_record(phase: SessionFailurePhase, error: &(dyn Error + '
     )
 }
 
+/// How far a session run got before an error left it.
+///
+/// The owner loop records its own failure with the phase it was in. An error
+/// that leaves before the loop starts, or after the loop finished cleanly, has
+/// no such record, so a startup refusal of the output profile ended a daily
+/// login with nothing but a failed result.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SessionRunStage {
+    Startup,
+    OwnerLoop,
+    Finished,
+}
+
+/// The failure record a run still owes, if the owner loop did not write one.
+pub fn unrecorded_session_failure(
+    stage: SessionRunStage,
+    error: &(dyn Error + 'static),
+) -> Option<String> {
+    let phase = match stage {
+        SessionRunStage::Startup => SessionFailurePhase::Startup,
+        SessionRunStage::OwnerLoop => return None,
+        SessionRunStage::Finished => SessionFailurePhase::Cleanup,
+    };
+    Some(session_failure_record(phase, error))
+}
+
 pub(super) fn approved_phase(value: &str) -> bool {
     use SessionFailurePhase::*;
     [

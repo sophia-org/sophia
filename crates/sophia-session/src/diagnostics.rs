@@ -4,6 +4,7 @@ mod capture;
 mod commands;
 mod failure;
 mod input_device;
+mod output_profile;
 mod recovery;
 mod selection;
 mod shell_action;
@@ -24,7 +25,9 @@ pub use capture::{
 };
 pub use commands::{Inspection, Marker, Retention, SessionRecord, Store};
 pub use failure::failure_code;
-pub use session_failure::{SessionFailurePhase, session_failure_record};
+pub use session_failure::{
+    SessionFailurePhase, SessionRunStage, session_failure_record, unrecorded_session_failure,
+};
 
 use std::io;
 use std::time::{SystemTime, UNIX_EPOCH};

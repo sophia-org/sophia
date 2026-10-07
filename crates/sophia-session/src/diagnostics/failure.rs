@@ -292,6 +292,9 @@ pub fn failure_code(error: &(dyn std::error::Error + 'static)) -> &'static str {
     if let Some(code) = super::recovery::failure_code(error) {
         return code;
     }
+    if let Some(code) = super::output_profile::failure_code(error) {
+        return code;
+    }
     if let Some(detail) = error.downcast_ref::<Detail>() {
         return RENDERER_CODES
             .iter()
@@ -318,6 +321,7 @@ pub fn failure_code(error: &(dyn std::error::Error + 'static)) -> &'static str {
 pub(super) fn approved_failure_code(value: &str) -> bool {
     PREVIEW_REFUSAL_CODES.contains(&value)
         || super::recovery::CODES.contains(&value)
+        || super::output_profile::CODES.contains(&value)
         || value == "unclassified"
         || RENDERER_CODES.iter().any(|(_, code)| *code == value)
         || INVARIANT_CODES.iter().any(|(_, code)| *code == value)

@@ -108,7 +108,14 @@ pub const LIVE_RESOURCE_SAMPLE_CAPACITY: u64 = live_session::RESOURCE_SAMPLE_CAP
 
 #[cfg(feature = "native-session")]
 pub fn run_from_args(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    live_session::run_persistent_xterm_session(args)
+    let mut stage = diagnostics::SessionRunStage::Startup;
+    let result = live_session::run_persistent_xterm_session(args, &mut stage);
+    if let Err(error) = &result
+        && let Some(record) = diagnostics::unrecorded_session_failure(stage, error.as_ref())
+    {
+        session_eprintln!("{record}");
+    }
+    result
 }
 
 #[cfg(feature = "native-session")]

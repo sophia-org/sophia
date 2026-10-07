@@ -51,6 +51,17 @@ large binary held up unrelated events. Hashing now has a separate bounded
 worker, while identity records have a separate bounded priority queue. Neither
 worker performs display policy, protocol dispatch, or rendering.
 
+The records that say why a session ended, `sophia_session_failure`,
+`sophia_session_result` and `sophia_session_panic`, share that priority queue
+(t309). They are written as the owner returns, often just after a burst of
+ordinary records, and a full ordinary queue would otherwise refuse them. The
+writer reads the stop request before it looks at either queue, so a record sent
+before the stop is always written. A failure that leaves the session before
+the owner loop starts, or after the loop has finished cleanly, is recorded with
+phase `startup` or `cleanup`; the loop records its own failures. An output
+profile that the hardware refuses keeps only its kind, such as
+`output_profile_unknown_connector`, and never the connector name.
+
 The installed `mark`, `inspect`, `keep`, and `list` commands access private host
 records directly. A stopped desktop need not answer a request. Markers carry
 both clocks; post-exit reports use the final retained event window rather than
