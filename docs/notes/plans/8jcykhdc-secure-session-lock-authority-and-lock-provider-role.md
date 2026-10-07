@@ -354,6 +354,45 @@ Checkpoint 2026-10-03 on `lock/t034-next`:
   ([lock performance plan](qrstyyjn-restore-lock-animation-and-input-responsiveness.md)).
   Following a render-device change after a direct grant remains open.
 
+t294 closed on 2026-10-07 when the provider started following the render
+device (f9191659b). A direct grant names one device. When the session's
+admitted device changes, is lost or first appears, Session replaces only the
+provider's process. The lock file service and its transport live as long as
+the session, so every connection, and every image identity drawn from one,
+takes the next epoch of one checked counter. From the change on, Session
+ignores the old process's connection and submission events, ends its chords
+and images at once so every locked head shows the fill, asks it to exit
+without waiting for it, and asks the service to retire it. The service ends
+the connection, admits nobody until the next authorization, and answers with a
+`Retired` marker after every event the old process sent. The successor starts
+only after the marker is seen and the old process reaped, in either order.
+Its launch is prepared from the ungranted base for the latest device under the
+next grant epoch. A preparation that fails is made again at the next start, so
+no older launch is used and no grant epoch wraps; a prepared launch that fails
+to spawn is retried as prepared, on the ordinary backoff. Changes that arrive
+while a retirement is outstanding coalesce into the latest device. A direct
+grant with no admitted device starts nothing until one is admitted. A service
+that stops ends the provider for the rest of the session, and the cover keeps
+its fill. Grants other than direct name no device and are never replaced this
+way. The first launch now happens on the owner's first poll, so a first launch
+that fails is retried on the backoff like any later one. The controls are in
+`crates/sophia-session/tests/session_lock_succession.rs`, the provider's
+in-crate tests (a process that ignores TERM does not hold the owner step, and
+a reported service failure is terminal and discards its batch), and the
+retirement tests in `crates/sophia-runtime/tests/lock_file_service.rs`.
+Fifteen bounded mutants, one per rule, on a separate source copy built in its
+own target, were each killed by a named assertion; the one that first survived
+was killed after its control was strengthened. The full gate passed with 7192
+tests, none failed and 100 ignored, and Codex accepted the change in a
+read-only review. The owner-loop wiring that calls the provider and the
+revocation helper has no control of its own, because no harness swaps the
+admitted render device. Queue pressure is controlled in the succession rules,
+not through a full service queue. An exhausted connection counter refuses each
+successor without wrapping, and the service is not otherwise stopped. The
+evidence is in `development-evidence/t294-regrant-02/`, with the review in
+`REVIEW-CODEX-01.txt`; the held first design (bb3b9bf5f) and its reviews are in
+`t294-regrant-01/`.
+
 ### t295 SDKs
 
 Add a lock client to sophia-desktop-sdk-c and codecs to sophia-desktop-sdk-rs,
