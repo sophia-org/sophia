@@ -50,12 +50,16 @@ const SUPER_B: LockChordRequest = LockChordRequest {
 };
 
 fn service(label: &str) -> (LockFileService, std::path::PathBuf) {
+    service_from(label, 11)
+}
+
+fn service_from(label: &str, first_epoch: u64) -> (LockFileService, std::path::PathBuf) {
     let directory =
         std::env::temp_dir().join(format!("lock-file-service-{label}-{}", std::process::id()));
     let mut transport = LockFileTransport::bind_for_supervised_uid(
         &directory,
         rustix::process::geteuid().as_raw(),
-        11,
+        first_epoch,
         limits(),
     )
     .unwrap();
@@ -238,6 +242,156 @@ fn a_replacement_is_admitted_under_the_next_epoch_with_the_newest_lock() {
     let lock = second.read(7, 0);
     let lock = decode_lock_file_record(&lock, LockFileClass::Object).unwrap();
     assert_eq!(LockObject::decode(lock.body).unwrap().lock_epoch, 6);
+}
+
+/// t294: a provider retired while it may still run, as when Session follows
+/// a new render device. Its connection ends, `Retired` follows its last event
+/// and names the next epoch, and the successor is admitted under that epoch,
+/// so no identity the retired provider used can recur.
+#[test]
+fn a_retired_provider_is_followed_by_a_successor_under_the_next_epoch() {
+    let (service, path) = service("retired-successor");
+    let mut first = raw_peer::Peer::connect(&path);
+    first.setup();
+    service
+        .command(LockFileServiceCommand::RetireSupervisedProcess)
+        .unwrap();
+    match event(&service) {
+        LockFileServiceEvent::Disconnected {
+            connection_epoch: 11,
+        } => {}
+        other => panic!("{other:?}"),
+    }
+    match event(&service) {
+        LockFileServiceEvent::Retired { next_epoch: 12 } => {}
+        other => panic!("{other:?}"),
+    }
+    drop(first);
+    service
+        .command(LockFileServiceCommand::ReplaceSupervisedPid(
+            std::process::id(),
+        ))
+        .unwrap();
+    let mut second = raw_peer::Peer::connect(&path);
+    second.setup();
+    second.open(6, b"api", 0);
+    assert_eq!(second.read(6, 0), b"sophia-lock-files version=1 epoch=12\n");
+}
+
+/// t294: epochs spent by reconnects before a retirement stay spent, and a
+/// retirement with nobody connected still marks the end of the retired
+/// process.
+#[test]
+fn a_retirement_follows_earlier_reconnects_and_needs_no_connection() {
+    let (service, path) = service("retired-after-reconnect");
+    let mut first = raw_peer::Peer::connect(&path);
+    first.setup();
+    service
+        .command(LockFileServiceCommand::ReplaceSupervisedPid(
+            std::process::id(),
+        ))
+        .unwrap();
+    assert!(matches!(
+        event(&service),
+        LockFileServiceEvent::Disconnected {
+            connection_epoch: 11
+        }
+    ));
+    drop(first);
+    let mut second = raw_peer::Peer::connect(&path);
+    second.setup();
+    service
+        .command(LockFileServiceCommand::RetireSupervisedProcess)
+        .unwrap();
+    match event(&service) {
+        LockFileServiceEvent::Disconnected {
+            connection_epoch: 12,
+        } => {}
+        other => panic!("{other:?}"),
+    }
+    match event(&service) {
+        LockFileServiceEvent::Retired { next_epoch: 13 } => {}
+        other => panic!("{other:?}"),
+    }
+    drop(second);
+
+    let (service, _path) = service_from("retired-unconnected", 11);
+    service
+        .command(LockFileServiceCommand::RetireSupervisedProcess)
+        .unwrap();
+    match event(&service) {
+        LockFileServiceEvent::Retired { next_epoch: 11 } => {}
+        other => panic!("{other:?}"),
+    }
+}
+
+/// t294: the connection counter is checked. A retirement reports the last
+/// epoch the counter can give, and a successor past it is refused rather
+/// than given a wrapped epoch.
+#[test]
+fn an_exhausted_connection_counter_refuses_the_successor() {
+    let (service, path) = service_from("retired-exhausted", u64::MAX - 1);
+    let mut first = raw_peer::Peer::connect(&path);
+    first.setup();
+    first.open(6, b"api", 0);
+    assert_eq!(
+        first.read(6, 0),
+        format!("sophia-lock-files version=1 epoch={}\n", u64::MAX - 1).as_bytes()
+    );
+    service
+        .command(LockFileServiceCommand::RetireSupervisedProcess)
+        .unwrap();
+    assert!(matches!(
+        event(&service),
+        LockFileServiceEvent::Disconnected { .. }
+    ));
+    match event(&service) {
+        LockFileServiceEvent::Retired {
+            next_epoch: u64::MAX,
+        } => {}
+        other => panic!("{other:?}"),
+    }
+    drop(first);
+    service
+        .command(LockFileServiceCommand::ReplaceSupervisedPid(
+            std::process::id(),
+        ))
+        .unwrap();
+    match event(&service) {
+        LockFileServiceEvent::ConnectionRejected { .. } => {}
+        other => panic!("{other:?}"),
+    }
+}
+
+/// t294: until a replacement is authorized, the retired process is not
+/// answered, however long it takes to exit.
+#[test]
+fn a_retired_provider_cannot_connect_again() {
+    let (service, path) = service("retired-refused");
+    let mut first = raw_peer::Peer::connect(&path);
+    first.setup();
+    service
+        .command(LockFileServiceCommand::RetireSupervisedProcess)
+        .unwrap();
+    assert!(matches!(
+        event(&service),
+        LockFileServiceEvent::Disconnected { .. }
+    ));
+    assert!(matches!(
+        event(&service),
+        LockFileServiceEvent::Retired { .. }
+    ));
+    let mut late = raw_peer::Peer::connect(&path);
+    let version = [
+        65536u32.to_le_bytes().as_slice(),
+        &8u16.to_le_bytes(),
+        b"9P2000.L",
+    ]
+    .concat();
+    assert!(
+        late.rpc(100, &version).is_err(),
+        "the retired process was answered"
+    );
 }
 
 #[test]

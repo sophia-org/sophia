@@ -59,6 +59,7 @@ pub mod session_lock;
 pub mod session_lock_frames;
 pub mod session_lock_input;
 pub mod session_lock_object;
+pub mod session_lock_succession;
 pub mod session_shutdown;
 pub mod session_startup;
 #[cfg(feature = "native-session")]

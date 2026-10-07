@@ -128,6 +128,9 @@ macro_rules! begin_session_lock {
 
 macro_rules! service_lock_provider {
     () => {{
+        let lock_device = client_render_devices
+            .as_ref()
+            .and_then(|devices| devices.shell_gpu_device().ok());
         if !lock_provider_tried
             && let Some(snapshot) = wm_session.as_ref().and_then(|wm| wm.published_output_snapshot())
         {
@@ -137,9 +140,7 @@ macro_rules! service_lock_provider {
                 session_unlock_authenticator.is_some(),
                 &snapshot,
                 session_lock.phase(),
-                client_render_devices
-                    .as_ref()
-                    .and_then(|devices| devices.shell_gpu_device().ok()),
+                lock_device.clone(),
                 owner_wake.notifier(),
             );
         }
@@ -148,7 +149,24 @@ macro_rules! service_lock_provider {
             // Images drawn for an earlier lock never show in this one.
             let mut images_changed = lock_frames.lock(session_lock.cover_epoch());
             lock_frames.set_pacing_diagnostics(provider.pacing_enabled());
-            for event in provider.poll(Instant::now()) {
+            // A direct grant follows the render device. What the old process
+            // was granted ends now, while it may still be exiting.
+            if provider.follow_device(lock_device, Instant::now()) {
+                images_changed |= crate::session_lock_succession::revoke_replaced_lock_provider(
+                    &mut lock_chords,
+                    session_lock_input.as_mut(),
+                    &mut lock_frames,
+                );
+            }
+            let events = provider.poll(Instant::now());
+            if provider.take_failure() {
+                images_changed |= crate::session_lock_succession::revoke_replaced_lock_provider(
+                    &mut lock_chords,
+                    session_lock_input.as_mut(),
+                    &mut lock_frames,
+                );
+            }
+            for event in events {
                 match event {
                     sophia_runtime::lock_files::LockFileServiceEvent::Connected {
                         connection_epoch,
@@ -176,6 +194,8 @@ macro_rules! service_lock_provider {
                             "sophia_live_lock_provider schema=1 status=disconnected connection_epoch={connection_epoch}",
                         )
                     }
+                    // Consumed by the provider; never handed on.
+                    sophia_runtime::lock_files::LockFileServiceEvent::Retired { .. } => {}
                     sophia_runtime::lock_files::LockFileServiceEvent::ConnectionRejected {
                         message,
                     }

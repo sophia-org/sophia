@@ -103,7 +103,8 @@ fn the_metadata_broker_and_lock_provider_launch_the_session_bubblewrap() {
 
     let wake = sophia_wake::Wake::new().unwrap();
     let directory = stand_in.directory.join("lock");
-    let error = lock_provider::LockProvider::start(
+    // The service starts at once; the process is launched later, by a poll.
+    let mut provider = lock_provider::LockProvider::start(
         &sophia_config::LockProviderConfig {
             executable: PathBuf::from("/usr/bin/true"),
             config: None,
@@ -120,8 +121,8 @@ fn the_metadata_broker_and_lock_provider_launch_the_session_bubblewrap() {
         Vec::new(),
         wake.notifier(),
     )
-    .err()
     .unwrap();
+    let error = provider.launch(true).err().unwrap();
     assert!(stand_in.ran(&error), "{error}");
 }
 

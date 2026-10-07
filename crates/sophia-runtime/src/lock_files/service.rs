@@ -39,6 +39,10 @@ pub enum LockFileServiceCommand {
     ReplaceSupervisedProcess(LockFileAssignee),
     /// Test-owner path for a direct child kept unreaped by the caller.
     ReplaceSupervisedPid(u32),
+    /// The provider is being retired while it may still run: the current
+    /// connection ends, nobody may connect until the next replacement, and a
+    /// `Retired` event follows everything the retired process sent.
+    RetireSupervisedProcess,
     /// The lock object in force, published to the connected provider and
     /// handed to every later one.
     PublishLock(LockObject),
@@ -64,6 +68,11 @@ pub enum LockFileServiceEvent {
     },
     Disconnected {
         connection_epoch: u64,
+    },
+    /// Answers `RetireSupervisedProcess`. Every earlier event came from the
+    /// retired process; the next connection's epoch is `next_epoch` or later.
+    Retired {
+        next_epoch: u64,
     },
     ConnectionRejected {
         message: String,
@@ -338,6 +347,13 @@ impl Worker {
             LockFileServiceCommand::ReplaceSupervisedPid(pid) => {
                 self.retire_connection()?;
                 self.transport.authorize_supervised_pid(pid)?;
+            }
+            LockFileServiceCommand::RetireSupervisedProcess => {
+                self.retire_connection()?;
+                self.transport.revoke_assignee();
+                self.pending.push_back(LockFileServiceEvent::Retired {
+                    next_epoch: self.transport.next_epoch(),
+                });
             }
             LockFileServiceCommand::PublishLock(lock) => {
                 lock.encode().map_err(|_| Errno::EINVAL)?;

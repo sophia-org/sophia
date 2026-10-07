@@ -298,6 +298,15 @@ impl SessionLockFrames {
         self.forget()
     }
 
+    /// The provider is being replaced while it may still run, as when the
+    /// session follows a new render device. Its images, resources and demands
+    /// go now, and nothing is admitted until the successor connects under a
+    /// later epoch.
+    pub fn provider_replaced(&mut self) -> bool {
+        self.connection = None;
+        self.forget()
+    }
+
     fn forget(&mut self) -> bool {
         let changed = !self.shown.is_empty();
         self.resources.clear();

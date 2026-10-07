@@ -154,6 +154,12 @@ impl LockFileTransport {
         Ok(())
     }
 
+    /// Nobody may connect until the next authorization. A retired provider
+    /// that is still exiting keeps no claim on the role.
+    pub fn revoke_assignee(&mut self) {
+        self.assignee = None;
+    }
+
     fn assignee_alive(&self) -> Result<bool, LockFileTransportError> {
         self.assignee.as_ref().map_or(Ok(false), pidfd_alive)
     }

@@ -154,6 +154,37 @@ fn a_departed_provider_or_a_new_lock_leaves_the_fill() {
     );
 }
 
+/// t294: a provider replaced to follow a new render device leaves the fill.
+/// Nothing is admitted in its name until a successor connects, and the
+/// successor starts with none of its resources.
+#[test]
+fn a_replaced_provider_leaves_the_fill_until_its_successor_connects() {
+    let mut frames = frames();
+    frames.candidate(CONNECTION, candidate(1, 1));
+    frames.demand(CONNECTION, demand(2));
+    assert!(!frames.images().is_empty());
+    assert!(frames.provider_replaced());
+    assert!(frames.images().is_empty());
+    assert!(frames.permits().is_empty(), "its demands lapse");
+    assert_eq!(frames.waiting().count(), 0);
+    frames.resource_ready(CONNECTION, resource(5), 2, 1, Arc::from(vec![5; 8]));
+    assert!(
+        !frames.candidate(CONNECTION, candidate(2, 5)).0,
+        "nothing is admitted in the replaced provider's name"
+    );
+    assert!(!frames.provider_replaced(), "nothing was shown");
+    frames.connected(CONNECTION);
+    assert!(
+        !frames.candidate(CONNECTION, candidate(3, 1)).0,
+        "the successor has none of its predecessor's resources"
+    );
+    frames.resource_ready(CONNECTION, resource(6), 2, 1, Arc::from(vec![6; 8]));
+    assert!(
+        frames.candidate(CONNECTION, candidate(4, 6)).0,
+        "the successor draws"
+    );
+}
+
 /// t308: with the diagnostic enabled, the pacing sample follows one
 /// allocation through demand, permit, candidate and outcome, and names its
 /// lock, connection and allocation generation.
