@@ -53,3 +53,39 @@ handoff correction. The installed `4b4f2841` round trip and marker written while
 the seat was suspended passed. The subsequent logout/login and retrieval of
 that exact marked record also passed, as documented in the
 [acceptance record](../milestones/v4ycp9ba-daily-session-diagnostics-accepted-across-logout-and-login.md).
+
+## t309
+
+Preserve a structured cause when startup refuses an output profile on the
+ordinary supervised login route. The 2026-10-07 daily login returned to
+greetd with only a failed Session result. A bounded proof-route retry with
+private raw output captured `UnknownConnector("DP-2")` after that monitor
+was unplugged; the original daily cause cannot be recovered. See the
+[incident and profile correction](../investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#subsequent-hardware-change-and-login-failure).
+
+Keep the existing profile refusal semantics. Record a bounded failure kind
+and phase before returning the error, through the ordinary diagnostic
+capture. Decide the connector field under the existing metadata-disclosure
+rules; do not retain arbitrary error strings or client data as a shortcut.
+The fix must not depend on raw stderr or on the proof launcher.
+
+Exit: a missing named connector produces a classified cause in the durable
+ordinary-session record, without a successful startup or an opt-in trace.
+Controls must cover that route and keep a valid profile accepted. Retain the
+failed login and proof retry as separate evidence; neither proves the
+ordinary route is repaired. Card isolation and automatic fallback to another
+profile are outside this task.
+
+The subsequent live login reports suppressed Present-delivery records. The
+recorder names `sophia_x_present_delivery` as having spent its 3.75 MiB share
+of a 15 MiB segment; the source is identical to installed `825d91460`. This
+is a per-name byte quota, not a time-based limit or a shared failure quota.
+The failed login had `suppressed=0`, so this does not explain its missing
+cause. Read-only evidence: `igpu-login-exit-20261007/RECORDER-SUPPRESSION-01`.
+
+Quota independence does not guarantee terminal-cause persistence. Failure
+records use the ordinary 256-entry nonblocking queue; only identity/profile
+records have the separate priority queue. Extend the controls above to a
+spent Present quota and queue pressure, and verify the approved failure kind
+and phase survive record reduction. Keep terminal-cause storage bounded and
+TTY recovery independent of a wedged diagnostic writer.

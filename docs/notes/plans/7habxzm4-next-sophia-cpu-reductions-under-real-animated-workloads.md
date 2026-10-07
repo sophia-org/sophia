@@ -1871,3 +1871,170 @@ then capture a native baseline and profile. The fixture requires a window of
 with the smaller software guest workload. Use that profile to choose between
 the remaining upload copies and owner/composition work. Immutable upload
 sharing stays a candidate until hardware attribution supports it.
+
+### Native GLX fixture correction (2026-10-06)
+
+The corrected startup reached the output-policy commit and further composition,
+but wmbench failed before measurement because its GLX vendor library was not
+found on the non-NixOS host. The exact executable fails selection with its
+original lookup and selects the visual through radeonsi when given the pinned
+library paths. This requires a benchmark environment correction, with client
+library identity checked before the measurement barrier; no Sophia GLX source
+change. The [attribution note](../investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#native-qualification-stopped-at-glx-loading-2026-10-06)
+records the failed native run, selection controls, limitations and successor
+fixture. Qualify B then C using `t289-native-owned-upload-02`; keep the previous
+failure and stop on a new failure. Native CPU attribution and acceptance of
+`b02b47c45` remain pending.
+
+### Follow the native transport actually observed (2026-10-06)
+
+The next qualification passed GLX selection and rendered 120 warmup DMA-BUF
+frames, but stopped before measurement because Hagia placed the window on the
+other head at a larger size. Session and TTY cleanup passed; candidate C stayed
+held. Preserve that failed attempt in `t289-native-owned-upload-02`.
+
+Those warmup records contain zero CPU uploads. Therefore the next native step
+is **one DMA-BUF baseline**, not an owned-upload B/C comparison. Successor
+`t289-native-dmabuf-01` aligns primary and active output on DP-1 and requires
+exactly 1800×960 at 2300,240. Hagia's real profile parser and projection validate
+the planned outer geometry in a CPU-only control. The native guard still checks
+actual placement, post-configuration refresh rates and loaded GL libraries
+before measurement. Bounds and recovery stay unchanged.
+
+The [attribution investigation](../investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#native-warmup-reached-dma-buf-placement-refused-2026-10-06)
+owns the failure, active-output explanation, fixture identity and limitations.
+After native qualification, profile that same recipe and target its largest
+owner/composition costs. Measure the upload-copy candidate separately on the
+software workload that exercises it; native compatibility cannot demonstrate
+its saving. No native performance acceptance or promotion has occurred.
+
+### Native baseline qualified; attribution next (2026-10-06)
+
+The [first native DMA-BUF baseline](../investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#first-native-dma-buf-baseline-passed-2026-10-06)
+passes at the frozen DP-1 geometry with the pinned Radeon stack. It reports
+300 frames at 60.20 fps, desktop CPU 0.28 seconds over 5.0 seconds (about 5.6%
+of one core), and idle CPU 0.02 seconds over 10 seconds. One run establishes a
+usable starting point; it does not establish a saving, XLibre parity or power
+consumption. Snapshot and import reuse are observed; CPU uploads remain zero.
+
+Next run `t289-native-dmabuf-profile-01`: one 1,800-frame unprofiled control,
+then one matched user-space profile on the same baseline. Keep the real TTY,
+wrapper recovery, process-group cleanup and failure stop. Record kernel CPU
+separately without changing perf permissions. After offline attribution,
+choose one generic owner/composition change with a meaningful share of cost,
+then measure it in matched unprofiled trials. Do not select SIMD, another cache
+or a lifetime redesign before those samples identify its target. The software
+owned-upload candidate remains unmeasured and unpromoted.
+
+### Native attribution selects KMS property discovery (2026-10-06)
+
+The [native control/profile result](../investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#native-dma-buf-attribution-2026-10-06)
+passes both qualifications at 1,800 frames and 60.03 fps. The unprofiled run
+uses 1.49 desktop CPU seconds in 30 seconds: approximately 5% of one core.
+Its owner thread accounts for 0.86 seconds and renderer workers 0.37 seconds.
+User-space samples and the measured source identify repeated KMS property
+metadata discovery as a concrete owner-loop candidate. Caller unwind gaps,
+unprofiled kernel time and pointer activity in P limit finer attribution.
+
+Proceed with one bounded primary-plane property-handle cache, scoped to the
+live device and head selection. First audit every in-place selection change;
+reuse the established owner-reconstruction invalidation where applicable.
+Cache handles only, preserve atomic requests and resource ownership, and keep
+failed discovery retryable. Prove request equivalence and invalidation in
+tests, pass the gate, then qualify and measure the same native recipe in
+balanced unprofiled trials. Retain input and work-count checks with each arm.
+No saving is claimed until that comparison passes.
+
+Keep per-frame collection changes, xshmfence helpers, SIMD and snapshot-lifetime
+redesign out of this slice. The software owned-upload candidate remains
+separate because the native recipe has zero CPU uploads. t289 remains open;
+the published baseline and live installation are unchanged by this attribution.
+
+### Cache implementation gated; native comparison pending (2026-10-06)
+
+Candidate `82ec37c0b` is signed and its full isolated gate passes. The
+[implementation receipt](../investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#property-handle-candidate-ready-for-native-measurement-2026-10-06)
+records the bounded cache, invalidation controls, six killed mutants and exact
+Nix binary. The native fixture is frozen and its device-free checks pass.
+
+Next finish source/fixture review and coordinate a quiet window. Launch the
+reviewed command from the active local TTY: one candidate smoke followed by
+**BC CB CB BC**, with no replacements. Accept only if all pairs improve, median
+paired desktop CPU falls at least 5%, and candidate composition work is no lower
+in any pair. Preserve failure and inconclusive results. Until this comparison
+passes, keep the candidate on its branch; no live install or performance claim.
+
+### Hardware hotplug reproduction during attended lock checks (2026-10-06)
+
+The operator's monitor unplug while locked reproduced the t306 failure signature
+on installed Sophia `825d9146` (`niltempus-44f76a7d`): owner-loop fatal in the
+topology phase, unclassified cause, forced-detach drain error, and exit to greetd.
+TTY recovery passed. `t306-01/83-live-unplug-while-locked/RECORD.txt` has SHA-256
+`60affdc046784ab3bd6608f96c2f917ba87298a873da6c0cab043649c134af51`; all 13 copied
+session files verify against its manifest. The cause text is still absent, so
+the matching signature does not prove an identical internal cause. t297 records
+D1 passed, D2 failed and D3–D6 unreached; Claude retains the t306 repair lane.
+
+This installed binary predates the property-cache candidate. Keep the hotplug
+failure separate from its measurement and retain the t306 acceptance hold. At
+the coordination check both monitors were connected again, but a desktop was
+running on tty7. The corrected native comparison remains prepared and unrun;
+its next window requires the desktop logged out and the operator on the active
+local TTY, with a fresh quiet ACK. Do not overlap the attended lock checks.
+
+### Validate the caller login before the next native comparison (2026-10-06)
+
+Fixture02 stopped before graphics startup on libseat session lookup; it ran no
+benchmark or pair and recovered the TTY cleanly. The
+[login diagnosis](../investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#native-comparison-refused-session-lookup-2026-10-06)
+records the Nix libsystemd/host elogind mismatch and preserves the failed run.
+
+Use reviewed fixture03, which discovers and validates the launcher's actual
+local login before passing its `XDG_SESSION_ID` to the unchanged native wrapper.
+Its controls and argument checks pass, and Claude has supplied a fresh quiet
+ACK. The remaining acceptance is still one C smoke then BC CB CB BC from the
+operator's active tty3, with the same bounds and work checks. No CPU saving or
+promotion follows from the fixture repair. Keep both earlier failed attempts.
+
+### Native comparison reached; pending replacement refused (2026-10-07)
+
+Fixture03 completed its C smoke and first B/C runs, then stopped because the
+candidate reported one pending exporter supersession. The result stays FAILED.
+Both measured arms completed 1,949 compositions and 1,920 snapshot captures;
+their raw desktop CPU was 1.53/1.32 seconds. The incomplete, refused series is
+not performance acceptance. The cache itself recorded two discoveries and
+1,941 hits without discovery failure on the paired candidate.
+
+Use a fresh complete fixture04 series after review and quiet coordination.
+It reports the observed pending-replacement lower bound, keeps candidate
+completed work at least equal to baseline, and adds explicit native pacing
+checks and pairwise commit-time/depth bounds. Do not normalize CPU by
+supersessions or retroactively accept fixture03. The
+[result and successor declaration](../investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#native-cache-comparison-reached-the-workload-2026-10-07)
+preserve the evidence, limits and separate watchdog-sleep cleanup follow-up.
+The candidate remains unmerged and uninstalled.
+
+### Complete native comparison refused; isolate repaint obligations (2026-10-07)
+
+Fixture04 completed all eight arms. Raw desktop CPU fell in every pair
+(12.36% median), but two candidates completed four fewer compositions than
+their baselines, so the frozen verdict is NOT_ACCEPTED. Preserve it. The
+[completed result and source follow-up](../investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#native-cache-result-refused-on-composition-counts-2026-10-07)
+show extra baseline head recompositions during animation, with repeated
+logical checksums. Startup spread alone does not explain the difference.
+
+Before a successor measurement, exercise the ordinary cadence path with a
+nonvisual authority batch over a displayed DMA-BUF surface. Keep positive
+controls for real CPU, chrome and layout damage. The source can arm a repaint
+after GPU preservation even when this batch contains no Present; existing
+records do not identify the individual obligation. Establish that behavior
+before deciding whether a new method should exclude optional recompositions
+from useful work. Do not credit missing work or relax the old verdict.
+
+The operator then moved a monitor to the integrated GPU. Requalify topology
+before another native fixture; scope routine iGPU renderer tests to its render
+node and keep full Session/KMS ownership separate from the daily desktop.
+An installed login on the new topology failed after both heads became ready;
+its cause is missing from saved stderr. `igpu-login-exit-20261007` preserves it
+and prepares a bounded diagnostic retry. No cache merge, install or retry has
+occurred as part of that investigation.
