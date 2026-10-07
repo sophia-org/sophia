@@ -110,8 +110,6 @@ Runtime effect plug-ins or a sandboxed effect host until the private build-linke
 
 (B) Implement optional Hagia focus-follows-mouse with default-off behavior and committed presented-target routing +parallel +policy @development id:t078 order:078 [details](docs/notes/investigations/nsu4a0n2-optional-pointer-focus-follows-presented-targets-through-committed-policy.md)
 
-(B) 2026-09-12 Accept deployed uninstrumented pinentry 0.2.0 c9c1eda after t089 containment: verify live Dialog XID hints, floating placement, UTF-8 and the action/consecutive-dialog matrix; deployment and offline smoke passed, native acceptance pending. +parallel @development id:t082 order:082 [details](docs/notes/investigations/iux6ctsy-pinentry-submission-stalls-before-gui-exit-and-input-recovery-remains-blocked.md#pending-pinentry-work)
-
 Measure CPU content costs before admitting shared-memory or DMA-BUF image transport with immutable acceptance and final release. +candidate +lom @planning id:t102 order:102 peer:lom/t016 [details](docs/notes/plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md#t102)
 
 Evaluate an optional renderer-independent GPU bridge only against a named isolation or performance need and enforceable limits. +candidate +lom @planning id:t103 order:103 peer:lom/t019 [details](docs/notes/plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md#t103)

@@ -753,3 +753,17 @@ closing the row does not locate it. What is accepted is that the lockout does
 not reproduce in ordinary use across many signings; if it returns, it returns
 with this note's findings intact and the control-recovery repair already in
 place beneath it.
+
+## t082 closed as out of scope — 2026-10-06
+
+niltempus closed t082 in Sophia on 2026-10-06. Its remaining work, the native
+acceptance matrix of pinentry-egui (Dialog hints, floating placement, UTF-8
+and the action and consecutive-dialog cases), is acceptance of one named
+client. Under the shell and WM independence rule it belongs to the
+pinentry-egui fork (`~/src/pinentry-egui`, branch `deploy/t082`), not to
+Sophia. The operator's `~/.gnupg/gpg-agent.conf` also records a known defect
+in the deployed build (`c9c1eda`, SHA-256 `ed0ff94a…`): it fails to return a
+correct passphrase and gpg reports "End of file" (confirmed 2026-09-13), so
+the tty pinentry signs. That defect is the fork's to fix before any such
+matrix could pass. Sophia's own part, keeping the X authority up through a
+client's setup failures, closed with t089.
