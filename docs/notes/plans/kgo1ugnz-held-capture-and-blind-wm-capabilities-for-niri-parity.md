@@ -52,7 +52,15 @@ not claimed by this plan.
   implementation tree (sign/05-sophia-post-vendor-gate): fmt, layout,
   generator, both SDK checks and strict clippy pass; the workspace with all
   features and --no-fail-fast has 6238 passed and 0 failed.
-- Live acceptance remains open.
+- Live acceptance passed on 2026-10-07. On the installed release
+  `niltempus-44f76a7d05b2b8264a63` (Sophia `825d9146`, Hagia `155daab6`), on
+  two monitors, niltempus held Alt+Tab and confirmed every held key: Escape,
+  Return and space, Left and Right, Home and End, Tab and Shift+Tab, and the
+  scope keys a, w, o and s. xev in the focused window saw only Alt's press and
+  release, and the strip behaved the same on both monitors. The session's
+  recovery log stayed empty with no fatal record. The record is
+  `attended-closures-01/RESULTS.json` in the development evidence. t279 is
+  closed.
 
 <a id="t280"></a>
 **t280: surface attention (bit 23), candidate.** Peer: hagia/h015.
