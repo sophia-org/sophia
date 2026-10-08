@@ -128,6 +128,9 @@ Primary selection and render inventory now share a bounded udev seat-card
 inventory. Missing `ID_SEAT` means seat0 only on an initialized record. The
 seat comes from the opened libseat controller. An output profile or an
 `--input-seat` argument does not grant ownership of another seat's cards.
+An uninitialized card refuses discovery before its node is inspected, because
+its assignment is not yet authoritative. This can delay startup while udev
+settles; it cannot silently remove the card from the completeness check.
 The inventory is collected before opening nodes. A seated primary open must
 preserve the admitted node's device number, inode, filesystem, physical path
 and seat assignment before any KMS query uses that descriptor. An admitted
@@ -140,13 +143,19 @@ image-import render devices come from the same card inventory. Startup,
 topology replacement and seat reacquisition use this constructor. Standalone
 card probes retain their explicit, host-wide discovery route.
 
-CPU controls cover foreign and uninitialized card exclusion, failed admitted
+CPU controls cover foreign-card exclusion, uninitialized-card refusal, failed admitted
 discovery, capacity and identity aliases, returned-descriptor identity,
 foreign-connector exclusion before reading its facts, connector-ID collisions
 between cards, and refusal to fall back after an admitted open fails. Evidence
 and review for this slice live in `development-evidence/t312-seat-admission-01`.
 This is source preparation; physical seat assignment and concurrent visible
 sessions have not been qualified.
+
+The constructor's ordering has source review and controls for its individual
+parts, but no end-to-end constructor control without devices. Existing seat
+lease release calls the broker's close path; the raw descriptor ownership
+repair remains in the unpublished t306 work. This slice does not qualify
+that release behavior or change the unseated probe path.
 
 Both GPUs are still assigned to seat0 on this host. This change alone therefore
 does not release the iGPU from the daily desktop. Remaining work is to scope

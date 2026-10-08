@@ -15,13 +15,13 @@ fn candidate(index: u32) -> SeatDrmCard {
 }
 
 #[test]
-fn seat_selection_never_inspects_foreign_or_uninitialized_cards() {
+fn seat_selection_never_inspects_foreign_cards_or_connector_records() {
     let mut admitted = Vec::new();
     for (name, initialized, seat) in [
         ("card0", true, None),
         ("card1", true, Some("seat0")),
-        ("card2", false, Some("development")),
         ("card3-HDMI-A-1", true, Some("development")),
+        ("card4-HDMI-A-1", false, None),
     ] {
         admit_seat_card(
             &mut admitted,
@@ -29,7 +29,7 @@ fn seat_selection_never_inspects_foreign_or_uninitialized_cards() {
             OsStr::new(name),
             initialized,
             seat.map(OsStr::new),
-            || panic!("foreign/uninitialized node inspected"),
+            || panic!("foreign card or connector record inspected"),
         )
         .unwrap();
     }
@@ -44,6 +44,26 @@ fn seat_selection_never_inspects_foreign_or_uninitialized_cards() {
     )
     .unwrap();
     assert_eq!(admitted, vec![candidate(4)]);
+}
+
+#[test]
+fn an_uninitialized_card_refuses_the_inventory_before_node_inspection() {
+    for seat in ["seat0", "development"] {
+        for assigned in [None, Some("seat0"), Some("development")] {
+            let mut admitted = vec![candidate(0)];
+            let error = admit_seat_card(
+                &mut admitted,
+                seat,
+                OsStr::new("card1"),
+                false,
+                assigned.map(OsStr::new),
+                || panic!("an uninitialized card must never be inspected"),
+            )
+            .expect_err("an uninitialized card must refuse, not disappear");
+            assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+            assert_eq!(admitted, vec![candidate(0)]);
+        }
+    }
 }
 
 #[test]

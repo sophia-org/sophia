@@ -59,7 +59,19 @@ fn admit_seat_card(
     assigned: Option<&std::ffi::OsStr>,
     inspect: impl FnOnce() -> io::Result<SeatDrmCard>,
 ) -> io::Result<()> {
-    if is_node_name(name, "card") && seat_matches(seat, initialized, assigned) {
+    if !is_node_name(name, "card") {
+        return Ok(());
+    }
+    // Until udev has initialized the record, even an explicit assignment is
+    // provisional. Refuse the inventory before touching the node; omitting
+    // this card would also hide it from the scoped completeness check.
+    if !initialized {
+        return Err(io::Error::new(
+            io::ErrorKind::WouldBlock,
+            "DRM card seat assignment is not initialized",
+        ));
+    }
+    if seat_matches(seat, initialized, assigned) {
         admit_card(cards, inspect()?)?;
     }
     Ok(())
