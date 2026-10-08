@@ -178,6 +178,39 @@ requires the domain-aware verifier. Physical execution still requires separate
 authorization. Broader t097 retirement evidence and all other task exits remain
 open.
 
+## Gate stdin correction, 2026-10-07
+
+Two final t309 gates on `9836aadd1` failed the valid case of
+`protected_proof_exec_checks_exclusions_before_releasing_the_client`. Both
+recorded socket stdin and the exact refusal, "GPU proof inherited a socket or
+unrelated device". The initial explanation of load sensitivity was withdrawn.
+The same frozen test and CLI then passed with null stdin, failed with socket
+stdin, and passed with null stdin again, with devices hidden in every arm.
+This reproduces the inherited-stdio mechanism identified earlier in
+`t306-01/50-fd-refusal`; the older runs without recorded stdin remain separately
+qualified evidence.
+
+The narrow repair from unpublished `cb42e3244` is now carried by `9b3922d59`
+on top of the accepted t309 integration. The fixture declares its standard
+descriptors, and `xtask` gives the workspace test child null stdin. A regression
+re-executes under socket stdin: a proof with declared stdio runs its client;
+one that explicitly inherits the socket is refused before its client runs.
+Production defaults and descriptor inspection are unchanged.
+
+The complete repaired proof test binary passed when launched directly with
+socket stdin. The full isolated `cargo xtask check` also passed on `9b3922d59`,
+with socket stdin deliberately supplied and attested at the gate entry.
+Evidence is retained in `development-evidence/gate-stdio-isolation-01`:
+`RED-IDENTITIES.json`, `RED-RESULTS.json`, `GREEN-IDENTITIES.json`,
+`green-socket.log`, `gate.log` and `RESULT.json`.
+
+The two t309 red gates stay red. Its third gate passed on the unchanged t309
+source with explicitly null stdin, recorded as a corrected recipe in
+`t309-startup-refusal-01/final/RUN3-RECIPE.txt`; t309 was then published as
+`9836aadd1`. This follow-up makes the fixture independent of that launcher
+choice. No GPU, native session, install or physical acceptance was performed,
+and this repair does not close t306 or t307.
+
 ## Connections
 
 - [GPU permission decision](../decisions/mn4mzcnf-separate-shell-presentation-from-gpu-execution-permission.md): explicit execution permission is independent of content and hard quotas.

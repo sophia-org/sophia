@@ -31,6 +31,11 @@ the gate clears the inherited destructive scanout-smoke opt-in. Explicitly
 ignored hardware and component-acceptance tests remain separate; enabling
 the feature is not permission to access live input or display devices.
 
+The workspace test child receives `/dev/null` as standard input. The protected
+GPU proof fixture also declares its own standard descriptors, so a socket
+inherited from a terminal or agent launcher cannot change the test's result.
+The production proof still refuses inherited sockets.
+
 ### Offscreen renderer tests on a selected GPU
 
 Use `tools/run_render_node_test.py` for an already-built test that accepts
