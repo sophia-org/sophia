@@ -120,6 +120,54 @@ on the renderer worker, two heads composing concurrently, KMS scanout and
 retirement of the reused buffer before its reuse, and the slot's startup
 history.
 
+## Colour controls on the reused target
+
+Series 89 observed the original draw with the draw-state diagnostic. In
+its black boot, the compared GL API state was complete with no mismatch,
+and the draw passed 120000 samples for the 400x300 window. Neither that
+count nor API state establishes the colour written to the target.
+
+Series 95 used source `ed5ed064e`, image `a0714e87`, and the frozen
+`classify10` recipe. The OFF boot reproduced black in reused slot 0, age 1.
+The second boot repeated that result, then ran two production operations
+in the same context and target after the original region, frame and sample
+records: a CPU-texture draw of an independent pattern, then a scissored
+solid clear of `0x2080e0`. Each was followed by its own region read.
+Both reads returned 120000 black pixels, checksum `8572701038929191205`,
+with no GL error. Expected checksums were `13356461631286439117` for the
+pattern and `16104153671652024613` for the solid. The classifier reported
+`BLACK_EXPECTED_SAMPLES_CLEAN_STATE colour=TARGET_WRITES_DIFFER`.
+
+The original whole-frame read also reported black and carried the same
+output 1, head 1 and composition 7 identity. Both boots reached the composed
+setup-gate path and ended with the recognized startup-not-ready failure.
+The host runner completed, but neither guest was a successful Session.
+Evidence and hashes are in `t306-01/95-dc-pair`; no replacement run was made.
+
+The identical frozen host test in `93-colour-control-device` read both
+control oracles exactly on radeonsi, verified the solid pixels in the
+exported reused buffer, and then verified the original pattern in a fresh
+buffer. That was offscreen correctness with no real head trace identity.
+It does not clear the virgl Session path.
+
+These observations make the shared target and readback path the next
+focus. A failure limited to snapshot texture sampling cannot explain the
+later solid-clear read by itself. However, black readback does not prove
+that either operation failed to write: it may read stale or different
+storage. The controls ran after synchronization and under the state the
+original left; C2 inherited C1's state. There is no driver-defect finding.
+The intervened output and its later frames cannot qualify hotplug or
+image continuity, and there is no performance claim.
+
+The next proposed discriminator is an independent observation of the
+exported buffer after the existing swap and front-buffer lock. First
+review whether the existing DMA-BUF import probe can read that exact
+buffer through a private framebuffer without CPU mapping, changing its
+lease, or disturbing the producer context's cleanup. A solid result there
+would disagree with the earlier default-framebuffer read; a black result
+would leave writes, buffer selection and export visibility open. This is
+a source/design task, with no new device or guest run authorized.
+
 ## t307
 
 1. Trace the successful mixed Present and subsequent retained composition:
