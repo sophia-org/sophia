@@ -292,6 +292,42 @@ Evidence: `111-qemu-gdb-observer`, `112-mesa-frame-names`,
 `119-qemu-bp-package-3` and `120-qemu-bp-series`. The series 120 manifest
 is `f437b3378e669bd555b8ea42875b344b3529c230aa8713f5ece3bad8e9c3ea34`.
 
+## Both private teardown pairs discriminate (2026-10-08)
+
+Series 125 repeated B, P, B, P with an independent kernel exit witness.
+The watcher held a pidfd bound to the loaded executable's PID and start
+time, then read `PIDFD_GET_INFO` after exit. CPU controls covered the
+record grammar, descriptor ownership, missing exit information and
+runner stop rules. A debugger-lost exit had its own declared class;
+neither patched guest needed it.
+
+| Guest | Build | Result | Kernel termination |
+| --- | --- | --- | --- |
+| 1 | Unpatched B | Observer passed; matching main-thread SIGSEGV and cleanup chain. | SIGKILL after debugger capture. |
+| 2 | Patched P | Observer passed; clean inferior, debugger, wrapper and harness endpoint. | Exit 0. |
+| 3 | Unpatched B | Same matching fault and chain. | SIGKILL after debugger capture. |
+| 4 | Patched P | Same clean endpoint as guest 2. | Exit 0. |
+
+All four loaded identities, witness records and endpoint records joined.
+The series ended after 36 seconds with no replacement, invalid outcome
+or remaining QEMU, debugger or watcher. Independent classifier replays
+matched all four saved outputs exactly. Both pairs support the complete
+`baca25172d8c` cleanup-order hunk on this private build and stack.
+The individual ordering edge and shader-cache mechanism remain open;
+gdb still changes timing, and the installed Void binary is unchanged.
+Series 120 guest 4 remains invalid because it had no kernel witness.
+
+This resolves the private observer recipe's teardown qualification.
+The next step is a reviewed package using the qualified patched QEMU
+for the original observer and conditional virgl handle-lifetime test.
+The lifetime invocation remains held. No Session black-frame repair,
+hotplug acceptance or task closure follows from the teardown comparison.
+
+Evidence: `121-qemu-debugger-endpoint`, `122-qemu-bp-package-4`,
+`124-qemu-bp-package-5` and `125-qemu-bp-series`. The series 125 manifest
+is `71007227874dbb07b96ebc76bae4b080851346fef4a5ae5ff39cffe93fca0a51`;
+its `REVIEW-CODEX-75.txt` records the independent review.
+
 ## t307
 
 1. Trace the successful mixed Present and subsequent retained composition:
