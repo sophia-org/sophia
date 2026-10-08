@@ -15,6 +15,8 @@ mod output;
 mod output_proof;
 #[path = "config/reload.rs"]
 mod reload;
+#[path = "config/startup.rs"]
+mod startup;
 #[path = "config/session.rs"]
 mod session;
 #[path = "config/session_profile.rs"]

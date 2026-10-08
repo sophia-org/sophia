@@ -254,6 +254,11 @@ The next launcher still needs authenticated PAM registration outside an
 existing daily login, per-PCI confinement with private display/runtime
 endpoints, a deadline covering startup and children, and reviewed host rules
 with rollback. System-bus method timeouts do not bound connection setup.
+The second login check follows libseat's TakeControl; a mismatch releases that
+control through teardown. The launcher must bind the genuine host system-bus
+socket, since the service-owner answer itself comes from that bus. This mode
+has no physical recovery chord. zbus and its blocking executor are confined to
+the native-session feature.
 Both cards remain on seat0; no host rule, live seat, VT, input or installed
 release was changed by this slice. t312 remains open.
 

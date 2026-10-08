@@ -131,14 +131,19 @@ without a TTY or VT, and a seat with `CanTTY=false`. The login service must be
 root-owned. `LIBSEAT_BACKEND=logind` and an `XDG_SESSION_ID` equal to the observed
 ID are required; bus overrides and conflicting XDG seat/type/VT values refuse.
 After libseat opens, its seat and another login observation must still agree
-before DRM discovery. There is no fallback to the UID's display session.
+before DRM discovery. Libseat has already requested control by that second
+check; refusal then releases the session through teardown. There is no fallback
+to the UID's display session. The native-session feature adds zbus 5.19 and its
+blocking API's executor thread.
 
 Add `--validate-development-login` to perform argument and login checks and
 exit before opening libseat, devices or display endpoints. This differs from
 `--validate-session-args`, which checks arguments only; combining them refuses.
 The system-bus methods have a two-second timeout each. This is not an outer
 startup deadline: the future launcher must also bound connection setup and
-the entire process lifetime.
+the entire process lifetime. No physical recovery chord exists in this mode.
+The launcher must bind the genuine host system-bus socket into its private
+filesystem; service-owner checks cannot authenticate a substituted bus.
 
 `tools/development_session_login.py` provides a separate read-only host
 preflight using a hashed, root-owned host sd-login library. It observes only
