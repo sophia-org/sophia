@@ -26,6 +26,7 @@ tracing.workspace = true
 sha2.workspace = true
 rustix = { version = "1.1", default-features = false, features = ["process", "rand", "system", "fs", "time", "pipe", "event", "thread"] }
 x11rb = { version = "0.13.1", features = ["xtest"] }
+zbus = { version = "5.19", optional = true, default-features = false, features = ["async-io", "blocking-api"] }
 
 [dev-dependencies]
 # Present in x11rb imports dri3 even for this core-pixmap test client.
@@ -41,6 +42,7 @@ sophia-renderer-native-egl = { path = "../sophia-renderer-native-egl", features 
 [features]
 default = []
 native-session = [
+    "dep:zbus",
     "dep:sophia-9p",
     "dep:sophia-factotum",
     "sophia-backend-live/gbm-probe",

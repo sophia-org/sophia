@@ -19,6 +19,10 @@ pub(crate) fn run_persistent_xterm_session(
     };
     let args = args.as_slice();
     let mut config = PersistentXtermSessionConfig::from_args(args)?;
+    let validate_development = args.iter().any(|arg| arg == "--validate-development-login");
+    if validate_development && (validate_only || config.development_seat.is_none()) {
+        return Err("--validate-development-login requires --development-seat and cannot be combined with --validate-session-args".into());
+    }
     crate::diagnostics::application::set_enabled(
         config.core_config_state.active().application_stderr,
     );
@@ -27,6 +31,14 @@ pub(crate) fn run_persistent_xterm_session(
             "sophia_live_session_args schema=1 status=accepted arguments={}",
             args.len(),
         );
+        return Ok(());
+    }
+    // This check precedes endpoint creation and any libseat control request.
+    // A secondary login cannot be selected by an output profile or XDG claim.
+    let development_admission = config.development_seat.as_ref()
+        .map(development::DevelopmentSeat::attest).transpose()?;
+    if validate_development {
+        crate::session_println!("sophia_development_login schema=1 status=accepted devices_opened=0");
         return Ok(());
     }
     record_loaded_session_profiles(&config)?;
@@ -54,6 +66,9 @@ pub(crate) fn run_persistent_xterm_session(
         .then(sophia_backend_live::LiveSeatController::open)
         .transpose()?;
     if let Some(controller) = seat_controller.as_mut() {
+        if let (Some(seat), Some(admission)) = (&config.development_seat, &development_admission) {
+            admission.check_opened_seat(controller.device_opener().name(), &seat.attest()?)?;
+        }
         controller.set_owner_wake(owner_wake.notifier());
         let _ = controller.dispatch()?;
         crate::session_println!(

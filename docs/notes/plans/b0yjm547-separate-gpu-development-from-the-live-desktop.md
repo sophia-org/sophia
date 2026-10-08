@@ -224,6 +224,39 @@ produce two notices for one physical change. The bounded queue coalesces them,
 and notice counts are not counts of physical changes. Neither source slice
 was installed or exercised through a physical seat reassignment.
 
+### Third source slice: independent login admission
+
+The inputless native path is now conditional on `--development-seat` and a
+runtime bound of at most 300 seconds. The Session queries logind through a
+pure-Rust D-Bus client, using the authenticated caller (`GetSessionByPID(0)`),
+not the process-local libsystemd cgroup parser. It requires stable session and
+service identities, matching UID and non-seat0 seat, active/local graphical
+user status, no TTY or VT, and `CanTTY=false`. Fresh property calls bypass
+caches. The explicit logind backend and matching XDG session ID prevent
+libseat's display-session fallback. The opened libseat seat is checked and
+the login re-observed before native discovery.
+
+An argument-only preflight does not establish login authority. The separate
+`--validate-development-login` path checks the login and returns before
+endpoints, libseat or devices. The Python host checker is a read-only receipt
+tool; it loads host libelogind only into the host Python process. The actual
+Session uses the system bus and does not load host libraries into Nix libc.
+
+Controls cover the mode and time bound, physical-input exclusions, each login
+field, changed observations, missing/contradictory environment, wrong opened
+seat, and the real configuration/input-opening path remaining inputless.
+An actual startup refusal control exercises the non-logind backend refusal
+before endpoint creation. These do not qualify PAM registration, real
+secondary-seat acquisition or the post-open success path on hardware.
+Evidence is in `development-evidence/t312-development-login-01`.
+
+The next launcher still needs authenticated PAM registration outside an
+existing daily login, per-PCI confinement with private display/runtime
+endpoints, a deadline covering startup and children, and reviewed host rules
+with rollback. System-bus method timeouts do not bound connection setup.
+Both cards remain on seat0; no host rule, live seat, VT, input or installed
+release was changed by this slice. t312 remains open.
+
 ## Evidence
 
 - `igpu-development-01/FINDINGS-01.txt` and `READ-ONLY-01.json`: source survey,

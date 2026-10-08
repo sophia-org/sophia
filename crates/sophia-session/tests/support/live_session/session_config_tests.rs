@@ -1,5 +1,8 @@
 use super::*;
 
+#[path = "development_config.rs"]
+mod development_config;
+
 #[path = "wm_transport_config.rs"]
 mod wm_transport_config;
 

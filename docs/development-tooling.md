@@ -116,6 +116,42 @@ these generic controls without interpreting startup or proof recipe variables.
 Invocations without `--` are refused. Application recipes and proof staging
 live in the desktop integration; the wrapper never builds from a checkout.
 
+### Secondary development login
+
+`session run --development-seat=NAME --native-scanout --no-input
+--max-runtime-ms=N` is a separate, bounded admission path. `NAME` must name a
+seat other than seat0 and `N` must be in 1–300000. Physical input overrides and
+physical input proofs are refused. Ordinary native sessions still refuse
+`--no-input` without this admission.
+
+Before creating endpoints or opening libseat, Sophia queries the host system
+bus for the authenticated caller's own logind session. It requires two equal,
+fresh observations of an active, local graphical user login on that seat,
+without a TTY or VT, and a seat with `CanTTY=false`. The login service must be
+root-owned. `LIBSEAT_BACKEND=logind` and an `XDG_SESSION_ID` equal to the observed
+ID are required; bus overrides and conflicting XDG seat/type/VT values refuse.
+After libseat opens, its seat and another login observation must still agree
+before DRM discovery. There is no fallback to the UID's display session.
+
+Add `--validate-development-login` to perform argument and login checks and
+exit before opening libseat, devices or display endpoints. This differs from
+`--validate-session-args`, which checks arguments only; combining them refuses.
+The system-bus methods have a two-second timeout each. This is not an outer
+startup deadline: the future launcher must also bound connection setup and
+the entire process lifetime.
+
+`tools/development_session_login.py` provides a separate read-only host
+preflight using a hashed, root-owned host sd-login library. It observes only
+its own PID and keeps a fresh receipt. Its success grants no device or launch
+authority; the in-Session bus check is still required. No host library is
+loaded into the Nix-linked Sophia process.
+
+The ordinary TTY recovery wrapper above is not a secondary-seat launcher.
+Host seat assignment, a PAM login without a controlling VT, private endpoints,
+device confinement and an outer cleanup owner must be prepared separately.
+This source support neither reassigns a GPU nor qualifies concurrent visible
+sessions. See [t312](notes/plans/b0yjm547-separate-gpu-development-from-the-live-desktop.md#t312).
+
 ## Canonical Commands
 
 Use these from documentation, CI, and new scripts:

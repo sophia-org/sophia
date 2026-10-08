@@ -6,8 +6,7 @@ impl PersistentXtermSessionConfig {
             }
         }
         let no_config = args.iter().any(|argument| argument == "--no-config");
-        let explicit_config = arg_value(args, "--config")
-            .map(std::path::PathBuf::from);
+        let explicit_config = arg_value(args, "--config").map(std::path::PathBuf::from);
         if no_config && explicit_config.is_some() {
             return Err("--no-config and --config are mutually exclusive".into());
         }
@@ -741,9 +740,11 @@ impl PersistentXtermSessionConfig {
             );
         }
         let no_input = args.iter().any(|argument| argument == "--no-input");
+        let development_seat = development::from_arguments(args, native_scanout, no_input,
+            expect_physical_text.is_some() || expect_physical_pointer || inject_session_lock, max_runtime)?;
         let input_devices_argument = arg_value(args, "--input-devices");
         let input_seat_argument = arg_value(args, "--input-seat");
-        if no_input && (native_scanout || input_devices_argument.is_some() || input_seat_argument.is_some()) {
+        if no_input && ((native_scanout && development_seat.is_none()) || input_devices_argument.is_some() || input_seat_argument.is_some()) {
             return Err("--no-input requires a non-native session without input overrides".into());
         }
         if input_devices_argument.is_some() && input_seat_argument.is_some() {
@@ -925,6 +926,7 @@ impl PersistentXtermSessionConfig {
             input_devices,
             input_seat,
             native_scanout,
+            development_seat,
             software_client_rendering,
             wm_process,
             wm_process_args,

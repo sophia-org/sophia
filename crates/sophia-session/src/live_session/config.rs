@@ -1,5 +1,7 @@
 #[path = "config/chrome.rs"]
 mod chrome;
+#[path = "config/development.rs"]
+mod development;
 #[path = "config/firefox_stage.rs"]
 mod firefox_stage;
 #[path = "config/input_profile.rs"]
@@ -100,6 +102,7 @@ struct PersistentXtermSessionConfig {
     input_devices: Vec<std::path::PathBuf>,
     input_seat: Option<String>,
     native_scanout: bool,
+    development_seat: Option<development::DevelopmentSeat>,
     software_client_rendering: bool,
     wm_process: Option<String>,
     wm_process_args: Vec<String>,
