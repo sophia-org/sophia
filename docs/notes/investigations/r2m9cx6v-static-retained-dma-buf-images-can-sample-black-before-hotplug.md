@@ -244,6 +244,54 @@ not a repair. Designs and source review are in
 `108-qemu-teardown-design` and `109-qemu-teardown-source`; the source
 review correction distinguishes the release from later upstream changes.
 
+## Located teardown fault and private QEMU comparison (2026-10-08)
+
+The debugger run in series 111 located the fault on QEMU's main thread,
+inside Mesa during `eglTerminate`: `libgallium+0x5c7f37` dereferenced a
+null table-entry array. The virgl sync thread was idle at that stop.
+Exact QEMU and virgl debug build IDs supplied their function names.
+Mesa 26.2.3 debug files were unavailable; the Mesa names in series 112
+come from matching instruction windows to 26.2.4, not substituting its
+addresses. Screen/shader-cache destruction remains a source-consistent
+mechanism rather than a demonstrated identity of the faulting table.
+
+Two private QEMU 11.1.1 binaries differ by upstream `baca25172d8c`, which
+reorders thread release, EGL context/display destruction and GBM teardown.
+Neither binary was installed. Series 117 stopped before boot because
+the relocated binary could not find its BIOS. Series 118 supplied a
+private data layout and verified both arms with firmware lookup and a
+paused CPU-only startup. That did not qualify virgl teardown.
+
+The frozen series 120 then ran B, P, B, P under the same debugger wrapper:
+
+| Guest | Build | Result |
+| --- | --- | --- |
+| 1 | Unpatched B | Observer passed; exact main-thread fault; QEMU exit 139. |
+| 2 | Patched P | Observer passed; inferior, debugger, wrapper and harness all exited 0. |
+| 3 | Unpatched B | Same observer result and exact fault site/chain as guest 1. |
+| 4 | Patched P | Observer passed, but gdb did not obtain the process exit status; invalid. |
+
+Both B faults joined the loaded binary identity and build IDs through
+`libgallium+0x5c7f37`, `libEGL_mesa+0x12a47` and the private QEMU's
+`egl_cleanup` return at `+0x71fc4c`. Guest 4 reported an unknown stop,
+then debugger cleanup and wrapper exit 125. It is neither a clean P
+result nor an observed matching fault. The declared bound ended with
+no replacement and no remaining QEMU or debugger process.
+
+The first pair supports the upstream cleanup-order patch on this private
+build and stack. The patch changes several ordering edges, so this does
+not uniquely establish GBM-before-Terminate as the mechanism. The second
+P is inconclusive, and gdb changes timing. No installed-package repair,
+performance result, Session black-frame repair or t306 acceptance follows.
+The virgl lifetime guest remains held. The next step is to understand the
+lost debugger endpoint and propose a bounded qualification without
+weakening the clean-exit requirement.
+
+Evidence: `111-qemu-gdb-observer`, `112-mesa-frame-names`,
+`113-private-qemu`, `117-qemu-bp-series`, `118-qemu-bp-layout`,
+`119-qemu-bp-package-3` and `120-qemu-bp-series`. The series 120 manifest
+is `f437b3378e669bd555b8ea42875b344b3529c230aa8713f5ece3bad8e9c3ea34`.
+
 ## t307
 
 1. Trace the successful mixed Present and subsequent retained composition:
