@@ -262,6 +262,40 @@ the native-session feature.
 Both cards remain on seat0; no host rule, live seat, VT, input or installed
 release was changed by this slice. t312 remains open.
 
+The admission slice is qualified at `002c5f148` on `c1d876adc`: the isolated full
+gate passed with 7,222 Rust tests, zero failed and 100 ignored; clippy, tool
+controls and layout passed. The tree was clean before and after; stdin was
+`/dev/null`. Claude accepted the source and startup-module extraction. The
+preceding gate remains red: tests and clippy passed, but `run.rs` exceeded the
+1,000-line limit. Moving startup preflight into `config/startup.rs` resolved
+that layout failure without changing admission order.
+
+### Next: the development login and cleanup owner
+
+The prepared launcher design is in
+`development-evidence/t312-development-launcher-01/DESIGN-02.txt`. It requires
+a dedicated development account, distinct from the daily desktop's UID. The
+root-owned login owner must start outside an existing login, register a bounded
+non-VT PAM session, drop credentials before running development code, and own
+cleanup through startup failures and the owner's own death. No such service or
+account has been installed.
+
+The offscreen runner cannot be reused unchanged: native topology monitoring
+needs host udev event delivery and its root sender credentials. The proposed
+launcher keeps the host network and user namespaces while isolating mounts,
+process IDs, IPC and UTS. Private display/runtime paths, exactly the admitted
+GPU nodes, the genuine host system bus, and restrictions on abstract sockets,
+signals and network creation need their own controls. A delegated host udev
+monitor could permit narrower namespaces later; it does not exist today.
+
+The design must also preserve Sophia's nested protection domains. Blanket
+namespace-creation refusal would break those children. Effective host polkit
+rules could not be read by the agent; the privileged transaction preflight must
+inspect them and establish the dedicated account's restrictions. These are
+remaining implementation and qualification obligations, not an activation
+recipe. t312 stays open, and physical head-change acceptance still depends on
+t306.
+
 ## Evidence
 
 - `igpu-development-01/FINDINGS-01.txt` and `READ-ONLY-01.json`: source survey,
