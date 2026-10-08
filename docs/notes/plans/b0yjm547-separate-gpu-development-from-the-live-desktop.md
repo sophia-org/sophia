@@ -122,6 +122,39 @@ crash recovery and admitted-head changes leave the daily desktop presenting
 and taking input. Device/seat configuration and any one-time daily relogin are
 prepared for review before application. This remains open after t311 lands.
 
+### First source slice: seat-scoped DRM discovery
+
+Primary selection and render inventory now share a bounded udev seat-card
+inventory. Missing `ID_SEAT` means seat0 only on an initialized record. The
+seat comes from the opened libseat controller. An output profile or an
+`--input-seat` argument does not grant ownership of another seat's cards.
+The inventory is collected before opening nodes. A seated primary open must
+preserve the admitted node's device number, inode, filesystem, physical path
+and seat assignment before any KMS query uses that descriptor. An admitted
+open failure refuses the selection instead of falling back to another card.
+
+The seated scanout constructor reads connector facts only for those admitted
+cards, including its completeness check. Connector IDs are matched together
+with their card because their numeric values may overlap between GPUs. Its
+image-import render devices come from the same card inventory. Startup,
+topology replacement and seat reacquisition use this constructor. Standalone
+card probes retain their explicit, host-wide discovery route.
+
+CPU controls cover foreign and uninitialized card exclusion, failed admitted
+discovery, capacity and identity aliases, returned-descriptor identity,
+foreign-connector exclusion before reading its facts, connector-ID collisions
+between cards, and refusal to fall back after an admitted open fails. Evidence
+and review for this slice live in `development-evidence/t312-seat-admission-01`.
+This is source preparation; physical seat assignment and concurrent visible
+sessions have not been qualified.
+
+Both GPUs are still assigned to seat0 on this host. This change alone therefore
+does not release the iGPU from the daily desktop. Remaining work is to scope
+topology notifications and recovery to admitted devices, qualify an independent
+seat without taking the daily VT or input, and prepare a private development
+launcher with bounded crash cleanup. Any host configuration and daily relogin
+must follow the prepared review, while the daily desktop remains protected.
+
 ## Evidence
 
 - `igpu-development-01/FINDINGS-01.txt` and `READ-ONLY-01.json`: source survey,

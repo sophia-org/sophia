@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 use rustix::fs::{OFlags, fstat, major, minor, stat};
 
 mod selection;
-use selection::{RenderCandidate, admit_candidate, is_node_name, seat_matches, validate_identity};
+use super::seat_inventory::{SeatDrmCard, discover_seat_cards, policy as seat_policy};
+use selection::{RenderCandidate, admit_candidate, validate_identity};
 
 #[derive(Debug)]
 pub struct LiveRenderDevice {
@@ -48,38 +49,13 @@ impl std::error::Error for LiveRenderDeviceInventoryError {}
 pub fn discover_seat_render_devices(
     seat: &str,
 ) -> Result<Vec<LiveRenderDevice>, LiveRenderDeviceInventoryError> {
-    use LiveRenderDeviceInventoryError as E;
-    if seat.is_empty()
-        || seat.len() > 64
-        || !seat.is_ascii()
-        || seat.bytes().any(|byte| byte <= b' ')
-    {
-        return Err(E::InvalidSeat);
-    }
-    let mut enumerator = udev::Enumerator::new().map_err(|_| E::DiscoveryUnavailable)?;
-    enumerator
-        .match_subsystem("drm")
-        .and_then(|()| enumerator.match_sysname("card[0-9]*"))
-        .map_err(|_| E::DiscoveryUnavailable)?;
-    let mut selected = Vec::new();
-    for card in enumerator
-        .scan_devices()
-        .map_err(|_| E::DiscoveryUnavailable)?
-    {
-        if !is_node_name(card.sysname(), "card")
-            || !seat_matches(seat, card.is_initialized(), card.property_value("ID_SEAT"))
-        {
-            continue;
-        }
-        let Ok(physical) = fs::canonicalize(card.syspath().join("device")) else {
-            continue;
-        };
-        if let Some(candidate) = selection::render_sibling(Path::new("/sys/class/drm"), &physical)?
-        {
-            admit_candidate(&mut selected, candidate)?;
-        }
-    }
-    selected.sort_by(|left, right| left.sysfs_node.cmp(&right.sysfs_node));
+    discover_render_devices_on_cards(&render_cards(seat)?)
+}
+
+pub(crate) fn discover_render_devices_on_cards(
+    cards: &[SeatDrmCard],
+) -> Result<Vec<LiveRenderDevice>, LiveRenderDeviceInventoryError> {
+    let selected = select_render_candidates(cards)?;
     // The complete selection is bounded before the first descriptor is opened.
     selected.into_iter().map(open_candidate).collect()
 }
@@ -91,37 +67,7 @@ pub fn snapshot_seat_render_inventory(
     seat: &str,
 ) -> Result<Vec<LiveRenderDeviceIdentitySnapshot>, LiveRenderDeviceInventoryError> {
     use LiveRenderDeviceInventoryError as E;
-    if seat.is_empty()
-        || seat.len() > 64
-        || !seat.is_ascii()
-        || seat.bytes().any(|byte| byte <= b' ')
-    {
-        return Err(E::InvalidSeat);
-    }
-    let mut enumerator = udev::Enumerator::new().map_err(|_| E::DiscoveryUnavailable)?;
-    enumerator
-        .match_subsystem("drm")
-        .and_then(|()| enumerator.match_sysname("card[0-9]*"))
-        .map_err(|_| E::DiscoveryUnavailable)?;
-    let mut selected = Vec::new();
-    for card in enumerator
-        .scan_devices()
-        .map_err(|_| E::DiscoveryUnavailable)?
-    {
-        if !is_node_name(card.sysname(), "card")
-            || !seat_matches(seat, card.is_initialized(), card.property_value("ID_SEAT"))
-        {
-            continue;
-        }
-        let Ok(physical) = fs::canonicalize(card.syspath().join("device")) else {
-            continue;
-        };
-        if let Some(candidate) = selection::render_sibling(Path::new("/sys/class/drm"), &physical)?
-        {
-            admit_candidate(&mut selected, candidate)?;
-        }
-    }
-    selected.sort_by(|left, right| left.sysfs_node.cmp(&right.sysfs_node));
+    let selected = select_render_candidates(&render_cards(seat)?)?;
     selected
         .into_iter()
         .map(|candidate| {
@@ -184,4 +130,27 @@ fn open_candidate(
             physical_device: physical,
         },
     })
+}
+
+fn render_cards(seat: &str) -> Result<Vec<SeatDrmCard>, LiveRenderDeviceInventoryError> {
+    use LiveRenderDeviceInventoryError as E;
+    if !seat_policy::valid_seat(seat) {
+        return Err(E::InvalidSeat);
+    }
+    discover_seat_cards(seat).map_err(|_| E::DiscoveryUnavailable)
+}
+
+fn select_render_candidates(
+    cards: &[SeatDrmCard],
+) -> Result<Vec<RenderCandidate>, LiveRenderDeviceInventoryError> {
+    let mut selected = Vec::new();
+    for card in cards {
+        if let Some(candidate) =
+            selection::render_sibling(Path::new("/sys/class/drm"), &card.physical_device)?
+        {
+            admit_candidate(&mut selected, candidate)?;
+        }
+    }
+    selected.sort_by(|left, right| left.sysfs_node.cmp(&right.sysfs_node));
+    Ok(selected)
 }

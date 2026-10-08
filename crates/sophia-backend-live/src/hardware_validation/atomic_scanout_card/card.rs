@@ -15,6 +15,16 @@ enum RealAtomicScanoutCardFd {
 pub struct RealAtomicScanoutCard(RealAtomicScanoutCardFd);
 
 impl RealAtomicScanoutCard {
+    #[cfg(feature = "gbm-probe")]
+    pub(crate) fn sysfs_node(&self) -> io::Result<std::path::PathBuf> {
+        let metadata = rustix::fs::fstat(self)?;
+        std::fs::canonicalize(format!(
+            "/sys/dev/char/{}:{}",
+            rustix::fs::major(metadata.st_rdev),
+            rustix::fs::minor(metadata.st_rdev)
+        ))
+    }
+
     pub(super) fn open_nonblocking(path: &Path) -> io::Result<Self> {
         Ok(Self(RealAtomicScanoutCardFd::Direct(
             std::fs::OpenOptions::new()

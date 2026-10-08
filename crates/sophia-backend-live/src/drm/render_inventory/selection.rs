@@ -1,10 +1,10 @@
-use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use rustix::fs::{FileType, Stat, makedev};
 
 use super::LiveRenderDeviceInventoryError as E;
+use super::seat_policy::is_node_name;
 
 const CAPACITY: usize = 16;
 
@@ -13,19 +13,6 @@ pub(super) struct RenderCandidate {
     pub sysfs_node: PathBuf,
     pub physical_device: PathBuf,
     pub device_number: u64,
-}
-
-pub(super) fn is_node_name(name: &OsStr, prefix: &str) -> bool {
-    name.to_str()
-        .and_then(|name| name.strip_prefix(prefix))
-        .is_some_and(|suffix| {
-            !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
-        })
-}
-
-pub(super) fn seat_matches(seat: &str, initialized: bool, assigned: Option<&OsStr>) -> bool {
-    // Missing ID_SEAT denotes seat0 only after udev has initialized the record.
-    initialized && assigned.unwrap_or_else(|| OsStr::new("seat0")) == seat
 }
 
 pub(super) fn node_device_number(node: &Path) -> Option<u64> {

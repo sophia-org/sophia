@@ -50,8 +50,37 @@ impl LiveDrmSysfsDiscovery {
         &self,
         root: impl AsRef<Path>,
     ) -> io::Result<Vec<LiveSysfsConnectorRecord>> {
+        self.discover_connectors_matching(root.as_ref(), |_| true)
+    }
+
+    /// Restricts discovery before reading connector facts. An unrelated seat's
+    /// connector cannot affect completeness or make an admitted scan fail.
+    #[cfg(all(
+        feature = "seat-control",
+        any(test, all(feature = "libdrm-events", feature = "gbm-probe"))
+    ))]
+    pub(crate) fn discover_connectors_on_cards(
+        &self,
+        root: &Path,
+        cards: &[PathBuf],
+    ) -> io::Result<Vec<LiveSysfsConnectorRecord>> {
+        self.discover_connectors_matching(root, |path| {
+            cards
+                .iter()
+                .any(|card| connector_belongs_to_card(path, card))
+        })
+    }
+
+    fn discover_connectors_matching(
+        &self,
+        root: &Path,
+        includes: impl Fn(&Path) -> bool,
+    ) -> io::Result<Vec<LiveSysfsConnectorRecord>> {
         let mut records = Vec::new();
-        for (index, path) in drm_connector_paths(root.as_ref())?.into_iter().enumerate() {
+        for (index, path) in drm_connector_paths(root)?.into_iter().enumerate() {
+            if !includes(&path) {
+                continue;
+            }
             let Some(record) = self.discover_connector(&path, index)? else {
                 continue;
             };
@@ -89,6 +118,27 @@ impl LiveDrmSysfsDiscovery {
             mode,
             scale: scale.max(1),
         }))
+    }
+}
+
+#[cfg(any(test, all(feature = "libdrm-events", feature = "gbm-probe")))]
+pub(crate) fn connector_belongs_to_card(connector: &Path, card: &Path) -> bool {
+    let Some(card) = card.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    connector
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.strip_prefix(card))
+        .is_some_and(|suffix| suffix.starts_with('-'))
+}
+
+#[cfg(any(test, all(feature = "libdrm-events", feature = "gbm-probe")))]
+impl LiveSysfsConnectorRecord {
+    /// DRM connector integers are local to a card, not global identifiers.
+    pub(crate) fn matches_card_connector(&self, card: &Path, connector_id: u32) -> bool {
+        self.connector_id == connector_id
+            && connector_belongs_to_card(Path::new(&self.connector_name), card)
     }
 }
 
@@ -204,3 +254,6 @@ fn read_trimmed(path: impl AsRef<Path>) -> io::Result<Option<String>> {
         Err(error) => Err(error),
     }
 }
+
+#[path = "../../tests/support/seat_connector_discovery.rs"]
+mod tests;

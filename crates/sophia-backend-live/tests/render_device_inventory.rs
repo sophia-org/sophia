@@ -8,11 +8,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use sophia_backend_live::{LiveRenderDeviceInventoryError, discover_seat_render_devices};
 
+#[path = "../src/drm/seat_inventory/policy.rs"]
+mod seat_policy;
 #[path = "../src/drm/render_inventory/selection.rs"]
 mod selection;
-use selection::{
-    RenderCandidate, admit_candidate, is_node_name, render_sibling, seat_matches, validate_identity,
-};
+use seat_policy::{is_node_name, seat_matches, valid_seat};
+use selection::{RenderCandidate, admit_candidate, render_sibling, validate_identity};
 
 use LiveRenderDeviceInventoryError as E;
 
@@ -63,6 +64,7 @@ fn explicit_seat_membership_does_not_admit_another_seat() {
     assert!(!seat_matches("seat1", true, Some(OsStr::new("seat0"))));
     assert!(!seat_matches("seat0", true, Some(OsStr::new(""))));
     for seat in ["", "seat 0", "seat\n0", "sëat0"] {
+        assert!(!valid_seat(seat));
         assert_eq!(
             discover_seat_render_devices(seat).unwrap_err(),
             E::InvalidSeat

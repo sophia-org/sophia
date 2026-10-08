@@ -67,6 +67,7 @@ pub enum RealAtomicScanoutSelectionSetStatus {
     NoCompleteTargets,
     Partial,
     CapacityExceeded,
+    DeviceAdmissionUnavailable,
 }
 
 impl RealAtomicScanoutCardSelectionStatus {
@@ -107,9 +108,36 @@ pub fn select_real_atomic_scanout_cards() -> RealAtomicScanoutSelectionSet {
 pub fn select_real_atomic_scanout_cards_with_seat(
     opener: &crate::LiveSeatDeviceOpener,
 ) -> RealAtomicScanoutSelectionSet {
-    select_real_atomic_scanout_cards_from_dev_dri_with(Path::new("/dev/dri"), |path| {
-        RealAtomicScanoutCard::open_with_seat(opener, path)
-    })
+    match crate::drm::seat_inventory::discover_seat_cards(opener.name()) {
+        Ok(cards) => select_real_atomic_scanout_cards_in_seat(opener, &cards),
+        Err(_) => RealAtomicScanoutSelectionSet {
+            status: RealAtomicScanoutSelectionSetStatus::DeviceAdmissionUnavailable,
+            cards: Vec::new(),
+            connected_connectors: 0,
+        },
+    }
+}
+
+#[cfg(feature = "seat-control")]
+pub(crate) fn select_real_atomic_scanout_cards_in_seat(
+    opener: &crate::LiveSeatDeviceOpener,
+    cards: &[crate::drm::seat_inventory::SeatDrmCard],
+) -> RealAtomicScanoutSelectionSet {
+    select_real_atomic_scanout_candidates(
+        cards.iter().map(|card| card.node.clone()).collect(),
+        true,
+        |path| {
+            let admitted = cards
+                .iter()
+                .find(|card| card.node == path)
+                .ok_or_else(|| io::Error::other("DRM card was not admitted"))?;
+            admitted.validate_current(opener.name())?;
+            let card = RealAtomicScanoutCard::open_with_seat(opener, path)?;
+            admitted.validate_opened(&rustix::fs::fstat(&card)?)?;
+            admitted.validate_current(opener.name())?;
+            Ok(card)
+        },
+    )
 }
 
 pub fn select_real_atomic_scanout_cards_from_dev_dri(
@@ -122,7 +150,7 @@ pub fn select_real_atomic_scanout_cards_from_dev_dri(
 
 fn select_real_atomic_scanout_cards_from_dev_dri_with(
     dev_dri: &Path,
-    mut open: impl FnMut(&Path) -> io::Result<RealAtomicScanoutCard>,
+    open: impl FnMut(&Path) -> io::Result<RealAtomicScanoutCard>,
 ) -> RealAtomicScanoutSelectionSet {
     let Ok(entries) = std::fs::read_dir(dev_dri) else {
         return RealAtomicScanoutSelectionSet {
@@ -137,6 +165,14 @@ fn select_real_atomic_scanout_cards_from_dev_dri_with(
         .map(|entry| entry.path())
         .collect::<Vec<_>>();
     candidates.sort();
+    select_real_atomic_scanout_candidates(candidates, false, open)
+}
+
+fn select_real_atomic_scanout_candidates(
+    candidates: Vec<std::path::PathBuf>,
+    require_every_open: bool,
+    mut open: impl FnMut(&Path) -> io::Result<RealAtomicScanoutCard>,
+) -> RealAtomicScanoutSelectionSet {
     if candidates.is_empty() {
         return RealAtomicScanoutSelectionSet {
             status: RealAtomicScanoutSelectionSetStatus::NoPrimaryCardNodes,
@@ -150,6 +186,13 @@ fn select_real_atomic_scanout_cards_from_dev_dri_with(
     let mut incomplete = false;
     for path in candidates {
         let Ok(card) = open(&path) else {
+            if require_every_open {
+                return RealAtomicScanoutSelectionSet {
+                    status: RealAtomicScanoutSelectionSetStatus::DeviceAdmissionUnavailable,
+                    cards,
+                    connected_connectors,
+                };
+            }
             continue;
         };
         if !admit_atomic_scanout_client_capabilities(&card) {
@@ -204,6 +247,9 @@ fn select_real_atomic_scanout_cards_from_dev_dri_with(
         connected_connectors,
     }
 }
+
+#[path = "../../../tests/support/seat_scanout_selection.rs"]
+mod tests;
 
 pub fn select_real_atomic_scanout_card_from_dev_dri(
     dev_dri: &Path,

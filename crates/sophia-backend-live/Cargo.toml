@@ -34,7 +34,7 @@ egl-probe = ["sophia-renderer-live/egl-probe"]
 libdrm-events = ["dep:drm", "dep:rustix", "dep:sophia-drm-out-fence", "dep:sophia-drm-clock"]
 drm-hotplug = ["dep:rustix", "dep:udev"]
 libinput-events = ["dep:input", "dep:rustix"]
-seat-control = ["dep:libseat", "dep:rustix"]
+seat-control = ["dep:libseat", "dep:rustix", "dep:udev"]
 
 [lints]
 workspace = true

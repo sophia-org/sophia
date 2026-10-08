@@ -13,6 +13,11 @@ mod native_primary_plane;
 mod native_scanout;
 #[cfg(feature = "drm-hotplug")]
 mod render_inventory;
+#[cfg(any(
+    feature = "drm-hotplug",
+    all(feature = "seat-control", feature = "libdrm-events")
+))]
+pub(crate) mod seat_inventory;
 mod sysfs_discovery;
 #[cfg(feature = "drm-hotplug")]
 mod topology_monitor;

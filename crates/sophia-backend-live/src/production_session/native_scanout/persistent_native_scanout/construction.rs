@@ -14,6 +14,7 @@ impl LiveProductionNativeScanout {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         Self::new_with_selection(
             crate::select_real_atomic_scanout_cards(),
+            crate::discover_native_connector_records("/sys/class/drm")?,
             grouping,
             sophia_protocol::OutputHeadMapping::Fit,
         )
@@ -52,13 +53,23 @@ impl LiveProductionNativeScanout {
         grouping: &crate::NativeMirrorGrouping,
         mapping: sophia_protocol::OutputHeadMapping,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        let cards = crate::drm::seat_inventory::discover_seat_cards(opener.name())?;
+        let connector_records = crate::LiveDrmSysfsDiscovery::default().discover_connectors_on_cards(
+            std::path::Path::new("/sys/class/drm"),
+            &cards.iter().map(|card| card.node.clone()).collect::<Vec<_>>(),
+        )?;
+        let selection = crate::select_real_atomic_scanout_cards_in_seat(opener, &cards);
+        for card in &cards {
+            card.validate_current(opener.name())?;
+        }
         let mut scanout = Self::new_with_selection(
-            crate::select_real_atomic_scanout_cards_with_seat(opener),
+            selection,
+            connector_records,
             grouping,
             mapping,
         )?;
         #[cfg(feature = "drm-hotplug")]
-        let image_import_devices = match crate::discover_seat_render_devices(opener.name()) {
+        let image_import_devices = match crate::drm::discover_render_devices_on_cards(&cards) {
             Ok(devices) => devices.into_iter().map(|device| device.file).collect(),
             Err(reason) => {
                 tracing::warn!(
@@ -124,6 +135,7 @@ impl LiveProductionNativeScanout {
 
     fn new_with_selection(
         selection: crate::RealAtomicScanoutSelectionSet,
+        connector_records: Vec<crate::LiveSysfsConnectorRecord>,
         grouping: &crate::NativeMirrorGrouping,
         initial_mapping: sophia_protocol::OutputHeadMapping,
     ) -> Result<Self, Box<dyn std::error::Error>> {
@@ -138,7 +150,6 @@ impl LiveProductionNativeScanout {
             )
             .into());
         }
-        let connector_records = crate::discover_native_connector_records("/sys/class/drm")?;
         // Ownership is complete when every discovered connector has a head, not
         // when the logical-output count matches. A mirror group is several heads
         // behind one logical output, so comparing logical outputs to connectors
@@ -160,6 +171,7 @@ impl LiveProductionNativeScanout {
             crate::LiveProductionNativeHeadTable::from_records(sessions.head_records.clone())?;
         let mut presentation_outputs = sophia_engine::EngineHeadRegistry::new();
         for session in &sessions.sessions {
+            let card_node = session.card().sysfs_node()?;
             for ((selection, output_id), head_id) in session
                 .selections()
                 .iter()
@@ -169,7 +181,7 @@ impl LiveProductionNativeScanout {
             {
                 let Some(record) = connector_records
                     .iter()
-                    .find(|record| record.connector_id == selection.connector_id())
+                    .find(|record| record.matches_card_connector(&card_node, selection.connector_id()))
                 else {
                     return Err(format!(
                         "persistent native output has no Engine connector match: connector={}",
