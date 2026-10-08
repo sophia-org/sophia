@@ -129,8 +129,12 @@ inventory. Missing `ID_SEAT` means seat0 only on an initialized record. The
 seat comes from the opened libseat controller. An output profile or an
 `--input-seat` argument does not grant ownership of another seat's cards.
 An uninitialized card refuses discovery before its node is inspected, because
-its assignment is not yet authoritative. This can delay startup while udev
-settles; it cannot silently remove the card from the completeness check.
+its assignment is not yet authoritative. This refusal is global, including a
+provisionally foreign card. Startup fails without retry and currently records
+an unclassified startup error. Render inventory reduces this error to
+`DiscoveryUnavailable`; it cannot distinguish an uninitialized card from a
+failed discovery service. The live inventory comparison retries after 250 ms.
+No uninitialized card silently disappears from the completeness check.
 The inventory is collected before opening nodes. A seated primary open must
 preserve the admitted node's device number, inode, filesystem, physical path
 and seat assignment before any KMS query uses that descriptor. An admitted
