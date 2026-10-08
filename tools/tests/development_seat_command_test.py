@@ -29,8 +29,9 @@ class Commands(unittest.TestCase):
         self.assertEqual(argv[last + 1:last + 5],
                          [config["tools"]["drop"]["path"], "1200", "1200", "--"])
         self.assertNotIn(config["tools"]["sophia"]["path"], argv)
-        self.assertEqual(argv[last + 5:], [config["tools"]["python"]["path"], "-I", "-B",
-                                         config["bundle"] + "/audit.py", "9"])
+        self.assertEqual(argv[last + 5:], [config["tools"]["python"]["path"], "-I", "-B", "-S",
+                                         "-X", "pycache_prefix=/dev/null",
+                                         config["bundle"] + "/bootstrap.py", "audit", "9"])
         for flag in ("--unshare-pid", "--unshare-ipc", "--unshare-uts", "--clearenv", "--new-session"):
             self.assertIn(flag, argv)
         self.assertNotIn("--unshare-user", argv)

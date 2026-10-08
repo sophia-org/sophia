@@ -1,12 +1,14 @@
 """Pure command construction for the one fixed development Session."""
 from pathlib import Path
+import bootstrap
 
 
 NAMESPACES = ("mnt", "pid", "ipc", "uts", "net", "user")
 
 
 def environment(config, login):
-    return {"PATH": "/usr/bin:/bin", "HOME": "/home/development", "LANG": "C.UTF-8",
+    # bubblewrap sets PWD to its final chdir even under --clearenv.
+    return {"PATH": "/usr/bin:/bin", "HOME": "/home/development", "PWD": "/home/development", "LANG": "C.UTF-8",
             "USER": config["user"], "LOGNAME": config["user"],
             "XDG_RUNTIME_DIR": f"/run/user/{config['uid']}",
             "XDG_SESSION_ID": login["session"], "XDG_SEAT": config["seat"],
@@ -52,6 +54,5 @@ def command(config, run, login, inventory, admission_fd, *, nix_store):
     # Root drops credentials before loading the auditor, then the auditor
     # closes the admission pipe before exec. PAM descriptors never get here.
     result += ["--", config["tools"]["drop"]["path"], str(config["uid"]), str(config["gid"]),
-               "--", config["tools"]["python"]["path"], "-I", "-B", str(bundle / "audit.py"),
-               str(admission_fd)]
+               "--", *bootstrap.command(config, "audit", str(admission_fd))]
     return result

@@ -93,7 +93,7 @@ def parse(value):
     if len(set(paths)) != len(paths):
         raise ValueError("duplicate bundle file")
     required = {str(bundle / name) for name in
-                ("owner.py", "worker.py", "config.py", "login.py", "pam.py", "sandbox.py", "audit.py",
+                ("bootstrap.py", "owner.py", "worker.py", "config.py", "login.py", "pam.py", "sandbox.py", "audit.py",
                  "custody.py", "inventory.py", "policy.py", "elf.py", "deployment.py")}
     if not required.issubset(paths):
         raise ValueError("launcher source pins incomplete")
@@ -111,8 +111,10 @@ def parse(value):
 
 def verify(value):
     from elf import loader_paths
+    from bootstrap import inventory
     parse(value)
     trusted(Path(value["bundle"]))
+    inventory(value)
     for pin in [*value["tools"].values(), *value["files"]]:
         path = absolute(pin["path"])
         trusted(path, regular=True)

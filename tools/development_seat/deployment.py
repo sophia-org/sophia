@@ -1,6 +1,6 @@
 """Render reviewable host text only. This module installs or starts nothing."""
-from pathlib import Path
 import shlex
+import bootstrap
 from config import parse
 from policy import deny_rule
 
@@ -15,8 +15,7 @@ def service_run(config):
             "exec /usr/bin/env -i PATH=/usr/bin:/bin LANG=C.UTF-8 "
             f"{quote(tools['timeout']['path'])} -s KILL {config['outer_seconds']} "
             f"{quote(tools['custody']['path'])} \"$$\" -- "
-            f"{quote(tools['python']['path'])} -I -B "
-            f"{quote(str(Path(config['bundle']) / 'owner.py'))} --run < /dev/null\n")
+            f"{shlex.join(bootstrap.command(config, 'owner', '--run'))} < /dev/null\n")
 
 
 def proposed_files(config):

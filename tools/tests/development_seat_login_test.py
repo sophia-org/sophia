@@ -21,7 +21,7 @@ config, login, pam = module("config"), module("login"), module("pam")
 
 def fixture_config():
     bundle = "/opt/sophia-development/frozen"
-    names = ("owner.py", "worker.py", "config.py", "login.py", "pam.py", "sandbox.py", "audit.py",
+    names = ("bootstrap.py", "owner.py", "worker.py", "config.py", "login.py", "pam.py", "sandbox.py", "audit.py",
              "custody.py", "inventory.py", "policy.py", "elf.py", "deployment.py", "profile.kdl")
     return {"schema": 1, "user": "sophia-dev", "uid": 1200, "gid": 1200,
             "daily_uids": [1000], "seat": "seat-sophia-dev", "pci": "0000:16:00.0",

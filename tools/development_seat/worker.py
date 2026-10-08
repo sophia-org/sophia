@@ -9,6 +9,8 @@ import subprocess
 import sys
 import time
 
+if __name__ == "__main__" and not globals().get("__bundle_verified__"):
+    raise ValueError("worker must enter through the verified bootstrap")
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config as configuration
 import custody
@@ -116,19 +118,29 @@ def main():
     except BaseException as error:
         result["reason"] = str(error)
     finally:
+        # A second TERM cannot interrupt reap, PAM teardown or the receipt.
+        # The independent service SIGKILL bound remains in force.
+        signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM})
+        reaped = child is None
         if child is not None:
             try:
                 result["cleanup_exit"] = child.finish(terminate=True)
+                reaped = True
             except BaseException as error:
                 result["status"], result["cleanup_error"] = "failed", str(error)
         for descriptor in (read_fd, write_fd):
             if descriptor is not None:
                 os.close(descriptor)
-        if pam is not None:
+        if pam is not None and reaped:
             try:
                 pam.close()
             except BaseException as error:
                 result["status"], result["pam_cleanup_error"] = "failed", str(error)
+        elif pam is not None:
+            # Never claim ordered teardown when the child cannot be reaped.
+            # Worker exit closes the lifetime fd and triggers PDEATHSIG; their
+            # relative completion, including a D-state task, is not guaranteed.
+            result["pam_cleanup"] = "skipped_unreaped_child"
         write(run / "worker-result.json", result)
     return 0 if result["status"] == "completed" else 2
 

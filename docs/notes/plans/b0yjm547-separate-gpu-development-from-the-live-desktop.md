@@ -316,6 +316,22 @@ child before closing PAM. The owner can request termination only for the same
 fully attested login while its leader remains unreaped; it never selects a
 session by UID display or acts on a reused PID after reaping.
 
+The source review found three cleanup/trust gaps and a CPU execution control
+found an environment mismatch. Cleanup now blocks further TERM delivery until
+exit; PAM also protects close/end when handling an earlier failed open. If the
+sandbox cannot be reaped, the worker records failure and skips explicit PAM
+close. Worker exit then triggers parent-death cleanup and closes the login
+lifetime descriptor. Their completion order is not guaranteed, especially for
+an uninterruptible kernel task; that path is not successful ordered teardown.
+
+Each Python entry now starts through a standard-library-only bootstrap. It
+checks root ownership, the exact bundle directory contents and source hashes
+before importing bundle code. Startup disables site hooks and redirects
+bytecode lookup to `/dev/null`, which cannot contain a cache. The interpreter,
+standard library and initial bootstrap source remain deployment trust roots.
+The auditor's fixed environment includes the `PWD` that bubblewrap sets. A real
+CPU namespace control failed without that entry and passes with it.
+
 The mount namespace exposes exactly the admitted primary and render nodes,
 private home/runtime/output paths, read-only system metadata and the genuine
 system bus socket. Host user and network namespaces remain for udev delivery.
@@ -352,8 +368,20 @@ remain unqualified. File hashes alone do not prove that polkit loaded its rules;
 the dedicated account needs negative authorization controls before a GPU run.
 The service deliberately exposes the genuine system bus. Its dedicated UID,
 restricted policy and private mounts are separate parts of that boundary.
+Polkit does not govern every system-bus service: qualification must enumerate
+reachable services and exercise their own authorization as the dedicated UID.
+Read-only metadata mounts also do not prevent pathname-socket connections.
+The current host permissions restrict those endpoints, but qualification must
+check accessible sockets and FIFOs under `/run/udev` and `/run/systemd`; the
+mounted metadata includes other sessions' readable state. The host dynamic
+linker cache and transitive libraries remain trusted rather than fully pinned.
 The full owner-loop and auditor success paths need that privileged fixture;
 the CPU worker tests replace authority and mount/credential operations.
+
+The successor controls in `development-evidence/t312-development-launcher-03`
+cover unreaped children, TERM during owner/worker/PAM cleanup, stale unchecked
+bytecode, changed or extra bundle files, and real bubblewrap environment
+construction. They do not qualify a live PAM login or a physical seat.
 
 No account, PAM/runit/polkit/udev file, seat assignment, installed release, input
 device or live display has changed. t312 remains open until simultaneous

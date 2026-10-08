@@ -9,14 +9,18 @@ import socket
 import stat
 import sys
 
+if __name__ == "__main__" and not globals().get("__bundle_verified__"):
+    raise ValueError("auditor must enter through the verified bootstrap")
 # This file is executed only from the pinned, read-only bundle. -I excludes
 # user/site paths; add precisely that directory, not cwd or PYTHONPATH.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sandbox import NAMESPACES, environment, session_command
 from config import digest
+from bootstrap import inventory
 
 
 def verify_files(config):
+    inventory(config)
     bundle = Path(config["bundle"])
     for pin in [*config["tools"].values(), *config["files"]]:
         # Every bundle file, including the profile, is mandatory. Host-only

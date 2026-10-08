@@ -54,10 +54,10 @@ class FileTrust(unittest.TestCase):
                       ("sophia", "drop", "python", "nested_bubblewrap")}, "files": [pin(profile)]}
             audit.verify_files(config)
             profile.write_bytes(b"changed profile")
-            with self.assertRaisesRegex(ValueError, "bundle changed"):
+            with self.assertRaisesRegex(ValueError, "bundle file hash"):
                 audit.verify_files(config)
             profile.unlink()
-            with self.assertRaises(FileNotFoundError):
+            with self.assertRaisesRegex(ValueError, "bundle directory inventory"):
                 audit.verify_files(config)
 
     def test_pam_service_uses_only_the_two_pinned_absolute_modules(self):

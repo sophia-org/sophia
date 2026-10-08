@@ -18,7 +18,10 @@ import sys
 import tempfile
 import time
 
+if __name__ == "__main__" and not globals().get("__bundle_verified__"):
+    raise ValueError("owner must enter through the verified bootstrap")
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import bootstrap
 import config as configuration
 import custody
 import deployment
@@ -138,8 +141,7 @@ def run_once(config, api, initial):
         child = None
         observed = None
         try:
-            argv = [config["tools"]["python"]["path"], "-I", "-B",
-                    str(Path(config["bundle"]) / "worker.py"), str(run)]
+            argv = bootstrap.command(config, "worker", str(run))
             with (run / "worker.log").open("xb") as output:
                 child = custody.Child(custody.command(config, argv), stdin=subprocess.DEVNULL,
                                       stdout=output, stderr=output,
@@ -165,6 +167,7 @@ def run_once(config, api, initial):
         except BaseException as error:
             result["reason"] = str(error)
         finally:
+            signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM})
             if child is not None:
                 observed = observed_owned_login(api, config, child) or observed
                 try:

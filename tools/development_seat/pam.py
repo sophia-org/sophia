@@ -5,6 +5,7 @@ password conversation, authenticate call, ambient PAM environment, or fallback.
 The handle and module-owned session lifetime descriptors stay in this worker.
 """
 import ctypes as C
+import signal
 
 
 class Message(C.Structure):
@@ -114,9 +115,15 @@ class Pam:
     def close(self):
         if not self.handle.value:
             return
-        status = self.lib.pam_close_session(self.handle, 0) if self.opened else 0
-        self.opened = False
-        end = self.lib.pam_end(self.handle, status)
-        self.handle = C.c_void_p()
+        # close() is also used on a failed open before worker.finally. Delay
+        # TERM until both PAM operations finish; an outer cleanup mask stays.
+        previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM})
+        try:
+            status = self.lib.pam_close_session(self.handle, 0) if self.opened else 0
+            self.opened = False
+            end = self.lib.pam_end(self.handle, status)
+            self.handle = C.c_void_p()
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous)
         self.checked("pam_close_session", status)
         self.checked("pam_end", end)

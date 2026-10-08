@@ -5,6 +5,7 @@ the current unprivileged UID. It cannot qualify the root credential transition.
 That transition needs a separate privileged fixture before launcher activation.
 """
 import os
+import json
 from pathlib import Path
 import socket
 import subprocess
@@ -170,6 +171,24 @@ pathlib.Path(sys.argv[1]).write_text('nested')
                                 capture_output=True, text=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(marker.read_text(), "nested")
+
+    def test_bubblewrap_exec_environment_matches_the_auditor_contract(self):
+        # Real bwrap/Python startup, without root credentials, PAM or devices.
+        sys.path.insert(0, str(SOURCE))
+        from sandbox import environment
+        expected = environment({"uid": os.getuid(), "user": "sophia-dev", "seat": "seat-dev"},
+                               {"session": "fixture"})
+        argv = ["bwrap", "--unshare-all", "--die-with-parent", "--ro-bind", "/", "/",
+                "--dev", "/dev", "--tmpfs", "/home", "--dir", "/home/development",
+                "--chdir", "/home/development", "--clearenv"]
+        for name, value in expected.items():
+            argv += ["--setenv", name, value]
+        argv += ["--", sys.executable, "-I", "-B", "-c",
+                 "import json,os; print(json.dumps(dict(os.environ)))"]
+        result = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True,
+                                text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), expected, "bwrap environment must match the auditor")
 
 
 if __name__ == "__main__":
