@@ -98,9 +98,10 @@ def main():
         argv = sandbox.command(config, run, observed, devices, write_fd, nix_store=Path("/nix/store").is_dir())
         with (run / "untrusted-session-output.log").open("xb") as output:
             guarded = [config["tools"]["guard"]["path"], "--", *argv]
-            child = custody.Child(custody.command(config, guarded), stdin=subprocess.DEVNULL,
-                                  stdout=output, stderr=output, pass_fds=(write_fd,),
-                                  env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
+            with custody.defer_term():
+                child = custody.Child(custody.command(config, guarded), stdin=subprocess.DEVNULL,
+                                      stdout=output, stderr=output, pass_fds=(write_fd,),
+                                      env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
             os.close(write_fd)
             write_fd = None
             admission = read_admission(read_fd, child, deadline)

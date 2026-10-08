@@ -62,6 +62,9 @@ class WorkerWiring(unittest.TestCase):
                     super().__init__(*args, **kwargs)
                     children.append(self)
                     events.append("child")
+                    if scenario == "handoff":
+                        os.kill(os.getpid(), signal.SIGTERM)
+                        os.kill(os.getpid(), signal.SIGTERM)
 
                 def finish(self, *args, **kwargs):
                     if scenario == "unreaped":
@@ -166,12 +169,21 @@ class WorkerWiring(unittest.TestCase):
     def test_repeated_term_does_not_interrupt_cleanup_or_its_receipt(self):
         self.scenario("term-during-cleanup")
 
+    def test_term_during_sandbox_handoff_keeps_the_child_owned(self):
+        self.scenario("handoff")
+
 
 class OwnedLoginCleanup(unittest.TestCase):
     def test_term_during_owner_cleanup_cannot_skip_reap_or_result(self):
+        self.owner_case(False)
+
+    def test_term_during_worker_handoff_keeps_the_child_owned(self):
+        self.owner_case(True)
+
+    def owner_case(self, handoff):
         with tempfile.TemporaryDirectory() as temporary, ExitStack() as stack:
             config = fixture_config()
-            config.update(output_root=temporary, outer_seconds=15.05)
+            config.update(output_root=temporary, outer_seconds=20.05)
             config["tools"]["custody"]["path"] = "/usr/bin/env"
             children = []
             real_child = custody.Child
@@ -179,11 +191,15 @@ class OwnedLoginCleanup(unittest.TestCase):
             def child(*args, **kwargs):
                 value = real_child([sys.executable, "-I", "-c", "import time;time.sleep(30)"], **kwargs)
                 children.append(value)
+                if handoff:
+                    os.kill(os.getpid(), signal.SIGTERM)
+                    os.kill(os.getpid(), signal.SIGTERM)
                 return value
 
-            def terminate(*args):
+            actual_cleanup = owner.cleanup_worker
+            def cleanup(*args):
                 os.kill(os.getpid(), signal.SIGTERM)
-                return {"status": "fixture"}
+                return actual_cleanup(*args)
 
             actual_fstat = os.fstat
             def root_lock(fd):
@@ -196,7 +212,7 @@ class OwnedLoginCleanup(unittest.TestCase):
             stack.enter_context(patch.object(owner.os, "fstat", side_effect=root_lock))
             stack.enter_context(patch.object(owner.custody, "Child", side_effect=child))
             stack.enter_context(patch.object(owner, "observed_owned_login", return_value=None))
-            stack.enter_context(patch.object(owner, "terminate_owned_login", side_effect=terminate))
+            stack.enter_context(patch.object(owner, "cleanup_worker", side_effect=cleanup))
             previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, set())
             previous_handler = signal.signal(signal.SIGTERM,
                 lambda *_: (_ for _ in ()).throw(InterruptedError("owner cleanup TERM")))
@@ -212,10 +228,52 @@ class OwnedLoginCleanup(unittest.TestCase):
                     real_child.finish(value, terminate=True)
             report, = Path(temporary).glob("*/result.json")
             result = json.loads(report.read_text())
-            self.assertNotIn("login_cleanup_error", result, "owner cleanup must defer TERM")
-            self.assertEqual(result["login_cleanup"], {"status": "fixture"})
-            self.assertNotIn("cleanup_error", result)
+            self.assertNotIn("cleanup_error", result, "owner cleanup must defer TERM")
+            self.assertIn("cleanup_exit", result, "owner must retain the spawned worker")
             self.assertTrue(all(c.process.returncode is not None for c in children))
+
+    def test_owner_allows_worker_to_finish_slow_sandbox_cleanup_before_escalation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            code = r'''
+import os, pathlib, signal, subprocess, sys, time
+sys.path.insert(0, sys.argv[1])
+import custody
+root = pathlib.Path(sys.argv[2])
+sandbox = custody.Child([sys.executable, '-I', '-c',
+    "import pathlib,signal,time,sys;signal.signal(signal.SIGTERM,signal.SIG_IGN);pathlib.Path(sys.argv[1]).touch();time.sleep(30)",
+    str(root/'sandbox-ready')], stdin=subprocess.DEVNULL)
+stop = False
+def term(*_):
+    global stop
+    stop = True
+signal.signal(signal.SIGTERM, term)
+while not (root/'sandbox-ready').exists(): time.sleep(0.01)
+(root/'worker-ready').touch()
+while not stop: time.sleep(0.01)
+signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM})
+rc = sandbox.finish(terminate=True)
+assert rc == -signal.SIGKILL
+# Model slow PAM close after the real TERM-ignoring sandbox has been reaped.
+time.sleep(1.2)
+(root/'ordered-result').write_text('reaped then PAM then receipt')
+'''
+            child = custody.Child([sys.executable, "-I", "-B", "-c", code, str(SOURCE), str(root)],
+                                  stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            try:
+                deadline = time.monotonic() + 5
+                while not (root / "worker-ready").exists():
+                    self.assertLess(time.monotonic(), deadline, "worker must start")
+                    time.sleep(0.01)
+                result = {}
+                with patch.object(owner, "terminate_owned_login") as terminate:
+                    owner.cleanup_worker(None, fixture_config(), child, None, result)
+                    terminate.assert_not_called()
+                self.assertEqual(result["cleanup_exit"], 0, "owner must allow the worker cleanup budget")
+                self.assertEqual((root / "ordered-result").read_text(), "reaped then PAM then receipt")
+            finally:
+                child.finish(terminate=True)
+                child.process.stderr.close()
 
     def test_only_the_same_still_owned_login_can_be_terminated(self):
         config = fixture_config()

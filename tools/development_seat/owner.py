@@ -117,6 +117,19 @@ def terminate_owned_login(api, config, child, observed):
     return {"status": "requested", "session": current["session"], "exit": cleanup.returncode}
 
 
+def cleanup_worker(api, config, child, observed, result):
+    # Worker cleanup may use 2 s TERM grace + 5 s reap wait. Allow a margin for
+    # PAM/receipt before escalating through logind, which may kill the worker.
+    child.send(signal.SIGTERM)
+    if not child.ready(8):
+        try:
+            result["login_cleanup"] = terminate_owned_login(api, config, child, observed)
+        except BaseException as error:
+            result["login_cleanup_error"] = str(error)
+    # No second TERM grace: the 8 s above already elapsed if still alive.
+    result["cleanup_exit"] = child.finish(terminate=True, grace=0)
+
+
 def run_once(config, api, initial):
     root = Path(config["output_root"])
     configuration.trusted(root)
@@ -134,7 +147,8 @@ def run_once(config, api, initial):
         run = Path(tempfile.mkdtemp(prefix=config["seat"] + "-", dir=root))
         # Reserve cleanup time inside the service's independent hard timeout.
         outer_deadline = time.monotonic() + config["outer_seconds"]
-        deadline = outer_deadline - 15
+        # 8 s worker grace + 5 s loginctl + 5 s final reap, plus receipt margin.
+        deadline = outer_deadline - 20
         write(run / "declaration.json", {"config": config, **current, "deadline": deadline})
         result = {"schema": 1, "status": "failed", "run": str(run), "deadline": deadline,
                   "outer_deadline": outer_deadline}
@@ -143,9 +157,10 @@ def run_once(config, api, initial):
         try:
             argv = bootstrap.command(config, "worker", str(run))
             with (run / "worker.log").open("xb") as output:
-                child = custody.Child(custody.command(config, argv), stdin=subprocess.DEVNULL,
-                                      stdout=output, stderr=output,
-                                      env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
+                with custody.defer_term():
+                    child = custody.Child(custody.command(config, argv), stdin=subprocess.DEVNULL,
+                                          stdout=output, stderr=output,
+                                          env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
                 while not child.ready(0.1):
                     # Keep an owned identity while the worker is alive. This
                     # does not depend on worker publishing login.json first.
@@ -171,11 +186,7 @@ def run_once(config, api, initial):
             if child is not None:
                 observed = observed_owned_login(api, config, child) or observed
                 try:
-                    result["login_cleanup"] = terminate_owned_login(api, config, child, observed)
-                except BaseException as error:
-                    result["login_cleanup_error"] = str(error)
-                try:
-                    result["cleanup_exit"] = child.finish(terminate=True)
+                    cleanup_worker(api, config, child, observed, result)
                 except BaseException as error:
                     result["cleanup_error"] = str(error)
             result["owned_login"] = observed

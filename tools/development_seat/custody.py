@@ -4,6 +4,27 @@ import select
 import signal
 import subprocess
 import time
+from contextlib import contextmanager
+
+
+@contextmanager
+def defer_term():
+    """Keep TERM from interrupting child construction and handle assignment.
+
+    Latch the request instead of blocking the signal: a forked child must not
+    inherit a blocked TERM mask. Exec resets this caught disposition normally.
+    """
+    pending = False
+    def remember(*_):
+        nonlocal pending
+        pending = True
+    previous = signal.signal(signal.SIGTERM, remember)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+        if pending:
+            signal.raise_signal(signal.SIGTERM)
 
 
 class Child:
@@ -37,12 +58,12 @@ class Child:
                 raise TimeoutError("development launch deadline expired")
         # Caller can inspect the still-unreaped child's login before finish.
 
-    def finish(self, terminate=False):
+    def finish(self, terminate=False, grace=2):
         if self.pidfd is None:
             return self.process.returncode
         if terminate and not self.ready():
             self.send(signal.SIGTERM)
-            if not self.ready(2):
+            if not self.ready(grace):
                 self.send(signal.SIGKILL)
         if not self.ready(5):
             raise TimeoutError("owned child did not become reapable")

@@ -323,6 +323,14 @@ sandbox cannot be reaped, the worker records failure and skips explicit PAM
 close. Worker exit then triggers parent-death cleanup and closes the login
 lifetime descriptor. Their completion order is not guaranteed, especially for
 an uninterruptible kernel task; that path is not successful ordered teardown.
+TERM is deferred across child construction and assignment at both spawn sites.
+This latches the signal rather than masking it, so children do not inherit a
+blocked TERM. The owner gives the worker eight seconds for sandbox/PAM cleanup
+before requesting logind termination and final KILL/reap. Its cleanup reserve
+is twenty seconds: eight for the worker, five for loginctl, five for reaping,
+and a receipt margin. The outer KILL bound remains authoritative if any step
+cannot complete. A real TERM-ignoring child and simulated slow PAM cleanup
+exercise that grace; injected TERM at both handoffs must retain custody.
 
 Each Python entry now starts through a standard-library-only bootstrap. It
 checks root ownership, the exact bundle directory contents and source hashes
