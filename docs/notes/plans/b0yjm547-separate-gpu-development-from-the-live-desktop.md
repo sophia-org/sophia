@@ -210,6 +210,20 @@ wiring are source-reviewed; these CPU controls do not exercise real udev
 delivery or establish two visible sessions. Evidence is retained in
 `development-evidence/t312-seat-topology-01`. t312 remains open.
 
+This slice is published as `2c785caad` plus the test-only `06b88226a`.
+The frozen full isolated gate passed: 7,215 Rust tests, zero failed and 100
+ignored, with formatting and layout checks passing. Claude's source review
+accepted both commits. Six mutation controls failed as expected on the first
+pass; one exposed a test that sent another event after the failure. The added
+no-event retry control rejects that mutation. Both runs are kept.
+
+Two limits remain visible: failed comparisons currently warn on every 250 ms
+retry, which can spend that record name's diagnostic quota during a prolonged
+udev failure; kernel revocation followed by a settled inventory change can
+produce two notices for one physical change. The bounded queue coalesces them,
+and notice counts are not counts of physical changes. Neither source slice
+was installed or exercised through a physical seat reassignment.
+
 ## Evidence
 
 - `igpu-development-01/FINDINGS-01.txt` and `READ-ONLY-01.json`: source survey,
