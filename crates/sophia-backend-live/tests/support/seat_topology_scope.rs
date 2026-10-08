@@ -214,6 +214,32 @@ fn failed_comparison_keeps_revocation_identity_and_retries_without_a_new_event()
 }
 
 #[test]
+fn a_failed_comparison_remains_owed_when_no_further_event_arrives() {
+    let mut scope = SeatTopologyScope::new(vec![card("desktop", 1)]);
+    let now = Instant::now();
+    event(
+        &mut scope,
+        Processed,
+        Change,
+        "/sys/devices/desktop/drm/card1",
+        false,
+    );
+    assert!(
+        scope
+            .refresh(now, || Err(io::Error::other("udev is unsettled")))
+            .is_err()
+    );
+    // No observe/mark_dirty between failure and the next poll: the failed
+    // comparison itself must preserve this obligation.
+    assert!(
+        scope
+            .refresh(now + Duration::from_millis(250), || Ok(vec![]))
+            .unwrap(),
+        "the failed comparison must retry without another event"
+    );
+}
+
+#[test]
 fn path_reuse_renumbering_and_node_replacement_are_membership_changes() {
     let original = card("desktop", 1);
     for replacement in [
