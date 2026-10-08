@@ -73,7 +73,7 @@ mod implementation {
         assert_eq!(failure.cause, PrivateWatchdogCause::StateUnavailable);
         assert!(!gate.allows_execution());
         super::wait_for_exit(&gate);
-        assert!(owner.reap_finished().unwrap().is_ok());
+        super::wait_for_successful_reap(&mut owner);
         assert_eq!(
             execution.finish(),
             Err(PrivateWatchdogRefusal::Failed(failure))
@@ -160,6 +160,20 @@ fn wait_for_exit(gate: &PrivateWatchdogGate) {
     let deadline = Instant::now() + TEST_LIMIT;
     while !gate.supervisor_finished() {
         assert!(Instant::now() < deadline, "supervisor did not return");
+        std::thread::park_timeout(Duration::from_millis(1));
+    }
+}
+
+fn wait_for_successful_reap(owner: &mut PrivateWatchdogOwner) {
+    // The shared completion flag is published inside the thread, before its
+    // closure returns. It does not yet guarantee JoinHandle::is_finished().
+    let deadline = Instant::now() + TEST_LIMIT;
+    loop {
+        if let Some(result) = owner.reap_finished() {
+            assert!(result.is_ok(), "supervisor panicked");
+            return;
+        }
+        assert!(Instant::now() < deadline, "supervisor was not reapable");
         std::thread::park_timeout(Duration::from_millis(1));
     }
 }
@@ -332,7 +346,7 @@ fn actual_dequeue_time_is_kept_even_if_registration_is_delayed() {
     assert!(failure.elapsed.unwrap() >= PRIVATE_EXECUTION_DEADLINE);
     assert!(!gate.allows_execution());
     wait_for_exit(&gate);
-    assert!(owner.reap_finished().unwrap().is_ok());
+    wait_for_successful_reap(&mut owner);
 }
 
 #[test]
@@ -391,7 +405,7 @@ fn post_commit_stall_cannot_be_overwritten_by_late_finish() {
     assert!(
         matches!(owner.begin_dequeued(Instant::now()), Err(PrivateWatchdogRefusal::Failed(found)) if found == failure)
     );
-    assert!(owner.reap_finished().unwrap().is_ok());
+    wait_for_successful_reap(&mut owner);
 }
 
 #[test]
