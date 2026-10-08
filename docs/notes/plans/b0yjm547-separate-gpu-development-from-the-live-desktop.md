@@ -391,6 +391,13 @@ cover unreaped children, TERM during owner/worker/PAM cleanup, stale unchecked
 bytecode, changed or extra bundle files, and real bubblewrap environment
 construction. They do not qualify a live PAM login or a physical seat.
 
+The final source is `e729a5c53`, with read-only peer acceptance recorded in
+`REVIEW-CLAUDE-03.txt`. Its full isolated gate passed on 2026-10-08: 7,223 Rust
+tests, zero failures, 101 ignored, and all 40 launcher controls. The gate used
+stdin from `/dev/null` and kept devices hidden. Eight earlier guard mutations
+were killed on `60eed918c`; three further handoff/grace mutations were killed
+on the final source. These are source and CPU qualifications only.
+
 No account, PAM/runit/polkit/udev file, seat assignment, installed release, input
 device or live display has changed. t312 remains open until simultaneous
 presentation and forced-exit recovery meet its physical exit.
