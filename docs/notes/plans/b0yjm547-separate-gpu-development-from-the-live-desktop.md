@@ -296,6 +296,69 @@ remaining implementation and qualification obligations, not an activation
 recipe. t312 stays open, and physical head-change acceptance still depends on
 t306.
 
+### Fourth source slice: bounded login owner and launch boundary
+
+The implementation is in `tools/development_seat/`. It is source for a fixed,
+root-owned bundle, with no installation or activation command. Configuration
+requires a dedicated locked account, an unoccupied non-VT seat, one expected
+PCI device, pinned files and tools, and a Session bound of at most 300 seconds.
+The root service starts outside existing logins. Its worker registers PAM and
+attests that worker's own login before constructing the private environment.
+Only the credential-drop helper and trusted auditor run before Sophia. The
+auditor sends its receipt through a pipe closed before development code runs;
+writable user artifacts cannot replace that host receipt.
+
+The service declaration starts down and is intended for `sv once`. Its separate
+hard timeout covers configuration, PAM, Session and cleanup. Pidfds and checked
+parent-death signals keep children in custody. A namespace guard also covers
+parent death before namespace init arms its signal. Worker cleanup reaps the
+child before closing PAM. The owner can request termination only for the same
+fully attested login while its leader remains unreaped; it never selects a
+session by UID display or acts on a reused PID after reaping.
+
+The mount namespace exposes exactly the admitted primary and render nodes,
+private home/runtime/output paths, read-only system metadata and the genuine
+system bus socket. Host user and network namespaces remain for udev delivery.
+After credential and capability removal, Landlock ABI 6 scopes abstract UNIX
+sockets and signals. The inherited syscall filter allows UNIX and uevent
+sockets while refusing other socket families/protocols, io_uring and setns.
+Namespace creation remains available for Sophia's own protection domains.
+
+That inherited filter also covers nested bubblewrap setup. Stock bubblewrap
+tries NETLINK_ROUTE to configure private loopback, which the filter refuses.
+The private 0.13.0 build omits only that setup call, retaining CLONE_NEWNET and
+its failure checks; loopback stays down. It is never installed on PATH or made
+setuid. The offline builder verifies the release archive and applies one hunk.
+It removes build-directory RUNPATH before qualification. Configured privileged
+tools and their explicit ELF loader paths must be root-owned and not writable
+by other users. This does not freeze every transitive system-library load.
+An alternative is to install the filter after stock bubblewrap setup, but that
+would leave that setup outside the inherited restriction being qualified here.
+
+CPU controls exercise private fixture PAM modules, every login field, file and
+policy refusals, worker cleanup across failed admission and deadlines, real
+signal/socket restrictions, nested namespaces and parent-death races. They
+include a failed wait that retains its pidfd for final cleanup. Sophia's real
+`ProcessSupervisor` also launched and reaped an ordinary protected child under
+these restrictions with the private bubblewrap. Evidence and retained failed
+build attempts are in `development-evidence/t312-development-launcher-02`.
+These controls do not open the installed PAM stack or a GPU.
+
+Activation still requires a reviewed root-owned bundle and host transaction.
+The real credential transition, authenticated PAM registration and cgroup
+inheritance, effective host authorization policy, root-owner death after
+registration, processed udev delivery, and successful independent seat control
+remain unqualified. File hashes alone do not prove that polkit loaded its rules;
+the dedicated account needs negative authorization controls before a GPU run.
+The service deliberately exposes the genuine system bus. Its dedicated UID,
+restricted policy and private mounts are separate parts of that boundary.
+The full owner-loop and auditor success paths need that privileged fixture;
+the CPU worker tests replace authority and mount/credential operations.
+
+No account, PAM/runit/polkit/udev file, seat assignment, installed release, input
+device or live display has changed. t312 remains open until simultaneous
+presentation and forced-exit recovery meet its physical exit.
+
 ## Evidence
 
 - `igpu-development-01/FINDINGS-01.txt` and `READ-ONLY-01.json`: source survey,

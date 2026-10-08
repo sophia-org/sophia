@@ -110,6 +110,7 @@ fn all(repo: &Path) -> Result<Vec<String>, String> {
         "qemu_image_identity_test.py",
         "render_node_runner_test.py",
         "development_session_login_test.py",
+        "development_seat_*_test.py",
     ] {
         command(
             repo,

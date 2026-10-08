@@ -1,0 +1,11 @@
+--- a/bubblewrap.c
++++ b/bubblewrap.c
+@@ -3248,2 +3248,6 @@
+-  if (opt_unshare_net)
+-    loopback_setup (); /* Will exit if unsuccessful */
++  /* Sophia development-seat bundle only: the parent seccomp filter permits
++   * UNIX and uevent sockets, but refuses NETLINK_ROUTE and IP sockets. Keep
++   * CLONE_NEWNET and all other isolation; its loopback interface stays down.
++   * Configuring it would require a socket the parent deliberately refuses.
++   * Do not use this binary as the host's general-purpose bubblewrap. */
++  (void) opt_unshare_net;
