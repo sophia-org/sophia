@@ -159,14 +159,90 @@ original left; C2 inherited C1's state. There is no driver-defect finding.
 The intervened output and its later frames cannot qualify hotplug or
 image continuity, and there is no performance claim.
 
-The next proposed discriminator is an independent observation of the
-exported buffer after the existing swap and front-buffer lock. First
-review whether the existing DMA-BUF import probe can read that exact
-buffer through a private framebuffer without CPU mapping, changing its
-lease, or disturbing the producer context's cleanup. A solid result there
+The proposed discriminator after series 95 was an independent observation
+of the exported buffer after the existing swap and front-buffer lock. The
+source review first needed to establish whether the existing DMA-BUF
+import probe could read that exact buffer through a private framebuffer
+without CPU mapping, changing its lease, or disturbing the producer
+context's cleanup. A solid result there
 would disagree with the earlier default-framebuffer read; a black result
-would leave writes, buffer selection and export visibility open. This is
-a source/design task, with no new device or guest run authorized.
+would leave writes, buffer selection and export visibility open. This was
+a source/design task at that point; the subsequent controls follow below.
+
+## Export read and its handle-lifetime hazard (2026-10-08)
+
+Series 101 used source `4c717a475` and image `f4cc3541`. Its OFF
+comparator reproduced black. The intervened boot again read black after
+the original draw and both colour controls, then imported the exported
+allocation through a separate probe. The export read also found all
+120000 window pixels black and no nonzero RGB pixel anywhere in the
+frame. These two views agree; they do not show a default-framebuffer
+read/visibility discrepancy. Writes, target selection, export and
+visibility remain open.
+
+Immediately after the probe, frame 7 could not create a KMS framebuffer:
+all three AddFB forms failed, and the Session exited with
+`native_frame_service_failed`. No errno was recorded. This differs from
+series 95, which had the same colour controls without the export probe.
+The intervened frame cannot qualify t306, and the probe is held out of
+Sessions. Evidence is in `101-export-pair/RESULT.txt`.
+
+The source and binary review in `102-export-addfb-source` and
+`103-handle-lifetime/provenance` exposed a flaw in the probe design. In
+Mesa 26.2.3 virgl, the winsys table hashes the integer fd, even though its
+equality function compares open file descriptions. Lookup uses the caller
+fd, while insertion uses a duplicate. A checked duplicate therefore does
+not establish shared Mesa ownership. Separate winsys objects can import
+the same kernel GEM handle on the shared DRM file; dropping the probe can
+then close a handle still cached by the producer. Sophia passes that
+cached handle to AddFB without reimporting it. This is a source-consistent
+explanation of the new failure, not an observed close sequence. The
+original same-description safety claim has been corrected in the evidence.
+
+Two ignored tests separate the handle observer from the lifetime claim.
+The observer only exports existing GEM handles; it never imports a
+DMA-BUF and cannot repair a missing handle. Its own sacrificial allocation
+proves that live handles name their buffer, missing/closed handles return
+ENOENT, and a reused number names the new buffer. The lifetime test holds
+a producer allocation and checks its DMA-BUF identity before probe
+construction, after the read while the probe is alive, and after drop,
+without allocating another producer buffer between checks.
+
+On host amdgpu, series 104 qualified the observer, including numeric
+handle reuse. Series 105 preserved the producer handle through probe
+drop. These are render-node controls for that host driver; they do not
+exclude the predicted virgl loss. Neither test proves the Session age-1
+case or the primary-node/KMS submission path.
+
+## QEMU teardown blocks the virgl lifetime control (2026-10-08)
+
+Series 107 ran the frozen observer under virgl on radeonsi, Mesa 26.2.3.
+It passed, including a refilled handle 1 that named a different DMA-BUF.
+After the guest recorded `test_exit=0` and powered down, QEMU died with
+SIGSEGV. The host endpoint recorded `qemu_exit=139 logger_exit=0`; the
+harness failed and the series correctly stopped before the lifetime
+guest. The runner exit 0 only records completion of that stopped series.
+
+The virgl lifetime result is therefore still unknown. QEMU teardown also
+crashed in device-test series 59 and 61. This is an infrastructure failure,
+separate from the successful guest observer and from the Session black
+frame. Existing passing guest observations are retained; none of these
+crashed harness runs becomes a clean pass. Sixteen earlier virgl
+output-unplug logs record QEMU exit 0; the teardown failure is not
+universal across these recipes. The difference remains unexplained.
+
+The next step is one bounded debugger run of the unchanged observer image
+to locate the host fault. The wrapper must keep guest output separate
+from debugger records, distinguish an inferior signal stop from the
+debugger exit, and prove cleanup on timeout and wrapper death using CPU
+controls first. QEMU 11.1.1 destruction order is a source lead: its
+`egl_cleanup` destroys the GBM device before releasing the thread and
+terminating EGL, whose Mesa display borrows GBM resources. The still-live
+virgl sync thread is another candidate. Neither is a located cause.
+A run that does not crash under the debugger would be a nonreproduction,
+not a repair. Designs and source review are in
+`108-qemu-teardown-design` and `109-qemu-teardown-source`; the source
+review correction distinguishes the release from later upstream changes.
 
 ## t307
 
