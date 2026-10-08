@@ -1,4 +1,5 @@
 use super::*;
+use super::events::topology_event_requires_rescan;
 use std::os::unix::ffi::OsStrExt;
 use udev::EventType::{Add, Bind, Change, Remove, Unbind, Unknown};
 
@@ -127,6 +128,7 @@ fn monitor_fixture() -> (
     let (health_sender, health) = sync_channel(1);
     (
         LiveDrmTopologyMonitor {
+            seat: "seat-test".into(),
             ready,
             inventory_ready,
             inventory_baseline: None,

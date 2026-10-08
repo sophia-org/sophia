@@ -161,12 +161,54 @@ lease release calls the broker's close path; the raw descriptor ownership
 repair remains in the unpublished t306 work. This slice does not qualify
 that release behavior or change the unseated probe path.
 
+The reviewed first slice is published through `3941fdf7d`. Its frozen isolated
+full gate passed with 7,205 Rust tests, zero failed and 100 ignored; formatting
+and the focused watchdog suite also passed. Two earlier red gates remain in
+the evidence. One refused an application-diagnostics fixture as already
+running; the timestamp-based root collision explanation is unproved, and the
+unchanged suite passed later. The other exposed a watchdog test that observed
+its completion flag before its thread became reapable. A test-only change
+waits for the actual successful reap within the existing two-second bound.
+No watchdog production behavior changed.
+
 Both GPUs are still assigned to seat0 on this host. This change alone therefore
 does not release the iGPU from the daily desktop. Remaining work is to scope
 topology notifications and recovery to admitted devices, qualify an independent
 seat without taking the daily VT or input, and prepare a private development
 launcher with bounded crash cleanup. Any host configuration and daily relogin
 must follow the prepared review, while the daily desktop remains protected.
+
+### Second source slice: topology notices follow the seat
+
+The topology monitor takes the opened libseat controller's seat. It subscribes
+to kernel and processed udev events before collecting the shared card inventory.
+Kernel output notices match cached admitted card paths, their exact connector
+children, or strict render-node siblings under the same DRM parent. Removal
+does not depend on a current sysfs lookup or seat property. An identical card
+name on a different physical path does not match.
+
+Processed device lifecycle events schedule a fresh comparison using the same
+initialized seat inventory. Per-event seat properties are not used to admit
+devices. Reassignment and removal compare against the prior membership before
+replacing it, so losing admission still notifies the owner. New settled members
+notify even without a HOTPLUG property. Replays and stable foreign changes do
+not emit an output notice or advance the owner's input epoch.
+
+A failed comparison retains the old identities and retries after 250 ms without
+needing another event. The shared inventory refuses any uninitialized card,
+even on another seat, so this retry can continue indefinitely while a foreign
+udev record remains uninitialized. New local membership and reassignment
+comparison wait for that record to settle. Known-path kernel revocations still
+publish immediately. No partial inventory is installed. Foreign events can
+cause metadata comparisons; this is not a claim of zero CPU work for them.
+
+Controls cover physical-path and card-name separation, strict render siblings,
+removal before and after baseline establishment, settled admission versus
+replay, reassignment, inode/device-number replacement, paced retry, and a full
+coalescing notice queue retaining revocation. Subscription and owner-loop
+wiring are source-reviewed; these CPU controls do not exercise real udev
+delivery or establish two visible sessions. Evidence is retained in
+`development-evidence/t312-seat-topology-01`. t312 remains open.
 
 ## Evidence
 

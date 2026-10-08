@@ -6,6 +6,18 @@ pub(super) enum TopologyEventSource {
     Processed,
 }
 
+pub(super) fn processed_membership_event(action: udev::EventType, name: &OsStr) -> bool {
+    is_device_node(name)
+        && matches!(
+            action,
+            udev::EventType::Add
+                | udev::EventType::Bind
+                | udev::EventType::Change
+                | udev::EventType::Remove
+                | udev::EventType::Unbind
+        )
+}
+
 fn is_device_node(name: &OsStr) -> bool {
     let Some(name) = name.to_str() else {
         return false;

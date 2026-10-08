@@ -1,4 +1,5 @@
 use super::render_inventory::{LiveRenderDeviceIdentitySnapshot, snapshot_seat_render_inventory};
+use super::seat_inventory::{discover_seat_cards, policy::valid_seat};
 use std::ffi::OsStr;
 use std::io;
 use std::sync::Arc;
@@ -10,7 +11,9 @@ use std::time::{Duration, Instant};
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
 
 mod events;
-use events::{TopologyEventSource, topology_event_requires_rescan};
+mod scope;
+use events::TopologyEventSource;
+use scope::SeatTopologyScope;
 
 const DRM_TOPOLOGY_MONITOR_POLL_MSEC: i64 = 50;
 const DRM_TOPOLOGY_MONITOR_BATCH_MAX_EVENTS: usize = 256;
@@ -37,6 +40,7 @@ pub struct LiveDrmTopologyMonitorStats {
 /// Device admission and reassignment require a running udev service; opening
 /// its monitor socket alone does not establish that the service delivers events.
 pub struct LiveDrmTopologyMonitor {
+    seat: String,
     ready: Receiver<()>,
     inventory_ready: Receiver<()>,
     inventory_baseline: Option<(String, Vec<LiveRenderDeviceIdentitySnapshot>)>,
@@ -59,7 +63,13 @@ fn inventory_changed(
 }
 
 impl LiveDrmTopologyMonitor {
-    pub fn open() -> io::Result<Self> {
+    pub fn open(seat: &str) -> io::Result<Self> {
+        if !valid_seat(seat) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid DRM monitor seat",
+            ));
+        }
         let (notice_sender, ready) = sync_channel(1);
         let (inventory_sender, inventory_ready) = sync_channel(1);
         let (startup_sender, startup_receiver) = sync_channel(1);
@@ -72,6 +82,7 @@ impl LiveDrmTopologyMonitor {
         let worker_sequence = Arc::clone(&latest_sequence);
         let worker_observed = Arc::clone(&observed);
         let worker_coalesced = Arc::clone(&coalesced);
+        let worker_seat = seat.to_owned();
         let worker = std::thread::spawn(move || {
             let monitors = (|| -> io::Result<_> {
                 let kernel = udev::MonitorBuilder::new_kernel()
@@ -84,9 +95,12 @@ impl LiveDrmTopologyMonitor {
                     .map_err(|error| {
                         io::Error::other(format!("processed udev DRM monitor: {error}"))
                     })?;
-                Ok((kernel, processed))
+                // Both subscriptions precede discovery. Events racing with
+                // this baseline remain queued on the monitor sockets.
+                let scope = SeatTopologyScope::new(discover_seat_cards(&worker_seat)?);
+                Ok((kernel, processed, scope))
             })();
-            let (kernel, processed) = match monitors {
+            let (kernel, processed, scope) = match monitors {
                 Ok(monitors) => {
                     let _ = startup_sender.send(Ok(()));
                     monitors
@@ -99,6 +113,8 @@ impl LiveDrmTopologyMonitor {
             let result = run_drm_topology_monitor(
                 kernel,
                 processed,
+                &worker_seat,
+                scope,
                 notice_sender,
                 inventory_sender,
                 &worker_stop,
@@ -110,6 +126,7 @@ impl LiveDrmTopologyMonitor {
         });
         match startup_receiver.recv_timeout(std::time::Duration::from_secs(2)) {
             Ok(Ok(())) => Ok(Self {
+                seat: seat.to_owned(),
                 ready,
                 inventory_ready,
                 inventory_baseline: None,
@@ -139,10 +156,10 @@ impl LiveDrmTopologyMonitor {
     }
 
     /// Establishes the membership baseline after subscriptions are active.
-    pub fn initialize_render_inventory(&mut self, seat: &str) -> io::Result<()> {
-        let snapshot = snapshot_seat_render_inventory(seat)
+    pub fn initialize_render_inventory(&mut self) -> io::Result<()> {
+        let snapshot = snapshot_seat_render_inventory(&self.seat)
             .map_err(|error| io::Error::other(error.to_string()))?;
-        self.inventory_baseline = Some((seat.to_owned(), snapshot));
+        self.inventory_baseline = Some((self.seat.clone(), snapshot));
         Ok(())
     }
 
@@ -243,6 +260,8 @@ impl Drop for LiveDrmTopologyMonitor {
 fn run_drm_topology_monitor(
     kernel: udev::MonitorSocket,
     processed: udev::MonitorSocket,
+    seat: &str,
+    mut scope: SeatTopologyScope,
     sender: SyncSender<()>,
     inventory_sender: SyncSender<()>,
     stop: &AtomicBool,
@@ -294,10 +313,11 @@ fn run_drm_topology_monitor(
                 if inventory_change {
                     let _ = inventory_sender.try_send(());
                 }
-                if !topology_event_requires_rescan(
+                if !scope.observe(
                     source,
                     event.event_type(),
                     event.sysname(),
+                    event.syspath(),
                     event.property_value("HOTPLUG") == Some(OsStr::new("1")),
                 ) {
                     continue;
@@ -308,6 +328,17 @@ fn run_drm_topology_monitor(
                     return Ok(());
                 }
             }
+        }
+        // Retry failed membership comparisons even without another event.
+        match scope.refresh(Instant::now(), || discover_seat_cards(seat)) {
+            Ok(true) => {
+                let _ = inventory_sender.try_send(());
+                if !publish_topology_notice(&sender, latest_sequence, observed, coalesced)? {
+                    return Ok(());
+                }
+            }
+            Ok(false) => {}
+            Err(error) => tracing::warn!(%error, "seat topology inventory comparison deferred"),
         }
     }
     Ok(())

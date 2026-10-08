@@ -20,8 +20,8 @@ pub(crate) struct SeatDrmCard {
     pub sysfs_node: PathBuf,
     pub physical_device: PathBuf,
     pub device_number: u64,
-    filesystem: u64,
-    inode: u64,
+    pub(super) filesystem: u64,
+    pub(super) inode: u64,
 }
 
 /// Does not open a DRM node. Errors on an admitted card refuse the inventory;

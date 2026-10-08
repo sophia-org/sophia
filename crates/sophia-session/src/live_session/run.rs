@@ -80,14 +80,14 @@ pub(crate) fn run_persistent_xterm_session(
     };
     // Subscribe before inventory discovery so a device change during startup
     // remains queued for authoritative reconstruction in the owner loop.
-    let mut output_topology_monitor = config
-        .native_scanout
-        .then(sophia_backend_live::LiveDrmTopologyMonitor::open)
+    let mut output_topology_monitor = seat_controller
+        .as_ref()
+        .map(|controller| {
+            sophia_backend_live::LiveDrmTopologyMonitor::open(controller.device_opener().name())
+        })
         .transpose()?;
-    if let (Some(monitor), Some(controller)) =
-        (output_topology_monitor.as_mut(), seat_controller.as_ref())
-    {
-        monitor.initialize_render_inventory(controller.device_opener().name())?;
+    if let Some(monitor) = output_topology_monitor.as_mut() {
+        monitor.initialize_render_inventory()?;
     }
     let mut native_scanout = seat_controller
         .as_ref()
