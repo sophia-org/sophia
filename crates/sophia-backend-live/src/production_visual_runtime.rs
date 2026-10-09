@@ -45,11 +45,11 @@ pub mod session_policy_presentation_fixture;
 mod software_preview_recovery;
 mod topology_target;
 use composition_target::NativeCompositionTarget;
-use topology_target::NativeTopologyTarget;
 pub use policy_presentation::{
     LivePolicyPresentation, LivePolicyPresentationRefusal, LivePolicyPresentationRevocation,
     LivePresentedPolicyPublication,
 };
+use topology_target::NativeTopologyTarget;
 mod native;
 mod ownership;
 mod present;
