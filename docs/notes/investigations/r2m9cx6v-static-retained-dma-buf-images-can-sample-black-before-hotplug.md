@@ -855,6 +855,40 @@ The frozen manifest is
 arming, filtering and collection remain untested; no corrected image or
 subsequent guest had been prepared at this checkpoint.
 
+Corrected child images `186-premise-readback-child-images` were then prepared
+once, from 09:29:19Z to 09:31:31Z, after all eleven archive controls passed.
+Independent device-hidden comparison reproduced their hashes, contents,
+metadata and raw archive relationships. Each changes only the init entry from
+its 170 parent; the pair still differs only in `libgallium`. The images are
+`8cb1a4f55929c9debe51ce3c099eac5b892e89c14530ab0d8aba6f78428decee`
+and `20eab3f5fb394771638178a7c56d6a0eb9f4282679c023ff7df9bc461740d7f4`.
+The frozen 42-entry manifest is
+`5df76cf1ab6d60952a139ab0ea7a08b73751b12fff74da1901f977ada2cd92ea`.
+The original source manifest remains separately preserved. No image was booted
+during preparation or review.
+
+Successor runner `187-mesa-pair-readback-runner` binds those images and parser
+185 to a new series 188. Its runtime changes from 180 are the package, result
+and runtime paths, the image identities and the premise-classifier path.
+Cleanup, advance rules, pixel classification, test, environment and bounds
+remain unchanged. A separate guard verifies the filled identities against
+the prepared images, manifests and all runner/control consumers before the
+CPU cases and again at freeze.
+
+The single CPU qualification ran from 09:37:53Z to 09:38:26Z: 53 orchestration
+cases, five real preflight binding refusals, and 130 decision cases passed,
+including repeat and usage checks. The current parser handled a synthetic
+32768-line capture in 0.325 s for original and 0.331 s for patched. That remains
+one full-line-cap shape, not a worst-case graph or byte-budget guarantee.
+Source pins were unchanged. The actual host read-only preflight also passed,
+with both frozen worktrees clean, correct device metadata and no remaining
+process in its preflight scope. These checks establish neither a real trace
+premise nor a pixel repair; 181's refused result remains unchanged.
+The 187 manifest is
+`2c6c31dd2380b44347ec2a17389f7fd6372f156bfd06669c69447489105e5e5d`
+(6566 regular files, with one negative-case symlink separately recorded), and
+`READY-187.txt` is `ed06074f`. No guest GO is contained in that package.
+
 ## Real-context control and a freshness-oracle gap (2026-10-09 UTC)
 
 Series 141 ran the reviewed observer and context recipe once, from 03:38:28Z
