@@ -6,6 +6,20 @@ tags: [plan, rendering, topology, validation]
 ---
 # Qualify Mesa lifetime repair and KVM hotplug recovery
 
+## Bare-metal acceptance (2026-10-09)
+
+Niltempus decided that t306 is accepted on bare metal. QEMU guests are a
+debugging tool for this work and no longer gate it; t307 stays a separate
+virgl and Mesa question. The 215c diagnostic on `9384f0013` ran its first boot
+through the barrier, all twenty repaint keys and the uevent check without the
+callback fatal, then stopped INVALID at the clean session exit on a different
+owner-loop fatal, `renderer worker started while another content identity was
+rendering`. Its records, and those of 211 and 213, stay as they are. Root
+traced that fatal to two paths that leave a worker's frame in the rendering
+slot: cancelling a stored worker-owned preparation, most visibly during
+composition installation, and a renderer frame deferred for want of a free
+frame slot. Both are repaired with CPU regressions that fail without them.
+
 ## Resume progress (2026-10-09)
 
 The newly reported installed-session crash has interrupted qualification.
@@ -461,12 +475,14 @@ Use Rust/xtask for maintained tooling. Carry the corrected bounded endpoint
 collector and refuse recorded unreaped processes even if a later scan finds
 none. Correct display attempt/completion ordering before guest qualification.
 
-Freeze fixed qualification runs for managed-head return, all-head return,
-keyboard return, combined loss/return and locked all-return. Use a 60-second
-session for the combined case with bounded host collection. Require independent
-pixel and input-routing proof, complete endpoints, lock coverage for the
-returned topology and no automatic reruns. Startup instability remains a
-refusal; a later good retained frame does not silently discharge its obligation.
+Each defect found on the way is repaired with a CPU regression that fails
+without the repair. The candidate is the recovery branch with root's signed
+repairs merged by exact ancestry, gated once in full on its clean signed head.
+The release pins that revision on a niltempus release branch that keeps the
+other component pins and the admitted output profile (development GPU
+excluded, its connector dark, the seat1 rule kept), and records the AMD driver
+and Mesa identity. Public master merges follow attended acceptance, in
+publication order.
 
 Gate the exact signed candidate, prepare its release and concrete install and
 rollback commands, and keep the attended physical KVM check separate. Physical
