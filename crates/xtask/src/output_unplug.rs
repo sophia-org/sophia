@@ -347,6 +347,18 @@ fn verify_static_client(
     let size = present
         .get("source")
         .ok_or("static client: its Present names no source size")?;
+    let expected = size
+        .split_once('x')
+        .and_then(|(width, height)| Some((width.parse::<u32>().ok()?, height.parse::<u32>().ok()?)))
+        .ok_or("static client: its Present names no source size")?;
+    // The probe takes dimensions 1..=4096 (tools/probes/dri3_layout.c,
+    // geometry); anything else is not its frame, and is refused before the
+    // checksum walks every pixel of it.
+    if !(1..=4096).contains(&expected.0) || !(1..=4096).contains(&expected.1) {
+        return Err(format!(
+            "static client: its Present source {size} is outside the probe's 1..=4096 dimensions"
+        ));
+    }
     let is_window = |record: &Record| {
         record.is("sophia_native_composition_region_frame", "read")
             && record.get("source_stage") == Some("renderer_image")
@@ -429,11 +441,6 @@ fn verify_static_client(
         .ok_or("static client: region without checksum")?;
     // The reference must be the probe's frame itself, judged against what
     // that frame is, never against another sample of the run.
-    let expected = size
-        .split_once('x')
-        .and_then(|(width, height)| Some((width.parse().ok()?, height.parse().ok()?)))
-        .filter(|&(width, height): &(u32, u32)| width > 0 && height > 0)
-        .ok_or("static client: its Present names no source size")?;
     let pixels = u64::from(expected.0) * u64::from(expected.1);
     let expected_checksum = probe_frame_checksum(expected.0, expected.1).to_string();
     if reference.get("region_pixels") != Some(pixels.to_string().as_str())

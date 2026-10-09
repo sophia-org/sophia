@@ -474,3 +474,15 @@ fn the_expected_frame_is_the_probes_pattern_read_bottom_up() {
     assert_eq!(probe_frame_checksum(2, 2), 2471897560895143411);
     assert_eq!(probe_frame_checksum(3, 1), 8974295684228261135);
 }
+
+#[test]
+fn out_of_probe_dimensions_are_refused_before_computing_a_reference() {
+    for size in ["0x300", "400x0", "4097x1", "1x4097", "4294967295x1"] {
+        let log = static_client().replace("source=400x300", &format!("source={size}"));
+        let error = verify(&log, Mode::OneReturn).unwrap_err();
+        assert!(
+            error.contains("outside the probe's 1..=4096 dimensions"),
+            "{size}: {error}"
+        );
+    }
+}
