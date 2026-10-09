@@ -154,7 +154,11 @@ where
     validate_native_multi_head_topology_on_device(committer.device(), heads)
 }
 
-/// Validates a topology against a device directly.
+/// Validates a plane-less topology against a device directly. Diagnostic only.
+///
+/// A request with no plane state is judged against whatever the planes hold
+/// now, and amdgpu refuses any enabled CRTC whose primary plane is off. A
+/// session must validate with `validate_native_complete_topology_on_device`.
 ///
 /// A validation is not a commit: nothing is scheduled, nothing retires, and the
 /// committer's submit and reject counters would describe work that never happened.
@@ -198,5 +202,77 @@ where
         LibdrmNativeAtomicCommitSubmitStatus::Submitted => NativeTopologySubmitOutcome::Accepted,
         LibdrmNativeAtomicCommitSubmitStatus::WouldBlock => NativeTopologySubmitOutcome::Busy,
         LibdrmNativeAtomicCommitSubmitStatus::Rejected => NativeTopologySubmitOutcome::Rejected,
+    }
+}
+
+/// What the kernel said about one complete topology test, with its errno.
+#[cfg(feature = "libdrm-events")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NativeTopologyValidation {
+    pub outcome: NativeTopologySubmitOutcome,
+    /// The kernel's errno for `Busy` and `Rejected`; zero otherwise or when the
+    /// kernel reported none, which cannot collide because errno 0 is success.
+    pub errno: i32,
+}
+
+/// Validates a complete topology, primary plane state included, and changes
+/// nothing.
+///
+/// Every head names its own framebuffer, so the answer does not depend on what
+/// a previous owner left bound. The request is `TEST_ONLY | ALLOW_MODESET`
+/// without a page-flip event; there is no apply form of this function.
+/// `EAGAIN` and `EBUSY` mean the device could not take the request now.
+#[cfg(feature = "libdrm-events")]
+pub fn validate_native_complete_topology_on_device<D>(
+    device: &D,
+    heads: &[LibdrmNativeAtomicHead],
+) -> NativeTopologyValidation
+where
+    D: LibdrmNativeAtomicCommitDevice,
+{
+    let build = build_native_multi_head_atomic_request(
+        heads,
+        LibdrmNativeAtomicCommitRequestScope::Modeset,
+    );
+    let Some(request) = build
+        .request
+        .filter(|_| build.status == LibdrmNativeMultiHeadRequestBuildStatus::Built)
+    else {
+        return NativeTopologyValidation {
+            outcome: NativeTopologySubmitOutcome::Unbuildable(build.status),
+            errno: 0,
+        };
+    };
+    let (flags, native) = request
+        .without_page_flip_event()
+        .test_only()
+        .allow_modeset()
+        .into_native();
+    classify_validation(device.submit_atomic_commit(flags, native))
+}
+
+#[cfg(feature = "libdrm-events")]
+fn classify_validation(result: io::Result<()>) -> NativeTopologyValidation {
+    const EAGAIN: i32 = 11;
+    const EBUSY: i32 = 16;
+    let Err(error) = result else {
+        return NativeTopologyValidation {
+            outcome: NativeTopologySubmitOutcome::Accepted,
+            errno: 0,
+        };
+    };
+    let errno = error.raw_os_error().unwrap_or(0);
+    let busy = matches!(errno, EAGAIN | EBUSY)
+        || matches!(
+            error.kind(),
+            io::ErrorKind::WouldBlock | io::ErrorKind::ResourceBusy
+        );
+    NativeTopologyValidation {
+        outcome: if busy {
+            NativeTopologySubmitOutcome::Busy
+        } else {
+            NativeTopologySubmitOutcome::Rejected
+        },
+        errno,
     }
 }

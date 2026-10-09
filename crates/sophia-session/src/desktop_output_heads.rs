@@ -1,16 +1,21 @@
 use std::fmt;
 
 use sophia_backend_live::{
-    LibdrmNativeAtomicHead, LibdrmNativeAtomicTopologyHead, LibdrmNativeCurrentFramebufferHead,
-    LibdrmNativeOutputCapability, LibdrmNativeOutputTiming,
-    LibdrmNativePrimaryPlanePropertyHandles, LibdrmNativePrimaryPlaneResourceDevice,
-    LibdrmNativePrimaryPlaneSelection, LiveProductionNativeScanout,
-    compose_native_head_from_current_framebuffer, discover_native_primary_plane_property_handles,
-    resolve_native_connector_mode,
+    LibdrmNativeAtomicHead, LibdrmNativeCurrentFramebufferHead, LibdrmNativeOutputCapability,
+    LibdrmNativeOutputTiming, LibdrmNativePrimaryPlanePropertyHandles,
+    LibdrmNativePrimaryPlaneResourceDevice, LibdrmNativePrimaryPlaneSelection,
+    LiveProductionNativeScanout, compose_native_head_from_current_framebuffer,
+    discover_native_primary_plane_property_handles, resolve_native_connector_mode,
 };
 use sophia_protocol::{OutputId, Size};
 
 use crate::desktop_output_topology::NativeOutputActivationPlan;
+
+mod validation;
+pub use validation::{
+    NativeOutputValidationHead, NativeOutputValidationResources,
+    compose_native_output_validation_head, release_native_output_validation_head,
+};
 
 /// Why one output could not contribute a head.
 ///
@@ -36,6 +41,8 @@ pub enum NativeOutputHeadUnavailable {
     /// applying hits this; validation names no framebuffer at all, which is exactly
     /// why a topology can be checked before one exists.
     NeedsFramebuffer { have: Option<(u32, u32)> },
+    /// A framebuffer for a complete topology test could not be allocated.
+    FramebufferUnavailable,
 }
 
 /// One head plus the mode blob it names.
@@ -55,7 +62,7 @@ pub struct NativeOutputComposedHead<H> {
 /// the decisions testable without a DRM device, and it keeps DRM handle types out
 /// of the resolver entirely — `Head` is opaque here.
 pub trait NativeOutputTopologyHardware {
-    /// A composed head. Real hardware yields `LibdrmNativeAtomicTopologyHead`.
+    /// A composed head. Real hardware yields a complete `NativeOutputValidationHead` that owns its framebuffer.
     type Head;
 
     /// Composes one head for `connector` at `timing`, creating the mode blob it
@@ -79,6 +86,13 @@ pub trait NativeOutputTopologyHardware {
     /// a session can span more than one card. Releasing against the wrong device
     /// would leak the blob and disturb an unrelated one.
     fn release_mode_blob(&self, output: OutputId, blob: u64);
+
+    /// Releases one composed head and the blob it names. Hardware whose heads own
+    /// further resources releases them here, on the exact card and head that
+    /// composed them; the default releases only the blob.
+    fn release_head(&self, output: OutputId, composed: NativeOutputComposedHead<Self::Head>) {
+        self.release_mode_blob(output, composed.mode_blob);
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -112,6 +126,9 @@ impl fmt::Display for NativeOutputHeadResolveError {
                         "does not advertise the requested timing"
                     }
                     NativeOutputHeadUnavailable::ModeBlobRefused => "was refused a mode blob",
+                    NativeOutputHeadUnavailable::FramebufferUnavailable => {
+                        "could not allocate a validation framebuffer"
+                    }
                     NativeOutputHeadUnavailable::NeedsFramebuffer { have: None } => {
                         "scans out nothing, so there is no framebuffer to reuse"
                     }
@@ -171,8 +188,10 @@ where
     H: NativeOutputTopologyHardware,
 {
     fn drop(&mut self) {
-        for (output, blob) in self.blobs.drain(..) {
-            self.hardware.release_mode_blob(output, blob);
+        // Heads and blobs are pushed together, one per composed head.
+        for (head, (output, mode_blob)) in self.heads.drain(..).zip(self.blobs.drain(..)) {
+            self.hardware
+                .release_head(output, NativeOutputComposedHead { head, mode_blob });
         }
     }
 }
@@ -476,48 +495,6 @@ impl LiveNativeOutputTopologyHardware<'_> {
                 Err(NativeOutputHeadUnavailable::NeedsFramebuffer { have: None })
             }
         }
-    }
-}
-
-impl NativeOutputTopologyHardware for LiveNativeOutputTopologyHardware<'_> {
-    type Head = LibdrmNativeAtomicTopologyHead;
-
-    fn compose_head(
-        &self,
-        output: OutputId,
-        connector: &str,
-        timing: LibdrmNativeOutputTiming,
-    ) -> Result<NativeOutputComposedHead<Self::Head>, NativeOutputHeadUnavailable> {
-        let Some(index) = self.head_for_connector(connector) else {
-            return Err(NativeOutputHeadUnavailable::MissingSelection);
-        };
-        let _ = output;
-        let selection = self.scanout.selection(index);
-        let card = self.scanout.card(index);
-        let properties = self.properties(index)?;
-
-        // A timing this connector never advertised is a configuration error, and it
-        // fails here rather than as an opaque kernel refusal later.
-        let Ok(Some(mode)) =
-            resolve_native_connector_mode(card, selection.connector_handle(), timing)
-        else {
-            return Err(NativeOutputHeadUnavailable::UnknownTiming);
-        };
-        let Ok(mode_blob) = card.create_mode_blob(mode) else {
-            return Err(NativeOutputHeadUnavailable::ModeBlobRefused);
-        };
-        if mode_blob == 0 {
-            return Err(NativeOutputHeadUnavailable::ModeBlobRefused);
-        }
-
-        Ok(NativeOutputComposedHead {
-            head: LibdrmNativeAtomicTopologyHead::from_selection(selection, mode_blob, properties),
-            mode_blob,
-        })
-    }
-
-    fn release_mode_blob(&self, output: OutputId, blob: u64) {
-        self.release(output, blob);
     }
 }
 

@@ -21,6 +21,10 @@ mod drm;
 mod gpu_admission;
 mod hardware_validation;
 mod input;
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+#[path = "../tests/support/native_validation_fixture.rs"]
+pub mod native_validation_fixture;
 mod prelude;
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 mod presentation;

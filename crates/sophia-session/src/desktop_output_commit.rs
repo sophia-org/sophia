@@ -1,7 +1,7 @@
 use sophia_backend_live::{
-    LibdrmNativeAtomicCommitDevice, LibdrmNativeAtomicHead, LibdrmNativeAtomicTopologyHead,
-    NativeTopologySubmitIntent, NativeTopologySubmitOutcome,
-    submit_native_multi_head_topology_on_device, validate_native_multi_head_topology_on_device,
+    LibdrmNativeAtomicCommitDevice, LibdrmNativeAtomicHead, NativeTopologySubmitIntent,
+    NativeTopologySubmitOutcome, NativeTopologyValidation,
+    submit_native_multi_head_topology_on_device, validate_native_complete_topology_on_device,
 };
 
 use crate::desktop_output_activation::{
@@ -26,24 +26,25 @@ pub struct NativeOutputHeadSet {
 
 /// Validates a candidate against real hardware and never mutates anything.
 ///
-/// This is the executor a session runs before it owns framebuffers. Its heads carry
-/// no plane state, so the kernel judges the topology itself: whether these
-/// connectors can be driven by these CRTCs at these modes, together, in one commit.
-/// That is the question startup needs answered, and it can be answered before a
-/// single pixel exists.
+/// This is the executor a session runs before it owns framebuffers. Each head
+/// is complete: its primary plane names a framebuffer allocated for the test
+/// alone, so the kernel judges the requested desktop and not whatever a previous
+/// owner left bound (amdgpu refuses an enabled CRTC with no primary plane). That
+/// is the question startup and every rebuild need answered, and it is answered
+/// before a single pixel is rendered.
 ///
-/// Apply is not gated here, it is absent. The type cannot mutate output state
-/// because a topology request has nothing to scan out; a caller who wants to apply
-/// needs `NativeOutputCommitExecutor` and real framebuffers. Rollback succeeds
-/// trivially for the same reason: nothing was applied, so nothing needs undoing.
-pub struct NativeOutputTopologyValidationExecutor<'a, D> {
+/// Apply is not gated here, it is absent. The request is `TEST_ONLY`, so the
+/// test buffers never reach scanout; a caller who wants to apply needs
+/// `NativeOutputCommitExecutor`. Rollback succeeds trivially for the same reason:
+/// nothing was applied, so nothing needs undoing.
+pub struct NativeOutputTopologyValidationExecutor<'a, D, H> {
     device: &'a D,
-    heads: &'a [LibdrmNativeAtomicTopologyHead],
-    validation: Option<NativeTopologySubmitOutcome>,
+    heads: &'a [H],
+    validation: Option<NativeTopologyValidation>,
 }
 
-impl<'a, D> NativeOutputTopologyValidationExecutor<'a, D> {
-    pub const fn new(device: &'a D, heads: &'a [LibdrmNativeAtomicTopologyHead]) -> Self {
+impl<'a, D, H> NativeOutputTopologyValidationExecutor<'a, D, H> {
+    pub const fn new(device: &'a D, heads: &'a [H]) -> Self {
         Self {
             device,
             heads,
@@ -61,26 +62,41 @@ impl<'a, D> NativeOutputTopologyValidationExecutor<'a, D> {
     pub const fn validation(&self) -> &'static str {
         match self.validation {
             None => "not_attempted",
-            Some(NativeTopologySubmitOutcome::Accepted) => "accepted",
-            Some(NativeTopologySubmitOutcome::Busy) => "busy",
-            Some(NativeTopologySubmitOutcome::Rejected) => "rejected",
-            Some(NativeTopologySubmitOutcome::Unbuildable(_)) => "unbuildable",
+            Some(NativeTopologyValidation { outcome, .. }) => match outcome {
+                NativeTopologySubmitOutcome::Accepted => "accepted",
+                NativeTopologySubmitOutcome::Busy => "busy",
+                NativeTopologySubmitOutcome::Rejected => "rejected",
+                NativeTopologySubmitOutcome::Unbuildable(_) => "unbuildable",
+            },
+        }
+    }
+
+    /// The kernel's errno for a busy or rejected test, zero otherwise.
+    pub const fn validation_errno(&self) -> i32 {
+        match self.validation {
+            Some(validation) => validation.errno,
+            None => 0,
         }
     }
 }
 
-impl<D> NativeOutputActivationEffectExecutor for NativeOutputTopologyValidationExecutor<'_, D>
+impl<D, H> NativeOutputActivationEffectExecutor for NativeOutputTopologyValidationExecutor<'_, D, H>
 where
     D: LibdrmNativeAtomicCommitDevice,
+    H: AsRef<LibdrmNativeAtomicHead>,
 {
     fn test(
         &mut self,
         _key: NativeOutputActivationKey,
         _plan: &NativeOutputActivationPlan,
     ) -> NativeOutputEffectCompletion {
-        let outcome = validate_native_multi_head_topology_on_device(self.device, self.heads);
-        self.validation = Some(outcome);
-        completion(outcome)
+        // The heads borrow buffers that outlive this call; the test reads them
+        // and releases nothing.
+        let heads: Vec<LibdrmNativeAtomicHead> =
+            self.heads.iter().map(|head| *head.as_ref()).collect();
+        let validation = validate_native_complete_topology_on_device(self.device, &heads);
+        self.validation = Some(validation);
+        completion(validation.outcome)
     }
 
     fn apply(

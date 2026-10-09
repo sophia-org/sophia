@@ -5,6 +5,14 @@ pub(super) struct StartupOutputActivation {
     pub plan: Option<NativeOutputActivationPlan>,
     pub refused: bool,
     pub validation: &'static str,
+    /// The kernel's errno for a busy or rejected complete test; zero when the
+    /// test was accepted or never reached the kernel. Runtime refusal reporting
+    /// reads it.
+    #[allow(
+        dead_code,
+        reason = "read by the runtime refusal record once that lands"
+    )]
+    pub validation_errno: i32,
 }
 
 /// A head-to-connector mapping for an accepted startup owner or an adopted
@@ -64,12 +72,17 @@ pub(super) fn prepare(
     // topology rather than evidence that nothing was attempted.
     let hardware = LiveNativeOutputTopologyHardware::new(native, &capabilities);
     let resolved = resolve_native_output_topology_heads(&activation, &capabilities, &hardware);
-    let (report, executor, validation) = match &resolved {
+    let (report, executor, validation, validation_errno) = match &resolved {
         Ok(heads) => match plan_validation_device(native, &activation) {
             Some(card) => {
                 let mut executor = NativeOutputTopologyValidationExecutor::new(card, heads.heads());
                 let report = run_native_output_activation(activation.clone(), &mut executor)?;
-                (report, "topology_validation", executor.validation())
+                (
+                    report,
+                    "topology_validation",
+                    executor.validation(),
+                    executor.validation_errno(),
+                )
             }
             // One atomic request cannot span two DRM devices, so a topology
             // that does is not validatable as a unit and must not be reported
@@ -81,6 +94,7 @@ pub(super) fn prepare(
                 )?,
                 "multi_device_unvalidatable",
                 "not_attempted",
+                0,
             ),
         },
         Err(error) => {
@@ -96,6 +110,7 @@ pub(super) fn prepare(
                 )?,
                 "unresolved",
                 "not_attempted",
+                0,
             )
         }
     };
@@ -125,12 +140,14 @@ pub(super) fn prepare(
         cause,
         executor,
         validation,
+        validation_errno,
         generation,
         outputs = targets,
         rollback_targets = targets,
         focused,
         "native desktop output candidate admitted"
     );
+    // The test buffers outlived the test; release them on their own cards now.
     drop(resolved);
     let refused =
         matches!(validation, "busy" | "rejected" | "unbuildable") || executor == "unresolved";
@@ -145,5 +162,6 @@ pub(super) fn prepare(
         } else {
             validation
         },
+        validation_errno,
     })
 }
