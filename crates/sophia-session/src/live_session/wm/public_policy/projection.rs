@@ -263,7 +263,8 @@ impl LivePublicPolicyState {
                     .copied()
                     .ok_or("public WM snapshot lost logical output bounds")?;
                 Ok(sophia_protocol::PolicyOutputSnapshot {
-                    policy_key: resolve_output_policy_key(output, &self.output_policy_keys, &self.output_capabilities)?,
+                    policy_key: resolve_output_policy_key(output, &self.output_policy_keys,
+                        self.output_policy_capabilities.as_deref().unwrap_or(&self.output_capabilities))?,
                     output,
                     generation: self.output_generations.get(&output).copied().unwrap_or(1),
                     focus: public_policy_snapshot_focus(

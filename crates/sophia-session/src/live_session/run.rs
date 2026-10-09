@@ -53,16 +53,6 @@ pub(crate) fn run_persistent_xterm_session(
             controller.name()
         );
     }
-    // The grouping is what makes mirroring happen at all: connectors named by a
-    // `mirror` directive share one logical output, and without it every connector
-    // is its own. It is fixed for the session's life because it comes from the
-    // profile loaded at startup, so it is built once and reused by every rebuild
-    // below -- a rescan that regrouped differently would change the desktop's
-    // identity behind policy's back.
-    let mirror_grouping = sophia_backend_live::NativeMirrorGrouping::new(
-        config.output_profile.current().mirror_groups(),
-    )
-    .map_err(|error| format!("configured mirror grouping is invalid: {error:?}"))?;
     let initial_head_mapping = match config.output_profile.current().mirror_fit() {
         Some(sophia_config::DesktopMirrorFit::Cover) => sophia_protocol::OutputHeadMapping::Cover,
         Some(sophia_config::DesktopMirrorFit::Exact) => sophia_protocol::OutputHeadMapping::Exact,
@@ -732,7 +722,6 @@ pub(crate) fn run_persistent_xterm_session(
             shell_components: &mut shell_components,
             component_catalog: &mut component_catalog,
             session_launches: &mut session_launches,
-            mirror_grouping: &mirror_grouping,
             initial_head_mapping,
         },
         SessionLoopStartup {

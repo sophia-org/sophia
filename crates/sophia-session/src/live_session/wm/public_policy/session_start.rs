@@ -178,6 +178,7 @@ impl LiveWmSession {
             output_bounds,
             output_generations,
             output_policy_keys,
+            output_policy_capabilities: None,
             live_output_ids,
             work_areas,
             session_operations,

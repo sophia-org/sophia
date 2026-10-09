@@ -487,6 +487,44 @@ fn a_presentation_wait_can_be_released_without_its_flip() {
 
     // Claimed once; a second call is not a second release.
     assert!(!owner.release_presentation_wait());
+    // Releasing input is not evidence of a presentation. The actual late
+    // completion still releases the parked hardware publication, once.
+    assert!(!owner.observe_presentation(9));
+    assert!(owner.observe_presentation(10));
+    assert!(!owner.observe_presentation(11));
+}
+
+#[test]
+fn a_new_notice_invalidates_a_timed_out_owners_late_presentation() {
+    let mut owner = owner();
+    owner.begin_rescan(1).unwrap();
+    observe_unmirrored(&mut owner, vec![output(1, 1920)]).unwrap();
+    owner.mark_published(8, false).unwrap();
+    assert!(owner.release_presentation_wait());
+    owner.begin_rescan(2).unwrap();
+    assert!(!owner.observe_presentation(9));
+    observe_unmirrored(&mut owner, vec![output(1, 1920)]).unwrap();
+    owner.mark_published(0, false).unwrap();
+    assert!(!owner.observe_presentation(0));
+    assert!(owner.observe_presentation(1));
+}
+
+#[test]
+fn connector_or_policy_change_advances_topology_even_with_identical_output_numbers_and_sizes() {
+    let mut owner = owner();
+    owner.begin_rescan(1).unwrap();
+    assert_eq!(
+        owner
+            .observe_resolved_rebuild(
+                vec![output(1, 1280)],
+                vec![(OutputId::from_raw(1), 1)],
+                true
+            )
+            .unwrap(),
+        LiveOutputTopologyRebuild::TopologyChanged
+    );
+    assert_eq!(owner.topology_epoch, 2);
+    assert_eq!(owner.publication_generation, 2);
 }
 
 #[test]

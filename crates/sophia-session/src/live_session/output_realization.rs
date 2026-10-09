@@ -5,11 +5,21 @@ use sophia_backend_live::LibdrmNativeOutputCapability;
 use sophia_config::{DesktopOutputCandidate, DesktopOutputReconciliation};
 use sophia_protocol::OutputId;
 
+mod layout;
+pub(super) use layout::OutputPolicyLayout;
+pub(super) use layout::matches_presented;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct OutputRealizationBinding {
     pub transition: u64,
     pub notice_sequence: u64,
     pub native_owner: u64,
+}
+
+pub(super) struct PendingOutputPublication {
+    pub binding: OutputRealizationBinding,
+    pub snapshot: sophia_protocol::OutputAuthoritySnapshot,
+    pub capabilities: Vec<LibdrmNativeOutputCapability>,
 }
 
 struct PendingRealization {

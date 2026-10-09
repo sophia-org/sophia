@@ -1,4 +1,53 @@
 {
+    if let Some(wm) = wm_session.as_ref()
+        && let Some(focused) = wm.reference_output()
+        && let Some(public) = wm.public.as_ref()
+        && pending_hardware_output_publication.is_none()
+    {
+        output_realization.observe_focus(focused, public.output_policy_capabilities.as_deref().unwrap_or(&public.output_capabilities));
+    }
+    // The initial owner has no hotplug publication to settle. Its ordinary
+    // startup presentation barrier supplies the same evidence, before a later
+    // rescan can use it as the committed fallback and focus preference.
+    if native_presentation_admitted
+        && pending_hardware_output_publication.is_none()
+        && output_topology_owner.phase == LiveOutputTopologyPhase::Stable
+        && active_output_topology_preparation.is_none()
+        && wm_session.as_ref().is_none_or(|wm| !wm.output_candidate_active())
+        && let Some(native) = native_scanout.as_ref()
+    {
+        let initial_binding = output_realization::OutputRealizationBinding {
+                transition: 0,
+                notice_sequence: 0,
+                native_owner: native.retirement_owner_identity(),
+        };
+        if let Some(initial) = output_realization.pending(initial_binding, config.output_profile.current()) {
+            let capabilities = native.output_capabilities()?;
+            let snapshot = wm_session.as_ref().and_then(|wm| wm.published_output_snapshot())
+                .map(Ok).unwrap_or_else(|| native.output_authority_snapshot(output_topology_owner.topology_epoch))?;
+            let settings_match = initial.outputs.iter().filter(|state| state.enabled).all(|state| {
+                capabilities.iter().find(|cap| cap.connector_key() == state.connector)
+                    .and_then(|cap| cap.head())
+                    .and_then(|head| native.heads.iter().find(|candidate| candidate.head == head))
+                    .is_some_and(|head| head.transform == sophia_protocol::OutputTransform::Normal
+                        && state.transform == sophia_config::DesktopOutputTransform::Normal
+                        && head.scale.saturating_mul(1000) == state.scale_milli
+                        && head.vrr == match state.vrr {
+                            sophia_config::DesktopOutputVrrMode::Disabled => sophia_protocol::OutputVrrPolicy::Disabled,
+                            sophia_config::DesktopOutputVrrMode::Automatic => sophia_protocol::OutputVrrPolicy::Automatic,
+                            sophia_config::DesktopOutputVrrMode::Always => sophia_protocol::OutputVrrPolicy::Always,
+                        })
+            });
+            if settings_match && output_realization::matches_presented(initial, &capabilities, &outputs, &snapshot, initial_head_mapping)? {
+                output_realization.commit(initial_binding, config.output_profile.current());
+            } else {
+                // One observation per owner: a refused startup candidate must
+                // not turn every idle pass into another capability read.
+                output_realization.abandon();
+                tracing::warn!("sophia_live_output_resolution schema=1 phase=startup status=uncommitted reason=presented_settings_differ");
+            }
+        }
+    }
     if let Some(devices) = client_render_devices.as_mut() {
         let now = Instant::now();
         if let Some(monitor) = output_topology_monitor.as_mut() {
@@ -109,6 +158,9 @@
     }
     if rebuild_requested {
         output_topology_retry_at = None;
+        output_realization.abandon();
+        pending_hardware_output_publication = None;
+        hardware_output_publication_presented = false;
         pause_metadata_shell_presentation!("topology_rebuild");
         let mut retirement_mode = RetirementMode::Abandoned;
         if let (Some(runtime), Some(native)) = (runtime.as_mut(), native_scanout.as_mut()) {
@@ -188,26 +240,39 @@
                 *native_scanout = Some(*replacement);
                 native_retirement.admit(native_scanout.as_ref().expect("just adopted"))?;
                 let replacement = native_scanout.as_mut().expect("just adopted");
+                let replacement_outputs = replacement.outputs();
+                let replacement_capabilities = replacement.output_capabilities()?;
+                let policy_layout = output_realization::OutputPolicyLayout::prepare(
+                    &realization,
+                    &replacement_capabilities,
+                    &replacement_outputs,
+                    initial_head_mapping,
+                )?;
+                let realization_changed = output_realization.committed().is_none_or(|before| {
+                    before.outputs != realization.outputs || before.policy_keys != realization.policy_keys
+                });
+                let binding = output_realization::OutputRealizationBinding {
+                    transition: output_topology_owner.transition,
+                    notice_sequence: output_topology_owner.notice_sequence,
+                    native_owner: replacement.retirement_owner_identity(),
+                };
                 // Staged for the realization owner before anything downstream
                 // publishes; the owner decides commit and abandonment.
                 output_realization.stage(
-                    output_realization::OutputRealizationBinding {
-                        transition: output_topology_owner.transition,
-                        notice_sequence: output_topology_owner.notice_sequence,
-                        native_owner: replacement.retirement_owner_identity(),
-                    },
+                    binding,
                     *realization,
                 )?;
-                let replacement_outputs = replacement.outputs();
                 let rebuild = output_topology_owner
-                    .observe_rebuild(replacement_outputs.clone(), replacement.head_fingerprint())?;
+                    .observe_resolved_rebuild(replacement_outputs.clone(), replacement.head_fingerprint(), realization_changed)?;
                 let topology_changed = rebuild == LiveOutputTopologyRebuild::TopologyChanged;
                 physical_output_topology_replaced |= topology_changed;
-                let replacement_capabilities = replacement.output_capabilities()?;
-                let replacement_authority = replacement.output_authority_snapshot(
+                let mut replacement_authority = replacement.output_authority_snapshot(
                     output_topology_owner.topology_epoch,
                 )?;
-                let replacement_primary = replacement_outputs[0];
+                policy_layout.apply_authority_geometry(&mut replacement_authority)?;
+                let replacement_primary = replacement_outputs.iter()
+                    .find(|output| output.id == policy_layout.primary).copied()
+                    .ok_or("replacement lost its resolved primary output")?;
                 if scene.reconfigure_output_descriptors(&replacement_outputs)? {
                     let committed = runtime
                         .as_ref()
@@ -218,16 +283,17 @@
                 let runtime = runtime
                     .as_mut()
                     .ok_or("DRM topology rescan lost the visual runtime")?;
-                let restored = resume_native_scanout_from_scene(
+                let restored = resume_native_scanout_from_scene_at(
                     runtime,
                     replacement,
                     &replacement_outputs,
                     scene,
                     suspended_renderer_images,
+                    &policy_layout.bounds,
                 )?;
 
                 if topology_changed {
-                    let snapshot = output_topology_from_engine_outputs_at_generation(
+                    let snapshot = policy_layout.frontend_snapshot(
                         &replacement_outputs,
                         output_topology_owner.publication_generation,
                     )?;
@@ -252,19 +318,17 @@
                 outputs = replacement_outputs;
                 output = replacement_primary;
                 pointer.set_output_bounds(
-                    wm_output_bounds(&outputs)
-                        .into_iter()
-                        .map(|(_, bounds)| bounds)
+                    policy_layout.bounds.iter()
+                        .map(|(_, bounds)| *bounds)
                         .collect(),
                 );
                 cursor_updates.dirty = pointer.position().is_some();
                 cursor_updates.dirty_since = cursor_updates.dirty.then(Instant::now);
 
                 let mut policy_required = false;
-                if topology_changed
-                    && let Some(wm) = wm_session.as_mut()
+                if let Some(wm) = wm_session.as_mut()
                 {
-                    let admission = wm.update_output_work_areas(&layout, &outputs, output)?;
+                    let admission = wm.update_output_work_areas_for_realization(&layout, &outputs, &policy_layout)?;
                     if admission == LiveWmRequestAdmission::RejectedCapacity {
                         return Err("output topology relayout exceeded WM owner capacity".into());
                     }
@@ -276,6 +340,16 @@
                 let presentation_baseline = replacement.retirements;
                 output_topology_owner
                     .mark_published(presentation_baseline, policy_required)?;
+                if !policy_required {
+                    // A blocking initial modeset retires no flip. Request an
+                    // observation frame even when the WM has no changed scene,
+                    // so this replacement can cross the publication barrier.
+                    let focused = runtime.focused_surface();
+                    scene.force_full_repaint();
+                    runtime.run_cpu_repaint(scene, focused, focused,
+                        LiveProductionCursorPresentation::HardwarePlane, &outputs, replacement)?;
+                    primary_frame_pacer.observe_repaint(Instant::now());
+                }
                 // The replacement's first frame is a blocking modeset, which
                 // retires no page flip. With no policy commit to force another,
                 // a still screen would hold input quarantined until some client
@@ -283,8 +357,11 @@
                 topology_presentation_deadline = (output_topology_owner.phase
                     == LiveOutputTopologyPhase::AwaitingPresentation)
                     .then(|| Instant::now() + OUTPUT_TOPOLOGY_PRESENTATION_TIMEOUT);
-                pending_hardware_output_publication =
-                    Some((replacement_authority, replacement_capabilities));
+                pending_hardware_output_publication = Some(output_realization::PendingOutputPublication {
+                    binding,
+                    snapshot: replacement_authority,
+                    capabilities: replacement_capabilities,
+                });
                 // A replacement snapshot owes its own presentation before it
                 // may be published, so it does not inherit the previous one's.
                 hardware_output_publication_presented = false;
@@ -295,7 +372,7 @@
                             .iter()
                             .find(|committed| committed.surface == surface)?
                             .geometry;
-                        let bounds = wm_output_bounds(&outputs);
+                        let bounds = &policy_layout.bounds;
                         Some(
                             replacement
                                 .heads
@@ -419,6 +496,12 @@
             .as_ref()
             .map_or(0, |native| native.retirements);
         if output_topology_owner.release_presentation_wait() {
+            if startup_topology_recovery_pending {
+                // Invalidate the retired owner's readiness even if no new
+                // flip arrived. This does not mark the replacement ready.
+                let _ = reduce_session_startup(&mut startup_readiness, SessionStartupEvent::NativeRecovered);
+                startup_topology_recovery_pending = false;
+            }
             tracing::warn!(
                 "sophia_live_output_topology schema=2 status=presentation_timed_out transition={} retirements={retirements} presentation_baseline={} timeout_msec={} input=enabled",
                 output_topology_owner.transition,
@@ -431,21 +514,41 @@
     // on its own schedule. One slot is enough: a newer hardware snapshot
     // supersedes an older unpublished one rather than queueing behind it.
     if hardware_output_publication_presented
-        && let Some(wm) = wm_session.as_mut()
-        && !wm.output_candidate_active()
-        && let Some((snapshot, capabilities)) = pending_hardware_output_publication.take()
+        && wm_session.as_ref().is_none_or(|wm| !wm.output_candidate_active())
+        && let Some(publication) = pending_hardware_output_publication.take()
     {
         hardware_output_publication_presented = false;
-        if wm.output_authority_topology_epoch().is_some_and(|current| {
-            hardware_output_snapshot_is_stale(snapshot.topology_epoch, current)
+        let current_owner = native_scanout.as_ref().map(|native| native.retirement_owner_identity());
+        let binding = publication.binding;
+        let profile = config.output_profile.current();
+        let current_binding = binding.transition == output_topology_owner.transition
+            && binding.notice_sequence == output_topology_owner.notice_sequence
+            && Some(binding.native_owner) == current_owner;
+        let current_profile = output_realization.pending(binding, profile).is_some();
+        let current_epoch = wm_session.as_ref().and_then(|wm| wm.output_authority_topology_epoch());
+        if !current_binding || current_epoch.is_some_and(|current| {
+            hardware_output_snapshot_is_stale(publication.snapshot.topology_epoch, current)
         }) {
             tracing::warn!(
-                "sophia_live_output_authority schema=2 status=hardware_snapshot_dropped snapshot_epoch={} current_epoch={} reason=stale_after_candidate",
-                snapshot.topology_epoch,
-                wm.output_authority_topology_epoch().unwrap_or(0),
+                "sophia_live_output_authority schema=2 status=hardware_snapshot_dropped snapshot_epoch={} current_epoch={} reason=stale_replacement",
+                publication.snapshot.topology_epoch,
+                current_epoch.unwrap_or(0),
             );
         } else {
-            let _ = wm.publish_output_authority_snapshot(snapshot, capabilities)?;
+            if let Some(wm) = wm_session.as_mut() {
+                let _ = wm.publish_output_authority_snapshot(publication.snapshot, publication.capabilities)?;
+            }
+            if current_profile {
+                if !output_realization.commit(binding, profile) {
+                    return Err("presented output realization lost its publication binding".into());
+                }
+            } else {
+                // This owner really presented, so publish its hardware facts.
+                // A newer desired profile needs a fresh resolution; it cannot
+                // rewrite the generation of the realization just presented.
+                output_realization.abandon();
+                schedule_output_topology_rebuild!("profile_changed_during_rebuild", false);
+            }
         }
     }
 }

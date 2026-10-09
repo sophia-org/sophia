@@ -258,6 +258,9 @@ struct LivePublicPolicyState {
     output_bounds: BTreeMap<sophia_protocol::OutputId, Rect>,
     output_generations: BTreeMap<sophia_protocol::OutputId, u64>,
     output_policy_keys: BTreeMap<String, u64>,
+    /// Replacement layout can reach the WM before the output authority's
+    /// presentation barrier. Keep its key join separate from published caps.
+    output_policy_capabilities: Option<Vec<sophia_backend_live::LibdrmNativeOutputCapability>>,
     live_output_ids: BTreeSet<sophia_protocol::OutputId>,
     work_areas: BTreeMap<sophia_protocol::OutputId, Rect>,
     session_operations: Vec<sophia_protocol::PolicySessionOperation>,

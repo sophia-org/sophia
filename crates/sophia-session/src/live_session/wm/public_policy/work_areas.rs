@@ -5,6 +5,7 @@ impl LiveWmSession {
         outputs: &[sophia_engine::HeadlessOutput],
         full_bounds: &[(sophia_protocol::OutputId, Rect)],
         primary: sophia_engine::HeadlessOutput,
+        policy: Option<&output_realization::OutputPolicyLayout>,
     ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
         let root = full_bounds.iter().try_fold(
             Rect {
@@ -39,15 +40,30 @@ impl LiveWmSession {
             .collect::<BTreeSet<_>>();
         let mut next_generations = public.output_generations.clone();
         let mut generation_live = public.live_output_ids.clone();
-        observe_public_output_generations(
-            &mut next_generations,
-            &mut generation_live,
-            outputs,
-        )?;
+        observe_public_output_generations(&mut next_generations, &mut generation_live, outputs)?;
         if generation_live != next_live {
             return Err("public WM output-generation projection is incomplete".into());
         }
-        let next_active = if next_live.contains(&public.active_output) {
+        let effective_capabilities = public
+            .output_policy_capabilities
+            .as_deref()
+            .unwrap_or(&public.output_capabilities);
+        let active_connector_unchanged = policy.is_none_or(|policy| {
+            let before = effective_capabilities
+                .iter()
+                .filter(|cap| cap.output() == public.active_output)
+                .map(|cap| cap.connector_key())
+                .collect::<BTreeSet<_>>();
+            let after = policy
+                .capabilities
+                .iter()
+                .filter(|cap| cap.output() == public.active_output)
+                .map(|cap| cap.connector_key())
+                .collect::<BTreeSet<_>>();
+            !before.is_empty() && before == after
+        });
+        let next_active = if next_live.contains(&public.active_output) && active_connector_unchanged
+        {
             public.active_output
         } else {
             primary.id
@@ -61,7 +77,38 @@ impl LiveWmSession {
             };
             next_work_areas.insert(area.output, work);
         }
-        let changed = public.outputs != outputs
+        let mut policy_changed = false;
+        if let Some(policy) = policy {
+            let current = effective_capabilities;
+            let mut assigned = BTreeSet::new();
+            for output in &next_live {
+                let before =
+                    resolve_output_policy_key(*output, &public.output_policy_keys, current)?;
+                let after = resolve_output_policy_key(*output, &policy.keys, &policy.capabilities)?;
+                if after.is_some_and(|key| !assigned.insert(key)) {
+                    return Err("replacement policy key belongs to multiple logical outputs".into());
+                }
+                let connectors = |caps: &[sophia_backend_live::LibdrmNativeOutputCapability]| {
+                    caps.iter()
+                        .filter(|cap| cap.output() == *output)
+                        .map(|cap| cap.connector_key().to_owned())
+                        .collect::<BTreeSet<_>>()
+                };
+                if before != after || connectors(current) != connectors(&policy.capabilities) {
+                    policy_changed = true;
+                    if public.live_output_ids.contains(output) {
+                        let generation = next_generations
+                            .get_mut(output)
+                            .ok_or("replacement lost an output generation")?;
+                        *generation = generation
+                            .checked_add(1)
+                            .ok_or("replacement output generation exhausted")?;
+                    }
+                }
+            }
+        }
+        let changed = policy_changed
+            || public.outputs != outputs
             || public.live_output_ids != next_live
             || public.output_bounds != next_bounds
             || public.work_areas != next_work_areas
@@ -100,6 +147,10 @@ impl LiveWmSession {
             materialize_public_dirty_cause(&mut next_queue, &mut dirty, public.in_flight_source);
         }
         public.outputs = outputs.to_vec();
+        if let Some(policy) = policy {
+            public.output_policy_keys = policy.keys.clone();
+            public.output_policy_capabilities = Some(policy.capabilities.clone());
+        }
         public.output_generations = next_generations;
         public.live_output_ids = next_live;
         public.output_bounds = next_bounds;
@@ -107,8 +158,13 @@ impl LiveWmSession {
             if public.work_areas.get(output) != Some(work) {
                 crate::session_println!(
                     "sophia_live_work_area schema=1 output={} x={} y={} width={} height={} app_reservations={} shell_reservations={}",
-                    output.raw(), work.x, work.y, work.width, work.height,
-                    layout.active_output_reservations().len(), self.shell_reservation_bands.len(),
+                    output.raw(),
+                    work.x,
+                    work.y,
+                    work.width,
+                    work.height,
+                    layout.active_output_reservations().len(),
+                    self.shell_reservation_bands.len(),
                 );
             }
         }
