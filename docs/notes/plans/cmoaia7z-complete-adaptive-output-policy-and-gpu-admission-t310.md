@@ -174,6 +174,14 @@ Evidence: `t310-runtime-20261009/physical-return-03`, manifest
 `32683bb2d2857ac0b89710d12ebce238c73eca1007f02b4d5245b042fabcf852`.
 No t306/t310 closure or master promotion follows from these two checks alone.
 
+niltempus then confirmed normal pointer and keyboard shortcuts and reported
+survival of the requested locked cable-return test. Owner 4 resumed in the same
+Session with lock epoch 1 recorded before loss and after return; application
+presentation continued. The retained log omits lock status and coverage fields,
+so it is not an independent proof of coverage for the replacement topology.
+The snapshot and limits are recorded in the linked investigation. The actual
+KVM/USB switch, including input and lock behavior, has not yet been reported.
+
 The test must recover without a VT workaround. A separate read-only follow-up
 found that requesting a VT switch while already Waiting with no native owner
 overwrites a held renderer-image handoff with `None` in `lifecycle/seat.rs`.

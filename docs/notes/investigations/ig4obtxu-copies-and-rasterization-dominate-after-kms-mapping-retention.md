@@ -531,6 +531,36 @@ pixel checksums, KVM input return, pointer routing, lock/unlock, or workspace
 restoration. t306/t310 remain open for their remaining physical checks and the
 publication follow-up; the masters remain unchanged.
 
+#### Release 222 locked cable return (2026-10-09)
+
+After the first two cable tests, niltempus confirmed that the pointer and usual
+keyboard shortcuts seemed normal. The next instruction was to lock, unplug
+for fifteen seconds, reconnect to the same port, wait ten seconds, verify that
+the lock screen remained, then unlock without a VT switch. niltempus reported
+that it survived. This is an attended survival report, not a measured cable
+duration or an independent pixel/lock-coverage proof.
+
+The same Session and PID 7778 remained on release 222. Lock epoch 1 appears at
+boot millisecond 38694031 before owner 3 settles at 38701323. Waiting reaches
+attempt four; owner 4 resolves at 38721972 with zero adjustments and is ready
+at 38722197. The known same-topology `uncommitted reason=stale` record follows
+at 38722222. Lock epoch 1 appears again at 38728070 and 38731376–38731388,
+including input epoch 7, followed by application Present retirements and shell
+presentation. No retained fatal, refused resolution or seat transition occurs
+in this interval. Capture strips the lock status and coverage fields, so these
+records alone do not establish the covered topology or successful unlock.
+
+Preserved snapshot: the same full Session ID with suffix
+`bef7027b-841f-41dc-a49e-5cc8cab3850e`, manifest SHA-256
+`d99270dcbe8a6676f9814a607d8cab5751edd8988b60c35ead3193707475d8d5`.
+The manifest verifies and recorder health reports zero discarded records and
+storage errors. Markers `9553066b-80d9-456e-b9ce-62ae4d84517f`,
+`9980a20d-239c-4bca-a543-977bc2e07bd4` and
+`c9ea6e32-2ecb-457d-b8e8-ba67f15524b1` delimit the input confirmation, test
+instruction and survival report. No actual KVM/USB acceptance report has been
+received; cable return and normal input without device removal do not supply
+that separate evidence. No task closure, new build or master merge occurred.
+
 #### Matched desktop artifact prepared (2026-10-09)
 
 Signed niltempus candidate `6d50e38cc5014d248d8110e8c82f928b349cecd0` pairs the
