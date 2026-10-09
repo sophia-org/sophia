@@ -75,6 +75,8 @@ fn modelines_sharing_a_nominal_timing_project_and_reconcile_once() {
         generation: ConfigGeneration::INITIAL,
         digest: ConfigDigest::new([1; 32]),
         inherit_sophia: true,
+        availability: sophia_config::DesktopOutputAvailability::Strict,
+        fallback_policy_key: None,
         named: vec![],
     };
     let reconciled = reconcile_desktop_output_candidate(&profile, &topology).unwrap();

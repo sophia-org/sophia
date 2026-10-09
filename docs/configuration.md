@@ -606,6 +606,50 @@ does not advertise chrome-policy ownership, so it uses `config.kdl`. A failed
 or restarting WM retains the last complete visual chrome and geometry until a
 replacement policy can relayout atomically.
 
+### Available outputs at startup
+
+Output profiles default to `availability "strict"`: every named connector must
+exist, and enabled connectors must be connected. Proof profiles retain those
+requirements. A desktop can instead tolerate absent saved monitors:
+
+```kdl
+output {
+  availability "adaptive"
+  fallback-policy-key 1
+  inherit-sophia #false
+  named "DP-1" {
+    policy-key 1
+    mode "2560x1440@120"
+    enabled #true
+    focus-at-startup #true
+  }
+  named "HDMI-A-2" { enabled #false; }
+}
+```
+
+Adaptive reconciliation skips absent or disconnected ordinary named outputs.
+If no output remains enabled, it selects the first connected, unnamed connector
+in bytewise name order, excluding mirror members. The fallback uses its
+preferred mode, automatic scale, normal transform and disabled VRR at `(0, 0)`,
+and receives startup focus. It does not copy another monitor's mode or scale.
+Named disabled outputs stay excluded even when absent. With adaptive behavior,
+`inherit-sophia #false` disables unnamed outputs ordinarily but permits this
+last-output fallback; name a connector with `enabled #false` to exclude it.
+
+The optional `fallback-policy-key` assigns an explicit WM workspace affinity
+to that fallback. A saved connector with the same key loses its claim for this
+session, so returning it cannot duplicate the affinity. The binding lasts for
+the session; reload cannot reassign it. Without the setting, fallback does not
+invent a key. Changing availability, configured policy keys or the fallback key
+requires a new session.
+
+This only relaxes connector availability. Unsupported settings on present
+named outputs, incomplete mirror groups, invalid profiles and a topology with
+no eligible output still refuse. Discovery remains scoped to the session's
+seat; output preferences grant no access to another seat's GPU. Startup and
+explicit profile reload use this reconciliation. Automatic hotplug recovery
+and retained content after loss/return require their separate runtime policy.
+
 ### Mirrored outputs
 
 A named desktop output may list physical mirror members and choose how its one

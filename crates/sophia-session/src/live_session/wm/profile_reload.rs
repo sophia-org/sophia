@@ -54,6 +54,18 @@ fn desktop_profile_reload_effects(
     }
 }
 
+/// Output affinity identities are bound once per session: the policy keys a
+/// profile names, its availability, and the key a fallback carries. A reload
+/// may change anything else about the outputs.
+fn output_identity_changed(
+    before: &sophia_config::DesktopOutputCandidate,
+    after: &sophia_config::DesktopOutputCandidate,
+) -> bool {
+    configured_output_policy_keys(after) != configured_output_policy_keys(before)
+        || after.availability != before.availability
+        || after.fallback_policy_key != before.fallback_policy_key
+}
+
 struct PreparedDesktopLaunch {
     profile: sophia_config::DesktopProfileGeneration,
     launch_profile: sophia_config::DesktopSessionCandidate,
@@ -187,8 +199,10 @@ impl LiveWmSession {
             .public
             .as_mut()
             .ok_or("desktop launch lost policy owner")?;
+        // Reload declines these before staging anything; reaching here with one
+        // changed is a broken invariant, not an operator's edit.
         if output.as_ref().is_some_and(|profile| {
-            configured_output_policy_keys(profile.current()) != public.output_policy_keys
+            output_identity_changed(config.output_profile.current(), profile.current())
         }) {
             return Err("output policy keys are startup identities; changing them requires a new session".into());
         }
@@ -363,6 +377,18 @@ impl LiveWmSession {
                 return Ok(DesktopProfileReloadOutcome::Declined);
             }
         };
+        // Declined here, before either branch, so a policy change never starts
+        // a replacement WM that could only fail to publish.
+        if launch
+            .output
+            .as_ref()
+            .is_some_and(|output| output_identity_changed(config.output_profile.current(), output))
+        {
+            crate::session_eprintln!(
+                "sophia_live_desktop_profile schema=2 status=reload_declined reason=output_identity"
+            );
+            return Ok(DesktopProfileReloadOutcome::Declined);
+        }
         launch.commands = launch
             .commands
             .with_policy_launch_roles(!self.command_registry.local_roles);

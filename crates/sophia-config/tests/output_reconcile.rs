@@ -1,6 +1,6 @@
 use sophia_config::{
-    ConfigDigest, ConfigGeneration, DesktopNamedOutputCandidate, DesktopOutputCandidate,
-    DesktopOutputMode, DesktopOutputReconcileError, DesktopOutputScale,
+    ConfigDigest, ConfigGeneration, DesktopNamedOutputCandidate, DesktopOutputAvailability,
+    DesktopOutputCandidate, DesktopOutputMode, DesktopOutputReconcileError, DesktopOutputScale,
     DesktopOutputScaleCapabilities, DesktopOutputState, DesktopOutputTiming,
     DesktopOutputTopologyConnector, DesktopOutputTopologySnapshot, DesktopOutputTransform,
     DesktopOutputTransformSet, DesktopOutputVrrMode, reconcile_desktop_output_candidate,
@@ -98,6 +98,8 @@ fn candidate() -> DesktopOutputCandidate {
         generation: ConfigGeneration::INITIAL,
         digest: ConfigDigest::new([7; 32]),
         inherit_sophia: true,
+        availability: DesktopOutputAvailability::Strict,
+        fallback_policy_key: None,
         named: vec![
             first,
             named("DP-2", DesktopOutputMode::Preferred, (2560, 0)),
@@ -272,6 +274,8 @@ fn mirrored(primary: &str, members: &[&str]) -> DesktopOutputCandidate {
         generation: ConfigGeneration::from_raw(1),
         digest: ConfigDigest::new([1; 32]),
         inherit_sophia: true,
+        availability: DesktopOutputAvailability::Strict,
+        fallback_policy_key: None,
         named: vec![DesktopNamedOutputCandidate {
             policy_key: None,
             mirror_fit: None,

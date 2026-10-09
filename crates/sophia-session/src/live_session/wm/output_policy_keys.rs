@@ -8,6 +8,25 @@ fn configured_output_policy_keys(
         .collect()
 }
 
+/// A fallback takes the explicitly configured affinity for this session. Remove
+/// the absent connector's claim so its later return cannot duplicate that key.
+fn startup_output_policy_keys(
+    profile: &sophia_config::DesktopOutputCandidate,
+    fallback_connector: Option<&str>,
+) -> Result<BTreeMap<String, u64>, Box<dyn std::error::Error>> {
+    let mut keys = configured_output_policy_keys(profile);
+    if let Some(connector) = fallback_connector {
+        if profile.availability != sophia_config::DesktopOutputAvailability::Adaptive {
+            return Err("strict output profile cannot bind a fallback connector".into());
+        }
+        if let Some(key) = profile.fallback_policy_key {
+            keys.retain(|_, saved_key| *saved_key != key);
+            keys.insert(connector.to_owned(), key);
+        }
+    }
+    Ok(keys)
+}
+
 /// Only the locally resolved logical output crosses to policy. Mirrors must
 /// have a single configured key; no primary/enumeration fallback picks one.
 fn resolve_output_policy_key(
