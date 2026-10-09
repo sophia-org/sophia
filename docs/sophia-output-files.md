@@ -44,16 +44,6 @@ transport ticket. Client departure does not cancel the startup transaction.
 Runtime changes are not written back to the desktop profile. Revision 1 has
 no confirmation operation or automatic trial confirmation timer.
 
-A role connection epoch is distinct from a physical owner or topology
-generation. While no native owner is available, pinned topology bytes describe
-the last published state; they are not proof that a display is currently
-attached, presented, or authorized for input. Revision 1 requires a nonempty
-head set and must not encode Waiting as an empty or invented topology. A future
-availability/status view under t257 reports that state separately. Output-bound
-operations still require the current generation and normal policy/presentation
-barriers; immutable historical reads do not bypass them. See the
-[monitor continuity contract](notes/plans/cmoaia7z-complete-adaptive-output-policy-and-gpu-admission-t310.md#persistent-services-and-replaceable-display-attachments).
-
 The outcome reason is an open u16 diagnostic code; an unknown reason grants
 no operation and cannot change the outcome kind. Unknown kinds, transforms,
 mappings, intents, outcome values, reserved values and trailing bytes refuse.
