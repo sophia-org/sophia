@@ -104,6 +104,29 @@ both arms cleanly. The
 [sampling investigation](../investigations/r2m9cx6v-static-retained-dma-buf-images-can-sample-black-before-hotplug.md#the-mesa-2624-context-comparison-repeats-loss-and-preservation-2026-10-09-utc)
 records the packages and manifests. Part 2 on 26.2.4 (package 211) is next.
 
+The two part 4 verifier obligations are closed. Signed `87154b95d` makes every
+output-unplug verdict refuse, before any mode's own rules, a host record of an
+unreaped QEMU, logger or display bus, a kept pid or a stopped guest; a runner
+that re-verifies a retained log can no longer pass one. Package 212 kept a
+failing run of each fix: the verifier before `87154b95d` with the new tests
+failed exactly those two tests, and `87154b95d` with `1e63d9c71`'s attempt
+binding reversed failed exactly seven named display-action tests, both by named
+assertions; the fixed source passed. 212's full gate failed on a
+nondeterministic race in a development-seat test, which read `/proc/PID/stat`
+of a descendant being reaped and caught only one of the two errors that read
+can raise. Signed `5efab3d2c` catches both in its two teardown polls and
+changes nothing else. Gate-only successor 212-02 passed on that head, 7,441
+tests passed across 534 summaries, none failed, 101 ignored (CLOSURE
+`0d4ca36d`); its own xtask build, `2c5c7d0b`, is the host verifier part 2 pins.
+Root's later docs record `7d915879a` came in by the signed merge `78d3f0e53`.
+
+Packages 211a and 211b prepared part 2's images without a guest. 211a built
+the candidate's binaries and base image from `0f84dcb0c`, whose code is the
+gated `83c68c7c4` (image `1330b90a`). 211b installed 209's original and patched
+stages into it; the two images differ only in `libgallium-26.2.4.so`
+(original `556cf9f5`, patched `b3c2f677`). The guest source stays `0f84dcb0c`;
+the verifier fix is host-side only.
+
 ## Resume interrupted by normal-login failure (2026-10-09)
 
 After reboot, niltempus reported that moving the main monitor from DP-1 to
