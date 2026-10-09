@@ -8,6 +8,24 @@ tags: [plan, rendering, topology, validation]
 
 ## Resume progress (2026-10-09)
 
+The newly reported installed-session crash has interrupted qualification.
+The [incident account](../investigations/kdleagg3-kvm-output-and-usb-loss-returns-the-desktop-to-greetd.md#installed-session-renderer-failure-interrupts-qualification-2026-10-09)
+records `renderer_retained_buffer_missing`, preserved logs and the intentionally
+stopped integration gate. Both lanes are idle; no 202 guest has run. The
+display attempt/completion correction is signed as `1e63d9c71` and passed
+42 focused checks before the full gate was stopped while compiling.
+
+201's unchanged runtime passed the control-only `201-02-controls` successor:
+64 orchestration cases, five binding refusals, 168 decision cases and capacity
+checks. The original 201 run failed two mistaken fixture expectations and is
+preserved as failed. The successor manifest is
+`b9d84497b69fe4dbb26f8e189cd9e5787bf08de13376e763c76f221ef7935fb7`;
+run records are `55c5339f7e8b8de068f28872620fa1bff04a2b892dd4488dfc6352d3b5df7998`.
+Claude froze 201 with READY-201 and manifest prefix `e76032e4`; fresh host
+preflight had not begun when both lanes stopped. The declared host kernel for
+any later 202 is 6.18.55_1, with the guest still pinned to 6.18.54_1; such a
+comparison is not host-identical to 194. Review the crash before resuming.
+
 The first isolated run of 198-03 passed all 105 controls and all fourteen
 mutants. Retrospective 194 files match 198-02 byte for byte. Both source checks
 passed; the frozen package manifest is

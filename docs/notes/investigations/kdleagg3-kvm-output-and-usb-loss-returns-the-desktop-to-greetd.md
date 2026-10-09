@@ -533,6 +533,37 @@ integration checks and guest qualification still outstanding. The installed
 session remains unchanged. The [resume plan](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md#resume-progress-2026-10-09)
 records identities and the classifier result prerequisite.
 
+### Installed Session renderer failure interrupts qualification (2026-10-09)
+
+niltempus reported a fresh live-session crash during the resumed work. The
+installed t310 release, Sophia `838d5b16a`, recorded
+`renderer_retained_buffer_missing` at 13:29:50.007Z, retained the cause
+`live renderer scanout export failed: RetainedBufferMissing`, drained native
+scanout during cleanup, and returned to greetd with exit 1 at 13:29:56.008Z.
+Its last retained ordinary records show WM layout transactions 30 and 31,
+about 98 milliseconds before the fatal record. The operator action is not yet
+known; no hotplug cause is established.
+
+`204-live-session-crash-20261009/session` preserves all seventeen session files
+with a separate checksum manifest. The diagnostic health reports 63,301
+discarded and 1,676,130 suppressed records, zero storage errors: absence from
+this event stream cannot exclude an unrecorded event. The host's `oom_kill`
+counter is zero since boot; the later capture has 58,875,576 KiB available.
+Unprivileged kernel-log access failed and noninteractive sudo required a
+password, so no kernel GPU-reset verdict is available.
+
+At the reported crash, the root lane was compiling the signed combined
+candidate `1e63d9c71` inside device-hidden isolation with eight jobs. It had not
+installed that candidate or launched a guest. Claude's controls ended at
+13:23:07Z; subsequent work was source reading and package hashing/freezing.
+Both lanes stopped. Root sent SIGTERM only to its identified gate timeout;
+`203-recovery-integration/gate-01` retains exit 143 and unchanged source pins,
+an intentional interruption rather than a test failure. Its earlier focused
+display/endpoint checks passed 29 and 13 tests. No automatic build or guest
+restart follows this incident. The installed failure's immediate call site
+and trigger still need investigation; association with compilation alone
+does not establish causation.
+
 ## t306
 
 The [four-part qualification plan](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md)
