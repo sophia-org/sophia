@@ -5,6 +5,7 @@ mod commands;
 mod failure;
 mod input_device;
 mod output_profile;
+mod output_resolution;
 mod recovery;
 mod renderer_worker;
 mod selection;

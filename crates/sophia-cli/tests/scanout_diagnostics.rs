@@ -31,6 +31,9 @@ const WORKER_FAILED: &str =
 const WORKER_MISROUTED: &str =
     "sophia_renderer_worker schema=3 status=result_misrouted output=2 observed=3 request=17";
 const PRESENT_DEFER: &str = "sophia_live_present_defer schema=1 status=output_busy defers=8 transaction=1650791 output=1 in_flight=true cleanup_pending=false pending_frame=true";
+const RESOLUTION_REFUSED: &str = "sophia_live_output_resolution schema=1 phase=runtime status=refused reason=hardware transition=3 notice=4 attempt=2";
+const ADJUSTMENT: &str =
+    "sophia_live_output_adjustment schema=1 phase=startup reason=MirrorUnavailable head=2 output=1";
 
 struct Fixture(PathBuf);
 
@@ -100,6 +103,23 @@ fn capture_child(path: &Path) {
     tracing::warn!(target: EXPORTER_TARGET, "{} age_ms=5 title=private-title", WORKER_FAILED);
     tracing::warn!(target: EXPORTER_TARGET, "{} output=9", WORKER_MISROUTED);
     tracing::info!(target: EXPORTER_TARGET, "{}", PRESENT_DEFER);
+    // Output resolution keeps its bounded fields; connector, error and
+    // profile text never cross, and an unknown status or reason is refused.
+    tracing::warn!(
+        target: EXPORTER_TARGET,
+        "{} error=private connector=DP-1 profile=desktop",
+        RESOLUTION_REFUSED
+    );
+    tracing::info!(target: EXPORTER_TARGET, "{} connector=HDMI-A-1", ADJUSTMENT);
+    tracing::info!(
+        target: EXPORTER_TARGET,
+        "sophia_live_output_resolution schema=1 phase=runtime status=probing attempt=1"
+    );
+    tracing::info!(
+        target: EXPORTER_TARGET,
+        "sophia_live_output_adjustment schema=1 phase=runtime reason=mode head=1"
+    );
+    tracing::info!(target: "another_backend", "{}", RESOLUTION_REFUSED);
     // A detail that is not exactly a compiler-owned variant name is dropped.
     tracing::warn!(
         target: EXPORTER_TARGET,
@@ -270,6 +290,8 @@ fn scanout_records_reach_capture_independently_of_console_logging() {
             WORKER_FAILED,
             WORKER_MISROUTED,
             PRESENT_DEFER,
+            RESOLUTION_REFUSED,
+            ADJUSTMENT,
             "sophia_renderer_worker schema=3 status=failed output=2 request=18",
             "sophia_renderer_worker schema=3 status=failed output=2 request=19",
             PRESENT_WRITTEN,

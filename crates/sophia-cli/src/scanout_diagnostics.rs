@@ -48,6 +48,10 @@ impl<S: Subscriber> Layer<S> for ScanoutDiagnostics {
                             // Session reduces each by status and drops the rest.
                             | "sophia_renderer_worker"
                             | "sophia_live_present_defer"
+                            // Output resolution and its adjustments; Session
+                            // reduces each by phase and status or reason.
+                            | "sophia_live_output_resolution"
+                            | "sophia_live_output_adjustment"
                     )
                 ))
         {
