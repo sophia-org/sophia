@@ -420,7 +420,8 @@ impl NativeSessionEvidence {
         self.epoch != 0
     }
 
-    pub fn open(&mut self, reason: &str) {
+    /// Opens the evidence of an adopted native owner and returns its epoch.
+    pub fn open(&mut self, reason: &str) -> u64 {
         assert!(
             !self.active,
             "native evidence owner replaced without closing"
@@ -434,6 +435,48 @@ impl NativeSessionEvidence {
             "sophia_live_native_owner schema=1 status=opened epoch={} reason={reason}",
             self.epoch
         );
+        self.epoch
+    }
+
+    /// Joins each head of the owner `epoch` just opened to its connector, once
+    /// per owner, from that owner's own selected heads. It is the only record
+    /// that names an owner epoch beside a connector; a verifier never infers the
+    /// join from neighbouring ready lines. A failed capability read is reported
+    /// and leaves the join missing; it changes no topology or presentation.
+    pub fn record_owner_heads(
+        &self,
+        epoch: u64,
+        capabilities: std::io::Result<Vec<sophia_backend_live::LibdrmNativeOutputCapability>>,
+    ) {
+        assert!(
+            self.active && epoch == self.epoch,
+            "owner heads recorded outside the owner just opened"
+        );
+        let capabilities = match capabilities {
+            Ok(capabilities) => capabilities,
+            Err(error) => {
+                crate::session_println!(
+                    "sophia_live_native_owner_head schema=1 status=unavailable epoch={epoch}"
+                );
+                tracing::warn!(%error, epoch, "native owner head join unavailable");
+                return;
+            }
+        };
+        for capability in &capabilities {
+            let Some(head) = capability.head() else {
+                crate::session_println!(
+                    "sophia_live_native_owner_head schema=1 status=unavailable epoch={epoch}"
+                );
+                return;
+            };
+            crate::session_println!(
+                "sophia_live_native_owner_head schema=1 status=mapped epoch={epoch} output={} head={} connector={} connector_id={}",
+                capability.output().raw(),
+                head.raw(),
+                capability.connector_name(),
+                capability.connector_id(),
+            );
+        }
     }
 
     pub fn close(&mut self, snapshot: &NativeEvidenceSnapshot, reason: &str) {

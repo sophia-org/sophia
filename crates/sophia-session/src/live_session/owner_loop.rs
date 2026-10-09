@@ -754,8 +754,9 @@ fn run_session_loop_inner(
     let mut session_quiescence = None::<SessionQuiescence>;
     let mut native_evidence = NativeSessionEvidence::default();
     let mut content_mapping_evidence = content_mapping_evidence::ContentMappingEvidence::default();
-    if native_scanout.is_some() {
-        native_evidence.open("startup");
+    if let Some(native) = native_scanout.as_ref() {
+        let epoch = native_evidence.open("startup");
+        native_evidence.record_owner_heads(epoch, native.output_capabilities());
     }
     macro_rules! native_recovery_allowed {
         () => {

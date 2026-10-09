@@ -393,6 +393,17 @@ macro_rules! service_session_lock {
         ) {
             crate::session_println!("{}", crate::session_lock_coverage::session_lock_coverage_record(record));
         }
+        // Proof of exclusion: a device whose keys the lock consumed, once per
+        // device and lock. It names the lock epoch and device, never a key.
+        if let (Some(epoch), Some(input)) = (locked_epoch, session_lock_input.as_mut()) {
+            for device in input.take_unreported_held_devices() {
+                crate::session_println!(
+                    "sophia_live_session_lock schema=1 status=key_held epoch={} device={}",
+                    epoch.raw(),
+                    device.raw(),
+                );
+            }
+        }
         if let Some(input) = session_lock_input.as_mut() {
             // Edits reach the provider as entries and chords by their ID,
             // never logged: their count and timing would describe the secret.

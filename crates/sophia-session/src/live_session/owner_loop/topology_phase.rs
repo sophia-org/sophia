@@ -449,7 +449,11 @@
                         )
                     });
                 }
-                native_evidence.open("topology_rebuild");
+                let epoch = native_evidence.open("topology_rebuild");
+                native_evidence.record_owner_heads(
+                    epoch,
+                    native_scanout.as_ref().expect("just adopted").output_capabilities(),
+                );
                 native_presentation_admitted = false;
                 tracing::info!(
                     "sophia_live_output_topology schema=1 status=published transition={} topology_epoch={} generation={} outputs={} changed={} restored_images={} policy_required={} input=quarantined",

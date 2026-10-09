@@ -277,3 +277,43 @@ fn granted_chords_convert_all_or_none_so_ids_never_shift() {
     assert_eq!(session_lock_chords(&[good, good]).len(), 2);
     assert!(session_lock_chords(&[good, shift_only]).is_empty());
 }
+
+#[test]
+fn consumed_keys_name_their_devices_once_bounded_and_without_keys() {
+    let mut seat = Seat::new();
+    assert!(seat.lock.take_unreported_held_devices().is_empty());
+    seat.tap(A);
+    seat.tap(B);
+    assert_eq!(seat.lock.take_unreported_held_devices(), [DeviceId::from_raw(3)]);
+    // A device already reported is not reported again for the same lock.
+    seat.tap(A);
+    assert!(seat.lock.take_unreported_held_devices().is_empty());
+    // A release alone holds nothing; a new device's press is new.
+    seat.device = DeviceId::from_raw(4);
+    seat.key(A, false);
+    assert!(seat.lock.take_unreported_held_devices().is_empty());
+    seat.tap(ENTER);
+    assert_eq!(seat.lock.take_unreported_held_devices(), [DeviceId::from_raw(4)]);
+    // At most eight devices, so a flood of identities stays bounded.
+    for raw in 10..30 {
+        seat.device = DeviceId::from_raw(raw);
+        seat.tap(A);
+    }
+    assert_eq!(seat.lock.take_unreported_held_devices().len(), 6);
+    assert!(seat.lock.take_unreported_held_devices().is_empty());
+}
+
+#[test]
+fn a_vt_switch_still_acts_after_its_modifiers_hold_the_device() {
+    let mut seat = Seat::new();
+    // The modifiers are consumed by the lock before the chord fires, so they
+    // hold the device once; the trigger still switches and adds nothing.
+    seat.key(LEFT_CTRL, true);
+    seat.key(LEFT_ALT, true);
+    assert_eq!(seat.lock.take_unreported_held_devices(), [DeviceId::from_raw(3)]);
+    assert!(matches!(
+        seat.key(F2, true),
+        SessionLockKeyOutcome::VirtualTerminal { .. }
+    ));
+    assert!(seat.lock.take_unreported_held_devices().is_empty());
+}

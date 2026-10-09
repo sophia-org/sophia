@@ -122,7 +122,15 @@ pub struct SessionLockInput {
     edits: Vec<(SessionLockEdit, bool)>,
     chords: Vec<u16>,
     submitted: bool,
+    /// Devices whose keys this lock consumed, in first-seen order, at most
+    /// `HELD_DEVICES`; `held_reported` of them have been reported. Proof only:
+    /// it names devices, never keys, and changes no routing.
+    held_devices: Vec<DeviceId>,
+    held_reported: usize,
 }
+
+/// The bound on devices a lock records as held.
+const HELD_DEVICES: usize = 8;
 
 impl SessionLockInput {
     pub fn new(keyboard: SessionLockKeyboard) -> Result<Self, SessionLockSecretUnavailable> {
@@ -132,6 +140,8 @@ impl SessionLockInput {
             edits: Vec::new(),
             chords: Vec::new(),
             submitted: false,
+            held_devices: Vec::new(),
+            held_reported: 0,
         })
     }
 
@@ -172,6 +182,10 @@ impl SessionLockInput {
         if let Some(outcome) = outcome {
             return outcome;
         }
+        if pressed && self.held_devices.len() < HELD_DEVICES && !self.held_devices.contains(&device)
+        {
+            self.held_devices.push(device);
+        }
         match key {
             SessionLockKey::Inserted if fitted => self.edits.push((SessionLockEdit::Insert, false)),
             SessionLockKey::Delete if self.secret.pop_char() => {
@@ -191,6 +205,13 @@ impl SessionLockInput {
             _ => {}
         }
         SessionLockKeyOutcome::Consumed
+    }
+
+    /// Devices this lock first consumed a pressed key from since the last call.
+    pub fn take_unreported_held_devices(&mut self) -> &[DeviceId] {
+        let start = self.held_reported;
+        self.held_reported = self.held_devices.len();
+        &self.held_devices[start..]
     }
 
     /// Edits since the last call, each with whether the secret was empty after.

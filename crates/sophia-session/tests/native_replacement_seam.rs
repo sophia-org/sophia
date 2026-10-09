@@ -112,3 +112,42 @@ fn initial_activation_recovery_precedes_any_output_effect_dispatch() {
         ["live_session/owner_loop/wm_phase.rs"]
     );
 }
+
+#[test]
+fn every_opened_native_owner_records_its_own_head_join_once() {
+    // The owner/head join is emitted beside each owner open, from the
+    // adopted owner's own capabilities, and nowhere else: a verifier binds
+    // returned heads through it, never through neighbouring ready lines.
+    assert_eq!(
+        containing("native_evidence.open("),
+        [
+            "live_session/owner_loop.rs",
+            "live_session/owner_loop/topology_phase.rs"
+        ]
+    );
+    assert_eq!(
+        containing("native_evidence.record_owner_heads("),
+        [
+            "live_session/owner_loop.rs",
+            "live_session/owner_loop/topology_phase.rs"
+        ]
+    );
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/live_session");
+    for file in ["owner_loop.rs", "owner_loop/topology_phase.rs"] {
+        let source = fs::read_to_string(root.join(file)).unwrap();
+        assert_eq!(source.matches("native_evidence.open(").count(), 1, "{file}");
+        assert_eq!(
+            source
+                .matches("native_evidence.record_owner_heads(")
+                .count(),
+            1,
+            "{file}"
+        );
+        let open = source.find("native_evidence.open(").unwrap();
+        let join = source.find("native_evidence.record_owner_heads(").unwrap();
+        assert!(
+            open < join && source[open..join].matches(';').count() == 1,
+            "{file}"
+        );
+    }
+}
