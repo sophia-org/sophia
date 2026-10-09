@@ -360,6 +360,8 @@ nothing deleted in the first step, is an estimate from the export sizes.
 
 ## Connections
 
+- [Serve every public role from one 9P core](../decisions/zsx0tk4k-serve-every-public-role-from-one-9p-core-with-namespaces-as-composed-trees-and-portals-as-binds.md)
+  is the proposed decision this reasoning led to.
 - [Adopt 9P2000.L as the public interface](../decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)
   governs the transport direction this note builds on.
 - [Keep broker and portal file authority and custody separate](../decisions/xa78u03g-keep-broker-and-portal-file-authority-and-custody-separate.md)
