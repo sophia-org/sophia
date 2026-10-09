@@ -7,6 +7,26 @@
 # a clean exit of both, a non-zero status, or a process the host had to stop.
 # Only the first is "guest_exited".
 
+# unplug_start_logger SERIAL_FIFO EVIDENCE: copies the guest's serial lines to
+# stdout and the evidence, as every scenario's logger does, inside one
+# background subshell whose pid becomes LOGGER_PID. Bash's wait on a
+# pipeline's last pid waits for every member of that job, even after the last
+# member is gone, so a pipeline started directly could hold a wait that no
+# bound covers; the subshell is a single process that ends when its pipeline
+# does and can be waited for. It inherits the harness's shell options, so its
+# status is the pipeline's status under the same pipefail the raw background
+# pipeline had (crates/xtask/tests/output_unplug_endpoint.rs compares the two).
+# Ending the subshell does not end the pipeline members inside it; the runner's
+# leftover check covers them.
+unplug_start_logger() {
+    (
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            printf '%s\n' "${line%$'\r'}"
+        done < "$1" | tee -a "$2"
+    ) &
+    LOGGER_PID=$!
+}
+
 # unplug_wait_for EVIDENCE STEPS PID PROBE...: polls every 0.05 s, at most
 # STEPS times, and prints one outcome. A failure record the guest or the host
 # already wrote wins over everything; then the probe (PROBE... run as a
@@ -86,10 +106,10 @@ unplug_end_process() {
 }
 
 # unplug_collect_endpoint EVIDENCE QEMU_PID LOGGER_PID DEADLINE [STOP_REASON]:
-# the guest's end, recorded once. LOGGER_PID is the last member (tee) of the
-# harness's serial pipeline; its reader ends at the FIFO's EOF in a clean end,
-# but a stopped or unreaped logger says nothing about the rest of that pipeline,
-# which the runner's leftover check still has to cover. QEMU may run until DEADLINE (an absolute SECONDS value,
+# the guest's end, recorded once. LOGGER_PID is the subshell that owns the
+# serial pipeline (unplug_start_logger); its pipeline ends at the FIFO's EOF in a
+# clean end, but a stopped or unreaped logger says nothing about the pipeline
+# members inside it, which the runner's leftover check still has to cover. QEMU may run until DEADLINE (an absolute SECONDS value,
 # never extended here); the logger, which ends when QEMU closes the serial
 # FIFO, gets UNPLUG_LOGGER_GRACE_S seconds after that. Records:
 #   status=guest_exited qemu_exit=0                         both exited 0

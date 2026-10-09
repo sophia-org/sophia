@@ -176,14 +176,21 @@ fn a_clean_end_of_both_processes_is_the_only_guest_exited() {
         ["sophia_qemu_unplug schema=1 status=guest_exited qemu_exit=0"]
     );
     assert!(result.stdout.ends_with("rc=0\n"), "{}", result.stdout);
-    // A real FIFO logger that ends when the writer closes.
+    // The harness's real logger launch on a FIFO: a carriage return is
+    // stripped, a final unterminated line is kept, and the logger ends cleanly
+    // when the writer closes.
     let result = run(
-        "mkfifo serial\n( sleep 0.2; echo line ) > serial & q=$!\ncat serial > /dev/null & l=$!\nrc=0\nunplug_collect_endpoint \"$E\" \"$q\" \"$l\" \"$((SECONDS + 5))\" || rc=$?\necho \"rc=$rc\"\n",
+        "mkfifo serial\n( sleep 0.2; printf 'line\\r\\nlast' ) > serial & q=$!\nunplug_start_logger \"$PWD/serial\" \"$E\" > /dev/null\nrc=0\nunplug_collect_endpoint \"$E\" \"$q\" \"$LOGGER_PID\" \"$((SECONDS + 5))\" || rc=$?\necho \"rc=$rc\"\n",
     );
     assert_eq!(
         result.evidence,
-        ["sophia_qemu_unplug schema=1 status=guest_exited qemu_exit=0"]
+        [
+            "line",
+            "last",
+            "sophia_qemu_unplug schema=1 status=guest_exited qemu_exit=0"
+        ]
     );
+    assert!(result.stdout.ends_with("rc=0\n"), "{}", result.stdout);
 }
 
 #[test]
@@ -445,4 +452,68 @@ fn an_unexpected_exit_records_a_stopped_guest_not_a_clean_one() {
             "sophia_qemu_unplug schema=1 status=guest_stopped qemu_exit=143 logger_exit=0 qemu_signal=TERM logger_signal=none",
         ]
     );
+}
+
+#[test]
+fn a_logger_whose_last_member_ended_is_still_ended_within_bounds() {
+    // The harness's own logger launch, with a stand-in QEMU holding the serial
+    // FIFO open without writing, so the reader stays blocked. The pipeline's
+    // last member (tee) is then killed. Bash's wait on a pipeline's last pid
+    // waits for the whole job, so a logger started as a bare pipeline would
+    // hang here; the logger's single owner must instead be ended within the
+    // logger grace and recorded as stopped. tee is the logger pid itself in a
+    // bare pipeline, or a child of the owning subshell.
+    let result = run(
+        "mkfifo serial\nsleep 30 > serial & writer=$!\nunplug_start_logger \"$PWD/serial\" \"$E\" > /dev/null\ntee_pid=\"\"\nwhile [[ -z \"$tee_pid\" ]]; do\n  if [[ \"$(cat \"/proc/$LOGGER_PID/comm\" 2>/dev/null)\" == tee ]]; then tee_pid=$LOGGER_PID\n  else tee_pid=$(pgrep -x -P \"$LOGGER_PID\" tee || true); fi\n  sleep 0.05\ndone\nbuiltin kill \"$tee_pid\"\nwhile builtin kill -0 \"$tee_pid\" 2>/dev/null; do sleep 0.05; done\nsh -c 'exit 0' & q=$!\nrc=0\nunplug_collect_endpoint \"$E\" \"$q\" \"$LOGGER_PID\" \"$((SECONDS + 5))\" || rc=$?\necho \"rc=$rc\"\nbuiltin kill \"$writer\" 2>/dev/null || true\n",
+    );
+    assert_eq!(
+        result.evidence,
+        [
+            "sophia_qemu_unplug schema=1 status=guest_stopped qemu_exit=0 logger_exit=143 qemu_signal=none logger_signal=TERM"
+        ]
+    );
+    assert!(result.stdout.ends_with("rc=1\n"), "{}", result.stdout);
+    assert!(
+        result.elapsed < Duration::from_secs(10),
+        "{:?}",
+        result.elapsed
+    );
+}
+
+/// The r2 harness's raw logger launch, verbatim but for $1 and $2 in place of
+/// $SERIAL_FIFO and $EVIDENCE_FILE: a bare background pipeline, waited for by
+/// the pid of its last member.
+const RAW_LOGGER: &str = "raw() {\n    while IFS= read -r line || [[ -n \"$line\" ]]; do\n        printf '%s\\n' \"${line%$'\\r'}\"\n    done < \"$1\" | tee -a \"$2\" &\n    p=$!\n    s=0\n    wait \"$p\" || s=$?\n    RAW_STATUS=$s\n}\n";
+
+#[test]
+fn the_logger_owner_ends_with_the_status_the_raw_pipeline_had() {
+    // Under the harness's set -euo pipefail, the raw pipeline's wait status and
+    // the owner's must agree when the reader fails, when tee fails, and when
+    // both end cleanly.
+    for (label, setup, input, output, expected) in [
+        ("reader fails", "", "$PWD/missing", "$PWD/out", "1"),
+        (
+            "tee fails",
+            "printf 'x\\n' > in\n",
+            "$PWD/in",
+            "$PWD/nodir/out",
+            "1",
+        ),
+        (
+            "both clean",
+            "printf 'x\\n' > in\n",
+            "$PWD/in",
+            "$PWD/out",
+            "0",
+        ),
+    ] {
+        let result = run(&format!(
+            "{RAW_LOGGER}{setup}raw \"{input}\" \"{output}\" > /dev/null 2>&1\necho \"raw=$RAW_STATUS\"\nunplug_start_logger \"{input}\" \"{output}\" > /dev/null 2>&1\ns=0\nwait \"$LOGGER_PID\" || s=$?\necho \"owner=$s\"\n"
+        ));
+        assert_eq!(
+            result.stdout,
+            format!("raw={expected}\nowner={expected}\n"),
+            "{label}"
+        );
+    }
 }

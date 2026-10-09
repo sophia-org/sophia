@@ -345,10 +345,15 @@ case "$SCENARIO" in
         ;;
 esac
 
-while IFS= read -r line || [[ -n "$line" ]]; do
-    printf '%s\n' "${line%$'\r'}"
-done < "$SERIAL_FIFO" | tee -a "$EVIDENCE_FILE" &
-LOGGER_PID=$!
+if [[ "$SCENARIO" == output-unplug ]]; then
+    # One waitable owner for the whole serial pipeline (the sourced helper).
+    unplug_start_logger "$SERIAL_FIFO" "$EVIDENCE_FILE"
+else
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        printf '%s\n' "${line%$'\r'}"
+    done < "$SERIAL_FIFO" | tee -a "$EVIDENCE_FILE" &
+    LOGGER_PID=$!
+fi
 
 cpu_export_args=()
 if [[ "$SCENARIO" == cpu ]]; then
