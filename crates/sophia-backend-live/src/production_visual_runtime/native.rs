@@ -2,6 +2,7 @@ use super::*;
 
 mod layout_witness;
 mod page_flip;
+mod resume;
 mod rollback;
 mod source_restore;
 
@@ -366,98 +367,6 @@ impl LiveProductionVisualRuntime {
             abandoned_scanouts,
             skipped_present: skipped_present.map(|present| present.transaction),
         })
-    }
-
-    pub fn resume_native_scanout(
-        &mut self,
-        native_scanout: &mut LiveProductionNativeScanout,
-        outputs: &[sophia_engine::HeadlessOutput],
-        scene: &LiveProductionCpuScene,
-        renderer_handoff: Option<&LiveProductionRendererImageHandoff>,
-    ) -> Result<crate::LiveProductionRendererImageRestore, Box<dyn std::error::Error>> {
-        native_scanout.use_renderer_image_reads(self.image_reads.clone())?;
-        self.validate_native_retirement_disposition()?;
-        let retained = self.retained_renderer_image_ids();
-        validate_renderer_image_resume_admission(
-            &retained,
-            renderer_handoff.as_ref().map(|handoff| handoff.image_ids()),
-        )?;
-        let mut resume_phase = crate::LiveRendererImageResumePhase::default();
-        // Build runtime-only output state first. Renderer workers and retained
-        // images must exist before the semantic head plans are lowered, while
-        // KMS must remain untouched until every resulting owner is prepared.
-        let resumed_outputs = LiveProductionOutputRuntimeSet::new(
-            outputs,
-            self.production.committed_surfaces(),
-            Some(native_scanout),
-        )?;
-        let workers = native_scanout.enable_renderer_workers()?;
-        if workers != native_scanout.enabled_head_count() {
-            return Err("native resume established partial renderer-worker coverage".into());
-        }
-        if !native_scanout.renderer_image_owners_initialized() {
-            return Err("native resume did not initialize every renderer image owner".into());
-        }
-        resume_phase = advance_renderer_image_resume(
-            resume_phase,
-            crate::LiveRendererImageResumeObservation::OutputOwnerInitialized,
-        )?;
-        // Availability scoped to the retired outputs described them; it is
-        // derived again below from where this restore puts each image.
-        self.source_availability.outputs_replaced();
-        let demand = self.retained_image_demand(&resumed_outputs)?;
-        let restore = match renderer_handoff {
-            Some(handoff) => native_scanout.restore_renderer_image_handoff(handoff, &demand)?,
-            None => crate::LiveProductionRendererImageRestore::default(),
-        };
-        self.mark_unrestored_sources(&restore);
-        resume_phase = advance_renderer_image_resume(
-            resume_phase,
-            crate::LiveRendererImageResumeObservation::ImagesRestored,
-        )?;
-        if resume_phase != crate::LiveRendererImageResumePhase::Ready {
-            return Err("native resume renderer-image lifecycle did not become ready".into());
-        }
-        self.resume_prepared_outputs_on(native_scanout, resumed_outputs, scene)?;
-        tracing::info!(
-            "sophia_live_renderer_image_handoff schema=2 status=restored restored_images={} pending_images={} unavailable_pairs={} unavailable_surfaces={}",
-            restore.restored.len(),
-            restore.pending.len(),
-            restore.unavailable.len(),
-            self.source_availability.len(),
-        );
-        Ok(restore)
-    }
-
-    /// Native resume reaches this only after worker coverage and retained-image
-    /// restoration are validated. Tests substitute those prepared device facts,
-    /// then share the runtime installation and the first covered head plans.
-    pub(crate) fn resume_prepared_outputs_on<T: NativeTopologyTarget>(
-        &mut self,
-        native_scanout: &mut T,
-        resumed_outputs: LiveProductionOutputRuntimeSet,
-        scene: &LiveProductionCpuScene,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        // Install the runtime privately, lower the restored scene for every
-        // native head, and synchronously present each complete output cohort.
-        self.outputs = resumed_outputs;
-        self.native_suspended = false;
-        self.resume_input_projections()?;
-        let batches = self.retained_output_head_composition_frames(scene, native_scanout)?;
-        if batches.len() != self.outputs.output_count() {
-            return Err("native resume produced partial logical-output coverage".into());
-        }
-        for (output, frames) in batches {
-            native_scanout.initialize_output_composition(&mut self.outputs, output, frames)?;
-        }
-        self.publish_presented_input_layers(native_scanout);
-        // Published. An image held by some store but not yet by an output that
-        // samples it is ordinary from here: that output's frames wait while
-        // the cold migration brings it over. Only images no store holds stay
-        // marked; the caller hands their snapshots back with
-        // keep_pending_renderer_handoff once it has taken the handoff.
-        self.source_availability.release_output_scoped_pending();
-        Ok(())
     }
 
     /// Rebuilds logical output runtimes around scanout owners already installed

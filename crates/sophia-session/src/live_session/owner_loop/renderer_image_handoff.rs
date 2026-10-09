@@ -44,9 +44,51 @@ fn resume_native_scanout_from_scene(
     scene: &mut LiveProductionCpuScene,
     handoff: &mut Option<sophia_backend_live::LiveProductionRendererImageHandoff>,
 ) -> Result<usize, Box<dyn std::error::Error>> {
-    let (restore, taken) = native_owner_retirement::restore_retained_handoff(handoff, |handoff| {
-        runtime.resume_native_scanout(native, outputs, scene, handoff)
-    })?;
+    resume_native_scanout_from_scene_with(runtime, native, outputs, scene, handoff, None)
+}
+
+/// The same resume with every logical output at a resolved layout's
+/// root-space viewport, installed before restore and the first presentation.
+fn resume_native_scanout_from_scene_at(
+    runtime: &mut LiveProductionVisualRuntime,
+    native: &mut LiveProductionNativeScanout,
+    outputs: &[sophia_engine::HeadlessOutput],
+    scene: &mut LiveProductionCpuScene,
+    handoff: &mut Option<sophia_backend_live::LiveProductionRendererImageHandoff>,
+    logical_viewports: &[(sophia_protocol::OutputId, sophia_protocol::Rect)],
+) -> Result<usize, Box<dyn std::error::Error>> {
+    resume_native_scanout_from_scene_with(
+        runtime,
+        native,
+        outputs,
+        scene,
+        handoff,
+        Some(logical_viewports),
+    )
+}
+
+fn resume_native_scanout_from_scene_with(
+    runtime: &mut LiveProductionVisualRuntime,
+    native: &mut LiveProductionNativeScanout,
+    outputs: &[sophia_engine::HeadlessOutput],
+    scene: &mut LiveProductionCpuScene,
+    handoff: &mut Option<sophia_backend_live::LiveProductionRendererImageHandoff>,
+    logical_viewports: Option<&[(sophia_protocol::OutputId, sophia_protocol::Rect)]>,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let (restore, taken) =
+        native_owner_retirement::restore_retained_handoff(
+            handoff,
+            |handoff| match logical_viewports {
+                Some(logical_viewports) => runtime.resume_native_scanout_at(
+                    native,
+                    outputs,
+                    scene,
+                    handoff,
+                    logical_viewports,
+                ),
+                None => runtime.resume_native_scanout(native, outputs, scene, handoff),
+            },
+        )?;
     if let Some(mut taken) = taken {
         taken.retain_only(&restore.pending);
         runtime.keep_pending_renderer_handoff(

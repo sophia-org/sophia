@@ -7,6 +7,8 @@ use super::presentation_instances::{
 };
 use super::*;
 
+#[path = "resume_viewports.rs"]
+mod resume_viewports;
 #[path = "session_lock_topology.rs"]
 mod topology;
 
