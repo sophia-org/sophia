@@ -13,6 +13,8 @@ use source::output_unplug::{Mode, probe_frame_checksum, verify};
 
 #[path = "support/output_unplug_display_actions.rs"]
 mod display_actions;
+#[path = "support/output_unplug_unreaped.rs"]
+mod unreaped;
 
 const START: &str = "\
 sophia_qemu_unplug schema=1 status=starting isolation=headless control=none host_drm=none host_vt=none gpu=virtio-gpu mode=MODE single_card=1
