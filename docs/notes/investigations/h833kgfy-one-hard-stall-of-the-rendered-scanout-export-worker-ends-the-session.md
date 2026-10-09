@@ -62,6 +62,22 @@ still refuses with the distinct `PendingFrameMissing` detail. Legacy status-only
 degraded reports still use `RetainedBufferMissing`. No physical workspace-switch
 acceptance follows from these device-free tests.
 
+Niltempus requested merging the repair for the daily desktop. Signed master
+merge `22b124c882be0044fb5fceb7c9bdf5d3c6d6f0f0` preserves the existing
+lock work and accepted startup fallback. Independent merge review found no
+blocking issue, and the merged source passed the full isolated gate in
+`205-workspace-render-recovery/gate-02` at 14:17:33–14:26:39Z with unchanged
+source pins. Its frozen manifest is
+`ac29e00024f0c1f511a922e41f0b78dd9f4d04d8d1c62e15c27fe5b18bc1f088`.
+The source is published on master; desktop integration `39fdba80` pins that
+exact public revision. Release `niltempus-e3e6a9c375a1bfa4c7bc` passed its
+build, checksum, source-identity and profile checks in
+`205-workspace-render-recovery/release-02`. The store output is retained by
+that directory's `result` GC root. Installation awaits the operator's sudo
+authentication; the current installed release is unchanged. These results
+qualify the source and package, not the reported physical incident's cause
+or an installed-session outcome.
+
 ## Question
 
 niltempus's installed session (commit 4eacfcfb, the daily desktop) exited at

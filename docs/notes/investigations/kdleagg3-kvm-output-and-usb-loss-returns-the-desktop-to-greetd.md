@@ -573,18 +573,45 @@ reachable. The retained physical incident cannot prove this path, because
 worker warnings were excluded from daily capture, and the same detail named
 several producers.
 
-Signed candidate `bacfdb207567afa8dc57ba5a99ba14f381afbe74` in
-`~/dev/sophia-workspace-recovery` retains the accepted identity and validates
-late replies, captures worker transitions and sampled presentation deferrals,
+Signed candidate `bacfdb207567afa8dc57ba5a99ba14f381afbe74` retains the
+accepted identity and validates late replies, captures worker transitions
+and sampled presentation deferrals,
 and gives missing-frame/descriptor/owner failures distinct typed codes.
 The backend/renderer suites passed 1,136 tests (11 ignored); six reducer
 tests and the CLI durable-capture test passed with console logging disabled.
-Independent review found no blocking issue. Root resumed only this repair's
-CPU gate, one job at nice 10 with devices hidden; its immutable inputs and
-records are in `205-workspace-render-recovery/gate-01`. The desktop pin is
-signed as `e282564` in `~/dev/niltempus-workspace-recovery`. Neither this source
-nor that pin establishes a passing full gate, a built/installed release or
-physical acceptance yet. The 202 guest and combined hotplug gate stay stopped.
+Independent review found no blocking issue. The repair passed its full CPU gate,
+one job at nice 10 with devices hidden, in `205-workspace-render-recovery/gate-01`.
+Niltempus requested merging the fixes for the daily session. Signed merge
+`22b124c882be0044fb5fceb7c9bdf5d3c6d6f0f0` combines the accepted startup
+fallback, renderer repair and existing lock coverage on master. Independent
+merge review found no lost code or startup-policy facts. The merged source
+passed the full isolated gate in `205-workspace-render-recovery/gate-02`,
+14:17:33–14:26:39Z, with unchanged source pins and a clean tree. Its frozen
+manifest is `ac29e00024f0c1f511a922e41f0b78dd9f4d04d8d1c62e15c27fe5b18bc1f088`.
+The gate includes workspace tests, SDK checks, strict lint, layout and all six
+verifier archives; native pixels and physical lock retirement remain unproved.
+
+Master `22b124c88` is published. Signed desktop integration
+`39fdba80befb00a188cb08ebe224b84a396a6dba` replaces the temporary local pin
+with that exact public source; other flake inputs are unchanged. The standalone
+release launcher was never run and is marked superseded. The merged release
+build passed in `205-workspace-render-recovery/release-02`, producing
+`niltempus-e3e6a9c375a1bfa4c7bc`. All release checksums, source identities and
+the build-time profile preflight passed. Its Sophia binary hashes to
+`5ca5a64f1a3dd3d26cc06c778598a7ed2894aed5daeebaea3f74c9dc82b527d5`.
+The store output is retained by `release-02/result`. Both source repositories
+are published. Installation awaits the operator's sudo authentication;
+`sudo -n true` requires a password, so `/opt` and the running session were not
+changed. The clean merged repair worktrees were removed after their pins
+were replaced; signed commits and frozen gate records remain. Physical
+workspace-switch acceptance is still outstanding. The 202 guest and combined
+hotplug gate stay stopped.
+
+The release build used one job and one core as a precaution after the crash
+during an eight-job build. Niltempus challenged that restriction; load was
+never established as the cause. Compilation had finished before that exchange,
+so no restart followed. The limit belonged to this recorded launcher, not
+the user's Nix configuration; subsequent builds should use parallelism.
 
 ## t306
 

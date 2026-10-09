@@ -12,10 +12,16 @@ The newly reported installed-session crash has interrupted qualification.
 The [incident account](../investigations/kdleagg3-kvm-output-and-usb-loss-returns-the-desktop-to-greetd.md#installed-session-renderer-failure-interrupts-qualification-2026-10-09)
 records `renderer_retained_buffer_missing`, preserved logs and the intentionally
 stopped integration gate. Niltempus identified workspace switching. A separate
-late-render repair is signed as `bacfdb207`; its focused backend/renderer and
-durable-capture tests pass, and its full CPU gate is running with one low-priority
-job. Claude's capture slice is frozen and independently reviewed. No 202 guest
-has run. The
+late-render repair is signed as `bacfdb207` and merged into public master as
+`22b124c882be0044fb5fceb7c9bdf5d3c6d6f0f0`. Both the repair and merged master
+passed the full isolated CPU gate; independent source and merge reviews found
+no blocking issue. The merged gate is `205-workspace-render-recovery/gate-02`,
+14:17:33–14:26:39Z, with unchanged source pins. Desktop integration `39fdba80`
+pins that exact public revision. Release `niltempus-e3e6a9c375a1bfa4c7bc` built
+and passed checksum, source-identity and profile checks in
+`205-workspace-render-recovery/release-02`. Installation awaits the operator's
+sudo authentication; the current release is unchanged. Physical acceptance
+remains separate. No 202 guest has run. The
 display attempt/completion correction is signed as `1e63d9c71` and passed
 42 focused checks before the full gate was stopped while compiling.
 
