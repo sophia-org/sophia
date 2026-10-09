@@ -292,6 +292,11 @@ mkdir -p "$(dirname "$EVIDENCE_FILE")"
 rm -f "$VNC_SOCKET" "$QMP_SOCKET" "$SERIAL_FIFO" "$DISPLAY_BUS_SOCKET"
 mkfifo "$SERIAL_FIFO"
 if [[ "$SCENARIO" == output-unplug ]]; then
+    # The scenario's waits, endpoint and bounded cleanup
+    # (tools/qemu_unplug_endpoint.sh), installed before its private bus starts
+    # so no exit reaches the shared cleanup's unbounded waits.
+    source "$ROOT_DIR/tools/qemu_unplug_endpoint.sh"
+    trap unplug_cleanup EXIT
     # A private bus that only QEMU and this harness use.
     cat > "$OUT_DIR/display-bus.conf" <<EOF
 <!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
@@ -630,51 +635,33 @@ if [[ "$SCENARIO" == output-unplug ]]; then
         "${display_bus[@]}" call org.qemu "/org/qemu/Display1/Console_$1" \
             org.qemu.Display1.Console SetUIInfo qqiiuu 0 0 0 0 "$2" "$3" > /dev/null
     }
-    unplug_failed() {
-        echo "sophia_qemu_unplug schema=1 status=failed reason=$1" | tee -a "$EVIDENCE_FILE"
-        exit 1
+    # Every failure goes through unplug_failed and the normal end through
+    # unplug_finish (both in the sourced helper): the failure record first,
+    # then the guest's recorded end.
+    display_bus_ready() {
+        "${display_bus[@]}" status org.qemu > /dev/null 2>&1
     }
-    display_ready=false
-    for _ in $(seq 1 200); do
-        if "${display_bus[@]}" status org.qemu > /dev/null 2>&1; then
-            display_ready=true
-            break
-        fi
-        kill -0 "$QEMU_PID" 2>/dev/null || break
-        sleep 0.05
-    done
-    [[ "$display_ready" == true ]] || unplug_failed display_bus_timeout
+    outcome=$(unplug_wait_for "$EVIDENCE_FILE" 200 "$QEMU_PID" display_bus_ready)
+    [[ "$outcome" == ready ]] || unplug_failed "display_bus_$outcome"
     head_size 0 1280 800 || unplug_failed head_enable
     head_size 1 1280 800 || unplug_failed head_enable
     "$ROOT_DIR/tools/qemu_qmp_cont.py" "$QMP_SOCKET" || unplug_failed qmp_cont
 
     if [[ "$UNPLUG_MODE" != input-return ]]; then
         # The guest records its uevents from the session's readiness on.
-        monitoring=false
-        for _ in $(seq 1 1200); do
-            if grep -q '^sophia_qemu_unplug schema=1 status=monitoring$' "$EVIDENCE_FILE"; then
-                monitoring=true
-                break
-            fi
-            kill -0 "$QEMU_PID" 2>/dev/null || break
-            sleep 0.05
-        done
-        [[ "$monitoring" == true ]] || unplug_failed monitoring_timeout
+        outcome=$(unplug_wait_for "$EVIDENCE_FILE" 1200 "$QEMU_PID" \
+            grep -q '^sophia_qemu_unplug schema=1 status=monitoring$' "$EVIDENCE_FILE")
+        [[ "$outcome" == ready ]] || unplug_failed "monitoring_$outcome"
         if [[ "${SOPHIA_QEMU_UNPLUG_CLIENT:-none}" == dri3 ]]; then
             # The static client's barrier: its DMA-BUF Present was captured,
             # promoted and retired (a mixed retirement), and the client now
             # holds without presenting. Only then is a head taken away.
-            barrier=false
-            for _ in $(seq 1 600); do
-                if grep -q '^sophia_live_session_present schema=2 status=retired ' "$EVIDENCE_FILE" \
-                    && grep -q '^dri3_layout stage=holding ' "$EVIDENCE_FILE"; then
-                    barrier=true
-                    break
-                fi
-                kill -0 "$QEMU_PID" 2>/dev/null || break
-                sleep 0.05
-            done
-            [[ "$barrier" == true ]] || unplug_failed static_barrier_timeout
+            static_barrier_ready() {
+                grep -q '^sophia_live_session_present schema=2 status=retired ' "$EVIDENCE_FILE" \
+                    && grep -q '^dri3_layout stage=holding ' "$EVIDENCE_FILE"
+            }
+            outcome=$(unplug_wait_for "$EVIDENCE_FILE" 600 "$QEMU_PID" static_barrier_ready)
+            [[ "$outcome" == ready ]] || unplug_failed "static_barrier_$outcome"
             echo "sophia_qemu_unplug schema=1 status=static_barrier present=retired client=holding" | tee -a "$EVIDENCE_FILE"
         fi
         # One head modes take away SOPHIA_QEMU_UNPLUG_CONSOLE (default 1, the
@@ -699,17 +686,10 @@ if [[ "$SCENARIO" == output-unplug ]]; then
         # the helper returns, so the sending line comes first and the
         # completed line after its exit.
         input_key() {
-            local phase=$1 marker=$2 key=$3 ready=false
-            for _ in $(seq 1 800); do
-                if grep -qE "^sophia_qemu_unplug schema=1 status=$marker device=[0-9]+\$" "$EVIDENCE_FILE"; then
-                    ready=true
-                    break
-                fi
-                grep -q '^sophia_qemu_unplug schema=1 status=failed ' "$EVIDENCE_FILE" && break
-                kill -0 "$QEMU_PID" 2>/dev/null || break
-                sleep 0.05
-            done
-            [[ "$ready" == true ]] || unplug_failed "${phase}_ready_timeout"
+            local phase=$1 marker=$2 key=$3 outcome
+            outcome=$(unplug_wait_for "$EVIDENCE_FILE" 800 "$QEMU_PID" \
+                grep -qE "^sophia_qemu_unplug schema=1 status=$marker device=[0-9]+\$" "$EVIDENCE_FILE")
+            [[ "$outcome" == ready ]] || unplug_failed "${phase}_ready_$outcome"
             echo "sophia_qemu_unplug schema=1 status=key_sending phase=$phase key=$key" | tee -a "$EVIDENCE_FILE"
             local status=0
             "$ROOT_DIR/tools/qemu_qmp_type.py" "$QMP_SOCKET" --no-return "$key" || status=$?
@@ -723,25 +703,10 @@ if [[ "$SCENARIO" == output-unplug ]]; then
         input_key return input_return_ready b
     fi
 
-    # The session bounds its own runtime; this bounds one that never ends.
-    deadline=$((SECONDS + 150))
-    while kill -0 "$QEMU_PID" 2>/dev/null && (( SECONDS < deadline )); do sleep 0.2; done
-    kill -0 "$QEMU_PID" 2>/dev/null && unplug_failed host_timeout
-    set +e
-    wait "$QEMU_PID"
-    qemu_status=$?
-    QEMU_PID=""
-    wait "$LOGGER_PID"
-    logger_status=$?
-    LOGGER_PID=""
-    set -e
-    cleanup
-    if [[ "$qemu_status" -ne 0 || "$logger_status" -ne 0 ]]; then
-        unplug_failed "guest_exit qemu_exit=$qemu_status logger_exit=$logger_status"
-    fi
-    echo "sophia_qemu_unplug schema=1 status=guest_exited qemu_exit=0" | tee -a "$EVIDENCE_FILE"
-    cd "$ROOT_DIR"
-    exec cargo xtask conformance verify output-unplug "$UNPLUG_MODE" "$EVIDENCE_FILE"
+    # The session bounds its own runtime; unplug_finish bounds one that never
+    # ends, records the guest's end, and runs the verifier only after
+    # guest_exited.
+    unplug_finish
 fi
 
 if [[ "$SCENARIO" == xtest-selection ]]; then
