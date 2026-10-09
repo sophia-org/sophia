@@ -72,6 +72,26 @@ candidate still needs its gate and guest qualification; it is not installed.
 Claude owns preparation of 201 around the qualified classifiers. No 202 guest
 has run. The shutdown checkpoint below remains the historical handoff.
 
+Claude now owns the recovery candidate and t307; Codex owns t310 runtime
+policy. Their seam is one topology hook. t310 resolves an admitted discovery
+into Waiting or an active set of heads, and t306 executes suspend and resume,
+retained-image custody and lock coverage around it. Signed merge `3b2c53403`
+brings master `0fee221ac` into the candidate and adds the candidate's
+`RendererImageTransferBusy` to the capture slice's guarded detail list. Its
+full isolated gate passed from 15:01:48Z to 15:08:55Z, with 7,350 tests passed,
+none failed, 101 ignored and unchanged source pins. Evidence is
+`206-t306-recovery-merge`, manifest
+`157dbc868e42f03f569ab9fd48612c49dce8ac9fe0b220112a07e37fcba50d34`.
+
+The first 202 launch was refused by a concurrent build. Its successor ran once
+from 15:13:52Z to 15:14:48Z, and all three guests qualified as declared. The
+original kept the separate arm and lost the shared arm, with one recognized
+diagnostic. The patched guest preserved both arms cleanly. The
+[sampling investigation](../investigations/r2m9cx6v-static-retained-dma-buf-images-can-sample-black-before-hotplug.md#the-observable-comparison-reproduces-loss-and-preservation-2026-10-09-utc)
+records the result and a bounded hypothesis: Sophia's renderer instances share
+one duplicated card file description. Part 2 is next, as a reviewed CPU package
+before any guest.
+
 ## Resume interrupted by normal-login failure (2026-10-09)
 
 After reboot, niltempus reported that moving the main monitor from DP-1 to

@@ -1308,6 +1308,89 @@ independent review and controls before any 202 guest. The
 [resume plan](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md#resume-progress-2026-10-09)
 records the parallel lock gate and recovery candidate.
 
+## The observable comparison reproduces loss and preservation (2026-10-09 UTC)
+
+Runner `201-mesa-pair-observable-runner` is frozen 193 with premise4 from
+198-03 and handle6 from 199. Its decision helper qualifies a context guest
+only with clean infrastructure, the expected same-boot screen premise and the
+declared pixel control. The original must keep the separate arm, lose the
+shared arm on the named composition assertion with test exit 101, and report
+at most one recognized diagnostic, in the shared arm. The patched guest must
+preserve both arms with test exit 0 and a clean driver report. 201's own first
+control run failed two orchestration cases and is preserved as failed, records
+`34f867a0`. Both failures came from an expectation, not from the runner: 144's
+serial is a valid PAIR under handle6, because its one Mesa line lies in the
+declared interval. The control-only successor `201-02-controls` re-declared
+those two cases, added two genuinely invalid ones and passed 64 orchestration
+and 168 decision cases (package `b9d84497`, records `55c5339f`). 201 is frozen
+under `e76032e45fda2997eef98f94b2a7b9ebb0f9f60950beb80889732141b911cb1b`
+with READY `405512b9`. The host kernel is declared as 6.18.55_1; the guest
+kernel stays 6.18.54_1, so 202 is not host-identical to 194.
+
+The first launch was refused by its window preflight. A ninja and cc1 build
+in another lane was running, and the runner's busy-process scan refused it;
+no guest started. Those records stay in `202-launch-records-claude`, manifest
+`d92a2a3e`. The successor launcher in `202-preflight-03` differs only in its
+records and package paths (`65474c3d39f9126f0338919c7d2f877beec04a1196c0c55dbfdfd585435ee5b3`).
+Its preflight pins the installed release and refuses a changed live session.
+It ran once under an exact-argv GO from 15:13:52Z to 15:14:48Z, with every
+other lane's builds held. The runner, pins and launcher all exited 0.
+
+| Guest | Screen premise | Pixels | Test exit | Driver report |
+| --- | --- | --- | --- | --- |
+| observer | none | `OBSERVER_PASS` | 0 | none |
+| original | separate and shared `SCREEN_NEW` | separate `PRESERVED`, shared `LOST_AFTER_SIBLING_DROP` | 101 | `ERROR`, one shared diagnostic |
+| patched | separate `SCREEN_NEW` with one miss, shared `SCREEN_SHARED` with one hit | both `PRESERVED` | 0 | `CLEAN` |
+
+Every guest had clean infrastructure, a clean endpoint, unchanged pins and
+sources and no remaining process; all three decisions qualified. At context
+level, then, the unpatched shared arm loses the producer's pixels after its
+sibling is dropped, and the patched screen cache keeps them. This is a
+screen-premise and pixel observation, not a mechanism trace. It establishes
+no Sophia production effect, repair or t306/t307 acceptance.
+
+The series manifest, outside the series in `202-freeze-claude`, is
+`af1d65ee53589266c8932527483e03d1da89faef4219d3f3f92262e406ee33df`
+for 103 files; the private runtime manifest is
+`abcfa6a9d4df344d1781bc2560b5e4cdcae08b39ed303063535e7e1e926a304a`;
+the launch records are
+`146975d90640668bcfb702cb8f75cf71b50417317b101682969d59dc0cbf0af5`.
+The production-workload comparison is the next authorized step.
+
+## Sophia shares one card file description across renderer instances (hypothesis, 2026-10-09 UTC)
+
+Source reading of the recovery candidate finds a Sophia shape that matches
+the failing arm. `RealAtomicScanoutRenderDeviceDiscovery::from_card` keeps
+`card.try_clone_file()`, and `open_render_device` returns `try_clone` of that
+file (`hardware_validation/atomic_scanout_card/render_device.rs`). Both are
+duplicates, so every renderer instance shares the KMS card's open file
+description. Per-head workers are the default; the shared worker needs
+`SOPHIA_ENABLE_SHARED_RENDERER_WORKER=1`. Each head's worker, and each
+exporter's inline context, therefore opens its own GBM and EGL instance on
+one description. GEM handles belong to the file description, so importing one
+DMA-BUF through two instances yields one handle. Under unpatched virgl each
+instance creates a new screen with its own buffer table, as 202's original
+premise shows. When one instance tears down its import, as a lost head's worker
+does, the handle closes for every other instance. That is 144's shared-arm
+hazard, and it would leave retained images black on the remaining heads.
+
+The KMS side is already careful about the same hazard. Compositor-owned
+buffers come from the renderer's own duplicate and are used by handle without
+a PRIME re-import. Only direct client scanout, which is opt-in, imports a
+client buffer and closes its handle during cleanup. Image-import devices are
+duplicated into each worker too, but they are opened only on the transfer path
+after a direct import fails.
+
+This is a hypothesis, not evidence. No trace ties the black frames of 153 or
+earlier series to an instance teardown. The single-head 153 guest has one
+worker, so another instance would have to be shown there, such as an inline
+or capture context; that has not been established. The proposed control gives
+each renderer instance a fresh open of the admitted device, revalidated
+against the admission identity on the card, rather than a duplicate; 144
+showed that a separately opened file preserves the handle. It belongs in the
+production-workload comparison as a third arm on unpatched Mesa, with its own
+CPU controls and review before any guest.
+
 ## t307
 
 The [four-part qualification plan](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md)
