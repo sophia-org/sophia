@@ -526,8 +526,11 @@ scanout buffer into another screen. The audit follow-up does identify
 cross-context imports of sibling-allocated renderer-image snapshots in
 cross-head preview, cold migration and handoff restore. Those are sampling
 buffers, so they strengthen the production hypothesis without demonstrating
-an AddFB-handle failure. The search was not exhaustive. These findings also
-do not explain series 95's single-head black read after a clear.
+an AddFB-handle failure. The search was not exhaustive. Series 95 observed
+black pixels after a clear on head 1, but ran two active heads with two
+renderer workers. It therefore cannot exclude cross-worker interaction on
+the premise that the experiment had only one head. It does not establish
+such an interaction or attribute the black pixels to descriptor ownership.
 No renderer policy or worker default changed on this evidence. A focused
 test through the actual context import/release APIs is being prepared before
 choosing a repair; a structural test that merely forbids shared descriptions
@@ -535,6 +538,11 @@ would assert an unchosen policy.
 
 Evidence: `t306-01/134-drm-descriptor-audit/AUDIT.txt` (`206232c6`).
 The audit names the construction, worker, transfer, AddFB and Mesa callsites.
+The topology correction is retained in
+`t306-01/162-series95-topology-correction/REVIEW.txt`; the original audit and
+series remain unchanged. Both guest logs name two ready heads at lines
+16–17 and separate worker bootstraps at lines 38 and 46. Their final resource
+records report `renderer_workers=2` (boot 1 line 203; boot 2 line 219).
 The complete t306 restore candidate is being qualified separately; neither
 this source audit nor the successful maintenance login closes t307.
 
