@@ -228,6 +228,47 @@ The production restore unit remains unchanged, and no hotplug guest or
 installation follows from this CPU result. Retained-pixel, loss/return,
 lock and attended-device acceptance remain separate.
 
+## Keyboard-return guest exposes a fixture ordering gap (2026-10-09 UTC)
+
+CPU preparation 145 built the signed `6b66c45c7` candidate and image
+`8d7127f0`, checking the three binaries, init, DRI3 probe and generic WM
+against their in-image bytes. Its 37-entry manifest is
+`ca46cb81ac1248dd68c4815bf582f3f4a6764a9db9f4f26357168d9fb156c997`.
+The complete inventory comparison against 140 declares four changed paths
+and five removed diagnostic paths; retained library contents, ownership and
+non-directory hard-link groups match. The fixture source identities are in
+`guest-tools/FIXTURE.txt`.
+
+Package 146 froze the gate's own `xtask` binary. A strict adapter dispatches
+only the one input-return verification command, so the harness cannot build
+or select another checkout's verifier. CPU controls pass 9 adapter cases,
+8 cleanup cases and 45 infrastructure cases. The latter joins the patched
+QEMU's loaded identity, wrapper records and independent kernel exit witness;
+it treats debugger loss as refusal and keeps the test verdict separate.
+
+The one guest attempt, series 147, ran from 04:39:41Z to 04:40:31Z under
+`REVIEW-CODEX-146-GO.txt`. Infrastructure was `INFRA_CLEAN`: QEMU, debugger
+and wrapper exited 0, the guest powered down, and no process remained. The
+frozen verifier refused the run with `keyboard off does not precede K0
+removed`. Harness and direct verifier both exited 1 with the same diagnostic.
+The refused verdict remains unchanged.
+
+Raw records show keycode 38 reaching the client from K0=257, then keycode 56
+from returned K1=262, both with `synthetic=0`. Session's removal of K0 is
+line 230; the fixture's `off sent` marker is line 231. The fixture emits
+that marker after the sysfs unbind returns, while the verifier requires it
+before Session's resulting notification. Rebind has the analogous ordering
+risk. This calls for explicit before-write and successful-completion markers,
+with controls for both notification orders, rather than changing the old
+verdict. The raw routing records alone do not accept this run.
+
+Evidence: `146-hotplug-input-package`, manifest
+`e9c12996815518f6f9a9bdd08ec3fb830022bbb31e49f3ff91523f8a82e8a30c`,
+and read-only `147-qemu-input-return-series`, whose 36-entry manifest is
+`fce040b9b34f0b1c54f31de5fea6b987a2e056c24e0aa13f74626a18538ec41c`.
+The result note is `147-qemu-input-return-result/RESULT.txt`. No replacement
+guest, display-loss, lock, physical KVM or t306 acceptance followed.
+
 ## t306
 
 1. Preserve the incident records. Make the next failure name the responsible

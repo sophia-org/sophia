@@ -634,6 +634,18 @@ manifest is `c6c520cef70867b2d3d4e3c189e04582a1121a256924d6ae050b8c1a70897344`.
 The separate result note is `144-qemu-context-freshness-result/RESULT.txt`.
 The guest log is `9ada2735`, and its frozen classifier output is `dafbd6ab`.
 
+The subsequent source audit reads the guest's exact Linux 6.18.54 driver
+path, using the Void package's recorded source revision and matching module
+bytes. With the fields Mesa sets, an `ENOENT` from the submission path can
+mean either that `virtio_gpu_array_alloc` failed or that
+`drm_gem_object_lookup` found no object for a listed handle on that DRM file.
+The diagnostic alone does not distinguish them. Module disassembly confirms
+that the allocation and lookup calls are out of line and can be observed
+separately. The same audit identifies all handle creation, PRIME reuse and
+deletion paths. Evidence is `148-execbuffer-source-audit/AUDIT.txt`
+(`c23976fc`). This is source and symbol inspection; no trace was run and
+no mechanism or production trigger is attributed by it.
+
 ## t307
 
 1. Trace the successful mixed Present and subsequent retained composition:
