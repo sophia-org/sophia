@@ -51,6 +51,58 @@ state and a return path. Irrecoverable device or ownership faults still need an
 explicit, safe disposition. The operator currently avoids KVM switching as a
 workaround; that is not acceptance of recovery.
 
+## A maintenance release prepared from current master (2026-10-08)
+
+After the descriptor-isolation comparison in series 132, niltempus asked
+to prepare a new live candidate. Signed Sophia `19403a511` starts from
+master `d336f698b` and contains the installed `825d9146` baseline. It
+adds three reviewed repairs from the diagnostic branch: bounded private
+failure-cause reporting (`85bbc869b`), ownership of the descriptor
+libseat returns (`fc7ca1e07`), and release of that device when duplicating
+its descriptor fails (`5f954ef3d`). The port retains master's t309 failure
+recording and t312 seat scoping, including its udev feature dependency.
+
+The larger topology and renderer-image restore changes are excluded.
+The early topology repair discards static content, and its later
+replacement still lacks accepted managed-head and all-return evidence.
+The existing t307 black-frame investigation remains open. This is a
+maintenance candidate, not a claim that monitor loss now recovers.
+
+A new CPU regression exercises the actual ownership adapter through
+libseat's noop backend on `/dev/null`, in a child bounded by ten seconds.
+Across 64 open/close cycles every released descriptor disappears and
+the descriptor count returns to baseline. A disposable leak mutant is
+refused. The parent also requires the named child test to run; a filter
+matching zero tests is refused. Logind's release-before-close ordering
+and the broker's duplicate-failure path retain source-review coverage.
+
+The final full `cargo xtask check` passed on clean `19403a511`, including
+strict lint, layout and retained archive checks, with devices and network
+hidden. An earlier test lint failure is preserved in the evidence; its
+correction and the final gate were independently reviewed with Claude.
+No guest or physical acceptance test ran for this maintenance candidate.
+
+Signed niltempus integration `2f3ed993` changes only the Sophia lock node
+from the installed integration `83c34a4`. The Nix build produced
+`niltempus-087445319affcb9bfc53`; profile and policy validation passed,
+and all 87 release checksums verified. Hagia, narthex, Lom, Bemenu and
+kleis binaries match the installed release byte for byte. The desktop
+profile differs only in its embedded release paths.
+
+The candidate is retained at
+`/nix/store/7pfppl5qxdnf68s6xg33ksx5pgv9mk2q-niltempus-desktop-niltempus-087445319affcb9bfc53`,
+with a GC-root link at `target/live-candidate-release` in the main
+Sophia checkout. It has not been installed or published. At this review
+the current release remains `niltempus-f18fc2ed5aa55e0f6132`; installation
+and an attended new login remain separate from these checks.
+
+Evidence: `t306-01/133-promotion-review` and
+`134-live-maintenance-candidate`, whose 47-entry manifest is
+`79a045f212086df0ddc187d1523b37537a49ff25f838934133cf158ebde403a8`.
+The latter retains the source diffs, signed identities, controls, gates,
+release hashes and exact proposed install/rollback commands. Neither
+t306 nor t307 is accepted by this candidate.
+
 ## t306
 
 1. Preserve the incident records. Make the next failure name the responsible
