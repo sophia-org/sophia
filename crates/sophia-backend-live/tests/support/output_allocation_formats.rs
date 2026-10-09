@@ -122,9 +122,6 @@ fn devices() -> LiveRenderDeviceState {
     state
 }
 
-#[path = "native_head_fixture.rs"]
-mod native_head_fixture;
-
 fn head(id: u32, output: u64, modifier: u64) -> LiveProductionNativeHead {
     native_head_fixture::head(
         id,

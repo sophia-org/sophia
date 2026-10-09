@@ -24,6 +24,8 @@ pub use discovery::{
 
 mod completion_wait;
 mod head_completion;
+#[path = "../../../tests/support/native_head_fixture.rs"]
+mod native_head_fixture;
 pub use completion_wait::LiveNativeCompletionWait;
 mod composition_admission;
 mod composition_installation;

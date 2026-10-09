@@ -7,11 +7,8 @@ use sophia_renderer_live::{
     LiveRendererSelectionObservation,
 };
 
-#[path = "native_head_fixture.rs"]
-mod fixture;
-
 fn head(id: u32) -> LiveProductionNativeHead {
-    fixture::head(
+    native_head_fixture::head(
         id,
         1,
         crate::LibdrmNativePlaneFormatCapabilities::parse(id + 200, 0, &[]),
