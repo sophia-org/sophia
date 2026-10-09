@@ -976,6 +976,36 @@ The frozen manifest is
 `READY-193.txt` `97c0c71d`. Series 194 and its runtime root were absent at
 freeze. This package contains no guest GO or new runtime result.
 
+Series 194 subsequently ran once under receipt `bc892c7d`, from 10:22:53Z
+to 10:23:57Z. All three guests were `P_CLEAN`, with clean endpoints, no
+remaining processes and unchanged pins and sources. The observer passed.
+The original's screen premise was established: both arms `SCREEN_NEW`.
+Its pixel verdict remains `INVALID` because the shared arm emitted the
+known Mesa diagnostic; test exit was 101. The patched guest preserved both
+arms' pixels and exited 0, but its screen premise was `INCOMPLETE`.
+
+The patched capture contains the expected sibling-loader lookup miss in
+the separate arm and hit in the shared arm. It also contains comparisons
+whose first descriptor belongs to the sibling winsys. Cache insertion and
+removal can invoke that same equality callback; 192's contract modelled
+only lookup and therefore refuses those comparisons. The trace has no
+stack, so this source correspondence is not function attribution. The
+patched premise remains refused, and the original `INVALID` also prevents
+an accepted pixel-pair conclusion.
+
+Independent review `196-mesa-signature-result-review` replayed all eleven
+frozen classifications and decisions under device-hidden isolation at
+10:42:49Z–10:42:55Z, exit 0. Outputs and statuses match byte for byte; the
+103 raw files verify unchanged before and after. Its manifest is
+`39e6ee33dbfaa8512e9f52d8aaaa6f1f0dd2d43dd27e2ed96b2a938304733fe6`.
+The raw manifest, outside the series in `194-freeze-claude`, is
+`0b752fe4b32257c3f05718d83cd4c8caaf81dabcd25a5191f4e381e6ca4fd4c4`.
+Niltempus approved a successor that resolves both the cache-lifecycle
+contract and separately reported driver diagnostics before another paired
+run. Neither correction changes 194 or establishes the original Sophia
+workload's cause. Production-workload and hotplug qualification remain
+separate requirements.
+
 ## Real-context control and a freshness-oracle gap (2026-10-09 UTC)
 
 Series 141 ran the reviewed observer and context recipe once, from 03:38:28Z

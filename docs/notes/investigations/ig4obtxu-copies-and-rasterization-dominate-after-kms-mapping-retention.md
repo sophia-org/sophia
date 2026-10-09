@@ -131,6 +131,25 @@ runtime continuity repair is t306; neither these profile edits nor a passing
 startup check close it. Full concurrent development sessions also still need
 separate card and seat/VT ownership.
 
+Card admission must be specified separately from output policy. Excluding a
+connector from the layout does not prevent Session from opening its DRM card
+or render node. The iGPU passthrough preparation exposed this distinction:
+the live Session retained card1 and renderD129 while HDMI-A-2 was excluded.
+Today admission follows udev's seat assignment; a missing `ID_SEAT` means
+seat0 only for an initialized record.
+
+Decide whether the profile exposes a card exclusion or allowlist whose
+meaning is "do not open this card". Use stable PCI/udev identity, such as
+`pci-0000:16:00.0`, rather than `cardN`. An absent excluded card must not
+prevent login. Profile selection may only narrow the cards assigned to the
+session's seat; it must not grant access to another seat. Specify the same
+boundary for render-node discovery and shell GPU selection so neither can
+reopen an excluded card. Controls must cover changed card numbering, absent
+exclusions, foreign-seat cards and a shell render-node request that conflicts
+with admission. This remains t310 design work, not a promotion or a device
+ownership change. The separate udev seat rule used for iGPU preparation does
+not establish profile-level card selection.
+
 ## Native cache comparison reached the workload (2026-10-07)
 
 Fixture03's explicit local-session lookup worked. The candidate smoke and
