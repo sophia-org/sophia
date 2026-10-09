@@ -482,6 +482,7 @@ fn run_session_loop_inner(
     )?;
     let mut physical_output_topology_replaced = false;
     let mut output_topology_retry_at: Option<Instant> = None;
+    let mut output_topology_retry_attempts = 0usize;
     let mut deferred_output_topology_notice: Option<
         sophia_backend_live::LiveDrmTopologyRescanNotice,
     > = None;

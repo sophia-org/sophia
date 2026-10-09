@@ -14,7 +14,11 @@ use sophia_config::{
 use std::error::Error;
 use std::io;
 
+mod runtime;
 mod startup;
+pub(super) use runtime::{
+    RuntimeOutputReplacement, resolve_runtime_output_replacement, runtime_output_retry_delay,
+};
 pub(super) use startup::wait_for_startup_output;
 
 pub(super) enum OutputReplacementDecision {

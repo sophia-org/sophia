@@ -61,6 +61,8 @@
     if let Some(notice) = monitor_notice {
         let advance_security_epoch = output_topology_owner.begin_rescan(notice.sequence)?;
         output_topology_retry_at = None;
+        // A new notice starts a new bounded rescan series.
+        output_topology_retry_attempts = 0;
         if advance_security_epoch {
             let revoked_input_leases = advance_application_input_security_epoch(
                 &mut application_route_leases,
@@ -91,10 +93,19 @@
         && hotplug_quarantined
         && seat_state == sophia_backend_live::LiveSeatState::Active
         && runtime.is_some();
-    if (hotplug_quarantined || output_topology_owner.take_deferred_hotplug_notice())
+    // A deferred notice starts a new series. Once a series is spent, only a
+    // new notice or seat enable rescans: a quarantined owner is never polled
+    // on a timer.
+    let deferred_notice =
+        !hotplug_quarantined && output_topology_owner.take_deferred_hotplug_notice();
+    if deferred_notice {
+        output_topology_retry_attempts = 0;
+    }
+    if (hotplug_quarantined || deferred_notice)
         && output_topology_retry_at.is_none()
+        && let Some(delay) = output_replacement::runtime_output_retry_delay(output_topology_retry_attempts)
     {
-        output_topology_retry_at = Some(Instant::now() + Duration::from_millis(250));
+        output_topology_retry_at = Some(Instant::now() + delay);
     }
     if rebuild_requested {
         output_topology_retry_at = None;
@@ -134,31 +145,59 @@
 
         if !native_recovery_allowed!() { continue; }
         native_owner_retirement::finish_before_replacement(runtime.as_ref(), native_retirement)?;
+        // Policy resolves against admitted probes only; the suspended images
+        // and the hotplug quarantine stay as they are until a replacement is
+        // constructed, and waiting or a refusal is unavailability, never a
+        // session failure.
         let replacement = match seat_controller.as_ref() {
-            Some(controller) => {
-                LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
-                    &controller.device_opener(),
-                    mirror_grouping,
-                    initial_head_mapping,
-                    config.cursor_resolution.asset.clone(),
-                )
-                .map_err(|error| error.to_string())
-            }
-            None => Err("DRM topology rescan lost its seat controller".to_owned()),
+            Some(controller) => output_replacement::resolve_runtime_output_replacement(
+                controller,
+                config.output_profile.current(),
+                output_realization.committed(),
+                initial_head_mapping,
+                &config.cursor_resolution.asset,
+            ),
+            None => output_replacement::RuntimeOutputReplacement::Refused(
+                "DRM topology rescan lost its seat controller".to_owned(),
+            ),
         };
         match replacement {
-            Err(error) => {
+            output_replacement::RuntimeOutputReplacement::Waiting
+            | output_replacement::RuntimeOutputReplacement::Refused(_) => {
                 let _ = output_topology_owner.observe_rebuild(Vec::new(), Vec::new())?;
-                output_topology_retry_at = Some(Instant::now() + Duration::from_millis(250));
-                tracing::warn!(
-                    "sophia_live_output_topology schema=1 status=unavailable transition={} retry_msec=250 error={error}",
-                    output_topology_owner.transition,
-                );
+                let attempt = output_topology_retry_attempts;
+                let retry = output_replacement::runtime_output_retry_delay(attempt);
+                output_topology_retry_attempts = attempt.saturating_add(1);
+                output_topology_retry_at = retry.map(|delay| Instant::now() + delay);
+                let retry_msec = retry.map_or("none".to_owned(), |delay| delay.as_millis().to_string());
+                match replacement {
+                    output_replacement::RuntimeOutputReplacement::Refused(error) => tracing::warn!(
+                        "sophia_live_output_topology schema=1 status=unavailable transition={} attempt={} retry_msec={retry_msec} error={error}",
+                        output_topology_owner.transition,
+                        attempt + 1,
+                    ),
+                    _ => tracing::info!(
+                        "sophia_live_output_topology schema=1 status=waiting transition={} attempt={} retry_msec={retry_msec}",
+                        output_topology_owner.transition,
+                        attempt + 1,
+                    ),
+                }
             }
-            Ok(replacement) => {
-                *native_scanout = Some(replacement);
+            output_replacement::RuntimeOutputReplacement::Active(replacement, realization) => {
+                output_topology_retry_attempts = 0;
+                *native_scanout = Some(*replacement);
                 native_retirement.admit(native_scanout.as_ref().expect("just adopted"))?;
                 let replacement = native_scanout.as_mut().expect("just adopted");
+                // Staged for the realization owner before anything downstream
+                // publishes; the owner decides commit and abandonment.
+                output_realization.stage(
+                    output_realization::OutputRealizationBinding {
+                        transition: output_topology_owner.transition,
+                        notice_sequence: output_topology_owner.notice_sequence,
+                        native_owner: replacement.retirement_owner_identity(),
+                    },
+                    *realization,
+                )?;
                 let replacement_outputs = replacement.outputs();
                 let rebuild = output_topology_owner
                     .observe_rebuild(replacement_outputs.clone(), replacement.head_fingerprint())?;
