@@ -639,6 +639,23 @@ abandon bound to stop, so a recoverable late join would still end the session
 here. That is a custody limitation, separate from activation or policy
 refusal; the wait is revisited only if qualification shows such a late join.
 
+## Closure no longer waits on t307 (2026-10-09 UTC)
+
+Virgl's screen-cache hazard ([t307](r2m9cx6v-static-retained-dma-buf-images-can-sample-black-before-hotplug.md#t307))
+makes the guest's retained-image pixels unreliable, and part 2's production
+comparison stopped before a verdict. The approved split, recorded in the
+[plan](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md),
+lets this task close on its own evidence. Its guest runs boot the patched Mesa
+image as a declared intervention, once the patched-only diagnostic 213 has
+shown both of its boots `RETAINED`; each run keeps its own pixel, input,
+endpoint and lock proof. The frozen candidate's harness and verifier already
+carry three of the five runs: managed-head return (`one-return`), all-head
+return (`all-return`) and keyboard return (`input-return`). Combined
+loss/return and locked all-return have no mode yet; their fixture changes need
+a gated source and a new image. The task still ends with the attended KVM
+check on the exact gated release, on the operator's AMD card with stock Mesa,
+whose driver and Mesa identity are recorded.
+
 ## t306
 
 The [four-part qualification plan](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md)

@@ -137,6 +137,27 @@ records the run and a labelled readout outside acceptance. The next package,
 `PATCHED_WORKLOAD_RETAINED` only when both boots qualify `RETAINED`, and it does
 not complete 211 or stand as part 2's comparison.
 
+t306 closure no longer waits on t307. Niltempus approved the split and root
+confirmed it with these terms. The part 4 qualification runs boot the 211b
+patched Mesa image as a declared guest intervention, supported by the context
+result; that result does not show the production artifact removed, and the
+runs claim no t307 repair. Before any t306 guest depends on it, 213 must
+report `PATCHED_WORKLOAD_RETAINED`, both boots qualified `RETAINED`; `LOST`,
+`INSUFFICIENT`, `INCOMPLETE` or a startup or infrastructure refusal stops the
+work for a report. That qualifies the test environment only. Each of the five
+runs still needs its own pixel, input-routing, endpoint and lock evidence;
+neither CPU controls nor 213 substitute for a return test, and readiness is
+not relaxed. Where the combined or locked all-return run needs guest init or
+fixture changes, the changed source is frozen and gated and a new image is
+derived from it, not described as 211b's; host-only verifier changes may be
+pinned separately. The installed release keeps stock host Mesa. Physical KVM
+acceptance runs on the exact gated release and records the actual AMD driver
+and Mesa identity. Radeonsi is not shown to be immune; a matching physical
+failure reopens the dependency. t307 continues on its own, with a review of
+whether the amdgpu and radeonsi winsys share the hazard, and any fresh-open
+implementation needs its own API, PRIME and custody review and comparison.
+The stopped 211 boot is not an accepted negative control.
+
 ## Resume interrupted by normal-login failure (2026-10-09)
 
 After reboot, niltempus reported that moving the main monitor from DP-1 to

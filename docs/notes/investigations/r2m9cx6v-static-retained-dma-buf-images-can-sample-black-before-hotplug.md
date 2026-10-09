@@ -1519,11 +1519,20 @@ The underlying investigation obligations remain:
 4. Repair the demonstrated lifetime or synchronization defect and require
    a regression that fails without the repair. Retain snapshot immutability,
    source release, bounded storage and per-output ownership guarantees.
+5. Review whether the amdgpu and radeonsi winsys share the hazard of one
+   file description across renderer instances. The installed desktop runs
+   radeonsi with stock Mesa; its immunity is not shown.
 
 The task is high priority because pixels can disappear without a new client
 frame, and this currently obscures hotplug qualification. t306 need not
 absorb its root-cause repair, but failed or unstable runs are not acceptance
 of the still-unproved managed-head loss and all-return cases.
+
+t306 no longer waits on this task. Under the approved split its guest runs
+boot the patched Mesa image as a declared intervention, after 213 qualifies
+that environment; this task keeps the production result, the radeonsi review
+and any fresh-open change, which needs its own API, PRIME and custody review
+and comparison.
 
 Task state and execution order live in [todo.md](../../../todo.md).
 
