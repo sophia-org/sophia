@@ -21,7 +21,13 @@ native_owner_retirement::finish_before_replacement(runtime.as_ref(), native_reti
 // constructed and resumed by the topology phase, as every rebuild is; the
 // retained handoff waits for it there. Readiness completes when that
 // replacement presents.
-schedule_output_topology_rebuild!("startup_recovery", false);
+schedule_output_topology_rebuild!(@same_budget "startup_recovery", false);
+// A failed first presentation spends the same allowance as a refused TEST or
+// replacement apply; scheduling a synthetic notice cannot grant another try.
+if !output_recovery.refused(config.output_profile.current()) {
+    output_topology_retry_at = None;
+}
+output_recovery.record_exhausted("startup", config.output_profile.current());
 startup_topology_recovery_pending = true;
 let _ = reduce_session_startup(&mut startup_readiness, SessionStartupEvent::NativeRecovered);
 crate::session_println!(

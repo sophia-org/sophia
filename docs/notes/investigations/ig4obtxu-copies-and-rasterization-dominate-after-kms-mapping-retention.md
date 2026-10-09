@@ -207,6 +207,35 @@ Device-free evidence is under `t310-runtime-20261009/reload-01`: Session library
 reviewed the reload boundary and the phase invariant. Bounded conservative
 hardware recovery, the combined gate and attended acceptance remain open.
 
+#### Bounded hardware recovery integration (2026-10-09)
+
+The next slice carries one adaptive recovery allowance across TEST_ONLY,
+construction, the first real startup render and runtime replacement resume.
+The conservative attempt keeps one admitted logical group with its complete
+mirrors and affinity, uses an advertised timing nearest 60 Hz, unit scale,
+normal transform and VRR off, and leaves saved preferences untouched. A second
+refusal waits for another topology, seat or profile event; availability timers
+cannot reset the allowance. Durable `status=waiting reason=hardware attempt=2`
+distinguishes the exhausted adaptive attempt from ordinary missing-output wait.
+
+Claude's signed `de806765e` returns a failed replacement to suspension while
+preserving the caller's original retained-image handoff and lock cover. Session
+retires that exact owner before another attempt. The published topology is
+adopted only after resume succeeds; failed preparation restores the scene's
+published descriptors. An undispatched startup output transaction is settled
+as stale before its native owner disappears, so old head identities cannot
+block the replacement. Dispatched transactions keep their rollback contract.
+Waiting without a native owner no longer requests a permanent 1 ms service
+loop; ordinary control and monitor maintenance continues.
+
+Focused evidence is in `t310-runtime-20261009/recovery-01`, including advertised
+mode and key controls, whole mirror groups, bounded attempts, partial resume
+abandonment, lock proof on the next owner, startup ordering and cancellation.
+The combined gate and physical acceptance still follow. A failed ownership
+disposition or worker retirement beyond the existing two-second bound remains
+a terminal custody failure; this slice does not claim recovery from a wedged
+GPU or relax retirement ownership checks.
+
 #### Port change after reboot (2026-10-09)
 
 niltempus moved the main monitor between ports on the discrete AMD card before

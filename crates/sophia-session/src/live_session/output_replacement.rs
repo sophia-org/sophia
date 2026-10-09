@@ -14,9 +14,11 @@ use sophia_config::{
 use std::error::Error;
 use std::io;
 
+mod recovery;
 mod reload;
 mod runtime;
 mod startup;
+pub(super) use recovery::OutputRecovery;
 pub(super) use reload::{ReloadOutputReplacement, prepare_output_reload};
 pub(super) use runtime::{
     RuntimeOutputReplacement, resolve_runtime_output_replacement, runtime_output_retry_delay,
@@ -37,10 +39,19 @@ pub(super) fn resolve_output_replacement(
     discovery: LiveNativeOutputDiscovery,
     profile: &DesktopOutputCandidate,
     previous: Option<&DesktopOutputReconciliation>,
+    recovery: OutputRecovery,
 ) -> Result<OutputReplacementDecision, Box<dyn Error>> {
+    if recovery == OutputRecovery::Exhausted {
+        return Ok(OutputReplacementDecision::Waiting);
+    }
     let resolution = resolve_probe_policy(discovery.connectors(), profile, previous)?;
     let DesktopOutputResolution::Active(realization) = resolution else {
         return Ok(OutputReplacementDecision::Waiting);
+    };
+    let realization = if recovery == OutputRecovery::Conservative {
+        recovery::conservative_realization(discovery.connectors(), profile, realization)?
+    } else {
+        realization
     };
     let requests = resolved_requests(discovery.connectors(), &realization)?;
     let native = discovery.resolve(requests)?;
