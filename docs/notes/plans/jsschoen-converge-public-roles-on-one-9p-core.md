@@ -73,12 +73,29 @@ kind, clipboard text, is proven end to end through both recipient paths.
 Rebuild the `sophia-9p-authority` scaffold as an export on the core. Delete
 its decode and encode modules, which duplicate `crates/sophia-9p/src/wire.rs`,
 remove the FUSE service claim from its crate header, and make it attach
-through the `Export` trait with an admission-derived root. Exit: the crate
+through the `Export` trait with an admission-derived root, targeting the
+protocol authority contract named under t321. Exit: the crate
 builds with no protocol codec of its own; its tree is served by the core in a
 device-free test; the
 [application frontend design](../../sophia-9p-authority.md) drops the FUSE
 and separate-codec text; no application API, content format or input
 contract is added.
+
+## t321
+
+Name the protocol authority contract once. The records the session exchanges
+with the X authority today are the contract under X names: observed
+transaction batches and CPU buffer updates, allocation preferences and
+metadata candidates, routed input with its origin, output update and
+presentation outcomes, pointer grab anchors and responses, dma-buf import
+formats, service commands and the injection policy. Move and rename them into
+`sophia-protocol` as protocol-neutral records, make the X authority their
+first implementor with no behavior change, and make the rebuilt application
+authority under t316 target them. Exit: the session's run loop names no
+X-specific type for any of these exchanges; every existing X gate passes
+unchanged, including the all-profile gate; the application frontend document
+describes the contract as the single seam into Engine; no trait is added and
+no third-party path is opened in process.
 
 ## t317
 
@@ -95,9 +112,10 @@ is reconciled with the result. Depends on t133.
 
 ## t318
 
-Implement the namespace recipe and composition layer that derives each
-connection's tree from its admission context and role grants, following the
-design t275 produces from the
+Implement the namespace recipe and composition layer: a per-identity socket
+directory with a discovery file, derived from the admission context and role
+grants, with role trees staying one per endpoint and binds landing in the
+granting role's tree, following the design t275 produces from the
 [namespace investigation](../investigations/kcfh2hdg-adopting-the-plan-9-namespace-model-in-sophia.md).
 The recipe is declarative and sealed at attach; clients cannot rebind their
 own view. Exit: two private clients with overlapping names see different

@@ -281,6 +281,63 @@ Two Plan 9 parts are not imported. The draw protocol would only wrap a command
 stream around composition that Engine already owns. The Plan 9 process model
 is already matched by Rust threads and the owner loop.
 
+## Protocol authorities and the primary native path
+
+The 9P core is a transport. What hooks into Engine is a protocol authority,
+and there should be exactly one way to be one. The X authority never imports
+Engine; it emits the value vocabulary in `sophia-protocol`, and the 9P
+application scaffold already targets the same vocabulary. What is missing is
+the name: the session's run loop takes ten X-named types from the X authority,
+observed transaction batches and CPU buffer updates on the way in, allocation
+preferences and metadata candidates as proposals, routed input origin and
+output update outcomes on the way out, pointer grab anchors and responses,
+dma-buf import formats, service commands and the injection policy. None is
+X-specific in meaning. Naming them once as the protocol authority contract,
+with the X authority as first implementor and no behavior change, turns the X
+wiring into one instance of a seam rather than the seam itself.
+
+```text
+  X11 clients          9P clients: WM · shells · output · lock ·        third-party protocol
+                       admin · broker · portal · applications · agents   clients (any protocol)
+       │                               │                                        │
+       ▼                               ▼                                        ▼
+  X authority                 ONE 9P CORE: one export per role           translator process:
+  in-process crate            9P2000.L and plain 9P2000                  a 9P client of the
+                              application authority = an export          application authority
+       │                               │                                        │
+       └───────────────────────────────┴────────────────────────────────────────┘
+                                       │
+                 PROTOCOL AUTHORITY CONTRACT (records in sophia-protocol)
+                 ingress: admitted surface transactions, proposals, metadata candidates
+                 egress:  routed input with origin, outcomes, topology, revocation
+                                       ▼
+                   session owners: admission · routing · policy  ──▶  ENGINE  ──▶  DRM/KMS
+
+   identity proven at attach · one socket directory per identity with a discovery file
+   binds land in the granting role's tree · descriptors on a side channel per role
+   OS touched only by backend, renderer, adapters and the containment driver
+```
+
+Composition across roles happens where Plan 9 did it, in the client's
+namespace, not in a server. Six role servers on six endpoints stay as they
+are; the recipe decides which endpoints an identity's socket directory holds
+and writes a discovery file; binds land in the granting role's tree. A
+composing root that forwards into other owners' exports would collapse the
+per-role reach boundary and is deferred until measured.
+
+Three ways to hook in follow. Sophia's own authorities, X and the 9P
+application authority, implement the contract in process, hosted like the
+role exports with an owner, a thread, bounded queues and a wake. Third
+parties hook in out of process as a 9P client of the application authority,
+the model in which a translator is itself a client, which is why that
+authority's files must carry a translator's many clients as sub-identities
+with their own namespace contexts. An in-process trait over the contract is a
+later option only if a measured need appears. niltempus recorded on
+2026-10-09 that 9P on this core is the primary way to build native window
+managers, shells, services and applications for Engine, that a Wayland
+authority is not planned, and that other developers remain free to add a
+protocol authority of their choice through the translator path.
+
 ## Guardrails against sprawl
 
 There is one 9P core and everything else is an export on it. The application

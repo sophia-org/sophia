@@ -52,7 +52,8 @@ replies carry Sophia's own error vocabulary mapped per dialect, never the host
 operating system's errno values, because 9P2000.L defines its codes as Linux
 numbers regardless of host.
 
-A namespace is the tree a connection sees at attach. The immutable
+A namespace is what a connection can reach: the role endpoints in its socket
+directory and, on each endpoint, the tree its attach yields. The immutable
 `ClientAdmissionContext` remains the single identity value for every
 connection. The tree is derived from that context and the role grants by a
 declarative recipe, and it is never stored or mutated by the client. The
@@ -78,6 +79,31 @@ X recipient receives a translation into X semantics by the X authority. A
 descriptor-bearing kind carries a record on the file and the descriptor on
 that role's side channel, never on the 9P stream. Capture is the first bind,
 output-only, refused while the session is locked.
+
+Composition is a per-identity socket directory. The recipe decides which
+role endpoints exist in an identity's directory and writes one discovery file
+listing them with their versions. Role trees stay one per endpoint, each
+checked by its owner, and a portal bind lands in the tree of the role that
+granted it. A single composing root that forwards into other owners' exports
+is not built; it remains a later option if a measured need appears. This keeps
+the reach rule of the transport investigation: endpoint reach, attach names,
+fids and qids alone grant nothing.
+
+Protocol authorities hook into Engine through one contract. The records the
+session exchanges with the X authority today, admitted surface transactions,
+buffer updates, allocation and metadata proposals, routed input with its
+origin, configure, allocation and presentation outcomes, topology snapshots,
+service commands and the injection policy, are named once in
+`sophia-protocol` as the protocol authority contract. The X authority is its
+first implementor with no behavior change, and the application authority its
+second. Sophia's native path for window managers, shells, services and
+applications is 9P on this core, and Sophia ships no other application
+protocol authority; niltempus recorded on 2026-10-09 that a Wayland authority
+is not planned. Other developers may add a protocol authority of their choice
+out of process, as a 9P client of the application authority that carries its
+own clients as sub-identities, each with an immutable namespace context. An
+in-process implementation of the contract is possible but is not an extension
+path Sophia maintains for third parties.
 
 Only the live backend, the renderer, the narrow adapter crates and the
 containment driver touch the operating system. The session selects a backend
@@ -105,16 +131,24 @@ their provenance. The contract is designed under t320 before the application
 authority gains an API.
 
 ```text
-   X11 apps ──X11──▶ X authority ──┐
-   9P apps  ──9P───▶ app authority ─┤  an export; no own codec, no FUSE
-   WM · shell · output · lock       │
-   admin · broker · portal          ├──▶ ONE 9P CORE ──▶ ENGINE ──▶ DRM/KMS
-   inspection · factotum · capture  │       9P2000.L and plain 9P2000
-   ──────────────9P files───────────┘
-                     ▲
-   identity proven at attach: afid + factotum + launch custody
-   one tree per identity from a recipe; portals and delegation are binds
-   descriptors on a side channel per role, named by a record on the file
+  X11 clients          9P clients: WM · shells · output · lock ·        third-party protocol
+                       admin · broker · portal · applications · agents   clients (any protocol)
+       │                               │                                        │
+       ▼                               ▼                                        ▼
+  X authority                 ONE 9P CORE: one export per role           translator process:
+  in-process crate            9P2000.L and plain 9P2000                  a 9P client of the
+                              application authority = an export          application authority
+       │                               │                                        │
+       └───────────────────────────────┴────────────────────────────────────────┘
+                                       │
+                 PROTOCOL AUTHORITY CONTRACT (records in sophia-protocol)
+                 ingress: admitted surface transactions, proposals, metadata candidates
+                 egress:  routed input with origin, outcomes, topology, revocation
+                                       ▼
+                   session owners: admission · routing · policy  ──▶  ENGINE  ──▶  DRM/KMS
+
+   identity proven at attach · one socket directory per identity with a discovery file
+   binds land in the granting role's tree · descriptors on a side channel per role
    OS touched only by backend, renderer, adapters and the containment driver
 ```
 
@@ -199,7 +233,8 @@ tasks in [todo.md](../../../todo.md), with the new rows owned by the
 t250 and t252 qualify the live 9P roles; t254 migrates administration; t314
 and t315 serve the [broker](../../sophia-broker-files.md) and
 [portal](../../sophia-portal-files.md) files whose contracts t273 designed;
-t316 rebuilds the application authority scaffold as an export; t255 retires
+t321 names the protocol authority contract and t316 rebuilds the
+application authority scaffold as an export against it; t255 retires
 the legacy envelope and its default selections; t133 and t256 cover the
 admission review and the portability audit, and t317 proves identity at
 attach; t142 and t275 cover group listeners and the recipe, and t318
