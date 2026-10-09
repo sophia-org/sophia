@@ -114,6 +114,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if is_run && result.is_err() {
         session_stderr("sophia_session_result schema=1 status=failed");
     }
+    // The records never carry a failure's text, and an installed session's
+    // stderr goes nowhere, so the cause is kept beside them.
+    if let (Some(capture), Err(error)) = (capture.as_ref(), result.as_ref()) {
+        let _ = capture.record_failure_cause(&error.to_string());
+    }
     drop(application_capture);
     drop(capture);
     if let Some((store, id)) = owned {

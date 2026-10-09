@@ -38,7 +38,16 @@ struct IdentityJob(Stamp, &'static str, u64, Option<File>);
 pub struct Capture {
     stop: Arc<AtomicBool>,
     finished: mpsc::Receiver<()>,
+    /// The run's directory, for its failure cause.
+    run: Directory,
 }
+
+/// A failed run's cause, kept beside its records. The text is the run's own
+/// error, which the records never carry; like application output it is
+/// private, and `keep` leaves it out unless asked.
+pub const FAILURE_CAUSE: &str = "failure-cause";
+/// The most of a failure's text kept, before escaping.
+const FAILURE_CAUSE_LIMIT: usize = 1024;
 
 pub fn recording() -> bool {
     SINK.get().is_some()
@@ -137,6 +146,7 @@ impl Capture {
             return Err(io::Error::other("session capture already installed"));
         }
         let directory = Directory::open(path, false)?;
+        let run = Directory::open(path, false)?;
         let discarded = Arc::new(AtomicU64::new(0));
         let stop = Arc::new(AtomicBool::new(false));
         let (sender, receiver) = mpsc::sync_channel(QUEUE_CAPACITY);
@@ -247,7 +257,27 @@ impl Capture {
                 }
                 let _ = finished_tx.send(());
             })?;
-        Ok(Self { stop, finished })
+        Ok(Self {
+            stop,
+            finished,
+            run,
+        })
+    }
+
+    /// Keeps `cause`, the run's error, as its failure cause: at most
+    /// FAILURE_CAUSE_LIMIT bytes, control and non-ASCII bytes escaped, a
+    /// cut marked. A failure needs its text to be diagnosed, and the session
+    /// records deliberately hold none.
+    pub fn record_failure_cause(&self, cause: &str) -> io::Result<()> {
+        let bytes = cause.as_bytes();
+        let kept = &bytes[..bytes.len().min(FAILURE_CAUSE_LIMIT)];
+        let mut text = super::application::escape_bytes(kept);
+        if kept.len() < bytes.len() {
+            text.push_str(" [cut]");
+        }
+        text.push('\n');
+        let _lock = self.run.lock()?;
+        self.run.replace(FAILURE_CAUSE, &text)
     }
 }
 

@@ -1,0 +1,15 @@
+[package]
+name = "sophia-seat-device"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+libseat = { version = "0.2.4", default-features = false }
+
+[lints.rust]
+# This crate is the narrow ownership adapter for libseat's device descriptors.
+# Sophia's backend and policy crates continue to forbid unsafe code.
+unsafe_code = "allow"

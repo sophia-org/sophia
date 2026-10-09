@@ -1351,6 +1351,7 @@ dependencies = [
  "sophia-protocol",
  "sophia-renderer-live",
  "sophia-runtime",
+ "sophia-seat-device",
  "sophia-wake",
  "sophia-xshmfence",
  "tracing",
@@ -1545,6 +1546,13 @@ dependencies = [
  "sophia-wake",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "sophia-seat-device"
+version = "0.1.0"
+dependencies = [
+ "libseat",
 ]
 
 [[package]]

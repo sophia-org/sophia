@@ -370,14 +370,15 @@ trait SeatBrokerBackend {
 
 struct LibseatBroker {
     seat: libseat::Seat,
-    devices: BTreeMap<u64, libseat::Device>,
+    /// Each device with the descriptor libseat handed out, closed with it.
+    devices: BTreeMap<u64, sophia_seat_device::SeatDevice>,
     next_token: u64,
 }
 
 impl LibseatBroker {
     fn close_all(&mut self) {
         for (_, device) in std::mem::take(&mut self.devices) {
-            let _ = self.seat.close_device(device);
+            let _ = device.close(&mut self.seat);
         }
     }
 }
@@ -399,23 +400,27 @@ impl SeatBrokerBackend for LibseatBroker {
     fn execute(&mut self, command: LiveSeatCommand) {
         match command {
             LiveSeatCommand::Open(path, reply) => {
-                let result = self
-                    .seat
-                    .open_device(&path)
+                let result = sophia_seat_device::SeatDevice::open(&mut self.seat, &path)
                     .map_err(|error| format!("libseat open {} failed: {error}", path.display()))
-                    .and_then(|device| {
-                        let fd = duplicate_cloexec(&device)
-                            .map_err(|error| format!("libseat device dup failed: {error}"))?;
-                        let token = self.next_token;
-                        self.next_token = self.next_token.saturating_add(1);
-                        self.devices.insert(token, device);
-                        Ok((token, fd))
+                    .and_then(|device| match duplicate_cloexec(&device) {
+                        Ok(fd) => {
+                            let token = self.next_token;
+                            self.next_token = self.next_token.saturating_add(1);
+                            self.devices.insert(token, device);
+                            Ok((token, fd))
+                        }
+                        Err(error) => {
+                            // Release the device on its seat as well as its
+                            // descriptor; dropping it would do only the latter.
+                            let _ = device.close(&mut self.seat);
+                            Err(format!("libseat device dup failed: {error}"))
+                        }
                     });
                 let _ = reply.send(result);
             }
             LiveSeatCommand::Close(token) => {
                 if let Some(device) = self.devices.remove(&token) {
-                    let _ = self.seat.close_device(device);
+                    let _ = device.close(&mut self.seat);
                 }
             }
             LiveSeatCommand::Switch(terminal, reply) => {

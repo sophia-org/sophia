@@ -452,6 +452,20 @@ impl Store {
         self.keep_with_application_stderr(selector, false)
     }
 
+    /// The failure cause a failed run kept, if any: its own error text,
+    /// bounded and escaped (Capture::record_failure_cause).
+    pub fn failure_cause(&self, selector: &str) -> io::Result<Option<String>> {
+        let _lock = self.root.lock()?;
+        let record = self.select_unlocked(Some(selector))?;
+        let run = self.root.child(&record.id, false)?;
+        let _run_lock = run.lock()?;
+        match run.read(super::FAILURE_CAUSE, METADATA_LIMIT) {
+            Ok(cause) => Ok(Some(cause)),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
     pub fn application_records(
         &self,
         selector: &str,
@@ -479,9 +493,11 @@ impl Store {
         let mut checksums = String::new();
         for entry in fs::read_dir(&run.path)? {
             let name = entry?.file_name().to_string_lossy().into_owned();
+            // Application output and the failure cause are free text:
+            // private unless the caller asks for them.
             if name == "lock"
                 || name.ends_with(".new")
-                || (!include && name.starts_with("application-"))
+                || (!include && (name.starts_with("application-") || name == super::FAILURE_CAUSE))
             {
                 continue;
             }

@@ -286,6 +286,14 @@ const INVARIANT_CODES: &[(&str, &str)] = &[
         "renderer-image handoff is unexpectedly missing",
         "handoff_missing",
     ),
+    (
+        "renderer-image handoff head coverage changed during replacement",
+        "handoff_head_coverage_changed",
+    ),
+    (
+        "renderer-image handoff names an unavailable connector",
+        "handoff_connector_unavailable",
+    ),
 ];
 
 pub fn failure_code(error: &(dyn std::error::Error + 'static)) -> &'static str {

@@ -20,8 +20,8 @@ mod x_lifecycle;
 pub use supervise::supervise;
 
 pub use capture::{
-    Capture, DIAGNOSTIC_RECORD_MAX_BYTES, capture_line, capture_process_identity, recording,
-    reduced_record,
+    Capture, DIAGNOSTIC_RECORD_MAX_BYTES, FAILURE_CAUSE, capture_line, capture_process_identity,
+    recording, reduced_record,
 };
 pub use commands::{Inspection, Marker, Retention, SessionRecord, Store};
 pub use failure::failure_code;
