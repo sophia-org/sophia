@@ -25,6 +25,10 @@ struct Run {
     first_shift_s: f64,
     /// Seconds from the Present's retirement to each head's first frame.
     initial_s: f64,
+    /// Seconds between the frames of successive shifts.
+    period_s: f64,
+    /// The pixels of each head's first frame when not the client's frame.
+    initial_region: Option<(u64, u64)>,
     /// The pixels of (head, shift) when not the client's frame.
     region: Override<(u64, u64)>,
     /// The x offset head shows for shift, when not the committed one.
@@ -49,6 +53,8 @@ impl Default for Run {
             shifts: 20,
             first_shift_s: 1.2,
             initial_s: -0.05,
+            period_s: 1.0,
+            initial_region: None,
             region: Box::new(|_, _| None),
             offset: Box::new(|_, _| None),
             stops_after: None,
@@ -124,7 +130,8 @@ sophia_live_native_owner schema=1 status=opened epoch=1 reason=startup
 ");
         let good = (checksum(), 120_000);
         for head in HEADS {
-            self.frame(&mut log, self.initial_s, head, 1, 0, good);
+            let initial = self.initial_region.unwrap_or(good);
+            self.frame(&mut log, self.initial_s, head, 1, 0, initial);
             self.imports(&mut log, head, 1, 1);
         }
         for present in 0..self.presents {
@@ -176,7 +183,7 @@ sophia_qemu_wm_hold schema=1 status=outcome transaction={transaction} request_id
                 {
                     continue;
                 }
-                let seconds = self.first_shift_s + press as f64;
+                let seconds = self.first_shift_s + press as f64 * self.period_s;
                 let pixels = (self.region)(head, press).unwrap_or(good);
                 let x = (self.offset)(head, press).unwrap_or(x);
                 self.frame(&mut log, seconds, head, press + 2, x, pixels);
@@ -560,4 +567,32 @@ fn only_presented_regions_count() {
     })
     .unwrap();
     assert!(lines[0].contains("status=RETAINED"), "{lines:?}");
+}
+
+#[test]
+fn fewer_than_fifteen_samples_are_insufficient_even_when_they_span_the_window() {
+    // Nine shifts 2.2 s apart reach 18.8 s with no gap over 2.5 s: only the
+    // sample floor refuses them.
+    refused(
+        Run {
+            shifts: 9,
+            period_s: 2.2,
+            ..Run::default()
+        },
+        "INSUFFICIENT",
+        "samples=10 first_us=-49000 last_us=18801000 max_gap_us=2200000",
+    );
+}
+
+#[test]
+fn an_unready_run_whose_first_region_was_never_the_frame_reproduces_nothing() {
+    refused(
+        Run {
+            ready: false,
+            initial_region: Some((5, 0)),
+            ..Run::default()
+        },
+        "UNREADY",
+        "reproduced=no",
+    );
 }
