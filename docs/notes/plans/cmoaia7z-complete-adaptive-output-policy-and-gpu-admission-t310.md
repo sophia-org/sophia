@@ -145,6 +145,30 @@ Fingerprint-based suppression of unchanged topology notices remains a follow-up.
 
 ### Integration and proof
 
+The third physical candidate is prepared as release 222,
+`niltempus-0f783c805f8040c77adc`, pinning signed Sophia `ada93fd4b` and signed
+niltempus `edb449458`. Gate 221-02 passed 7,498 tests with zero failures and
+101 ignored; CLOSURE is `a7c67ca0bb8e3b89104276bbc611ae3bf6f36e3d65d96fca68365e92e9ae21ff`.
+Gate 221 remains stopped at SDK contract-copy drift. Its correction restored
+the SDK-owned spec; the lifetime extension is recorded here and in the linked
+9P notes. Runtime code is identical to `415bc88f0`.
+
+Release checksums, source/profile preflight, unchanged non-Sophia pins and
+graphics closure were verified. Install and explicit recovery commands are in
+`~/.local/state/sophia/development-evidence/t306-01/222-bare-metal-release/READY.txt`.
+The default rollback after installing 222 returns to physically failed 219;
+READY also names the still-installed pre-t306 release. Nothing was installed
+by the agents, and both masters remain unchanged. Next is attended same-port
+loss/return with a long absence, then KVM input and locked-return checks, with
+session evidence. Physical acceptance remains open.
+
+The test must recover without a VT workaround. A separate read-only follow-up
+found that requesting a VT switch while already Waiting with no native owner
+overwrites a held renderer-image handoff with `None` in `lifecycle/seat.rs`.
+Its content consequence and repair need their own regression; it is not fixed
+by 222. Evidence: `t306-01/followup-seat-vt-handoff-01.txt`, SHA-256
+`10d81b19e05c17bc919f1daa17627fb25aa219d997ca86cd65952cd7f332110f`.
+
 Implement configuration and admission independently from master. Integrate runtime
 changes on the gated t306 continuity candidate. Claude owns retained images,
 suspend/resume, lock coverage and t306/t307 evidence; coordinate before editing

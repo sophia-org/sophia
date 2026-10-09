@@ -462,6 +462,17 @@ guards. They do not execute a GPU hotplug or prove physical recovery. Duplicate
 notices can still request another rebuild; this slice does not claim
 fingerprint-based suppression. t306/t310 remain open.
 
+Combined candidate `ada93fd4b` passed gate 221-02 (7,498/0/101) and is packaged
+as release 222, `niltempus-0f783c805f8040c77adc`. Its executable SHA-256 is
+`f911cd6646ba09df289e81819e45bb2d227a11a419d0e7eb2798e73a65681f58`.
+The runtime tree equals `415bc88f0`; the successor only restores an SDK-owned
+documentation copy after gate 221 stopped on drift. Release evidence is
+`t306-01/222-bare-metal-release`, manifest
+`693993554239cf3d54c8c71cd7dd08e252ff7df382097a79ee3e43ae098a15b3`.
+The [plan](../plans/cmoaia7z-complete-adaptive-output-policy-and-gpu-admission-t310.md#integration-and-proof)
+records install/rollback identities and the deferred zero-output VT handoff
+issue. No physical pass or installation is claimed.
+
 #### Matched desktop artifact prepared (2026-10-09)
 
 Signed niltempus candidate `6d50e38cc5014d248d8110e8c82f928b349cecd0` pairs the
