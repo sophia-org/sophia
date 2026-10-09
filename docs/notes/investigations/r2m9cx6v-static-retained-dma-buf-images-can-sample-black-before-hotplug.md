@@ -827,6 +827,34 @@ That review is `182-mesa-pair-result-review`, manifest
 The setup-contract defect needs a separately qualified successor; none of the
 frozen verdicts, production code or installed components were changed.
 
+Source audit `183-arming-readback-audit` also found a second defect behind the
+buffer refusal. Enabling `event-fork` before reading `set_event_pid` adds the
+readback's own child to the PID filter. That produces at least two lines and
+would fail the original one-PID check. The old stand-in echoed writes as
+readbacks, so it modeled neither the rounded capacity nor that fork behavior.
+
+Successor init 184 (`2fcf5035`) keeps the request at 4096 and requires readback
+4099. It writes and verifies `event-fork=0`, writes and reads the PID filter,
+then enables and verifies `event-fork=1` before tracing. Its model controls
+passed on 2026-10-09 from 09:15:24Z to 09:15:29Z: 267 assertions, exit zero.
+They reproduce 181's refusal byte for byte, expose the second defect in a
+buffer-only correction, retain all 18 earlier scenarios, and cover a dirty
+initial fork-tracking state. Model mutations falsify the relevant controls.
+The result manifest is
+`ad0f57c4cde0d8bfb0593ec331c8403510f08e68cca1ad3b1567a3b9e57eab86`.
+
+Parser successor 185 accepts only that new 65-setting sequence; core, serial
+interpretation and CLI logic remain byte-identical to 174. Its controls bind
+the parsed settings to the frozen init's actual arming calls and an independent
+expected sequence. On 2026-10-09, 09:18:02Z–09:18:04Z, 23 core, 31 capture and
+22 contract cases passed under device-hidden isolation. Each parser refuses
+the other's contract, and both still reproduce 181's `INCOMPLETE` unchanged.
+The frozen manifest is
+`57877ef364a308b90d40ae44b7df76432319808565bbf9167bf97bfcb8820e21`
+(90 files). These qualify the source and model correction only. Real tracefs
+arming, filtering and collection remain untested; no corrected image or
+subsequent guest had been prepared at this checkpoint.
+
 ## Real-context control and a freshness-oracle gap (2026-10-09 UTC)
 
 Series 141 ran the reviewed observer and context recipe once, from 03:38:28Z
