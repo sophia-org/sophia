@@ -441,6 +441,68 @@ Evidence: `129-qemu-lifetime-package-2` and
 No Session integration, installed QEMU change or t306/t307 acceptance
 follows from this diagnostic.
 
+## A separately opened probe file preserves the handle (2026-10-08)
+
+Series 132 ran the descriptor-isolation control from signed Sophia
+`254204a74`, after a passing observer. Its frozen test `b70605df` is the
+artifact exercised by that commit's full CPU gate. The device test is
+the lifetime recipe with the probe on a separate open of the same
+explicit render node. Before constructing the probe, it requires equal
+character-device identity and a different open file description. The
+producer retains its original file, allocation and DMA-BUF; its handle
+observations remain on that file.
+
+| Guest | Test | Infrastructure |
+| --- | --- | --- |
+| 1 | Observer passed; refill reached. | Clean. |
+| 2 | Handle preserved after probe destruction. | Clean. |
+
+The isolation guest recorded device `226:128`, driver `virtio-pci`, and
+`probe_file` on that device with `description=separate`. Producer handle
+1 exported the held DMA-BUF `11:2` before construction, while the probe
+was alive and after its destruction. Construction succeeded, and the
+read returned all 1228800 bytes with an exact match. As in the lifetime
+test, the read occurs before destruction even though its record is
+printed afterward. The named test passed, exited 0 and powered off.
+
+Both guests had clean endpoints and `P_CLEAN` infrastructure. The
+kernel witness joined the isolation QEMU PID 22024 to patched binary
+`6da4d8f3` and recorded exit 0; debugger, wrapper and harness also exited
+0. The series ran once, ended after guest 2 and left no processes.
+REVIEW-CODEX-81 verified all 41 series manifest entries and all 50
+package entries, then replayed both classifiers for both guests with
+byte-identical results. The ordered guest records independently agree.
+
+Compared with series 130's dup-based `LOSS_AFTER_DROP`, this supports
+the shared-description hypothesis for this recipe on this stack. The
+negative was not rerun, and its debugger-lost endpoint limit remains.
+One comparison across two series neither proves necessity or
+sufficiency nor traces the closing mechanism. This is a render-node
+probe result, not the original Session black-frame diagnosis. The
+descriptor control also leaves an unanswered-query refusal branch
+unexercised; its surviving mutant is not claimed equivalent.
+
+The isolation image `dd2be216` differs in content from corrected
+lifetime image `fdd2f505` only in the test binary and dracut's build-path
+record. All 5971 paths, modes, ownership, device nodes and 123 hard-link
+groups match. The repaired init is unchanged. The observer still uses
+the older init and would refuse a failed test without complete output.
+
+This closes the bounded diagnostic comparison at niltempus's requested
+install-assessment checkpoint. It does not provide a production repair
+or t306/t307 acceptance. The live release `niltempus-f18fc2ed` uses
+Sophia `825d9146`, which current master contains but the diagnostic
+branch does not. That branch combines earlier topology, seat and
+restore repairs with experimental instrumentation; it is not a live
+upgrade candidate as a whole. Any candidate must retain the installed
+baseline, have an explicit reviewed repair scope and pass its own gates.
+No installation, passthrough or live GPU reassignment occurred.
+
+Evidence: `131-handle-isolation-package` and
+`132-qemu-isolation-series`; the latter's manifest is
+`028cc94b7732c93e432b3ae32c93d0333a656969509a3d808ebcb906e6821e87`.
+The exact-command approval is `131/REVIEW-CODEX-80.txt`.
+
 ## t307
 
 1. Trace the successful mixed Present and subsequent retained composition:
