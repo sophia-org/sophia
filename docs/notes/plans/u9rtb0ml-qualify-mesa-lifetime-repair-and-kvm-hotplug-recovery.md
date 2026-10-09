@@ -20,6 +20,19 @@ slot: cancelling a stored worker-owned preparation, most visibly during
 composition installation, and a renderer frame deferred for want of a free
 frame slot. Both are repaired with CPU regressions that fail without them.
 
+The attended sequence completed on release 222, Sophia `ada93fd4b` with
+niltempus `edb449458`, after gate 221-02 passed 7,498/0/101. Same-port return,
+live port movement, locked cable return, unlocked KVM return and locked KVM
+return through unlock all survived in one Session. The two KVM traces retain
+input-device removal/replacement and post-return routing. The exact artifacts,
+operator observations and evidence limits are in the
+[t306 acceptance account](../investigations/kdleagg3-kvm-output-and-usb-loss-returns-the-desktop-to-greetd.md#release-222-physical-acceptance-2026-10-09).
+This closes the operator's t306 recovery gate without changing any guest
+disposition or accepting t307. The same-topology publication issue stays with
+t310; full lock acceptance and owner-bound cover evidence stay with t297;
+the requested-VT handoff is candidate t322. Source promotion retains the tested
+Sophia pin and installed release; broader follow-ups need their own regressions.
+
 ## Resume progress (2026-10-09)
 
 The newly reported installed-session crash has interrupted qualification.

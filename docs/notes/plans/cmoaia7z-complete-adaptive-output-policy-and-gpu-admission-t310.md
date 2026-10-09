@@ -158,7 +158,7 @@ graphics closure were verified. Install and explicit recovery commands are in
 `~/.local/state/sophia/development-evidence/t306-01/222-bare-metal-release/READY.txt`.
 The default rollback after installing 222 returns to physically failed 219;
 READY also names the still-installed pre-t306 release. niltempus installed it
-and relogged; both masters remain unchanged.
+and relogged before source promotion.
 
 The first two attended checks on release 222 returned the display in the same
 Session: same-port unplug/replug, then a live move from DP-2 to DP-1. Session
@@ -182,14 +182,20 @@ so it is not an independent proof of coverage for the replacement topology.
 The snapshot and limits are recorded in the linked investigation. A subsequent
 unlocked KVM away/back also survived: the log records removal of eight input
 devices, their replacements, a new display owner and post-return routed keys.
-Locked KVM/USB return remains to be checked. Same-topology lock coverage also
+The subsequent locked KVM/USB return also survived through unlock in the same
+Session. This completes t306's attended recovery sequence on this desktop;
+its exact evidence is in the [KVM investigation](../investigations/kdleagg3-kvm-output-and-usb-loss-returns-the-desktop-to-greetd.md#release-222-physical-acceptance-2026-10-09).
+t310 remains open for the same-topology ledger/capability-publication fix and
+its broader workspace-affinity/policy exits; t297 retains its wider lock checks.
+Same-topology lock coverage also
 needs an owner-aware evidence identity; its present dedup key omits the native
 owner, so the earlier cover cannot prove the replacement owner's presentation.
 
 The test must recover without a VT workaround. A separate read-only follow-up
 found that requesting a VT switch while already Waiting with no native owner
 overwrites a held renderer-image handoff with `None` in `lifecycle/seat.rs`.
-Its content consequence and repair need their own regression; it is not fixed
+Its content consequence and repair need their own regression under candidate
+[t322](../investigations/kdleagg3-kvm-output-and-usb-loss-returns-the-desktop-to-greetd.md#t322-zero-output-vt-handoff); it is not fixed
 by 222. Evidence: `t306-01/followup-seat-vt-handoff-01.txt`, SHA-256
 `10d81b19e05c17bc919f1daa17627fb25aa219d997ca86cd65952cd7f332110f`.
 

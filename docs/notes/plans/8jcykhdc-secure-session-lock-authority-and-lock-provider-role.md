@@ -452,6 +452,18 @@ On an exact installed release with a lock provider: two outputs, hotplug while
 locked, a VT round trip, a provider kill, a wrong and a right password. Physical
 evidence stays separate from the deterministic checks.
 
+On 2026-10-09 niltempus accepted locked cable and locked KVM return through
+unlock on release 222 (Sophia `ada93fd4b`), as part of
+[t306's operator recovery](../investigations/kdleagg3-kvm-output-and-usb-loss-returns-the-desktop-to-greetd.md#release-222-physical-acceptance-2026-10-09).
+This is one admitted output; two-output coverage, VT round trip, provider kill
+and wrong-password rejection are not supplied by those observations. t297
+remains open. Its next evidence slice also needs a bounded lock-specific
+capture reducer for status, source, verdict and numeric coverage fields, with
+free-form errors excluded. Coverage dedup must include native owner identity
+alongside lock and topology epochs, so a same-topology replacement records its
+own cover. Add a regression for equal topology epoch with a different owner;
+the current absence of that record is not itself proof of an uncovered frame.
+
 ### t298 p9any and dp9ik
 
 Add `p9any` and `dp9ik` (client and server roles) to `sophia-factotum`,

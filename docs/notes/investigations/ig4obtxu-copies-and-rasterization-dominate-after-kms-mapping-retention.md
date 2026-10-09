@@ -596,6 +596,30 @@ This supplies attended unlocked KVM survival plus recorded device return and
 key routing. Locked KVM return remains separate; no task closure, code change,
 build or master merge follows from this result alone.
 
+#### Release 222 locked KVM acceptance (2026-10-09)
+
+niltempus completed the last requested combination and explicitly reported
+survival after lock/unlock. Session `efb96437` and PID 7778 remained live on
+the exact release executable. Lock epoch 2 precedes loss; devices 270–277 are
+removed, owner 5 settles, Waiting reaches the slow cadence, then owner 6 resumes
+and devices 278–285 return. Application presentation and routed keys follow
+the lock records with input epoch 11. The interval from owner 5 closing to
+owner 6 becoming ready is about 98 seconds; this is a log interval, not a
+measurement of the physical KVM switch. The known same-topology uncommitted
+record recurs. No retained fatal or seat transition occurs in the test.
+
+The final snapshot suffix is `c34ea252-b15e-4a33-8173-dd7ddcc2a4ca` under the
+same full Session ID. Both rotated event segments were inspected. Its verified
+manifest is `b14a12f679741f1da22e0e42a77ab4a9ae2a35321dc1620a55a6527ea3e5ad59`,
+and recorder health has zero discarded records and storage errors. Markers
+`f434c921-76e8-4993-9cdf-3b3d6c8ab9a3` and
+`20894f11-3a51-4c01-9bf6-9d1f5c50ff76` bind the request and report.
+The [t306 acceptance account](kdleagg3-kvm-output-and-usb-loss-returns-the-desktop-to-greetd.md#release-222-physical-acceptance-2026-10-09)
+combines this with the exact gate and release. t306's attended recovery is
+accepted on this desktop. The operator's lock observation is not an independent
+per-owner cover record; t297, t310 and the separate virgl investigation retain
+their remaining obligations. No new runtime code was added during these tests.
+
 #### Matched desktop artifact prepared (2026-10-09)
 
 Signed niltempus candidate `6d50e38cc5014d248d8110e8c82f928b349cecd0` pairs the

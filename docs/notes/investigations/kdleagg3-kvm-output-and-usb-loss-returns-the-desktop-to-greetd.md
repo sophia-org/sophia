@@ -658,6 +658,69 @@ whose driver and Mesa identity are recorded.
 
 ## t306
 
+### Release 222 physical acceptance (2026-10-09)
+
+The authorized bare-metal route completed on niltempus's AMD desktop. Signed
+Sophia `ada93fd4b4ed5de89a1727c5eec9ec77349d4fde` passed the full isolated
+gate 221-02: 7,498 passed, zero failed, 101 ignored across 536 summaries.
+Gate CLOSURE is `a7c67ca0bb8e3b89104276bbc611ae3bf6f36e3d65d96fca68365e92e9ae21ff`.
+The CPU repairs and failing-without-fix controls include renderer cancellation
+and deferral, callback authority, adoption/evidence ordering, complete-plane
+validation and delayed/slow admitted recovery; the original incident's exact
+kernel error remains unknown. The original frozen failures are not relabelled.
+
+Signed niltempus `edb44945854edd2a2955ea74544005a1cc9bf69c` produced installed
+release `niltempus-0f783c805f8040c77adc` (222). Sophia's executable SHA-256 is
+`f911cd6646ba09df289e81819e45bb2d227a11a419d0e7eb2798e73a65681f58`.
+Release evidence `t306-01/222-bare-metal-release` has manifest
+`693993554239cf3d54c8c71cd7dd08e252ff7df382097a79ee3e43ae098a15b3`.
+The admitted dGPU is Navi 31 with amdgpu on kernel 6.18.55_1; the session maps
+Mesa 26.2.3 and libdrm 2.4.134. The profile retains the development-GPU
+exclusion and HDMI-A-2 exclusion; no private Mesa package was installed.
+
+niltempus reported successful same-port cable return, DP-2 to DP-1 movement,
+locked cable return, unlocked KVM away/back, and locked KVM away/back followed
+by unlock. Pointer and ordinary shortcuts were confirmed normal. All five
+checks kept Session
+`00000001791584192075-efb96437-173b-4184-9372-57e199d4edcf` and PID 7778 alive.
+The two KVM traces each show eight input devices removed and replaced,
+replacement display owners and subsequent keyboard routing/presentation. No
+retained fatal or seat transition occurs in their test intervals. The final
+locked KVM return spans about 98 seconds between owner close and successor
+ready, exceeding the short retry series. These are attended observations with
+retained runtime evidence, not a claim of exhaustive hardware qualification.
+
+Exact markers, snapshot manifests and bounded timelines are in the
+[physical return investigation](ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#release-222-attended-cable-return-and-port-move-2026-10-09).
+The final snapshot suffix `c34ea252-b15e-4a33-8173-dd7ddcc2a4ca` has verified
+manifest `b14a12f679741f1da22e0e42a77ab4a9ae2a35321dc1620a55a6527ea3e5ad59`.
+Recorder health reports no discarded records or storage errors; these remain
+snapshots of the running session, not clean-exit proofs. Lock status fields are
+filtered and same-topology cover dedup lacks owner identity, so the operator's
+lock/unlock observation supplies physical acceptance, not a machine-verified
+cover on the returned owner.
+
+This satisfies t306's current operator recovery exit. Broader t310 policy and
+same-topology publication work, t297's full lock matrix and evidence repair,
+t322's requested-VT handoff, and t307's virgl/Mesa investigation remain separate.
+Promotion keeps the exact accepted Sophia pin in niltempus; no rebuild or
+reinstall is required for the documentation and task disposition.
+
+### t322 Zero-output VT handoff
+
+The requested-VT path in `owner_loop/lifecycle/seat.rs` overwrites an existing
+`suspended_renderer_images` handoff with `None` when `native_scanout` is absent.
+It neither explicitly discards those runtime images nor records that loss:
+it emits captured images=0. This is outside the cable/KVM tests, which used no
+VT workaround. Evidence: `t306-01/followup-seat-vt-handoff-01.txt`, SHA-256
+`10d81b19e05c17bc919f1daa17627fb25aa219d997ca86cd65952cd7f332110f`.
+Before implementation, trace custody and distinguish retained from newly
+captured handoffs. Add a failing-without-fix control for native None with
+handoff Some, preserve custody and useful diagnostics, and qualify the changed
+VT path separately. This candidate is not implicitly promoted by t306 closure.
+
+### Original incident exits
+
 The [four-part qualification plan](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md)
 records the authorized lock, hotplug and rollout scope. The incident's exits
 remain:
@@ -677,8 +740,8 @@ remain:
    an attended KVM away/back test on the operator's devices. Check restored
    outputs, keyboard shortcuts, pointer routing and lock/unlock afterward.
 
-The task has high priority because normal device switching ends the session.
-State and execution order live in [todo.md](../../../todo.md).
+The incident made normal device switching end the session. Its accepted repair
+is recorded above; task state and execution order live in the task ledger.
 
 ## Connections
 
