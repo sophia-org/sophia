@@ -799,6 +799,34 @@ advance rules and runtime bounds remain those of 177; the unchanged classifier
 capacity measurements are reused. The package reserves series 181 and a new
 private runtime directory. It supplies no guest result or acceptance claim.
 
+Series 181 then ran once under `REVIEW-CODEX-180-GO.txt` (`e47b2346`), from
+08:59:48Z to 09:00:24Z. Two guests ran: the observer passed, and the original
+private Mesa child reached its tests. Both infrastructure verdicts were
+`P_CLEAN`, with clean endpoints, no remaining processes and unchanged end
+pins and source. The original child's pixel verdict remains `INVALID`: its
+separate arm passed, while the shared arm printed the same foreign Mesa line
+as 141/144 before an after-drop pixel mismatch. Test exit 101 was correctly
+bound to harness exit 1. Those raw observations do not override the verdict.
+
+Trace setup refused before arming. A request of `4096` to `buffer_size_kb`
+read back as `4099`; frozen init 173 and parser 174 incorrectly require an
+exact `4096` readback. The kernel rounds the byte request up to whole
+subbuffer capacities and reports the resulting capacity in KiB. With
+4080 data bytes per page, this is 1029 pages, or 4099 KiB when reported.
+The trace block records skipped stop/end and zero lines. Premise1 therefore
+returned `INCOMPLETE`, and the runner correctly refused the patched guest.
+There was no trace or Mesa pair comparison, and no replacement guest.
+
+The 70 raw files remain read-only under the external manifest
+`181-freeze-claude/181.SHA256SUMS`
+(`bf580a1edb630d41918b712a77f2541b034e01f604f2c99b3774e49bebc603d9`).
+Independent device-hidden replay reproduced all seven classifier and decision
+records byte for byte, including exit statuses, with raw hashes unchanged.
+That review is `182-mesa-pair-result-review`, manifest
+`a27f6a3d8ae8f1df72f9c3ad442bf6a7f71ca7ffbfdcde68e7d4d173705a3736`.
+The setup-contract defect needs a separately qualified successor; none of the
+frozen verdicts, production code or installed components were changed.
+
 ## Real-context control and a freshness-oracle gap (2026-10-09 UTC)
 
 Series 141 ran the reviewed observer and context recipe once, from 03:38:28Z
