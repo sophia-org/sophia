@@ -1,5 +1,7 @@
 # One task per line, a blank line between tasks: keep it that way so the file reads as a list. A row is `(priority) date text ... @context id:tNNN order:NNN [details](note)`; closed rows move to done-YYYY-MM.md.
 
+(A) 2026-10-09 Preserve retained renderer-image custody across a requested VT switch while no native output exists; prevent repeated Missing admission on return, distinguish retained from captured evidence, and qualify the VT path separately. +critical +topology @development id:t322 order:000.0000027 [details](docs/notes/investigations/kdleagg3-kvm-output-and-usb-loss-returns-the-desktop-to-greetd.md#t322-zero-output-vt-handoff)
+
 (A) 2026-10-07 Complete ordinary desktop output loss/return policy after accepted startup fallback, preserving reachable workspaces; distinguish stable-identity card admission from output exclusions and qualify retained DMA-BUF continuity with t306. +critical +topology @development id:t310 order:000.0000028 [details](docs/notes/investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#t310)
 
 (B) 2026-10-05 Diagnose one head freezing the lock provider's frames overnight while the other kept animating; record dropped provider commands, sample per-allocation lock pacing behind an opt-in, and repair only from a discriminating trace. +important +lock @development id:t308 order:000.0000045 [details](docs/notes/investigations/ncpg7gmm-one-head-stops-drawing-the-lock-provider-frames.md#t308)
@@ -62,7 +64,6 @@ Decide whether blind spatial/output roles require Bubblewrap protection by defau
 
 (B) 2026-10-03 Accept the session lock physically on an exact installed release: two outputs, hotplug, VT round trip, provider kill, wrong and right password. +parallel @physical id:t297 order:034.07 depends:t034 [details](docs/notes/plans/8jcykhdc-secure-session-lock-authority-and-lock-provider-role.md#t297-attended-acceptance)
 (B) 2026-10-03 Add p9any and dp9ik to sophia-factotum and the shared sophia-libauthsrv crate, byte-checked against a C oracle built from 9front's sources. +parallel @development id:t298 order:034.08 depends:t293 [details](docs/notes/plans/8jcykhdc-secure-session-lock-authority-and-lock-provider-role.md#t298-p9any-and-dp9ik)
-2026-10-09 Preserve a retained renderer-image handoff across a requested VT switch while no native output exists; prove custody and distinguish retained from captured evidence. +candidate @development id:t322 order:034.09 [details](docs/notes/investigations/kdleagg3-kvm-output-and-usb-loss-returns-the-desktop-to-greetd.md#t322-zero-output-vt-handoff)
 
 Before admitting a content prototype, characterize Quickshell's retained popup-movement failure with an isolated display backend. +candidate @planning id:t035 order:035 [details](docs/notes/plans/queue-14-native-wm-and-shell-product.md#t035)
 

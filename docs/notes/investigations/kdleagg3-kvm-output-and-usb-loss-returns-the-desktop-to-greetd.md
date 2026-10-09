@@ -714,10 +714,43 @@ It neither explicitly discards those runtime images nor records that loss:
 it emits captured images=0. This is outside the cable/KVM tests, which used no
 VT workaround. Evidence: `t306-01/followup-seat-vt-handoff-01.txt`, SHA-256
 `10d81b19e05c17bc919f1daa17627fb25aa219d997ca86cd65952cd7f332110f`.
-Before implementation, trace custody and distinguish retained from newly
-captured handoffs. Add a failing-without-fix control for native None with
-handoff Some, preserve custody and useful diagnostics, and qualify the changed
-VT path separately. This candidate is not implicitly promoted by t306 closure.
+The subsequent source trace on `31c8cca5b` establishes the custody consequence:
+the runtime still names the retained image IDs, but their snapshots were dropped
+without the explicit discard path that marks surfaces Lost. Resume admission
+therefore returns Missing and `native resume omitted retained renderer images`.
+Repeated replacement attempts cannot repair that state while the retained set
+is unchanged. A notice resets the retry budget, not the missing snapshots.
+This is a source-derived failure, not yet a reproduced physical sequence.
+
+The VT-return abandonment in the earlier `1b20b40c` incident fits this path:
+the owner had closed, VT preparation reported captured, then resume abandoned
+the new owner and hit the separate evidence-close panic. The exact resume error
+was not captured, so attributing that incident to t322 remains a hypothesis.
+
+niltempus authorized the narrow repair on 2026-10-09 and then directed work
+along the critical path. t322 is promoted ahead of t310's publication follow-up.
+Claude owns the separate repair branch; Codex owns task disposition and the
+independent t310 publication slice. The seat file is available to this repair.
+
+Preserve the existing handoff when no owner can be captured. Capture failure
+must leave that handoff untouched. `LiveProductionRendererImageHandoff::absorb`
+requires disjoint IDs and only appends; blindly combining an old handoff with
+a fresh capture can create DuplicateIdentity and another resume failure.
+Capture only uncovered identities with a proved disjoint union, or refuse an
+unexpected overlap while retaining custody; do not silently deduplicate or
+discard snapshots. Keep explicit forced-detach discard behavior separate.
+
+Regressions must fail without the repair: no owner plus a held handoff keeps
+the snapshots; normal capture still works; capture failure preserves existing
+custody; any supported merge preserves unique coverage. Exercise the actual
+resume-admission reducer with retained-without-handoff (Missing) and the
+preserved IDs (Ready), and pin the seat helper call site. Bounded handoff
+diagnostics retain counts and distinguish captured, retained, discarded and
+failed forms without free text; existing schema-1 forms remain readable.
+
+After the CPU regression and repository gate, qualify zero outputs → requested
+VT away/back → output return on a matched release, with retained client content.
+That attended check is separate from release 222's accepted cable/KVM sequence.
 
 ### Original incident exits
 

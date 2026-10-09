@@ -64,8 +64,9 @@ The existing WM/shell acceptance and performance tasks retain their queue
 positions and exits. t249 is an existing portal-export prerequisite, not a
 reason to restart the entire role migration or postpone all design work.
 
-The immediate code action is t310's same-topology publication regression and
-fix. The next design action is the t133/t275 admission-and-recipe boundary,
+The output-publication slice starts with t310's same-topology regression and
+fix. The separately promoted t322 VT custody repair precedes it in the task
+queue and is independently owned. The next design action is the t133/t275 admission-and-recipe boundary,
 using the immutable-connection rule in the accepted ADR. t257 can supply a
 narrow output-availability/status slice without waiting for text status in
 every role; t319 requires that slice, not completion of the whole t257 row.
