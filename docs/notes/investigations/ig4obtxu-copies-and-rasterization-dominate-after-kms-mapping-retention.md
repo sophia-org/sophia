@@ -471,7 +471,65 @@ documentation copy after gate 221 stopped on drift. Release evidence is
 `693993554239cf3d54c8c71cd7dd08e252ff7df382097a79ee3e43ae098a15b3`.
 The [plan](../plans/cmoaia7z-complete-adaptive-output-policy-and-gpu-admission-t310.md#integration-and-proof)
 records install/rollback identities and the deferred zero-output VT handoff
-issue. No physical pass or installation is claimed.
+issue. At artifact preparation, no physical pass or installation was claimed.
+
+#### Release 222 attended cable return and port move (2026-10-09)
+
+niltempus installed release 222 and relogged. The live executable at PID 7778
+has the release hash `f911cd6646ba09df289e81819e45bb2d227a11a419d0e7eb2798e73a65681f58`.
+Both checks kept Session
+`00000001791584192075-efb96437-173b-4184-9372-57e199d4edcf` alive. The operator
+was asked to wait fifteen seconds unplugged and ten seconds after connecting,
+without switching VTs; these requested durations are not measured cable times.
+
+For same-port return, niltempus reported that the desktop survived. Owner 1
+settled at boot millisecond 37781016; unavailable observations ran at 37781026,
+37781282, 37782291 and 37786311, then the slow cadence was silent. Owner 2
+resolved at 37799512 with Unavailable/Fallback adjustments, was ready at
+37799574, and its shell content presented at 37799774. The saved snapshot
+contains 515 subsequent application Present retirements. Its suffix is
+`f182f2ff-d23b-48eb-87a5-c715e61038da`; its manifest SHA-256 is
+`6415937882e4c498c940d2949d0f6267c5293168feb084d57ddf4029d731b759`.
+
+The same-port return also recorded `uncommitted reason=stale transition=2
+notice=4 owner=2`. Source review explains the equal-epoch case: Waiting keeps
+the previous topology, the same realization returns as TransportReplaced, and
+the queued publication is marked not already published. The publication check
+rejects an epoch equal to the current one, leaving the realization pending
+without a commit or WM authority republication. This did not prevent display
+recovery. Read-only follow-up found that a fresh owner allocates head/output
+numbers from one in selection order, so the same connectors and order reuse
+the same numeric identities and configured mappings. The unchanged topology
+epoch therefore does not misbind this same-port case. TransportReplaced does
+not compare advertised capabilities, however: another monitor on the same port
+with the same realized mode could leave the WM's old mode or VRR capabilities.
+The proposed follow-up compares authority snapshots excluding epoch: equal
+contents settle the ledger without republication; changed contents advance the
+epoch and publish. It needs regressions for both cases. No such repair is in
+release 222, and the cable result does not close this publication obligation.
+
+niltempus then moved the cable to another port on the same GPU and reported
+that the desktop returned. Owner 2 settled at 37891968; Waiting again reached
+attempt four. Owner 3 resolved at 37912773, was ready at 37912989, and committed
+at 37913006 with zero adjustments. Its shell bindings report 120000 mHz and
+subsequent presentation. Read-only cached sysfs status after return shows DP-1
+connected/enabled and DP-2 disconnected/disabled. The snapshot suffix is
+`904b8ea3-7342-4979-8090-e88b1983ae21`; its manifest SHA-256 is
+`71d4558ca62169d00addec4c0c98da3713a0dcf032ce55522bb92091bbf685f7`.
+
+Both snapshots are under `~/.local/state/sophia/session-investigations/` with
+the full session ID followed by the suffix. Their checksums verify; recorder
+health reports zero discarded records and storage errors. There is no retained
+seat transition, runtime fatal or refused resolution in either test interval.
+The snapshots preserve a running session, not a clean termination. Graphics
+maps still name Mesa 26.2.3 and libdrm 2.4.134. The bounded extraction, snapshot
+identities, markers, process hash and read-only graphics observations are frozen
+under `t310-runtime-20261009/physical-return-03`, manifest
+`32683bb2d2857ac0b89710d12ebce238c73eca1007f02b4d5245b042fabcf852`.
+These observations prove neither the GPU's runtime-PM sequence nor independent
+pixel checksums, KVM input return, pointer routing, lock/unlock, or workspace
+restoration. t306/t310 remain open for their remaining physical checks and the
+publication follow-up; the masters remain unchanged.
 
 #### Matched desktop artifact prepared (2026-10-09)
 

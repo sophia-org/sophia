@@ -157,10 +157,22 @@ Release checksums, source/profile preflight, unchanged non-Sophia pins and
 graphics closure were verified. Install and explicit recovery commands are in
 `~/.local/state/sophia/development-evidence/t306-01/222-bare-metal-release/READY.txt`.
 The default rollback after installing 222 returns to physically failed 219;
-READY also names the still-installed pre-t306 release. Nothing was installed
-by the agents, and both masters remain unchanged. Next is attended same-port
-loss/return with a long absence, then KVM input and locked-return checks, with
-session evidence. Physical acceptance remains open.
+READY also names the still-installed pre-t306 release. niltempus installed it
+and relogged; both masters remain unchanged.
+
+The first two attended checks on release 222 returned the display in the same
+Session: same-port unplug/replug, then a live move from DP-2 to DP-1. Session
+`00000001791584192075-efb96437-173b-4184-9372-57e199d4edcf` and PID 7778 remained
+live on the release executable. The first replacement presented with fallback;
+the second committed with zero adjustments and presented at 120 Hz. The
+preserved logs show no seat transition or runtime fatal during either test.
+These are display-return and session-survival observations, not completed
+KVM input, pointer, lock/unlock or workspace-affinity acceptance. Those checks
+remain, as does the same-topology realization-publication gap described in the
+[investigation](../investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#release-222-attended-cable-return-and-port-move-2026-10-09).
+Evidence: `t310-runtime-20261009/physical-return-03`, manifest
+`32683bb2d2857ac0b89710d12ebce238c73eca1007f02b4d5245b042fabcf852`.
+No t306/t310 closure or master promotion follows from these two checks alone.
 
 The test must recover without a VT workaround. A separate read-only follow-up
 found that requesting a VT switch while already Waiting with no native owner
