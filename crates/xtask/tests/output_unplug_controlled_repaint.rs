@@ -23,6 +23,8 @@ struct Run {
     shifts: usize,
     /// Seconds from the Present's retirement to the first shift's frames.
     first_shift_s: f64,
+    /// Seconds from the Present's retirement to each head's first frame.
+    initial_s: f64,
     /// The pixels of (head, shift) when not the client's frame.
     region: Override<(u64, u64)>,
     /// The x offset head shows for shift, when not the committed one.
@@ -46,6 +48,7 @@ impl Default for Run {
             presents: 1,
             shifts: 20,
             first_shift_s: 1.2,
+            initial_s: -0.05,
             region: Box::new(|_, _| None),
             offset: Box::new(|_, _| None),
             stops_after: None,
@@ -121,7 +124,7 @@ sophia_live_native_owner schema=1 status=opened epoch=1 reason=startup
 ");
         let good = (checksum(), 120_000);
         for head in HEADS {
-            self.frame(&mut log, -0.05, head, 1, 0, good);
+            self.frame(&mut log, self.initial_s, head, 1, 0, good);
             self.imports(&mut log, head, 1, 1);
         }
         for present in 0..self.presents {
@@ -520,4 +523,41 @@ fn recoveries_are_context_and_never_turn_a_mismatch_into_retained() {
     })
     .unwrap();
     assert!(lines[0].ends_with("recoveries=1"), "{lines:?}");
+}
+
+#[test]
+fn coverage_must_start_and_end_inside_its_declared_bounds() {
+    refused(
+        Run {
+            initial_s: 1.6,
+            first_shift_s: 2.0,
+            ..Run::default()
+        },
+        "INSUFFICIENT",
+        "first_us=1601000",
+    );
+    refused(
+        Run {
+            shifts: 18,
+            ..Run::default()
+        },
+        "INSUFFICIENT",
+        "last_us=18201000",
+    );
+}
+
+#[test]
+fn only_presented_regions_count() {
+    // A composition of the window that its owner never retired is not shown,
+    // so its pixels neither contradict nor cover anything.
+    let unpresented = traced(
+        5.5,
+        "sophia_native_composition_region_frame schema=1 status=read output=1 head=2 scene_generation=77 layer=0 source_stage=renderer_image target=400x300_40_0 region_pixels=120000 nonzero_rgb_pixels=0 checksum=3",
+    );
+    let lines = verdict(Run {
+        extra: unpresented,
+        ..Run::default()
+    })
+    .unwrap();
+    assert!(lines[0].contains("status=RETAINED"), "{lines:?}");
 }
