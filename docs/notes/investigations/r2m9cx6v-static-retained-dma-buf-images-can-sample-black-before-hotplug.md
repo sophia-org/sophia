@@ -1391,6 +1391,112 @@ showed that a separately opened file preserves the handle. It belongs in the
 production-workload comparison as a third arm on unpatched Mesa, with its own
 CPU controls and review before any guest.
 
+## The Mesa 26.2.4 context comparison repeats loss and preservation (2026-10-09 UTC)
+
+The host now carries Mesa 26.2.4, so 202's 26.2.3 result could not stand for
+the production workload's base. Package 209 built a matched private pair from
+the 26.2.4 release tarball, whose checksum Void's template records, with 167's
+configuration and patch; the two stage trees differ only in
+`libgallium-26.2.4.so` (original `8dcf2b93`, patched `fdcaa7e6`). The five
+files 165 reviewed are byte-identical to 26.2.3 and the patch applies without
+fuzz. That similarity was recorded and qualified nothing. 210a-02 rebuilt the
+143 device-test base on the 26.2.4 host (image `287918d8`; its predecessor
+stopped on a pipefail record and is preserved). 210b and 210c derived the
+original and patched images and their premise-init children (`1466b6cb` and
+`7190493e`).
+
+The first runner, 210d, stopped correctly at its original guest. Its
+classifiers reach handle5's context identity check, which required handle3's
+`Mesa 26.2.3`. The guest carried 26.2.4, so both classifiers refused the
+identity before reading any pixel or premise. That series is preserved
+unqualified (`7d1dda10`); no guest3 or replacement ran. An audit found this to
+be the chain's only exact version dependency. 210e adds a context-only
+`Mesa 26.2.4`, matched in handle3's three exact forms so that 26.2.40 is
+refused; the observer, whose image is unchanged, keeps 26.2.3. 210e's CPU
+controls ran over 210d's retained records. The old classifiers refuse the real
+context byte for byte as retained. The successor prints, on the real log,
+exactly what the old ones print when only its three version lines are renamed
+to 26.2.3. Every wrong-version variant is refused at its stage. Runner 210f is
+210d re-keyed to 210e. Its controls rename only the context fixtures' version
+lines, so the positive series is mixed-version like the real one; they added
+seven stage-specific wrong-version stops and passed 71 orchestration and 168
+decision cases (records closure `bec3ec84`). The same controls with the old
+classifiers fail 36 cases, every positive stopping at guest2 as 210d did.
+
+210f ran once under an exact-argv GO from 17:55:12Z to 17:56:07Z, with the
+installed release e3e6a9 live and root builds held. Its launcher reran the
+window preflight; the launcher, runner and pins all exited 0.
+
+| Guest | Screen premise | Pixels | Test exit | Driver report |
+| --- | --- | --- | --- | --- |
+| observer (26.2.3) | none | `OBSERVER_PASS` | 0 | none |
+| original (26.2.4) | separate and shared `SCREEN_NEW` | separate `PRESERVED`, shared `LOST_AFTER_SIBLING_DROP` | 101 | `ERROR`, one shared diagnostic |
+| patched (26.2.4) | separate `SCREEN_NEW` with one miss, shared `SCREEN_SHARED` with one hit | both `PRESERVED` | 0 | `CLEAN` |
+
+All three decisions qualified, with clean infrastructure and endpoints and no
+remaining process. At context level the 26.2.4 pair therefore repeats 202:
+the unpatched shared arm loses the producer's pixels after its sibling is
+dropped, and the patched screen cache keeps them. As with 202, this is a
+screen-premise and pixel observation; it establishes no Sophia production
+effect, repair or t306/t307 acceptance. A retrospective readout of 210d's
+retained original guest under 210e has the same shape and qualifies nothing.
+
+The series manifest is
+`b50b28ea953bbc2b70c2b5e35c35e4198f4a3ed7a7d4693b48a2faf89bd7916e`
+for 103 files; the launch records close under
+`1089222ded4a19353df49e6973497f7f744f40a444fc9b05b96654c9488eb7d9`.
+Package 211, the production-workload comparison on 26.2.4, is next. A
+non-reproducing original can leave t307 as a declared limit only when that
+original workload has complete sampling and importer coverage and a qualified
+`RETAINED` verdict; `INSUFFICIENT` or an ordinary `UNREADY` is no such result.
+
+## The production comparison stops before its first verdict (2026-10-09 UTC)
+
+Package 211 ran part 2 on Mesa 26.2.4: the candidate `0f84dcb0c` built into
+base image `1330b90a` (211a), 209's pair installed into it (211b, original
+`556cf9f5` and patched `b3c2f677`, differing only in `libgallium-26.2.4.so`),
+and a four-boot runner, original, patched, patched, original (211c). The
+runner's host verifier is the 212-02 gate's build of `5efab3d2c`, xtask
+`2c5c7d0b`, which refuses a recorded unreaped process or stopped guest before
+any verdict. A boot qualifies only when the harness itself reached that
+verifier through a fixed adapter, the recorded endpoint is one clean exit,
+the verdict exits exactly 0 for `RETAINED` or 1 otherwise, and the harness
+agrees. At this harness a session that never becomes ready ends before the
+verifier, so `UNREADY` cannot qualify; the declared negative control is a
+qualified `LOST`. The runner's controls passed 66 orchestration and 90
+decision cases (records closure `b3d868a4`), after root's review withdrew a
+first freeze whose decision accepted matching timeout exits and whose fourth
+boot could pass unchecked.
+
+The series ran once at 19:09Z under the checked launcher 211d, whose window
+preflight passed again; the launcher, runner, final pins and outcome all
+exited 0 and its records close under
+`ede5fc33b827a08f95e1835a2f08cf94cb51203999e28dae629a31e3f328cd5e`. The
+first boot, original, had clean infrastructure and one clean guest exit, but
+its session never reached startup readiness: the guest ended with
+`persistent live session never reached startup readiness: ... visual_detail=0`
+and its failure record, the host stopped waiting for monitoring, and the
+harness exited before its verifier. The boot was refused as declared, no
+later boot ran, and the outcome is `INCOMPLETE`. 211 stays as it is.
+
+Outside acceptance, the boot's own records show two renderer identities, one
+per head, each importing the client buffer at the same geometry. Head 1's
+first presented window region of the client's frame is entirely black and
+head 2's is the client's frame. The native owner closed drained, with no
+pending retirement; the `RetirementFailure` carries the readiness proof's
+failure, not a stuck retirement. This matches the shared-description
+hypothesis above but does not establish the Mesa handle-lifetime mechanism,
+and it is not 211's negative control.
+
+Root's decision is a separate patched-only diagnostic, package 213: two boots
+of the same patched image with the same source, workload, renderer mode,
+verifier, readiness and infrastructure checks, and no image rebuild,
+readiness relaxation, startup substitution or fresh-open code. Only two
+qualified `RETAINED` boots report `PATCHED_WORKLOAD_RETAINED`; a `LOST` or
+`INSUFFICIENT` boot is diagnostic non-success, and a refusal stops the series
+without replacement. None of these is `PATCH_EFFECT`, completes 211, or is
+t306/t307 acceptance.
+
 ## t307
 
 The [four-part qualification plan](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md)
@@ -1413,11 +1519,20 @@ The underlying investigation obligations remain:
 4. Repair the demonstrated lifetime or synchronization defect and require
    a regression that fails without the repair. Retain snapshot immutability,
    source release, bounded storage and per-output ownership guarantees.
+5. Review whether the amdgpu and radeonsi winsys share the hazard of one
+   file description across renderer instances. The installed desktop runs
+   radeonsi with stock Mesa; its immunity is not shown.
 
 The task is high priority because pixels can disappear without a new client
 frame, and this currently obscures hotplug qualification. t306 need not
 absorb its root-cause repair, but failed or unstable runs are not acceptance
 of the still-unproved managed-head loss and all-return cases.
+
+t306 no longer waits on this task. Under the approved split its guest runs
+boot the patched Mesa image as a declared intervention, after 213 qualifies
+that environment; this task keeps the production result, the radeonsi review
+and any fresh-open change, which needs its own API, PRIME and custody review
+and comparison.
 
 Task state and execution order live in [todo.md](../../../todo.md).
 

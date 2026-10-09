@@ -24,12 +24,16 @@
 //! The controlled-repaint mode (t307) changes no head and is judged on its
 //! own terms (output_unplug/controlled_repaint.rs).
 //!
+//! Before any mode's verdict, a host record of an unreaped process or a
+//! stopped guest refuses the run (output_unplug/endpoint.rs).
+//!
 //! A run in which the guest saw no DRM hotplug uevent (or, in the input mode,
 //! no input removal) never asked Sophia anything. It is reported as an
 //! unreached fixture, never as a pass and never as a Sophia failure.
 
 mod controlled_repaint;
 mod display_actions;
+mod endpoint;
 mod input_return;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -146,6 +150,13 @@ fn number(record: &Record, key: &str) -> Result<u32, String> {
 /// Verifies one run's serial log and returns the summary lines on a pass.
 pub fn verify(log: &str, mode: Mode) -> Result<Vec<String>, String> {
     let records = log.lines().map(Record::parse).collect::<Vec<_>>();
+    if let Some(reason) = endpoint::refusal(&records) {
+        return Err(if mode == Mode::ControlledRepaint {
+            controlled_repaint::invalid(reason)
+        } else {
+            format!("host endpoint refused: {reason}")
+        });
+    }
     if mode == Mode::ControlledRepaint {
         return controlled_repaint::verify(&records, log);
     }

@@ -66,8 +66,12 @@ pub(super) fn verify(records: &[Record], log: &str) -> Result<Vec<String>, Strin
     classify(records, &lines).map(|line| vec![line])
 }
 
+/// The INVALID verdict line for `reason`.
+pub(super) fn invalid(reason: String) -> String {
+    format!("{VERDICT} status=INVALID reason: {reason}")
+}
+
 fn classify(records: &[Record], lines: &[String]) -> Result<String, String> {
-    let invalid = |reason: String| format!("{VERDICT} status=INVALID reason: {reason}");
     fixture(records).map_err(invalid)?;
 
     // The client's one Present names the frame every region must show.

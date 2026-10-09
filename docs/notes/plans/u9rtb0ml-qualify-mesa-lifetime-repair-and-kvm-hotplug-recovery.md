@@ -92,6 +92,99 @@ records the result and a bounded hypothesis: Sophia's renderer instances share
 one duplicated card file description. Part 2 is next, as a reviewed CPU package
 before any guest.
 
+The host's move to Mesa 26.2.4 required part 1 again on a matched 26.2.4 pair.
+Packages 209 through 210c built the pair, a 26.2.4 device-test base and its
+original and patched children. Runner 210d stopped unqualified at its original
+guest because its classifiers required Mesa 26.2.3; that series is preserved
+without replacement. Successor classifiers 210e require exactly 26.2.4 for the
+context children and keep 26.2.3 for the observer. Runner 210f passed its CPU
+controls and ran once at 17:55Z: the original kept the separate arm and lost
+the shared arm with one recognized diagnostic, and the patched guest preserved
+both arms cleanly. The
+[sampling investigation](../investigations/r2m9cx6v-static-retained-dma-buf-images-can-sample-black-before-hotplug.md#the-mesa-2624-context-comparison-repeats-loss-and-preservation-2026-10-09-utc)
+records the packages and manifests. Part 2 on 26.2.4 (package 211) is next.
+
+The two part 4 verifier obligations are closed. Signed `87154b95d` makes every
+output-unplug verdict refuse, before any mode's own rules, a host record of an
+unreaped QEMU, logger or display bus, a kept pid or a stopped guest; a runner
+that re-verifies a retained log can no longer pass one. Package 212 kept a
+failing run of each fix: the verifier before `87154b95d` with the new tests
+failed exactly those two tests, and `87154b95d` with `1e63d9c71`'s attempt
+binding reversed failed exactly seven named display-action tests, both by named
+assertions; the fixed source passed. 212's full gate failed on a
+nondeterministic race in a development-seat test, which read `/proc/PID/stat`
+of a descendant being reaped and caught only one of the two errors that read
+can raise. Signed `5efab3d2c` catches both in its two teardown polls and
+changes nothing else. Gate-only successor 212-02 passed on that head, 7,441
+tests passed across 534 summaries, none failed, 101 ignored (CLOSURE
+`0d4ca36d`); its own xtask build, `2c5c7d0b`, is the host verifier part 2 pins.
+Root's later docs record `7d915879a` came in by the signed merge `78d3f0e53`.
+
+Packages 211a and 211b prepared part 2's images without a guest. 211a built
+the candidate's binaries and base image from `0f84dcb0c`, whose code is the
+gated `83c68c7c4` (image `1330b90a`). 211b installed 209's original and patched
+stages into it; the two images differ only in `libgallium-26.2.4.so`
+(original `556cf9f5`, patched `b3c2f677`). The guest source stays `0f84dcb0c`;
+the verifier fix is host-side only.
+
+Part 2 on 26.2.4 (211c, launched by 211d) ran once and stopped at its first,
+original boot: the session never reached startup readiness, so the harness
+ended before its verifier and the boot was refused as declared. The outcome is
+`INCOMPLETE`, with no qualified verdict, and 211 stays as it is. The
+[sampling investigation](../investigations/r2m9cx6v-static-retained-dma-buf-images-can-sample-black-before-hotplug.md#the-production-comparison-stops-before-its-first-verdict-2026-10-09-utc)
+records the run and a labelled readout outside acceptance. The next package,
+213, is a separate patched-only diagnostic of two boots; it reports
+`PATCHED_WORKLOAD_RETAINED` only when both boots qualify `RETAINED`, and it does
+not complete 211 or stand as part 2's comparison.
+
+t306 closure no longer waits on t307. Niltempus approved the split and root
+confirmed it with these terms. The part 4 qualification runs boot the 211b
+patched Mesa image as a declared guest intervention, supported by the context
+result; that result does not show the production artifact removed, and the
+runs claim no t307 repair. Before any t306 guest depends on it, 213 must
+report `PATCHED_WORKLOAD_RETAINED`, both boots qualified `RETAINED`; `LOST`,
+`INSUFFICIENT`, `INCOMPLETE` or a startup or infrastructure refusal stops the
+work for a report. That qualifies the test environment only. Each of the five
+runs still needs its own pixel, input-routing, endpoint and lock evidence;
+neither CPU controls nor 213 substitute for a return test, and readiness is
+not relaxed. Where the combined or locked all-return run needs guest init or
+fixture changes, the changed source is frozen and gated and a new image is
+derived from it, not described as 211b's; host-only verifier changes may be
+pinned separately. The installed release keeps stock host Mesa. Physical KVM
+acceptance runs on the exact gated release and records the actual AMD driver
+and Mesa identity. Radeonsi is not shown to be immune; a matching physical
+failure reopens the dependency. t307 continues on its own, with a review of
+whether the amdgpu and radeonsi winsys share the hazard, and any fresh-open
+implementation needs its own API, PRIME and custody review and comparison.
+The stopped 211 boot is not an accepted negative control.
+
+213 ran once and stopped at its first patched boot before client pixels. During
+the startup desktop-profile apply the owner loop failed with `mirror head 1
+callback has no logical generation` on both heads. Both heads had retired
+their bootstrap frame by out-fence, and the topology installation then reset
+their completion authority, so the frame's late kernel page-flip event most
+likely entered a fresh intake with no submitted generation. That provenance
+is an inference: the error names neither the serial nor the source. This is a
+Sophia callback-accounting failure, not evidence about Mesa retention. 211 and
+213 stay as recorded. Root owns the narrow repair, which keeps the selected
+completion authority across apply and rollback for the same physical head and
+card route, with a device-free regression. A 213 successor follows on the
+repaired source.
+
+For the five qualification runs root chose one t306 tooling candidate: red-first
+controls, the full gate, one new image and a re-derived patched-Mesa transform
+for all five packages, rather than starting some runs on the old fixture. Every
+run carries pixel proof for each returned head, bound through the action
+target, the replacement owner and that owner's head records, so a surviving or
+pre-loss head cannot stand in. Every run also carries post-return input
+routing, gated by the guest's own publication and settlement records, and
+complete endpoints. The keyboard-only run gains a baseline and post-return
+content witness. Lock coverage applies to the locked all-return run only: it
+must name the locked epoch and the returned topology before unlock, keys must
+stay away from the client while locked, and a key must reach the focused client
+after the normal unlock. The combined run is the declared 60-second session.
+The fixture and proof boundary is in package 214's `BOUNDARY-01.txt`.
+
 ## Resume interrupted by normal-login failure (2026-10-09)
 
 After reboot, niltempus reported that moving the main monitor from DP-1 to

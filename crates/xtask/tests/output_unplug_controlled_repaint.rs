@@ -596,3 +596,51 @@ fn an_unready_run_whose_first_region_was_never_the_frame_reproduces_nothing() {
         "reproduced=no",
     );
 }
+
+/// The harness's endpoint records of a process it could not reap and of a guest it had to stop.
+const UNREAPED: [&str; 3] = [
+    "sophia_qemu_unplug schema=1 status=display_bus_ended display_bus_exit=unreaped display_bus_signal=KILL display_bus_pid=4242",
+    "sophia_qemu_unplug schema=1 status=guest_stopped qemu_exit=unreaped logger_exit=0 qemu_signal=KILL logger_signal=none qemu_pid=4243",
+    "sophia_qemu_unplug schema=1 status=guest_stopped qemu_exit=143 logger_exit=0 qemu_signal=TERM logger_signal=none",
+];
+
+fn lost() -> Run {
+    Run {
+        region: Box::new(|head, shift| (head == 2 && shift == 7).then_some((1, 0))),
+        ..Run::default()
+    }
+}
+
+#[test]
+fn an_unreaped_or_stopped_endpoint_is_invalid_before_retained_lost_or_unready() {
+    let unready = || Run {
+        ready: false,
+        ..Run::default()
+    };
+    for (name, run) in [
+        ("retained", Run::default()),
+        ("lost", lost()),
+        ("unready", unready()),
+    ] {
+        let log = run.build();
+        for record in UNREAPED {
+            for changed in [format!("{log}{record}\n"), format!("{record}\n{log}")] {
+                let line = verify(&changed, controlled_repaint()).unwrap_err();
+                assert!(
+                    line.starts_with("sophia_qemu_controlled_repaint_verdict schema=1 status=INVALID reason: the host "),
+                    "{name}: {line}"
+                );
+            }
+        }
+    }
+    // Valid controls: a reaped bus leaves each verdict as it was.
+    let reaped = "sophia_qemu_unplug schema=1 status=display_bus_ended display_bus_exit=143 display_bus_signal=TERM\n";
+    let lines = verify(
+        &format!("{}{reaped}", Run::default().build()),
+        controlled_repaint(),
+    )
+    .unwrap();
+    assert!(lines[0].contains("status=RETAINED"), "{lines:?}");
+    let line = verify(&format!("{}{reaped}", lost().build()), controlled_repaint()).unwrap_err();
+    assert!(line.contains("status=LOST head=2 frame=9"), "{line}");
+}
