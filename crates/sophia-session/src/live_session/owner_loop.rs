@@ -49,6 +49,7 @@ struct LoopRenderOwners {
 }
 
 struct SessionLoopStartup<'a> {
+    initial_output_realization: Option<sophia_config::DesktopOutputReconciliation>,
     client_render_devices: Option<render_devices::LiveRenderDeviceCoordinator>,
     output_topology_monitor: Option<sophia_backend_live::LiveDrmTopologyMonitor>,
     xauthority: &'a std::path::Path,
@@ -412,6 +413,7 @@ fn run_session_loop_inner(
         initial_head_mapping,
     } = resources;
     let SessionLoopStartup {
+        initial_output_realization,
         mut output_topology_monitor,
         mut client_render_devices,
         xauthority,
@@ -425,6 +427,19 @@ fn run_session_loop_inner(
         xtest_evidence,
         xtest_scene,
     } = startup;
+    let mut output_realization = output_realization::OutputRealizationLedger::default();
+    if let (Some(realization), Some(native)) =
+        (initial_output_realization, native_scanout.as_ref())
+    {
+        output_realization.stage(
+            output_realization::OutputRealizationBinding {
+                transition: 0,
+                notice_sequence: 0,
+                native_owner: native.retirement_owner_identity(),
+            },
+            realization,
+        )?;
+    }
     let started = Instant::now();
     // Physical verifiers still depend on a complete, in-order retirement log.
     // Keep the experiment opt-in until their launch and verification contract

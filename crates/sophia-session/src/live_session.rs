@@ -105,6 +105,7 @@ mod lock_authenticator;
 mod lock_provider;
 mod native_retirement;
 mod native_session_evidence;
+mod output_realization;
 mod output_replacement;
 mod output_startup_activation;
 mod owner_wake;

@@ -736,6 +736,7 @@ pub(crate) fn run_persistent_xterm_session(
             initial_head_mapping,
         },
         SessionLoopStartup {
+            initial_output_realization: startup_realization,
             output_topology_monitor,
             client_render_devices,
             xauthority: xauthority.path(),
