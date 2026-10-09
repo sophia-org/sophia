@@ -665,6 +665,77 @@ or a rendering repair. A bounded runner, its runtime premise and exact-argv
 GO remain separate. Installed libraries and all previous series verdicts
 are unchanged; t306/t307 remain unaccepted.
 
+## CPU qualification of the screen-sharing witness (2026-10-09 UTC)
+
+Evidence `171-premise-witness-design/DESIGN-R2.txt` replaces the proposed
+separate premise boots with a common traced child pair. Screen sharing and
+pixel records must come from the same boot: an original integer-descriptor
+hash can collide, so a premise observed in one boot cannot establish another
+boot's shape. The trace overhead is a shared intervention. The frozen test,
+its arguments and environment, and `classify_handle5` remain unchanged.
+
+The private init in `173-premise-witness-init`, `ca0706c3`, adds a top-level
+block and three call sites. Removing those four marked regions reproduces
+the frozen init `f49c78d0` byte for byte. It records 27 syscall and scheduler
+events, scoped to init and its descendants, and dumps the stopped trace
+after the ordinary test-exited record. Eighteen shell stand-in scenarios
+passed 139 assertions. Their first run exposed a real collector defect:
+a failed trace-file redirection skipped the loop and reported an empty,
+complete dump. Revision 3 opens the file explicitly and reports failure.
+Both runs and their source identities are retained. These are stand-in
+checks; real tracefs behavior, filtering and collection cost remain untested.
+
+The frozen `174-premise-classifier` implements the corresponding reader.
+Its manifest is
+`c7c943f0eff49753cf996fd119be137cbb3374662911fb279fcf75db768a3a48`
+(148 entries); `RESULT.txt` is `457f4552`. The descriptor model passed
+23 CPU tests, and the complete synthetic reader passed 31. Source review
+found two format mismatches missed by the first 27-test run: the x86 clock
+name and a scheduler flag. Both defects are preserved and reproduced by
+new controls. Seven validation-bypass mutants were also killed, and three
+command-line controls passed. Independent freeze inspection found no
+discrepancy.
+
+The reader binds raw event counts to the header and each CPU's counters,
+pairs syscalls, identifies the frozen test through exec and fork ancestry,
+and follows descriptor generations through creation, duplication and close.
+It requires a unique ordered embedding of the test's description-query
+graph, allowing Mesa's additional queries. GET_CAPS and equality against
+the producer's winsys distinguish a new sibling screen from a shared one.
+The serial records must independently establish both arms' pre-drop device,
+description, pixel-window and held-output premises. The screen verdict is
+reported alongside the unchanged pixel verdict; it cannot rehabilitate an
+`INVALID` test result.
+
+The classifier assumes complete syscall capture and the frozen source's
+shared descriptor table. Zero loss counters and balanced records cannot
+prove that tracing omitted no entire syscall pair. Strict microsecond
+ordering and an unmatched syscall at thread exit can cause conservative
+refusals. No runtime screen sharing, rendering repair, handle mechanism or
+subcontext mechanism has been established by this CPU work. Child images,
+their bounded runner and runtime qualification remain separate.
+
+The common traced child pair was subsequently prepared once in
+`176-premise-child-images`, from 07:46:43Z to 07:48:53Z, with exit zero.
+Its 11 archive controls passed. The images are original
+`6b183464615c68a435024d430675534aaaa3a469c4dc2eed04c59fa3e1ae3c0b`
+and patched
+`ebd4f0fa53f208437bb70897d4508c7e5a4dc2b1270d9678e2e6001c18bcd1ba`.
+Each replaces only `usr/bin/sophia-qemu-init` in its corresponding 170
+parent with `ca0706c3`, preserving its mode 0700 and every header field
+except file size. Entry count stays 5917; nothing is added or removed.
+Every other record, entry order and trailer is byte-identical to its parent.
+The children still differ only in libgallium, with equal metadata.
+
+Independent output review re-hashed both images, raw streams and verified
+decompressions, recomputed the complete content and metadata listings, and
+checked both parent-to-child changes and the one-entry pair difference.
+All checks passed. The read-only manifest is
+`74ddfdea5075b4c7ef2104dca1b69c2767659b51757b25c7b220e143153a1217`
+(52 entries, including the two image paths); `RESULT.txt` is `696ba22c`.
+Neither child has booted. The runner still needs explicit collection bounds
+for the trace dump and unchanged, separate test and infrastructure verdicts.
+
 ## Real-context control and a freshness-oracle gap (2026-10-09 UTC)
 
 Series 141 ran the reviewed observer and context recipe once, from 03:38:28Z
