@@ -318,6 +318,13 @@ where
             .and_then(NativeGbmRendererWorker::in_flight_correlation)
     }
 
+    /// Queued work, including a deferred worker frame or its newer replacement.
+    pub(crate) fn queued_frame_correlation(&self) -> Option<super::LiveRendererFrameCorrelation> {
+        self.pending_frame
+            .as_ref()
+            .map(|frame| super::worker::frame_correlation(frame, None))
+    }
+
     pub const fn direct_cpu_bootstrap_attempts(&self) -> usize {
         self.direct_cpu_bootstrap_attempts
     }

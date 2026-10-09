@@ -78,8 +78,7 @@ known-working rollback target instead of tearing down a viable desktop.
 Implement configuration and admission independently from master. Integrate runtime
 changes on the gated t306 continuity candidate. Claude owns retained images,
 suspend/resume, lock coverage and t306/t307 evidence; coordinate before editing
-`owner_loop/topology_phase.rs` or `output_topology_owner.rs`. Guest qualification
-gets a quiet host window with fresh preflight and the reviewed exact launcher.
+`owner_loop/topology_phase.rs` or `output_topology_owner.rs`.
 
 Device-free tests cover strict controls, safe settings, unavailable and unusable
 heads, exclusions, sticky fallback, return restoration, mirrors, deterministic
@@ -87,8 +86,17 @@ placement, policy-key uniqueness, focus, GPU renumbering and foreign seats,
 identity-changing reloads, no-output waiting and stale completion rejection.
 Exercise session transitions and lock barriers on the combined candidate; run
 the full isolated repository gate and layout checks. Keep bounded output-policy
-diagnostics durable. t306/t307 supplies the retained DMA-BUF continuity proof;
-client-specific workspace checks belong in the desktop integration repository.
+diagnostics durable. Client-specific workspace checks belong in the desktop
+integration repository.
+
+On 2026-10-09 niltempus removed QEMU qualification from the t306 release gate.
+After the renderer-content repair and its failing-without-fix CPU regressions,
+run one full isolated gate on the combined recovery candidate, build its matched
+desktop release, and perform the attended physical KVM loss/return check. Capture
+the AMD driver, Mesa identity and session log. The separate t307 virgl/Mesa work
+does not block this path; the stopped 211, 213 and 215 guest records retain their
+original dispositions. The physical check supplies the remaining continuity
+evidence for this desktop, without asserting that the QEMU environment qualifies.
 
 Release the profile and Sophia pin together in niltempus, preserving the seat1
 rule and HDMI exclusion as defense in depth. Record exact installed and rollback
