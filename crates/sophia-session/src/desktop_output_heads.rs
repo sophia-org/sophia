@@ -417,9 +417,10 @@ impl<'a> LiveNativeOutputTopologyHardware<'a> {
         let capability = self
             .capabilities
             .iter()
-            .find(|capability| capability.connector_name() == connector)?;
-        self.scanout
-            .head_index_for_native_connector(capability.connector_id())
+            .find(|capability| capability.connector_key() == connector)?;
+        // Connector numbers are local to a DRM device. Only the capability's
+        // bound opaque head disambiguates equal numbers on admitted GPUs.
+        self.scanout.head_index_for_head(capability.head()?)
     }
 }
 

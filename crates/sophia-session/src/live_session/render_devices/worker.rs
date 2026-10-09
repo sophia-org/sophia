@@ -2,9 +2,13 @@ use super::super::x_frontend::{LiveXPixmapAllocator, LiveXRenderDeviceProvider};
 use super::*;
 use sophia_x_authority::{XServerFrontendPixmapAllocator, XServerFrontendRenderDeviceProvider};
 
-pub(super) fn prepare(request: PreparationRequest) -> Result<PreparedInventory, String> {
-    let devices = sophia_backend_live::discover_seat_render_devices(&request.seat)
-        .map_err(|error| format!("render inventory: {error}"))?;
+pub(super) fn prepare(
+    request: PreparationRequest,
+    admission: &sophia_backend_live::LiveGpuAdmission,
+) -> Result<PreparedInventory, String> {
+    let devices =
+        sophia_backend_live::discover_admitted_seat_render_devices(&request.seat, admission)
+            .map_err(|error| format!("render inventory: {error}"))?;
     let observed = devices
         .iter()
         .map(|device| device.identity.clone())
@@ -111,6 +115,7 @@ fn prepare_bundle(
 pub(in crate::live_session) fn initial(
     native: &sophia_backend_live::LiveProductionNativeScanout,
     seat: &str,
+    admission: sophia_backend_live::LiveGpuAdmission,
 ) -> Result<(Arc<Bundle>, LiveRenderDeviceCoordinator), String> {
     use std::os::unix::fs::MetadataExt;
     let primary = LiveXRenderDeviceProvider {
@@ -125,7 +130,7 @@ pub(in crate::live_session) fn initial(
             .map_err(|error| error.to_string())?,
     );
     let metadata = file.metadata().map_err(|error| error.to_string())?;
-    let devices = sophia_backend_live::discover_seat_render_devices(seat)
+    let devices = sophia_backend_live::discover_admitted_seat_render_devices(seat, &admission)
         .map_err(|error| error.to_string())?;
     let identity = devices
         .iter()
@@ -145,7 +150,7 @@ pub(in crate::live_session) fn initial(
         bundle.clone(),
         identity,
         devices,
-        prepare,
+        move |request| prepare(request, &admission),
     )?;
     Ok((bundle, coordinator))
 }

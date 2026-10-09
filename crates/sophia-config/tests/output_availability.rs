@@ -14,6 +14,9 @@ use sophia_config::{
     validate_desktop_output_reconciliation,
 };
 
+#[path = "support/output_runtime.rs"]
+mod runtime;
+
 const DAILY: DesktopOutputTiming = DesktopOutputTiming::new(2560, 1440, 119_998);
 const OFFICE: DesktopOutputTiming = DesktopOutputTiming::new(1920, 1080, 60_000);
 
@@ -349,16 +352,15 @@ fn fallback_choice_follows_connector_names_not_enumeration() {
 }
 
 #[test]
-fn a_fallback_without_a_preferred_mode_is_refused_not_skipped() {
+fn a_fallback_without_a_preferred_mode_uses_an_advertised_timing() {
     let mut first = head("DP-2", OFFICE, 0);
     first.preferred_mode = None;
     let attached = topology(vec![first, head("DP-3", OFFICE, 1920)]);
-    assert_eq!(
-        reconcile_desktop_output_candidate(&daily(DesktopOutputAvailability::Adaptive), &attached),
-        Err(DesktopOutputReconcileError::PreferredModeUnavailable(
-            "DP-2".to_owned()
-        ))
-    );
+    let resolved =
+        reconcile_desktop_output_candidate(&daily(DesktopOutputAvailability::Adaptive), &attached)
+            .unwrap();
+    assert_eq!(resolved.fallback_connector.as_deref(), Some("DP-2"));
+    assert_eq!(resolved.outputs[0].mode, OFFICE);
 }
 
 #[test]
@@ -424,7 +426,7 @@ fn the_preferred_monitor_returning_restores_the_strict_result() {
 }
 
 #[test]
-fn adaptive_tolerates_availability_only() {
+fn adaptive_uses_safe_settings_but_strict_keeps_its_refusals() {
     let mut profile = daily(DesktopOutputAvailability::Adaptive);
     profile.named[0].mode = Some(DesktopOutputMode::Exact {
         width: 3840,
@@ -432,6 +434,10 @@ fn adaptive_tolerates_availability_only() {
         refresh_millihz: 60_000,
     });
     let attached = topology(vec![head("DP-1", DAILY, 0), head("DP-2", OFFICE, 2560)]);
+    let resolved = reconcile_desktop_output_candidate(&profile, &attached).unwrap();
+    assert_eq!(resolved.outputs[0].mode, DAILY);
+    profile.availability = DesktopOutputAvailability::Strict;
+    profile.fallback_policy_key = None;
     assert_eq!(
         reconcile_desktop_output_candidate(&profile, &attached),
         Err(DesktopOutputReconcileError::ModeUnavailable(
@@ -443,6 +449,11 @@ fn adaptive_tolerates_availability_only() {
     unsupported.named[0].vrr = Some(DesktopOutputVrrMode::Always);
     let mut fixed = head("DP-1", DAILY, 0);
     fixed.vrr_capable = false;
+    let resolved =
+        reconcile_desktop_output_candidate(&unsupported, &topology(vec![fixed.clone()])).unwrap();
+    assert_eq!(resolved.outputs[0].vrr, DesktopOutputVrrMode::Disabled);
+    unsupported.availability = DesktopOutputAvailability::Strict;
+    unsupported.fallback_policy_key = None;
     assert_eq!(
         reconcile_desktop_output_candidate(&unsupported, &topology(vec![fixed])),
         Err(DesktopOutputReconcileError::VrrUnsupported(
@@ -452,33 +463,27 @@ fn adaptive_tolerates_availability_only() {
 }
 
 #[test]
-fn mirror_groups_keep_strict_availability() {
+fn adaptive_mirror_groups_are_unavailable_as_a_whole() {
     let mut profile = daily(DesktopOutputAvailability::Adaptive);
     profile.named[0].mirror = vec!["DP-3".to_owned()];
 
     assert_eq!(
         reconcile_desktop_output_candidate(&profile, &topology(vec![head("DP-3", DAILY, 0)])),
-        Err(DesktopOutputReconcileError::UnknownConnector(
-            "DP-1".to_owned()
-        ))
+        Err(DesktopOutputReconcileError::NoEnabledOutput)
     );
     assert_eq!(
         reconcile_desktop_output_candidate(
             &profile,
             &topology(vec![head("DP-1", DAILY, 0), unplugged("DP-3")])
         ),
-        Err(DesktopOutputReconcileError::DisconnectedConnector(
-            "DP-3".to_owned()
-        ))
+        Err(DesktopOutputReconcileError::NoEnabledOutput)
     );
     assert_eq!(
         reconcile_desktop_output_candidate(
             &profile,
             &topology(vec![unplugged("DP-1"), head("DP-3", DAILY, 0)])
         ),
-        Err(DesktopOutputReconcileError::DisconnectedConnector(
-            "DP-1".to_owned()
-        ))
+        Err(DesktopOutputReconcileError::NoEnabledOutput)
     );
 
     // A dark group's member is the group's, not a fallback candidate.

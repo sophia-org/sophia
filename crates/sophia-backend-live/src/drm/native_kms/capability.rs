@@ -104,6 +104,8 @@ pub struct LibdrmNativeOutputCapability {
     output: OutputId,
     connector_id: u32,
     connector_name: String,
+    gpu_identity: Option<String>,
+    connector_key: String,
     modes: Vec<LibdrmNativeOutputTiming>,
     preferred_mode: Option<LibdrmNativeOutputTiming>,
     selected_mode: LibdrmNativeOutputTiming,
@@ -120,11 +122,14 @@ impl LibdrmNativeOutputCapability {
         selected_mode: LibdrmNativeOutputTiming,
         vrr_status: LibdrmNativeVrrPropertyDiscoveryStatus,
     ) -> io::Result<Self> {
+        let connector_name = connector_name.into();
         let capability = Self {
             head: sophia_engine::RenderHeadId::INVALID,
             output,
             connector_id,
-            connector_name: connector_name.into(),
+            connector_key: connector_name.clone(),
+            connector_name,
+            gpu_identity: None,
             modes: modes.into_iter().collect(),
             preferred_mode,
             selected_mode,
@@ -187,6 +192,26 @@ impl LibdrmNativeOutputCapability {
         &self.connector_name
     }
 
+    pub fn gpu_identity(&self) -> Option<&str> {
+        self.gpu_identity.as_deref()
+    }
+
+    pub fn connector_key(&self) -> &str {
+        &self.connector_key
+    }
+
+    pub fn with_gpu_identity(mut self, gpu: Option<&str>) -> io::Result<Self> {
+        if gpu.is_some_and(|gpu| !crate::gpu_admission::valid_identity(gpu)) {
+            return Err(io::Error::other("DRM GPU identity is invalid"));
+        }
+        self.gpu_identity = gpu.map(str::to_owned);
+        self.connector_key = gpu.map_or_else(
+            || self.connector_name.clone(),
+            |gpu| format!("{gpu}/{}", self.connector_name),
+        );
+        Ok(self)
+    }
+
     pub fn modes(&self) -> &[LibdrmNativeOutputTiming] {
         &self.modes
     }
@@ -244,7 +269,6 @@ where
         .map(native_output_timing)
         .filter(|mode| mode.valid())
         .ok_or_else(|| io::Error::other("selected DRM connector has no usable mode"))?;
-    let preferred_mode = preferred_mode.or(Some(selected_mode));
     let vrr_status =
         discover_native_vrr_properties(device, selection.connector, selection.crtc).status;
     LibdrmNativeOutputCapability::new(

@@ -48,7 +48,7 @@ impl LiveGpuAdmission {
     }
 }
 
-fn valid_identity(identity: &str) -> bool {
+pub(crate) fn valid_identity(identity: &str) -> bool {
     !identity.is_empty()
         && identity.len() <= 256
         && identity

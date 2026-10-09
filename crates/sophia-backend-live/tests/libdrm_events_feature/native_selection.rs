@@ -465,6 +465,56 @@ fn an_ungrouped_connector_is_its_own_logical_output() {
 }
 
 #[test]
+fn excluded_connector_cannot_consume_the_requested_heads_only_crtc() {
+    let first = drm::control::from_u32::<drm::control::connector::Handle>(21).unwrap();
+    let second = drm::control::from_u32::<drm::control::connector::Handle>(22).unwrap();
+    let encoder = drm::control::from_u32::<drm::control::encoder::Handle>(31).unwrap();
+    let crtc = drm::control::from_u32::<drm::control::crtc::Handle>(41).unwrap();
+    let plane = drm::control::from_u32::<drm::control::plane::Handle>(51).unwrap();
+    let device = FakeMultiNativeKmsSelectionDevice {
+        connectors: [first, second]
+            .into_iter()
+            .map(|handle| {
+                (
+                    handle,
+                    LibdrmNativeConnectorSnapshot::new(
+                        true,
+                        Some(encoder),
+                        [encoder],
+                        Some(Size {
+                            width: 1920,
+                            height: 1080,
+                        }),
+                    ),
+                )
+            })
+            .collect(),
+        crtcs: vec![crtc],
+        encoders: vec![(
+            encoder,
+            LibdrmNativeEncoderSnapshot::new(Some(crtc), [crtc]),
+        )],
+        planes: vec![(plane, LibdrmNativePlaneSnapshot::new([crtc]))],
+        cursor_planes: Vec::new(),
+    };
+    let all = select_native_primary_plane_targets(&device);
+    assert_eq!(
+        all.status,
+        LibdrmNativePrimaryPlaneSelectionSetStatus::Partial
+    );
+    assert_eq!(all.selections[0].connector_id(), 21);
+    let selected =
+        sophia_backend_live::select_native_primary_plane_targets_matching(&device, |id| id == 22);
+    assert_eq!(
+        selected.status,
+        LibdrmNativePrimaryPlaneSelectionSetStatus::SelectedAll
+    );
+    assert_eq!(selected.connected_connectors, 1);
+    assert_eq!(selected.selections[0].connector_id(), 22);
+    assert_eq!(selected.selections[0].crtc_id(), 41);
+}
+
+#[test]
 fn connectors_in_one_group_share_a_logical_output() {
     let grouping = NativeMirrorGrouping::new([
         vec!["DP-1".to_owned(), "DP-2".to_owned()],
@@ -492,7 +542,9 @@ fn one_connector_cannot_belong_to_two_groups() {
             vec!["DP-1".to_owned(), "DP-2".to_owned()],
             vec!["DP-2".to_owned(), "DP-3".to_owned()],
         ]),
-        Err(NativeMirrorGroupingError::ConnectorInTwoGroups("DP-2".to_owned()))
+        Err(NativeMirrorGroupingError::ConnectorInTwoGroups(
+            "DP-2".to_owned()
+        ))
     );
 }
 
@@ -553,8 +605,14 @@ fn native_selection_discovers_a_cursor_plane_per_crtc() {
         ],
         crtcs: vec![crtc_a, crtc_b],
         encoders: vec![
-            (encoder_a, LibdrmNativeEncoderSnapshot::new(Some(crtc_a), [crtc_a])),
-            (encoder_b, LibdrmNativeEncoderSnapshot::new(Some(crtc_b), [crtc_b])),
+            (
+                encoder_a,
+                LibdrmNativeEncoderSnapshot::new(Some(crtc_a), [crtc_a]),
+            ),
+            (
+                encoder_b,
+                LibdrmNativeEncoderSnapshot::new(Some(crtc_b), [crtc_b]),
+            ),
         ],
         planes: vec![
             (plane_a, LibdrmNativePlaneSnapshot::new([crtc_a])),
@@ -610,7 +668,10 @@ fn native_selection_without_a_cursor_plane_is_unchanged() {
             ),
         )],
         crtcs: vec![crtc],
-        encoders: vec![(encoder, LibdrmNativeEncoderSnapshot::new(Some(crtc), [crtc]))],
+        encoders: vec![(
+            encoder,
+            LibdrmNativeEncoderSnapshot::new(Some(crtc), [crtc]),
+        )],
         planes: vec![(plane, LibdrmNativePlaneSnapshot::new([crtc]))],
         cursor_planes: Vec::new(),
     };
@@ -667,8 +728,14 @@ fn a_single_cursor_plane_is_not_shared_between_heads() {
         ],
         crtcs: vec![crtc_a, crtc_b],
         encoders: vec![
-            (encoder_a, LibdrmNativeEncoderSnapshot::new(Some(crtc_a), [crtc_a])),
-            (encoder_b, LibdrmNativeEncoderSnapshot::new(Some(crtc_b), [crtc_b])),
+            (
+                encoder_a,
+                LibdrmNativeEncoderSnapshot::new(Some(crtc_a), [crtc_a]),
+            ),
+            (
+                encoder_b,
+                LibdrmNativeEncoderSnapshot::new(Some(crtc_b), [crtc_b]),
+            ),
         ],
         planes: vec![
             (plane_a, LibdrmNativePlaneSnapshot::new([crtc_a])),

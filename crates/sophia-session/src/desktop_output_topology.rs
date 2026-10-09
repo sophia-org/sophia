@@ -223,7 +223,7 @@ pub fn prepare_native_output_activation_plan(
         // one logical output backed by several connectors. What must stay unique
         // is the connector below -- a cable drives one head, and two capabilities
         // naming one would make that head's state ambiguous.
-        let connector = capability.connector_name();
+        let connector = capability.connector_key();
         if capabilities_by_connector
             .insert(connector, capability)
             .is_some()
@@ -302,7 +302,7 @@ pub fn prepare_native_output_authority_candidate(
 
     let capabilities = capabilities
         .iter()
-        .map(|capability| (capability.connector_name(), capability))
+        .map(|capability| (capability.connector_key(), capability))
         .collect::<BTreeMap<_, _>>();
     let snapshot_heads = snapshot
         .heads
@@ -590,7 +590,7 @@ pub fn project_native_output_topology(
         // is what makes them one logical output rather than N side by side.
         for member in group {
             connectors.push(DesktopOutputTopologyConnector {
-                connector: member.connector_name().to_owned(),
+                connector: member.connector_key().to_owned(),
                 connected: true,
                 // Profiles name nominal timings. Distinct DRM modelines can
                 // reduce to the same resolution and integer refresh rate.
@@ -612,7 +612,7 @@ pub fn project_native_output_topology(
                 transforms: DesktopOutputTransformSet::NORMAL,
                 vrr_capable: member.vrr_configurable(),
                 current: DesktopOutputState {
-                    connector: member.connector_name().to_owned(),
+                    connector: member.connector_key().to_owned(),
                     // This head's own mode, which is the one it is actually
                     // scanning out. Stamping the group's mode here described a
                     // state the connector could not present, and the snapshot
@@ -657,7 +657,7 @@ fn capability_matches_topology(
         .map(timing)
         .collect::<BTreeSet<_>>();
     let topology_modes = connector.modes.iter().copied().collect::<BTreeSet<_>>();
-    capability.connector_name() == connector.connector
+    capability.connector_key() == connector.connector
         && capability_modes == topology_modes
         && capability.preferred_mode().map(timing) == connector.preferred_mode
         && timing(capability.selected_mode()) == connector.current.mode

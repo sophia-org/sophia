@@ -34,6 +34,39 @@ pub struct DesktopSessionCandidate {
     pub inspection: DesktopInspectionAccess,
     pub components: crate::DesktopComponents,
     pub applications: Vec<crate::DesktopApplication>,
+    /// Exact udev ID_PATH values; output exclusions do not imply GPU admission.
+    pub excluded_gpus: std::collections::BTreeSet<String>,
+}
+
+pub fn valid_desktop_gpu_identity(identity: &str) -> bool {
+    !identity.is_empty()
+        && identity.len() <= 256
+        && identity
+            .split_once('-')
+            .is_some_and(|(kind, path)| !kind.is_empty() && !path.is_empty())
+        && identity.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':' | b'+')
+        })
+}
+
+fn excluded_gpu(node: &KdlNode) -> Result<String, DesktopProfileError> {
+    if node.entries().len() != 1
+        || node.children().is_some()
+        || node.ty().is_some()
+        || node.entries()[0].name().is_some()
+        || node.entries()[0].ty().is_some()
+    {
+        return Err(schema_error(
+            "exclude-gpu requires one untyped ID_PATH string",
+        ));
+    }
+    node.get(0)
+        .and_then(|value| value.as_string())
+        .filter(|identity| valid_desktop_gpu_identity(identity))
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            schema_error("exclude-gpu requires a stable udev ID_PATH, not a device node")
+        })
 }
 
 fn schema_error(message: impl Into<String>) -> DesktopProfileError {
@@ -164,10 +197,20 @@ pub fn prepare_desktop_session_candidate(
         inspection: DesktopInspectionAccess::Disabled,
         components: crate::DesktopComponents::default(),
         applications: Vec::new(),
+        excluded_gpus: std::collections::BTreeSet::new(),
     };
     for value in &candidate.values {
         let node = single_node(&value.encoded)?;
         match node.name().value() {
+            "exclude-gpu" => {
+                if prepared.excluded_gpus.len() >= 16
+                    || !prepared.excluded_gpus.insert(excluded_gpu(&node)?)
+                {
+                    return Err(schema_error(
+                        "GPU exclusions must be unique and bounded to sixteen identities",
+                    ));
+                }
+            }
             "application" => {
                 let application =
                     crate::application_command::parse_application(&node, &value.provenance)?;

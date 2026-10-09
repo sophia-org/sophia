@@ -26,10 +26,19 @@ impl LiveWmSession {
             profile_key,
         } = started_launch;
 
-        let output_policy_keys = startup_output_policy_keys(
-            config.output_profile.current(),
-            output_bootstrap.as_ref().and_then(|bootstrap| bootstrap.fallback_connector.as_deref()),
-        )?;
+        let output_policy_keys = if let Some(keys) = output_bootstrap
+            .as_ref()
+            .and_then(|bootstrap| bootstrap.realized_policy_keys.clone())
+        {
+            keys
+        } else {
+            startup_output_policy_keys(
+                config.output_profile.current(),
+                output_bootstrap
+                    .as_ref()
+                    .and_then(|bootstrap| bootstrap.fallback_connector.as_deref()),
+            )?
+        };
         let (output_service, output_authority, output_capabilities, startup_output_transaction) =
             match (output_transport, output_bootstrap) {
                 (
@@ -39,6 +48,7 @@ impl LiveWmSession {
                         capabilities,
                         startup_candidate,
                         fallback_connector: _,
+                        realized_policy_keys: _,
                     }),
                 ) => {
                     let mut authority =
@@ -70,13 +80,10 @@ impl LiveWmSession {
                             Ok(transaction)
                         })
                         .transpose()?;
-                    let service = transport.map(|transport| transport.start(snapshot)).transpose()?;
-                    (
-                        service,
-                        Some(authority),
-                        capabilities,
-                        startup_transaction,
-                    )
+                    let service = transport
+                        .map(|transport| transport.start(snapshot))
+                        .transpose()?;
+                    (service, Some(authority), capabilities, startup_transaction)
                 }
                 (None, None) => (None, None, Vec::new(), None),
                 (Some(_), None) => {
@@ -89,7 +96,8 @@ impl LiveWmSession {
             .first()
             .map(|output| output.id)
             .ok_or("public WM requires at least one output")?;
-        let scene = LivePublicPolicyState::initial_scene(outputs, active, session_operations.clone());
+        let scene =
+            LivePublicPolicyState::initial_scene(outputs, active, session_operations.clone());
         let mut reducer = sophia_engine::PolicyProjectionReducer::new(scene)?;
         reducer.connect(1)?;
         let output_bounds = wm_output_bounds(outputs)
@@ -160,7 +168,9 @@ impl LiveWmSession {
             dropped_default_shortcuts: config.dropped_shortcuts.clone(),
             accepted_configuration: None,
             launch_classifications: BTreeMap::new(),
-            launch_origins: Arc::new(Mutex::new(crate::launch_origin::LaunchOriginRegistry::default())),
+            launch_origins: Arc::new(Mutex::new(
+                crate::launch_origin::LaunchOriginRegistry::default(),
+            )),
             staged_launch_contexts: Vec::new(),
             staged_output_launch_contexts: Vec::new(),
             in_flight_origin_surfaces: Vec::new(),

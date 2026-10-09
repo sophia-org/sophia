@@ -4,6 +4,24 @@ use sophia_protocol::{OutputId, TransactionId};
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 
+/// Advertised timing and grouping selected by Session, never permission to
+/// discover or open another GPU.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LiveNativeOutputRequest {
+    pub connector: String,
+    pub mode: crate::LibdrmNativeOutputTiming,
+    pub scale: u32,
+    pub vrr: sophia_protocol::OutputVrrPolicy,
+    pub mirror_of: Option<String>,
+}
+
+#[cfg(feature = "seat-control")]
+mod discovery;
+#[cfg(feature = "seat-control")]
+pub use discovery::{
+    LiveNativeOutputDiscovery, LiveNativeOutputProbe, LiveResolvedOutputReplacement,
+};
+
 mod completion_wait;
 pub use completion_wait::LiveNativeCompletionWait;
 mod composition_admission;

@@ -734,6 +734,7 @@ fn validate_setting(
         .contains(&name),
         DesktopAuthority::Shortcut => crate::shortcut_candidate::SETTINGS.contains(&name),
         DesktopAuthority::Session => [
+            "exclude-gpu",
             "application",
             "terminal",
             "browser",
@@ -832,10 +833,23 @@ fn setting_key(authority: DesktopAuthority, node: &KdlNode) -> Result<String, De
             "device",
             "named",
             "shell-component",
+            "exclude-gpu",
         ]
         .contains(&node.name().value())
     {
         key.push('.');
+        if authority == DesktopAuthority::Output
+            && name == "named"
+            && let Some(gpu) = node.children().and_then(|children| {
+                children
+                    .nodes()
+                    .iter()
+                    .find(|child| child.name().value() == "gpu")
+            })
+        {
+            key.push_str(exact_string_argument(gpu, "output GPU")?);
+            key.push('/');
+        }
         key.push_str(exact_first_string(node)?);
     }
     Ok(key)

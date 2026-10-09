@@ -142,6 +142,22 @@ impl LiveProductionNativeScanout {
         grouping: &crate::NativeMirrorGrouping,
         initial_mapping: sophia_protocol::OutputHeadMapping,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::new_with_selection_and_settings(
+            selection,
+            connector_records,
+            grouping,
+            initial_mapping,
+            &BTreeMap::new(),
+        )
+    }
+
+    fn new_with_selection_and_settings(
+        selection: crate::RealAtomicScanoutSelectionSet,
+        connector_records: Vec<crate::LiveSysfsConnectorRecord>,
+        grouping: &crate::NativeMirrorGrouping,
+        initial_mapping: sophia_protocol::OutputHeadMapping,
+        initial_settings: &BTreeMap<String, LiveNativeOutputRequest>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let authority = crate::RealAtomicScanoutSmokeConfig::default_primary_output()
             .ok_or("persistent native scanout config is invalid")?
             .authority;
@@ -182,10 +198,9 @@ impl LiveProductionNativeScanout {
                 .zip(session.outputs().iter().copied())
                 .zip(session.heads().iter().copied())
             {
-                let Some(record) = connector_records
-                    .iter()
-                    .find(|record| record.matches_card_connector(&card_node, selection.connector_id()))
-                else {
+                let Some(record) = connector_records.iter().find(|record| {
+                    record.matches_card_connector(&card_node, selection.connector_id())
+                }) else {
                     return Err(format!(
                         "persistent native output has no Engine connector match: connector={}",
                         selection.connector_id(),
@@ -197,7 +212,12 @@ impl LiveProductionNativeScanout {
                     output: output_id,
                     target_generation: 1,
                     native_size: selection.size(),
-                    scale: record.scale,
+                    scale: sessions
+                        .head_records
+                        .iter()
+                        .find(|record| record.head == head_id)
+                        .and_then(|record| initial_settings.get(&record.connector_name))
+                        .map_or(record.scale, |request| request.scale),
                     refresh_millihz: super::refresh::head_refresh_millihz(
                         selection.mode().map(|mode| mode.vrefresh()),
                         record.mode.refresh_millihz,
@@ -216,7 +236,9 @@ impl LiveProductionNativeScanout {
             }
         }
         for record in &sessions.head_records {
-            if grouping.is_group_primary(&record.connector_name)
+            if (grouping.is_group_primary(&record.connector_name)
+                || grouping
+                    .is_group_primary(record.connector_name.rsplit('/').next().unwrap_or_default()))
                 && presentation_outputs.set_primary_head(record.output, record.head)
                     != sophia_engine::EngineLogicalOutputUpdate::Updated
             {
@@ -278,7 +300,14 @@ impl LiveProductionNativeScanout {
                     refresh_millihz: target.refresh_millihz,
                     transform: target.transform,
                     mapping: target.mapping,
-                    vrr: sophia_protocol::OutputVrrPolicy::Disabled,
+                    vrr: sessions
+                        .head_records
+                        .iter()
+                        .find(|record| record.head == head_id)
+                        .and_then(|record| initial_settings.get(&record.connector_name))
+                        .map_or(sophia_protocol::OutputVrrPolicy::Disabled, |request| {
+                            request.vrr
+                        }),
                     pending_callback: None,
                     completion_mode: LiveProductionKmsCompletionMode::PageFlipPreferred,
                     completion_fence_status: crate::LibdrmNativeCompletionFenceStatus::Unsupported,
@@ -288,7 +317,7 @@ impl LiveProductionNativeScanout {
                     output: sophia_engine::HeadlessOutput {
                         id: output_id,
                         size,
-                        scale: 1,
+                        scale: target.scale,
                     },
                     target_generation: 1,
                     submitted_at: None,
@@ -335,7 +364,7 @@ impl LiveProductionNativeScanout {
                         sophia_engine::HeadlessOutput {
                             id: output_id,
                             size,
-                            scale: 1,
+                            scale: target.scale,
                         },
                     )
                     .map_err(|error| {
@@ -433,7 +462,8 @@ impl LiveProductionNativeScanout {
             head_table,
             native_frame_owner,
             present_clocks: crate::LiveNativePresentClocks::new(
-                std::num::NonZeroU64::new(native_frame_owner.raw()).expect("nonzero native owner")),
+                std::num::NonZeroU64::new(native_frame_owner.raw()).expect("nonzero native owner"),
+            ),
             present_clock_monotonic: BTreeMap::new(),
             present_clock_crtc_events: BTreeMap::new(),
             next_frame_id: 1,

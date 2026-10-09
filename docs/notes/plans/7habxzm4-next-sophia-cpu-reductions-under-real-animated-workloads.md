@@ -1950,6 +1950,21 @@ redesign out of this slice. The software owned-upload candidate remains
 separate because the native recipe has zero CPU uploads. t289 remains open;
 the published baseline and live installation are unchanged by this attribution.
 
+### Operator comparison: btop versus Codex in Herder (2026-10-09)
+
+niltempus reports Sophia showing 0.0% CPU with btop in the active window, and
+higher Sophia CPU while Codex runs inside Herder, despite btop having visibly
+more animation. The message called this t298; the current CPU task is t289
+(t298 is p9any/dp9ik authentication), so the observation is retained here.
+
+This is an informal observation, not a controlled comparison. No duration,
+precise nonzero value, sampling precision, release identity or frame/damage
+counts were captured with it; displayed 0.0% does not establish zero CPU work.
+Preserve this workload pair for attribution, checking text-update damage,
+redraw scope and nonvisual authority/repaint work alongside presentation cadence.
+Visible animation volume alone does not identify compositor work. No cause,
+performance result or change in task priority follows from the observation.
+
 ### Cache implementation gated; native comparison pending (2026-10-06)
 
 Candidate `82ec37c0b` is signed and its full isolated gate passes. The

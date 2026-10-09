@@ -105,6 +105,8 @@ mod lock_authenticator;
 mod lock_provider;
 mod native_retirement;
 mod native_session_evidence;
+mod output_replacement;
+mod output_startup_activation;
 mod owner_wake;
 mod present_clock;
 use owner_wake::{OwnerWake, SessionSender};
@@ -334,11 +336,7 @@ fn build_reloaded_output_topology_candidate(
         config.output_profile.current(),
         &topology,
     )?;
-    let resolved_keys = startup_output_policy_keys(
-        config.output_profile.current(),
-        reconciled.fallback_connector.as_deref(),
-    )?;
-    if policy_keys.is_some_and(|keys| keys != &resolved_keys) {
+    if policy_keys.is_some_and(|keys| keys != &reconciled.policy_keys) {
         return Err(
             "output policy affinity would rebind; changing the startup binding requires a new session"
                 .into(),
