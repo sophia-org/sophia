@@ -13,8 +13,9 @@ const CHILD: &str = "SOPHIA_SEAT_DESCRIPTOR_TEST_CHILD";
 fn descriptor_count() -> usize {
     fs::read_dir("/proc/self/fd")
         .unwrap()
-        .map(|entry| entry.unwrap())
-        .count()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()
+        .len()
 }
 
 #[test]
@@ -40,6 +41,13 @@ fn released_seat_devices_close_their_descriptors() {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr),
         );
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(
+            stdout.lines().any(|line| {
+                line == "test released_seat_devices_close_their_descriptors ... ok"
+            }),
+            "descriptor child did not run its test: {stdout}",
+        );
         return;
     }
 
@@ -49,7 +57,11 @@ fn released_seat_devices_close_their_descriptors() {
     for cycle in 0..64 {
         let device = SeatDevice::open(&mut seat, Path::new("/dev/null")).unwrap();
         let descriptor = format!("/proc/self/fd/{}", device.as_fd().as_raw_fd());
-        assert!(fs::read_link(&descriptor).is_ok(), "cycle {cycle}: open fd");
+        assert_eq!(
+            fs::read_link(&descriptor).unwrap(),
+            Path::new("/dev/null"),
+            "cycle {cycle}: the noop device is /dev/null",
+        );
         device.close(&mut seat).unwrap();
         assert_eq!(
             fs::read_link(&descriptor).unwrap_err().kind(),
