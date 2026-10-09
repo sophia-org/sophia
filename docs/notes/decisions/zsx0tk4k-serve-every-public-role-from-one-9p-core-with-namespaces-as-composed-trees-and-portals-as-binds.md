@@ -175,15 +175,19 @@ against it for the same workload. The three rules act at connect time and at
 operator cadence; they add no per-frame work and leave Engine's hot path
 untouched.
 
-This record promotes no task. The open work maps onto existing tasks in
-[todo.md](../../../todo.md): t250 and t252 qualify the live 9P roles; t254
-migrates administration; t273 serves the
-[broker](../../sophia-broker-files.md) and [portal](../../sophia-portal-files.md)
-files; t255 retires the legacy envelope and its default selections; t133 and
-t256 cover identity and the portability audit; t142 and t275 cover group
-listeners and the recipe; t046 delivers the capture bind and t045 the
-confined daily group; t257 adds status files. Monitor recovery remains the
-active implementation priority.
+This record promotes nothing into the critical lane. The open work maps onto
+tasks in [todo.md](../../../todo.md), with the new rows owned by the
+[convergence plan](../plans/jsschoen-converge-public-roles-on-one-9p-core.md):
+t250 and t252 qualify the live 9P roles; t254 migrates administration; t314
+and t315 serve the [broker](../../sophia-broker-files.md) and
+[portal](../../sophia-portal-files.md) files whose contracts t273 designed;
+t316 rebuilds the application authority scaffold as an export; t255 retires
+the legacy envelope and its default selections; t133 and t256 cover the
+admission review and the portability audit, and t317 proves identity at
+attach; t142 and t275 cover group listeners and the recipe, and t318
+implements the composition layer; t319 delivers the capture bind carved from
+t046, and t045 the confined daily group; t257 adds status files. Monitor
+recovery remains the active implementation priority.
 
 On acceptance, the normative documents carry the target, labeled as
 unimplemented until each part lands: the protocol frontends and namespace
