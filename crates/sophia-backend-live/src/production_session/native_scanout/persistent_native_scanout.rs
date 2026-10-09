@@ -23,6 +23,7 @@ pub use discovery::{
 };
 
 mod completion_wait;
+mod head_completion;
 pub use completion_wait::LiveNativeCompletionWait;
 mod composition_admission;
 mod composition_installation;

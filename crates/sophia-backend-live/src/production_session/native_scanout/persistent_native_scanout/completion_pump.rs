@@ -80,12 +80,18 @@ impl LiveProductionNativeScanout {
                         .into());
                     };
                     callback.output = self.heads[head_index].output.id;
-                    if self.heads[head_index].completion_mode
-                        == LiveProductionKmsCompletionMode::OutFenceAuthoritative
-                    {
-                        self.heads[head_index].late_page_flip_events = self.heads[head_index]
-                            .late_page_flip_events
-                            .saturating_add(1);
+                    let queued = self.heads[head_index]
+                        .queue_page_flip_callback(*callback)
+                        .map_err(|error| {
+                            self.callback_queue_saturated =
+                                self.callback_queue_saturated.saturating_add(1);
+                            format!(
+                                "{error}: head={} output={}",
+                                callback.head.raw(),
+                                callback.output.raw()
+                            )
+                        })?;
+                    if !queued {
                         self.kernel_page_flip_ust.remove(&(
                             callback.output,
                             callback.head,
@@ -93,17 +99,6 @@ impl LiveProductionNativeScanout {
                         ));
                         continue;
                     }
-                    if self.heads[head_index].pending_callback.is_some() {
-                        self.callback_queue_saturated =
-                            self.callback_queue_saturated.saturating_add(1);
-                        return Err(format!(
-                            "native head completion ledger is full: head={} output={}",
-                            callback.head.raw(),
-                            callback.output.raw(),
-                        )
-                        .into());
-                    }
-                    self.heads[head_index].pending_callback = Some(*callback);
                 }
                 Ok(())
             })();

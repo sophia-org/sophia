@@ -365,19 +365,7 @@ impl LiveProductionNativeScanout {
                 size: install.selection.size(),
                 scale: install.scale,
             };
-            head.pending_callback = None;
-            head.completion_mode = LiveProductionKmsCompletionMode::PageFlipPreferred;
-            head.completion_fence_status = crate::LibdrmNativeCompletionFenceStatus::Unsupported;
-            head.last_callback_serial = None;
-            head.pending_content = None;
-            head.rendering_content = None;
-            head.submitted_content = None;
-            head.presented_content = None;
-            head.submitted_group_frame = None;
-            head.prepared_group_frame = None;
-            head.submitted_at = None;
-            head.submitted_ust_usec = None;
-            head.output_frames = install.output_frames;
+            head.install_topology_presentation(install.output_frames);
         }
         self.logical_outputs = logical_outputs.clone();
         self.presentation_outputs = logical_outputs.len();
