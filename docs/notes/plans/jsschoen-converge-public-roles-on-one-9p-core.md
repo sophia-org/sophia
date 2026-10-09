@@ -33,6 +33,11 @@ rows here have landed. t133 reconciles the admission review with production.
 t142 proves confined groups on separate listeners. t275 designs the recipe.
 t256 audits portability and t257 adds status files.
 
+One row here is critical-lane work by niltempus's decision of 2026-10-09: the
+9P-side input injection contract, t320, because the application authority's
+input contract, the driver tier and agent-driven acceptance all depend on it
+and none can be designed around it later.
+
 ## Task details
 
 ## t314
@@ -119,6 +124,32 @@ lock is applied; the fid answers ESTALE after revocation; known pixels match
 on a CPU client and an accelerated client; no XTEST admission is implied; the
 dma-buf form stays with the recording kind on a separate descriptor channel.
 Depends on t315 and t142.
+
+## t320
+
+Design the 9P-side input injection contract, the driver tier's mechanism for
+9P applications and the equivalent of admitted XTEST for X clients. An
+admitted window's input file is served by the application authority and bound
+into a driver's tree by its grant; the application never sees the file and
+cannot tell injected input from physical input except through the journal.
+Injected events enter Engine's routing at the same seam as admitted XTEST
+injection in `crates/sophia-x-authority/src/x11_socket/connection/xtest.rs`,
+so target resolution against presented state, bounded capture, cancellation,
+the lock refusal and revocation epochs from the
+[target-resolved input contract](../../target-resolved-input.md) apply
+unchanged. The design must settle: the record format and its relationship to
+the application authority's routed-input encoding; provenance marking so the
+journal and policy distinguish injected from physical input; the single
+namespace a driver grant may address; backpressure, deadlines and the slow
+writer; refusal while locked with nothing in flight completing after the
+lock; and how the X-side XTEST admission and the 9P-side file share one
+admission so a namespace has one injection permission regardless of its
+clients' protocols. Exit: a reviewed design recorded in the
+[application frontend document](../../sophia-9p-authority.md) as labeled
+target text, an amendment to the one-core decision naming the chosen seam,
+a device-free test list covering accept, refuse, revoke, lock and provenance,
+and no implementation. This precedes any application API under t316's
+successor work.
 
 ## Connections
 

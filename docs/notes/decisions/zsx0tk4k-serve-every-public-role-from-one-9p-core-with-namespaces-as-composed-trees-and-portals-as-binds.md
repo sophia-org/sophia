@@ -95,6 +95,15 @@ recipes are composed by the operator, and the driver tier is absent from the
 installed daily session unless a task names it. Sophia builds nothing
 agent-specific: no harness, no named client and no feature for one agent.
 
+For 9P applications the driver tier's mechanism is an input file on the
+admitted window, served by the application authority, bound into the driver's
+tree by its grant and never visible to the application itself. Injected
+events enter Engine's routing at the same seam as admitted XTEST injection,
+so target resolution against presented state, capture, cancellation, the
+lock refusal and revocation epochs apply unchanged, and the journal records
+their provenance. The contract is designed under t320 before the application
+authority gains an API.
+
 ```text
    X11 apps ──X11──▶ X authority ──┐
    9P apps  ──9P───▶ app authority ─┤  an export; no own codec, no FUSE

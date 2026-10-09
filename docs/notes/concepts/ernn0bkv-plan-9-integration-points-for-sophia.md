@@ -348,6 +348,35 @@ observer recipe, that operator and driver recipes are composed by the
 operator, and that the driver tier stays out of the installed daily session
 unless a task names it.
 
+### What the observe and act split replaces in X11
+
+The agent model is a better XTEST only in the sense that it separates what X11
+lumps together. XTEST is one of three X mechanisms, and the tiers map onto all
+three.
+
+| X11 today | What it gives | Sophia end state | What changes |
+| --- | --- | --- | --- |
+| XTEST | Injects pointer and key events. Ambient: any connected client may. No audit, no revocation, no target binding; events land wherever focus is. | Driver tier | Injection is a per-namespace admission granted to one identity, journaled, revocable in the middle of a task, and routed by Engine against presented state like physical input. Sophia already gates XTEST this way with `--admit-xtest`. |
+| GetImage, xwd, scrot | Reads a drawable's CPU backing. Misses accelerated content and the composed desktop. | Capture bind | One grant yields a frame record with a presentation generation and bounded pixels from the composed output, refused while locked, revoked by ESTALE. |
+| XRecord, xprop, xwininfo | Watches protocol traffic and reads window state with full metadata. | Inspection and status files | Sanitized, bounded, read-only records per role, with no metadata reaching a blind WM and no acknowledgement-floor cost on it. |
+
+The honest description is XTEST, GetImage and XRecord placed behind one
+identity, one grant model and one audit trail, with observing and acting held
+by different identities. XTEST's flaw is not that it injects input; it is that
+anyone who can open the display may do so silently, with no way to tell
+afterwards.
+
+Three limits keep this from being oversold. XTEST itself remains the X-side
+surface for clients such as xdotool, gated by namespace admission; the driver
+tier is XTEST admission for X plus an equivalent for 9P applications. That 9P
+equivalent is not yet designed: the Plan 9 answer is to write events into an
+admitted window's input file, served by the application authority and routed
+by Engine against presented targets, and t320 in the
+[convergence plan](../plans/jsschoen-converge-public-roles-on-one-9p-core.md#t320)
+owns that design on the critical path. And injection stays out of the
+installed daily session unless a task names it; an agent on the live desktop
+observes and does not act.
+
 ## Where the cost lands
 
 The three rules act at connect time and at operator cadence, not per frame.
