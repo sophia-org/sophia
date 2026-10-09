@@ -59,18 +59,6 @@ impl LiveProductionNativeScanout {
         }
 
         fn synthesize_out_fence_callback(&mut self, index: usize) -> crate::LivePageFlipCallback {
-            let serial = self.heads[index]
-                .last_callback_serial
-                .unwrap_or_default()
-                .saturating_add(1);
-            self.heads[index].completion_mode =
-                LiveProductionKmsCompletionMode::OutFenceAuthoritative;
-            self.heads[index].out_fence_retirements =
-                self.heads[index].out_fence_retirements.saturating_add(1);
-            crate::LivePageFlipCallback {
-                output: self.heads[index].output.id,
-                head: self.heads[index].head,
-                frame_serial: serial,
-            }
+            self.heads[index].synthesize_out_fence_callback()
         }
 }

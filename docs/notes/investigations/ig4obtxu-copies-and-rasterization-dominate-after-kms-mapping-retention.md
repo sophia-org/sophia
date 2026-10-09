@@ -262,6 +262,37 @@ The failed first gate is retained separately. Native pixel and retained-image
 proof, the matched desktop release and attended acceptance remain outstanding;
 t310 stays open and the installed desktop has not changed.
 
+#### Completion authority across output-policy installation (2026-10-09)
+
+The patched-Mesa diagnostic `t306-01/213-qemu-patched-repaint-diagnostic-series`
+stopped during mirrored startup at frozen source `0f84dcb0c`, before any client
+Present. Both heads had retired frame 2 by out-fence. Installing the startup
+output policy then reset their completion mode and callback serial, while the
+card's event routes remained alive. The next mirror callbacks had no submitted
+logical generation, ending the session. Unread kernel events for frame 2 fit
+that ordering, but their identity is an inference: the error record did not
+carry callback provenance. This is a Sophia accounting defect, not Mesa evidence.
+
+The repair retains each physical head's completion source and last callback
+serial across policy apply and rollback. Once out-fence completion is
+authoritative, subsequent kernel events remain late events; a successor retires
+through its own fence. It does not guess which submission a kernel event names.
+The event and fence serials have different bases. In-place plans keep connector,
+CRTC and plane, and every event-bearing commit on that CRTC requests its
+available out-fence. A newly constructed owner still creates fresh heads with
+page-flip completion preferred and no callback serial.
+
+Device-free evidence is
+`~/.local/state/sophia/development-evidence/t310-runtime-20261009/mirror-completion-01/`.
+The extracted old reset compiles and fails three named assertions: late event
+before successor submission, late event after submission, and preserved serial
+basis. With the repair, all 364 backend library tests pass. The tests drive the
+production head reset, callback filter, fence synthesis and runtime intake;
+they do not execute a card pump or a full topology installation. Claude's
+independent source review found no blocker. The full gate and a new diagnostic
+image remain required. The stopped 211 and 213 series retain their dispositions;
+no guest or physical acceptance follows from these tests.
+
 #### Matched desktop artifact prepared (2026-10-09)
 
 Signed niltempus candidate `6d50e38cc5014d248d8110e8c82f928b349cecd0` pairs the
