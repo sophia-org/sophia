@@ -667,11 +667,15 @@ current replacement and after its presentation and policy barriers. Settings
 reloads that would leave a viable desktop waiting are declined; reloads during
 a rebuild are folded into its next resolution.
 
-If adaptive replacement activation fails, one conservative attempt keeps a
-complete logical output group with an advertised timing nearest 60 Hz, unit
-scale, normal transform and VRR off. A second failure waits for a new topology,
-seat or profile event; timer retries do not replenish that allowance. In-place
-settings changes retain the working rollback target. Ownership failures,
+Runtime topology notices quarantine input immediately and coalesce for up to
+250 ms before rebuilding. Later notices cannot extend that window indefinitely.
+Runtime refusals retry after 250, 1,000 and 4,000 ms, then wait for a new topology,
+seat or profile event. An adaptive refusal selects conservative settings for
+the remaining retries: one complete logical output group, an advertised timing
+nearest 60 Hz, unit scale, normal transform and VRR off. Strict retries keep
+the requested settings. Only a successful resume resets the retry counter;
+constructing a replacement does not. Startup retains its separate allowance of
+one conservative attempt. In-place settings changes retain the working rollback target. Ownership failures,
 including renderer retirement exceeding its existing two-second bound, remain
 terminal. Device-free checks establish these state transitions; native pixels,
 retained-image continuity and attended acceptance remain separate qualification.

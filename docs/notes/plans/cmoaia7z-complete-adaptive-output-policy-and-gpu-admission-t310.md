@@ -61,17 +61,28 @@ WM. Hardware movement may transfer a realized key atomically, with one enabled
 logical owner at a time. Reconcile capabilities before activation; never briefly
 light every connected head. Publish geometry and realized keys at one topology
 generation after the existing test/apply/rollback and presentation barriers.
-Stale completions cannot publish. A failed adaptive activation gets one bounded
-conservative attempt, then retains viable committed state or waits.
+Stale completions cannot publish. A failed adaptive startup activation gets one
+bounded conservative attempt. Runtime refusals use the finite rescan backoff
+series, retaining conservative settings through its remaining attempts.
 
 For a replacement with no viable owner, that attempt keeps one admitted logical
 group (the focused group, otherwise canonical connector order), with complete
 mirrors, unit scale, normal transform and VRR disabled. It chooses an advertised
 timing nearest 60 Hz, then largest pixel area, without changing desired policy.
-The allowance covers TEST refusal, construction and failed first activation;
-timer retries do not replenish it. A new topology, seat or profile notice can
+Startup's allowance covers TEST refusal, construction and failed first activation.
+Runtime uses 250/1,000/4,000 ms retries before waiting; success is a completed
+resume, not merely construction. A new topology, seat or profile notice can
 resolve desired preferences again. In-place reloads retain their existing
 known-working rollback target instead of tearing down a viable desktop.
+
+The first attended same-port cable test on `3ef3d5b77` failed on 2026-10-09:
+reconnection produced a burst that retired the just-resumed owner, followed by
+two immediate refusals and a black desktop. A subsequent VT return panicked
+while closing an adopted replacement whose evidence owner was never opened.
+The successor coalesces notifications for a bounded 250 ms before rebuilding,
+uses the delayed runtime series, preserves bounded refusal codes, and pairs
+with the evidence-owner ordering fix. Exact hardware refusal remains unknown;
+another attended check is required after the combined gate and release.
 
 ### Integration and proof
 

@@ -70,6 +70,26 @@ fn field_allowed(name: &str, key: &str, value: &str) -> bool {
                 | "stale"
                 | "none"
         ),
+        (RESOLUTION, "stage") => matches!(
+            value,
+            "availability"
+                | "probe"
+                | "resolution"
+                | "construction"
+                | "activation"
+                | "validation"
+                | "layout"
+                | "seat"
+                | "resume"
+        ),
+        (RESOLUTION, "failure_code") => {
+            value == "none" || super::failure::approved_failure_code(value)
+        }
+        (RESOLUTION, "validation") => matches!(
+            value,
+            "not_attempted" | "accepted" | "busy" | "rejected" | "unbuildable" | "unresolved"
+        ),
+        (RESOLUTION, "errno") => integer(value) && value.parse::<u32>().is_ok(),
         (
             RESOLUTION,
             "generation" | "transition" | "notice" | "owner" | "outputs" | "adjustments"

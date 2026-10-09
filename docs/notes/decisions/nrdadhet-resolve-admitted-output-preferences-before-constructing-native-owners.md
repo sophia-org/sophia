@@ -45,8 +45,10 @@ Identity is revalidated before use; a changed device refuses rather than falling
 back to another node. Startup, runtime rebuild, seat return and recovery now use
 the boundary. Reload compares a pure resolution before retaining its current
 owner or scheduling a rebuild. The realization ledger binds publication to the
-current owner, notice, transition, profile and presentation; a failed adaptive
-replacement gets one conservative attempt before waiting. The full isolated
+current owner, notice, transition, profile and presentation. Startup permits one
+conservative attempt; after the first physical return failure, runtime retries
+retain conservative settings through a bounded 250/1,000/4,000 ms series before
+waiting, with a 250 ms coalescing window for notifications. The full isolated
 gate passes on `83c68c7c4`. Native retained-image continuity and attended physical
 acceptance remain open.
 
