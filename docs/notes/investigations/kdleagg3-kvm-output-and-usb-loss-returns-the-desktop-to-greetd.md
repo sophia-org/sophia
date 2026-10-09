@@ -336,6 +336,70 @@ The separate result is `153-qemu-input-return-result-2/RESULT.txt`
 coverage across topology changes and attended physical KVM acceptance remain
 unproved; the installed session is unchanged.
 
+### Preserve the endpoint after a fixture failure
+
+Signed candidate `7d4bad641` changes the host harness's failure path without
+changing the guest image, startup proof or production code. Its wait helper
+distinguishes a guest failure, a process exit and an actual timeout. An
+existing failure wins over a readiness marker. After recording the original
+failure, the harness collects QEMU and logger statuses once, exits 1 and
+does not invoke the verifier. A clean endpoint after a failed fixture thus
+remains separate from the test result.
+
+Cleanup uses bounded TERM and KILL phases for QEMU, the serial logger and
+the private display bus. A child still present after the final deadline is
+recorded as `unreaped`, with its PID and no invented exit status. An
+unreaped bus also prevents verification. The output-unplug cleanup trap is
+installed before that bus starts; other scenarios retain their existing
+cleanup. Local deadlines do not replace the runner's outer timeout or its
+independent leftovers check.
+
+The reviewed three-file patch is in `157-unplug-failure-endpoint-patch`,
+revision `59edd9d0`, with source/CPU disposition in
+`158-unplug-endpoint-root-review`. Eleven endpoint tests use stand-in
+processes, including the series-153 failure shape, logger failure, forced
+stops and simulated unreaped children; all pass. The existing 24 unplug
+verifier tests, shell syntax checks and Rust formatting also pass. The
+initial bare-rustc check lacked Cargo's manifest-directory environment;
+that check-method failure is retained beside the corrected invocation.
+The full integration gate 159 also passed: 527 libtest summary lines total
+7,299 passed, zero failed and 101 ignored, including nested summaries;
+source/target provenance passed 11 controls. Its 25-entry manifest is
+`9d94c487778e7391cfc7c550e0953eb76e8b37facfb2d15422776a3217799f76`.
+
+That passing gate does **not** qualify this candidate. An independent
+stand-in reproduction found that Bash can wait for a whole pipeline job
+after its last PID has disappeared. The real serial logger has that shape.
+Calling the actual endpoint helper with an earlier pipeline member still
+alive blocked until the four-second outer KILL, exit 137. The original
+11 controls missed this case. `158/REVIEW-03.txt` supersedes the earlier
+qualification; 159 retains the known blocker.
+
+Signed successor `3fc8b4495` gives only output-unplug's serial logger a
+dedicated background owner, preserving the original pipeline's shell
+options and status. The added regression fails on the raw pipeline after
+30.01 seconds and passes on the corrected owner within the declared test
+bound. Equivalence controls retain reader-failure and `tee`-failure statuses;
+the real FIFO launch also preserves CR stripping and the final unterminated
+line. All 13 endpoint tests and the existing 24 verifier tests pass. Patch,
+earlier draft, and red/green results are in `160-unplug-endpoint-r3`, manifest
+`91f254c8b28b6b65dcf52a72967e1a0319f13804751412be7039445783176bbb`.
+
+The successor's full isolated gate 161 ran from 05:35:28Z to 05:39:32Z on
+October 9, exiting 0. Its 527 summary lines total 7,301 passed, zero failed
+and 101 ignored, including nested summaries. All 13 endpoint regressions
+ran in this gate, and source/target provenance passed 12 controls. The
+freeze checks both committed blobs and working files against the reviewed
+patch hashes. The 27-entry manifest is
+`7334e4860a304cb23356b2f14a15d77f6bb7787645e1b6ae783255e598550f21`.
+
+A future runner must pin the new sourced helper and refuse recorded
+unreaped processes even if they disappear before its final scan. The older
+infrastructure classifier is not automatically qualified for these new
+records. No image or guest follows from this CPU repair, and 147 and 153
+keep their original verdicts. The black-frame startup failure still blocks
+qualification of the input-return fixture.
+
 ## t306
 
 1. Preserve the incident records. Make the next failure name the responsible
