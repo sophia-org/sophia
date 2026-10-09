@@ -20,11 +20,15 @@ OwnerHeldWork {
     ),
     output_topology: active_output_topology_preparation.is_some()
         || topology_presentation_deadline.is_some()
-        || output_topology_retry_at.is_some()
+        || output_topology_retry_at.is_some_and(|at| at <= Instant::now())
         || pending_hardware_output_publication.is_some()
         || deferred_output_topology_notice.is_some()
-        || output_topology_owner.input_quarantined()
-        || startup_topology_recovery_pending,
+        // Waiting without a native owner has no local presentation work.
+        // Ordinary maintenance still polls notices and serves control, while
+        // retirement above independently requests service until it finishes.
+        || (native_scanout.is_some()
+            && (output_topology_owner.input_quarantined()
+                || startup_topology_recovery_pending)),
     seat: seat_state != sophia_backend_live::LiveSeatState::Active
         || pending_virtual_terminal.is_some()
         || requested_virtual_terminal.is_some()

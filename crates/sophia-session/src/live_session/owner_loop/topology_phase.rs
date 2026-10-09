@@ -111,6 +111,7 @@
         output_topology_retry_at = None;
         // A new notice starts a new bounded rescan series.
         output_topology_retry_attempts = 0;
+        output_recovery = output_replacement::OutputRecovery::default();
         if advance_security_epoch {
             let revoked_input_leases = advance_application_input_security_epoch(
                 &mut application_route_leases,
@@ -138,6 +139,7 @@
     let hotplug_quarantined = output_topology_owner.phase
         == LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Hotplug);
     let rebuild_requested = (monitor_notice.is_some() || retry_due)
+        && output_recovery != output_replacement::OutputRecovery::Exhausted
         && hotplug_quarantined
         && seat_state == sophia_backend_live::LiveSeatState::Active
         && runtime.is_some();
@@ -148,15 +150,23 @@
         !hotplug_quarantined && output_topology_owner.take_deferred_hotplug_notice();
     if deferred_notice {
         output_topology_retry_attempts = 0;
+        output_recovery = output_replacement::OutputRecovery::default();
     }
     if (hotplug_quarantined || deferred_notice)
+        && output_recovery != output_replacement::OutputRecovery::Exhausted
         && output_topology_retry_at.is_none()
         && let Some(delay) = output_replacement::runtime_output_retry_delay(output_topology_retry_attempts)
     {
         output_topology_retry_at = Some(Instant::now() + delay);
     }
     if rebuild_requested {
+        // A dispatched authority effect owns Policy quarantine, which cannot
+        // enter this branch; its monitor notice waits for rollback/settlement.
+        debug_assert!(active_output_topology_preparation.is_none());
         output_topology_retry_at = None;
+        if let Some(wm) = wm_session.as_mut() {
+            wm.abandon_unstarted_output_topology_for_rebuild()?;
+        }
         output_realization.abandon();
         pending_hardware_output_publication = None;
         hardware_output_publication_presented = false;
@@ -208,6 +218,7 @@
                 output_realization.committed(),
                 replacement_head_mapping,
                 &config.cursor_resolution.asset,
+                output_recovery,
             ),
             None => output_replacement::RuntimeOutputReplacement::Refused(
                 "DRM topology rescan lost its seat controller".to_owned(),
@@ -218,9 +229,14 @@
             | output_replacement::RuntimeOutputReplacement::Refused(_) => {
                 let _ = output_topology_owner.observe_rebuild(Vec::new(), Vec::new())?;
                 let attempt = output_topology_retry_attempts;
-                let retry = output_replacement::runtime_output_retry_delay(attempt);
+                let retry = if matches!(replacement, output_replacement::RuntimeOutputReplacement::Refused(_)) {
+                    output_recovery.refused(config.output_profile.current()).then_some(Duration::ZERO)
+                } else {
+                    output_replacement::runtime_output_retry_delay(attempt)
+                };
                 output_topology_retry_attempts = attempt.saturating_add(1);
                 output_topology_retry_at = retry.map(|delay| Instant::now() + delay);
+                output_recovery.record_exhausted("runtime", config.output_profile.current());
                 let retry_msec = retry.map_or("none".to_owned(), |delay| delay.as_millis().to_string());
                 let status = if matches!(replacement, output_replacement::RuntimeOutputReplacement::Waiting) { "waiting" } else { "refused" };
                 tracing::info!(target: "sophia_scanout_evidence",
@@ -240,19 +256,13 @@
                     ),
                 }
             }
-            output_replacement::RuntimeOutputReplacement::Active(replacement, realization) => {
+            output_replacement::RuntimeOutputReplacement::Active(replacement, realization, policy_layout) => {
                 output_topology_retry_attempts = 0;
                 *native_scanout = Some(*replacement);
                 native_retirement.admit(native_scanout.as_ref().expect("just adopted"))?;
                 let replacement = native_scanout.as_mut().expect("just adopted");
                 let replacement_outputs = replacement.outputs();
-                let replacement_capabilities = replacement.output_capabilities()?;
-                let policy_layout = output_realization::OutputPolicyLayout::prepare(
-                    &realization,
-                    &replacement_capabilities,
-                    &replacement_outputs,
-                    replacement_head_mapping,
-                )?;
+                let replacement_capabilities = policy_layout.capabilities.clone();
                 let realization_changed = output_realization.committed().is_none_or(|before| {
                     before.outputs != realization.outputs || before.policy_keys != realization.policy_keys
                 });
@@ -267,12 +277,14 @@
                     binding,
                     *realization,
                 )?;
-                let rebuild = output_topology_owner
+                // Keep the old published topology until resume succeeds. A
+                // partially applied replacement still belongs to quarantine.
+                let mut replacement_owner = output_topology_owner.clone();
+                let rebuild = replacement_owner
                     .observe_resolved_rebuild(replacement_outputs.clone(), replacement.head_fingerprint(), realization_changed)?;
                 let topology_changed = rebuild == LiveOutputTopologyRebuild::TopologyChanged;
-                physical_output_topology_replaced |= topology_changed;
                 let mut replacement_authority = replacement.output_authority_snapshot(
-                    output_topology_owner.topology_epoch,
+                    replacement_owner.topology_epoch,
                 )?;
                 policy_layout.apply_authority_geometry(&mut replacement_authority)?;
                 let replacement_primary = replacement_outputs.iter()
@@ -285,17 +297,37 @@
                         .unwrap_or_default();
                     scene.compose(&committed, None, pointer.position())?;
                 }
-                let runtime = runtime
-                    .as_mut()
-                    .ok_or("DRM topology rescan lost the visual runtime")?;
-                let restored = resume_native_scanout_from_scene_at(
-                    runtime,
+                let attempt = try_resume_native_scanout_from_scene_at(
+                    runtime.as_mut().ok_or("DRM topology rescan lost the visual runtime")?,
                     replacement,
                     &replacement_outputs,
                     scene,
                     suspended_renderer_images,
                     &policy_layout.bounds,
                 )?;
+                let restored = match attempt {
+                    ResumeAttempt::Resumed(restored) => restored,
+                    ResumeAttempt::Abandoned { error, mode } => {
+                        output_realization.abandon();
+                        close_native_owner!("replacement_refused", mode);
+                        native_owner_retirement::finish_before_replacement(runtime.as_ref(), native_retirement)?;
+                        if scene.reconfigure_output_descriptors(&outputs)? {
+                            let committed = runtime.as_ref().expect("retained runtime").committed_surfaces().to_vec();
+                            scene.compose(&committed, None, pointer.position())?;
+                        }
+                        output_topology_retry_at = output_recovery.refused(config.output_profile.current()).then(Instant::now);
+                        output_recovery.record_exhausted("runtime", config.output_profile.current());
+                        tracing::warn!(target: "sophia_scanout_evidence",
+                            "sophia_live_output_resolution schema=1 phase=runtime status=refused reason=hardware transition={} notice={} owner={}",
+                            binding.transition, binding.notice_sequence, binding.native_owner);
+                        tracing::warn!(%error, "replacement resume refused; retained handoff kept");
+                        continue;
+                    }
+                };
+                let runtime = runtime.as_mut().expect("retained runtime");
+                output_topology_owner = replacement_owner;
+                physical_output_topology_replaced |= topology_changed;
+                output_startup_activation::record_ready_heads(&replacement_capabilities)?;
 
                 if topology_changed {
                     let snapshot = policy_layout.frontend_snapshot(

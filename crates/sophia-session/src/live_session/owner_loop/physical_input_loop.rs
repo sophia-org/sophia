@@ -1,6 +1,10 @@
 {
 macro_rules! schedule_output_topology_rebuild {
     ($reason:literal, $security_epoch_already_advanced:expr) => {{
+        output_recovery = output_replacement::OutputRecovery::default();
+        schedule_output_topology_rebuild!(@same_budget $reason, $security_epoch_already_advanced);
+    }};
+    (@same_budget $reason:literal, $security_epoch_already_advanced:expr) => {{
         let notice_sequence = output_topology_owner
             .notice_sequence
             .checked_add(1)
@@ -34,6 +38,27 @@ macro_rules! schedule_output_topology_rebuild {
             $security_epoch_already_advanced,
         );
     }};
+}
+
+if let Some(error) = initial_native_activation_failure.take() {
+    if let Some(wm) = wm_session.as_mut() {
+        wm.abandon_unstarted_output_topology_for_rebuild()?;
+    }
+    let native = native_scanout.as_mut().ok_or("startup recovery lost its failed owner")?;
+    let report = runtime.as_mut().ok_or("startup recovery lost its runtime")?
+        .abandon_native_resume(native, &outputs, Duration::from_secs(2))?;
+    close_native_owner!("startup_apply_refused", RetirementMode::from_resume_abandonment(report));
+    native_owner_retirement::finish_before_replacement(runtime.as_ref(), native_retirement)?;
+    schedule_output_topology_rebuild!(@same_budget "startup_apply_refused", false);
+    if !output_recovery.refused(config.output_profile.current()) {
+        output_topology_retry_at = None;
+    }
+    output_recovery.record_exhausted("startup", config.output_profile.current());
+    output_realization.abandon();
+    startup_topology_recovery_pending = true;
+    let _ = reduce_session_startup(&mut startup_readiness, SessionStartupEvent::NativeRecovered);
+    tracing::warn!(target: "sophia_scanout_evidence", "sophia_live_output_resolution schema=1 phase=startup status=refused reason=hardware");
+    tracing::warn!(%error, "initial native activation refused; session retained for recovery");
 }
 
 let mut native_frame_service_preempted_previous_cycle = false;

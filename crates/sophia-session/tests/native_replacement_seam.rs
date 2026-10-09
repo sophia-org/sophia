@@ -69,3 +69,30 @@ fn only_the_topology_phase_resumes_onto_a_replacement() {
         ["live_session/owner_loop/renderer_image_handoff.rs"]
     );
 }
+
+#[test]
+fn initial_activation_recovery_precedes_any_output_effect_dispatch() {
+    // Startup retirement can discard only an undispatched effect. Keep that
+    // ordering explicit: the owner loop has no device-free execution driver.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/live_session");
+    let owner = fs::read_to_string(root.join("owner_loop.rs")).unwrap();
+    assert!(
+        owner
+            .find("include!(\"owner_loop/initial_runtime.rs\")")
+            .unwrap()
+            < owner
+                .find("include!(\"owner_loop/physical_input_loop.rs\")")
+                .unwrap()
+    );
+    let physical = fs::read_to_string(root.join("owner_loop/physical_input_loop.rs")).unwrap();
+    assert!(
+        physical
+            .find("initial_native_activation_failure.take()")
+            .unwrap()
+            < physical.find("include!(\"wm_phase.rs\")").unwrap()
+    );
+    assert_eq!(
+        containing("wm.take_output_topology_effect()"),
+        ["live_session/owner_loop/wm_phase.rs"]
+    );
+}

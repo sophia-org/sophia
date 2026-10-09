@@ -1,4 +1,18 @@
 impl LiveWmSession {
+    /// A physical owner is being retired before an admitted policy effect
+    /// started. Its old head identities cannot survive into the replacement.
+    /// Started effects must instead finish their own cancellation/rollback.
+    fn abandon_unstarted_output_topology_for_rebuild(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let Some(public) = self.public.as_mut() else { return Ok(()); };
+        if public.output_effect_dispatched {
+            return Err("native rebuild overlaps a dispatched output effect".into());
+        }
+        if let Some(transaction) = public.output_authority.as_ref().and_then(|authority| authority.active_transaction()) {
+            public.reject_output_topology_effect(transaction, sophia_engine::OutputTopologyTransactionFailure::Stale)?;
+        }
+        Ok(())
+    }
+
     fn poll_output_authority(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(public) = self.public.as_mut() {
             public.poll_output_authority()?;

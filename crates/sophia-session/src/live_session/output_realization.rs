@@ -129,6 +129,7 @@ impl OutputRealizationLedger {
 
     pub fn abandon(&mut self) {
         self.pending = None;
+        self.policy = None;
     }
 
     /// Focus is live WM state, not the saved focus-at-startup preference. Call

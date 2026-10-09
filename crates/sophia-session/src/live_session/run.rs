@@ -74,9 +74,9 @@ pub(crate) fn run_persistent_xterm_session(
     if let Some(monitor) = output_topology_monitor.as_mut() {
         monitor.initialize_render_inventory()?;
     }
-    let (mut native_scanout, startup_realization) =
+    let (mut native_scanout, startup_realization, activation, initial_output_recovery) =
         if let Some(controller) = seat_controller.as_mut() {
-            let Some((native, realization)) = output_replacement::wait_for_startup_output(
+            let Some(startup) = output_replacement::wait_for_startup_output(
                 controller,
                 output_topology_monitor
                     .as_mut()
@@ -90,20 +90,29 @@ pub(crate) fn run_persistent_xterm_session(
             else {
                 return Ok(());
             };
-            (Some(native), Some(realization))
+            (
+                Some(startup.native),
+                Some(startup.realization),
+                Some(startup.activation),
+                startup.recovery,
+            )
         } else {
-            (None, None)
+            (
+                None,
+                None,
+                None,
+                output_replacement::OutputRecovery::default(),
+            )
         };
     let public_policy_launch =
         LiveWmSession::activate_public_launch(&mut config, prepared_public_launch)?;
     let mut output_authority_capabilities = None;
     let mut startup_output_activation = None;
     let mut startup_fallback_connector = None;
-    if let Some(native) = native_scanout.as_ref() {
+    if let Some(prepared) = activation {
         let realization = startup_realization
             .as_ref()
             .expect("native owner has a resolved profile");
-        let prepared = output_startup_activation::prepare(native, realization)?;
         startup_fallback_connector.clone_from(&realization.fallback_connector);
         startup_output_activation = prepared.plan;
         output_authority_capabilities = Some(prepared.capabilities);
@@ -726,6 +735,7 @@ pub(crate) fn run_persistent_xterm_session(
         },
         SessionLoopStartup {
             initial_output_realization: startup_realization,
+            initial_output_recovery,
             output_topology_monitor,
             client_render_devices,
             xauthority: xauthority.path(),

@@ -13,6 +13,7 @@ pub(in crate::live_session) enum RuntimeOutputReplacement {
     Active(
         Box<LiveProductionNativeScanout>,
         Box<DesktopOutputReconciliation>,
+        Box<crate::live_session::output_realization::OutputPolicyLayout>,
     ),
 }
 
@@ -22,10 +23,14 @@ pub(in crate::live_session) fn resolve_runtime_output_replacement(
     previous: Option<&DesktopOutputReconciliation>,
     mapping: sophia_protocol::OutputHeadMapping,
     cursor: &sophia_engine::CursorAsset,
+    recovery: OutputRecovery,
 ) -> RuntimeOutputReplacement {
+    if recovery == OutputRecovery::Exhausted {
+        return RuntimeOutputReplacement::Waiting;
+    }
     let resolution = LiveNativeOutputDiscovery::probe(&controller.device_opener())
         .map_err(|error| Box::new(error) as Box<dyn Error>)
-        .and_then(|discovery| resolve_output_replacement(discovery, profile, previous));
+        .and_then(|discovery| resolve_output_replacement(discovery, profile, previous, recovery));
     match resolution {
         Ok(OutputReplacementDecision::Waiting) => RuntimeOutputReplacement::Waiting,
         Ok(OutputReplacementDecision::Active(prepared)) => {
@@ -33,14 +38,39 @@ pub(in crate::live_session) fn resolve_runtime_output_replacement(
                 native,
                 realization,
             } = *prepared;
+            // This constructor performs no modeset and starts no renderer
+            // workers. Refused preflight owners have no scanout custody and
+            // may be dropped here. Every owner passed to resume is instead
+            // admitted to NativeRetirement before it can acquire payloads.
             match LiveProductionNativeScanout::from_resolved_replacement(
                 native,
                 mapping,
                 cursor.clone(),
             ) {
-                Ok(native) => {
-                    RuntimeOutputReplacement::Active(Box::new(native), Box::new(realization))
-                }
+                Ok(native) => match crate::live_session::output_startup_activation::prepare(
+                    &native,
+                    &realization,
+                ) {
+                    Ok(activation) if !activation.refused => {
+                        match crate::live_session::output_realization::OutputPolicyLayout::prepare(
+                            &realization,
+                            &activation.capabilities,
+                            &native.outputs(),
+                            mapping,
+                        ) {
+                            Ok(layout) => RuntimeOutputReplacement::Active(
+                                Box::new(native),
+                                Box::new(realization),
+                                Box::new(layout),
+                            ),
+                            Err(error) => RuntimeOutputReplacement::Refused(error.to_string()),
+                        }
+                    }
+                    Ok(_) => RuntimeOutputReplacement::Refused(
+                        "replacement output activation was refused by hardware".into(),
+                    ),
+                    Err(error) => RuntimeOutputReplacement::Refused(error.to_string()),
+                },
                 Err(error) => RuntimeOutputReplacement::Refused(error.to_string()),
             }
         }

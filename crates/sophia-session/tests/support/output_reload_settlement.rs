@@ -328,3 +328,55 @@ fn a_newer_profile_reload_stays_queued_until_the_active_output_transaction_settl
     assert!(public.take_output_topology_reload_request());
     assert!(!public.take_output_topology_reload_request());
 }
+
+#[test]
+fn a_rebuild_cancels_an_unstarted_startup_candidate_without_publishing_it() {
+    let mut fixture = ReloadFixture::new();
+    let public = fixture.wm.public.as_mut().unwrap();
+    let (capability, snapshot, candidate) = reload_inputs(public);
+    public.output_authority = Some(
+        crate::live_output_authority::LiveOutputAuthorityOwner::new(1, snapshot.clone()).unwrap(),
+    );
+    public.output_capabilities = vec![capability];
+    assert!(public.admit_reloaded_output_topology(candidate).unwrap());
+    public.startup_output_transaction = public.reload_output_transaction.take();
+    public.output_topology_reload_pending = true;
+    // Peer loss must leave this Session-owned startup candidate alone, but a
+    // physical replacement cannot apply it to a different native owner.
+    public
+        .request_output_candidate_cancellation("peer gone".into(), None)
+        .unwrap();
+    assert!(public.output_candidate_active());
+    fixture
+        .wm
+        .abandon_unstarted_output_topology_for_rebuild()
+        .unwrap();
+    let public = fixture.wm.public.as_mut().unwrap();
+    assert!(!public.output_candidate_active());
+    assert_eq!(public.startup_output_transaction, None);
+    assert_eq!(public.published_output_snapshot(), Some(snapshot));
+    assert!(public.take_output_topology_reload_request());
+    fixture
+        .wm
+        .abandon_unstarted_output_topology_for_rebuild()
+        .unwrap();
+}
+
+#[test]
+fn a_rebuild_cannot_discard_a_dispatched_output_effect() {
+    let mut fixture = ReloadFixture::new();
+    let public = fixture.wm.public.as_mut().unwrap();
+    let (capability, snapshot, candidate) = reload_inputs(public);
+    public.output_authority =
+        Some(crate::live_output_authority::LiveOutputAuthorityOwner::new(1, snapshot).unwrap());
+    public.output_capabilities = vec![capability];
+    assert!(public.admit_reloaded_output_topology(candidate).unwrap());
+    public.output_effect_dispatched = true;
+    assert!(
+        fixture
+            .wm
+            .abandon_unstarted_output_topology_for_rebuild()
+            .is_err()
+    );
+    assert!(fixture.wm.output_candidate_active());
+}

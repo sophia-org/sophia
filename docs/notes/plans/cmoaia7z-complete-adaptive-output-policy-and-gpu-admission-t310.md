@@ -64,6 +64,15 @@ generation after the existing test/apply/rollback and presentation barriers.
 Stale completions cannot publish. A failed adaptive activation gets one bounded
 conservative attempt, then retains viable committed state or waits.
 
+For a replacement with no viable owner, that attempt keeps one admitted logical
+group (the focused group, otherwise canonical connector order), with complete
+mirrors, unit scale, normal transform and VRR disabled. It chooses an advertised
+timing nearest 60 Hz, then largest pixel area, without changing desired policy.
+The allowance covers TEST refusal, construction and failed first activation;
+timer retries do not replenish it. A new topology, seat or profile notice can
+resolve desired preferences again. In-place reloads retain their existing
+known-working rollback target instead of tearing down a viable desktop.
+
 ### Integration and proof
 
 Implement configuration and admission independently from master. Integrate runtime

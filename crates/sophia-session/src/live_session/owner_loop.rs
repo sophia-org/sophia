@@ -32,11 +32,8 @@ struct SessionLoopResources<'a> {
     shell_components: &'a mut Option<metadata_shell::component_session::ShellComponentSession>,
     component_catalog: &'a mut component_catalog::ComponentCatalog,
     session_launches: &'a mut SessionLaunchQueue,
-    /// Which connectors share one logical output, from the profile loaded at
-    /// startup. Fixed for the session's life: a rescan that regrouped differently
-    /// would change the desktop's identity behind policy's back.
-    /// Neutral initial policy for heads reconstructed after VT/hotplug loss.
-    /// Output-authority commits may replace it independently on live heads.
+    /// Mapping used to verify the initial presentation. Replacements derive
+    /// their mapping from the current profile before construction.
     initial_head_mapping: sophia_protocol::OutputHeadMapping,
 }
 
@@ -49,6 +46,7 @@ struct LoopRenderOwners {
 
 struct SessionLoopStartup<'a> {
     initial_output_realization: Option<sophia_config::DesktopOutputReconciliation>,
+    initial_output_recovery: output_replacement::OutputRecovery,
     client_render_devices: Option<render_devices::LiveRenderDeviceCoordinator>,
     output_topology_monitor: Option<sophia_backend_live::LiveDrmTopologyMonitor>,
     xauthority: &'a std::path::Path,
@@ -412,6 +410,7 @@ fn run_session_loop_inner(
     } = resources;
     let SessionLoopStartup {
         initial_output_realization,
+        initial_output_recovery: mut output_recovery,
         mut output_topology_monitor,
         mut client_render_devices,
         xauthority,
@@ -544,32 +543,9 @@ fn run_session_loop_inner(
     let window_transitions_enabled = !std::env::var("SOPHIA_ENABLE_WINDOW_TRANSITIONS")
         .is_ok_and(|value| value == "0");
     let runtime = &mut render_owners.runtime;
+    let mut initial_native_activation_failure = None;
     if initialize_empty_runtime {
-        let mut initialized = LiveProductionVisualRuntime::new(&outputs, native_scanout.as_mut())?
-        .with_m4_proof_controls(
-            config.m4_first_acquire_delay,
-            config.m4_reject_first_present,
-            config.m4_diagnose_first_mixed_export,
-        )
-        .with_surface_chrome_style(initial_border_style);
-        initialized.set_transitions_enabled(window_transitions_enabled);
-        initialized.set_indicator_publication(
-            wm_session
-                .as_ref()
-                .and_then(LiveWmSession::indicator_publication),
-        );
-        *runtime = Some(initialized);
-        if let Some(native) = native_scanout.as_mut() {
-            let initialized = runtime.as_mut().expect("runtime just retained");
-            let _ = initialized.run_cpu_repaint(
-                scene,
-                None,
-                None,
-                LiveProductionCursorPresentation::HardwarePlane,
-                &outputs,
-                native,
-            )?;
-        }
+        include!("owner_loop/initial_runtime.rs");
     }
     let mut window_allocation_publisher = window_allocation::LiveWindowAllocationPublisher::default();
     let mut last_authority_update = started;

@@ -3,14 +3,15 @@ use super::*;
 pub(super) struct StartupOutputActivation {
     pub capabilities: Vec<sophia_backend_live::LibdrmNativeOutputCapability>,
     pub plan: Option<NativeOutputActivationPlan>,
+    pub refused: bool,
 }
 
-pub(super) fn prepare(
-    native: &LiveProductionNativeScanout,
-    realization: &sophia_config::DesktopOutputReconciliation,
-) -> Result<StartupOutputActivation, Box<dyn std::error::Error>> {
-    let capabilities = native.output_capabilities()?;
-    for capability in &capabilities {
+/// A head-to-connector mapping for an accepted startup owner or an adopted
+/// replacement. Validation alone must not emit this record for refused heads.
+pub(super) fn record_ready_heads(
+    capabilities: &[sophia_backend_live::LibdrmNativeOutputCapability],
+) -> Result<(), Box<dyn std::error::Error>> {
+    for capability in capabilities {
         let mode = capability.selected_mode();
         // The one place the opaque head id is printed beside its connector
         // name: later per-head evidence carries only `head=`, and physical
@@ -37,6 +38,14 @@ pub(super) fn prepare(
                 > 1,
         );
     }
+    Ok(())
+}
+
+pub(super) fn prepare(
+    native: &LiveProductionNativeScanout,
+    realization: &sophia_config::DesktopOutputReconciliation,
+) -> Result<StartupOutputActivation, Box<dyn std::error::Error>> {
+    let capabilities = native.output_capabilities()?;
     let topology = project_native_output_topology(&capabilities, &native.outputs())?;
     let mut reconciled = realization.clone();
     // Discovery includes dark sockets. This activation plan describes only
@@ -122,8 +131,13 @@ pub(super) fn prepare(
         "native desktop output candidate admitted"
     );
     drop(resolved);
+    let refused =
+        matches!(validation, "busy" | "rejected" | "unbuildable") || executor == "unresolved";
     Ok(StartupOutputActivation {
         capabilities,
-        plan: (validation == "accepted").then_some(activation),
+        // An unavailable cross-device test is not an acceptance, but its
+        // geometry must still reach the ordinary transactional apply path.
+        plan: (!refused).then_some(activation),
+        refused,
     })
 }
