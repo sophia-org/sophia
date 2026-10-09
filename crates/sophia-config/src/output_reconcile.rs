@@ -7,6 +7,13 @@ use crate::{
     DesktopOutputVrrMode, valid_desktop_output_connector,
 };
 
+mod adaptive;
+mod identity;
+pub use adaptive::{
+    DesktopOutputAdjustment, DesktopOutputAdjustmentReason, DesktopOutputResolution,
+    resolve_desktop_output_candidate,
+};
+
 const OUTPUT_MODE_REFRESH_TOLERANCE_MILLIHZ: u32 = 500;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -140,6 +147,10 @@ pub struct DesktopOutputReconciliation {
     /// The connector an adaptive candidate lit because nothing it names could
     /// be. `None` whenever the profile's own outputs were used.
     pub fallback_connector: Option<String>,
+    /// Realized, unique workspace affinities. Absent outputs retain their
+    /// configured preference in the profile, not a second live claim here.
+    pub policy_keys: BTreeMap<String, u64>,
+    pub adjustments: Vec<DesktopOutputAdjustment>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -148,6 +159,7 @@ pub enum DesktopOutputReconcileError {
     InvalidTopology(String),
     InvalidReconciliation(String),
     UnknownConnector(String),
+    AmbiguousConnector(String),
     DisconnectedConnector(String),
     PreferredModeUnavailable(String),
     ModeUnavailable(String),
@@ -188,6 +200,12 @@ impl fmt::Display for DesktopOutputReconcileError {
             }
             Self::UnknownConnector(connector) => {
                 write!(formatter, "unknown connector {connector:?}")
+            }
+            Self::AmbiguousConnector(connector) => {
+                write!(
+                    formatter,
+                    "connector {connector:?} is present on multiple GPUs; qualify its GPU"
+                )
             }
             Self::DisconnectedConnector(connector) => {
                 write!(formatter, "connector {connector:?} is disconnected")
@@ -239,6 +257,18 @@ pub fn reconcile_desktop_output_candidate(
     candidate: &DesktopOutputCandidate,
     topology: &DesktopOutputTopologySnapshot,
 ) -> Result<DesktopOutputReconciliation, DesktopOutputReconcileError> {
+    match resolve_desktop_output_candidate(candidate, topology, None)? {
+        DesktopOutputResolution::Active(resolved) => Ok(resolved),
+        DesktopOutputResolution::Waiting { .. } => {
+            Err(DesktopOutputReconcileError::NoEnabledOutput)
+        }
+    }
+}
+
+fn reconcile_required_outputs(
+    candidate: &DesktopOutputCandidate,
+    topology: &DesktopOutputTopologySnapshot,
+) -> Result<DesktopOutputReconciliation, DesktopOutputReconcileError> {
     validate_candidate(candidate)?;
     validate_topology(topology)?;
     validate_mirror_against_topology(candidate, topology)?;
@@ -262,7 +292,6 @@ pub fn reconcile_desktop_output_candidate(
             }
         })
         .collect::<Vec<_>>();
-    let adaptive = candidate.availability == DesktopOutputAvailability::Adaptive;
     let mut focused_connector = None;
     for requested in &candidate.named {
         let index = topology
@@ -273,20 +302,6 @@ pub fn reconcile_desktop_output_candidate(
             Some(index) if candidate.inherit_sophia => outputs[index].enabled,
             _ => true,
         });
-        let unavailable = index.is_none_or(|index| !topology.connectors[index].connected);
-        // Mirror groups keep strict availability: a group's members and its
-        // primary are one logical output, and lighting part of one is not a
-        // decision this rule makes.
-        if adaptive && unavailable && requested.mirror.is_empty() {
-            // An unavailable output is a preference that cannot apply now,
-            // which is not the same as a contradiction in the profile.
-            if requested.focus_at_startup == Some(true) && !enabled {
-                return Err(DesktopOutputReconcileError::FocusedOutputDisabled(
-                    requested.connector.clone(),
-                ));
-            }
-            continue;
-        }
         let Some(index) = index else {
             return Err(DesktopOutputReconcileError::UnknownConnector(
                 requested.connector.clone(),
@@ -343,23 +358,6 @@ pub fn reconcile_desktop_output_candidate(
         }
     }
     apply_mirror_groups(candidate, &mut outputs)?;
-    let mut fallback_connector = None;
-    if adaptive && !outputs.iter().any(|output| output.enabled) {
-        let index = select_fallback_connector(candidate, topology)?;
-        let connector = &topology.connectors[index];
-        outputs[index] = DesktopOutputState {
-            connector: connector.connector.clone(),
-            enabled: true,
-            mode: resolve_mode(connector, DesktopOutputMode::Preferred)?,
-            scale_milli: connector.scales.automatic_milli,
-            position: (0, 0),
-            transform: DesktopOutputTransform::Normal,
-            vrr: DesktopOutputVrrMode::Disabled,
-            mirror_of: None,
-        };
-        focused_connector = Some(connector.connector.clone());
-        fallback_connector = Some(connector.connector.clone());
-    }
     if !outputs.iter().any(|output| output.enabled) {
         return Err(DesktopOutputReconcileError::NoEnabledOutput);
     }
@@ -369,39 +367,12 @@ pub fn reconcile_desktop_output_candidate(
         digest: candidate.digest,
         outputs,
         focused_connector,
-        fallback_connector,
+        fallback_connector: None,
+        policy_keys: BTreeMap::new(),
+        adjustments: Vec::new(),
     };
     validate_desktop_output_reconciliation(&reconciliation, topology)?;
     Ok(reconciliation)
-}
-
-/// Chooses the connector an adaptive candidate falls back to.
-///
-/// Only a connected connector the profile does not mention is eligible. A
-/// named connector already says what the operator wants of it -- including
-/// `enabled #false`, the exclusion this must never override -- and a mirror
-/// member belongs to its group. The choice is the least connector name, so it
-/// depends on what is attached and not on the order it was enumerated in.
-fn select_fallback_connector(
-    candidate: &DesktopOutputCandidate,
-    topology: &DesktopOutputTopologySnapshot,
-) -> Result<usize, DesktopOutputReconcileError> {
-    let configured = candidate
-        .named
-        .iter()
-        .flat_map(|output| std::iter::once(&output.connector).chain(&output.mirror))
-        .map(String::as_str)
-        .collect::<BTreeSet<_>>();
-    topology
-        .connectors
-        .iter()
-        .enumerate()
-        .filter(|(_, connector)| {
-            connector.connected && !configured.contains(connector.connector.as_str())
-        })
-        .min_by(|(_, first), (_, second)| first.connector.cmp(&second.connector))
-        .map(|(index, _)| index)
-        .ok_or(DesktopOutputReconcileError::NoEnabledOutput)
 }
 
 pub fn validate_desktop_output_topology_snapshot(
@@ -414,7 +385,7 @@ pub fn validate_desktop_output_reconciliation(
     reconciliation: &DesktopOutputReconciliation,
     topology: &DesktopOutputTopologySnapshot,
 ) -> Result<(), DesktopOutputReconcileError> {
-    validate_topology(topology)?;
+    validate_topology_for_availability(topology, true)?;
     if reconciliation.generation.raw() == 0
         || reconciliation.outputs.len() != topology.connectors.len()
     {
@@ -437,6 +408,10 @@ pub fn validate_desktop_output_reconciliation(
             return Err(DesktopOutputReconcileError::DisconnectedConnector(
                 output.connector.clone(),
             ));
+        }
+        // An unavailable connector carries no timing obligation until enabled.
+        if !output.enabled && connector.modes.is_empty() {
+            continue;
         }
         if !connector.modes.contains(&output.mode) {
             return Err(DesktopOutputReconcileError::ModeUnavailable(
@@ -504,6 +479,19 @@ pub fn validate_desktop_output_reconciliation(
             ));
         }
     }
+    let mut keys = BTreeSet::new();
+    for (connector, key) in &reconciliation.policy_keys {
+        if *key == 0
+            || !keys.insert(*key)
+            || !reconciliation.outputs.iter().any(|output| {
+                output.enabled && output.mirror_of.is_none() && &output.connector == connector
+            })
+        {
+            return Err(DesktopOutputReconcileError::InvalidReconciliation(
+                "policy affinities must be unique and belong to enabled logical outputs".into(),
+            ));
+        }
+    }
     reject_overlaps(&reconciliation.outputs)
 }
 
@@ -516,8 +504,17 @@ fn validate_candidate(
         ));
     }
     let mut connectors = BTreeSet::new();
+    let mut policy_keys = BTreeSet::new();
     let mut focused = false;
     for output in &candidate.named {
+        if output
+            .policy_key
+            .is_some_and(|key| key == 0 || !policy_keys.insert(key))
+        {
+            return Err(DesktopOutputReconcileError::InvalidCandidate(
+                "named policy affinities must be nonzero and unique".into(),
+            ));
+        }
         if !valid_desktop_output_connector(&output.connector)
             || !connectors.insert(output.connector.clone())
         {
@@ -637,7 +634,16 @@ fn validate_mirror_against_topology(
 fn validate_topology(
     topology: &DesktopOutputTopologySnapshot,
 ) -> Result<(), DesktopOutputReconcileError> {
-    if topology.connectors.is_empty() || topology.connectors.len() > DESKTOP_OUTPUT_MAX_NAMED {
+    validate_topology_for_availability(topology, false)
+}
+
+fn validate_topology_for_availability(
+    topology: &DesktopOutputTopologySnapshot,
+    adaptive: bool,
+) -> Result<(), DesktopOutputReconcileError> {
+    if (!adaptive && topology.connectors.is_empty())
+        || topology.connectors.len() > DESKTOP_OUTPUT_MAX_NAMED
+    {
         return Err(DesktopOutputReconcileError::InvalidTopology(
             "connector count is outside its supported range".to_owned(),
         ));
@@ -652,7 +658,7 @@ fn validate_topology(
             ));
         }
         if connector.current.connector != connector.connector
-            || connector.modes.is_empty()
+            || (!adaptive && connector.modes.is_empty())
             || connector.modes.len() > 256
             || !connector.scales.valid()
             || !connector
@@ -672,7 +678,8 @@ fn validate_topology(
             || connector
                 .preferred_mode
                 .is_some_and(|mode| !modes.contains(&mode))
-            || !modes.contains(&connector.current.mode)
+            || (!connector.modes.is_empty() && !modes.contains(&connector.current.mode))
+            || (connector.modes.is_empty() && connector.current.enabled)
             || !connector.scales.supports(connector.current.scale_milli)
             || !connector.transforms.contains(connector.current.transform)
             || !(-1_000_000..=1_000_000).contains(&connector.current.position.0)

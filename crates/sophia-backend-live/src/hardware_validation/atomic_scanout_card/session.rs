@@ -518,7 +518,10 @@ impl RealAtomicScanoutPageFlipSession {
             .iter()
             .copied()
             .zip(self.outputs.iter().copied())
-            .map(|(selection, output)| read_native_output_capability(&self.card, selection, output))
+            .map(|(selection, output)| {
+                read_native_output_capability(&self.card, selection, output)?
+                    .with_gpu_identity(self.card.gpu_identity())
+            })
             .collect()
     }
 
@@ -878,7 +881,10 @@ impl RealAtomicScanoutSelectionSet {
                 )
                 .map(|connector| connector.to_string())
                 .unwrap_or_default();
-                let group = grouping.group_of(&connector_name);
+                let connector_key = target_set.card.connector_key(&connector_name);
+                let group = grouping
+                    .group_of(&connector_key)
+                    .or_else(|| grouping.group_of(&connector_name));
                 let output = match group.and_then(|group| group_outputs.get(&group).copied()) {
                     Some(output) => output,
                     None => {
@@ -901,7 +907,7 @@ impl RealAtomicScanoutSelectionSet {
                     card_index,
                     connector_id: selection.connector_id(),
                     crtc_id: selection.crtc_id(),
-                    connector_name,
+                    connector_name: connector_key,
                 });
                 next_slot = next_slot.saturating_add(1);
             }

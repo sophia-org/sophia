@@ -36,7 +36,10 @@ fn resolve_output_policy_key(
 ) -> Result<Option<u64>, Box<dyn std::error::Error>> {
     let mut found = None;
     for capability in capabilities.iter().filter(|c| c.output() == output) {
-        if let Some(key) = keys.get(capability.connector_name()) {
+        if let Some(key) = keys
+            .get(capability.connector_key())
+            .or_else(|| keys.get(capability.connector_name()))
+        {
             if found.is_some_and(|previous| previous != *key) {
                 return Err("logical output has conflicting configured policy keys".into());
             }

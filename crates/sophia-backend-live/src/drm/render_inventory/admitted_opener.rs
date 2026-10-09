@@ -82,6 +82,5 @@ fn open_revalidated(
     Ok(opened)
 }
 
-#[cfg(test)]
 #[path = "../../../tests/support/admitted_render_opener.rs"]
 mod tests;

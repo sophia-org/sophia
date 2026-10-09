@@ -54,16 +54,12 @@ fn desktop_profile_reload_effects(
     }
 }
 
-/// Output affinity identities are bound once per session: the policy keys a
-/// profile names, its availability, and the key a fallback carries. A reload
-/// may change anything else about the outputs.
+/// Hardware movement changes the realization, never the configured identity.
 fn output_identity_changed(
     before: &sophia_config::DesktopOutputCandidate,
     after: &sophia_config::DesktopOutputCandidate,
 ) -> bool {
-    configured_output_policy_keys(after) != configured_output_policy_keys(before)
-        || after.availability != before.availability
-        || after.fallback_policy_key != before.fallback_policy_key
+    !before.same_session_identity(after)
 }
 
 struct PreparedDesktopLaunch {
@@ -201,10 +197,15 @@ impl LiveWmSession {
             .ok_or("desktop launch lost policy owner")?;
         // Reload declines these before staging anything; reaching here with one
         // changed is a broken invariant, not an operator's edit.
-        if output.as_ref().is_some_and(|profile| {
-            output_identity_changed(config.output_profile.current(), profile.current())
-        }) {
-            return Err("output policy keys are startup identities; changing them requires a new session".into());
+        if launch.launch_profile.excluded_gpus != config.session_profile.candidate().excluded_gpus
+            || output.as_ref().is_some_and(|profile| {
+                output_identity_changed(config.output_profile.current(), profile.current())
+            })
+        {
+            return Err(
+                "output policy keys are startup identities; changing them requires a new session"
+                    .into(),
+            );
         }
         config.applications = launch.applications;
         config.active_launch_profile = Some(launch.launch_profile);
@@ -379,6 +380,12 @@ impl LiveWmSession {
         };
         // Declined here, before either branch, so a policy change never starts
         // a replacement WM that could only fail to publish.
+        if launch.launch_profile.excluded_gpus != config.session_profile.candidate().excluded_gpus {
+            crate::session_eprintln!(
+                "sophia_live_desktop_profile schema=2 status=reload_declined reason=gpu_admission_identity"
+            );
+            return Ok(DesktopProfileReloadOutcome::Declined);
+        }
         if launch
             .output
             .as_ref()
@@ -521,7 +528,12 @@ impl LiveWmSession {
                 &commands,
                 &dropped,
             )?;
-            Some((commands, registry, dropped, configuration.action_lifecycles.clone()))
+            Some((
+                commands,
+                registry,
+                dropped,
+                configuration.action_lifecycles.clone(),
+            ))
         } else {
             None
         };
@@ -530,7 +542,10 @@ impl LiveWmSession {
             self.command_registry = commands;
             self.install_shortcuts(registry, &lifecycles);
             config.dropped_shortcuts.clone_from(&dropped);
-            self.public.as_mut().expect("core reload retains public policy").dropped_default_shortcuts = dropped;
+            self.public
+                .as_mut()
+                .expect("core reload retains public policy")
+                .dropped_default_shortcuts = dropped;
         }
         Ok(report)
     }
@@ -553,9 +568,9 @@ impl LiveWmSession {
         // unknown slots remain invalid rather than being silently discarded.
         let mut configuration = configuration.clone();
         configuration.actions.retain(|action| {
-            action.session_operation_slot.is_none_or(|slot| {
-                !(1..=7).contains(&slot) || admitted_slots.contains(&slot)
-            })
+            action
+                .session_operation_slot
+                .is_none_or(|slot| !(1..=7).contains(&slot) || admitted_slots.contains(&slot))
         });
         let missing_slots = configuration
             .actions
@@ -592,7 +607,11 @@ impl LiveWmSession {
                         .as_ref()
                         .map(|pending| &pending.launch.commands)
                         .unwrap_or(&self.command_registry),
-                    if self.desktop_reload.is_some() { &[] } else { &public.dropped_default_shortcuts },
+                    if self.desktop_reload.is_some() {
+                        &[]
+                    } else {
+                        &public.dropped_default_shortcuts
+                    },
                 )
             })
             .and_then(|result| {

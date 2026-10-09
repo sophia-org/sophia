@@ -78,6 +78,56 @@ fn native_capabilities_project_in_engine_semantic_order() {
 }
 
 #[test]
+fn equal_connector_names_and_numbers_on_different_gpus_keep_distinct_opaque_heads() {
+    let mode = LibdrmNativeOutputTiming::new(1920, 1080, 60_000);
+    let capabilities = ["pci-0000:03:00.0", "pci-0000:16:00.0"]
+        .into_iter()
+        .enumerate()
+        .map(|(index, gpu)| {
+            LibdrmNativeOutputCapability::new(
+                OutputId::from_raw(index as u64 + 1),
+                42,
+                "DP-1",
+                [mode],
+                Some(mode),
+                mode,
+                LibdrmNativeVrrPropertyDiscoveryStatus::Unsupported,
+            )
+            .unwrap()
+            .with_gpu_identity(Some(gpu))
+            .unwrap()
+            .bind_head(RenderHeadId::from_raw(index as u64 + 11))
+            .unwrap()
+        })
+        .collect::<Vec<_>>();
+    let outputs = [output(1, 1920, 1080, 1), output(2, 1920, 1080, 1)];
+    let topology = project_native_output_topology(&capabilities, &outputs).unwrap();
+    let profile = DesktopOutputCandidate {
+        generation: ConfigGeneration::INITIAL,
+        digest: ConfigDigest::new([4; 32]),
+        inherit_sophia: true,
+        availability: sophia_config::DesktopOutputAvailability::Strict,
+        fallback_policy_key: None,
+        named: Vec::new(),
+    };
+    let realized = reconcile_desktop_output_candidate(&profile, &topology).unwrap();
+    assert_eq!(realized.outputs[0].connector, "pci-0000:03:00.0/DP-1");
+    assert_eq!(realized.outputs[1].connector, "pci-0000:16:00.0/DP-1");
+    let plan = prepare_native_output_activation_plan(&capabilities, &topology, &realized).unwrap();
+    let snapshot = project_live_output_authority_snapshot(&capabilities, &outputs, 7).unwrap();
+    let candidate = prepare_native_output_authority_candidate(
+        &plan,
+        &capabilities,
+        &snapshot,
+        OutputHeadMapping::Fit,
+    )
+    .unwrap();
+    assert_eq!(candidate.heads.len(), 2);
+    assert_ne!(candidate.heads[0].head, candidate.heads[1].head);
+    assert_eq!(candidate.groups.len(), 2);
+}
+
+#[test]
 fn native_projection_rejects_cross_owner_inconsistency() {
     let capability = capability(1, "DP-1", 2560, 1440, true);
     assert_eq!(

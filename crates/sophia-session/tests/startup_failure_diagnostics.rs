@@ -16,6 +16,7 @@ fn an_output_profile_refusal_keeps_its_kind_and_not_the_connector() {
         Refusal::InvalidTopology("DP-2".into()),
         Refusal::InvalidReconciliation("DP-2".into()),
         Refusal::UnknownConnector("DP-2".into()),
+        Refusal::AmbiguousConnector("DP-2".into()),
         Refusal::DisconnectedConnector("DP-2".into()),
         Refusal::PreferredModeUnavailable("DP-2".into()),
         Refusal::ModeUnavailable("DP-2".into()),

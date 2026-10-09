@@ -122,6 +122,7 @@ pub(super) struct LiveOutputAuthorityBootstrap {
     pub(super) capabilities: Vec<sophia_backend_live::LibdrmNativeOutputCapability>,
     pub(super) startup_candidate: Option<sophia_protocol::OutputTopologyCandidate>,
     pub(super) fallback_connector: Option<String>,
+    pub(super) realized_policy_keys: Option<BTreeMap<String, u64>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -158,7 +159,8 @@ impl PreparedOutputProfile {
 
     pub(super) const fn slot_mut(
         &mut self,
-    ) -> &mut sophia_config::DesktopProfileCandidateSlot<sophia_config::DesktopOutputCandidate> {
+    ) -> &mut sophia_config::DesktopProfileCandidateSlot<sophia_config::DesktopOutputCandidate>
+    {
         &mut self.slot
     }
 }

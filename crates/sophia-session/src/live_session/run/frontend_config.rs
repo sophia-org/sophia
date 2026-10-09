@@ -25,7 +25,7 @@
             .device_opener()
             .name()
             .to_owned();
-        let (bundle, coordinator) = render_devices::initial(native_scanout, &seat)?;
+        let (bundle, coordinator) = render_devices::initial(native_scanout, &seat, gpu_admission.clone())?;
         frontend_config = frontend_config.with_device_bundle(bundle);
         client_render_devices = Some(coordinator);
     }

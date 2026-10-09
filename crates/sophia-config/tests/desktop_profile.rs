@@ -293,6 +293,48 @@ session {
 }
 
 #[test]
+fn gpu_exclusions_use_exact_stable_identities_and_remain_session_owned() {
+    let root = temporary_directory("gpu-admission");
+    let path = root.join("config.kdl");
+    write_profile(
+        &path,
+        "schema 1\nsession { exclude-gpu \"pci-0000:16:00.0\"; exclude-gpu \"platform-test.gpu\"; }\n",
+    );
+    let profile = load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL).unwrap();
+    let session =
+        prepare_desktop_session_candidate(&profile.profile.candidates[&DesktopAuthority::Session])
+            .unwrap();
+    assert_eq!(
+        session.excluded_gpus,
+        ["pci-0000:16:00.0".into(), "platform-test.gpu".into()].into()
+    );
+    for setting in [
+        "exclude-gpu \"card0\"",
+        "exclude-gpu \"/dev/dri/renderD128\"",
+        "exclude-gpu \"pci-*\"",
+        "exclude-gpu \"pci-\"",
+        "exclude-gpu 1",
+        "exclude-gpu \"pci-0000:16:00.0\" \"pci-0000:03:00.0\"",
+        "exclude-gpu value=\"pci-0000:16:00.0\"",
+        "exclude-gpu (path)\"pci-0000:16:00.0\"",
+        "exclude-gpu \"pci-0000:16:00.0\" {};",
+        "exclude-gpu \"pci-0000:16:00.0\"; exclude-gpu \"pci-0000:16:00.0\"",
+    ] {
+        write_profile(&path, &format!("schema 1\nsession {{ {setting}; }}\n"));
+        assert!(
+            load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL).is_err(),
+            "{setting}"
+        );
+    }
+    let exclusions = (0..17)
+        .map(|index| format!("exclude-gpu \"pci-test:{index}\";"))
+        .collect::<String>();
+    write_profile(&path, &format!("schema 1\nsession {{ {exclusions} }}\n"));
+    assert!(load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL).is_err());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn input_candidate_prepares_keyboard_and_pointer_values() {
     let root = temporary_directory("input-candidate");
     let profile_path = root.join("config.kdl");

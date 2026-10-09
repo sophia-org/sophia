@@ -2,13 +2,15 @@ pub(crate) fn run_persistent_xterm_session(
     args: &[String],
     stage: &mut crate::diagnostics::SessionRunStage,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let Some(startup::Prepared { mut config, development_admission }) = startup::prepare(args)? else {
+    let Some(startup::Prepared {
+        mut config,
+        development_admission,
+    }) = startup::prepare(args)?
+    else {
         return Ok(());
     };
     record_loaded_session_profiles(&config)?;
     let prepared_public_launch = LiveWmSession::prepare_public_launch(&mut config)?;
-    let public_policy_launch =
-        LiveWmSession::activate_public_launch(&mut config, prepared_public_launch)?;
     let terminal = if config.client.is_none() {
         Some(crate::support::resolve_external_probe_binary(
             "xterm",
@@ -25,16 +27,27 @@ pub(crate) fn run_persistent_xterm_session(
     // Every producer the owner loop inspects gets this before it can publish
     // anything the owner would otherwise sleep past.
     let owner_wake = OwnerWake::new()?;
+    let mut scripting = LiveControlState::start(&mut config);
+    scripting.set_owner_wake(&owner_wake.notifier());
+    let gpu_admission = sophia_backend_live::LiveGpuAdmission::new(
+        config
+            .session_profile
+            .candidate()
+            .excluded_gpus
+            .iter()
+            .cloned(),
+    )?;
     let mut seat_controller = config
         .native_scanout
-        .then(sophia_backend_live::LiveSeatController::open)
+        .then(|| {
+            sophia_backend_live::LiveSeatController::open_with_gpu_admission(gpu_admission.clone())
+        })
         .transpose()?;
     if let Some(controller) = seat_controller.as_mut() {
         if let (Some(seat), Some(admission)) = (&config.development_seat, &development_admission) {
             admission.check_opened_seat(controller.device_opener().name(), &seat.attest()?)?;
         }
         controller.set_owner_wake(owner_wake.notifier());
-        let _ = controller.dispatch()?;
         crate::session_println!(
             "sophia_live_seat schema=1 status=active seat={}",
             controller.name()
@@ -62,145 +75,48 @@ pub(crate) fn run_persistent_xterm_session(
     let mut output_topology_monitor = seat_controller
         .as_ref()
         .map(|controller| {
-            sophia_backend_live::LiveDrmTopologyMonitor::open(controller.device_opener().name())
+            sophia_backend_live::LiveDrmTopologyMonitor::open_with_gpu_admission(
+                controller.device_opener().name(),
+                gpu_admission.clone(),
+            )
         })
         .transpose()?;
     if let Some(monitor) = output_topology_monitor.as_mut() {
         monitor.initialize_render_inventory()?;
     }
-    let mut native_scanout = seat_controller
-        .as_ref()
-        .map(|controller| {
-            LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
-                &controller.device_opener(),
-                &mirror_grouping,
+    let (mut native_scanout, startup_realization) =
+        if let Some(controller) = seat_controller.as_mut() {
+            let Some((native, realization)) = output_replacement::wait_for_startup_output(
+                controller,
+                output_topology_monitor
+                    .as_mut()
+                    .expect("native startup subscribed to topology"),
+                config.output_profile.current(),
+                &mut scripting,
+                &owner_wake,
                 initial_head_mapping,
-                config.cursor_resolution.asset.clone(),
-            )
-        })
-        .transpose()?;
+                &config.cursor_resolution.asset,
+            )?
+            else {
+                return Ok(());
+            };
+            (Some(native), Some(realization))
+        } else {
+            (None, None)
+        };
+    let public_policy_launch =
+        LiveWmSession::activate_public_launch(&mut config, prepared_public_launch)?;
     let mut output_authority_capabilities = None;
     let mut startup_output_activation = None;
     let mut startup_fallback_connector = None;
     if let Some(native) = native_scanout.as_ref() {
-        let capabilities = native.output_capabilities()?;
-        for capability in &capabilities {
-            let mode = capability.selected_mode();
-            // The one place the opaque head id is printed beside its connector
-            // name: later per-head evidence carries only `head=`, and physical
-            // verifiers correlate through this mapping line.
-            let head = native
-                .head_index_for_native_connector(capability.connector_id())
-                .map(|index| native.heads[index].head.raw())
-                .ok_or_else(|| {
-                    format!(
-                        "native readiness found no head for connector {}",
-                        capability.connector_name()
-                    )
-                })?;
-            crate::session_println!(
-                "sophia_live_native_head schema=2 status=ready output={} head={} connector={} connector_id={} mode={}x{} refresh_millihz={} mirrored={}",
-                capability.output().raw(),
-                head,
-                capability.connector_name(),
-                capability.connector_id(),
-                mode.width,
-                mode.height,
-                mode.refresh_millihz,
-                mirror_grouping.is_mirrored(capability.connector_name()),
-            );
-        }
-        let topology = project_native_output_topology(&capabilities, &native.outputs())?;
-        let reconciled = sophia_config::reconcile_desktop_output_candidate(
-            config.output_profile.current(),
-            &topology,
-        )?;
-        startup_fallback_connector.clone_from(&reconciled.fallback_connector);
-        let activation =
-            prepare_native_output_activation_plan(&capabilities, &topology, &reconciled)?;
-        let generation = activation.generation().raw();
-        let targets = activation.targets().len();
-        let focused = activation.focused_output().is_some();
-        // The prepared plan drives the real activation phase machine, and the test
-        // phase now reaches hardware: the candidate is resolved into topology heads
-        // and submitted as one TEST_ONLY request, so the kernel judges the whole
-        // desktop. Startup still performs no KMS mutation, because a validation
-        // executor has no apply. What it settles as is now evidence about the
-        // topology rather than evidence that nothing was attempted.
-        let hardware = LiveNativeOutputTopologyHardware::new(native, &capabilities);
-        let resolved = resolve_native_output_topology_heads(&activation, &capabilities, &hardware);
-        let (report, executor, validation) = match &resolved {
-            Ok(heads) => match plan_validation_device(native, &activation) {
-                Some(card) => {
-                    let mut executor =
-                        NativeOutputTopologyValidationExecutor::new(card, heads.heads());
-                    let report = run_native_output_activation(activation.clone(), &mut executor)?;
-                    (report, "topology_validation", executor.validation())
-                }
-                // One atomic request cannot span two DRM devices, so a topology
-                // that does is not validatable as a unit and must not be reported
-                // as refused.
-                None => (
-                    run_native_output_activation(
-                        activation.clone(),
-                        &mut UnavailableNativeOutputExecutor,
-                    )?,
-                    "multi_device_unvalidatable",
-                    "not_attempted",
-                ),
-            },
-            Err(error) => {
-                tracing::warn!(
-                    schema = 1,
-                    %error,
-                    "native desktop output candidate could not be resolved into heads"
-                );
-                (
-                    run_native_output_activation(
-                        activation.clone(),
-                        &mut UnavailableNativeOutputExecutor,
-                    )?,
-                    "unresolved",
-                    "not_attempted",
-                )
-            }
-        };
-        let (status, phase, cause) = match report.settlement {
-            NativeOutputActivationSettlement::Activated { .. } => ("applied", "activated", "none"),
-            NativeOutputActivationSettlement::Rejected {
-                cause, rollback, ..
-            } => (
-                "prepared_not_applied",
-                match rollback {
-                    NativeOutputRollbackSettlement::Failed(_) => "recovery_failed",
-                    _ => "rejected",
-                },
-                match cause {
-                    NativeOutputActivationFailure::Invalidated => "invalidated",
-                    NativeOutputActivationFailure::Rejected => "rejected",
-                    NativeOutputActivationFailure::WouldBlock => "would_block",
-                    NativeOutputActivationFailure::TimedOut => "timed_out",
-                    NativeOutputActivationFailure::Disconnected => "disconnected",
-                },
-            ),
-        };
-        tracing::info!(
-            schema = 1,
-            status,
-            phase,
-            cause,
-            executor,
-            validation,
-            generation,
-            outputs = targets,
-            rollback_targets = targets,
-            focused,
-            "native desktop output candidate admitted"
-        );
-        if validation == "accepted" {
-            startup_output_activation = Some(activation);
-        }
-        output_authority_capabilities = Some(capabilities.clone());
+        let realization = startup_realization
+            .as_ref()
+            .expect("native owner has a resolved profile");
+        let prepared = output_startup_activation::prepare(native, realization)?;
+        startup_fallback_connector.clone_from(&realization.fallback_connector);
+        startup_output_activation = prepared.plan;
+        output_authority_capabilities = Some(prepared.capabilities);
     }
     let device_map =
         sophia_backend_live::NativeLibinputDeviceMap::new(SeatId::from_raw(SESSION_SEAT_RAW))
@@ -261,6 +177,9 @@ pub(crate) fn run_persistent_xterm_session(
                     capabilities,
                     startup_candidate,
                     fallback_connector: startup_fallback_connector.take(),
+                    realized_policy_keys: startup_realization
+                        .as_ref()
+                        .map(|realization| realization.policy_keys.clone()),
                 })
             }
             (None, _) => None,
@@ -271,8 +190,6 @@ pub(crate) fn run_persistent_xterm_session(
     } else {
         None
     };
-    let mut scripting = LiveControlState::start(&mut config);
-    scripting.set_owner_wake(&owner_wake.notifier());
     let mut wm_session = LiveWmSession::from_config(
         &config,
         &initial_outputs,

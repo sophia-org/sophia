@@ -627,11 +627,19 @@ output {
 }
 ```
 
-Adaptive reconciliation skips absent or disconnected ordinary named outputs.
-If no output remains enabled, it selects the first connected, unnamed connector
-in bytewise name order, excluding mirror members. The fallback uses its
-preferred mode, automatic scale, normal transform and disabled VRR at `(0, 0)`,
-and receives startup focus. It does not copy another monitor's mode or scale.
+Adaptive reconciliation skips unavailable named outputs and treats an incomplete
+mirror group as unavailable as a whole. Unsupported mode, scale, transform and
+VRR preferences use safe settings without changing the saved profile. Safe modes
+come from the advertised list: preferred first, otherwise nearest 60 Hz, then
+largest pixel area with deterministic ties. Scale falls back to a supported
+automatic value, transform to normal, and VRR to disabled. Overlapping adaptive
+placements are packed into a deterministic row.
+
+If no output remains enabled, reconciliation retains an eligible existing
+fallback or selects a usable, unnamed connector in bytewise identity order,
+excluding mirror members. The fallback uses the safe mode, automatic scale,
+normal transform and disabled VRR at `(0, 0)`, and receives startup focus.
+It does not copy another monitor's mode or scale.
 Named disabled outputs stay excluded even when absent. With adaptive behavior,
 `inherit-sophia #false` disables unnamed outputs ordinarily but permits this
 last-output fallback; name a connector with `enabled #false` to exclude it.
@@ -640,15 +648,48 @@ The optional `fallback-policy-key` assigns an explicit WM workspace affinity
 to that fallback. A saved connector with the same key loses its claim for this
 session, so returning it cannot duplicate the affinity. The binding lasts for
 the session; reload cannot reassign it. Without the setting, fallback does not
-invent a key. Changing availability, configured policy keys or the fallback key
-requires a new session.
+invent a key. Changing availability, inheritance, configured policy keys, the
+fallback key, explicit exclusions or mirror membership requires a new session.
 
-This only relaxes connector availability. Unsupported settings on present
-named outputs, incomplete mirror groups, invalid profiles and a topology with
-no eligible output still refuse. Discovery remains scoped to the session's
-seat; output preferences grant no access to another seat's GPU. Startup and
-explicit profile reload use this reconciliation. Automatic hotplug recovery
-and retained content after loss/return require their separate runtime policy.
+With no eligible output, adaptive startup waits before launching the WM and
+applications. Host-admin control can still request logout. Probe retries after
+a notice are bounded; a new topology or seat event starts another attempt.
+Invalid profiles still refuse. Startup resolves admitted connectors before
+constructing renderers, so excluded outputs cannot consume the selected heads'
+CRTCs or planes. Automatic hotplug restoration and retained content after
+loss/return remain separate integration work in t310/t306.
+
+### GPU admission and connector identity
+
+Session can exclude a GPU by its exact udev `ID_PATH`:
+
+```kdl
+session {
+  exclude-gpu "pci-0000:16:00.0"
+}
+```
+
+Exclusions narrow the existing seat boundary. They apply before opening KMS or
+render nodes, including image import, application render-device export and shell
+GPU grants. They tolerate absent hardware and survive card-node renumbering;
+device paths and wildcards are refused. Changing this set requires a new session.
+Disabling an output does not exclude its GPU.
+
+When two admitted GPUs expose the same connector name, qualify the named output:
+
+```kdl
+output {
+  named "DP-1" {
+    gpu "pci-0000:03:00.0"
+    enabled #true
+  }
+}
+```
+
+Bare names must resolve uniquely. The equivalent selector
+`"pci-0000:03:00.0/DP-1"` also works in named outputs and mirror member lists.
+Discovery and opening revalidate the admitted GPU and seat identities; a changed
+identity refuses the operation.
 
 ### Mirrored outputs
 

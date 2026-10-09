@@ -109,6 +109,42 @@ missing refusal reason is tracked as [t309](../plans/queue-05-3-make-failures-di
 
 ### t310
 
+The approved [runtime policy and GPU admission plan](../plans/cmoaia7z-complete-adaptive-output-policy-and-gpu-admission-t310.md)
+extends the accepted startup fallback below. niltempus chose safe fallback for
+unsupported settings; strict profiles retain their refusal contract.
+
+#### Admitted discovery and startup boundary (2026-10-09)
+
+Signed `5fabe9f61` introduces stable GPU admission and a revalidated fresh
+render-node opener. The next boundary candidate adds the pure adaptive resolver,
+GPU-qualified connector selectors, identity-changing reload refusals and passive
+backend discovery. Session resolves that inventory before constructing selected
+heads. Disabled connectors cannot consume their CRTCs or planes. Native requests
+retain the exact advertised full mode timing. Startup waits without launching
+policy or applications when adaptive resolution has no usable output, while
+servicing seat release and host-admin logout. The same Session resolver is the
+handoff to t306's retained-image continuity hook.
+
+The isolated backend/config/Session suite passed: 124 test-result summaries,
+2,499 reported passes, zero failures and 51 ignored (summaries include nested
+child-process tests). After the startup activation code was split by ownership
+and GPU-qualified lookup corrected, Session lib tests passed with 896 passed and
+26 ignored; native output topology passed 12/12, including two GPUs sharing both
+a connector name and connector number. Three-crate all-target/all-feature clippy
+passes with warnings denied. Source layout passes with no new debt, including the
+test-module layout correction Claude found in the opener commit.
+
+Evidence is `~/.local/state/sophia/development-evidence/t310-runtime-20261009/`:
+`config-01`, `admission-01`, `admission-tests-01`, `focused-02`, `discovery-01`
+and `replacement-01`. Failed intermediate checks remain recorded. The exact
+boundary commit and source hashes are recorded in `replacement-01`.
+
+This qualifies the boundary for integration, not a live release. Runtime hotplug,
+seat reacquisition and recovery still need the continuity hook; committed
+geometry/key publication, bounded conservative hardware retry, durable output
+policy diagnostics, the combined gate and attended acceptance remain open.
+The installed release and master are unchanged.
+
 #### Port change after reboot (2026-10-09)
 
 niltempus moved the main monitor between ports on the discrete AMD card before

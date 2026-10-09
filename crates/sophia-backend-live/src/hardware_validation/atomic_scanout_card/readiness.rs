@@ -69,7 +69,7 @@ pub(super) fn inspect_opened_real_atomic_scanout_card(
     }
 }
 
-pub(super) fn admit_atomic_scanout_client_capabilities(card: &RealAtomicScanoutCard) -> bool {
+pub(crate) fn admit_atomic_scanout_client_capabilities(card: &RealAtomicScanoutCard) -> bool {
     drm::Device::set_client_capability(card, drm::ClientCapability::UniversalPlanes, true).is_ok()
         && drm::Device::set_client_capability(card, drm::ClientCapability::Atomic, true).is_ok()
 }

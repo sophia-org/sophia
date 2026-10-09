@@ -150,6 +150,18 @@ pub fn select_native_primary_plane_targets<D>(
 where
     D: LibdrmNativeKmsSelectionDevice,
 {
+    select_native_primary_plane_targets_matching(device, |_| true)
+}
+
+/// Restrict connectors before assigning CRTCs and planes. A disabled head must
+/// not consume the only compatible resource of a requested head.
+pub fn select_native_primary_plane_targets_matching<D>(
+    device: &D,
+    includes: impl Fn(u32) -> bool,
+) -> LibdrmNativePrimaryPlaneSelectionSetResult
+where
+    D: LibdrmNativeKmsSelectionDevice,
+{
     let (Ok(mut connectors), Ok(mut crtcs), Ok(mut planes)) = (
         device.connector_handles(),
         device.crtc_handles(),
@@ -166,6 +178,9 @@ where
     let mut used_crtcs = Vec::new();
     let mut used_planes = Vec::new();
     for connector in connectors {
+        if !includes(u32::from(connector)) {
+            continue;
+        }
         let Ok(snapshot) = device.connector_snapshot(connector) else {
             return selection_set_failure(
                 LibdrmNativePrimaryPlaneSelectionSetStatus::ReadFailed,

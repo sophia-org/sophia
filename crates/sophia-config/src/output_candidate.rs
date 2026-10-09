@@ -65,9 +65,9 @@ pub enum DesktopMirrorFit {
 /// connector must exist, and an enabled one must be connected. `Adaptive` is
 /// for a daily desktop whose monitors move: a named connector that is absent
 /// or disconnected is skipped, and when nothing named remains enabled one
-/// unconfigured connected connector is lit instead. Only availability adapts:
-/// a present output whose settings cannot be honoured is refused either way,
-/// and a mirror group keeps strict availability for its primary and members.
+/// usable, unconfigured connector is lit instead. Unsupported preferences use
+/// safe advertised settings without changing the saved profile. An incomplete
+/// mirror group is unavailable as a whole. No usable output means waiting.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum DesktopOutputAvailability {
     #[default]
@@ -77,6 +77,8 @@ pub enum DesktopOutputAvailability {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DesktopNamedOutputCandidate {
+    /// Bare name or `ID_PATH/connector`; the latter preserves GPU identity across
+    /// card-node renumbering. Bare names must resolve uniquely in the inventory.
     pub connector: String,
     /// Stable operator-selected policy affinity; never inferred from enumeration.
     pub policy_key: Option<u64>,
@@ -113,6 +115,45 @@ pub struct DesktopOutputCandidate {
 }
 
 impl DesktopOutputCandidate {
+    /// Hardware may move an affinity; a reload cannot redefine its meaning or
+    /// change which devices the running session is permitted to activate.
+    pub fn same_session_identity(&self, other: &Self) -> bool {
+        let keys = |candidate: &Self| {
+            candidate
+                .named
+                .iter()
+                .filter_map(|output| output.policy_key.map(|key| (output.connector.clone(), key)))
+                .collect::<std::collections::BTreeMap<_, _>>()
+        };
+        let excluded = |candidate: &Self| {
+            candidate
+                .named
+                .iter()
+                .filter(|output| output.enabled == Some(false))
+                .map(|output| output.connector.clone())
+                .collect::<BTreeSet<_>>()
+        };
+        let mirrors = |candidate: &Self| {
+            candidate
+                .named
+                .iter()
+                .filter(|output| !output.mirror.is_empty())
+                .map(|output| {
+                    (
+                        output.connector.clone(),
+                        output.mirror.iter().cloned().collect::<BTreeSet<_>>(),
+                    )
+                })
+                .collect::<std::collections::BTreeMap<_, _>>()
+        };
+        self.availability == other.availability
+            && self.fallback_policy_key == other.fallback_policy_key
+            && self.inherit_sophia == other.inherit_sophia
+            && keys(self) == keys(other)
+            && excluded(self) == excluded(other)
+            && mirrors(self) == mirrors(other)
+    }
+
     /// The connector sets this configuration asks to drive as one logical output.
     ///
     /// Each group leads with its primary, because that is the output policy sees
@@ -228,7 +269,7 @@ fn connector_name(node: &KdlNode) -> Result<String, DesktopProfileError> {
     let connector = node
         .get(0)
         .and_then(|value| value.as_string())
-        .filter(|value| !value.is_empty() && value.len() <= 64)
+        .filter(|value| !value.is_empty() && value.len() <= 321)
         .ok_or_else(|| schema_error("named output connector identity is invalid"))?;
     if !valid_desktop_output_connector(connector) {
         return Err(schema_error(
@@ -239,6 +280,14 @@ fn connector_name(node: &KdlNode) -> Result<String, DesktopProfileError> {
 }
 
 pub(crate) fn valid_desktop_output_connector(connector: &str) -> bool {
+    let connector = if let Some((gpu, connector)) = connector.split_once('/') {
+        if !crate::valid_desktop_gpu_identity(gpu) {
+            return false;
+        }
+        connector
+    } else {
+        connector
+    };
     !connector.is_empty()
         && connector.len() <= 64
         && connector
@@ -386,7 +435,7 @@ fn output_mirror(node: &KdlNode, primary: &str) -> Result<Vec<String>, DesktopPr
         let connector = entry
             .value()
             .as_string()
-            .filter(|value| !value.is_empty() && value.len() <= 64)
+            .filter(|value| !value.is_empty() && value.len() <= 321)
             .ok_or_else(|| schema_error("output mirror connector identity is invalid"))?;
         if !valid_desktop_output_connector(connector) {
             return Err(schema_error(
@@ -406,6 +455,7 @@ fn output_mirror(node: &KdlNode, primary: &str) -> Result<Vec<String>, DesktopPr
 
 fn named_output(node: &KdlNode) -> Result<DesktopNamedOutputCandidate, DesktopProfileError> {
     let connector = connector_name(node)?;
+    let mut gpu = None;
     let mut result = DesktopNamedOutputCandidate {
         connector,
         policy_key: None,
@@ -425,6 +475,15 @@ fn named_output(node: &KdlNode) -> Result<DesktopNamedOutputCandidate, DesktopPr
     }
     for child in children.nodes() {
         match child.name().value() {
+            "gpu" if gpu.is_none() => {
+                let identity = one_string(child, "output GPU")?;
+                if !crate::valid_desktop_gpu_identity(identity) || result.connector.contains('/') {
+                    return Err(schema_error(
+                        "output GPU requires one stable ID_PATH and a bare connector name",
+                    ));
+                }
+                gpu = Some(identity.to_owned());
+            }
             "policy-key" if result.policy_key.is_none() => {
                 result.policy_key =
                     Some(one_integer(child, "output policy-key", 1, i128::from(i64::MAX))? as u64);
@@ -458,11 +517,14 @@ fn named_output(node: &KdlNode) -> Result<DesktopNamedOutputCandidate, DesktopPr
                 result.mirror_fit = Some(output_mirror_fit(child)?);
             }
             "mode" | "scale" | "position" | "transform" | "enabled" | "focus-at-startup"
-            | "vrr" | "mirror" | "mirror-fit" | "policy-key" => {
+            | "vrr" | "mirror" | "mirror-fit" | "policy-key" | "gpu" => {
                 return Err(schema_error("duplicate named output setting"));
             }
             _ => return Err(schema_error("unsupported named output setting")),
         }
+    }
+    if let Some(gpu) = gpu {
+        result.connector = format!("{gpu}/{}", result.connector);
     }
     Ok(result)
 }

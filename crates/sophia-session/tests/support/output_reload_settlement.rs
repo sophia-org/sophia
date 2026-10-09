@@ -16,6 +16,36 @@ use sophia_protocol::{
 const ADAPTIVE_OUTPUT: &str = "availability adaptive; fallback-policy-key 1; \
     inherit-sophia #false; named DP-1 { policy-key 1; enabled #true; }";
 
+#[test]
+fn gpu_admission_reload_is_declined_before_staging_or_replacing_a_wm() {
+    use std::io::Write;
+    for policy in [None, Some("grid")] {
+        let (mut fixture, realized) = fallback_session();
+        assert_eq!(fixture.reload(), DesktopProfileReloadOutcome::Applied);
+        let before = fixture.source.config.desktop_profile.clone();
+        save_output_profile(&fixture, policy, ADAPTIVE_OUTPUT);
+        let path = fixture
+            .source
+            .config
+            .desktop_profile_source
+            .as_ref()
+            .unwrap();
+        writeln!(
+            std::fs::OpenOptions::new().append(true).open(path).unwrap(),
+            "session {{ exclude-gpu \"pci-0000:16:00.0\"; }}"
+        )
+        .unwrap();
+        assert_eq!(fixture.reload(), DesktopProfileReloadOutcome::Declined);
+        assert_eq!(fixture.source.config.desktop_profile, before);
+        assert_eq!(
+            fixture.wm.public.as_ref().unwrap().output_policy_keys,
+            realized
+        );
+        assert!(!fixture.wm.desktop_reload_pending());
+        assert!(!fixture.wm.force_transport_restart);
+    }
+}
+
 fn save_output_profile(fixture: &ReloadFixture, policy: Option<&str>, output: &str) {
     use std::io::Write;
     fixture.save("/replacement/command", policy);
@@ -61,12 +91,15 @@ fn reload_keeps_the_realized_fallback_binding_across_unrelated_output_changes() 
     save_output_profile(
         &fixture,
         None,
-        &format!("{ADAPTIVE_OUTPUT}; named HDMI-A-2 {{ enabled #false; }}"),
+        &ADAPTIVE_OUTPUT.replace("enabled #true;", "enabled #true; scale 1.25;"),
     );
     assert_eq!(fixture.reload(), DesktopProfileReloadOutcome::Applied);
     let current = fixture.source.config.output_profile.current();
-    assert_eq!(current.named.len(), 2);
-    assert_eq!(current.named[1].enabled, Some(false));
+    assert_eq!(current.named.len(), 1);
+    assert_eq!(
+        current.named[0].scale,
+        Some(sophia_config::DesktopOutputScale::FixedMilli(1250))
+    );
     assert_eq!(current.fallback_policy_key, Some(1));
     assert_eq!(
         fixture.wm.public.as_ref().unwrap().output_policy_keys,
@@ -100,6 +133,14 @@ fn reload_declines_output_identity_changes_and_keeps_the_session() {
         (
             format!("{ADAPTIVE_OUTPUT}; named DP-2 {{ policy-key 2; enabled #true; }}"),
             "added key",
+        ),
+        (
+            format!("{ADAPTIVE_OUTPUT}; named HDMI-A-2 {{ enabled #false; }}"),
+            "exclusion",
+        ),
+        (
+            ADAPTIVE_OUTPUT.replace("enabled #true;", "enabled #true; mirror DP-3;"),
+            "mirror membership",
         ),
     ] {
         save_output_profile(&fixture, None, &output);

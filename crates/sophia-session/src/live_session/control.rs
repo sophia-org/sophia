@@ -87,9 +87,51 @@ impl LiveControlState {
         std::mem::take(&mut self.requests)
     }
 
+    /// Startup can wait for a monitor before a policy peer exists. Host-admin
+    /// logout still works through the usual claim/revalidation protocol.
+    fn service_before_outputs(&mut self) {
+        use sophia_protocol::{ControlCommand, ControlOutcome, ControlOwner};
+        let Some(service) = self.service.as_ref() else {
+            return;
+        };
+        if !self.published {
+            self.catalog = Arc::new(sophia_protocol::ControlCatalog {
+                generation: self.catalog.generation,
+                commands: vec![ControlCommand {
+                    owner: ControlOwner::Session,
+                    name: "logout".into(),
+                }],
+            });
+            self.published = service.publish(self.catalog.clone(), &[]);
+        }
+        if self.next.is_none() {
+            self.next = service.try_request();
+        }
+        let Some(ticket) = self.next.take() else {
+            return;
+        };
+        if ticket.cancelled() {
+            return;
+        }
+        if ticket.generation != self.catalog.generation {
+            ticket.finish(ControlOutcome::Stale);
+        } else if ticket.command.owner != ControlOwner::Session || ticket.command.name != "logout" {
+            ticket.finish(ControlOutcome::Unavailable);
+        } else if ticket.claim() {
+            self.requests.logout = true;
+            ticket.finish(ControlOutcome::Completed);
+        } else if !ticket.cancelled() {
+            self.next = Some(ticket);
+        }
+    }
+
     /// The reload owner's outcome for the reload a control ticket asked for.
     /// Without such a ticket (a binding asked) this changes nothing.
-    pub(super) fn settle_reload(&mut self, outcome: DesktopProfileReloadOutcome, wm: &LiveWmSession) {
+    pub(super) fn settle_reload(
+        &mut self,
+        outcome: DesktopProfileReloadOutcome,
+        wm: &LiveWmSession,
+    ) {
         use sophia_protocol::ControlOutcome as O;
         let Some((ticket, ReloadSettlement::Requested)) = self.reloading.take() else {
             return;

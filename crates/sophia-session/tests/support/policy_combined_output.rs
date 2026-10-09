@@ -146,12 +146,17 @@ fn native_bootstrap(output: sophia_engine::HeadlessOutput) -> LiveOutputAuthorit
         capabilities: vec![capability],
         startup_candidate: Some(startup_candidate),
         fallback_connector: None,
+        realized_policy_keys: None,
     }
 }
 
 /// Session's output authority is exactly as bootstrapped: no service, the
 /// first epoch, the original topology and the same startup effect custody.
-fn assert_output_retained(wm: &LiveWmSession, expected: &OutputAuthoritySnapshot, dispatched: bool) {
+fn assert_output_retained(
+    wm: &LiveWmSession,
+    expected: &OutputAuthoritySnapshot,
+    dispatched: bool,
+) {
     let public = wm.public.as_ref().unwrap();
     assert!(public.output_service.is_none(), "no output listener");
     let authority = public.output_authority.as_ref().unwrap();
@@ -276,7 +281,10 @@ fn profile_only_restarts(dispatched: bool) {
     )
     .unwrap();
     if dispatched {
-        assert_eq!(wm.take_output_topology_effect().unwrap().transaction.raw(), STARTUP);
+        assert_eq!(
+            wm.take_output_topology_effect().unwrap().transaction.raw(),
+            STARTUP
+        );
     }
     assert_output_retained(&wm, &expected, dispatched);
     let first = observe_wm(&mut wm, &listener, 1, &expected, dispatched);

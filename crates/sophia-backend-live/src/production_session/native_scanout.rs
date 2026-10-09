@@ -15,10 +15,10 @@ mod persistent_native_scanout;
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 pub use persistent_native_scanout::{
-    LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL, LiveNativeCompletionWait, LiveOutputAllocationContext,
-    LiveOutputAllocationFormatPreference, LiveOutputAllocationPreference,
-    LivePersistentRenderMetrics, LivePreviewFrameFailure, LivePreviewImageRefusal,
-    LiveProductionCompletionTimestamp, LiveProductionCpuFrameQueueStatus,
+    LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL, LiveNativeCompletionWait, LiveNativeOutputRequest,
+    LiveOutputAllocationContext, LiveOutputAllocationFormatPreference,
+    LiveOutputAllocationPreference, LivePersistentRenderMetrics, LivePreviewFrameFailure,
+    LivePreviewImageRefusal, LiveProductionCompletionTimestamp, LiveProductionCpuFrameQueueStatus,
     LiveProductionDirectScanoutTotals, LiveProductionHeadCompositionFrame,
     LiveProductionKmsCompletionSource, LiveProductionMirrorGenerationQueue,
     LiveProductionMirrorGroupBegin, LiveProductionMirrorGroupLifecycle,
@@ -46,6 +46,15 @@ pub use persistent_native_scanout::{
     reduce_live_production_retained_frame_queue, reduce_live_production_retained_scene_queue,
     reduce_live_production_semantic_startup_barrier, validate_live_head_composition_frame_batch,
     validate_live_production_rollback_topology, validate_live_production_topology_frames,
+};
+
+#[cfg(all(
+    feature = "libdrm-events",
+    feature = "gbm-probe",
+    feature = "seat-control"
+))]
+pub use persistent_native_scanout::{
+    LiveNativeOutputDiscovery, LiveNativeOutputProbe, LiveResolvedOutputReplacement,
 };
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]

@@ -19,6 +19,19 @@ pub struct RealAtomicScanoutCard {
 }
 
 impl RealAtomicScanoutCard {
+    pub fn gpu_identity(&self) -> Option<&str> {
+        #[cfg(feature = "seat-control")]
+        if let Some(admitted) = &self.admitted {
+            return admitted.gpu_id.as_deref().and_then(std::ffi::OsStr::to_str);
+        }
+        None
+    }
+
+    pub fn connector_key(&self, connector: &str) -> String {
+        self.gpu_identity()
+            .map_or_else(|| connector.to_owned(), |gpu| format!("{gpu}/{connector}"))
+    }
+
     #[cfg(feature = "gbm-probe")]
     pub(crate) fn sysfs_node(&self) -> io::Result<std::path::PathBuf> {
         let metadata = rustix::fs::fstat(self)?;
@@ -44,7 +57,7 @@ impl RealAtomicScanoutCard {
     }
 
     #[cfg(feature = "seat-control")]
-    pub(super) fn open_admitted_with_seat(
+    pub(crate) fn open_admitted_with_seat(
         opener: &crate::LiveSeatDeviceOpener,
         admitted: &crate::drm::seat_inventory::SeatDrmCard,
     ) -> io::Result<Self> {
