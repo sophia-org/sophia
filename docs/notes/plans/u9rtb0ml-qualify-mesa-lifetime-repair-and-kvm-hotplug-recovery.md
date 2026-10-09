@@ -6,6 +6,72 @@ tags: [plan, rendering, topology, validation]
 ---
 # Qualify Mesa lifetime repair and KVM hotplug recovery
 
+## Resume progress (2026-10-09)
+
+The newly reported installed-session crash has interrupted qualification.
+The [incident account](../investigations/kdleagg3-kvm-output-and-usb-loss-returns-the-desktop-to-greetd.md#installed-session-renderer-failure-interrupts-qualification-2026-10-09)
+records `renderer_retained_buffer_missing`, preserved logs and the intentionally
+stopped integration gate. Niltempus identified workspace switching. A separate
+late-render repair is signed as `bacfdb207` and merged into public master as
+`22b124c882be0044fb5fceb7c9bdf5d3c6d6f0f0`. Both the repair and merged master
+passed the full isolated CPU gate; independent source and merge reviews found
+no blocking issue. The merged gate is `205-workspace-render-recovery/gate-02`,
+14:17:33–14:26:39Z, with unchanged source pins. Desktop integration `39fdba80`
+pins that exact public revision. Release `niltempus-e3e6a9c375a1bfa4c7bc` built
+and passed checksum, source-identity and profile checks in
+`205-workspace-render-recovery/release-02`. Niltempus installed it and confirmed
+normal login. The read-only `installed-01` check binds the running binary and
+session manifest to `22b124c88`; durable presentation-deferral records are
+present, with no diagnostic storage errors. Workspace-stall recovery and
+physical lock/hotplug acceptance remain separate. No 202 guest has run. The
+display attempt/completion correction is signed as `1e63d9c71` and passed
+42 focused checks before the full gate was stopped while compiling.
+
+201's unchanged runtime passed the control-only `201-02-controls` successor:
+64 orchestration cases, five binding refusals, 168 decision cases and capacity
+checks. The original 201 run failed two mistaken fixture expectations and is
+preserved as failed. The successor manifest is
+`b9d84497b69fe4dbb26f8e189cd9e5787bf08de13376e763c76f221ef7935fb7`;
+run records are `55c5339f7e8b8de068f28872620fa1bff04a2b892dd4488dfc6352d3b5df7998`.
+Claude froze 201 with READY-201 and manifest prefix `e76032e4`; fresh host
+preflight had not begun when both lanes stopped. The declared host kernel for
+any later 202 is 6.18.55_1, with the guest still pinned to 6.18.54_1; such a
+comparison is not host-identical to 194. Review the crash before resuming.
+
+The first isolated run of 198-03 passed all 105 controls and all fourteen
+mutants. Retrospective 194 files match 198-02 byte for byte. Both source checks
+passed; the frozen package manifest is
+`9619ca6a276318c8e9c9d77f0fbfb5da23a992ebb8fb95dcc83e8f5f3187ac28`.
+`198-03-run-records-codex` declares the exact wrapper, independent review and
+one-run result, under manifest
+`fe33d10715d224bac4ec9ca34bf2a8d6bd6870e77b45a05f8f7aa9b05d4b2431`.
+The old Claude run-record manifest has nineteen valid payload entries and
+one invalid self-entry; it is preserved with that construction error recorded.
+The removal-tail mutant's replacement kill test was chosen after the survivor
+was seen. Its mechanism was independently reviewed; this limits independence
+of that control selection, without changing the runtime classifier.
+
+Lock implementation `006434bed` now has a passing full isolated gate on signed
+`f1effad0daf38e7a9ad4eaef20fb2214dea2ac27`. Signed `3539415dc` moved internal
+Session coverage diagnostics into `docs/session-lock-diagnostics.md`, restoring
+the provider contract byte for byte without editing SDK snapshots. The only
+subsequent source correction reorders one import. Gate 02's formatting failure
+and gate 03's overlong test socket path are preserved. Gate 04 used a shorter
+private target and passed in 13:00:50–13:07:22Z, with unchanged source pins and
+a clean tree. Its manifest is
+`c2517d2c837bce6a140311d50d7b01964b02be326732c68c4f343efa9aef63bb`.
+Native pixels and physical lock retirement remain unproved by this CPU gate.
+
+The isolated recovery worktree is `~/dev/sophia-recovery-resume`, branch
+`candidate/t306-recovery-resume-20261009`. Signed merges `75af47276` and
+`497464309` combine the reviewed hotplug candidate with the current lock work
+and accepted t310 startup repair. The native resume conflict preserves the
+production lock-test boundary, restored-image result and pending-image cleanup.
+Notebook conflicts retain the newer accepted-startup account. This combined
+candidate still needs its gate and guest qualification; it is not installed.
+Claude owns preparation of 201 around the qualified classifiers. No 202 guest
+has run. The shutdown checkpoint below remains the historical handoff.
+
 ## Resume interrupted by normal-login failure (2026-10-09)
 
 After reboot, niltempus reported that moving the main monitor from DP-1 to

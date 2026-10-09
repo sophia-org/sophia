@@ -408,7 +408,7 @@ where
         LiveRendererFrameSlotAcquire::Deferred => return WorkerOutcome::Deferred(frame),
         LiveRendererFrameSlotAcquire::IncarnationExhausted => {
             return WorkerOutcome::Failed(
-                LiveRendererScanoutBufferExportDetail::RetainedBufferMissing,
+                LiveRendererScanoutBufferExportDetail::FrameSlotIncarnationExhausted,
             );
         }
     };
@@ -578,7 +578,7 @@ where
         return WorkerOutcome::Failed(report.detail);
     }
     let Some(buffer) = report.buffer else {
-        return WorkerOutcome::Failed(LiveRendererScanoutBufferExportDetail::RetainedBufferMissing);
+        return WorkerOutcome::Failed(LiveRendererScanoutBufferExportDetail::ExportedOwnerMissing);
     };
     let descriptor = buffer.descriptor();
     if matches!(request.format, Some(sophia_renderer_live::LiveCompositionFormatRequest::Required(format)) if descriptor.format != format)
@@ -586,7 +586,9 @@ where
         return WorkerOutcome::Failed(LiveRendererScanoutBufferExportDetail::InvalidTarget);
     }
     let Some(next_id) = next_lease_id.checked_add(1) else {
-        return WorkerOutcome::Failed(LiveRendererScanoutBufferExportDetail::RetainedBufferMissing);
+        return WorkerOutcome::Failed(
+            LiveRendererScanoutBufferExportDetail::WorkerLeaseIdExhausted,
+        );
     };
     let lease_id = LiveRendererWorkerLeaseId(*next_lease_id);
     *next_lease_id = next_id;

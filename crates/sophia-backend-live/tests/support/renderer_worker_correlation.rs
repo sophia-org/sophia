@@ -185,9 +185,8 @@ fn failed_and_disconnected_jobs_name_the_accepted_frame() {
 /// A hard stall is a render the worker has not finished, not a worker that
 /// is gone (t186): while the stalled render is out, nothing else is
 /// accepted, so its late result can never be assigned to another frame;
-/// once that result arrives it is released, not assigned, and the facade
-/// takes the next render. Before this, one late second quarantined the
-/// facade for good, and the session with it.
+/// the validated late result must settle that accepted frame before the
+/// facade takes the next render.
 #[test]
 fn a_hard_stalled_job_cannot_assign_its_late_result_to_another_frame_and_the_worker_recovers() {
     let (mut facade, commands, results) = correlated_facade();
@@ -195,7 +194,7 @@ fn a_hard_stalled_job_cannot_assign_its_late_result_to_another_frame_and_the_wor
     facade.in_flight.as_mut().unwrap().submitted_at =
         std::time::Instant::now() - super::LIVE_RENDERER_WORKER_HARD_STALL;
     assert!(matches!(facade.poll(), super::WorkerPoll::HardStalled(_)));
-    assert_eq!(facade.in_flight_correlation(), None);
+    assert_eq!(facade.in_flight_correlation(), Some(first));
     // Still out: refused, and the wait is reported rather than a failure.
     assert_eq!(
         facade.submit(
@@ -210,11 +209,17 @@ fn a_hard_stalled_job_cannot_assign_its_late_result_to_another_frame_and_the_wor
         Err(super::LiveRendererScanoutBufferExportDetail::WorkerPending)
     );
     assert!(matches!(facade.poll(), super::WorkerPoll::Stalled { .. }));
-    // The late result: released, never assigned, and the facade is back.
+    // The late result retains the accepted identity and its lease owner.
     results
         .send(correlated_result(first, exported_outcome()))
         .unwrap();
-    assert!(matches!(facade.poll(), super::WorkerPoll::Idle));
+    let super::WorkerPoll::Exported(lease) = facade.poll() else {
+        panic!("the accepted late result was lost")
+    };
+    assert_eq!(lease.correlation(), first);
+    assert_eq!(facade.in_flight_correlation(), None);
+    assert!(commands.try_recv().is_err());
+    drop(lease);
     assert!(
         matches!(commands.recv().unwrap(), WorkerCommand::Release { output, lease_id, .. } if output == facade.output && lease_id == super::LiveRendererWorkerLeaseId(1))
     );

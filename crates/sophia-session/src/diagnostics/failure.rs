@@ -110,6 +110,26 @@ const RENDERER_CODES: &[(Detail, &str)] = &[
         Detail::RetainedBufferMissing,
         "renderer_retained_buffer_missing",
     ),
+    (
+        Detail::PendingFrameMissing,
+        "renderer_pending_frame_missing",
+    ),
+    (
+        Detail::ExportedDescriptorMissing,
+        "renderer_exported_descriptor_missing",
+    ),
+    (
+        Detail::ExportedOwnerMissing,
+        "renderer_exported_owner_missing",
+    ),
+    (
+        Detail::WorkerLeaseIdExhausted,
+        "renderer_worker_lease_id_exhausted",
+    ),
+    (
+        Detail::FrameSlotIncarnationExhausted,
+        "renderer_frame_slot_incarnation_exhausted",
+    ),
 ];
 const PREVIEW_REFUSAL_CODES: &[&str] = &[
     "preview_image_pending",

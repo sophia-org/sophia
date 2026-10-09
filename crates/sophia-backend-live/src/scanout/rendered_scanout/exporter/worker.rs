@@ -96,7 +96,7 @@ pub struct LiveRendererWorkerMetrics {
     pub result_misroutes: usize,
     pub soft_stalls: usize,
     pub hard_stalls: usize,
-    /// Hard-stalled renders whose late result arrived and was released, after
+    /// Hard-stalled renders whose validated late result arrived, after
     /// which the facade took renders again (t186).
     pub stall_recoveries: usize,
     /// Hard-stalled renders that never returned within the abandon bound;
@@ -397,6 +397,10 @@ impl NativeGbmRendererWorker {
         self.in_flight.is_some() || self.stalled.is_some()
     }
 
+    pub(super) const fn output(&self) -> LiveRendererWorkerOutputKey {
+        self.output
+    }
+
     pub const fn in_flight_correlation(&self) -> Option<LiveRendererFrameCorrelation> {
         match &self.in_flight {
             Some(request) => Some(request.correlation),
@@ -487,40 +491,6 @@ impl NativeGbmRendererWorker {
     pub fn poll(&mut self) -> WorkerPoll {
         let Some(mut in_flight) = self.in_flight.take() else {
             self.flush_discarded_release();
-            if let Some(since) = self.stalled.as_ref().map(|stalled| stalled.since) {
-                return match self.result_receiver.try_recv() {
-                    Ok(result) => {
-                        // The stalled render's late result: released, never
-                        // assigned, and the facade takes renders again.
-                        self.release_discarded_result(&result);
-                        self.stalled = None;
-                        self.metrics.stall_recoveries =
-                            self.metrics.stall_recoveries.saturating_add(1);
-                        WorkerPoll::Idle
-                    }
-                    Err(TryRecvError::Disconnected) => {
-                        self.stalled = None;
-                        self.quarantined = true;
-                        self.metrics.failures = self.metrics.failures.saturating_add(1);
-                        WorkerPoll::Failed(
-                            LiveRendererScanoutBufferExportDetail::WorkerDisconnected,
-                        )
-                    }
-                    Err(TryRecvError::Empty) => {
-                        let age = since.elapsed();
-                        if age >= LIVE_RENDERER_WORKER_STALL_ABANDON {
-                            self.stalled = None;
-                            self.quarantined = true;
-                            self.metrics.failures = self.metrics.failures.saturating_add(1);
-                            self.metrics.stalls_abandoned =
-                                self.metrics.stalls_abandoned.saturating_add(1);
-                            WorkerPoll::Failed(LiveRendererScanoutBufferExportDetail::WorkerStalled)
-                        } else {
-                            WorkerPoll::Stalled { age }
-                        }
-                    }
-                };
-            }
             if self.quarantined
                 && self.discarded_release.is_none()
                 && let Ok(result) = self.result_receiver.try_recv()
@@ -529,6 +499,9 @@ impl NativeGbmRendererWorker {
             }
             return WorkerPoll::Idle;
         };
+        // A stall changes the wait bound, not ownership. Keep validating late
+        // replies against the accepted frame so its content can still settle.
+        let stalled = self.stalled.take();
         match self.result_receiver.try_recv() {
             Ok(result) => {
                 self.in_flight = None;
@@ -556,6 +529,7 @@ impl NativeGbmRendererWorker {
                     self.metrics.failures = self.metrics.failures.saturating_add(1);
                     self.quarantined = true;
                     tracing::error!(
+                        target: "sophia_scanout_evidence",
                         "sophia_renderer_worker schema=3 status=result_misrouted output={} observed={} request={}",
                         self.output.raw(),
                         result.output.raw(),
@@ -570,12 +544,24 @@ impl NativeGbmRendererWorker {
                     || result.correlation != in_flight.correlation
                     || matches!(&result.outcome, WorkerOutcome::Exported { descriptor, .. }
                         if matches!(in_flight.output_format, Some(sophia_renderer_live::LiveCompositionFormatRequest::Required(format)) if descriptor.format != format))
+                    || matches!(&result.outcome, WorkerOutcome::Deferred(frame)
+                        if frame_correlation(frame, Some(result.request_id)) != result.correlation)
                 {
                     self.metrics.failures = self.metrics.failures.saturating_add(1);
                     self.quarantined = true;
                     self.release_discarded_result(&result);
                     return WorkerPoll::Failed(
                         LiveRendererScanoutBufferExportDetail::WorkerDisconnected,
+                    );
+                }
+                if stalled.is_some() {
+                    self.metrics.stall_recoveries = self.metrics.stall_recoveries.saturating_add(1);
+                    tracing::info!(
+                        target: "sophia_scanout_evidence",
+                        "sophia_renderer_worker schema=3 status=stall_recovered output={} request={} age_ms={}",
+                        self.output.raw(),
+                        in_flight.request_id.0,
+                        age.as_millis(),
                     );
                 }
                 match result.outcome {
@@ -601,17 +587,7 @@ impl NativeGbmRendererWorker {
                         self.metrics.failures = self.metrics.failures.saturating_add(1);
                         WorkerPoll::Failed(detail)
                     }
-                    WorkerOutcome::Deferred(frame) => {
-                        if frame_correlation(&frame, Some(result.request_id)) != result.correlation
-                        {
-                            self.metrics.failures = self.metrics.failures.saturating_add(1);
-                            self.quarantined = true;
-                            return WorkerPoll::Failed(
-                                LiveRendererScanoutBufferExportDetail::WorkerDisconnected,
-                            );
-                        }
-                        WorkerPoll::Deferred(frame)
-                    }
+                    WorkerOutcome::Deferred(frame) => WorkerPoll::Deferred(frame),
                 }
             }
             Err(TryRecvError::Disconnected) => {
@@ -623,11 +599,24 @@ impl NativeGbmRendererWorker {
             Err(TryRecvError::Empty) => {
                 let age = in_flight.submitted_at.elapsed();
                 self.metrics.max_request_age = self.metrics.max_request_age.max(age);
-                if age >= LIVE_RENDERER_WORKER_HARD_STALL {
+                if let Some(stalled) = stalled {
+                    let age = stalled.since.elapsed();
+                    if age >= LIVE_RENDERER_WORKER_STALL_ABANDON {
+                        self.quarantined = true;
+                        self.metrics.failures = self.metrics.failures.saturating_add(1);
+                        self.metrics.stalls_abandoned =
+                            self.metrics.stalls_abandoned.saturating_add(1);
+                        WorkerPoll::Failed(LiveRendererScanoutBufferExportDetail::WorkerStalled)
+                    } else {
+                        self.in_flight = Some(in_flight);
+                        self.stalled = Some(stalled);
+                        WorkerPoll::Stalled { age }
+                    }
+                } else if age >= LIVE_RENDERER_WORKER_HARD_STALL {
                     // Not a failure yet: the render is late, not lost. It
                     // is waited for up to the abandon bound with nothing
                     // else submitted (t186).
-                    self.in_flight = None;
+                    self.in_flight = Some(in_flight);
                     self.stalled = Some(StalledRequest {
                         since: Instant::now(),
                     });

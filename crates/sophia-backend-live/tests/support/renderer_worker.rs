@@ -243,3 +243,8 @@ include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/support/renderer_worker_correlation.rs"
 ));
+
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/renderer_worker_stall.rs"
+));

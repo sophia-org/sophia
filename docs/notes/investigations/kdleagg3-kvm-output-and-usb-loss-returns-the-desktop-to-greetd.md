@@ -511,6 +511,116 @@ The gate finished before shutdown preparation and was not killed. The
 records the documentation/provenance correction and fresh gate still needed.
 No locked guest, live installation or physical acceptance occurred.
 
+### Resumed lock gate and recovery integration (2026-10-09)
+
+The resumed full gate passed on signed `f1effad0daf38e7a9ad4eaef20fb2214dea2ac27`.
+`3539415dc` restored the provider contract's previous bytes and moved the
+internal coverage description to [Session lock diagnostics](../../session-lock-diagnostics.md);
+no vendored snapshot changed. The following commit only orders one import.
+Gate 02 preserves that formatting refusal. Gate 03 reached an unchanged
+conformance fixture whose Unix socket exceeded `SUN_LEN` under the long private
+target; gate 04 uses `~/.cache/sophia-lock-200-target` with the same isolation,
+umask 0077 and source. It passed workspace tests, SDK checks, clippy, layout
+and verifier archives. Its source checks pass and the tree remained clean.
+The frozen `200-lock-publication-characterization/gate-04` manifest is
+`c2517d2c837bce6a140311d50d7b01964b02be326732c68c4f343efa9aef63bb`.
+
+The new recovery worktree combines current lock coverage, the frozen hotplug
+candidate and accepted startup fallback. Signed merges `75af47276` and
+`497464309` preserve both the production resume test boundary and image
+restoration bookkeeping. This is a candidate, with display marker ordering,
+integration checks and guest qualification still outstanding. The installed
+session remains unchanged. The [resume plan](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md#resume-progress-2026-10-09)
+records identities and the classifier result prerequisite.
+
+### Installed Session renderer failure interrupts qualification (2026-10-09)
+
+niltempus reported a fresh live-session crash during the resumed work. The
+installed t310 release, Sophia `838d5b16a`, recorded
+`renderer_retained_buffer_missing` at 13:29:50.007Z, retained the cause
+`live renderer scanout export failed: RetainedBufferMissing`, drained native
+scanout during cleanup, and returned to greetd with exit 1 at 13:29:56.008Z.
+Its last retained ordinary records show WM layout transactions 30 and 31,
+about 98 milliseconds before the fatal record. Niltempus subsequently confirmed
+switching workspaces; no hotplug cause is established.
+
+`204-live-session-crash-20261009/session` preserves all seventeen session files
+with a separate checksum manifest. The diagnostic health reports 63,301
+discarded and 1,676,130 suppressed records, zero storage errors: absence from
+this event stream cannot exclude an unrecorded event. The host's `oom_kill`
+counter is zero since boot; the later capture has 58,875,576 KiB available.
+Unprivileged kernel-log access failed and noninteractive sudo required a
+password, so no kernel GPU-reset verdict is available.
+
+At the reported crash, the root lane was compiling the signed combined
+candidate `1e63d9c71` inside device-hidden isolation with eight jobs. It had not
+installed that candidate or launched a guest. Claude's controls ended at
+13:23:07Z; subsequent work was source reading and package hashing/freezing.
+Both lanes stopped. Root sent SIGTERM only to its identified gate timeout;
+`203-recovery-integration/gate-01` retains exit 143 and unchanged source pins,
+an intentional interruption rather than a test failure. Its earlier focused
+display/endpoint checks passed 29 and 13 tests. No automatic build or guest
+restart followed this incident. Association with compilation alone does not
+establish causation.
+
+Source review and a device-free real-exporter regression subsequently found a
+deterministic late-render defect, recorded in the
+[worker-stall investigation](h833kgfy-one-hard-stall-of-the-rendered-scanout-export-worker-ends-the-session.md#late-completion-defect-found-after-workspace-switch-crash-2026-10-09).
+The installed worker discarded a reply after declaring a hard stall, then
+returned `Idle`; the exporter had no staged replacement and refused with
+`RetainedBufferMissing`. Presentation withholding makes that empty slot
+reachable. The retained physical incident cannot prove this path, because
+worker warnings were excluded from daily capture, and the same detail named
+several producers.
+
+Signed candidate `bacfdb207567afa8dc57ba5a99ba14f381afbe74` retains the
+accepted identity and validates late replies, captures worker transitions
+and sampled presentation deferrals,
+and gives missing-frame/descriptor/owner failures distinct typed codes.
+The backend/renderer suites passed 1,136 tests (11 ignored); six reducer
+tests and the CLI durable-capture test passed with console logging disabled.
+Independent review found no blocking issue. The repair passed its full CPU gate,
+one job at nice 10 with devices hidden, in `205-workspace-render-recovery/gate-01`.
+Niltempus requested merging the fixes for the daily session. Signed merge
+`22b124c882be0044fb5fceb7c9bdf5d3c6d6f0f0` combines the accepted startup
+fallback, renderer repair and existing lock coverage on master. Independent
+merge review found no lost code or startup-policy facts. The merged source
+passed the full isolated gate in `205-workspace-render-recovery/gate-02`,
+14:17:33–14:26:39Z, with unchanged source pins and a clean tree. Its frozen
+manifest is `ac29e00024f0c1f511a922e41f0b78dd9f4d04d8d1c62e15c27fe5b18bc1f088`.
+The gate includes workspace tests, SDK checks, strict lint, layout and all six
+verifier archives; native pixels and physical lock retirement remain unproved.
+
+Master `22b124c88` is published. Signed desktop integration
+`39fdba80befb00a188cb08ebe224b84a396a6dba` replaces the temporary local pin
+with that exact public source; other flake inputs are unchanged. The standalone
+release launcher was never run and is marked superseded. The merged release
+build passed in `205-workspace-render-recovery/release-02`, producing
+`niltempus-e3e6a9c375a1bfa4c7bc`. All release checksums, source identities and
+the build-time profile preflight passed. Its Sophia binary hashes to
+`5ca5a64f1a3dd3d26cc06c778598a7ed2894aed5daeebaea3f74c9dc82b527d5`.
+The store output is retained by `release-02/result`. Both source repositories
+are published. The initial install handoff required the operator's sudo
+authentication. Niltempus subsequently installed the release and confirmed
+normal login. At 14:40:20Z, the read-only `installed-01` observation bound
+the running executable and session manifest to that exact binary and commit.
+Session `00000001791556726570-719a02b7-1f2d-4b3f-b9ad-88c7bbd5257d` completed
+startup; diagnostic recording was running with zero storage errors and six
+durable presentation-deferral records. No worker stall record, failure-cause
+file or terminal outcome was present in that observation. Its frozen manifest
+is `73300a2470ae99224358d0789413c593ce0c8dc690ca19a8bbc385388a84a0bd`.
+The previous release remains `niltempus-19efce64b00ae803d566` for rollback.
+The clean merged repair worktrees were removed after their pins
+were replaced; signed commits and frozen gate records remain. Physical
+workspace-switch acceptance is still outstanding. The 202 guest and combined
+hotplug gate stay stopped.
+
+The release build used one job and one core as a precaution after the crash
+during an eight-job build. Niltempus challenged that restriction; load was
+never established as the cause. Compilation had finished before that exchange,
+so no restart followed. The limit belonged to this recorded launcher, not
+the user's Nix configuration; subsequent builds should use parallelism.
+
 ## t306
 
 The [four-part qualification plan](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md)

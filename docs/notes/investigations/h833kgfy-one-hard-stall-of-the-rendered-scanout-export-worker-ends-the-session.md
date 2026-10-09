@@ -2,10 +2,85 @@
 id: h833kgfy
 date: 2026-09-24
 kind: investigation
-status: resolved
+status: awaiting-physical-acceptance
 tags: [investigation, scanout, renderer, session-fatal]
 ---
 # One hard stall of the rendered-scanout export worker ends the session
+
+## Late completion defect found after workspace-switch crash (2026-10-09)
+
+Niltempus reported a crash while switching workspaces on installed Sophia
+`838d5b16acad9a6afd119ce25b8622c068b32646`. At 13:29:50.007Z the retained
+session reported `renderer_retained_buffer_missing`; bounded cleanup returned
+to greetd. The copied session is preserved under
+`~/.local/state/sophia/development-evidence/t306-01/204-live-session-crash-20261009/`.
+The [t306 investigation](kdleagg3-kvm-output-and-usb-loss-returns-the-desktop-to-greetd.md)
+owns the surrounding interrupted qualification. This incident had no recorded
+topology rebuild. The user identified workspace switching as the trigger.
+
+The September repair below retained the stall flag but discarded the request
+identity. When a late result arrived, it released the buffer and returned
+`Idle`. The real exporter then required a staged frame. Ordinary presentation
+withholds that frame while the exporter reports work pending, including a
+stall. Thus a render crossing the one-second threshold and subsequently
+returning before abandonment could deterministically become a degraded export
+with `RetainedBufferMissing`. The earlier channel-only test asserted release
+and `Idle`, missing this caller consequence.
+
+The new channel fixture drives the real exporter without a render device.
+`205-workspace-render-recovery/red-02.log` reproduces exactly that degraded
+export on the installed source. `red-01.log` selected zero tests and is not a
+test result. The repair retains the accepted request and frame kind through
+the stall, validates its late reply through the ordinary completion path, and
+returns the owned buffer with its original correlation. A newer staged frame
+remains queued. Deferred replies retain their frame identity; invalid replies
+remain refused. The existing ten-second abandon policy is unchanged, and
+replies arriving after abandonment only release their lease.
+
+The fatal record alone does not prove a worker stall in the physical incident:
+several producers used `RetainedBufferMissing`, and worker warnings never
+entered daily capture. This was a filter gap, not proof of missing log rotation.
+The repair forwards bounded worker transitions and sampled presentation
+deferrals through the explicit evidence target, independent of console logging.
+Missing staged frame, exported descriptor, exported owner, exhausted worker
+lease ID and exhausted slot incarnation now carry distinct typed failure codes.
+The concurrent build is a possible latency contributor, not an established
+cause. Neither GPU reset nor the source of any render delay is established.
+
+The recovery branch is `fix/workspace-render-recovery-20261009`, based directly
+on the installed commit. The backend and renderer suites passed 1,136 tests
+(11 ignored); the six reducer tests and the CLI capture test passed, including
+durable records with `RUST_LOG=off`. Independent source review found no blocking
+issue. Signed candidate `bacfdb207567afa8dc57ba5a99ba14f381afbe74` passed the
+full isolated gate in `205-workspace-render-recovery/gate-01`, with unchanged
+source pins. The final exporter fixture checks native owner/head/frame identity
+and the frame-kind counter. The gate covers tests, SDK checks, lint, layout and
+verifier controls; device-dependent pixel checks explicitly remain unproved.
+`stall_recovered` means a validated late reply arrived, including a deferred or
+failed reply, not necessarily successful rendering. An empty export request
+still refuses with the distinct `PendingFrameMissing` detail. Legacy status-only
+degraded reports still use `RetainedBufferMissing`. No physical workspace-switch
+acceptance follows from these device-free tests.
+
+Niltempus requested merging the repair for the daily desktop. Signed master
+merge `22b124c882be0044fb5fceb7c9bdf5d3c6d6f0f0` preserves the existing
+lock work and accepted startup fallback. Independent merge review found no
+blocking issue, and the merged source passed the full isolated gate in
+`205-workspace-render-recovery/gate-02` at 14:17:33–14:26:39Z with unchanged
+source pins. Its frozen manifest is
+`ac29e00024f0c1f511a922e41f0b78dd9f4d04d8d1c62e15c27fe5b18bc1f088`.
+The source is published on master; desktop integration `39fdba80` pins that
+exact public revision. Release `niltempus-e3e6a9c375a1bfa4c7bc` passed its
+build, checksum, source-identity and profile checks in
+`205-workspace-render-recovery/release-02`. The store output is retained by
+that directory's `result` GC root. Niltempus installed the release and confirmed
+normal login. Read-only observation `205-workspace-render-recovery/installed-01`
+binds the running executable and new session manifest to the verified binary.
+Startup completed and diagnostic recording had zero storage errors. Six
+presentation-deferral records reached the durable log; no worker stall record
+was present at observation. This confirms installation, startup and live
+deferral capture, not the reported incident's cause or recovery from a
+physical renderer stall. Workspace-switch acceptance remains outstanding.
 
 ## Question
 
