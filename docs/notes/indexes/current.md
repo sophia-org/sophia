@@ -8,6 +8,11 @@
 investigates composable per-process file and service views, their Linux mapping,
 and their relationship to Sophia's admission and isolation contracts.
 
+The [Plan 9 integration points concept](../concepts/ernn0bkv-plan-9-integration-points-for-sophia.md)
+fixes what stays unchanged, states three rules for namespaces, identity and the
+operating-system boundary, and lists seven further Plan 9 ideas with the
+guardrails for adopting them without a parallel mechanism.
+
 ## Desktop startup
 
 The [panel-only startup investigation](../investigations/startup-panel-only-startup-physical-acceptance.md)
