@@ -23,6 +23,7 @@ native_owner_retirement::finish_before_replacement(runtime.as_ref(), native_reti
 // replacement presents.
 schedule_output_topology_rebuild!("startup_recovery", false);
 startup_topology_recovery_pending = true;
+let _ = reduce_session_startup(&mut startup_readiness, SessionStartupEvent::NativeRecovered);
 crate::session_println!(
     "sophia_live_session_startup schema=4 status=recovery_deferred reason=topology_rebuild attempt=1 cause={} outcome={} drained={} abandoned_scanouts={} retained_images={}",
     recovery_reason.reduced_name(),

@@ -46,6 +46,9 @@ struct LiveOutputTopologyOwner {
     policy_committed: bool,
     policy_settlement_pending: bool,
     presentation_baseline: usize,
+    /// Input may resume after a timeout, but a late flip still owes the
+    /// matching hardware publication one observation.
+    presentation_pending: bool,
     /// A hotplug notice that arrived under a policy quarantine and still owes
     /// a rescan once the owner settles.
     deferred_hotplug_notice: bool,
@@ -74,6 +77,7 @@ impl LiveOutputTopologyOwner {
             policy_committed: true,
             policy_settlement_pending: false,
             presentation_baseline: 0,
+            presentation_pending: false,
             deferred_hotplug_notice: false,
         })
     }
@@ -89,6 +93,7 @@ impl LiveOutputTopologyOwner {
             return Ok(false);
         }
         self.notice_sequence = notice_sequence;
+        self.presentation_pending = false;
         if let LiveOutputTopologyPhase::Quarantined(holder) = self.phase {
             // A notice arriving under a policy candidate is remembered rather
             // than serviced, because servicing it here would consume the
@@ -118,8 +123,7 @@ impl LiveOutputTopologyOwner {
     /// Whether a hotplug notice arrived while a policy candidate held the
     /// quarantine, and so still owes a rescan.
     const fn hotplug_notice_deferred(&self) -> bool {
-        self.deferred_hotplug_notice
-            && matches!(self.phase, LiveOutputTopologyPhase::Stable)
+        self.deferred_hotplug_notice && matches!(self.phase, LiveOutputTopologyPhase::Stable)
     }
 
     fn take_deferred_hotplug_notice(&mut self) -> bool {
@@ -150,8 +154,7 @@ impl LiveOutputTopologyOwner {
     /// or physically rolled back. No published fields were mutated while the
     /// owner was quarantined, so cancellation is an explicit phase transition.
     fn cancel_policy_change(&mut self) -> Result<(), &'static str> {
-        if self.phase
-            != LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Policy)
+        if self.phase != LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Policy)
         {
             return Err("live policy topology cancellation is out of order");
         }
@@ -166,8 +169,7 @@ impl LiveOutputTopologyOwner {
         &mut self,
         publication_generation: u64,
     ) -> Result<(), &'static str> {
-        if self.phase
-            != LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Policy)
+        if self.phase != LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Policy)
             || publication_generation <= self.publication_generation
         {
             return Err("live policy topology transport rollback is out of order");
@@ -181,8 +183,16 @@ impl LiveOutputTopologyOwner {
         outputs: Vec<sophia_engine::HeadlessOutput>,
         heads: Vec<(sophia_protocol::OutputId, usize)>,
     ) -> Result<LiveOutputTopologyRebuild, &'static str> {
-        if self.phase
-            != LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Hotplug)
+        self.observe_resolved_rebuild(outputs, heads, false)
+    }
+
+    fn observe_resolved_rebuild(
+        &mut self,
+        outputs: Vec<sophia_engine::HeadlessOutput>,
+        heads: Vec<(sophia_protocol::OutputId, usize)>,
+        realization_changed: bool,
+    ) -> Result<LiveOutputTopologyRebuild, &'static str> {
+        if self.phase != LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Hotplug)
         {
             return Err("live topology rebuild was observed outside a hotplug quarantine");
         }
@@ -192,7 +202,7 @@ impl LiveOutputTopologyOwner {
         // A surviving-head topology is a new candidate. Comparing the head counts
         // as well as the outputs is what makes that true here rather than only in
         // the model that requires it.
-        let changed = outputs != self.outputs || heads != self.heads;
+        let changed = realization_changed || outputs != self.outputs || heads != self.heads;
         if changed {
             self.topology_epoch = self
                 .topology_epoch
@@ -223,8 +233,7 @@ impl LiveOutputTopologyOwner {
         heads: Vec<(sophia_protocol::OutputId, usize)>,
         candidate_topology_epoch: u64,
     ) -> Result<(), &'static str> {
-        if self.phase
-            != LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Policy)
+        if self.phase != LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Policy)
             || outputs.is_empty()
             || candidate_topology_epoch != self.topology_epoch.checked_add(1).unwrap_or(0)
         {
@@ -250,6 +259,7 @@ impl LiveOutputTopologyOwner {
             return Err("live topology publication is out of order");
         }
         self.presentation_baseline = presentation_baseline;
+        self.presentation_pending = true;
         self.policy_settlement_pending |= policy_required;
         self.policy_committed = !self.policy_settlement_pending;
         self.phase = if self.policy_committed {
@@ -260,10 +270,7 @@ impl LiveOutputTopologyOwner {
         Ok(())
     }
 
-    fn mark_policy_committed(
-        &mut self,
-        presentation_baseline: usize,
-    ) -> Result<(), &'static str> {
+    fn mark_policy_committed(&mut self, presentation_baseline: usize) -> Result<(), &'static str> {
         if self.phase != LiveOutputTopologyPhase::Published {
             return Err("live topology policy settlement is out of order");
         }
@@ -297,13 +304,17 @@ impl LiveOutputTopologyOwner {
     }
 
     fn observe_presentation(&mut self, retirements: usize) -> bool {
-        if self.phase != LiveOutputTopologyPhase::AwaitingPresentation
+        if !matches!(
+            self.phase,
+            LiveOutputTopologyPhase::AwaitingPresentation | LiveOutputTopologyPhase::Stable
+        ) || !self.presentation_pending
             || !self.policy_committed
             || retirements <= self.presentation_baseline
         {
             return false;
         }
         self.phase = LiveOutputTopologyPhase::Stable;
+        self.presentation_pending = false;
         true
     }
 

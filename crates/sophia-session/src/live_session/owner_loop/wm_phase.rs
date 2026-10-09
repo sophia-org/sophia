@@ -780,6 +780,7 @@
         // so a reload and a startup reach the modeset by one road.
         if active_output_topology_preparation.is_none()
             && output_topology_owner.phase == LiveOutputTopologyPhase::Stable
+            && pending_hardware_output_publication.is_none()
             && wm.ordinary_policy_settlement_idle()
             && wm.take_output_topology_reload_request()
         {
@@ -811,6 +812,7 @@
         }
         if active_output_topology_preparation.is_none()
             && runtime.is_some()
+            && pending_hardware_output_publication.is_none()
             && pending_wm_update.is_none()
             && layout.pending.is_none()
             && wm.ordinary_policy_settlement_idle()

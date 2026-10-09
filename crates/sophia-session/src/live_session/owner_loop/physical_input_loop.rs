@@ -36,25 +36,6 @@ macro_rules! schedule_output_topology_rebuild {
     }};
 }
 
-macro_rules! publish_resumed_topology_transport {
-    ($native:expr) => {{
-        if output_topology_owner.phase
-            == LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Hotplug)
-        {
-            let rebuild = output_topology_owner
-                .observe_rebuild(outputs.clone(), $native.head_fingerprint())?;
-            debug_assert_eq!(rebuild, LiveOutputTopologyRebuild::TransportReplaced);
-            output_topology_owner.mark_published($native.retirements, false)?;
-            output_topology_retry_at = None;
-            tracing::info!(
-                "sophia_live_output_topology schema=1 status=published transition={} outputs={} changed=false source=seat_resume input=quarantined",
-                output_topology_owner.transition,
-                outputs.len(),
-            );
-        }
-    }};
-}
-
 let mut native_frame_service_preempted_previous_cycle = false;
 let mut native_frame_control_priority_cycles = 0_u8;
 let mut last_native_frame_service = Instant::now();

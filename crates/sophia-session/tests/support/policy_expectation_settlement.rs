@@ -101,10 +101,54 @@ fn staged_close_expecting_operation() -> Staged {
         .expect("a policy settlement identity");
     assert!(settlement.expect_session_operation);
     assert_eq!(
-        staged.fixture.wm.public.as_ref().unwrap().expected_operation_slot,
+        staged
+            .fixture
+            .wm
+            .public
+            .as_ref()
+            .unwrap()
+            .expected_operation_slot,
         Some(3)
     );
     staged
+}
+
+#[test]
+fn a_projection_from_the_retired_connector_cannot_settle_after_replacement_affinity() {
+    let Staged {
+        mut fixture,
+        layout,
+        proposal,
+        commands,
+    } = staged_close_expecting_operation();
+    let output = sophia_engine::HeadlessOutput::deterministic();
+    let policy = super::output_realization_policy::moved_policy(output);
+    fixture
+        .wm
+        .update_output_work_areas_for_realization(&layout, &[output], &policy)
+        .unwrap();
+    let result = LiveWmCommitResult {
+        update: WmTransactionUpdate {
+            commit: TransactionCommit {
+                transaction: proposal.transaction,
+                outcome: TransactionOutcome::TimedOut,
+                applied_surfaces: vec![],
+            },
+        },
+        source: Some(LiveWmProposalSource::Action(CLOSE)),
+        policy_settlement: proposal.policy_settlement,
+    };
+    fixture
+        .wm
+        .apply_commit_result(result, None, output.id)
+        .unwrap();
+    assert_eq!(
+        submitted_outcome(&commands),
+        (PolicyProjectionOutcome::RejectedStale, false)
+    );
+    let scene = fixture.wm.public.as_ref().unwrap().reducer.scene();
+    assert_eq!(scene.outputs[0].policy_key, Some(1));
+    assert_eq!(scene.outputs[0].bounds.x, 8);
 }
 
 fn submitted_outcome(
@@ -215,7 +259,13 @@ fn a_chord_action_never_expects_a_session_operation() {
         .expect("a policy settlement identity");
     assert!(!settlement.expect_session_operation);
     assert_eq!(
-        staged.fixture.wm.public.as_ref().unwrap().expected_operation_slot,
+        staged
+            .fixture
+            .wm
+            .public
+            .as_ref()
+            .unwrap()
+            .expected_operation_slot,
         None
     );
 }

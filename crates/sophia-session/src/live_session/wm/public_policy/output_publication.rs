@@ -49,6 +49,7 @@ impl LivePublicPolicyState {
             self.publish_snapshot_to_transport(snapshot, "hardware_snapshot_transport")?;
         self.output_authority = Some(replacement);
         self.output_capabilities = capabilities;
+        self.output_policy_capabilities = None;
         crate::session_println!(
             "sophia_live_output_authority schema=2 status=hardware_snapshot_published transaction={} topology_epoch={} heads={} groups={} first_presented=true transport_published={transport_published}",
             transaction.raw(),

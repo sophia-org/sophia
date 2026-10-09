@@ -35,7 +35,6 @@ struct SessionLoopResources<'a> {
     /// Which connectors share one logical output, from the profile loaded at
     /// startup. Fixed for the session's life: a rescan that regrouped differently
     /// would change the desktop's identity behind policy's back.
-    mirror_grouping: &'a sophia_backend_live::NativeMirrorGrouping,
     /// Neutral initial policy for heads reconstructed after VT/hotplug loss.
     /// Output-authority commits may replace it independently on live heads.
     initial_head_mapping: sophia_protocol::OutputHeadMapping,
@@ -409,7 +408,6 @@ fn run_session_loop_inner(
         shell_components,
         component_catalog,
         session_launches,
-        mirror_grouping,
         initial_head_mapping,
     } = resources;
     let SessionLoopStartup {
@@ -521,10 +519,8 @@ fn run_session_loop_inner(
     );
     let mut pending_wm_update = None;
     let mut active_output_topology_preparation: Option<LiveOutputTopologyExecution> = None;
-    let mut pending_hardware_output_publication: Option<(
-        sophia_protocol::OutputAuthoritySnapshot,
-        Vec<sophia_backend_live::LibdrmNativeOutputCapability>,
-    )> = None;
+    let mut pending_hardware_output_publication:
+        Option<output_realization::PendingOutputPublication> = None;
     // Whether the parked hardware snapshot's topology has presented, which is
     // the first of the two conditions its publication waits on.
     let mut hardware_output_publication_presented = false;

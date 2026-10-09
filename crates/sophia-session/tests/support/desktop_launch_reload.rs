@@ -48,6 +48,9 @@ mod inspection_profile_reload;
 #[path = "output_reload_settlement.rs"]
 mod output_reload_settlement;
 
+#[path = "output_realization_policy.rs"]
+mod output_realization_policy;
+
 struct ReloadFixture {
     // Fragments and their directory must be released before the fixture root.
     wm: LiveWmSession,
@@ -120,6 +123,7 @@ impl ReloadFixture {
             wm_transport: config.wm_transport,
             wm_filesystem_qids,
             output_policy_keys: Default::default(),
+            output_policy_capabilities: None,
             control_generation: 1,
             control_catalog_serial: 1,
             control_tickets: BTreeMap::new(),

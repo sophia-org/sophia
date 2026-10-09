@@ -49,7 +49,41 @@ impl LiveWmSession {
         full_bounds: &[(sophia_protocol::OutputId, Rect)],
         primary: sophia_engine::HeadlessOutput,
     ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
-        let output_ids = outputs.iter().map(|output| output.id).collect::<BTreeSet<_>>();
+        self.update_output_work_areas_and_policy(layout, outputs, full_bounds, primary, None)
+    }
+
+    fn update_output_work_areas_for_realization(
+        &mut self,
+        layout: &PersistentLiveLayout,
+        outputs: &[sophia_engine::HeadlessOutput],
+        policy: &output_realization::OutputPolicyLayout,
+    ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
+        let primary = outputs
+            .iter()
+            .find(|output| output.id == policy.primary)
+            .copied()
+            .ok_or("resolved output layout has no primary descriptor")?;
+        self.update_output_work_areas_and_policy(
+            layout,
+            outputs,
+            &policy.bounds,
+            primary,
+            Some(policy),
+        )
+    }
+
+    fn update_output_work_areas_and_policy(
+        &mut self,
+        layout: &PersistentLiveLayout,
+        outputs: &[sophia_engine::HeadlessOutput],
+        full_bounds: &[(sophia_protocol::OutputId, Rect)],
+        primary: sophia_engine::HeadlessOutput,
+        policy: Option<&output_realization::OutputPolicyLayout>,
+    ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
+        let output_ids = outputs
+            .iter()
+            .map(|output| output.id)
+            .collect::<BTreeSet<_>>();
         let bound_ids = full_bounds
             .iter()
             .map(|(output, _)| *output)
@@ -91,6 +125,6 @@ impl LiveWmSession {
             })
             .collect::<Result<Vec<_>, _>>()?;
         let _ = work_bounds;
-        self.update_public_work_areas_at(layout, outputs, full_bounds, primary)
+        self.update_public_work_areas_at(layout, outputs, full_bounds, primary, policy)
     }
 }

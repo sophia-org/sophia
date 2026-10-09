@@ -145,6 +145,44 @@ geometry/key publication, bounded conservative hardware retry, durable output
 policy diagnostics, the combined gate and attended acceptance remain open.
 The installed release and master are unchanged.
 
+#### Runtime publication integration (2026-10-09)
+
+The runtime branch now includes Claude's signed `937696c19` resolver hook,
+`65b4e5d7e` resume-at-viewports implementation and `6da0e59a6` seat/startup
+recovery routing. Hotplug, seat return and native recovery construct replacements
+through admitted discovery and the shared profile resolver. Waiting preserves
+retained images and lock custody; retries use 250, 1000 and 4000 ms, then wait
+for another notice. Resolved viewports are installed before retained-image
+demand, restoration and the first replacement presentation.
+
+The publication slice binds speculative realization to transition, monitor
+notice, native owner and desired-profile identity. WM geometry and realized keys
+enter one scene; reusing an output number for another connector advances its
+generation and invalidates older proposals. A surviving connector keeps live
+focus. The published hardware capability view remains separate until the
+replacement presents. A profile change during that wait publishes the current
+owner's physical facts, then schedules fresh reconciliation rather than
+mislabelling the old realization with the new profile generation.
+
+A static replacement requests a repaint even without a WM layout change.
+Releasing input after the presentation deadline is not presentation evidence:
+a later flip can still settle the parked snapshot once, while a new notice
+invalidates that observation. Startup realization is checked once against the
+presented settings, avoiding repeated capability probes on idle owner passes.
+
+Device-free evidence is under `t310-runtime-20261009/publication-01`; the
+directory records the candidate identity and source hashes. It includes ledger,
+WM affinity/geometry, stale-proposal, same-connector focus, late-presentation and
+normalized-layout controls, plus native topology, startup, lock coverage,
+warnings-denied clippy and source layout checks. Intermediate fixture failures
+are preserved: one lacked opaque head IDs and another omitted the production
+head-mapping projection. Neither is recorded as a product failure.
+
+This is integration progress, not release qualification. Reload resolution over
+the complete admitted inventory, bounded conservative hardware recovery,
+durable policy diagnostics, the combined gate and physical acceptance remain.
+Master and the installed release are unchanged.
+
 #### Port change after reboot (2026-10-09)
 
 niltempus moved the main monitor between ports on the discrete AMD card before

@@ -134,3 +134,118 @@ fn live_focus_is_observed_through_connector_identity_not_enumeration() {
         Some("DP-2")
     );
 }
+
+#[test]
+fn resolved_geometry_is_normalized_once_for_wm_frontend_and_authority() {
+    use sophia_backend_live::{LibdrmNativeOutputTiming, LibdrmNativeVrrPropertyDiscoveryStatus};
+    use sophia_engine::HeadlessOutput;
+    use sophia_protocol::{OutputHeadMapping, Size};
+    let outputs = [1, 2].map(|id| HeadlessOutput {
+        id: OutputId::from_raw(id),
+        size: Size {
+            width: 1920,
+            height: 1080,
+        },
+        scale: 1,
+    });
+    let mode = LibdrmNativeOutputTiming::new(1920, 1080, 120_000);
+    let capabilities = outputs
+        .iter()
+        .enumerate()
+        .map(|(index, output)| {
+            LibdrmNativeOutputCapability::new(
+                output.id,
+                index as u32 + 1,
+                format!("DP-{}", index + 1),
+                [mode],
+                Some(mode),
+                mode,
+                LibdrmNativeVrrPropertyDiscoveryStatus::Unsupported,
+            )
+            .unwrap()
+            .bind_head(sophia_engine::RenderHeadId::from_raw(index as u64 + 1))
+            .unwrap()
+        })
+        .collect::<Vec<_>>();
+    let mut realization = realized("DP-1");
+    realization.fallback_connector = None;
+    realization.outputs.push(realized("DP-2").outputs.remove(0));
+    for (index, output) in realization.outputs.iter_mut().enumerate() {
+        output.mode = DesktopOutputTiming::new(1920, 1080, 120_000);
+        output.position = (-1920 + index as i32 * 1920, 32);
+    }
+    realization.focused_connector = Some("DP-2".into());
+    let policy = OutputPolicyLayout::prepare(
+        &realization,
+        &capabilities,
+        &outputs,
+        OutputHeadMapping::Exact,
+    )
+    .unwrap();
+    let frontend = policy.frontend_snapshot(&outputs, 8).unwrap();
+    let mut authority =
+        sophia_backend_live::project_live_output_authority_snapshot(&capabilities, &outputs, 7)
+            .unwrap();
+    sophia_backend_live::apply_live_output_authority_head_mappings(
+        &mut authority,
+        &capabilities
+            .iter()
+            .map(|capability| (capability.head().unwrap(), OutputHeadMapping::Exact))
+            .collect(),
+    )
+    .unwrap();
+    policy.apply_authority_geometry(&mut authority).unwrap();
+    assert!(
+        matches_presented(
+            &realization,
+            &capabilities,
+            &outputs,
+            &authority,
+            OutputHeadMapping::Exact
+        )
+        .unwrap()
+    );
+    let mut wrong = authority.clone();
+    wrong.groups[0].logical.y += 8;
+    assert!(
+        !matches_presented(
+            &realization,
+            &capabilities,
+            &outputs,
+            &wrong,
+            OutputHeadMapping::Exact
+        )
+        .unwrap()
+    );
+    assert_eq!(policy.primary, OutputId::from_raw(2));
+    assert_eq!(frontend.primary, policy.primary);
+    assert_eq!(authority.primary_output, policy.primary);
+    assert_eq!(policy.bounds[0].1.x, 0);
+    assert_eq!(policy.bounds[1].1.x, 1920);
+    for (id, bounds) in &policy.bounds {
+        assert_eq!(
+            frontend
+                .outputs
+                .iter()
+                .find(|output| output.output == *id)
+                .unwrap()
+                .logical,
+            *bounds
+        );
+        assert_eq!(
+            authority
+                .groups
+                .iter()
+                .find(|group| group.output == *id)
+                .unwrap()
+                .logical,
+            *bounds
+        );
+    }
+    assert!(
+        frontend
+            .outputs
+            .iter()
+            .all(|output| output.refresh_millihz == 120_000)
+    );
+}
