@@ -14,10 +14,11 @@ promoted t310 ahead of this plan. The installed strict profile refused the
 missing DP-1; this was not new evidence of the retained-image fault.
 
 The [t310 investigation](../investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#t310)
-records the signed startup repair, passing isolated gate and built release.
-Installation awaits administrator authentication in the operator's terminal,
-followed by a normal-login check. Its scope is startup and explicit reload;
-automatic hotplug recovery remains unqualified. All packages and remaining
+records the signed startup repair, passing isolated gate and installed release
+`niltempus-19efce64b00ae803d566`. niltempus confirmed normal login; read-only
+checks bind the running session to Sophia `838d5b16a`, with DP-2 enabled and
+DP-1 absent. Its scope is startup and explicit reload; automatic hotplug
+recovery remains unqualified. All packages and remaining
 gates in the shutdown checkpoint below are preserved. The new release does
 not include the unqualified master lock implementation.
 

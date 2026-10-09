@@ -180,19 +180,36 @@ All client and factotum binaries match the installed baseline byte for byte.
 `release-build-01.log`, `release-binaries.json` and `RESULT.json` retain the
 build and verification identities.
 
-Installation was attempted through the reviewed `tools/desktop install`
+Installation was first attempted through the reviewed `tools/desktop install`
 command but sudo required a password and the tool terminal had no graphical
 authentication agent. No release copy or current/previous switch occurred.
-The operator must run that installer for the exact store path above in their
-terminal, then attempt normal login. The installer preserves
-`niltempus-087445319affcb9bfc53` as `previous`. Physical startup acceptance
-remains pending. On DP-2, fallback uses the EDID preferred refresh rate with
-VRR off; the saved 120 Hz and VRR preference is still specific to DP-1.
+The initial `RESULT.json` retains that pre-install disposition. On DP-2,
+fallback uses the EDID preferred refresh rate with VRR off; the saved 120 Hz
+and VRR preference is still specific to DP-1.
 
 Automatic hotplug reconstruction still does not rerun profile reconciliation.
 Runtime exclusions, workspace migration, all-head suspension and retained-image
 recovery remain separate obligations with t306. This startup repair does not
 close t310 or change the prior shutdown checkpoint's unqualified evidence.
+
+#### Startup accepted on DP-2 (2026-10-09)
+
+niltempus subsequently reported being back in the live session. Read-only
+checks confirm `current` is `niltempus-19efce64b00ae803d566`, with the prior
+`niltempus-087445319affcb9bfc53` retained as `previous`. The normal Session
+process, PID 10449, runs the new installed path on seat0 with Hagia over
+9P2000.L. Session `00000001791549817928-0337103c-3efd-4c02-b52a-977f4b9caed3`
+records commit `838d5b16a` and the exact verified binary hash above. Sysfs
+shows DP-2 connected/enabled, DP-1 disconnected/disabled and HDMI-A-2
+connected/disabled. This accepts startup fallback for the reported port move.
+
+`LIVE-LOGIN.json` and `LIVE-LOGIN.SHA256SUMS` bind this observation to a
+checksummed preserved session under `~/.local/state/sophia/session-investigations/`,
+suffix `-0dbccf62-3e7b-4646-b88c-d4092c3f09dd`. The running-session snapshot
+reports zero discarded records and storage errors, but 20,317 records were
+suppressed by per-kind volume limits. It is incomplete event evidence, not a
+whole-session verdict. No live topology, reload or lock intervention was made.
+Runtime loss/return and card admission remain open under t310 and t306.
 
 The operator expects the desktop to handle changing monitor combinations at
 login and during a session. The DP-1 profile is an immediate configuration
