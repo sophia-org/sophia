@@ -578,6 +578,62 @@ The separate result note is `141-qemu-context-result/RESULT.txt`. This run
 does not establish a production trigger, KMS/AddFB failure, the original
 black-frame cause or t306/t307 acceptance.
 
+Signed follow-up `9dee187ae` changes only the context test: producer stages
+place the same client buffer at x=16, x=24 and x=8, within the same output
+slot. Its two CPU tests pass, and both deliberate mutations that reuse an
+earlier placement after the sibling's drop fail at the intended assertion.
+The full device-hidden gate and layout check passed from 03:50:43Z to
+03:57:59Z, with 7,227 passing, zero failing and 103 ignored entries across
+524 raw libtest summaries, including nested summaries. Both device arms
+remained ignored. The exact gate artifact is frozen as
+`0d9c10c8b42a91a5f28c2e508cfc4e4a2638a256d12bded339371b0bb5813be6`.
+
+Evidence `142-context-freshness-cpu` has 35 entries under manifest
+`9aa2fda79fac7ce27ed263cf5f1c8e5e87acba65bf5fa3698beb516164bf3529`.
+Its package policy fixes the treatment of unexpected output before another
+run: foreign lines, including the Mesa diagnostic, still refuse the test
+window. A successor classifier must bind each recorded placement and the
+new binary's identity. Fresh pixels would exclude an earlier producer frame;
+they would not attribute a failed submission that never touched that output.
+
+## Freshness run catches a mismatch; the strict verdict stays INVALID (2026-10-09 UTC)
+
+Series 144 ran the frozen freshness test once from 04:19:35Z to 04:19:55Z,
+under `REVIEW-CODEX-143-GO.txt`. The observer passed and both guests were
+`P_CLEAN`, with clean endpoints and no remaining processes. The context
+test exited 101; its harness exit 1 follows that test failure, while QEMU
+exited 0 after guest power-down. Infrastructure and test outcomes remain
+separate.
+
+The frozen context verdict is `INVALID`. The shared arm again printed
+`got error from kernel - expect bad rendering 2`, which the policy fixed
+before this run requires the classifier to refuse. Neither this run nor
+series 141 is normalized or reclassified.
+
+The raw separate-open records match all three placements, x=16, x=24 and
+x=8, and preserve the AddFB handle `Exports((11, 2))`. The shared arm
+matches at x=16 and x=24. After the sibling's drop and the Mesa diagnostic,
+its x=8 record reports a mismatch: pixel (8,12) reads `[0, 0, 0]` instead
+of `[3, 2, 1]`. The AddFB handle still exports `Exports((11, 6))`; its
+assertion passes before the named composition assertion fails at line 683.
+Libtest reports one passing and one failing device arm.
+
+The reported 2,304 black pixels cover the whole 64x48 output: that is the
+black count for a frame containing one 32x24 window. Together with the
+black pixel at the new window's origin, this is consistent with an older
+frame remaining in slot 1. It does not identify which frame was read or
+which context, buffer or ioctl produced the diagnostic. The revised oracle
+has exposed a mismatch that the repeated placement in 141 could hide;
+it has not established a production trigger, KMS/AddFB failure, the original
+black-frame cause or t306/t307 acceptance.
+
+Evidence: `143-context-freshness-package`, manifest
+`718870b2caed4ace2f29500ffbaaa228c4604cb4fa3fb8480316bef6d29ae15b`,
+and the read-only `144-qemu-context-freshness-series`, whose 39-entry
+manifest is `c6c520cef70867b2d3d4e3c189e04582a1121a256924d6ae050b8c1a70897344`.
+The separate result note is `144-qemu-context-freshness-result/RESULT.txt`.
+The guest log is `9ada2735`, and its frozen classifier output is `dafbd6ab`.
+
 ## t307
 
 1. Trace the successful mixed Present and subsequent retained composition:

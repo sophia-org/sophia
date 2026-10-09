@@ -204,6 +204,30 @@ The tested diff equals the signed commit's diff. This is a focused CPU check
 of test tooling; the combined fixture gate, input-return proof and guest
 qualification remain separate. The production restore candidate is unchanged.
 
+Signed candidate `6b66c45c7` adds the input-return chain: Session admits K0,
+the managed client receives the baseline key, K0 is removed, a distinct K1
+is admitted, and the returned key reaches that client. Synthetic X events,
+probe failures, ambiguous records and sends completed after shutdown are
+refused. Input mode requires a normal client exit. All modes now bind the
+guest's scenario completion and zero QEMU exit to the bounded endpoint.
+The focused controls pass 21 Rust tests, including 45 chain refusals and
+the endpoint cases, plus five probe/C tests.
+
+The combined gate passed from 04:09:32Z to 04:17:28Z on a dedicated hotplug
+target: strict lint, layout, repository checks and six retained archives.
+Its 526 raw Rust summaries total 7,285 passing, zero failing and 101 ignored
+entries, including nested summaries. An independent audit verifies the
+source worktree, target and relevant test family in the actual log. The
+earlier attempt's exit 0 was rejected: a shared target reused an `xtask`
+executable bound to the freshness worktree. That attempt and the correction
+remain in the evidence; they do not qualify this candidate.
+
+Evidence `139-hotplug-fixtures-cpu` has 41 entries under manifest
+`d7dbb53573c4ff3a1ac344c627fc424521950485599a9d18ca927d8724f50a04`.
+The production restore unit remains unchanged, and no hotplug guest or
+installation follows from this CPU result. Retained-pixel, loss/return,
+lock and attended-device acceptance remain separate.
+
 ## t306
 
 1. Preserve the incident records. Make the next failure name the responsible
