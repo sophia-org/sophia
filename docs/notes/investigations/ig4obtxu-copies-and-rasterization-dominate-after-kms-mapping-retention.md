@@ -293,6 +293,24 @@ independent source review found no blocker. The full gate and a new diagnostic
 image remain required. The stopped 211 and 213 series retain their dispositions;
 no guest or physical acceptance follows from these tests.
 
+Signed repair `e2b4201eb087863083a744be60a955a0e950bc42` was merged with the
+qualified recovery controls as `cb5234a65`. Its first full gate, `gate-03`,
+passed the Rust tests but stopped at Clippy: the shared test fixture was loaded
+as two modules. Signed `9384f001383233064729577ecff02a993a936158` registers that
+fixture once without changing production behavior. The full isolated `gate-04`
+then passed on that exact clean head, 19:49:44–19:54:21 UTC: 535 Rust summaries,
+7,447 passed, zero failed, 101 ignored, plus Clippy, layout, tooling and archive
+checks. Its frozen manifest is
+`5f7079ffc31e6a8f04a6fa0a304e703f78158b8416dd0a7779b2fc3529225c92`;
+the focused red/green manifest is
+`c67249e6cd6c88cb2619bf42a6263d8f3f83aa801c4f77555ea131c88296f609`.
+
+The next diagnostic uses detached source `9384f0013` and a newly built image
+with the declared patched Mesa, keeping 213's workload, readiness, verifier and
+acceptance rules unchanged. The broader t306 fixture work remains separate.
+This gate does not qualify the guest environment, merge to master, install a
+desktop, or close t306/t310; those remaining steps retain their existing exits.
+
 #### Matched desktop artifact prepared (2026-10-09)
 
 Signed niltempus candidate `6d50e38cc5014d248d8110e8c82f928b349cecd0` pairs the
