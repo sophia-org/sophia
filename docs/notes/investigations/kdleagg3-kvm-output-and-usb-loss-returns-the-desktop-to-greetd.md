@@ -621,6 +621,24 @@ never established as the cause. Compilation had finished before that exchange,
 so no restart followed. The limit belonged to this recorded launcher, not
 the user's Nix configuration; subsequent builds should use parallelism.
 
+### Replacement failure and the retirement limit (2026-10-09)
+
+A replacement owner that fails to resume no longer ends the session. The
+runtime returns to suspension with its cover and retained images, the failed
+owner is retired in the mode its abandonment reached, and the original
+retained-image handoff waits for the next owner, which proves the cover only
+by its own retirements. Output policy then spends its one recovery allowance
+on a conservative layout, or waits for a new topology, seat or profile event.
+
+Retirement itself is bounded and is not policy. `NativeRetirement::poll`
+refuses after two seconds without the owner's join, and that refusal ends the
+session with the exact owner and handoff kept by the terminal
+`RetirementFailure` carrier, as for every other retirement. A replacement
+whose renderer workers are mid-render may need up to the worker's ten-second
+abandon bound to stop, so a recoverable late join would still end the session
+here. That is a custody limitation, separate from activation or policy
+refusal; the wait is revisited only if qualification shows such a late join.
+
 ## t306
 
 The [four-part qualification plan](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md)
