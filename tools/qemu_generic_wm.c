@@ -16,11 +16,13 @@
  *
  * With the one argument --hold-shift only (the controlled-repaint
  * comparison; the protection domain clears the environment), it also requires
- * actions and registers one, "hold-shift". Each Action Cycle naming it moves the
- * placements on every output between x offsets 0 and 8 within the work area,
- * so Session recomposes a static client at a declared crop. Each proposal and
- * its outcome are reported with their transaction and request identities;
- * Session's own settlement record is the authority, not these lines. */
+ * actions and registers one, "hold-shift". Each Action Cycle naming it moves
+ * the placements on every output 8 pixels further right, so Session
+ * recomposes a static client at a crop that names the shift: the nth shift
+ * places it at x offset 8n, unless that would leave the work area. Each
+ * proposal and its outcome are reported with their transaction and request
+ * identities; Session's own settlement record is the authority, not these
+ * lines. */
 #define _GNU_SOURCE
 #include "sophia_wm_session.h"
 #include <errno.h>
@@ -42,7 +44,7 @@ static uint64_t profile_generation, projections, rejected, cycles, reported;
 #define HOLD_SHIFT_ACTION 1u
 #define HOLD_SHIFT_PIXELS 8
 static int hold_shift;     /* the controlled-repaint opt-in */
-static int32_t hold_offset; /* 0 or HOLD_SHIFT_PIXELS */
+static int32_t hold_offset; /* HOLD_SHIFT_PIXELS per committed shift */
 
 static uint64_t now_ms(void) {
   struct timespec t;
@@ -158,7 +160,7 @@ static void cycle(const struct sophia_wf_record *event) {
   int shifted = hold_shift && c.cause == SOPHIA_WF_ACTION &&
                 c.value.action.action == HOLD_SHIFT_ACTION;
   if (shifted)
-    hold_offset = hold_offset ? 0 : HOLD_SHIFT_PIXELS;
+    hold_offset += HOLD_SHIFT_PIXELS;
   if (sophia_ws_snapshot(session, now_ms() + 5000))
     die("snapshot");
   if (sophia_ws_consume(session))

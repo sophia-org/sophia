@@ -21,10 +21,14 @@
 //! This proves the owner transition on a connector loss and return; the KVM
 //! switch itself stays an attended test.
 //!
+//! The controlled-repaint mode (t307) changes no head and is judged on its
+//! own terms (output_unplug/controlled_repaint.rs).
+//!
 //! A run in which the guest saw no DRM hotplug uevent (or, in the input mode,
 //! no input removal) never asked Sophia anything. It is reported as an
 //! unreached fixture, never as a pass and never as a Sophia failure.
 
+mod controlled_repaint;
 mod display_actions;
 mod input_return;
 
@@ -38,6 +42,9 @@ pub enum Mode {
     AllReturn,
     /// The keyboard goes and comes back; the outputs stay.
     InputReturn,
+    /// No head changes: the WM shifts a static client on a mirrored output
+    /// once a second, and its retained image must survive every recomposition.
+    ControlledRepaint,
 }
 
 impl Mode {
@@ -47,8 +54,9 @@ impl Mode {
             "one-return" => Ok(Self::OneReturn),
             "all-return" => Ok(Self::AllReturn),
             "input-return" => Ok(Self::InputReturn),
+            "controlled-repaint" => Ok(Self::ControlledRepaint),
             other => Err(format!(
-                "unknown output-unplug mode {other:?}: one, one-return, all-return or input-return"
+                "unknown output-unplug mode {other:?}: one, one-return, all-return, input-return or controlled-repaint"
             )),
         }
     }
@@ -59,6 +67,7 @@ impl Mode {
             Self::OneReturn => "one-return",
             Self::AllReturn => "all-return",
             Self::InputReturn => "input-return",
+            Self::ControlledRepaint => "controlled-repaint",
         }
     }
 
@@ -137,6 +146,9 @@ fn number(record: &Record, key: &str) -> Result<u32, String> {
 /// Verifies one run's serial log and returns the summary lines on a pass.
 pub fn verify(log: &str, mode: Mode) -> Result<Vec<String>, String> {
     let records = log.lines().map(Record::parse).collect::<Vec<_>>();
+    if mode == Mode::ControlledRepaint {
+        return controlled_repaint::verify(&records, log);
+    }
     let only = |name: &str, status: &str| -> Result<usize, String> {
         let mut found = records
             .iter()
@@ -338,9 +350,25 @@ pub fn verify(log: &str, mode: Mode) -> Result<Vec<String>, String> {
     if mode != Mode::InputReturn && records[running].get("client") == Some("dri3") {
         summary.push(verify_static_client(&records, first_off, last_action)?);
     }
-    // The clean guest exit: the guest's own completion of this scenario, then
-    // the host's record of QEMU's exit status 0, in that order after the
-    // session's bounded completion.
+    clean_exit(&records)?;
+    Ok(summary)
+}
+
+/// The clean guest exit: the guest's own completion of this scenario, then
+/// the host's record of QEMU's exit status 0, in that order after the
+/// session's bounded completion.
+fn clean_exit(records: &[Record]) -> Result<(), String> {
+    let only = |name: &str, status: &str| -> Result<usize, String> {
+        let mut found = records
+            .iter()
+            .enumerate()
+            .filter(|(_, record)| record.is(name, status));
+        match (found.next(), found.next()) {
+            (Some((index, _)), None) => Ok(index),
+            (None, _) => Err(format!("is missing {name} status={status}")),
+            (Some(_), Some(_)) => Err(format!("has more than one {name} status={status}")),
+        }
+    };
     let complete = only("sophia_qemu_guest", "complete")?;
     let exited = only("sophia_qemu_unplug", "guest_exited")?;
     if !exact_fields(
@@ -375,7 +403,7 @@ pub fn verify(log: &str, mode: Mode) -> Result<Vec<String>, String> {
             "guest completion and exit do not follow the bounded completion in order".to_owned(),
         );
     }
-    Ok(summary)
+    Ok(())
 }
 
 /// Whether the record carries exactly these fields, each once, in any order.
@@ -508,64 +536,7 @@ fn verify_static_client(
             && record.get("source_stage") == Some("renderer_image")
             && region_size(record) == Some(size)
     };
-    // Presented by the native owner that composed it: the frame this region
-    // was queued as, within one owner (owner closings bound it), then either
-    // that frame's page flip retiring after the region, or that frame's
-    // bootstrap composition followed by the owner's publication, which
-    // follows only its synchronous first modeset. Never a frame of another
-    // owner, a retirement before the region, or another frame's.
-    let closed = |record: &Record| record.is("sophia_live_native_owner", "closed");
-    let presented = |at: usize| -> bool {
-        let region = &records[at];
-        let (Some(output), Some(head), Some(generation)) = (
-            region.get("output"),
-            region.get("head"),
-            region.get("scene_generation"),
-        ) else {
-            return false;
-        };
-        let start = records[..at]
-            .iter()
-            .rposition(closed)
-            .map_or(0, |index| index + 1);
-        let end = records[at..]
-            .iter()
-            .position(closed)
-            .map_or(records.len(), |index| at + index);
-        let Some(frame) = records[start..at]
-            .iter()
-            .rev()
-            .find(|queued| {
-                queued.is("sophia_live_head_composition_queue", "queued")
-                    && queued.get("output") == Some(output)
-                    && queued.get("head") == Some(head)
-                    && queued.get("scene_generation") == Some(generation)
-            })
-            .and_then(|queued| queued.get("frame"))
-        else {
-            return false;
-        };
-        let same_frame = |record: &Record| {
-            record.get("output") == Some(output)
-                && record.get("head") == Some(head)
-                && record.get("frame") == Some(frame)
-        };
-        let after = &records[at + 1..end];
-        let flipped = after.iter().any(|record| {
-            record.is("sophia_live_native_head_page_flip", "retired") && same_frame(record)
-        });
-        let bootstrapped = after
-            .iter()
-            .position(|record| {
-                record.is("sophia_live_head_bootstrap", "worker_composed") && same_frame(record)
-            })
-            .is_some_and(|composed| {
-                after[composed..]
-                    .iter()
-                    .any(|record| record.is(TOPOLOGY, "published"))
-            });
-        flipped || bootstrapped
-    };
+    let presented = |at: usize| presented_frame(records, at).is_some();
     // The reference is the one submitted frame as first presented, before
     // the removal: never a later sample chosen because it matches. Every
     // other region of the window before the removal must show the same
@@ -620,6 +591,62 @@ fn verify_static_client(
         "sophia_qemu_output_unplug_verdict schema=1 status=static_content_retained size={size} checksum={checksum} baseline=stable target_after={}",
         after.get("target").unwrap_or("?")
     ))
+}
+
+/// Presented by the native owner that composed it: the frame this region
+/// was queued as, within one owner (owner closings bound it), then either
+/// that frame's page flip retiring after the region, or that frame's
+/// bootstrap composition followed by the owner's publication, which
+/// follows only its synchronous first modeset. Never a frame of another
+/// owner, a retirement before the region, or another frame's.
+fn presented_frame(records: &[Record], at: usize) -> Option<&str> {
+    let closed = |record: &Record| record.is("sophia_live_native_owner", "closed");
+    let region = &records[at];
+    let (Some(output), Some(head), Some(generation)) = (
+        region.get("output"),
+        region.get("head"),
+        region.get("scene_generation"),
+    ) else {
+        return None;
+    };
+    let start = records[..at]
+        .iter()
+        .rposition(closed)
+        .map_or(0, |index| index + 1);
+    let end = records[at..]
+        .iter()
+        .position(closed)
+        .map_or(records.len(), |index| at + index);
+    let frame = records[start..at]
+        .iter()
+        .rev()
+        .find(|queued| {
+            queued.is("sophia_live_head_composition_queue", "queued")
+                && queued.get("output") == Some(output)
+                && queued.get("head") == Some(head)
+                && queued.get("scene_generation") == Some(generation)
+        })
+        .and_then(|queued| queued.get("frame"))?;
+    let same_frame = |record: &Record| {
+        record.get("output") == Some(output)
+            && record.get("head") == Some(head)
+            && record.get("frame") == Some(frame)
+    };
+    let after = &records[at + 1..end];
+    let flipped = after.iter().any(|record| {
+        record.is("sophia_live_native_head_page_flip", "retired") && same_frame(record)
+    });
+    let bootstrapped = after
+        .iter()
+        .position(|record| {
+            record.is("sophia_live_head_bootstrap", "worker_composed") && same_frame(record)
+        })
+        .is_some_and(|composed| {
+            after[composed..]
+                .iter()
+                .any(|record| record.is(TOPOLOGY, "published"))
+        });
+    (flipped || bootstrapped).then_some(frame)
 }
 
 /// The checksum the composition trace reports for the probe's first frame

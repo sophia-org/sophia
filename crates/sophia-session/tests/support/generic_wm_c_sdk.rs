@@ -251,12 +251,13 @@ fn generic_test_wm_places_and_focuses_from_session_geometry() {
 }
 
 /// The controlled-repaint opt-in (t307): with `--hold-shift` the WM registers
-/// one action, and each Action Cycle naming it toggles every placement between
-/// x offsets 0 and 8 inside its work area. Other Cycles keep the offset, and a
-/// placement as wide as its work area never moves. Each proposal and outcome
+/// one action, and each Action Cycle naming it moves every placement 8 pixels
+/// further right inside its work area, so the nth shift sits at offset 8n.
+/// Other Cycles keep the offset, and a placement as wide as its work area
+/// never moves. Each proposal and outcome
 /// is reported with its identities.
 #[test]
-fn generic_test_wm_hold_shift_toggles_placement_on_its_action() {
+fn generic_test_wm_hold_shift_moves_placement_on_its_action() {
     let Launched {
         worker,
         wm,
@@ -297,8 +298,8 @@ fn generic_test_wm_hold_shift_toggles_placement_on_its_action() {
         (60, PolicyRequestCause::SceneChanged, 0),
         (61, action(1), 8),
         (62, PolicyRequestCause::SceneChanged, 8),
-        (63, action(2), 0),
-        (64, action(3), 8),
+        (63, action(2), 16),
+        (64, action(3), 24),
     ];
     let mut previous = configured;
     for (step, (request_id, cause, x)) in steps.into_iter().enumerate() {
