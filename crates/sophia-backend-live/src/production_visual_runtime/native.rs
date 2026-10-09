@@ -417,6 +417,19 @@ impl LiveProductionVisualRuntime {
         if resume_phase != crate::LiveRendererImageResumePhase::Ready {
             return Err("native resume renderer-image lifecycle did not become ready".into());
         }
+        self.resume_prepared_outputs_on(native_scanout, resumed_outputs, scene)?;
+        Ok(restored)
+    }
+
+    /// Native resume reaches this only after worker coverage and retained-image
+    /// restoration are validated. Tests substitute those prepared device facts,
+    /// then share the runtime installation and the first covered head plans.
+    pub(crate) fn resume_prepared_outputs_on<T: NativeTopologyTarget>(
+        &mut self,
+        native_scanout: &mut T,
+        resumed_outputs: LiveProductionOutputRuntimeSet,
+        scene: &LiveProductionCpuScene,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         // Install the runtime privately, lower the restored scene for every
         // native head, and synchronously present each complete output cohort.
         self.outputs = resumed_outputs;
@@ -426,11 +439,10 @@ impl LiveProductionVisualRuntime {
             return Err("native resume produced partial logical-output coverage".into());
         }
         for (output, frames) in batches {
-            self.outputs
-                .initialize_native_head_composition(native_scanout, output, frames)?;
+            native_scanout.initialize_output_composition(&mut self.outputs, output, frames)?;
         }
         self.publish_presented_input_layers(native_scanout);
-        Ok(restored)
+        Ok(())
     }
 
     /// Rebuilds logical output runtimes around scanout owners already installed
@@ -520,6 +532,15 @@ impl LiveProductionVisualRuntime {
         outputs: &[sophia_engine::HeadlessOutput],
         logical_viewports: &[(OutputId, Rect)],
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.rebind_applied_topology_on(native_scanout, outputs, logical_viewports)
+    }
+
+    pub(crate) fn rebind_applied_topology_on<T: NativeTopologyTarget>(
+        &mut self,
+        native_scanout: &mut T,
+        outputs: &[sophia_engine::HeadlessOutput],
+        logical_viewports: &[(OutputId, Rect)],
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if self.native_suspended {
             self.validate_native_retirement_disposition()?;
         }
@@ -528,11 +549,8 @@ impl LiveProductionVisualRuntime {
                 "native topology runtime rebind requires quiescent presentation ownership".into(),
             );
         }
-        let mut next = LiveProductionOutputRuntimeSet::adopt_native_topology(
-            outputs,
-            self.production.committed_surfaces(),
-            native_scanout,
-        )?;
+        let mut next =
+            native_scanout.adopt_output_runtimes(outputs, self.production.committed_surfaces())?;
         next.replace_logical_viewports(logical_viewports)?;
         let input_epoch = self
             .input_projections
@@ -565,12 +583,12 @@ impl LiveProductionVisualRuntime {
         let _ = self.retain_shell_content_outputs(&retained_outputs)?;
         self.translations.settle();
         self.translation_deadlines.clear();
-        native_scanout.set_translation_motion_active(false);
+        native_scanout.stop_translation_motion();
         self.content_layout_generation = self
             .content_layout_generation
             .checked_add(1)
             .ok_or("content layout generation exhausted")?;
-        native_scanout.handoff_installed_topology_custody(&mut self.outputs, &mut next)?;
+        native_scanout.handoff_topology_custody(&mut self.outputs, &mut next)?;
         self.outputs = next;
         self.ordinary_repaints_pending.clear();
         self.input_projections = input_projections;

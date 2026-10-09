@@ -48,6 +48,55 @@ fn owner() -> LiveOutputTopologyOwner {
 }
 
 #[test]
+fn lock_coverage_does_not_name_the_previous_topology_during_a_rebind() {
+    use crate::session_lock_coverage::SessionLockCoveragePublication;
+    let epoch = sophia_engine::SessionLockEpoch::from_raw(3).unwrap();
+    let mut publication = SessionLockCoveragePublication::default();
+    let mut owner = owner();
+    assert_eq!(owner.settled_coverage_epoch(Some(1), false, false), Some(1));
+    assert!(owner.begin_rescan(1).unwrap());
+    assert_eq!(owner.settled_coverage_epoch(Some(1), false, false), None);
+    observe_unmirrored(&mut owner, vec![output(1, 1920), output(2, 1280)]).unwrap();
+    owner.mark_published(7, false).unwrap();
+    // The new heads have retired a cover, but the old public epoch still
+    // names the previous topology. A first report must not misattribute it.
+    assert!(
+        publication
+            .update(
+                Some(epoch),
+                owner.settled_coverage_epoch(Some(1), true, false),
+                Some((epoch, 2, 2)),
+            )
+            .is_none()
+    );
+    assert_eq!(owner.settled_coverage_epoch(Some(2), false, false), None);
+    assert!(owner.observe_presentation(8));
+    for (published, pending, candidate) in [
+        (None, false, false),
+        (Some(1), false, false),
+        (Some(3), false, false),
+        (Some(2), true, false),
+        (Some(2), false, true),
+    ] {
+        assert_eq!(
+            owner.settled_coverage_epoch(published, pending, candidate),
+            None
+        );
+    }
+    let record = publication
+        .update(
+            Some(epoch),
+            owner.settled_coverage_epoch(Some(2), false, false),
+            Some((epoch, 2, 2)),
+        )
+        .unwrap();
+    assert_eq!(
+        (record.topology_epoch, record.outputs, record.heads),
+        (2, 2, 2)
+    );
+}
+
+#[test]
 fn changed_topology_advances_public_identity_once() {
     let mut owner = owner();
     assert_eq!(owner.begin_rescan(1), Ok(true));

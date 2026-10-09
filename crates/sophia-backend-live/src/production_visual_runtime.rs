@@ -43,7 +43,9 @@ pub mod session_content_fixture;
 #[path = "../tests/support/session_policy_presentation_fixture.rs"]
 pub mod session_policy_presentation_fixture;
 mod software_preview_recovery;
+mod topology_target;
 use composition_target::NativeCompositionTarget;
+use topology_target::NativeTopologyTarget;
 pub use policy_presentation::{
     LivePolicyPresentation, LivePolicyPresentationRefusal, LivePolicyPresentationRevocation,
     LivePresentedPolicyPublication,
@@ -55,6 +57,7 @@ mod projection;
 pub use projection::presented_keyboard_scope;
 mod service;
 mod session_lock;
+pub use session_lock::LiveSessionLockCoverage;
 mod software_present;
 mod translation;
 pub use compositor_graphics::{

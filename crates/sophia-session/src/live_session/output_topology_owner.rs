@@ -310,4 +310,20 @@ impl LiveOutputTopologyOwner {
     const fn input_quarantined(&self) -> bool {
         !matches!(self.phase, LiveOutputTopologyPhase::Stable)
     }
+
+    /// A cover observed on installed heads may be named by the published
+    /// epoch only after both the installation and publication have settled.
+    fn settled_coverage_epoch(
+        &self,
+        published_epoch: Option<u64>,
+        publication_pending: bool,
+        candidate_active: bool,
+    ) -> Option<u64> {
+        published_epoch.filter(|epoch| {
+            !self.input_quarantined()
+                && !publication_pending
+                && !candidate_active
+                && *epoch == self.topology_epoch
+        })
+    }
 }

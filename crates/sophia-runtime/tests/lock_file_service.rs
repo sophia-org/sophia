@@ -119,6 +119,175 @@ fn event(service: &LockFileService) -> LockFileServiceEvent {
     service.event_timeout(Duration::from_secs(5)).unwrap()
 }
 
+/// A late Session receipt for an image custody revoked during topology
+/// publication is stale work, not a reason to stop the provider service.
+#[test]
+fn a_revoked_candidates_late_outcome_does_not_stop_the_service() {
+    let (service, path) = service("late-topology-outcome");
+    let mut peer = raw_peer::Peer::connect(&path);
+    peer.setup();
+    submit(
+        &mut peer,
+        11,
+        1,
+        LockFileKind::Negotiate,
+        &LockNegotiate {
+            minimum_revision: 1,
+            maximum_revision: 1,
+            requested_capabilities: LOCK_FILE_CAPABILITY_PRESENT,
+            chords: Vec::new(),
+        }
+        .encode()
+        .unwrap(),
+    );
+    assert!(matches!(
+        event(&service),
+        LockFileServiceEvent::Connected {
+            connection_epoch: 11,
+            ..
+        }
+    ));
+    let mut offset = 0;
+    wait_for(&mut peer, &mut offset, LockFileKind::ObjectPublished);
+    let resource = LockResourceId {
+        id: 1,
+        generation: 1,
+    };
+    submit(
+        &mut peer,
+        11,
+        2,
+        LockFileKind::ResourceBegin,
+        &LockResourceBegin {
+            transaction: 100,
+            resource,
+            width_px: 4,
+            height_px: 4,
+            slot: 0,
+        }
+        .encode()
+        .unwrap(),
+    );
+    assert_eq!(peer.open_path(8, &[b"upload", b"0"], 1).0, 13);
+    assert_eq!(peer.write(8, &[7; 64]).0, 119);
+    peer.clunk(8);
+    submit(
+        &mut peer,
+        11,
+        3,
+        LockFileKind::ResourceEnd,
+        &LockResourceStep {
+            transaction: 100,
+            resource,
+            total_bytes: Some(64),
+        }
+        .encode()
+        .unwrap(),
+    );
+    assert!(matches!(
+        event(&service),
+        LockFileServiceEvent::Inbound {
+            connection_epoch: 11,
+            inbound: LockInbound::ResourceReady { .. },
+        }
+    ));
+    submit(
+        &mut peer,
+        11,
+        4,
+        LockFileKind::FrameDemand,
+        &LockFrameDemand {
+            transaction: 101,
+            lock_epoch: 4,
+            allocation_id: 2,
+            allocation_generation: 1,
+            demand_id: 1,
+        }
+        .encode()
+        .unwrap(),
+    );
+    assert!(matches!(
+        event(&service),
+        LockFileServiceEvent::Inbound {
+            connection_epoch: 11,
+            inbound: LockInbound::Demand(_),
+        }
+    ));
+    service
+        .command(LockFileServiceCommand::Permit {
+            allocation_id: 2,
+            demand_id: 1,
+            expires_after: Duration::from_millis(250),
+        })
+        .unwrap();
+    let permit =
+        LockFramePermit::decode(&wait_for(&mut peer, &mut offset, LockFileKind::FramePermit))
+            .unwrap();
+    let candidate = LockCandidate {
+        transaction: 102,
+        lock_epoch: 4,
+        output_id: 1,
+        output_generation: 1,
+        allocation_id: 2,
+        allocation_generation: 1,
+        candidate_generation: 1,
+        pacing_permit: permit.pacing_permit,
+        resource,
+    };
+    submit(
+        &mut peer,
+        11,
+        5,
+        LockFileKind::Candidate,
+        &candidate.encode().unwrap(),
+    );
+    match event(&service) {
+        LockFileServiceEvent::Inbound {
+            connection_epoch: 11,
+            inbound:
+                LockInbound::Candidate {
+                    candidate: received,
+                    ..
+                },
+        } => assert_eq!(received, candidate),
+        other => panic!("candidate was not admitted: {other:?}"),
+    }
+    let mut withdrawn = locked(4);
+    withdrawn.topology_generation = 2;
+    withdrawn.allocations.clear();
+    service
+        .command(LockFileServiceCommand::PublishLock(withdrawn))
+        .unwrap();
+    let revoked = LockCandidateOutcome::decode(&wait_for(
+        &mut peer,
+        &mut offset,
+        LockFileKind::CandidateOutcome,
+    ))
+    .unwrap();
+    assert_eq!(revoked.transaction, candidate.transaction);
+    assert_eq!(revoked.status, LockCandidateStatus::Revoked);
+    wait_for(&mut peer, &mut offset, LockFileKind::ObjectPublished);
+    service
+        .command(LockFileServiceCommand::Outcome(LockCandidateOutcome {
+            status: LockCandidateStatus::Presented,
+            reason: 0,
+            ..revoked
+        }))
+        .unwrap();
+    // A later valid command is a barrier through the same worker queue:
+    // enqueue success alone would not prove it survived the stale outcome.
+    let marker = LockEntry {
+        lock_epoch: 4,
+        entry: LockEntryKind::Insert,
+        empty_after: false,
+    };
+    service
+        .command(LockFileServiceCommand::Entry(marker))
+        .unwrap();
+    let seen = LockEntry::decode(&wait_for(&mut peer, &mut offset, LockFileKind::Entry)).unwrap();
+    assert_eq!(seen, marker);
+}
+
 #[test]
 fn session_and_the_provider_reach_each_other_through_the_worker() {
     let (service, path) = service("round-trip");

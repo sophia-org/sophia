@@ -637,6 +637,8 @@ fn run_session_loop_inner(
     let mut lock_provider: Option<lock_provider::LockProvider> = None;
     let mut lock_provider_tried = config.lock_provider.is_none();
     let mut lock_publication = lock_provider::LockPublication::default();
+    let mut lock_coverage_publication =
+        crate::session_lock_coverage::SessionLockCoveragePublication::default();
     let mut lock_frames = crate::session_lock_frames::SessionLockFrames::default();
     // The current provider's granted chords, given to every lock's keyboard.
     let mut lock_chords: Vec<sophia_engine::SessionLockChord> = Vec::new();

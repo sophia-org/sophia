@@ -368,6 +368,31 @@ macro_rules! service_session_lock {
             | crate::session_lock::SessionLockPhase::Unlocking { .. }
             | crate::session_lock::SessionLockPhase::Unlocked => {}
         }
+        // Report coverage again for a new topology even when the session was
+        // locked before the transition. This is an observation, never an
+        // additional lock-state transition or permission to clear the cover.
+        let locked_epoch = match session_lock.phase() {
+            crate::session_lock::SessionLockPhase::Locked { epoch, .. } => Some(epoch),
+            _ => None,
+        };
+        let topology_epoch = wm_session.as_ref().and_then(|wm| {
+            output_topology_owner.settled_coverage_epoch(
+                wm.output_authority_topology_epoch(),
+                pending_hardware_output_publication.is_some(),
+                wm.output_candidate_active(),
+            )
+        });
+        let coverage = match (runtime.as_ref(), native_scanout.as_ref(), locked_epoch) {
+            (Some(runtime), Some(native), Some(_)) => runtime.session_lock_coverage(native),
+            _ => None,
+        };
+        if let Some(record) = lock_coverage_publication.update(
+            locked_epoch,
+            topology_epoch,
+            coverage.map(|proof| (proof.epoch, proof.outputs, proof.heads)),
+        ) {
+            crate::session_println!("{}", crate::session_lock_coverage::session_lock_coverage_record(record));
+        }
         if let Some(input) = session_lock_input.as_mut() {
             // Edits reach the provider as entries and chords by their ID,
             // never logged: their count and timing would describe the secret.

@@ -1,5 +1,14 @@
 use super::*;
 
+/// A current cover retired on every current native head. This observation
+/// carries no authority to lock or unlock the session.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LiveSessionLockCoverage {
+    pub epoch: SessionLockEpoch,
+    pub outputs: usize,
+    pub heads: usize,
+}
+
 impl LiveProductionVisualRuntime {
     /// Installs or clears the session lock cover and queues a retained repaint
     /// of every head.
@@ -72,6 +81,50 @@ impl LiveProductionVisualRuntime {
             }
         }
         proven
+    }
+
+    /// Diagnostic proof for the currently installed topology, including after
+    /// a session already became locked. Suspended outputs and prepared frames
+    /// cannot supply it; neither can an older lock's retired cover.
+    pub fn session_lock_coverage(
+        &self,
+        native: &LiveProductionNativeScanout,
+    ) -> Option<LiveSessionLockCoverage> {
+        self.session_lock_coverage_on(native)
+    }
+
+    pub(crate) fn session_lock_coverage_on<T: NativeCompositionTarget>(
+        &self,
+        native: &T,
+    ) -> Option<LiveSessionLockCoverage> {
+        if self.native_suspended || !native.frame_service_available() {
+            return None;
+        }
+        let epoch = self.session_lock.as_ref()?.epoch;
+        if self.presented_session_lock_on(native)? != epoch {
+            return None;
+        }
+        let mut heads = BTreeSet::new();
+        let mut outputs = 0;
+        for (output, _) in self.outputs.logical_viewports() {
+            let targets = native.head_targets(output);
+            // Production obtains both lists from the same enabled heads;
+            // this also refuses an inconsistent target implementation.
+            if targets.is_empty() || targets.len() != native.presented_head_frames(output).len() {
+                return None;
+            }
+            for target in targets {
+                if target.output != output || !heads.insert(target.head) {
+                    return None;
+                }
+            }
+            outputs += 1;
+        }
+        (outputs > 0).then_some(LiveSessionLockCoverage {
+            epoch,
+            outputs,
+            heads: heads.len(),
+        })
     }
 
     /// The provider image, and its candidate generation, that every head of

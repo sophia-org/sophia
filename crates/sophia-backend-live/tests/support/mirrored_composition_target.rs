@@ -9,6 +9,9 @@ use crate::{
 };
 use std::{cell::Cell, rc::Rc};
 
+#[path = "mirrored_topology_target.rs"]
+mod topology;
+
 pub(super) struct Head {
     pub(super) target: HeadRenderTarget,
     pub(super) pending: Option<crate::PendingRenderedFrame>,
@@ -41,6 +44,7 @@ pub(super) struct MirroredTarget {
     pub(super) recovering: BTreeSet<OutputId>,
     pub(super) preview_failures: BTreeMap<OutputId, crate::LivePreviewFrameFailure>,
     pub(super) preview_withdraw_ready: bool,
+    pub(super) frame_service_available: bool,
 }
 
 impl MirroredTarget {
@@ -108,6 +112,7 @@ impl MirroredTarget {
             recovering: BTreeSet::new(),
             preview_failures: BTreeMap::new(),
             preview_withdraw_ready: true,
+            frame_service_available: true,
         }
     }
 
@@ -404,7 +409,7 @@ impl NativeCompositionTarget for MirroredTarget {
         self.owner
     }
     fn frame_service_available(&self) -> bool {
-        true
+        self.frame_service_available
     }
     fn head_targets(&self, output: OutputId) -> Vec<HeadRenderTarget> {
         self.outputs[&output]
@@ -460,8 +465,10 @@ impl NativeCompositionTarget for MirroredTarget {
         self.heads[self.outputs[&output][0]].frames.presented()
     }
     fn presented_head_frames(&self, output: OutputId) -> Vec<Option<&OutputFrameDamageSnapshot>> {
-        self.outputs[&output]
-            .iter()
+        self.outputs
+            .get(&output)
+            .into_iter()
+            .flatten()
             .map(|index| self.heads[*index].frames.presented())
             .collect()
     }

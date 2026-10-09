@@ -7,6 +7,9 @@ use super::presentation_instances::{
 };
 use super::*;
 
+#[path = "session_lock_topology.rs"]
+mod topology;
+
 const FILL: sophia_engine::CompositorRgb8 = sophia_engine::CompositorRgb8 {
     red: 0x10,
     green: 0x20,

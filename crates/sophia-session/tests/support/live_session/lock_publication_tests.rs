@@ -7,6 +7,9 @@ use sophia_engine::SessionLockEpoch;
 use std::cell::Cell;
 use std::num::NonZeroU64;
 
+#[path = "lock_publication_lifetime.rs"]
+mod lifetime;
+
 fn snapshot(epoch: u64) -> sophia_protocol::OutputAuthoritySnapshot {
     use sophia_protocol::*;
     OutputAuthoritySnapshot {
