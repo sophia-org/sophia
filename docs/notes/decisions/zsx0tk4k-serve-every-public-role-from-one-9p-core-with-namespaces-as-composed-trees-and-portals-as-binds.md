@@ -86,6 +86,15 @@ by profile and never names one.
 Engine, its internal typed transactions, the X authority, the WM and shell
 file contracts and their binary records are unchanged by this decision.
 
+Agents and other operator tools are ordinary admitted clients. Their power is
+the tree their recipe composes, in three tiers: an observer reads status and
+inspection files and holds capture grants on named outputs; an operator adds
+administrative ctl files and clipboard grants; a driver adds XTEST admission
+on one named namespace. Sophia ships the observer recipe. Operator and driver
+recipes are composed by the operator, and the driver tier is absent from the
+installed daily session unless a task names it. Sophia builds nothing
+agent-specific: no harness, no named client and no feature for one agent.
+
 ```text
    X11 apps ──X11──▶ X authority ──┐
    9P apps  ──9P───▶ app authority ─┤  an export; no own codec, no FUSE

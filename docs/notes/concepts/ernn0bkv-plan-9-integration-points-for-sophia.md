@@ -297,6 +297,57 @@ name. Every new mechanism absorbs an existing path rather than adding a
 parallel one, consistent with the
 [IPC removal inventory](../investigations/1lty2tzb-what-ipc-code-remains-after-the-desktop-moved-to-9p2000-l.md).
 
+## Agents as admitted clients
+
+The end-state diagram places agents beside the WM, the shells and the CLI as
+9P clients. That placement is deliberate. An agent is not a new kind of
+client. It is an admitted connection with an identity proven at attach and a
+tree composed for that identity. It reads status files, writes one-line ctl
+commands, blocks on event files and requests portal grants, which is how a
+shell script drove wmii and is where the file idiom pays off: an agent needs
+no SDK, no protocol of its own and no feature built for it.
+
+An agent's authority is its tree and nothing more. There is no ambient
+permission, so agent power is defined as recipes rather than code paths.
+
+| Tier | The recipe binds | The agent cannot |
+| --- | --- | --- |
+| Observer | Status and inspection files, capture grants on named outputs | Inject input, read another namespace, propose layout |
+| Operator | Observer plus administrative ctl files and clipboard grants | Become the WM, see pixels without a grant |
+| Driver | Operator plus XTEST admission on one named namespace | Reach the trusted namespace, act after revocation |
+
+Input injection is the line that matters. Capture never implies it, XTEST
+admission is per namespace and separately granted, and the invariants forbid
+synthetic input as a side effect of anything. An agent that can see and an
+agent that can act are two identities.
+
+Every agent action is attributable and revocable. It happens on a fid tied to
+an attach, the 9P journal records it, and revocation makes the fid answer
+ESTALE in the middle of a task. That is stronger than a CLI running as the
+user with ambient rights, and it bounds prompt injection: a hostile window
+title or clipboard payload the agent reads cannot grant it anything the recipe
+did not. The agent is itself confined. It runs arbitrary code, so it lives in
+its own namespace with host reach cut by the containment driver and touches
+Sophia only through its composed tree. Because identity comes from the attach
+rather than the socket's peer, the agent may sit on another machine over a
+forwarded socket.
+
+Sophia builds nothing agent-specific. The shell and WM independence rule
+applies: no agent harness, no named-agent client, no feature for one agent.
+Sophia ships the generic files, the small CLI and the conformance peers, and an
+agent is simply the most demanding generic client, which makes it a useful
+test of whether the contract is generic.
+
+The development loop changes with it. The readback investigation that began
+this note arose because an agent could not verify a GUI without screenshot
+workarounds. With inspection, status files and the capture bind, an agent
+verifies a desktop change by reading a frame record, comparing known pixels
+and checking a presentation generation, and the headless VKMS candidate gives
+CI the same path. niltempus agreed on 2026-10-09 that Sophia ships the
+observer recipe, that operator and driver recipes are composed by the
+operator, and that the driver tier stays out of the installed daily session
+unless a task names it.
+
 ## Where the cost lands
 
 The three rules act at connect time and at operator cadence, not per frame.

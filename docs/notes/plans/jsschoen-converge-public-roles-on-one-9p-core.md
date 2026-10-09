@@ -100,8 +100,9 @@ trees; an explicitly shared service has one identity in both; a rebound
 service changes the view without changing retained handles' authority; a
 revoked transfer makes its fid answer ESTALE; visibility, service identity
 and permission are recorded as three separate results; the shared and
-confined session profiles are expressed as two recipes. Depends on t275 and
-t142.
+confined session profiles are expressed as two recipes, and the shipped
+observer recipe for agents and operator tools binds only status, inspection
+and capture grants, with input injection absent. Depends on t275 and t142.
 
 ## t319
 
