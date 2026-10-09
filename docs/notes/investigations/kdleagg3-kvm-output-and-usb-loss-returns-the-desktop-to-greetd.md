@@ -400,6 +400,30 @@ records. No image or guest follows from this CPU repair, and 147 and 153
 keep their original verdicts. The black-frame startup failure still blocks
 qualification of the input-return fixture.
 
+## Lock publication and pending-image scope (2026-10-09 UTC)
+
+Read-only review `195-lock-publication-source-review` narrows the proposed
+lock/hotplug characterization in 154. Custody revokes an outstanding provider
+candidate when publication removes its allocation or changes its generation,
+and journals that outcome to the provider. Session receives no corresponding
+revocation event; its publication hook updates diagnostic pacing state while
+retaining the pending candidate and shown image. A demand for the returning
+allocation can therefore remain behind that candidate.
+
+This source observation does not establish a permanent stall. Retirement of
+the old image on the returned output can remove Session's pending candidate
+and release the demand. Custody refuses the then-stale outcome, and the service
+explicitly absorbs that refusal. A CPU characterization must exercise both
+the publication/custody path and this recovery path before choosing a repair.
+It would not itself prove actual native topology installation or returned-head
+retirement. Those tests still need a legitimate concrete scanout seam.
+
+The review is source-only on `8e1782309c`, with exact source hashes retained
+under manifest
+`1a02b0fd10fe278bf7f72d4490563ffba9acef5ecf17f2ba2523f19a162bb927`.
+No test, production change, lock guest or physical acceptance followed from
+this review.
+
 ## t306
 
 1. Preserve the incident records. Make the next failure name the responsible

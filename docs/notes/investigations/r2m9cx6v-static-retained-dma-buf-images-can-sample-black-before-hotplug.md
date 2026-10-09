@@ -936,6 +936,46 @@ P, from EGL's later duplicate. Neither is interchangeable with L or W. The
 This supports preparing a narrower creation-signature classifier with its
 own refusal controls. It supplies no revised verdict or further guest GO.
 
+Successor classifier `192-premise-screen-signature-classifier` distinguishes
+the loader probe from its direct child winsys construction. Its declared
+contract binds the setup sequence, return values, descriptor generations and
+arm thread. A cache comparison must name sibling L and producer W, follow
+the loader probe, and precede any sibling winsys duplication. Partial or
+unexplained construction attempts refuse. Capture, serial interpretation,
+CLI, descriptor ledger and graph inference remain unchanged from 185.
+
+Its isolated CPU qualification ran once on 2026-10-09, 10:09:50Z–10:09:51Z:
+24 core, 31 capture and 19 signature tests passed, including subcases and
+the synthetic old/new classifier contrast. Source pins were unchanged.
+The source manifest is
+`3ce71dbad585eb83516ef7ae7b1e0b585e2576db3caf6257b4b5b8f820a8f8d7`;
+the result manifest is
+`207fb30091e3ad8fb8c03f85449b317207d2d3d8b6b22493e0b95d1b4cc0dd3e`.
+A labelled retrospective analysis of 188 recognizes both original-build
+arms as `SCREEN_NEW` under the successor contract. Frozen 185 still
+reproduces 188's canonical record byte for byte: both arms `CREATE_FAILED`,
+`premise_established=false`, exit 1. That is a full classification, not a
+top-level `INCOMPLETE` record; the separate clarification in
+`189-claude-reviews/CLARIFICATION-192-RESULT-01.txt` (`58a4cc38`) corrects
+that wording in the retained 192 documents. No 188 verdict changes, and
+the runtime Mesa pair comparison remains unperformed.
+
+Runner successor `193-mesa-pair-signature-runner` reuses both 186 images
+unchanged and selects premise3 from 192. Its other runtime differences from
+187 are the new package, evidence and runtime paths; decision predicates,
+launches, bounds, environment, test and pixel classification are unchanged.
+The single isolated CPU run, 10:16:13Z–10:16:46Z, passed 53 orchestration
+cases, five precheck refusals and 130 decision cases with repeat and usage
+checks. Its generated 192 synthetic captures remain labelled. Classification
+at the 32768-line cap took about 0.347 s per mode; this is one capture shape,
+not a worst-case search or byte-budget guarantee. Pins remained unchanged.
+The mode/image binding guard and actual host read-only preflight passed.
+The frozen manifest is
+`6fd063f97774726b159a8a1f054cd92d18617b0c514d8f065adc5793b2e55145`
+(6561 regular files, one refusal-case symlink listed separately), with
+`READY-193.txt` `97c0c71d`. Series 194 and its runtime root were absent at
+freeze. This package contains no guest GO or new runtime result.
+
 ## Real-context control and a freshness-oracle gap (2026-10-09 UTC)
 
 Series 141 ran the reviewed observer and context recipe once, from 03:38:28Z
