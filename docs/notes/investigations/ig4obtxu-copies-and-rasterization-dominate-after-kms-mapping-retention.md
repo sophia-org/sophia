@@ -236,6 +236,14 @@ disposition or worker retirement beyond the existing two-second bound remains
 a terminal custody failure; this slice does not claim recovery from a wedged
 GPU or relax retirement ownership checks.
 
+The first full gate on signed `3a36ea6ac` stopped at the new startup-ordering
+source guard: it assumed `physical_input_loop.rs` was included directly by
+`owner_loop.rs`. The actual chain starts at `session_control.rs` and passes
+through the policy, lock and physical-input phase fragments. The corrected
+guard checks the whole chain, preserves the recovery-before-dispatch check,
+and passes all three seam tests. `gate-01` remains failed and frozen; its
+source stayed unchanged. A fresh full gate follows the test correction.
+
 #### Port change after reboot (2026-10-09)
 
 niltempus moved the main monitor between ports on the discrete AMD card before

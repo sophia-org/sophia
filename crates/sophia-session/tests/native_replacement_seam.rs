@@ -81,9 +81,25 @@ fn initial_activation_recovery_precedes_any_output_effect_dispatch() {
             .find("include!(\"owner_loop/initial_runtime.rs\")")
             .unwrap()
             < owner
-                .find("include!(\"owner_loop/physical_input_loop.rs\")")
+                .find("include!(\"owner_loop/session_control.rs\")")
                 .unwrap()
     );
+    // The phase fragments form a nested include chain, rather than direct
+    // children of owner_loop.rs. Check every link to the recovery prelude.
+    for (parent, child) in [
+        ("session_control.rs", "policy_input_phase.rs"),
+        ("policy_input_phase.rs", "session_lock_phase.rs"),
+        ("session_lock_phase.rs", "physical_input_phase.rs"),
+        ("physical_input_phase.rs", "physical_input_loop.rs"),
+    ] {
+        let source = fs::read_to_string(root.join("owner_loop").join(parent)).unwrap();
+        let include = format!("include!(\"{child}\")");
+        assert_eq!(source.matches(&include).count(), 1, "{parent} -> {child}");
+        assert_eq!(
+            containing(&include),
+            [format!("live_session/owner_loop/{parent}")]
+        );
+    }
     let physical = fs::read_to_string(root.join("owner_loop/physical_input_loop.rs")).unwrap();
     assert!(
         physical
