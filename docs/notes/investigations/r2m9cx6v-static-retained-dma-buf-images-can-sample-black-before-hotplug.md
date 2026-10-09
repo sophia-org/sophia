@@ -328,6 +328,61 @@ Evidence: `121-qemu-debugger-endpoint`, `122-qemu-bp-package-4`,
 is `71007227874dbb07b96ebc76bae4b080851346fef4a5ae5ff39cffe93fca0a51`;
 its `REVIEW-CODEX-75.txt` records the independent review.
 
+## The lifetime guest lost its test record (2026-10-08)
+
+Series 127 ran the original observer and then the virgl handle-lifetime
+test on the qualified patched private QEMU under the debugger wrapper
+and kernel exit witness. Each guest received separate test and
+infrastructure classifications. The observer passed with a clean host
+endpoint and clean infrastructure, permitting the lifetime guest.
+
+| Guest | Test | Infrastructure | Kernel termination |
+| --- | --- | --- | --- |
+| 1 | Observer passed; refill reached. | Clean. | Exit 0. |
+| 2 | Invalid: no test output or exit record. | Invalid: no guest exit record. | Exit 0. |
+
+The lifetime guest's log preserves the identity chain through the test
+environment record: the frozen test, virgl on radeonsi and Mesa 26.2.3.
+The kernel then reported that PID 1 exited with status 101 and panicked.
+The guest init runs under `set -eu`. Its device-test branch ran the test
+as a plain command and only afterwards read the status. A nonzero status
+therefore ended init before it relayed the redirected test output,
+recorded the exit or powered off. With `panic=-1` and `-no-reboot`, QEMU
+then exited 0. Status 101 does not identify the failed assertion. The
+before, alive, after-drop and read records were not preserved, so this
+is neither an observed handle loss nor a preserved handle. Both
+classifiers refused the guest. The observer's passing test did not
+exercise this failure path.
+
+Sophia `bac569dbe` captures both eglinfo and test statuses in explicit
+conditions. A failing test then keeps its output, exact status and
+power-off. `crates/xtask/tests/qemu_device_test_init.rs` runs the branch's
+own text under `/bin/sh` with `set -eu`, replacing its device, file and
+power operations. Against the earlier init, the failing-test case
+reproduces series 127: the shell ends with 101 immediately after the
+environment record. After the repair all five cases pass: success,
+exit 101, failing eglinfo, the bound's SIGKILL and a SIGTERM. The full
+gate passed on `bac569dbe`: 7290 passed, 0 failed and 111 ignored;
+the layout check also passed.
+
+The rebuilt lifetime image `fdd2f505` carries the same frozen test
+`d1e1339a` and pinned binaries. Of its 5971 entries, only the init and
+dracut's record of its input directory differ in content from `c4d13b3f`.
+An independent comparison also verified unchanged ownership, modes,
+device nodes and 123 hard-link groups. Rebuilding changed 1363 mtimes.
+The original images remain intact.
+
+A further lifetime guest needs its own reviewed package and exact
+command. No handle-lifetime conclusion, Session black-frame repair or
+task closure follows from series 127. The descriptor-isolation control
+remains conditional on an observed handle loss.
+
+Evidence: `126-qemu-lifetime-package`, `127-qemu-lifetime-series` and
+`128-guest-init-repair`. The series 127 manifest is
+`5ec5a1c079fd28adac31828c639b45242a0e3eda831ad6a392d9c74d1a140d24`,
+with `CORRECTION-01.txt` for guest 1's time window. `REVIEW-CODEX-77.txt`
+records the independent review.
+
 ## t307
 
 1. Trace the successful mixed Present and subsequent retained composition:
