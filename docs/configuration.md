@@ -645,19 +645,36 @@ Named disabled outputs stay excluded even when absent. With adaptive behavior,
 last-output fallback; name a connector with `enabled #false` to exclude it.
 
 The optional `fallback-policy-key` assigns an explicit WM workspace affinity
-to that fallback. A saved connector with the same key loses its claim for this
-session, so returning it cannot duplicate the affinity. The binding lasts for
-the session; reload cannot reassign it. Without the setting, fallback does not
-invent a key. Changing availability, inheritance, configured policy keys, the
-fallback key, explicit exclusions or mirror membership requires a new session.
+to that fallback. Only one enabled logical output owns the key: a returning
+preferred connector restores its configured claim through the same topology
+publication. Reload cannot redefine the configured affinity. Without the setting,
+fallback does not invent a key. Changing availability, inheritance, configured
+policy keys, the fallback key, explicit exclusions or mirror membership requires
+a new session.
 
 With no eligible output, adaptive startup waits before launching the WM and
 applications. Host-admin control can still request logout. Probe retries after
 a notice are bounded; a new topology or seat event starts another attempt.
 Invalid profiles still refuse. Startup resolves admitted connectors before
 constructing renderers, so excluded outputs cannot consume the selected heads'
-CRTCs or planes. Automatic hotplug restoration and retained content after
-loss/return remain separate integration work in t310/t306.
+CRTCs or planes.
+
+Runtime hotplug, seat return and recovery use the same resolution. With no usable
+head, Session keeps applications, WM state, retained images and lock cover while
+waiting. Returning hardware restores saved preferences; an eligible surviving
+active output keeps focus. Geometry and realized keys publish only for the
+current replacement and after its presentation and policy barriers. Settings
+reloads that would leave a viable desktop waiting are declined; reloads during
+a rebuild are folded into its next resolution.
+
+If adaptive replacement activation fails, one conservative attempt keeps a
+complete logical output group with an advertised timing nearest 60 Hz, unit
+scale, normal transform and VRR off. A second failure waits for a new topology,
+seat or profile event; timer retries do not replenish that allowance. In-place
+settings changes retain the working rollback target. Ownership failures,
+including renderer retirement exceeding its existing two-second bound, remain
+terminal. Device-free checks establish these state transitions; native pixels,
+retained-image continuity and attended acceptance remain separate qualification.
 
 ### GPU admission and connector identity
 
