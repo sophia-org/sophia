@@ -44,3 +44,19 @@ t292 left here because no portal executor existed: while the session is
 locked, a capture or frame handoff is refused and none in flight completes
 after the lock is applied
 ([lock plan](8jcykhdc-secure-session-lock-authority-and-lock-provider-role.md#t292-session-lock-state-and-input)).
+
+The [2026-10-09 screenshot report](../investigations/id869143-x11-drawable-readback-and-an-operator-capture-path.md)
+adds an operator and agent use case: one authorized image of a selected window
+or composed output, including accelerated content. A minimal CLI/provider
+path should return bounded image data with target, dimensions and frame
+identity, and a distinct refusal or unavailable result when no capture can be
+produced. Audit the existing CPU-backed GetImage path separately; a successful
+read of zero-filled backing is not proof of the visible frame.
+
+For this slice, prove the selected window/output using a generic known-pattern
+client, including accelerated presentation, and declare crop, occlusion and
+cursor semantics. Cover resize or output replacement while pending, bounded
+completion, recipient isolation, cancellation and the lock gate above. A CLI
+caller and an agent use the same explicit grant; no new input permission is
+implied. Live desktop capture does not depend on completing the separate
+[t303 VKMS investigation](../investigations/jweorh0z-headless-sophia-validation-and-capture-with-vkms-writeback.md#t303).
