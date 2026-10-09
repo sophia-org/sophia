@@ -369,7 +369,7 @@ elif [ "$scenario" = "output-unplug" ]; then
     # (unplug_drive). No client: the verdict is read from the session's own
     # topology records and its bounded completion.
     case "$unplug_mode" in
-        one|one-return|all-return|input-return) ;;
+        one|one-return|all-return|input-return|controlled-repaint) ;;
         *)
             echo "sophia_qemu_guest schema=1 status=failed reason=unplug_mode scenario=$scenario"
             poweroff -f
@@ -379,6 +379,12 @@ elif [ "$scenario" = "output-unplug" ]; then
     # WM reports its focus and key presses (input_return_drive).
     if [ "$unplug_mode" = input-return ] && { [ "$unplug_wm" != true ] || [ "$unplug_client" != dri3 ]; }; then
         echo "sophia_qemu_guest schema=1 status=failed reason=input_return_fixture scenario=$scenario"
+        poweroff -f
+    fi
+    # Controlled repaint (t307) is read at the static DRI3 client under the
+    # WM, whose hold-shift action the host's F9 presses drive.
+    if [ "$unplug_mode" = controlled-repaint ] && { [ "$unplug_wm" != true ] || [ "$unplug_client" != dri3 ]; }; then
+        echo "sophia_qemu_guest schema=1 status=failed reason=controlled_repaint_fixture scenario=$scenario"
         poweroff -f
     fi
     input_devices=""
@@ -391,11 +397,38 @@ elif [ "$scenario" = "output-unplug" ]; then
         # empty desktop profile replaces the default shortcuts, whose launchers
         # name applications this guest does not have.
         mkdir -p -m 0700 /run/sophia-qemu-unplug
-        echo 'schema 1' > /run/sophia-qemu-unplug/desktop.kdl
+        if [ "$unplug_mode" = controlled-repaint ]; then
+            # Both heads of the one card mirror one logical output, so one
+            # scene is composed by each head's renderer, and F9, the one
+            # shortcut, runs the WM's hold-shift action. The heads share one
+            # mode, and exact fit places the scene unscaled on each. The profile is read
+            # by crates/sophia-config/tests/qemu_controlled_repaint_profile.rs
+            # between these delimiters.
+            cat > /run/sophia-qemu-unplug/desktop.kdl <<'CONTROLLED_REPAINT_PROFILE'
+schema 1
+output {
+  named "Virtual-1" {
+    mirror "Virtual-2"
+    mirror-fit "exact"
+  }
+}
+shortcut {
+  profile "controlled-repaint"
+  bind "F9" "policy:hold-shift"
+}
+CONTROLLED_REPAINT_PROFILE
+        else
+            echo 'schema 1' > /run/sophia-qemu-unplug/desktop.kdl
+        fi
         chmod 600 /run/sophia-qemu-unplug/desktop.kdl
         set -- "$@" --desktop-profile=/run/sophia-qemu-unplug/desktop.kdl \
             --wm-process=/usr/bin/sophia-qemu-generic-wm \
             --wm-interface=sophia_wm_v1 --wm-transport=9p2000.L
+        # The protection domain clears the WM's environment, so the opt-in is
+        # its one argument.
+        if [ "$unplug_mode" = controlled-repaint ]; then
+            set -- "$@" --wm-process-arg=--hold-shift
+        fi
     fi
     if [ "$unplug_client" = dri3 ]; then
         # A DMA-BUF client: one explicit DRI3 frame, then the window stays
@@ -618,6 +651,10 @@ unplug_drive() {
             sample=$((sample + 1))
             sleep 0.1
         done
+    elif [ "$unplug_mode" = controlled-repaint ]; then
+        # The host's twenty presses start at the static barrier, a few
+        # seconds after readiness; the uevent count then covers them.
+        sleep 30
     else
         # The host's removal, wait and return, with room to settle.
         sleep 18

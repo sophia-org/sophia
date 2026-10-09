@@ -12,7 +12,15 @@
  * outcome that asks for one is a failure. Session starts it in the WM
  * protection domain with SOPHIA_WM_9P_SOCKET.
  *
- * It reports on stderr only on state changes and once per second at most. */
+ * It reports on stderr only on state changes and once per second at most.
+ *
+ * With the one argument --hold-shift only (the controlled-repaint
+ * comparison; the protection domain clears the environment), it also requires
+ * actions and registers one, "hold-shift". Each Action Cycle naming it moves the
+ * placements on every output between x offsets 0 and 8 within the work area,
+ * so Session recomposes a static client at a declared crop. Each proposal and
+ * its outcome are reported with their transaction and request identities;
+ * Session's own settlement record is the authority, not these lines. */
 #define _GNU_SOURCE
 #include "sophia_wm_session.h"
 #include <errno.h>
@@ -30,6 +38,11 @@
 
 static struct sophia_ws *session;
 static uint64_t profile_generation, projections, rejected, cycles, reported;
+
+#define HOLD_SHIFT_ACTION 1u
+#define HOLD_SHIFT_PIXELS 8
+static int hold_shift;     /* the controlled-repaint opt-in */
+static int32_t hold_offset; /* 0 or HOLD_SHIFT_PIXELS */
 
 static uint64_t now_ms(void) {
   struct timespec t;
@@ -104,11 +117,23 @@ static void profile(const struct sophia_wf_record *event, uint16_t completion) {
 }
 
 static void configure(void) {
+  static uint8_t action_row[SOPHIA_WF_SNAPSHOT_ACTION_BYTES];
   struct sophia_wf_record r;
   memset(&r, 0, sizeof r);
   r.header.kind = SOPHIA_WF_CONFIGURATION;
   r.value.configuration.transaction = next_transaction();
   r.value.configuration.generation = profile_generation;
+  if (hold_shift) {
+    struct sophia_wf_snapshot_action action;
+    memset(&action, 0, sizeof action);
+    action.action = HOLD_SHIFT_ACTION;
+    action.name_len = sizeof("hold-shift") - 1;
+    memcpy(action.name, "hold-shift", action.name_len);
+    if (sophia_wf_snapshot_action_encode(action_row, sizeof action_row, &action))
+      die("hold-shift action row");
+    r.section_count = 1;
+    r.sections[0] = (struct sophia_wf_section){3, 1, action_row, sizeof action_row};
+  }
   submit(&r, "configuration");
 }
 
@@ -130,6 +155,10 @@ static void cycle(const struct sophia_wf_record *event) {
   struct sophia_wf_record r;
   uint32_t placed = 0;
   int status;
+  int shifted = hold_shift && c.cause == SOPHIA_WF_ACTION &&
+                c.value.action.action == HOLD_SHIFT_ACTION;
+  if (shifted)
+    hold_offset = hold_offset ? 0 : HOLD_SHIFT_PIXELS;
   if (sophia_ws_snapshot(session, now_ms() + 5000))
     die("snapshot");
   if (sophia_ws_consume(session))
@@ -179,6 +208,9 @@ static void cycle(const struct sophia_wf_record *event) {
         p.width = output.work_width;
       if (p.height > output.work_height)
         p.height = output.work_height;
+      /* The shift never moves a placement out of its work area. */
+      if (hold_offset && (int64_t)p.width + hold_offset <= (int64_t)output.work_width)
+        p.x += hold_offset;
       p.requested_width = p.width;
       p.requested_height = p.height;
       p.transform = 1; /* identity */
@@ -211,6 +243,15 @@ static void cycle(const struct sophia_wf_record *event) {
   if (placed)
     r.sections[1] = (struct sophia_wf_section){
         2, placed, placement_rows, (size_t)placed * SOPHIA_WF_PROJECTION_PLACEMENT_BYTES};
+  if (hold_shift)
+    fprintf(stderr,
+            "sophia_qemu_wm_hold schema=1 status=proposed transaction=%llu "
+            "request_id=%llu cause=%u activation_serial=%llu shift=%d offset_x=%d "
+            "placements=%u\n",
+            (unsigned long long)r.value.projection.transaction,
+            (unsigned long long)c.request_id, (unsigned)c.cause,
+            (unsigned long long)(c.cause == SOPHIA_WF_ACTION ? c.value.action.serial : 0),
+            shifted, (int)hold_offset, (unsigned)placed);
   submit(&r, "projection");
   if (sophia_ws_snapshot_release(session))
     die("snapshot release");
@@ -226,13 +267,16 @@ static void report(const char *status) {
           (unsigned long long)rejected);
 }
 
-int main(void) {
+int main(int argc, char **argv) {
   const char *path = getenv("SOPHIA_WM_9P_SOCKET");
   struct sockaddr_un address;
   struct sophia_ws_config config;
   void *storage;
   size_t bytes;
   int fd;
+  if (argc > 2 || (argc == 2 && strcmp(argv[1], "--hold-shift")))
+    die("usage: sophia-qemu-generic-wm [--hold-shift]");
+  hold_shift = argc == 2;
   if (!path || strlen(path) >= sizeof address.sun_path)
     die("socket path");
   memset(&address, 0, sizeof address);
@@ -246,6 +290,8 @@ int main(void) {
   config.msize = 65536;
   config.offer.required = SOPHIA_WF_CAP_PROFILE_ACTIVATION |
                           SOPHIA_WF_CAP_CONFIGURATION | SOPHIA_WF_CAP_MULTI_OUTPUT;
+  if (hold_shift)
+    config.offer.required |= SOPHIA_WF_CAP_ACTIONS;
   config.offer.optional = SOPHIA_WF_CAP_CHROME | SOPHIA_WF_CAP_POLICY_DIRTY;
   config.bootstrap_deadline_ms = now_ms() + 20000;
   bytes = sophia_ws_storage_bytes(config.msize);
@@ -286,6 +332,14 @@ int main(void) {
       case SOPHIA_WF_PROJECTION_OUTCOME:
         if (e->value.projection_outcome.expect_session_operation)
           die("session operation requested");
+        if (hold_shift)
+          fprintf(stderr,
+                  "sophia_qemu_wm_hold schema=1 status=outcome transaction=%llu "
+                  "request_id=%llu scene_generation=%llu outcome=%u\n",
+                  (unsigned long long)e->value.projection_outcome.transaction,
+                  (unsigned long long)e->value.projection_outcome.request_id,
+                  (unsigned long long)e->value.projection_outcome.scene_generation,
+                  (unsigned)e->value.projection_outcome.outcome);
         if (e->value.projection_outcome.outcome != 1)
           ++rejected;
         if (projections == 1)

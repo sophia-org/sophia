@@ -37,8 +37,20 @@ fn rect(x: i32, y: i32, width: i32, height: i32) -> Rect {
     }
 }
 
-#[test]
-fn generic_test_wm_places_and_focuses_from_session_geometry() {
+struct Launched {
+    // Field order is drop order: the worker and WM end before the scratch
+    // directory holding the binary and socket is removed.
+    worker: PolicyTransportWorker,
+    wm: process::Process,
+    configuration: PolicyConfiguration,
+    /// The Configuration's transaction; every projection's follows it.
+    configured: TransactionId,
+    _scratch: process::Scratch,
+}
+
+/// Starts the WM with `args`, answers its Configuration with a commit, and
+/// returns once it is ready for its first Cycle.
+fn launch(args: &[&str]) -> Launched {
     let scratch = process::Scratch::new();
     let binary = process::compile(
         &scratch.0,
@@ -53,7 +65,8 @@ fn generic_test_wm_places_and_focuses_from_session_geometry() {
     let mut command = Command::new("/usr/bin/env");
     command
         .arg(format!("SOPHIA_WM_9P_SOCKET={}", socket.display()))
-        .arg(&binary);
+        .arg(&binary)
+        .args(args);
     let wm = process::Process::spawn(&mut command, &scratch.0, "wm");
     let until = Instant::now() + Duration::from_secs(5);
     let stream = loop {
@@ -108,6 +121,25 @@ fn generic_test_wm_places_and_focuses_from_session_geometry() {
         next(&worker, &wm),
         PolicyTransportEvent::ReadyForCycle { .. }
     ));
+    Launched {
+        worker,
+        wm,
+        configuration,
+        configured: transaction,
+        _scratch: scratch,
+    }
+}
+
+#[test]
+fn generic_test_wm_places_and_focuses_from_session_geometry() {
+    let Launched {
+        worker,
+        wm,
+        configuration,
+        configured: transaction,
+        _scratch,
+    } = launch(&[]);
+    assert!(configuration.actions.is_empty());
 
     // Two outputs with offset work areas. Output 1 is active and holds two
     // surfaces plus one unassigned; output 2 holds one larger than its area.
@@ -215,5 +247,143 @@ fn generic_test_wm_places_and_focuses_from_session_geometry() {
         "{log}"
     );
     assert!(!log.contains("status=failed"), "{log}");
+    drop(worker);
+}
+
+/// The controlled-repaint opt-in (t307): with `--hold-shift` the WM registers
+/// one action, and each Action Cycle naming it toggles every placement between
+/// x offsets 0 and 8 inside its work area. Other Cycles keep the offset, and a
+/// placement as wide as its work area never moves. Each proposal and outcome
+/// is reported with its identities.
+#[test]
+fn generic_test_wm_hold_shift_toggles_placement_on_its_action() {
+    let Launched {
+        worker,
+        wm,
+        configuration,
+        configured,
+        _scratch,
+    } = launch(&["--hold-shift"]);
+    let hold_shift = WmActionId::from_raw(1);
+    assert_eq!(
+        configuration.actions,
+        vec![PolicyActionRegistration {
+            action: hold_shift,
+            name: "hold-shift".to_owned(),
+            session_operation_slot: None,
+        }]
+    );
+
+    let mut scene = fixture::scene();
+    scene.outputs.truncate(1);
+    scene.outputs[0].bounds = rect(0, 0, 1280, 800);
+    scene.outputs[0].work_area = rect(0, 0, 1280, 800);
+    let template = scene.surfaces[0];
+    let surface = |index, width, height| {
+        let mut value = template;
+        value.surface = SurfaceId::new(index, 1);
+        value.current_output = Some(OutputId::from_raw(1));
+        value.geometry = rect(100, 100, width, height);
+        value
+    };
+    scene.surfaces = vec![surface(3, 400, 300), surface(4, 2000, 300)];
+    scene.session_operations.clear();
+    let action = |activation_serial| PolicyRequestCause::Action {
+        activation_serial,
+        action: hold_shift,
+    };
+    // (request id, cause, expected x of the 400 px surface)
+    let steps = [
+        (60, PolicyRequestCause::SceneChanged, 0),
+        (61, action(1), 8),
+        (62, PolicyRequestCause::SceneChanged, 8),
+        (63, action(2), 0),
+        (64, action(3), 8),
+    ];
+    let mut previous = configured;
+    for (step, (request_id, cause, x)) in steps.into_iter().enumerate() {
+        let step = step as u64;
+        let mut snapshot = scene.clone();
+        snapshot.generation = 7 + step;
+        enqueue(
+            &worker,
+            PolicyTransportCommand::Cycle {
+                snapshot_transaction: TransactionId::from_raw(100 + 2 * step),
+                request_transaction: TransactionId::from_raw(101 + 2 * step),
+                scene: Box::new(snapshot),
+                actions: configuration.actions.clone(),
+                classifications: vec![],
+                launch_origins: vec![],
+                request: PolicyProjectionRequest {
+                    connection_epoch: 9,
+                    request_id,
+                    scene_generation: 7 + step,
+                    policy_generation: profile().generation,
+                    affected_outputs: vec![OutputId::from_raw(1)],
+                    cause,
+                },
+            },
+        );
+        let PolicyTransportEvent::Projection(projection) = next(&worker, &wm) else {
+            panic!("projection missing at request {request_id}");
+        };
+        assert!(projection.transaction.raw() > previous.raw());
+        previous = projection.transaction;
+        assert_eq!(projection.request_id, request_id);
+        assert_eq!(projection.outputs.len(), 1);
+        let placed = projection.outputs[0]
+            .placements
+            .iter()
+            .map(|p| (p.surface.index(), p.geometry))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            placed,
+            vec![(3, rect(x, 0, 400, 300)), (4, rect(0, 0, 1280, 300))],
+            "request {request_id}"
+        );
+        enqueue(
+            &worker,
+            PolicyTransportCommand::ProjectionOutcome {
+                transaction: projection.transaction,
+                request_id,
+                scene_generation: 7 + step,
+                outcome: PolicyProjectionOutcome::Committed,
+                expect_session_operation: false,
+            },
+        );
+        assert!(matches!(
+            next(&worker, &wm),
+            PolicyTransportEvent::ReadyForCycle { .. }
+        ));
+        let log = wm.diagnostic();
+        let (shift, serial) = match cause {
+            PolicyRequestCause::Action {
+                activation_serial, ..
+            } => (1, activation_serial),
+            _ => (0, 0),
+        };
+        let cause = if shift == 1 { 1 } else { 0 };
+        let proposed = format!(
+            "sophia_qemu_wm_hold schema=1 status=proposed transaction={} request_id={request_id} \
+             cause={cause} activation_serial={serial} shift={shift} offset_x={x} placements=2\n",
+            projection.transaction.raw()
+        );
+        let outcome = format!(
+            "sophia_qemu_wm_hold schema=1 status=outcome transaction={} request_id={request_id} \
+             scene_generation={} outcome=1\n",
+            projection.transaction.raw(),
+            7 + step
+        );
+        assert!(log.contains(&proposed), "{proposed}{log}");
+        // The WM reports the outcome after it reads it, which may follow the
+        // worker's readiness.
+        let until = Instant::now() + Duration::from_secs(5);
+        while !wm.diagnostic().contains(&outcome) {
+            assert!(Instant::now() < until, "{outcome}{}", wm.diagnostic());
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+    assert!(!wm.exited(), "the WM stops only with its session");
+    assert!(!wm.diagnostic().contains("status=failed"));
     drop(worker);
 }

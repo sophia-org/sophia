@@ -22,6 +22,7 @@ use std::sync::{Arc, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
+mod head_imports;
 mod lifecycle;
 mod maintenance;
 mod shutdown;
@@ -326,6 +327,7 @@ impl NativeGbmRendererWorkerCore {
             discarded_release: None,
             context_status: None,
             persistent_render_stats: LiveNativePersistentRenderStats::default(),
+            head_imports: head_imports::HeadImportTrace::from_environment(),
             composition_nonzero_rgb_pixels: 0,
             frame_slot_metrics,
             metrics: LiveRendererWorkerMetrics::default(),
@@ -352,6 +354,8 @@ pub(super) struct NativeGbmRendererWorker {
     discarded_release: Option<DiscardedWorkerLease>,
     context_status: Option<NativeGbmRenderedScanoutContextStatus>,
     persistent_render_stats: LiveNativePersistentRenderStats,
+    /// Proof-only per-head import records (t307), off by default.
+    head_imports: head_imports::HeadImportTrace,
     composition_nonzero_rgb_pixels: usize,
     frame_slot_metrics: LiveRendererFrameSlotMetricsHandle,
     metrics: LiveRendererWorkerMetrics,
@@ -564,6 +568,11 @@ impl NativeGbmRendererWorker {
                         age.as_millis(),
                     );
                 }
+                self.head_imports.record(
+                    &result.correlation,
+                    self.core.image_store,
+                    &self.persistent_render_stats,
+                );
                 match result.outcome {
                     WorkerOutcome::Exported {
                         descriptor,

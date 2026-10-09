@@ -41,21 +41,30 @@ elif [[ -n "$LOCK_PROVIDER_MODE" ]]; then
     echo "SOPHIA_QEMU_LOCK_PROVIDER_MODE is only for the session-lock-provider scenario" >&2
     exit 1
 fi
-# The output-unplug scenario's action (t306): one, one-return, all-return or
-# input-return. The host takes away the last head or every head, and the
-# guest the keyboard, and gives it back in the return modes;
-# SOPHIA_QEMU_SINGLE_CARD picks two heads on one card or one head on each of
-# two cards.
+# The output-unplug scenario's action (t306): one, one-return, all-return,
+# input-return or controlled-repaint. The host takes away the last head or
+# every head, and the guest the keyboard, and gives it back in the return
+# modes; SOPHIA_QEMU_SINGLE_CARD picks two heads on one card or one head on
+# each of two cards. Controlled repaint (t307) changes no head: the two heads
+# mirror one output, and after the static client's barrier the host presses
+# F9 once a second, a key the guest profile binds to the WM's hold-shift
+# action, so each committed shift recomposes the static client on both heads.
 UNPLUG_MODE="${SOPHIA_QEMU_UNPLUG_MODE:-}"
 unplug_cmdline=""
 if [[ "$SCENARIO" == output-unplug ]]; then
     case "$UNPLUG_MODE" in
-        one|one-return|all-return|input-return) ;;
+        one|one-return|all-return|input-return|controlled-repaint) ;;
         *)
-            echo "SOPHIA_QEMU_UNPLUG_MODE must be one, one-return, all-return or input-return" >&2
+            echo "SOPHIA_QEMU_UNPLUG_MODE must be one, one-return, all-return, input-return or controlled-repaint" >&2
             exit 1
             ;;
     esac
+    if [[ "$UNPLUG_MODE" == controlled-repaint \
+        && ( "${SOPHIA_QEMU_UNPLUG_WM:-0}" != 1 || "${SOPHIA_QEMU_UNPLUG_CLIENT:-none}" != dri3 \
+            || "${SOPHIA_QEMU_SINGLE_CARD:-0}" != 1 ) ]]; then
+        echo "controlled-repaint requires SOPHIA_QEMU_UNPLUG_WM=1, SOPHIA_QEMU_UNPLUG_CLIENT=dri3 and SOPHIA_QEMU_SINGLE_CARD=1" >&2
+        exit 1
+    fi
     unplug_cmdline=" sophia.unplug_mode=$UNPLUG_MODE"
     # Diagnostic only, off by default: the guest kernel logs its DRM ioctls,
     # atomic checks and probes (drm.debug core, atomic and KMS bits), so a
@@ -669,16 +678,32 @@ if [[ "$SCENARIO" == output-unplug ]]; then
             [[ "$outcome" == ready ]] || unplug_failed "static_barrier_$outcome"
             echo "sophia_qemu_unplug schema=1 status=static_barrier present=retired client=holding" | tee -a "$EVIDENCE_FILE"
         fi
-        # One head modes take away SOPHIA_QEMU_UNPLUG_CONSOLE (default 1, the
-        # second head); 0 takes away the first, where new windows open.
-        consoles=("${SOPHIA_QEMU_UNPLUG_CONSOLE:-1}")
-        [[ "$UNPLUG_MODE" == all-return ]] && consoles=(0 1)
+        # Controlled repaint: no head is taken away. Twenty F9 presses, one
+        # a second over one QMP connection, each followed by its cadence
+        # record; the guest's records, not the host's times, bind each press
+        # to a committed shift and its presented frames.
+        consoles=()
+        if [[ "$UNPLUG_MODE" == controlled-repaint ]]; then
+            echo "sophia_qemu_unplug schema=1 status=cadence_sending key=f9 count=20 period_ms=1000" | tee -a "$EVIDENCE_FILE"
+            status=0
+            "$ROOT_DIR/tools/qemu_qmp_cadence.py" "$QMP_SOCKET" f9 20 1000 | tee -a "$EVIDENCE_FILE" || status=$?
+            if (( status != 0 )); then
+                echo "sophia_qemu_unplug schema=1 status=cadence_sent result=failed exit=$status" | tee -a "$EVIDENCE_FILE"
+                unplug_failed cadence
+            fi
+            echo "sophia_qemu_unplug schema=1 status=cadence_sent result=completed" | tee -a "$EVIDENCE_FILE"
+        else
+            # One head modes take away SOPHIA_QEMU_UNPLUG_CONSOLE (default 1,
+            # the second head); 0 takes away the first, where new windows open.
+            consoles=("${SOPHIA_QEMU_UNPLUG_CONSOLE:-1}")
+            [[ "$UNPLUG_MODE" == all-return ]] && consoles=(0 1)
+        fi
         for console in "${consoles[@]}"; do
             echo "sophia_qemu_unplug schema=1 status=sending action=off target=Console_$console" | tee -a "$EVIDENCE_FILE"
             head_size "$console" 0 0 || unplug_failed head_disable
             echo "sophia_qemu_unplug schema=1 status=sent action=off target=Console_$console" | tee -a "$EVIDENCE_FILE"
         done
-        sleep 5
+        (( ${#consoles[@]} == 0 )) || sleep 5
         if [[ "$UNPLUG_MODE" != one ]]; then
             for console in "${consoles[@]}"; do
                 echo "sophia_qemu_unplug schema=1 status=sending action=on target=Console_$console" | tee -a "$EVIDENCE_FILE"
