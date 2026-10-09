@@ -1,20 +1,68 @@
 //! Native resume onto a replacement owner (t306): renderer workers and
-//! retained images are prepared before the first presentation, at the
-//! ordinary row or at a resolved layout's viewports (t310).
+//! retained images are prepared before the first presentation, at a resolved
+//! layout's viewports (t310); and the return to suspension when a resume fails.
 
 use super::*;
 
+/// What abandoning a failed resume left the runtime as. Neither case touches
+/// the caller's retained-image handoff: a failed resume never takes it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveProductionNativeResumeAbandonment {
+    /// The resume failed before the runtime adopted the replacement's
+    /// outputs. The runtime is still suspended on the retired owner's set,
+    /// which nothing changed; only the replacement is to be retired.
+    BeforeInstall,
+    /// The runtime had adopted the replacement and is suspended from it again.
+    /// The report is the replacement's, for its retirement mode.
+    Suspended(LiveProductionNativeSuspendReport),
+}
+
 impl LiveProductionVisualRuntime {
-    /// Resumes onto a replacement owner with each logical output at its
-    /// ordinary row position.
-    pub fn resume_native_scanout(
+    /// Returns the runtime to suspension after `resume_native_scanout_at`
+    /// failed on `native_scanout`, so the caller can
+    /// retire that replacement and try another owner or wait with the same
+    /// retained images. Source availability the failed resume derived is
+    /// derived again by the next resume, and nothing composes meanwhile.
+    ///
+    /// An error here means the runtime could not be detached from the
+    /// replacement even by forced revocation: no suspended state can be
+    /// established, and the session cannot continue on it.
+    pub fn abandon_native_resume(
         &mut self,
         native_scanout: &mut LiveProductionNativeScanout,
         outputs: &[sophia_engine::HeadlessOutput],
-        scene: &LiveProductionCpuScene,
-        renderer_handoff: Option<&LiveProductionRendererImageHandoff>,
-    ) -> Result<crate::LiveProductionRendererImageRestore, Box<dyn std::error::Error>> {
-        self.resume_native_scanout_with(native_scanout, outputs, scene, renderer_handoff, None)
+        timeout: Duration,
+    ) -> Result<LiveProductionNativeResumeAbandonment, Box<dyn std::error::Error>> {
+        self.abandon_native_resume_with(outputs, |runtime| {
+            runtime.suspend_native_scanout(native_scanout, outputs, timeout)
+        })
+    }
+
+    /// The device-free rule of `abandon_native_resume`. `suspend` is the
+    /// bounded drain and detach of the replacement. A drain failure whose
+    /// forced detach completed is already a suspension; only a detach that did
+    /// not complete falls back to forced revocation, so nothing detaches twice.
+    pub(crate) fn abandon_native_resume_with(
+        &mut self,
+        outputs: &[sophia_engine::HeadlessOutput],
+        suspend: impl FnOnce(
+            &mut Self,
+        )
+            -> Result<LiveProductionNativeSuspendReport, Box<dyn std::error::Error>>,
+    ) -> Result<LiveProductionNativeResumeAbandonment, Box<dyn std::error::Error>> {
+        if self.native_suspended {
+            return Ok(LiveProductionNativeResumeAbandonment::BeforeInstall);
+        }
+        let report = match suspend(self) {
+            Ok(report) => report,
+            Err(error) => match error.downcast::<LiveProductionNativeSuspendError>() {
+                Ok(error) if error.detach_report.is_some() => {
+                    error.detach_report.expect("detach report checked")
+                }
+                _ => self.suspend_revoked_native_scanout(outputs)?,
+            },
+        };
+        Ok(LiveProductionNativeResumeAbandonment::Suspended(report))
     }
 
     /// Resumes onto a replacement owner with every logical output at the given
@@ -29,23 +77,6 @@ impl LiveProductionVisualRuntime {
         renderer_handoff: Option<&LiveProductionRendererImageHandoff>,
         logical_viewports: &[(OutputId, Rect)],
     ) -> Result<crate::LiveProductionRendererImageRestore, Box<dyn std::error::Error>> {
-        self.resume_native_scanout_with(
-            native_scanout,
-            outputs,
-            scene,
-            renderer_handoff,
-            Some(logical_viewports),
-        )
-    }
-
-    fn resume_native_scanout_with(
-        &mut self,
-        native_scanout: &mut LiveProductionNativeScanout,
-        outputs: &[sophia_engine::HeadlessOutput],
-        scene: &LiveProductionCpuScene,
-        renderer_handoff: Option<&LiveProductionRendererImageHandoff>,
-        logical_viewports: Option<&[(OutputId, Rect)]>,
-    ) -> Result<crate::LiveProductionRendererImageRestore, Box<dyn std::error::Error>> {
         native_scanout.use_renderer_image_reads(self.image_reads.clone())?;
         self.validate_native_retirement_disposition()?;
         let retained = self.retained_renderer_image_ids();
@@ -58,7 +89,7 @@ impl LiveProductionVisualRuntime {
         // images must exist before the semantic head plans are lowered, while
         // KMS must remain untouched until every resulting owner is prepared.
         let resumed_outputs =
-            self.resumed_output_set(outputs, Some(native_scanout), logical_viewports)?;
+            self.resumed_output_set(outputs, Some(native_scanout), Some(logical_viewports))?;
         let workers = native_scanout.enable_renderer_workers()?;
         if workers != native_scanout.enabled_head_count() {
             return Err("native resume established partial renderer-worker coverage".into());

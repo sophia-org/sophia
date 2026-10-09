@@ -3,6 +3,7 @@ use super::*;
 mod layout_witness;
 mod page_flip;
 mod resume;
+pub use resume::LiveProductionNativeResumeAbandonment;
 mod rollback;
 mod source_restore;
 

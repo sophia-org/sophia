@@ -148,6 +148,22 @@ impl RetirementMode {
             Outcome::ForcedDetachTimeout | Outcome::ForcedDetachDrainError => Self::Abandoned,
         }
     }
+
+    /// How a replacement whose resume failed is retired. One abandoned before
+    /// the runtime adopted it was never drained, yet it may hold renderer
+    /// workers and restored images, so it is retired as abandoned.
+    pub fn from_resume_abandonment(
+        abandonment: sophia_backend_live::LiveProductionNativeResumeAbandonment,
+    ) -> Self {
+        match abandonment {
+            sophia_backend_live::LiveProductionNativeResumeAbandonment::BeforeInstall => {
+                Self::Abandoned
+            }
+            sophia_backend_live::LiveProductionNativeResumeAbandonment::Suspended(report) => {
+                Self::from_suspend(report.outcome)
+            }
+        }
+    }
 }
 
 struct Retiring<O> {

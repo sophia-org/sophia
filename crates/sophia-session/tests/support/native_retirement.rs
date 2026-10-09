@@ -534,3 +534,31 @@ fn replacement_waits_for_retained_runtime_even_after_native_join() {
     assert_eq!(Arc::strong_count(&bytes), 1);
     assert_eq!(runtime.drains.get(), 0);
 }
+
+#[test]
+fn a_replacement_abandoned_after_a_failed_resume_retires_by_how_far_it_got() {
+    use sophia_backend_live::{
+        LiveProductionNativeResumeAbandonment as Abandonment,
+        LiveProductionNativeSuspendOutcome as Outcome, LiveProductionNativeSuspendReport,
+    };
+    // Never installed, never drained, but it may hold workers and images.
+    assert_eq!(
+        RetirementMode::from_resume_abandonment(Abandonment::BeforeInstall),
+        RetirementMode::Abandoned
+    );
+    for (outcome, mode) in [
+        (Outcome::Drained, RetirementMode::Drained),
+        (Outcome::ForcedDetachRevoked, RetirementMode::DeviceRevoked),
+        (Outcome::ForcedDetachTimeout, RetirementMode::Abandoned),
+        (Outcome::ForcedDetachDrainError, RetirementMode::Abandoned),
+    ] {
+        let report = LiveProductionNativeSuspendReport {
+            outcome,
+            ..Default::default()
+        };
+        assert_eq!(
+            RetirementMode::from_resume_abandonment(Abandonment::Suspended(report)),
+            mode
+        );
+    }
+}

@@ -66,3 +66,56 @@ fn resume_native_scanout_from_scene_at(
     }
     Ok(restore.restored.len())
 }
+
+/// One resume onto a replacement owner, which may fail without ending the
+/// session.
+enum ResumeAttempt {
+    Resumed(usize),
+    /// The resume failed and the runtime is suspended again. The original
+    /// retained handoff is still the caller's, unchanged: it is never
+    /// recaptured from the failed replacement. The caller retires the
+    /// replacement in `mode` before trying another owner or waiting.
+    Abandoned {
+        error: Box<dyn std::error::Error>,
+        mode: RetirementMode,
+    },
+}
+
+/// `resume_native_scanout_from_scene_at`, returning a failed resume as a
+/// suspended runtime the caller can recover from. An error is one the session
+/// cannot continue on: the handoff changed hands, or the runtime could not be
+/// detached from the replacement even by forced revocation.
+fn try_resume_native_scanout_from_scene_at(
+    runtime: &mut LiveProductionVisualRuntime,
+    native: &mut LiveProductionNativeScanout,
+    outputs: &[sophia_engine::HeadlessOutput],
+    scene: &mut LiveProductionCpuScene,
+    handoff: &mut Option<sophia_backend_live::LiveProductionRendererImageHandoff>,
+    logical_viewports: &[(sophia_protocol::OutputId, sophia_protocol::Rect)],
+) -> Result<ResumeAttempt, Box<dyn std::error::Error>> {
+    let held = handoff.as_ref().map(|handoff| handoff.image_ids().to_vec());
+    let error = match resume_native_scanout_from_scene_at(
+        runtime,
+        native,
+        outputs,
+        scene,
+        handoff,
+        logical_viewports,
+    ) {
+        Ok(restored) => return Ok(ResumeAttempt::Resumed(restored)),
+        Err(error) => error,
+    };
+    // restore_retained_handoff takes the handoff only on success.
+    if handoff.as_ref().map(|handoff| handoff.image_ids().to_vec()) != held {
+        return Err(format!("a failed resume changed the retained handoff: {error}").into());
+    }
+    let abandonment = runtime
+        .abandon_native_resume(native, outputs, Duration::from_secs(2))
+        .map_err(|cleanup| {
+            format!("a failed resume could not be abandoned: {cleanup}; resume: {error}")
+        })?;
+    Ok(ResumeAttempt::Abandoned {
+        error,
+        mode: RetirementMode::from_resume_abandonment(abandonment),
+    })
+}

@@ -39,6 +39,10 @@ pub(super) struct MirroredTarget {
     /// Refuse every batch at queueing, as a target whose repaint cannot be
     /// admitted does.
     pub(super) refuse_queue: bool,
+    /// Refuse every batch after this many were queued: a replacement that
+    /// presents some outputs and then fails, partway through a resume.
+    pub(super) refuse_queue_after: Option<usize>,
+    pub(super) queued_batches: usize,
     pub(super) installed_heads: usize,
     pub(super) serial: u64,
     pub(super) recovering: BTreeSet<OutputId>,
@@ -107,6 +111,8 @@ impl MirroredTarget {
             wrong_target: None,
             refuse_reservation: false,
             refuse_queue: false,
+            refuse_queue_after: None,
+            queued_batches: 0,
             installed_heads: 0,
             serial: 0,
             recovering: BTreeSet::new(),
@@ -482,9 +488,14 @@ impl MirroredTarget {
         content: crate::LiveProductionHeadCompositionContent,
     ) -> Result<BTreeMap<OutputId, crate::LiveProductionNativeFrameId>, Box<dyn std::error::Error>>
     {
-        if self.refuse_queue {
+        if self.refuse_queue
+            || self
+                .refuse_queue_after
+                .is_some_and(|after| self.queued_batches >= after)
+        {
             return Err("test target refuses the batch".into());
         }
+        self.queued_batches += 1;
         let states = self
             .outputs
             .iter()
