@@ -69,7 +69,7 @@ pub(super) fn verify(records: &[Record], mode: Mode, heads: u32) -> Result<Displ
     if pending.is_some() {
         return Err("display commands: missing completion".to_owned());
     }
-    let expected = if mode == Mode::AllReturn { heads } else { 1 };
+    let expected = if mode.all_heads() { heads } else { 1 };
     if removed.len() != expected as usize {
         return Err(format!(
             "display commands: expected {expected} distinct removals"

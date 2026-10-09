@@ -35,6 +35,7 @@ mod controlled_repaint;
 mod display_actions;
 mod endpoint;
 mod input_return;
+mod probes;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Mode {
@@ -49,6 +50,12 @@ pub enum Mode {
     /// No head changes: the WM shifts a static client on a mirrored output
     /// once a second, and its retained image must survive every recomposition.
     ControlledRepaint,
+    /// The keyboard and every connector go and come back: a KVM switch of
+    /// both, in the declared 60-second session (two-probe fixture only).
+    CombinedReturn,
+    /// Every connector goes and comes back while the session is locked; the
+    /// lock covers each returned head before the unlock (two-probe only).
+    LockedReturn,
 }
 
 impl Mode {
@@ -59,8 +66,10 @@ impl Mode {
             "all-return" => Ok(Self::AllReturn),
             "input-return" => Ok(Self::InputReturn),
             "controlled-repaint" => Ok(Self::ControlledRepaint),
+            "combined-return" => Ok(Self::CombinedReturn),
+            "locked-return" => Ok(Self::LockedReturn),
             other => Err(format!(
-                "unknown output-unplug mode {other:?}: one, one-return, all-return, input-return or controlled-repaint"
+                "unknown output-unplug mode {other:?}: one, one-return, all-return, input-return, controlled-repaint, combined-return or locked-return"
             )),
         }
     }
@@ -72,11 +81,21 @@ impl Mode {
             Self::AllReturn => "all-return",
             Self::InputReturn => "input-return",
             Self::ControlledRepaint => "controlled-repaint",
+            Self::CombinedReturn => "combined-return",
+            Self::LockedReturn => "locked-return",
         }
     }
 
     fn returns(self) -> bool {
         self != Self::One
+    }
+
+    /// Every connector goes and comes back.
+    fn all_heads(self) -> bool {
+        matches!(
+            self,
+            Self::AllReturn | Self::CombinedReturn | Self::LockedReturn
+        )
     }
 
     fn display(self) -> bool {
@@ -198,7 +217,9 @@ pub fn verify(log: &str, mode: Mode) -> Result<Vec<String>, String> {
     let removed = number(uevents, "input_remove")?;
     let added = number(uevents, "input_add")?;
     let phases = if mode.returns() { 2 } else { 1 };
-    let reached = if mode.display() {
+    let reached = if mode == Mode::CombinedReturn {
+        hotplug >= phases && removed >= 1 && added >= 1
+    } else if mode.display() {
         hotplug >= phases
     } else {
         removed >= 1 && added >= 1
@@ -273,7 +294,7 @@ pub fn verify(log: &str, mode: Mode) -> Result<Vec<String>, String> {
         // The loss must show in what the session publishes, not only in a
         // session that happened to stay up.
         let loss = &records[first_off..loss_end];
-        if mode == Mode::AllReturn {
+        if mode.all_heads() {
             // A first removal can publish a healthy smaller topology. Neither
             // that transition nor a host command proves that every head went.
             // The guest can observe the loss before the host command returns.
@@ -339,7 +360,37 @@ pub fn verify(log: &str, mode: Mode) -> Result<Vec<String>, String> {
     // returned keyboard, and the managed client is the input witness, not a
     // static-content subject.
     let mut last_action = ons.last().copied().unwrap_or(last_off);
-    if mode == Mode::InputReturn {
+    // The two-probe fixture (t306 qualification) proves each returned head,
+    // the fixture repaint and the returned input on its own terms.
+    let two_probes = records[running].get("probes") == Some("2");
+    if !two_probes && matches!(mode, Mode::CombinedReturn | Mode::LockedReturn) {
+        return Err(format!(
+            "mode {} runs only with the two-probe fixture",
+            mode.name()
+        ));
+    }
+    if two_probes {
+        if records[running].get("wm") != Some("true")
+            || records[running].get("client") != Some("dri3")
+            || !mode.returns()
+        {
+            return Err(
+                "probes: a two-probe run needs the WM, the DRI3 client and a return".to_owned(),
+            );
+        }
+        let plain = log.lines().map(strip_ansi).collect::<Vec<_>>();
+        let (lines, last) = probes::verify(
+            &records,
+            &plain,
+            mode,
+            heads,
+            first_off,
+            ons.first().copied(),
+            ons.last().copied(),
+        )?;
+        summary.extend(lines);
+        last_action = last_action.max(last);
+    } else if mode == Mode::InputReturn {
         if records[running].get("wm") != Some("true")
             || records[running].get("client") != Some("dri3")
         {
@@ -352,13 +403,19 @@ pub fn verify(log: &str, mode: Mode) -> Result<Vec<String>, String> {
         summary.push(line);
         last_action = routed;
     }
-    let completed = display.as_ref().map_or(last_action, |a| a.completed);
+    let completed = display.as_ref().map_or(last_action, |a| {
+        if two_probes {
+            a.completed.max(last_action)
+        } else {
+            a.completed
+        }
+    });
     if !records[completed..].iter().any(|record| {
         record.name == "sophia_live_session" && record.get("status") == Some("bounded_complete")
     }) {
         return Err("has no bounded completion after the last action".to_owned());
     }
-    if mode != Mode::InputReturn && records[running].get("client") == Some("dri3") {
+    if !two_probes && mode != Mode::InputReturn && records[running].get("client") == Some("dri3") {
         summary.push(verify_static_client(&records, first_off, last_action)?);
     }
     clean_exit(&records)?;
