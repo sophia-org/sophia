@@ -11,7 +11,11 @@ tags: [plan, rendering, topology, validation]
 The newly reported installed-session crash has interrupted qualification.
 The [incident account](../investigations/kdleagg3-kvm-output-and-usb-loss-returns-the-desktop-to-greetd.md#installed-session-renderer-failure-interrupts-qualification-2026-10-09)
 records `renderer_retained_buffer_missing`, preserved logs and the intentionally
-stopped integration gate. Both lanes are idle; no 202 guest has run. The
+stopped integration gate. Niltempus identified workspace switching. A separate
+late-render repair is signed as `bacfdb207`; its focused backend/renderer and
+durable-capture tests pass, and its full CPU gate is running with one low-priority
+job. Claude's capture slice is frozen and independently reviewed. No 202 guest
+has run. The
 display attempt/completion correction is signed as `1e63d9c71` and passed
 42 focused checks before the full gate was stopped while compiling.
 

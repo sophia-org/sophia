@@ -541,8 +541,8 @@ installed t310 release, Sophia `838d5b16a`, recorded
 `live renderer scanout export failed: RetainedBufferMissing`, drained native
 scanout during cleanup, and returned to greetd with exit 1 at 13:29:56.008Z.
 Its last retained ordinary records show WM layout transactions 30 and 31,
-about 98 milliseconds before the fatal record. The operator action is not yet
-known; no hotplug cause is established.
+about 98 milliseconds before the fatal record. Niltempus subsequently confirmed
+switching workspaces; no hotplug cause is established.
 
 `204-live-session-crash-20261009/session` preserves all seventeen session files
 with a separate checksum manifest. The diagnostic health reports 63,301
@@ -560,9 +560,31 @@ Both lanes stopped. Root sent SIGTERM only to its identified gate timeout;
 `203-recovery-integration/gate-01` retains exit 143 and unchanged source pins,
 an intentional interruption rather than a test failure. Its earlier focused
 display/endpoint checks passed 29 and 13 tests. No automatic build or guest
-restart follows this incident. The installed failure's immediate call site
-and trigger still need investigation; association with compilation alone
-does not establish causation.
+restart followed this incident. Association with compilation alone does not
+establish causation.
+
+Source review and a device-free real-exporter regression subsequently found a
+deterministic late-render defect, recorded in the
+[worker-stall investigation](h833kgfy-one-hard-stall-of-the-rendered-scanout-export-worker-ends-the-session.md#late-completion-defect-found-after-workspace-switch-crash-2026-10-09).
+The installed worker discarded a reply after declaring a hard stall, then
+returned `Idle`; the exporter had no staged replacement and refused with
+`RetainedBufferMissing`. Presentation withholding makes that empty slot
+reachable. The retained physical incident cannot prove this path, because
+worker warnings were excluded from daily capture, and the same detail named
+several producers.
+
+Signed candidate `bacfdb207567afa8dc57ba5a99ba14f381afbe74` in
+`~/dev/sophia-workspace-recovery` retains the accepted identity and validates
+late replies, captures worker transitions and sampled presentation deferrals,
+and gives missing-frame/descriptor/owner failures distinct typed codes.
+The backend/renderer suites passed 1,136 tests (11 ignored); six reducer
+tests and the CLI durable-capture test passed with console logging disabled.
+Independent review found no blocking issue. Root resumed only this repair's
+CPU gate, one job at nice 10 with devices hidden; its immutable inputs and
+records are in `205-workspace-render-recovery/gate-01`. The desktop pin is
+signed as `e282564` in `~/dev/niltempus-workspace-recovery`. Neither this source
+nor that pin establishes a passing full gate, a built/installed release or
+physical acceptance yet. The 202 guest and combined hotplug gate stay stopped.
 
 ## t306
 
