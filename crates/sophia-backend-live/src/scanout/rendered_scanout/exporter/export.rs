@@ -37,7 +37,11 @@ impl<Owner> LiveRenderedScanoutBufferExport<Owner> {
             },
             (LiveRendererScanoutBufferExportStatus::Exported, false) => Self {
                 status: LiveRendererScanoutBufferExportStatus::Degraded,
-                detail: LiveRendererScanoutBufferExportDetail::RetainedBufferMissing,
+                detail: if descriptor.is_none() {
+                    LiveRendererScanoutBufferExportDetail::ExportedDescriptorMissing
+                } else {
+                    LiveRendererScanoutBufferExportDetail::ExportedOwnerMissing
+                },
                 descriptor: None,
                 owner: None,
                 correlation: None,

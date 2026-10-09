@@ -104,7 +104,7 @@ impl NativeGbmOwnedScanoutBufferExportReport {
                 detail: if buffer.is_some() {
                     detail
                 } else {
-                    LiveRendererScanoutBufferExportDetail::RetainedBufferMissing
+                    LiveRendererScanoutBufferExportDetail::ExportedOwnerMissing
                 },
                 buffer,
                 buffer_age: None,

@@ -46,6 +46,8 @@ fn plan(generation: u64, digest: u8) -> NativeOutputActivationPlan {
         generation: ConfigGeneration::from_raw(generation),
         digest: ConfigDigest::new([digest; 32]),
         inherit_sophia: true,
+        availability: sophia_config::DesktopOutputAvailability::Strict,
+        fallback_policy_key: None,
         named: Vec::new(),
     };
     let reconciliation = reconcile_desktop_output_candidate(&candidate, &topology).unwrap();

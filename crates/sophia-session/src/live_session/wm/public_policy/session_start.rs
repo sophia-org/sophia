@@ -26,6 +26,10 @@ impl LiveWmSession {
             profile_key,
         } = started_launch;
 
+        let output_policy_keys = startup_output_policy_keys(
+            config.output_profile.current(),
+            output_bootstrap.as_ref().and_then(|bootstrap| bootstrap.fallback_connector.as_deref()),
+        )?;
         let (output_service, output_authority, output_capabilities, startup_output_transaction) =
             match (output_transport, output_bootstrap) {
                 (
@@ -34,6 +38,7 @@ impl LiveWmSession {
                         snapshot,
                         capabilities,
                         startup_candidate,
+                        fallback_connector: _,
                     }),
                 ) => {
                     let mut authority =
@@ -162,7 +167,7 @@ impl LiveWmSession {
             outputs: outputs.to_vec(),
             output_bounds,
             output_generations,
-            output_policy_keys: configured_output_policy_keys(config.output_profile.current()),
+            output_policy_keys,
             live_output_ids,
             work_areas,
             session_operations,

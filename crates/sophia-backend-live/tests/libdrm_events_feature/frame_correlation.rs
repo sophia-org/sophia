@@ -119,6 +119,13 @@ mod frame_correlation {
                     assert!(checked.owner.is_none());
                     assert!(checked.descriptor.is_none());
                     assert_eq!(drops.get(), usize::from(has_owner));
+                    if status == LiveRendererScanoutBufferExportStatus::Exported {
+                        assert_eq!(checked.detail, if has_descriptor {
+                            LiveRendererScanoutBufferExportDetail::ExportedOwnerMissing
+                        } else {
+                            LiveRendererScanoutBufferExportDetail::ExportedDescriptorMissing
+                        });
+                    }
                 }
                 drop(checked);
                 assert_eq!(drops.get(), usize::from(has_owner));

@@ -21,6 +21,16 @@ const SHELL_BINDING: &str = "sophia_shell_native_binding schema=1 connection_epo
 const SHELL_COMPLETION: &str = "sophia_shell_native_completion schema=1 output=3 native_owner=5 native_frame=6 heads=1 monotonic_usec=12345 timestamp_source=kernel missing_kernel_timestamp=0";
 const FORMATTER_MARKER: &str = "unrelated formatter output remains visible";
 const PRESENT_WRITTEN: &str = "sophia_x_present_delivery schema=1 client=2 transaction=0 sequence=7 window_token=11 subscription_token=12 pixmap_token=13 serial=4 kind=idle status=written";
+const WORKER_SOFT_STALL: &str =
+    "sophia_renderer_worker schema=3 status=soft_stall output=2 request=17 age_ms=104";
+const WORKER_HARD_STALL: &str = "sophia_renderer_worker schema=3 status=hard_stall output=2 request=17 age_ms=1043 abandon_after_ms=10000";
+const WORKER_RECOVERED: &str =
+    "sophia_renderer_worker schema=3 status=stall_recovered output=2 request=17 age_ms=2210";
+const WORKER_FAILED: &str =
+    "sophia_renderer_worker schema=3 status=failed output=2 request=17 detail=PendingFrameMissing";
+const WORKER_MISROUTED: &str =
+    "sophia_renderer_worker schema=3 status=result_misrouted output=2 observed=3 request=17";
+const PRESENT_DEFER: &str = "sophia_live_present_defer schema=1 status=output_busy defers=8 transaction=1650791 output=1 in_flight=true cleanup_pending=false pending_frame=true";
 
 struct Fixture(PathBuf);
 
@@ -76,6 +86,49 @@ fn capture_child(path: &Path) {
 
     tracing::info!(target: EXPORTER_TARGET, "{} payload=private", SHELL_BINDING);
     tracing::info!(target: EXPORTER_TARGET, "{}", SHELL_COMPLETION);
+
+    // Rare worker and present-deferral evidence persists at warn and info even
+    // though console logging is off. Fields outside a status's scope, private
+    // fields and repeated keys are dropped from an admitted record.
+    tracing::warn!(target: EXPORTER_TARGET, "{}", WORKER_SOFT_STALL);
+    tracing::warn!(
+        target: EXPORTER_TARGET,
+        "{} detail=WorkerStalled path=/private/account",
+        WORKER_HARD_STALL
+    );
+    tracing::warn!(target: EXPORTER_TARGET, "{}", WORKER_RECOVERED);
+    tracing::warn!(target: EXPORTER_TARGET, "{} age_ms=5 title=private-title", WORKER_FAILED);
+    tracing::warn!(target: EXPORTER_TARGET, "{} output=9", WORKER_MISROUTED);
+    tracing::info!(target: EXPORTER_TARGET, "{}", PRESENT_DEFER);
+    // A detail that is not exactly a compiler-owned variant name is dropped.
+    tracing::warn!(
+        target: EXPORTER_TARGET,
+        "sophia_renderer_worker schema=3 status=failed output=2 request=18 detail=NotAVariant"
+    );
+    tracing::warn!(
+        target: EXPORTER_TARGET,
+        "sophia_renderer_worker schema=3 status=failed output=2 request=19 detail=Some(Exported)"
+    );
+    // Statuses outside the rare set, request chatter and other targets are
+    // refused whole.
+    tracing::warn!(
+        target: EXPORTER_TARGET,
+        "sophia_renderer_worker schema=3 status=startup_failed reason=image_import_devices error=private"
+    );
+    tracing::debug!(
+        target: EXPORTER_TARGET,
+        "sophia_renderer_worker schema=2 status=request_submitted request=20 requests=20"
+    );
+    tracing::debug!(
+        "sophia_renderer_worker schema=2 status=request_received request=20 expected=20 age_ms=3"
+    );
+    tracing::warn!(target: "another_backend", "{}", WORKER_HARD_STALL);
+    tracing::info!(target: "sophia_application_evidence", "{}", PRESENT_DEFER);
+    tracing::info!(
+        target: EXPORTER_TARGET,
+        "sophia_live_present_defer schema=1 status=output_idle defers=1 transaction=1 output=1"
+    );
+
     tracing::debug!(target: "sophia_application_evidence", "{} title=secret xid=123", PRESENT_WRITTEN);
     tracing::debug!(target: EXPORTER_TARGET, "{}", PRESENT_WRITTEN);
     tracing::debug!(target: "sophia_application_evidence", "{}", SHELL_COMPLETION);
@@ -211,6 +264,14 @@ fn scanout_records_reach_capture_independently_of_console_logging() {
             LAYOUT_TESTED,
             SHELL_BINDING,
             SHELL_COMPLETION,
+            WORKER_SOFT_STALL,
+            WORKER_HARD_STALL,
+            WORKER_RECOVERED,
+            WORKER_FAILED,
+            WORKER_MISROUTED,
+            PRESENT_DEFER,
+            "sophia_renderer_worker schema=3 status=failed output=2 request=18",
+            "sophia_renderer_worker schema=3 status=failed output=2 request=19",
             PRESENT_WRITTEN,
             "sophia_live_atomic_test schema=1 scene_generation=12 status=Submitted errno=none output=2",
         ],

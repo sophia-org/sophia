@@ -145,6 +145,7 @@ fn native_bootstrap(output: sophia_engine::HeadlessOutput) -> LiveOutputAuthorit
         snapshot,
         capabilities: vec![capability],
         startup_candidate: Some(startup_candidate),
+        fallback_connector: None,
     }
 }
 

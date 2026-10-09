@@ -377,7 +377,12 @@ Sophia libraries use `tracing` for structured diagnostics. Binaries and runtime
 entrypoints install subscribers; libraries do not.
 
 The CLI forwards the backend's `sophia_scanout_evidence` target to the daily
-recorder only for `sophia_live_atomic_test` and `sophia_live_layout_probe` messages.
+recorder for the explicitly admitted atomic-test, layout-probe, shell-native,
+renderer-worker and present-deferral records. Renderer-worker capture admits
+stall transitions, validated late replies, failures and misroutes; ordinary
+request traffic stays outside this channel. Present deferrals are sampled at
+powers of two. Worker details are compiler-owned enum names, never arbitrary
+error text, with numeric output/request identities and elapsed times.
 This observation layer has its own filter, independent of console `RUST_LOG`.
 It forwards no spans or auxiliary fields, bounds formatting before allocation,
 and sends oversized records through existing discard accounting. Library module
