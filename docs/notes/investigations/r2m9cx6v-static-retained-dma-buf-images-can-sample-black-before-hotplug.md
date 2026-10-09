@@ -917,6 +917,25 @@ assumptions, but no screen premise, Mesa pair comparison or pixel repair.
 The next source audit separates loader probing from winsys creation; 185 and
 188 are preserved without rule changes or retrospective reclassification.
 
+Source audit `191-source-audit`, with its correction addendum, distinguishes
+the calls. The pipe loader duplicates the supplied descriptor into L and
+performs an optional native-context capability probe. A cache miss later
+duplicates L into the winsys descriptor W; that path issues seven `GETPARAM`
+calls, a version query, context initialization and its own capability query.
+The winsys's actual version fallback stays on W. The build includes three
+`GET_CAPS` call sites, and the observed L/W sequences match these distinct
+source paths. Their function attribution remains conditional on the frozen
+source: the trace has no stack or ioctl payload and does not prove the cause
+of L's `EINVAL`. Two `DRM_VERSION` ioctls are an observed restricted shape,
+not a source-verified universal libdrm count.
+
+The addendum also separates O, the test's observer duplicate created before
+P, from EGL's later duplicate. Neither is interchangeable with L or W. The
+191 manifest is
+`58cffb009940fe215f2c043797b253746b0529ffaa1d427bc80aa745873cafe2`.
+This supports preparing a narrower creation-signature classifier with its
+own refusal controls. It supplies no revised verdict or further guest GO.
+
 ## Real-context control and a freshness-oracle gap (2026-10-09 UTC)
 
 Series 141 ran the reviewed observer and context recipe once, from 03:38:28Z
