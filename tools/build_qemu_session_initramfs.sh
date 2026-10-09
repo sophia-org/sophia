@@ -103,13 +103,18 @@ cc -std=c11 -O2 -Wall -Wextra -Werror -I"$SDK_SOURCE" \
     -o "$GUEST_TOOLS/sophia-qemu-generic-wm"
 cc -std=c11 -O2 -Wall -Wextra -Werror "$ROOT_DIR/tools/qemu_reroot.c" \
     -o "$GUEST_TOOLS/sophia-qemu-reroot"
+# The output-unplug scenario's DMA-BUF client: explicit DRI3 buffers presented
+# once, then held still, so its window has no next frame.
+cc -std=c11 -O2 -Wall -Wextra -Werror "$ROOT_DIR/tools/probes/dri3_layout.c" \
+    -o "$GUEST_TOOLS/sophia-qemu-dri3-layout" \
+    $(pkg-config --cflags --libs xcb xcb-dri3 xcb-present gbm)
 (cd "$GUEST_TOOLS" && sha256sum sophia-qemu-lock-provider sophia-qemu-line-stamp \
-    sophia-qemu-generic-wm sophia-qemu-reroot > SHA256SUMS)
+    sophia-qemu-generic-wm sophia-qemu-reroot sophia-qemu-dri3-layout > SHA256SUMS)
 # What the guest tools were built from, recorded beside their hashes.
 {
     echo "sdk=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$ROOT_DIR/vendor/c-desktop-sdk/source/compatibility.json" | head -1)"
     echo "sdk_upstream=$(sha256sum "$ROOT_DIR/vendor/c-desktop-sdk/upstream.commit" | cut -d' ' -f1) (upstream.commit)"
-    echo "sources=$(cd "$ROOT_DIR" && sha256sum tools/qemu_lock_provider_standin.c tools/qemu_lock_provider_service.h tools/qemu_line_stamp.c tools/qemu_generic_wm.c tools/qemu_reroot.c | tr '\n' ' ')"
+    echo "sources=$(cd "$ROOT_DIR" && sha256sum tools/qemu_lock_provider_standin.c tools/qemu_lock_provider_service.h tools/qemu_line_stamp.c tools/qemu_generic_wm.c tools/qemu_reroot.c tools/probes/dri3_layout.c | tr '\n' ' ')"
     echo "bwrap=/usr/bin/bwrap $(/usr/bin/bwrap --version) sha256=$(sha256sum /usr/bin/bwrap | cut -d' ' -f1)"
 } > "$GUEST_TOOLS/FIXTURE.txt"
 XTEST_SELECTION_DRIVER="$TARGET_DIR/release/examples/xtest_selection_driver"
@@ -132,6 +137,8 @@ runtime_files=(
     /usr/lib/libdrm.so.2
     /usr/lib/libinput.so.10
     /usr/lib/libudev.so.1
+    /usr/lib/libxcb-dri3.so.0
+    /usr/lib/libxcb-present.so.0
     /usr/bin/zenity
     /usr/lib/libpam.so.0
     /usr/lib/security/pam_unix.so
@@ -146,6 +153,7 @@ extra_includes=(
     --include "$GUEST_TOOLS/sophia-qemu-line-stamp" /usr/bin/sophia-qemu-line-stamp
     --include "$GUEST_TOOLS/sophia-qemu-generic-wm" /usr/bin/sophia-qemu-generic-wm
     --include "$GUEST_TOOLS/sophia-qemu-reroot" /usr/bin/sophia-qemu-reroot
+    --include "$GUEST_TOOLS/sophia-qemu-dri3-layout" /usr/bin/sophia-qemu-dri3-layout
     --include "$ROOT_DIR/examples/pam.d/sophia-lock" /usr/share/sophia/pam.d/sophia-lock
 )
 required_guest_paths=(
@@ -162,6 +170,7 @@ required_guest_paths=(
     /usr/bin/sophia-qemu-line-stamp
     /usr/bin/sophia-qemu-generic-wm
     /usr/bin/sophia-qemu-reroot
+    /usr/bin/sophia-qemu-dri3-layout
     /usr/bin/umount
     /usr/share/sophia/pam.d/sophia-lock
     /usr/lib/security/pam_unix.so
@@ -178,6 +187,12 @@ fi
 runtime_files+=(/usr/bin/bwrap)
 install_files=()
 runtime_files+=("$(command -v xterm)")
+# Diagnostic only, off by default: gdb in the guest, so a scenario can take
+# userspace stacks of a stalled session (the output-unplug scenario does on a
+# renderer worker hard stall).
+if [[ "${SOPHIA_QEMU_DIAGNOSTIC_GDB:-0}" == 1 ]]; then
+    runtime_files+=("$(command -v gdb)")
+fi
 for file in "${runtime_files[@]}"; do
     if [[ -e "$file" ]]; then
         install_files+=("$file")

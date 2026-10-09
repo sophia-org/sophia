@@ -316,7 +316,8 @@ impl LiveProductionVisualRuntime {
             outputs,
             presentation_queued,
             software_frame_waiting: software_frame_waiting.is_some(),
-            preparation_pending: native_scanout.cold_preparation_ready(),
+            preparation_pending: native_scanout.cold_preparation_ready()
+                || self.pending_renderer_images_due(native_scanout),
         })
     }
 
@@ -335,7 +336,9 @@ impl LiveProductionVisualRuntime {
         self.recover_policy_preview_frames(scene, native_scanout)?;
         // Cold migration has one quota per native service pass. WM publication
         // installation may prepare hot previews separately, never cold copies.
-        native_scanout.prepare_retained_images()?;
+        self.place_pending_renderer_images(native_scanout)?;
+        let refused = native_scanout.prepare_retained_images()?;
+        self.mark_cold_refusals(&refused);
         self.prepare_policy_preview_images(native_scanout)?;
         let mut retired_present = None;
         let mut effects = Vec::new();

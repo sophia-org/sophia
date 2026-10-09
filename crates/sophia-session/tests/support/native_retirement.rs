@@ -457,11 +457,13 @@ fn resume_failure_keeps_handoff_until_entire_restore_succeeds() {
         assert_eq!(error, Err("replacement rejected"));
         assert_eq!(Arc::strong_count(&bytes), 2);
     }
-    let restored = restore_retained_handoff(&mut handoff, |source| {
+    let (restored, taken) = restore_retained_handoff(&mut handoff, |source| {
         Ok::<_, &'static str>(source.unwrap().clone())
     })
     .unwrap();
     assert!(handoff.is_none());
+    assert_eq!(Arc::strong_count(&bytes), 3);
+    drop(taken);
     assert_eq!(Arc::strong_count(&bytes), 2);
     drop(restored);
     assert_eq!(Arc::strong_count(&bytes), 1);

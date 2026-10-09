@@ -65,6 +65,7 @@ impl LiveProductionVisualRuntime {
             output,
             &sources.committed,
             &sources.presentation_order,
+            None,
         )?;
         self.compose_native_head_frames_from_sources(
             native,

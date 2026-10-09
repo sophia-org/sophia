@@ -173,7 +173,7 @@ impl LiveProductionVisualRuntime {
             .present_scheduler
             .in_flight_transaction()
             .ok_or("preview recovery lost its Present transaction")?;
-        let (_, layer) = self
+        let (presenting, layer) = self
             .present_scheduler
             .in_flight_displayed_layer()
             .ok_or("preview recovery lost its Present image")?;
@@ -186,7 +186,12 @@ impl LiveProductionVisualRuntime {
             .present_scheduler
             .in_flight_recovery_sources()
             .ok_or("preview recovery lost its frozen sources")?;
-        let list = self.recovery_display_list_for_output(output, prepared.candidate(), order)?;
+        let list = self.recovery_display_list_for_output(
+            output,
+            prepared.candidate(),
+            order,
+            Some(presenting),
+        )?;
         let frames = self.compose_native_head_frames_from_sources(
             native,
             output,

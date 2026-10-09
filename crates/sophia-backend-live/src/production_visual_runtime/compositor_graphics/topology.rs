@@ -34,6 +34,7 @@ impl LiveProductionVisualRuntime {
                     viewport.logical,
                     &source_set.committed,
                     &source_set.presentation_order,
+                    None,
                 )
                 .map_err(|_| "topology composition display list invalid")?;
             let snapshot = sophia_engine::output_scene_snapshot_from_committed_in_view(

@@ -214,7 +214,14 @@ where
         snapshot: NativeRendererImageSnapshot,
     ) -> Result<bool, NativeGbmScanoutBufferExportDetail> {
         let image_id = snapshot.image_id();
-        if !self.capture_renderer_image(image_id, snapshot.as_frame())? {
+        // Full while GPU uses of pooled storage are still in flight is busy:
+        // the restore is retried soon, here on the renderer thread that polls
+        // the fences (REVIEW-CODEX-07).
+        let fences_outstanding = !self.snapshot_fences.is_empty();
+        let captured = self
+            .capture_renderer_image(image_id, snapshot.as_frame())
+            .map_err(|detail| detail.restore_capacity(fences_outstanding))?;
+        if !captured {
             return Ok(false);
         }
         if !self.promote_renderer_image(image_id)? {

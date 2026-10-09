@@ -418,6 +418,13 @@ pub struct LiveProductionVisualRuntime {
     retired_software_presents: VecDeque<LiveProductionRetiredSoftwarePresent>,
     retired_software_presents_overflowed: bool,
     displayed_surfaces: BTreeMap<SurfaceId, LiveDisplayedSurface>,
+    /// Retained surfaces with no drawable source on some outputs (t306).
+    source_availability: crate::LiveSourceAvailability,
+    /// Snapshots of retained images no store holds yet, kept from the last
+    /// resume until a store takes them or the next handoff absorbs them.
+    pending_renderer_handoff: Option<crate::LiveProductionRendererImageHandoff>,
+    /// When pending images are next offered a store.
+    pending_renderer_retry: crate::LiveRendererImageRetryGate,
     presentation_order: Vec<SurfaceId>,
     surface_outputs: BTreeMap<SurfaceId, OutputId>,
     geometry_routed_surfaces: BTreeSet<SurfaceId>,

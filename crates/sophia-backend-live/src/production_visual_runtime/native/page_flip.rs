@@ -194,6 +194,9 @@ impl LiveProductionVisualRuntime {
             submitted.surface,
             submitted.displayed_layer,
         );
+        // Only a committed retirement gives an unavailable surface a source
+        // again; the stale and discarded outcomes returned above.
+        self.source_availability.committed(submitted.surface);
         if let Some(replaced) = replaced {
             native_scanout.evict_renderer_image(replaced.layer.image_id)?;
         }

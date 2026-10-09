@@ -624,9 +624,59 @@ impl LiveProductionVisualRuntime {
         committed_surfaces: &[CommittedSurfaceState],
         presentation_order: &[SurfaceId],
     ) -> Result<CompositorDisplayList, CompositorDisplayListError> {
-        let owned = self.surface_order_for_output(output, presentation_order);
+        self.display_list_for_present(
+            output,
+            viewport,
+            committed_surfaces,
+            presentation_order,
+            None,
+        )
+    }
+
+    /// As `display_list_for_output`, for the Present of `presenting`, whose
+    /// new source is drawn even while its retained one is unavailable.
+    pub(super) fn display_list_for_present(
+        &self,
+        output: OutputId,
+        viewport: Rect,
+        committed_surfaces: &[CommittedSurfaceState],
+        presentation_order: &[SurfaceId],
+        presenting: Option<SurfaceId>,
+    ) -> Result<CompositorDisplayList, CompositorDisplayListError> {
+        let owned = self.drawable_order(
+            output,
+            self.surface_order_for_output(output, presentation_order),
+            committed_surfaces,
+            presenting,
+        );
         self.output_composition()
             .display_list(output, viewport, committed_surfaces, &owned)
+    }
+
+    /// Leaves out the DMA-BUF surfaces whose retained source is unavailable on
+    /// `output`, as a surface whose first frame has not landed is left out. A
+    /// surface committed with a CPU buffer never needs a retained image.
+    fn drawable_order(
+        &self,
+        output: OutputId,
+        order: Vec<SurfaceId>,
+        committed_surfaces: &[CommittedSurfaceState],
+        presenting: Option<SurfaceId>,
+    ) -> Vec<SurfaceId> {
+        if self.source_availability.is_empty() {
+            return order;
+        }
+        order
+            .into_iter()
+            .filter(|surface| {
+                self.source_availability
+                    .available_on(*surface, output, presenting)
+                    || !committed_surfaces.iter().any(|state| {
+                        state.surface == *surface
+                            && matches!(state.buffer(), BufferSource::DmaBuf { .. })
+                    })
+            })
+            .collect()
     }
 
     /// A recovery frame owes the frozen client pixels, not a later WM tier.
@@ -636,13 +686,20 @@ impl LiveProductionVisualRuntime {
         output: OutputId,
         committed_surfaces: &[CommittedSurfaceState],
         presentation_order: &[SurfaceId],
+        presenting: Option<SurfaceId>,
     ) -> Result<CompositorDisplayList, &'static str> {
         let viewport = self
             .outputs
             .logical_viewport(output)
             .ok_or("preview recovery targets an unknown output")?;
-        self.display_list_without_policy(output, viewport, committed_surfaces, presentation_order)
-            .map_err(|_| "preview recovery display list invalid")
+        self.display_list_without_policy(
+            output,
+            viewport,
+            committed_surfaces,
+            presentation_order,
+            presenting,
+        )
+        .map_err(|_| "preview recovery display list invalid")
     }
 
     /// The WM tier is omitted; the session lock never is.
@@ -652,8 +709,14 @@ impl LiveProductionVisualRuntime {
         viewport: Rect,
         committed_surfaces: &[CommittedSurfaceState],
         presentation_order: &[SurfaceId],
+        presenting: Option<SurfaceId>,
     ) -> Result<CompositorDisplayList, CompositorDisplayListError> {
-        let owned = self.surface_order_for_output(output, presentation_order);
+        let owned = self.drawable_order(
+            output,
+            self.surface_order_for_output(output, presentation_order),
+            committed_surfaces,
+            presenting,
+        );
         let mut composition = self.output_composition();
         composition.policy_presentation = None;
         composition.display_list(output, viewport, committed_surfaces, &owned)

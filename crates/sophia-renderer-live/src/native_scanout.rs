@@ -18,6 +18,7 @@ pub use image_reads::{LiveRendererImageRead, LiveRendererImageReads};
 
 mod renderer_images;
 pub use renderer_images::{
+    LIVE_RENDERER_IMAGE_STORE_BYTE_BUDGET, LIVE_RENDERER_IMAGE_STORE_CAPACITY,
     LiveRendererImagePromotion, LiveRendererImageSnapshot, LiveRendererSnapshotWeak,
     LiveRetainedRendererImageSnapshot,
 };
@@ -898,6 +899,9 @@ fn reduced_native_owned_scanout_buffer_export_detail(
         }
         sophia_renderer_native_egl::NativeGbmScanoutBufferExportDetail::RendererImageStoreFull => {
             LiveRendererScanoutBufferExportDetail::RendererImageStoreFull
+        }
+        sophia_renderer_native_egl::NativeGbmScanoutBufferExportDetail::RendererImageTransferBusy => {
+            LiveRendererScanoutBufferExportDetail::RendererImageTransferBusy
         }
     }
 }

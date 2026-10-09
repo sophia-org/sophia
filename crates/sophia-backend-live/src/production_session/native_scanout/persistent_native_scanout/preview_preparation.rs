@@ -11,18 +11,25 @@ impl LiveProductionNativeScanout {
     /// Ordinary surfaces migrate once to their new head's existing store.
     /// This reuses topology's export/restore path, including import transfer
     /// fallback, without spending the repeating-preview snapshot budget.
+    ///
+    /// One cold-migration pass. Returns the (image, output) pairs whose
+    /// import the output's stores refused; the runtime leaves those surfaces
+    /// out on that output while the donor keeps its copy.
     pub(crate) fn prepare_retained_images(
         &mut self,
-    ) -> Result<(), crate::LiveRendererScanoutBufferExportDetail> {
+    ) -> Result<Vec<(Image, OutputId)>, crate::LiveRendererScanoutBufferExportDetail> {
         use crate::LiveRendererScanoutBufferExportDetail as D;
         self.synchronize_preview_epochs();
-        if self.preview_images.cold_misses.is_empty() { return Ok(()); }
+        if self.preview_images.cold_misses.is_empty() { return Ok(Vec::new()); }
         let stores = self.cold_image_stores();
+        let progress = self.renderer_storage_progress();
         let exporters = &mut self.exporters;
         prepare_cold_images(
             &mut self.preview_images.cold_misses,
             &mut self.preview_images.owners,
             &stores,
+            &mut self.preview_images.cold_gate,
+            progress,
             |donor, target, image| {
                 let snapshot = exporters[donor]
                     .try_export_promoted_renderer_image(image)?
@@ -40,6 +47,8 @@ impl LiveProductionNativeScanout {
             &self.preview_images.cold_misses,
             &self.preview_images.owners,
             &self.cold_image_stores(),
+            &self.preview_images.cold_gate,
+            self.renderer_storage_progress(),
         )
     }
 
@@ -319,23 +328,40 @@ struct ColdImageStore {
     identity: u64,
     busy: bool,
 }
+
+/// One pass of cold migration: for each (image, output) the output's stores
+/// lack, export from a donor store and restore into the target. Returns the
+/// (image, output) pairs whose import was refused outright; those leave the
+/// demand and the donor keeps its copy. A full store may be waiting on GPU
+/// completions rather than out of room (REVIEW-CODEX-05 R2): the pair is gated
+/// at `progress`, the owner's storage progress, and neither tried nor
+/// reported ready again until it moves, so nothing spins. A busy bridge is
+/// tried again on the next pass, while its GPU work is in flight.
 fn prepare_cold_images(
     demand: &mut BTreeMap<Image, BTreeSet<OutputId>>,
     owners: &mut BTreeMap<Image, BTreeSet<u64>>,
     stores: &[ColdImageStore],
+    gate: &mut BTreeMap<(Image, OutputId), u64>,
+    progress: u64,
     mut transfer: impl FnMut(
         usize,
         usize,
         Image,
     ) -> Result<(), crate::LiveRendererScanoutBufferExportDetail>,
-) -> Result<(), crate::LiveRendererScanoutBufferExportDetail> {
+) -> Result<Vec<(Image, OutputId)>, crate::LiveRendererScanoutBufferExportDetail> {
     use crate::LiveRendererScanoutBufferExportDetail as D;
     // One export/restore pair per owner pass (each worker visit is bounded).
     // Busy facts cost no visit; remaining ready misses keep the owner awake.
     let mut attempted = false;
+    let mut refused = Vec::new();
+    gate.retain(|_, at| *at == progress);
     for (image, outputs) in demand.clone() {
         for output in outputs {
+            if gate.contains_key(&(image, output)) {
+                continue;
+            }
             let mut ready = true;
+            let mut refused_here = false;
             for target in stores.iter().filter(|store| store.output == output) {
                 if owners
                     .get(&image)
@@ -361,19 +387,30 @@ fn prepare_cold_images(
                     Ok(()) => {
                         owners.entry(image).or_default().insert(target.identity);
                     }
-                    Err(D::WorkerPending | D::WorkerQueueFull) => {
+                    Err(D::WorkerPending | D::WorkerQueueFull | D::RendererImageTransferBusy) => {
                         ready = false;
+                    }
+                    Err(D::RendererImageStoreFull) => {
+                        gate.insert((image, output), progress);
+                        ready = false;
+                    }
+                    Err(D::DmaBufImageCreateFailed | D::DmaBufImageBindFailed | D::DmaBufImportFailed) => {
+                        refused_here = true;
+                        break;
                     }
                     Err(detail) => return Err(detail),
                 }
             }
-            if ready && let Some(outputs) = demand.get_mut(&image) {
+            if refused_here {
+                refused.push((image, output));
+            }
+            if (ready || refused_here) && let Some(outputs) = demand.get_mut(&image) {
                 outputs.remove(&output);
             }
         }
     }
     demand.retain(|_, outputs| !outputs.is_empty());
-    Ok(())
+    Ok(refused)
 }
 
 /// No frame is fabricated for preparation. The owner schedules another pass
@@ -382,10 +419,16 @@ fn cold_preparation_ready(
     demand: &BTreeMap<Image, BTreeSet<OutputId>>,
     owners: &BTreeMap<Image, BTreeSet<u64>>,
     stores: &[ColdImageStore],
+    gate: &BTreeMap<(Image, OutputId), u64>,
+    progress: u64,
 ) -> bool {
     demand.iter().any(|(image, outputs)| {
         let owned = owners.get(image);
         outputs.iter().any(|output| {
+            // A pair gated on a full store waits for progress, not a pass.
+            if gate.get(&(*image, *output)) == Some(&progress) {
+                return false;
+            }
             stores.iter().filter(|s| s.output == *output).any(|target| {
                 if owned.is_some_and(|set| set.contains(&target.identity)) {
                     return false;

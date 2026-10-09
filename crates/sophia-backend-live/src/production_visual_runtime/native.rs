@@ -3,6 +3,7 @@ use super::*;
 mod layout_witness;
 mod page_flip;
 mod rollback;
+mod source_restore;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum LiveProductionNativeSuspendOutcome {
@@ -189,12 +190,6 @@ impl LiveProductionVisualRuntime {
         images.into_iter().collect()
     }
 
-    pub fn discard_retained_renderer_images(&mut self) -> usize {
-        let discarded = self.displayed_surfaces.len();
-        self.displayed_surfaces.clear();
-        discarded
-    }
-
     pub fn suspend_native_scanout(
         &mut self,
         native_scanout: &mut LiveProductionNativeScanout,
@@ -379,7 +374,7 @@ impl LiveProductionVisualRuntime {
         outputs: &[sophia_engine::HeadlessOutput],
         scene: &LiveProductionCpuScene,
         renderer_handoff: Option<&LiveProductionRendererImageHandoff>,
-    ) -> Result<usize, Box<dyn std::error::Error>> {
+    ) -> Result<crate::LiveProductionRendererImageRestore, Box<dyn std::error::Error>> {
         native_scanout.use_renderer_image_reads(self.image_reads.clone())?;
         self.validate_native_retirement_disposition()?;
         let retained = self.retained_renderer_image_ids();
@@ -407,9 +402,15 @@ impl LiveProductionVisualRuntime {
             resume_phase,
             crate::LiveRendererImageResumeObservation::OutputOwnerInitialized,
         )?;
-        let restored = renderer_handoff.map_or(Ok(0), |handoff| {
-            native_scanout.restore_renderer_image_handoff(handoff)
-        })?;
+        // Availability scoped to the retired outputs described them; it is
+        // derived again below from where this restore puts each image.
+        self.source_availability.outputs_replaced();
+        let demand = self.retained_image_demand(&resumed_outputs)?;
+        let restore = match renderer_handoff {
+            Some(handoff) => native_scanout.restore_renderer_image_handoff(handoff, &demand)?,
+            None => crate::LiveProductionRendererImageRestore::default(),
+        };
+        self.mark_unrestored_sources(&restore);
         resume_phase = advance_renderer_image_resume(
             resume_phase,
             crate::LiveRendererImageResumeObservation::ImagesRestored,
@@ -418,7 +419,14 @@ impl LiveProductionVisualRuntime {
             return Err("native resume renderer-image lifecycle did not become ready".into());
         }
         self.resume_prepared_outputs_on(native_scanout, resumed_outputs, scene)?;
-        Ok(restored)
+        tracing::info!(
+            "sophia_live_renderer_image_handoff schema=2 status=restored restored_images={} pending_images={} unavailable_pairs={} unavailable_surfaces={}",
+            restore.restored.len(),
+            restore.pending.len(),
+            restore.unavailable.len(),
+            self.source_availability.len(),
+        );
+        Ok(restore)
     }
 
     /// Native resume reaches this only after worker coverage and retained-image
@@ -434,6 +442,7 @@ impl LiveProductionVisualRuntime {
         // native head, and synchronously present each complete output cohort.
         self.outputs = resumed_outputs;
         self.native_suspended = false;
+        self.resume_input_projections()?;
         let batches = self.retained_output_head_composition_frames(scene, native_scanout)?;
         if batches.len() != self.outputs.output_count() {
             return Err("native resume produced partial logical-output coverage".into());
@@ -442,6 +451,12 @@ impl LiveProductionVisualRuntime {
             native_scanout.initialize_output_composition(&mut self.outputs, output, frames)?;
         }
         self.publish_presented_input_layers(native_scanout);
+        // Published. An image held by some store but not yet by an output that
+        // samples it is ordinary from here: that output's frames wait while
+        // the cold migration brings it over. Only images no store holds stay
+        // marked; the caller hands their snapshots back with
+        // keep_pending_renderer_handoff once it has taken the handoff.
+        self.source_availability.release_output_scoped_pending();
         Ok(())
     }
 
@@ -590,6 +605,7 @@ impl LiveProductionVisualRuntime {
             .ok_or("content layout generation exhausted")?;
         native_scanout.handoff_topology_custody(&mut self.outputs, &mut next)?;
         self.outputs = next;
+        self.source_availability.outputs_rebound();
         self.ordinary_repaints_pending.clear();
         self.input_projections = input_projections;
         // Topology first frames intentionally omit the tier; re-present it
@@ -952,6 +968,7 @@ pub(super) fn check_frame_service_submission(
                     Some(
                         crate::LiveRendererScanoutBufferExportDetail::InvalidRendererImageId
                             | crate::LiveRendererScanoutBufferExportDetail::RendererImageStoreFull
+                            | crate::LiveRendererScanoutBufferExportDetail::RendererImageTransferBusy
                     )
                 ) =>
         {

@@ -51,6 +51,9 @@ pub(super) struct PreviewImages {
     pub owners: BTreeMap<Image, BTreeSet<u64>>,
     pub snapshots: BTreeMap<(Image, usize), Snapshot>,
     pub cold_misses: BTreeMap<Image, BTreeSet<OutputId>>,
+    /// Cold misses waiting on a full store, keyed to the storage progress at
+    /// which they were last refused (REVIEW-CODEX-05 R2, -06 R1).
+    pub cold_gate: BTreeMap<(Image, OutputId), u64>,
     pub demand_sources: BTreeMap<Image, (sophia_protocol::SurfaceId, BTreeSet<OutputId>)>,
     pub frame_sources: BTreeMap<crate::LiveNativeFrameIdentity, sophia_protocol::SurfaceId>,
     // Retired imports can outlive the last queued frame. Busy workers keep
@@ -68,6 +71,7 @@ impl Default for PreviewImages {
             owners: BTreeMap::new(),
             snapshots: BTreeMap::new(),
             cold_misses: BTreeMap::new(),
+            cold_gate: BTreeMap::new(),
             demand_sources: BTreeMap::new(),
             frame_sources: BTreeMap::new(),
             retired_imports: BTreeMap::new(),
@@ -108,6 +112,8 @@ impl PreviewImages {
         });
         self.cold_misses
             .retain(|image, _| self.owners.contains_key(image));
+        self.cold_gate
+            .retain(|(image, _), _| self.owners.contains_key(image));
         let stale = self
             .snapshots
             .iter()
@@ -130,6 +136,7 @@ impl PreviewImages {
         self.reads.clear_evictions();
         self.owners.clear();
         self.cold_misses.clear();
+        self.cold_gate.clear();
         self.retired_imports.clear();
         self.live_stores.clear();
     }

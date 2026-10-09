@@ -19,7 +19,7 @@ fn recoverable(detail: crate::LiveRendererScanoutBufferExportDetail) -> bool {
     use crate::LiveRendererScanoutBufferExportDetail as D;
     matches!(
         detail,
-        D::InvalidRendererImageId | D::RendererImageStoreFull
+        D::InvalidRendererImageId | D::RendererImageStoreFull | D::RendererImageTransferBusy
     )
 }
 

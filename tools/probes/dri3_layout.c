@@ -1,4 +1,6 @@
-/* Explicit DRI3 allocations and synthetic pixels only; no input or capture.
+/* Explicit DRI3 allocations and synthetic pixels only; no capture. It sends no
+ * input; with --report-keys it only reports the focus changes and key presses
+ * it receives.
  * Build: cc -std=c11 -O2 -Wall -Wextra -Werror tools/probes/dri3_layout.c \
  *           -o /tmp/sophia-dri3-layout $(pkg-config --cflags --libs xcb xcb-dri3 xcb-present gbm)
  */
@@ -30,9 +32,9 @@ enum { MAX_PLANES = 4, MAX_MODIFIERS = 16384, MAX_FRAMES = 120 };
 
 struct options {
     int x, y, width, height;
-    uint32_t format, frames, timeout_ms;
+    uint32_t format, frames, timeout_ms, hold_ms;
     uint64_t modifier;
-    bool list_only, has_geometry, has_format, has_modifier, suboptimal;
+    bool list_only, has_geometry, has_format, has_modifier, suboptimal, managed, report_keys;
 };
 
 struct buffer {
@@ -55,6 +57,8 @@ struct probe {
     uint64_t deadline_ms;
     struct buffer buffers[2];
     unsigned submitted, completed, idled;
+    unsigned keys_reported;
+    bool keys_overflowed;
 };
 
 static uint64_t now_ms(void)
@@ -139,21 +143,88 @@ static void *reply(struct probe *probe, unsigned sequence, const char *stage)
     }
 }
 
-/* Unchecked void requests report their errors on the ordinary event queue.
- * Present events use a separate XGE queue and cannot be consumed here. */
-static bool ordinary_events(struct probe *probe, bool queued_only)
+/* Whether the window's geometry is the requested one. An override-redirect
+ * window is placed by its client, so any change is refused. A managed window
+ * (--managed) is placed by the window manager: its position may differ, its
+ * size may not. */
+static bool geometry_matches(const struct options *options, int x, int y, int width, int height)
 {
-    xcb_generic_event_t *event;
-    while ((event = queued_only ? xcb_poll_for_queued_event(probe->connection) :
-                                xcb_poll_for_event(probe->connection))) {
+    return width == options->width && height == options->height &&
+        (options->managed || (x == options->x && y == options->y));
+}
+
+/* The window's creation attributes in mask order; returns the mask. Only an
+ * unmanaged window is override-redirect, which keeps it out of every policy
+ * the window manager applies. */
+static uint32_t window_attributes(const struct options *options, xcb_colormap_t colormap, uint32_t values[4])
+{
+    unsigned count = 0;
+    uint32_t mask = XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK | XCB_CW_COLORMAP;
+    values[count++] = 0xff304038;
+    if (!options->managed) {
+        mask |= XCB_CW_OVERRIDE_REDIRECT;
+        values[count++] = 1;
+    }
+    values[count++] = XCB_EVENT_MASK_STRUCTURE_NOTIFY |
+        (options->report_keys ? XCB_EVENT_MASK_KEY_PRESS | XCB_EVENT_MASK_FOCUS_CHANGE : 0);
+    values[count++] = colormap;
+    return mask;
+}
+
+/* With --report-keys, at most this many key presses are reported; the next
+ * one is named as an overflow once. */
+#define MAX_KEY_REPORTS 64
+
+/* With --report-keys, each focus change and key press of the window, on
+ * stderr, wherever the ordinary queue is drained: focus can arrive while the
+ * window is mapped, before the hold begins. Each report says whether the
+ * event was synthetic (SendEvent sets the high bit of its type), so a key
+ * some client sent is never taken for a routed one. */
+static void report_input(struct probe *probe, const xcb_generic_event_t *event)
+{
+    unsigned synthetic = (event->response_type & 0x80) ? 1u : 0u;
+    switch (event->response_type & 127) {
+    case XCB_KEY_PRESS:
+        if (probe->keys_reported < MAX_KEY_REPORTS) {
+            fprintf(stderr, "dri3_layout stage=key keycode=%u synthetic=%u\n",
+                    (unsigned)((const xcb_key_press_event_t *)event)->detail, synthetic);
+            probe->keys_reported++;
+        } else if (!probe->keys_overflowed) {
+            fprintf(stderr, "dri3_layout stage=key_overflow reported=%u\n", probe->keys_reported);
+            probe->keys_overflowed = true;
+        }
+        break;
+    case XCB_FOCUS_IN:
+    case XCB_FOCUS_OUT: {
+        const xcb_focus_in_event_t *focus = (const xcb_focus_in_event_t *)event;
+        fprintf(stderr, "dri3_layout stage=focus state=%s source=event mode=%u detail=%u synthetic=%u\n",
+                (event->response_type & 127) == XCB_FOCUS_IN ? "in" : "out", focus->mode, focus->detail, synthetic);
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+/* Unchecked void requests report their errors on the ordinary event queue.
+ * Present events use a separate XGE queue and cannot be consumed here. At most
+ * `limit` events are taken; *more says whether the limit stopped the drain. */
+static bool drain_events(struct probe *probe, bool queued_only, unsigned limit, bool *more)
+{
+    xcb_generic_event_t *event = NULL;
+    unsigned taken = 0;
+    while (taken < limit && (event = queued_only ? xcb_poll_for_queued_event(probe->connection) :
+                                                xcb_poll_for_event(probe->connection))) {
         bool ok = true;
+        taken++;
         if (event->response_type == 0)
             ok = x_error("request", (xcb_generic_error_t *)event);
+        else if (probe->options.report_keys)
+            report_input(probe, event);
         if ((event->response_type & 127) == XCB_CONFIGURE_NOTIFY) {
             xcb_configure_notify_event_t *configure = (void *)event;
             if (configure->window == probe->window &&
-                (configure->x != probe->options.x || configure->y != probe->options.y ||
-                 configure->width != probe->options.width || configure->height != probe->options.height)) {
+                !geometry_matches(&probe->options, configure->x, configure->y, configure->width, configure->height)) {
                 errno = EINVAL;
                 ok = fail("geometry_changed");
             }
@@ -162,11 +233,18 @@ static bool ordinary_events(struct probe *probe, bool queued_only)
         if (!ok)
             return false;
     }
+    if (more)
+        *more = taken == limit;
     if (xcb_connection_has_error(probe->connection)) {
         errno = EPIPE;
         return fail("connection");
     }
     return true;
+}
+
+static bool ordinary_events(struct probe *probe, bool queued_only)
+{
+    return drain_events(probe, queued_only, UINT_MAX, NULL);
 }
 
 static bool barrier(struct probe *probe, const char *stage)
@@ -213,9 +291,11 @@ static void usage(FILE *output)
 {
     fprintf(output, "usage: dri3_layout --geometry X,Y,W,H --format XR24|AR24\n"
                     "       [--modifier VALUE] [--list-only] [--frames 1..120] [--timeout-ms 100..10000]\n"
-                    "       [--suboptimal]\n"
+                    "       [--suboptimal] [--hold-ms 0..60000] [--managed] [--report-keys]\n"
                     "Present requires --modifier. List-only never maps or presents a window.\n"
-                    "Geometry: signed 16-bit position, positive dimensions <=4096.\n");
+                    "Managed windows are placed by the window manager; their size still must not change.\n"
+                    "Geometry: signed 16-bit position, positive dimensions <=4096.\n"
+                    "--report-keys reports focus changes and key presses during the hold on stderr.\n");
 }
 
 static bool parse(int argc, char **argv, struct options *options)
@@ -229,6 +309,14 @@ static bool parse(int argc, char **argv, struct options *options)
         }
         if (!strcmp(arg, "--suboptimal")) {
             options->suboptimal = true;
+            continue;
+        }
+        if (!strcmp(arg, "--managed")) {
+            options->managed = true;
+            continue;
+        }
+        if (!strcmp(arg, "--report-keys")) {
+            options->report_keys = true;
             continue;
         }
         if (index + 1 >= argc)
@@ -257,6 +345,8 @@ static bool parse(int argc, char **argv, struct options *options)
                 options->frames = (uint32_t)parsed;
             } else if (!strcmp(arg, "--timeout-ms") && parsed >= 100 && parsed <= 10000) {
                 options->timeout_ms = (uint32_t)parsed;
+            } else if (!strcmp(arg, "--hold-ms") && parsed <= 60000) {
+                options->hold_ms = (uint32_t)parsed;
             } else {
                 return false;
             }
@@ -341,12 +431,12 @@ static bool open_window_and_device(struct probe *probe, const xcb_screen_t *scre
     probe->colormap = xcb_generate_id(probe->connection);
     xcb_create_colormap(probe->connection, XCB_COLORMAP_ALLOC_NONE, probe->colormap, screen->root, chosen);
     probe->window = xcb_generate_id(probe->connection);
-    uint32_t values[] = { 0xff304038, 1, XCB_EVENT_MASK_STRUCTURE_NOTIFY, probe->colormap };
+    uint32_t values[4];
+    uint32_t mask = window_attributes(&probe->options, probe->colormap, values);
     xcb_create_window(probe->connection, depth, probe->window, screen->root,
         (int16_t)probe->options.x, (int16_t)probe->options.y,
         (uint16_t)probe->options.width, (uint16_t)probe->options.height, 0,
-        XCB_WINDOW_CLASS_INPUT_OUTPUT, chosen,
-        XCB_CW_BACK_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK | XCB_CW_COLORMAP, values);
+        XCB_WINDOW_CLASS_INPUT_OUTPUT, chosen, mask, values);
     if (!barrier(probe, "create_window"))
         return false;
     xcb_dri3_open_reply_t *opened = reply(probe,
@@ -624,8 +714,7 @@ static bool run_frames(struct probe *probe)
         xcb_get_geometry(probe->connection, probe->window).sequence, "window_geometry");
     if (!geometry)
         return false;
-    bool exact = geometry->x == probe->options.x && geometry->y == probe->options.y &&
-                 geometry->width == probe->options.width && geometry->height == probe->options.height;
+    bool exact = geometry_matches(&probe->options, geometry->x, geometry->y, geometry->width, geometry->height);
     free(geometry);
     if (!exact) {
         errno = EINVAL;
@@ -663,6 +752,42 @@ static bool run_frames(struct probe *probe)
             return false;
     }
     return modifiers(probe, "completed") && present_events(probe);
+}
+
+/* The hold with --report-keys: the window still presents nothing more, but it
+ * drains its ordinary events until the hold's deadline, with the same request
+ * error and geometry checks as before the hold, and reports focus and keys
+ * (report_input). It first reports whether the window holds the input focus
+ * now, since a focus change may have been drained before the hold began. Each
+ * drain takes a bounded batch, so a stream of events cannot outlast the hold. */
+static bool hold_reporting_keys(struct probe *probe)
+{
+    probe->deadline_ms = now_ms() + probe->options.hold_ms;
+    xcb_get_input_focus_reply_t *focus =
+        reply(probe, xcb_get_input_focus(probe->connection).sequence, "hold_focus");
+    if (!focus)
+        return false;
+    fprintf(stderr, "dri3_layout stage=focus state=%s source=query\n", focus->focus == probe->window ? "in" : "out");
+    free(focus);
+    for (;;) {
+        bool more = false;
+        if (!drain_events(probe, false, 64, &more))
+            return false;
+        uint64_t now = now_ms();
+        if (now >= probe->deadline_ms)
+            return true;
+        if (more)
+            continue;
+        struct pollfd socket = { .fd = xcb_get_file_descriptor(probe->connection), .events = POLLIN };
+        uint64_t remaining = probe->deadline_ms - now;
+        int result = poll(&socket, 1, remaining > INT_MAX ? INT_MAX : (int)remaining);
+        if (result < 0 && errno != EINTR)
+            return fail("hold_poll");
+        if (result > 0 && (socket.revents & (POLLERR | POLLHUP | POLLNVAL))) {
+            errno = EPIPE;
+            return fail("hold_connection");
+        }
+    }
 }
 
 static void cleanup(struct probe *probe)
@@ -737,15 +862,35 @@ int main(int argc, char **argv)
         errno = ENODEV;
         ok = fail("screen");
     }
-    printf("dri3_layout stage=start list_only=%u x=%d y=%d width=%d height=%d format=0x%08" PRIx32 " frames=%" PRIu32 " timeout_ms=%" PRIu32 "\n",
+    printf("dri3_layout stage=start list_only=%u x=%d y=%d width=%d height=%d format=0x%08" PRIx32 " frames=%" PRIu32 " timeout_ms=%" PRIu32 " managed=%u\n",
         probe.options.list_only, probe.options.x, probe.options.y, probe.options.width, probe.options.height,
-        probe.options.format, probe.options.frames, probe.options.timeout_ms);
+        probe.options.format, probe.options.frames, probe.options.timeout_ms, probe.options.managed);
     if (ok)
         ok = versions(&probe) && open_window_and_device(&probe, screens.data) && modifiers(&probe, "unmapped");
     if (ok && probe.options.list_only && probe.options.has_modifier)
         ok = allocate(&probe, &probe.buffers[0], 0) && export_planes(&probe, &probe.buffers[0], 0, false);
     if (ok && !probe.options.list_only)
         ok = run_frames(&probe);
+    if (ok && !probe.options.list_only && probe.options.hold_ms) {
+        /* The window stays mapped with its last frame and presents nothing
+         * more: a client whose content is static. The deadline bounded the
+         * frames; the hold has its own bound. */
+        timer = (struct itimerval){0};
+        (void)setitimer(ITIMER_REAL, &timer, NULL);
+        /* On stderr: a session that captures its client's stdout still
+         * shows a harness that the hold has begun. */
+        fprintf(stderr, "dri3_layout stage=holding hold_ms=%" PRIu32 "\n", probe.options.hold_ms);
+        if (probe.options.report_keys) {
+            ok = hold_reporting_keys(&probe);
+        } else {
+            struct timespec rest = {
+                .tv_sec = probe.options.hold_ms / 1000,
+                .tv_nsec = (long)(probe.options.hold_ms % 1000) * 1000000L,
+            };
+            while (nanosleep(&rest, &rest) != 0 && errno == EINTR) {
+            }
+        }
+    }
     cleanup(&probe);
     timer = (struct itimerval){0};
     (void)setitimer(ITIMER_REAL, &timer, NULL);

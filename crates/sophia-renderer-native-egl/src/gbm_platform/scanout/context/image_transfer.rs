@@ -180,7 +180,7 @@ impl<T: AsFd> NativeGbmRenderedScanoutContext<T> {
                 image_transfer_policy::BridgeSelection::Deferred => {
                     self.transfer_stats.bridge_busy =
                         self.transfer_stats.bridge_busy.saturating_add(1);
-                    return Err(NativeGbmScanoutBufferExportDetail::RendererImageStoreFull);
+                    return Err(NativeGbmScanoutBufferExportDetail::RendererImageTransferBusy);
                 }
                 image_transfer_policy::BridgeSelection::Replace(slot) => {
                     self.image_bridges.swap_remove(slot);

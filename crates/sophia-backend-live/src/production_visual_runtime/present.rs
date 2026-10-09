@@ -231,11 +231,12 @@ impl LiveProductionVisualRuntime {
                     .ok_or("Present targets an unknown logical output")?;
                 Ok((
                     *output,
-                    self.display_list_for_output(
+                    self.display_list_for_present(
                         *output,
                         logical_viewport,
                         prepared.candidate(),
                         &self.presentation_order,
+                        Some(queued_surface),
                     )?,
                 ))
             })

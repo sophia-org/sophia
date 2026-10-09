@@ -10,7 +10,7 @@ let suspended = runtime
 native_evidence.observe_settlement(suspended.outcome.drained(), suspended.abandoned_scanouts);
 *suspended_renderer_images = Some(capture_renderer_image_handoff(
     runtime
-        .as_ref()
+        .as_mut()
         .ok_or("startup native recovery lost the visual runtime")?,
     current,
 )?);

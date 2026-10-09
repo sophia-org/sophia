@@ -81,6 +81,9 @@ pub enum NativeGbmScanoutBufferExportDetail {
     DmaBufDescriptorMismatch,
     DmaBufImportCacheFull,
     RendererImageStoreFull,
+    /// Every image bridge is still behind a GPU completion; a later attempt
+    /// may succeed without anything being freed. Not a bounds refusal.
+    RendererImageTransferBusy,
 }
 
 #[cfg(feature = "gbm-platform")]
@@ -114,7 +117,19 @@ impl NativeGbmScanoutBufferExportDetail {
             | Self::InvalidRendererImageId
             | Self::DmaBufDescriptorMismatch
             | Self::DmaBufImportCacheFull
-            | Self::RendererImageStoreFull => NativeGbmScanoutBufferExportStatus::Degraded,
+            | Self::RendererImageStoreFull
+            | Self::RendererImageTransferBusy => NativeGbmScanoutBufferExportStatus::Degraded,
+        }
+    }
+
+    /// A restore's capacity refusal, read against pooled storage still held
+    /// behind GPU uses: full while such uses are outstanding is busy, since
+    /// they finish without any image counter changing; with none outstanding
+    /// the store is full or quarantined and stays full.
+    pub const fn restore_capacity(self, fences_outstanding: bool) -> Self {
+        match self {
+            Self::RendererImageStoreFull if fences_outstanding => Self::RendererImageTransferBusy,
+            detail => detail,
         }
     }
 

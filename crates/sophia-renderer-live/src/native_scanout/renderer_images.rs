@@ -17,7 +17,22 @@ impl LiveRendererImageSnapshot {
     pub const fn image_id(&self) -> LiveRendererImageId {
         self.image_id
     }
+
+    /// What restoring it would charge a store, estimated from its size as
+    /// four bytes a pixel; the store's own admission is authoritative.
+    pub fn byte_estimate(&self) -> u64 {
+        let frame = self.inner.as_frame();
+        u64::from(frame.width)
+            .saturating_mul(u64::from(frame.height))
+            .saturating_mul(4)
+    }
 }
+
+/// A fresh store's bounds: images it may hold, and their bytes.
+pub const LIVE_RENDERER_IMAGE_STORE_CAPACITY: usize =
+    sophia_renderer_native_egl::DEFAULT_NATIVE_RENDERER_IMAGE_CAPACITY;
+pub const LIVE_RENDERER_IMAGE_STORE_BYTE_BUDGET: u64 =
+    sophia_renderer_native_egl::DEFAULT_NATIVE_RENDERER_IMAGE_BYTE_BUDGET;
 
 /// A budgeted immutable snapshot shared by queued frames, EGL imports and
 /// submitted scanout owners. Cloning it neither copies pixels nor duplicates FDs.

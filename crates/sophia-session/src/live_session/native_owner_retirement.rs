@@ -4,13 +4,15 @@
 use sophia_backend_live::LiveProductionNativeScanout;
 use std::time::{Duration, Instant};
 
+/// Restores from a retained handoff and takes it only once the restore
+/// succeeded; a failed restore leaves it for the next attempt. The taken
+/// handoff is returned, for a caller that keeps part of it.
 pub(super) fn restore_retained_handoff<H, T, E>(
     handoff: &mut Option<H>,
     restore: impl FnOnce(Option<&H>) -> Result<T, E>,
-) -> Result<T, E> {
+) -> Result<(T, Option<H>), E> {
     let result = restore(handoff.as_ref())?;
-    drop(handoff.take());
-    Ok(result)
+    Ok((result, handoff.take()))
 }
 
 pub(super) trait RenderRetirement<O> {
