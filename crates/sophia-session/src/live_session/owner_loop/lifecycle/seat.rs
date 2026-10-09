@@ -105,37 +105,14 @@ if let Some(controller) = seat_controller.as_mut() {
                                 seat_release_prepared = false;
                                 if !native_recovery_allowed!() { continue; }
                                 native_owner_retirement::finish_before_replacement(runtime.as_ref(), native_retirement)?;
-                let resumed =
-                                    LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
-                                        &controller.device_opener(),
-                                        mirror_grouping,
-                                        initial_head_mapping,
-                                        config.cursor_resolution.asset.clone(),
-                                    )?;
-                                *native_scanout = Some(resumed);
-                                native_retirement.admit(native_scanout.as_ref().expect("just adopted"))?;
-                                let resumed = native_scanout.as_mut().expect("just adopted");
-                                if resumed.outputs() != outputs {
-                                    schedule_output_topology_rebuild!("switch_rejected", true);
-                                    close_native_owner!("replacement_mismatch");
-                                } else {
-                                    let restored = resume_native_scanout_from_scene(
-                                        runtime.as_mut().ok_or(
-                                            "seat switch rejection lost the visual runtime",
-                                        )?,
-                                        resumed,
-                                        &outputs,
-                                        scene,
-                                        suspended_renderer_images,
-                                    )?;
-                                    publish_resumed_topology_transport!(resumed);
-                                    native_evidence.open("seat_resume");
-
-                    native_presentation_admitted = false;
-                                    crate::session_println!(
-                                        "sophia_live_renderer_handoff schema=1 status=restored images={restored} source=switch_rejected"
-                                    );
-                                }
+                                // Resolved against the admitted output profile,
+                                // constructed and resumed by the topology phase,
+                                // where the retained handoff waits.
+                                schedule_output_topology_rebuild!("switch_rejected", true);
+                                crate::session_println!(
+                                    "sophia_live_renderer_handoff schema=1 status=retained images={} source=switch_rejected",
+                                    suspended_renderer_images.as_ref().map_or(0, |handoff| handoff.len()),
+                                );
                                 let device_map =
                                     sophia_backend_live::NativeLibinputDeviceMap::new(
                                         SeatId::from_raw(SESSION_SEAT_RAW),
@@ -205,37 +182,14 @@ if let Some(controller) = seat_controller.as_mut() {
                 requested_virtual_terminal = None;
                 seat_release_prepared = false;
                 native_owner_retirement::finish_before_replacement(runtime.as_ref(), native_retirement)?;
-                let resumed =
-                    LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
-                        &controller.device_opener(),
-                        mirror_grouping,
-                        initial_head_mapping,
-                        config.cursor_resolution.asset.clone(),
-                    )?;
-                *native_scanout = Some(resumed);
-                native_retirement.admit(native_scanout.as_ref().expect("just adopted"))?;
-                let resumed = native_scanout.as_mut().expect("just adopted");
-                if resumed.outputs() != outputs {
-                    schedule_output_topology_rebuild!("switch_timeout", true);
-                    close_native_owner!("replacement_mismatch");
-                } else {
-                    let restored = resume_native_scanout_from_scene(
-                        runtime
-                            .as_mut()
-                            .ok_or("seat switch timeout lost the visual runtime")?,
-                        resumed,
-                        &outputs,
-                        scene,
-                        suspended_renderer_images,
-                    )?;
-                    publish_resumed_topology_transport!(resumed);
-                    native_evidence.open("seat_resume");
-
-                    native_presentation_admitted = false;
-                    crate::session_println!(
-                        "sophia_live_renderer_handoff schema=1 status=restored images={restored} source=disable_timeout"
-                    );
-                }
+                // Resolved against the admitted output profile, constructed
+                // and resumed by the topology phase, where the retained
+                // handoff waits.
+                schedule_output_topology_rebuild!("switch_timeout", true);
+                crate::session_println!(
+                    "sophia_live_renderer_handoff schema=1 status=retained images={} source=disable_timeout",
+                    suspended_renderer_images.as_ref().map_or(0, |handoff| handoff.len()),
+                );
                 let device_map = sophia_backend_live::NativeLibinputDeviceMap::new(
                     SeatId::from_raw(SESSION_SEAT_RAW),
                 )
@@ -347,51 +301,28 @@ if let Some(controller) = seat_controller.as_mut() {
             {
                 crate::session_println!("sophia_live_seat schema=1 status=acquire_pending");
                 native_owner_retirement::finish_before_replacement(runtime.as_ref(), native_retirement)?;
-                let resumed =
-                    LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
-                        &controller.device_opener(),
-                        mirror_grouping,
-                        initial_head_mapping,
-                        config.cursor_resolution.asset.clone(),
-                    )?;
-                *native_scanout = Some(resumed);
-                native_retirement.admit(native_scanout.as_ref().expect("just adopted"))?;
-                let resumed = native_scanout.as_mut().expect("just adopted");
-                if resumed.outputs() != outputs {
-                    schedule_output_topology_rebuild!("seat_resume", true);
-                    close_native_owner!("replacement_mismatch");
-                } else {
-                    let frames = scene.frames_for_outputs(&outputs)?;
-                    let scene_outputs = frames.len();
-                    let nonzero_scene_outputs = frames
-                        .iter()
-                        .filter(|frame| frame.nonzero_pixel_bytes > 0)
-                        .count();
-                    let primary_nonzero_pixel_bytes = frames
-                        .first()
-                        .map_or(0, |frame| frame.nonzero_pixel_bytes);
-                    let restored = resume_native_scanout_from_scene(
-                        runtime
-                            .as_mut()
-                            .ok_or("seat resume lost the visual runtime")?,
-                        resumed,
-                        &outputs,
-                        scene,
-                        suspended_renderer_images,
-                    )?;
-                    publish_resumed_topology_transport!(resumed);
-                    native_evidence.open("seat_resume");
-
-                    native_presentation_admitted = false;
-                    // CPU snapshots live in the Engine scene, outside the imported
-                    // renderer-image table. Record both recovery paths separately.
-                    crate::session_println!(
-                        "sophia_live_scene_handoff schema=1 status=rehydrated outputs={scene_outputs} nonzero_outputs={nonzero_scene_outputs} primary_nonzero_pixel_bytes={primary_nonzero_pixel_bytes} source=seat_resume"
-                    );
-                    crate::session_println!(
-                        "sophia_live_renderer_handoff schema=1 status=restored images={restored} source=seat_resume"
-                    );
-                }
+                // CPU snapshots live in the Engine scene, outside the imported
+                // renderer-image table, and are recorded on their own. The
+                // replacement is resolved against the admitted output profile,
+                // constructed and resumed by the topology phase, where the
+                // retained handoff waits.
+                let frames = scene.frames_for_outputs(&outputs)?;
+                let scene_outputs = frames.len();
+                let nonzero_scene_outputs = frames
+                    .iter()
+                    .filter(|frame| frame.nonzero_pixel_bytes > 0)
+                    .count();
+                let primary_nonzero_pixel_bytes = frames
+                    .first()
+                    .map_or(0, |frame| frame.nonzero_pixel_bytes);
+                crate::session_println!(
+                    "sophia_live_scene_handoff schema=1 status=rehydrated outputs={scene_outputs} nonzero_outputs={nonzero_scene_outputs} primary_nonzero_pixel_bytes={primary_nonzero_pixel_bytes} source=seat_resume"
+                );
+                schedule_output_topology_rebuild!("seat_resume", true);
+                crate::session_println!(
+                    "sophia_live_renderer_handoff schema=1 status=retained images={} source=seat_resume",
+                    suspended_renderer_images.as_ref().map_or(0, |handoff| handoff.len()),
+                );
                 let device_map = sophia_backend_live::NativeLibinputDeviceMap::new(
                     SeatId::from_raw(SESSION_SEAT_RAW),
                 )
