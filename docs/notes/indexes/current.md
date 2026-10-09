@@ -12,6 +12,11 @@ The [namespace prerequisites for capture](../investigations/id869143-x11-drawabl
 map admission, live client groups, confined daily use and portal capture to
 their owning tasks, with recommended sequencing and limits of the older notes.
 
+The [Plan 9 integration points concept](../concepts/ernn0bkv-plan-9-integration-points-for-sophia.md)
+fixes what stays unchanged, states three rules for namespaces, identity and the
+operating-system boundary, and lists seven further Plan 9 ideas with the
+guardrails for adopting them without a parallel mechanism.
+
 ## Desktop startup
 
 The [panel-only startup investigation](../investigations/startup-panel-only-startup-physical-acceptance.md)

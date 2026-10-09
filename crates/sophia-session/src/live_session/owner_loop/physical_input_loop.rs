@@ -31,6 +31,7 @@ macro_rules! schedule_output_topology_rebuild {
         }
         output_topology_retry_at = Some(Instant::now());
         output_topology_retry_attempts = 0;
+        output_topology_waiting_attempts = 0;
         tracing::warn!(
             "sophia_live_output_topology schema=1 status=deferred transition={} source={} security_epoch_already_advanced={}",
             output_topology_owner.transition,

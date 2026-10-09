@@ -27,7 +27,9 @@ no client-specific behavior or new WM protocol is introduced here.
 
 Use one pure resolver at startup, profile reload, hotplug, seat reacquisition and
 native recovery. Keep the saved candidate separate from the committed realized
-state. Strict profiles preserve their refusal behavior. Adaptive profiles use
+state. Strict profiles preserve settings and startup/reload refusal behavior;
+runtime absence waits for the required display without choosing a fallback.
+Adaptive profiles use
 advertised safe settings when mode, refresh, scale, transform or VRR preferences
 are unsupported. Prefer the advertised preferred timing; otherwise choose the
 advertised timing nearest 60 Hz, then largest pixel area, with deterministic
@@ -70,8 +72,19 @@ group (the focused group, otherwise canonical connector order), with complete
 mirrors, unit scale, normal transform and VRR disabled. It chooses an advertised
 timing nearest 60 Hz, then largest pixel area, without changing desired policy.
 Startup's allowance covers TEST refusal, construction and failed first activation.
-Runtime uses 250/1,000/4,000 ms retries before waiting; success is a completed
-resume, not merely construction. A new topology, seat or profile notice can
+Runtime hardware refusals use 250/1,000/4,000 ms retries before waiting for an
+external trigger; success is a completed resume, not merely construction.
+Unavailable outputs instead retain a five-second admitted probe after the short
+series, while the seat is active. Waiting uses its own cadence count and does
+not consume the finite refusal allowance. A failed probe or seat open is unknown
+availability; it follows the slow cadence without spending or resetting that
+allowance by pretending a monitor returned. A changed bounded failure identity
+is reported without resetting cadence, so alternating probe errors cannot
+create a permanent 250 ms polling loop.
+The five-second period favors recovery latency and may keep a GPU with a
+five-second autosuspend delay awake. Waiting is logged during the short series
+and on entry to slow probing, then only after a notice or changed outcome.
+A new topology, seat or profile notice can
 resolve desired preferences again. In-place reloads retain their existing
 known-working rollback target instead of tearing down a viable desktop.
 
@@ -83,6 +96,52 @@ The successor coalesces notifications for a bounded 250 ms before rebuilding,
 uses the delayed runtime series, preserves bounded refusal codes, and pairs
 with the evidence-owner ordering fix. Exact hardware refusal remains unknown;
 another attended check is required after the combined gate and release.
+
+The second physical check, release 219 at `28b76f7ef`, also failed. The GPU
+runtime-suspended after the last unavailable probe and did not report the
+reconnected DP-2 until the attended VT switch woke it. The replacement then
+resumed, but later hotplug notices retired it and four preflights refused with
+`stage=validation validation=rejected`. No evidence-owner panic recurred. The
+preflight submitted connector/CRTC state without a primary plane, so its answer
+depended on an existing framebuffer. The successor needs the slow availability
+probe and complete-plane validation with its own resources and retained errno.
+The source explanation and captured observations remain distinct; the rejected
+kernel errno was not retained by release 219. Physical acceptance is still open.
+
+### Persistent services and replaceable display attachments
+
+This is the monitor slice of the [one-core public-role proposal](../decisions/zsx0tk4k-serve-every-public-role-from-one-9p-core-with-namespaces-as-composed-trees-and-portals-as-binds.md)
+and [Plan 9 integration concept](../concepts/ernn0bkv-plan-9-integration-points-for-sophia.md).
+
+niltempus approved this Plan 9-inspired continuity scope on 2026-10-09. Session,
+application admission and window identities, desired layout and workspace
+affinity, committed scene state, and retained images outlive a physical output.
+The native owner and its presentation bindings do not: replacements have fresh
+generations. Old input routes and output-bound grants are invalidated; they
+cannot acquire a successor's authority by retaining a handle. An unplug does
+not create a dummy monitor or complete a Present that did not occur. Existing
+bounded service and custody failures retain their defined handling.
+
+Public role connection epochs and physical output generations are distinct.
+Existing pinned inspection snapshots remain immutable historical bytes; keeping
+one open does not certify a currently attached or presented head. Output protocol
+revision 1 requires at least one head, so runtime Waiting must not be encoded as
+an invalid empty topology or as a fabricated lit display. The last presented
+snapshot and current availability need separate descriptions.
+
+The later t257 status surface should expose availability, recovery stage,
+current owner generation, last presented generation, next retry and bounded
+failure identity, updated on transitions and probes rather than per frame.
+t318 composes role namespaces without silently rebinding retained fids; t319
+binds capture grants to an output/presentation generation and defines stale or
+revoked grants, including lock revocation. These interface extensions are
+outside the next physical recovery gate. Existing metadata-shell presentation
+grants still revoke and reconnect by their current contract; this repair does
+not claim to preserve every output-bound role connection or add a 9P frontend.
+
+The immediate implementation is admitted rediscovery, complete-plane validation
+and bounded refusal reporting, with the existing publication and input barriers.
+Fingerprint-based suppression of unchanged topology notices remains a follow-up.
 
 ### Integration and proof
 

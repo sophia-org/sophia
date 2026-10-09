@@ -22,7 +22,9 @@ pub(super) use recovery::OutputRecovery;
 pub(super) use reload::{ReloadOutputReplacement, prepare_output_reload};
 pub(super) use runtime::{
     RuntimeOutputRefusal, RuntimeOutputReplacement, resolve_runtime_output_replacement,
-    runtime_output_notice_deadline, runtime_output_retry_after_failure, runtime_output_retry_delay,
+    runtime_output_notice_deadline, runtime_output_observe_availability,
+    runtime_output_retry_after_failure, runtime_output_retry_after_observation,
+    runtime_output_retry_delay,
 };
 pub(super) use startup::wait_for_startup_output;
 
@@ -46,6 +48,15 @@ pub(super) fn resolve_output_replacement(
         return Ok(OutputReplacementDecision::Waiting);
     }
     let resolution = resolve_probe_policy(discovery.connectors(), profile, previous)?;
+    prepare_output_replacement(discovery, profile, recovery, resolution)
+}
+
+fn prepare_output_replacement(
+    discovery: LiveNativeOutputDiscovery,
+    profile: &DesktopOutputCandidate,
+    recovery: OutputRecovery,
+    resolution: DesktopOutputResolution,
+) -> Result<OutputReplacementDecision, Box<dyn Error>> {
     let DesktopOutputResolution::Active(realization) = resolution else {
         return Ok(OutputReplacementDecision::Waiting);
     };

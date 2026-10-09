@@ -398,6 +398,70 @@ join immediately after retirement admission, retaining the duplicate-close
 assertion. Adoption is not proof of presentation. Physical acceptance failed;
 neither this repair nor the earlier CPU gate closes t306/t310.
 
+#### Second bare-metal return: sleeping GPU and incomplete validation (2026-10-09)
+
+Gate 218 passed on signed merge `28b76f7ef` with 7,480 tests, zero failures and
+101 ignored. niltempus installed release 219, `niltempus-281431925697eb28f7c1`,
+with executable SHA-256
+`fe0be70bf1fa27c56c89425e3dd5775a3c9f5c9dbb2b1f216f308db5c5617b8c`.
+The profile and Mesa closure matched the preceding release apart from release
+paths. Session `00000001791580847533-da0dcfb4-42ec-40d3-b7cf-ed559217b399`
+was marked before the same-port DP-2 test (`671d7045-57d2-498b-8d2a-c3ec7368e828`).
+
+The user confirmed that the cable was reconnected and the monitor powered on.
+Sophia remained alive, but cached sysfs status stayed disconnected with no modes
+or EDID; the GPU was runtime-suspended in D3hot. The four unavailable probes ended
+at boot millisecond 34303585. No subsequent return notice reached the recorder.
+An attended VT away/back reached the seat controller and woke the GPU. DP-2 then
+reported connected. A read-only udev monitor captured HOTPLUG sequence numbers
+14664 and 14665, each as a kernel/processed pair, at approximately boot milliseconds
+34540132 and 34540224. Owner 2 resolved at 34540244 and reached ready at 34540304,
+then was closed at 34540671 for transition 3, notice 6. Four refusals followed at
+the declared delays, each `stage=validation validation=rejected errno=0`.
+There was no panic, and the session stayed alive with a black desktop. Recorder
+health showed no discarded records or storage errors.
+
+Snapshots are under `~/.local/state/sophia/session-investigations/`, with that
+session prefix and suffix `c5e39d9c-2e41-4bfc-bc0e-7124c5fb2a6a` after the VT
+attempt. Sysfs and udev observations are in
+`t310-runtime-20261009/physical-return-02`. The VT action, rather than an agent
+device open or write, preceded the wake.
+
+The source explains two defects. Linux v6.18's
+[amdgpu ioctl wrapper](https://github.com/torvalds/linux/blob/v6.18/drivers/gpu/drm/amd/amdgpu/amdgpu_drv.c)
+resumes the device for an ioctl and releases that runtime-PM reference afterward;
+holding a descriptor is not an active reference. An event-only waiting path
+therefore needs a slow admitted probe when a sleeping device cannot signal a
+return. Separately, the
+[amdgpu CRTC check](https://github.com/torvalds/linux/blob/v6.18/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_crtc.c)
+refuses an enabled CRTC without its primary plane. Sophia's preflight supplied
+connector/CRTC properties only, leaving the previous plane state implicit.
+Retiring owned framebuffers can invalidate that implicit state. The exact errno
+of this incident remains unknown: the submitter discarded it before the durable
+refusal producer received a synthetic error.
+
+The waiting repair retains one probe every five seconds after the short series,
+only through the existing active-seat, admitted-device discovery path. A return
+starts a fresh activation allowance once; failed resumes cannot reset it on each
+new owner. CPU controls and two failing-without-fix variants are retained in
+`t310-runtime-20261009/zero-output-wait-01`. They exercise scheduling helpers and
+source guards, not a live GPU. Complete-plane validation is the coordinated
+companion repair, signed as `2831c9e3b`, with exact-card resource cleanup and
+preserved EINVAL/EAGAIN/EBUSY identities. Its retained evidence is
+`t306-01/220-complete-plane-validation`: backend 5/5, Session 6/6, with two
+plane-less and five blob-only-cleanup negative controls failing as declared.
+The root integration wires that errno into runtime refusal, waits for strict
+profiles' missing connectors without changing their settings, and separates
+Waiting cadence from failures of unknown availability. Repeated Waiting logs
+stop after entry to the slow cadence. The five-second interval deliberately
+favors return latency over runtime-PM residency.
+
+Focused integration evidence is `t310-runtime-20261009/continuity-01`; the tests
+exercise policy, retry helpers and errno transfer, with structural owner-loop
+guards. They do not execute a GPU hotplug or prove physical recovery. Duplicate
+notices can still request another rebuild; this slice does not claim
+fingerprint-based suppression. t306/t310 remain open.
+
 #### Matched desktop artifact prepared (2026-10-09)
 
 Signed niltempus candidate `6d50e38cc5014d248d8110e8c82f928b349cecd0` pairs the

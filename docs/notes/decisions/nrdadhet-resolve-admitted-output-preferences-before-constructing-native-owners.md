@@ -52,6 +52,25 @@ waiting, with a 250 ms coalescing window for notifications. The full isolated
 gate passes on `83c68c7c4`. Native retained-image continuity and attended physical
 acceptance remain open.
 
+The second physical failure distinguishes an unavailable output from a refused
+activation. With no output, a runtime-suspended GPU can miss a cable return;
+Session therefore retains a five-second admitted discovery probe after the
+short settling series while the seat is active. These waiting observations do
+not consume the finite hardware-refusal allowance. No probing is added to the
+ordinary active-output idle path.
+
+The probe cadence and the finite refusal count are separate. A failed probe is
+unknown availability and does not replenish the refusal count. Strict runtime
+profiles wait for a missing required connector while retaining their settings;
+unsupported settings remain refusals. Complete validation owns a temporary
+primary-plane framebuffer on each head's card and submits TEST_ONLY with
+ALLOW_MODESET, independent of leftover scanout state. Cleanup stays on that
+card, and Busy/Rejected retain the kernel errno through durable reporting.
+
+This realizes the physical part of the [persistent service contract](../plans/cmoaia7z-complete-adaptive-output-policy-and-gpu-admission-t310.md#persistent-services-and-replaceable-display-attachments).
+The logical session persists while physical attachments and grants change
+generation; broader public status, namespace and capture work stays separate.
+
 ## Acceptance and connections
 
 Proposed implementation of niltempus's 2026-10-09 safe-fallback decision. Keep
