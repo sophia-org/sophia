@@ -767,6 +767,38 @@ The frozen 177 manifest is
 `c9d1b85a`. This CPU qualification supplies no guest GO, runtime result,
 production repair or t306/t307 acceptance.
 
+The actual host preflight subsequently stopped before any guest or result
+directory was created. Its environment scan could not read three older host
+processes: two zombies and the live factotum. Device-hidden CPU controls had
+not exposed that host condition. Evidence `179-runner-host-preflight` keeps
+the refusal; 177 is unchanged and unrun, and series 178 remains absent.
+
+Successor `180-mesa-pair-runner-scoped` records the runner's PID and start tick
+once and requires that identity to remain a live ancestor of each checker.
+Global busy-process and owned-path checks still cover all processes. Inherited
+environment tags are checked for same-UID processes born at or after the
+runner, including equal ticks; unreadable environments or zombies in that
+interval refuse. A missing, forged, stale or unsafe marker also refuses.
+An unrelated new unreadable process or zombie can therefore stop the series;
+both agent lanes must stay idle during execution. No host process is signalled.
+
+The successor's isolated orchestration controls passed 53/53 plus five real
+preflight binding refusals, from 08:50:27Z to 08:50:56Z. Focused real-process
+controls passed 31/31 against both checker versions, without namespace residue
+or same-tick retries. On this kernel the earlier checker already refuses the
+zombie case through its unreadable environment, so these runs do not show a
+red-to-green separation. The successor's explicit zombie-state refusal is
+exercised; protection against a readable, empty zombie environment rests on
+source inspection. The actual host read-only preflight then passed with
+`remaining=no`, the pinned device identity and both frozen worktrees clean.
+
+The 180 manifest is
+`8afbe059dac3b8518f403846695ceeb53ff73cb7960af09b58ebb2f6efb7b047`
+(5040 entries), and `READY-180.txt` is `f6eeded1`. Images, tests, classifiers,
+advance rules and runtime bounds remain those of 177; the unchanged classifier
+capacity measurements are reused. The package reserves series 181 and a new
+private runtime directory. It supplies no guest result or acceptance claim.
+
 ## Real-context control and a freshness-oracle gap (2026-10-09 UTC)
 
 Series 141 ran the reviewed observer and context recipe once, from 03:38:28Z
