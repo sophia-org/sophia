@@ -383,6 +383,64 @@ Evidence: `126-qemu-lifetime-package`, `127-qemu-lifetime-series` and
 with `CORRECTION-01.txt` for guest 1's time window. `REVIEW-CODEX-77.txt`
 records the independent review.
 
+## Probe destruction loses the producer handle in virgl (2026-10-08)
+
+Series 130 used the repaired init and unchanged frozen lifetime test
+`d1e1339a` on the private patched QEMU. The observer passed with clean
+infrastructure, permitting the lifetime guest. This time the failing
+guest preserved its complete test output, exit 101 and power-off.
+
+The producer retained the allocation and its DMA-BUF `11:2`. The probe
+used a dup of the producer's DRM file, whose shared open file description
+the test verified. No producer allocation or repairing import occurred
+between the handle observations:
+
+| Observation of producer handle 1 | Result |
+| --- | --- |
+| Before probe construction | Exports the held DMA-BUF `11:2`. |
+| After the probe read, while the probe is alive | Exports `11:2`. |
+| Immediately after dropping the probe | Refused with `ENOENT` (2). |
+
+Probe construction succeeded. Its read, performed before destruction,
+returned all 1228800 bytes and matched the expected pixels. The sole
+panic was the named assertion that probe teardown must preserve the
+producer's handle: expected `Exports((11, 2))`, observed `Refused(2)`.
+The guest classifier reported `LOSS_AFTER_DROP`.
+
+The infrastructure result was separately `P_EXIT0_DEBUGGER_LOST`.
+The pidfd witness joined the loaded patched binary to QEMU PID 14846
+and recorded exit 0. Gdb reported one `No unwaited-for children left.`;
+the wrapper exited 125 and the harness endpoint remained `INFRA_FAILURE`.
+This is not a clean debugger or end-to-end harness result. Both guests
+finished, no processes remained, and the declared series ended without
+a replacement.
+
+REVIEW-CODEX-79 accepts the complete guest loss observation with that
+endpoint limit. All 41 manifest entries verified, and independent
+replays of both classifiers matched both guests' saved output exactly.
+REVIEW-CODEX-78's clean-endpoint wording was not satisfied for the
+lifetime guest; the review does not convert that failed endpoint into
+a pass. The loss was observed before host teardown, and the independent
+kernel witness confirms the joined QEMU process exited normally.
+
+This demonstrates the diagnostic probe's render-node handle hazard on
+this stack and agrees with the source prediction. It does not trace
+the exact close mechanism or establish the original Session black-frame
+cause. The primary-node, DRM-master, KMS AddFB and worker-placement paths
+remain untested. Series 127 and series 120 guest 4 remain invalid.
+
+The result admits CPU preparation of a descriptor-isolation control:
+open the same explicit render node separately for the probe, verify a
+different open file description, and preserve the held buffer and all
+producer-file observations. The original dup test and evidence remain
+unchanged. Another device run requires its own reviewed package.
+
+Evidence: `129-qemu-lifetime-package-2` and
+`130-qemu-lifetime-series-2`. The latter's manifest is
+`d41aca5f0a19500f10480b2676c207b7bd99a166274d1170be58d6a2bd450358`.
+No Session integration, installed QEMU change or t306/t307 acceptance
+follows from this diagnostic.
+
 ## t307
 
 1. Trace the successful mixed Present and subsequent retained composition:
