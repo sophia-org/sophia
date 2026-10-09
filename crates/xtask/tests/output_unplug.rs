@@ -1,10 +1,15 @@
 //! The output-unplug verdict on logs built from the emitters' own formats:
 //! each passing run, and each way a run must be refused.
 
-#[path = "../src/output_unplug.rs"]
-mod output_unplug;
+// The real parent source and its input-return child: the inline module sets the source
+// directory, so `mod input_return;` resolves to src/output_unplug/input_return.rs as it does in
+// the xtask binary.
+#[path = "../src"]
+mod source {
+    pub mod output_unplug;
+}
 
-use output_unplug::{Mode, probe_frame_checksum, verify};
+use source::output_unplug::{Mode, probe_frame_checksum, verify};
 
 const START: &str = "\
 sophia_qemu_unplug schema=1 status=starting isolation=headless control=none host_drm=none host_vt=none gpu=virtio-gpu mode=MODE single_card=1
@@ -89,9 +94,11 @@ sophia_live_session_input_device schema=1 status=key_observed device=257
 dri3_layout stage=key keycode=38 synthetic=0
 sophia_qemu_unplug schema=1 status=input_baseline device=257 routed=yes
 sophia_qemu_unplug schema=1 status=key_sent phase=baseline result=completed
+sophia_qemu_unplug schema=1 status=sending action=off target=virtio2
 sophia_qemu_unplug schema=1 status=sent action=off target=virtio2
 sophia_live_session_input_device schema=1 status=removed device=257 released=0
 sophia_qemu_unplug schema=1 status=input_removed device=257
+sophia_qemu_unplug schema=1 status=sending action=on target=virtio2
 sophia_qemu_unplug schema=1 status=sent action=on target=virtio2
 sophia_live_session_input_device schema=1 status=added device=262 keyboard=true pointer=false touch=false virtual=true source=udev
 sophia_qemu_unplug schema=1 status=input_return_ready device=262
@@ -174,7 +181,7 @@ fn every_break_in_the_input_return_chain_is_refused() {
         (moved(&log, observed_k1, sending_return), "returned keyboard's key was not observed"),
         // Markers out of order.
         (moved(&log, "sophia_qemu_unplug schema=1 status=input_removed device=257", removed_k0), "K0 removed does not precede removal marked"),
-        (moved(&log, added_k1, "sophia_qemu_unplug schema=1 status=sent action=on"), "keyboard on does not precede K1 admitted"),
+        (moved(&log, added_k1, "sophia_qemu_unplug schema=1 status=sending action=on"), "keyboard on attempted does not precede K1 admitted"),
         // The client lost the focus by its last report before readiness.
         (log.replace("state=in source=query", "state=out source=query"), "did not hold the focus"),
         // A failed send, another key, a completion outside its phase.
@@ -184,7 +191,7 @@ fn every_break_in_the_input_return_chain_is_refused() {
         // Keys or removals on other devices, a second removal action.
         (log.replace(&format!("{observed_k0}\n"), &format!("{observed_k0}\n{}\n", observed_k0.replace("257", "256"))), "another device"),
         (log.replace(&format!("{removed_k0}\n"), &format!("{removed_k0}\n{}\n", removed_k0.replace("257", "258"))), "another input device was removed"),
-        (log.replace("sophia_qemu_unplug schema=1 status=sent action=on", "sophia_qemu_unplug schema=1 status=sent action=off target=virtio2\nsophia_qemu_unplug schema=1 status=sent action=on"), "one keyboard removal and one return"),
+        (log.replace("sophia_qemu_unplug schema=1 status=sent action=on", "sophia_qemu_unplug schema=1 status=sent action=off target=virtio2\nsophia_qemu_unplug schema=1 status=sent action=on"), "two keyboard attempts and two completions"),
         // Overflowed copies and reports.
         (log.replace(routed, &format!("dri3_layout stage=key_overflow reported=64\n{routed}")), "overflowed"),
         (log.replace(routed, &format!("sophia_qemu_unplug schema=1 status=records_overflow lines=40000\n{routed}")), "overflowed"),
@@ -227,6 +234,172 @@ fn every_break_in_the_input_return_chain_is_refused() {
         (log.replace("status=input_return_ready device=262", "status=input_return_ready device=26x"), "malformed sophia_qemu_unplug status=input_return_ready"),
         (log.replace(sending_return, &format!("{sending_return} key=a")), "malformed sophia_qemu_unplug status=key_sending"),
         (log.replace("status=input_baseline device=257 routed=yes", "status=input_baseline device=257 routed=yes routed=no"), "malformed sophia_qemu_unplug status=input_baseline"),
+    ];
+    for (index, (changed, expected)) in cases.into_iter().enumerate() {
+        assert_ne!(changed, log, "case {index} must change the chain");
+        let error = verify(&changed, Mode::InputReturn).unwrap_err();
+        assert!(error.contains(expected), "case {index}: {error}");
+    }
+}
+
+const SENDING_OFF: &str = "sophia_qemu_unplug schema=1 status=sending action=off target=virtio2";
+const SENT_OFF: &str = "sophia_qemu_unplug schema=1 status=sent action=off target=virtio2";
+const SENDING_ON: &str = "sophia_qemu_unplug schema=1 status=sending action=on target=virtio2";
+const SENT_ON: &str = "sophia_qemu_unplug schema=1 status=sent action=on target=virtio2";
+const REMOVED_K0: &str =
+    "sophia_live_session_input_device schema=1 status=removed device=257 released=0";
+const ADDED_K1: &str = "sophia_live_session_input_device schema=1 status=added device=262 keyboard=true pointer=false touch=false virtual=true source=udev";
+const INPUT_REMOVED: &str = "sophia_qemu_unplug schema=1 status=input_removed device=257";
+
+/// The input chain with Session's removal and admission each placed before or
+/// after the guest's completion line, as the kernel's work inside the write
+/// lets either reach the log first (series 147 logged the removal first).
+fn input_return_ordered(removal_first: bool, admission_first: bool) -> String {
+    let mut log = input_return();
+    if removal_first {
+        log = moved(&log, REMOVED_K0, SENT_OFF);
+    }
+    if admission_first {
+        log = moved(&log, ADDED_K1, SENT_ON);
+    }
+    log
+}
+
+#[test]
+fn a_keyboard_notification_may_precede_or_follow_its_completion() {
+    for removal_first in [false, true] {
+        for admission_first in [false, true] {
+            let log = input_return_ordered(removal_first, admission_first);
+            let removed = log.find(REMOVED_K0).unwrap() < log.find(SENT_OFF).unwrap();
+            let added = log.find(ADDED_K1).unwrap() < log.find(SENT_ON).unwrap();
+            assert_eq!((removed, added), (removal_first, admission_first));
+            let summary = verify(&log, Mode::InputReturn).unwrap_or_else(|error| {
+                panic!("removal_first={removal_first} admission_first={admission_first}: {error}")
+            });
+            assert!(summary[1].contains("status=input_routed"), "{summary:?}");
+        }
+    }
+}
+
+#[test]
+fn the_removal_logged_before_its_completion_as_in_series_147_is_accepted() {
+    // Series 147's order: Session's removal of K0 before the guest's "sent action=off".
+    let log = input_return_ordered(true, false);
+    assert!(log.find(REMOVED_K0).unwrap() < log.find(SENT_OFF).unwrap());
+    let summary = verify(&log, Mode::InputReturn).unwrap();
+    assert!(summary[1].contains("status=input_routed"), "{summary:?}");
+}
+
+#[test]
+fn every_break_in_the_keyboard_attempt_and_completion_is_refused() {
+    let log = input_return_ordered(true, true);
+    let without = |line: &str| log.replace(&format!("{line}\n"), "");
+    let cases = [
+        // Series 147's shape: no attempt line, the completion after the removal.
+        (
+            without(SENDING_OFF),
+            "expected exactly two keyboard attempts",
+        ),
+        (
+            without(SENDING_OFF).replace(SENT_OFF, &format!("{SENT_OFF}\n{SENDING_OFF}")),
+            "attempted does not precede K0 removed",
+        ),
+        (
+            without(SENDING_ON),
+            "expected exactly two keyboard attempts",
+        ),
+        // Session's record before the attempt.
+        (
+            moved(&log, REMOVED_K0, SENDING_OFF),
+            "keyboard off attempted does not precede K0 removed",
+        ),
+        (
+            moved(&log, ADDED_K1, SENDING_ON),
+            "keyboard on attempted does not precede K1 admitted",
+        ),
+        // A completion before its attempt, or after the guest's own marker.
+        (
+            moved(&log, SENT_OFF, SENDING_OFF),
+            "removal completed outside its attempt window",
+        ),
+        (
+            moved(&log, SENT_ON, SENDING_ON),
+            "return completed outside its attempt window",
+        ),
+        (
+            // After the guest's own removal marker.
+            moved(&log, SENT_OFF, SENDING_ON),
+            "removal completed outside its attempt window",
+        ),
+        (
+            moved(
+                &log,
+                SENT_ON,
+                "sophia_qemu_unplug schema=1 status=key_sending phase=return",
+            ),
+            "return completed outside its attempt window",
+        ),
+        // The bind attempted before the removal marker.
+        (
+            moved(&log, SENDING_ON, INPUT_REMOVED),
+            "removal marked does not precede keyboard on attempted",
+        ),
+        // Targets: an attempt and its completion differ, or off and on differ.
+        (
+            log.replace(SENDING_OFF, &SENDING_OFF.replace("virtio2", "virtio3")),
+            "name different devices",
+        ),
+        (
+            log.replace(SENT_ON, &SENT_ON.replace("virtio2", "virtio3"))
+                .replace(SENDING_ON, &SENDING_ON.replace("virtio2", "virtio3")),
+            "name different devices",
+        ),
+        (
+            log.replace(SENT_OFF, &SENT_OFF.replace("virtio2", "card0-Virtual-1")),
+            "malformed sophia_qemu_unplug status=sent",
+        ),
+        (
+            log.replace(SENDING_OFF, &SENDING_OFF.replace("virtio2", "virtio")),
+            "malformed sophia_qemu_unplug status=sending",
+        ),
+        // Counts and actions: a repeated attempt, an unknown action, a missing completion.
+        (
+            log.replace(SENDING_OFF, &format!("{SENDING_OFF}\n{SENDING_OFF}")),
+            "expected exactly two keyboard attempts",
+        ),
+        (
+            log.replace(
+                SENDING_ON,
+                &SENDING_ON.replace("action=on", "action=toggle"),
+            ),
+            "malformed sophia_qemu_unplug status=sending",
+        ),
+        (
+            // No return completion: the shared check finds no return at all.
+            without(SENT_ON),
+            "has its removals and returns out of order",
+        ),
+        // Malformed attempt records.
+        (
+            log.replace(SENDING_OFF, &format!("{SENDING_OFF} target=virtio2")),
+            "malformed sophia_qemu_unplug status=sending",
+        ),
+        (
+            log.replace(SENDING_OFF, &SENDING_OFF.replace("schema=1", "schema=2")),
+            "malformed sophia_qemu_unplug status=sending",
+        ),
+        (
+            log.replace(SENDING_OFF, &format!("{SENDING_OFF} extra=1")),
+            "malformed sophia_qemu_unplug status=sending",
+        ),
+        // An attempt whose write failed: the guest's failure marker, no completion.
+        (
+            log.replace(
+                SENT_OFF,
+                "sophia_qemu_unplug schema=1 status=failed reason=keyboard_off",
+            ),
+            "failure marker",
+        ),
     ];
     for (index, (changed, expected)) in cases.into_iter().enumerate() {
         assert_ne!(changed, log, "case {index} must change the chain");

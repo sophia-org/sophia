@@ -455,7 +455,15 @@ unplug_keyboard() {
         unplug_keyboard_device="$keyboard"
         control=/sys/bus/virtio/drivers/virtio_input/unbind
     fi
-    if [ -n "$keyboard" ] && echo "${keyboard##*/}" > "$control"; then
+    if [ -z "$keyboard" ]; then
+        echo "sophia_qemu_unplug schema=1 status=failed reason=keyboard_$action"
+        return
+    fi
+    # The attempt is named before the write: the kernel removes or adds the
+    # device inside it, so Session's record of that can reach the console
+    # before the write returns. "sent" follows a successful write only.
+    echo "sophia_qemu_unplug schema=1 status=sending action=$action target=${keyboard##*/}"
+    if echo "${keyboard##*/}" > "$control"; then
         echo "sophia_qemu_unplug schema=1 status=sent action=$action target=${keyboard##*/}"
     else
         echo "sophia_qemu_unplug schema=1 status=failed reason=keyboard_$action"
