@@ -262,6 +262,27 @@ The failed first gate is retained separately. Native pixel and retained-image
 proof, the matched desktop release and attended acceptance remain outstanding;
 t310 stays open and the installed desktop has not changed.
 
+#### Matched desktop artifact prepared (2026-10-09)
+
+Signed niltempus candidate `6d50e38cc5014d248d8110e8c82f928b349cecd0` pairs the
+gated Sophia pin `83c68c7c4` with `exclude-gpu "pci-0000:16:00.0"`, retaining
+adaptive affinity 1 and the HDMI-A-2 exclusion. The Nix build produced
+`niltempus-565e7cc7483dab088875` at
+`/nix/store/y99wcv7pimkkv3ivpk5kk7mfsmzbf3bi-niltempus-desktop-niltempus-565e7cc7483dab088875`.
+Packaged profile validation reports `accepted policy=validated`; every release
+checksum verifies. Sophia's executable digest is
+`9b504a0e100280452a124f2971ea3253075b95314c19fc717eb973dbdb2ac8ea`.
+Only Sophia differs among the release binaries shared with the installed
+desktop; all clients and factotum binaries remain byte-identical.
+
+Evidence is `t310-runtime-20261009/release-build-01`, manifest
+`ca5f875320f1a672bd5590a19c2de05070296a56a0cd1392b8be943d03a3be7a`.
+Its indirect GC root retains the candidate. The Nix daemon uses its configured
+sandbox, with eight requested build cores. This is a built artifact, not an
+installation or native acceptance. Current remains `niltempus-e3e6a9c375a1bfa4c7bc`
+and previous remains `niltempus-19efce64b00ae803d566`. The t306/t307 native proof
+and attended t310 checks remain outstanding before closure.
+
 #### Port change after reboot (2026-10-09)
 
 niltempus moved the main monitor between ports on the discrete AMD card before
