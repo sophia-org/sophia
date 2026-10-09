@@ -243,6 +243,9 @@ impl LiveProductionNativeScanout {
                     }
                 }
                 Status::ScanoutExportPending => {
+                    if worker_was_in_flight && !worker_is_in_flight {
+                        self.settle_deferred_renderer_content(index)?;
+                    }
                     self.submit_deferred = self.submit_deferred.saturating_add(1);
                 }
                 Status::AlreadyInFlight | Status::CleanupPending => {

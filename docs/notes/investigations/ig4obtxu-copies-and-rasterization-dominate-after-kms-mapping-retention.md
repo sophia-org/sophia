@@ -311,6 +311,55 @@ acceptance rules unchanged. The broader t306 fixture work remains separate.
 This gate does not qualify the guest environment, merge to master, install a
 desktop, or close t306/t310; those remaining steps retain their existing exits.
 
+#### Cancelled and deferred renderer content (2026-10-09)
+
+Diagnostic 215 reached startup and its hold workload on `9384f0013`, then failed
+during clean client exit: `renderer worker started while another content identity
+was rendering`. It remains INCOMPLETE, with only boot 1 run and no qualified
+verdict. Its launch closure is
+`2216b9deca60cedf7d124e4f5d7ce8fbfa381e340c22b545bfa89d41350cdb8e`.
+The earlier missing-logical-generation error did not occur in this run.
+
+Two source paths can retain that obsolete content slot. When a newer mirror
+generation cancels an already-prepared worker buffer through the composition
+installer, cancellation releases or transfers its resources but previously
+left `rendering_content` and its damage snapshot behind. The mirror tick's
+own cancellation branches cleared those fields; the shared path did not.
+Separately, a worker returning Deferred becomes idle and requeues its frame
+(or keeps a newer queued frame), while the head previously kept the returned
+frame marked as rendering. Either path makes the next real worker start fail.
+The retained INFO log cannot distinguish them: it records neither the sibling's
+preparation nor worker slot deferrals. Both are independently reproducible
+accounting defects, not a demonstrated Mesa mechanism.
+
+Cancellation now settles the content and damage at the successful shared custody
+boundary; capacity refusal retains both. Consuming a prepared submission also
+clears its preparation flags on success or failure. Deferred completion in both
+singleton and mirror ticks validates the exporter's queued native identity,
+retains the latest queued content, and returns its damage to pending state.
+When a successor supersedes a deferred mirror frame, the old cohort records
+that head as skipped, allowing its generation to release after siblings settle.
+The competing-content invariant remains unchanged.
+
+CPU evidence lives in `t310-runtime-20261009/prepared-cancellation-01` and
+`renderer-deferral-01`. The old cancellation settlement compiles and fails three
+named tests; the omitted deferral settlement compiles and fails three, including
+both unchanged-frame and superseded-frame retries with the exact fatal message.
+The first deferral compile attempt is retained as invalid evidence (method
+visibility), separately from that valid red run. With both repairs the backend
+library has 374 passing tests, with another 317 integration tests passing and
+one ignored. A further named red proves the superseded cohort would otherwise
+remain unreleasable. Tests drive the real head settlement and renderer
+start reducer with supplied resource/poll outcomes; source guards check the
+installer/shared cancellation and both tick call sites. They do not execute a
+card, GPU worker or complete owner loop.
+
+niltempus's revised exit is the combined CPU gate, a matched release with rollback,
+and an attended bare-metal KVM check with driver/Mesa identity and session logs.
+QEMU successors and patched-Mesa qualification no longer gate t306. t307 remains
+separate, and physical failure is diagnosed from its captured evidence. Neither
+this change nor the stopped guest series closes t306 or t310.
+
 #### Matched desktop artifact prepared (2026-10-09)
 
 Signed niltempus candidate `6d50e38cc5014d248d8110e8c82f928b349cecd0` pairs the

@@ -26,6 +26,8 @@ mod completion_wait;
 mod head_completion;
 #[path = "../../../tests/support/native_head_fixture.rs"]
 mod native_head_fixture;
+mod prepared_cancellation;
+mod renderer_deferral;
 pub use completion_wait::LiveNativeCompletionWait;
 mod composition_admission;
 mod composition_installation;

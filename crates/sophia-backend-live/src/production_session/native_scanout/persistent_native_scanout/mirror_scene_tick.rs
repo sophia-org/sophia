@@ -106,13 +106,8 @@ impl LiveProductionNativeScanout {
             }
             let submit = if let Some(prepared) = self.heads[head_index].prepared_scanout.take() {
                 if logical_frame != newest_frame {
-                    let worker_owned = self.heads[head_index].prepared_worker_was_in_flight;
                     if !self.cancel_prepared_head_owner(head_index, prepared) {
                         continue;
-                    }
-                    if worker_owned {
-                        self.heads[head_index].rendering_content = None;
-                        self.heads[head_index].output_frames.discard_rendering();
                     }
                     if let Some(cohort) = self.output_cohorts.get_mut(&(output, logical_frame)) {
                         let _ = cohort.mark_skipped(head_id);
@@ -133,6 +128,10 @@ impl LiveProductionNativeScanout {
                     self.heads[head_index].prepared_scanout = Some(prepared);
                     continue;
                 }
+                // Submission consumes the prepared owner on success or failure.
+                // Keep its worker provenance in this turn's local value only.
+                self.heads[head_index].prepared_group_frame = None;
+                self.heads[head_index].prepared_worker_was_in_flight = false;
                 let mut result = crate::submit_prepared_rendered_primary_plane_scanout(
                     self.groups[head_group].session.card(),
                     prepared,
@@ -328,8 +327,6 @@ impl LiveProductionNativeScanout {
             }
             match submit.status {
                 Status::SubmittedWaitingForPageFlip => {
-                    self.heads[head_index].prepared_group_frame = None;
-                    self.heads[head_index].prepared_worker_was_in_flight = false;
                     let pending_before = self.heads[head_index].pending_content;
                     let rendering_before = self.heads[head_index].rendering_content;
                     let content = if worker_was_in_flight {
@@ -483,6 +480,9 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                     }
                 }
                 Status::ScanoutExportPending => {
+                    if worker_was_in_flight && !worker_is_in_flight {
+                        self.settle_deferred_renderer_content(head_index)?;
+                    }
                     self.submit_deferred = self.submit_deferred.saturating_add(1);
                     // The logical Present owns this generation as soon as any
                     // physical exporter starts. Returning `None` leaves the

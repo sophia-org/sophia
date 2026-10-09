@@ -137,8 +137,7 @@ impl LiveProductionNativeScanout {
                     if !result.released {
                         self.retire_failures = self.retire_failures.saturating_add(1);
                     }
-                    self.heads[head_index].prepared_group_frame = None;
-                    self.heads[head_index].prepared_worker_was_in_flight = false;
+                    self.heads[head_index].finish_prepared_cancellation();
                     true
                 }
                 Err(prepared) => {
