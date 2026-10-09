@@ -190,6 +190,20 @@ Evidence: `t306-01/137-hotplug-tooling-cpu`, whose 15-entry manifest is
 The review's appended correction supersedes its initial no-finding statement
 for those modes. No guest, merge or installation followed this gate.
 
+Signed candidate `c12e87063` corrects the all-heads premise. The guest samples
+connector status throughout the removal window; the verifier requires zero
+connected outputs and a Session unavailable topology after the last removal
+and before the first return. Missing, malformed, inconsistent or repeated
+observation fields are refused. All eighteen focused verifier tests pass,
+including sixteen new refusal cases. The new regression fails against the
+old verifier because it accepts a log with the zero-connected witness removed.
+
+Evidence: `t306-01/138-all-heads-fixture-correction`, whose 20-entry manifest
+is `44027f85c68c208425b850c746359f093831baf50243610751f2bfbda7dac362`.
+The tested diff equals the signed commit's diff. This is a focused CPU check
+of test tooling; the combined fixture gate, input-return proof and guest
+qualification remain separate. The production restore candidate is unchanged.
+
 ## t306
 
 1. Preserve the incident records. Make the next failure name the responsible
