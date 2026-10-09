@@ -73,10 +73,14 @@ The source is published on master; desktop integration `39fdba80` pins that
 exact public revision. Release `niltempus-e3e6a9c375a1bfa4c7bc` passed its
 build, checksum, source-identity and profile checks in
 `205-workspace-render-recovery/release-02`. The store output is retained by
-that directory's `result` GC root. Installation awaits the operator's sudo
-authentication; the current installed release is unchanged. These results
-qualify the source and package, not the reported physical incident's cause
-or an installed-session outcome.
+that directory's `result` GC root. Niltempus installed the release and confirmed
+normal login. Read-only observation `205-workspace-render-recovery/installed-01`
+binds the running executable and new session manifest to the verified binary.
+Startup completed and diagnostic recording had zero storage errors. Six
+presentation-deferral records reached the durable log; no worker stall record
+was present at observation. This confirms installation, startup and live
+deferral capture, not the reported incident's cause or recovery from a
+physical renderer stall. Workspace-switch acceptance remains outstanding.
 
 ## Question
 

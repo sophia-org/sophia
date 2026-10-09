@@ -600,9 +600,17 @@ build passed in `205-workspace-render-recovery/release-02`, producing
 the build-time profile preflight passed. Its Sophia binary hashes to
 `5ca5a64f1a3dd3d26cc06c778598a7ed2894aed5daeebaea3f74c9dc82b527d5`.
 The store output is retained by `release-02/result`. Both source repositories
-are published. Installation awaits the operator's sudo authentication;
-`sudo -n true` requires a password, so `/opt` and the running session were not
-changed. The clean merged repair worktrees were removed after their pins
+are published. The initial install handoff required the operator's sudo
+authentication. Niltempus subsequently installed the release and confirmed
+normal login. At 14:40:20Z, the read-only `installed-01` observation bound
+the running executable and session manifest to that exact binary and commit.
+Session `00000001791556726570-719a02b7-1f2d-4b3f-b9ad-88c7bbd5257d` completed
+startup; diagnostic recording was running with zero storage errors and six
+durable presentation-deferral records. No worker stall record, failure-cause
+file or terminal outcome was present in that observation. Its frozen manifest
+is `73300a2470ae99224358d0789413c593ce0c8dc690ca19a8bbc385388a84a0bd`.
+The previous release remains `niltempus-19efce64b00ae803d566` for rollback.
+The clean merged repair worktrees were removed after their pins
 were replaced; signed commits and frozen gate records remain. Physical
 workspace-switch acceptance is still outstanding. The 202 guest and combined
 hotplug gate stay stopped.

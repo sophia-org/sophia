@@ -19,9 +19,11 @@ no blocking issue. The merged gate is `205-workspace-render-recovery/gate-02`,
 14:17:33–14:26:39Z, with unchanged source pins. Desktop integration `39fdba80`
 pins that exact public revision. Release `niltempus-e3e6a9c375a1bfa4c7bc` built
 and passed checksum, source-identity and profile checks in
-`205-workspace-render-recovery/release-02`. Installation awaits the operator's
-sudo authentication; the current release is unchanged. Physical acceptance
-remains separate. No 202 guest has run. The
+`205-workspace-render-recovery/release-02`. Niltempus installed it and confirmed
+normal login. The read-only `installed-01` check binds the running binary and
+session manifest to `22b124c88`; durable presentation-deferral records are
+present, with no diagnostic storage errors. Workspace-stall recovery and
+physical lock/hotplug acceptance remain separate. No 202 guest has run. The
 display attempt/completion correction is signed as `1e63d9c71` and passed
 42 focused checks before the full gate was stopped while compiling.
 
