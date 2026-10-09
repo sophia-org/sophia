@@ -21,7 +21,8 @@ mod startup;
 pub(super) use recovery::OutputRecovery;
 pub(super) use reload::{ReloadOutputReplacement, prepare_output_reload};
 pub(super) use runtime::{
-    RuntimeOutputReplacement, resolve_runtime_output_replacement, runtime_output_retry_delay,
+    RuntimeOutputRefusal, RuntimeOutputReplacement, resolve_runtime_output_replacement,
+    runtime_output_notice_deadline, runtime_output_retry_after_failure, runtime_output_retry_delay,
 };
 pub(super) use startup::wait_for_startup_output;
 

@@ -4,6 +4,7 @@ pub(super) struct StartupOutputActivation {
     pub capabilities: Vec<sophia_backend_live::LibdrmNativeOutputCapability>,
     pub plan: Option<NativeOutputActivationPlan>,
     pub refused: bool,
+    pub validation: &'static str,
 }
 
 /// A head-to-connector mapping for an accepted startup owner or an adopted
@@ -139,5 +140,10 @@ pub(super) fn prepare(
         // geometry must still reach the ordinary transactional apply path.
         plan: (!refused).then_some(activation),
         refused,
+        validation: if executor == "unresolved" {
+            "unresolved"
+        } else {
+            validation
+        },
     })
 }

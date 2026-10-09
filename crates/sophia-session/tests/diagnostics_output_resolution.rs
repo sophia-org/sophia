@@ -124,3 +124,36 @@ fn only_the_first_sixteen_fields_are_read() {
         Some("sophia_live_output_resolution schema=1 phase=runtime status=waiting")
     );
 }
+
+#[test]
+fn runtime_refusal_retains_its_boundary_and_code_without_error_text() {
+    for stage in [
+        "availability",
+        "probe",
+        "resolution",
+        "construction",
+        "activation",
+        "validation",
+        "layout",
+        "seat",
+        "resume",
+    ] {
+        kept(&format!(
+            "sophia_live_output_resolution schema=1 phase=runtime status=refused reason=unavailable generation=1 transition=3 notice=6 attempt=2 stage={stage} failure_code=output_profile_unknown_connector errno=16 validation=busy"
+        ));
+    }
+    for fields in [
+        "stage=/private",
+        "failure_code=private",
+        "errno=-1",
+        "errno=4294967296",
+        "validation=private",
+        "error=private",
+    ] {
+        let prefix = "sophia_live_output_resolution schema=1 phase=runtime status=refused";
+        assert_eq!(
+            reduced_record(&format!("{prefix} {fields}")).as_deref(),
+            Some(prefix)
+        );
+    }
+}

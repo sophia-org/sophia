@@ -360,6 +360,44 @@ QEMU successors and patched-Mesa qualification no longer gate t306. t307 remains
 separate, and physical failure is diagnosed from its captured evidence. Neither
 this change nor the stopped guest series closes t306 or t310.
 
+#### First bare-metal return fails; retry and evidence ordering (2026-10-09)
+
+The full combined gate passed on `3ef3d5b77` (7,472 tests, zero failures,
+101 ignored). niltempus installed `niltempus-6f3b5ab0755b9d84b418`, Sophia SHA-256
+`1a9cb3ddbbb2f03e00e7382f143faa29dd1def95db0fa5b16f4da9becfd47c90`.
+The physical DP-2 unplug/replug left a black desktop. Session
+`00000001791579500572-96e48315-4379-453b-be1e-d52b8eb284ef` remained alive until
+a subsequent VT away/back attempt ended it with exit 101. The two preserved
+snapshots are under `~/.local/state/sophia/session-investigations/`, with that
+session prefix and suffixes `c29d7c2d-7aee-4695-90ce-fcfd13de5c79` (black screen)
+and `1b20b40c-61eb-4745-90b0-fc4ca623a83e` (after the panic).
+
+Durable events show owner 1 drained on disconnect, four unavailable observations,
+then owner 2 adopted on reconnect notice 3. Within about 120 ms it was retired
+for notice 6. Two refusals spent the hardware allowance within milliseconds;
+the process then waited with no native output. The exact refusal was logged
+only to the discarded console stream and cannot be recovered from this capture.
+The notification burst is observed; unchanged physical topology during that
+burst is an inference, not established by these reduced records.
+
+The retry repair quarantines input immediately but coalesces notices in a
+250 ms window that later notices cannot extend. Runtime refusals use the bounded
+250/1,000/4,000 ms series; adaptive retries retain conservative settings after
+the first failure, strict retries preserve desired settings. A constructed owner
+whose resume fails cannot reset that counter. Startup's allowance is unchanged.
+Durable refusal records now preserve a fixed stage, approved failure code,
+numeric OS error and bounded TEST outcome. No connector or arbitrary error
+text is admitted. CPU controls and retained legacy-scheduling red are in
+`t310-runtime-20261009/physical-return-01`; they drive the scheduling helpers
+with source guards for their owner-loop use, not a real DRM owner.
+
+The VT panic is concrete: `native_session_evidence.rs:483` asserts that a closed
+owner was opened. The failed-resume branch closed an adopted replacement before
+the success-only evidence open. Claude's `38f99daf3` moves the open and owner/head
+join immediately after retirement admission, retaining the duplicate-close
+assertion. Adoption is not proof of presentation. Physical acceptance failed;
+neither this repair nor the earlier CPU gate closes t306/t310.
+
 #### Matched desktop artifact prepared (2026-10-09)
 
 Signed niltempus candidate `6d50e38cc5014d248d8110e8c82f928b349cecd0` pairs the

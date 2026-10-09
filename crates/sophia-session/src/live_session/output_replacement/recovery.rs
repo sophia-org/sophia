@@ -1,8 +1,9 @@
 use super::*;
 use sophia_config::{DesktopOutputAdjustment, DesktopOutputAdjustmentReason as Reason};
 
-/// One hardware recovery allowance per topology/profile/seat notice. Timer
-/// retries may observe availability, but cannot replenish an activation budget.
+/// Startup permits one conservative recovery. Runtime retries retain this
+/// settings choice through their finite backoff series; only a new notice
+/// or a completed recovery starts a new series.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(in crate::live_session) enum OutputRecovery {
     #[default]
@@ -13,13 +14,18 @@ pub(in crate::live_session) enum OutputRecovery {
 
 impl OutputRecovery {
     pub fn record_exhausted(self, phase: &'static str, profile: &DesktopOutputCandidate) {
+        self.record_exhausted_after(
+            phase,
+            if profile.availability == sophia_config::DesktopOutputAvailability::Adaptive {
+                2
+            } else {
+                1
+            },
+        );
+    }
+
+    pub fn record_exhausted_after(self, phase: &'static str, attempt: usize) {
         if self == Self::Exhausted {
-            let attempt =
-                if profile.availability == sophia_config::DesktopOutputAvailability::Adaptive {
-                    2
-                } else {
-                    1
-                };
             tracing::warn!(target: "sophia_scanout_evidence",
                 "sophia_live_output_resolution schema=1 phase={phase} status=waiting reason=hardware attempt={attempt}");
         }
