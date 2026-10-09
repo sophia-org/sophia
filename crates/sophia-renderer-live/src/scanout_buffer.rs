@@ -268,6 +268,11 @@ pub enum LiveRendererScanoutBufferExportDetail {
     DmaBufDescriptorMismatch,
     DmaBufImportCacheFull,
     RendererImageStoreFull,
+    PendingFrameMissing,
+    ExportedDescriptorMissing,
+    ExportedOwnerMissing,
+    WorkerLeaseIdExhausted,
+    FrameSlotIncarnationExhausted,
     RetainedBufferMissing,
 }
 

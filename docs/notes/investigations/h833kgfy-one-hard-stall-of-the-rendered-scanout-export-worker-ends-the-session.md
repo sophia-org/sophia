@@ -2,10 +2,62 @@
 id: h833kgfy
 date: 2026-09-24
 kind: investigation
-status: resolved
+status: investigating
 tags: [investigation, scanout, renderer, session-fatal]
 ---
 # One hard stall of the rendered-scanout export worker ends the session
+
+## Late completion defect found after workspace-switch crash (2026-10-09)
+
+Niltempus reported a crash while switching workspaces on installed Sophia
+`838d5b16acad9a6afd119ce25b8622c068b32646`. At 13:29:50.007Z the retained
+session reported `renderer_retained_buffer_missing`; bounded cleanup returned
+to greetd. The copied session is preserved under
+`~/.local/state/sophia/development-evidence/t306-01/204-live-session-crash-20261009/`.
+The [t306 investigation](kdleagg3-kvm-output-and-usb-loss-returns-the-desktop-to-greetd.md)
+owns the surrounding interrupted qualification. This incident had no recorded
+topology rebuild. The user identified workspace switching as the trigger.
+
+The September repair below retained the stall flag but discarded the request
+identity. When a late result arrived, it released the buffer and returned
+`Idle`. The real exporter then required a staged frame. Ordinary presentation
+withholds that frame while the exporter reports work pending, including a
+stall. Thus a render crossing the one-second threshold and subsequently
+returning before abandonment could deterministically become a degraded export
+with `RetainedBufferMissing`. The earlier channel-only test asserted release
+and `Idle`, missing this caller consequence.
+
+The new channel fixture drives the real exporter without a render device.
+`205-workspace-render-recovery/red-02.log` reproduces exactly that degraded
+export on the installed source. `red-01.log` selected zero tests and is not a
+test result. The repair retains the accepted request and frame kind through
+the stall, validates its late reply through the ordinary completion path, and
+returns the owned buffer with its original correlation. A newer staged frame
+remains queued. Deferred replies retain their frame identity; invalid replies
+remain refused. The existing ten-second abandon policy is unchanged, and
+replies arriving after abandonment only release their lease.
+
+The fatal record alone does not prove a worker stall in the physical incident:
+several producers used `RetainedBufferMissing`, and worker warnings never
+entered daily capture. This was a filter gap, not proof of missing log rotation.
+The repair forwards bounded worker transitions and sampled presentation
+deferrals through the explicit evidence target, independent of console logging.
+Missing staged frame, exported descriptor, exported owner, exhausted worker
+lease ID and exhausted slot incarnation now carry distinct typed failure codes.
+The concurrent build is a possible latency contributor, not an established
+cause. Neither GPU reset nor the source of any render delay is established.
+
+The recovery branch is `fix/workspace-render-recovery-20261009`, based directly
+on the installed commit. The backend and renderer suites passed 1,136 tests
+(11 ignored); the six reducer tests and the CLI capture test passed, including
+durable records with `RUST_LOG=off`. Independent source review found no blocking
+issue. The final exporter fixture also checks native owner/head/frame identity
+and the frame-kind counter; that strengthened assertion awaits the full gate.
+`stall_recovered` means a validated late reply arrived, including a deferred or
+failed reply, not necessarily successful rendering. An empty export request
+still refuses with the distinct `PendingFrameMissing` detail. Legacy status-only
+degraded reports still use `RetainedBufferMissing`. No physical workspace-switch
+acceptance follows from these device-free tests.
 
 ## Question
 

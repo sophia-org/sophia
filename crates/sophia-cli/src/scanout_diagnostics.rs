@@ -44,6 +44,10 @@ impl<S: Subscriber> Layer<S> for ScanoutDiagnostics {
                             | "sophia_live_layout_probe"
                             | "sophia_shell_native_binding"
                             | "sophia_shell_native_completion"
+                            // Rare worker and present-deferral events only;
+                            // Session reduces each by status and drops the rest.
+                            | "sophia_renderer_worker"
+                            | "sophia_live_present_defer"
                     )
                 ))
         {

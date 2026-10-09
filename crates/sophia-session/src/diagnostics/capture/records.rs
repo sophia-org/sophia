@@ -7,6 +7,10 @@ pub fn reduced_record(line: &str) -> Option<String> {
     {
         return None;
     }
+    // Judged whole, ahead of the shared key filter, which would drop `detail`.
+    if super::renderer_worker::record(name) {
+        return super::renderer_worker::reduce(name, fields);
+    }
     let mut result = name.to_owned();
     for field in fields {
         let Some((key, value)) = field.split_once('=') else {

@@ -14,6 +14,10 @@ where
             .as_mut()
             .expect("worker export path requires a renderer worker");
         let in_flight = worker.in_flight_correlation();
+        let request = in_flight
+            .and_then(|frame| frame.request)
+            .map_or(0, |id| id.0);
+        let output = worker.output().raw();
         match worker.poll() {
             WorkerPoll::Exported(lease) => {
                 let kind = self.worker_frame_kind.take();
@@ -47,7 +51,10 @@ where
                 self.worker_frame_kind = None;
                 self.context_status = worker.context_status();
                 self.last_export_status = Some(LiveRendererScanoutBufferExportStatus::Degraded);
-                tracing::warn!("sophia_renderer_worker schema=1 status=failed detail={detail:?}");
+                tracing::warn!(
+                    target: "sophia_scanout_evidence",
+                    "sophia_renderer_worker schema=3 status=failed output={output} request={request} detail={detail:?}"
+                );
                 return LiveRenderedScanoutBufferExport::new(
                     LiveRendererScanoutBufferExportStatus::Degraded,
                     detail,
@@ -82,10 +89,10 @@ where
                 // output's failure and not the session's (t186). The
                 // abandonment, when it comes, arrives as `Failed` below.
                 self.layout_probe.candidate.invalidate();
-                self.worker_frame_kind = None;
                 self.last_export_status = Some(LiveRendererScanoutBufferExportStatus::Pending);
                 tracing::warn!(
-                    "sophia_renderer_worker schema=1 status=hard_stall age_ms={} action=wait abandon_after_ms={}",
+                    target: "sophia_scanout_evidence",
+                    "sophia_renderer_worker schema=3 status=hard_stall output={output} request={request} age_ms={} abandon_after_ms={}",
                     age.as_millis(),
                     super::super::worker::LIVE_RENDERER_WORKER_STALL_ABANDON.as_millis(),
                 );
@@ -115,7 +122,8 @@ where
             } => {
                 if soft_stall_started {
                     tracing::warn!(
-                        "sophia_renderer_worker schema=1 status=soft_stall age_ms={}",
+                        target: "sophia_scanout_evidence",
+                        "sophia_renderer_worker schema=3 status=soft_stall output={output} request={request} age_ms={}",
                         age.as_millis(),
                     );
                 }
@@ -129,7 +137,7 @@ where
             self.last_export_status = Some(LiveRendererScanoutBufferExportStatus::Degraded);
             return LiveRenderedScanoutBufferExport::new(
                 LiveRendererScanoutBufferExportStatus::Degraded,
-                LiveRendererScanoutBufferExportDetail::RetainedBufferMissing,
+                LiveRendererScanoutBufferExportDetail::PendingFrameMissing,
                 None,
                 None,
             );

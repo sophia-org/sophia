@@ -144,6 +144,7 @@ impl LiveProductionVisualRuntime {
                 self.present_output_busy_defers = self.present_output_busy_defers.saturating_add(1);
                 if self.present_output_busy_defers.is_power_of_two() {
                     tracing::info!(
+                        target: "sophia_scanout_evidence",
                         "sophia_live_present_defer schema=1 status=output_busy defers={} transaction={} output={} in_flight={in_flight} cleanup_pending={cleanup_pending} pending_frame={pending_frame}",
                         self.present_output_busy_defers,
                         transaction.raw(),

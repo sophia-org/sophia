@@ -264,7 +264,11 @@ where
             Some(target.status),
             Some(export.status),
         );
-        result.export_detail = Some(LiveRendererScanoutBufferExportDetail::RetainedBufferMissing);
+        result.export_detail = Some(if export.descriptor.is_none() {
+            LiveRendererScanoutBufferExportDetail::ExportedDescriptorMissing
+        } else {
+            LiveRendererScanoutBufferExportDetail::ExportedOwnerMissing
+        });
         return result;
     };
     let shares_kms_drm_file = owner.shares_kms_drm_file();

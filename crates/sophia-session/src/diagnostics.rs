@@ -6,6 +6,7 @@ mod failure;
 mod input_device;
 mod output_profile;
 mod recovery;
+mod renderer_worker;
 mod selection;
 mod shell_action;
 mod shell_component;

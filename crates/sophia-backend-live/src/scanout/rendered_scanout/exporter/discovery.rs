@@ -738,7 +738,7 @@ where
                 }
                 None => sophia_renderer_live::NativeGbmOwnedScanoutBufferExportReport::new(
                     LiveRendererScanoutBufferExportStatus::Degraded,
-                    LiveRendererScanoutBufferExportDetail::RetainedBufferMissing,
+                    LiveRendererScanoutBufferExportDetail::PendingFrameMissing,
                     None,
                 ),
             };
