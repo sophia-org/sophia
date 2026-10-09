@@ -889,6 +889,34 @@ The 187 manifest is
 (6566 regular files, with one negative-case symlink separately recorded), and
 `READY-187.txt` is `ed06074f`. No guest GO is contained in that package.
 
+Series 188 ran once under the separate `REVIEW-CODEX-187-GO.txt` (`3843454b`),
+from 09:43:18Z to 09:43:58Z. Two guests ran, both with `P_CLEAN` infrastructure,
+clean endpoints and no remaining process. The observer passed. The original
+child's pixel verdict remained `INVALID` on the same foreign Mesa line; its
+test exit 101 was bound to harness exit 1. Handle5 and BP7 exited zero, while
+premise2 exited one. The runner refused the patched guest, with no replacement.
+
+The corrected init successfully armed real tracefs and collected a complete
+2682-line dump. Parser 185 accepted its settings, counts, 2670 events, test
+identity and both arm graphs. Each arm nevertheless classified `CREATE_FAILED`:
+a descriptor generation had one `GET_CAPS` return of `-EINVAL`, and a nested
+duplicate had a successful call. The frozen rule accepts success, or an
+`-EINVAL` followed by success, within one generation; it therefore refused the
+premise. The trace does not capture ioctl payloads, so calling those two
+operations a single retry would exceed the observation.
+
+All 70 raw files remain unchanged under the external manifest
+`188-freeze-claude/188.SHA256SUMS`
+(`1aa9fae0c2ed1ded4eeea9eb6c878b10541373656cabc400ca694d30be477520`).
+Independent device-hidden replay reproduced all seven classifier and decision
+outputs byte for byte with their exit statuses. Review `190-mesa-readback-result-review`
+is frozen under manifest
+`c53dfa9d8427178d1f0db24eea9ae0170c2e90ae59265f2dc7bfc215bf1bd784`.
+This establishes the corrected arming observation under the declared capture
+assumptions, but no screen premise, Mesa pair comparison or pixel repair.
+The next source audit separates loader probing from winsys creation; 185 and
+188 are preserved without rule changes or retrospective reclassification.
+
 ## Real-context control and a freshness-oracle gap (2026-10-09 UTC)
 
 Series 141 ran the reviewed observer and context recipe once, from 03:38:28Z
