@@ -9,6 +9,7 @@ mod output_resolution;
 mod recovery;
 mod renderer_worker;
 mod selection;
+mod session_lock;
 mod shell_action;
 mod shell_component;
 mod wm_pointer;
