@@ -158,6 +158,33 @@ whether the amdgpu and radeonsi winsys share the hazard, and any fresh-open
 implementation needs its own API, PRIME and custody review and comparison.
 The stopped 211 boot is not an accepted negative control.
 
+213 ran once and stopped at its first patched boot before client pixels. During
+the startup desktop-profile apply the owner loop failed with `mirror head 1
+callback has no logical generation` on both heads. Both heads had retired
+their bootstrap frame by out-fence, and the topology installation then reset
+their completion authority, so the frame's late kernel page-flip event most
+likely entered a fresh intake with no submitted generation. That provenance
+is an inference: the error names neither the serial nor the source. This is a
+Sophia callback-accounting failure, not evidence about Mesa retention. 211 and
+213 stay as recorded. Root owns the narrow repair, which keeps the selected
+completion authority across apply and rollback for the same physical head and
+card route, with a device-free regression. A 213 successor follows on the
+repaired source.
+
+For the five qualification runs root chose one t306 tooling candidate: red-first
+controls, the full gate, one new image and a re-derived patched-Mesa transform
+for all five packages, rather than starting some runs on the old fixture. Every
+run carries pixel proof for each returned head, bound through the action
+target, the replacement owner and that owner's head records, so a surviving or
+pre-loss head cannot stand in. Every run also carries post-return input
+routing, gated by the guest's own publication and settlement records, and
+complete endpoints. The keyboard-only run gains a baseline and post-return
+content witness. Lock coverage applies to the locked all-return run only: it
+must name the locked epoch and the returned topology before unlock, keys must
+stay away from the client while locked, and a key must reach the focused client
+after the normal unlock. The combined run is the declared 60-second session.
+The fixture and proof boundary is in package 214's `BOUNDARY-01.txt`.
+
 ## Resume interrupted by normal-login failure (2026-10-09)
 
 After reboot, niltempus reported that moving the main monitor from DP-1 to
