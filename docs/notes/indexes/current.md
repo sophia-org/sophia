@@ -17,6 +17,10 @@ and the [decision to separate desktop readiness from application proofs](../deci
 
 ## Desktop composition
 
+The [X11 readback and operator capture investigation](../investigations/id869143-x11-drawable-readback-and-an-operator-capture-path.md)
+separates the missing XkbBell request from CPU drawable readback, scoped desktop
+capture and the independently admitted XTEST input path.
+
 The [wmbench fault investigation](../investigations/djo84ohx-repeated-kms-software-mappings-account-for-the-wmbench-fault-storm.md)
 distinguishes retained rendering targets from repeated Mesa software mappings,
 records a 30.6% CPU reduction from retaining those mappings in the fixed guest

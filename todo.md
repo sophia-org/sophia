@@ -75,7 +75,7 @@ Publish docs/building-on-sophia.md as a public web page. +candidate @planning id
 
 Promote a confined daily-driver group only after Kitty and Firefox pass their grant and recovery gates. +candidate @planning id:t045 order:045 [details](docs/notes/plans/queue-16-portals-and-confined-applications.md#t045)
 
-Close named portal/frontend/provider gaps for INCR, Xdnd, URI/file launch, prompts, notifications and capture/FD handoff; prove scoped grants with minimal clients, not a desktop UI suite. +candidate @planning id:t046 order:046 [details](docs/notes/plans/queue-16-portals-and-confined-applications.md#t046)
+Close named portal/frontend/provider gaps for INCR, Xdnd, URI/file launch, prompts, notifications and capture/FD handoff, including operator-authorized window/output capture through a CLI usable by agents; prove scoped grants with minimal clients. +candidate @planning id:t046 order:046 [details](docs/notes/plans/queue-16-portals-and-confined-applications.md#t046)
 
 Before broadening the shell schema with effects, model capability admission, bounded parameters, supersession, Engine-clock cancellation, provider absence/failure, deterministic fallback, and… +candidate @planning id:t047 order:047 [details](docs/notes/plans/queue-17-compositor-graphics-and-effects.md#t047)
 
@@ -191,3 +191,5 @@ Keep fence-waiting Present pixmaps eligible for equal-target full-update scrappi
 2026-10-04 Diagnose the rare QEMU page-flip hard stall from series-10 baseline-3; preserve failed evidence and obtain a discriminating trace or reproduction before changing completion behavior. +candidate +renderer @development id:t305 order:305 [details](docs/notes/investigations/3v4qwldr-rare-qemu-native-page-flip-hard-stall-after-successful-unlock.md#t305)
 
 (B) 2026-10-07 Enable an independently owned iGPU development Session while the dGPU desktop remains active; scope discovery and lifecycle to admitted devices, use private endpoints and recovery, and prove no cross-seat display or input effects. +parallel +topology @development id:t312 order:312 depends:t311 [details](docs/notes/plans/b0yjm547-separate-gpu-development-from-the-live-desktop.md#t312)
+
+2026-10-09 Implement and validate XkbBell request semantics so ordinary Xlib bell users such as xwd do not fail with BadRequest; distinguish this compatibility fix from accelerated pixel readback and portal capture. +candidate +x11 @planning id:t313 order:313 [details](docs/notes/investigations/id869143-x11-drawable-readback-and-an-operator-capture-path.md#t313)
