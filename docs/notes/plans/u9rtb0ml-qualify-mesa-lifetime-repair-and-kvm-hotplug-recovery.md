@@ -308,9 +308,18 @@ The result describes mirrored-head renderer retention; it does not qualify two
 logical outputs or workspace affinity.
 
 Two images come from one frozen candidate. The base is built from the signed
-candidate with the pinned initramfs builder, as for image 145. The 170 Mesa
-transform then installs the private original or patched build, re-pinned to
-that base, so the pair differs only in `libgallium`. The series runs original,
+candidate with the pinned initramfs builder, as for image 145, for guest kernel
+6.18.54_1. The host now carries Mesa 26.2.4, so that base carries it too, and
+the private pair must match it: package 209 builds a matched original and
+patched Mesa 26.2.4 pair from the release tarball whose checksum Void's
+template records, with 167's configuration and patch. The five source files
+165 reviewed are byte-identical in 26.2.4 and the patch applies without fuzz;
+that similarity is recorded but qualifies nothing, and 202 remains evidence
+for 26.2.3 only. Package 210 then repeats the part 1 context comparison for the
+26.2.4 pair, on a 26.2.4 base of the device-test lineage, in its own guest
+window. Only after 210 does package 211 run this workload: a transform
+successor of 170 installs the 26.2.4 original or patched build into the
+candidate base, re-pinned to it, so the pair differs only in `libgallium`. The series runs original,
 patched, patched, original under one exact-argv GO, with a per-boot precheck
 and no replacement, following the 152 and 201 runners.
 
