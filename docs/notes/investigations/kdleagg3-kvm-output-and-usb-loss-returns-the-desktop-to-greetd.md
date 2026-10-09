@@ -140,6 +140,32 @@ is `fa3badedb19a112eb6a8c6b1db502902e4e85172c637ca0d340c80966e4d9006`.
 This records the live maintenance baseline and portable publication. It does
 not qualify output loss/return, retained pixels, or physical KVM recovery.
 
+## Complete restore unit ported and CPU-qualified (2026-10-09 UTC)
+
+The isolated `candidate/t306-hotplug-20261008` branch at signed `45ac1d81c`
+ports the seven remaining topology/restore commits onto maintenance master
+`9b1c86b18`. It includes the per-device restore planner, source availability,
+pending-snapshot custody, storage-progress wakeup and busy-alternate retry
+corrections. All ports applied without textual conflicts. The early policy
+that discarded retained images on a changed head set is not the endpoint.
+
+The clean candidate passed the full device-hidden `cargo xtask check` from
+02:51:15Z to 02:58:15Z: exit 0, strict lint, layout, verifier checks and six
+retained direct-scanout archives. Raw Rust summaries total 7,264 passing,
+zero failing and 101 ignored entries; nested summaries are not deduplicated.
+An independent source review found no blocking overlap with current seat
+scoping, CPU scene reconfiguration or lock handling.
+
+The candidate is neither merged nor installed. No new guest ran. Series 45's
+failed verdicts stand; managed-head and all-head loss/return, retained pixels
+and native-owner retirement while locked still need qualification. The
+existing CPU lock test covers addition of an output. It does not cover that
+retirement path. The t307 black-frame problem remains unchanged.
+
+Evidence: `t306-01/136-hotplug-current-master-cpu`, whose 12-entry manifest
+is `ce787707cdde41e5b5ef45d4be0008ebfa6f771a119326535d7e6551df1b3687`.
+It retains the source diff, signed identities, gate and semantic review.
+
 ## t306
 
 1. Preserve the incident records. Make the next failure name the responsible

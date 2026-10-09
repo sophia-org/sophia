@@ -522,8 +522,12 @@ does not establish a general absence of descriptor defects on AMD hardware.
 
 No production trigger was demonstrated. Multiple virgl heads importing one
 DMA-BUF is a candidate, but no reviewed callsite imports a sibling head's
-scanout buffer into another screen. The search was not exhaustive. These
-findings also do not explain series 95's single-head black read after a clear.
+scanout buffer into another screen. The audit follow-up does identify
+cross-context imports of sibling-allocated renderer-image snapshots in
+cross-head preview, cold migration and handoff restore. Those are sampling
+buffers, so they strengthen the production hypothesis without demonstrating
+an AddFB-handle failure. The search was not exhaustive. These findings also
+do not explain series 95's single-head black read after a clear.
 No renderer policy or worker default changed on this evidence. A focused
 test through the actual context import/release APIs is being prepared before
 choosing a repair; a structural test that merely forbids shared descriptions
