@@ -151,6 +151,9 @@ candidates that role may exchange.
   references, not supported Sophia policy clients.
 - [Renderer Import Boundary](renderer-import-boundary.md), [Live Backend
   Dependency Policy](live-backend-dependency-policy.md), define backend/runtime seams.
+- [Session Lock Coverage Diagnostics](session-lock-diagnostics.md) defines the
+  internal retirement observation used to qualify lock coverage after topology
+  changes, separately from the provider wire contract.
 - Installed desktop operations and release procedures live in niltempus.
 
 Subsystem documents may describe implementation details, but they may not
