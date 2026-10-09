@@ -166,6 +166,30 @@ Evidence: `t306-01/136-hotplug-current-master-cpu`, whose 12-entry manifest
 is `ce787707cdde41e5b5ef45d4be0008ebfa6f771a119326535d7e6551df1b3687`.
 It retains the source diff, signed identities, gate and semantic review.
 
+## Generic fixture gate and remaining verifier gaps (2026-10-09 UTC)
+
+Signed tooling candidate `7b9f80bc9` keeps the production restore unit above
+and ports the generic WM, static DRI3 probe and output-unplug verifier. Its
+full device-hidden gate passed from 03:05:15Z to 03:09:39Z, including layout;
+raw Rust summaries total 7,281 passing, zero failing and 101 ignored entries.
+Focused checks passed all seventeen output-unplug controls and four probe
+controls. The verifier computes the probe's expected pixel checksum from its
+pattern, binds presentation to the same native owner, refuses unstable
+baselines and bounds image dimensions before computing the reference.
+
+Source review found two inherited acceptance gaps despite those passing
+controls. All-head return accepts any topology record after the first
+removal; it does not require an unavailable topology after the last removal
+or a guest observation that every connector is disconnected. Input return
+accepts udev counts without proving that Session admitted the returned
+keyboard and delivered its input to a client. Both modes need stronger
+fixtures and refusal controls before their verdicts can support acceptance.
+
+Evidence: `t306-01/137-hotplug-tooling-cpu`, whose 15-entry manifest is
+`9203a878bc22aaee60ab4921268c67005712cbb1cf3b878a53088c257210ab73`.
+The review's appended correction supersedes its initial no-finding statement
+for those modes. No guest, merge or installation followed this gate.
+
 ## t306
 
 1. Preserve the incident records. Make the next failure name the responsible
