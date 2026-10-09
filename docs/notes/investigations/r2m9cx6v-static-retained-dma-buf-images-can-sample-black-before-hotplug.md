@@ -546,6 +546,20 @@ records report `renderer_workers=2` (boot 1 line 203; boot 2 line 219).
 The complete t306 restore candidate is being qualified separately; neither
 this source audit nor the successful maintenance login closes t307.
 
+The subsequent source review in `163-virgl-subcontext-source` identifies a
+second hazard under the separate-screen/shared-DRM-file premise. Mesa's
+virgl screens each allocate subcontext numbers starting at 1, while the
+kernel assigns their duplicated descriptors one host context namespace.
+Virglrenderer silently accepts a duplicate subcontext creation; both screens
+can then select the same host GL state, and one screen's destruction can
+destroy that shared subcontext. This does not require importing the same
+DMA-BUF and is separate from GEM handle ownership. It remains a source
+candidate: no recorded subcontext IDs or commands attribute the pixels in
+95, 144 or 153 to it. The error-reporting variant would normally log a host
+context error; using its absence as evidence still requires verification of
+each series' stderr path. An EXECBUFFER missing-handle trace alone would not
+exclude this second mechanism. No worker policy or installed driver changes.
+
 ## Real-context control and a freshness-oracle gap (2026-10-09 UTC)
 
 Series 141 ran the reviewed observer and context recipe once, from 03:38:28Z
