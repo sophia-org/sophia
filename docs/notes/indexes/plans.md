@@ -17,6 +17,7 @@ Candidates and deferred tasks require explicit promotion before implementation.
 - [Parallel Production Readiness](../plans/queue-11-parallel-production-readiness.md)
 - [Candidate Queue](../plans/queue-12-candidate-queue.md)
 - [Deferred](../plans/queue-19-deferred.md)
+- [Converge public roles on one 9P core](../plans/jsschoen-converge-public-roles-on-one-9p-core.md) owns the broker and portal exports, the application authority rebuild, attach identity, the namespace recipe and the capture bind that follow the proposed one-core decision.
 
 The [checked-task source](../sources/2026-09/todo-cutover-completed.md) retains
 pre-cutover completions without assigning them invented completion dates.
