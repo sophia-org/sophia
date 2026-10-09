@@ -260,6 +260,14 @@
                 output_topology_retry_attempts = 0;
                 *native_scanout = Some(*replacement);
                 native_retirement.admit(native_scanout.as_ref().expect("just adopted"))?;
+                // Open the adopted owner's evidence before resume: a refused
+                // resume closes it through close_native_owner!. This names the
+                // adopted owner, not a presentation; readiness follows resume.
+                let epoch = native_evidence.open("topology_rebuild");
+                native_evidence.record_owner_heads(
+                    epoch,
+                    native_scanout.as_ref().expect("just adopted").output_capabilities(),
+                );
                 let replacement = native_scanout.as_mut().expect("just adopted");
                 let replacement_outputs = replacement.outputs();
                 let replacement_capabilities = policy_layout.capabilities.clone();
@@ -449,11 +457,6 @@
                         )
                     });
                 }
-                let epoch = native_evidence.open("topology_rebuild");
-                native_evidence.record_owner_heads(
-                    epoch,
-                    native_scanout.as_ref().expect("just adopted").output_capabilities(),
-                );
                 native_presentation_admitted = false;
                 tracing::info!(
                     "sophia_live_output_topology schema=1 status=published transition={} topology_epoch={} generation={} outputs={} changed={} restored_images={} policy_required={} input=quarantined",

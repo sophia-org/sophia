@@ -95,3 +95,18 @@ fn duplicate_close_is_not_silently_counted() {
     session.close(&successful(1, 1), "seat_release");
     session.close(&successful(1, 1), "seat_release");
 }
+
+#[test]
+fn an_abandoned_replacement_is_opened_and_closed_like_any_other_owner() {
+    // The topology phase opens each adopted replacement before resuming onto
+    // it; a refused resume then closes that owner with no submissions.
+    let mut session = NativeSessionEvidence::default();
+    session.open("startup");
+    session.close(&successful(10, 10), "topology_rebuild");
+    assert_eq!(session.open("topology_rebuild"), 2);
+    session.close(&NativeEvidenceSnapshot::default(), "replacement_refused");
+    let totals = session.snapshot(None);
+    assert_eq!((totals.submissions, totals.retirements), (10, 10));
+    assert_eq!(session.unsettled_owners, 0);
+    assert_eq!(session.epoch, 2);
+}

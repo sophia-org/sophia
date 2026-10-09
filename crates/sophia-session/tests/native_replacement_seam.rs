@@ -151,3 +151,25 @@ fn every_opened_native_owner_records_its_own_head_join_once() {
         );
     }
 }
+
+#[test]
+fn every_adopted_replacement_is_opened_before_resume_can_refuse_it() {
+    // A resume refusal closes the adopted owner through close_native_owner!,
+    // which closes the evidence of whatever owner is adopted. The evidence of
+    // a replacement must therefore open at adoption, before resume, or a
+    // hardware refusal panics the session as a double close.
+    let source = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/live_session/owner_loop/topology_phase.rs"),
+    )
+    .unwrap();
+    let at = |needle: &str| {
+        assert_eq!(source.matches(needle).count(), 1, "{needle}");
+        source.find(needle).unwrap()
+    };
+    let adopted = at("*native_scanout = Some(*replacement);");
+    let open = at("native_evidence.open(");
+    let join = at("native_evidence.record_owner_heads(");
+    let resume = at("try_resume_native_scanout_from_scene_at(");
+    let refused = at("close_native_owner!(\"replacement_refused\"");
+    assert!(adopted < open && open < join && join < resume && resume < refused);
+}
