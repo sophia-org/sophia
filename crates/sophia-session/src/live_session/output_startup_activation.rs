@@ -8,10 +8,6 @@ pub(super) struct StartupOutputActivation {
     /// The kernel's errno for a busy or rejected complete test; zero when the
     /// test was accepted or never reached the kernel. Runtime refusal reporting
     /// reads it.
-    #[allow(
-        dead_code,
-        reason = "read by the runtime refusal record once that lands"
-    )]
     pub validation_errno: i32,
 }
 

@@ -28,6 +28,23 @@ pub(in crate::live_session) struct RuntimeOutputRefusal {
 }
 
 impl RuntimeOutputRefusal {
+    pub fn validation(validation: &'static str, errno: i32) -> Self {
+        let error = if errno > 0 {
+            io::Error::from_raw_os_error(errno)
+        } else {
+            io::Error::other("replacement output activation was refused by hardware")
+        };
+        Self {
+            validation,
+            ..Self::new("validation", &error)
+        }
+    }
+
+    /// A failed probe says nothing about whether a monitor has returned.
+    pub fn observed_availability(&self) -> Option<bool> {
+        (!matches!(self.stage, "probe" | "seat")).then_some(true)
+    }
+
     pub fn new(stage: &'static str, error: &(dyn Error + 'static)) -> Self {
         let mut code = "unclassified";
         let mut errno = 0;
@@ -81,7 +98,10 @@ pub(in crate::live_session) fn resolve_runtime_output_replacement(
             return RuntimeOutputReplacement::Refused(RuntimeOutputRefusal::new("probe", &error));
         }
     };
-    let resolution = resolve_output_replacement(discovery, profile, previous, recovery);
+    let resolution = resolve_runtime_probe_policy(discovery.connectors(), profile, previous)
+        .and_then(|resolution| {
+            prepare_output_replacement(discovery, profile, recovery, resolution)
+        });
     match resolution {
         Ok(OutputReplacementDecision::Waiting) => RuntimeOutputReplacement::Waiting,
         Ok(OutputReplacementDecision::Active(prepared)) => {
@@ -119,15 +139,12 @@ pub(in crate::live_session) fn resolve_runtime_output_replacement(
                             ),
                         }
                     }
-                    Ok(activation) => RuntimeOutputReplacement::Refused(RuntimeOutputRefusal {
-                        validation: activation.validation,
-                        ..RuntimeOutputRefusal::new(
-                            "validation",
-                            &io::Error::other(
-                                "replacement output activation was refused by hardware",
-                            ),
-                        )
-                    }),
+                    Ok(activation) => {
+                        RuntimeOutputReplacement::Refused(RuntimeOutputRefusal::validation(
+                            activation.validation,
+                            activation.validation_errno,
+                        ))
+                    }
                     Err(error) => RuntimeOutputReplacement::Refused(RuntimeOutputRefusal::new(
                         "activation",
                         error.as_ref(),
@@ -143,6 +160,47 @@ pub(in crate::live_session) fn resolve_runtime_output_replacement(
             "resolution",
             error.as_ref(),
         )),
+    }
+}
+
+/// Runtime continuity also waits for strict profiles' required connectors.
+/// Preserve every setting error; only physical absence (including an empty
+/// admitted inventory) becomes Waiting. Startup and reload keep their existing
+/// refusal policy, and no adaptive fallback is introduced for strict profiles.
+fn resolve_runtime_probe_policy(
+    probes: &[LiveNativeOutputProbe],
+    profile: &DesktopOutputCandidate,
+    previous: Option<&DesktopOutputReconciliation>,
+) -> Result<DesktopOutputResolution, Box<dyn Error>> {
+    use sophia_config::DesktopOutputReconcileError as ReconcileError;
+    match resolve_probe_policy(probes, profile, previous) {
+        Err(error) if profile.availability == sophia_config::DesktopOutputAvailability::Strict => {
+            let unavailable = match error.downcast_ref::<ReconcileError>() {
+                Some(
+                    ReconcileError::UnknownConnector(_)
+                    | ReconcileError::DisconnectedConnector(_)
+                    | ReconcileError::NoEnabledOutput,
+                ) => true,
+                // Candidate validation precedes topology validation. An empty
+                // projected inventory has no other topology fields to reject.
+                Some(ReconcileError::InvalidTopology(_)) => {
+                    project_profile_probes(probes, profile, previous)
+                        .connectors
+                        .is_empty()
+                }
+                _ => false,
+            };
+            if unavailable {
+                Ok(DesktopOutputResolution::Waiting {
+                    generation: profile.generation,
+                    digest: profile.digest,
+                    adjustments: Vec::new(),
+                })
+            } else {
+                Err(error)
+            }
+        }
+        resolution => resolution,
     }
 }
 
@@ -186,6 +244,65 @@ pub(in crate::live_session) fn runtime_output_retry_delay(attempt: usize) -> Opt
     [250, 1_000, 4_000]
         .get(attempt)
         .map(|millis| Duration::from_millis(*millis))
+}
+
+/// No available output is a waiting state, not a failed activation. Some GPUs
+/// suspend after the last CRTC is disabled and detect a return only when a DRM
+/// probe resumes the device. Keep one slow, admitted probe after the short
+/// settling series; hardware refusals still exhaust their separate allowance.
+pub(in crate::live_session) fn runtime_output_waiting_delay(attempt: usize) -> Option<Duration> {
+    runtime_output_retry_delay(attempt).or(Some(Duration::from_secs(5)))
+}
+
+/// Failed discovery is unknown availability, not a failed activation. It must
+/// retain the same slow wake opportunity as an absent monitor, since a sleeping
+/// device cannot be relied on to send a new notice after a transient open error.
+pub(in crate::live_session) fn runtime_output_retry_after_observation(
+    available: Option<bool>,
+    recovery: &mut OutputRecovery,
+    profile: &DesktopOutputCandidate,
+    failures: &mut usize,
+    waiting_attempts: &mut usize,
+) -> (usize, Option<Duration>, bool) {
+    if available == Some(true) {
+        *waiting_attempts = 0;
+        let attempt = *failures;
+        (
+            attempt,
+            runtime_output_retry_after_failure(recovery, profile, failures),
+            true,
+        )
+    } else {
+        let attempt = *waiting_attempts;
+        *waiting_attempts = attempt.saturating_add(1);
+        (
+            attempt,
+            runtime_output_waiting_delay(attempt),
+            runtime_output_report_waiting(attempt),
+        )
+    }
+}
+
+/// Waiting observations do not spend the activation retry allowance. A return
+/// starts that allowance once, while repeated Active preflights followed by a
+/// failed resume retain their count and still exhaust it.
+pub(in crate::live_session) fn runtime_output_observe_availability(
+    available: Option<bool>,
+    waiting: &mut bool,
+    attempts: &mut usize,
+) {
+    let Some(available) = available else { return };
+    let is_waiting = !available;
+    if *waiting != is_waiting {
+        *waiting = is_waiting;
+        *attempts = 0;
+    }
+}
+
+/// Record the settling probes and entry to slow Waiting once. A new notice or
+/// a refusal starts a fresh observation series; an unplugged night is silent.
+pub(in crate::live_session) fn runtime_output_report_waiting(attempt: usize) -> bool {
+    attempt <= 3
 }
 
 #[path = "../../../tests/support/output_replacement_runtime.rs"]

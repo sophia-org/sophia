@@ -661,7 +661,20 @@ CRTCs or planes.
 
 Runtime hotplug, seat return and recovery use the same resolution. With no usable
 head, Session keeps applications, WM state, retained images and lock cover while
-waiting. Returning hardware restores saved preferences; an eligible surviving
+waiting. After the initial 250/1,000/4,000 ms settling series, it probes admitted
+devices every five seconds while the seat is active. This lets a GPU that
+suspended with no active display detect a return without a hotplug event.
+Waiting probes have a separate cadence counter and do not spend the finite
+refusal allowance. This also covers strict profiles waiting for required
+connectors; their settings and startup/reload refusal rules remain strict.
+Probe/seat failures are unknown availability and use the same slow cadence;
+they neither spend the activation allowance nor count as a monitor returning.
+Waiting or repeated probe-failure records stop
+after the short series and the first slow probe; notices restart the series,
+and a changed outcome gets a record without resetting cadence.
+The five-second interval favors return latency; with a matching GPU
+autosuspend delay it may keep an unplugged GPU awake.
+Returning hardware restores saved preferences; an eligible surviving
 active output keeps focus. Geometry and realized keys publish only for the
 current replacement and after its presentation and policy barriers. Settings
 reloads that would leave a viable desktop waiting are declined; reloads during
@@ -673,9 +686,13 @@ Runtime refusals retry after 250, 1,000 and 4,000 ms, then wait for a new topolo
 seat or profile event. An adaptive refusal selects conservative settings for
 the remaining retries: one complete logical output group, an advertised timing
 nearest 60 Hz, unit scale, normal transform and VRR off. Strict retries keep
-the requested settings. Only a successful resume resets the retry counter;
-constructing a replacement does not. Startup retains its separate allowance of
-one conservative attempt. In-place settings changes retain the working rollback target. Ownership failures,
+the requested settings. A transition from unavailable outputs to an activation
+attempt starts a fresh refusal allowance; successive constructed replacements
+cannot replenish it unless resume succeeds. Validation supplies its own
+per-head primary-plane framebuffer in TEST_ONLY with ALLOW_MODESET, releases
+resources on the allocating card, and retains the kernel errno (including
+EAGAIN/EBUSY as Busy). Startup retains its separate allowance of one conservative
+attempt. In-place settings changes retain the working rollback target. Ownership failures,
 including renderer retirement exceeding its existing two-second bound, remain
 terminal. Device-free checks establish these state transitions; native pixels,
 retained-image continuity and attended acceptance remain separate qualification.

@@ -480,6 +480,9 @@ fn run_session_loop_inner(
     let mut physical_output_topology_replaced = false;
     let mut output_topology_retry_at: Option<Instant> = None;
     let mut output_topology_retry_attempts = 0usize;
+    let mut output_topology_waiting_for_output = false;
+    let mut output_topology_waiting_attempts = 0usize;
+    let mut output_topology_waiting_identity = None;
     let mut deferred_output_topology_notice: Option<
         sophia_backend_live::LiveDrmTopologyRescanNotice,
     > = None;

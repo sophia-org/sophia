@@ -112,6 +112,7 @@
         ));
         // A new notice starts a new bounded rescan series.
         output_topology_retry_attempts = 0;
+        output_topology_waiting_attempts = 0;
         output_recovery = output_replacement::OutputRecovery::default();
         if advance_security_epoch {
             let revoked_input_leases = advance_application_input_security_epoch(
@@ -139,22 +140,31 @@
     // candidate was mid-apply on, and release the quarantine it was holding.
     let hotplug_quarantined = output_topology_owner.phase
         == LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Hotplug);
+    let probe_allowed = seat_state == sophia_backend_live::LiveSeatState::Active
+        && session_quiescence.is_none();
+    if !probe_allowed {
+        // An expired deadline must neither open an off-seat device nor keep
+        // owner_held_work spinning. Seat enable schedules a fresh series.
+        output_topology_retry_at = None;
+    }
     let retry_due = output_topology_retry_at.is_some_and(|deadline| Instant::now() >= deadline);
     let rebuild_requested = retry_due
         && output_recovery != output_replacement::OutputRecovery::Exhausted
         && hotplug_quarantined
-        && seat_state == sophia_backend_live::LiveSeatState::Active
+        && probe_allowed
         && runtime.is_some();
-    // A deferred notice starts a new series. Once a series is spent, only a
-    // new notice or seat enable rescans: a quarantined owner is never polled
-    // on a timer.
+    // A deferred notice starts a new series. Hardware refusals eventually stop
+    // retrying. A genuinely unavailable output instead keeps a slow probe so
+    // a runtime-suspended GPU can discover a return without an HPD event.
     let deferred_notice =
         !hotplug_quarantined && output_topology_owner.take_deferred_hotplug_notice();
     if deferred_notice {
         output_topology_retry_attempts = 0;
+        output_topology_waiting_attempts = 0;
         output_recovery = output_replacement::OutputRecovery::default();
     }
     if (hotplug_quarantined || deferred_notice)
+        && probe_allowed
         && output_recovery != output_replacement::OutputRecovery::Exhausted
         && output_topology_retry_at.is_none()
         && let Some(delay) = output_replacement::runtime_output_retry_delay(output_topology_retry_attempts)
@@ -231,42 +241,58 @@
             output_replacement::RuntimeOutputReplacement::Waiting
             | output_replacement::RuntimeOutputReplacement::Refused(_) => {
                 let _ = output_topology_owner.observe_rebuild(Vec::new(), Vec::new())?;
-                let attempt = output_topology_retry_attempts;
-                let retry = if matches!(replacement, output_replacement::RuntimeOutputReplacement::Refused(_)) {
-                    output_replacement::runtime_output_retry_after_failure(
-                        &mut output_recovery, config.output_profile.current(), &mut output_topology_retry_attempts,
-                    )
-                } else {
-                    output_topology_retry_attempts = attempt.saturating_add(1);
-                    output_replacement::runtime_output_retry_delay(attempt)
+                let available = match &replacement {
+                    output_replacement::RuntimeOutputReplacement::Refused(error) => error.observed_availability(),
+                    _ => Some(false),
                 };
-                output_topology_retry_at = retry.map(|delay| Instant::now() + delay);
-                output_recovery.record_exhausted_after("runtime", output_topology_retry_attempts);
-                let retry_msec = retry.map_or("none".to_owned(), |delay| delay.as_millis().to_string());
-                let status = if matches!(replacement, output_replacement::RuntimeOutputReplacement::Waiting) { "waiting" } else { "refused" };
+                output_replacement::runtime_output_observe_availability(
+                    available,
+                    &mut output_topology_waiting_for_output,
+                    &mut output_topology_retry_attempts,
+                );
                 let (stage, code, errno, validation) = match &replacement {
                     output_replacement::RuntimeOutputReplacement::Refused(error) =>
                         (error.stage, error.code, error.errno, error.validation),
                     _ => ("availability", "none", 0, "not_attempted"),
                 };
-                tracing::info!(target: "sophia_scanout_evidence",
-                    "sophia_live_output_resolution schema=1 phase=runtime status={status} reason=unavailable generation={} transition={} notice={} attempt={} stage={stage} failure_code={code} errno={errno} validation={validation}",
-                    config.output_profile.current().generation.raw(), output_topology_owner.transition,
-                    output_topology_owner.notice_sequence, attempt + 1);
-                match replacement {
-                    output_replacement::RuntimeOutputReplacement::Refused(error) => tracing::warn!(
-                        "sophia_live_output_topology schema=1 status=unavailable transition={} attempt={} retry_msec={retry_msec} error={error}",
-                        output_topology_owner.transition,
-                        attempt + 1,
-                    ),
-                    _ => tracing::info!(
-                        "sophia_live_output_topology schema=1 status=waiting transition={} attempt={} retry_msec={retry_msec}",
-                        output_topology_owner.transition,
-                        attempt + 1,
-                    ),
+                let waiting_identity = (available != Some(true)).then_some((stage, code, errno, validation));
+                // A changed identity is reported without restarting cadence:
+                // alternating success/error probes must still settle at 5 s.
+                let identity_changed = output_topology_waiting_identity != waiting_identity;
+                output_topology_waiting_identity = waiting_identity;
+                let (attempt, retry, report) = output_replacement::runtime_output_retry_after_observation(
+                    available, &mut output_recovery, config.output_profile.current(),
+                    &mut output_topology_retry_attempts, &mut output_topology_waiting_attempts,
+                );
+                output_topology_retry_at = retry.map(|delay| Instant::now() + delay);
+                output_recovery.record_exhausted_after("runtime", output_topology_retry_attempts);
+                if report || identity_changed {
+                    let retry_msec = retry.map_or("none".to_owned(), |delay| delay.as_millis().to_string());
+                    let status = if matches!(replacement, output_replacement::RuntimeOutputReplacement::Waiting) { "waiting" } else { "refused" };
+                    tracing::info!(target: "sophia_scanout_evidence",
+                        "sophia_live_output_resolution schema=1 phase=runtime status={status} reason=unavailable generation={} transition={} notice={} attempt={} stage={stage} failure_code={code} errno={errno} validation={validation}",
+                        config.output_profile.current().generation.raw(), output_topology_owner.transition,
+                        output_topology_owner.notice_sequence, attempt.saturating_add(1));
+                    match replacement {
+                        output_replacement::RuntimeOutputReplacement::Refused(error) => tracing::warn!(
+                            "sophia_live_output_topology schema=1 status=unavailable transition={} attempt={} retry_msec={retry_msec} error={error}",
+                            output_topology_owner.transition,
+                            attempt.saturating_add(1),
+                        ),
+                        _ => tracing::info!(
+                            "sophia_live_output_topology schema=1 status=waiting transition={} attempt={} retry_msec={retry_msec}",
+                            output_topology_owner.transition,
+                            attempt.saturating_add(1),
+                        ),
+                    }
                 }
             }
             output_replacement::RuntimeOutputReplacement::Active(replacement, realization, policy_layout) => {
+                output_replacement::runtime_output_observe_availability(
+                    Some(true), &mut output_topology_waiting_for_output, &mut output_topology_retry_attempts,
+                );
+                output_topology_waiting_attempts = 0;
+                output_topology_waiting_identity = None;
                 *native_scanout = Some(*replacement);
                 native_retirement.admit(native_scanout.as_ref().expect("just adopted"))?;
                 // Open the adopted owner's evidence before resume: a refused
