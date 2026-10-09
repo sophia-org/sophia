@@ -503,6 +503,37 @@ Evidence: `131-handle-isolation-package` and
 `028cc94b7732c93e432b3ae32c93d0333a656969509a3d808ebcb906e6821e87`.
 The exact-command approval is `131/REVIEW-CODEX-80.txt`.
 
+## Production descriptor audit after the maintenance login (2026-10-09 UTC)
+
+The source audit on published `9b1c86b18` found two production shapes with
+several renderer screens sharing one DRM open file description. By default,
+each head's worker receives a duplicate of the card descriptor; the shared
+worker remains opt-in. Separately, image-import render nodes are opened once
+and duplicated for each worker's lazy import contexts. The AddFB path can use
+the worker's cached GEM handle directly because it shares the KMS file.
+
+Mesa 26.2.3's virgl screen table hashes descriptor numbers but compares open
+file descriptions for equality. Different descriptor numbers can therefore
+create separate handle owners for one DRM file. This source reading supports
+the probe result in 130 and its separate-open control in 132. The inspected
+amdgpu path instead looks up the device and reuses a screen owner for an equal
+file description; that agrees with host control 105's preserved handle. It
+does not establish a general absence of descriptor defects on AMD hardware.
+
+No production trigger was demonstrated. Multiple virgl heads importing one
+DMA-BUF is a candidate, but no reviewed callsite imports a sibling head's
+scanout buffer into another screen. The search was not exhaustive. These
+findings also do not explain series 95's single-head black read after a clear.
+No renderer policy or worker default changed on this evidence. A focused
+test through the actual context import/release APIs is being prepared before
+choosing a repair; a structural test that merely forbids shared descriptions
+would assert an unchosen policy.
+
+Evidence: `t306-01/134-drm-descriptor-audit/AUDIT.txt` (`206232c6`).
+The audit names the construction, worker, transfer, AddFB and Mesa callsites.
+The complete t306 restore candidate is being qualified separately; neither
+this source audit nor the successful maintenance login closes t307.
+
 ## t307
 
 1. Trace the successful mixed Present and subsequent retained composition:

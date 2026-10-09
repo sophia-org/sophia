@@ -103,6 +103,43 @@ The latter retains the source diffs, signed identities, controls, gates,
 release hashes and exact proposed install/rollback commands. Neither
 t306 nor t307 is accepted by this candidate.
 
+## Installed baseline and public source pin (2026-10-09 UTC)
+
+After that review, niltempus installed `niltempus-087445319affcb9bfc53`
+and confirmed a new login. At 02:49:07Z the running session's PID 25091
+resolved to that release's Sophia executable, whose SHA256 was
+`2aca36ddd8e93b160516039259e3239eeb9ad08b86df833297515f8453bd4d79`.
+Session `00000001791513578420-31f7e0c8-050d-49e7-a3a4-20dd934860ce`
+records source `19403a511`. Startup completed preflight, input guard and
+graphics takeover; the seat was active and fourteen input devices were
+admitted. The sampled native-renderer and capture-failure counters were zero.
+
+The read-only snapshot contains no session-failure or fatal record. Its
+health reports no discarded records, rotated bytes or storage errors, and
+28,395 suppressed records. The files were copied sequentially while the
+session ran; suppression limits absence claims. Listing sessions printed
+the running record and then failed the preserved-directory permission check;
+inspection by the explicit session ID succeeded. No permissions changed.
+
+Signed merge `9b1c86b18` publishes all five maintenance commits on master.
+Its production tree equals qualified `19403a511`; only this investigation's
+earlier candidate section differs. Signed niltempus `a08719f` publishes a
+GitHub pin to exact Sophia `19403a511`. Its fetched content hash equals
+the installed candidate's local pin, and every other lock field is unchanged.
+
+That portable integration built `niltempus-f8cf882c158e59026c46` and passed
+all 87 release checksums. Every binary is byte-identical to the installed
+maintenance release; only release metadata and embedded profile paths differ.
+It is retained through `target/live-maintenance-portable-release` and was
+not installed. The current release and its `f18fc2ed` rollback remain intact.
+The two superseded maintenance worktrees were removed after confirming they
+contained no modified, untracked or ignored files; their branches remain.
+
+Evidence: `t306-01/135-live-maintenance-publication`, whose 23-entry manifest
+is `fa3badedb19a112eb6a8c6b1db502902e4e85172c637ca0d340c80966e4d9006`.
+This records the live maintenance baseline and portable publication. It does
+not qualify output loss/return, retained pixels, or physical KVM recovery.
+
 ## t306
 
 1. Preserve the incident records. Make the next failure name the responsible
