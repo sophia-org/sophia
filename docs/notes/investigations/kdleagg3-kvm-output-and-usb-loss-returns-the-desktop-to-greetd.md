@@ -424,7 +424,80 @@ under manifest
 No test, production change, lock guest or physical acceptance followed from
 this review.
 
+## Lock characterizations and topology coverage (2026-10-09 UTC)
+
+The authorized [qualification plan](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md)
+separates CPU lock characterization, production topology coverage, virtual
+hotplug qualification and attended physical acceptance. Evidence
+`200-lock-publication-characterization` initially tested an uncommitted
+implementation on signed base `a7050f1e1`; its per-run source snapshots
+identify the tested bytes. This is not yet a gated integration candidate or
+a frozen package.
+
+The publication tests exercise the real LockPublication, LockFileCustody and
+SessionLockFrames. They distinguish custody revocation from Session's retained
+candidate, demonstrate old-image retirement releasing the returning output's
+demand, and cover unrelated outputs, wrong receipts, resource retirement,
+new lock and reconnect. A separate real service test sends a late outcome
+for a revoked candidate and confirms that the worker continues to process a
+subsequent request. These characterize the recovery described in review 195;
+they do not justify a new revocation policy.
+
+The topology tests now enter shared production rebind/resume functions with
+controlled device facts. They do not directly replace the runtime's output
+list. Coverage includes loss/return while locked, loss before initial cover
+proof, mirrored heads, all-output absence followed by resume, and an unlocked
+control. On an exported source copy, the four-test baseline passed; clearing
+the cover inside either actual rebind or resume caused its named regression
+to fail with exit 101. Both mutant results are retained in
+`mutations-01/results.json`.
+
+A passive diagnostic implementation reports lock epoch, topology epoch,
+output count and head count after current cover retirement. Its tests require
+the current lock epoch, unique current head identities, every head retired,
+and no suspension; publication suppresses repeats and stale topology epochs.
+This adds observability without changing the Locked transition. The binding
+between native coverage and the published topology is part of the independent
+source review, not an assumed guest qualification.
+
+Independent review `189-claude-reviews/REVIEW-200-01.txt` (`54894568`), bound
+to the working diff `258d2090` and untracked-file hashes on `a7050f1e1`,
+confirmed the device-call equivalence and the current-epoch all-head proof.
+It found a diagnostic attribution gap: installed heads can belong to N+1
+while the WM still publishes topology N during its presentation wait. Their
+retired covers must not be reported as proof for N. The record needs a settled
+installation/publication binding and a control for that interval before it
+serves as qualification evidence. The review also requests direct refusal
+controls for unavailable frame service and a target naming another output.
+
+The source correction requires the topology owner to be Stable, no hardware
+publication pending, no active policy candidate, and the public epoch equal
+to the installed owner's epoch. Its new control exercises a real topology
+owner through rebuild and presentation settlement, withholding the first
+coverage record until those identities agree. The two backend refusal controls
+are added, and the unrelated owner-loop formatting was dropped. Focused
+`checks-05` passed twelve backend coverage tests, 26 real topology-owner tests
+(including the new attribution regression), and two diagnostic publication
+tests. Clippy with warnings denied passed for the backend, Session and runtime
+crates, all features and tests. The 18 source files in
+`source-05.SHA256SUMS` verified before and after. Earlier passing logs remain
+bound to their earlier source snapshots.
+
+Focused isolated checks passed: seven publication tests, ten service tests,
+and, after the diagnostic addition, twelve backend coverage tests plus two
+diagnostic publication tests. `source-03.SHA256SUMS` and
+`source-04.SHA256SUMS` bind the corresponding snapshots and logs. The first
+publication run failed because its fixture requested a one-second permit
+against the protocol's 250-millisecond maximum; it is retained alongside the
+corrected 100-millisecond fixture. No production defect is inferred from that
+failed fixture. Independent review, full integration gate, locked guest and
+physical KVM acceptance remain separate obligations.
+
 ## t306
+
+The [four-part qualification plan](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md)
+records the authorized lock, hotplug and rollout scope. The incident's exits
+remain:
 
 1. Preserve the incident records. Make the next failure name the responsible
    operation and retain its bounded error text independently of ordinary event

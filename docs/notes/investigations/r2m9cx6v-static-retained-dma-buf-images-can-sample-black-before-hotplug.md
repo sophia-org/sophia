@@ -1163,7 +1163,102 @@ Evidence is the read-only `153-qemu-input-return-series-2`, manifest
 and `153-qemu-input-return-result-2/RESULT.txt` (`9374400a`). No replacement
 run, production repair, mechanism trace or t306/t307 acceptance followed.
 
+## Callback and pixel contracts after 194 (2026-10-09 UTC)
+
+Series 194 exposed two independent limits of the comparison contract. The
+original pixel result remains `INVALID` because handle5 rejects the Mesa
+diagnostic. The patched premise remains refused because premise3 mistakes
+cache maintenance comparisons for sibling lookups. Neither result is accepted
+retrospectively. The authorized
+[qualification plan](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md)
+requires both successor contracts to be controlled before another comparison,
+then a separate production-workload qualification.
+
+Source audit `197-cache-callback-audit` binds the pinned Mesa implementation
+to the retained trace. Its manifest is
+`3756f72d336f2f5ba0a7f1fe3223c1c8275e51f17a5888ccb5b6d02db603de55`.
+The table compares the searched or inserted key against an existing winsys
+key. After a miss, the loader's LOOKUP sequence is repeated by the new winsys
+during INSERT; destruction can issue another run during REMOVAL. With the
+patched inode hash these comparisons become visible. They are not additional
+screen-sharing observations.
+
+The accepted bounded successor design assigns every such comparison to one
+unique operation using live generations, returns, thread and source order.
+Contiguity means the ordered cache-comparison subsequence, not adjacency in
+the whole trace. Cross-thread relations require strictly ordered printed
+times. INSERT must follow its loader lookup; an ambiguous INSERT/REMOVAL run
+refuses. A queryless insertion is bounded after the screen's optional
+DRM_CAP_PRIME query when present, and the process may contain no more than
+16 proven winsys generations. Negative query returns refuse. Queryless
+removal and the untraced same-fd shortcut remain declared limits. The audit's
+original-hash injectivity proof is not a classification prerequisite.
+
+`198-premise-callback-classifier` implements this design as a source draft,
+with source-input manifest prefix `ad200d7d` and core prefix `b0f40d21`.
+The independent source review found the callback assignment consistent with
+the bounded contract: maintenance pairs bypass counting but must still receive
+a unique global assignment; live-key bounds include the optional prime query;
+thread, time and 16-generation limits remain explicit. All source inputs
+verified under manifest
+`ad200d7decaa4e7b264e056f5bec32656e8c3ed1cecaf9c57e6110be8ac42e54`.
+The reviewed launcher allows one isolated CPU control run with a 1,800-second
+outer KILL, enough for its six separately bounded steps. Its retrospective
+comparison must reproduce 192's original outputs before recording successor
+analysis separately. It cannot revise the verdict of 194.
+
+The single control run at 11:22:57–11:23:00Z failed, outer exit 1, with source
+checks unchanged. Core had seven errors; callback controls had nine failures;
+signature controls had one failure and one error; capture controls had one
+failure and seven errors. No mutant met its kill criterion (0/12). Both old
+192 records reproduced exactly; successor analysis matched the original
+guest but refused the patched guest with “ambiguous or unexplained winsys
+maintenance run.” The same refusal affects the positive synthetic fixture,
+so this is a classifier/design defect requiring diagnosis, not permission to
+weaken the controls. `controls-01` remains intact. No replacement control run
+or guest is qualified by the earlier source review.
+
+A bounded read-only diagnostic (`198-diagnostic-01`, manifest prefix
+`dd7afb55`) identified the run-forming defect in both the fixture and real
+patched trace. The innermost sibling's INSERT and later REMOVAL have the same
+first operand, with no other cache comparison between them. The classifier
+therefore merged them despite intervening resource/use ioctls on that winsys.
+The merged sequence satisfies neither operation shape. Other observed runs
+assign uniquely; this does not prove there are no further defects.
+
+The reviewed successor design splits at a winsys ioctl strictly between
+consecutive comparisons, preserving thread/time ordering and unique operation
+assignment. A single hash-table walk cannot issue that ioctl between its
+comparisons. It must not split merely at the expected lookup length; a screen
+with no separating use remains ambiguous and refuses. The failed run also
+revealed that colored unittest output can defeat the mutant driver's literal
+failure matching. Raw logs remain intact; the successor must disable color
+for its own subprocesses while retaining the named-assertion-only kill rule.
+Both corrections need new controlled evidence before a guest package.
+
+The pixel successor in `199-pixel-diagnostic-classifier` has completed CPU
+qualification. It recognizes only the exact standalone line
+`got error from kernel - expect bad rendering 2`, once per arm at most, as
+the sole line between validated sibling-alive and after-drop records.
+Full handle5 identity, freshness, readiness, assertion, summary, exit and
+endpoint checks still apply. Raw logs are not rewritten. A separate report
+marks a recognized diagnostic as driver `ERROR`, even if pixels match;
+invalid records produce `UNQUALIFIED`, never healthy preservation.
+
+All 60 retained policy controls, 20 new controls and five named mutant checks
+passed. The old 194 handle5 outputs reproduced byte for byte. The frozen
+54-file manifest is
+`a977bfeed5a3d4f31749e60bc0b5f55b9ba1bc983929a9a95b686b0e3491b717`.
+This qualifies a parser policy, not a Mesa repair or a runtime result. The
+runner must still enforce the plan's original negative control and require
+patched preservation with zero diagnostics. No new guest or production
+workload result follows from these controls.
+
 ## t307
+
+The [four-part qualification plan](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md)
+records the authorized bounded comparison and production-workload exits.
+The underlying investigation obligations remain:
 
 1. Trace the successful mixed Present and subsequent retained composition:
    source buffer, snapshot identity and storage, texture/import identity,
