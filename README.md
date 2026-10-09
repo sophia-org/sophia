@@ -21,6 +21,15 @@ Each component has a defined authority:
 Target architecture, including the planned 9P application authority and portal
 interfaces:
 
+The [accepted one-core decision](docs/notes/decisions/zsx0tk4k-serve-every-public-role-from-one-9p-core-with-namespaces-as-composed-trees-and-portals-as-binds.md)
+uses one shared 9P implementation with separately authorized role exports.
+Per-identity endpoint directories and role trees are derived from admission;
+grants remain checked on retained handles. Authenticated attach, namespace
+composition and an output-capture CLI are implementation targets, not current
+support. The [delivery plan](docs/notes/plans/jsschoen-converge-public-roles-on-one-9p-core.md#first-deliverable-and-dependency-order)
+starts with a bounded observer interface; the native application frontend
+and input driving are separate deliverables.
+
 ```text
 ===============================================================================================
                                       HARDWARE AND KERNEL
@@ -36,7 +45,7 @@ interfaces:
     |   +----------------------+   +----------------------+   +----------------------+    |
     |               ^                          ^                          ^               |
     |               |                          |                          |               |
-    |               |      9P2000.L role filesystems (target)             |               |
+    |               |   One 9P core, separate role exports (target)      |               |
     |               |                          |                          |               |
     |               v                          v                          v               |
     |   +----------------------------------------------------------------------------+    |

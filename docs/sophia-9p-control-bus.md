@@ -13,6 +13,14 @@ direct sockets, compact binary WM records, and existing Session owners. This
 does not authorize installation or live-session work, and other roles remain
 later milestones.
 
+On 2026-10-09 niltempus accepted the
+[one-core decision](notes/decisions/zsx0tk4k-serve-every-public-role-from-one-9p-core-with-namespaces-as-composed-trees-and-portals-as-binds.md):
+all public 9P roles use `sophia-9p`, while each export retains its authority.
+Admission-derived endpoint directories and role trees, authenticated attach
+and the first output-capture bind remain implementation targets. The
+[delivery plan](notes/plans/jsschoen-converge-public-roles-on-one-9p-core.md#first-deliverable-and-dependency-order)
+separates the observer milestone from native applications and portability.
+
 The [control-plane investigation](notes/investigations/5kqzwmi5-plan-9-belongs-in-the-session-control-plane-not-the-engine.md)
 records the reach and mount limits that still apply: per-role sockets, mounts
 chosen by the sandbox, and no unprivileged v9fs mount.
@@ -169,10 +177,11 @@ and lifecycle checks, not an already supported access path.
 **Decision (2026-09-26): plain 9P2000.L, no Sophia extension.** Desktop
 meaning lives in each role's file namespace (events as blocking reads,
 transactions as submit records, snapshots as pinned objects, uploads as fixed
-slots, revocation as the export's check), never in new message types, so any
-9P2000.L client can drive a role. Role contracts use only operations that
-plain 9P2000 also has (version, attach, walk, open, read, write, clunk, flush,
-attributes and directory reads), which keeps a later dual-dialect core cheap.
+slots, revocation as the export's check), never in new message types. A generic
+9P2000.L client still needs the role's file grammar and admission. The current
+.L open, attribute, directory and error operations require explicit adapters
+for plain 9P2000. Common file semantics do not establish wire compatibility
+or the cost of a second dialect.
 Descriptor passing, if a role needs it, stays an optional out-of-band
 capability on the socket, not a protocol extension. Portability beyond Linux
 is deferred (t256).
@@ -180,7 +189,7 @@ Record traffic is binary, compact and strictly bounded because graphics and
 input run at frame rate; a read-only text view per role for humans and
 scripts is planned separately (t257).
 
-Classic 9P2000 fallback is a separate compatibility question. Supporting `.L`
+Classic 9P2000 is a later audited target, not current support. Supporting `.L`
 does not make existing Plan 9 or plan9port applications work unchanged. Graphics,
 input, runtime and service conventions need separate compatibility evidence.
 
@@ -222,9 +231,20 @@ unmounting a view is not proof that an already-open handle has lost authority.
 Client-supplied attach names, UIDs or paths cannot confer a role by themselves.
 
 The mounted client must not be assumed to authenticate every issuing process
-through one socket's peer credentials. Mapping mounts, attaches and open handles
-to protection domains is an unresolved contract requirement. Filesystem modes
-and mount topology supplement authorization; they do not replace it.
+through one socket's peer credentials. The accepted target fixes one principal
+and namespace at the first authenticated attach; later attaches must prove the
+same identity. Different identities require different connections. A mount
+sharing one connection shares that admission, and retained fids never acquire
+a new identity by reattach or rebind. Implementing and qualifying this rule
+remains t317/t318 work. Filesystem modes and mount topology do not replace it.
+
+The observer target reads status and separately granted capture. Screenshot
+bytes cross 9P within explicit limits; GPU descriptors do not. Administrative,
+clipboard and injection grants are independent, with no tier inheritance.
+Capture requires an immutable renderer snapshot and a live generation-bound
+grant at delivery, including cancellation on lock or output replacement.
+These checks and readback costs need measurement even though rendering and
+scanout retain their existing owners.
 
 During migration, one explicitly admitted WM owns spatial proposals regardless
 of its transport. A WM disconnect never automatically grants layout authority

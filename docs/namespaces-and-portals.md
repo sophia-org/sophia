@@ -52,6 +52,38 @@ admission, and revocation belong in `sophia-runtime` and its session supervisor.
 Each frontend owns the protocol-specific adapter that consumes an admitted
 context.
 
+## Accepted composition target (not yet implemented)
+
+The [2026-10-09 one-core decision](notes/decisions/zsx0tk4k-serve-every-public-role-from-one-9p-core-with-namespaces-as-composed-trees-and-portals-as-binds.md)
+extends this contract with admission-derived recipes. Each identity receives
+an endpoint directory and discovery file; every role retains its own tree and
+authority. There is no shared forwarding root. Mount visibility and host
+containment remain separate from server authorization.
+
+The first successful authenticated attach fixes the connection's principal
+and namespace. Subsequent attaches must prove the same identity and stay
+within its admission; another identity requires a separate connection. Every
+retained fid keeps its original identity and generation checks. Authentication
+does not establish supervisor launch custody, and a mount sharing a connection
+shares that admission rather than authenticating each process using it.
+
+Portal policy continues to decide over bounded facts without owning payloads.
+A recipient executor exposes a grant-bound object in its 9P role tree or
+translates through X authority. Revocation removes future access, including
+through retained fids. The first new transfer is one output screenshot:
+immutable renderer-owned bytes, dimensions, format and output/presentation
+generation, delivered within byte and time limits. Screenshot bytes cross 9P;
+GPU descriptors use a separate channel. Loss or replacement invalidates the
+grant. Lock refuses new capture and cancels unfinished delivery; previously
+delivered bytes cannot be recalled.
+
+Observer, operator and driver recipes contain independent grants. The shipped
+target observer has status, inspection and explicitly authorized capture,
+with no injection or administrative authority. Separate identities are the
+default for observation and driving; combining grants requires explicit
+operator policy. This target does not assert that the current admission or
+capture implementation already provides these guarantees.
+
 ## Session Profiles
 
 ### Classic Shared-X

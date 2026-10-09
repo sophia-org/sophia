@@ -41,6 +41,14 @@ authorities, replace namespaces, or move Engine's internal execution onto 9P.
 The [decision record](notes/decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)
 distinguishes accepted direction from the open filesystem contract.
 
+The [one-core decision accepted on 2026-10-09](notes/decisions/zsx0tk4k-serve-every-public-role-from-one-9p-core-with-namespaces-as-composed-trees-and-portals-as-binds.md)
+further specifies the target: every public 9P role, including the later
+application authority, is an export on `sophia-9p`. Role owners retain their
+admission, state and execution; no forwarding root combines their authorities.
+The application scaffold's separate codec and FUSE service claim are not the
+target. Authenticated attach and namespace composition remain unimplemented;
+existing role contracts and X11 behavior do not change through this decision.
+
 ## System Shape
 
 ```text
@@ -1475,6 +1483,16 @@ Portal policy receives only source/target namespaces, transfer kind,
 generation, bounded metadata, and lifetime. Runtime executors retain protocol
 request context, data, handles, and UI effects. Denial maps to native protocol
 failure and never freezes the session or fabricates input.
+
+The accepted composition target uses a per-identity endpoint directory and
+discovery file, with an admitted tree per role. The first authenticated attach
+fixes a connection's principal and namespace; later attaches cannot change
+them or rebase retained fids. For 9P recipients, executors expose one
+grant-bound object in the granting role's tree; X recipients use X authority's
+translation. Bounded screenshot bytes may be read over 9P; GPU descriptors
+use a separate channel. Output replacement cannot silently retarget a capture
+grant. These are unimplemented extensions to the current boundary, with
+capture, administration and injection granted independently.
 
 The complete admission, capability, grant-lifecycle, and first X11
 clipboard/PRIMARY contract is in

@@ -15,14 +15,16 @@ and transaction ownership. The X authority, the WM and shell 9P2000.L role
 contracts, and the planned 9P application authority keep their protocols and
 their owners. Every integration recorded here is additive work in a known
 place. The limit of the insight is that file contents remain a protocol: each
-file needs a grammar, a version and a bounded parser, and Plan 9's own
-simplicity came from keeping those grammars to one line each.
+file needs a grammar, a version and a bounded parser. Small text controls are
+useful where they fit; binary role records retain their existing contracts.
 
 niltempus set this scope on 2026-10-09 during a brainstorm over a personal
 design note, "Plan 9 Inspired Native Display Server Architecture", and the X11
-readback investigation `id869143`. That investigation sits on the t310 and t306
-lane branches at the time of writing, so its findings are summarized here
-rather than linked. The design note is not in the repository.
+readback investigation [id869143](../investigations/id869143-x11-drawable-readback-and-an-operator-capture-path.md).
+The personal design note is not in the repository. The resulting
+[one-core ADR](../decisions/zsx0tk4k-serve-every-public-role-from-one-9p-core-with-namespaces-as-composed-trees-and-portals-as-binds.md)
+was accepted after review on 2026-10-09. This concept remains explanatory;
+its cost estimates and unimplemented examples are not qualification evidence.
 
 ## What stays fixed
 
@@ -60,9 +62,9 @@ current owner.
                                       v          peer credentials become optional
  +-------------------------------------------------------------------+
  | sophia-session                                                    |
- |   namespace recipe  -> composes one tree per admitted identity    |  rule 1
+|   namespace recipe  -> endpoint directory per admitted identity  |  rule 1
  |   portal policy     -> reducer over bounded facts   (unchanged)   |
- |   executor          -> bind / unbind one object into that tree    |
+|   recipient executor -> bind in its role tree / X translation    |
  +-------------------------------------------------------------------+
                                       |
  PUBLIC ROLE BOUNDARY --------------- | ------  one 9P core, N exports
@@ -87,13 +89,14 @@ current owner.
 
 ### Namespaces and portals under rule one
 
-Each export already builds its root from the attach context, so composition is
-the only missing layer. With it, every portal kind has one execution model. An
-allowed grant binds one object into the requester's tree for the grant's
-lifetime. Revocation, expiry, disconnect or a session lock makes the open fid
-return ESTALE. The policy reducer, the seven `PortalTransferKind` values and
-the request lifecycle keep their current definitions; the executor is bind and
-unbind plus one object type per kind. Confinement divides into two halves that
+Each export already builds its root from the attach context. The missing work
+includes composition, authenticated admission and recipient executors. A 9P
+recipient receives a grant-bound object in that role's tree; an X recipient
+uses the X authority's protocol translation. Revocation, expiry, disconnect
+or a session lock makes the capture fid return ESTALE. The policy reducer,
+the seven `PortalTransferKind` values and the request lifecycle keep their
+definitions; each kind still needs an executor and ownership proof.
+Confinement divides into two halves that
 the current bubblewrap policy mixes. Reach within Sophia is enforced by the
 composed tree on every platform with no operating-system help. Reach into the
 host stays a per-platform driver fed the same backend-neutral policy that
@@ -108,7 +111,7 @@ was repaired in the authority, not with mounts, and the
 says that hiding a path is not proof an open handle has lost authority. The
 server checks attach, walk, open and every operation on a retained handle.
 
-The first bind should be capture, t046. One grant materializes a small
+The first new bind is capture, t319, carved from t046. One grant materializes a small
 directory for the requester holding a frame record, with dimensions, format,
 the output or opaque window identity and the presentation generation, and a
 frame file whose read returns bounded bytes. That is the small direct client
@@ -124,16 +127,14 @@ recording kind on a separate descriptor channel, as the lock image plan
 proposes. An output is the first target; a window by opaque identity follows.
 
 ```text
- requester's tree (composed at attach)        grant lifecycle
+requester's portal-role tree                grant lifecycle
  /
  ├── status      role status, one line        request  Pending -> Allowed
- ├── ctl         one-line commands            grant    Active  -> bind into tree
- └── portal/
-     └── capture/<grant>/                     read the record, read the bytes
-         ├── frame.record   dimensions, format, target,
-         │                  presentation generation
-         └── frame          bounded bytes; dma-buf only on the
-                            recording kind's descriptor channel
+ └── capture/<grant>/                        grant    Active  -> bind into tree
+     ├── frame.record   dimensions, format, target,
+     │                  presentation generation
+     └── frame          bounded bytes read over 9P; dma-buf only on
+                        the recording kind's descriptor channel
                                               grant    Completed | Revoked | Expired | locked
                                                        -> unbind; the open fid answers ESTALE
 ```
@@ -149,13 +150,13 @@ is independent of capture and is not closed by accepting unknown minors.
 
 ### Identity under rule two
 
-Plan 9 authenticated every attach because one server served local and remote
-clients over the same protocol. Sophia has the same need in a different form.
-A mounted client may share one socket's peer credentials among several
-processes, which the public-interface design records as an unresolved
-contract requirement. An afid conversation settles identity per attach
-regardless of transport. The supervisor's launch record, the process
-descriptor it holds for a child it spawned, settles custody. Lock-file
+The accepted target authenticates the first attach and fixes one principal
+and namespace for that connection. Every later attach must prove the same
+identity and stay within its admitted grants; a different principal needs a
+separate connection. Existing fids never change identity. A mount sharing one
+connection therefore shares its admission, rather than treating each process
+using the mount as a new authenticated client. The supervisor's launch record
+proves custody only for a child it actually spawned. Lock-file
 admission today hard-requires `SO_PEERPIDFD` in
 `crates/sophia-runtime/src/lock_files/transport.rs`; under this rule that
 becomes an optional check where the platform offers it. X11 clients have no
@@ -164,17 +165,17 @@ namespace-keyed resource checks.
 
 ### Portability under rule three
 
-The compositor core is already platform-neutral through rustix. The remaining
-items are the t256 audit. The live session names a libinput poller entry point
+Using rustix does not prove platform neutrality; syscalls and dependencies
+still need the t256 audit. The live session names a libinput poller entry point
 directly at `crates/sophia-session/src/live_session.rs:270`, where the profile
 should select the backend. 9P2000.L's `Rlerror` carries Linux errno numbers by
 dialect definition, so the error vocabulary must be Sophia's own enum mapped
-per dialect and never the host's errno. Plain 9P2000 beside 9P2000.L is cheap
-because role contracts already restrict themselves to the common operation set.
-A BSD containment driver takes the same policy input as bubblewrap. FreeBSD is
-the first target because libinput, udev and libseat exist there; OpenBSD also
-needs a wscons input backend. PAM is isolated in `sophia-factotum-pam` with the
-libpam binding in its own module, which is the seam a bsd_auth module would use.
+per dialect and never an unchecked host errno. Plain 9P2000 requires explicit
+adapters for the current .L open, stat, directory and error operations, plus
+independent interoperability evidence. Its cost is not established. A future
+BSD containment driver should take the same policy input as bubblewrap;
+backend and dependency availability must be audited before selecting a port.
+PAM is isolated in `sophia-factotum-pam`, the seam for any alternative adapter.
 
 ## Findings against the personal design note
 
@@ -367,16 +368,18 @@ no SDK, no protocol of its own and no feature built for it.
 An agent's authority is its tree and nothing more. There is no ambient
 permission, so agent power is defined as recipes rather than code paths.
 
-| Tier | The recipe binds | The agent cannot |
+| Recipe | Explicit grants | Absent without another grant |
 | --- | --- | --- |
-| Observer | Status and inspection files, capture grants on named outputs | Inject input, read another namespace, propose layout |
-| Operator | Observer plus administrative ctl files and clipboard grants | Become the WM, see pixels without a grant |
-| Driver | Operator plus XTEST admission on one named namespace | Reach the trusted namespace, act after revocation |
+| Observer | Status and inspection files, capture grants on named outputs | Input injection, administration, WM policy |
+| Operator | Selected administrative ctl files and clipboard grants | Capture, input injection, WM policy |
+| Driver | Input injection on one named namespace | Capture, administration, other namespaces |
 
 Input injection is the line that matters. Capture never implies it, XTEST
 admission is per namespace and separately granted, and the invariants forbid
-synthetic input as a side effect of anything. An agent that can see and an
-agent that can act are two identities.
+synthetic input as a side effect of anything. These recipes do not inherit
+one another. The default observe-and-act workflow uses two identities on
+separate connections; an operator may explicitly compose grants for one
+identity. Neither an identity's name nor its recipe label grants authority.
 
 Every agent action is attributable and revocable. It happens on a fid tied to
 an attach, the 9P journal records it, and revocation makes the fid answer
@@ -414,14 +417,13 @@ three.
 | X11 today | What it gives | Sophia end state | What changes |
 | --- | --- | --- | --- |
 | XTEST | Injects pointer and key events. Ambient: any connected client may. No audit, no revocation, no target binding; events land wherever focus is. | Driver tier | Injection is a per-namespace admission granted to one identity, journaled, revocable in the middle of a task, and routed by Engine against presented state like physical input. Sophia already gates XTEST this way with `--admit-xtest`. |
-| GetImage, xwd, scrot | Reads a drawable's CPU backing. Misses accelerated content and the composed desktop. | Capture bind | One grant yields a frame record with a presentation generation and bounded pixels from the composed output, refused while locked, revoked by ESTALE. |
+| GetImage, xwd, scrot | Sophia's current readback uses CPU backing and does not establish accelerated or composed-output pixels. | Capture bind | One grant yields a frame record with a presentation generation and bounded pixels from the composed output, refused while locked, revoked by ESTALE. |
 | XRecord, xprop, xwininfo | Watches protocol traffic and reads window state with full metadata. | Inspection and status files | Sanitized, bounded, read-only records per role, with no metadata reaching a blind WM and no acknowledgement-floor cost on it. |
 
-The honest description is XTEST, GetImage and XRecord placed behind one
-identity, one grant model and one audit trail, with observing and acting held
-by different identities. XTEST's flaw is not that it injects input; it is that
-anyone who can open the display may do so silently, with no way to tell
-afterwards.
+The target puts observation and input behind explicit grants and attributable
+operations, with separate identities in the default workflow. Permission to
+connect to a display is insufficient authority to inject input. Authentication
+does not prevent an explicitly authorized client from misusing its grants.
 
 Three limits keep this from being oversold. XTEST itself remains the X-side
 surface for clients such as xdotool, gated by namespace admission; the driver
@@ -436,19 +438,18 @@ observes and does not act.
 
 ## Where the cost lands
 
-The three rules act at connect time and at operator cadence, not per frame.
-Composition and authentication happen once at attach. A portal bind happens
-once per grant. Pixels never cross 9P: X clients keep DRI3 and shared memory,
-the recording kind uses a dma-buf on its own descriptor channel, and the WM and
-shell roles keep binary records. Engine's scene, commits, rendering and scanout
-are untouched, so the design cannot make rendering slower. The costs it does
-add are these.
+Composition and authentication act at attach; a portal bind acts per grant.
+Bounded screenshot bytes do cross 9P, while GPU descriptors use their separate
+channel. X clients keep DRI3 and shared memory, and WM and shell roles keep
+binary records. Engine ownership is unchanged, but capture can require GPU
+waits, readback and copies that compete with rendering. There is no guarantee
+of unchanged frame latency. The costs to bound and measure include these.
 
 | Where | Cost | Cadence |
 | --- | --- | --- |
 | Attach with factotum | One authentication conversation | Per connection |
 | Walk against the composed tree | Slice matching with no inodes or caches | Per path lookup, never per frame |
-| Capture frame read | One bounded copy from a retained snapshot | Per grant |
+| Capture frame read | Snapshot completion, bounded readback, copies and delivery | Per grant, with deadlines and byte limits |
 | Ctl and status files | Parsing one line | Per operator command |
 | Mounted clients through 9pfuse | Extra kernel context switches | The reason core roles connect directly |
 
@@ -470,8 +471,9 @@ delegation, Rio-style re-export and discovery by the tree.
 The departures are deliberate. There is no draw protocol, because Engine's
 transaction model is the part that survives GPUs and server-side drawing is
 the part that did not. There are no kernel mounts as authority, because the
-server check is the authority. Pixels move as GPU handles on a descriptor
-channel, not as file reads. The result is Plan 9's structure with a modern
+server check is the authority. Screenshot pixels are bounded file reads;
+GPU-buffer transfers use handles on a separate descriptor channel. The result
+borrows Plan 9's structure with a modern
 transactional compositor in the middle.
 
 ## Sequence
@@ -481,22 +483,20 @@ The immediate monitor-continuity application is recorded in the
 and [physical-return investigation](../investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#second-bare-metal-return-sleeping-gpu-and-incomplete-validation-2026-10-09).
 Session and application identities outlive unplugged displays; native owners,
 input routing and presentation grants are tied to their physical generation.
-Admitted slow probing and complete-plane validation are the immediate repair.
+Admitted slow probing and complete-plane validation shipped in release 222,
+which passed the attended cable and KVM returns, including while locked.
 This borrows the service-lifetime idea without replacing Engine or pretending
 that a disconnected display presented a frame. Status/discovery and revoked
 capture fids remain scoped work under t257/t318/t319, separate from this release.
 
-This note creates no task and promotes none. The order follows the open tasks
-that already exist. Identity comes first: reconcile the
-[admission investigation](../investigations/1pv291te-namespace-and-client-admission-security-gaps.md)
-and the [pidfd proposal](../plans/esnqxpqw-pidfd-and-namespace-admission-optimizations.md)
-under t133 with production admission, alongside the t256 audit. Composition
-follows under t142, the
-[several-listener frontend](../plans/ooy00zjd-socket-directory-and-frontend-multiplexer-architecture.md),
-and t275, the namespace recipe. The first bind is the output-only capture slice
-of t046, then the confined daily group under t045. The t257 status files and
-the t313 XkbBell fix proceed independently. Monitor recovery remains the active
-implementation priority.
+The [delivery plan](../plans/jsschoen-converge-public-roles-on-one-9p-core.md#first-deliverable-and-dependency-order)
+now owns the dependency sequence: finish t310's output publication obligations,
+prove admission and confined groups, compose the observer view, then deliver
+one authorized output screenshot. The portal foundation does not wait for
+clipboard execution through a future 9P application frontend. Native
+applications, input driving, other portal kinds and portability are separate
+deliverables. Task lanes remain in todo.md; t307 is parked until a physical
+failure or a new VM-testing goal warrants resuming it.
 
 ## Limits
 
@@ -508,7 +508,7 @@ nothing deleted in the first step, is an estimate from the export sizes.
 ## Connections
 
 - [Serve every public role from one 9P core](../decisions/zsx0tk4k-serve-every-public-role-from-one-9p-core-with-namespaces-as-composed-trees-and-portals-as-binds.md)
-  is the proposed decision this reasoning led to.
+  is the accepted decision this reasoning led to.
 - [Adopt 9P2000.L as the public interface](../decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)
   governs the transport direction this note builds on.
 - [Keep broker and portal file authority and custody separate](../decisions/xa78u03g-keep-broker-and-portal-file-authority-and-custody-separate.md)

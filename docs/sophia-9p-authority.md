@@ -10,6 +10,14 @@ The admitted [Hagia-first implementation](notes/plans/80blhke8-migrate-the-hagia
 builds shared transport and the WM role; this application frontend remains a
 later milestone and is not activated by that work.
 
+The [one-core decision accepted on 2026-10-09](notes/decisions/zsx0tk4k-serve-every-public-role-from-one-9p-core-with-namespaces-as-composed-trees-and-portals-as-binds.md)
+requires this frontend to use the shared `sophia-9p` core as an export. The
+scaffold's separate codec and FUSE service claim describe unfinished code,
+not the target architecture. t321 first names the existing authority exchange
+records in `sophia-protocol`; t316 then replaces the scaffold's codec without
+adding an application API. An operator screenshot does not depend on either
+step: its recipient can be a generic client of the portal export.
+
 ## Purpose and scope
 
 The target frontend lets an application create and update its graphical content
@@ -53,7 +61,8 @@ allocations merely because those interfaces also speak 9P.
 
 | Owner | Responsibility |
 | --- | --- |
-| 9P application frontend | Protocol decoding, per-connection handles and object state, admitted application content and metadata, translation to existing visual transactions, protocol replies and routed-input encoding |
+| Shared 9P core | Wire decoding and encoding, connection machinery and dialect handling |
+| 9P application frontend export | Per-connection object state, admitted application content and metadata, translation to existing visual transactions, role outcomes and routed-input encoding |
 | Session | Caller admission, protection domains, supervision, grants, revocation and service routing |
 | Engine and rendering owners | Scene truth, hit-testing, atomic visual commits, source retention, native backing retirement, rendering and scanout |
 | WM | Metadata-blind spatial and focus policy over opaque nodes |
@@ -100,9 +109,12 @@ Session establishes the application's resource namespace and effective rights.
 The server restricts every attach, walk, open and operation to that admission,
 including operations on previously opened handles. Linux mount namespaces can
 expose only the intended view but do not replace server checks, FD custody or
-revocation. The mounted client's relationship to process identity needs an
-explicit contract; a mount's transport peer is not assumed to identify every
-process using it.
+revocation. In the accepted target, the first authenticated attach fixes one
+principal and namespace for the connection; later attaches cannot change it.
+A different identity uses a new connection, and existing fids are never
+rebased. A mounted view sharing one connection shares that admission, rather
+than independently authenticating each process using it. The attach and
+custody implementation remains separate prerequisite work under t317.
 
 Engine resolves input against presented state. The frontend receives only the
 events routed to the admitted application and translates them into its own
@@ -130,8 +142,8 @@ protocols need separate implementation and independent-client evidence.
 Plan 9's [draw interface](https://9p.io/magic/man2html/3/draw) carries a specific
 graphics protocol inside files. [Rio](https://9p.io/magic/man2html/4/rio) exports
 window services. They are references for API design, not interchangeable APIs
-obtained by implementing 9P2000.L. Classic 9P2000 fallback remains an open
-compatibility decision.
+obtained by implementing 9P2000.L. Classic 9P2000 is a later portability
+target requiring explicit operation adapters and interoperability tests.
 
 An application could separately export its own domain services: for example,
 an editor's buffers and commands, following the

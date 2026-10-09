@@ -64,6 +64,11 @@ implied. Live desktop capture does not depend on completing the separate
 The [namespace prerequisite review](../investigations/id869143-x11-drawable-readback-and-an-operator-capture-path.md#namespace-prerequisites-for-capture-2026-10-09)
 maps t133 admission, t142 live client groups and related work. It recommends
 proving admission and confinement before shipping capture, while permitting
-portal design and isolated tests alongside them. The broader t275 namespace
-composition design remains separate; this reference does not promote t046 or
-change the task queue.
+portal design and isolated tests alongside them. The accepted
+[one-core delivery plan](jsschoen-converge-public-roles-on-one-9p-core.md#first-deliverable-and-dependency-order)
+now places authenticated admission, group proof and recipe composition before
+shipping the t319 output-capture bind. t315 supplies portal control and the
+generic bind seam while preserving current X clipboard execution; it does not
+wait for clipboard support through a future 9P application frontend. This
+t046 row retains the later executor gaps and their per-recipient acceptance,
+without making them prerequisites for the first screenshot.

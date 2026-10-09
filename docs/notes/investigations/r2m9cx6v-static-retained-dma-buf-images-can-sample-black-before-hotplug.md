@@ -1499,9 +1499,28 @@ t306/t307 acceptance.
 
 ## t307
 
+### Disposition: parked after physical acceptance (2026-10-09)
+
+niltempus keeps this investigation open and removes it from the critical path.
+The observed problem is confined to QEMU/virgl evidence so far; it was not seen
+in the [release 222 bare-metal amdgpu acceptance](kdleagg3-kvm-output-and-usb-loss-returns-the-desktop-to-greetd.md#release-222-physical-acceptance-2026-10-09).
+That acceptance does not prove every physical driver immune.
+
+The earlier Mesa-pair evidence points at Mesa virgl: the patched shared arm
+was PRESERVED and the original shared arm LOST at context level. The
+producer/snapshot/consumer synchronization split remains unfinished, so a
+Sophia-side missing wait is not ruled out. The 215c successor stopped on the
+since-fixed renderer-content fatal; its INCOMPLETE result is neither retained
+pixel acceptance nor a t307 repair. The 211, 213 and 215 records keep their
+original identities and verdicts.
+
+Return this work to the critical path if a black retained image appears on
+real hardware, or if QEMU/VM testing becomes a goal. Until then, no QEMU run,
+private Mesa image or t307 repair gates t306 or the next desktop milestone.
+
 The [four-part qualification plan](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md)
-records the authorized bounded comparison and production-workload exits.
-The underlying investigation obligations remain:
+preserves the earlier bounded comparison and production-workload exits.
+If this task is resumed, the underlying investigation obligations remain:
 
 1. Trace the successful mixed Present and subsequent retained composition:
    source buffer, snapshot identity and storage, texture/import identity,
@@ -1523,16 +1542,10 @@ The underlying investigation obligations remain:
    file description across renderer instances. The installed desktop runs
    radeonsi with stock Mesa; its immunity is not shown.
 
-The task is high priority because pixels can disappear without a new client
-frame, and this currently obscures hotplug qualification. t306 need not
-absorb its root-cause repair, but failed or unstable runs are not acceptance
-of the still-unproved managed-head loss and all-return cases.
-
-t306 no longer waits on this task. Under the approved split its guest runs
-boot the patched Mesa image as a declared intervention, after 213 qualifies
-that environment; this task keeps the production result, the radeonsi review
-and any fresh-open change, which needs its own API, PRIME and custody review
-and comparison.
+The former patched-guest prerequisite was superseded by the bare-metal
+decision and physical acceptance. A future fresh-open change still needs its
+own API, PRIME and custody review and comparison; parking the investigation
+does not authorize that implementation.
 
 Task state and execution order live in [todo.md](../../../todo.md).
 

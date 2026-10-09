@@ -33,6 +33,12 @@ t310; full lock acceptance and owner-bound cover evidence stay with t297;
 the requested-VT handoff is candidate t322. Source promotion retains the tested
 Sophia pin and installed release; broader follow-ups need their own regressions.
 
+niltempus subsequently parked t307 while keeping it open. Its
+[disposition and re-entry conditions](../investigations/r2m9cx6v-static-retained-dma-buf-images-can-sample-black-before-hotplug.md#t307)
+preserve the virgl evidence and unresolved synchronization split. No remaining
+guest package in this historical plan gates the current desktop work; resume
+that investigation for a physical black retained image or a new QEMU/VM goal.
+
 ## Resume progress (2026-10-09)
 
 The newly reported installed-session crash has interrupted qualification.

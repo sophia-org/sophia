@@ -2,7 +2,7 @@
 id: zsx0tk4k
 date: 2026-10-09
 kind: adr
-status: proposed
+status: accepted
 tags: [adr, architecture, protocol, security, namespaces, portals]
 ---
 # Serve every public role from one 9P core with namespaces as composed trees and portals as binds
@@ -46,11 +46,13 @@ accepted. The application authority is built as an export on the same core;
 its separate codec and its FUSE service claim are withdrawn before any
 application API work. X11 remains its own frontend and is not a 9P interface.
 
-The core serves 9P2000.L now and plain 9P2000 beside it when the portability
-audit lands. Role contracts use only the operations both dialects share. Error
-replies carry Sophia's own error vocabulary mapped per dialect, never the host
-operating system's errno values, because 9P2000.L defines its codes as Linux
-numbers regardless of host.
+The core serves 9P2000.L now. Plain 9P2000 is a later portability target, with
+explicit adapters for open, stat, directory reads and errors; the existing .L
+operation subset is not already common to both dialects. Role file semantics
+stay the same where an adapter can preserve them. Error replies use Sophia's
+error vocabulary mapped per dialect, never an unchecked host errno, because
+9P2000.L defines its codes as Linux numbers regardless of host. The audit and
+interoperability tests precede any plain-9P support claim.
 
 A namespace is what a connection can reach: the role endpoints in its socket
 directory and, on each endpoint, the tree its attach yields. The immutable
@@ -64,11 +66,15 @@ become two recipes rather than two code paths, with the capability set as the
 recipe's portal section and host reach as a separate, per-platform, optional
 section.
 
-Identity is proven at attach. A 9P connection may authenticate each attach
-through an afid conversation with factotum, and the supervisor's launch record
-for a child it spawned establishes custody. Kernel peer credentials become a
-platform-optional second check. X11 admission is unchanged, since X has no
-attach to authenticate.
+Identity is proven at attach. The first successful authenticated attach fixes
+the connection's principal and namespace in its immutable admission context.
+Later attaches must authenticate as that same principal and namespace and can
+only obtain views within its admitted grants. A different identity requires a
+different connection; no attach can rebase an existing fid's authority. The
+afid conversation uses factotum, while the supervisor's launch record proves
+custody of a child it actually spawned. Authentication alone proves no launch
+custody. Kernel peer credentials become a platform-optional second check only
+after the replacement's negative controls pass. X11 admission is unchanged.
 
 Portals are the only edge between namespaces, and the recipient's frontend
 executes them. Portal policy remains a deterministic reducer over bounded
@@ -77,8 +83,12 @@ without executing. A 9P recipient receives a bind of one object into its tree
 for the grant's lifetime, and revocation makes the open fid return ESTALE. An
 X recipient receives a translation into X semantics by the X authority. A
 descriptor-bearing kind carries a record on the file and the descriptor on
-that role's side channel, never on the 9P stream. Capture is the first bind,
-output-only, refused while the session is locked.
+that role's side channel, never on the 9P stream. Capture is the first new bind:
+one named output, with a versioned frame record and bounded screenshot bytes
+read over 9P from an immutable renderer-owned snapshot. GPU handles and
+recording descriptors stay on the separate descriptor channel. Capture is
+refused while locked; applying the lock cancels unfinished capture delivery.
+Revocation prevents future reads and cannot recall bytes already delivered.
 
 Composition is a per-identity socket directory. The recipe decides which
 role endpoints exist in an identity's directory and writes one discovery file
@@ -112,14 +122,17 @@ by profile and never names one.
 Engine, its internal typed transactions, the X authority, the WM and shell
 file contracts and their binary records are unchanged by this decision.
 
-Agents and other operator tools are ordinary admitted clients. Their power is
-the tree their recipe composes, in three tiers: an observer reads status and
-inspection files and holds capture grants on named outputs; an operator adds
-administrative ctl files and clipboard grants; a driver adds XTEST admission
-on one named namespace. Sophia ships the observer recipe. Operator and driver
-recipes are composed by the operator, and the driver tier is absent from the
-installed daily session unless a task names it. Sophia builds nothing
-agent-specific: no harness, no named client and no feature for one agent.
+Agents and other operator tools are ordinary admitted clients. Observer,
+operator and driver are recipes of independent grants, not an inheritance
+hierarchy. The observer reads status and inspection and may receive capture
+grants on named outputs. The operator receives selected administrative ctl
+and clipboard grants. The driver receives injection admission on one named
+namespace; it gains neither capture nor administration implicitly. The default
+observe-and-act workflow uses separate identities and connections. Combining
+grants for one identity requires explicit operator policy; names such as
+"driver" confer nothing. Sophia ships the observer recipe, and driving is
+absent from the daily session unless a task admits it. Sophia builds nothing
+agent-specific: no harness, named client or feature for one agent.
 
 For 9P applications the driver tier's mechanism is an input file on the
 admitted window, served by the application authority, bound into the driver's
@@ -223,9 +236,11 @@ deleted in the first step.
 The measurement rule in the
 [public-interface design](../../sophia-9p-control-bus.md#performance-is-an-acceptance-question)
 is unchanged: no legacy interface is retired until its replacement is measured
-against it for the same workload. The three rules act at connect time and at
-operator cadence; they add no per-frame work and leave Engine's hot path
-untouched.
+against it for the same workload. Authentication and composition act at
+connect time; grants and capture act on demand. Capture can require GPU waits,
+readback and copies, and shared resources can affect frame latency even when
+Engine's ownership is unchanged. Bound that work and measure idle wakeups,
+CPU, allocations, copied bytes and presentation latency with capture enabled.
 
 This record promotes nothing into the critical lane. The open work maps onto
 tasks in [todo.md](../../../todo.md), with the new rows owned by the
@@ -239,10 +254,12 @@ the legacy envelope and its default selections; t133 and t256 cover the
 admission review and the portability audit, and t317 proves identity at
 attach; t142 and t275 cover group listeners and the recipe, and t318
 implements the composition layer; t319 delivers the capture bind carved from
-t046, and t045 the confined daily group; t257 adds status files. Monitor
-recovery remains the active implementation priority.
+t046, and t045 the confined daily group; t257 adds status files. Physical
+monitor recovery was accepted on release 222. The remaining t310 publication
+and policy obligations precede treating output identities as a capture target;
+the independent t307 QEMU/virgl investigation is parked.
 
-On acceptance, the normative documents carry the target, labeled as
+The normative documents carry the accepted target, labeled as
 unimplemented until each part lands: the protocol frontends and namespace
 sections of [architecture](../../architecture.md), the target diagram in the
 repository README, [namespaces and portals](../../namespaces-and-portals.md)
@@ -263,9 +280,15 @@ later availability/status view, t318 the retained-handle binding rules, and t319
 generation-bound capture and revocation. They do not block the physical recovery
 candidate or change its current role protocols.
 
-Proposed on 2026-10-09 by niltempus during the Plan 9 brainstorm. Acceptance
-is pending review by niltempus and Codex and will be recorded here with its
-basis.
+Proposed and accepted by niltempus on 2026-10-09 after review of this record
+and ernn0bkv. Acceptance includes five clarifications: bounded screenshot
+bytes may cross 9P while descriptors do not; attaches cannot change a
+connection's identity; observer/operator/driver grants do not inherit;
+t315's portal foundation does not require future clipboard delivery through
+both application frontends before t319 capture; and unchanged Engine ownership
+is not a performance guarantee. The [delivery plan](../plans/jsschoen-converge-public-roles-on-one-9p-core.md#first-deliverable-and-dependency-order)
+sets the first usable milestone and its gates. Approval establishes the target
+architecture, not implementation or physical acceptance of these interfaces.
 
 - [Plan 9 integration points](../concepts/ernn0bkv-plan-9-integration-points-for-sophia.md)
   holds the reasoning, the cost table and the seven further integration points.

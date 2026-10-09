@@ -9,7 +9,7 @@ tags: [plan, milestone, 9p, namespaces, portals]
 ## Scope and exit
 
 This plan owns the implementation rows that follow from the
-[proposed one-core decision](../decisions/zsx0tk4k-serve-every-public-role-from-one-9p-core-with-namespaces-as-composed-trees-and-portals-as-binds.md).
+[accepted one-core decision](../decisions/zsx0tk4k-serve-every-public-role-from-one-9p-core-with-namespaces-as-composed-trees-and-portals-as-binds.md).
 The milestone ends when every public role is an export on the `sophia-9p`
 core, the legacy socket envelope has no production caller, the application
 authority scaffold attaches through the same core, identity can be proven at
@@ -17,9 +17,10 @@ attach, each connection's tree is derived from its admission context by a
 recipe, and one portal kind has been executed as a bind. Engine, the X
 authority and the existing role file contracts are unchanged throughout.
 
-The plan creates no critical-lane work. Rows enter as parallel work where a
-driver and a measurable exit exist and as candidates where they wait on a
-gate. Task state and execution order live in [todo.md](../../../todo.md).
+Architecture approval and the dependency plan below do not promote every row
+at once. Rows enter as parallel work where a driver and a measurable exit
+exist and as candidates where they wait on a gate. Task state and execution
+order live in [todo.md](../../../todo.md).
 Each row's exit below is the acceptance claim; physical acceptance, where a
 row needs it, is a separate claim with its own evidence. The measurement rule
 of the [public-interface design](../../sophia-9p-control-bus.md#performance-is-an-acceptance-question)
@@ -37,6 +38,50 @@ One row here is critical-lane work by niltempus's decision of 2026-10-09: the
 9P-side input injection contract, t320, because the application authority's
 input contract, the driver tier and agent-driven acceptance all depend on it
 and none can be designed around it later.
+
+## First deliverable and dependency order
+
+niltempus approved the reviewed direction on 2026-10-09 and requested the
+critical path. The first usable deliverable is a generic observer CLI that
+reads bounded status and captures one explicitly authorized output, including
+accelerated content, with the output and presentation generation attached.
+The observer cannot inject input. No native 9P application frontend, mounted
+filesystem, recording stream or new desktop UI is required for this milestone.
+
+| Step | Existing scope | Exit that unlocks the next step |
+| --- | --- | --- |
+| 1. Finish output publication | t310 | Same-topology owner replacement settles the realization; equal authority snapshots need no republication, changed capabilities advance the epoch and publish. Both paths have failing-without-fix CPU regressions. Reconcile the remaining workspace-affinity/policy exits in t310's plan; do not repeat accepted cable survival as a substitute. |
+| 2. Establish admission and reach | t133, t317, t142; recipe design t275 | One immutable principal/namespace per connection; no forged attach, cross-identity second attach or inherited-fid authority change. Two confined groups cannot reach the trusted socket or one another; explicit CLIPBOARD and PRIMARY transfers retain their t142 controls. Launch custody is proven separately from authentication. |
+| 3. Compose the observer and portal foundation | t318, t315; bounded status slice of t257 | Separate role endpoints and discovery, independent grants, a retained-fid revocation seam, and truthful available/waiting/recovering status. t315 retains its existing t249 prerequisite and preserves current X recipient execution. The foundation needs no future native-9P clipboard client. |
+| 4. Add one output capture | t319 | Renderer-owned immutable snapshot, bounded bytes/deadline, declared crop and cursor semantics, and a generic CLI. Known CPU and accelerated pixels match; lock, revoke, disconnect, output loss/replacement and slow readers fail closed without leaking or retargeting a frame. |
+| 5. Qualify the observer on the desktop | t319 acceptance, then t045 only within its own scope | Full isolated repository gate on the signed candidate, capture-on/off resource and latency measurements, then a matched release and attended capture/revocation check. Record the exact source, profile and artifact. Only the observer is enabled for this milestone. |
+
+The dependency spine is admission review → authenticated attach and group
+proof → recipe/composition and portal foundation → capture → qualification.
+Recipe design and isolated snapshot tests can proceed while prerequisites are
+being proved; neither authorizes exposing capture before admission is ready.
+The existing WM/shell acceptance and performance tasks retain their queue
+positions and exits. t249 is an existing portal-export prerequisite, not a
+reason to restart the entire role migration or postpone all design work.
+
+The immediate code action is t310's same-topology publication regression and
+fix. The next design action is the t133/t275 admission-and-recipe boundary,
+using the immutable-connection rule in the accepted ADR. t257 can supply a
+narrow output-availability/status slice without waiting for text status in
+every role; t319 requires that slice, not completion of the whole t257 row.
+
+Administration and broker migration (t254/t314), the neutral authority records
+and application scaffold (t321/t316), later clipboard/INCR/Xdnd/URI/prompt
+executors (t046), and portability/plain 9P (t256) remain separate work. t320's
+injection design retains its approved place, but implementing or enabling a
+driver is not a screenshot prerequisite. t255 still requires accepted exports
+and measurements for every legacy production caller before retirement.
+
+t307 stays open and parked by niltempus's decision: no QEMU, private Mesa or
+VM qualification gates this path. Its [re-entry conditions](../investigations/r2m9cx6v-static-retained-dma-buf-images-can-sample-black-before-hotplug.md#t307)
+are a physical retained-image failure or a new QEMU/VM-testing goal. The
+accepted release 222 and its evidence remain the baseline. Future live checks
+test the changed feature; frozen failed runs are never relabeled.
 
 ## Task details
 
@@ -65,8 +110,17 @@ lifetime and its open fid answers ESTALE after revocation; an X recipient
 receives a translation in the X authority. Exit: no request record carries a
 payload, descriptor, raw object ID or unbounded string; denied, stale, foreign
 and revoked requests fail closed with compiled controls; a grant dies with
-source generation, deadline, disconnect, lock or broker restart; one existing
-kind, clipboard text, is proven end to end through both recipient paths.
+source generation, deadline, disconnect, lock or broker restart. Prove the
+generic bind/revoke seam with a device-free recipient and preserve every
+currently implemented X clipboard/PRIMARY executor outcome through the new
+files path. No legacy production behavior may disappear during migration.
+
+This is the portal foundation. It does not require clipboard text through a
+future 9P application frontend. t319 supplies the first real new 9P transfer;
+t046 owns later clipboard and other executor gaps, with explicit end-to-end
+proof for each recipient path as that frontend becomes available. t255 may
+retire the old envelope only after all its existing production callers have
+accepted replacements, regardless of this split.
 
 ## t316
 
@@ -102,9 +156,13 @@ no third-party path is opened in process.
 Prove identity at attach. The core accepts an afid, runs the factotum
 conversation, and the admission policy derives the `ClientAdmissionContext`
 from that identity together with the supervisor's launch custody record for a
-child it spawned. Peer pidfd and peer credentials remain optional platform
-checks. X11 admission is unchanged. Exit: an attach without a valid afid on a
-role that requires one is refused; a forged uname confers nothing; a client
+child it spawned. The first successful attach fixes the principal and
+namespace; later attaches must prove that same identity and cannot widen its
+admission or rebase retained fids. Different identities use separate connections.
+Peer checks become optional only after equivalent admission and custody
+controls pass. X11 admission is unchanged. Exit: an attach without a valid afid on a
+role that requires one is refused; a forged uname confers nothing; an attach
+for a second identity is refused without changing existing fids; a client
 the supervisor did not launch cannot acquire custody; lock-file admission no
 longer hard-requires `SO_PEERPIDFD`; the admission threat model in the
 [admission investigation](../investigations/1pv291te-namespace-and-client-admission-security-gaps.md)
@@ -125,7 +183,9 @@ revoked transfer makes its fid answer ESTALE; visibility, service identity
 and permission are recorded as three separate results; the shared and
 confined session profiles are expressed as two recipes, and the shipped
 observer recipe for agents and operator tools binds only status, inspection
-and capture grants, with input injection absent. Depends on t275 and t142.
+and capture grants, with input injection absent. Operator and driver recipes
+do not inherit observer grants; deliberate composition is explicit policy.
+Depends on t275, t142 and t317.
 
 The [monitor continuity contract](cmoaia7z-complete-adaptive-output-policy-and-gpu-admission-t310.md#persistent-services-and-replaceable-display-attachments)
 adds a lifetime control: a display's replacement generation cannot silently
@@ -144,10 +204,12 @@ at the [renderer import boundary](../../renderer-import-boundary.md), the
 same primitive an accelerated same-namespace GetImage would use. Exit: a
 small CLI reads one image and its generation under one grant; capture is
 refused while the session is locked and none in flight completes after the
-lock is applied; the fid answers ESTALE after revocation; known pixels match
+lock is applied; the fid answers ESTALE after revocation; bytes already
+delivered cannot be recalled; known pixels match
 on a CPU client and an accelerated client; no XTEST admission is implied; the
 dma-buf form stays with the recording kind on a separate descriptor channel.
-Depends on t315 and t142.
+Depends on t315 and t318, including t318's admission and group prerequisites,
+and on the bounded availability/status slice of t257 described above.
 
 Loss or replacement of a captured output invalidates its generation-bound grant;
 retained bytes do not become a capture of the replacement. Prove the old fid's
@@ -156,7 +218,7 @@ must distinguish current availability from the last presented topology, with
 bounded recovery stage, owner/presentation generations, retry time and failure
 identity. Output protocol revision 1 cannot carry an empty head set, so do not
 use an invalid topology record as this availability signal. These additions
-remain outside the immediate t306/t310 physical gate.
+do not reopen the accepted t306 physical gate.
 
 ## t320
 
@@ -187,7 +249,7 @@ successor work.
 ## Connections
 
 - [Serve every public role from one 9P core](../decisions/zsx0tk4k-serve-every-public-role-from-one-9p-core-with-namespaces-as-composed-trees-and-portals-as-binds.md)
-  is the proposed decision these rows implement.
+  is the accepted decision these rows implement.
 - [Plan 9 integration points](../concepts/ernn0bkv-plan-9-integration-points-for-sophia.md)
   holds the reasoning and the cost estimate.
 - [Desktop role migration](jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md)
