@@ -375,6 +375,12 @@ elif [ "$scenario" = "output-unplug" ]; then
             poweroff -f
             ;;
     esac
+    # Input return is proved at a client: the managed DRI3 window under the
+    # WM reports its focus and key presses (input_return_drive).
+    if [ "$unplug_mode" = input-return ] && { [ "$unplug_wm" != true ] || [ "$unplug_client" != dri3 ]; }; then
+        echo "sophia_qemu_guest schema=1 status=failed reason=input_return_fixture scenario=$scenario"
+        poweroff -f
+    fi
     input_devices=""
     # Records written through tracing then carry no colour in the evidence.
     export NO_COLOR=1
@@ -407,6 +413,11 @@ elif [ "$scenario" = "output-unplug" ]; then
         # pixels are still checked.
         if [ "$unplug_wm" = true ]; then
             set -- "$@" --client-arg=--managed
+        fi
+        # In the input mode the client is the routing witness: it reports
+        # what it receives, and a client that fails ends the session.
+        if [ "$unplug_mode" = input-return ]; then
+            set -- "$@" --client-arg=--report-keys --require-client-normal-exit
         fi
     fi
     echo "sophia_qemu_unplug schema=1 status=running mode=$unplug_mode wm=$unplug_wm client=${unplug_client:-none}"
@@ -451,6 +462,103 @@ unplug_keyboard() {
     fi
 }
 
+# Input return, the guest's half. Session's own records and the client's
+# reports reach /run/sophia-qemu-unplug/records through unplug_watch; each
+# wait reads them from a line on, with no order assumed between Session's and
+# the client's lines, and is bounded in 0.05 s steps. The host types one key
+# per phase over QMP once the guest names the phase ready. The bounds sum to
+# 560 steps, 28 s of sleep plus each step's sed and grep, which starts about
+# 1 s after readiness and so stays inside the session's 40 s runtime and the
+# client's 35 s hold. The wait for the client's key starts once Session's
+# record is found and reads from the same line, so either order passes; it is
+# the shorter because the key was already delivered.
+unplug_records=/run/sophia-qemu-unplug/records
+
+# wait_record FROM PATTERN STEPS: the first record from line FROM on matching
+# the extended PATTERN, as "LINE:RECORD" with LINE absolute; status 1 when
+# STEPS steps pass without one, or when the copy overflowed.
+wait_record() {
+    steps=0
+    while [ "$steps" -lt "$3" ]; do
+        [ -e /run/sophia-qemu-unplug/records-overflow ] && return 1
+        found="$(sed -n "$1,\$p" "$unplug_records" 2>/dev/null | grep -n -m1 -E "$2")"
+        if [ -n "$found" ]; then
+            echo "$(( ${found%%:*} + $1 - 1 )):${found#*:}"
+            return 0
+        fi
+        sleep 0.05
+        steps=$((steps + 1))
+    done
+    return 1
+}
+
+# The number of the next record to be copied.
+next_record() {
+    echo $(( $(wc -l < "$unplug_records") + 1 ))
+}
+
+input_failed() {
+    if [ -e /run/sophia-qemu-unplug/records-overflow ]; then
+        echo "sophia_qemu_unplug schema=1 status=failed reason=records_overflow step=$1"
+    else
+        echo "sophia_qemu_unplug schema=1 status=failed reason=$1_timeout"
+    fi
+}
+
+input_return_drive() {
+    added='^sophia_live_session_input_device schema=1 status=added device=[0-9]+ keyboard=true pointer=(true|false) touch=(true|false) virtual=true source=udev$'
+    # K0: the one virtio keyboard (the kernel's virtual bus) Session admitted
+    # before its readiness. Any other count is refused.
+    ready="$(grep -n -m1 '^sophia_live_session_startup schema=2 status=ready ' "$unplug_records")"
+    ready="${ready%%:*}"
+    keyboards="$(sed -n "1,${ready:-0}p" "$unplug_records" | grep -E "$added")"
+    if [ -z "$ready" ] || [ "$(printf '%s\n' "$keyboards" | grep -c .)" != 1 ]; then
+        echo "sophia_qemu_unplug schema=1 status=failed reason=input_keyboard_identity"
+        return
+    fi
+    k0="${keyboards#*device=}"
+    k0="${k0%% *}"
+    # The managed client is holding and, by the last report it made, holds
+    # the input focus.
+    wait_record 1 '^dri3_layout stage=holding ' 100 > /dev/null || { input_failed input_client_holding; return; }
+    steps=0
+    while :; do
+        focus="$(grep -E '^dri3_layout stage=focus state=' "$unplug_records" | sed -n '$p')"
+        case "$focus" in
+            "dri3_layout stage=focus state=in source=query" | "dri3_layout stage=focus state=in source=event "*" synthetic=0") break ;;
+        esac
+        steps=$((steps + 1))
+        [ "$steps" -lt 60 ] || { input_failed input_client_focus; return; }
+        sleep 0.05
+    done
+    from="$(next_record)"
+    echo "sophia_qemu_unplug schema=1 status=input_baseline_ready device=$k0"
+    wait_record "$from" "^sophia_live_session_input_device schema=1 status=key_observed device=$k0\$" 100 > /dev/null \
+        || { input_failed input_baseline_session; return; }
+    wait_record "$from" '^dri3_layout stage=key keycode=38 synthetic=0$' 40 > /dev/null || { input_failed input_baseline_client; return; }
+    echo "sophia_qemu_unplug schema=1 status=input_baseline device=$k0 routed=yes"
+    from="$(next_record)"
+    unplug_keyboard off
+    wait_record "$from" "^sophia_live_session_input_device schema=1 status=removed device=$k0 " 60 > /dev/null \
+        || { input_failed input_removed; return; }
+    echo "sophia_qemu_unplug schema=1 status=input_removed device=$k0"
+    from="$(next_record)"
+    unplug_keyboard on
+    k1="$(wait_record "$from" "$added" 60)" || { input_failed input_return_added; return; }
+    k1="${k1#*device=}"
+    k1="${k1%% *}"
+    if [ "$k1" = "$k0" ]; then
+        echo "sophia_qemu_unplug schema=1 status=failed reason=input_return_identity device=$k1"
+        return
+    fi
+    from="$(next_record)"
+    echo "sophia_qemu_unplug schema=1 status=input_return_ready device=$k1"
+    wait_record "$from" "^sophia_live_session_input_device schema=1 status=key_observed device=$k1\$" 100 > /dev/null \
+        || { input_failed input_return_session; return; }
+    wait_record "$from" '^dri3_layout stage=key keycode=56 synthetic=0$' 40 > /dev/null || { input_failed input_return_client; return; }
+    echo "sophia_qemu_unplug schema=1 status=input_return_routed device=$k1"
+}
+
 unplug_drive() {
     udevadm monitor --kernel --property --subsystem-match=drm --subsystem-match=input \
         > /run/sophia-qemu-unplug/uevents 2>/dev/null &
@@ -465,10 +573,7 @@ unplug_drive() {
     sleep 1
     echo "sophia_qemu_unplug schema=1 status=monitoring"
     if [ "$unplug_mode" = input-return ]; then
-        unplug_keyboard off
-        sleep 5
-        unplug_keyboard on
-        sleep 6
+        input_return_drive
     elif [ "$unplug_mode" = all-return ]; then
         # Repeated guest observations bind the zero-head premise to the
         # interval after the host logged its final removal. A single sample
@@ -577,8 +682,20 @@ unplug_threads() {
 unplug_watch() {
     driving=false
     threads_dumped=false
+    copied=0
     while IFS= read -r line; do
         printf '%s\n' "$line"
+        # Input return waits on these copies (input_return_drive); the copy
+        # is capped, and the cap is recorded rather than passed silently.
+        if [ "$unplug_mode" = input-return ]; then
+            if [ "$copied" -lt 40000 ]; then
+                printf '%s\n' "$line" >> "$unplug_records"
+                copied=$((copied + 1))
+            elif [ ! -e /run/sophia-qemu-unplug/records-overflow ]; then
+                : > /run/sophia-qemu-unplug/records-overflow
+                echo "sophia_qemu_unplug schema=1 status=records_overflow lines=$copied"
+            fi
+        fi
         case "$line" in
             *"sophia_renderer_worker schema=1 status=hard_stall"*)
                 if [ "$threads_dumped" = false ]; then

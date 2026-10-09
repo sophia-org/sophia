@@ -67,12 +67,235 @@ sophia_live_output_topology schema=1 status=unavailable transition=1 retry_msec=
     run("all-return", &format!("{loss}{back}"), &uevents(4, 0, 0))
 }
 
-fn input_return() -> String {
-    let middle = "\
-sophia_qemu_unplug schema=1 status=sent action=off target=virtio2
-sophia_qemu_unplug schema=1 status=sent action=on target=virtio2
+/// Session's input records before readiness: a non-virtual keyboard, the
+/// virtio keyboard (bus virtual) and the virtio tablet, as in a real guest.
+const INPUT_DEVICES: &str = "\
+sophia_live_session_input_device schema=1 status=added device=256 keyboard=true pointer=false touch=false virtual=false source=udev
+sophia_live_session_input_device schema=1 status=added device=257 keyboard=true pointer=false touch=false virtual=true source=udev
+sophia_live_session_input_device schema=1 status=added device=258 keyboard=false pointer=true touch=false virtual=true source=udev
 ";
-    run("input-return", middle, &uevents(0, 2, 2))
+
+/// The input mode's chain, in the guest's, the host's, Session's and the
+/// client's own formats. The host's completed line follows the guest's
+/// baseline marker, as it may when QMP delivers before the helper returns,
+/// and the client's return key precedes Session's record of it.
+const INPUT_CHAIN: &str = "\
+dri3_layout stage=focus state=in source=event mode=0 detail=3 synthetic=0
+dri3_layout stage=holding hold_ms=35000
+dri3_layout stage=focus state=in source=query
+sophia_qemu_unplug schema=1 status=input_baseline_ready device=257
+sophia_qemu_unplug schema=1 status=key_sending phase=baseline key=a
+sophia_live_session_input_device schema=1 status=key_observed device=257
+dri3_layout stage=key keycode=38 synthetic=0
+sophia_qemu_unplug schema=1 status=input_baseline device=257 routed=yes
+sophia_qemu_unplug schema=1 status=key_sent phase=baseline result=completed
+sophia_qemu_unplug schema=1 status=sent action=off target=virtio2
+sophia_live_session_input_device schema=1 status=removed device=257 released=0
+sophia_qemu_unplug schema=1 status=input_removed device=257
+sophia_qemu_unplug schema=1 status=sent action=on target=virtio2
+sophia_live_session_input_device schema=1 status=added device=262 keyboard=true pointer=false touch=false virtual=true source=udev
+sophia_qemu_unplug schema=1 status=input_return_ready device=262
+sophia_qemu_unplug schema=1 status=key_sending phase=return key=b
+dri3_layout stage=key keycode=56 synthetic=0
+sophia_live_session_input_device schema=1 status=key_observed device=262
+sophia_qemu_unplug schema=1 status=key_sent phase=return result=completed
+sophia_qemu_unplug schema=1 status=input_return_routed device=262
+";
+
+fn input_return() -> String {
+    let start = START
+        .replace(
+            "status=running mode=MODE",
+            "status=running mode=MODE wm=true client=dri3",
+        )
+        .replace("MODE", "input-return")
+        .replace(
+            "sophia_live_session_startup schema=2",
+            &format!("{INPUT_DEVICES}sophia_live_session_startup schema=2"),
+        );
+    format!("{start}{INPUT_CHAIN}{}{END}", uevents(0, 2, 2))
+}
+
+/// The log with `line` (a whole line) taken out and put back before `before`.
+fn moved(log: &str, line: &str, before: &str) -> String {
+    let line = format!("{line}\n");
+    assert_eq!(log.matches(&line).count(), 1, "{line}");
+    let without = log.replacen(&line, "", 1);
+    assert_eq!(without.matches(before).count(), 1, "{before}");
+    without.replacen(before, &format!("{line}{before}"), 1)
+}
+
+#[test]
+fn input_return_is_routed_to_the_client_before_and_after_the_keyboard_returns() {
+    let summary = verify(&input_return(), Mode::InputReturn).unwrap();
+    assert_eq!(
+        summary[1],
+        "sophia_qemu_output_unplug_verdict schema=1 status=input_routed baseline_device=257 return_device=262 baseline_keycode=38 return_keycode=56"
+    );
+}
+
+#[test]
+fn every_break_in_the_input_return_chain_is_refused() {
+    let log = input_return();
+    let observed_k0 = "sophia_live_session_input_device schema=1 status=key_observed device=257";
+    let observed_k1 = "sophia_live_session_input_device schema=1 status=key_observed device=262";
+    let added_k1 = "sophia_live_session_input_device schema=1 status=added device=262 keyboard=true pointer=false touch=false virtual=true source=udev";
+    let removed_k0 =
+        "sophia_live_session_input_device schema=1 status=removed device=257 released=0";
+    let return_ready = "sophia_qemu_unplug schema=1 status=input_return_ready device=262";
+    let sending_return = "sophia_qemu_unplug schema=1 status=key_sending phase=return key=b";
+    let sending_baseline = "sophia_qemu_unplug schema=1 status=key_sending phase=baseline key=a";
+    let sent_baseline =
+        "sophia_qemu_unplug schema=1 status=key_sent phase=baseline result=completed";
+    let routed = "sophia_qemu_unplug schema=1 status=input_return_routed device=262";
+    let sent_return = "sophia_qemu_unplug schema=1 status=key_sent phase=return result=completed";
+    let bounded_end =
+        "sophia_live_session schema=7 status=bounded_complete display=:181 elapsed_msec=40000\n";
+    let cases = [
+        // The keyboard's first key observed only in the return phase.
+        (moved(&log, observed_k0, routed), "baseline key was not observed"),
+        // The returned keyboard is the old identity.
+        (log.replace("device=262", "device=257"), "not a new identity"),
+        (log.replace("status=added device=262", "status=added device=257"), "not a new identity"),
+        // Two keyboards admitted at the return.
+        (log.replace(&format!("{added_k1}\n"), &format!("{added_k1}\n{}\n", added_k1.replace("262", "263"))), "found 3"),
+        // No removal of K0.
+        (log.replace(&format!("{removed_k0}\n"), ""), "removal of K0, found 0"),
+        // The client's key missing at the baseline, or at the return.
+        (log.replace("dri3_layout stage=key keycode=38 synthetic=0\n", ""), "two client key reports, found 1"),
+        (log.replace("dri3_layout stage=key keycode=56 synthetic=0\n", ""), "two client key reports, found 1"),
+        // The baseline's keycode again at the return: buffered data.
+        (log.replace("keycode=56", "keycode=38"), "expected 38 then 56"),
+        // A client key before the baseline key was sent, none inside it.
+        (moved(&log, "dri3_layout stage=key keycode=38 synthetic=0", sending_baseline), "baseline key was not observed"),
+        // The return key sent before the guest named the return ready.
+        (moved(&log, sending_return, return_ready), "return ready does not precede return key sending"),
+        // Session saw K1's first key before the return key was sent.
+        (moved(&log, observed_k1, sending_return), "returned keyboard's key was not observed"),
+        // Markers out of order.
+        (moved(&log, "sophia_qemu_unplug schema=1 status=input_removed device=257", removed_k0), "K0 removed does not precede removal marked"),
+        (moved(&log, added_k1, "sophia_qemu_unplug schema=1 status=sent action=on"), "keyboard on does not precede K1 admitted"),
+        // The client lost the focus by its last report before readiness.
+        (log.replace("state=in source=query", "state=out source=query"), "did not hold the focus"),
+        // A failed send, another key, a completion outside its phase.
+        (log.replace("phase=baseline result=completed", "phase=baseline result=failed exit=1"), "did not complete"),
+        (log.replace("phase=baseline key=a", "phase=baseline key=c"), "another key"),
+        (moved(&log, sent_baseline, "sophia_qemu_unplug schema=1 status=key_sent phase=return"), "completed outside its phase"),
+        // Keys or removals on other devices, a second removal action.
+        (log.replace(&format!("{observed_k0}\n"), &format!("{observed_k0}\n{}\n", observed_k0.replace("257", "256"))), "another device"),
+        (log.replace(&format!("{removed_k0}\n"), &format!("{removed_k0}\n{}\n", removed_k0.replace("257", "258"))), "another input device was removed"),
+        (log.replace("sophia_qemu_unplug schema=1 status=sent action=on", "sophia_qemu_unplug schema=1 status=sent action=off target=virtio2\nsophia_qemu_unplug schema=1 status=sent action=on"), "one keyboard removal and one return"),
+        // Overflowed copies and reports.
+        (log.replace(routed, &format!("dri3_layout stage=key_overflow reported=64\n{routed}")), "overflowed"),
+        (log.replace(routed, &format!("sophia_qemu_unplug schema=1 status=records_overflow lines=40000\n{routed}")), "overflowed"),
+        // Without the WM and the managed client there is no input witness.
+        (log.replace("wm=true client=dri3", "wm=true client=none"), "managed DRI3 client"),
+        // The routed marker missing: nothing after the return proves routing.
+        (log.replace(&format!("{routed}\n"), ""), "input_return_routed, found 0"),
+        // A SendEvent key is no routing witness, at either phase; a
+        // synthetic focus report does not count as the focus at readiness.
+        (log.replace("keycode=56 synthetic=0", "keycode=56 synthetic=1"), "synthetic key reached the client"),
+        (log.replace("keycode=38 synthetic=0", "keycode=38 synthetic=1"), "synthetic key reached the client"),
+        (log.replace("keycode=38 synthetic=0", "keycode=38"), "malformed client key report"),
+        (
+            log.replace("dri3_layout stage=focus state=in source=query\n", "")
+                .replace("detail=3 synthetic=0", "detail=3 synthetic=1"),
+            "did not hold the focus",
+        ),
+        // The client's own failure lines after an otherwise complete chain:
+        // a hold poll, a request error, a geometry change, a lost connection,
+        // a failed finish.
+        (log.replace(routed, &format!("{routed}\ndri3_layout status=failed stage=hold_poll errno=4")), "client reported a failure"),
+        (log.replace(routed, &format!("{routed}\ndri3_layout status=failed stage=request x_error=3 major=12 minor=0 sequence=40 resource=4194305")), "client reported a failure"),
+        (log.replace(routed, &format!("{routed}\ndri3_layout status=failed stage=geometry_changed errno=22")), "client reported a failure"),
+        (log.replace(routed, &format!("{routed}\ndri3_layout status=failed stage=connection errno=32")), "client reported a failure"),
+        (log.replace(routed, &format!("{routed}\ndri3_layout event=finished result=fail window=4194305 submitted=1 completed=1 idle=0")), "client reported a failure"),
+        // The return key's completion after the bounded completion, the
+        // guest's completion or its exit.
+        (moved(&log, sent_return, "sophia_qemu_guest schema=1 status=complete"), "completed outside its phase"),
+        (log.replace(&format!("{sent_return}\n"), "").replace(bounded_end, &format!("{bounded_end}{sent_return}\n")), "completed outside its phase"),
+        (log.replace(&format!("{sent_return}\n"), "") + sent_return + "\n", "completed outside its phase"),
+        // Phase markers counted in the whole log before their device is bound.
+        (log.replace(&format!("{return_ready}\n"), &format!("{return_ready}\n{}\n", return_ready.replace("262", "300"))), "expected exactly one input_return_ready, found 2"),
+        (log.replace("status=input_baseline_ready device=257", "status=input_baseline_ready device=256"), "input_baseline_ready names another device than K0"),
+        (log.replace("status=input_return_routed device=262", "status=input_return_routed device=257"), "input_return_routed names another device than K1"),
+        // Input records with a repeated or contradictory field, another
+        // schema, a missing or extra field, or a non-numeric device.
+        (log.replace(observed_k0, &format!("{observed_k0} device=999")), "malformed sophia_live_session_input_device status=key_observed"),
+        (log.replace(added_k1, &added_k1.replace("schema=1", "schema=2")), "malformed sophia_live_session_input_device status=added"),
+        (log.replace(removed_k0, &removed_k0.replace(" released=0", "")), "malformed sophia_live_session_input_device status=removed"),
+        (log.replace("status=input_return_ready device=262", "status=input_return_ready device=26x"), "malformed sophia_qemu_unplug status=input_return_ready"),
+        (log.replace(sending_return, &format!("{sending_return} key=a")), "malformed sophia_qemu_unplug status=key_sending"),
+        (log.replace("status=input_baseline device=257 routed=yes", "status=input_baseline device=257 routed=yes routed=no"), "malformed sophia_qemu_unplug status=input_baseline"),
+    ];
+    for (index, (changed, expected)) in cases.into_iter().enumerate() {
+        assert_ne!(changed, log, "case {index} must change the chain");
+        let error = verify(&changed, Mode::InputReturn).unwrap_err();
+        assert!(error.contains(expected), "case {index}: {error}");
+    }
+}
+
+#[test]
+fn the_guest_exit_must_be_clean_and_follow_the_bounded_completion() {
+    let complete = "sophia_qemu_guest schema=1 status=complete scenario=output-unplug";
+    let exited = "sophia_qemu_unplug schema=1 status=guest_exited qemu_exit=0";
+    let bounded = "sophia_live_session schema=7 status=bounded_complete";
+    for log in [one(), all_return(), input_return()] {
+        let mode = if log.contains("mode=input-return") {
+            Mode::InputReturn
+        } else if log.contains("mode=all-return") {
+            Mode::AllReturn
+        } else {
+            Mode::One
+        };
+        verify(&log, mode).unwrap();
+        let cases = [
+            (
+                log.replace(complete, &complete.replace("output-unplug", "device-test")),
+                "not this scenario's",
+            ),
+            (
+                log.replace(complete, &format!("{complete} extra=1")),
+                "not this scenario's",
+            ),
+            (
+                log.replace("qemu_exit=0", "qemu_exit=1"),
+                "not a clean QEMU exit",
+            ),
+            (
+                log.replace("qemu_exit=0", "qemu_exit=0 qemu_exit=0"),
+                "not a clean QEMU exit",
+            ),
+            (
+                log.replace(exited, "sophia_qemu_unplug schema=1 status=guest_exited"),
+                "not a clean QEMU exit",
+            ),
+            (
+                moved(&log, complete, bounded),
+                "do not follow the bounded completion",
+            ),
+            (
+                moved(&log, exited, complete),
+                "do not follow the bounded completion",
+            ),
+            (
+                log.replace(&format!("{exited}\n"), ""),
+                "is missing sophia_qemu_unplug status=guest_exited",
+            ),
+            (
+                log.replace(&format!("{complete}\n"), ""),
+                "is missing sophia_qemu_guest status=complete",
+            ),
+        ];
+        for (index, (changed, expected)) in cases.into_iter().enumerate() {
+            assert_ne!(
+                changed, log,
+                "{mode:?} case {index} must change the endpoint"
+            );
+            let error = verify(&changed, mode).unwrap_err();
+            assert!(error.contains(expected), "{mode:?} case {index}: {error}");
+        }
+    }
 }
 
 #[test]
@@ -81,7 +304,7 @@ fn each_mode_passes_on_a_run_that_lived_through_it() {
         (Mode::One, one(), 2),
         (Mode::OneReturn, one_return(), 3),
         (Mode::AllReturn, all_return(), 2),
-        (Mode::InputReturn, input_return(), 1),
+        (Mode::InputReturn, input_return(), 2),
     ] {
         let summary = verify(&log, mode).unwrap_or_else(|error| panic!("{mode:?}: {error}"));
         assert_eq!(summary.len(), lines, "{mode:?}: {summary:?}");

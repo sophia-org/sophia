@@ -692,6 +692,35 @@ if [[ "$SCENARIO" == output-unplug ]]; then
                 echo "sophia_qemu_unplug schema=1 status=sent action=on target=Console_$console" | tee -a "$EVIDENCE_FILE"
             done
         fi
+    else
+        # Input return: the guest names each phase ready once its keyboard
+        # and the focused client are, and the host types one key per phase
+        # through QEMU's own virtio keyboard. QMP may deliver the key before
+        # the helper returns, so the sending line comes first and the
+        # completed line after its exit.
+        input_key() {
+            local phase=$1 marker=$2 key=$3 ready=false
+            for _ in $(seq 1 800); do
+                if grep -qE "^sophia_qemu_unplug schema=1 status=$marker device=[0-9]+\$" "$EVIDENCE_FILE"; then
+                    ready=true
+                    break
+                fi
+                grep -q '^sophia_qemu_unplug schema=1 status=failed ' "$EVIDENCE_FILE" && break
+                kill -0 "$QEMU_PID" 2>/dev/null || break
+                sleep 0.05
+            done
+            [[ "$ready" == true ]] || unplug_failed "${phase}_ready_timeout"
+            echo "sophia_qemu_unplug schema=1 status=key_sending phase=$phase key=$key" | tee -a "$EVIDENCE_FILE"
+            local status=0
+            "$ROOT_DIR/tools/qemu_qmp_type.py" "$QMP_SOCKET" --no-return "$key" || status=$?
+            if (( status != 0 )); then
+                echo "sophia_qemu_unplug schema=1 status=key_sent phase=$phase result=failed exit=$status" | tee -a "$EVIDENCE_FILE"
+                unplug_failed "key_$phase"
+            fi
+            echo "sophia_qemu_unplug schema=1 status=key_sent phase=$phase result=completed" | tee -a "$EVIDENCE_FILE"
+        }
+        input_key baseline input_baseline_ready a
+        input_key return input_return_ready b
     fi
 
     # The session bounds its own runtime; this bounds one that never ends.
