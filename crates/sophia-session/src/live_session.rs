@@ -316,42 +316,6 @@ include!("live_session/owner_loop_state.rs");
 include!("live_session/output_topology_owner.rs");
 include!("live_session/owner_loop.rs");
 
-/// Builds the topology candidate a reloaded profile asks for.
-///
-/// The same four steps startup takes, run again against the hardware as it is
-/// now: capabilities, the topology they project, the profile reconciled onto
-/// it, and the activation plan that becomes a candidate. Running them again
-/// rather than reusing startup's plan is deliberate -- a display may have been
-/// unplugged since, and a plan built against absent hardware is exactly the
-/// kind of thing the candidate preparation is there to refuse.
-fn build_reloaded_output_topology_candidate(
-    native: &LiveProductionNativeScanout,
-    config: &PersistentXtermSessionConfig,
-    snapshot: &sophia_protocol::OutputAuthoritySnapshot,
-    mapping: sophia_protocol::OutputHeadMapping,
-    policy_keys: Option<&BTreeMap<String, u64>>,
-) -> Result<sophia_protocol::OutputTopologyCandidate, Box<dyn std::error::Error>> {
-    let capabilities = native.output_capabilities()?;
-    let topology = project_native_output_topology(&capabilities, &native.outputs())?;
-    let reconciled = sophia_config::reconcile_desktop_output_candidate(
-        config.output_profile.current(),
-        &topology,
-    )?;
-    if policy_keys.is_some_and(|keys| keys != &reconciled.policy_keys) {
-        return Err(
-            "output policy affinity would rebind; changing the startup binding requires a new session"
-                .into(),
-        );
-    }
-    let plan = prepare_native_output_activation_plan(&capabilities, &topology, &reconciled)?;
-    Ok(prepare_native_output_authority_candidate(
-        &plan,
-        &capabilities,
-        snapshot,
-        mapping,
-    )?)
-}
-
 #[path = "../tests/support/live_session.rs"]
 mod tests;
 

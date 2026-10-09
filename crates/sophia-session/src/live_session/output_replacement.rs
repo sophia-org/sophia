@@ -14,8 +14,10 @@ use sophia_config::{
 use std::error::Error;
 use std::io;
 
+mod reload;
 mod runtime;
 mod startup;
+pub(super) use reload::{ReloadOutputReplacement, prepare_output_reload};
 pub(super) use runtime::{
     RuntimeOutputReplacement, resolve_runtime_output_replacement, runtime_output_retry_delay,
 };
@@ -36,8 +38,7 @@ pub(super) fn resolve_output_replacement(
     profile: &DesktopOutputCandidate,
     previous: Option<&DesktopOutputReconciliation>,
 ) -> Result<OutputReplacementDecision, Box<dyn Error>> {
-    let topology = project_profile_probes(discovery.connectors(), profile, previous);
-    let resolution = sophia_config::resolve_desktop_output_candidate(profile, &topology, previous)?;
+    let resolution = resolve_probe_policy(discovery.connectors(), profile, previous)?;
     let DesktopOutputResolution::Active(realization) = resolution else {
         return Ok(OutputReplacementDecision::Waiting);
     };
@@ -49,6 +50,29 @@ pub(super) fn resolve_output_replacement(
             realization,
         },
     )))
+}
+
+fn resolve_probe_policy(
+    probes: &[LiveNativeOutputProbe],
+    profile: &DesktopOutputCandidate,
+    previous: Option<&DesktopOutputReconciliation>,
+) -> Result<DesktopOutputResolution, Box<dyn Error>> {
+    let topology = project_profile_probes(probes, profile, previous);
+    Ok(sophia_config::resolve_desktop_output_candidate(
+        profile, &topology, previous,
+    )?)
+}
+
+pub(super) fn profile_head_mapping(
+    profile: &DesktopOutputCandidate,
+) -> sophia_protocol::OutputHeadMapping {
+    match profile.mirror_fit() {
+        Some(sophia_config::DesktopMirrorFit::Cover) => sophia_protocol::OutputHeadMapping::Cover,
+        Some(sophia_config::DesktopMirrorFit::Exact) => sophia_protocol::OutputHeadMapping::Exact,
+        Some(sophia_config::DesktopMirrorFit::Fit) | None => {
+            sophia_protocol::OutputHeadMapping::Fit
+        }
+    }
 }
 
 fn timing(mode: LibdrmNativeOutputTiming) -> DesktopOutputTiming {

@@ -1,4 +1,5 @@
 {
+    let mut profile_output_rebuild_requested = false;
     scripting.service(wm_session.as_mut(), &layout, output, logout_requested);
     // Control's session operations raise the same requests as the bindings.
     let control_requests = scripting.take_session_requests();
@@ -748,6 +749,21 @@
                             }
                             output_readback_proof.settled(transaction);
                             output_topology_owner = published_topology_owner;
+                            if let Some(realization) = output_realization.take_policy(transaction, config.output_profile.current()) {
+                                let binding = output_realization::OutputRealizationBinding {
+                                    transition: output_topology_owner.transition,
+                                    notice_sequence: output_topology_owner.notice_sequence,
+                                    native_owner: native.retirement_owner_identity(),
+                                };
+                                output_realization.stage(binding, realization)?;
+                                pending_hardware_output_publication = Some(output_realization::PendingOutputPublication {
+                                    binding,
+                                    snapshot: published.clone(),
+                                    capabilities: Vec::new(),
+                                    already_published: true,
+                                });
+                                hardware_output_publication_presented = false;
+                            }
                             outputs = candidate_outputs;
                             output = candidate_primary;
                             pointer.set_output_bounds(
@@ -771,6 +787,7 @@
                 active_output_topology_preparation = Some(execution);
             } else {
                 active_output_topology_preparation = None;
+                let _ = output_realization.take_policy(transaction, config.output_profile.current());
                 output_readback_proof.settled(transaction);
             }
         }
@@ -779,23 +796,33 @@
         // leaves behind is drained by the block below, on this same iteration,
         // so a reload and a startup reach the modeset by one road.
         if active_output_topology_preparation.is_none()
-            && output_topology_owner.phase == LiveOutputTopologyPhase::Stable
+            && matches!(output_topology_owner.phase, LiveOutputTopologyPhase::Stable
+                | LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Hotplug))
             && pending_hardware_output_publication.is_none()
             && wm.ordinary_policy_settlement_idle()
             && wm.take_output_topology_reload_request()
         {
-            match (native_scanout.as_ref(), wm.published_output_snapshot()) {
-                (Some(native), Some(snapshot)) => {
-                    match build_reloaded_output_topology_candidate(
+            if output_topology_owner.phase == LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Hotplug) {
+                // The retired owner's capabilities cannot admit a transaction.
+                // Fold the desired edit into the pending authoritative rescan.
+                profile_output_rebuild_requested = true;
+            } else { match (seat_controller.as_ref(), native_scanout.as_ref(), wm.published_output_snapshot()) {
+                (Some(controller), Some(native), Some(snapshot)) => {
+                    match output_replacement::prepare_output_reload(
+                        controller,
+                        config.output_profile.current(),
+                        output_realization.committed(),
                         native,
-                        config,
                         &snapshot,
-                        initial_head_mapping,
-                        wm.public.as_ref().map(|public| &public.output_policy_keys),
                     ) {
-                        Ok(candidate) => {
-                            wm.admit_reloaded_output_topology(candidate)?;
+                        Ok(output_replacement::ReloadOutputReplacement::Candidate {candidate, realization}) => {
+                            if wm.admit_reloaded_output_topology(*candidate)? {
+                                let transaction = wm.public.as_ref().and_then(|public| public.reload_output_transaction)
+                                    .ok_or("admitted output reload has no transaction")?;
+                                output_realization.prepare_policy(transaction, *realization);
+                            }
                         }
+                        Ok(output_replacement::ReloadOutputReplacement::Rebuild) => profile_output_rebuild_requested = true,
                         // A profile naming a mode or a connector the hardware
                         // does not have is the ordinary way to reach this, and
                         // it must cost the operator a log line rather than the
@@ -805,14 +832,16 @@
                         ),
                     }
                 }
+                (Some(_), None, _) => profile_output_rebuild_requested = true,
                 _ => crate::session_eprintln!(
                     "sophia_live_output_authority schema=3 status=reload_declined reason=no_native_authority"
                 ),
-            }
+            } }
         }
         if active_output_topology_preparation.is_none()
             && runtime.is_some()
             && pending_hardware_output_publication.is_none()
+            && !profile_output_rebuild_requested
             && pending_wm_update.is_none()
             && layout.pending.is_none()
             && wm.ordinary_policy_settlement_idle()
@@ -879,6 +908,9 @@
                 OUTPUT_TOPOLOGY_QUIESCENCE_TIMEOUT.as_millis(),
             );
         }
+    }
+    if profile_output_rebuild_requested {
+        schedule_output_topology_rebuild!("profile_reload", false);
     }
     synchronize_wm_pointer_epoch!();
     if let Some(runtime) = runtime.as_mut() {
