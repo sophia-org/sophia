@@ -244,6 +244,24 @@ guard checks the whole chain, preserves the recovery-before-dispatch check,
 and passes all three seam tests. `gate-01` remains failed and frozen; its
 source stayed unchanged. A fresh full gate follows the test correction.
 
+#### Combined deterministic gate passed (2026-10-09)
+
+Signed `83c68c7c47d344aa07b53535bd59b5c4c7928d1d` passes the full isolated
+`cargo xtask check`: 534 Rust test summaries report 7,438 passes, no failures
+and 101 ignored. Formatting, warnings-denied clippy, layout, both SDK checks,
+verifier controls and six direct-scanout archives also pass. The run used eight
+build jobs, a private target, hidden devices and no network, from 17:20:51Z to
+17:25:10Z. The source remained clean and its pins verified at the end.
+
+Evidence is `t310-runtime-20261009/gate-02`, manifest
+`88bab0358e8a3ec1e364cc40155824005d034d6ad750ea076fb25614a2035d3e`.
+The focused development logs, including their intermediate failures, are frozen
+in `recovery-01`, manifest
+`21d23268dcd85251376ee526a72a0d5b7d95fe3ef38dc3f68c896365d74550f9`.
+The failed first gate is retained separately. Native pixel and retained-image
+proof, the matched desktop release and attended acceptance remain outstanding;
+t310 stays open and the installed desktop has not changed.
+
 #### Port change after reboot (2026-10-09)
 
 niltempus moved the main monitor between ports on the discrete AMD card before

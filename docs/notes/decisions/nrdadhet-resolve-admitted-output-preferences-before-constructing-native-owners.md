@@ -42,10 +42,13 @@ waiting state and publishes geometry that cannot present.
 Probe and construction lifetimes become explicit, and policy tests need no
 devices. Full DRM timings remain intact across the configuration projection.
 Identity is revalidated before use; a changed device refuses rather than falling
-back to another node. Dynamic failure still requires bounded retry and a coherent
-commit path. Runtime integration, hardware refusal recovery and physical
-acceptance remain open; the first implementation commit provides the boundary
-and startup consumer only.
+back to another node. Startup, runtime rebuild, seat return and recovery now use
+the boundary. Reload compares a pure resolution before retaining its current
+owner or scheduling a rebuild. The realization ledger binds publication to the
+current owner, notice, transition, profile and presentation; a failed adaptive
+replacement gets one conservative attempt before waiting. The full isolated
+gate passes on `83c68c7c4`. Native retained-image continuity and attended physical
+acceptance remain open.
 
 ## Acceptance and connections
 
