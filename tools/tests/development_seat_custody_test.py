@@ -135,7 +135,7 @@ while time.monotonic()<deadline:
     active=[]
     for pid in pids:
         try: state=pathlib.Path('/proc/'+str(pid)+'/stat').read_text().rsplit(') ',1)[1].split()[0]
-        except FileNotFoundError: continue
+        except (FileNotFoundError, ProcessLookupError): continue
         if state not in ('Z','X'): active.append(pid)
     if not active: break
     time.sleep(.01)
@@ -176,7 +176,7 @@ os.write(gw,b'G'); os.close(gw); os.close(rr)
 deadline=time.monotonic()+5
 while time.monotonic()<deadline:
     try: state=pathlib.Path('/proc/'+str(child)+'/stat').read_text().rsplit(') ',1)[1].split()[0]
-    except FileNotFoundError: break
+    except (FileNotFoundError, ProcessLookupError): break
     if state in ('Z','X'): break
     time.sleep(.01)
 else: raise AssertionError('orphan namespace init stayed alive')
