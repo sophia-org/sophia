@@ -493,6 +493,24 @@ corrected 100-millisecond fixture. No production defect is inferred from that
 failed fixture. Independent review, full integration gate, locked guest and
 physical KVM acceptance remain separate obligations.
 
+Independent delta review `189-claude-reviews/REVIEW-200-02.txt`
+(`a6c8826b`) compared all 18 files with `source-05` and found the settled
+epoch binding and requested controls resolved. The implementation and its
+normative diagnostic description were signed as
+`006434bedcb723c2b5d3eafb8c4ecf596ab4c4a5` on master.
+
+The first full gate on that commit, `200-lock-publication-characterization/gate-01`,
+ran 11:35:02–11:35:09Z and exited 1 on the C SDK contract drift check for
+`docs/sophia-lock-files.md`. The SDK's immutable snapshot retains the previous
+contract bytes; the Rust SDK also compares this document. No full test-suite
+pass follows. Source pins passed, the source tree stayed clean, and the
+launcher recorded `STOPPED gate_exit=1 pins_exit=0`. The preserved gate
+manifest is `b41a3a44f3022d5ac3141c4d53e2cfdcdca909be9019a1505169e16141fdd442`.
+The gate finished before shutdown preparation and was not killed. The
+[resume checkpoint](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md#shutdown-and-resume-checkpoint-2026-10-09-utc)
+records the documentation/provenance correction and fresh gate still needed.
+No locked guest, live installation or physical acceptance occurred.
+
 ## t306
 
 The [four-part qualification plan](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md)

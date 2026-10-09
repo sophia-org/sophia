@@ -6,6 +6,92 @@ tags: [plan, rendering, topology, validation]
 ---
 # Qualify Mesa lifetime repair and KVM hotplug recovery
 
+## Shutdown and resume checkpoint (2026-10-09 UTC)
+
+Niltempus requested shutdown after the lock implementation was signed. Work
+stopped; this is a handoff, not acceptance of t306 or t307. Claude confirmed
+that his lane has no background work and that 198-03 remains unrun. The root
+gate had already exited on its own; no shutdown signal or replacement run
+was needed. No build or guest is left running in either lane.
+
+The implementation is signed commit
+`006434bedcb723c2b5d3eafb8c4ecf596ab4c4a5` on `master` in
+`/home/niltempus/dev/sophia`. The preceding notebook reconciliation is
+`f913a9f0b`. The checkpoint documentation is committed after that implementation.
+These local commits are durable; this checkpoint does not claim a push or
+an installed release. The last recorded installed release remains
+`niltempus-087445319affcb9bfc53` (Sophia `19403a511`); the new lock work has
+not been installed.
+
+Preserve these clean worktrees and their evidence identities:
+
+| Worktree under `~/dev` | Branch | HEAD |
+| --- | --- | --- |
+| `sophia-t306` | `t306-wm-variant` | `254204a743a248c871db65968109bbfad3ccbead` |
+| `sophia-context-freshness` | `investigate/t307-context-freshness-20261009` | `9dee187ae0645c1a61268ad3f374545a4f1c9c68` |
+| `sophia-hotplug-candidate` | `candidate/t306-hotplug-20261008` | `3fc8b449590049f1661da1896436f5e87f529b6a` |
+
+All package names below are relative to
+`/home/niltempus/.local/state/sophia/development-evidence/t306-01/`.
+
+- Lock work: `200-lock-publication-characterization` retains focused checks,
+  mutants, source snapshots and `gate-01`. That full gate ran
+  11:35:02–11:35:09Z and exited 1 on
+  `C SDK contract drift: .../docs/sophia-lock-files.md`, before full validation.
+  Its source pins passed and the tree stayed clean. Its retained manifest is
+  `b41a3a44f3022d5ac3141c4d53e2cfdcdca909be9019a1505169e16141fdd442`.
+  This is a failed prerequisite, not an interrupted or passing gate.
+- Premise work: `198-03-premise-callback-classifier` is source-only, awaiting
+  review and its first CPU run. Its source-input manifest is
+  `a8edd8c6ed571a3e20d4d7742882c1848ce03f455a4223859cfa8c6caa94231b`.
+  Both failed predecessors and their logs remain untouched. Durable launch
+  and result-hash records are in `198-run-records-claude`, manifest
+  `c390bbf4126bf4cfc1fc3594147dad183591dd2461c7369ef6fcf5007645e38c`.
+- Pixel policy: `199-pixel-diagnostic-classifier` is CPU-qualified and frozen
+  under `a977bfeed5a3d4f31749e60bc0b5f55b9ba1bc983929a9a95b686b0e3491b717`.
+  This does not qualify a new guest result.
+- Runner work: the two temporary 201 drafts were copied byte for byte to
+  `201-mesa-pair-observable-runner/draft-source/`, with `SHA256SUMS`.
+  `201-decide_next.py` is `d0aa533c754a9c32bb596fe8ca31a0eae74e4c0261717b9d10adcf241cc447fb`;
+  `201-control_pixels_decision.py` is `03528248d8bb6a0f97fd7d7e0b95324d47d19f76e5e0c7dd9ddb0513c4a471bd`.
+  Both are unreviewed and unrun; there is no assembled or approved 201 runner.
+  No necessary draft now depends on `/tmp` surviving reboot.
+
+On return, read this checkpoint and the two linked investigations before
+resuming the admitted plan. Inspect `git status`, the task rows by stable ID,
+and the package manifests. Coordinate the CPU lane with Claude; old Herdr
+pane IDs `w9:pT`/`w9:pX` are historical and must be rediscovered if the session
+changes. No previous exact-argv guest GO carries over to an unreviewed successor.
+
+For part 3, first reconcile the lock diagnostic documentation with the SDK
+contract boundary. Both C and Rust SDK snapshots compare
+`spec/sophia-lock-files.md` with the authoritative document byte for byte.
+Preserve their immutable snapshot provenance: either use the normal upstream
+contract/snapshot update workflow or place internal diagnostic documentation
+in its appropriate Sophia-only contract. Do not bypass the gate or edit a
+vendored snapshot in place. Then sign the correction and run a fresh full
+gate with a new evidence directory (`gate-02`); `gate-01/run-gate.sh` retains
+the prior exact launcher. Its private target is
+`~/dev/sophia/target/lock-characterization-200`. Review any formatting failure
+against the source baseline; do not silently bundle unrelated reflow.
+
+For part 1, independently review the narrow 198-03 control delta, then authorize
+one bounded isolated CPU run with its declared launcher and fresh output.
+Require all retained controls, the baseline and all fourteen mutants to pass
+before freezing it. Its runtime core is unchanged from 198-02. Only after
+that qualification should 201 be assembled around premise4, handle6 and the
+existing 186 images, with fresh runner/decision/binding controls and review.
+The reserved future series is 202. Retrospective 194 analysis remains separate
+from a new paired experiment; no new guest is authorized by this checkpoint.
+
+After reboot, refresh host, kernel, device, seat, binary, process and source
+prechecks before any hardware work. Claude reports the iGPU seat1 rule is
+installed and takes effect at reboot; the iGPU probe is paused. Revalidate
+the resulting seat and render-node mapping rather than reuse the previous
+`renderD128`/PCI assumptions. This is not permission for VFIO or device rebinding.
+Parts 2 and 4 still require their own candidates, reviewed packages and exits;
+the physical KVM check remains attended and separate.
+
 ## Scope and authority
 
 This records the four-part plan niltempus authorized with “Implement the plan”

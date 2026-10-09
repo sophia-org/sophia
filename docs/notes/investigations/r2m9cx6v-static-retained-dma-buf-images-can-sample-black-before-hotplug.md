@@ -1236,6 +1236,35 @@ failure matching. Raw logs remain intact; the successor must disable color
 for its own subprocesses while retaining the named-assertion-only kill rule.
 Both corrections need new controlled evidence before a guest package.
 
+Successor `198-02-premise-callback-classifier` ran once at
+11:33:32–11:33:35Z, under source-input manifest `09369e2c`, and exited 1.
+Source checks passed before and after, and no log contained an escape byte.
+Core 24/24, callback 31/31 and signature 19/19 passed. Capture had one failure
+out of 31, and mutants killed 13/14 after a passing unmutated baseline.
+Both frozen 192 outputs reproduced exactly. Labelled successor analysis of
+194 matched the declared expectations: original both `SCREEN_NEW`; patched
+separate `SCREEN_NEW` with one miss, shared `SCREEN_SHARED` with one hit.
+This does not revise 194 or establish a completed pixel comparison.
+
+The failing capture control selected the last ioctl positionally. The newer
+fixture ends with GEM_CLOSE, so the control changed that return instead of
+the sibling winsys's GET_CAPS. The surviving removal-tail mutant was paired
+with a refusal that also refused through another shape ambiguity; that
+pairing did not isolate the omitted condition. These are proposed control
+corrections, not a claim that no classifier defect remains.
+
+`198-03-premise-callback-classifier` preserves the runtime core (`d825bfc2`),
+capture parser, serial parser and CLI byte for byte. Its capture control
+selects the shared sibling's GET_CAPS by tid, fd and command, asserting one
+successful match before changing the return. The removal-tail mutant is
+paired with the existing positive patched-count control. Its source-input
+manifest is `a8edd8c6ed571a3e20d4d7742882c1848ce03f455a4223859cfa8c6caa94231b`.
+It is unrun and awaiting review at shutdown; neither predecessor is repaired
+in place. `198-run-records-claude`, manifest `c390bbf4`, preserves both failed
+runs' launch, exit and result-hash records outside temporary storage. The
+[resume checkpoint](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md#shutdown-and-resume-checkpoint-2026-10-09-utc)
+identifies the pending qualification and saved runner drafts.
+
 The pixel successor in `199-pixel-diagnostic-classifier` has completed CPU
 qualification. It recognizes only the exact standalone line
 `got error from kernel - expect bad rendering 2`, once per arm at most, as
