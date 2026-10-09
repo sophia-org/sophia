@@ -179,8 +179,12 @@ survival of the requested locked cable-return test. Owner 4 resumed in the same
 Session with lock epoch 1 recorded before loss and after return; application
 presentation continued. The retained log omits lock status and coverage fields,
 so it is not an independent proof of coverage for the replacement topology.
-The snapshot and limits are recorded in the linked investigation. The actual
-KVM/USB switch, including input and lock behavior, has not yet been reported.
+The snapshot and limits are recorded in the linked investigation. A subsequent
+unlocked KVM away/back also survived: the log records removal of eight input
+devices, their replacements, a new display owner and post-return routed keys.
+Locked KVM/USB return remains to be checked. Same-topology lock coverage also
+needs an owner-aware evidence identity; its present dedup key omits the native
+owner, so the earlier cover cannot prove the replacement owner's presentation.
 
 The test must recover without a VT workaround. A separate read-only follow-up
 found that requesting a VT switch while already Waiting with no native owner

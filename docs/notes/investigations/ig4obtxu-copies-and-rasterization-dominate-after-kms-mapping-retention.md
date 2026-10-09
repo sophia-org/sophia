@@ -561,6 +561,41 @@ instruction and survival report. No actual KVM/USB acceptance report has been
 received; cable return and normal input without device removal do not supply
 that separate evidence. No task closure, new build or master merge occurred.
 
+Read-only follow-up identified two lock evidence gaps on release 222. The
+generic capture filter drops lock status and coverage counts; a future specific
+reducer should admit only closed status/source/verdict sets and bounded numeric
+fields, retaining no free-form errors. Separately, session_lock_coverage dedups
+on lock epoch and topology epoch without native owner identity. A same-topology
+replacement therefore emits no new cover record even with complete capture.
+Recording and keying coverage by owner as well needs its own regression; no
+coverage failure or exposure of unlocked contents is established by this
+missing record. The attended result and the absent machine proof stay distinct.
+
+#### Release 222 unlocked KVM return (2026-10-09)
+
+niltempus next followed the actual KVM away/back instruction, including display,
+pointer and shortcut checks, and reported survival. PID 7778 and the same Session
+remained live. Input devices 262–269 were removed at boot milliseconds
+38844895–38845387. Owner 4 settled at 38845235, and Waiting reached attempt four.
+Owner 5 resolved at 38874238 with zero adjustments and was ready at 38874448;
+the known same-topology uncommitted record followed at 38874464. Devices 270–277
+were added at 38876415–38877162 with keyboard/pointer capabilities. Device 275
+produced a key observation at 38877815, and the ensuing routing records report
+key_observed_count=1 and key_routed_count=1. Presentation continued without a
+retained fatal or seat transition. The requested fifteen-second absence is not
+an independently measured physical switch interval.
+
+Snapshot suffix `8e9ec065-c0fe-491f-bebc-c82cd4ac0dde` under the same full
+Session ID preserves both `events.0.log` and `events.1.log`; analysis includes
+both rotated segments. Its verified manifest SHA-256 is
+`346d427cd41bf014c0041e7ab3bbfdcb673e3e05a22dd0bfb79ef32de3960973`.
+Recorder health reports zero discarded records and storage errors. Markers
+`93af0d2c-45a0-49d5-b4af-ca47b0214f83` and
+`21d35291-16d3-40bc-8ac5-004767069a78` delimit the instruction and report.
+This supplies attended unlocked KVM survival plus recorded device return and
+key routing. Locked KVM return remains separate; no task closure, code change,
+build or master merge follows from this result alone.
+
 #### Matched desktop artifact prepared (2026-10-09)
 
 Signed niltempus candidate `6d50e38cc5014d248d8110e8c82f928b349cecd0` pairs the
