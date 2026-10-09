@@ -469,6 +469,42 @@ unplug_drive() {
         sleep 5
         unplug_keyboard on
         sleep 6
+    elif [ "$unplug_mode" = all-return ]; then
+        # Repeated guest observations bind the zero-head premise to the
+        # interval after the host logged its final removal. A single sample
+        # could race that log, and hotplug uevents alone do not prove loss.
+        sample=0
+        while [ "$sample" -lt 180 ]; do
+            connectors=0
+            connected=0
+            sample_valid=true
+            for connector in /sys/class/drm/card*-*/status; do
+                connector_state=""
+                if ! IFS= read -r connector_state < "$connector"; then
+                    echo 'sophia_qemu_unplug schema=1 status=failed reason=connector_unreadable'
+                    sample_valid=false
+                    break
+                fi
+                case "$connector_state" in
+                    connected) connected=$((connected + 1)) ;;
+                    disconnected) ;;
+                    *)
+                        echo 'sophia_qemu_unplug schema=1 status=failed reason=connector_unknown'
+                        sample_valid=false
+                        break
+                        ;;
+                esac
+                connectors=$((connectors + 1))
+            done
+            [ "$sample_valid" = true ] || break
+            if [ "$connectors" -eq 0 ]; then
+                echo 'sophia_qemu_unplug schema=1 status=failed reason=connectors_missing'
+                break
+            fi
+            echo "sophia_qemu_unplug schema=1 status=connectors connectors=$connectors connected=$connected sample=$sample"
+            sample=$((sample + 1))
+            sleep 0.1
+        done
     else
         # The host's removal, wait and return, with room to settle.
         sleep 18

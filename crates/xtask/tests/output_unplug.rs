@@ -57,7 +57,8 @@ fn all_return() -> String {
     let loss = "\
 sophia_qemu_unplug schema=1 status=sent action=off target=card0-Virtual-1
 sophia_qemu_unplug schema=1 status=sent action=off target=card0-Virtual-2
-sophia_live_output_topology schema=1 status=unavailable transition=1 retry_msec=250 error=no_connected_outputs
+sophia_qemu_unplug schema=1 status=connectors connectors=2 connected=0 sample=20
+sophia_live_output_topology schema=1 status=unavailable transition=1 retry_msec=250 error=\"persistent native scanout could not open all KMS outputs: SelectionFailed\"
 ";
     let back = RETURN.replace(
         "action=on target=card0-Virtual-2",
@@ -121,23 +122,183 @@ fn the_session_ending_on_the_loss_is_refused_with_its_line() {
 #[test]
 fn every_missing_obligation_is_refused() {
     let cases = [
-        (Mode::One, one().replace("outputs=1 changed=true", "outputs=1 changed=false"), "never published 1"),
-        (Mode::One, one().replace("retirements=1 input=enabled", "retirements=1 input=quarantined"), "never published 1"),
-        (Mode::One, one().replace("status=settled transition=1", "status=settled transition=9"), "never published 1"),
-        (Mode::OneReturn, one_return().replace("outputs=2 changed=true", "outputs=1 changed=true"), "never published 2"),
-        (Mode::AllReturn, all_return().replace("sophia_live_output_topology schema=1 status=unavailable transition=1 retry_msec=250 error=no_connected_outputs\n", ""), "no topology transition"),
-        (Mode::One, one().replace("sophia_live_session schema=7 status=bounded_complete", "sophia_live_session schema=7 status=stopped"), "bounded completion"),
-        (Mode::One, one().replace("sophia_qemu_guest schema=1 status=complete scenario=output-unplug\n", ""), "sophia_qemu_guest"),
-        (Mode::One, one().replace("status=guest_exited qemu_exit=0", "status=failed reason=host_timeout"), "failure marker"),
-        (Mode::OneReturn, one().replace("mode=one", "mode=one-return"), "fixture unreached"),
-        (Mode::One, one().replace("connected=2", "connected=1"), "needs 2"),
-        (Mode::One, one().replace("action=off", "action=noop"), "no removal"),
-        (Mode::One, format!("{}{}", one(), "sophia_qemu_unplug schema=1 status=running mode=one\n"), "more than one"),
+        (
+            Mode::One,
+            one().replace("outputs=1 changed=true", "outputs=1 changed=false"),
+            "never published 1",
+        ),
+        (
+            Mode::One,
+            one().replace(
+                "retirements=1 input=enabled",
+                "retirements=1 input=quarantined",
+            ),
+            "never published 1",
+        ),
+        (
+            Mode::One,
+            one().replace("status=settled transition=1", "status=settled transition=9"),
+            "never published 1",
+        ),
+        (
+            Mode::OneReturn,
+            one_return().replace("outputs=2 changed=true", "outputs=1 changed=true"),
+            "never published 2",
+        ),
+        (
+            Mode::AllReturn,
+            all_return().replace("status=unavailable", "status=quiesced"),
+            "no unavailable topology",
+        ),
+        (
+            Mode::One,
+            one().replace(
+                "sophia_live_session schema=7 status=bounded_complete",
+                "sophia_live_session schema=7 status=stopped",
+            ),
+            "bounded completion",
+        ),
+        (
+            Mode::One,
+            one().replace(
+                "sophia_qemu_guest schema=1 status=complete scenario=output-unplug\n",
+                "",
+            ),
+            "sophia_qemu_guest",
+        ),
+        (
+            Mode::One,
+            one().replace(
+                "status=guest_exited qemu_exit=0",
+                "status=failed reason=host_timeout",
+            ),
+            "failure marker",
+        ),
+        (
+            Mode::OneReturn,
+            one().replace("mode=one", "mode=one-return"),
+            "fixture unreached",
+        ),
+        (
+            Mode::One,
+            one().replace("connected=2", "connected=1"),
+            "needs 2",
+        ),
+        (
+            Mode::One,
+            one().replace("action=off", "action=noop"),
+            "no removal",
+        ),
+        (
+            Mode::One,
+            format!(
+                "{}{}",
+                one(),
+                "sophia_qemu_unplug schema=1 status=running mode=one\n"
+            ),
+            "more than one",
+        ),
     ];
     for (index, (mode, log, expected)) in cases.into_iter().enumerate() {
         let error = verify(&log, mode).unwrap_err();
         assert!(error.contains(expected), "case {index}: {error}");
     }
+}
+
+#[test]
+fn all_heads_loss_requires_guest_and_session_witnesses_after_the_last_removal() {
+    let zero = "sophia_qemu_unplug schema=1 status=connectors connectors=2 connected=0 sample=20\n";
+    let unavailable = "sophia_live_output_topology schema=1 status=unavailable transition=1 retry_msec=250 error=\"persistent native scanout could not open all KMS outputs: SelectionFailed\"\n";
+    let last_off = "sophia_qemu_unplug schema=1 status=sent action=off target=card0-Virtual-2\n";
+    let first_on = "sophia_qemu_unplug schema=1 status=sent action=on target=card0-Virtual-1\n";
+    let log = all_return();
+    let cases = [
+        (log.replace(zero, ""), "no zero-connected observation"),
+        (
+            log.replace(zero, "")
+                .replace(last_off, &format!("{zero}{last_off}")),
+            "no zero-connected observation",
+        ),
+        (
+            log.replace(zero, "")
+                .replace(first_on, &format!("{first_on}{zero}")),
+            "no zero-connected observation",
+        ),
+        (
+            log.replace(unavailable, "")
+                .replace(last_off, &format!("{unavailable}{last_off}")),
+            "no unavailable topology",
+        ),
+        (
+            log.replace(unavailable, "")
+                .replace(first_on, &format!("{first_on}{unavailable}")),
+            "no unavailable topology",
+        ),
+        (
+            log.replace("status=unavailable", "status=published"),
+            "no unavailable topology",
+        ),
+        (
+            log.replace("connected=0 sample", "connected=1 sample"),
+            "no zero-connected observation",
+        ),
+        (
+            log.replace("connectors=2 connected=0", "connectors=0 connected=0"),
+            "inconsistent counts",
+        ),
+        (
+            log.replace("connectors=2 connected=0", "connectors=1 connected=0"),
+            "inconsistent counts",
+        ),
+        (
+            log.replace("connectors=2 connected=0", "connectors=2 connected=3"),
+            "inconsistent counts",
+        ),
+        (
+            log.replace("connected=0 sample", "connected=unknown sample"),
+            "no numeric connected",
+        ),
+        (
+            log.replace("connectors=2 connected=0", "connectors=unknown connected=0"),
+            "no numeric connectors",
+        ),
+        (
+            log.replace("schema=1 status=connectors", "schema=2 status=connectors"),
+            "unsupported schema",
+        ),
+        (
+            log.replace("connected=0 sample", "connected=0 connected=1 sample"),
+            "repeated fields",
+        ),
+        (
+            log.replace(
+                "connectors=2 connected=0",
+                "connectors=2 connectors=1 connected=0",
+            ),
+            "repeated fields",
+        ),
+        (
+            log.replace(
+                "schema=1 status=connectors",
+                "schema=1 schema=2 status=connectors",
+            ),
+            "repeated fields",
+        ),
+    ];
+    for (index, (changed, expected)) in cases.into_iter().enumerate() {
+        assert_ne!(changed, log, "case {index} must change its witness");
+        let error = verify(&changed, Mode::AllReturn).unwrap_err();
+        assert!(error.contains(expected), "case {index}: {error}");
+    }
+    // Enumeration includes disconnected connectors, and repeated samples can
+    // straddle the host's logging of a completed removal.
+    let repeated = log.replace(last_off, &format!("{zero}{last_off}"));
+    verify(&repeated, Mode::AllReturn).unwrap();
+    verify(
+        &log.replace("connectors=2 connected=0", "connectors=3 connected=0"),
+        Mode::AllReturn,
+    )
+    .unwrap();
 }
 
 #[test]

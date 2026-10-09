@@ -1,17 +1,17 @@
 //! `cargo xtask conformance verify output-unplug MODE LOG`: the verdict on
 //! the QEMU output-unplug scenario (t306).
 //!
-//! WHAT IT PROVES. While the session runs on scanned-out heads, the guest
+//! WHAT IT PROVES. While the session runs on scanned-out heads, the fixture
 //! takes away one connector, every connector, or the keyboard, and in the
 //! return modes gives it back. The session must live through it: no runtime
 //! fatal, a published topology that reflects the loss, after a return one
 //! that has every head again with input enabled, then a bounded completion and
 //! a clean guest exit.
 //!
-//! WHAT IT DOES NOT. virtio-gpu is not the operator's card, and the guest
-//! forces connector state through sysfs instead of a link going down. This
-//! proves the owner transition on a connector loss and return; the KVM switch
-//! itself stays an attended test.
+//! WHAT IT DOES NOT. virtio-gpu is not the operator's card, and the fixture
+//! changes QEMU's display configuration instead of a physical link going down.
+//! This proves the owner transition on a connector loss and return; the KVM
+//! switch itself stays an attended test.
 //!
 //! A run in which the guest saw no DRM hotplug uevent (or, in the input mode,
 //! no input removal) never asked Sophia anything. It is reported as an
@@ -232,8 +232,47 @@ pub fn verify(log: &str, mode: Mode) -> Result<Vec<String>, String> {
         // session that happened to stay up.
         let loss = &records[first_off..loss_end];
         if mode == Mode::AllReturn {
-            if !loss.iter().any(|record| record.name == TOPOLOGY) {
-                return Err("shows no topology transition after every head went".to_owned());
+            // A first removal can publish a healthy smaller topology. Neither
+            // that transition nor a host command proves that every head went.
+            // Bind both independent witnesses to the completed removal phase.
+            let all_gone = &records[last_off + 1..loss_end];
+            let mut zero_connected = false;
+            for sample in all_gone
+                .iter()
+                .filter(|record| record.is("sophia_qemu_unplug", "connectors"))
+            {
+                let keys = sample
+                    .fields
+                    .iter()
+                    .map(|(key, _)| key)
+                    .collect::<std::collections::BTreeSet<_>>();
+                if keys.len() != sample.fields.len() {
+                    return Err("connector observation has repeated fields".to_owned());
+                }
+                if sample.get("schema") != Some("1") {
+                    return Err("connector observation has an unsupported schema".to_owned());
+                }
+                let connectors = number(sample, "connectors")?;
+                let connected = number(sample, "connected")?;
+                if connectors < heads || connected > connectors {
+                    return Err("connector observation has inconsistent counts".to_owned());
+                }
+                zero_connected |= connected == 0;
+            }
+            if !zero_connected {
+                return Err(
+                    "fixture unreached: no zero-connected observation after the last removal and before the first return"
+                        .to_owned(),
+                );
+            }
+            if !all_gone
+                .iter()
+                .any(|record| record.is(TOPOLOGY, "unavailable"))
+            {
+                return Err(
+                    "no unavailable topology after the last removal and before the first return"
+                        .to_owned(),
+                );
             }
         } else {
             let (transition, settle) = published_and_settled(loss, heads - 1)
