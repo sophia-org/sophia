@@ -264,6 +264,57 @@ workload as the cache patch's effect. It does not itself identify the cause of
 the original Sophia black frames. Keep the patch narrow and retain the matched
 build provenance; do not install private Mesa or patched QEMU into the host.
 
+### Proposed package design (2026-10-09, for review)
+
+No existing fixture runs this workload. Every output-unplug display mode
+removes a head, and its verifier requires hotplug uevents. The 170 and 186
+images carry an older Sophia with the device-test init. The design below adds
+test tooling and images only; it changes no production policy.
+
+The fixture is a `hold` mode of the output-unplug scenario. Both heads are
+enabled as today, the generic WM manages the DRI3 probe, and the probe
+presents one frame and holds. The host sends no display or input action; it
+waits for the static barrier and then for a declared hold window before
+shutdown. The probe window crosses the boundary between the heads, so both
+per-head workers import the same client buffer. A window on one head leaves
+one importer, which cannot exercise the shared-description hazard recorded
+in the sampling investigation. The verifier reuses `verify_static_client`
+and the probe's analytic pattern, computes the expected checksum of each
+head's visible part of the window, and binds every region to a frame its own
+native owner presented.
+
+The verdict for one boot is declared in advance. `RETAINED` requires
+startup readiness, exactly one mixed Present retirement, and every presented
+region on both heads equal to its expected checksum through the hold window.
+`LOST` requires readiness, a first presented region equal to its expectation,
+and a later presented region on either head that differs from it. A boot
+that never reaches readiness reports `UNREADY`, with its regions recorded; it
+counts as a reproduced failure only when its first presented region matched
+and a later one did not, as in 153. Startup recovery and the adaptive fallback
+are recorded separately and never turn a mismatch into `RETAINED`.
+Infrastructure refusal stops the series without replacement.
+
+Two images come from one frozen candidate. The base is built from the signed
+candidate with the pinned initramfs builder, as for image 145. The 170 Mesa
+transform then installs the private original or patched build, re-pinned to
+that base, so the pair differs only in `libgallium`. The series runs original,
+patched, patched, original under one exact-argv GO, with a per-boot precheck
+and no replacement, following the 152 and 201 runners.
+
+A third arm runs only if the series reproduces the failure on an original
+boot. It boots the original image twice with each renderer instance given a
+fresh, revalidated open of the admitted render node instead of a duplicate of
+the card. Its buffers then take the PRIME export and import path to KMS. That
+opt-in needs a reviewed production change, so it is a separate package and a
+separate GO; the duplicate remains the default until evidence supports a
+change.
+
+CPU controls precede any image or guest: hold-mode verifier refusals
+(missing readiness, a second Present, a changed region on either head, a
+region from another owner, an unstable baseline), runner orchestration with
+stand-in launches, image binding against the prepared manifests, and named
+mutants of the verdict rules.
+
 ## 3. Characterize lock custody and prove cover retirement
 
 Exercise real LockPublication, LockFileCustody and SessionLockFrames through
