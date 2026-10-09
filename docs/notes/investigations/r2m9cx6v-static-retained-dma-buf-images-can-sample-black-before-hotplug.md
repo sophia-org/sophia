@@ -617,9 +617,53 @@ The frozen pair manifest is
 
 This pair uses EGL/GBM with X11 support and only the virgl driver, GLVND,
 debug symbols and NDEBUG, without GLX or software fallback. It is a matched
-private build, not a claimed reproduction of the distro build. No image or
-guest used it. Rendering qualification and the runtime screen-sharing premise
-remain separate from the compiled cache correction.
+private build, not a claimed reproduction of the distro build. At that build
+freeze, no image or guest used it. Rendering qualification and the runtime
+screen-sharing premise remain separate from the compiled cache correction.
+
+## Matched private Mesa images (2026-10-09 UTC)
+
+Evidence `170-mesa-image-pair` derives two images from frozen image 143,
+`f49bc81a`, using the reviewed pair from 167. CPU preparation ran once from
+06:52:06Z to 06:54:19Z and exited zero, with devices and network hidden.
+The original image is
+`e9597490d1484928e7064fbf7d94566bddba4c105bc433a42d41b648d3f1d57f`;
+the patched image is
+`8edf6031cc2838c5448f99e08ac4b6b7233e97de3c55ca86e14b41353503587e`.
+
+Each derivation replaces five Mesa library bodies, removes 54 foreign DRI/VA
+driver links and adds nothing. The remaining 5917 entries retain the base
+metadata; every non-Mesa body and header is byte-identical to 143. The
+original and patched archives differ only in `libgallium-26.2.3.so`, with
+equal metadata. The frozen test `0d9c10c8`, init `f49c78d0`, guest tools,
+Sophia binaries, loader cache, vendor JSON and build-parameter record remain
+unchanged. The external `classify_handle5` and its strict foreign-line rule
+also remain unchanged. `MAP.json` records the derivation; the preserved
+build-parameter does not claim a new build.
+
+All 17 archive/audit controls passed, including byte-exact round trip,
+unauthorized path changes, changed trailer, reordered entries and non-block
+padding. Compression validation, decompression comparison and independent
+content/metadata listings passed. The five libraries keep their original
+SONAMEs, have no runtime path override, and resolve all 44 direct dependency
+edges inside the image with every required symbol version present. The
+unchanged loader cache and GLVND lookup resolve to the same entries.
+An independent review recomputed the image hashes, stream hashes and full
+listings and found no discrepancy.
+
+The read-only evidence manifest is
+`52431174075a8f9d0e1c2455e799aabd9b5adadee06cefd994000a91067d1367`
+(153 entries, including both compressed image paths); `RESULT.txt` is
+`1b6dd935`. Neither image has booted. The unstripped private build grows the
+unpacked archive from about 771.8 MB to 816.9 MB and the compressed image
+from 373.8 MB to 387.5 MB. A future runner must record its memory setting
+and classify an early boot OOM as infrastructure. The prior recipe used
+2048 MiB. Stripping would break the reviewed binary identity.
+
+These checks establish the image pair, not runtime loading, screen sharing
+or a rendering repair. A bounded runner, its runtime premise and exact-argv
+GO remain separate. Installed libraries and all previous series verdicts
+are unchanged; t306/t307 remain unaccepted.
 
 ## Real-context control and a freshness-oracle gap (2026-10-09 UTC)
 
