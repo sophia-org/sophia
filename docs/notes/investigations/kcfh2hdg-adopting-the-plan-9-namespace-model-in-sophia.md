@@ -157,6 +157,9 @@ acceptance require their own tasks and evidence.
 
 ## Connections
 
+- [Namespace prerequisites for capture](id869143-x11-drawable-readback-and-an-operator-capture-path.md#namespace-prerequisites-for-capture-2026-10-09)
+  map t133/t142 admission and confinement to t046's proposed capture path;
+  the full namespace composition investigation is a separate design effort.
 - [Namespaces and portals](../../namespaces-and-portals.md) owns Sophia's
   existing resource isolation and admission contract. Reconcile it with the
   proposed naming model rather than treating identical terminology as identical

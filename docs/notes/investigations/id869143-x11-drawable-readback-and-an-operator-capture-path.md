@@ -3,7 +3,7 @@ id: id869143
 date: 2026-10-09
 kind: investigation
 status: investigating
-tags: [investigation, x11, portals]
+tags: [investigation, x11, portals, namespaces]
 ---
 # X11 drawable readback and an operator capture path
 
@@ -82,6 +82,59 @@ can supply a virtual-device proof, but VKMS is not a prerequisite for exposing
 capture on the running native desktop. XTEST admission remains a separate
 input permission; capture does not enable it. The later multi-listener group
 admission work remains in [t142](../plans/ooy00zjd-socket-directory-and-frontend-multiplexer-architecture.md).
+
+## Namespace prerequisites for capture (2026-10-09)
+
+niltempus asked whether namespaces should be locked down before t046, then
+requested this reference for later. The recommendation is to prove admission
+and confinement before shipping the capture executor. Portal design and
+device-free tests can proceed alongside that work. The broader Plan 9 namespace
+composition investigation need not finish before a bounded capture slice.
+This records recommended sequencing, not a task promotion or queue reorder;
+monitor recovery remains the active implementation priority.
+
+The relevant task and note map is:
+
+| Task | Owning note and scope | Relationship to capture |
+| --- | --- | --- |
+| t133 | [Admission security investigation](1pv291te-namespace-and-client-admission-security-gaps.md) and [pidfd proposal](../plans/esnqxpqw-pidfd-and-namespace-admission-optimizations.md): peer identity, launch origins, descriptor transfer, process lifetime and admission bounds. | Reconcile the threat model with current code and prove the identity relied on by grants. |
+| t142 | [Socket directories and live frontend groups](../plans/ooy00zjd-socket-directory-and-frontend-multiplexer-architecture.md#phase-2----t142-several-listeners-one-synchronous-frontend-tier-2): multiple listeners, credential admission and confined launcher mounts. | Prove that a confined group cannot reach the trusted endpoint and cannot acquire another group's authority. |
+| t275 | [Plan 9 namespace model](kcfh2hdg-adopting-the-plan-9-namespace-model-in-sophia.md): service views, bind/mount/union semantics, inheritance and revocation. | Broader design; reconcile future recipes with existing grants without making all composition semantics a capture prerequisite. |
+| t045 | [Confined daily-driver promotion](../plans/queue-16-portals-and-confined-applications.md#t045): application grants and recovery. | Daily-use acceptance follows the required working transfers and confinement proof. |
+| t046 | [Portal integration](../plans/queue-16-portals-and-confined-applications.md#t046): narrow authorized transfers and their executors. | Deliver one scoped window/output capture through the same operator and agent interface. |
+| t033 | [Role protection defaults](../plans/queue-13-authority-and-lifecycle-hardening.md#t033): protection for blind spatial/output roles and behavior without bwrap. | Related host-containment policy; do not confuse role isolation with application resource namespaces. |
+| t113 | [Confined desktop services](../plans/1sxw3fyj-native-desktop-protocol-gaps-after-the-three-component-baseline.md#t113): per-service status and effect permissions. | Keep service access scoped instead of granting an unrestricted host bus to make confinement usable. |
+| t060 | [Namespace pointer queries](../plans/queue-11-parallel-production-readiness.md#t060): installed menu-placement and drag acceptance. | Related namespace-correctness acceptance, separate from capture authorization. |
+
+Recommended sequence after monitor recovery: reconcile t133 with production
+admission, implement and qualify t142, deliver a bounded t046 capture slice,
+then qualify the daily confined group under t045. The existing clipboard
+transfer controls support t142; this sequence does not require completing all
+of t046 before group isolation can be tested.
+
+The baseline already includes namespace-keyed resource checks, registry
+admission/revocation and clipboard controls. t141 completed the socket-directory
+foundation; its launcher mount and trusted-path exclusion proof moved to t142.
+The [cross-namespace root-readback leak](8xgoow54-a-root-readback-showed-one-namespace-anothers-windows.md)
+was repaired and must stay covered when adding capture. t135's sandbox-backend
+evaluation is recorded in completion history; replacing Bubblewrap is not a
+prerequisite for this sequence. Task status remains in
+[todo.md](../../../todo.md) and [completion history](../../../done.md).
+
+The older t133 notes need source reconciliation before implementation. At
+`8b8ac27b5`, `LiveXAdmissionPolicy::admit` checks the peer UID and admits to its
+configured namespace before collecting ancestry for launch-origin metadata.
+An ancestry lookup failure therefore is not itself the namespace-admission
+failure described in parts of the old investigation. The pidfd proposal and
+t275's evaluated design are proposals requiring validation, not security proof.
+
+Before enabling capture, require an admitted requester and recipient, a bounded
+target and payload, live generation/permission checks at execution, cancellation
+and revocation, and refusal while locked, including pending transfers. Missing
+executors must report unavailable rather than successful execution. These are
+the [existing t046 exits](../plans/queue-16-portals-and-confined-applications.md#t046)
+and [portal authority boundaries](../decisions/xa78u03g-keep-broker-and-portal-file-authority-and-custody-separate.md#portal),
+not an ambient screenshot permission for every same-UID process.
 
 ## Validation and remaining work
 

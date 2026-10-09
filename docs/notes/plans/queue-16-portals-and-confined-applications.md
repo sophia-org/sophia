@@ -60,3 +60,10 @@ completion, recipient isolation, cancellation and the lock gate above. A CLI
 caller and an agent use the same explicit grant; no new input permission is
 implied. Live desktop capture does not depend on completing the separate
 [t303 VKMS investigation](../investigations/jweorh0z-headless-sophia-validation-and-capture-with-vkms-writeback.md#t303).
+
+The [namespace prerequisite review](../investigations/id869143-x11-drawable-readback-and-an-operator-capture-path.md#namespace-prerequisites-for-capture-2026-10-09)
+maps t133 admission, t142 live client groups and related work. It recommends
+proving admission and confinement before shipping capture, while permitting
+portal design and isolated tests alongside them. The broader t275 namespace
+composition design remains separate; this reference does not promote t046 or
+change the task queue.

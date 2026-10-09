@@ -8,6 +8,10 @@
 investigates composable per-process file and service views, their Linux mapping,
 and their relationship to Sophia's admission and isolation contracts.
 
+The [namespace prerequisites for capture](../investigations/id869143-x11-drawable-readback-and-an-operator-capture-path.md#namespace-prerequisites-for-capture-2026-10-09)
+map admission, live client groups, confined daily use and portal capture to
+their owning tasks, with recommended sequencing and limits of the older notes.
+
 ## Desktop startup
 
 The [panel-only startup investigation](../investigations/startup-panel-only-startup-physical-acceptance.md)
