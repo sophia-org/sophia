@@ -81,6 +81,7 @@ pub(crate) fn run_persistent_xterm_session(
         .transpose()?;
     let mut output_authority_capabilities = None;
     let mut startup_output_activation = None;
+    let mut startup_fallback_connector = None;
     if let Some(native) = native_scanout.as_ref() {
         let capabilities = native.output_capabilities()?;
         for capability in &capabilities {
@@ -114,6 +115,7 @@ pub(crate) fn run_persistent_xterm_session(
             config.output_profile.current(),
             &topology,
         )?;
+        startup_fallback_connector.clone_from(&reconciled.fallback_connector);
         let activation =
             prepare_native_output_activation_plan(&capabilities, &topology, &reconciled)?;
         let generation = activation.generation().raw();
@@ -258,6 +260,7 @@ pub(crate) fn run_persistent_xterm_session(
                     snapshot,
                     capabilities,
                     startup_candidate,
+                    fallback_connector: startup_fallback_connector.take(),
                 })
             }
             (None, _) => None,

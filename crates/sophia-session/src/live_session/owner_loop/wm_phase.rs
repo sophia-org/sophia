@@ -790,6 +790,7 @@
                         config,
                         &snapshot,
                         initial_head_mapping,
+                        wm.public.as_ref().map(|public| &public.output_policy_keys),
                     ) {
                         Ok(candidate) => {
                             wm.admit_reloaded_output_topology(candidate)?;

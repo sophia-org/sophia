@@ -173,6 +173,8 @@ mod output_proof_tests;
 mod bubblewrap_config_tests;
 #[path = "live_session/lock_publication_tests.rs"]
 mod lock_publication_tests;
+#[path = "live_session/output_fallback_tests.rs"]
+mod output_fallback_tests;
 #[path = "live_session/output_readback_tests.rs"]
 mod output_readback_tests;
 #[path = "live_session/output_rollback_quiescence_tests.rs"]

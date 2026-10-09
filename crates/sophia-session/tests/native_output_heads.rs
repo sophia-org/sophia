@@ -245,6 +245,8 @@ fn plan_with_disabled(
         generation: ConfigGeneration::from_raw(7),
         digest: ConfigDigest::new([9; 32]),
         inherit_sophia: true,
+        availability: sophia_config::DesktopOutputAvailability::Strict,
+        fallback_policy_key: None,
         named: disabled
             .iter()
             .map(|output| DesktopNamedOutputCandidate {
@@ -436,6 +438,8 @@ fn a_candidate_that_enables_nothing_never_becomes_a_plan() {
         generation: ConfigGeneration::from_raw(7),
         digest: ConfigDigest::new([9; 32]),
         inherit_sophia: true,
+        availability: sophia_config::DesktopOutputAvailability::Strict,
+        fallback_policy_key: None,
         named: vec![DesktopNamedOutputCandidate {
             policy_key: None,
             mirror_fit: None,

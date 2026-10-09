@@ -109,6 +109,44 @@ missing refusal reason is tracked as [t309](../plans/queue-05-3-make-failures-di
 
 ### t310
 
+#### Port change after reboot (2026-10-09)
+
+Niltempus moved the main monitor between ports on the discrete AMD card before
+rebooting and requested a durable startup repair. Both normal logins failed
+on installed Sophia `19403a511`, release `niltempus-087445319affcb9bfc53`, with
+`output_profile_unknown_connector` and the retained cause `unknown connector
+"DP-1"`. Both reached native head readiness. Their diagnostics report zero
+suppressed, discarded or lost records. Sysfs shows discrete PCI `0000:03:00.0`
+with DP-1 disconnected and DP-2 connected; the integrated card at
+`0000:16:00.0` retains HDMI-A-2. The new udev rule assigns that integrated card
+and render node to seat1; the discrete card remains on default seat0. The
+installed profile still requires DP-1. This establishes a configuration
+availability refusal, without requiring a rendering-failure hypothesis.
+
+The failed sessions, installed profile, udev records and connector snapshot are
+retained under `~/.local/state/sophia/development-evidence/t310-startup-port-20261009/incident/`
+with `SHA256SUMS`. Session IDs end in `19724b5a-ac06-4bea-9b7e-7154eb41f9e5`
+and `02bedb1b-176a-4d8a-8a89-4194567bd4d4`.
+
+The startup repair is isolated on `fix/t310-startup-output-fallback`, based on
+the installed `19403a511`. Adaptive availability is explicit, leaving strict
+proof profiles unchanged. Missing ordinary preferences are skipped; if no
+output remains enabled, one connected unnamed connector receives a safe
+preferred-mode desktop. Explicitly disabled connectors and mirror members
+are not fallback candidates. A configured fallback policy key binds workspace
+affinity to the selected port for the session, without letting a returning
+saved connector duplicate the key. Reload cannot rebind that identity.
+The integration profile must explicitly disable HDMI-A-2 because unnamed
+connectors become eligible for fallback. Seat admission remains independent.
+
+This slice does not relax unsupported settings on present named outputs or
+mirror-group requirements. Automatic hotplug reconstruction currently does
+not rerun profile reconciliation; runtime exclusions, workspace migration,
+all-head suspension and retained-image recovery remain separate obligations.
+The prior t306/t307 shutdown checkpoint and its unqualified packages remain
+unchanged. Qualification and physical acceptance of this startup candidate
+are still pending.
+
 The operator expects the desktop to handle changing monitor combinations at
 login and during a session. The DP-1 profile is an immediate configuration
 repair, not that capability's acceptance. Define saved output settings as

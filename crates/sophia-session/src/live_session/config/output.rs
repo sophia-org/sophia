@@ -121,6 +121,7 @@ pub(super) struct LiveOutputAuthorityBootstrap {
     pub(super) snapshot: sophia_protocol::OutputAuthoritySnapshot,
     pub(super) capabilities: Vec<sophia_backend_live::LibdrmNativeOutputCapability>,
     pub(super) startup_candidate: Option<sophia_protocol::OutputTopologyCandidate>,
+    pub(super) fallback_connector: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

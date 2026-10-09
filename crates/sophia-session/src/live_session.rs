@@ -326,6 +326,7 @@ fn build_reloaded_output_topology_candidate(
     config: &PersistentXtermSessionConfig,
     snapshot: &sophia_protocol::OutputAuthoritySnapshot,
     mapping: sophia_protocol::OutputHeadMapping,
+    policy_keys: Option<&BTreeMap<String, u64>>,
 ) -> Result<sophia_protocol::OutputTopologyCandidate, Box<dyn std::error::Error>> {
     let capabilities = native.output_capabilities()?;
     let topology = project_native_output_topology(&capabilities, &native.outputs())?;
@@ -333,6 +334,16 @@ fn build_reloaded_output_topology_candidate(
         config.output_profile.current(),
         &topology,
     )?;
+    let resolved_keys = startup_output_policy_keys(
+        config.output_profile.current(),
+        reconciled.fallback_connector.as_deref(),
+    )?;
+    if policy_keys.is_some_and(|keys| keys != &resolved_keys) {
+        return Err(
+            "output policy affinity would rebind; changing the startup binding requires a new session"
+                .into(),
+        );
+    }
     let plan = prepare_native_output_activation_plan(&capabilities, &topology, &reconciled)?;
     Ok(prepare_native_output_authority_candidate(
         &plan,

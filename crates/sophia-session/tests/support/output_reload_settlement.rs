@@ -11,6 +11,174 @@ use sophia_protocol::{
     OutputTopologyCandidate, OutputTopologyIntent, OutputTransform, OutputVrrPolicy,
 };
 
+/// The daily profile at startup on the moved monitor: DP-1 preferred and
+/// absent, DP-2 lit as the fallback with affinity 1.
+const ADAPTIVE_OUTPUT: &str = "availability adaptive; fallback-policy-key 1; \
+    inherit-sophia #false; named DP-1 { policy-key 1; enabled #true; }";
+
+fn save_output_profile(fixture: &ReloadFixture, policy: Option<&str>, output: &str) {
+    use std::io::Write;
+    fixture.save("/replacement/command", policy);
+    let path = fixture
+        .source
+        .config
+        .desktop_profile_source
+        .as_ref()
+        .unwrap();
+    let mut file = std::fs::OpenOptions::new().append(true).open(path).unwrap();
+    writeln!(file, "output {{ {output} }}").unwrap();
+}
+
+/// A session that started on the DP-2 fallback. Only its output profile and
+/// realized keys are set; the desktop generation is still the fixture's, so
+/// the first reload sees an output change.
+fn fallback_session() -> (ReloadFixture, BTreeMap<String, u64>) {
+    let mut fixture = ReloadFixture::new();
+    save_output_profile(&fixture, None, ADAPTIVE_OUTPUT);
+    let prepared = sophia_config::load_prepared_desktop_profile(
+        fixture.source.config.desktop_profile_source.as_deref(),
+        sophia_config::ConfigGeneration::INITIAL,
+    )
+    .unwrap();
+    fixture.source.config.output_profile =
+        PreparedOutputProfile::new(prepared.candidates.output).unwrap();
+    let realized = BTreeMap::from([("DP-2".to_owned(), 1)]);
+    fixture.wm.public.as_mut().unwrap().output_policy_keys = realized.clone();
+    (fixture, realized)
+}
+
+#[test]
+fn reload_keeps_the_realized_fallback_binding_across_unrelated_output_changes() {
+    let (mut fixture, realized) = fallback_session();
+
+    // Compare the saved identities to the previous profile, not to the
+    // realized DP-2 binding, or no reload could follow a fallback start.
+    assert_eq!(fixture.reload(), DesktopProfileReloadOutcome::Applied);
+    let public = fixture.wm.public.as_ref().unwrap();
+    assert_eq!(public.output_policy_keys, realized);
+    assert!(public.output_topology_reload_pending);
+
+    save_output_profile(
+        &fixture,
+        None,
+        &format!("{ADAPTIVE_OUTPUT}; named HDMI-A-2 {{ enabled #false; }}"),
+    );
+    assert_eq!(fixture.reload(), DesktopProfileReloadOutcome::Applied);
+    let current = fixture.source.config.output_profile.current();
+    assert_eq!(current.named.len(), 2);
+    assert_eq!(current.named[1].enabled, Some(false));
+    assert_eq!(current.fallback_policy_key, Some(1));
+    assert_eq!(
+        fixture.wm.public.as_ref().unwrap().output_policy_keys,
+        realized
+    );
+}
+
+#[test]
+fn reload_declines_output_identity_changes_and_keeps_the_session() {
+    let (mut fixture, realized) = fallback_session();
+    assert_eq!(fixture.reload(), DesktopProfileReloadOutcome::Applied);
+    let generation = fixture.source.config.desktop_profile.generation;
+    let before = fixture.source.config.output_profile.current().clone();
+
+    for (output, change) in [
+        (
+            ADAPTIVE_OUTPUT.replace("fallback-policy-key 1", "fallback-policy-key 2"),
+            "fallback key",
+        ),
+        (
+            ADAPTIVE_OUTPUT.replace(
+                "availability adaptive; fallback-policy-key 1; ",
+                "availability strict; ",
+            ),
+            "availability",
+        ),
+        (
+            ADAPTIVE_OUTPUT.replace("{ policy-key 1;", "{ policy-key 3;"),
+            "named key",
+        ),
+        (
+            format!("{ADAPTIVE_OUTPUT}; named DP-2 {{ policy-key 2; enabled #true; }}"),
+            "added key",
+        ),
+    ] {
+        save_output_profile(&fixture, None, &output);
+        // Declined is an ordinary outcome; an error here would end the
+        // owner loop and with it the operator's session.
+        assert_eq!(
+            fixture.reload(),
+            DesktopProfileReloadOutcome::Declined,
+            "{change}"
+        );
+        assert_eq!(
+            fixture.source.config.desktop_profile.generation, generation,
+            "{change}"
+        );
+        assert_eq!(
+            fixture.source.config.output_profile.current(),
+            &before,
+            "{change}"
+        );
+        assert_eq!(
+            fixture.wm.public.as_ref().unwrap().output_policy_keys,
+            realized,
+            "{change}"
+        );
+        assert!(!fixture.wm.desktop_reload_pending(), "{change}");
+    }
+}
+
+#[test]
+fn a_policy_reload_changing_output_identity_is_declined_before_a_replacement_wm() {
+    let (mut fixture, realized) = fallback_session();
+    let generation = fixture.source.config.desktop_profile.generation;
+    let policy_path = fixture.policy_path();
+    let profile_key = fixture.wm.public.as_ref().unwrap().profile_key;
+    let launch_spec = fixture.wm.supervisor.launch_spec().clone();
+
+    save_output_profile(
+        &fixture,
+        Some("grid"),
+        &ADAPTIVE_OUTPUT.replace("fallback-policy-key 1", "fallback-policy-key 2"),
+    );
+    assert_eq!(fixture.reload(), DesktopProfileReloadOutcome::Declined);
+    assert!(!fixture.wm.desktop_reload_pending());
+    assert!(!fixture.wm.force_transport_restart);
+    assert_eq!(fixture.policy_path(), policy_path);
+    assert_eq!(fixture.wm.public.as_ref().unwrap().profile_key, profile_key);
+    assert_eq!(fixture.wm.supervisor.launch_spec(), &launch_spec);
+    assert_eq!(fixture.source.config.desktop_profile.generation, generation);
+    assert_eq!(
+        fixture
+            .source
+            .config
+            .output_profile
+            .current()
+            .fallback_policy_key,
+        Some(1)
+    );
+
+    // The same policy change with the identities kept goes through the
+    // replacement and publishes with the realized binding intact.
+    save_output_profile(&fixture, Some("grid"), ADAPTIVE_OUTPUT);
+    assert_eq!(
+        fixture.reload(),
+        DesktopProfileReloadOutcome::RestartRequired
+    );
+    fixture.replacement_started();
+    assert_eq!(
+        fixture.stage_configuration(&fixture.configuration()),
+        sophia_protocol::PolicyProjectionOutcome::Committed
+    );
+    fixture.settle(true);
+    assert!(!fixture.wm.desktop_reload_pending());
+    let public = fixture.wm.public.as_ref().unwrap();
+    assert!(public.configured);
+    assert!(public.output_topology_reload_pending);
+    assert_eq!(public.output_policy_keys, realized);
+    assert!(fixture.source.config.desktop_profile.generation.raw() > generation.raw());
+}
+
 /// One connected head, its published snapshot and an apply candidate that
 /// names it.
 fn reload_inputs(

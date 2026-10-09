@@ -223,6 +223,7 @@ fn independent_output_process_survives_both_wm_restart_paths_without_reassignmen
             snapshot: super::policy_combined_output::snapshot(),
             capabilities: vec![],
             startup_candidate: None,
+            fallback_connector: None,
         }),
     )
     .unwrap();

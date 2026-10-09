@@ -750,7 +750,13 @@ fn validate_setting(
         DesktopAuthority::Input => {
             ["inherit-sophia", "keyboard", "pointer", "cursor"].contains(&name)
         }
-        DesktopAuthority::Output => ["inherit-sophia", "named"].contains(&name),
+        DesktopAuthority::Output => [
+            "inherit-sophia",
+            "availability",
+            "fallback-policy-key",
+            "named",
+        ]
+        .contains(&name),
         DesktopAuthority::Broker => ["enabled", "capability"].contains(&name),
     };
     if !supported {

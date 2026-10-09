@@ -2,9 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use crate::{
-    ConfigDigest, ConfigGeneration, DESKTOP_OUTPUT_MAX_NAMED, DesktopOutputCandidate,
-    DesktopOutputMode, DesktopOutputScale, DesktopOutputTransform, DesktopOutputVrrMode,
-    valid_desktop_output_connector,
+    ConfigDigest, ConfigGeneration, DESKTOP_OUTPUT_MAX_NAMED, DesktopOutputAvailability,
+    DesktopOutputCandidate, DesktopOutputMode, DesktopOutputScale, DesktopOutputTransform,
+    DesktopOutputVrrMode, valid_desktop_output_connector,
 };
 
 const OUTPUT_MODE_REFRESH_TOLERANCE_MILLIHZ: u32 = 500;
@@ -137,6 +137,9 @@ pub struct DesktopOutputReconciliation {
     pub digest: ConfigDigest,
     pub outputs: Vec<DesktopOutputState>,
     pub focused_connector: Option<String>,
+    /// The connector an adaptive candidate lit because nothing it names could
+    /// be. `None` whenever the profile's own outputs were used.
+    pub fallback_connector: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -259,24 +262,38 @@ pub fn reconcile_desktop_output_candidate(
             }
         })
         .collect::<Vec<_>>();
+    let adaptive = candidate.availability == DesktopOutputAvailability::Adaptive;
     let mut focused_connector = None;
     for requested in &candidate.named {
-        let Some(index) = topology
+        let index = topology
             .connectors
             .iter()
-            .position(|connector| connector.connector == requested.connector)
-        else {
+            .position(|connector| connector.connector == requested.connector);
+        let enabled = requested.enabled.unwrap_or(match index {
+            Some(index) if candidate.inherit_sophia => outputs[index].enabled,
+            _ => true,
+        });
+        let unavailable = index.is_none_or(|index| !topology.connectors[index].connected);
+        // Mirror groups keep strict availability: a group's members and its
+        // primary are one logical output, and lighting part of one is not a
+        // decision this rule makes.
+        if adaptive && unavailable && requested.mirror.is_empty() {
+            // An unavailable output is a preference that cannot apply now,
+            // which is not the same as a contradiction in the profile.
+            if requested.focus_at_startup == Some(true) && !enabled {
+                return Err(DesktopOutputReconcileError::FocusedOutputDisabled(
+                    requested.connector.clone(),
+                ));
+            }
+            continue;
+        }
+        let Some(index) = index else {
             return Err(DesktopOutputReconcileError::UnknownConnector(
                 requested.connector.clone(),
             ));
         };
         let connector = &topology.connectors[index];
         let output = &mut outputs[index];
-        let enabled = requested.enabled.unwrap_or(if candidate.inherit_sophia {
-            output.enabled
-        } else {
-            true
-        });
         if enabled && !connector.connected {
             return Err(DesktopOutputReconcileError::DisconnectedConnector(
                 connector.connector.clone(),
@@ -326,6 +343,23 @@ pub fn reconcile_desktop_output_candidate(
         }
     }
     apply_mirror_groups(candidate, &mut outputs)?;
+    let mut fallback_connector = None;
+    if adaptive && !outputs.iter().any(|output| output.enabled) {
+        let index = select_fallback_connector(candidate, topology)?;
+        let connector = &topology.connectors[index];
+        outputs[index] = DesktopOutputState {
+            connector: connector.connector.clone(),
+            enabled: true,
+            mode: resolve_mode(connector, DesktopOutputMode::Preferred)?,
+            scale_milli: connector.scales.automatic_milli,
+            position: (0, 0),
+            transform: DesktopOutputTransform::Normal,
+            vrr: DesktopOutputVrrMode::Disabled,
+            mirror_of: None,
+        };
+        focused_connector = Some(connector.connector.clone());
+        fallback_connector = Some(connector.connector.clone());
+    }
     if !outputs.iter().any(|output| output.enabled) {
         return Err(DesktopOutputReconcileError::NoEnabledOutput);
     }
@@ -335,9 +369,39 @@ pub fn reconcile_desktop_output_candidate(
         digest: candidate.digest,
         outputs,
         focused_connector,
+        fallback_connector,
     };
     validate_desktop_output_reconciliation(&reconciliation, topology)?;
     Ok(reconciliation)
+}
+
+/// Chooses the connector an adaptive candidate falls back to.
+///
+/// Only a connected connector the profile does not mention is eligible. A
+/// named connector already says what the operator wants of it -- including
+/// `enabled #false`, the exclusion this must never override -- and a mirror
+/// member belongs to its group. The choice is the least connector name, so it
+/// depends on what is attached and not on the order it was enumerated in.
+fn select_fallback_connector(
+    candidate: &DesktopOutputCandidate,
+    topology: &DesktopOutputTopologySnapshot,
+) -> Result<usize, DesktopOutputReconcileError> {
+    let configured = candidate
+        .named
+        .iter()
+        .flat_map(|output| std::iter::once(&output.connector).chain(&output.mirror))
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    topology
+        .connectors
+        .iter()
+        .enumerate()
+        .filter(|(_, connector)| {
+            connector.connected && !configured.contains(connector.connector.as_str())
+        })
+        .min_by(|(_, first), (_, second)| first.connector.cmp(&second.connector))
+        .map(|(index, _)| index)
+        .ok_or(DesktopOutputReconcileError::NoEnabledOutput)
 }
 
 pub fn validate_desktop_output_topology_snapshot(
@@ -426,6 +490,20 @@ pub fn validate_desktop_output_reconciliation(
             ));
         }
     }
+    if let Some(fallback) = reconciliation.fallback_connector.as_deref() {
+        // A fallback carries the session's fallback affinity, so it has to be
+        // an output that is actually lit and the one the session starts on.
+        if reconciliation.focused_connector.as_deref() != Some(fallback)
+            || !reconciliation
+                .outputs
+                .iter()
+                .any(|output| output.connector == fallback && output.enabled)
+        {
+            return Err(DesktopOutputReconcileError::InvalidReconciliation(
+                "fallback connector must be the enabled, focused output".to_owned(),
+            ));
+        }
+    }
     reject_overlaps(&reconciliation.outputs)
 }
 
@@ -464,6 +542,14 @@ fn validate_candidate(
         }
     }
     validate_mirror_groups(candidate, &connectors)?;
+    if candidate.fallback_policy_key.is_some_and(|key| key == 0)
+        || (candidate.fallback_policy_key.is_some()
+            && candidate.availability != DesktopOutputAvailability::Adaptive)
+    {
+        return Err(DesktopOutputReconcileError::InvalidCandidate(
+            "a fallback policy key must be nonzero and belongs to an adaptive candidate".to_owned(),
+        ));
+    }
     Ok(())
 }
 

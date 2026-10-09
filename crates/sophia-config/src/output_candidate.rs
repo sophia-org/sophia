@@ -59,6 +59,22 @@ pub enum DesktopMirrorFit {
     Exact,
 }
 
+/// Whether a named output is a requirement or a preference.
+///
+/// `Strict` is the default and what proof fixtures depend on: every named
+/// connector must exist, and an enabled one must be connected. `Adaptive` is
+/// for a daily desktop whose monitors move: a named connector that is absent
+/// or disconnected is skipped, and when nothing named remains enabled one
+/// unconfigured connected connector is lit instead. Only availability adapts:
+/// a present output whose settings cannot be honoured is refused either way,
+/// and a mirror group keeps strict availability for its primary and members.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum DesktopOutputAvailability {
+    #[default]
+    Strict,
+    Adaptive,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DesktopNamedOutputCandidate {
     pub connector: String,
@@ -88,6 +104,11 @@ pub struct DesktopOutputCandidate {
     pub generation: ConfigGeneration,
     pub digest: ConfigDigest,
     pub inherit_sophia: bool,
+    pub availability: DesktopOutputAvailability,
+    /// The policy affinity a fallback output carries. Explicit, because the
+    /// connector a fallback lands on says nothing about which workspaces
+    /// belong there. Only an adaptive candidate may name one.
+    pub fallback_policy_key: Option<u64>,
     pub named: Vec<DesktopNamedOutputCandidate>,
 }
 
@@ -456,9 +477,12 @@ pub fn prepare_desktop_output_candidate(
         generation: candidate.generation,
         digest: candidate.digest,
         inherit_sophia: true,
+        availability: DesktopOutputAvailability::Strict,
+        fallback_policy_key: None,
         named: Vec::new(),
     };
     let mut inheritance_seen = false;
+    let mut availability_seen = false;
     let mut connectors = BTreeSet::new();
     let mut focused_connector = None;
     let mut policy_keys = BTreeSet::new();
@@ -468,6 +492,25 @@ pub fn prepare_desktop_output_candidate(
             "inherit-sophia" if !inheritance_seen => {
                 prepared.inherit_sophia = one_bool(&node, "inherit-sophia")?;
                 inheritance_seen = true;
+            }
+            "availability" if !availability_seen => {
+                prepared.availability = match one_string(&node, "output availability")? {
+                    "strict" => DesktopOutputAvailability::Strict,
+                    "adaptive" => DesktopOutputAvailability::Adaptive,
+                    _ => {
+                        return Err(schema_error(
+                            "output availability must be strict or adaptive",
+                        ));
+                    }
+                };
+                availability_seen = true;
+            }
+            "fallback-policy-key" if prepared.fallback_policy_key.is_none() => {
+                prepared.fallback_policy_key =
+                    Some(
+                        one_integer(&node, "output fallback-policy-key", 1, i128::from(i64::MAX))?
+                            as u64,
+                    );
             }
             "named" => {
                 if prepared.named.len() == DESKTOP_OUTPUT_MAX_NAMED {
@@ -492,9 +535,21 @@ pub fn prepare_desktop_output_candidate(
                 }
                 prepared.named.push(output);
             }
-            "inherit-sophia" => return Err(schema_error("duplicate output setting")),
+            "inherit-sophia" | "availability" | "fallback-policy-key" => {
+                return Err(schema_error("duplicate output setting"));
+            }
             _ => return Err(schema_error("candidate contains a non-output setting")),
         }
+    }
+    // The key belongs to the fallback, and only an adaptive candidate has one.
+    // Accepting it on a strict candidate would read as an affinity that is
+    // never applied.
+    if prepared.fallback_policy_key.is_some()
+        && prepared.availability != DesktopOutputAvailability::Adaptive
+    {
+        return Err(schema_error(
+            "output fallback-policy-key requires availability adaptive",
+        ));
     }
     if !prepared.inherit_sophia && prepared.named.is_empty() {
         return Err(schema_error(

@@ -119,6 +119,8 @@ fn migrated_output_candidate_reconciles_against_native_projection() {
         generation: ConfigGeneration::INITIAL,
         digest: ConfigDigest::new([7; 32]),
         inherit_sophia: true,
+        availability: sophia_config::DesktopOutputAvailability::Strict,
+        fallback_policy_key: None,
         named: vec![
             DesktopNamedOutputCandidate {
                 policy_key: None,
@@ -176,6 +178,8 @@ fn native_activation_plan_retains_stable_targets_and_rollback_state() {
         generation: ConfigGeneration::from_raw(9),
         digest: ConfigDigest::new([9; 32]),
         inherit_sophia: true,
+        availability: sophia_config::DesktopOutputAvailability::Strict,
+        fallback_policy_key: None,
         named: vec![DesktopNamedOutputCandidate {
             policy_key: None,
             mirror_fit: None,
@@ -234,6 +238,8 @@ fn startup_authority_candidate_preserves_profile_geometry_modes_and_focus() {
         generation: ConfigGeneration::from_raw(4),
         digest: ConfigDigest::new([4; 32]),
         inherit_sophia: true,
+        availability: sophia_config::DesktopOutputAvailability::Strict,
+        fallback_policy_key: None,
         named: vec![
             DesktopNamedOutputCandidate {
                 policy_key: None,
@@ -312,6 +318,8 @@ fn native_activation_plan_rejects_capability_drift_and_aliases() {
         generation: ConfigGeneration::INITIAL,
         digest: ConfigDigest::new([3; 32]),
         inherit_sophia: true,
+        availability: sophia_config::DesktopOutputAvailability::Strict,
+        fallback_policy_key: None,
         named: Vec::new(),
     };
     let reconciliation = reconcile_desktop_output_candidate(&candidate, &topology).unwrap();
@@ -471,6 +479,8 @@ fn a_profile_mode_the_hardware_lacks_is_refused_and_names_the_connector() {
         generation: ConfigGeneration::from_raw(4),
         digest: ConfigDigest::new([4; 32]),
         inherit_sophia: true,
+        availability: sophia_config::DesktopOutputAvailability::Strict,
+        fallback_policy_key: None,
         named: vec![DesktopNamedOutputCandidate {
             policy_key: None,
             connector: "DP-1".to_owned(),
@@ -512,6 +522,8 @@ fn a_profile_mode_the_hardware_offers_is_taken_exactly() {
         generation: ConfigGeneration::from_raw(4),
         digest: ConfigDigest::new([4; 32]),
         inherit_sophia: true,
+        availability: sophia_config::DesktopOutputAvailability::Strict,
+        fallback_policy_key: None,
         named: vec![DesktopNamedOutputCandidate {
             policy_key: None,
             connector: "DP-1".to_owned(),
@@ -602,6 +614,8 @@ fn a_measured_timing_does_not_change_what_a_profile_matches() {
         generation: ConfigGeneration::from_raw(4),
         digest: ConfigDigest::new([4; 32]),
         inherit_sophia: true,
+        availability: sophia_config::DesktopOutputAvailability::Strict,
+        fallback_policy_key: None,
         named: vec![DesktopNamedOutputCandidate {
             policy_key: None,
             connector: "DP-1".to_owned(),

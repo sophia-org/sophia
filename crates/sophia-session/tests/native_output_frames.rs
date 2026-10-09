@@ -57,6 +57,8 @@ fn plan(outputs: &[u64], disabled: &[u64]) -> NativeOutputActivationPlan {
         generation: ConfigGeneration::from_raw(3),
         digest: ConfigDigest::new([4; 32]),
         inherit_sophia: true,
+        availability: sophia_config::DesktopOutputAvailability::Strict,
+        fallback_policy_key: None,
         named: disabled
             .iter()
             .map(|output| DesktopNamedOutputCandidate {
