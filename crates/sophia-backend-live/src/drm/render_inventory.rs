@@ -5,8 +5,10 @@ use std::path::{Path, PathBuf};
 
 use rustix::fs::{OFlags, fstat, major, minor, stat};
 
+mod admitted_opener;
 mod selection;
-use super::seat_inventory::{SeatDrmCard, discover_seat_cards, policy as seat_policy};
+use super::seat_inventory::{SeatDrmCard, discover_admitted_seat_cards, policy as seat_policy};
+pub use admitted_opener::LiveAdmittedRenderDeviceOpener;
 use selection::{RenderCandidate, admit_candidate, validate_identity};
 
 #[derive(Debug)]
@@ -23,6 +25,16 @@ pub struct LiveRenderDeviceIdentitySnapshot {
     pub inode: u64,
     pub device_number: u64,
     pub physical_device: PathBuf,
+}
+
+impl LiveRenderDeviceIdentitySnapshot {
+    /// The node name came from the admitted sysfs record and was checked against
+    /// the opened descriptor's dev_t. Primary-node descriptors are not render nodes.
+    pub fn is_render_node(&self) -> bool {
+        self.node
+            .file_name()
+            .is_some_and(|name| seat_policy::is_node_name(name, "renderD"))
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -49,7 +61,14 @@ impl std::error::Error for LiveRenderDeviceInventoryError {}
 pub fn discover_seat_render_devices(
     seat: &str,
 ) -> Result<Vec<LiveRenderDevice>, LiveRenderDeviceInventoryError> {
-    discover_render_devices_on_cards(&render_cards(seat)?)
+    discover_admitted_seat_render_devices(seat, &crate::LiveGpuAdmission::default())
+}
+
+pub fn discover_admitted_seat_render_devices(
+    seat: &str,
+    admission: &crate::LiveGpuAdmission,
+) -> Result<Vec<LiveRenderDevice>, LiveRenderDeviceInventoryError> {
+    discover_render_devices_on_cards(&render_cards(seat, admission)?)
 }
 
 pub(crate) fn discover_render_devices_on_cards(
@@ -57,7 +76,21 @@ pub(crate) fn discover_render_devices_on_cards(
 ) -> Result<Vec<LiveRenderDevice>, LiveRenderDeviceInventoryError> {
     let selected = select_render_candidates(cards)?;
     // The complete selection is bounded before the first descriptor is opened.
-    selected.into_iter().map(open_candidate).collect()
+    selected
+        .into_iter()
+        .map(|candidate| {
+            let card = cards
+                .iter()
+                .find(|card| card.physical_device == candidate.physical_device)
+                .ok_or(LiveRenderDeviceInventoryError::IdentityChanged)?;
+            card.validate_current(&card.seat)
+                .map_err(|_| LiveRenderDeviceInventoryError::IdentityChanged)?;
+            let device = open_candidate(candidate)?;
+            card.validate_current(&card.seat)
+                .map_err(|_| LiveRenderDeviceInventoryError::IdentityChanged)?;
+            Ok(device)
+        })
+        .collect()
 }
 
 /// Captures render-device membership and identity without opening the devices.
@@ -66,29 +99,37 @@ pub(crate) fn discover_render_devices_on_cards(
 pub fn snapshot_seat_render_inventory(
     seat: &str,
 ) -> Result<Vec<LiveRenderDeviceIdentitySnapshot>, LiveRenderDeviceInventoryError> {
+    snapshot_admitted_seat_render_inventory(seat, &crate::LiveGpuAdmission::default())
+}
+
+pub fn snapshot_admitted_seat_render_inventory(
+    seat: &str,
+    admission: &crate::LiveGpuAdmission,
+) -> Result<Vec<LiveRenderDeviceIdentitySnapshot>, LiveRenderDeviceInventoryError> {
+    let selected = select_render_candidates(&render_cards(seat, admission)?)?;
+    selected.iter().map(snapshot_candidate).collect()
+}
+
+fn snapshot_candidate(
+    candidate: &RenderCandidate,
+) -> Result<LiveRenderDeviceIdentitySnapshot, LiveRenderDeviceInventoryError> {
     use LiveRenderDeviceInventoryError as E;
-    let selected = select_render_candidates(&render_cards(seat)?)?;
-    selected
-        .into_iter()
-        .map(|candidate| {
-            let name = candidate.sysfs_node.file_name().ok_or(E::InvalidDevice)?;
-            let path = Path::new("/dev/dri").join(name);
-            let metadata = fs::metadata(&path).map_err(|_| E::OpenFailed)?;
-            let physical = fs::canonicalize(candidate.sysfs_node.join("device"))
-                .map_err(|_| E::IdentityChanged)?;
-            let device_number = metadata.rdev();
-            if device_number != candidate.device_number {
-                return Err(E::IdentityChanged);
-            }
-            Ok(LiveRenderDeviceIdentitySnapshot {
-                node: path,
-                device: metadata.dev(),
-                inode: metadata.ino(),
-                device_number,
-                physical_device: physical,
-            })
-        })
-        .collect()
+    let name = candidate.sysfs_node.file_name().ok_or(E::InvalidDevice)?;
+    let path = Path::new("/dev/dri").join(name);
+    let metadata = fs::metadata(&path).map_err(|_| E::OpenFailed)?;
+    let physical =
+        fs::canonicalize(candidate.sysfs_node.join("device")).map_err(|_| E::IdentityChanged)?;
+    let device_number = metadata.rdev();
+    if device_number != candidate.device_number {
+        return Err(E::IdentityChanged);
+    }
+    Ok(LiveRenderDeviceIdentitySnapshot {
+        node: path,
+        device: metadata.dev(),
+        inode: metadata.ino(),
+        device_number,
+        physical_device: physical,
+    })
 }
 
 fn open_candidate(
@@ -132,12 +173,15 @@ fn open_candidate(
     })
 }
 
-fn render_cards(seat: &str) -> Result<Vec<SeatDrmCard>, LiveRenderDeviceInventoryError> {
+fn render_cards(
+    seat: &str,
+    admission: &crate::LiveGpuAdmission,
+) -> Result<Vec<SeatDrmCard>, LiveRenderDeviceInventoryError> {
     use LiveRenderDeviceInventoryError as E;
     if !seat_policy::valid_seat(seat) {
         return Err(E::InvalidSeat);
     }
-    discover_seat_cards(seat).map_err(|_| E::DiscoveryUnavailable)
+    discover_admitted_seat_cards(seat, admission).map_err(|_| E::DiscoveryUnavailable)
 }
 
 fn select_render_candidates(

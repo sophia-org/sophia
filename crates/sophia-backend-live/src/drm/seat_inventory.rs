@@ -16,6 +16,8 @@ const CAPACITY: usize = 16;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SeatDrmCard {
+    pub seat: String,
+    pub gpu_id: Option<std::ffi::OsString>,
     pub node: PathBuf,
     pub sysfs_node: PathBuf,
     pub physical_device: PathBuf,
@@ -26,7 +28,10 @@ pub(crate) struct SeatDrmCard {
 
 /// Does not open a DRM node. Errors on an admitted card refuse the inventory;
 /// an inaccessible card is never silently reclassified as another seat's.
-pub(crate) fn discover_seat_cards(seat: &str) -> io::Result<Vec<SeatDrmCard>> {
+pub(crate) fn discover_admitted_seat_cards(
+    seat: &str,
+    admission: &crate::LiveGpuAdmission,
+) -> io::Result<Vec<SeatDrmCard>> {
     if !valid_seat(seat) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -44,6 +49,8 @@ pub(crate) fn discover_seat_cards(seat: &str) -> io::Result<Vec<SeatDrmCard>> {
             card.sysname(),
             card.is_initialized(),
             card.property_value("ID_SEAT"),
+            admission,
+            card.property_value("ID_PATH"),
             || inspect_card(&card),
         )?;
     }
@@ -57,6 +64,8 @@ fn admit_seat_card(
     name: &std::ffi::OsStr,
     initialized: bool,
     assigned: Option<&std::ffi::OsStr>,
+    admission: &crate::LiveGpuAdmission,
+    gpu_id: Option<&std::ffi::OsStr>,
     inspect: impl FnOnce() -> io::Result<SeatDrmCard>,
 ) -> io::Result<()> {
     if !is_node_name(name, "card") {
@@ -71,7 +80,7 @@ fn admit_seat_card(
             "DRM card seat assignment is not initialized",
         ));
     }
-    if seat_matches(seat, initialized, assigned) {
+    if seat_matches(seat, initialized, assigned) && admission.admits(gpu_id)? {
         admit_card(cards, inspect()?)?;
     }
     Ok(())
@@ -96,6 +105,15 @@ fn inspect_card(card: &udev::Device) -> io::Result<SeatDrmCard> {
         return Err(io::Error::other("DRM card node identity changed"));
     }
     Ok(SeatDrmCard {
+        seat: card
+            .property_value("ID_SEAT")
+            .unwrap_or(std::ffi::OsStr::new("seat0"))
+            .to_str()
+            .ok_or_else(|| io::Error::other("invalid DRM seat identity"))?
+            .to_owned(),
+        gpu_id: card
+            .property_value("ID_PATH")
+            .map(std::ffi::OsStr::to_os_string),
         node: node.to_owned(),
         sysfs_node: fs::canonicalize(card.syspath())?,
         physical_device: fs::canonicalize(card.syspath().join("device"))?,
@@ -110,6 +128,7 @@ fn admit_card(cards: &mut Vec<SeatDrmCard>, candidate: SeatDrmCard) -> io::Resul
         if existing.node == candidate.node
             || existing.device_number == candidate.device_number
             || existing.physical_device == candidate.physical_device
+            || (existing.gpu_id.is_some() && existing.gpu_id == candidate.gpu_id)
         {
             return if existing == &candidate {
                 Ok(())
@@ -128,7 +147,6 @@ fn admit_card(cards: &mut Vec<SeatDrmCard>, candidate: SeatDrmCard) -> io::Resul
 impl SeatDrmCard {
     /// Recheck both seat and physical identity before/after a seat-broker open.
     /// No KMS ioctl may be issued on the returned descriptor before this check.
-    #[cfg(all(feature = "seat-control", feature = "libdrm-events"))]
     pub(crate) fn validate_current(&self, seat: &str) -> io::Result<()> {
         let card = udev::Device::from_syspath(&self.sysfs_node)?;
         if !seat_matches(seat, card.is_initialized(), card.property_value("ID_SEAT"))

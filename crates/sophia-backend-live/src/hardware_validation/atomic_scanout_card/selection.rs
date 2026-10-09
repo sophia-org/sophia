@@ -108,7 +108,10 @@ pub fn select_real_atomic_scanout_cards() -> RealAtomicScanoutSelectionSet {
 pub fn select_real_atomic_scanout_cards_with_seat(
     opener: &crate::LiveSeatDeviceOpener,
 ) -> RealAtomicScanoutSelectionSet {
-    match crate::drm::seat_inventory::discover_seat_cards(opener.name()) {
+    match crate::drm::seat_inventory::discover_admitted_seat_cards(
+        opener.name(),
+        opener.gpu_admission(),
+    ) {
         Ok(cards) => select_real_atomic_scanout_cards_in_seat(opener, &cards),
         Err(_) => RealAtomicScanoutSelectionSet {
             status: RealAtomicScanoutSelectionSetStatus::DeviceAdmissionUnavailable,
@@ -132,7 +135,7 @@ pub(crate) fn select_real_atomic_scanout_cards_in_seat(
                 .find(|card| card.node == path)
                 .ok_or_else(|| io::Error::other("DRM card was not admitted"))?;
             admitted.validate_current(opener.name())?;
-            let card = RealAtomicScanoutCard::open_with_seat(opener, path)?;
+            let card = RealAtomicScanoutCard::open_admitted_with_seat(opener, admitted)?;
             admitted.validate_opened(&rustix::fs::fstat(&card)?)?;
             admitted.validate_current(opener.name())?;
             Ok(card)

@@ -18,6 +18,7 @@ mod direct_scanout_cost;
 #[cfg(feature = "gbm-probe")]
 mod dma_buf_capabilities;
 mod drm;
+mod gpu_admission;
 mod hardware_validation;
 mod input;
 mod prelude;
@@ -51,17 +52,19 @@ pub use cursor_transaction_owner::*;
 pub use direct_scanout_cost::*;
 #[cfg(feature = "gbm-probe")]
 pub use dma_buf_capabilities::common_dma_buf_import_formats;
+#[cfg(feature = "drm-hotplug")]
+pub use drm::{
+    LiveAdmittedRenderDeviceOpener, LiveRenderDevice, LiveRenderDeviceIdentitySnapshot,
+    LiveRenderDeviceInventoryError, discover_admitted_seat_render_devices,
+    discover_seat_render_devices, snapshot_admitted_seat_render_inventory,
+};
 pub use drm::{
     LiveDrmSysfsDiscovery, LiveDrmSysfsDiscoveryConfig, LiveSysfsConnectorRecord,
     SysfsDrmKmsOutputBackend, discover_native_connector_records,
 };
 #[cfg(feature = "drm-hotplug")]
 pub use drm::{LiveDrmTopologyMonitor, LiveDrmTopologyMonitorStats, LiveDrmTopologyRescanNotice};
-#[cfg(feature = "drm-hotplug")]
-pub use drm::{
-    LiveRenderDevice, LiveRenderDeviceIdentitySnapshot, LiveRenderDeviceInventoryError,
-    discover_seat_render_devices,
-};
+pub use gpu_admission::LiveGpuAdmission;
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 pub use presentation::*;
 pub use production_cpu_cycle::*;

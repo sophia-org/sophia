@@ -117,6 +117,7 @@ impl std::fmt::Debug for LiveSeatCommands {
 #[derive(Clone)]
 pub struct LiveSeatDeviceOpener {
     name: String,
+    gpu_admission: crate::LiveGpuAdmission,
     commands: LiveSeatCommands,
 }
 
@@ -133,6 +134,10 @@ struct LiveSeatLease {
 }
 
 impl LiveSeatDeviceOpener {
+    pub fn gpu_admission(&self) -> &crate::LiveGpuAdmission {
+        &self.gpu_admission
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -191,6 +196,7 @@ impl Drop for LiveSeatLease {
 
 pub struct LiveSeatController {
     name: String,
+    gpu_admission: crate::LiveGpuAdmission,
     commands: LiveSeatCommands,
     events: Receiver<LiveSeatEvent>,
     /// Why the broker stopped, if it stopped on its own.
@@ -202,6 +208,10 @@ pub struct LiveSeatController {
 
 impl LiveSeatController {
     pub fn open() -> Result<Self, String> {
+        Self::open_with_gpu_admission(crate::LiveGpuAdmission::default())
+    }
+
+    pub fn open_with_gpu_admission(gpu_admission: crate::LiveGpuAdmission) -> Result<Self, String> {
         let wake = Wake::new().map_err(|error| format!("libseat broker wake failed: {error}"))?;
         let (commands_tx, commands_rx) = mpsc::channel();
         let commands = LiveSeatCommands {
@@ -231,6 +241,7 @@ impl LiveSeatController {
             .map_err(|_| "libseat broker stopped during startup".to_owned())??;
         Ok(Self {
             name,
+            gpu_admission,
             commands,
             events: events_rx,
             failure: failure_rx,
@@ -248,6 +259,7 @@ impl LiveSeatController {
     pub fn device_opener(&self) -> LiveSeatDeviceOpener {
         LiveSeatDeviceOpener {
             name: self.name.clone(),
+            gpu_admission: self.gpu_admission.clone(),
             commands: self.commands.clone(),
         }
     }

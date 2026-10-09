@@ -12,7 +12,11 @@ enum RealAtomicScanoutCardFd {
 }
 
 #[derive(Debug)]
-pub struct RealAtomicScanoutCard(RealAtomicScanoutCardFd);
+pub struct RealAtomicScanoutCard {
+    fd: RealAtomicScanoutCardFd,
+    #[cfg(feature = "seat-control")]
+    admitted: Option<crate::drm::seat_inventory::SeatDrmCard>,
+}
 
 impl RealAtomicScanoutCard {
     #[cfg(feature = "gbm-probe")]
@@ -26,41 +30,69 @@ impl RealAtomicScanoutCard {
     }
 
     pub(super) fn open_nonblocking(path: &Path) -> io::Result<Self> {
-        Ok(Self(RealAtomicScanoutCardFd::Direct(
-            std::fs::OpenOptions::new()
-                .read(true)
-                .write(true)
-                .custom_flags(rustix::fs::OFlags::NONBLOCK.bits() as i32)
-                .open(path)?,
-        )))
+        Ok(Self {
+            fd: RealAtomicScanoutCardFd::Direct(
+                std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .custom_flags(rustix::fs::OFlags::NONBLOCK.bits() as i32)
+                    .open(path)?,
+            ),
+            #[cfg(feature = "seat-control")]
+            admitted: None,
+        })
     }
 
     #[cfg(feature = "seat-control")]
-    pub(super) fn open_with_seat(
+    pub(super) fn open_admitted_with_seat(
         opener: &crate::LiveSeatDeviceOpener,
-        path: &Path,
+        admitted: &crate::drm::seat_inventory::SeatDrmCard,
     ) -> io::Result<Self> {
-        opener
-            .open(path)
-            .map(RealAtomicScanoutCardFd::Seat)
-            .map(Self)
-            .map_err(io::Error::other)
+        admitted.validate_current(opener.name())?;
+        if !opener.gpu_admission().admits(admitted.gpu_id.as_deref())? {
+            return Err(io::Error::other("DRM card is excluded"));
+        }
+        let card = Self {
+            fd: RealAtomicScanoutCardFd::Seat(
+                opener.open(&admitted.node).map_err(io::Error::other)?,
+            ),
+            admitted: Some(admitted.clone()),
+        };
+        admitted.validate_opened(&rustix::fs::fstat(&card)?)?;
+        admitted.validate_current(opener.name())?;
+        Ok(card)
+    }
+
+    #[cfg(all(feature = "seat-control", feature = "drm-hotplug"))]
+    pub fn admitted_render_device_opener(
+        &self,
+    ) -> io::Result<crate::LiveAdmittedRenderDeviceOpener> {
+        let admitted = self
+            .admitted
+            .as_ref()
+            .ok_or_else(|| io::Error::other("render instance requires an admitted seat card"))?;
+        crate::LiveAdmittedRenderDeviceOpener::from_primary(admitted).map_err(io::Error::other)
     }
 
     pub fn try_clone(&self) -> io::Result<Self> {
-        match &self.0 {
+        let fd = match &self.fd {
             RealAtomicScanoutCardFd::Direct(file) => {
-                Ok(Self(RealAtomicScanoutCardFd::Direct(file.try_clone()?)))
+                RealAtomicScanoutCardFd::Direct(file.try_clone()?)
             }
             #[cfg(feature = "seat-control")]
             RealAtomicScanoutCardFd::Seat(device) => {
-                Ok(Self(RealAtomicScanoutCardFd::Seat(device.try_clone()?)))
+                RealAtomicScanoutCardFd::Seat(device.try_clone()?)
             }
-        }
+        };
+        Ok(Self {
+            fd,
+            #[cfg(feature = "seat-control")]
+            admitted: self.admitted.clone(),
+        })
     }
 
     pub fn try_clone_file(&self) -> io::Result<std::fs::File> {
-        match &self.0 {
+        match &self.fd {
             RealAtomicScanoutCardFd::Direct(file) => file.try_clone(),
             #[cfg(feature = "seat-control")]
             RealAtomicScanoutCardFd::Seat(device) => device.try_clone_file(),
@@ -70,7 +102,7 @@ impl RealAtomicScanoutCard {
 
 impl AsFd for RealAtomicScanoutCard {
     fn as_fd(&self) -> BorrowedFd<'_> {
-        match &self.0 {
+        match &self.fd {
             RealAtomicScanoutCardFd::Direct(file) => file.as_fd(),
             #[cfg(feature = "seat-control")]
             RealAtomicScanoutCardFd::Seat(device) => device.as_fd(),

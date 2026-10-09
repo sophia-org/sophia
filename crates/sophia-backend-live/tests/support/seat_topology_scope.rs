@@ -6,6 +6,8 @@ use udev::EventType::{Add, Bind, Change, Remove, Unbind};
 
 fn card(gpu: &str, index: u32) -> SeatDrmCard {
     SeatDrmCard {
+        seat: "seat0".into(),
+        gpu_id: Some(format!("pci-{gpu}").into()),
         node: format!("/dev/dri/card{index}").into(),
         sysfs_node: format!("/sys/devices/{gpu}/drm/card{index}").into(),
         physical_device: format!("/sys/devices/{gpu}").into(),
