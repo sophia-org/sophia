@@ -253,6 +253,16 @@ FUSE and separate-codec text.
 
 ## Acceptance and connections
 
+niltempus separately approved the [monitor continuity slice](../plans/cmoaia7z-complete-adaptive-output-policy-and-gpu-admission-t310.md#persistent-services-and-replaceable-display-attachments)
+on 2026-10-09: persistent logical session state, replaceable physical attachment
+generations, and admitted rediscovery while displays are absent. That approval
+does not promote the remaining one-core, authentication, namespace or capture
+tasks. Role connection epochs and display generations stay distinct; an old
+inspection snapshot cannot authorize a current output operation. t257 owns the
+later availability/status view, t318 the retained-handle binding rules, and t319
+generation-bound capture and revocation. They do not block the physical recovery
+candidate or change its current role protocols.
+
 Proposed on 2026-10-09 by niltempus during the Plan 9 brainstorm. Acceptance
 is pending review by niltempus and Codex and will be recorded here with its
 basis.

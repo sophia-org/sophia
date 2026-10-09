@@ -110,6 +110,9 @@ kernel errno was not retained by release 219. Physical acceptance is still open.
 
 ### Persistent services and replaceable display attachments
 
+This is the monitor slice of the [one-core public-role proposal](../decisions/zsx0tk4k-serve-every-public-role-from-one-9p-core-with-namespaces-as-composed-trees-and-portals-as-binds.md)
+and [Plan 9 integration concept](../concepts/ernn0bkv-plan-9-integration-points-for-sophia.md).
+
 niltempus approved this Plan 9-inspired continuity scope on 2026-10-09. Session,
 application admission and window identities, desired layout and workspace
 affinity, committed scene state, and retained images outlive a physical output.

@@ -476,6 +476,16 @@ transactional compositor in the middle.
 
 ## Sequence
 
+The immediate monitor-continuity application is recorded in the
+[t310 plan](../plans/cmoaia7z-complete-adaptive-output-policy-and-gpu-admission-t310.md#persistent-services-and-replaceable-display-attachments)
+and [physical-return investigation](../investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#second-bare-metal-return-sleeping-gpu-and-incomplete-validation-2026-10-09).
+Session and application identities outlive unplugged displays; native owners,
+input routing and presentation grants are tied to their physical generation.
+Admitted slow probing and complete-plane validation are the immediate repair.
+This borrows the service-lifetime idea without replacing Engine or pretending
+that a disconnected display presented a frame. Status/discovery and revoked
+capture fids remain scoped work under t257/t318/t319, separate from this release.
+
 This note creates no task and promotes none. The order follows the open tasks
 that already exist. Identity comes first: reconcile the
 [admission investigation](../investigations/1pv291te-namespace-and-client-admission-security-gaps.md)

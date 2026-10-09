@@ -127,6 +127,12 @@ confined session profiles are expressed as two recipes, and the shipped
 observer recipe for agents and operator tools binds only status, inspection
 and capture grants, with input injection absent. Depends on t275 and t142.
 
+The [monitor continuity contract](cmoaia7z-complete-adaptive-output-policy-and-gpu-admission-t310.md#persistent-services-and-replaceable-display-attachments)
+adds a lifetime control: a display's replacement generation cannot silently
+retarget an existing output-bound handle. Role connection identity and physical
+generation are independent. Pinned read-only inspection bytes may remain
+historical; operations requiring a live output must reject stale identity.
+
 ## t319
 
 Deliver capture as the first portal bind, carved from
@@ -142,6 +148,15 @@ lock is applied; the fid answers ESTALE after revocation; known pixels match
 on a CPU client and an accelerated client; no XTEST admission is implied; the
 dma-buf form stays with the recording kind on a separate descriptor channel.
 Depends on t315 and t142.
+
+Loss or replacement of a captured output invalidates its generation-bound grant;
+retained bytes do not become a capture of the replacement. Prove the old fid's
+stale/revoked result and a new grant's independent identity. The t257 status view
+must distinguish current availability from the last presented topology, with
+bounded recovery stage, owner/presentation generations, retry time and failure
+identity. Output protocol revision 1 cannot carry an empty head set, so do not
+use an invalid topology record as this availability signal. These additions
+remain outside the immediate t306/t310 physical gate.
 
 ## t320
 
