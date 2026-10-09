@@ -646,6 +646,55 @@ deletion paths. Evidence is `148-execbuffer-source-audit/AUDIT.txt`
 (`c23976fc`). This is source and symbol inspection; no trace was run and
 no mechanism or production trigger is attributed by it.
 
+## Black, correct and black before input readiness (2026-10-09 UTC)
+
+The one input-return guest in series 153 never reached its input fixture.
+It used signed candidate `b12f0720c`, image 151, and the unchanged production
+binaries from image 145. The new image changes only the guest's keyboard
+write markers and build output-directory record. Before any key, unbind,
+bind or display loss, output 1/head 1 records three consecutive compositions
+of the 400x300 client region:
+
+| Frame | Scene generation | Nonzero RGB pixels | Region checksum |
+| --- | --- | --- | --- |
+| 15 | 26 | 0 | `8572701038929191205` |
+| 16 | 1 | 120,000 | `15913682524319544229` |
+| 17 | 1 | 0 | `8572701038929191205` |
+
+Each region read follows its matching composition queue record and precedes
+the corresponding frame's retirement on the same output/head. Frame 16's
+checksum is the independently computed probe pattern. The source is recorded
+as `renderer_image`; the log does not trace the producer storage, imported
+texture or synchronization dependency responsible for the change. No Mesa
+`got error from kernel` line appears. This is another black/correct/black
+observation before hotplug, not an attribution to the descriptor hazard in
+144.
+
+Startup remains unready with `surface=1 focus_applied=1 visual_detail=0`.
+The guest reports `unplug_session_exit=1`; the host reports
+`baseline_ready_timeout`, and the frozen verifier refuses missing unplug
+uevents. Infrastructure is separately `INFRA_REFUSED` because the harness
+never emits `guest_exited`, despite clean QEMU, debugger, wrapper and kernel
+exits and no remaining process. The accepted endpoint rule is unchanged.
+Neither the raw pixels nor the completed runner accept the input test.
+
+Source reading explains why the good retained frame does not establish
+startup readiness. For this DMA-BUF surface, the CPU visual-detail term is
+false. Stable GPU evidence is recorded when the client's Present itself
+retires, requiring nonzero content for that transaction on its participating
+outputs. That was black frame 15. Frame 16 is retained composition rather
+than another Present retirement, and the client presents only once.
+The host separately exits its failure path before collecting and printing
+the QEMU/logger endpoint; its wait also misses the guest's own failure
+marker and reports a timeout after QEMU exits. Evidence and source analysis
+are in `155-input-153-startup-diagnosis/DIAGNOSIS.txt`. These findings do not
+explain the black pixels or justify relaxing startup's proof requirement.
+
+Evidence is the read-only `153-qemu-input-return-series-2`, manifest
+`ed8a1a57302f756c9bdaae0ea80906a4530351056bdd5954eb5cc2544afac403`,
+and `153-qemu-input-return-result-2/RESULT.txt` (`9374400a`). No replacement
+run, production repair, mechanism trace or t306/t307 acceptance followed.
+
 ## t307
 
 1. Trace the successful mixed Present and subsequent retained composition:

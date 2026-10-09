@@ -269,6 +269,73 @@ and read-only `147-qemu-input-return-series`, whose 36-entry manifest is
 The result note is `147-qemu-input-return-result/RESULT.txt`. No replacement
 guest, display-loss, lock, physical KVM or t306 acceptance followed.
 
+### Keyboard write markers and the corrected CPU gate
+
+Signed candidate `b12f0720c` corrects the fixture's ordering contract. It
+prints `sending` before each keyboard unbind or bind write and retains
+`sent` after a successful write. The input verifier requires exactly one
+attempt and completion per action, all naming the same virtio device.
+Session's removal or admission may precede or follow the completion, but
+must follow the attempt and precede the corresponding phase marker.
+The existing key, focus, device identity and endpoint checks remain.
+The input-return verifier now has its own module; reconstructing the
+parent from `6b66c45c7` confirms that display and static-image logic did
+not change. This four-file commit changes no production renderer or
+session code.
+
+Evidence `149-hotplug-write-marker-patch` contains the reviewed patch,
+24 passing focused tests, all four notification/completion orderings,
+and 21 new refusals. The same tests against `6b66c45c7` have four failures;
+the reproduction of 147's order fails with its original diagnostic.
+The corrected verifier still refuses the unchanged 147 log because its
+attempt markers are absent. A separately labelled synthetic copy with
+those markers inserted passes the later chain; it is informative only.
+
+Gate `150-hotplug-write-marker-cpu` ran on clean `b12f0720c` from
+04:53:53Z to 04:58:20Z on October 9, using the dedicated hotplug target.
+The full check exited 0, including layout and both ordering regressions.
+Its 526 libtest summary lines total 7,288 passed, zero failed and 101
+ignored, including nested summaries. The independent source/target audit
+passed eight controls. The frozen 22-entry manifest is
+`1c7fff159c2cf5b0d5d7506b67d660da3701ba529d3d01782484a0df1a308ff4`.
+This qualifies the corrected fixture for a new bounded guest; it does not
+replace 147's refusal or accept t306.
+
+### The next input guest stops before the fixture
+
+Image 151 reuses 145's frozen production binaries. Its complete comparison
+retains all 5,966 paths, ownership, modes and hard-link groups; only the
+corrected init bytes and build output-directory record differ. Its manifest
+is `8928a87c39de050258f8db60d1804aa40ad7706df123dfb5d340fb2ad53fe9e1`.
+Package 152 freezes gate 150's verifier `de99b628`, with nine passing
+adapter controls and two exported-log controls. The unchanged infrastructure
+and cleanup helpers explicitly reuse their 146 controls. Its manifest is
+`dcfb5b72973c2eccabec1dbd7bae7ca32dbe1a49688f2877914fe136923fcfe1`.
+
+Series 153 ran once under `REVIEW-CODEX-152-GO.txt` (`4fef92ab`), from
+05:02:06Z to 05:02:52Z on October 9. It never reached the input fixture.
+Sophia reported a startup `RetirementFailure`, with a surface and applied
+focus but `visual_detail=0`; the guest then reported `unplug_session_exit`
+and powered down. The host timed out waiting for baseline readiness before
+issuing a key or keyboard write. The direct frozen verifier exited 1 for
+missing unplug uevents. The harness exited before invoking its verifier
+adapter, so there is no adapter argv record.
+
+Infrastructure is `INFRA_REFUSED` solely for the absent `guest_exited`
+endpoint. The watcher, QEMU identity, wrapper, debugger, inferior and kernel
+exit checks pass; all processes are gone. Outer exit 0 records completion
+only. The renderer records show black, correct-pattern and black frames
+before any fixture action, as detailed in the
+[sampling investigation](r2m9cx6v-static-retained-dma-buf-images-can-sample-black-before-hotplug.md).
+The input-marker correction was not exercised; no replacement guest ran.
+
+Evidence `153-qemu-input-return-series-2` is read-only, with 38-entry manifest
+`ed8a1a57302f756c9bdaae0ea80906a4530351056bdd5954eb5cc2544afac403`.
+The separate result is `153-qemu-input-return-result-2/RESULT.txt`
+(`9374400a`). Source and pins remain unchanged. Display loss/return, lock
+coverage across topology changes and attended physical KVM acceptance remain
+unproved; the installed session is unchanged.
+
 ## t306
 
 1. Preserve the incident records. Make the next failure name the responsible
