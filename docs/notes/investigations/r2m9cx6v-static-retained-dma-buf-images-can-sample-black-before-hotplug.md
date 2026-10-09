@@ -538,6 +538,46 @@ The audit names the construction, worker, transfer, AddFB and Mesa callsites.
 The complete t306 restore candidate is being qualified separately; neither
 this source audit nor the successful maintenance login closes t307.
 
+## Real-context control and a freshness-oracle gap (2026-10-09 UTC)
+
+Series 141 ran the reviewed observer and context recipe once, from 03:38:28Z
+to 03:38:48Z, under `REVIEW-CODEX-140-GO.txt`. Both guests were `P_CLEAN`,
+with clean endpoints, zero kernel exit status and no leftover processes.
+The observer passed. The frozen context verdict is `INVALID` and remains
+unchanged: the shared arm printed `got error from kernel - expect bad
+rendering 2` between its sibling-alive and after-drop records, which the
+strict classifier refused as an unexpected line.
+
+The raw records report matching pixels at all stages and a preserved output
+handle in each arm: separate-open `Exports((11, 2))`, shared-description
+`Exports((11, 6))`. Both libtest tests passed and the guest reported exit 0.
+These measurements do not override the frozen verdict or establish fresh
+rendering after the sibling's teardown.
+
+In the matching Mesa 26.2.3 source, the exact diagnostic occurs in
+`virgl_drm_winsys_submit_cmd` when `DRM_IOCTL_VIRTGPU_EXECBUFFER` returns -1;
+the printed value is errno, here 2 (`ENOENT`). The ordinary `virgl_submit_cmd`
+caller does not propagate that return value. The guest log does not identify
+the issuing context, command buffer or handles, so this source mapping does
+not trace the failure mechanism.
+
+The run also exposes a test limitation: P reused slot 1 with the identical
+window and expected pixels at baseline, sibling-alive and after-drop. A
+failed new submission could leave the preceding matching frame in that slot.
+The observations therefore cannot exclude stale output. The source follow-up
+moves the same client DMA-BUF to a distinct position at each producer stage
+and checks that every earlier frame fails the later expectation. This is an
+explicit test intervention, with its own qualification; no production repair
+or replacement guest is implied.
+
+Frozen evidence: `140-context-sharing-package`, manifest
+`e4b8cb0f64cdc564d0f57f5e333356c4731a289495173bf5cf6133d56a24b808`,
+and `141-qemu-context-series`, whose 39-entry manifest is
+`cf5f7105a2ec8512b7f9449a934fd8562500c9e48e095a9b9a3e160cd7f18a5d`.
+The separate result note is `141-qemu-context-result/RESULT.txt`. This run
+does not establish a production trigger, KMS/AddFB failure, the original
+black-frame cause or t306/t307 acceptance.
+
 ## t307
 
 1. Trace the successful mixed Present and subsequent retained composition:
