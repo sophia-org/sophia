@@ -129,6 +129,7 @@ fn monitor_fixture() -> (
     (
         LiveDrmTopologyMonitor {
             seat: "seat-test".into(),
+            gpu_admission: crate::LiveGpuAdmission::default(),
             ready,
             inventory_ready,
             inventory_baseline: None,

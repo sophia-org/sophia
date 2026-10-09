@@ -53,21 +53,24 @@ impl LiveProductionNativeScanout {
         grouping: &crate::NativeMirrorGrouping,
         mapping: sophia_protocol::OutputHeadMapping,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let cards = crate::drm::seat_inventory::discover_seat_cards(opener.name())?;
-        let connector_records = crate::LiveDrmSysfsDiscovery::default().discover_connectors_on_cards(
-            std::path::Path::new("/sys/class/drm"),
-            &cards.iter().map(|card| card.node.clone()).collect::<Vec<_>>(),
+        let cards = crate::drm::seat_inventory::discover_admitted_seat_cards(
+            opener.name(),
+            opener.gpu_admission(),
         )?;
+        let connector_records = crate::LiveDrmSysfsDiscovery::default()
+            .discover_connectors_on_cards(
+                std::path::Path::new("/sys/class/drm"),
+                &cards
+                    .iter()
+                    .map(|card| card.node.clone())
+                    .collect::<Vec<_>>(),
+            )?;
         let selection = crate::select_real_atomic_scanout_cards_in_seat(opener, &cards);
         for card in &cards {
             card.validate_current(opener.name())?;
         }
-        let mut scanout = Self::new_with_selection(
-            selection,
-            connector_records,
-            grouping,
-            mapping,
-        )?;
+        let mut scanout =
+            Self::new_with_selection(selection, connector_records, grouping, mapping)?;
         #[cfg(feature = "drm-hotplug")]
         let image_import_devices = match crate::drm::discover_render_devices_on_cards(&cards) {
             Ok(devices) => devices.into_iter().map(|device| device.file).collect(),

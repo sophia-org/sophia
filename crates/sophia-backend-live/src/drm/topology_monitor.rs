@@ -1,5 +1,7 @@
-use super::render_inventory::{LiveRenderDeviceIdentitySnapshot, snapshot_seat_render_inventory};
-use super::seat_inventory::{discover_seat_cards, policy::valid_seat};
+use super::render_inventory::{
+    LiveRenderDeviceIdentitySnapshot, snapshot_admitted_seat_render_inventory,
+};
+use super::seat_inventory::{discover_admitted_seat_cards, policy::valid_seat};
 use std::ffi::OsStr;
 use std::io;
 use std::sync::Arc;
@@ -41,6 +43,7 @@ pub struct LiveDrmTopologyMonitorStats {
 /// its monitor socket alone does not establish that the service delivers events.
 pub struct LiveDrmTopologyMonitor {
     seat: String,
+    gpu_admission: crate::LiveGpuAdmission,
     ready: Receiver<()>,
     inventory_ready: Receiver<()>,
     inventory_baseline: Option<(String, Vec<LiveRenderDeviceIdentitySnapshot>)>,
@@ -64,6 +67,13 @@ fn inventory_changed(
 
 impl LiveDrmTopologyMonitor {
     pub fn open(seat: &str) -> io::Result<Self> {
+        Self::open_with_gpu_admission(seat, crate::LiveGpuAdmission::default())
+    }
+
+    pub fn open_with_gpu_admission(
+        seat: &str,
+        gpu_admission: crate::LiveGpuAdmission,
+    ) -> io::Result<Self> {
         if !valid_seat(seat) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -83,6 +93,7 @@ impl LiveDrmTopologyMonitor {
         let worker_observed = Arc::clone(&observed);
         let worker_coalesced = Arc::clone(&coalesced);
         let worker_seat = seat.to_owned();
+        let worker_admission = gpu_admission.clone();
         let worker = std::thread::spawn(move || {
             let monitors = (|| -> io::Result<_> {
                 let kernel = udev::MonitorBuilder::new_kernel()
@@ -97,7 +108,10 @@ impl LiveDrmTopologyMonitor {
                     })?;
                 // Both subscriptions precede discovery. Events racing with
                 // this baseline remain queued on the monitor sockets.
-                let scope = SeatTopologyScope::new(discover_seat_cards(&worker_seat)?);
+                let scope = SeatTopologyScope::new(discover_admitted_seat_cards(
+                    &worker_seat,
+                    &worker_admission,
+                )?);
                 Ok((kernel, processed, scope))
             })();
             let (kernel, processed, scope) = match monitors {
@@ -113,7 +127,7 @@ impl LiveDrmTopologyMonitor {
             let result = run_drm_topology_monitor(
                 kernel,
                 processed,
-                &worker_seat,
+                (&worker_seat, &worker_admission),
                 scope,
                 notice_sender,
                 inventory_sender,
@@ -127,6 +141,7 @@ impl LiveDrmTopologyMonitor {
         match startup_receiver.recv_timeout(std::time::Duration::from_secs(2)) {
             Ok(Ok(())) => Ok(Self {
                 seat: seat.to_owned(),
+                gpu_admission,
                 ready,
                 inventory_ready,
                 inventory_baseline: None,
@@ -157,7 +172,7 @@ impl LiveDrmTopologyMonitor {
 
     /// Establishes the membership baseline after subscriptions are active.
     pub fn initialize_render_inventory(&mut self) -> io::Result<()> {
-        let snapshot = snapshot_seat_render_inventory(&self.seat)
+        let snapshot = snapshot_admitted_seat_render_inventory(&self.seat, &self.gpu_admission)
             .map_err(|error| io::Error::other(error.to_string()))?;
         self.inventory_baseline = Some((self.seat.clone(), snapshot));
         Ok(())
@@ -166,8 +181,9 @@ impl LiveDrmTopologyMonitor {
     /// Returns a notice only when the settled render-device identities differ
     /// from the baseline. Event bursts are coalesced before comparison.
     pub fn poll_render_inventory_notice(&mut self) -> io::Result<bool> {
+        let admission = self.gpu_admission.clone();
         self.poll_render_inventory_with(Instant::now(), |seat| {
-            snapshot_seat_render_inventory(seat)
+            snapshot_admitted_seat_render_inventory(seat, &admission)
                 .map_err(|error| io::Error::other(error.to_string()))
         })
     }
@@ -260,7 +276,7 @@ impl Drop for LiveDrmTopologyMonitor {
 fn run_drm_topology_monitor(
     kernel: udev::MonitorSocket,
     processed: udev::MonitorSocket,
-    seat: &str,
+    admission: (&str, &crate::LiveGpuAdmission),
     mut scope: SeatTopologyScope,
     sender: SyncSender<()>,
     inventory_sender: SyncSender<()>,
@@ -269,6 +285,7 @@ fn run_drm_topology_monitor(
     observed: &AtomicU64,
     coalesced: &AtomicU64,
 ) -> Result<(), String> {
+    let (seat, gpu_admission) = admission;
     let timeout = Timespec {
         tv_sec: 0,
         tv_nsec: DRM_TOPOLOGY_MONITOR_POLL_MSEC * 1_000_000,
@@ -330,7 +347,9 @@ fn run_drm_topology_monitor(
             }
         }
         // Retry failed membership comparisons even without another event.
-        match scope.refresh(Instant::now(), || discover_seat_cards(seat)) {
+        match scope.refresh(Instant::now(), || {
+            discover_admitted_seat_cards(seat, gpu_admission)
+        }) {
             Ok(true) => {
                 let _ = inventory_sender.try_send(());
                 if !publish_topology_notice(&sender, latest_sequence, observed, coalesced)? {

@@ -5,6 +5,8 @@ use std::ffi::OsStr;
 
 fn candidate(index: u32) -> SeatDrmCard {
     SeatDrmCard {
+        seat: "seat0".into(),
+        gpu_id: Some(format!("pci-test:{index}").into()),
         node: format!("/dev/dri/card{index}").into(),
         sysfs_node: format!("/sys/devices/gpu{index}/drm/card{index}").into(),
         physical_device: format!("/sys/devices/gpu{index}").into(),
@@ -12,6 +14,63 @@ fn candidate(index: u32) -> SeatDrmCard {
         filesystem: 1,
         inode: u64::from(index) + 100,
     }
+}
+
+#[test]
+fn excluded_gpu_is_not_inspected_even_after_card_renumbering() {
+    let admission = crate::LiveGpuAdmission::new(["pci-0000:16:00.0".into()]).unwrap();
+    let mut cards = Vec::new();
+    for node in ["card0", "card9"] {
+        admit_seat_card(
+            &mut cards,
+            "seat0",
+            OsStr::new(node),
+            true,
+            None,
+            &admission,
+            Some(OsStr::new("pci-0000:16:00.0")),
+            || panic!("excluded GPU reached node inspection"),
+        )
+        .unwrap();
+    }
+    assert!(cards.is_empty());
+    admit_seat_card(
+        &mut cards,
+        "seat0",
+        OsStr::new("card0"),
+        true,
+        None,
+        &admission,
+        Some(OsStr::new("pci-0000:03:00.0")),
+        || Ok(candidate(0)),
+    )
+    .unwrap();
+    assert_eq!(cards.len(), 1);
+    admit_seat_card(
+        &mut cards,
+        "seat0",
+        OsStr::new("card1"),
+        true,
+        Some(OsStr::new("seat1")),
+        &admission,
+        Some(OsStr::new("pci-0000:03:00.0")),
+        || panic!("exclusion admitted a foreign seat"),
+    )
+    .unwrap();
+    assert_eq!(cards.len(), 1);
+    assert!(
+        admit_seat_card(
+            &mut cards,
+            "seat0",
+            OsStr::new("card2"),
+            true,
+            None,
+            &admission,
+            None,
+            || panic!("unknown identity reached inspection")
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -29,6 +88,8 @@ fn seat_selection_never_inspects_foreign_cards_or_connector_records() {
             OsStr::new(name),
             initialized,
             seat.map(OsStr::new),
+            &crate::LiveGpuAdmission::default(),
+            Some(OsStr::new("pci-test:0")),
             || panic!("foreign card or connector record inspected"),
         )
         .unwrap();
@@ -40,6 +101,8 @@ fn seat_selection_never_inspects_foreign_cards_or_connector_records() {
         OsStr::new("card4"),
         true,
         Some(OsStr::new("development")),
+        &crate::LiveGpuAdmission::default(),
+        Some(OsStr::new("pci-test:4")),
         || Ok(candidate(4)),
     )
     .unwrap();
@@ -57,6 +120,8 @@ fn an_uninitialized_card_refuses_the_inventory_before_node_inspection() {
                 OsStr::new("card1"),
                 false,
                 assigned.map(OsStr::new),
+                &crate::LiveGpuAdmission::default(),
+                Some(OsStr::new("pci-test:1")),
                 || panic!("an uninitialized card must never be inspected"),
             )
             .expect_err("an uninitialized card must refuse, not disappear");
@@ -75,6 +140,8 @@ fn an_admitted_card_failure_refuses_instead_of_hiding_a_device() {
         OsStr::new("card1"),
         true,
         None,
+        &crate::LiveGpuAdmission::default(),
+        Some(OsStr::new("pci-test:1")),
         || Err(io::Error::other("admitted node disappeared")),
     );
     assert!(result.is_err());
