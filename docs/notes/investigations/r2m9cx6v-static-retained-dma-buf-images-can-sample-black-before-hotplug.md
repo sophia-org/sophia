@@ -733,8 +733,39 @@ checked both parent-to-child changes and the one-entry pair difference.
 All checks passed. The read-only manifest is
 `74ddfdea5075b4c7ef2104dca1b69c2767659b51757b25c7b220e143153a1217`
 (52 entries, including the two image paths); `RESULT.txt` is `696ba22c`.
-Neither child has booted. The runner still needs explicit collection bounds
-for the trace dump and unchanged, separate test and infrastructure verdicts.
+Neither child had booted at this image checkpoint. Collection bounds and
+unchanged, separate test and infrastructure verdicts belong to the runner.
+
+Package `177-mesa-pair-runner` subsequently froze the observer, original-child,
+patched-child order under a 3000-second outer cap. Each context guest has a
+900-second host collection deadline, a 960-second wrapper bound, a
+1020-second harness kill and a watcher deadline extended to 1035 seconds.
+Private runtime directories hold sockets and FIFOs outside the frozen image
+caches. The observer keeps its earlier harness and watcher. Only the context
+harness deadline and watcher constant change; their reviewed diffs are kept.
+
+The advancement validator passed 130 cases plus repeat and usage checks.
+Isolated controls of the actual runner with stand-in launches passed 46/46,
+including all three guest positions, end-pin and source changes, classifier
+failures, missing traces and three independent leftover-process forms. Five
+checks exercised the real preflight's mode/image/test refusal before host
+reads. Two synthetic captures at the 32768-line limit took about 0.34 seconds
+each under the classifier's 20-second bound. Their roughly 4.13 MB size and
+simple query graph do not prove a worst-case processing bound. The controls
+ran from 08:22:00Z to 08:22:25Z, exit zero, without a guest or device access.
+
+The original child permits the patched child only with clean infrastructure,
+no remaining process, unchanged pins/source and both expected screen premises.
+A pixel `INVALID` remains `INVALID` and blocks a usable pixel comparison;
+screen observations cannot override it. Faithful serial bytes remain an
+explicit assumption: framing, counts, grammar and endpoint checks cannot
+detect every corruption that still forms valid text. No UART baud pacing or
+drop-to-logger-error guarantee is claimed, and no checksum rule was added.
+The frozen 177 manifest is
+`953b34f4f6f3f4f17cf6fe9a65d4fa9291e9bd97407aad7e81e80a8e1eef7dee`
+(4339 entries, including retained control cases). `READY-177.txt` is
+`c9d1b85a`. This CPU qualification supplies no guest GO, runtime result,
+production repair or t306/t307 acceptance.
 
 ## Real-context control and a freshness-oracle gap (2026-10-09 UTC)
 
