@@ -511,6 +511,28 @@ The gate finished before shutdown preparation and was not killed. The
 records the documentation/provenance correction and fresh gate still needed.
 No locked guest, live installation or physical acceptance occurred.
 
+### Resumed lock gate and recovery integration (2026-10-09)
+
+The resumed full gate passed on signed `f1effad0daf38e7a9ad4eaef20fb2214dea2ac27`.
+`3539415dc` restored the provider contract's previous bytes and moved the
+internal coverage description to [Session lock diagnostics](../../session-lock-diagnostics.md);
+no vendored snapshot changed. The following commit only orders one import.
+Gate 02 preserves that formatting refusal. Gate 03 reached an unchanged
+conformance fixture whose Unix socket exceeded `SUN_LEN` under the long private
+target; gate 04 uses `~/.cache/sophia-lock-200-target` with the same isolation,
+umask 0077 and source. It passed workspace tests, SDK checks, clippy, layout
+and verifier archives. Its source checks pass and the tree remained clean.
+The frozen `200-lock-publication-characterization/gate-04` manifest is
+`c2517d2c837bce6a140311d50d7b01964b02be326732c68c4f343efa9aef63bb`.
+
+The new recovery worktree combines current lock coverage, the frozen hotplug
+candidate and accepted startup fallback. Signed merges `75af47276` and
+`497464309` preserve both the production resume test boundary and image
+restoration bookkeeping. This is a candidate, with display marker ordering,
+integration checks and guest qualification still outstanding. The installed
+session remains unchanged. The [resume plan](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md#resume-progress-2026-10-09)
+records identities and the classifier result prerequisite.
+
 ## t306
 
 The [four-part qualification plan](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md)

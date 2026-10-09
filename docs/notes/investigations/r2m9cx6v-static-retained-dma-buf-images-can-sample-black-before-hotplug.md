@@ -1283,6 +1283,31 @@ runner must still enforce the plan's original negative control and require
 patched preservation with zero diagnostics. No new guest or production
 workload result follows from these controls.
 
+### 198-03 CPU qualification after resume (2026-10-09)
+
+Independent review confirmed the GET_CAPS selector and the removal-tail kill
+mechanism. One isolated run passed 24 core, 31 capture, 19 signature and 31
+callback controls, then the baseline and all fourteen named mutants. The
+removal-tail mutant fails `test_patched_counts_only_the_sibling_lookup` as
+predicted. No mutant produced an ERROR or escape byte. Source pins verified
+before and after; the 194 retrospective files equal 198-02 byte for byte.
+This qualifies the classifier controls, not the Mesa repair.
+
+The frozen package manifest is
+`9619ca6a276318c8e9c9d77f0fbfb5da23a992ebb8fb95dcc83e8f5f3187ac28`.
+`198-03-run-records-codex` records the declared wrapper and one launch under
+manifest `fe33d10715d224bac4ec9ca34bf2a8d6bd6870e77b45a05f8f7aa9b05d4b2431`.
+It also records the historical manifest construction error: all nineteen old
+Claude payload entries verify, but its twentieth self-entry cannot verify.
+That file and both failed predecessor packages remain unchanged. Selecting
+the new removal-tail kill test after seeing the survivor limits independence
+of its selection; the runtime core stayed byte-identical.
+
+Preparation of 201 is now admitted around frozen 198-03 and 199. It still needs
+independent review and controls before any 202 guest. The
+[resume plan](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md#resume-progress-2026-10-09)
+records the parallel lock gate and recovery candidate.
+
 ## t307
 
 The [four-part qualification plan](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md)
