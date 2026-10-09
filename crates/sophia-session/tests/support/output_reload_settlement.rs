@@ -302,3 +302,29 @@ fn output_reload_is_admitted_with_the_output_owner_epoch_not_the_wm_epoch() {
         );
     }
 }
+
+#[test]
+fn a_newer_profile_reload_stays_queued_until_the_active_output_transaction_settles() {
+    let mut fixture = ReloadFixture::new();
+    let public = fixture.wm.public.as_mut().unwrap();
+    let (capability, snapshot, candidate) = reload_inputs(public);
+    public.output_authority = Some(
+        crate::live_output_authority::LiveOutputAuthorityOwner::new(1, snapshot.clone()).unwrap(),
+    );
+    public.output_capabilities = vec![capability];
+    assert!(public.admit_reloaded_output_topology(candidate).unwrap());
+    // A second accepted profile edit raises this flag while the first owns
+    // preparation. A declined preparation must not consume that newer edit.
+    public.output_topology_reload_pending = true;
+    assert!(!public.take_output_topology_reload_request());
+    assert!(public.output_topology_reload_pending);
+    let authority = public.output_authority.as_mut().unwrap();
+    authority
+        .fail(sophia_engine::OutputTopologyTransactionFailure::Preparation)
+        .unwrap();
+    let settlement = authority.settle_terminal().unwrap();
+    public.finish_output_settlement(settlement).unwrap();
+    assert_eq!(public.published_output_snapshot(), Some(snapshot));
+    assert!(public.take_output_topology_reload_request());
+    assert!(!public.take_output_topology_reload_request());
+}

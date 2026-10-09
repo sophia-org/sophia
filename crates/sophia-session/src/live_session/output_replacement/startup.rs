@@ -69,7 +69,8 @@ pub(in crate::live_session) fn wait_for_startup_output(
                     ) {
                         Ok(native) => return Ok(Some((native, prepared.realization))),
                         Err(error) if profile.availability == sophia_config::DesktopOutputAvailability::Adaptive => {
-                            tracing::warn!("sophia_live_output_resolution schema=1 phase=startup status=construction_refused attempt={} error={error}", attempts + 1);
+                            tracing::warn!(target: "sophia_scanout_evidence", "sophia_live_output_resolution schema=1 phase=startup status=construction_refused reason=hardware attempt={}", attempts + 1);
+                            tracing::warn!(%error, "startup output construction refused");
                         }
                         Err(error) => return Err(error),
                     }
@@ -77,7 +78,8 @@ pub(in crate::live_session) fn wait_for_startup_output(
                 Ok(OutputReplacementDecision::Waiting) => {}
                 Err(error) if profile.availability == sophia_config::DesktopOutputAvailability::Adaptive
                     && error.downcast_ref::<io::Error>().is_some() => {
-                    tracing::warn!("sophia_live_output_resolution schema=1 phase=startup status=refused attempt={} error={error}", attempts + 1);
+                    tracing::warn!(target: "sophia_scanout_evidence", "sophia_live_output_resolution schema=1 phase=startup status=refused reason=hardware attempt={}", attempts + 1);
+                    tracing::warn!(%error, "startup output probe refused");
                 }
                 Err(error) => return Err(error),
             }

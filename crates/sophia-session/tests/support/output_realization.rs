@@ -104,6 +104,40 @@ fn late_notice_owner_and_profile_completions_cannot_consume_a_newer_realization(
 }
 
 #[test]
+fn rollback_or_a_late_policy_transaction_cannot_publish_a_prepared_reload() {
+    use sophia_protocol::TransactionId;
+    let mut ledger = OutputRealizationLedger::default();
+    ledger.prepare_policy(TransactionId::from_raw(9), realized("DP-2"));
+    assert!(ledger.committed().is_none());
+    assert!(
+        ledger
+            .take_policy(TransactionId::from_raw(8), &profile())
+            .is_none()
+    );
+    let desired = ledger
+        .take_policy(TransactionId::from_raw(9), &profile())
+        .unwrap();
+    // Taking a refused transaction only disposes of speculation.
+    assert!(ledger.committed().is_none());
+    ledger.prepare_policy(TransactionId::from_raw(10), desired);
+    let changed = DesktopOutputCandidate {
+        generation: ConfigGeneration::from_raw(2),
+        ..profile()
+    };
+    assert!(
+        ledger
+            .take_policy(TransactionId::from_raw(10), &changed)
+            .is_none()
+    );
+    assert!(
+        ledger
+            .take_policy(TransactionId::from_raw(10), &profile())
+            .is_none()
+    );
+    assert!(ledger.committed().is_none());
+}
+
+#[test]
 fn live_focus_is_observed_through_connector_identity_not_enumeration() {
     use sophia_backend_live::{LibdrmNativeOutputTiming, LibdrmNativeVrrPropertyDiscoveryStatus};
     let mut initial = realized("DP-1");

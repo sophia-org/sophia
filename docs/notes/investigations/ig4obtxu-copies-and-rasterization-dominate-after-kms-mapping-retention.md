@@ -183,6 +183,30 @@ the complete admitted inventory, bounded conservative hardware recovery,
 durable policy diagnostics, the combined gate and physical acceptance remain.
 Master and the installed release are unchanged.
 
+#### Reload reconciliation and durable evidence (2026-10-09)
+
+Reload now resolves against the complete admitted inventory, including dark
+connected heads, without allocating CRTCs or planes during preflight. A result
+with no usable output declines the reload while retaining the live owner.
+Changes to the enabled connector set, mirror graph or head mapping enter the
+shared continuity rebuild; settings on the same groups use the existing
+test/apply/rollback transaction. A reload during hotplug quarantine folds into
+that rebuild instead of preparing against a suspended owner.
+
+The realization ledger tracks each reload transaction separately from its
+hardware publication. It commits only after settlement and presentation with
+the same desired-profile identity; a newer reload remains pending if an older
+candidate is cancelled. Runtime policy transitions increment the transition
+identity before staging, so transition zero uniquely identifies startup.
+
+Claude's bounded capture slice `d457d55a5` and this slice's producers persist
+resolution and adjustment records without connector names or free-form errors.
+Device-free evidence is under `t310-runtime-20261009/reload-01`: Session library
+915 passed and 26 ignored, native topology 12, replacement seam 2, diagnostics
+5, plus warnings-denied clippy, formatting and layout checks. Claude independently
+reviewed the reload boundary and the phase invariant. Bounded conservative
+hardware recovery, the combined gate and attended acceptance remain open.
+
 #### Port change after reboot (2026-10-09)
 
 niltempus moved the main monitor between ports on the discrete AMD card before

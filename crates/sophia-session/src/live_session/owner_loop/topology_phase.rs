@@ -31,7 +31,6 @@
                     .and_then(|head| native.heads.iter().find(|candidate| candidate.head == head))
                     .is_some_and(|head| head.transform == sophia_protocol::OutputTransform::Normal
                         && state.transform == sophia_config::DesktopOutputTransform::Normal
-                        && head.scale.saturating_mul(1000) == state.scale_milli
                         && head.vrr == match state.vrr {
                             sophia_config::DesktopOutputVrrMode::Disabled => sophia_protocol::OutputVrrPolicy::Disabled,
                             sophia_config::DesktopOutputVrrMode::Automatic => sophia_protocol::OutputVrrPolicy::Automatic,
@@ -44,7 +43,7 @@
                 // One observation per owner: a refused startup candidate must
                 // not turn every idle pass into another capability read.
                 output_realization.abandon();
-                tracing::warn!("sophia_live_output_resolution schema=1 phase=startup status=uncommitted reason=presented_settings_differ");
+                tracing::warn!(target: "sophia_scanout_evidence", "sophia_live_output_resolution schema=1 phase=startup status=uncommitted reason=presented_settings_differ");
             }
         }
     }
@@ -201,12 +200,13 @@
         // and the hotplug quarantine stay as they are until a replacement is
         // constructed, and waiting or a refusal is unavailability, never a
         // session failure.
+        let replacement_head_mapping = output_replacement::profile_head_mapping(config.output_profile.current());
         let replacement = match seat_controller.as_ref() {
             Some(controller) => output_replacement::resolve_runtime_output_replacement(
                 controller,
                 config.output_profile.current(),
                 output_realization.committed(),
-                initial_head_mapping,
+                replacement_head_mapping,
                 &config.cursor_resolution.asset,
             ),
             None => output_replacement::RuntimeOutputReplacement::Refused(
@@ -222,6 +222,11 @@
                 output_topology_retry_attempts = attempt.saturating_add(1);
                 output_topology_retry_at = retry.map(|delay| Instant::now() + delay);
                 let retry_msec = retry.map_or("none".to_owned(), |delay| delay.as_millis().to_string());
+                let status = if matches!(replacement, output_replacement::RuntimeOutputReplacement::Waiting) { "waiting" } else { "refused" };
+                tracing::info!(target: "sophia_scanout_evidence",
+                    "sophia_live_output_resolution schema=1 phase=runtime status={status} reason=unavailable generation={} transition={} notice={} attempt={}",
+                    config.output_profile.current().generation.raw(), output_topology_owner.transition,
+                    output_topology_owner.notice_sequence, attempt + 1);
                 match replacement {
                     output_replacement::RuntimeOutputReplacement::Refused(error) => tracing::warn!(
                         "sophia_live_output_topology schema=1 status=unavailable transition={} attempt={} retry_msec={retry_msec} error={error}",
@@ -246,7 +251,7 @@
                     &realization,
                     &replacement_capabilities,
                     &replacement_outputs,
-                    initial_head_mapping,
+                    replacement_head_mapping,
                 )?;
                 let realization_changed = output_realization.committed().is_none_or(|before| {
                     before.outputs != realization.outputs || before.policy_keys != realization.policy_keys
@@ -361,6 +366,7 @@
                     binding,
                     snapshot: replacement_authority,
                     capabilities: replacement_capabilities,
+                    already_published: false,
                 });
                 // A replacement snapshot owes its own presentation before it
                 // may be published, so it does not inherit the previous one's.
@@ -526,16 +532,22 @@
             && Some(binding.native_owner) == current_owner;
         let current_profile = output_realization.pending(binding, profile).is_some();
         let current_epoch = wm_session.as_ref().and_then(|wm| wm.output_authority_topology_epoch());
-        if !current_binding || current_epoch.is_some_and(|current| {
-            hardware_output_snapshot_is_stale(publication.snapshot.topology_epoch, current)
-        }) {
+        let stale_epoch = if publication.already_published {
+            current_epoch != Some(publication.snapshot.topology_epoch)
+        } else {
+            current_epoch.is_some_and(|current| hardware_output_snapshot_is_stale(publication.snapshot.topology_epoch, current))
+        };
+        if !current_binding || stale_epoch {
+            tracing::info!(target: "sophia_scanout_evidence",
+                "sophia_live_output_resolution schema=1 phase=runtime status=uncommitted reason=stale transition={} notice={} owner={}",
+                binding.transition, binding.notice_sequence, binding.native_owner);
             tracing::warn!(
                 "sophia_live_output_authority schema=2 status=hardware_snapshot_dropped snapshot_epoch={} current_epoch={} reason=stale_replacement",
                 publication.snapshot.topology_epoch,
                 current_epoch.unwrap_or(0),
             );
         } else {
-            if let Some(wm) = wm_session.as_mut() {
+            if !publication.already_published && let Some(wm) = wm_session.as_mut() {
                 let _ = wm.publish_output_authority_snapshot(publication.snapshot, publication.capabilities)?;
             }
             if current_profile {
@@ -547,6 +559,9 @@
                 // A newer desired profile needs a fresh resolution; it cannot
                 // rewrite the generation of the realization just presented.
                 output_realization.abandon();
+                tracing::info!(target: "sophia_scanout_evidence",
+                    "sophia_live_output_resolution schema=1 phase=runtime status=uncommitted reason=profile_changed generation={} transition={} notice={} owner={}",
+                    profile.generation.raw(), binding.transition, binding.notice_sequence, binding.native_owner);
                 schedule_output_topology_rebuild!("profile_changed_during_rebuild", false);
             }
         }

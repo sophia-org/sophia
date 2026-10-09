@@ -3,7 +3,7 @@
 use super::*;
 use sophia_config::{ConfigDigest, ConfigGeneration, DesktopOutputAvailability};
 
-fn profile() -> DesktopOutputCandidate {
+pub(super) fn profile() -> DesktopOutputCandidate {
     DesktopOutputCandidate {
         generation: ConfigGeneration::INITIAL,
         digest: ConfigDigest::new([7; 32]),
@@ -14,7 +14,7 @@ fn profile() -> DesktopOutputCandidate {
     }
 }
 
-fn probe(name: &str) -> LiveNativeOutputProbe {
+pub(super) fn probe(name: &str) -> LiveNativeOutputProbe {
     LiveNativeOutputProbe {
         connector: name.into(),
         gpu_identity: Some("pci-0000:03:00.0".into()),
