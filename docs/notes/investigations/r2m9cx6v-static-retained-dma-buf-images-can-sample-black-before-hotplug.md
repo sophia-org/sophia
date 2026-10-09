@@ -1450,6 +1450,53 @@ non-reproducing original can leave t307 as a declared limit only when that
 original workload has complete sampling and importer coverage and a qualified
 `RETAINED` verdict; `INSUFFICIENT` or an ordinary `UNREADY` is no such result.
 
+## The production comparison stops before its first verdict (2026-10-09 UTC)
+
+Package 211 ran part 2 on Mesa 26.2.4: the candidate `0f84dcb0c` built into
+base image `1330b90a` (211a), 209's pair installed into it (211b, original
+`556cf9f5` and patched `b3c2f677`, differing only in `libgallium-26.2.4.so`),
+and a four-boot runner, original, patched, patched, original (211c). The
+runner's host verifier is the 212-02 gate's build of `5efab3d2c`, xtask
+`2c5c7d0b`, which refuses a recorded unreaped process or stopped guest before
+any verdict. A boot qualifies only when the harness itself reached that
+verifier through a fixed adapter, the recorded endpoint is one clean exit,
+the verdict exits exactly 0 for `RETAINED` or 1 otherwise, and the harness
+agrees. At this harness a session that never becomes ready ends before the
+verifier, so `UNREADY` cannot qualify; the declared negative control is a
+qualified `LOST`. The runner's controls passed 66 orchestration and 90
+decision cases (records closure `b3d868a4`), after root's review withdrew a
+first freeze whose decision accepted matching timeout exits and whose fourth
+boot could pass unchecked.
+
+The series ran once at 19:09Z under the checked launcher 211d, whose window
+preflight passed again; the launcher, runner, final pins and outcome all
+exited 0 and its records close under
+`ede5fc33b827a08f95e1835a2f08cf94cb51203999e28dae629a31e3f328cd5e`. The
+first boot, original, had clean infrastructure and one clean guest exit, but
+its session never reached startup readiness: the guest ended with
+`persistent live session never reached startup readiness: ... visual_detail=0`
+and its failure record, the host stopped waiting for monitoring, and the
+harness exited before its verifier. The boot was refused as declared, no
+later boot ran, and the outcome is `INCOMPLETE`. 211 stays as it is.
+
+Outside acceptance, the boot's own records show two renderer identities, one
+per head, each importing the client buffer at the same geometry. Head 1's
+first presented window region of the client's frame is entirely black and
+head 2's is the client's frame. The native owner closed drained, with no
+pending retirement; the `RetirementFailure` carries the readiness proof's
+failure, not a stuck retirement. This matches the shared-description
+hypothesis above but does not establish the Mesa handle-lifetime mechanism,
+and it is not 211's negative control.
+
+Root's decision is a separate patched-only diagnostic, package 213: two boots
+of the same patched image with the same source, workload, renderer mode,
+verifier, readiness and infrastructure checks, and no image rebuild,
+readiness relaxation, startup substitution or fresh-open code. Only two
+qualified `RETAINED` boots report `PATCHED_WORKLOAD_RETAINED`; a `LOST` or
+`INSUFFICIENT` boot is diagnostic non-success, and a refusal stops the series
+without replacement. None of these is `PATCH_EFFECT`, completes 211, or is
+t306/t307 acceptance.
+
 ## t307
 
 The [four-part qualification plan](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md)

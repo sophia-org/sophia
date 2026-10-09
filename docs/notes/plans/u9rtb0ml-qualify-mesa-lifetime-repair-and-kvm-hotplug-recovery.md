@@ -127,6 +127,16 @@ stages into it; the two images differ only in `libgallium-26.2.4.so`
 (original `556cf9f5`, patched `b3c2f677`). The guest source stays `0f84dcb0c`;
 the verifier fix is host-side only.
 
+Part 2 on 26.2.4 (211c, launched by 211d) ran once and stopped at its first,
+original boot: the session never reached startup readiness, so the harness
+ended before its verifier and the boot was refused as declared. The outcome is
+`INCOMPLETE`, with no qualified verdict, and 211 stays as it is. The
+[sampling investigation](../investigations/r2m9cx6v-static-retained-dma-buf-images-can-sample-black-before-hotplug.md#the-production-comparison-stops-before-its-first-verdict-2026-10-09-utc)
+records the run and a labelled readout outside acceptance. The next package,
+213, is a separate patched-only diagnostic of two boots; it reports
+`PATCHED_WORKLOAD_RETAINED` only when both boots qualify `RETAINED`, and it does
+not complete 211 or stand as part 2's comparison.
+
 ## Resume interrupted by normal-login failure (2026-10-09)
 
 After reboot, niltempus reported that moving the main monitor from DP-1 to
