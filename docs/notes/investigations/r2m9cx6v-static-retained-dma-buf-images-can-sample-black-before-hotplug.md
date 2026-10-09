@@ -555,10 +555,71 @@ can then select the same host GL state, and one screen's destruction can
 destroy that shared subcontext. This does not require importing the same
 DMA-BUF and is separate from GEM handle ownership. It remains a source
 candidate: no recorded subcontext IDs or commands attribute the pixels in
-95, 144 or 153 to it. The error-reporting variant would normally log a host
-context error; using its absence as evidence still requires verification of
-each series' stderr path. An EXECBUFFER missing-handle trace alone would not
+95, 144 or 153 to it. An EXECBUFFER missing-handle trace alone would not
 exclude this second mechanism. No worker policy or installed driver changes.
+
+The stderr audit in `166-series-stderr-audit` supports expected delivery of
+host context errors through the four series' launchers and loggers. Series
+117 supplies a positive QEMU stderr witness through the wrapped chain used
+by 141, 144 and 153. No retained log contains the expected context-error
+text. As narrowed by `ADDENDUM-01.txt` (`df709ce6`), this weighs against a
+reported sticky context error; it does not prove one absent in a particular
+run. Series 95 did not pin its QEMU binary and has no positive witness at
+its harness version, and none of the four series recorded its loaded host
+library mapping. Silent subcontext collisions remain possible. The audit
+does not attribute pixels or change any series verdict.
+
+## CPU control of the virgl screen-cache key (2026-10-09 UTC)
+
+Evidence `165-virgl-cache-key-control` reproduces the cache-key defect using
+the actual Mesa 26.2.3 hash table, allocator and descriptor helpers, with
+verbatim virgl hash and equality callbacks. Temporary regular files provide
+decisively checked shared and separate open file descriptions. No screen,
+EGL, GBM or DRM operation is involved.
+
+The original integer-descriptor hash passed 8 of 15 checks. A duplicate
+lookup missed without invoking the equality callback because its hash
+differed from the stored descriptor's hash. Six failures exercise this one
+production lookup defect. The seventh checks removal through a duplicate,
+an additional table contract that production does not use: production
+destroys through the stored descriptor. Different descriptor integers can
+also accidentally collide in the original 32-bit hash.
+
+The reviewed candidate changes only the hash to Mesa's existing common
+file-identity formula, retaining virgl's conservative description equality.
+It passed all 15 checks, including independent opens of one inode, table
+growth, caller close and descriptor reuse. Independent opens can hash alike
+and are still distinguished by equality. The patch is `fbfe928a`; the frozen
+evidence manifest is
+`02cf3236cd01fb4962cf3dbbd57b29d6127e75a7070864145414267ac798507c`.
+The independent source review is included unchanged.
+
+This establishes the key correction, not screen construction or a rendering
+repair. A patched shared-description arm would use one shared screen instead
+of the separate-screen shape under investigation, so any guest comparison
+requires new premises and evidence. No installed Mesa or Sophia code changed,
+and t306/t307 remain unaccepted.
+
+The paired private builds in `167-virgl-cache-private-build` carry the
+correction into compiled Mesa. Both use the same source and build paths,
+compiler, options and dependencies; the original stage was frozen before
+applying the one-file patch. The 15 staged files differ only in
+`libgallium-26.2.3.so`: original `be3ca218`, patched `bd3df816`. Links,
+permissions, ownership, dynamic dependencies and exported symbol names/types
+match. The compiled patched hash calls `fstat64`; the original hashes the
+integer. The winsys object, its archive and libgallium are the only changed
+artifacts among 982 tracked build outputs. Unmodified incremental builds
+leave those outputs unchanged; Mesa's always-run Git-version generator is
+accounted for explicitly. Preparation failures and collector corrections
+remain in the evidence under their original results.
+The frozen pair manifest is
+`793c752dabb7c6a5f8663a6b6f8fd79af13a64be657d7c15ac930a244d98d20f`.
+
+This pair uses EGL/GBM with X11 support and only the virgl driver, GLVND,
+debug symbols and NDEBUG, without GLX or software fallback. It is a matched
+private build, not a claimed reproduction of the distro build. No image or
+guest used it. Rendering qualification and the runtime screen-sharing premise
+remain separate from the compiled cache correction.
 
 ## Real-context control and a freshness-oracle gap (2026-10-09 UTC)
 
