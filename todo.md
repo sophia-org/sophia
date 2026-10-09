@@ -1,5 +1,7 @@
 # One task per line, a blank line between tasks: keep it that way so the file reads as a list. A row is `(priority) date text ... @context id:tNNN order:NNN [details](note)`; closed rows move to done-YYYY-MM.md.
 
+(A) 2026-10-07 Make ordinary desktop output policy adapt to available monitors at login and loss/return, preserving reachable workspaces; qualify startup fallback first, distinguish stable-identity card admission from output exclusions and qualify retained DMA-BUF continuity with t306. +critical +topology @development id:t310 order:000.0000028 [details](docs/notes/investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#t310)
+
 (A) 2026-10-04 Diagnose and repair KVM output/USB hotplug ending the desktop session; retain the topology error, prove safe loss/return and repeat on the operator's devices. +critical +topology @development id:t306 order:000.0000029 [details](docs/notes/investigations/kdleagg3-kvm-output-and-usb-loss-returns-the-desktop-to-greetd.md#t306)
 
 (A) 2026-10-05 Diagnose intermittent black sampling of an unchanged retained DMA-BUF image in virgl, including a correct-to-black frame on master before hotplug; separate producer, snapshot and consumer synchronization, and keep unstable pixel baselines from passing recovery checks. +important +renderer @development id:t307 order:000.00000295 [details](docs/notes/investigations/r2m9cx6v-static-retained-dma-buf-images-can-sample-black-before-hotplug.md#t307)
@@ -187,7 +189,5 @@ Keep fence-waiting Present pixmaps eligible for equal-target full-update scrappi
 2026-10-04 Review and qualify negotiated DMA-BUF lock images with bounded capture, source release and byte fallback; renderer integration follows t289 snapshot reuse. +candidate +lock @planning id:t304 order:304 [details](docs/notes/plans/r8z5a3sk-negotiated-dma-buf-lock-images-with-bounded-capture-and-release.md#t304)
 
 2026-10-04 Diagnose the rare QEMU page-flip hard stall from series-10 baseline-3; preserve failed evidence and obtain a discriminating trace or reproduction before changing completion behavior. +candidate +renderer @development id:t305 order:305 [details](docs/notes/investigations/3v4qwldr-rare-qemu-native-page-flip-hard-stall-after-successful-unlock.md#t305)
-
-2026-10-07 Make ordinary desktop output policy adapt to available monitors at login and loss/return, preserving reachable workspaces; distinguish stable-identity card admission from output exclusions, define fallback separately from strict proof profiles and qualify retained DMA-BUF continuity with t306. +candidate +topology @planning id:t310 order:310 [details](docs/notes/investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#t310)
 
 (B) 2026-10-07 Enable an independently owned iGPU development Session while the dGPU desktop remains active; scope discovery and lifecycle to admitted devices, use private endpoints and recovery, and prove no cross-seat display or input effects. +parallel +topology @development id:t312 order:312 depends:t311 [details](docs/notes/plans/b0yjm547-separate-gpu-development-from-the-live-desktop.md#t312)

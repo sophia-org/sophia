@@ -6,6 +6,21 @@ tags: [plan, rendering, topology, validation]
 ---
 # Qualify Mesa lifetime repair and KVM hotplug recovery
 
+## Resume interrupted by normal-login failure (2026-10-09)
+
+After reboot, niltempus reported that moving the main monitor from DP-1 to
+DP-2 prevented normal login and requested robust output handling. That request
+promoted t310 ahead of this plan. The installed strict profile refused the
+missing DP-1; this was not new evidence of the retained-image fault.
+
+The [t310 investigation](../investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#t310)
+records the signed startup repair, passing isolated gate and built release.
+Installation awaits administrator authentication in the operator's terminal,
+followed by a normal-login check. Its scope is startup and explicit reload;
+automatic hotplug recovery remains unqualified. All packages and remaining
+gates in the shutdown checkpoint below are preserved. The new release does
+not include the unqualified master lock implementation.
+
 ## Shutdown and resume checkpoint (2026-10-09 UTC)
 
 Niltempus requested shutdown after the lock implementation was signed. Work
