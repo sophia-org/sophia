@@ -264,35 +264,48 @@ workload as the cache patch's effect. It does not itself identify the cause of
 the original Sophia black frames. Keep the patch narrow and retain the matched
 build provenance; do not install private Mesa or patched QEMU into the host.
 
-### Proposed package design (2026-10-09, for review)
+### Package design (2026-10-09, reviewed; tooling in 654a9fe7f and 1d447631c)
 
-No existing fixture runs this workload. Every output-unplug display mode
-removes a head, and its verifier requires hotplug uevents. The 170 and 186
-images carry an older Sophia with the device-test init. The design below adds
-test tooling and images only; it changes no production policy.
+The workload is the `controlled-repaint` mode of the output-unplug scenario.
+It changes no head and no input device. The desktop profile mirrors both
+virtio heads onto one logical output at exact fit, so one scene is composed
+twice, once by each head's renderer worker, and binds F9 as its only shortcut
+to `policy:hold-shift`. The generic test WM, started with `--hold-shift`,
+registers that action and moves the managed DRI3 probe 8 pixels further right
+on each Action Cycle naming it. The probe presents one frame and holds. After
+its barrier the host presses F9 once a second, twenty times, over one QMP
+connection. Each committed shift therefore recomposes the static client from
+its retained image on both heads, at a crop that names the shift.
 
-The fixture is a `hold` mode of the output-unplug scenario. Both heads are
-enabled as today, the generic WM manages the DRI3 probe, and the probe
-presents one frame and holds. The host sends no display or input action; it
-waits for the static barrier and then for a declared hold window before
-shutdown. The probe window crosses the boundary between the heads, so both
-per-head workers import the same client buffer. A window on one head leaves
-one importer, which cannot exercise the shared-description hazard recorded
-in the sampling investigation. The verifier reuses `verify_static_client`
-and the probe's analytic pattern, computes the expected checksum of each
-head's visible part of the window, and binds every region to a frame its own
-native owner presented.
+QMP input carries no sequence the guest can see, so the host's cadence records
+are cadence evidence only. The authoritative chain is the guest's. Session's
+action record gives the activation serial, request, transaction and outcome;
+the WM's proposal for that transaction gives its offset; Session's settlement
+of the same transaction confirms the commit. Each head's presented regions of
+the window, in native frame order and bound to the frame its owner queued and
+retired, must then show the client's frame at the committed offsets in commit
+order. Each renderer facade can record its own import counters
+(`sophia_live_head_renderer_imports`, proof-only under the final-regions
+trace). The verdict requires one renderer identity per head, distinct between
+the heads, each with at least one import, so the run exercises two importers
+of one client buffer.
 
-The verdict for one boot is declared in advance. `RETAINED` requires
-startup readiness, exactly one mixed Present retirement, and every presented
-region on both heads equal to its expected checksum through the hold window.
-`LOST` requires readiness, a first presented region equal to its expectation,
-and a later presented region on either head that differs from it. A boot
-that never reaches readiness reports `UNREADY`, with its regions recorded; it
-counts as a reproduced failure only when its first presented region matched
-and a later one did not, as in 153. Startup recovery and the adaptive fallback
-are recorded separately and never turn a mismatch into `RETAINED`.
-Infrastructure refusal stops the series without replacement.
+The verdict for one boot is declared in advance and computed by
+`cargo xtask conformance verify output-unplug controlled-repaint LOG`.
+`RETAINED` is the only pass. `LOST` is any presented region of the window,
+on either head and at any time after that head's first, that differs from the
+client's frame. `UNREADY` is a session that never became ready; it counts as a
+reproduced failure only in the 153 shape, a first presented region equal to
+the frame and a later one that is not. `INSUFFICIENT` is a run without a
+contradiction in which a head missed committed shifts or the samples do not
+cover the window: at least 15 per head, the first by 1.5 s after the Present's
+retirement, the last from 18.5 s after it, and no gap over 2.5 s, all on the
+guest clock. `INVALID` is a run that is not this fixture, whose chain is
+broken, or that ended badly without a contradiction. Renderer recoveries and
+the adaptive fallback are counted as context and never turn a contradiction
+into `RETAINED`. Infrastructure refusal stops the series without replacement.
+The result describes mirrored-head renderer retention; it does not qualify two
+logical outputs or workspace affinity.
 
 Two images come from one frozen candidate. The base is built from the signed
 candidate with the pinned initramfs builder, as for image 145. The 170 Mesa
@@ -309,11 +322,14 @@ opt-in needs a reviewed production change, so it is a separate package and a
 separate GO; the duplicate remains the default until evidence supports a
 change.
 
-CPU controls precede any image or guest: hold-mode verifier refusals
-(missing readiness, a second Present, a changed region on either head, a
-region from another owner, an unstable baseline), runner orchestration with
+CPU controls precede any image or guest. The verdict's controls build logs
+from the emitters' formats and refuse a changed region on either head, a late
+mismatch after the window, missed or stale coverage, a crop out of order or
+outside the committed set, a shared renderer, a second owner, a missing
+importer, a second client Present, a shift Session did not accept, a device
+change and an unclean end. The package adds runner orchestration with
 stand-in launches, image binding against the prepared manifests, and named
-mutants of the verdict rules.
+mutants of the verdict rules run against a separate source copy.
 
 ## 3. Characterize lock custody and prove cover retirement
 
