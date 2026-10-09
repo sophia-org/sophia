@@ -25,6 +25,7 @@
 //! no input removal) never asked Sophia anything. It is reported as an
 //! unreached fixture, never as a pass and never as a Sophia failure.
 
+mod display_actions;
 mod input_return;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -214,15 +215,23 @@ pub fn verify(log: &str, mode: Mode) -> Result<Vec<String>, String> {
             .map(|(index, _)| index)
             .collect::<Vec<_>>()
     };
-    let offs = sent("off");
-    let ons = sent("on");
+    let display = mode
+        .display()
+        .then(|| display_actions::verify(&records, mode, heads))
+        .transpose()?;
+    let offs = display
+        .as_ref()
+        .map_or_else(|| sent("off"), |a| a.offs.clone());
+    let ons = display
+        .as_ref()
+        .map_or_else(|| sent("on"), |a| a.ons.clone());
     let (Some(&first_off), Some(&last_off)) = (offs.first(), offs.last()) else {
         return Err("has no removal sent".to_owned());
     };
     if mode.returns() == ons.is_empty() || ons.first().is_some_and(|&on| on < last_off) {
         return Err("has its removals and returns out of order".to_owned());
     }
-    // A removal sent after the session began to stop asked it nothing.
+    // A removal attempted after the session began to stop asked it nothing.
     if records[..first_off].iter().any(|record| {
         record.is("sophia_live_session_quiescence", "started")
             || record.is("sophia_live_session", "bounded_complete")
@@ -244,7 +253,9 @@ pub fn verify(log: &str, mode: Mode) -> Result<Vec<String>, String> {
         if mode == Mode::AllReturn {
             // A first removal can publish a healthy smaller topology. Neither
             // that transition nor a host command proves that every head went.
-            // Bind both independent witnesses to the completed removal phase.
+            // The guest can observe the loss before the host command returns.
+            // Both witnesses must follow the last attempt; the paired host
+            // completion was checked independently above.
             let all_gone = &records[last_off + 1..loss_end];
             let mut zero_connected = false;
             for sample in all_gone
@@ -318,7 +329,8 @@ pub fn verify(log: &str, mode: Mode) -> Result<Vec<String>, String> {
         summary.push(line);
         last_action = routed;
     }
-    if !records[last_action..].iter().any(|record| {
+    let completed = display.as_ref().map_or(last_action, |a| a.completed);
+    if !records[completed..].iter().any(|record| {
         record.name == "sophia_live_session" && record.get("status") == Some("bounded_complete")
     }) {
         return Err("has no bounded completion after the last action".to_owned());

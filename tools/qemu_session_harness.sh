@@ -674,12 +674,14 @@ if [[ "$SCENARIO" == output-unplug ]]; then
         consoles=("${SOPHIA_QEMU_UNPLUG_CONSOLE:-1}")
         [[ "$UNPLUG_MODE" == all-return ]] && consoles=(0 1)
         for console in "${consoles[@]}"; do
+            echo "sophia_qemu_unplug schema=1 status=sending action=off target=Console_$console" | tee -a "$EVIDENCE_FILE"
             head_size "$console" 0 0 || unplug_failed head_disable
             echo "sophia_qemu_unplug schema=1 status=sent action=off target=Console_$console" | tee -a "$EVIDENCE_FILE"
         done
         sleep 5
         if [[ "$UNPLUG_MODE" != one ]]; then
             for console in "${consoles[@]}"; do
+                echo "sophia_qemu_unplug schema=1 status=sending action=on target=Console_$console" | tee -a "$EVIDENCE_FILE"
                 head_size "$console" 1280 800 || unplug_failed head_enable
                 echo "sophia_qemu_unplug schema=1 status=sent action=on target=Console_$console" | tee -a "$EVIDENCE_FILE"
             done

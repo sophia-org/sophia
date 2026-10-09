@@ -11,6 +11,9 @@ mod source {
 
 use source::output_unplug::{Mode, probe_frame_checksum, verify};
 
+#[path = "support/output_unplug_display_actions.rs"]
+mod display_actions;
+
 const START: &str = "\
 sophia_qemu_unplug schema=1 status=starting isolation=headless control=none host_drm=none host_vt=none gpu=virtio-gpu mode=MODE single_card=1
 sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu scenario=output-unplug
@@ -20,7 +23,8 @@ sophia_live_session_startup schema=2 status=ready elapsed_msec=900 surface=true 
 ";
 
 const LOSS: &str = "\
-sophia_qemu_unplug schema=1 status=sent action=off target=card0-Virtual-2
+sophia_qemu_unplug schema=1 status=sending action=off target=Console_1
+sophia_qemu_unplug schema=1 status=sent action=off target=Console_1
 sophia_live_input_epoch schema=1 reason=output_topology transition=1 epoch=2 revoked_leases=0
 sophia_live_output_topology schema=1 status=quiesced transition=1 outcome=drained abandoned_scanouts=0
 sophia_live_output_topology schema=1 status=published transition=1 topology_epoch=2 generation=2 outputs=1 changed=true restored_images=1 policy_required=false input=quarantined
@@ -28,7 +32,8 @@ sophia_live_output_topology schema=1 status=settled transition=1 retirements=1 i
 ";
 
 const RETURN: &str = "\
-sophia_qemu_unplug schema=1 status=sent action=on target=card0-Virtual-2
+sophia_qemu_unplug schema=1 status=sending action=on target=Console_1
+sophia_qemu_unplug schema=1 status=sent action=on target=Console_1
 sophia_live_output_topology schema=1 status=quiesced transition=2 outcome=drained abandoned_scanouts=0
 sophia_live_output_topology schema=1 status=published transition=2 topology_epoch=3 generation=3 outputs=2 changed=true restored_images=1 policy_required=false input=quarantined
 sophia_live_output_topology schema=1 status=settled transition=2 retirements=2 input=enabled
@@ -60,14 +65,15 @@ fn one_return() -> String {
 
 fn all_return() -> String {
     let loss = "\
-sophia_qemu_unplug schema=1 status=sent action=off target=card0-Virtual-1
-sophia_qemu_unplug schema=1 status=sent action=off target=card0-Virtual-2
+sophia_qemu_unplug schema=1 status=sending action=off target=Console_0
+sophia_qemu_unplug schema=1 status=sent action=off target=Console_0
+sophia_qemu_unplug schema=1 status=sending action=off target=Console_1
+sophia_qemu_unplug schema=1 status=sent action=off target=Console_1
 sophia_qemu_unplug schema=1 status=connectors connectors=2 connected=0 sample=20
 sophia_live_output_topology schema=1 status=unavailable transition=1 retry_msec=250 error=\"persistent native scanout could not open all KMS outputs: SelectionFailed\"
 ";
-    let back = RETURN.replace(
-        "action=on target=card0-Virtual-2",
-        "action=on target=card0-Virtual-1\nsophia_qemu_unplug schema=1 status=sent action=on target=card0-Virtual-2",
+    let back = format!(
+        "sophia_qemu_unplug schema=1 status=sending action=on target=Console_0\nsophia_qemu_unplug schema=1 status=sent action=on target=Console_0\n{RETURN}"
     );
     run("all-return", &format!("{loss}{back}"), &uevents(4, 0, 0))
 }
@@ -355,7 +361,7 @@ fn every_break_in_the_keyboard_attempt_and_completion_is_refused() {
             "name different devices",
         ),
         (
-            log.replace(SENT_OFF, &SENT_OFF.replace("virtio2", "card0-Virtual-1")),
+            log.replace(SENT_OFF, &SENT_OFF.replace("virtio2", "Console_0")),
             "malformed sophia_qemu_unplug status=sent",
         ),
         (
@@ -583,7 +589,7 @@ fn every_missing_obligation_is_refused() {
         (
             Mode::One,
             one().replace("action=off", "action=noop"),
-            "no removal",
+            "malformed attempt",
         ),
         (
             Mode::One,
@@ -605,8 +611,8 @@ fn every_missing_obligation_is_refused() {
 fn all_heads_loss_requires_guest_and_session_witnesses_after_the_last_removal() {
     let zero = "sophia_qemu_unplug schema=1 status=connectors connectors=2 connected=0 sample=20\n";
     let unavailable = "sophia_live_output_topology schema=1 status=unavailable transition=1 retry_msec=250 error=\"persistent native scanout could not open all KMS outputs: SelectionFailed\"\n";
-    let last_off = "sophia_qemu_unplug schema=1 status=sent action=off target=card0-Virtual-2\n";
-    let first_on = "sophia_qemu_unplug schema=1 status=sent action=on target=card0-Virtual-1\n";
+    let last_off = "sophia_qemu_unplug schema=1 status=sending action=off target=Console_1\n";
+    let first_on = "sophia_qemu_unplug schema=1 status=sending action=on target=Console_0\n";
     let log = all_return();
     let cases = [
         (log.replace(zero, ""), "no zero-connected observation"),
@@ -700,12 +706,12 @@ fn all_heads_loss_requires_guest_and_session_witnesses_after_the_last_removal() 
 #[test]
 fn returns_before_removals_and_a_return_in_a_lasting_mode_are_refused() {
     let early = one_return().replace(
-        "sophia_qemu_unplug schema=1 status=sent action=off target=card0-Virtual-2\n",
+        "sophia_qemu_unplug schema=1 status=sent action=off target=Console_1\n",
         "",
     );
     let early = early.replacen(
         "sophia_qemu_unplug schema=1 status=sent action=on",
-        "sophia_qemu_unplug schema=1 status=sent action=on target=card0-Virtual-2\nsophia_qemu_unplug schema=1 status=sent action=off",
+        "sophia_qemu_unplug schema=1 status=sent action=on target=Console_1\nsophia_qemu_unplug schema=1 status=sent action=off",
         1,
     );
     assert!(
@@ -763,8 +769,8 @@ fn a_removal_after_the_session_began_to_stop_is_an_unreached_fixture() {
     // The session's startup took its whole runtime, so the host's removal
     // reached a session that was already stopping.
     let log = one().replace(
-        "sophia_qemu_unplug schema=1 status=sent action=off",
-        "sophia_live_session_quiescence schema=3 status=started reason=runtime_deadline timeout_msec=2000\nsophia_qemu_unplug schema=1 status=sent action=off",
+        "sophia_qemu_unplug schema=1 status=sending action=off",
+        "sophia_live_session_quiescence schema=3 status=started reason=runtime_deadline timeout_msec=2000\nsophia_qemu_unplug schema=1 status=sending action=off",
     );
     let error = verify(&log, Mode::One).unwrap_err();
     assert!(error.starts_with("fixture unreached"), "{error}");
@@ -860,6 +866,7 @@ sophia_live_native_head_page_flip schema=2 status=retired output=1 head=1 submis
 sophia_qemu_unplug schema=1 status=static_barrier present=retired client=holding
 ";
     let loss = "\
+sophia_qemu_unplug schema=1 status=sending action=off target=Console_1
 sophia_qemu_unplug schema=1 status=sent action=off target=Console_1
 sophia_live_output_topology schema=1 status=quiesced transition=1 outcome=drained abandoned_scanouts=0
 sophia_live_native_owner schema=1 status=closed epoch=1 reason=topology_rebuild settled=true
