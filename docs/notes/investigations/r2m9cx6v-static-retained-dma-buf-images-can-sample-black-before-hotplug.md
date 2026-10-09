@@ -1391,6 +1391,65 @@ showed that a separately opened file preserves the handle. It belongs in the
 production-workload comparison as a third arm on unpatched Mesa, with its own
 CPU controls and review before any guest.
 
+## The Mesa 26.2.4 context comparison repeats loss and preservation (2026-10-09 UTC)
+
+The host now carries Mesa 26.2.4, so 202's 26.2.3 result could not stand for
+the production workload's base. Package 209 built a matched private pair from
+the 26.2.4 release tarball, whose checksum Void's template records, with 167's
+configuration and patch; the two stage trees differ only in
+`libgallium-26.2.4.so` (original `8dcf2b93`, patched `fdcaa7e6`). The five
+files 165 reviewed are byte-identical to 26.2.3 and the patch applies without
+fuzz. That similarity was recorded and qualified nothing. 210a-02 rebuilt the
+143 device-test base on the 26.2.4 host (image `287918d8`; its predecessor
+stopped on a pipefail record and is preserved). 210b and 210c derived the
+original and patched images and their premise-init children (`1466b6cb` and
+`7190493e`).
+
+The first runner, 210d, stopped correctly at its original guest. Its
+classifiers reach handle5's context identity check, which required handle3's
+`Mesa 26.2.3`. The guest carried 26.2.4, so both classifiers refused the
+identity before reading any pixel or premise. That series is preserved
+unqualified (`7d1dda10`); no guest3 or replacement ran. An audit found this to
+be the chain's only exact version dependency. 210e adds a context-only
+`Mesa 26.2.4`, matched in handle3's three exact forms so that 26.2.40 is
+refused; the observer, whose image is unchanged, keeps 26.2.3. 210e's CPU
+controls ran over 210d's retained records. The old classifiers refuse the real
+context byte for byte as retained. The successor prints, on the real log,
+exactly what the old ones print when only its three version lines are renamed
+to 26.2.3. Every wrong-version variant is refused at its stage. Runner 210f is
+210d re-keyed to 210e. Its controls rename only the context fixtures' version
+lines, so the positive series is mixed-version like the real one; they added
+seven stage-specific wrong-version stops and passed 71 orchestration and 168
+decision cases (records closure `bec3ec84`). The same controls with the old
+classifiers fail 36 cases, every positive stopping at guest2 as 210d did.
+
+210f ran once under an exact-argv GO from 17:55:12Z to 17:56:07Z, with the
+installed release e3e6a9 live and root builds held. Its launcher reran the
+window preflight; the launcher, runner and pins all exited 0.
+
+| Guest | Screen premise | Pixels | Test exit | Driver report |
+| --- | --- | --- | --- | --- |
+| observer (26.2.3) | none | `OBSERVER_PASS` | 0 | none |
+| original (26.2.4) | separate and shared `SCREEN_NEW` | separate `PRESERVED`, shared `LOST_AFTER_SIBLING_DROP` | 101 | `ERROR`, one shared diagnostic |
+| patched (26.2.4) | separate `SCREEN_NEW` with one miss, shared `SCREEN_SHARED` with one hit | both `PRESERVED` | 0 | `CLEAN` |
+
+All three decisions qualified, with clean infrastructure and endpoints and no
+remaining process. At context level the 26.2.4 pair therefore repeats 202:
+the unpatched shared arm loses the producer's pixels after its sibling is
+dropped, and the patched screen cache keeps them. As with 202, this is a
+screen-premise and pixel observation; it establishes no Sophia production
+effect, repair or t306/t307 acceptance. A retrospective readout of 210d's
+retained original guest under 210e has the same shape and qualifies nothing.
+
+The series manifest is
+`b50b28ea953bbc2b70c2b5e35c35e4198f4a3ed7a7d4693b48a2faf89bd7916e`
+for 103 files; the launch records close under
+`1089222ded4a19353df49e6973497f7f744f40a444fc9b05b96654c9488eb7d9`.
+Package 211, the production-workload comparison on 26.2.4, is next. A
+non-reproducing original can leave t307 as a declared limit only when that
+original workload has complete sampling and importer coverage and a qualified
+`RETAINED` verdict; `INSUFFICIENT` or an ordinary `UNREADY` is no such result.
+
 ## t307
 
 The [four-part qualification plan](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md)

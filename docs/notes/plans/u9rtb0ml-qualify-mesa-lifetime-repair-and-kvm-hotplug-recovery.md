@@ -92,6 +92,18 @@ records the result and a bounded hypothesis: Sophia's renderer instances share
 one duplicated card file description. Part 2 is next, as a reviewed CPU package
 before any guest.
 
+The host's move to Mesa 26.2.4 required part 1 again on a matched 26.2.4 pair.
+Packages 209 through 210c built the pair, a 26.2.4 device-test base and its
+original and patched children. Runner 210d stopped unqualified at its original
+guest because its classifiers required Mesa 26.2.3; that series is preserved
+without replacement. Successor classifiers 210e require exactly 26.2.4 for the
+context children and keep 26.2.3 for the observer. Runner 210f passed its CPU
+controls and ran once at 17:55Z: the original kept the separate arm and lost
+the shared arm with one recognized diagnostic, and the patched guest preserved
+both arms cleanly. The
+[sampling investigation](../investigations/r2m9cx6v-static-retained-dma-buf-images-can-sample-black-before-hotplug.md#the-mesa-2624-context-comparison-repeats-loss-and-preservation-2026-10-09-utc)
+records the packages and manifests. Part 2 on 26.2.4 (package 211) is next.
+
 ## Resume interrupted by normal-login failure (2026-10-09)
 
 After reboot, niltempus reported that moving the main monitor from DP-1 to
