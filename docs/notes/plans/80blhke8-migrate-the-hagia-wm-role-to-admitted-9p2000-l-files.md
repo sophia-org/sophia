@@ -27,8 +27,11 @@ now passes with supplied surface facts and layout completion, without pixel or
 physical-input claims. The subsequent
 [operation/disconnect slice](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#operation-settlement-and-disconnect-implementation-2026-10-10)
 checks typed intent acceptance/refusal and lost-peer recovery without executing
-an operation. Slow-peer/credit and presentation/input joins remain, as does a
-reviewed measurement method. The old
+an operation. The subsequent
+[stalled-peer slice](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#stalled-live-peer-recovery-2026-10-10)
+proves recovery driven by the production response deadline while the peer is
+still alive. Presentation/input joins, including real-peer receipt credit,
+and a reviewed measurement method remain. The old
 80-run campaign remains refused, the numeric budgets remain unchanged, and
 occupied-output acceptance is reused only for its demonstrated scope.
 

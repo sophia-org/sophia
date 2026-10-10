@@ -418,6 +418,86 @@ and product gates were not repeated for external tests only. t249/h006 remain
 open for slow-peer/credit coverage, presentation/chord/capture owner joins and
 the reviewed measurement method; original budgets and observer scope are unchanged.
 
+## Stalled live peer recovery (2026-10-10)
+
+The read-only follow-up separated command/event queue pressure, response
+deadlines, journal ACK credit, waiting reads/revocation and process restart.
+They are different owners and bounds. The command and event queues have
+capacity one. The response deadline is twelve seconds; sending against a full
+journal has a separate four-second deadline. The journal allows 64 records
+within 1 MiB. ACK consumption advances its floor; revocation answers pending
+reads with ESTALE before closing.
+
+Source review found generic coverage in `policy_file_custody.rs` for real
+reactor ACK release, bounded full-journal send, stop while waiting for credit,
+and ESTALE before close; driver, adapter and shutdown tests cover their own
+queues and wakeups. SDK-local scripted tests cover held-event ACK ordering,
+partial-event deadlines and terminal ticket custody. Those tests were inspected,
+not rerun here. The previous external cases terminated the peer first. The
+missing composition was the production response deadline requesting replacement
+of a peer which was still alive.
+
+Hagia `651763e2dff1102a0b7380b3347ce7fc19c44fea` adds external
+`tests/external/slow_peer.rs`; niltempus
+`e441c7fb6b8cd4738ebc3d34fbc51df48d664b85` mounts and hashes that fourth module
+and requires the ninth exact test. Sophia is pinned to `65440ff5d`; the change
+from `ea64b1f02` is documentation only, with the same mount blob and owner code.
+There is no production-code or installed-release change.
+
+`t249-slow-peer-01` reports
+`PASS lifecycle=3 occupied=2 operations=3 slow_peer=1 native=false` with clean
+signed fixture source. Independently verified manifest:
+`537e570a65ce84623dbd00684f10ef304752a4bc1b25955a5cd7aabac961a390`.
+The fixture proves its protected parent/child chain, records the peer's start
+time and pauses only that process with SIGSTOP. It observes the stopped state
+before issuing an action. The unmodified deadline then requests restart while
+the supervisor reports no process exit and the peer remains stopped. The
+captured reason is `WM file response deadline expired`. Committed layout,
+policy and checkpoint remain intact. The new epoch clears request, operation,
+deferred-command and staged authority; the old peer must disappear, with a
+zombie still counting as present. The successor completes its scene/Dirty
+recovery and a fresh explicit focus action.
+
+Observed detection was 12051 ms and replacement 29 ms. These are one-run
+observations, not latency qualification or proof of an owner-loop stall. The
+actual path is `sophia_runtime::ProcessSupervisor::terminate`, not Session's
+`terminate_session_child`. The fixture's same-start-time drop guard resumes a
+surviving paused peer; the outer PID namespace and timeout bound failure cleanup.
+`session-lines.txt` captures lines through deadline detection, not the entire
+replacement/recovery lifetime.
+
+`t249-slow-peer-controls-01` modifies only archived server copies. Ignoring both
+Failed and the disconnected-worker indication hits the named forty-second
+stalled-peer bound. Retaining `in_flight_request` across restart fails the
+immediate stale-authority assertion, not a later Ready timeout. Each compiled
+control exits 101 with one named failure, and not the other control's message.
+Manifest `9172a63d50bb671fb8d3250e45898d7550122d261bc4e6c2eecf9935058ba4a3`;
+the bound inputs match at start/end and the archive sources are restored.
+The earlier unsigned development run is kept separately as
+`t249-slow-peer-dev01`, manifest
+`e0245cf81c6a9410c3231513b02358e27535699db343a200e753dbdfd06e1305`.
+
+`t249-slow-peer-checks-01` verifies the two mutated production files against
+the pinned blobs, and passes strict Session overlay/runner clippy, two runner
+controls, formatting and Hagia layout. Independently verified manifest:
+`f35280c03cd458794dce6b5124dd4cd4513419bed6d27faa145d66774a2db098`.
+There was no test rerun or full product/Nim/formal gate for this external slice.
+
+Occupied facts and layout completion remain supplied. This case does not
+exercise AbortSettlement, a paused peer consuming ESTALE, ACK-credit exhaustion,
+slow-but-progressing throughput, application execution or native presentation.
+The headless request/response cadence does not naturally fill the 64-record
+journal; real-Hagia ACK exhaustion belongs with accumulating presentation
+receipts, rather than an artificial headless flood. Next is the bounded
+presentation/chord/capture owner-join design, including receipt credit and its
+terminal paths. The measurement method remains separate. t249/h006 stay open.
+
+One source-only question remains separate: a full Cycle command queue returns
+an error from `poll_public_request`. The surrounding deferred-command and
+receipt guards appear to prevent reaching that branch, but this slice does
+not prove that invariant or reproduce a session failure. Any follow-up belongs
+in generic Sophia queue tests, not a Hagia-specific production change.
+
 ## Connections
 
 - [t249 plan](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249) owns the unchanged acceptance requirements.
