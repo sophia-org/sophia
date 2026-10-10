@@ -127,6 +127,16 @@ The gate has these measurable exits:
 | Reconnect and identity | New epochs reject retained old handles, transactions and presentation actions. Reuse a surface's numeric index with a new generation and prove old input/action identity cannot target the replacement. Correlate the first answer or refusal; a timeout or later disconnect cannot stand in for it. |
 | Regression and evidence | Run affected core/export checks and all eighteen baseline Hagia cases on the final paired candidate. New behavioral assertions require discriminating controls with recorded first failures. Preserve signed pins, manifests, bounded jobs, source restoration and teardown health; no physical or performance claim follows. |
 
+The [October 10 readiness evidence](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#t323-shared-owner-evidence-reconciliation)
+satisfies this exit at Sophia `a8c5fdf29`, Hagia `b4d5702` and runner `6592846`:
+the isolated generic gate is bound to the signed source, the ACK-credit join
+and reused-surface control discriminate, all nineteen paired cases pass, and
+the opt-in SDK export tests pass. Shared wire flush ordering and reply-byte
+bounds remain qualified at their common owner; the Session join specifically
+exhausts journal record credit. Withholding reads reaching that same journal
+bound is source inference, not a second executed Session capacity claim.
+The detailed record retains the supplied facts and all remaining t249 limits.
+
 9P flush, fid clunk, policy cancellation and grant revocation retain their
 separate contracts. A wire reply is not semantic settlement. Test protocol
 invariants once at the shared owner, then test each role-specific connection;

@@ -1844,6 +1844,124 @@ The reused-surface-generation recovery join and the final eighteen-case paired
 regression remain required by t323; this slice does not change its exit or
 complete t249.
 
+### t323 reused surface identity after recovery (2026-10-10)
+
+The external `sdk_occupied_reused_surface_generation_after_restart` case
+now joins an actual supervised Hagia restart to Session's exact-surface focus
+guard. Signed candidates are Sophia
+`a8c5fdf29c8932580b04b3de0f807327e0d0a34b`, Hagia
+`b4d57025139296ed0f3b3a6a8ece417418ed960e`, and niltempus runner
+`659284608534a2a611c2af0e3876e4eb74f9d7ac`. The Sophia pin differs from
+`8ce7c40ef` only in documentation and eight test or test-wiring files; all five
+bound production GLUE spans were independently rehashed unchanged.
+Two of the eight are production source files, `policy_transport_worker/ninep.rs`
+and `ninep/runtime_adapter.rs`, whose changes only mount or expose test modules
+carrying `#![cfg(test)]`.
+
+After the peer restarts into epoch 2, the fixture removes surface `(47,5)`
+through the layout observation and WM removal owners. Supplied arrival facts
+replace it with `(47,6)`. Two real Hagia recovery cycles commit a checkpoint
+containing the replacement and the surviving surface, without the old identity.
+With the surviving surface focused and no queued or in-flight cause, requesting
+focus for the old identity returns Duplicate synchronously without queue or
+request changes. A fresh request produces the correlated Focus cause for the
+replacement and commits that focus in both Session and Hagia's checkpoint.
+A non-admitting transport poll and supervisor poll establish healthy transport,
+the same epoch and a running peer immediately before teardown; this is not a
+round trip.
+
+Both `t323-identity-dev01` and the clean signed `t323-identity-01` pass all
+nineteen cases: the eighteen-case regression baseline plus the new join.
+The runner's serial suite passes thirteen tests with its subprocess helper
+ignored; standalone strict clippy, rustfmt and whitespace checks pass.
+The Hagia layout gate passes. No production code changes in this slice.
+
+The archived-source control changes only `enqueue_focus`'s exact SurfaceId
+membership check to an index-only comparison. `t323-identity-control-01`
+exits 101 with exactly one failed test, first at **old surface identity must
+not target its numeric replacement**. The call wrongly admits `(47,5)` before
+the separate admission-time liveness guard can filter it; no timeout or later
+disconnect substitutes for this refusal. The restored source hash is
+`6889f0ef3afd1519dfc7d621599f23033b23b442a22919542d9f88d5e889bebc`.
+All fourteen fixture modules and the ordinary Hagia executable remain unchanged.
+The positive and control packages have verified self-excluding manifests:
+
+| Record | SHA-256 of SHA256SUMS |
+| --- | --- |
+| `t323-identity-01` | `4240a1ff70987e15b984b929eb304dc587dc6f330f6958a9ba62527720cd4d31` |
+| `t323-identity-control-01` | `3552498888f57f8ef94d2e5cb0d4e922ca63d0495ff019c9c6e40b0bf04d719d` |
+
+These records live under `~/.local/state/sophia/development-evidence/`.
+Surface facts, source-less layers and layout completion are supplied. This
+qualifies focus-request authority across generational reuse, not Manage
+admission, physical input, pixels or every surface-keyed authority.
+
+### t323 shared-owner evidence reconciliation
+
+The retained `t323-receipt-credit-01/xtask-02.log` records the generic tests
+below as executed, not merely listed. Its manifest and candidate binding were
+rechecked. The credit control collected its complete modified/untracked file
+set with `git ls-files --modified --others --exclude-standard`; its seven
+recorded hashes plus the separately recorded 0700 fixture-repair hash match
+the signed `a8c5fdf29` tree. Those are exactly the eight files in the
+`eefefed49..a8c5fdf29` crates/Cargo delta. The subsequent documentation commit
+does not change gate inputs.
+
+| t323 obligation | Executed generic evidence in `xtask-02.log` |
+| --- | --- |
+| Request lifetime and flush ordering | All 22 `pipeline.rs` and 14 `waiting_and_bounds.rs` tests, including both outcomes of `flush_keeps_or_frees_the_fid_depending_on_which_answer_wins`, full-output flush ordering and waiting-read cancellation. WM export `reactor_receive_timeout_withdraws_permit_without_delivering_fragments`, `staging_retries_preserve_prefix_and_do_not_renew_expiry`, `no_permit_never_decodes_and_accepted_replay_never_decodes_again`, and `idle_driver_services_ack_clunk_flush_and_blocks_when_quiet`. |
+| Bounds and atomic credit | `undrained_replies_are_bounded_by_bytes_not_only_by_count`, `pipelined_requests_refuse_beyond_the_outstanding_limit_without_side_effects`, `a_write_without_room_for_its_reply_is_not_performed`, journal ACK/deadline controls, and atomic-cycle credit-before-encoding/no-QID-spend tests. The production Session credit join above supplies the local revocation/release connection. |
+| Malformed records never reach semantics | Envelope and array truncation tests, fixed-control truncation/extra-tail refusal, malformed inspection capture refusal, reserved/trailing-data codec refusal, `a_malformed_candidate_record_is_refused_at_submit`, and malformed-wire peer isolation. |
+| Snapshot and driver custody | `snapshots_pin_metadata_and_qids_continue_across_epochs`, `cycle_refusals_and_identity_exhaustion_leave_both_publications_unchanged`, `decode_capability_permit_and_credit_refusals_do_not_burn_domain_or_submission`, and `unnegotiated_extension_is_refused_before_driver_delivery`. |
+| Reconnect and stale identities | `policy_presentation_reconnect_rejects_old_identity_at_enqueue_and_settlement`, Engine's repeated-publication/target-number reconnect test, `a_stale_click_does_not_retarget_a_reused_surface_index`, transaction-open/QID tests and consumed-domain replay tests. The real-Hagia generation-reuse join above adds peer recovery. |
+
+Two ownership decisions keep this gate bounded without weakening its claims.
+First, WM waiting reads and wire flush use `sophia_9p::unix::Server`; there is
+no separate WM flush implementation. The shared core's two ordering tests
+therefore qualify request custody. The WM contract explicitly says a flush
+does not undo an executed write or submit; replay, permit and atomic-publication
+tests qualify those role semantics separately. A wire reply is still not
+semantic settlement.
+
+Second, the executed Session pressure join reads events and withholds ACKs.
+Source inspection shows that withholding reads also retains unacknowledged
+records against the same journal bound: `send_encoded_before` waits on journal
+room, not reader progress. This is an inference about that capacity, not an
+executed no-read Session join. Reply-byte/socket pressure remains separately
+tested at the shared core; no Session reply-byte exhaustion claim is made.
+Local receipt flushing uses nonblocking `try_command` regardless of the
+transport cause behind its full slot. No new role-specific copy of the wire
+tests is needed for these unchanged owners.
+
+The two opt-in `independent_nim_supplied_stream` tests, ignored by the ordinary
+workspace suite, were rerun at the signed pair in `t323-sdk-export-01`: startup
+and cycle both pass. This is an independent Nim SDK peer against the production
+WM export with supplied admission and scripted outcomes, not Hagia policy or
+authenticated launch. `protected_reconnect_keeps_the_supplied_logical_qid_allocator`
+was also rerun alone in `t323-reconnect-01` and passes, avoiding reliance on its
+earlier interleaved parent/child output. The restored external overlay passes
+strict clippy in `t323-identity-checks-01`.
+
+| Additional closed record | SHA-256 of SHA256SUMS |
+| --- | --- |
+| `t323-identity-checks-01` | `3cdfc08ef5f4580e82ef0e3b55ddc055e03b4832a149d9d9b4e329d2a88241c0` |
+| `t323-reconnect-01` | `2731bce22672fd62e1bba37f0433016f2c791b8c807ca56aa9ccfe68e96d68a8` |
+| `t323-sdk-export-01` | `226195eaa1fb8f9ae47b6cc1625dad748b95630b31ab5631aa81b959d4c407c6` |
+| `t323-readiness-audit-01` | `17d0a8201dab9fa91cbebca4658baac9e9a7720c551e242ee1013942d8b103f6` |
+
+The audit package retains the signed-tree hash comparison and exact executed
+test lines; it is an evidence audit, not another test run. All packages verify.
+After every build and control exited, the leased runner cleanup removed the
+marked build root (`t323-identity-cleanup-01`); its stable sibling lease remains.
+Fixed cargo slots are retained, and no built binary is copied into evidence.
+
+This satisfies the bounded t323 readiness exit. It does not complete t249 or
+Hagia's full WM qualification. The approved sequence now proceeds to t133
+admission review, t275 recipe design, t142 confined groups, t317 attach identity
+and t318 namespace composition. The existing t249 coverage matrix, production
+backend joins, measurement/comparator obligations and separate t250 physical
+acceptance remain unchanged. No desktop component was installed or reloaded.
+
 ## Connections
 
 - [t249 plan](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249) owns the unchanged acceptance requirements.
