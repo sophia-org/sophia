@@ -290,6 +290,75 @@ live release necessary. It advances the t249 prerequisite of t315 while leaving
 the admitted t133/t275 observer design work independent, in alignment with
 zsx0tk4k and the observer plan.
 
+## Occupied settlement and recovery implementation (2026-10-10)
+
+Hagia `0bbfe3cee3d1efa0b191098c70e64062ab8073b0` adds
+`tests/external/occupied.rs` and extends the shared lifecycle helper.
+niltempus `83023216817500f7595d5550f76d6b28016c99ba` mounts both external
+modules and requires all five named tests. Its Sophia pin is
+`9f52403be19346a49ad275481886de9a5d4015a3`; the mount and production code
+are unchanged from the prior lifecycle pin. There are no Sophia production or
+repository test changes, no Hagia production change, and no new installed release.
+
+The clean signed-fixture run `t249-occupied-01` reports
+`PASS lifecycle=3 occupied=2 native=false`. Its verified self-excluding manifest
+is `7a340bac1e5b4dfc9cf4458162b6c5ab1fe4077afd8f1d31d5067dc0ce2946b7`;
+ordinary Hagia binary SHA256 is
+`2334a3754bdc59ea0f141a07a685c1c83aca1f1fa8a5ca86c9fb74213ad72538`.
+SDK remains `b2a254dcb792e5f9d66f78bdd73f645153504507`. Both fixture modules,
+source pins, profile, case list and per-proposal identities are recorded.
+
+The two new cases use distinct generational surface handles and real catalog
+actions. The settlement case first commits a focus change, then supplies a
+timeout and separately advances the scene before refusing the staged proposal.
+Committed layers, policy focus and checkpoint stay unchanged. The actual
+recovery SceneChanged request does not replay the action; a later explicit
+action has fresh request/transaction identities and commits successfully.
+The restart case changes private column sizing, then exercises automatic and
+requested replacement of the fixture-owned peer. Both restore the committed
+policy projection, layout layers and checkpoint relationships, including focus,
+window membership and column state. Only the epoch-scoped layer translation
+identity is normalized for comparison. Each successor supplies its own Dirty.
+
+**Fixture limit:** mapped authority facts and source-less layers are supplied.
+The fixture completes layout directly through the commit owner; it bypasses
+visual readiness, application admission, configure ACKs and rendering. Focus is
+policy focus, not physical keyboard routing. Timeout is supplied, not a measured
+resize deadline. Requested restart invokes the owner, not the public control
+socket. This extends J coverage for occupied policy recovery; it does not qualify
+native presentation, all capabilities, multi-output restart or latency.
+
+Development records remain distinct. `t249-occupied-dev-01` exposed a fixture
+checkpoint-read race: transport Ready can precede the peer's checkpoint rename.
+The helper now waits for replacement and reads bytes/inode through the same
+open file. Dev-02 compared cached pre-projection surface facts to a later fresh
+snapshot; the setup now observes the newly committed geometry before restart.
+Dev-03 expected the next explicit action before Session's owed recovery scene;
+the test now checks that recovery scene explicitly. Dev-04/05 pass their named
+development cases. None of these was a production repair or is relabelled as
+the clean final run.
+
+`t249-occupied-controls-01` binds the final test executable and fixture hashes
+before/after both controls. The previously built no-restore mutant is reused
+only after checking identical Hagia production trees; it fails on committed
+placements/focus, before waiting for Dirty. A separately built mutant promotes
+and saves refused candidates; it fails `refusal cannot promote client candidate`.
+Both are exactly one named failure (exit 101), not compiler or timeout failures.
+The verified manifest is
+`6dcd65ec09d3bfffd2ef3c7cd9106eb0d7832bbfc8d2a13d0705180cc55eea60`.
+`t249-occupied-checks-02` records strict Session overlay clippy, two runner
+refusal/closure controls, runner clippy and formatting, all passing; manifest
+`2855f118dd35575247f03425285c8fe1dfc1bca1395b79c973ac9a685beec5cb`.
+The full Nim/formal/product gates were not repeated for external tests-only
+changes. Source and build caches are excluded from these evidence manifests;
+the declared source identities, overlay files, binaries and records are covered.
+
+The next bounded t249 work is current session-operation intent and terminal
+peer/credit handling, followed by the native presentation/chord/capture join.
+The prospective measurement method and original budgets remain outstanding.
+t249/h006 stay open; this does not expand observer authority or reopen t310
+physical acceptance.
+
 ## Connections
 
 - [t249 plan](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249) owns the unchanged acceptance requirements.

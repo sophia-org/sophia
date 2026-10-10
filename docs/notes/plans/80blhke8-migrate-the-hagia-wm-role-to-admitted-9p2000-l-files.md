@@ -21,9 +21,11 @@ empty headless scene, with client policy and named-stack tooling outside Sophia;
 the audit records its exact limits and evidence. Its
 [capability map](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#current-capability-to-evidence-map-2026-10-10)
 now accounts for all 23 bits: the lifecycle selects 19, but exercises only its
-declared empty-scene subset. The next bounded join is occupied settlement and
-checkpoint recovery, followed by terminal/operation and presentation/input
-joins. A reviewed measurement method remains required. The old
+declared empty-scene subset. A separate
+[occupied settlement/recovery slice](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#occupied-settlement-and-recovery-implementation-2026-10-10)
+now passes with supplied surface facts and layout completion, without pixel or
+physical-input claims. Terminal/operation and presentation/input joins remain,
+as does a reviewed measurement method. The old
 80-run campaign remains refused, the numeric budgets remain unchanged, and
 occupied-output acceptance is reused only for its demonstrated scope.
 
