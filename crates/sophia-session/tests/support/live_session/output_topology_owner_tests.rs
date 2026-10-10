@@ -65,6 +65,7 @@ fn lock_coverage_does_not_name_the_previous_topology_during_a_rebind() {
             .update(
                 Some(epoch),
                 owner.settled_coverage_epoch(Some(1), true, false),
+                Some(7),
                 Some((epoch, 2, 2)),
             )
             .is_none()
@@ -87,6 +88,7 @@ fn lock_coverage_does_not_name_the_previous_topology_during_a_rebind() {
         .update(
             Some(epoch),
             owner.settled_coverage_epoch(Some(2), false, false),
+            Some(7),
             Some((epoch, 2, 2)),
         )
         .unwrap();

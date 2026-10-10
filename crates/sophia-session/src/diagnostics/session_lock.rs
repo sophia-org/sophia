@@ -75,7 +75,7 @@ fn field_allowed(key: &str, value: &str) -> bool {
             "no_authenticator" | "no_native_presentation" | "lock_input" | "EpochExhausted"
         ),
         "verdict" => matches!(value, "Accepted" | "Rejected" | "Unavailable"),
-        "epoch" | "input_epoch" | "topology_epoch" | "outputs" | "heads" | "attempt"
+        "epoch" | "input_epoch" | "topology_epoch" | "owner" | "outputs" | "heads" | "attempt"
         | "revoked_leases" | "device" => integer(value),
         _ => false,
     }
