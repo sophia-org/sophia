@@ -249,8 +249,8 @@ The daily niltempus profile assigns all six workspaces to policy key 1, so a
 single-display recovery cannot establish migration to a surviving display.
 Prepare a temporary qualification profile with two explicit connectors on the
 admitted AMD GPU, keys 1 and 2, and workspace sets 1–3 and 4–6. Preserve the GPU
-exclusion, disabled HDMI-A-2, component pins and accepted rollback. The second
-monitor's availability and exact connector remain prerequisites; no connector
+exclusion, disabled HDMI-A-2, component pins and accepted rollback. Identify the
+second monitor's actual connector before preparing the profile; no connector
 is guessed and no excluded GPU is enabled. Adding a policy identity requires a
 separately prepared profile/session, not an identity-changing live reload.
 
@@ -276,6 +276,32 @@ The read-only boundary and source inventory are frozen as
 No new hardware run or installation is claimed. QEMU/private Mesa work and
 repetition of accepted KVM survival are not prerequisites for this policy check;
 t297's broader lock matrix remains separate.
+
+#### Two-output profile prepared
+
+niltempus connected the second monitor. Read-only sysfs and udev records show
+DP-1 (2560×1440) and HDMI-A-1 (1920×1080) on admitted GPU
+`pci-0000:03:00.0`; HDMI-A-1 remains disabled under the current one-output
+profile. Signed niltempus candidate `7fec163d047f4556635c0e27f5fc9cb62e39f65d`
+changes only the desktop profile: DP-1 keeps key 1 and workspaces 1–3, and
+HDMI-A-1 gains key 2 and workspaces 4–6, at scale 1 to the right. Both selectors
+name the admitted GPU. The other GPU exclusion and HDMI-A-2 disablement stay.
+
+The temporary release `niltempus-642f4b984163c5317d49` built successfully offline
+and passed Sophia/Hagia profile preflight. All ten packaged executable files
+are byte-identical to the installed release; every component pin, including
+Sophia `96cb6d6d8`, and the Mesa/libdrm closure remain unchanged. The accepted
+runtime's gate remains the code evidence; this is a configuration-only build,
+not hardware or workspace acceptance. The newer passive diagnostics are not
+included. The branch is local and the daily profile is not promoted.
+
+Frozen `t310-two-output-release-01` has manifest
+`035b58ab815169401ba4675e36bc2cddea3cecfe8f94a631107633f3bce5b180`.
+Its `READY.txt` names the store artifact, first-login checks, workspace loss/return
+sequence and explicit rollback to accepted `niltempus-01fa4c74950b5a998db9`.
+The release is prepared, not installed; the new output and workspace identities
+require a fresh login. First verify both outputs, then remove only HDMI and
+check that its workspace set remains reachable on DP before testing restoration.
 
 ## Connections
 
