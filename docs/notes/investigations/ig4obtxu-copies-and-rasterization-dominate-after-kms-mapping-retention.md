@@ -304,6 +304,26 @@ without negotiation or revocation, then requires deadline revocation. It does
 not alter production timing or lock behavior. The combined successor gate is
 recorded separately as `t310-output-loss-scene-02`.
 
+The successor on signed `adfecd4e1` passed the full isolated gate: 539 reported
+Rust summaries, 7,530 passed, zero failed, 101 ignored, and all remaining
+SDK/lint/layout/tooling checks. Its manifest is
+`f888aac634d6dd4f0651a77ead1ef60576fa0facfd08323427a05d83d04d3970`,
+CLOSURE `3eeaed663093ad06b0025b24d85ea220ec49b2b2c921c85891c796f444f55db7`.
+Both repair commits are merged and pushed to Sophia master; the temporary
+Sophia branch and worktree were removed after inspecting ignored files.
+
+Matched `niltempus-9d9413c9aeb19a0bdace`, signed integration `80bf27e1d`, is built
+and verified, not installed. The qualification lock changes only Sophia. The
+new executable is `4c19b3aebafae37549ffca0bc321958064a81630eaa9b5ed0106163340dd44d5`;
+the other nine executables and graphics closure are unchanged. The profile
+diff is exactly four release-path substitutions. Frozen
+`t310-output-loss-scene-release-01` has manifest
+`20210e42f18ab02c3e4bcb78f775fa81c517f5514aecef26feed0a2a584b5aa2`,
+CLOSURE `d1f010ef6bfb954cb68d5c44260798f6923ff6969a6728370a6f3a862c63c9a6`.
+Its READY names installation and explicit accepted one-output recovery to
+`01fa4`; ordinary rollback after installation would return to failed `9244`.
+The new physical loss/return check remains pending.
+
 #### Admitted discovery and startup boundary (2026-10-09)
 
 Signed `5fabe9f61` introduces stable GPU admission and a revalidated fresh

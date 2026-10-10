@@ -376,6 +376,18 @@ gate the narrow repair and build the same two-output profile with only Sophia
 updated. Physical migration and restoration remain unaccepted; no new cable
 test is needed on the failed release.
 
+The repair and the separate lock-test timing correction are now on signed
+Sophia `adfecd4e1`, merged and pushed. Successor gate
+`t310-output-loss-scene-02` passed (7,530 reported Rust passes, zero failures,
+101 ignored, plus SDK/lint/layout/tooling). Matched
+`niltempus-9d9413c9aeb19a0bdace`, integration `80bf27e1d`, is built and verified,
+not installed; `t310-output-loss-scene-release-01/READY.txt` gives the exact
+install and accepted one-output recovery commands. Its manifest is
+`20210e42f18ab02c3e4bcb78f775fa81c517f5514aecef26feed0a2a584b5aa2`.
+Start a fresh session with both displays connected, verify ordinary input,
+then resume the attended HDMI-loss and workspace migration check. t310 stays
+open until that physical sequence succeeds.
+
 ## Connections
 
 - [Proposed admitted-discovery boundary](../decisions/nrdadhet-resolve-admitted-output-preferences-before-constructing-native-owners.md)
