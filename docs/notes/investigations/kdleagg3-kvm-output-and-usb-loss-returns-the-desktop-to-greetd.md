@@ -771,6 +771,10 @@ path therefore also needs an operator observation of retained client content.
 After the CPU regression and repository gate, qualify zero outputs → requested
 VT away/back → output return on a matched release, with retained client content.
 That attended check is separate from release 222's accepted cable/KVM sequence.
+The matched candidate `niltempus-01fa4c74950b5a998db9` is built, verified and
+uninstalled; its [publication-repair record](ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#same-topology-publication-repair-2026-10-09)
+binds the source, release and frozen `t322-t310-release-01/READY.txt` handoff.
+Ordinary rollback after installing that candidate returns to accepted 222.
 
 ### Original incident exits
 

@@ -660,6 +660,26 @@ Device pixels and physical VT recovery are not established by this gate.
 The later renderer-handoff reducer `969658fba` and owner-aware lock coverage
 `0b1d7ab60` were reviewed separately and are outside this integration.
 
+The matched desktop is built and verified, not installed:
+`niltempus-01fa4c74950b5a998db9`, signed niltempus integration
+`481fdc0abe4dca57d12e1730860ea957b3761f30`, Sophia `96cb6d6d8`.
+Store path:
+`/nix/store/bnir9wxayhybkkns1sddy9l2183hcfr6-niltempus-desktop-niltempus-01fa4c74950b5a998db9`.
+Only Sophia changes among the release binaries. The profile differs from
+accepted release 222 only in four release-path substitutions; the Mesa/libdrm
+store paths and other flake inputs are unchanged. The build's profile preflight
+and release checksum verification pass.
+
+Frozen evidence is `t322-t310-release-01`, manifest
+`807492cb17da556d3818c4d5f0066548a03fee61f8ea927de6e2f28c0c462bdd`.
+Its `READY.txt` provides install, status and rollback commands and the remaining
+attended checks. After installation, ordinary rollback returns to accepted
+release 222. The candidate's GC root and local niltempus release branch are
+retained; niltempus master and the installed session are unchanged. Sophia's
+integrated source is merged and pushed, and the merged publication worktree
+and branch have been removed. Physical VT recovery and the remaining t310
+policy checks remain separate from this build result.
+
 #### Matched desktop artifact prepared (2026-10-09)
 
 Signed niltempus candidate `6d50e38cc5014d248d8110e8c82f928b349cecd0` pairs the
