@@ -26,6 +26,8 @@ The [CPU admission successor](#cpu-backed-new-window-admission-2026-10-10)
 continues through Managed, production CPU intake and headless pixel checks.
 The [mirrored receipt successor](#mirrored-receipt-consensus-2026-10-10)
 joins backend-derived Presented and Withdrawn receipts to real Hagia policy.
+The [source-only repaint successor](#source-only-preview-repaint-2026-10-10)
+uses retired instance snapshots to inspect the preview's captured source generation.
 The coverage baseline remains revisable without reducing the acceptance scope.
 The old worktrees have been removed. The original
 reboot checkpoint follows for provenance.
@@ -1131,6 +1133,8 @@ contexts remain distinct requirements.
 The [mirrored receipt successor](#mirrored-receipt-consensus-2026-10-10)
 adds retired-frame stamp and receipt consensus for one output with two mirror
 heads. It does not cover multiple logical outputs or the native service tail.
+The [source-only repaint successor](#source-only-preview-repaint-2026-10-10)
+separates preview source capture from the still-open production scheduling join.
 
 This is a revisable coverage baseline, not a frozen feature list or a reduced
 exit. Every defined capability and explicit acceptance requirement stays in
@@ -1559,6 +1563,143 @@ the resolver's unique source-generation assignment to 1. Explicit fixture
 recomposition would still leave production source-only repaint scheduling as a
 separate native-service join, and the mirrored target supplies no preview pixel
 readback. The frozen historical overlay remains unchanged and was not rerun.
+
+## Source-only preview repaint (2026-10-10)
+
+The generic test-support readback in signed Sophia
+`8ce7c40effce25251856d52d3fb234532ca9e921` exposes each mirror head's retired
+`CompositorSurfaceInstance` values through the existing
+`SessionPolicyPresentationFixture`. It copies the frame's stored instances;
+it does not recompute them from the latest source or requested publication.
+An unretired head contributes an empty list. The only crate/Cargo difference
+from the previous pin `f77244abe` is eighteen lines in this test-support file.
+Production source and all five independently rehashed GLUE spans are unchanged.
+
+The external `sdk_presented_source_repaint_preserves_identity` case begins with
+real Hagia's held switcher and backend-derived Presented on both mirror heads.
+Each retired preview initially names source generation 1. One previewed surface
+then receives a supplied second CPU backing frame through authority observation,
+`projected_batch`, `production_authority_batch` and the ordinary CPU cycle.
+The fixture explicitly requests retained recomposition and simulates both head
+completions. Session must retain the original receipt identity and publication
+stamp, emit no new receipt, and admit no WM cycle. Each retired preview tuple
+must keep its instance identity and source, changing only the repainted source's
+captured generation to 2 on both heads. Separate diagnostics inspect the retired
+application layer and the CPU scene's retained bytes.
+
+Signed Hagia `e539e69d9eac19542edf2ff431e934b0b1bdf52b` owns the external
+case; signed niltempus `cb9ddebc9a2abb0d5a73271961bfd99da9ee1614` binds all
+eighteen cases and thirteen modules to the new Sophia pin. The development run
+`t249-repaint-dev01` passes eighteen individually invoked cases, manifest
+`ff4a6e665753ac5a091da27d10d97c6cbca3aef070aa334623e98d0bcc313e23`.
+The repaint case takes 0.22 seconds; this is a test duration, not latency evidence.
+The source-layout audit, formatting, whitespace, Hagia data-layout gate, strict
+runner Clippy and thirteen serial runner tests (one internal holder ignored)
+also pass. The full Nim/formal and product gates are not repeated for this
+test-support and external-fixture change.
+
+The first clean signed-candidate run `t249-repaint-01` also passes eighteen
+cases, manifest
+`802ecd579de83022fa1e933b32debab0c69e24fa2937ae49fb052a08bb0501cb`.
+`t249-repaint-checks-01` passes strict overlay Clippy, including tests, manifest
+`501db71c4b3243e660de4c9dd4fc8d9a680185fe28bd080313d01e777b078a13`.
+These records precede the following health-check tightening.
+
+The peer's `remote=116` log line also occurs during older qualified fixtures'
+shutdown, including startup-only cases. `Lifecycle::stop` drops the transport
+worker before terminating the child, and `NinePStop` explicitly revokes and flushes
+reads with ESTALE. The repaint case previously had no health poll between its
+Presented drain and shutdown. Hagia follow-up `1a2902e` adds a case-local poll
+without admitting work, then checks healthy transport, unchanged epoch and
+request count, empty queued/in-flight work and a supervisor poll with no exit.
+It runs after the preview and byte assertions and before the final record and
+teardown. This observes health at that boundary; it is not a policy round trip
+or a guarantee against a later exit. The shared shutdown helper is unchanged.
+
+Final signed Hagia `1a2902e1739f4abf31933429a5900dceb8bba60b` passes all
+eighteen cases in `t249-repaint-02`, including the pre-teardown health check.
+Its independently verified manifest is
+`c2d8a0ab683dc73dadce802c170608e7c053c2b53a06e92da13df57c0df736cf`.
+The repaint case again takes 0.22 seconds. The final control uses this run's
+exact argv and thirteen fixture copies, rather than the earlier candidate's.
+
+The original control prediction was wrong. In `t249-repaint-control-01`,
+clamping the resolver's captured source generation to 1 compiles, but the
+production composition-plan guard refuses `StaleInstanceSource` at the second
+`target.queue` (`presentation_repaint.rs:211`) before a repaint frame can queue.
+The experiment expected the later readback assertion, so its result remains
+STOP, preserved unedited with manifest
+`2fb40801b26a00a3d5469ae34842af84281dbef2aa14b8f4df2617e3d330c9b3`.
+Restoration was independently verified. The corrected one-site control requires
+that exact production error, exact queue site, exit 101 and one failed test.
+It establishes fail-closed rejection of stale source capture on this target path;
+it does not independently test the retired-instance assertion.
+
+`t249-repaint-control-02` passes that corrected expectation, one failure in
+0.18 seconds, manifest
+`042d62490622609f9883e2f499011fb272f3ad5372caeb5cb829aa981d945b09`.
+The independently reviewed compound `t249-repaint-control-03` additionally
+clamps the comparison's committed generation in `composition_plan.rs`, bypassing
+that guard for the deliberately stale resolver output. The first failure is now
+“retired previews must sample the repainted source”: both heads retain generation
+1 for the changed source instead of 2, after the no-cycle and presentation-identity
+checks pass. One failure, exit 101, 0.18 seconds; manifest
+`5670263593b9b93a7751adc4c7e195d9722a8fd9a714c19a126b17cb66061b23`.
+This is explicitly a two-site oracle control, not a claim that a single resolver
+regression can bypass the production guard. The CPU-scene damage validator is a
+separate defense and is not qualified by this target-retirement control.
+
+Both controls bind the final ordinary binary and all thirteen fixture modules,
+hold the build-root and cargo-slot leases, and restore their archived production
+files. The compound script checks both original files against the pin before
+mutation and restores both on failure as well as success. After the controls,
+all 1,616 archived crate production-source files independently match pinned Git
+blobs. The runner documentation follow-up `38e2ae3` distinguishes the one-site
+refusal from the compound readback control; its runner executable is unchanged.
+
+`t249-repaint-checks-02` passes strict Session overlay Clippy, including tests,
+on the final fixture and restored sources; manifest
+`be323782bdbad75077c14a2431626a0226aa473591ed03c3619bc0844a2d0b96`.
+All eight run/check/control manifests independently verify, including the
+preserved STOP record, and each package's thirteen fixture modules match its
+own signed candidate. Independent review finds no blockers in the readback,
+runner, fixture, health check or either control boundary. Hagia `1a2902e` and
+niltempus `38e2ae3` are merged and pushed.
+
+After all jobs finish, leased `t249-repaint-cleanup-01` removes the build root;
+its independently verified manifest is
+`0b8bc8b23753164a1befdc3708e9355ca3c7d576166a489b649eac12bd20304c`.
+The nine records remain under `~/.local/state/sophia/development-evidence/`;
+no compiled artifact is copied there. Fixed cargo slots and the stable sibling
+lease remain. Finished worktrees and scratch executables are removed after
+inspection. No installed desktop component is rebuilt, installed or reloaded.
+
+This remains one output with two mirror heads and supplied CPU sources/device
+completion. The inherited scene bypasses admission: these supplied surfaces are
+not a proof of managed frontend admission. The target does not rasterize preview
+pixels. Recomposition is fixture-requested, so the native service's decision to
+schedule source-only repaint remains a t249 production-owner gap. Neither that
+gap nor Session's concrete native-selection tail is deferred to physical-only
+acceptance. No performance, physical display or complete t249/h006 claim follows.
+
+### Next admission boundary identified
+
+A read-only audit finds that a software-Present admission case need not supply
+the typed retired record. The existing CPU cycle's without-native branch calls
+`settle_unframed_software_presents_without_native`, which generates a correlated
+`LiveProductionRetiredSoftwarePresent` from the committed submission. Its frame,
+native-submission and timing fields are zero; this is headless copy settlement,
+not native target retirement. The public runtime drain can provide that record
+to Session's `record_native_software_present_retirement`, whose admission
+completion should let a following source frame escape quarantine. This is a
+source-backed design, not a result. A case must distinguish record correlation
+from Session's admission transition and label its supplied frontend answers.
+
+The production Session loop currently obtains those records through its native
+service report; a fixture-driven drain/record call would not qualify that service
+selection. The audit found no exported target fixture for native software-Present
+submission/retirement. Whether a live no-native Session can accumulate undrained
+headless records requires a reachability assessment before calling it a defect.
 
 ## Connections
 
