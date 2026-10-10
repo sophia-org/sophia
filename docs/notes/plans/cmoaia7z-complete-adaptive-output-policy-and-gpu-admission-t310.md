@@ -388,6 +388,33 @@ Start a fresh session with both displays connected, verify ordinary input,
 then resume the attended HDMI-loss and workspace migration check. t310 stays
 open until that physical sequence succeeds.
 
+The installed `9d9413` then passed ordinary two-output use and occupied-HDMI
+loss: niltempus reached workspace 4 on DP and typed in the migrated window.
+HDMI return failed with missing workspace labels and held input. Native heads
+readied, but Hagia restarted repeatedly before replacement publication. The
+approved stop returned Crunch to greetd; niltempus can continue from the X13.
+The [return diagnosis](../investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#occupied-hdmi-loss-passes-return-restarts-policy-2026-10-10)
+records the distinction between the real checkpoint, supplied return snapshot
+and unavailable original client error.
+
+Hagia h018 repairs stale fallback focus history when windows return to their
+preferred output. Signed `ed2f30060` passes both failing-without-fix regressions,
+the retained-checkpoint cases and its full device-hidden gate. Keep Sophia
+`adfecd4e1`, the two-output profile and all other integration inputs fixed when
+building the successor. First confirm normal labels and input; then repeat
+occupied-HDMI loss, use the migrated workspace on DP, switch back to workspace
+1, and reconnect HDMI. Acceptance requires the same window and workspace
+affinity on HDMI with keyboard and pointer usable and no policy restart loop.
+Keep the two-output profile off daily master until that return succeeds.
+
+The matched successor `niltempus-66f68ee2cef161b3829d`, signed integration
+`a8067a043`, is ready and not installed. Frozen
+`t310-hagia-output-return-release-01/READY.txt` gives the exact install and
+accepted one-output recovery commands. Only Hagia changes among the ten
+executables; profile geometry, keys, graphics libraries and Sophia remain fixed.
+The release manifest is
+`54ce8a704ba10a47ed6b03e52bd2ec4258bb4869a64350c644fd37c199c3e80b`.
+
 ## Connections
 
 - [Proposed admitted-discovery boundary](../decisions/nrdadhet-resolve-admitted-output-preferences-before-constructing-native-owners.md)

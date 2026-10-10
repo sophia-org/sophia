@@ -324,6 +324,87 @@ Its READY names installation and explicit accepted one-output recovery to
 `01fa4`; ordinary rollback after installation would return to failed `9244`.
 The new physical loss/return check remains pending.
 
+#### Occupied HDMI loss passes; return restarts policy (2026-10-10)
+
+Release `niltempus-9d9413c9aeb19a0bdace` was installed. Session
+`00000001791630270246-acde5c19-88e2-4770-9b74-cc0834a908de` began with DP only,
+then admitted HDMI. niltempus confirmed both displays, a new workspace-4 window
+and navigation between workspaces 1 and 4. Removing occupied HDMI then passed:
+the window remained reachable on DP and accepted typing. The replacement
+realization committed with one output, and both workspace actions committed.
+This accepts the loss leg of that attended run.
+
+Reconnecting HDMI failed the return leg. Native owner 4 resolved and readied
+two heads, but its realization never committed. The bar lost workspace labels
+and keyboard and pointer input remained held. Hagia repeatedly restarted after
+configuration and snapshot delivery. No owner-loop fatal or session failure
+was recorded before the approved stop. Client stderr went to `/dev/null`, and
+the durable reducer omitted the original client error. Capture reported
+discarded records and storage errors; available disk space was ample, so these
+records do not establish a full disk.
+
+niltempus approved ending that frozen session. The identity-checked runtime
+received SIGTERM; lifecycle records show exit 143 and display-manager handoff,
+and its process was gone. niltempus has a usable desktop on the X13 through
+Herdr, so Crunch can remain at greetd during offline repair. Nothing was
+installed or probed through a live DRM or input interface.
+
+The retained Hagia checkpoint has SHA-256
+`4d206fe82b1188e2aeec57ceae8e60f9ce903b3a328ed313b270f416c0bbd9b3`.
+Offline reconciliation with a supplied returning topology reproduces
+`PolicyStateError: policy focus history is invalid` for a hidden migrated
+window. This uses the real checkpoint, but not captured wire or the missing
+original error text. Hagia `restoreOutput` moves the window back to its preferred
+output without removing its entry from the fallback output's focus history.
+Model validation correctly rejects that cross-output reference. Restarting
+from the checkpoint repeats the same failed transition.
+
+The repair belongs to Hagia h018, note `dl6j2ygg`. Signed candidate
+`ed2f30060a09c5796f80f779ff8f8ebf2033c516` removes returning windows from other
+outputs' focus histories and clears only a current focus that moved with them.
+It preserves the history order and focus of windows that stay. The generic
+model and checkpoint-reconciliation regressions both fail on the old code and
+pass on the repair. Eight supplied return cases using the real checkpoint
+improve from four failures to eight passes. The original raw failure remains
+unknown; this establishes a matching policy defect, not GPU or Mesa causality.
+
+Hagia's full device-hidden `nimble verify` gate passed: 527 reported Nim OK
+lines, zero failed lines, eight Alloy checks, one Z3 result set and four TLC
+configurations, plus formatting, layout and SDK checks. Sophia is unchanged at
+already-gated `adfecd4e1`. The matched release changes only the Hagia pin on the
+existing two-output qualification branch. Physical restoration is still open.
+
+Matched `niltempus-66f68ee2cef161b3829d`, integration `a8067a043`, is built and
+verified, not installed. Only Hagia differs among the ten packaged executables;
+its SHA-256 is `99c2fdd66676de4af2e4aeda4f156e3463a90f6af24828aa1842a903670c6ad2`.
+Profile changes are exactly four release paths, and the six Mesa/libdrm paths
+are unchanged. Frozen `t310-hagia-output-return-release-01` has manifest
+`54ce8a704ba10a47ed6b03e52bd2ec4258bb4869a64350c644fd37c199c3e80b`
+and CLOSURE `d06ed8faea4e41d2b3a530bb0890ee0d499fc28873db3310172ddb47665bf40c`.
+Its READY names installation, the loss/use/switch/return sequence and explicit
+accepted one-output recovery. The failed `9d9413` remains installed until
+niltempus chooses to install the successor; plain rollback afterward would
+return to that failed candidate.
+
+Evidence under `~/.local/state/sophia/development-evidence/`:
+
+- `t310-two-output-attended-04/occupied-hdmi-loss-01` preserves the passing
+  loss; `hdmi-return-frozen-input-02` preserves the failed return across log
+  rotation (manifest `19094e2367504f3d2dbde70572dda6408f217016fb0913706b479da2fec59348`).
+- `t310-two-output-attended-04/approved-session-stop-01` records the authorized
+  stop (manifest `cde7181f65d697ae018cd755f1e6da04a6fdb9674da3f909c9ae3a9a90c8f404`).
+- `t310-hdmi-return-diagnosis-01` preserves the checkpoint, supplied cases,
+  final red/green tests and earlier invalid or incomplete fixtures. Its
+  CLOSURE is `4f7e8545ea6c13dd30fc5293f62a424bac0798e121d67b071e32ba43fd870b69`.
+- `t310-hagia-output-return-gate-01` binds the exact signed Hagia candidate;
+  its CLOSURE is `e976fc2111afc765af83095ca5fe9b76b6e64a5e5be81196d4bff9f9806bd61c`.
+
+Separate supervision follow-up: successful negotiation marks a WM process
+healthy and resets its restart budget before a successful policy cycle. A client
+that negotiates then fails repeatedly can therefore loop indefinitely. This
+repair changes neither that budget nor durable classification of WM failures.
+
+
 #### Admitted discovery and startup boundary (2026-10-09)
 
 Signed `5fabe9f61` introduces stable GPU admission and a revalidated fresh
