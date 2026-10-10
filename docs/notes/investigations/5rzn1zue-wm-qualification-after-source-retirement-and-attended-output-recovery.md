@@ -135,6 +135,49 @@ unique across open and completed ledgers, and whitespace checks pass. zk's
 repository-wide broken-link report is unchanged from the 25-note baseline;
 none of this slice's notes adds a broken link. No task was closed by the audit.
 
+## Current lifecycle implementation (2026-10-10)
+
+The next bounded slice above is implemented outside Sophia. Hagia
+`870bfc68b3d2d8c1239f9f853f63ddb6557bd04a` owns `tests/external/lifecycle.rs`;
+niltempus `dbda3009b389ab4bd9aec6dce81fd4d5b10ce1c9` owns the Rust runner
+`tools/wm_lifecycle.rs`. Sophia production and repository test sources are
+unchanged. The runner archives Sophia `0f2ad2386baa063ab92d9567a145148f5232bccb`
+and explicitly mounts that external test module under the launch/reload owner.
+It is a disclosed test-source overlay, not a new public Session API.
+
+The final three cases each ran exactly once and passed: protected ordinary
+startup with profile/catalog/capabilities, accepted profile replacement followed
+by real Hagia rejection and Session rollback, and automatic recovery after
+terminating only the fixture child followed by requested restart. All successors
+answer their queued scene and send a real post-checkpoint Dirty continuation.
+Requested restart invokes its production owner directly, not the control socket.
+The ordinary binary uses SDK `b2a254dcb792e5f9d66f78bdd73f645153504507`; its
+SHA256 is `20581c96e823240460fa09e863f779de53a4851080cefabaa4e46b22172ff5f4`.
+
+`t249-sdk-lifecycle-01/RESULT` is `PASS lifecycle=3 native=false`. Its verified
+self-excluding manifest SHA256 is
+`b5ac4542073194c5ba27200a292862eb77489624236549f2b40add43c9df23c6`.
+`t249-sdk-lifecycle-controls-02` hashes its final test, fixture and mutant inputs
+before/after and fails exactly the restart case when Hagia's checkpoint load is
+disabled: the fresh projection deadline expires without the client's restored
+Dirty. Its manifest is
+`6bbfd791ec39a0f752b2bc63682bd3cd29b4f92df296378838294bdab9557aa5`;
+controls-01 preserves the mutation/build. `t249-sdk-lifecycle-checks-01` records
+overlay Session clippy with warnings denied and the runner's refusal/closure
+controls. Development run 01 stopped on zero tests because the feature was
+omitted; it remains a failed invocation, not qualification. Runs 02/03 remain
+labelled development runs.
+
+This is an **empty headless scene**. It does not qualify occupied model/focus
+restoration, renderer pixels, native receipts or physical input. Protection is
+supervisor evidence, not independent namespace inventory or 9P Tauth. The full
+product/formal gates were not repeated for this external tests-only change.
+No release was built or installed. The historical pairing runner and refused
+measurement campaign remain unchanged. t249/h006 stay open; next is the
+current capability-to-evidence map and its missing owner joins, followed by the
+prospectively reviewed measurement method. The observer admission/recipe design
+can continue within its previously admitted parallel scope.
+
 ## Connections
 
 - [t249 plan](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249) owns the unchanged acceptance requirements.

@@ -15,9 +15,10 @@ the accepted retirement amendment governs current product selection and
 whole-release rollback. Output has also migrated. Neither change closes t249.
 
 The historical two-wire Hagia runner is frozen at its pinned source and must
-not be run against current master or silently rebased. The next development
-slice is current protected startup, profile rollback and WM restart pairing,
-with client policy and named-stack tooling outside Sophia. Follow it with an
+not be run against current master or silently rebased. The first current
+protected startup, profile rollback and WM restart slice now passes on an
+empty headless scene, with client policy and named-stack tooling outside Sophia;
+the audit records its exact limits and evidence. Follow it with an
 explicit capability-to-evidence map and a reviewed measurement method. The old
 80-run campaign remains refused, the numeric budgets remain unchanged, and
 occupied-output acceptance is reused only for its demonstrated scope.
