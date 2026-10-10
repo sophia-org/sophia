@@ -7,6 +7,88 @@ tags: [validation, protocol, policy]
 ---
 # WM qualification after source retirement and attended output recovery
 
+## Reboot handoff (2026-10-10)
+
+User requested a reboot checkpoint. Resume here before starting any job.
+Root directed Claude wB:p2 to stop and preserve unfinished work.
+Run `zk index --quiet` after reboot; root stopped its slow index pass to avoid
+delaying shutdown. The Markdown handoff itself is committed independently. The installed
+desktop is unchanged by this lane; do not install, reload or repeat physical
+monitor tests as part of resuming these external tests.
+
+Completed and pushed masters before this handoff: Sophia `5e8ecbc43`, Hagia
+`08611fc9`, niltempus `74506a45`, all signed and clean. The ten-case presented
+chord join and its two discriminating controls are integrated; its results and
+limits appear below. Finished worktrees from that slice were removed.
+
+Outstanding work is **B, runner resources, then A, revocation-to-model**:
+
+- niltempus worktree `/home/niltempus/dev/niltempus-t249-runner-slots`, branch
+  `test/t249-runner-slots`: signed baseline `ec3c4cfb3eab7104557a3e135ca38db71be59b37`
+  is not merged. It separates builds from evidence and uses cargo-slot, but
+  root review found two blockers: no independent build-root lease across run,
+  reuse and cleanup; and protected-root ancestor overlaps were not refused.
+  Signed WIP correction is `6fc1cf080283a722f349e1acbb80373344263249`, clean.
+  It adds an external nonblocking build-root lock, two-way protected-path
+  checks, and failure-record handling. Claude reports nine focused tests,
+  strict runner clippy and busy-root/ancestor probes passing; root has not
+  reviewed or independently qualified the correction. Documentation still
+  needs its lease/protection update. No product run or new evidence package
+  exists for this slice; scratch checks are reported development checks.
+- Hagia worktree `/home/niltempus/dev/hagia-t249-revocation`, branch
+  `test/t249-presented-revocation`, was clean at `08611fc9` on root's checkpoint
+  inspection. A has not run. Do not interpret its existence as test completion.
+- Sophia pin `/home/niltempus/dev/sophia-t249-rev-pin` is clean and detached at
+  `f77244abe`, the existing runner's code pin. Newer Sophia commits are notes;
+  do not move the pin casually or rebuild the installed desktop.
+
+Claude's durable restart record is
+`/home/niltempus/.claude/projects/-home-niltempus-dev-sophia/memory/project-t249-revocation-restart.md`.
+At handoff he reports no active jobs, no build root and no held cargo slot.
+The only probe lock is an unlocked job-tmp file; no resume dependency may rely
+on that temporary file or its test binary surviving reboot.
+
+First resume action: update B's docs, read Claude's restart record and inspect the runner
+correction against `ec3c4cfb`. Require a stable external build-root lock shared
+by runner, controls/checks and cleanup, busy refusal without mutation, protected
+root overlap checks in both directions, and closed failure reporting. A pool
+path is not lease proof; the cargo-slot wrapper holds that separate lock.
+Review focused controls before A execution. Nothing unreviewed goes to master.
+
+A's agreed boundary is one new `sdk_presented_revocation_closes_switcher`
+case in a child module, reusing the first Held/Presented prefix without a Right
+press or outstanding debt. Supply a completed frame without its stamp; observe
+Revoked with the original identity, then the **first exact SceneChanged answer**
+with no presentation and unchanged W1 focus. Only after that observation supply
+the Withdrawn frame. Ended must restore chord credit without changing focus.
+The omitted-Revoked archived-server control must fail a named semantic assertion
+on that answer, never merely a timeout, disconnect or later retry. Do not allow
+Withdrawn to mask the omitted Revoked. Disconnect/debt, cancel, AbortSettlement,
+native retirement/pixels and latency remain separate open work.
+
+A has one newly identified evidence limit: Session supplies no refusal-reason
+record for this staged-projection rejection. The fixture may observe explicit
+settlement without a proposal with transport healthy, but stale-generation
+causation remains a source inference unless independently exposed. Root must
+review how first_answer binds that settlement to the exact request before
+execution; do not add production observability merely to make the test pass.
+
+Resource rules: all Cargo via `cargo-slot sophia`, fixed pool only; no new
+per-task targets, copied target trees or built binaries in evidence. Keep build
+products in a marked scratch root outside evidence and retain it only until
+controls/checks finish. Preserve old frozen evidence unchanged. Use at most four
+jobs, nice 10 and no debug/incremental output. No whole-product gate is requested.
+After review/integration, remove merged worktrees with `git worktree remove`.
+
+Architectural direction is still
+[zsx0tk4k](../decisions/zsx0tk4k-serve-every-public-role-from-one-9p-core-with-namespaces-as-composed-trees-and-portals-as-binds.md)
+and [ernn0bkv](../concepts/ernn0bkv-plan-9-integration-points-for-sophia.md), with
+[jsschoen](../plans/jsschoen-converge-public-roles-on-one-9p-core.md) the delivery
+spine: t249 qualification plus admission/recipe design, then admitted composition,
+portal grants and the observer capture CLI. t307/QEMU remains off the critical
+path. Admission exchange and recipe review are in esnqxpqw/kcfh2hdg; no new
+admission implementation was authorized by the test work.
+
 ## Question
 
 What remains of t249/Hagia h006 after the WM became 9P-only and t310/h018
