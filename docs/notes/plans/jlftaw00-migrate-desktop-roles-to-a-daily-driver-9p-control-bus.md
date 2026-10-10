@@ -610,8 +610,11 @@ restoration on the exact candidate before t253 can close.
 
 ### t254 — Migrate administrative commands
 
-After the WM development exit t249, this lane can run independently of shell
-and output migration. Specify a separate
+After the [shared-core readiness gate t323](jsschoen-converge-public-roles-on-one-9p-core.md#t323),
+this lane can run independently of the remaining WM, shell and output
+qualification. The approved October 10 split replaces its full t249
+prerequisite without changing this lane's acceptance or retirement gates.
+Specify a separate
 authorized command export for existing discovery, registered actions and
 Session operations; retain existing validation and execution owners. Keep
 HostDomain control admission independent from inspection and protected roles.
@@ -635,7 +638,9 @@ does not change revision-1 output behavior or its native acceptance gate.
 
 The deferred proposal would allow the separate 9P administrative export to accept an output invocation with
 bounded arguments and return a bounded invocation identity and result. This
-does not remove t254's t249 dependency or its rollout gates.
+did not remove t254's then-current t249 dependency or its rollout gates. The
+later t323 sequencing decision above changes only that dependency; this
+invocation extension remains deferred.
 
 - The startup desktop profile declares the executable and explicitly enables
   administrative invocation. HostDomain admission remains separate from

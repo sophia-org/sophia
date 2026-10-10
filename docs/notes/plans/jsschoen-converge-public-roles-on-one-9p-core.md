@@ -52,17 +52,22 @@ filesystem, recording stream or new desktop UI is required for this milestone.
 | --- | --- | --- |
 | 1. Finish output publication | t310 | Same-topology owner replacement settles the realization; equal authority snapshots need no republication, changed capabilities advance the epoch and publish. Both paths have failing-without-fix CPU regressions. Reconcile the remaining workspace-affinity/policy exits in t310's plan; do not repeat accepted cable survival as a substitute. |
 | 2. Establish admission and reach | t133, t317, t142; recipe design t275 | One immutable principal/namespace per connection; no forged attach, cross-identity second attach or inherited-fid authority change. Two confined groups cannot reach the trusted socket or one another; explicit CLIPBOARD and PRIMARY transfers retain their t142 controls. Launch custody is proven separately from authentication. |
-| 3. Compose the observer and portal foundation | t318, t315; bounded status slice of t257 | Separate role endpoints and discovery, independent grants, a retained-fid revocation seam, and truthful available/waiting/recovering status. t315 retains its existing t249 prerequisite and preserves current X recipient execution. The foundation needs no future native-9P clipboard client. |
+| 3. Compose the observer and portal foundation | t318, t315; bounded status slice of t257 | Separate role endpoints and discovery, independent grants, a retained-fid revocation seam, and truthful available/waiting/recovering status. t315 requires the t323 readiness gate and preserves current X recipient execution. The foundation needs no future native-9P clipboard client. |
 | 4. Add one output capture | t319 | Renderer-owned immutable snapshot, bounded bytes/deadline, declared crop and cursor semantics, and a generic CLI. Known CPU and accelerated pixels match; lock, revoke, disconnect, output loss/replacement and slow readers fail closed without leaking or retargeting a frame. |
 | 5. Qualify the observer on the desktop | t319 acceptance, then t045 only within its own scope | Full isolated repository gate on the signed candidate, capture-on/off resource and latency measurements, then a matched release and attended capture/revocation check. Record the exact source, profile and artifact. Only the observer is enabled for this milestone. |
 
 The dependency spine is admission review → authenticated attach and group
 proof → recipe/composition and portal foundation → capture → qualification.
-Recipe design and isolated snapshot tests can proceed while prerequisites are
-being proved; neither authorizes exposing capture before admission is ready.
-The existing WM/shell acceptance and performance tasks retain their queue
-positions and exits. t249 is an existing portal-export prerequisite, not a
-reason to restart the entire role migration or postpone all design work.
+Under the October 10 sequence, t323 is the default first task, followed by
+t133/t275 design and t142 implementation before t317/t318. These rows are
+sequenced after the readiness gate; the earlier permission for parallel design
+does not move their implementation ahead of it. Read-only prerequisite audits
+may inform t323. None authorizes exposing capture before admission is ready.
+The existing WM/shell acceptance and performance exits remain unchanged. The
+[October 10 sequencing decision](../milestones/dueqd6r0-separate-shared-core-readiness-from-full-wm-qualification.md)
+replaces the full t249 prerequisite for administration, broker and portal
+migration with t323. It schedules the role-facing foundation before the rest
+of t249; it does not waive either role acceptance or retirement measurements.
 
 The output-publication repair has failing-without-fix controls and a full gate.
 The separately promoted t322 VT custody repair has also passed its attended
@@ -75,10 +80,10 @@ On October 10 niltempus authorized the
 [t249 evidence audit](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md)
 alongside the [t133 admission boundary](esnqxpqw-pidfd-and-namespace-admission-optimizations.md)
 and [t275 recipe boundary](../investigations/kcfh2hdg-adopting-the-plan-9-namespace-model-in-sophia.md#proposed-recipe-boundary-2026-10-10).
-The drafts use the immutable-connection rule; they do not promote t317/t318/t319
-implementation or bypass t315's t249 prerequisite. The immediate code follow-up
-is current WM lifecycle qualification, with authentication mechanism review and
-recipe controls as the parallel design work. t257 can supply a
+Those drafts used the immutable-connection rule and did not themselves promote
+t317/t318/t319 implementation or bypass the then-current t249 prerequisite.
+The later approved sequence below promotes t317/t318 behind their explicit
+gates and replaces that broad prerequisite with t323. t257 can supply a
 narrow output-availability/status slice without waiting for text status in
 every role; t319 requires that slice, not completion of the whole t257 row.
 
@@ -96,6 +101,63 @@ accepted release 222 and its evidence remain the baseline. Future live checks
 test the changed feature; frozen failed runs are never relabeled.
 
 ## Task details
+
+## t323
+
+Qualify the bounded shared-core readiness gate before migrating more roles.
+This is a subset of t249's obligations, not its completion. niltempus approved
+the split and its implementation on 2026-10-10. Root owns the cross-repository
+evidence integration; task state and execution order remain in `todo.md`.
+
+First map each obligation to its production owner, existing test, retained
+candidate/run and remaining join. Source inspection alone is not a passing run.
+Reuse compatible evidence after an impact review; rerun affected tests when
+code or fixture bytes change. Generic wire/export tests belong in Sophia,
+Hagia policy joins in Hagia, and their runner in external integration tooling.
+The eighteen-case `t249-repaint-02` run is the regression baseline, not proof of
+the missing credit and identity joins.
+
+The gate has these measurable exits:
+
+| Obligation | Required proof |
+| --- | --- |
+| Request lifetime | Partial submission has no effect; accepted replay cannot repeat an effect; cancellation preserves already committed work. Exercise both reply/flush orderings and bounded blocked-read cleanup through the shared core and the WM export where its semantics differ. |
+| Record and snapshot custody | Malformed or truncated records never reach semantic delivery. Opened snapshots retain generation-pinned bytes and immutable metadata. Credit refusal spends no snapshot identity or partial event; one driver phase owner issues receive permits. Map the existing codec, atomic-cycle, snapshot and driver controls before adding tests. |
+| Capacity and progress | Requests, reply bytes, staging, journal/results and acknowledgements remain bounded. A peer withholding reads or ACKs cannot make Session's local revocation or swallowed-release handling wait for credit; overflow or deadline failure is bounded and fails closed. Require a production Session join with the credit genuinely exhausted, not only a supplied receipt or a source assertion. |
+| Reconnect and identity | New epochs reject retained old handles, transactions and presentation actions. Reuse a surface's numeric index with a new generation and prove old input/action identity cannot target the replacement. Correlate the first answer or refusal; a timeout or later disconnect cannot stand in for it. |
+| Regression and evidence | Run affected core/export checks and all eighteen baseline Hagia cases on the final paired candidate. New behavioral assertions require discriminating controls with recorded first failures. Preserve signed pins, manifests, bounded jobs, source restoration and teardown health; no physical or performance claim follows. |
+
+9P flush, fid clunk, policy cancellation and grant revocation retain their
+separate contracts. A wire reply is not semantic settlement. Test protocol
+invariants once at the shared owner, then test each role-specific connection;
+do not multiply equivalent wire tests across every WM capability. A simulated
+device completion may replace an external fact, but must not replace the
+production owner whose behavior is being qualified.
+
+On completion, t323 releases t254/t314/t315 from the broad t249 dependency.
+It also permits t317 after t133. The approved foundation sequence is t133
+admission review, t275 recipe design, t142 confined-group proof, t317 attach
+identity, then t318 namespace composition. t317/t318 are promoted with those
+dependencies; existing custody checks stay until replacement controls pass.
+t319 remains gated by t315/t318 and its capture acceptance; neither input
+driving nor a native 9P application frontend is admitted by this split.
+
+Return to t249 after t318's exit, including its t317 and t142 prerequisites,
+is validated on a signed candidate and the affected Hagia regression passes.
+Do not wait for t255: it depends on t250, which still depends on full t249.
+Complete remaining WM joins in groups: backend admission/presentation and
+launch; output lifecycle; input/capture/reload. The
+[coverage reconciliation](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#fourteen-case-coverage-reconciliation-2026-10-10)
+and its dated successors retain every requirement. Software-Present admission,
+the native service tail and automatic repaint scheduling remain t249 gaps.
+
+Before any latency campaign, review complete offered/admitted/replaced/settled
+accounting and a same-workload comparator. The t249 budgets, failed historical
+campaign and whole-release rollback remain unchanged. An unavailable valid
+comparator leaves qualification open; it is not permission to replace the
+relative gate with a transport microbenchmark. Final closure requires the
+full coverage matrix, inspection/export controls, signed isolated gates and
+reproducible measurements, followed separately by t250 physical acceptance.
 
 ## t314
 
@@ -178,7 +240,7 @@ for a second identity is refused without changing existing fids; a client
 the supervisor did not launch cannot acquire custody; lock-file admission no
 longer hard-requires `SO_PEERPIDFD`; the admission threat model in the
 [admission investigation](../investigations/1pv291te-namespace-and-client-admission-security-gaps.md)
-is reconciled with the result. Depends on t133.
+is reconciled with the result. Depends on t133 and t323.
 
 ## t318
 

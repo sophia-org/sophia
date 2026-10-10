@@ -14,6 +14,12 @@ The older opt-in/current-IPC language below describes the original milestone;
 the accepted retirement amendment governs current product selection and
 whole-release rollback. Output has also migrated. Neither change closes t249.
 
+The latest baseline is the eighteen-case `t249-repaint-02` run; the dated
+investigation records its successors to the early slices summarized below.
+The [t323 readiness gate](jsschoen-converge-public-roles-on-one-9p-core.md#t323)
+is now the immediate prerequisite for further shared-core migration, followed
+by the role-facing foundation and a return to full t249 qualification.
+
 The historical two-wire Hagia runner is frozen at its pinned source and must
 not be run against current master or silently rebased. The first current
 protected startup, profile rollback and WM restart slice now passes on an
@@ -130,6 +136,16 @@ strict checks and fresh layout correction to this exit. Later file-role and
 whole-candidate acceptance remain separate.
 
 ### t249
+
+The [approved shared-core sequence](jsschoen-converge-public-roles-on-one-9p-core.md#t323)
+extracts t323 as the immediate readiness gate and retains the eighteen-case
+regression baseline. Full t249 resumes after the role-facing admission and
+namespace foundation (t318, including t317/t142) is validated. Administration,
+broker and portal migration depend on t323 instead of all of t249; t250 still
+requires full t249. This changes sequencing only: no capability, production
+join, inspection, measurement or rollback exit below is removed. The
+[milestone record](../milestones/dueqd6r0-separate-shared-core-readiness-from-full-wm-qualification.md)
+records the approval and evidence boundary.
 
 Use the [October 10 coverage reconciliation](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#fourteen-case-coverage-reconciliation-2026-10-10)
 for current work; retain the original workload and qualification requirements

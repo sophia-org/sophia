@@ -1701,6 +1701,70 @@ selection. The audit found no exported target fixture for native software-Presen
 submission/retirement. Whether a live no-native Session can accumulate undrained
 headless records requires a reachability assessment before calling it a defect.
 
+## Shared-core readiness split (2026-10-10)
+
+After the source-repaint evidence closed, niltempus approved implementing a
+smaller prerequisite for the remaining role migrations. The
+[t323 plan](../plans/jsschoen-converge-public-roles-on-one-9p-core.md#t323)
+owns that gate: request lifetime, bounded credit-independent local revocation
+and release handling, reconnect with reused identities, and the existing
+eighteen-case regression baseline. The
+[sequencing record](../milestones/dueqd6r0-separate-shared-core-readiness-from-full-wm-qualification.md)
+preserves the approval, conditional promotions and unchanged full exits.
+
+The software-Present design above remains a t249 follow-up, but is no longer
+the next implementation slice. Neither that source audit nor the Plan 9/rio
+comparison establishes a passing gate. Existing generic core tests are to be
+mapped to retained evidence before more Hagia cases are added; any new join
+must exercise the production owner and identify supplied external facts.
+The full capability matrix and all dated results above remain unchanged.
+
+### Initial t323 evidence map
+
+The initial audit reads Sophia `83bb9c2b9` (the source-repaint documentation
+successor) without modifying production or fixtures. The following tests were
+read, not run during this audit. The
+[runtime retirement mapping](1lty2tzb-what-ipc-code-remains-after-the-desktop-moved-to-9p2000-l.md#runtime-wm-ipc-retirement-t269-2026-09-28)
+records earlier executions and candidate identities; those historical runs
+require impact review before use for the final readiness candidate.
+
+| Boundary | Existing tests or retained join | Limit for t323 |
+| --- | --- | --- |
+| Shared request lifetime and pressure | `sophia-9p/tests/pipeline.rs` and `waiting_and_bounds.rs`: reply/flush races, tag and fid reuse, bounded outstanding requests/reply bytes, waiting reads, revocation and full-output ordering | Shared protocol evidence; not Session's local input or presentation behavior under transport pressure. |
+| WM staging, replay and epoch custody | `policy_file_custody.rs`, `policy_file_replay.rs`, `policy_file_startup.rs`: driver-issued permits, partial staging, replay without decode, wrong epoch and snapshot/QID lifetime | Generic export semantics; opened snapshots and live action authority need distinct expectations. |
+| Snapshot atomicity and record validation | `policy_file_atomic_cycle.rs`: credit precedes encoding; byte-credit refusal, stop and expiry spend no snapshot QID or event. `snapshots_pin_metadata_and_qids_continue_across_epochs` and `wm_file_arrays.rs` cover immutable snapshot identity and truncated records. | Shared-core design obligations included in t323; source mapping still requires a current run or reviewed reuse. |
+| Actual journal ACK exhaustion | `real_reactor_services_ack_to_release_a_blocked_whole_event_send`, `stop_wakes_actual_reactor_waiting_for_ack_credit`, `actual_reactor_send_without_ack_has_a_bounded_deadline` | These use the actual reactor and filled journal. Stop/progress is not a joined proof that Session revokes a presentation and consumes release debt while credit is absent. |
+| Local capture revocation | `physical_policy_routing_keeps_release_debt_when_action_queue_forces_revocation` | Fills the owner action queue; presentation stamps are supplied. This is not journal ACK exhaustion or 9P reply-byte exhaustion. |
+| Receipt retention pressure | `policy_presentation_revocation_survives_full_lifecycle_delivery_queue` | Supplies receipt storage pressure and checks local revocation despite transport unavailability; it does not exhaust an actual reactor's credit. |
+| Reused surface index | `a_stale_click_does_not_retarget_a_reused_surface_index` | Generic stale-click refusal; it does not combine peer reconnect and real Hagia model recovery with that generation change. |
+| Repeated presentation identities across epochs | Engine `reconnect_cannot_reuse_an_old_action_when_publication_and_target_ids_repeat`; Session `policy_presentation_reconnect_rejects_old_identity_at_enqueue_and_settlement` | Generic Engine/Session refusal; neither is the real-peer reused-surface-generation join. |
+| Real Hagia reconnect | Retained `sdk_presented_disconnect_preserves_release_debt`: unsettled action discarded, exact old identity refused, owed and duplicate release distinguished | Uses unchanged surfaces across restart. Reuse of a numeric surface index with a new generation remains a missing join. |
+
+The first implementation target is therefore the production Session
+revocation/release path with independently verified transport pressure. State
+which capacity is exhausted (reply bytes, journal ACK credit or owner command
+queue); do not use one as a proxy for another. Require local revocation and the
+owed release before restoring peer progress, with a bounded failure path and a
+control that distinguishes the claimed behavior. The other missing join
+replaces a surface generation across peer recovery and rejects the predecessor's
+authority before accepting a fresh action. These are gate obligations, not
+results or a claim that all remaining generic evidence has been revalidated.
+
+Pausing the peer does not itself establish journal ACK-credit exhaustion.
+Session's receipt flush observes the capacity-one command slot through
+`try_command`; a full slot can have several transport causes. A fixture must
+independently establish journal state before claiming that bound is exhausted.
+Otherwise its claim is limited to command-slot pressure while transport is
+stalled. Reply-byte exhaustion needs its own construction. Independent
+read-only review agrees with this distinction and the two missing joins;
+neither reviewer nor root ran tests during this documentation audit.
+
+The audit independently verifies every `t249-repaint-02/SHA256SUMS` entry;
+the manifest still hashes to
+`c2d8a0ab683dc73dadce802c170608e7c053c2b53a06e92da13df57c0df736cf`.
+Its retained RESULT is the eighteen-case PASS. This is integrity verification
+of the existing run, not another execution or readiness-gate acceptance.
+
 ## Connections
 
 - [t249 plan](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249) owns the unchanged acceptance requirements.

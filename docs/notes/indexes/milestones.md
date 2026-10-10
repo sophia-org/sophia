@@ -7,6 +7,7 @@ They do not revive work, close a current milestone, or change acceptance gates.
 
 ## Milestone records
 
+- 2026-10-10: [Shared-core readiness separated from full WM qualification](../milestones/dueqd6r0-separate-shared-core-readiness-from-full-wm-qualification.md) — approved sequencing change; no acceptance requirement waived.
 - 2026-10-01: [Output IPC retired after strict file-contract acceptance](../milestones/dzsezje2-accept-output-ipc-retirement-with-the-strict-file-only-wm-contract.md)
 - 2026-10-01: [Revision-1 output files accepted through native rollback](../milestones/ofard23a-accept-the-revision-1-output-file-role-through-native-rollback.md)
 - 2026-09-26: [9P foundations meet their scoped exits](../milestones/agu8cnww-9p-foundations-meet-their-scoped-exits.md)
