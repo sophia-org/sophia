@@ -483,6 +483,59 @@ after the baseline passes. Daily niltempus master and the acceptance status are
 unchanged. The merged repair worktree was removed after checking ignored files;
 only its rebuildable notebook index was discarded.
 
+#### Occupied HDMI migration and return accepted (2026-10-10)
+
+niltempus installed `niltempus-d59a72c27a32a2c05e27` and ran the remaining
+workspace-affinity sequence: open a window on HDMI workspace 4, unplug HDMI,
+use that workspace on DP-1, then reconnect the same discrete-GPU HDMI port.
+The session survived. niltempus then explicitly confirmed that workspace labels
+were visible and keyboard and mouse worked on both monitors.
+
+Session `00000001791634507164-8ac8e743-a762-425c-be33-a1b9fc963bc7` retains
+the source/binary join to Sophia `6fd66325b`, Hagia `ed2f30060` and integration
+`dc57e532`. Owner 1 committed two outputs at sequence 69; owner 2 committed one
+at 10978; owner 3 committed the returned pair at 17623. The same surface,
+4194318, was placed on output 2 before loss, on output 1 in transaction 16,
+and back on output 2 in transaction 18. Workspace actions 14 and 11 committed
+after return. The running Sophia PID 30201 and Hagia PID 30212 have start ticks
+at the beginning of this session and the expected executable hashes; neither
+was restarted for the check.
+
+Frozen evidence is `t310-two-output-attended-06`:
+
+- `startup-and-loss-01`, manifest
+  `fd734f88333f35dc24a597cbacab51e720730b396925fd7eb5c452aec337948c`;
+- `hdmi-return-01`, manifest
+  `c2e2b5dad3e5f5bb16fe5a05995342bf85a20be7f60eb84e728b4fdb9450ad9e`;
+- `acceptance-01`, manifest
+  `8b02d63a6b4517aa848261c22b07ab756d5eddcd7ace37edba66ef3a791ff13a`.
+
+The first snapshot was taken during the operator's sequence and also includes
+the return commit. The second snapshot's raw search count of one WM
+restart/unavailable match is the startup `status=ready restarts=0` line, not a
+restart. Capture reports discarded/suppressed events and zero storage errors;
+the positive owner/surface/action joins above are present. Visual and input
+acceptance comes from niltempus, not independent pixel readback.
+
+This completes t310's remaining two-output policy qualification together with
+the previously accepted startup fallback, cable/port and KVM continuity, VT
+handoff and deterministic policy/publication controls in the plan. It also
+supplies Hagia h018's physical output-return result. Broader t297 lock tests,
+t307 QEMU/virgl work and t289 performance qualification remain separate; this
+run adds no cross-GPU or changed-capability claim. The accepted pins and profile
+can be published without rebuilding, reinstalling or changing the running
+session. The earlier failed candidates and their dispositions are preserved.
+
+Publication subsequently fast-forwarded Hagia master to signed `2839d29`
+(containing the installed `ed2f30060` repair) and niltempus master to signed
+`dc57e532`, exactly the installed integration. Sophia's installed `6fd66325b`
+was already on pushed master. No pin, build, installation or running process
+changed. The merged qualification worktrees were removed after inspecting
+their ignored files. Signing the acceptance-only notes required an unlocked
+GPG key; staged notes and task completion were retained without an unsigned
+commit or resetting the agent. `t310-two-output-attended-06/publication-01`
+records that publication and pending documentation boundary.
+
 #### Admitted discovery and startup boundary (2026-10-09)
 
 Signed `5fabe9f61` introduces stable GPU admission and a revalidated fresh

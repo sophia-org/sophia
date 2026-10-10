@@ -1,7 +1,5 @@
 # One task per line, a blank line between tasks: keep it that way so the file reads as a list. A row is `(priority) date text ... @context id:tNNN order:NNN [details](note)`; closed rows move to done-YYYY-MM.md.
 
-(A) 2026-10-07 Complete ordinary desktop output loss/return policy after accepted startup fallback, preserving reachable workspaces; distinguish stable-identity card admission from output exclusions and qualify retained DMA-BUF continuity with t306. +critical +topology @development id:t310 order:000.0000028 [details](docs/notes/investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#t310)
-
 (B) 2026-10-05 Diagnose one head freezing the lock provider's frames overnight while the other kept animating; record dropped provider commands, sample per-allocation lock pacing behind an opt-in, and repair only from a discriminating trace. +important +lock @development id:t308 order:000.0000045 [details](docs/notes/investigations/ncpg7gmm-one-head-stops-drawing-the-lock-provider-frames.md#t308)
 
 (A) 2026-09-25 Complete remaining WM file lifecycle acceptance and reproducible transport measurements with independent Hagia and existing Session owners; retain explicit opt-in while output stays current IPC. +critical +9p @development id:t249 order:000.000003 depends:t247,t248 peer:hagia/h006 [details](docs/notes/plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249)

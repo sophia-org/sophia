@@ -430,6 +430,25 @@ holds the install and explicit accepted recovery commands. Physical return
 remains open: first establish the fresh-session baseline, then repeat the same
 occupied-HDMI return. Crunch can stay at greetd while niltempus uses the X13.
 
+### Final workspace-affinity acceptance (2026-10-10)
+
+Installed `niltempus-d59a72c27a32a2c05e27` passed the remaining two-output
+sequence: a workspace-4 window remained reachable on DP-1 after occupied HDMI
+loss and returned to HDMI on reconnection. niltempus confirmed session survival,
+workspace labels and working keyboard/mouse on both monitors. The
+[acceptance record](../investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#occupied-hdmi-migration-and-return-accepted-2026-10-10)
+joins the unchanged processes, gated source, same surface and committed
+replacement owners; its frozen receipt is
+`t310-two-output-attended-06/acceptance-01`, manifest
+`8b02d63a6b4517aa848261c22b07ab756d5eddcd7ace37edba66ef3a791ff13a`.
+
+Combined with the prior continuity and deterministic results above, this meets
+t310's scoped exit. Publish the accepted Hagia repair and exact niltempus
+integration `dc57e532`, keeping the installed Sophia/Hagia pins `6fd66325b` and
+`ed2f30060`. A newer docs tip is not a reason to repin or rebuild. The accepted
+one-output recovery remains rooted. The broader lock matrix, QEMU/virgl issue,
+performance measurement and 9P qualification keep their own task exits.
+
 ## Connections
 
 - [Proposed admitted-discovery boundary](../decisions/nrdadhet-resolve-admitted-output-preferences-before-constructing-native-owners.md)
