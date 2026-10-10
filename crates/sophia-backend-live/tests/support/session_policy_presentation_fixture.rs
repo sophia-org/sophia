@@ -25,6 +25,24 @@ impl SessionPolicyPresentationFixture {
             .collect()
     }
 
+    /// Read the instances captured in each head's retired frame. Source
+    /// generations come from frame capture, not the requested publication.
+    /// A head without a retired frame contributes an empty list.
+    pub fn presented_surface_instances(
+        &self,
+        output: OutputId,
+    ) -> Vec<Vec<CompositorSurfaceInstance>> {
+        self.target
+            .presented_head_frames(output)
+            .into_iter()
+            .map(|frame| {
+                frame
+                    .map(|frame| frame.compositor_display_list.surface_instances().collect())
+                    .unwrap_or_default()
+            })
+            .collect()
+    }
+
     /// Capture the installed publication and committed source bytes before
     /// any simulated completion. Changing requested state cannot relabel it.
     pub fn queue(
