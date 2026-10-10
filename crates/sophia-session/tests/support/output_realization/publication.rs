@@ -118,7 +118,7 @@ fn same_geometry_with_new_capabilities_publishes_at_a_new_epoch() {
         match change {
             "mode" => {
                 // The realized mode stays at 60 Hz; only the advertised list changes.
-                let mut extra = replacement.snapshot.heads[0].modes[0].clone();
+                let mut extra = replacement.snapshot.heads[0].modes[0];
                 extra.mode = sophia_protocol::DisplayModeId::from_raw(2);
                 extra.refresh_millihz = 75_000;
                 extra.preferred = false;
