@@ -305,6 +305,14 @@ check that its workspace set remains reachable on DP before testing restoration.
 
 ## Connections
 
+The temporary profile was subsequently installed and reached both outputs,
+but the first workspace check ended the session before the requested unplug.
+The recorded fatal is stale click-focus admission after an empty layout commit;
+see the [diagnosis and CPU repair](../investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#two-output-workspace-check-stopped-on-stale-click-focus-2026-10-09).
+Preserve that failed run. Gate the narrow Session repair, prepare a matched
+successor, then verify ordinary workspace switching before continuing the
+two-output loss/return sequence. t310's physical exit remains open.
+
 - [Proposed admitted-discovery boundary](../decisions/nrdadhet-resolve-admitted-output-preferences-before-constructing-native-owners.md)
 - [t310 investigation and accepted startup fallback](../investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#t310)
 - [t306 recovery investigation](../investigations/kdleagg3-kvm-output-and-usb-loss-returns-the-desktop-to-greetd.md#t306)

@@ -7,6 +7,9 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 #[path = "policy_active_focus.rs"]
 mod policy_active_focus;
 
+#[path = "policy_stale_click_focus.rs"]
+mod policy_stale_click_focus;
+
 #[path = "../../../sophia-config/examples/desktop_profile_probe.rs"]
 mod desktop_probe;
 

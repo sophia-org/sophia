@@ -311,6 +311,55 @@ fn route_with_shortcuts(
     .unwrap()
 }
 
+#[test]
+fn a_click_on_a_hidden_surface_is_discarded_when_the_new_layout_presents() {
+    let mut layout = PersistentLiveLayout::default();
+    let surface = SurfaceId::new(201, 1);
+    let layers = vec![add_surface(&mut layout, surface, admission(1, 4))];
+    let mut handoff = PointerFocusHandoffState::default();
+    let mut router = WmShortcutRouter::new(
+        sophia_engine::WmShortcutRegistry::from_plan(
+            &sophia_engine::WmShortcutPlan::default(),
+            sophia_protocol::WmCapabilities::all_supported(),
+            1,
+            sophia_protocol::WmChromePolicy::default(),
+        )
+        .unwrap(),
+    );
+    let pressed = route_with_shortcuts(
+        &layout,
+        &layers,
+        press_on_surface(),
+        &mut handoff,
+        &mut router,
+        None,
+        10,
+    );
+    assert_eq!(pressed.pointer_focus_targets, vec![surface]);
+    assert_eq!(pressed.pointer_buttons_routed, 0);
+    assert_eq!(handoff.target(), Some(surface));
+
+    // The client remains live; only its workspace placement disappeared.
+    // A refused focus request cannot replay the held click to a hidden client.
+    let hidden = route_with_shortcuts(&layout, &[], vec![], &mut handoff, &mut router, None, 11);
+    assert_eq!(hidden.pointer_focus_handoff_stale_drops, 1);
+    assert_eq!(hidden.pointer_buttons_routed, 0);
+    assert!(hidden.pointer_focus_handoff_released.is_none());
+    assert_eq!(handoff.target(), None);
+
+    let returned = route_with_shortcuts(
+        &layout,
+        &layers,
+        vec![],
+        &mut handoff,
+        &mut router,
+        Some(surface),
+        12,
+    );
+    assert_eq!(returned.pointer_buttons_routed, 0);
+    assert!(returned.pointer_focus_handoff_released.is_none());
+}
+
 /// D3b (D3a review): a button deferred by a focus handoff already abandoned
 /// pending shortcut work when it arrived. Its replay, after the WM answers,
 /// is that same button, so a sequence started meanwhile stays pending and

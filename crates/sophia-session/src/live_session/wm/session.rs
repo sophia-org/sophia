@@ -831,7 +831,14 @@ impl LiveWmSession {
         output: sophia_engine::HeadlessOutput,
     ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
         if !layout.layers.contains_key(&surface) {
-            return Err("pointer focus target is missing from the live layout".into());
+            // A click names the last presented input scene. A newer layout
+            // can hide or remove that surface before policy admission; do not
+            // revive it, retarget the click, or turn stale input into a fatal.
+            crate::session_println!(
+                "sophia_live_wm schema=3 status=request_rejected source=pointer_focus reason=stale_target surface={}",
+                surface.index(),
+            );
+            return Ok(LiveWmRequestAdmission::Duplicate);
         }
         let public = self.public.as_mut().ok_or("public WM state is unavailable")?;
         let target_output = public

@@ -113,6 +113,49 @@ The approved [runtime policy and GPU admission plan](../plans/cmoaia7z-complete-
 extends the accepted startup fallback below. niltempus chose safe fallback for
 unsupported settings; strict profiles retain their refusal contract.
 
+#### Two-output workspace check stopped on stale click focus (2026-10-09)
+
+Temporary release `niltempus-642f4b984163c5317d49` (Sophia `96cb6d6d8`,
+niltempus `7fec163d0`) reached a two-output desktop. niltempus then reported
+"my session just crashed" before the requested cable-removal step. Session
+`44402f87-20d7-4e3d-a079-c76fcb33324b` ended with exit 1. Its `failure-cause`
+is `pointer focus target is missing from the live layout`. The last committed
+policy transaction, 24, made the active output empty; the runtime fatal follows
+at the same boot millisecond, 46843012. Cleanup drained native presentation.
+The capture stopped with no discarded/suppressed records or storage errors.
+
+`LiveWmSession::enqueue_focus` treats a missing current layer as an error, and
+the physical ClickFocus dispatcher propagates it out of the owner loop. Input
+hit-testing uses presented layers, while the policy layout may already have
+committed a workspace change. Queued clicks can likewise outlive their target's
+placement. Either yields ordinary stale input at this admission boundary. The
+durable record does not identify the rejected surface or distinguish those two
+interleavings; the precise physical gesture is not reconstructed.
+
+The repair drops only this missing-layer request, with a bounded-field
+`request_rejected reason=stale_target` diagnostic. It cannot reactivate the
+hidden window, retarget a reused surface index, or change the active output.
+Current targets still queue normally. Hidden-tab activation uses its separate
+validated path and is unchanged. The input router already drops a held button
+sequence when the target leaves presented layers, or on its existing timeout;
+the repair adds no replay or input-delivery bypass.
+
+Two admission regressions fail on the parent with that exact error: a click
+queued across an empty-layout commit, and an old generation whose index has
+been reused. Both pass with the repair, including current-target and duplicate
+controls. A separate router control verifies that a held click is discarded
+when the client becomes hidden and cannot replay on its return. All 45 focused
+focus tests pass. These call production admission, layout commit, queue and
+routing seams; they do not drive a live owner-loop input poll or reproduce the
+operator's exact timing.
+
+Frozen failed-session manifest: `t310-two-output-attended-01/failed-session/`,
+`7611b40676308905f923410ad04436db3cce240d860e1e587904d1ee6e503b5d`.
+CPU records are under `t310-stale-click-focus-01`. The failed attended run is
+not workspace or hotplug acceptance. Rollback to accepted one-output release
+`niltempus-01fa4c74950b5a998db9` was provided, not observed. A gated successor
+and a fresh attended workspace check remain necessary.
+
 #### Admitted discovery and startup boundary (2026-10-09)
 
 Signed `5fabe9f61` introduces stable GPU admission and a revalidated fresh
