@@ -16,6 +16,8 @@ before starting another job, followed by the
 [captured-disconnect results](#captured-release-debt-survives-replacement-2026-10-10).
 The subsequent [matching-loss cancellation result](#matching-loss-cancels-the-presented-chord-2026-10-10)
 extends the terminal-path coverage without closing t249.
+The [pending-settlement abort result](#pending-settlement-abort-precedes-replacement-2026-10-10)
+then checks the barrier before automatic replacement.
 The old worktrees have been removed. The original
 reboot checkpoint follows for provenance.
 
@@ -1016,6 +1018,87 @@ case. Content, heads, completion, router time and layout settlement retain the
 earlier supplied boundaries. Pointer debt, other cancellation triggers,
 AbortSettlement, native/source-loss/pixel joins, receipt ACK/credit reachability
 and latency remain separate work. t249/h006 stay open.
+
+## Pending settlement abort precedes replacement (2026-10-10)
+
+Hagia `168270dc5296db0f18dd1f4e0e11369f36f71e41` adds
+`sdk_disconnect_aborts_pending_settlement` beneath the occupied fixture.
+niltempus `c1702f3ae3a8195d79777b5264c94e8176dbc67c` requires fourteen cases
+and binds nine modules. Sophia remains pinned to `f77244abe`. No production
+source, installed process or release changes.
+
+The real Hagia fullscreen action produces a proposal whose frontend
+presentation state differs from the committed baseline. Production
+`layout.stage` retains it pending presentation-state acknowledgements. The
+fixture supplies a 30-second initial deadline and leaves frontend controls in
+a local queue. This separates forced expiry from the normal short timeout;
+it is not a timing measurement. Terminating only the fixture peer makes
+`poll_public_restart` take AbortSettlement: transport is unavailable, the
+worker and deferred command are gone, and the exact pending identity remains
+in the old epoch with its deadline shortened to now. A repeated restart poll
+still cannot advance the epoch or restart count.
+
+The real `expire_pending` returns TimedOut for that transaction and settlement
+identity with no applied surfaces. Applying the result preserves committed
+policy, layout layers and frontend presentation state. Only the next restart
+poll admits the successor. Its own scene/Dirty exchange restores the baseline,
+and a fresh fullscreen action still toggles from the uncommitted state. That
+last action uses the existing supplied layout completion, not a frontend ACK.
+
+The unsigned development run `t249-abort-settlement-dev01` passes all fourteen
+cases, manifest
+`506954f70edd8e092b327976a951443f4358937a70b6d1cbd3499e6369b6a2d8`.
+The clean signed-fixture run `t249-abort-settlement-01` also passes all fourteen
+cases; manifest
+`92cc01eb4febf19191948d2927bc85c0bad8684958ef8fe73158ef128f5a0909`.
+
+Two compiled archived-Session controls discriminate the abort from replacement:
+
+- `t249-abort-settlement-forced-control-01` removes `force_pending_timeout`.
+  It fails “AbortSettlement must force the pending deadline” while the original
+  deadline remains in the future. Manifest
+  `2aae85a83a9124d532bb8c5661a99a6c18ef6af18ccb351a41ff779397cc6382`.
+- `t249-abort-settlement-barrier-control-01` forces `settlement_pending=false`.
+  It fails “replacement must wait for pending settlement”, observing epoch 2
+  instead of epoch 1 before expiry. Manifest
+  `b83f7d0c845a9da4bd9ea761fbfdfdc8a15ce01a15b79769611f81c463709194`.
+
+Each exits 101 with one named failure, before a timeout can satisfy the case.
+The archive is restored after each mutation; ordinary Hagia and fixture bytes
+remain unchanged. Controls hold the external build-root lock and cargo-slot
+lease, and the timeout supervisor inherits the build-root lock descriptor.
+Independent source review found no blockers in the owner sequence or the two
+planned control seams. Checkpoint equality after peer termination is a
+consistency observation, not evidence of what a dead peer would do. The
+discriminating non-promotion assertions cover the returned TimedOut result,
+empty applied surfaces and unchanged committed reducer/layout state.
+
+`t249-abort-settlement-checks-01` passes strict Session overlay Clippy, including
+tests; manifest
+`5a7f9e01ce83b902e70b5523a9f0b1b775364ca354d8d7c31eae6e6a3e3e70e7`.
+All five manifests independently verify. All nine fixture modules match the
+signed source across development, clean run, both controls and checks. The
+restored restart source also matches the pinned Git blob. Development checks
+pass thirteen serial runner tests (one internal helper ignored), strict runner
+Clippy, Rust formatting, whitespace and Hagia's layout gate. No whole-product
+gate or performance measurement was repeated.
+
+Hagia `168270d` and niltempus `c1702f3` are merged and pushed. Runner cleanup
+removed the marked build root after all jobs ended;
+`t249-abort-settlement-cleanup-01` passes with independently verified manifest
+`1e8542c44ea33a09189ed54b41042ece5d28e32d3ef1e724a13bbcd0a2d681c4`.
+Merged worktrees and the detached Sophia pin are removed after inspection.
+The stable sibling lock, cargo slots and frozen evidence remain; no binaries
+or caches are copied into evidence.
+
+The fixture chooses the owner interleaving directly; production expires the
+layout in a later owner-loop phase. Rollback control emission is not inspected,
+and the queued controls are never delivered or acknowledged. This qualifies
+the restart/settlement ordering for a pending frontend presentation-state ACK,
+not native rollback, application behavior or every resize/admission path.
+Supplied occupied facts, initial deadline and completion retain those limits.
+Other cancellation triggers, pointer debt, native/source-loss/pixel joins,
+receipt ACK/credit reachability and latency remain separate. t249/h006 stay open.
 
 ## Connections
 
