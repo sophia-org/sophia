@@ -20,8 +20,9 @@ The [pending-settlement abort result](#pending-settlement-abort-precedes-replace
 then checks the barrier before automatic replacement.
 The [fourteen-case coverage reconciliation](#fourteen-case-coverage-reconciliation-2026-10-10)
 supersedes the older three-case capability map and records the passing current
-SDK/export gate. New-window Manage admission is the first uncovered owner join;
-the coverage baseline remains revisable without reducing the acceptance scope.
+SDK/export gate. The [Manage settlement successor](#new-window-manage-settlement-2026-10-10)
+then covers the first missing admission owner boundary, through AwaitingPixels.
+The coverage baseline remains revisable without reducing the acceptance scope.
 The old worktrees have been removed. The original
 reboot checkpoint follows for provenance.
 
@@ -1117,6 +1118,10 @@ review checked the capability declaration, external fixtures and Session
 admission owners; it ran no tests. The older three-case table is not a current
 gap list.
 
+The later [Manage settlement result](#new-window-manage-settlement-2026-10-10)
+adds the fifteenth case and supersedes the absence of `enqueue_manage` coverage
+in this snapshot. Visual admission and launch-origin propagation remain distinct.
+
 This is a revisable coverage baseline, not a frozen feature list or a reduced
 exit. Every defined capability and explicit acceptance requirement stays in
 scope unless a recorded decision assigns it elsewhere. Newly discovered
@@ -1259,6 +1264,87 @@ SDK manifest verifies. The identity record's `sdk` field contains the raw signed
 commit object; its Git object hash equals the manifest's revision above.
 This closes the selected-pair export rerun gap, not t249/h006. No full repository
 gate, measurement, installation or running-session change occurred.
+
+## New-window Manage settlement (2026-10-10)
+
+Hagia fixture `270cd419c414a89decc479bfeaad4c221258ebbc` adds
+`sdk_occupied_manage_settles_admission` in `tests/external/manage.rs`, a child
+of the occupied fixture. niltempus runner
+`14dcf34ddd12eb28774099881d133d0f819189e1` binds fifteen cases, ten modules
+and a fifth production-glue span. Sophia stays pinned to `f77244abe`.
+Hagia's later `5239a8f` changes only README wording: Session retains the returned
+placement, while the checkpoint assertion compares focus, not geometry.
+Fixture and production bytes are unchanged by that clarification.
+
+Against the occupied two-surface baseline, a supplied authority batch requests
+a third PolicyManaged top-level through a real presentation intent. Session's
+admission owner enters PolicyPending, and its own `next_unmanaged_surface`
+selects that surface. `enqueue_manage` admits one request and refuses queued
+and in-flight duplicates. Real Hagia places and focuses the new window.
+
+Unlike the occupied fixture's supplied direct completion, this case calls
+production `layout.stage`. It checks ControlPending and the exact AdmitSurface
+and SetPresentationState commands dispatched to a local channel by the
+production control queue. Supplied Delivered answers pass through that queue's
+correlation and the admission/presentation acknowledgement owners. A wrong
+transaction and repeated answers are refused. The deliberately repeated ACK's
+UnexpectedAcknowledgement is a local correlation control, not peer transport
+failure. The two copied completion-dispatch arms are independently reviewed
+and bound to `owner_loop/session_control.rs`, hash
+`244a9c1ab6d74142f86a3288be001cecf1452d8f5980b872140e619563e1ffe5`.
+
+`resolve_pending` commits the exact settlement, then the real peer checkpoint
+is awaited separately from transport Ready. Session must no longer offer the
+surface for management, must retain the returned placement and focus, and must
+agree with the checkpoint's new window/focus identity. Admission remains
+AwaitingPixels: no CPU/native candidate or visual completion is supplied.
+
+The clean signed-fixture run `t249-manage-01` passes all fifteen individually
+named cases, manifest
+`039f0491bcec44ccd28dd0f006aab49df16d8d89eb7d0f2d9c475c92d5422a9b`.
+`t249-manage-dev01` also has fifteen passing case logs, but correctly ends STOP
+because two final comment edits arrived after its source snapshot. Its manifest
+is `6f4b76bf10a69463abe8b615b672908cdb247dc6b5de94bc65a528a1f4b25524`.
+That development record is retained separately and is not promoted.
+
+`t249-manage-control-01` changes only the archived Session's `enqueue_manage`
+source from Manage to Relayout. The peer still receives SceneChanged and returns
+the same placement; staging and acknowledgement assertions pass. The first
+failure is “committed Manage answer must end the owner's admission request”,
+with `Some(SurfaceId { index: 59, generation: 1 })` instead of None. It is one
+named semantic failure, exit 101, in 0.12 seconds; neither a deadline nor an
+enum assertion supplies the discrimination. Manifest
+`6d7ff2e2ddc6eec28ebaad71a59371c0bc0c19b1ba2a2314df2d8ba6b5991816`.
+The source is restored and independently equals the pinned Git blob; the
+ordinary Hagia executable and all ten fixture modules remain unchanged.
+
+`t249-manage-checks-01` passes strict restored Session overlay Clippy, including
+tests; manifest
+`96f5c56f023a2ca609b9fc16f2b693f1ddabcbd0ac49077e1835d31bfffa307d`.
+All four run/control/check manifests independently verify. All ten modules in
+the clean run, control and checks match signed source. Development checks also
+pass thirteen serial runner tests (one internal helper ignored), strict runner
+Clippy, Rust formatting, whitespace and Hagia's layout gate. The full Nim/formal
+or product gate was not repeated for this external-test-only addition.
+
+Hagia `5239a8f` and niltempus `14dcf34` are merged and pushed. After all jobs
+ended, the runner removed the marked build root under its lease.
+`t249-manage-cleanup-01` passes, independently verified manifest
+`6df7ac52249670bab4065892653f91209e81d4808341eaa135dbd88f1d5acc05`.
+The merged source worktrees, detached pin and scratch executables are removed
+after inspection; cargo slots, the stable sibling lock and frozen records
+remain. No compiled artifacts are copied into evidence.
+
+This qualifies management-request settlement, not complete launch visibility.
+Authority facts and frontend answers are supplied; no real frontend delivery,
+map/viewable transition, pixels, Managed state or safe-extent reconciliation
+is proved. No follow-on relayout is claimed: restaging AwaitingPixels can
+re-enter admission control. Launch origin and Manage across restart remain
+separate. The explicit backend gaps include the presented-policy install branch
+in `wm/presentation.rs::service_presented_policy` and admission completion in
+`native_retirement.rs`; they cannot be assigned to t250 merely because the
+current fixtures bypass them. Current control-path latency remains t249;
+attended/input-to-photon acceptance remains separate. t249/h006 stay open.
 
 ## Connections
 
