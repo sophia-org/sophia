@@ -1,7 +1,7 @@
 //! Real worker/reactor and a raw-wire peer. Settlement outcomes below are
 //! scripted; this does not assert Engine acceptance or actual presentation.
 #![cfg(test)]
-use super::super::startup::tests::{Peer, header, negotiate};
+use super::super::startup::tests::{Peer, header};
 use super::*;
 use crate::live_session::policy_transport_worker::{PolicyTransportEvent, PolicyTransportWorker};
 use sophia_protocol::*;
@@ -27,7 +27,10 @@ mod c_sdk;
 #[path = "generic_wm_c_sdk.rs"]
 mod generic_wm_c_sdk;
 
-fn enqueue(worker: &PolicyTransportWorker, mut command: PolicyTransportCommand) {
+pub(in crate::live_session::policy_transport_worker::ninep) fn enqueue(
+    worker: &PolicyTransportWorker,
+    mut command: PolicyTransportCommand,
+) {
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
         match worker.try_command(command) {
@@ -55,11 +58,17 @@ fn accepted(peer: &mut Peer, bytes: &[u8]) {
     peer.clear_transaction();
 }
 fn configured() -> (PolicyTransportWorker, Peer, u64) {
+    configured_at(9)
+}
+
+pub(in crate::live_session::policy_transport_worker::ninep) fn configured_at(
+    epoch: u64,
+) -> (PolicyTransportWorker, Peer, u64) {
     let caps = sophia_runtime::select_policy_capabilities(u64::MAX, u64::MAX, false);
     let (server, client) = UnixStream::pair().unwrap();
     let adapter = NinePPolicyAdapter::supplied(
         server,
-        9,
+        epoch,
         WmFileLimits {
             capability_ceiling: caps,
             profile_required: false,
@@ -67,23 +76,25 @@ fn configured() -> (PolicyTransportWorker, Peer, u64) {
         WmQids::new(),
     )
     .unwrap();
-    let worker = PolicyTransportWorker::spawn(adapter, 9, None).unwrap();
+    let worker = PolicyTransportWorker::spawn(adapter, epoch, None).unwrap();
     let mut peer = Peer::from_stream(client);
-    negotiate(&mut peer, caps);
+    super::super::startup::tests::negotiate_at(&mut peer, caps, epoch);
     assert!(matches!(event(&worker), PolicyTransportEvent::Negotiated));
     let config = WmFileConfiguration {
         transaction: TransactionId::from_raw(10),
         configuration: PolicyConfiguration {
             action_lifecycles: Vec::new(),
-            connection_epoch: 9,
+            connection_epoch: epoch,
             generation: 3,
             actions: vec![],
             chrome: WmChromePolicy::default(),
         },
     };
+    let mut config_header = header(WmFileKind::Configuration, 2);
+    config_header.connection_epoch = epoch;
     accepted(
         &mut peer,
-        &encode_wm_file_configuration(header(WmFileKind::Configuration, 2), &config, caps).unwrap(),
+        &encode_wm_file_configuration(config_header, &config, caps).unwrap(),
     );
     assert!(
         matches!(event(&worker), PolicyTransportEvent::Configuration { transaction, configuration } if transaction == config.transaction && configuration == config.configuration)

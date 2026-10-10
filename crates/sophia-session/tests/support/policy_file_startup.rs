@@ -389,9 +389,15 @@ pub(in super::super) fn profile() -> PolicyProfileAdmission {
     }
 }
 pub(in super::super) fn negotiate(peer: &mut Peer, caps: u64) {
+    negotiate_at(peer, caps, 9);
+}
+
+pub(in super::super) fn negotiate_at(peer: &mut Peer, caps: u64, epoch: u64) {
     peer.setup();
+    let mut offer_header = header(WmFileKind::Negotiate, 1);
+    offer_header.connection_epoch = epoch;
     let offer = encode_wm_file_negotiate(
-        header(WmFileKind::Negotiate, 1),
+        offer_header,
         WmFileNegotiationOffer {
             required_capabilities: caps,
             optional_capabilities: 0,
@@ -401,7 +407,7 @@ pub(in super::super) fn negotiate(peer: &mut Peer, caps: u64) {
     assert_eq!(peer.submit(&offer).unwrap().0, 119);
     // The retained submit retry is still valid while startup has moved on to
     // profile completion. It must not consume that permit or negotiate twice.
-    let retry = super::super::custody_tests::submit(9, 1, offer.len());
+    let retry = super::super::custody_tests::submit(epoch, 1, offer.len());
     assert_eq!(peer.write(3, &retry).unwrap().0, 119);
     let submitted = peer.next_event();
     assert_eq!(

@@ -349,3 +349,6 @@ mod custody_tests;
 
 #[path = "../../../tests/support/policy_file_replay.rs"]
 mod replay_tests;
+
+#[path = "../../../tests/support/policy_receipt_credit_peer.rs"]
+pub(in crate::live_session) mod receipt_credit_peer;

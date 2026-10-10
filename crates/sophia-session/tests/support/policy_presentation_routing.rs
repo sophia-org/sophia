@@ -2,6 +2,9 @@ use super::*;
 use sophia_protocol::{InputEventKind, InputEventPacket};
 use sophia_x_authority::XkbRmlvoConfig;
 
+#[path = "policy_presentation_credit.rs"]
+mod credit;
+
 fn key(keycode: u32, pressed: bool) -> InputEventKind {
     InputEventKind::Key { keycode, pressed }
 }

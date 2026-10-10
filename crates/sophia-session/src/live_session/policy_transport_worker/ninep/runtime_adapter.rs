@@ -9,7 +9,7 @@ use super::*;
 use sophia_protocol::{PolicyDecodedSnapshot, PolicySessionOperationOutcome};
 
 #[path = "../../../../tests/support/policy_file_adapter.rs"]
-mod tests;
+pub(super) mod tests;
 
 #[path = "../../../../tests/support/policy_file_nim_peer.rs"]
 mod nim_peer_tests;
