@@ -294,6 +294,16 @@ exit is authoritative. CPU red/green evidence is `t310-output-loss-scene-01`.
 Gate and matched release precede another attended loss/return check. t310 stays
 open; daily niltempus master remains the accepted one-output configuration.
 
+The first gate on `dc20fec87` stopped in the unrelated silent-lock-provider
+transport test: its 30 ms negotiation deadline raced the fixture's multiple
+setup RPCs, returning `Rlerror` where setup asserted `Rlopen`. The failed gate
+remains frozen in `t310-output-loss-scene-01` (CLOSURE
+`a334fca0a14a58afb3a54c2391d02c6195d3410d4ebb213b5da61c5805cdf767`).
+The test-only correction connects a silent authorized peer, verifies admission
+without negotiation or revocation, then requires deadline revocation. It does
+not alter production timing or lock behavior. The combined successor gate is
+recorded separately as `t310-output-loss-scene-02`.
+
 #### Admitted discovery and startup boundary (2026-10-09)
 
 Signed `5fabe9f61` introduces stable GPU admission and a revalidated fresh

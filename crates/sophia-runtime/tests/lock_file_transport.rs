@@ -231,13 +231,12 @@ fn a_provider_that_never_negotiates_loses_the_role() {
     transport
         .authorize_supervised_pid(std::process::id())
         .unwrap();
-    let path = transport.socket_path().to_owned();
-    let peer = std::thread::spawn(move || {
-        let mut peer = raw_peer::Peer::connect(&path);
-        peer.setup();
-        peer
-    });
-    let _peer = pump(&mut transport, peer, &unlocked());
+    // Silence is the condition under test. Performing a multi-RPC setup under
+    // the same 30 ms deadline races correct revocation on a busy test host.
+    let _peer = UnixStream::connect(transport.socket_path()).unwrap();
+    assert!(transport.poll_accept(&unlocked(), &[]).unwrap());
+    assert!(!transport.export().unwrap().custody().is_negotiated());
+    assert!(!transport.export().unwrap().is_revoked());
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         assert!(Instant::now() < deadline, "never revoked");
