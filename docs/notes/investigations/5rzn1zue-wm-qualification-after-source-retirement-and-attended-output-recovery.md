@@ -9,7 +9,13 @@ tags: [validation, protocol, policy]
 
 ## Reboot handoff (2026-10-10)
 
-User requested a reboot checkpoint. Resume here before starting any job.
+Resume update: B and A below are integrated. Read the
+[runner review](#post-reboot-runner-review-2026-10-10) and
+[revocation results](#revocation-reaches-the-switcher-model-2026-10-10)
+before starting another job; the old worktrees have been removed. The original
+reboot checkpoint follows for provenance.
+
+User requested a reboot checkpoint.
 Root directed Claude wB:p2 to stop and preserve unfinished work.
 Run `zk index --quiet` after reboot; root stopped its slow index pass to avoid
 delaying shutdown. The Markdown handoff itself is committed independently. The installed
