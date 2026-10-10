@@ -620,6 +620,35 @@ accepted on this desktop. The operator's lock observation is not an independent
 per-owner cover record; t297, t310 and the separate virgl investigation retain
 their remaining obligations. No new runtime code was added during these tests.
 
+#### Same-topology publication repair (2026-10-09)
+
+The replacement path now compares its fully projected authority snapshot with
+the published one before deciding whether topology changed. It normalizes only
+the incoming topology epoch to the owner's current epoch; head descriptors,
+mode inventory, VRR support, logical groups, mappings and primary output all
+participate in equality. Missing or older published authority requires a new
+epoch. A changed realization still forces publication even when its public
+snapshot is equal.
+
+An identical return retains its epoch and marks the pending snapshot already
+published. It still owes the replacement's presentation barrier and the exact
+transition, notice, native owner and profile binding before ledger commit.
+Changed capabilities advance the epoch and publication generation and take the
+existing authority-publication path after presentation. The equal-epoch stale
+guard for genuinely new publications is unchanged.
+
+Device-free evidence is `t310-transport-publication-01`. The first five tests
+run with the previous decisions retained through the extracted production seam
+fail three named assertions: equal-epoch settlement, changed capabilities, and
+missing/older published authority. All five pass with the repair. The final
+six publication tests additionally exercise incoming-epoch normalization and
+install a changed mode/VRR/mapping snapshot through the real authority reducer.
+All fifteen filtered realization tests pass, including the existing stale
+binding, profile churn and affinity tests. These drive the production owner,
+publication decision and ledger directly; they do not drive the complete
+owner loop or a DRM card. A full isolated gate and later matched physical
+qualification remain distinct from these checks. Release 222 is unchanged.
+
 #### Matched desktop artifact prepared (2026-10-09)
 
 Signed niltempus candidate `6d50e38cc5014d248d8110e8c82f928b349cecd0` pairs the

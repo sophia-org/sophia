@@ -223,6 +223,30 @@ impl LiveOutputTopologyOwner {
         })
     }
 
+    /// Owner replacement alone does not change public identity, but changed
+    /// capabilities do, even when the selected mode and head count are equal.
+    /// Compare the complete public payload at the current epoch before deciding
+    /// whether its replacement needs publication or only ledger settlement.
+    fn observe_publication_rebuild(
+        &mut self,
+        outputs: Vec<sophia_engine::HeadlessOutput>,
+        heads: Vec<(sophia_protocol::OutputId, usize)>,
+        realization_changed: bool,
+        publication: &mut output_realization::PendingOutputPublication,
+        published: Option<&sophia_protocol::OutputAuthoritySnapshot>,
+    ) -> Result<LiveOutputTopologyRebuild, &'static str> {
+        publication.snapshot.topology_epoch = self.topology_epoch;
+        let authority_changed = published != Some(&publication.snapshot);
+        let rebuild = self.observe_resolved_rebuild(
+            outputs,
+            heads,
+            realization_changed || authority_changed,
+        )?;
+        publication.snapshot.topology_epoch = self.topology_epoch;
+        publication.already_published = rebuild == LiveOutputTopologyRebuild::TransportReplaced;
+        Ok(rebuild)
+    }
+
     /// Installs an authority-approved policy candidate after its physical
     /// first-presentation barrier. Unlike hotplug reduction, this always
     /// advances the topology epoch: mode timing, transform, mapping, and VRR

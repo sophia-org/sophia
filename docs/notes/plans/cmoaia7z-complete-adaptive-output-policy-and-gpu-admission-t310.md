@@ -185,8 +185,13 @@ devices, their replacements, a new display owner and post-return routed keys.
 The subsequent locked KVM/USB return also survived through unlock in the same
 Session. This completes t306's attended recovery sequence on this desktop;
 its exact evidence is in the [KVM investigation](../investigations/kdleagg3-kvm-output-and-usb-loss-returns-the-desktop-to-greetd.md#release-222-physical-acceptance-2026-10-09).
-t310 remains open for the same-topology ledger/capability-publication fix and
-its broader workspace-affinity/policy exits; t297 retains its wider lock checks.
+t310 remains open for qualification of the same-topology ledger/capability
+publication repair and its broader workspace-affinity/policy exits; t297 retains
+its wider lock checks. The repair compares the replacement authority payload
+with the published snapshot at the current epoch. Equal payloads settle the
+new owner's realization after its presentation barrier without republishing;
+changed advertised modes, VRR or mappings advance the epoch and publish. The
+CPU evidence is in the [investigation](../investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#same-topology-publication-repair-2026-10-09).
 Same-topology lock coverage also
 needs an owner-aware evidence identity; its present dedup key omits the native
 owner, so the earlier cover cannot prove the replacement owner's presentation.
@@ -194,7 +199,7 @@ owner, so the earlier cover cannot prove the replacement owner's presentation.
 The test must recover without a VT workaround. A separate read-only follow-up
 found that requesting a VT switch while already Waiting with no native owner
 overwrites a held renderer-image handoff with `None` in `lifecycle/seat.rs`.
-Its content consequence and repair need their own regression under candidate
+Its content consequence and repair need their own regression under
 [t322](../investigations/kdleagg3-kvm-output-and-usb-loss-returns-the-desktop-to-greetd.md#t322-zero-output-vt-handoff); it is not fixed
 by 222. Evidence: `t306-01/followup-seat-vt-handoff-01.txt`, SHA-256
 `10d81b19e05c17bc919f1daa17627fb25aa219d997ca86cd65952cd7f332110f`.

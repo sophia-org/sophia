@@ -23,6 +23,20 @@ pub(super) struct PendingOutputPublication {
     pub already_published: bool,
 }
 
+impl PendingOutputPublication {
+    /// A replacement that owes no public update still owes presentation and
+    /// ledger settlement at exactly the epoch whose snapshot it matched.
+    pub fn has_stale_epoch(&self, current: Option<u64>) -> bool {
+        if self.already_published {
+            current != Some(self.snapshot.topology_epoch)
+        } else {
+            current.is_some_and(|current| {
+                super::hardware_output_snapshot_is_stale(self.snapshot.topology_epoch, current)
+            })
+        }
+    }
+}
+
 struct PendingRealization {
     binding: OutputRealizationBinding,
     realization: DesktopOutputReconciliation,

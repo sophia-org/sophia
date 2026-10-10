@@ -7,6 +7,9 @@ use sophia_config::{
 };
 use std::collections::BTreeMap;
 
+#[path = "output_realization/publication.rs"]
+mod publication;
+
 fn profile() -> DesktopOutputCandidate {
     DesktopOutputCandidate {
         generation: ConfigGeneration::INITIAL,

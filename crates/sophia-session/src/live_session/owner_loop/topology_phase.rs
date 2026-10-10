@@ -323,13 +323,22 @@
                 // Keep the old published topology until resume succeeds. A
                 // partially applied replacement still belongs to quarantine.
                 let mut replacement_owner = output_topology_owner.clone();
-                let rebuild = replacement_owner
-                    .observe_resolved_rebuild(replacement_outputs.clone(), replacement.head_fingerprint(), realization_changed)?;
-                let topology_changed = rebuild == LiveOutputTopologyRebuild::TopologyChanged;
                 let mut replacement_authority = replacement.output_authority_snapshot(
                     replacement_owner.topology_epoch,
                 )?;
                 policy_layout.apply_authority_geometry(&mut replacement_authority)?;
+                let mut replacement_publication = output_realization::PendingOutputPublication {
+                    binding,
+                    snapshot: replacement_authority,
+                    capabilities: replacement_capabilities,
+                    already_published: false,
+                };
+                let published = wm_session.as_ref().and_then(|wm| wm.published_output_snapshot());
+                let rebuild = replacement_owner.observe_publication_rebuild(
+                    replacement_outputs.clone(), replacement.head_fingerprint(), realization_changed,
+                    &mut replacement_publication, published.as_ref(),
+                )?;
+                let topology_changed = rebuild == LiveOutputTopologyRebuild::TopologyChanged;
                 let replacement_primary = replacement_outputs.iter()
                     .find(|output| output.id == policy_layout.primary).copied()
                     .ok_or("replacement lost its resolved primary output")?;
@@ -375,7 +384,7 @@
                 let runtime = runtime.as_mut().expect("retained runtime");
                 output_topology_owner = replacement_owner;
                 physical_output_topology_replaced |= topology_changed;
-                output_startup_activation::record_ready_heads(&replacement_capabilities)?;
+                output_startup_activation::record_ready_heads(&replacement_publication.capabilities)?;
 
                 if topology_changed {
                     let snapshot = policy_layout.frontend_snapshot(
@@ -442,12 +451,7 @@
                 topology_presentation_deadline = (output_topology_owner.phase
                     == LiveOutputTopologyPhase::AwaitingPresentation)
                     .then(|| Instant::now() + OUTPUT_TOPOLOGY_PRESENTATION_TIMEOUT);
-                pending_hardware_output_publication = Some(output_realization::PendingOutputPublication {
-                    binding,
-                    snapshot: replacement_authority,
-                    capabilities: replacement_capabilities,
-                    already_published: false,
-                });
+                pending_hardware_output_publication = Some(replacement_publication);
                 // A replacement snapshot owes its own presentation before it
                 // may be published, so it does not inherit the previous one's.
                 hardware_output_publication_presented = false;
@@ -611,11 +615,7 @@
             && Some(binding.native_owner) == current_owner;
         let current_profile = output_realization.pending(binding, profile).is_some();
         let current_epoch = wm_session.as_ref().and_then(|wm| wm.output_authority_topology_epoch());
-        let stale_epoch = if publication.already_published {
-            current_epoch != Some(publication.snapshot.topology_epoch)
-        } else {
-            current_epoch.is_some_and(|current| hardware_output_snapshot_is_stale(publication.snapshot.topology_epoch, current))
-        };
+        let stale_epoch = publication.has_stale_epoch(current_epoch);
         if !current_binding || stale_epoch {
             tracing::info!(target: "sophia_scanout_evidence",
                 "sophia_live_output_resolution schema=1 phase=runtime status=uncommitted reason=stale transition={} notice={} owner={}",
