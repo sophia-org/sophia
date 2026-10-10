@@ -1765,6 +1765,85 @@ the manifest still hashes to
 Its retained RESULT is the eighteen-case PASS. This is integrity verification
 of the existing run, not another execution or readiness-gate acceptance.
 
+### t323 Session join under exhausted journal record credit (2026-10-10)
+
+The generic `journal_credit_does_not_block_local_revocation_or_release` test
+joins Session routing and receipt delivery to the production transport worker,
+9P adapter, reactor and journal. Its source base is `eefefed49`. The new files
+are `policy_presentation_credit.rs` and `policy_receipt_credit_peer.rs` under
+`crates/sophia-session/tests/support/`; the other code changes only generalize
+existing test helpers to an explicit epoch and mount the test modules. No
+production behavior or public API changes.
+Two production source files change bytes: `ninep.rs` mounts the new helper,
+and `runtime_adapter.rs` widens its test module's visibility. Both modules'
+files carry `#![cfg(test)]`, so non-test builds are unaffected. Session state
+comes from `ReloadFixture`, with a supplied scene and no supervised WM process.
+
+After acknowledging startup and the original Presented receipt, the scripted
+wire peer reads and decodes exactly 64 consecutive receipt records without
+acknowledging any. Their total size is below the journal byte limit. Two more
+commands occupy the blocked sender and capacity-one command slot; a third is
+refused both immediately and after 100 ms. An independent `api` open still
+succeeds and the worker has no failure event. This establishes exhausted
+journal **record** credit and sustained owner-command pressure, without
+injecting journal state or treating a stopped peer as proof of exhaustion.
+
+Under that pressure, a supplied completed frame losing its stamp revokes the
+local publication and queues the exact Revoked identity. Removing the visible
+policy shield leaves the capture debt responsible for swallowing the owed key
+release; a duplicate reaches the empty-focus path. The owner poll returns
+within a one-second liveness bound and retains that Revoked receipt. With no
+ACK subsequently sent, Session requests transport restart at the four-second
+send deadline (100 ms lower-bound tolerance, two-second upper-bound margin),
+without changing epoch or attempting a replacement.
+Restart correlation is by timing only; this fixture does not expose or assert
+the failure reason.
+
+The tightened positive run passed in 4.20 seconds, following an earlier passing
+run before the extra pressure/deadline checks. Development evidence is under
+`~/.local/state/sophia/development-evidence/t323-receipt-credit-01`.
+The separate `t323-receipt-credit-control-01` replaces the receipt flush's
+nonblocking refusal with a bounded four-second retry. It exits 101 with one
+failed test, first at **Session poll must not wait for journal credit**.
+The control test takes 4.13 seconds.
+The control checks its production source against the HEAD blob, takes a stable
+worktree lease, records the executable hash, restores the source, and verifies
+all seven fixture/module hashes. It ran only after the positive build and test
+finished. Its self-excluding manifest verifies; a separate post-control git
+diff and source hash confirm restoration before integration.
+
+The first isolated `cargo xtask check` passes the Session library, including
+this join, then stops in the existing `startup_failure_diagnostics` integration
+test: its directory helper uses `create_dir`, which produces mode 0755 under
+the inherited umask 0022, while `Capture` requires 0700. The fixture now uses
+`DirBuilderExt::mode(0o700)` explicitly; no diagnostic production check is
+weakened. `xtask.log` preserves that failure. The seven credit fixture/module
+files are unchanged by this separate test-fixture correction.
+
+The repair is signed commit `dd12fa5ca9e7884422d882f1c525317bf7095a8d`;
+the credit join is signed commit `a2703c497ef15ce4472a51e00aa7709eb137964e`.
+The second full isolated `cargo xtask check` passes (`xtask-02.log`): workspace
+tests with all features, SDK checks, clippy, layout and repository verifiers.
+It re-verifies six retained scanout archives; device pixel proofs explicitly
+remain unproved here. Jobs use the fixed cargo-slot pool, four build workers,
+serial tests, offline inputs, nice 10 and device-hidden bubblewrap, with a
+30-minute outer gate timeout. No built binaries are copied into evidence.
+
+| Closed record | SHA-256 |
+| --- | --- |
+| Positive `SHA256SUMS` | `3fbd4ce0dca9b2e14fc610b5e462e9c1ef335b874f355fa0b49983829d84bbb9` |
+| Control `SHA256SUMS` | `b656361e6ec10290a285d4612d7a1d5b84f44c97b9c6d4027b71fc7492c5cebf` |
+| Restored `wm/presentation.rs` | `d50d0f23bcbb8686d7361b2b86346a7227ce6771631aa5e095cbfa4a7ed19c19` |
+| Control test executable | `077f86b9be06bf27b67d984eaaae924d449f4c6b39c185ffe9a87a31d41ec18d` |
+
+This is a scripted raw 9P peer, one output, supplied presentation facts and
+input, and an observed restart request. It does not claim Hagia behavior,
+backend retirement, supervised replacement, reply-byte exhaustion or desktop
+latency. Existing shared-core reply-byte tests remain a separate obligation.
+The reused-surface-generation recovery join and the final eighteen-case paired
+regression remain required by t323; this slice does not change its exit or
+complete t249.
+
 ## Connections
 
 - [t249 plan](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249) owns the unchanged acceptance requirements.
