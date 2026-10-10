@@ -804,6 +804,11 @@ event claim. Handoff counts and pixel equality were not captured. The bounded
 handoff reducer `969658fba` still needs integration; this observation does not
 silently close that part of t322 or t297's broader lock checks.
 
+The tested niltempus integration `481fdc0ab` was subsequently fast-forwarded
+to master and pushed, without a rebuild, repin or reinstall. Its clean release
+worktree and merged local branch were removed; the evidence GC root and rollback
+to accepted release 222 remain. Publication records are `t322-publication-01`.
+
 ### Original incident exits
 
 The [four-part qualification plan](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md)
