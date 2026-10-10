@@ -353,11 +353,70 @@ The full Nim/formal/product gates were not repeated for external tests-only
 changes. Source and build caches are excluded from these evidence manifests;
 the declared source identities, overlay files, binaries and records are covered.
 
-The next bounded t249 work is current session-operation intent and terminal
-peer/credit handling, followed by the native presentation/chord/capture join.
+The operation/disconnect successor below covers the next intent boundary.
+Slow-peer/credit handling and the native presentation/chord/capture join remain.
 The prospective measurement method and original budgets remain outstanding.
 t249/h006 stay open; this does not expand observer authority or reopen t310
 physical acceptance.
+
+## Operation settlement and disconnect implementation (2026-10-10)
+
+Hagia `67da6edfb2c5932b59f828b452ab9bf4e17236fe` adds external
+`tests/external/operations.rs`, reusing the occupied fixture's supplied facts.
+niltempus `7eff07b728a41a7813bd29fb850999f222eb5d09` binds all three module
+hashes and eight exact test names. Sophia is pinned to this investigation's
+parent `ea64b1f027ace8b9064935d966697acfac37d004`; only documentation changed
+from the previous pin, with identical mount and owner APIs. No client-specific
+code entered Sophia and no production code, release or installed process changed.
+
+`t249-operations-01` reports
+`PASS lifecycle=3 occupied=2 operations=3 native=false` on clean signed Hagia
+source. Its verified manifest is
+`84e927141e8887cd9eb0ca66b7f317f9edf47aee0663110d5c139fca7dc83189`.
+The new cases establish:
+
+- A real admitted terminal action first commits its projection; Hagia saves its
+  checkpoint, then sends the operation. The request names the activation serial,
+  deliberately distinct from the projection request ID. Session returns the
+  expected typed launch intent on acceptance and none on supplied refusal.
+  The tuple stays local: neither the operation queue nor executor is invoked.
+- Both operation outcomes permit the same peer's next fresh cycle without
+  changing the committed layout or checkpoint. A refused action instead owes
+  recovery SceneChanged; a fresh explicit action can subsequently send an
+  operation.
+- Terminating the fixture child while a projection or operation is unsettled
+  exercises automatic restart. The new epoch clears pending intent and expected
+  slot, preserves the checkpoint, restores occupied placements/focus through its
+  own scene/Dirty exchange, and accepts a fresh explicit action. The obsolete
+  proposal is discarded, not settled into the replacement owner.
+
+`t249-operations-controls-01` compiles two server mutations in the development
+archive. Accepting a refused operation fails “refusal must not return an
+executable intent”; keeping pending operation across restart fails
+“disconnected operation must lose its authority”. Each is one named runtime
+failure, exit 101, with source restored afterward. Manifest:
+`b597e4e71aa96e00019713d12af0e50f6a92d6c3fb09ab5b1df409f49be6a78f`.
+The three external module files and overlay hash match the final run exactly;
+Hagia's production `src`, `vendor` and `hagia.nimble` Git objects match too.
+
+`t249-operations-checks-01` passes strict Session overlay clippy, then stops
+after layout succeeds because Nimble tries to save metadata in the read-only
+sandbox. Its manifest is
+`5c60c5999c026ed8fdd0f3cb55de9581ac5c1f84049b185ce452c71758a9e1e8`.
+The successor `t249-operations-checks-02` uses the layout script directly and
+passes layout, two runner controls, strict runner clippy and formatting;
+manifest `d822a3c6639d8e92d32d479c1e5b25727fa7a36d1164b492ef9144680889abd3`.
+All manifests verify and covered records are read-only. The development run
+is preserved separately from the clean signed-fixture run.
+
+This extends joined bit-7 evidence through Session's typed-intent boundary and
+lost-peer recovery. It does not prove application execution, exactly-once
+external effects, exhaustive wire output, real resize deadlines, public
+control-socket restart or physical input. Layout completion and occupied
+authority facts are supplied; native receipts remain absent. Full Nim/formal
+and product gates were not repeated for external tests only. t249/h006 remain
+open for slow-peer/credit coverage, presentation/chord/capture owner joins and
+the reviewed measurement method; original budgets and observer scope are unchanged.
 
 ## Connections
 
