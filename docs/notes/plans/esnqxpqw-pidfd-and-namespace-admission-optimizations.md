@@ -158,6 +158,237 @@ would qualify the admission state machine only; actual authentication still
 needs the independent peer exchange and its negative controls. t133 remains
 open and t317 implementation is not promoted by this review.
 
+## Local authentication design and t317 handoff (2026-10-10)
+
+This section resolves the design choices left open by the earlier review at
+source `b089c15d5`. On 2026-10-10 niltempus approved supervised authentication
+first for desktop components, an authorized developer launch command, and an
+explicit follow-on for independently launched local tools and applications.
+This is an implementation target,
+not implemented support or authentication evidence. X admission and all current
+role checks remain intact.
+The first mechanism is **Session-attested, Factotum-verified launch-channel
+authentication**. Session and its supervisor are the root of trust: Session
+attests channel possession, while Factotum verifies the attempt against that
+registration. This mechanism does not defend against a compromised Session,
+which already owns admission and role authority.
+It proves possession of a capability provisioned for a particular authorized
+launch. It does not prove the current holder's PID, executable image or human
+identity afresh.
+
+### Mechanism and bootstrap
+
+Use ordinary 9P `Tauth`, reads/writes on its authentication fid, and `Tattach`
+with that verified afid. [Plan 9's attach specification](https://9p.io/magic/man2html/5/attach)
+deliberately leaves the authentication protocol to the implementation. The
+mechanism takes the external-credential approach described by
+[RFC 4422 Appendix A](https://www.rfc-editor.org/rfc/rfc4422.html#appendix-A):
+authority comes from a protected channel established outside the exchange.
+This is an analogy of security semantics, not a claim of SASL wire compatibility.
+The channel's custody and isolation must be established; the exchange itself
+adds neither encryption nor protection from deliberate delegation.
+
+Session's trusted launch policy chooses an opaque principal, namespace and role
+audience before spawning. A principal is a policy identity, not a claimed uname,
+UID or role name. Factotum validates the corresponding delegation through its
+private Session control connection; it does not accept a caller-selected
+principal. Namespace selection and grants remain Session decisions.
+
+1. Reserve a fresh launch generation and create a private connected channel
+   `P` for the prospective child. Session retains the trusted end and serves a
+   bounded conversation-only relay, bound to that reservation. Session registers
+   the delegated principal with Factotum over their existing private control
+   connection. No descriptor crosses the 9P stream, and Factotum does not need
+   to adopt the child endpoint. No path exposes `P` to another same-UID client.
+   A client on `P` cannot walk, open or call `ctl`,
+   keys, `log`, `confirm`, `needkey`, PAM or password retrieval.
+2. Pass only the designated child end through the protected spawn. An environment
+   variable may name its descriptor number; that number is not a credential.
+   The parent closes its child-end copy after spawn. The launch becomes Active
+   only when this reservation's spawn and protection confirmation succeed.
+   A child can run before confirmation: requests during Reserved wait only within
+   their original deadline and cannot receive a successful verdict. Failure
+   retires the reservation, closes its channels and burns its generation.
+3. On the ordinary role transport `X`, `Tauth` allocates afid `A`. Its owner asks
+   Factotum for an attempt bound to `(server instance, X, wire generation, A,
+   attempt generation, role audience, session generation)`. Factotum creates a
+   fresh 256-bit nonce using the platform random source; failure refuses the
+   attempt. The nonce is an opaque correlation challenge, not a bearer grant.
+   The afid serves it to the client; no protected role file is accessible yet.
+4. The client relays the challenge over `P`. Session's relay attaches the
+   trusted channel-registration identity; the child cannot supply that field.
+   Factotum resolves the original attempt and checks the registered delegation,
+   session and allowed audience, with Session checking Active launch custody
+   again before using the verdict. Factotum trusts Session's channel attestation;
+   it does not inspect `P` itself. Client-supplied connection IDs, principals,
+   generations or namespace names cannot replace those facts. A successful
+   response consumes the nonce once and sends a typed verdict to Session over
+   the trusted owner channel. The client cannot manufacture that verdict by
+   writing success to an afid. Wrong-channel, expired or spent challenges fail
+   without consuming a different valid attempt.
+5. The afid reports success only for its own still-live attempt. `Tattach`
+   checks that result, the live supervisor launch record and current Session
+   policy together. It reserves root-fid/reply/admission capacity before the
+   first successful attach pins the immutable principal and namespace. Failures
+   leave previous admissions and fids unchanged. Uname/aname must match the
+   authenticated request and policy-selected view; neither selects authority.
+   The `.L` numeric uname is also a claim, never a substitute proof.
+
+Version the local mechanism independently of the role records. t317 must publish
+its bounded afid transcript and independent SDK exchange before enabling it;
+do not pretend that the existing `pass` or `pam` protocol implements it. The
+minimum transcript carries a versioned challenge, its relay and a terminal
+status. It carries no password, private key, bearer ticket or client-asserted
+verification result. Server-to-Factotum messages are private owner commands,
+not new WM/shell records. A later standard remote mechanism can use the same
+neutral verified-result seam, but requires its own review and provisioning.
+
+This preserves two independent decisions even though they share launch facts:
+Factotum confirms the Session-registered delegation for the relayed attempt;
+Session separately checks whether launch `L` still owns the requested role. Revoking one must
+prevent attach even if the other remains valid. A valid principal alone never
+creates a role assignment. The core sees a verified result, not Factotum keys
+or Session-specific policy.
+
+### Lifetimes and atomic transitions
+
+| Event | Required transition |
+| --- | --- |
+| Spawn reserved / confirmed | Reserved becomes Active only for its own successful spawn/protection result. A different spawn result cannot activate it. Rollback retires the generation permanently. |
+| `Tauth` / completed exchange | One bounded Pending attempt becomes Verified only through the trusted verdict. A late result must match transport, wire and attempt generations as well as the afid number. |
+| First successful attach | Pin principal, namespace and launch binding for the transport lifetime; publish the admission and root fid together. No partial identity pin or consumed unrelated grant on refusal. |
+| Further attach | Reuse a valid afid only for its authenticated uname/aname and scope. Another view needs a fresh authentication scope and must still be a subset of the pinned identity's grants. Refuse another principal, namespace or launch. |
+| `Tflush` | Cancel the pending wire request. It cannot undo an already committed attach. Reading or rereading the fixed challenge does not consume its verification right; the attempt remains bounded by its original deadline and can be explicitly clunked. |
+| Clunk of afid / attempt deadline | Cancel and release that attempt; late verification is ignored. Clunk of a role fid does not unpin the transport identity. |
+| `Tversion` | Release fids, afids and their verdict handles and cancel pending verification. Preserve transport identity, launch binding and the lifetime attempt budget. Fresh authentication must prove the same pinned identity. |
+| Revocation / launch exit / transport loss | Prevent new protected operations, cancel pending attempts and invalidate results before closing or replacing the transport. Closing `P`, Session's per-launch relay, alone is insufficient: consult the owner's revoked generation before attach/delivery. The shared Session–Factotum control connection remains open for other launches. |
+| Reconnect in the same live launch | Allowed via the ordinary role endpoint and a fresh attempt using the still-live `P`. A single-assignee role must retire its previous transport before accepting a replacement; a second connection cannot steal the live assignment. New connection epochs never inherit old fids/verdicts. |
+| Launch replacement | New generation and new `P`; the old generation cannot authenticate the replacement even if PID, path, afid or numeric connection values repeat. |
+
+`P` therefore lasts for the authorized launch generation, while each challenge
+is single-use. The design does not leave old afids valid across `Tversion`.
+The admission owner retains the pinned identity outside the core's wire-reset
+state and ends it only with the transport. Secret and challenge material stays
+out of the immutable `ClientAdmissionContext`, WM snapshots and durable logs.
+
+### Initial bounds, to be enforced and tested by t317
+
+These are conservative policy limits for the first local mechanism, not measured
+latencies or capacity claims. They bound unauthenticated work independently of
+the existing role's post-attach limits; a smaller existing role limit still wins.
+
+| Resource | Limit and refusal behavior |
+| --- | --- |
+| Unattached transports | 32 per Session, at most 8 per endpoint; refuse before allocating another conversation. Existing admitted clients retain their slots and service. |
+| Provisioned channels | One per launch generation, at most 64 active or Reserved delegations per Session. Reserve before spawn; refusal starts no child, and retirement reclaims its channel and registration. |
+| Pending authentication | One afid attempt per transport, 2 per authorized launch, 8 per verified principal and 32 globally. Before identity is known charge endpoint/global quotas, never a claimed uname. |
+| Attempt and first-attach time | 5 seconds from `Tauth`, within a 10-second absolute first-attach deadline from transport adoption. Activity, Reserved state and `Tversion` do not renew either deadline. |
+| Attempt count | 8 starts per transport lifetime, including cancelled/failed attempts; `Tversion` does not reset it. Exhaustion requires a new admitted connection and remains subject to endpoint limits. |
+| Authentication bytes | At most 4 KiB aggregate input/output transcript per attempt, including relay framing; the initial local exchange should be much smaller. Oversize fails before forwarding or allocation. |
+| Unattached wire state | Maximum 4 fids, 4 outstanding tags, 64 KiB negotiated message size and 128 KiB unsent replies, or the existing endpoint's smaller limits. Afids count toward fid limits; no role-root fid before successful attach. The smaller authentication-transcript bound applies before forwarding. This does not force a smaller post-attach role message size. |
+| Owner work and completion | At most 32 pending verification requests and 32 bounded results globally. Reservation follows a request until its result is consumed or cancellation acknowledged; never release a slot early while an unbounded late-result queue can still grow. No blocking send, per-attempt thread or Engine wait. |
+
+Quota rejection does not evict another principal's admitted work. Dispatch must
+give admitted connections progress while unauthenticated endpoints are full;
+bound work per turn and test a flood alongside an already-admitted operation.
+Saturated unauthenticated service may refuse newcomers: these finite bounds do
+not claim fair access against an unlimited external connection flood. No PAM
+worker or user prompt is involved in the local mechanism.
+
+Custody-required path endpoints retain today's cheap expected-peer credential
+filter before allocating these slots on platforms that provide it. This is an
+availability filter, not the authenticated principal or the launch proof.
+Do not remove it merely because the afid proof works: an unlaunched same-UID
+process must not squat on the lock provider's admission capacity. A platform
+without this filter needs a separately controlled reserved transport handoff
+before enabling a custody-required path listener; anonymous quota sharing is
+not an acceptable fallback. Removing the hard `SO_PEERPIDFD` requirement and
+removing this accept filter are different changes.
+
+Failure to reserve a launch slot is an explicit unavailable launch result and
+uses the supervisor's bounded restart/backoff policy, not an immediate retry
+loop. A lock-provider launch or attach failure must preserve Session's locked
+input/output protection; it cannot release the lock or fall back to an
+unauthenticated provider. Test both a pre-auth flood and quota refusal while
+locked, without weakening the existing fail-closed lock contract.
+
+### Implementation boundaries and controls
+
+`ProtectionDomainSpec::inherited_fds` currently accepts only descriptors 0–2;
+the spawn code nulls unlisted standard descriptors. This is not a universal
+close-all-fds guarantee from Rust `Command`. t317 needs a narrow typed channel
+handoff with child-only CLOEXEC handling, exact bubblewrap preservation at the
+supported minimum version, and closure of every unintended inherited descriptor.
+The SDK sets CLOEXEC again when adopting `P`; this reduces accidental exec
+inheritance but cannot prevent fork or intentional descriptor passing.
+
+The holder can proxy or transfer its existing capability. That remains the
+same launch's delegated authority, not a newly supervised child. Controls must
+prove that it cannot change principal/namespace/audience and that launch
+revocation cuts it off; they must not claim that passing the descriptor is
+impossible. t142 owns host reach and transfer containment. Current pidfd and
+credential checks remain required until the replacement controls pass for each
+role; removing one role's check does not waive another role's gate.
+Specifically, the holder can relay a challenge from another process's transport
+and thereby authorize that transport within the same delegation. The SDK must
+relay only challenges read from its own afid; this does not constrain a malicious
+holder. Current platform accept filters can further limit such transport use,
+but the capability mechanism itself does not prevent intentional delegation.
+
+| Control family | Required first discriminating observation |
+| --- | --- |
+| Bootstrap exposure | The child can use only its provisioned conversation; key administration and another launch's channel are unreachable. A deliberately inheritable unrelated sentinel fd is absent inside the sandbox. Observe that an ordinary exec after SDK adoption does not inherit `P`; do not claim this stops fork or intentional transfer. |
+| Activation and custody | Early child request waits without admission, failed spawn refuses it, wrong reservation cannot activate it, unlaunched same-UID peer gets no verdict. Removing the Active/custody guard fails before protected bytes are delivered. |
+| Attempt correlation | Wrong audience/session/launch, nonce replay, another afid/transport, reused IDs and late completion after reset each refuse at the exact attempt. Removing a correlation field must fail its corresponding case. |
+| Immutable admission | Wrong principal or namespace on second attach and after `Tversion` refuse without rebasing old authority. Stale afid is invalid; fresh same-identity authentication succeeds. Removing the pin check is the control. |
+| Revocation | A verified but not yet attached result, an open fid, a blocked read and a forwarded `P` lose authority when their source generation ends. Remove the final live check to discriminate the race. Delivered bytes cannot be recalled. |
+| Cancellation and overload | Test both reply/flush orders, clunk, timeout, reset and disconnect; counts return exactly once. Fill each named quota and make independent admitted work progress. Unverified names cannot charge another principal's quota; foreign path connectors cannot consume the lock assignee's slots. Replace the nonblocking handoff with a bounded blocking mutant to distinguish owner progress. |
+| Independent peers | C and Rust SDK peers execute the real afid exchange and use only the returned admitted view. Tests with supplied verifier outcomes qualify only the state machine, not authentication. |
+
+t317 starts with this state model and device-free controls, then implements the
+real Factotum exchange and protected handoff, then admits each role after its
+controls pass. No current peer check is removed by this planning task. Existing
+9P core/export and affected external client gates are rerun on the candidate;
+admission CPU, memory, wakeups and bounded failure are measured without inventing
+a sub-millisecond target.
+
+### Scope for ordinary tools and alternatives
+
+The first observer/operator client is also an explicitly authorized Session
+launch. A trusted profile/configuration, or an already-admitted administrative
+path under t254, requests that launch and chooses its recipe. An ad-hoc CLI
+started from a shell gets no UID-only fallback. t318/t319 must preserve this
+bootstrap dependency; unlaunched or remote principal provisioning is not
+silently supplied by a socket path. This is a bootstrap constraint on the first
+delivery, not removal of the later ordinary-client target.
+
+Third-party WMs, shells and desktop components remain independent executables
+using the public protocol and SDK, in any supported language. Supervised launch
+supplies their authorized connections; it does not require their code to live
+in Sophia. Before calling this developer experience ready, t318 must provide
+an authorized command to launch a developer's executable under a selected,
+policy-approved recipe. The caller cannot grant itself a requested role.
+
+[t324](jsschoen-converge-public-roles-on-one-9p-core.md#t324) owns local credential
+provisioning and authentication for tools started directly from a terminal and
+independently launched 9P applications. Supervised launch is not a permanent
+requirement for all applications. That follow-on does not itself deliver the
+future 9P application frontend, and remote authentication remains separate.
+
+Using the role socketpair itself as the only credential would simplify custody,
+but would not supply the reviewed Factotum afid exchange and would force every
+reconnect to relaunch. Keeping path sockets plus mandatory peer checks is the
+current safe baseline, not the portability exit. Reusing PAM success or a
+retrieved password as a role credential, and placing reusable bearer tokens in
+environment variables or files, are rejected. A standard network authentication
+mechanism would still need separate launch custody and credential provisioning;
+it is unnecessary for this local supervised path. No new cryptographic
+challenge-response algorithm or remote-authentication claim is introduced.
+
+The t133 planning result is the reviewed boundary and this measurable handoff.
+The state-machine, real-exchange, containment and role-migration results remain
+t317/t142 work; t133 completion must not be described as those controls passing.
+
 ## Connections
 
 - [Admission investigation and source corrections](../investigations/1pv291te-namespace-and-client-admission-security-gaps.md).

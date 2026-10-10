@@ -84,11 +84,35 @@ default for observation and driving; combining grants requires explicit
 operator policy. This target does not assert that the current admission or
 capture implementation already provides these guarantees.
 
-The [admission boundary draft](notes/plans/esnqxpqw-pidfd-and-namespace-admission-optimizations.md)
+The [admission boundary design](notes/plans/esnqxpqw-pidfd-and-namespace-admission-optimizations.md#local-authentication-design-and-t317-handoff-2026-10-10)
 and [recipe boundary draft](notes/investigations/kcfh2hdg-adopting-the-plan-9-namespace-model-in-sophia.md#proposed-recipe-boundary-2026-10-10)
 map this target to current source and proposed device-free controls. Their
 grammar, resource bounds and authentication handoff are design work, not
 additional supported interfaces.
+
+The proposed first local authentication target uses a supervisor-provisioned private
+conversation channel and a Factotum verdict bound to one 9P authentication
+attempt. It proves possession of that launch's delegated capability, not a
+current PID or executable image. Session still checks the live role assignment
+separately. A forwarded channel never changes its principal or grants and loses
+authority when its launch generation is revoked. Wire reset invalidates afids
+while preserving the connection's pinned identity; a fresh authentication must
+prove that same identity.
+
+The approved initial observer/operator bootstrap requires an authorized Session
+launch from trusted configuration or an admitted administrative path. A socket
+path or same UID is not an unlaunched-client fallback. Independent credential
+provisioning for ad-hoc or remote clients remains a later authentication design;
+the first capture CLI must retain this bootstrap requirement. No existing X
+admission, role peer check or supported 9P operation changes in this design.
+Independent components remain standalone programs using the protocol and SDK.
+[t318](notes/plans/jsschoen-converge-public-roles-on-one-9p-core.md#t318) must
+provide an authorized developer launch command before this experience is ready;
+requesting a role cannot grant it. Local authentication for independently
+launched tools and applications is an explicit
+[t324 follow-on](notes/plans/jsschoen-converge-public-roles-on-one-9p-core.md#t324),
+not a permanent requirement that Sophia launch every application. This staging
+was approved by niltempus on 2026-10-10.
 
 ## Session Profiles
 

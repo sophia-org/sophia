@@ -81,6 +81,74 @@ now separates authenticated principal, supervisor launch custody, namespace
 selection and grants; it withdraws pidfd-as-ancestry and unmeasured timing claims.
 No production checks were removed and no new authentication was exercised.
 
+## t133 local mechanism review (2026-10-10)
+
+Read-only source review at `b089c15d5` confirms the earlier corrections and
+resolves the next implementation boundary in the
+[local authentication design](../plans/esnqxpqw-pidfd-and-namespace-admission-optimizations.md#local-authentication-design-and-t317-handoff-2026-10-10).
+No code was changed and no build, authentication exchange, sandbox probe or
+performance experiment was run for this planning slice.
+
+The current Factotum agent adopts only its private Session stream.
+`agent.rs::serve` checks its parent relationship and registers that connection
+as `ChannelClass::Session`; `export.rs::attach` refuses unregistered connections.
+The only protocols remain `pass` and `pam`. Password retrieval has no server
+authentication side, and PAM is a Session-only unlock attempt whose result has
+no role-connection proof. A public `rpc` path must not be invented by exposing
+the existing key-administration tree.
+
+The selected implementation direction is a private launch-generation channel
+with conversation-only access, provisioned by the actual supervisor spawn.
+Factotum verifies an afid challenge relayed through that channel and sends its
+verdict to Session over the trusted owner channel. The verdict names the exact
+transport, wire generation and attempt. Session joins the delegated principal
+to a separate still-live launch assignment and policy-selected namespace.
+The plan records nonce lifetime, immutable connection identity across `Tversion`,
+Reserved-to-Active spawn ordering, bounded quotas and the controls for each.
+It introduces no password-derived or custom cryptographic proof.
+Session retains the trusted end of the child channel and attests its registration
+when relaying to Factotum; no descriptor is passed on the 9P stream. Factotum
+trusts that Session attestation rather than directly inspecting the child fd.
+Custody-required path endpoints retain the current cheap peer filter before
+allocating authentication slots. Removing `SO_PEERPIDFD` as a hard requirement
+does not authorize an anonymous path on which another process can squat ahead
+of the lock provider; lock-provider failure must leave the lock enforced.
+
+Two review corrections are material. Rust `Command` does not universally close
+all descriptors except standard I/O; CLOEXEC controls exec inheritance.
+`ProtectionDomainSpec::inherited_fds` currently validates only 0–2 and the spawn
+code nulls excluded standard streams. Bubblewrap's exact descriptor behavior
+has not been tested by this review: an explicit named handoff and a sentinel-fd
+leak control are implementation prerequisites. Also, `Tversion` must invalidate
+afids and their results, while the transport's pinned principal and launch
+binding survive. Reauthentication uses a new challenge through the same live
+generation capability, not a stale verdict.
+
+Possession is not proof of the current holder's process identity. A launched
+child can fork, transfer a descriptor or proxy its authority; the recipient
+still has that launch's authority and cannot choose another principal or role.
+Revocation must end that authority even if the descriptor remains open.
+Host containment belongs to t142, with X admission unchanged. The initial
+observer/operator tool must also be an authorized Session launch; adding a
+same-UID shortcut for an ad-hoc shell client would violate this design.
+
+The first local mechanism borrows the external-credential principle of
+[RFC 4422 Appendix A](https://www.rfc-editor.org/rfc/rfc4422.html#appendix-A),
+without claiming SASL framing or remote authentication. The
+[9P auth/attach contract](https://9p.io/magic/man2html/5/attach) supplies the afid
+exchange but deliberately leaves the authentication mechanism unspecified.
+On 2026-10-10 niltempus approved this t133 design result: supervised desktop
+components first, an authorized developer launch command under t318, and local
+credential provisioning for independently launched tools and applications as
+the explicit [t324 follow-on](../plans/jsschoen-converge-public-roles-on-one-9p-core.md#t324).
+Components remain independent executables; this is not a permanent requirement
+that Sophia launch all applications. The reviewed source is `b089c15d5`; this
+result changes documentation only. No exchange, build or confinement control
+was run for this design review. Actual exchange, state-machine, independent
+SDK, overload and replacement-peer-check controls remain t317 acceptance work;
+t142 owns the confined-group proof. Existing peer checks and X admission remain
+unchanged until their respective implementation gates pass.
+
 ## Connections
 
 - Links to [Namespaces and Portals](../../namespaces-and-portals.md)

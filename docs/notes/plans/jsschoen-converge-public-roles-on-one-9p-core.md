@@ -237,6 +237,13 @@ no third-party path is opened in process.
 
 ## t317
 
+Implement the approved [t133 local authentication handoff](esnqxpqw-pidfd-and-namespace-admission-optimizations.md#local-authentication-design-and-t317-handoff-2026-10-10),
+including Session's launch-channel relay, Factotum's correlated verdict,
+immutable transport identity across Tversion and the bounded negative controls.
+Retain the expected-peer accept filter as an availability defense until a
+reserved handoff has equivalent controls; removing a hard SO_PEERPIDFD
+dependency does not authorize anonymous custody-role admission.
+
 Prove identity at attach. The core accepts an afid, runs the factotum
 conversation, and the admission policy derives the `ClientAdmissionContext`
 from that identity together with the supervisor's launch custody record for a
@@ -271,6 +278,15 @@ and capture grants, with input injection absent. Operator and driver recipes
 do not inherit observer grants; deliberate composition is explicit policy.
 Depends on t275, t142 and t317.
 
+The first developer delivery also needs an authorized launch command for an
+independent executable and a policy-approved recipe. Its authority comes from
+trusted configuration or an already-admitted administrative path (t254), never
+from a caller's requested role or same UID. Prove an allowed developer launch
+and refusal of an unauthorized role escalation. Publish the SDK adoption steps
+and a generic example; third-party WM, shell and desktop code remains outside
+Sophia. This is the initial observer/operator bootstrap used by t319, not the
+final authentication model for all applications; t324 owns the local follow-on.
+
 The [monitor continuity contract](cmoaia7z-complete-adaptive-output-policy-and-gpu-admission-t310.md#persistent-services-and-replaceable-display-attachments)
 adds a lifetime control: a display's replacement generation cannot silently
 retarget an existing output-bound handle. Role connection identity and physical
@@ -278,6 +294,9 @@ generation are independent. Pinned read-only inspection bytes may remain
 historical; operations requiring a live output must reject stale identity.
 
 ## t319
+
+The first CLI uses t318's authorized launch path. Starting it directly from an
+unadmitted shell does not create grants or bypass authentication.
 
 Deliver capture as the first portal bind, carved from
 [t046](queue-16-portals-and-confined-applications.md#t046). An output-only
@@ -329,6 +348,29 @@ target text, an amendment to the one-core decision naming the chosen seam,
 a device-free test list covering accept, refuse, revoke, lock and provenance,
 and no implementation. This precedes any application API under t316's
 successor work.
+
+## t324
+
+Deliver local credential provisioning and authentication for independently
+launched tools and future 9P application clients. This follow-on preserves the
+ordinary-client target approved by niltempus on 2026-10-10; implementation needs
+explicit promotion after its mechanism and controls are reviewed. Depends on
+t317 and t318. It does not require or supply the future application frontend.
+
+First settle how an already-trusted authority provisions, scopes, renews and
+revokes a credential for a terminal-launched client without a UID-only fallback,
+password reuse or a new cryptographic algorithm. Authentication must not imply
+supervisor custody or grant a desktop role. Reuse the immutable attach and
+recipe boundaries rather than introducing a second admission model.
+
+Exit: publish the versioned protocol and SDK flow; an independent client started
+outside Session authenticates for an explicitly provisioned grant, while an
+unprovisioned same-UID client is refused. Controls cover replay, another
+transport or audience, expiry, revocation, reset, reconnect, overload and role
+escalation. Record credential storage and intentional delegation limits, and
+prove revocation of retained authority. Remote authentication and application
+frontend behavior remain separately scoped; an authenticated connection alone
+does not establish either. Keep X application admission unchanged.
 
 ## Connections
 
