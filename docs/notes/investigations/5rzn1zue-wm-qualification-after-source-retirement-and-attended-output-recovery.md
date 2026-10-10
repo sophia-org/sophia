@@ -89,6 +89,54 @@ portal grants and the observer capture CLI. t307/QEMU remains off the critical
 path. Admission exchange and recipe review are in esnqxpqw/kcfh2hdg; no new
 admission implementation was authorized by the test work.
 
+## Post-reboot runner review (2026-10-10)
+
+Resumed t249 at the checkpoint above and refreshed the zk index. Independent
+development checks of niltempus `6fc1cf08` passed all nine runner tests, strict
+runner Clippy and formatting. External `flock` probes confirmed busy run and
+cleanup refusal without root mutation, protected ancestor refusal, and cleanup
+manifest verification after lease release. These were scratch development
+checks, not a product qualification package.
+
+Independent Claude review found an uncovered interruption case: the runner's
+close-on-exec lock is released if the runner dies, while GNU timeout places the
+build/test supervisor in a separate process group and can keep using the
+archive. A second run can then acquire the lock and replace that archive.
+The earlier passing checks do not qualify this case. The correction requires
+the supervisor to retain the lease through its work and a control that kills
+the runner while the step remains alive. External controls must also avoid
+calling the self-locking runner while holding the same lock themselves.
+
+The accepted correction is signed niltempus `20ff4c0`. Only build/test
+supervisors and the `git archive`/`tar` source writers inherit the lease;
+read-only helpers retain close-on-exec behavior. Thirteen serial tests pass,
+including three controls that kill the lease-owning parent while each writing
+child remains active. Removing inheritance in a compiled scratch mutant makes
+all three fail when the second lease wrongly succeeds, with exit 101. The
+root's control cleanup observes child completion before deleting its scratch
+roots. Runner Clippy, formatting and whitespace checks pass. Parallel test
+execution exposed transient lock inheritance across unrelated fork/exec calls;
+the documented suite is serial. This is a test-execution limit, not evidence
+that the single-threaded runner drops a held lease.
+
+`t249-runner-resources-01` preserves the incomplete 11-test development state
+as STOP; its manifest is
+`280237859b8d6f7a052129935481823cb7a1b9298ddd610c15ae88bf96f3088c`.
+`t249-runner-resources-02` qualifies the corrected runner, manifest
+`2572375df419942fdb9697e615514c0daeb4b8cc18c1e469a251a67ca9b8c3c0`.
+Both manifests independently verify. Records contain source, logs, paths and
+hashes, with no copied compiled artifacts. A separate reviewer control removed
+scratch roots after its timeout but before confirming process exit; that
+cleanup is not qualification evidence, and the reviewer subsequently confirmed
+no surviving processes. The independently retained root controls supply the
+qualification above.
+
+No A case or product run had started at runner acceptance. Revocation's first
+answer must bind to the captured request identity with subsequent cycle
+admission disabled. Settlement without a returned proposal is observable;
+its precise refusal reason remains a source inference. The t249/h006 exits and
+the installed desktop remain unchanged.
+
 ## Question
 
 What remains of t249/Hagia h006 after the WM became 9P-only and t310/h018
@@ -688,6 +736,78 @@ closed. No full product gate, release, installation or live-session operation
 was repeated. Future runs must use cargo-slot and keep build products outside
 evidence under the updated global resource rules; frozen historical records
 are preserved.
+
+## Revocation reaches the switcher model (2026-10-10)
+
+Hagia `22908aa070d14bc4226e65945f771426155ca944` adds
+`sdk_presented_revocation_closes_switcher` in a child of the external
+presentation fixture. niltempus `95c5c83` requires eleven individually listed
+cases and binds all six fixture modules. Sophia remains pinned at `f77244abe`;
+no production implementation, release pin or installed process changed.
+
+The two presentation cases share their original prefix through Held. The new
+case supplies completion without pressing Right or creating release debt,
+then supplies a completed frame whose policy content remains visible but whose
+publication stamp is absent. Session revokes the original presentation identity.
+The first SceneChanged request is captured at admission; subsequent polling
+disables cycle admission and requires the same epoch, healthy transport and the
+exact request. Its answer must contain no presentation and preserve W1 focus.
+Only after that answer commits does the fixture supply Withdrawn. Ended returns
+chord credit and still preserves W1 in the proposal, committed state and
+checkpoint.
+
+The development run `t249-revocation-dev01` passes all eleven cases, including
+the unchanged captured-Right behavior after extracting the shared prefix. Its
+manifest is
+`2b665e30cbc50d191a181760c90a01d478ab1c651593585914ef0d48c60d6b19`.
+`t249-revocation-controls-01` omits only Revoked transport delivery in the
+archived Session, retaining local revocation and withdrawal state. It fails
+exactly one named assertion on the first answer, with exit 101; manifest
+`df25107e836251b42c70dc82713219f658ae4c618a5540f80f06030b476b9e62`.
+Both observe request 5, scene generation 2: the positive returns a proposal;
+the control settles without one before any Withdrawn frame or retry. Neither
+timeout nor disconnect satisfies the control.
+
+Strict overlay Clippy initially rejected the fixture's large answer enum.
+`t249-revocation-checks-01` preserves that STOP, manifest
+`67a8e2b75c3407fd18c1b7d85b9d4b55594bebc6d26da69d443b36685bb85a4e`.
+The signed fixture boxes the proposal value without changing the assertions
+or owner calls. These development records precede that representation change.
+
+The final signed run and repeated control bind identical fixture bytes:
+
+| Package | Result | Manifest SHA256 |
+| --- | --- | --- |
+| `t249-revocation-01` | Clean signed fixture, all eleven cases pass. | `54aa50e50d2dcf44ab7bef253bdacb63f8df764a46173d20dbb7a5de4ace9b34` |
+| `t249-revocation-controls-02` | Omitted Revoked fails the named first-answer assertion, one failure, exit 101. | `77cbf1cd6057d3676799a510afab167f0a0f5afc193b674a350278a7b4ee2d0b` |
+| `t249-revocation-checks-02` | Restored Session overlay passes strict Clippy, including tests. | `439ba8df712112af0f38173c99e238e18abb201c5c2c3ecc1e4a68ced7f3d515` |
+
+All manifests independently verify. The control holds the external build-root
+lock and a cargo-slot lease, restores the archived server bytes, and confirms
+the Hagia binary and all fixture modules are unchanged. The final run uses
+the signed Hagia fixture above and niltempus runner `95c5c83`; production Hagia
+source is unchanged from its baseline. Root also checked the updated runner's
+thirteen serial controls, strict runner Clippy, Rust formatting, whitespace,
+and Hagia's `nimble layout`. No full product gate was repeated. Binaries and
+build caches stay outside evidence; paths and hashes identify them.
+
+After controls and checks ended, the runner removed the marked build root
+under its own lease. `t249-revocation-cleanup-01` passes and independently
+verifies, manifest
+`edd860bbe0be39366accaaf11eb17647e9d60cac41c86199c835a0236314e928`.
+The stable sibling lock remains; cargo slots and frozen evidence were not
+removed. Hagia `22908aa` and niltempus `95c5c83` are integrated and pushed to
+their masters. Their merged worktrees and the detached Sophia test pin were
+removed after inspection; the source identities and evidence remain recorded.
+
+The observation is exact-request settlement without a returned proposal.
+This staged-projection rejection exposes no refusal-reason record; the
+same-generation presentation rejection remains a source inference. The
+`stale_responses_delta=0` observation counts only scene-advanced rejections and
+does not identify the reason here. Supplied content, heads, completion and
+router time retain their earlier limits. Native retirement, source-loss/pixel
+qualification, disconnect with release debt, cancellation, AbortSettlement,
+receipt ACK reachability and latency remain separate work. t249/h006 stay open.
 
 ## Connections
 
