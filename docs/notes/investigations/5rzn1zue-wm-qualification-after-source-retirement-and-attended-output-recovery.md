@@ -12,7 +12,9 @@ tags: [validation, protocol, policy]
 Resume update: B and A below are integrated. Read the
 [runner review](#post-reboot-runner-review-2026-10-10) and
 [revocation results](#revocation-reaches-the-switcher-model-2026-10-10)
-before starting another job; the old worktrees have been removed. The original
+before starting another job, followed by the
+[captured-disconnect results](#captured-release-debt-survives-replacement-2026-10-10).
+The old worktrees have been removed. The original
 reboot checkpoint follows for provenance.
 
 User requested a reboot checkpoint.
@@ -869,6 +871,78 @@ router time and layout-completion limits. It does not establish application
 delivery, native withdrawal, receipt ACKs, pointer debt, cancellation or
 AbortSettlement. No builds, product runs, hardware access or installed-session
 changes were made for this review. t249/h006 remain open.
+
+## Captured release debt survives replacement (2026-10-10)
+
+Hagia `ad3ec6601f145fd333576501fcb1b5cb2f8e7d35` implements the preceding
+design as `sdk_presented_disconnect_preserves_release_debt` in a child of
+the external presentation fixture. niltempus
+`8095269602daac885d17f300141b57e4f300128d` lists twelve cases and binds all
+seven module hashes. Sophia stays pinned at `f77244abe`. There is no production
+code, release or installed-session change.
+
+The case presents the real Held switcher, captures Right and obtains its exact
+PresentationAction proposal without committing it. With no pending layout
+settlement, termination of only the fixture peer triggers automatic replacement.
+Immediately after the epoch advances, Right debt remains while old presentation,
+staged request and chord authority are gone. Credits return, and the committed
+layout and checkpoint remain unchanged. The old captured identity cannot enqueue
+work in the successor. With supplied withdrawn projections, the owed release
+produces no policy action, no ingress and zero no-focus suppressions; its
+duplicate produces one no-focus suppression. The old Alt release emits no
+Ended into the new epoch. The successor answers its own scene/Dirty exchange,
+preserves W1, then a fresh routed Alt+Tab chord commits W2.
+
+The unsigned development run `t249-captured-disconnect-dev01` passes all twelve
+cases, manifest
+`79ae83e40d9667b1fc331c127ef796c614c4641972f49a685cd147f37c89e0f1`.
+`t249-captured-disconnect-controls-01` replaces only restart's capture revoke
+with an empty capture in the disposable Session archive. It fails exactly
+“disconnect must preserve captured Right release debt” immediately after the
+epoch changes, exit 101 with one failed test; manifest
+`b88ff3d9210a10a7d65020222ffcd3253ef40a8ffc90dc8f7e47ccf3ffcd026d`.
+The archive is restored before `t249-captured-disconnect-checks-01` passes
+strict Session overlay Clippy, including tests; manifest
+`fe74c9fb9f6644405e8fbf2857bc694422dad6305aaea6ebc6c9daf4d177c832`.
+
+The final clean signed-fixture run and its repeated same-binary control/checks
+all bind identical fixture bytes:
+
+| Package | Result | Manifest SHA256 |
+| --- | --- | --- |
+| `t249-captured-disconnect-01` | All twelve cases pass. | `93e47264e100d90e27e6eee1cbf57d8cda9cfa2ae87b7d27d9b970e1914d1135` |
+| `t249-captured-disconnect-controls-02` | Cleared debt fails the named post-restart assertion, one failure, exit 101. | `ca182c476eb4558795392227835b1f5d877e32c8378968e18eeba9f866a3e8c1` |
+| `t249-captured-disconnect-checks-02` | Restored Session overlay passes strict Clippy, including tests. | `f098edeb5518f72e352e05928941080cdd61832985d5d63c2cc45e6f06ebb7a2` |
+
+All six manifests independently verify. Controls/checks hold the external
+build-root lease and a cargo-slot lease; the final archived restart source was
+also independently compared with the pinned Git blob. All seven fixture modules
+match the signed source across all six packages. Hagia production source, vendor
+and build definition are unchanged. Separate builds do not claim reproducible
+binary bytes. Development checks also pass thirteen serial runner tests (one
+internal helper ignored), strict runner Clippy, Rust formatting, whitespace
+checks and Hagia's layout gate. No whole-product gate was repeated.
+
+Hagia `ad3ec66` and niltempus `8095269` are merged and pushed. The runner removes
+the marked build root after all controls and checks finish;
+`t249-captured-disconnect-cleanup-01` passes with independently verified manifest
+`c02a9c59f1d41eef6e4069df3eec75e64778ee4ba86336b144cc36842e844102`.
+The stable sibling lock and cargo slots remain. Merged worktrees and the detached
+Sophia pin are removed after inspection; evidence contains records, not binaries
+or build caches.
+
+Independent read-only review found no blockers. The positive run observes both
+release-routing counters. The mutation stops at the debt assertion, so the
+predicted later no-focus behavior with that assertion removed remains source
+inference. Fresh-chord assertions check its event kind, Released terminal event
+and W2 outcome, without explicitly correlating every event's chord token.
+The runner's historical `presented_case` identity field names the original
+case; the complete required set is bound by `tests.txt` and `overlay.sha256`.
+
+This is keyboard debt with empty input focus and supplied content, heads,
+completion, router time and layout settlement. It does not establish application
+delivery, pointer debt, native withdrawal, source-loss/pixel qualification,
+receipt ACKs, cancellation, AbortSettlement or latency. t249/h006 remain open.
 
 ## Connections
 
