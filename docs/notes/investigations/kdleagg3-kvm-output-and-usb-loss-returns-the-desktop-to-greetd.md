@@ -748,6 +748,26 @@ preserved IDs (Ready), and pin the seat helper call site. Bounded handoff
 diagnostics retain counts and distinguish captured, retained, discarded and
 failed forms without free text; existing schema-1 forms remain readable.
 
+Signed repair `792885659` routes requested-VT settlement through a custody
+helper: no live owner preserves the held handoff, a live owner captures as
+before, and a failed capture leaves the held value untouched. No absorb or
+deduplication is added. This relies on successful resume taking the handoff
+and abandoned resume retiring its replacement before seat handling runs.
+The backend admission tests already pin Missing for absent snapshots and Ready
+for exact unique retained coverage. Two separate red controls restore the old
+helper behavior and bypass the helper in the seat call site; each fails its
+named test. All four helper controls pass. Evidence `t322-vt-handoff-01` has
+manifest `4981eae54ea1cbcd0e436e36fe4454f733bd44669b782791485f445e389070a8`.
+
+Combined integration `96cb6d6d8` includes this repair, t310 publication and the
+lock-capture reducer. Its full isolated gate passes with 7,513 test passes,
+zero failures and 101 ignored; the signed source stays unchanged throughout.
+See `t310-transport-publication-01`, manifest
+`722d1514d0e714175755681afce700c9c5a090318e19954296f564f9d98edb4a`.
+Later renderer-handoff capture `969658fba` has been reviewed but is outside this
+candidate; daily capture still drops handoff image counts here. The changed
+path therefore also needs an operator observation of retained client content.
+
 After the CPU regression and repository gate, qualify zero outputs → requested
 VT away/back → output return on a matched release, with retained client content.
 That attended check is separate from release 222's accepted cable/KVM sequence.

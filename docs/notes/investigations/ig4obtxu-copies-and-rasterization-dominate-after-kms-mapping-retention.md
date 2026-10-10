@@ -646,8 +646,19 @@ install a changed mode/VRR/mapping snapshot through the real authority reducer.
 All fifteen filtered realization tests pass, including the existing stale
 binding, profile churn and affinity tests. These drive the production owner,
 publication decision and ledger directly; they do not drive the complete
-owner loop or a DRM card. A full isolated gate and later matched physical
-qualification remain distinct from these checks. Release 222 is unchanged.
+owner loop or a DRM card. Release 222 is unchanged.
+
+The repair is signed `ea5ba9d95`. Integration `96cb6d6d8` also includes the
+t322 custody repair `792885659` and bounded lock capture `1162d2f81` by exact
+ancestry. Its full isolated gate passes: 537 Rust summaries, 7,513 passed,
+zero failed, 101 ignored, with lint, layout and tooling checks. Start/end source
+identities agree. The evidence manifest is
+`722d1514d0e714175755681afce700c9c5a090318e19954296f564f9d98edb4a`.
+The earlier partial gate was deliberately stopped for a test-only Copy-value
+lint correction and is retained with exit 143; it is not a passing gate.
+Device pixels and physical VT recovery are not established by this gate.
+The later renderer-handoff reducer `969658fba` and owner-aware lock coverage
+`0b1d7ab60` were reviewed separately and are outside this integration.
 
 #### Matched desktop artifact prepared (2026-10-09)
 

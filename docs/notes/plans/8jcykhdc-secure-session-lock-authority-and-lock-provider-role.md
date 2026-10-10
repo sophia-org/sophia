@@ -457,12 +457,23 @@ unlock on release 222 (Sophia `ada93fd4b`), as part of
 [t306's operator recovery](../investigations/kdleagg3-kvm-output-and-usb-loss-returns-the-desktop-to-greetd.md#release-222-physical-acceptance-2026-10-09).
 This is one admitted output; two-output coverage, VT round trip, provider kill
 and wrong-password rejection are not supplied by those observations. t297
-remains open. Its next evidence slice also needs a bounded lock-specific
-capture reducer for status, source, verdict and numeric coverage fields, with
-free-form errors excluded. Coverage dedup must include native owner identity
+remains open. Signed `1162d2f81` adds the bounded lock-specific capture reducer
+for status, source, verdict and numeric coverage fields, excluding free-form
+errors. It is included in integration `96cb6d6d8`, whose full isolated gate
+passes with 7,513 test passes, zero failures and 101 ignored. Evidence is
+`t310-transport-publication-01`; the original unwired red and green controls are
+in `t297-lock-capture-01` (manifest
+`442b06f05e98b03de3278eed2e70671d9aa300ec32b9d4db27e4b5d977380dad`).
+This reducer is a bounded capture filter, not a complete record validator:
+consumers must still require their expected schema and proof fields.
+
+Coverage dedup must include native owner identity
 alongside lock and topology epochs, so a same-topology replacement records its
 own cover. Add a regression for equal topology epoch with a different owner;
 the current absence of that record is not itself proof of an uncovered frame.
+Separate candidate `0b1d7ab60` implements that identity and was reviewed read-only;
+the proof and owner are read from the same current native owner at the call
+site. It is outside the frozen `96cb6d6d8` integration and its release candidate.
 
 ### t298 p9any and dp9ik
 
