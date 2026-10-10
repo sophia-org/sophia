@@ -348,6 +348,23 @@ only its real retirement releases the temporary extent and permits the standing
 resize. This grants no sibling-output authority and changes no fullscreen rule.
 Physical workspace migration and restoration remain t310's open exit.
 
+Signed repair `61fbd1aa8` passed the full isolated gate (7,528 Rust tests,
+zero failures, 101 ignored, plus lint/layout/tooling) and is on Sophia master.
+Frozen `t310-oversized-admission-01` records the valid old-path regression and
+the gate; its CLOSURE is
+`9ed2fb45ecc5a25e3edef910689edc61c69982e332957fdf740489b6dfc8c95c`.
+The qualification pin moves only Sophia on the same two-output profile; daily
+niltempus master remains the accepted one-output configuration.
+
+The matched release `niltempus-9244cd92794032e23aa3`, signed integration
+`be9bb1e54`, is ready but not installed. Package checksums, source identity,
+profile preflight and unchanged peer/graphics checks pass. Frozen
+`t310-oversized-admission-release-01/READY.txt` names the exact artifact and
+accepted `01fa4` recovery; its package manifest is
+`064b75f5df6bfac1eb0ebc575c078770cf5908a6716735f6e593fa2236054995`.
+Leave both monitors connected for the first check of workspace switching and
+new-window admission. A passing CPU gate does not close physical t310 acceptance.
+
 ## Connections
 
 - [Proposed admitted-discovery boundary](../decisions/nrdadhet-resolve-admitted-output-preferences-before-constructing-native-owners.md)

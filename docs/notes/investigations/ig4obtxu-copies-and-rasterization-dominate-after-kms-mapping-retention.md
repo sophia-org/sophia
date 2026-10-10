@@ -226,6 +226,28 @@ preserved separately and are not regression evidence. These checks exercise
 layout and admission code, not a GPU or physical clipping. The matched release
 still needs ordinary two-output workspace acceptance before any cable test.
 
+Signed repair `61fbd1aa8235f0c94b43920eb4e5e9ccca95c690` passed the complete
+device-hidden gate: 540 Rust summaries, 7,528 passed, zero failed, 101 ignored,
+and all remaining lint, layout and tooling checks. The valid old-path mutation
+failed only the new first-frame progress test; the missing-pixels control still
+passed. Frozen CPU records have manifest
+`79dd018af4b10f086f01850a4a92f154c45afb4279e72ce18e995826f4f5aea2`
+and CLOSURE `9ed2fb45ecc5a25e3edef910689edc61c69982e332957fdf740489b6dfc8c95c`.
+The repair is merged and pushed on Sophia master. Its clean source worktree and
+merged branch were removed; the generated zk index was the only ignored file.
+
+Matched `niltempus-9244cd92794032e23aa3` is built and verified, not installed.
+Signed integration `be9bb1e54ea5a785e5e4249ecc3d6a33f2c44747` changes only the
+Sophia lock node from installed `8d6e`. Only Sophia differs among the ten
+packaged executables; its SHA-256 is
+`829eb3e202a3431d802c56d74afbecd08eed0316c4b2ed3ac18fe05b92b1d5b0`.
+The profile changes only release paths, and the Mesa/libdrm closure is equal.
+Frozen `t310-oversized-admission-release-01` has manifest
+`064b75f5df6bfac1eb0ebc575c078770cf5908a6716735f6e593fa2236054995`
+and CLOSURE `38c865f0b2ad162c2e225a4f8b85522406edb1be37123bbbed9be2d76f163957`.
+`READY.txt` names installation, the workspace baseline and explicit accepted
+one-output recovery. Automatic rollback would return to stalled `8d6e`.
+
 #### Admitted discovery and startup boundary (2026-10-09)
 
 Signed `5fabe9f61` introduces stable GPU admission and a revalidated fresh
