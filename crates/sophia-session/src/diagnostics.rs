@@ -7,6 +7,7 @@ mod input_device;
 mod output_profile;
 mod output_resolution;
 mod recovery;
+mod renderer_handoff;
 mod renderer_worker;
 mod selection;
 mod shell_action;

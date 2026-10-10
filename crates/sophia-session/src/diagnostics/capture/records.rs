@@ -14,6 +14,9 @@ pub fn reduced_record(line: &str) -> Option<String> {
     if super::output_resolution::record(name) {
         return super::output_resolution::reduce(name, fields);
     }
+    if super::renderer_handoff::record(name) {
+        return super::renderer_handoff::reduce(name, fields);
+    }
     let mut result = name.to_owned();
     for field in fields {
         let Some((key, value)) = field.split_once('=') else {
