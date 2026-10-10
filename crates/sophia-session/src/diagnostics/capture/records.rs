@@ -17,6 +17,9 @@ pub fn reduced_record(line: &str) -> Option<String> {
     if super::session_lock::record(name) {
         return super::session_lock::reduce(name, fields);
     }
+    if super::renderer_handoff::record(name) {
+        return super::renderer_handoff::reduce(name, fields);
+    }
     let mut result = name.to_owned();
     for field in fields {
         let Some((key, value)) = field.split_once('=') else {
