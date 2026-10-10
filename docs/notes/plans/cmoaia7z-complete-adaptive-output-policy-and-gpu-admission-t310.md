@@ -234,6 +234,49 @@ return, every head absent, locked transitions and workspace migration/restoratio
 Only then close t310. EDID monitor following, docking presets and display
 confirmation UI are outside this task.
 
+### Remaining policy qualification (2026-10-09)
+
+Release 222 supplies the accepted cable, port-move and unlocked/locked KVM
+continuity evidence. The subsequent installed `96cb6d6d8` release also survived
+zero-output Waiting, a requested VT away/back, and reconnection with working
+keyboard and pointer. That sequence committed the replacement under authority
+epoch 3 after startup epoch 2; it does not demonstrate the equal-snapshot
+commit-only branch. The publication repair's deterministic controls establish
+equal-snapshot settlement and changed-capability republication separately.
+
+The remaining workspace-affinity check requires two admitted logical outputs.
+The daily niltempus profile assigns all six workspaces to policy key 1, so a
+single-display recovery cannot establish migration to a surviving display.
+Prepare a temporary qualification profile with two explicit connectors on the
+admitted AMD GPU, keys 1 and 2, and workspace sets 1–3 and 4–6. Preserve the GPU
+exclusion, disabled HDMI-A-2, component pins and accepted rollback. The second
+monitor's availability and exact connector remain prerequisites; no connector
+is guessed and no excluded GPU is enabled. Adding a policy identity requires a
+separately prepared profile/session, not an identity-changing live reload.
+
+Put recognizable windows in both workspace sets. Removing the key-2 display
+must leave its workspaces and windows reachable on key 1; returning it must
+restore the configured affinity without duplicate ownership, lost windows,
+broken input or startup-focus theft. Also bind a same-port return without a VT
+transition to its actual replacement owner, publication epoch and committed
+record. If a physical capability-change claim is made, preserve the changed
+advertised snapshot; a reconnect alone does not establish that difference.
+
+Existing Sophia controls cover safe settings, sticky fallback, preferred return,
+exclusions, mirrors, coherent keys/geometry, focus and publication. The installed
+Hagia source has workspace assignment and unplug/replug checkpoint tests; this
+inventory is not a new Hagia test run. Client-specific acceptance belongs in
+niltempus/Hagia. The old niltempus output-topology shell runner counts excluded
+connectors and assumes fixed epochs, so it cannot verify this profile unchanged.
+Do not relax admission or reuse its counts as proof.
+
+The read-only boundary and source inventory are frozen as
+`t310-policy-acceptance-01`, manifest
+`6bef029a11cf0e22b93d4c87edcc5fd176975a4fe074e2a6b04116aa325fbed4`.
+No new hardware run or installation is claimed. QEMU/private Mesa work and
+repetition of accepted KVM survival are not prerequisites for this policy check;
+t297's broader lock matrix remains separate.
+
 ## Connections
 
 - [Proposed admitted-discovery boundary](../decisions/nrdadhet-resolve-admitted-output-preferences-before-constructing-native-owners.md)

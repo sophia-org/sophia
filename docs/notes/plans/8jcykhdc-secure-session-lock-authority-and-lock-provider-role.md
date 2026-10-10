@@ -467,13 +467,24 @@ in `t297-lock-capture-01` (manifest
 This reducer is a bounded capture filter, not a complete record validator:
 consumers must still require their expected schema and proof fields.
 
-Coverage dedup must include native owner identity
-alongside lock and topology epochs, so a same-topology replacement records its
-own cover. Add a regression for equal topology epoch with a different owner;
-the current absence of that record is not itself proof of an uncovered frame.
-Separate candidate `0b1d7ab60` implements that identity and was reviewed read-only;
-the proof and owner are read from the same current native owner at the call
-site. It is outside the frozen `96cb6d6d8` integration and its release candidate.
+Signed `0b1d7ab60` adds native owner identity to coverage dedup alongside lock
+and topology epochs, so a same-topology replacement records its own cover.
+The proof and identity are read from the same current native owner. Restoring
+the topology-only key fails the new replacement-owner regression; all three
+coverage tests pass with the repair. Evidence is `t297-lock-cover-owner-01`,
+manifest `16247b273b57f861e55e6afdcd7087f0d17e5dec92ab699a6ad8dd532bf46ef6`.
+The absence of an old diagnostic record is not itself proof of an uncovered
+frame. The [diagnostic contract](../../session-lock-diagnostics.md) describes
+the new owner field and proof boundary.
+
+Integration `bceaa6c18` includes both evidence obligations. Its full isolated
+repository gate passed 7,517 tests with zero failures and 101 ignored; frozen
+`t322-lock-evidence-integration-01` has manifest
+`75bd5a37f1618710aa8320413e69c124f6d7b3e2a9b20efd143dfe97be004548`.
+No new release was installed for these passive additions. The currently
+installed `96cb6d6d8` does not emit per-owner lock covers, and its successful
+unlocked zero-output VT return does not replace t297's locked VT check. The
+remaining physical matrix needs a matched release carrying the evidence fix.
 
 ### t298 p9any and dp9ik
 

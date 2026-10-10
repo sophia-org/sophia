@@ -800,14 +800,45 @@ These are prefixes of the continuing session. Earlier capture health was clean;
 the final saved health reports 6,828 suppressed records, zero discarded records
 and zero storage errors. The positive transition records remain present. No
 fatal appears in the prefix, but suppression precludes a complete negative
-event claim. Handoff counts and pixel equality were not captured. The bounded
-handoff reducer `969658fba` still needs integration; this observation does not
-silently close that part of t322 or t297's broader lock checks.
+event claim. Handoff counts and pixel equality were not captured. At this
+observation the bounded handoff reducer `969658fba` still needed integration;
+the physical result alone did not satisfy that code obligation or t297's
+broader lock checks.
 
 The tested niltempus integration `481fdc0ab` was subsequently fast-forwarded
 to master and pushed, without a rebuild, repin or reinstall. Its clean release
 worktree and merged local branch were removed; the evidence GC root and rollback
 to accepted release 222 remain. Publication records are `t322-publication-01`.
+
+#### Evidence integration and disposition (2026-10-09)
+
+Signed integration `bceaa6c181f7a11ec1081d5ce5fbcd309d24e9b9` contains
+renderer-handoff capture `969658fba` and passive per-owner lock coverage
+`0b1d7ab60`, merged by exact ancestry. The adjacent diagnostics dispatch
+conflict keeps both specialized reducers before the shared filter. Handoff
+records now preserve approved captured/retained/discarded/failed forms, counts
+and sources without free-form text. Unknown-status records retain only their
+name. The original unwired reducer control fails all three tests; its evidence
+is `t322-handoff-capture-01`, manifest
+`2c80603b45712033d24416c94c7426cf322adf9f3cf21e8d9c3f55eb77808fcc`.
+
+One full isolated `cargo xtask check` passed on the clean signed integration:
+538 Rust summaries, 7,517 passes, zero failures and 101 ignored, with repository
+tooling, SDK, formatting and layout checks passing. Frozen evidence is
+`t322-lock-evidence-integration-01`, manifest
+`75bd5a37f1618710aa8320413e69c124f6d7b3e2a9b20efd143dfe97be004548`.
+The gate reuses a private build target and exposes no devices; it is not a
+cold-build or hardware-pixel claim.
+
+Together with the failing-without-fix custody controls and the attended VT
+sequence above, this completes t322's repair and evidence implementation.
+The installed `96cb6d6d8` custody behavior is unchanged by the two passive
+diagnostic additions. No rebuild or install accompanies this integration;
+future daily captures gain the extra fields on the next matched release.
+Historical captures remain as recorded, without a handoff-count or pixel-equality
+claim. The [broader t297 lock matrix](../plans/8jcykhdc-secure-session-lock-authority-and-lock-provider-role.md#t297-attended-acceptance)
+and [t310 workspace policy qualification](../plans/cmoaia7z-complete-adaptive-output-policy-and-gpu-admission-t310.md#remaining-policy-qualification-2026-10-09)
+remain separate.
 
 ### Original incident exits
 

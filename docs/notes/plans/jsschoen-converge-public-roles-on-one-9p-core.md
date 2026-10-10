@@ -64,9 +64,11 @@ The existing WM/shell acceptance and performance tasks retain their queue
 positions and exits. t249 is an existing portal-export prerequisite, not a
 reason to restart the entire role migration or postpone all design work.
 
-The output-publication slice starts with t310's same-topology regression and
-fix. The separately promoted t322 VT custody repair precedes it in the task
-queue and is independently owned. The next design action is the t133/t275 admission-and-recipe boundary,
+The output-publication repair has failing-without-fix controls and a full gate.
+The separately promoted t322 VT custody repair has also passed its attended
+zero-output VT return and evidence integration. t310's remaining
+[workspace-affinity qualification](cmoaia7z-complete-adaptive-output-policy-and-gpu-admission-t310.md#remaining-policy-qualification-2026-10-09)
+still needs two admitted displays. The next design action is the t133/t275 admission-and-recipe boundary,
 using the immutable-connection rule in the accepted ADR. t257 can supply a
 narrow output-availability/status slice without waiting for text status in
 every role; t319 requires that slice, not completion of the whole t257 row.
