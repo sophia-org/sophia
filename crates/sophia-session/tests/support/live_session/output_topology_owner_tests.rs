@@ -2,7 +2,7 @@ use super::super::{
     LiveOutputTopologyExecutionPhase, LiveOutputTopologyOwner, LiveOutputTopologyPhase,
     LiveOutputTopologyQuarantine, LiveOutputTopologyRebuild,
     begin_output_topology_first_presentation_rollback, hardware_output_snapshot_is_stale,
-    owner_loop_shell_presentation_available,
+    owner_loop_shell_presentation_available, schedule_topology_repaint,
 };
 use crate::live_session::desktop_profile_reload_effects;
 use sophia_protocol::{OutputId, Size, TransactionId};
@@ -45,6 +45,57 @@ fn owner() -> LiveOutputTopologyOwner {
         1,
     )
     .unwrap()
+}
+
+#[test]
+fn topology_repaint_survives_backpressure_without_crediting_a_presentation() {
+    use sophia_backend_live::LiveProductionCpuScene;
+    use sophia_engine::PrimaryFramePacer;
+    use std::time::{Duration, Instant};
+
+    for policy_required in [false, true] {
+        let mut owner = owner();
+        owner.begin_rescan(1).unwrap();
+        observe_unmirrored(&mut owner, vec![output(1, 1280), output(2, 1920)]).unwrap();
+        owner.mark_published(7, policy_required).unwrap();
+        if policy_required {
+            owner.mark_policy_committed(7).unwrap();
+        }
+        let mut scene = LiveProductionCpuScene::new(output(1, 1280).size);
+        let interval = Duration::from_millis(10);
+        let now = Instant::now();
+        let mut pacer = PrimaryFramePacer::new(interval);
+        pacer.observe_repaint(now);
+
+        schedule_topology_repaint(&mut scene, &mut pacer, now);
+        assert!(pacer.repaint_pending());
+        assert!(!pacer.repaint_due(now));
+        for turn in 1..=3 {
+            let due = now + interval * turn;
+            assert!(pacer.repaint_due(due));
+            // The ordinary path returns None while a distinct frame owns
+            // retirement. Its scheduling response must keep the obligation
+            // without a zero wait, or releasing topology input/publication.
+            pacer.observe_repaint_deferred(due);
+            assert!(pacer.repaint_pending());
+            assert_eq!(pacer.cap_wait(due, Duration::from_secs(1)), interval);
+            assert!(!owner.observe_presentation(7));
+            assert!(owner.input_quarantined());
+        }
+
+        let ready = now + interval * 4;
+        assert!(pacer.repaint_due(ready), "no new client event is needed");
+        pacer.observe_repaint(ready);
+        assert!(!pacer.repaint_pending());
+        assert!(
+            !owner.observe_presentation(7),
+            "composition is not retirement"
+        );
+        assert!(owner.input_quarantined());
+        assert!(owner.observe_presentation(8));
+        assert!(!owner.input_quarantined());
+        assert!(!owner.observe_presentation(8));
+    }
 }
 
 #[test]

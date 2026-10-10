@@ -415,6 +415,16 @@ executables; profile geometry, keys, graphics libraries and Sophia remain fixed.
 The release manifest is
 `54ce8a704ba10a47ed6b03e52bd2ec4258bb4869a64350c644fd37c199c3e80b`.
 
+Installed `66f68` passed the baseline and occupied-HDMI loss. Return reached
+Hagia's committed restored layout without a restart, then Sophia exited with
+the recorded error `forced repaint waits for an existing distinct retirement`.
+The [forced-repaint diagnosis](../investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#restored-policy-commits-forced-repaint-ends-the-session-2026-10-10)
+preserves that failure. Runtime topology must schedule its observation repaint
+through ordinary cadence so existing retirement custody can finish; scheduling
+alone never counts as presentation. Keep the new Hagia pin and profile fixed,
+gate this narrow Session change, then prepare the matched successor. Physical
+return remains open, and Crunch can stay at greetd while niltempus uses the X13.
+
 ## Connections
 
 - [Proposed admitted-discovery boundary](../decisions/nrdadhet-resolve-admitted-output-preferences-before-constructing-native-owners.md)

@@ -230,6 +230,19 @@ fn paced_repaint_wait_cap(
     }
 }
 
+/// A replacement owes a post-policy frame even when no client causes damage.
+/// Keep that obligation in the ordinary cadence: a distinct Present or shell
+/// frame may still own retirement, and forcing composition then is invalid.
+/// The normal repaint path retains deferred work without crediting presentation.
+fn schedule_topology_repaint(
+    scene: &mut LiveProductionCpuScene,
+    pacer: &mut sophia_engine::PrimaryFramePacer,
+    now: Instant,
+) {
+    scene.force_full_repaint();
+    pacer.observe_production(now, false);
+}
+
 fn synchronize_runtime_surface_chrome_style(
     runtime: &mut LiveProductionVisualRuntime,
     style: sophia_engine::SurfaceChromeStyle,

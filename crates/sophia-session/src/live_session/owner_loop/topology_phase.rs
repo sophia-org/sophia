@@ -438,11 +438,7 @@
                     // A blocking initial modeset retires no flip. Request an
                     // observation frame even when the WM has no changed scene,
                     // so this replacement can cross the publication barrier.
-                    let focused = runtime.focused_surface();
-                    scene.force_full_repaint();
-                    runtime.run_cpu_repaint(scene, focused, focused,
-                        LiveProductionCursorPresentation::HardwarePlane, &outputs, replacement)?;
-                    primary_frame_pacer.observe_repaint(Instant::now());
+                    schedule_topology_repaint(scene, &mut primary_frame_pacer, Instant::now());
                 }
                 // The replacement's first frame is a blocking modeset, which
                 // retires no page flip. With no policy commit to force another,
@@ -525,22 +521,11 @@
             .as_ref()
             .map_or(0, |native| native.retirements);
         output_topology_owner.mark_policy_committed(presentation_baseline)?;
-        if let (Some(runtime), Some(native)) = (runtime.as_mut(), native_scanout.as_mut()) {
-            let focused = runtime.focused_surface();
-            scene.force_full_repaint();
-            let forced = runtime.run_cpu_repaint(
-                scene,
-                focused,
-                focused,
-                LiveProductionCursorPresentation::HardwarePlane,
-                &outputs,
-                native,
-            )?;
-            primary_frame_pacer.observe_repaint(Instant::now());
+        if runtime.is_some() && native_scanout.is_some() {
+            schedule_topology_repaint(scene, &mut primary_frame_pacer, Instant::now());
             tracing::info!(
-                "sophia_live_output_topology schema=2 status=repaint_forced transition={} presentation_baseline={presentation_baseline} checksum={} reason=policy_committed",
+                "sophia_live_output_topology schema=2 status=repaint_scheduled transition={} presentation_baseline={presentation_baseline} reason=policy_committed",
                 output_topology_owner.transition,
-                forced.composition.checksum,
             );
         }
         topology_presentation_deadline =

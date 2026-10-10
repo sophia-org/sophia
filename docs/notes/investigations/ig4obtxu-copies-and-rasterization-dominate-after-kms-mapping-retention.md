@@ -405,6 +405,58 @@ that negotiates then fails repeatedly can therefore loop indefinitely. This
 repair changes neither that budget nor durable classification of WM failures.
 
 
+#### Restored policy commits; forced repaint ends the session (2026-10-10)
+
+Installed `niltempus-66f68ee2cef161b3829d` (Sophia `adfecd4e1`, Hagia
+`ed2f30060`) passed the ordinary two-output baseline and occupied-HDMI loss.
+In session `00000001791632062836-c63c53f6-0766-4e5f-aeac-c7dad97329e5`, niltempus
+confirmed the same workspace-4 window on DP accepted typing after unplug.
+The one-output owner committed at sequence 55705, and workspace actions 14
+and 11 committed afterward. Reconnecting HDMI then ended Sophia with exit 1.
+
+This time the private `failure-cause` file preserves the exact error:
+`forced repaint waits for an existing distinct retirement`. Owner 3 resolved
+two outputs at sequence 76056. Hagia committed the restored two-output layout
+in transaction 36, and its matching 1902×1062 resize was visually armed. There
+was no WM restart. The next topology turn called `run_cpu_repaint`, whose
+guard rejects forced composition while any output owns a distinct retirement.
+The error propagated through topology to bounded fatal cleanup; native suspend
+drained, and lifecycle records confirm exit 1 and display-manager handoff.
+
+The guard protects real frame custody and stays intact. Runtime topology now
+requests a full repaint through the existing primary cadence after recording
+the presentation baseline, both with and without a WM policy commit. The
+ordinary path retains a blocked repaint, advances its wait deadline, and uses
+the output-local pending obligation when only a particular output is protected.
+Native service admits that obligation after its distinct frame retires. A
+scheduled or composed frame is not a retirement and cannot itself publish the
+replacement. The existing presentation barrier and timeout policy are unchanged.
+Initial startup retains the forced path; no failure is caught and discarded.
+
+The source-contract regression fails on the original two forced call sites.
+A device-free scheduling control covers both publication branches, repeated
+deferral without a zero-wait spin, later eligibility without another client
+event, and no presentation credit before retirement. Existing backend controls
+exercise actual ordinary admission behind a protected frame, preserving its
+identity and admitting the latest deferred scene only after all required heads
+retire. The owner loop has no device-free driver: these are scheduling and
+native queue controls, not an end-to-end cable reproduction.
+
+Frozen `t310-two-output-attended-05/hdmi-return-crash-01` contains the complete
+closed event log and lifecycle (manifest
+`52f6ff366dd2feb518a5b6f6838c667039f55125ae040802d6e1b12526098245`).
+The separate `hdmi-return-cause-01` preserves the private failure text and final
+outcome. Records show discarded and suppressed events but zero storage errors.
+Do not interpret missing individual events as evidence they never occurred.
+CPU controls and the combined gate belong to `t310-topology-repaint-01`.
+Focused checks pass: six replacement seam controls, 29 topology-owner controls
+and 11 backend ordinary-repaint controls. The original forced call site fails
+the new seam control; independently removing the pacer's repaint obligation
+fails the new scheduling control. Both negative controls compile and exit 101
+with exactly their named assertion failure. The full gate remains to run on
+the signed candidate; these results do not claim physical return acceptance.
+The failed return remains unaccepted; no further cable test is needed on `66f68`.
+
 #### Admitted discovery and startup boundary (2026-10-09)
 
 Signed `5fabe9f61` introduces stable GPU admission and a revalidated fresh

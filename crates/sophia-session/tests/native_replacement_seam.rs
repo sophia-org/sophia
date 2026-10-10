@@ -9,6 +9,16 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[test]
+fn runtime_topology_repaint_waits_through_the_ordinary_cadence() {
+    let topology = include_str!("../src/live_session/owner_loop/topology_phase.rs");
+    assert!(
+        !topology.contains(".run_cpu_repaint("),
+        "a runtime topology repaint must wait behind distinct retirement, not call the fatal forced path"
+    );
+    assert_eq!(topology.matches("schedule_topology_repaint(").count(), 2);
+}
+
 fn sources(directory: &Path, found: &mut Vec<PathBuf>) {
     for entry in fs::read_dir(directory).unwrap() {
         let path = entry.unwrap().path();
