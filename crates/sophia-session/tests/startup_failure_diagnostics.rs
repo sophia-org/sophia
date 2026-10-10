@@ -1,5 +1,6 @@
 //! A login that ends at startup leaves its cause in the ordinary record.
 use std::fs;
+use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -93,7 +94,7 @@ impl Directory {
                 .unwrap()
                 .as_nanos()
         ));
-        fs::create_dir(&path).unwrap();
+        fs::DirBuilder::new().mode(0o700).create(&path).unwrap();
         Self(path)
     }
 
