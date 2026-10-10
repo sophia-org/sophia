@@ -365,6 +365,17 @@ accepted `01fa4` recovery; its package manifest is
 Leave both monitors connected for the first check of workspace switching and
 new-window admission. A passing CPU gate does not close physical t310 acceptance.
 
+The `9244` release was installed and passed the workspace/typing baseline on
+both monitors. Removing HDMI then ended the session during replacement topology
+publication; this is a failed loss test, preserved as
+`t310-two-output-attended-03/hdmi-loss-01`. The
+[occupied-output scene diagnosis](../investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#occupied-hdmi-output-loss-rejects-the-replacement-scene-2026-10-09)
+has a matching `InvalidOutput` regression: retained windows still named the
+removed display in the new scene. Keep those windows unassigned for policy,
+gate the narrow repair and build the same two-output profile with only Sophia
+updated. Physical migration and restoration remain unaccepted; no new cable
+test is needed on the failed release.
+
 ## Connections
 
 - [Proposed admitted-discovery boundary](../decisions/nrdadhet-resolve-admitted-output-preferences-before-constructing-native-owners.md)

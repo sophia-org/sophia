@@ -228,7 +228,12 @@ impl LivePublicPolicyState {
         let mut committed_presentation = BTreeMap::new();
         for projection in &committed {
             for placement in &projection.placements {
-                current_output.insert(placement.surface, projection.output);
+                // Retained windows outlive their display. Keep their geometry
+                // and state, but report no current assignment once that output
+                // is gone; the next policy cycle chooses where to place them.
+                if self.live_output_ids.contains(&projection.output) {
+                    current_output.insert(placement.surface, projection.output);
+                }
                 committed_geometry.insert(placement.surface, placement.geometry);
                 committed_presentation.insert(placement.surface, placement.presentation);
             }

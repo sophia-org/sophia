@@ -54,6 +54,9 @@ mod output_reload_settlement;
 #[path = "output_realization_policy.rs"]
 mod output_realization_policy;
 
+#[path = "output_loss_policy.rs"]
+mod output_loss_policy;
+
 struct ReloadFixture {
     // Fragments and their directory must be released before the fixture root.
     wm: LiveWmSession,

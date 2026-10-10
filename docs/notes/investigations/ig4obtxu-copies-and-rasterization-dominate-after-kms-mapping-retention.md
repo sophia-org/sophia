@@ -248,6 +248,52 @@ and CLOSURE `38c865f0b2ad162c2e225a4f8b85522406edb1be37123bbbed9be2d76f163957`.
 `READY.txt` names installation, the workspace baseline and explicit accepted
 one-output recovery. Automatic rollback would return to stalled `8d6e`.
 
+#### Occupied HDMI output loss rejects the replacement scene (2026-10-09)
+
+Installed `niltempus-9244cd92794032e23aa3` (Sophia `61fbd1aa8`, integration
+`be9bb1e54`) passed the ordinary two-output workspace baseline. In session
+`00000001791600267481-5156e02e-9775-4f65-8435-5ac94075cab2`, niltempus confirmed
+the workspace-4 terminal on the second monitor accepted typing, then Super+1
+returned to the original window with working input. The terminal's initial
+2542×1398 frame retired before its 946×1038 successor, exercising the prior
+admission repair. This is baseline acceptance, not output-loss acceptance.
+
+Removing only HDMI then ended the session. The durable log resolves owner 2
+with one output (sequence 72831), records its ready head (72834), then a
+two-surface WM snapshot (72835), owner-loop fatal (72837), drained native
+cleanup and session failure in phase `topology` (72843). Lifecycle records give
+exit 1. There is no successful replacement publication. The fatal's durable
+code is `unclassified`; its original text is not available in this capture.
+Do not claim that the log itself identifies the exact error variant.
+
+The source and a device-free regression identify a failure at this boundary:
+`update_public_work_areas_at` replaces the output set, then `snapshot` derives
+each window's current output from the previous committed projections. A window
+on the removed output still names that output. Engine's `validate_scene`
+correctly rejects the contradictory scene with `InvalidOutput`, and the error
+propagates out of the topology phase. The test drives the actual shared work-area
+update and fails with this exact error before the fix. Its unchanged-topology
+control passes. This matches the captured location; it is not a recovered raw
+fatal message or a new physical reproduction.
+
+The narrow repair limits current-output assignments to live outputs while
+retaining window identity, geometry and presentation state. The displaced window
+is unassigned until policy chooses a replacement; Session neither withdraws it
+nor invents a workspace migration. Engine validation remains unchanged. The
+controls cover active and inactive removed outputs, a real outgoing cycle and
+supplied conforming reassignment, plus a stale pre-loss response and return
+without resurrection of the old placement or focus. These are policy/scene
+controls, not hardware, pixels or a particular WM's workspace behavior.
+
+Frozen receipts are under `t310-two-output-attended-03`: `startup-01`,
+`workspace-terminal-01`, `workspace-baseline-01` and `hdmi-loss-01`. The last
+manifest is `a66cc44f66c27646ed60c785e0301d559a6d07092c9d98de72716edbebbd9598`;
+it preserves the complete final event segment and lifecycle records. Health
+lags the last events and still says `recording=running`; the separate lifecycle
+exit is authoritative. CPU red/green evidence is `t310-output-loss-scene-01`.
+Gate and matched release precede another attended loss/return check. t310 stays
+open; daily niltempus master remains the accepted one-output configuration.
+
 #### Admitted discovery and startup boundary (2026-10-09)
 
 Signed `5fabe9f61` introduces stable GPU admission and a revalidated fresh
