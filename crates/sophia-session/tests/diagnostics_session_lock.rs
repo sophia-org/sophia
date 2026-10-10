@@ -25,7 +25,7 @@ fn every_producer_form_keeps_its_bounded_fields() {
         "sophia_live_session_lock schema=1 status=locking source=shortcut epoch=2 input_epoch=5 revoked_leases=1",
         "sophia_live_session_lock schema=1 status=already_locked source=proof epoch=2",
         "sophia_live_session_lock schema=1 status=locked epoch=2",
-        "sophia_live_session_lock schema=1 status=covered epoch=2 topology_epoch=3 outputs=2 heads=2",
+        "sophia_live_session_lock schema=1 status=covered epoch=2 topology_epoch=3 owner=4 outputs=2 heads=2",
         "sophia_live_session_lock schema=1 status=key_held epoch=2 device=262",
         "sophia_live_session_lock schema=1 status=checking epoch=2 attempt=1",
         "sophia_live_session_lock schema=1 status=failed epoch=2 attempt=1 verdict=Rejected",

@@ -389,6 +389,7 @@ macro_rules! service_session_lock {
         if let Some(record) = lock_coverage_publication.update(
             locked_epoch,
             topology_epoch,
+            native_scanout.as_ref().map(|native| native.retirement_owner_identity()),
             coverage.map(|proof| (proof.epoch, proof.outputs, proof.heads)),
         ) {
             crate::session_println!("{}", crate::session_lock_coverage::session_lock_coverage_record(record));
