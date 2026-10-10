@@ -680,6 +680,14 @@ integrated source is merged and pushed, and the merged publication worktree
 and branch have been removed. Physical VT recovery and the remaining t310
 policy checks remain separate from this build result.
 
+niltempus subsequently installed this release and accepted the zero-output
+VT away/back sequence with keyboard and mouse working on reconnection. Owner 2
+committed its realization after presenting under topology epoch 3; the old
+stale-publication symptom did not recur. This observes a successful replacement
+commit, not every branch of the snapshot comparison or the remaining affinity
+policy exits. The exact session, positive records and capture limitations are
+in the [t322 attended record](kdleagg3-kvm-output-and-usb-loss-returns-the-desktop-to-greetd.md#attended-zero-output-vt-return-2026-10-09).
+
 #### Matched desktop artifact prepared (2026-10-09)
 
 Signed niltempus candidate `6d50e38cc5014d248d8110e8c82f928b349cecd0` pairs the

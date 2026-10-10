@@ -771,10 +771,38 @@ path therefore also needs an operator observation of retained client content.
 After the CPU regression and repository gate, qualify zero outputs → requested
 VT away/back → output return on a matched release, with retained client content.
 That attended check is separate from release 222's accepted cable/KVM sequence.
-The matched candidate `niltempus-01fa4c74950b5a998db9` is built, verified and
-uninstalled; its [publication-repair record](ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#same-topology-publication-repair-2026-10-09)
+The matched candidate `niltempus-01fa4c74950b5a998db9` was built and verified;
+its [publication-repair record](ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#same-topology-publication-repair-2026-10-09)
 binds the source, release and frozen `t322-t310-release-01/READY.txt` handoff.
 Ordinary rollback after installing that candidate returns to accepted 222.
+
+#### Attended zero-output VT return (2026-10-09)
+
+niltempus installed the candidate and performed the requested sequence: unplug
+the monitor, leave it unplugged during Ctrl+Alt+F2 and Ctrl+Alt+F7, then reconnect.
+The operator reported, "it survived and kb/mouse work". The running executable
+matches the gated build, `aa3003cb…`, and Session
+`00000001791591693495-c5b9b0d8-1871-4001-ac61-3cc9800780e3` retains the same
+Sophia processes throughout. This is attended survival/input acceptance of the
+changed path, separate from the earlier cable/KVM tests.
+
+The records establish owner 1 retired before zero-output Waiting, the seat
+suspended and returned active while no replacement existed, then owner 2
+resolved and committed after reconnection. The returned owner first presented
+at boot millisecond 45,375,958; shell content bound to owner 2 presented at
+45,376,141. The realization committed instead of remaining pending as stale.
+Startup authority epoch was 2 and return was 3, so this is not physical proof
+of the equal-snapshot commit-only branch.
+
+Frozen evidence is `t322-attended-01`, manifest
+`4ce74b51d34a1389016c6af06f745c16cc17387bf976e983ddaa2d29330c6fc3`.
+These are prefixes of the continuing session. Earlier capture health was clean;
+the final saved health reports 6,828 suppressed records, zero discarded records
+and zero storage errors. The positive transition records remain present. No
+fatal appears in the prefix, but suppression precludes a complete negative
+event claim. Handoff counts and pixel equality were not captured. The bounded
+handoff reducer `969658fba` still needs integration; this observation does not
+silently close that part of t322 or t297's broader lock checks.
 
 ### Original incident exits
 
