@@ -24,6 +24,8 @@ SDK/export gate. The [Manage settlement successor](#new-window-manage-settlement
 then covers the first missing admission owner boundary, through AwaitingPixels.
 The [CPU admission successor](#cpu-backed-new-window-admission-2026-10-10)
 continues through Managed, production CPU intake and headless pixel checks.
+The [mirrored receipt successor](#mirrored-receipt-consensus-2026-10-10)
+joins backend-derived Presented and Withdrawn receipts to real Hagia policy.
 The coverage baseline remains revisable without reducing the acceptance scope.
 The old worktrees have been removed. The original
 reboot checkpoint follows for provenance.
@@ -1126,6 +1128,9 @@ in this snapshot. Visual admission and launch-origin propagation remain distinct
 The [CPU admission successor](#cpu-backed-new-window-admission-2026-10-10)
 adds backing-snapshot admission and rendering; Present retirement and launch
 contexts remain distinct requirements.
+The [mirrored receipt successor](#mirrored-receipt-consensus-2026-10-10)
+adds retired-frame stamp and receipt consensus for one output with two mirror
+heads. It does not cover multiple logical outputs or the native service tail.
 
 This is a revisable coverage baseline, not a frozen feature list or a reduced
 exit. Every defined capability and explicit acceptance requirement stays in
@@ -1457,6 +1462,103 @@ Actual device completion remains simulated, and the concrete native-selection
 tail of `service_presented_policy` still needs its own coverage accounting.
 It cannot be waived as physical-only acceptance merely because the headless
 fixture calls the installation owner directly.
+
+## Mirrored receipt consensus (2026-10-10)
+
+Signed Hagia `74c9729def30f77392c276d1a1c9826542f38b3f` adds
+`sdk_presented_receipts_require_all_heads`. Signed niltempus
+`51fb4a6670e88b88d6567fc68a69622e314a629b` binds the seventeenth case and
+twelfth overlay module. Production Sophia remains pinned to
+`f77244abe3063255c57c283a32eafe1666d6e684`; all five copied-owner glue spans
+are unchanged. No production API or backend fixture extension is needed.
+
+The real Hagia Held prefix supplies the CPU scene and initial installation.
+The existing `SessionPolicyPresentationFixture` then queues production retained
+composition and simulates submission and individual completion for two mirror
+heads. Production code derives the publication stamp and input projection from
+the actual retired display lists. No receipt, stamp or completed projection is
+supplied in this phase. After only the first head completes, Session must emit
+no Presented receipt. After both complete, it emits exactly one receipt for the
+installed publication; republishing the same completed frames emits no duplicate.
+
+A real Ended(Cancelled) exchange closes Hagia's switcher without changing focus.
+Session's changed installation branch emits Revoked before replacement retirement.
+The first replacement head alone must not cause Withdrawn while the other still
+carries the publication. Completing both produces exactly one Withdrawn for the
+original receipt identity, and republishing does not duplicate it. Behavioral
+receipt assertions precede raw projection diagnostics, so the controls fail on
+the semantic obligation rather than an implementation detail.
+
+The development run `t249-consensus-dev01` and clean signed-candidate run
+`t249-consensus-01` each pass all seventeen individually invoked cases:
+`lifecycle=3 occupied=5 operations=3 slow_peer=1 presented=5 native=false`.
+Their independently verified manifest hashes are respectively
+`35c31e6c707b0ab016cc3594f7876103fd53b073a478f5ba2e5a00c68e9767ed`
+and `bd59cc169c6850e3ff9c41718220bef4bf0f47dd32d0196367ec7d68d5ee4fe8`.
+The clean consensus case takes 0.20 seconds, a test duration rather than a latency
+measurement. `t249-consensus-checks-01` passes strict Session overlay Clippy,
+including tests, with manifest
+`2ff535ad59fe90c8ce16882ab21bd747f9df49fb378aa004162cd5afc7e6271f`.
+Development checks also pass thirteen serial runner tests with one internal
+holder ignored, strict runner Clippy, Rust formatting, whitespace and Hagia's
+data-layout gate. The full Nim/formal and product gates are not repeated for
+external-only test changes.
+
+Two compiled archive-only controls change the unique presented-head collection
+in backend `production_visual_runtime/projection.rs`:
+
+- `t249-consensus-control-presented-01` keeps only the primary head. Its first
+  failure is “a publication retired by one mirror head must not be Presented”:
+  one failure, exit 101, 0.16 seconds. Manifest
+  `1eed2482e0797a08db9be6a64d9baba4329050b6b4be10c7536d7c1dacbc1147`.
+- `t249-consensus-control-withdrawn-01` truncates only when the primary has a
+  retired stampless frame. The entire presentation round and Revoked pass;
+  replacement then fails “a replacement retired by one mirror head must not
+  withdraw the publication”: one failure, exit 101, 0.19 seconds. Manifest
+  `19cd006ae773d9beae3d3036c16e0d387a024b6cec645a739ac734cfe6f23555`.
+
+Both controls use the clean run's exact case argv, hold the build-root and cargo
+slot leases, compare the mutated file with its pin blob before starting, and
+restore it afterward. They preserve the ordinary Hagia executable and all
+twelve mounted fixture files. All five run/check/control manifests independently
+verify, and every recorded fixture matches signed source. After both controls,
+all 1,616 archived crate production-source files independently match pinned Git
+blobs. Read-only independent review finds no blockers in the fixture, runner,
+documentation or control seams. Hagia `74c9729` and niltempus `51fb4a6` are
+merged and pushed.
+
+With jobs finished, leased cleanup removes the build root:
+`t249-consensus-cleanup-01`, independently verified manifest
+`fd583770791cb71ffebaaba5e11b8eaf313b8d984549a58dd1a4257bd7928cbc`.
+Records live under `~/.local/state/sophia/development-evidence/`; no compiled
+artifacts are copied there. Fixed cargo slots and the stable sibling lock remain.
+
+The bounded result has one logical output with two mirror heads. Worker/device
+submission and completion are simulated. The inherited prefix initially installs
+against one supplied head; the case subsequently validates the publication against
+the target's heads, but does not claim that the first installation used them.
+The closure does exercise the changed installation branch. The GLUE-bound service
+mirror calls the production revalidation, withdrawal and receipt owners, but
+does not execute `service_presented_policy`'s concrete native-selection tail.
+That owner ordering remains a t249 gap. Physical display behavior, native Present
+admission and multi-output consensus are not established here. t249/h006 remain
+open, and measurement requirements and budgets are unchanged.
+
+### Source-only repaint oracle identified
+
+Read-only follow-up identifies a direct preview oracle at this pin: each retired
+display list records `CompositorSurfaceInstance::source_generation`, resolved
+from committed content during capture rather than supplied by the WM. The current
+external fixture exposes publication instance identities but not these per-head
+retired instances. A small WM-neutral test-support readback could expose the
+existing fact, allowing a case to require generation 2 on both heads while the
+policy publication and receipt identity stay unchanged and no WM cycle begins.
+This would require a reviewed Sophia test-support commit and runner pin update;
+it is a design, not implemented evidence. The proposed archive control clamps
+the resolver's unique source-generation assignment to 1. Explicit fixture
+recomposition would still leave production source-only repaint scheduling as a
+separate native-service join, and the mirrored target supplies no preview pixel
+readback. The frozen historical overlay remains unchanged and was not rerun.
 
 ## Connections
 
