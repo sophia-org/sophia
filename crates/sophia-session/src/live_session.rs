@@ -3,6 +3,7 @@ use super::prelude::*;
 mod c_sdk_fixture_process;
 mod content_mapping_evidence;
 mod native_owner_retirement;
+mod renderer_handoff_custody;
 use native_owner_retirement::{NativeRetirement, RetirementMode};
 
 use crate::desktop_output_activation::{

@@ -69,15 +69,19 @@ if let Some(controller) = seat_controller.as_mut() {
                 match quiesced {
                     Ok(report) => {
                         native_evidence.observe_settlement(report.outcome.drained(), report.abandoned_scanouts);
-                        *suspended_renderer_images = match (runtime.as_mut(), native_scanout.as_mut())
-                        {
+                        let capture = match (runtime.as_mut(), native_scanout.as_mut()) {
                             (Some(runtime), Some(native)) => {
-                                Some(capture_renderer_image_handoff(runtime, native)?)
+                                Some(|| capture_renderer_image_handoff(runtime, native))
                             }
                             _ => None,
                         };
+                        let custody = crate::live_session::renderer_handoff_custody::suspend_renderer_handoff_for_terminal_switch(
+                            suspended_renderer_images,
+                            capture,
+                        )?;
                         crate::session_println!(
-                            "sophia_live_renderer_handoff schema=1 status=captured images={}",
+                            "sophia_live_renderer_handoff schema=1 status={} images={} source=terminal_switch",
+                            custody.reduced_name(),
                             suspended_renderer_images.as_ref().map_or(0, |handoff| handoff.len()),
                         );
                         close_native_owner!("seat_release", RetirementMode::from_suspend(report.outcome));
