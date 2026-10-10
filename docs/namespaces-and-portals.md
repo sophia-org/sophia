@@ -85,10 +85,10 @@ operator policy. This target does not assert that the current admission or
 capture implementation already provides these guarantees.
 
 The [admission boundary design](notes/plans/esnqxpqw-pidfd-and-namespace-admission-optimizations.md#local-authentication-design-and-t317-handoff-2026-10-10)
-and [recipe boundary draft](notes/investigations/kcfh2hdg-adopting-the-plan-9-namespace-model-in-sophia.md#proposed-recipe-boundary-2026-10-10)
-map this target to current source and proposed device-free controls. Their
-grammar, resource bounds and authentication handoff are design work, not
-additional supported interfaces.
+and [recipe review](notes/investigations/kcfh2hdg-adopting-the-plan-9-namespace-model-in-sophia.md#t275-recipe-design-result-2026-10-10)
+map this target to current source and required device-free controls. The recipe
+contract below and the authentication handoff are approved implementation
+targets, not additional supported interfaces.
 
 The proposed first local authentication target uses a supervisor-provisioned private
 conversation channel and a Factotum verdict bound to one 9P authentication
@@ -113,6 +113,165 @@ launched tools and applications is an explicit
 [t324 follow-on](notes/plans/jsschoen-converge-public-roles-on-one-9p-core.md#t324),
 not a permanent requirement that Sophia launch every application. This staging
 was approved by niltempus on 2026-10-10.
+
+## Namespace recipe contract (target)
+
+Approved by niltempus on 2026-10-10 as the t275 design handed to t318. No recipe
+parser or composed endpoint directory is implemented by this document. The
+existing X group directory contract below remains separate and unchanged.
+
+### Policy and compiler boundary
+
+One trusted policy recipe contains three parts: naming instructions, portal
+participation capabilities, and an optional host-containment policy. Shared and
+confined profiles select recipes, not separate naming algorithms. Other role
+operation grants remain independent Session policy inputs. A recipe may narrow
+approved authority but cannot mint a principal, NamespaceId, role or transfer
+grant. If its requested scope exceeds policy, reject the candidate rather than
+silently publishing a partial view. Portal participation still requires an
+individual grant for each protected transfer.
+
+Host containment describes requirements for the platform driver, not shell
+commands in the recipe. Omission does not claim host isolation. If a selected
+profile requires confinement and the driver cannot meet it, refuse launch;
+never fall back to a shared host view. Endpoint visibility alone proves neither
+permission nor containment.
+
+The pure naming compiler receives pinned recipe bytes/revision, the selected
+namespace context, approved endpoint references and their grant scopes. Session
+can prepare a launch view before authentication, but must bind the verified
+admission to that policy before exposing protected role operations. Possessing
+the directory or its discovery file supplies no authentication. t133/t317 own
+that check and launch custody.
+
+Compilation returns a bounded endpoint table and discovery description. Session
+materializes the complete candidate privately and publishes it atomically;
+compile or materialization failure leaves the old naming view intact and
+releases the candidate. Separately applied revocations are never undone by that
+failure. No client-selected host path or socket is opened by the compiler.
+Each resulting connection still enters one role export on the shared 9P core;
+there is no forwarding root or second public service registry.
+
+### Naming language, version 1
+
+The top-level file starts with `namespace-recipe 1`. Included fragments contain
+operations only. Spaces and tabs delimit tokens; blank lines and whole-line
+comments beginning with `#` after optional whitespace are ignored. There is no
+quoting, escape syntax, environment substitution, executable hook or runtime
+client command. Unknown verbs, flags or extra operands refuse the candidate.
+
+| Operation | Meaning |
+| --- | --- |
+| `mount SERVICE PATH` | Install one approved catalog endpoint at PATH, including its protocol and grant scope. SERVICE is not a host path, network address or credential. Flags are refused. |
+| `bind SOURCE PATH` | Capture the existing endpoint or finite endpoint-directory snapshot at SOURCE under PATH. Later source changes do not retarget the capture. |
+| `bind -a SOURCE PATH` / `bind -b SOURCE PATH` | Append/prepend a directory snapshot's entries to another endpoint directory. Both operands must be directories; never union files within different role servers. |
+| `unmount PATH` | Remove the compiled endpoint or directory subtree at PATH. Missing mappings refuse. There is no hidden older mapping to uncover and no effect on open streams or grants. |
+| `cd PATH` | Set the compiler's base for relative SOURCE and PATH operands, initially `/`. This is lexical; it neither requires an existing directory nor changes the child's working directory. |
+| `include FILE` | Expand a pinned trusted fragment inline. Its `cd` effects persist after return. FILE resolves under the trusted configuration root, independently of `cd`. |
+
+Targets create necessary structural parent directories. Bind sources must
+already exist; a snapshot is captured before installing it, so even overlapping
+source/target names cannot create recursive aliases. A leaf cannot be a parent.
+Paths are case-sensitive UTF-8 names normalized within the recipe root; `.` and
+`..` are resolved lexically and escape above root is refused. Reject NUL/control
+characters, discovery-name collisions and symlink escape in include loading.
+The structural root cannot be removed or replaced by an endpoint.
+
+At an occupied target, an unflagged operation is idempotent only for an identical
+endpoint reference and grant scope, or identical directory snapshot. Otherwise
+it requires explicit `unmount` first. Directory composition preserves member
+order and each member's entry order. Equal relative leaf names deduplicate only
+when reference and grant scope match; different references/scopes and leaf vs
+directory collisions refuse. Distinct aliases of one service remain visible.
+There is no lower-member lookup after an authorization failure.
+
+This deliberately differs from [Plan 9 bind](https://9p.io/magic/man2html/1/bind),
+whose unflagged operation replaces directly. Source capture and ordered directory
+composition are borrowed; creation flags, cache flags, environment expansion,
+`import` and `clear` are unsupported. Sophia's `include` corresponds to the
+inclusion operation spelled `.` in [namespace(6)](https://9p.io/magic/man2html/6/namespace).
+
+Bound compilation to 64 KiB aggregate source, 1,024 expanded operations, include
+depth 8 (top level depth 0), 32 distinct include files, 64 exposed endpoint paths
+(aliases count), 1,024 bytes per normalized path and 255 bytes per component.
+Each expansion counts toward source/operation limits, even for a repeated
+fragment. Reject cycles on the active include stack and changes to pinned input.
+These are design limits, not measured capacity. Failure publishes nothing.
+
+### Worked policy recipes
+
+The following separates policy inputs from naming text; it does not invent
+accepted `desktop.kdl` syntax. t318 supplies the configuration adapter.
+
+| Recipe | Namespace and portal participation | Host policy and independent role grants |
+| --- | --- | --- |
+| Shared X | Session-selected ClassicShared context; explicitly approved clipboard request/publish capabilities | Trusted host reach; no administrative or injection grant implied |
+| Confined X | A distinct Confined group; zero portal capabilities by default | Required t142 group path exclusion and selected host restrictions; no ambient cross-group grant |
+| Observer | Its own admitted context; request-only screen-capture participation for policy-approved targets | Required selected confinement; read-only status/inspection and capture requests; no portal approval, clipboard, administration or injection |
+
+Shared and confined recipes can use the same naming fragment with different
+approved `x-group` references, contexts and capabilities:
+
+```text
+namespace-recipe 1
+cd /roles
+mount x-group x11
+mount portal portal
+```
+
+`x-group` is an X11 listener, not a 9P export. Its conventional X socket lives in
+t142's separate one-entry group directory; discovery and portal endpoints must
+not be inserted into that directory. Neither recipe joins resource namespaces.
+An exposed portal endpoint with zero participation capabilities grants nothing.
+
+The observer's naming fragment is:
+
+```text
+namespace-recipe 1
+cd /roles
+mount inspection inspection
+mount portal portal
+bind inspection status
+```
+
+Here `status` is an endpoint alias, not a new status-file implementation. One
+allowed capture creates a grant-bound object in the granting role's tree; it
+does not edit the base naming recipe. t315/t319 own execution and capture bytes.
+The t318 authorized developer launcher selects an approved recipe for an
+independent executable; a requested role cannot grant itself. Directly launched
+local client provisioning remains t324, and no remote authentication is implied.
+
+### Revisions, discovery and retained authority
+
+Recipe revision identifies a naming/policy snapshot. Service identity and
+generation identify an export instance. Admission epoch bounds a connection's
+authority. Output generation identifies a physical target. These are separate:
+rebinding a name to existing service B preserves B's identity/generation; a
+service restart changes its generation. Aliases do not manufacture new services.
+
+Publish a new sealed view for newly admitted connections when policy changes.
+Existing admissions keep their original view; neither a path replacement nor
+Tversion changes their pinned principal or namespace. A retained stream/fid
+continues to name its old owner while its authority remains valid. Before
+publishing an authority-reducing replacement, revoke the affected old authority;
+if replacement publication fails, that revocation is not undone. Pending
+delivery must recheck revocation. Unrelated grants survive. A new walk on an
+old role connection cannot traverse into the replacement endpoint's export.
+
+Sharing a NamespaceId is explicit Session policy. Child launches receive a
+selected recipe, and new connections authenticate independently; inherited or
+intentionally transferred authenticated streams retain their existing identity,
+as specified by t133. Sharing recipe text or a path does not prove custody.
+
+Each discovery snapshot names its recipe revision, relative endpoint paths,
+protocol/version, opaque service identities/generations and availability. It
+lists only that view's endpoints; credentials and raw policy secrets are absent.
+Role version/capability files remain authoritative. Availability is a bounded
+observation, not proof of authorization or currently presented output. Refresh
+discovery atomically without retargeting an admitted binding. t318 owns the
+versioned serialization, reserved filename and SDK reader; t257 owns the
+available/waiting/recovering status vocabulary. No single 9P root forwards into
+the listed services.
 
 ## Session Profiles
 

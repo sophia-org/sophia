@@ -252,6 +252,10 @@ contract is bytes and records only, with descriptors as an optional socket
 capability. That is already the rule, and this is the strongest reason to keep
 it.
 
+Application-service delegation and recursive re-export above are follow-on
+directions for the application authority. They do not expand t275's recipe
+design exit or imply that the initial endpoint composer forwards role trees.
+
 ### 5. Factotum as the single authentication agent
 
 Plan 9 used one agent for every authentication so keys never lived in clients.
@@ -264,18 +268,21 @@ two and is a reuse rather than a new component.
 Plan 9 mounts a remote machine's tree as naturally as a local one. For pixels
 at frame rate that is a trap, and the
 [performance section](../../sophia-9p-control-bus.md#performance-is-an-acceptance-question)
-of the public-interface design says so. For the ctl and status tree it is
-free: forward the socket over ssh and an agent on another machine reads the
-desktop's state files. Identity still comes from the attach, not from the
-transport, which is why rule two precedes this.
+of the public-interface design says so. Ctl and status records are candidates
+for a later forwarded transport, but forwarding alone supplies neither identity
+nor grants. The approved t133 first delivery uses Session-authorized local
+launches; t324 owns independent local-client provisioning. Remote credentials,
+admission and transport controls require separate work. Neither the recipe nor
+an ssh tunnel constitutes a remote-authentication implementation.
 
 ### 7. Discovery by the tree
 
 Plan 9 needs no registry because the namespace root is the catalogue, and each
 service has a version or ctl file at its root. This answers the first open
-question in the public-interface design. A client lists its root to see which
-roles it may attach to and reads one file per role for version and
-capabilities. Sophia's [proposed recipe subset](../investigations/kcfh2hdg-adopting-the-plan-9-namespace-model-in-sophia.md#proposed-recipe-boundary-2026-10-10)
+question in the public-interface design. In Sophia the client inspects its
+endpoint directory and discovery file, then authenticates at each selected
+endpoint and reads that role's version/capability contract. There is no combined
+9P root forwarding walks into other exports. Sophia's [approved recipe subset](../../namespaces-and-portals.md#namespace-recipe-contract-target)
 uses five operations: bind, mount, unmount, cd and include. This is a deliberate
 subset: [Plan 9 namespace(6)](https://9p.io/magic/man2html/6/namespace) also
 defines import and clear, and spells inclusion `.`. The earlier five-verb claim
@@ -391,9 +398,9 @@ user with ambient rights, and it bounds prompt injection: a hostile window
 title or clipboard payload the agent reads cannot grant it anything the recipe
 did not. The agent is itself confined. It runs arbitrary code, so it lives in
 its own namespace with host reach cut by the containment driver and touches
-Sophia only through its composed tree. Because identity comes from the attach
-rather than the socket's peer, the agent may sit on another machine over a
-forwarded socket.
+Sophia only through its admitted views. A future authenticated remote client
+could use a forwarded transport; the first local launch mechanism does not
+provide that credential provisioning or remote admission.
 
 Sophia builds nothing agent-specific. The shell and WM independence rule
 applies: no agent harness, no named-agent client, no feature for one agent.

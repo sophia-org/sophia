@@ -2,7 +2,7 @@
 id: kcfh2hdg
 date: 2026-09-28
 kind: investigation
-status: investigating
+status: closed
 tags: [architecture, security]
 ---
 # Adopting the Plan 9 namespace model in Sophia
@@ -143,6 +143,12 @@ To prevent architectural bloat and preserve low-latency execution:
    `EBADF` or `ESTALE` on existing open fids without tearing down physical mounts.
 
 ## Proposed recipe boundary (2026-10-10)
+
+This draft and its review refinements are retained as review history. The
+[approved contract](../../namespaces-and-portals.md#namespace-recipe-contract-target)
+and [result below](#t275-recipe-design-result-2026-10-10) supersede their open
+choices, including directory mount flags, service-generation wording and the
+ambiguous reference to new walks after rebinding.
 
 The accepted [one-core ADR](../decisions/zsx0tk4k-serve-every-public-role-from-one-9p-core-with-namespaces-as-composed-trees-and-portals-as-binds.md)
 settles the architecture. This draft specifies t275's recipe and t318's test
@@ -343,6 +349,58 @@ and concrete tests for composition, inheritance, isolation and revocation.
 Identify implementation gaps and unsupported semantics. The October 10 draft
 supplies that review material; implementation and acceptance remain separate
 tasks and evidence, and writing the draft does not close this investigation.
+
+## t275 recipe design result (2026-10-10)
+
+niltempus approved the recipe finalization plan after review against
+[zsx0tk4k](../decisions/zsx0tk4k-serve-every-public-role-from-one-9p-core-with-namespaces-as-composed-trees-and-portals-as-binds.md)
+and [ernn0bkv](../concepts/ernn0bkv-plan-9-integration-points-for-sophia.md).
+The [normative target](../../namespaces-and-portals.md#namespace-recipe-contract-target)
+now owns the complete naming semantics, policy boundary, examples and lifetime
+rules; [t318](../plans/jsschoen-converge-public-roles-on-one-9p-core.md#t318)
+owns implementation and the acceptance matrix. This resolves the investigation's
+design exit, not the implementation or physical acceptance gates.
+
+The reviewed source is `baec4cde663ea505675f8d6cbed9f13d8aeac8ab`. Source inspection
+established the following existing seams; none is new execution evidence:
+
+| Current source | Observation and implementation gap |
+| --- | --- |
+| `crates/sophia-protocol/src/packets/namespace.rs` | Immutable namespace/admission values and directional portal capabilities exist. They are not a recipe, verified principal or per-transfer grant. |
+| `crates/sophia-runtime/src/session/namespace.rs` | NamespaceRegistry allocates IDs and revokes immutable admissions. It does not compile naming views or establish Factotum authentication. |
+| `crates/sophia-session/src/live_session/x_frontend.rs` | LiveXAdmissionPolicy checks peer UID and admits into its selected namespace; recipe work does not replace X setup or t142's listener selection and confinement proof. |
+| `crates/sophia-9p/src/export.rs` | Attach, owner epochs and per-operation checks provide the export boundary. A composed directory must retain those checks instead of making paths authoritative. |
+
+The accepted changes from the draft are specific. One policy recipe contains
+naming, portal participation and optional host-containment requirements.
+`mount` installs one endpoint; only directory `bind` takes `-a`/`-b`. Aliases
+capture references, conflicting leaves refuse, and explicit unmount precedes
+replacement. Recipe revision and service generation no longer stand for one
+another. New views serve new admissions; old role connections and fids do not
+retarget. Authority reduction revokes affected old grants separately from
+publication. The X one-entry group directory stays separate from the composed
+endpoint directory and discovery file.
+
+The source-capture and directory-ordering comparisons were checked against
+[Plan 9 bind(1)](https://9p.io/magic/man2html/1/bind), and tokenization/inclusion
+against [namespace(6)](https://9p.io/magic/man2html/6/namespace). Sophia's explicit
+replacement requirement, lexical compiler `cd`, restricted includes, collision
+refusal and lack of client mutation are deliberate differences. No prototype
+is needed to decide these pure construction semantics. Linux materialization,
+atomic publication and path exclusion still need t318/t142 execution evidence;
+the rejected historical FUSE, forwarding-root and performance claims are not
+revived.
+
+Validation passed: documentation inspection, ten added local links/anchors,
+305 unique task IDs, an acyclic dependency graph and `git diff --check`.
+`zk index` completed; the broken-link report retains the same 25 pre-existing
+notes, with none of this slice's edited notes among them. No parser, Rust build,
+socket probe, confinement control or live job was run. The t318 matrix specifies the
+required behavioral observations and negative controls without claiming they
+passed. t133's approved launch authentication, t324's independent local-client
+follow-on, and the t315/t319 transfer/capture gates remain separate. Application
+delegation, recursive re-export and remote authentication are later work, not
+new requirements for closing this design review.
 
 ## Connections
 

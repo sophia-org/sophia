@@ -264,8 +264,9 @@ is reconciled with the result. Depends on t133 and t323.
 Implement the namespace recipe and composition layer: a per-identity socket
 directory with a discovery file, derived from the admission context and role
 grants, with role trees staying one per endpoint and binds landing in the
-granting role's tree, following the design t275 produces from the
-[namespace investigation](../investigations/kcfh2hdg-adopting-the-plan-9-namespace-model-in-sophia.md).
+granting role's tree, following t275's approved
+[recipe contract](../../namespaces-and-portals.md#namespace-recipe-contract-target)
+and [source review](../investigations/kcfh2hdg-adopting-the-plan-9-namespace-model-in-sophia.md#t275-recipe-design-result-2026-10-10).
 The recipe is declarative and sealed at attach; clients cannot rebind their
 own view. Exit: two private clients with overlapping names see different
 trees; an explicitly shared service has one identity in both; a rebound
@@ -277,6 +278,38 @@ observer recipe for agents and operator tools binds only status, inspection
 and capture grants, with input injection absent. Operator and driver recipes
 do not inherit observer grants; deliberate composition is explicit policy.
 Depends on t275, t142 and t317.
+
+### Recipe implementation acceptance
+
+Keep one policy recipe with naming instructions, portal participation and
+optional host policy. The compiler accepts only approved references/scopes;
+the admission/export owners enforce authority. Materialize a complete view
+privately and publish it atomically, with no partial endpoint exposure. Finalize
+the configuration adapter and versioned discovery filename/serialization/SDK
+reader against the contract's required fields before exposing the interface.
+These are t318 implementation artifacts, not existing protocol support.
+
+| Scenario | Required observation and discriminating control |
+| --- | --- |
+| Private views with equal names | Different contexts/resources despite equal paths; exact foreign admission refused. Remove the admission-scope check to discriminate. |
+| Shared service and aliases | Same export identity/generation, independent grants; distinct alias names remain visible. A bind cannot add a grant. Bypass scope validation and require a named refusal test to fail. |
+| A-to-B rebind | New view names existing B without inventing B's generation. An earlier alias and retained A fid still name A. Replace captured references with late path lookup to discriminate. |
+| Admission/view replacement | Old connections keep the old view; new authenticated connections get the candidate view. Authority reduction revokes affected old grants even if publication fails; no automatic revival. |
+| Directory composition | `-a`/`-b` produce deterministic member order, identical colliding leaves deduplicate, different scopes/references or node kinds refuse. Reject flags on leaves and mount; permission denial cannot fall through. |
+| Invalid input and bounds | Unknown syntax, missing sources, parent-leaf conflicts, root escape, include escape/cycles/changes and every documented limit refuse before publication. Boundary values pass; one over fails. A failed candidate leaves old naming intact. |
+| Publication failure | Inject failure while materializing endpoints/discovery; expose no partial view, clean candidate resources, preserve the old naming snapshot. Revocations already applied remain effective. |
+| Parent/child and forwarded stream | Fresh connections independently authenticate against selected policy; an inherited stream retains its existing identity and loses authority when revoked. Reuse t317 custody controls; supplied admissions are compiler evidence only. |
+| Revoked transfer | Retained and waiting reads refuse after revoke/expiry/disconnect while an unrelated grant progresses; release resources once. Omit the final delivery check to discriminate. A generic bounded object qualifies t318; renderer capture remains t319. |
+| Generation-bound target | Reused numeric output identity cannot retarget an old grant. Remove generation comparison to discriminate; physical return remains a separate acceptance gate. |
+| Observer and launcher | Status/inspection and scoped capture requests imply no approval, administration, clipboard or injection authority. An allowed developer launch succeeds; requesting an unauthorized role refuses. |
+| Host reach and required confinement | Reference t142's executed trusted/other-group path and descriptor exclusion proof. An unavailable required containment driver refuses launch; no shared-host fallback. |
+
+Record visibility, service identity and permission separately. Use pure compiler
+tests for construction and generic independent SDK/socket peers for actual
+attach/export/retained-fid behavior. Bind results to the candidate and run the
+isolated repository gate. Supplied objects or verifier results cannot qualify
+authentication, renderer pixels or physical containment. t315/t319 own capture
+lock cancellation and bytes; reuse their evidence only after an impact review.
 
 The first developer delivery also needs an authorized launch command for an
 independent executable and a policy-approved recipe. Its authority comes from
