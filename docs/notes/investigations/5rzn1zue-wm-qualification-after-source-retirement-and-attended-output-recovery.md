@@ -542,6 +542,71 @@ assertion. Dropping Presented receipts would not discriminate client model
 behavior. Revocation-to-model, disconnect with held release debt, cancellation,
 AbortSettlement, native stamps/pixels and latency remain separate open joins.
 
+## Presented chord and capture join (2026-10-10)
+
+The source-less precondition gap above is resolved using existing APIs. Hagia
+`3960c83752743805cfbe3a17843296c6fef4947e` adds the tenth external case;
+niltempus runner `beb125b744f0d18467c16b9bb5dc233ac45409e6` pins Sophia
+`f77244abe`. No Sophia production code changed. One ordinary CPU production
+cycle commits three owned buffers through `production_authority_batch`; no
+runtime registry is directly populated and no alternative commit path is used.
+The nine preceding cases retain their non-native ceiling.
+
+The real Hagia Held publication fails with MissingSource on an empty runtime
+and MissingHeads without a target, then passes unmodified preflight with those
+sources and a supplied head. Before completion it has no receipt or actionable
+capture. Supplied completion enables a production-routed Right action with the
+exact presentation identity, creates release debt, and settles it on release.
+Repeated completion produces no duplicate receipt. Hagia republishes, the old
+action identity is refused, and receipts follow Revoked/Withdrawn/Presented
+ordering. Ended returns chord credit and commits W3, derived beforehand from
+checkpoint window order and focus and cross-checked against preview ordering.
+
+All five manifests below independently verify under the development-evidence
+root; these are their SHA256SUMS file hashes:
+
+| Package | Result | Manifest |
+| --- | --- | --- |
+| `t249-presented-dev01` | Preserved STOP: final Ready preceded the last receipt flush. | `e541760f361bd384442187e71feb01baa6b985605d1b6930b6849d0ae7706d4d` |
+| `t249-presented-dev02` | Unsigned development fixture, ten cases pass. | `baf738cd98c37a2852d9fa993d857e9bbe4584e69720524583fb8614d16361ce` |
+| `t249-presented-controls-01` | Two compiled controls fail their named assertions; inputs restored. | `836e6638d74f264bb0b4ad91f169a5529821e6e2d48208939f312f1e02e4ff79` |
+| `t249-presented-01` | Clean signed fixture, ten cases pass. | `32e64d8b45db223c74f0a1a0d3f902070c666a8341177810d479bf1d6b11b623` |
+| `t249-presented-checks-01` | Overlay/runner clippy, three runner tests, fmt and Hagia layout pass. | `a2ef23105d82f86fbb0ff03621b73655b1a0801bba485f0b9bd5593fca85fcfa` |
+
+The fixture correction drains receipts through bounded owner polls with new
+cycles disabled. It proves transport progress, not a peer ACK. Three additional
+scratch development attempts were disclosed; they are not qualification records.
+The final fixture, overlay, glue and runner hashes match dev02. Production Hagia
+source is identical across those builds; executable bytes differ, so no binary
+reproducibility is claimed. Clean-run executable SHA256:
+`7cff9718f8ed280ecd334975778a4cdc02bc91cee8636197e93c57563f21e695`.
+
+F1 removes completion in the archived Session and fails at “presented switcher
+must take the captured key”; W2 is a predicted later outcome, not observed.
+F2 ignores Ended in an isolated Hagia mutant and fails at “released chord must
+commit the switcher selection”: actual W1, expected W3. Both exit 101 with one
+named failure. The original sources are restored and control inputs match.
+
+Review compared the copied dispatch to production: the reached three arms use
+the same owners, with fixture assertions replacing refusal logging. Other input
+arms are rejected by the fixture. The shortened presentation service omits
+availability/stopping and runtime-revocation branches and installs separately.
+Pinned span hashes guard reference drift; they do not prove glue equivalence.
+The 1,015-line test is larger than estimated but remains one disclosed fixture;
+no production test API or driver was introduced. Release debt uses Debug plus
+routing behavior because the owner has no public debt accessor.
+
+This qualifies semantic joins with supplied CPU content, heads, stamps, time
+and layout completion. Pixel admission/visual readiness is bypassed; displayed
+membership is established by validation, not an independent set read. There is
+no native retirement, pixel, physical-input or latency evidence. Presented has
+no Hagia model effect. Revocation-to-model, disconnect with release debt, cancel,
+AbortSettlement and receipt ACK reachability remain open. t249/h006 are not
+closed. No full product gate, release, installation or live-session operation
+was repeated. Future runs must use cargo-slot and keep build products outside
+evidence under the updated global resource rules; frozen historical records
+are preserved.
+
 ## Connections
 
 - [t249 plan](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249) owns the unchanged acceptance requirements.
