@@ -178,6 +178,118 @@ current capability-to-evidence map and its missing owner joins, followed by the
 prospectively reviewed measurement method. The observer admission/recipe design
 can continue within its previously admitted parallel scope.
 
+## Current capability-to-evidence map (2026-10-10)
+
+This follow-up inspected Sophia `b52a32dc3c26000bae9b6d656fc274710a90f9bd`
+and Hagia `70595f2553bb21527f9cf9dfcdade8e7cfb2f743`. It ran no tests,
+builds or live-session operations. The lifecycle evidence above remains pinned
+to its own source pair; the intervening commits are documentation.
+
+### Selection is not behavioral coverage
+
+The 23 defined bits are in `crates/sophia-protocol/src/wm_rows.rs`.
+Hagia's `src/sophia/wm_file_wire.nim::fileWire` requires bits 0–8 and 10;
+profile activation adds 9, pointer-focus settings add 13, and output assignment
+settings add 15/16. Its optional offer includes 11/12 and 14–22, minus anything
+already required. Bit 13 is conditional, not offered unconditionally.
+
+Session's `live_session/wm/public_policy/transport.rs` removes 18/19 from the
+headless ceiling. `sophia-runtime/src/policy_capabilities.rs` then removes
+dependent bits: 19 needs 18; 17 needs 14; 20 needs 1/6; 21 needs 20;
+22 needs 19. Profile activation is supported only with the profile admission.
+The runtime tests `selected_mechanisms_are_bounded_by_offer_ceiling_and_profile_admission`
+and `each_dependency_is_removed_after_either_offer_or_ceiling_excludes_its_prerequisite`,
+plus the three lifecycle/chord/held-capture tests in
+`crates/sophia-runtime/tests/policy_capabilities.rs`, pin these rules.
+
+The lifecycle's recorded mask is **3399679 (`0x33dfff`): 19 bits selected**.
+Absent are 13 (profile did not request pointer focus), 18/19 (headless ceiling)
+and 22 (dependency pruning). With a native ceiling and this same offer/profile,
+source predicts `0x7fdfff`; requesting pointer focus too permits `0x7fffff`.
+Those are computed expectations, not observed native negotiation records.
+
+### Coverage by bit
+
+In this table, **J** means a behavior exercised by the current three-case
+external lifecycle run; **S** means current test source inspected, not rerun by
+this audit; **P** means the separately recorded attended output acceptance.
+A selected bit without a corresponding workload remains only negotiated.
+Sophia paths prefixed `support/` are under `crates/sophia-session/tests/`;
+Hagia paths are relative to its separate repository. Test filenames identify
+reuse candidates, not a claim that every assertion was traced or executed.
+
+| Bit / capability | Current owner and reusable checks | Joined evidence and remaining gap |
+| --- | --- | --- |
+| 0 BINDINGS, 1 ACTIONS | Session catalog/shortcut dispatch; Hagia `tests/tpolicy_model.nim` view-action cases; `support/chord_lifecycle_session.rs`. | J admits the catalog and shortcuts, but invokes no window action. Need a real action cycle through Hagia and Session settlement. |
+| 2 MULTI_OUTPUT | Session output ownership; `support/policy_output_ownership.rs::partial_drag_projection_preserves_the_other_outputs_committed_content`; Hagia model cross-output movement. | P establishes occupied output migration/return in its exact release. J has one empty output; restart with occupied outputs is not covered. |
+| 3 POINTER_INTERACTIONS | Session bounded gesture queue, `support/live_session/wm_session_tests/pointer_interaction.rs`; Hagia model interaction vocabulary. | S; no current external SDK drag/cancel join or measured drag latency. |
+| 4 CHROME | Session configuration and Engine chrome; `support/policy_file_custody.rs::real_array_decoder_refuses_unnegotiated_chrome_before_semantic_delivery`; Engine `tests/chrome_layout.rs`. | J configuration admission, no chrome pixels or hit-test evidence. |
+| 5 POLICY_DIRTY | Session cycle owner and Hagia checkpoint continuation. | J consumes real post-restore Dirty; disabled checkpoint restore fails the named restart control. Occupied state remains untested by that join. |
+| 6 CONFIGURATION, 9 PROFILE_ACTIVATION | Protected launch/reload; Hagia `tests/tprofile_handoff.nim`; generic `support/policy_file_startup.rs`. | J real catalog, accepted replacement, rejected profile and rollback. This is the strongest current joined family, limited to empty policy state. |
+| 7 SESSION_OPERATIONS | Session owns execution, Hagia sends intent only after settlement; Hagia `tests/tpolicy_wire.nim` agreeing/rejected expectation cases. | S and historical owner evidence. J sends no operation; need acceptance/rejection and exactly-once intent on the current pair without executing a real desktop operation. |
+| 8 INDICATORS | Hagia projection, Engine strip/action identity; Engine `tests/indicator_chrome.rs::strip_layout_and_action_share_one_publication_identity`. | P workspace labels observed after return. No complete current SDK indicator/action identity join. |
+| 10 LAUNCH_PLACEMENT | Hagia admission policy and Session layout; Hagia `tests/support/admission_focus.nim`; `support/live_session/wm_session_tests.rs::public_policy_admission_reconciles_to_the_engine_safe_extent_before_staging`. | S; J admits no surface. Include occupied initial management before recovery tests. |
+| 11 TAB_GROUPS, 12 TRANSLATION_GROUPS | Hagia projection rows; `tests/twm_file_projection.nim`; Engine `tests/tab_chrome.rs` and `tests/translation.rs`. | S; no current external owner join for tab membership or translated occupied geometry. Wire round-trip tests alone do not prove rendering. |
+| 13 POINTER_FOCUS | Session focus admission; `support/policy_active_focus.rs::pointer_focus_admission_uses_negotiation_and_never_activates_before_commit`; Hagia `tests/support/pointer_focus_policy.nim`. | Not selected in J. Needs a separately declared profile, then admitted focus and rejected/stale focus controls. |
+| 14 LAUNCH_ORIGIN, 17 OUTPUT_LAUNCH_CONTEXT | Session origin registry; `tests/launch_origin.rs::delayed_child_freezes_origin_before_focus_and_source_placement_change`; Hagia `tests/support/launch_origin.nim`. | S; no launch in J. Test frozen origin through the current peer; do not treat process ancestry as authentication. |
+| 15 OUTPUT_ACTIONS, 16 OUTPUT_POLICY_KEYS | Session output authority and Hagia output policy; `support/policy_combined_output.rs`; Hagia `tests/twm_file_arrays.nim` output-generation refusal and `tests/support/arrow_output_policy.nim`. | P covers physical topology return, not every output action or live mode/VRR transaction. J has no output service. |
+| 18 SURFACE_INSTANCES, 19 PRESENTATION_ACTIONS | Session presentation owner, Engine retirement and Hagia presentation model; `support/policy_presentation_lifecycle.rs`, `policy_presentation_routing.rs`; Hagia `tests/twm_presentation.nim`, `toverview_adapter.nim`. | Absent in J. Generic tests and historical simulated completion are reusable, but no current SDK receipt-to-model-to-input join is qualified. |
+| 20 ACTION_LIFECYCLE, 21 CHORD_ACTIONS | Session chord service; `support/chord_lifecycle_session.rs::a_chord_action_is_handed_off_as_a_cycle`; Hagia `tests/trecent_windows.nim`, `trecent_windows_replay.nim`. | Selected but not exercised in J. Need current real-peer begin/held/end/cancel, reconnect and credit/refusal joins. |
+| 22 HELD_CAPTURE | Session presented-capture routing; `support/policy_presentation_routing.rs::a_held_capture_waits_for_a_held_application_key` and `a_new_owner_epoch_keeps_the_presented_held_rule`; Hagia recent-windows adapter. | Absent in J. Must join presented identity, chord ownership and release debt; an admitted proposal is not a presented capture. |
+
+Base Snapshot/Projection, request/transaction/connection identities, settlement,
+focus, restart and checkpoint custody do not each have a capability bit. They
+remain required. `support/policy_file_recovery.rs::protected_c_sdk_recovers_after_stale_and_timed_out_projections`
+uses a real protected C SDK connection but supplies timeout outcomes to the
+settlement owner. `support/policy_file_custody.rs` tests actual reactor ACK
+credit, bounded send and stop/ESTALE behavior. Neither is evidence that ordinary
+Hagia has traversed every corresponding failure path on the current pair.
+Hagia's `tests/tpolicy_wire.nim` uses a supplied wire: its expectation, receipt
+and operation checks are local client evidence, not production transport runs.
+
+### Next owner join: occupied settlement and recovery
+
+Extend the external lifecycle fixture and runner, retaining the same repository
+ownership and explicit overlay discipline. The smallest useful successor has
+two opaque surfaces with different generations, a committed focus/placement,
+and a real catalog action that proposes a distinguishable change. Prefer one
+headless output initially; extra outputs are a separate extension, not a reason
+to delay the first nonempty-state proof.
+
+1. Commit initial management and an action through the ordinary Hagia process.
+   Compare Session's committed layout/focus with the client's committed checkpoint;
+   a proposal or an ACK is insufficient. No frontend pixels are claimed.
+2. Stage another action, then force a stale scene and separately supply a timeout
+   to the production settlement owner, following the generic C SDK boundary.
+   Require the prior checkpoint and committed state to survive, a fresh request
+   identity, and a later successful commit. Label the timeout as supplied; it
+   does not qualify a real resize deadline.
+3. Terminate only the fixture peer and exercise automatic and requested recovery
+   with the occupied state. Require fresh connection/request identities and
+   restored window membership, placement and focus after the actual Dirty cycle.
+   A negative control must disable occupied checkpoint restoration or promote a
+   refused candidate and fail on state, not merely on a missing log line.
+
+The fixture must separate authoritative scene facts supplied by the test from
+policy values actually produced by Hagia. Record that distinction with the
+exact source, SDK, profile, binary, overlay and case list. Inspect the private
+seam before implementation; if it cannot expose committed focus without
+manufacturing the expected result, narrow the assertion or add a generic seam.
+No live keyboard, GPU or session access is needed for this slice.
+
+Then cover session-operation intent and terminal peer/credit paths, followed by
+the native presentation/chord/capture join. That join needs its own declared
+receipt and completion fixture; setting `native_scanout=true` is not native
+presentation evidence. Keep simulated retirement clearly labelled and preserve
+release-debt checks across reconnect, lock and lost heads. Existing local tests
+should be reused, not copied wholesale into a client-specific Sophia suite.
+
+The prospective measurement method remains required before a comparative
+campaign. This map changes no budget, closes no task, and does not make a new
+live release necessary. It advances the t249 prerequisite of t315 while leaving
+the admitted t133/t275 observer design work independent, in alignment with
+zsx0tk4k and the observer plan.
+
 ## Connections
 
 - [t249 plan](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249) owns the unchanged acceptance requirements.

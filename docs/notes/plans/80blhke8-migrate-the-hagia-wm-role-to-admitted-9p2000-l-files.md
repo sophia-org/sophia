@@ -18,8 +18,12 @@ The historical two-wire Hagia runner is frozen at its pinned source and must
 not be run against current master or silently rebased. The first current
 protected startup, profile rollback and WM restart slice now passes on an
 empty headless scene, with client policy and named-stack tooling outside Sophia;
-the audit records its exact limits and evidence. Follow it with an
-explicit capability-to-evidence map and a reviewed measurement method. The old
+the audit records its exact limits and evidence. Its
+[capability map](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#current-capability-to-evidence-map-2026-10-10)
+now accounts for all 23 bits: the lifecycle selects 19, but exercises only its
+declared empty-scene subset. The next bounded join is occupied settlement and
+checkpoint recovery, followed by terminal/operation and presentation/input
+joins. A reviewed measurement method remains required. The old
 80-run campaign remains refused, the numeric budgets remain unchanged, and
 occupied-output acceptance is reused only for its demonstrated scope.
 
