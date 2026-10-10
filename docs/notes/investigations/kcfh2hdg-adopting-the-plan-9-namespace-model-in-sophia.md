@@ -297,6 +297,31 @@ are device-free; independent SDK/socket tests exercise the actual export.
 Renderer pixel evidence belongs to t319, and physical acceptance follows a
 matched release. None of these tests ran in this documentation slice.
 
+### Recipe review refinements (2026-10-10)
+
+These refine the proposed grammar, not implemented behavior. An unflagged
+`mount` or `bind` at an occupied target refuses if it would change the service
+reference or grant set. To replace it, the recipe must first `unmount` that
+target, then install the new mapping. An identical reference is idempotent.
+Compilation still publishes the complete candidate atomically; intermediate
+unmounts never become a partially exposed client view.
+
+An alias captures the resolved service reference and generation when its
+`bind` is compiled. Later replacement of its source name does not retarget the
+alias. If the original service is revoked, the alias cannot bypass that
+revocation. Add controls for `mount A /source; bind /source /alias; unmount
+/source; mount B /source`: the new source names B, the alias still names A,
+and neither mapping gains grants. A separate revoked-A case refuses access
+through the alias while leaving authorized B work intact. This is in addition
+to retained-fid tests; a visible alias and an already-open fid are distinct.
+
+The compiler input must carry already-approved service references and grants.
+Synthetic compiler inputs can test composition but cannot serve as evidence
+that authentication or host containment supplied those facts. The
+[authentication review](../plans/esnqxpqw-pidfd-and-namespace-admission-optimizations.md#authentication-implementation-review-2026-10-10)
+identifies the still-missing attach exchange. These refinements do not promote
+t318 implementation or close t275.
+
 ## Evidence to collect
 
 Read the original Plan 9 namespace documentation and cite the specific semantics

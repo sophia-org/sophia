@@ -124,6 +124,40 @@ and launch channel binding, plus numeric authentication resource/time limits.
 Resolve them before admitting t317 implementation; no live-session experiment
 is needed to resolve them.
 
+## Authentication implementation review (2026-10-10)
+
+Read-only review at `f77244abe`; no authentication code, experiment or change
+to current admission. The missing exchange is a concrete implementation gap:
+
+- `sophia-factotum/src/proto/mod.rs` lists only `Pass` and `Pam`.
+  `proto/pass.rs` retrieves a password and has no server authentication side.
+  `proto/pam.rs` restricts login to `ChannelClass::Session`; its successful
+  `AuthInfo` has the owner's name and an empty secret. Neither implements a
+  connection-, audience- and launch-bound attach proof. Do not turn the existing
+  PAM verdict or password-retrieval reply into such a credential.
+- `sophia-factotum/src/export.rs::attach` requires a connection already present
+  in `classes`, and its tree includes `ctl`, `rpc`, `proto` and `log`. Merely
+  exposing that export to a not-yet-admitted client does not provide the proposed
+  conversation-only bootstrap. The restricted bootstrap needs its own explicit
+  access boundary and controls excluding key administration.
+- `sophia-9p/src/connection.rs::version` resets fids and pending wire state.
+  The proposed lifetime identity must survive that reset and end only with the
+  transport, while unfinished authentication work is cancelled. Add separate
+  assertions for those two lifetimes; retaining fids is not the solution.
+- `sophia-protocol/src/packets/namespace.rs::ClientAdmissionContext` and
+  `sophia-runtime/src/session/namespace.rs::admit` carry provenance, namespace
+  and admission identity, but no verified principal or supervisor launch proof.
+  Extending the passive record alone cannot establish either fact.
+
+The next design artifact must specify the supported authentication mechanism,
+the private bootstrap/channel binding to an actual supervisor launch, and
+numeric conversation limits. Then a device-free state transition fixture can
+exercise successful attach, refused identity changes, replay, cancellation and
+revocation using explicitly supplied verification outcomes. Such a fixture
+would qualify the admission state machine only; actual authentication still
+needs the independent peer exchange and its negative controls. t133 remains
+open and t317 implementation is not promoted by this review.
+
 ## Connections
 
 - [Admission investigation and source corrections](../investigations/1pv291te-namespace-and-client-admission-security-gaps.md).

@@ -487,8 +487,8 @@ Occupied facts and layout completion remain supplied. This case does not
 exercise AbortSettlement, a paused peer consuming ESTALE, ACK-credit exhaustion,
 slow-but-progressing throughput, application execution or native presentation.
 The headless request/response cadence does not naturally fill the 64-record
-journal; real-Hagia ACK exhaustion belongs with accumulating presentation
-receipts, rather than an artificial headless flood. Next is the bounded
+journal; whether presentation receipts can reach that bound requires a separate
+reachability review, rather than an artificial headless flood. Next is the bounded
 presentation/chord/capture owner-join design, including receipt credit and its
 terminal paths. The measurement method remains separate. t249/h006 stay open.
 
@@ -497,6 +497,50 @@ an error from `poll_public_request`. The surrounding deferred-command and
 receipt guards appear to prevent reaching that branch, but this slice does
 not prove that invariant or reproduce a session failure. Any follow-up belongs
 in generic Sophia queue tests, not a Hagia-specific production change.
+
+## Presentation-join feasibility review (2026-10-10)
+
+Read-only audit of Sophia `f77244abe`, Hagia `9fdf0b360` and niltempus
+`3696e497b`; no new test, build or device evidence. The proposed tenth external
+case would select the native capability ceiling without a device, drive real
+Hagia chord Held/Ended and presentation actions, and supply head identities,
+router time and completion stamps. Existing nine cases retain their headless
+ceiling. Supplied completions cannot establish native retirement or pixels.
+
+The first precondition failed by source inspection, before implementation.
+Hagia's `recent_windows_presentation.nim` emits SurfaceInstances for the real
+window previews. Runtime `validate_policy_presentation` requires each source
+in both displayed and committed surface sets. The current occupied fixture
+supplies source-less layout facts and never submits them to the visual runtime;
+a fresh runtime has neither set. Its real publication would therefore fail
+preflight with MissingSource. Generic Session presentation fixtures with empty
+instance arrays do not close this gap. No publication was narrowed, validation
+bypassed, worktree created or test result claimed.
+
+The next authorized step is a read-only feasibility check for an existing
+production CPU-intake path supplying three owned surface buffers with matching
+identities. A positive case must establish those sources through ordinary
+intake/commit, not direct mutation of runtime registries. A new driver,
+cross-crate test API or application-launch framework is outside this slice.
+If reuse is feasible, source lifetime, real Hagia recent-focus ordering and
+preflight must be checked before the presented-input fixture is implemented.
+A refusal-only case would be a separate obligation, not a substitute.
+
+Receipt claims also need narrower wording. Hagia drains and ACKs receipts in
+its wire loop, but Presented has no model effect; Revoked can close its
+switcher. Empty Session queues and successful later cycles show progress,
+not an observed ACK for a particular receipt. A source-only bound calculation
+suggests one stopped-peer publication can yield at most three receipts per
+output (48 at 16 outputs), plus a Cycle, below journal capacity 64. This depends
+on the publication and phase assumptions and is not a general unreachability
+proof. Keep generic journal-exhaustion evidence separate; do not construct an
+artificial receipt flood or close ACK obligations from that arithmetic.
+
+The intended controls remain completion-to-capture disabled in an archived
+Session and Ended ignored in a Hagia mutant, each failing a named semantic
+assertion. Dropping Presented receipts would not discriminate client model
+behavior. Revocation-to-model, disconnect with held release debt, cancellation,
+AbortSettlement, native stamps/pixels and latency remain separate open joins.
 
 ## Connections
 
