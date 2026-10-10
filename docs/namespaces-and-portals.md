@@ -84,6 +84,12 @@ default for observation and driving; combining grants requires explicit
 operator policy. This target does not assert that the current admission or
 capture implementation already provides these guarantees.
 
+The [admission boundary draft](notes/plans/esnqxpqw-pidfd-and-namespace-admission-optimizations.md)
+and [recipe boundary draft](notes/investigations/kcfh2hdg-adopting-the-plan-9-namespace-model-in-sophia.md#proposed-recipe-boundary-2026-10-10)
+map this target to current source and proposed device-free controls. Their
+grammar, resource bounds and authentication handoff are design work, not
+additional supported interfaces.
+
 ## Session Profiles
 
 ### Classic Shared-X

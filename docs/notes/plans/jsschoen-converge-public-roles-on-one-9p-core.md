@@ -66,10 +66,19 @@ reason to restart the entire role migration or postpone all design work.
 
 The output-publication repair has failing-without-fix controls and a full gate.
 The separately promoted t322 VT custody repair has also passed its attended
-zero-output VT return and evidence integration. t310's remaining
-[workspace-affinity qualification](cmoaia7z-complete-adaptive-output-policy-and-gpu-admission-t310.md#remaining-policy-qualification-2026-10-09)
-still needs two admitted displays. The next design action is the t133/t275 admission-and-recipe boundary,
-using the immutable-connection rule in the accepted ADR. t257 can supply a
+zero-output VT return and evidence integration. t310 and Hagia h018 completed
+[occupied-output migration and return acceptance](cmoaia7z-complete-adaptive-output-policy-and-gpu-admission-t310.md#final-workspace-affinity-acceptance-2026-10-10)
+on release `niltempus-d59a72c27a32a2c05e27`; this discharges step 1 without
+repeating accepted cable survival.
+
+On October 10 niltempus authorized the
+[t249 evidence audit](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md)
+alongside the [t133 admission boundary](esnqxpqw-pidfd-and-namespace-admission-optimizations.md)
+and [t275 recipe boundary](../investigations/kcfh2hdg-adopting-the-plan-9-namespace-model-in-sophia.md#proposed-recipe-boundary-2026-10-10).
+The drafts use the immutable-connection rule; they do not promote t317/t318/t319
+implementation or bypass t315's t249 prerequisite. The immediate code follow-up
+is current WM lifecycle qualification, with authentication mechanism review and
+recipe controls as the parallel design work. t257 can supply a
 narrow output-availability/status slice without waiting for text status in
 every role; t319 requires that slice, not completion of the whole t257 row.
 

@@ -13,6 +13,11 @@ How does Sophia ensure secure namespace placement at connection admission, and w
 
 ## Evidence
 
+The September 20 threat hypotheses below are historical. The October 10 source
+review corrects their admission and ancestry claims; use that review and the
+[current boundary plan](../plans/esnqxpqw-pidfd-and-namespace-admission-optimizations.md)
+for implementation scope.
+
 - `crates/sophia-session/src/live_session/x_frontend.rs:12` implements `LiveXAdmissionPolicy`. Vetting is done by inspecting `request.peer_credentials` (retrieved via `SO_PEERCRED` on Unix domain sockets).
 - `crates/sophia-session/src/launch_origin.rs:73` contains the implementation of `process_ancestors`, which reads parent and grandparent relationships via /proc in a separate worker thread.
 - `crates/sophia-runtime/src/session/namespace.rs` maintains the session-owned in-memory `NamespaceRegistry`.
@@ -50,6 +55,31 @@ To address these gaps, the following design mitigations and validation gates are
 1. **Verify Double-Fork Handling:** Implement a conformance test in `crates/sophia-x-authority/tests` where a client process double-forks and connects, asserting that the admission policy handles the re-parented child safely.
 2. **Limit FD Passing Exposure:** Ensure that frontends periodically audit active connections or utilize connection-bound unique tokens instead of relying solely on one-time connection setup peer credentials.
 3. **Bound /proc Traversal Rate:** Implement a connection-rate limiter per UID to prevent resource exhaustion from fast-reconnecting socket attacks.
+
+## Source reconciliation (2026-10-10)
+
+At Sophia `b0ca8280a`, `LiveXAdmissionPolicy::admit` checks the peer UID and
+calls `NamespaceRegistry::admit` before looking up ancestry. The lookup runs
+on the admission worker, outside the registry lock. `process_ancestors` returns
+an empty hint on unreadable proc, reparenting during observation or PID/start-time
+mismatch. It does not abort X admission or fall back to a more privileged
+namespace. The earlier claims of denied admission and a held namespace-registry
+lock during proc traversal are not supported by this implementation. Reparenting
+can lose launch/workspace attribution; that remains distinct from admission.
+
+The descriptor-transfer threat also needs a precise limit: a passed connection
+retains its original authority. Neither repeated original-peer checks nor an
+ordinary connection token proves the identity of its new holder. Confinement
+must exclude unwanted descriptor/credential transfer paths, and a cooperating
+trusted proxy remains a trust-boundary limitation. The accepted immutable
+connection rule does not claim otherwise.
+
+The core still refuses Tauth and non-NOFID attach, and the protected lock
+transport still requires pidfd checks. The
+[t133 design](../plans/esnqxpqw-pidfd-and-namespace-admission-optimizations.md)
+now separates authenticated principal, supervisor launch custody, namespace
+selection and grants; it withdraws pidfd-as-ancestry and unmeasured timing claims.
+No production checks were removed and no new authentication was exercised.
 
 ## Connections
 

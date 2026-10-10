@@ -6,6 +6,22 @@ tags: [plan, milestone]
 ---
 # Migrate the Hagia WM role to admitted 9P2000.L files
 
+## Current qualification boundary (2026-10-10)
+
+The [current-source audit](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md)
+reconciles this historical migration plan with the SDK-based, 9P-only desktop.
+The older opt-in/current-IPC language below describes the original milestone;
+the accepted retirement amendment governs current product selection and
+whole-release rollback. Output has also migrated. Neither change closes t249.
+
+The historical two-wire Hagia runner is frozen at its pinned source and must
+not be run against current master or silently rebased. The next development
+slice is current protected startup, profile rollback and WM restart pairing,
+with client policy and named-stack tooling outside Sophia. Follow it with an
+explicit capability-to-evidence map and a reviewed measurement method. The old
+80-run campaign remains refused, the numeric budgets remain unchanged, and
+occupied-output acceptance is reused only for its demonstrated scope.
+
 ## Scope and exit
 
 On 2026-09-25 niltempus approved Hagia's WM role as the first end-to-end 9P
@@ -101,6 +117,10 @@ strict checks and fresh layout correction to this exit. Later file-role and
 whole-candidate acceptance remain separate.
 
 ### t249
+
+Use the [October 10 audit and next slice](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#next-bounded-implementation-slice)
+for current work; retain the original workload and qualification requirements
+below as the acceptance basis, subject only to recorded later decisions.
 
 The [2026-09-28 retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)
 allows experimental WM/shell source retirement before this qualification is

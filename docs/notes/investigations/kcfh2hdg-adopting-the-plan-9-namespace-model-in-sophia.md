@@ -22,6 +22,10 @@ how clients use them, and how they map onto a Linux implementation. It should
 cover bind, mount, unmount, union ordering, inheritance, and private versus shared
 namespace state. No particular implementation mechanism is selected yet.
 
+That paragraph records the original September 28 question. The October 9
+one-core ADR subsequently selected per-identity endpoint directories and
+separate role trees; the October 10 draft below works within that decision.
+
 ## Questions to resolve
 
 1. **Naming and composition.** Define a client's namespace root, service naming,
@@ -53,6 +57,11 @@ namespace state. No particular implementation mechanism is selected yet.
    repositories; Sophia should provide generic composition and admission.
 
 ## Evaluated design: two-layer hybrid namespace architecture
+
+This is the September 28 proposal, retained for provenance. Its single
+forwarding-root, draw-file and unmeasured performance/portability claims are
+not the accepted target. The later one-core ADR and the October 10 boundary
+below replace those parts; no prototype established the quoted costs.
 
 To provide per-process namespace trees across Linux and BSDs without introducing
 bloated userspace VFS layers or requiring unprivileged kernel mount permissions,
@@ -133,6 +142,161 @@ To prevent architectural bloat and preserve low-latency execution:
    at the export boundary, revoking a portal or service immediately returns
    `EBADF` or `ESTALE` on existing open fids without tearing down physical mounts.
 
+## Proposed recipe boundary (2026-10-10)
+
+The accepted [one-core ADR](../decisions/zsx0tk4k-serve-every-public-role-from-one-9p-core-with-namespaces-as-composed-trees-and-portals-as-binds.md)
+settles the architecture. This draft specifies t275's recipe and t318's test
+boundary. It follows the [admission design](../plans/esnqxpqw-pidfd-and-namespace-admission-optimizations.md),
+not the earlier pidfd-as-ancestry proposal. It is a design for review, with no
+parser, authentication, endpoint exposure or capture implementation in this slice.
+
+### Three independent values
+
+| Value | Owner and rule |
+| --- | --- |
+| Visibility | A sealed recipe maps local names to role endpoint references. Names affect discovery and reach, not permission. |
+| Service identity | Session's service instance and generation identify the actual export. Aliases of one export retain that identity; a restarted or rebound service has another generation. |
+| Permission | Immutable admission plus current role/object grants. The export checks it on every operation, including retained and blocked fids. |
+
+A recipe is compiled from supervisor-owned configuration against an admission
+and a catalog of admissible services. It cannot mint a namespace or add a grant.
+Its input includes a recipe revision/digest, namespace context, admitted service
+references and independent operation grants. Its output is a bounded endpoint
+table and discovery snapshot. It is not a new 9P server forwarding calls between
+owners. Each connection still enters exactly one role export on the shared core.
+
+### Five-operation language
+
+Use a versioned, line-oriented file, `namespace-recipe 1`, followed by these
+operations. This is Sophia's proposed subset, not a claim that Plan 9 has only
+five operations: [namespace(6)](https://9p.io/magic/man2html/6/namespace) also
+defines `import` and `clear`, and spells inclusion `.`. Sophia names it `include`.
+
+| Operation | Proposed meaning |
+| --- | --- |
+| `mount SERVICE PATH` | Resolve a supervisor-approved service reference and add its role endpoint at PATH. No kernel mount, authentication bypass, network address or arbitrary host socket path. |
+| `bind SOURCE PATH` | Alias the already-resolved endpoint or endpoint directory at SOURCE. Resolve the source once at compilation; do not follow later rebinding. Grants stay those of this admission. |
+| `unmount PATH` | Remove this recipe's mapping at PATH. It is a construction operation, not proof that an already-open stream lost permission. |
+| `cd PATH` | Change the recipe compiler's base for relative target names. It does not change the launched process's working directory. |
+| `include FILE` | Expand another supervisor-owned, pinned recipe fragment at this point. Preserve order and detect cycles; it cannot read client-supplied paths. |
+
+Spaces and tabs delimit tokens; blank lines and whole-line comments are ignored.
+Version 1 has no shell expansion, environment substitution, quoting, executable
+hooks or runtime client commands. Service references are typed catalog names,
+not credentials. Paths normalize within the recipe root; NUL, escape above
+root, invalid components and reserved discovery-name collisions refuse the
+whole candidate. Include files resolve under the trusted configuration root,
+with no symlink escape or mutable unpinned input admitted during compilation.
+
+Directory `mount` and `bind` may carry `-b` or `-a` to prepend or append endpoint
+entries, borrowing ordered composition from
+[bind(1)](https://9p.io/magic/man2html/1/bind). This does not union the contents
+of different role servers. Conflicting leaf names naming different services or
+grant sets refuse; duplicate aliases of the same reference are deduplicated.
+Without a flag, replacement must be explicit at the target. No `-c` creation
+or `-C` data-cache flag is supported: role contracts own object creation and
+freshness, and the current .L core does not implement generic create. Permission
+failure never falls through to a lower union member.
+
+Proposed parser limits, to pin in t318 tests before implementation: 64 KiB of
+aggregate source, 1,024 expanded operations, include depth 8, 32 include files,
+64 exposed role endpoints, path length 1,024 bytes and component length 255
+bytes. Reject excess before publishing anything; these are chosen design
+bounds, not measurements or current supported limits. A failed compile leaves
+the previous admitted view intact. Compilation performs no GPU or input I/O.
+
+### Worked observer and application views
+
+The following is design notation, not accepted `desktop.kdl` syntax:
+
+```text
+namespace-recipe 1
+cd /roles
+mount inspection inspection
+mount portal portal
+bind inspection status
+```
+
+Here `inspection` and `status` name the same export, not two implementations.
+The observer's separately approved grants allow bounded status/inspection and
+requests for capture of named outputs. They do not allow portal approval,
+administration, clipboard transfer or injection. A denied capture request
+creates no object. An allowed request materializes its object inside the portal
+owner's tree; it does not rewrite this base recipe. t257 owns the availability
+record and t319 the capture frame grammar. The example does not assert these
+files already exist.
+
+The discovery file lists only this identity's endpoints, versions, opaque
+service generations and availability, under bounded records. Exact pathname
+and serialization are part of t318's versioned discovery contract. The output
+availability slice distinguishes available, waiting and recovering; it cannot
+report a remembered topology as currently presented. A client still authenticates
+at the selected endpoint and reads that role's version/capability contract.
+
+A confined X application can use a smaller recipe:
+
+```text
+namespace-recipe 1
+cd /roles
+mount x-group x11
+mount portal portal
+```
+
+`x-group` denotes the group's admitted X listener, not a 9P export. The discovery
+entry identifies its protocol. t142's containment driver exposes that group's
+X socket at the conventional client path and excludes the trusted and other
+group paths. Shared and confined profiles can use the same recipe text with
+different Session-supplied namespace contexts and grants. Two identical path
+views therefore need not share resources. Conversely, two aliases or explicitly
+shared views do not create duplicate service identities. WM policy remains blind
+to all of these identities.
+
+### Launch, changes and retained handles
+
+At launch, Session chooses the recipe revision and namespace. A child receives
+the selected endpoint directory; for a new connection it authenticates and
+obtains its own admission. Sharing a NamespaceId is explicit Session policy,
+not a consequence of inheriting a pathname. An inherited authenticated stream
+shares the existing admission, with the descriptor-transfer limit documented in
+t133; it does not prove the child's identity or supervisor custody.
+
+Recipes are sealed for an admission. A policy change constructs a new view and
+revokes the old admission when authority must shrink. Unmounting or rebinding
+a visible path alone cannot revoke an open stream. An old fid stays pinned to
+its original owner, node and epochs; it may continue only while that old grant
+remains valid, and never silently resolves to the replacement. Service shutdown,
+grant revocation and output replacement invalidate the applicable generation
+and answer ESTALE for further protected access. Pending reads recheck at
+delivery. Already delivered bytes cannot be recalled.
+
+For capture, output generation is separate from role-connection and namespace
+identity. A returned monitor cannot inherit the old screenshot grant even if
+its connector name and numeric OutputId match. A new grant has its own identity.
+Session lock refuses new capture and cancels unfinished delivery through the
+portal/capture owners. The compiler has no lock state and cannot enforce this
+by hiding names alone.
+
+### Implementation tests handed to t318
+
+| Control | Required separate observations |
+| --- | --- |
+| Two private clients, same names | Different admitted trees; foreign open refused; no shared resource identity inferred from equal paths. |
+| Explicit shared service, two aliases | One service identity, independent admissions/grants, no authority added by aliasing. |
+| Rebind and unmount | New walks observe the declared new mapping; retained handles never retarget; revoked old handles fail. |
+| Portal revoke, expiry, lock and disconnect | Pending and retained reads stop; unrelated grants survive; each resource is released once. |
+| Same-name output replacement | Old generation-bound grant fails; new grant is independent even at equal numeric output identity. |
+| Union collision/denied member | Deterministic directory order and refusal; no fallback around an access denial. |
+| Include cycle, escape, changed input and limits | Whole recipe refused before publication; old view unchanged; no client file or socket opened by compilation. |
+| Parent/child and forwarded stream | Separate connections get independently checked admission; a shared stream is explicitly the same identity. |
+| Host reach | t142 proves trusted/other-group paths and inherited descriptors are excluded; tree visibility alone is insufficient. |
+| Observer permissions | Inspection/capture grants grant neither ctl writes nor XTEST/9P injection; recipe names grant nothing. |
+
+Retain compiled controls removing grant intersection, generation pinning,
+retained-fid revalidation and final delivery cancellation. Pure compiler tests
+are device-free; independent SDK/socket tests exercise the actual export.
+Renderer pixel evidence belongs to t319, and physical acceptance follows a
+matched release. None of these tests ran in this documentation slice.
+
 ## Evidence to collect
 
 Read the original Plan 9 namespace documentation and cite the specific semantics
@@ -148,12 +312,12 @@ changes are required for this investigation.
 
 ## Investigation exit
 
-Produce a proposed ADR naming the adopted semantics, ownership and threat model;
-a worked application namespace recipe; and a migration plan with concrete tests
-for composition, inheritance, isolation and revocation. Identify implementation
-gaps and any semantics that cannot be supported on the chosen Linux mechanism.
-The investigation can finish with that reviewed design; implementation and
-acceptance require their own tasks and evidence.
+The accepted one-core ADR supplies the architectural decision. Complete this
+investigation with review of the worked recipe, ownership and threat boundary,
+and concrete tests for composition, inheritance, isolation and revocation.
+Identify implementation gaps and unsupported semantics. The October 10 draft
+supplies that review material; implementation and acceptance remain separate
+tasks and evidence, and writing the draft does not close this investigation.
 
 ## Connections
 

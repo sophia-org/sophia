@@ -275,8 +275,11 @@ Plan 9 needs no registry because the namespace root is the catalogue, and each
 service has a version or ctl file at its root. This answers the first open
 question in the public-interface design. A client lists its root to see which
 roles it may attach to and reads one file per role for version and
-capabilities. The recipe format can follow the Plan 9 namespace file, which
-has five verbs, bind, mount, unmount, cd and include, and has not needed more.
+capabilities. Sophia's [proposed recipe subset](../investigations/kcfh2hdg-adopting-the-plan-9-namespace-model-in-sophia.md#proposed-recipe-boundary-2026-10-10)
+uses five operations: bind, mount, unmount, cd and include. This is a deliberate
+subset: [Plan 9 namespace(6)](https://9p.io/magic/man2html/6/namespace) also
+defines import and clear, and spells inclusion `.`. The earlier five-verb claim
+about Plan 9 itself was incorrect.
 
 Two Plan 9 parts are not imported. The draw protocol would only wrap a command
 stream around composition that Engine already owns. The Plan 9 process model
