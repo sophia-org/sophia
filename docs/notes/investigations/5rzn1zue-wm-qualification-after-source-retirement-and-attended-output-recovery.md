@@ -14,6 +14,8 @@ Resume update: B and A below are integrated. Read the
 [revocation results](#revocation-reaches-the-switcher-model-2026-10-10)
 before starting another job, followed by the
 [captured-disconnect results](#captured-release-debt-survives-replacement-2026-10-10).
+The subsequent [matching-loss cancellation result](#matching-loss-cancels-the-presented-chord-2026-10-10)
+extends the terminal-path coverage without closing t249.
 The old worktrees have been removed. The original
 reboot checkpoint follows for provenance.
 
@@ -943,6 +945,77 @@ This is keyboard debt with empty input focus and supplied content, heads,
 completion, router time and layout settlement. It does not establish application
 delivery, pointer debt, native withdrawal, source-loss/pixel qualification,
 receipt ACKs, cancellation, AbortSettlement or latency. t249/h006 remain open.
+
+## Matching loss cancels the presented chord (2026-10-10)
+
+Hagia `7bca59cc04a6a0b37b86bad9d2ad88c05f8cf47b` adds
+`sdk_presented_cancel_preserves_focus` in an external child module. niltempus
+`066ec9373731c5697b27b795d00ab63304b64163` requires thirteen cases and binds
+eight fixture modules. Sophia remains pinned to `f77244abe`; no production
+source or installed release changes.
+
+The fixture supplies the keyboard-matching true-to-false transition to
+`LiveWmSession::observe_keyboard_matching`, then calls `service_shortcuts` in
+the same order as the production owner loop. The real router emits one
+Ended(Cancelled) for the token of the presented Held chord. The request's
+activation serial, action and count must match that chord's ledger record;
+the epoch and peer remain unchanged. Hagia's answer must close the switcher
+and retain W1 before any Revoked or Withdrawn receipt can mask cancellation.
+Chord credit returns; the committed focus and checkpoint retain W1. Only then
+does the fixture supply withdrawal, restore matching and route the old Alt
+release, which must emit no second terminal. A fresh opener has a distinct
+token, and its matching Released terminal commits W2.
+
+The unsigned development run `t249-held-cancel-dev01` passes all thirteen cases;
+manifest `ec825ff5b1f4720906855e2c415d983bd3ded3b7ce932c7b7e0922e5279a2fae`.
+Independent source review found no blockers. The repeated nonmatching call
+observes no duplicate terminal; it does not discriminate the transition latch,
+because cancellation over an already empty chord set also emits nothing.
+
+The clean signed run `t249-held-cancel-01` also passes all thirteen cases,
+manifest `cf64d878a25587083359c07a905c6a6fcc043a15dbc16396b3139b3dab6f5dd4`.
+Its cancellation answer names epoch 1, chord token 1 and activation serial 7,
+retaining W1 (`SurfaceId { index: 31, generation: 2 }`). The alternative
+selection W2 was derived before the run as index 47, generation 5.
+
+`t249-held-cancel-controls-01` rebuilds only the disposable Hagia archive with
+the lifecycle handler's `released = cause.lifecycleReason == 1` changed to
+`released = true`. The mutant still closes the switcher, but fails exactly
+“cancelled chord must not commit the switcher selection”: actual W2, expected
+W1, exit 101 with one failed test. This happens on the correlated Cancelled
+answer before any revocation or withdrawal receipt; it is not a timeout or
+transport failure. Manifest:
+`957b74cc926432feaf7f10536e4f73861ea7293091c92e07669eb4f8635ff0ad`.
+The adapter source is restored after building the mutant, and the ordinary
+Hagia binary is unchanged. Binary paths and hashes identify both executables;
+neither is copied into evidence. The experiment holds the external build-root
+lease and a cargo-slot lease; its timeout supervisor also inherits the build
+lease. Session source and fixture bytes are not mutated by this control.
+
+`t249-held-cancel-checks-01` passes strict Session overlay Clippy, including
+tests; manifest
+`389b5324f9335a8f3ddfd2f34ae1ce4b3f7373f05abf0393dd3e2c50a2e93769`.
+All four manifests independently verify, and all eight fixture modules match
+the signed source across development, clean run, control and checks. The restored
+Hagia adapter was independently compared with its signed Git blob. Development
+checks also pass thirteen serial runner tests (one internal helper ignored),
+strict runner Clippy, Rust formatting, whitespace and Hagia's layout gate.
+No whole-product gate or performance measurement was repeated.
+
+Hagia `7bca59c` and niltempus `066ec93` are merged and pushed. After all jobs
+ended, runner cleanup removed the marked build root under its lease.
+`t249-held-cancel-cleanup-01` passes with independently verified manifest
+`5e67ee697e9e3be7c127f05ddd954a5946e770142d12009ce46e43bd066a4e28`.
+Merged worktrees and the detached Sophia pin are removed after inspection.
+The stable sibling lock, cargo slots and frozen evidence remain.
+
+The trigger is supplied directly to the existing owner. This does not exercise
+actual seat locking, routing-mode computation, lock keyboard reset, seat/device
+removal or shortcut-registry replacement. There is no captured-key debt in this
+case. Content, heads, completion, router time and layout settlement retain the
+earlier supplied boundaries. Pointer debt, other cancellation triggers,
+AbortSettlement, native/source-loss/pixel joins, receipt ACK/credit reachability
+and latency remain separate work. t249/h006 stay open.
 
 ## Connections
 
