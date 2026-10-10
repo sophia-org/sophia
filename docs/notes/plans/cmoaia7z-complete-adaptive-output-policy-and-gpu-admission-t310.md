@@ -303,8 +303,6 @@ The release is prepared, not installed; the new output and workspace identities
 require a fresh login. First verify both outputs, then remove only HDMI and
 check that its workspace set remains reachable on DP before testing restoration.
 
-## Connections
-
 The temporary profile was subsequently installed and reached both outputs,
 but the first workspace check ended the session before the requested unplug.
 The recorded fatal is stale click-focus admission after an empty layout commit;
@@ -312,6 +310,29 @@ see the [diagnosis and CPU repair](../investigations/ig4obtxu-copies-and-rasteri
 Preserve that failed run. Gate the narrow Session repair, prepare a matched
 successor, then verify ordinary workspace switching before continuing the
 two-output loss/return sequence. t310's physical exit remains open.
+
+Signed repair `a41140cfdc52ffd874f9bb813e943ee22bae181e` passed one full
+device-hidden gate: 538 Rust summaries, 7,520 passed, zero failed and 101 ignored,
+with the remaining tooling checks passing. The tests establish stale-request
+admission and held-click discard; the physical workspace sequence still needs
+the matched successor release. Frozen `t310-stale-click-focus-01` has manifest
+`5c4ce90be5ba7bab0df383cf12a1b4d08657039d707372a9bba5b4854f9aa287`
+and CLOSURE `cdcda8668e851fea6a63d6becc79a8443730f8d774dcbcc6e490aefea1cc96da`.
+
+Matched successor `niltempus-8d6e5625f4bb8dec290e` is built and verified,
+not installed. Signed niltempus qualification `29592f781c18763b3646516d1b2dbaae209ed741`
+moves only the Sophia lock node from the failed profile candidate; the profile,
+peer executables and Mesa/libdrm paths are unchanged. The new Sophia executable
+is `f3d620153eb5ba96c97cb7e2d184ef91fef457211b818c74a31739983add58e7`.
+Release checksum and profile preflight checks pass. Frozen
+`t310-stale-click-focus-release-01` has manifest
+`bf4e8d1de6938c71a4e9ad2e5083b8336a31dbcc28069e08ea1b5a2db1aadbc8`;
+`READY.txt` gives installation, the initial workspace-only check and explicit
+one-output recovery. Installing over failed `642f` makes automatic rollback
+point at that failed candidate, so recovery names accepted `01fa4` explicitly.
+The niltempus qualification branch stays separate from its daily master.
+
+## Connections
 
 - [Proposed admitted-discovery boundary](../decisions/nrdadhet-resolve-admitted-output-preferences-before-constructing-native-owners.md)
 - [t310 investigation and accepted startup fallback](../investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#t310)

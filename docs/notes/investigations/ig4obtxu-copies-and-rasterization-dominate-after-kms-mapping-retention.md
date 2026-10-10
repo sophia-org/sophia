@@ -156,6 +156,23 @@ not workspace or hotplug acceptance. Rollback to accepted one-output release
 `niltempus-01fa4c74950b5a998db9` was provided, not observed. A gated successor
 and a fresh attended workspace check remain necessary.
 
+Signed repair `a41140cfdc52ffd874f9bb813e943ee22bae181e` subsequently passed
+the full isolated `cargo xtask check`: 538 Rust summaries, 7,520 passed, zero
+failed and 101 ignored, plus the gate's tooling checks. Source head and clean
+state held throughout. The frozen CPU manifest is
+`5c4ce90be5ba7bab0df383cf12a1b4d08657039d707372a9bba5b4854f9aa287`,
+with CLOSURE `cdcda8668e851fea6a63d6becc79a8443730f8d774dcbcc6e490aefea1cc96da`.
+
+The matched two-output desktop `niltempus-8d6e5625f4bb8dec290e` built and passed
+profile preflight and package checksum checks. Only Sophia differs among the
+ten packaged executables; the profile and peer pins are unchanged. Its source
+pin also includes the previously gated passive handoff/lock diagnostics from
+master. Frozen release records are `t310-stale-click-focus-release-01`, manifest
+`bf4e8d1de6938c71a4e9ad2e5083b8336a31dbcc28069e08ea1b5a2db1aadbc8`.
+Nothing was installed. The fix was promoted to Sophia master; the superseded
+source/profile worktrees were removed after checking for ignored artifacts.
+The new niltempus qualification worktree remains for the attended check.
+
 #### Admitted discovery and startup boundary (2026-10-09)
 
 Signed `5fabe9f61` introduces stable GPU admission and a revalidated fresh
