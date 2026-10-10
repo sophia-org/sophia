@@ -382,9 +382,11 @@ An eligible CPU composition that the backend defers remains a cadence repaint
 obligation. Ordinary repaint shares the retained-publication guard: suspension,
 an in-flight Present, or an unsettled software Present binding postpones it.
 Postponement preserves the obligation and advances its retry deadline; it
-neither spins nor supersedes another frame's retirement proof. Startup and
-topology replacement retain their separate forced repaint paths. DMA-BUF
-Present traffic alone must not create a synthetic CPU repaint obligation.
+neither spins nor supersedes another frame's retirement proof. Runtime topology
+replacement requests its observation frame through the same cadence after
+recording the presentation baseline. Scheduling or composing that frame is not
+retirement evidence. Initial startup retains its separate forced repaint path.
+DMA-BUF Present traffic alone must not create a synthetic CPU repaint obligation.
 
 Each queued Present owns exactly one matching `SurfaceTransaction`. Persistent
 scene state is the Engine's committed snapshot, not a table of historical

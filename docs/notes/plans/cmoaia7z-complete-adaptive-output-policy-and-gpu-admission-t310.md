@@ -422,8 +422,13 @@ The [forced-repaint diagnosis](../investigations/ig4obtxu-copies-and-rasterizati
 preserves that failure. Runtime topology must schedule its observation repaint
 through ordinary cadence so existing retirement custody can finish; scheduling
 alone never counts as presentation. Keep the new Hagia pin and profile fixed,
-gate this narrow Session change, then prepare the matched successor. Physical
-return remains open, and Crunch can stay at greetd while niltempus uses the X13.
+as in the matched successor `niltempus-d59a72c27a32a2c05e27` (Sophia
+`6fd66325b`, integration `dc57e532`), now built and uninstalled. The full isolated
+gate passed 7,533 tests with zero failures; two negative controls fail without
+the call-site and scheduling repairs. `t310-topology-repaint-release-01/READY.txt`
+holds the install and explicit accepted recovery commands. Physical return
+remains open: first establish the fresh-session baseline, then repeat the same
+occupied-HDMI return. Crunch can stay at greetd while niltempus uses the X13.
 
 ## Connections
 

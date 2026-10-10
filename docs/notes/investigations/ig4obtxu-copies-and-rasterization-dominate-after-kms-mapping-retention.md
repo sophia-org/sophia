@@ -453,9 +453,35 @@ Focused checks pass: six replacement seam controls, 29 topology-owner controls
 and 11 backend ordinary-repaint controls. The original forced call site fails
 the new seam control; independently removing the pacer's repaint obligation
 fails the new scheduling control. Both negative controls compile and exit 101
-with exactly their named assertion failure. The full gate remains to run on
-the signed candidate; these results do not claim physical return acceptance.
+with exactly their named assertion failure.
+
+Signed repair `6fd66325b` passed the full isolated `cargo xtask check`: 540 Rust
+summaries, 7,533 passed, zero failed and 101 ignored, with the required lint and
+tooling checks also passing. The source was clean and unchanged at both ends.
+The frozen CPU package manifest is
+`15f752344c31376cab7439d06f94877e0ab475b15d8f1226d723d716e2a704d9`,
+and its CLOSURE is
+`05bf53e831c96525b46cde7b6d75dec41895595fbeb715c402353e956c6488dd`.
+These results do not claim physical return acceptance.
 The failed return remains unaccepted; no further cable test is needed on `66f68`.
+
+The matched successor is built, verified and uninstalled:
+`niltempus-d59a72c27a32a2c05e27`, integration `dc57e532`, Sophia `6fd66325b`,
+and unchanged Hagia `ed2f30060`. Only Sophia changed among the ten packaged
+binaries; its SHA-256 is
+`3d7e7ababcba937eb4b6cb54d53f683d217b3d1dca1b7730aa84def3537fc57c`.
+The profile differs only in four release paths, the six Mesa/libdrm paths are
+unchanged, and release checksums and profile preflight pass. Frozen
+`t310-topology-repaint-release-01/READY.txt` names the install and explicit
+accepted one-output recovery commands. The release manifest is
+`00d5014003ee4391b0e1432e38d1efba8a687ac2ca9cf79fa1cca9aafd9b1de8`,
+and its CLOSURE is
+`ccdadb8dd99a24a066f53d2515868af01c2b4328f17da55cce365bc00804e96c`.
+Plain rollback after installation would return to failed `66f68`. The next
+physical action is a fresh-session baseline, then the same occupied-HDMI return
+after the baseline passes. Daily niltempus master and the acceptance status are
+unchanged. The merged repair worktree was removed after checking ignored files;
+only its rebuildable notebook index was discarded.
 
 #### Admitted discovery and startup boundary (2026-10-09)
 
