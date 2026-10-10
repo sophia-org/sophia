@@ -22,6 +22,8 @@ The [fourteen-case coverage reconciliation](#fourteen-case-coverage-reconciliati
 supersedes the older three-case capability map and records the passing current
 SDK/export gate. The [Manage settlement successor](#new-window-manage-settlement-2026-10-10)
 then covers the first missing admission owner boundary, through AwaitingPixels.
+The [CPU admission successor](#cpu-backed-new-window-admission-2026-10-10)
+continues through Managed, production CPU intake and headless pixel checks.
 The coverage baseline remains revisable without reducing the acceptance scope.
 The old worktrees have been removed. The original
 reboot checkpoint follows for provenance.
@@ -1121,6 +1123,9 @@ gap list.
 The later [Manage settlement result](#new-window-manage-settlement-2026-10-10)
 adds the fifteenth case and supersedes the absence of `enqueue_manage` coverage
 in this snapshot. Visual admission and launch-origin propagation remain distinct.
+The [CPU admission successor](#cpu-backed-new-window-admission-2026-10-10)
+adds backing-snapshot admission and rendering; Present retirement and launch
+contexts remain distinct requirements.
 
 This is a revisable coverage baseline, not a frozen feature list or a reduced
 exit. Every defined capability and explicit acceptance requirement stays in
@@ -1345,6 +1350,113 @@ in `wm/presentation.rs::service_presented_policy` and admission completion in
 `native_retirement.rs`; they cannot be assigned to t250 merely because the
 current fixtures bypass them. Current control-path latency remains t249;
 attended/input-to-photon acceptance remains separate. t249/h006 stay open.
+
+## CPU-backed new-window admission (2026-10-10)
+
+Hagia `6247086eb2c417f0f8af30e58a3fc898b023708f` adds
+`sdk_occupied_manage_admits_cpu_candidate` in `tests/external/manage_pixels.rs`.
+niltempus `799ae9588169f1f51545ded3cb8f65d5d982575f` binds the sixteenth case
+and eleventh fixture module, including the final input-change comparison.
+Both commits are signed. Sophia production remains pinned to `f77244abe`;
+no production source or installed process is changed.
+
+A supplied authority Request for a third window arrives with a 173-by-111 CPU
+backing snapshot and no software Present. Production intake quarantines that
+exact transaction and records BackingSnapshot evidence. Real Hagia places and
+focuses the window; Session reconciles its content size to the retained safe
+extent and stages the exact candidate. The same production control queue and
+admission/state acknowledgement owners as Tier 1 consume supplied Delivered
+answers. The existing fifth glue hash binds those two dispatch arms.
+
+The CPU backing branch in `layout/commit.rs` reaches Managed without Present
+retirement. A following authority turn calls `projected_batch` and
+`production_authority_batch` directly, releasing the retained frame into the
+ordinary `LiveProductionVisualRuntime` CPU cycle. The test checks generation 1,
+buffer identity and Session's committed geometry. Read-only
+`LiveProductionCpuScene::presentation_layers` exposes the exact retained bytes;
+the last composed frame also contains the expected RGB value at the window's
+centre. A second, differently filled CPU frame must reach generation 2 without
+being quarantined again. Only after that behavior does the test inspect Managed,
+planning removal and released recovery extent. Both frames' retained bytes and
+composed interior pixels are checked. The real peer checkpoint agrees on focus;
+the checkpoint does not provide the geometry oracle.
+
+The development run `t249-manage-cpu-dev01` and clean signed-fixture run
+`t249-manage-cpu-01` each pass all sixteen individually invoked cases.
+Their independently verified manifests are respectively
+`b5302f41ba310dd1a004c7676d0e3214f7033b12ba29525b0423c77a3df47bad`
+and `de9742750fcf0aeb6494f32a1fc767a808c00e8d707efbdf64e553c22d8ca634`.
+The normal CPU case completes in 0.21 seconds in the clean run; this is a test
+duration, not a latency result. `t249-manage-cpu-checks-01` passes strict Session
+overlay Clippy including tests, manifest
+`7fc0fe21a26fee6cc21cdbce5034809dabe10192168a8af911b0364dc0a7360b`.
+Development checks pass thirteen serial runner tests with one internal holder
+ignored, strict runner Clippy, Rust formatting, whitespace and Hagia's layout
+gate. The full Nim/formal and product gates are not repeated for external tests.
+
+Two compiled archive-only controls fail at their intended first assertions:
+
+- `t249-manage-cpu-control-managed-01` skips the CPU branch's `mark_managed`
+  transition and its planning/extent cleanup. The first admitted frame still
+  reaches production and passes the byte/pixel checks, but the second is
+  quarantined. “a managed surface's next frame must reach production” reports
+  generation 1 / handle 611 instead of generation 2 / handle 612. One failure,
+  exit 101, 0.18 seconds; manifest
+  `6feb167f4b2b2505a1decb86c83488e64fcbd3e8193aa17fd907a9c81111b881`.
+- `t249-manage-cpu-control-extent-01` omits `set_recovery_extent` inside the
+  synchronization owner's Update arm. Omitting only the Manage caller would
+  be masked by the intake caller. The first failure is “Session must reconcile
+  admission to the safe candidate extent”: 638-by-718 instead of 173-by-111.
+  One failure, exit 101, 0.12 seconds; manifest
+  `1cfc8764e2eb5ecf841fcc77e6ba1eb92ba600c8bff65e9db22424252e85b361`.
+
+The controls hold both resource leases, refuse leftover mutations in either
+source file before starting, restore their changed source and bind the ordinary
+Hagia executable. All five run/check/control manifests independently verify;
+all eleven recorded modules match signed source. After both controls, all
+1,616 archived crate production-source files independently match the pinned
+Git blobs. Independent read-only review finds no blockers in the fixture design,
+runner or control seams.
+
+Hagia `6247086` and niltempus `799ae95` are merged and pushed. With all jobs
+finished, leased cleanup removes the build root. `t249-manage-cpu-cleanup-01`
+passes, independently verified manifest
+`28b2fbe961e268a2e9709e4c1653b6b93f0cd45fce14d6b21e823b8c96c00ef3`.
+No compiled artifacts are copied into evidence. The merged worktrees, detached
+pin and scratch executables are removed after inspection; the fixed cargo slots,
+stable sibling lease and frozen records remain.
+
+This is CPU backing-snapshot admission, not native presentation acceptance.
+Frontend map/viewable facts and control answers are supplied. CPU software
+Present and DMA-BUF Present admission still require the AwaitingRetirement
+path and its production completion join. The presented-policy backend install
+branch, native receipt generation and all-head consensus remain t249 gaps;
+they are not deferred to t250. Launch contexts, admission across restart and
+the other coverage-matrix requirements remain open. Tier 1 stays necessary:
+with pixels, `mark_managed` removes planning state, so replacing Manage with
+Relayout no longer supplies its no-pixel management-request discriminator.
+t249/h006 remain open and measurement requirements are unchanged.
+
+### Existing seam for the next backend join
+
+The pinned backend already exports `session_policy_presentation_fixture` under
+`test-support`, which Session enables for tests. Its
+`SessionPolicyPresentationFixture` in
+`crates/sophia-backend-live/tests/support/session_policy_presentation_fixture.rs`
+owns a mirrored composition target and accepts the real runtime and CPU scene.
+It exposes target heads, queues retained composition frames, simulates submission
+and individual head completion, and calls the production input-publication owner.
+The backend derives the publication stamp from the retired frame lists; the
+caller does not supply a receipt or input stamp. This is the existing candidate
+for the real-Hagia all-head receipt join, without a new test API or pin change.
+
+An initial read-only audit overlooked this export while inspecting the adjacent
+`SessionContentFixture` and proposed extending that bridge. Root found the
+existing policy fixture at the same pin; that extension proposal is withdrawn.
+Actual device completion remains simulated, and the concrete native-selection
+tail of `service_presented_policy` still needs its own coverage accounting.
+It cannot be waived as physical-only acceptance merely because the headless
+fixture calls the installation owner directly.
 
 ## Connections
 
