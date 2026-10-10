@@ -131,7 +131,7 @@ whole-candidate acceptance remain separate.
 
 ### t249
 
-Use the [October 10 audit and next slice](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#next-bounded-implementation-slice)
+Use the [October 10 coverage reconciliation](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#fourteen-case-coverage-reconciliation-2026-10-10)
 for current work; retain the original workload and qualification requirements
 below as the acceptance basis, subject only to recorded later decisions.
 
