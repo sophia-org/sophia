@@ -62,9 +62,20 @@ fn reconcile_public_policy_proposal(
             };
             let transaction =
                 sophia_engine::apply_surface_chrome_clearance(&transaction, chrome)?;
-            let reconciliation = layout
-                .layout_epochs
-                .reconcile_transaction(&transaction, content_bounds)?;
+            // An ordinary first frame can exceed this output. Admit its exact
+            // retained pixels before requesting a new size: a Present-driven
+            // client may need that retirement to draw again. Its output owner
+            // clips the temporary placement. Fullscreen keeps its exact-output
+            // geometry contract, and no stale or unretained candidate qualifies.
+            let admission_candidate = (!placement.presentation.fullscreen)
+                .then(|| layout.retained_admission_candidate(placement.surface))
+                .flatten();
+            let reconciliation = match admission_candidate {
+                Some(candidate) => layout.layout_epochs.reconcile_admission_transaction(
+                    &transaction, content_bounds, candidate,
+                )?,
+                None => layout.layout_epochs.reconcile_transaction(&transaction, content_bounds)?,
+            };
             let content_geometry = reconciliation
                 .transaction
                 .render_positions

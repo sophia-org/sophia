@@ -332,6 +332,22 @@ one-output recovery. Installing over failed `642f` makes automatic rollback
 point at that failed candidate, so recovery names accepted `01fa4` explicitly.
 The niltempus qualification branch stays separate from its daily master.
 
+That successor was installed, but the workspace baseline stalled while admitting
+a new terminal on the smaller output. The retained first frame exceeded that
+output's bounds; reconciliation requested smaller pixels before the client
+received its first Present completion. Closing only the new terminal with
+niltempus's approval restored layout progress, and niltempus confirmed keyboard
+recovery after Super+1. The session remained alive, and no cable test followed.
+The [incident and CPU repair](../investigations/ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md#two-output-first-frame-admission-blocks-workspace-input-2026-10-09)
+keep source-derived causality distinct from the bounded live capture.
+
+Gate the exact-candidate admission repair, prepare its matched two-output
+release, and repeat the ordinary workspace baseline first. A retained ordinary
+first frame may temporarily exceed its assigned display and be clipped there;
+only its real retirement releases the temporary extent and permits the standing
+resize. This grants no sibling-output authority and changes no fullscreen rule.
+Physical workspace migration and restoration remain t310's open exit.
+
 ## Connections
 
 - [Proposed admitted-discovery boundary](../decisions/nrdadhet-resolve-admitted-output-preferences-before-constructing-native-owners.md)

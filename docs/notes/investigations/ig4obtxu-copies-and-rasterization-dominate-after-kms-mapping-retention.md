@@ -173,6 +173,59 @@ Nothing was installed. The fix was promoted to Sophia master; the superseded
 source/profile worktrees were removed after checking for ignored artifacts.
 The new niltempus qualification worktree remains for the attended check.
 
+#### Two-output first-frame admission blocks workspace input (2026-10-09)
+
+niltempus installed `niltempus-8d6e5625f4bb8dec290e` (Sophia `a41140cfd`)
+and reported that Super+4 did not switch focus and the keyboard remained on
+the original window. Session `04101117-775b-443c-905d-c8a9d22426d4` stayed
+alive. Action 14 committed transaction 10 and cleared focus for empty output
+2. A new terminal on that output then supplied a 2542×1398 first frame,
+larger than HDMI's 1920×1080 allocation. Its admission settled, but subsequent
+layout transactions waited for a smaller frame and timed out every four
+seconds. Super+1 later timed out in transaction 60. No cable was removed.
+
+The retained records contain one first-frame submission for the new surface,
+its selected safe extent, and repeated preserved-layout timeouts. They do not
+prove every internal Present ownership transition: daily capture is bounded.
+Source explains a circular wait that the CPU regression reproduces. Ordinary
+reconciliation drops a recovery extent that exceeds the output bounds, so it
+requests the smaller size before presenting the retained first frame. A client
+waiting for that Present's completion cannot supply the requested successor.
+
+With niltempus's explicit approval, only the newly launched terminal was closed.
+PID, executable and start ticks were checked against a pidfd before each signal.
+SIGTERM did not end it; SIGKILL did. Transaction 122 immediately committed the
+remaining window. Niltempus pressed Super+1, transaction 123 committed and
+focus was applied, then confirmed keyboard recovery. This recovered the live
+session; it did not qualify the failed two-output workspace check.
+
+Frozen evidence under `t310-two-output-attended-02`:
+
+- `workspace-focus-stall-01`, manifest `9ae5c676ecca54abd903032fdf5612774f3ea11ac7edf200fc421fcee885c63e`;
+- `workspace-focus-stall-02`, manifest `f688b7239653b058a3f6ac5dd4cdebf3b4e35629d660c467afce32a3853ab85d`;
+- `terminal-close-01`, manifest `3967ea6a168da02068dfced8875c73bfc8231ca8cfcf61b2ec02090ed924e847`.
+
+The narrow repair lets an ordinary first-frame admission retain its measured
+extent when the exact candidate is still held or awaiting its own retirement.
+It keeps the assigned output; that output clips the temporary placement.
+Engine requires the surface, transaction, buffer, selected extent and pending
+admission to agree. Ordinary managed recovery and fullscreen retain their
+existing bounds rules. An intervening policy answer cannot demand a smaller
+frame before the selected first frame retires. Actual retirement releases the
+temporary extent and drives the standing resize through the normal exact-size
+layout transaction; no completion or pixels are invented.
+
+Device-free tests drive map, policy admission, oversized Present, reconciliation,
+layout commit, an intervening reflow, exact retirement and the smaller successor.
+They preserve output ownership and defer the new focus intent until retirement.
+Controls cover missing retained pixels, foreign candidate identities, managed
+recovery, sibling surfaces and coordinate overflow. Restoring the old Session
+reconciliation path must fail the first-frame progress assertion. Records are
+`t310-oversized-admission-01`; early zero-test and incomplete-fixture runs are
+preserved separately and are not regression evidence. These checks exercise
+layout and admission code, not a GPU or physical clipping. The matched release
+still needs ordinary two-output workspace acceptance before any cable test.
+
 #### Admitted discovery and startup boundary (2026-10-09)
 
 Signed `5fabe9f61` introduces stable GPU admission and a revalidated fresh

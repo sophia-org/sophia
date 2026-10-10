@@ -208,6 +208,28 @@ impl LayoutEpochCoordinator {
         transaction: &LayoutTransaction,
         bounds: Rect,
     ) -> Result<LayoutConstraintReconciliation, LayoutConstraintError> {
+        self.reconcile_with_admission_candidate(transaction, bounds, None)
+    }
+
+    /// Keep the exact retained first frame at its measured extent until it
+    /// retires, including when an output can display only part of it. The caller
+    /// owns that candidate; an unrelated key cannot widen a recovery extent.
+    /// Output ownership and clipping still bound where its pixels are drawn.
+    pub fn reconcile_admission_transaction(
+        &self,
+        transaction: &LayoutTransaction,
+        bounds: Rect,
+        candidate: SurfaceTransactionKey,
+    ) -> Result<LayoutConstraintReconciliation, LayoutConstraintError> {
+        self.reconcile_with_admission_candidate(transaction, bounds, Some(candidate))
+    }
+
+    fn reconcile_with_admission_candidate(
+        &self,
+        transaction: &LayoutTransaction,
+        bounds: Rect,
+        candidate: Option<SurfaceTransactionKey>,
+    ) -> Result<LayoutConstraintReconciliation, LayoutConstraintError> {
         if bounds.is_empty() {
             return Err(LayoutConstraintError::InvalidBounds);
         }
@@ -223,7 +245,8 @@ impl LayoutEpochCoordinator {
         let mut adjusted = BTreeSet::new();
 
         for request in &mut transaction.requested_sizes {
-            let reconciled = self.constrained_size(request.surface, request.size, bounds)?;
+            let reconciled =
+                self.constrained_size(request.surface, request.size, bounds, candidate)?;
             if reconciled != request.size {
                 request.size = reconciled;
                 adjusted.insert(request.surface);
@@ -235,7 +258,8 @@ impl LayoutEpochCoordinator {
                 width: placement.geometry.width,
                 height: placement.geometry.height,
             };
-            let reconciled = self.constrained_size(placement.surface, proposed, bounds)?;
+            let reconciled =
+                self.constrained_size(placement.surface, proposed, bounds, candidate)?;
             let max_x = bounds_right.checked_sub(reconciled.width).ok_or(
                 LayoutConstraintError::GeometryOverflow {
                     surface: placement.surface,
@@ -260,18 +284,25 @@ impl LayoutEpochCoordinator {
                 reconciled.width != proposed.width || reconciled.height != proposed.height;
             let geometry = Rect {
                 x: if resized {
-                    placement.geometry.x.clamp(bounds.x, max_x)
+                    placement.geometry.x.clamp(bounds.x, max_x.max(bounds.x))
                 } else {
                     placement.geometry.x
                 },
                 y: if resized {
-                    placement.geometry.y.clamp(bounds.y, max_y)
+                    placement.geometry.y.clamp(bounds.y, max_y.max(bounds.y))
                 } else {
                     placement.geometry.y
                 },
                 width: reconciled.width,
                 height: reconciled.height,
             };
+            if geometry.x.checked_add(geometry.width).is_none()
+                || geometry.y.checked_add(geometry.height).is_none()
+            {
+                return Err(LayoutConstraintError::GeometryOverflow {
+                    surface: placement.surface,
+                });
+            }
             if geometry != placement.geometry {
                 placement.geometry = geometry;
                 adjusted.insert(placement.surface);
@@ -673,7 +704,16 @@ impl LayoutEpochCoordinator {
         surface: SurfaceId,
         proposed: Size,
         bounds: Rect,
+        candidate: Option<SurfaceTransactionKey>,
     ) -> Result<Size, LayoutConstraintError> {
+        let retained_admission = candidate.is_some_and(|candidate| {
+            candidate.surface == surface
+                && self.admission(surface) == SurfaceAdmissionState::PendingLayout
+                && self.safe_observation(surface).is_some_and(|observed| {
+                    observed.candidate == Some(candidate)
+                        && self.recovery_extent(surface) == Some(observed.extent)
+                })
+        });
         // A recovery extent pins the surface to exactly the pixels the client
         // has already produced, so admission can show real content before the
         // blind WM drives final geometry. It is a best-effort aid, not
@@ -681,16 +721,21 @@ impl LayoutEpochCoordinator {
         // larger than the output the surface now lands on. Yield to the
         // client's declared constraints there: holding the pin instead makes
         // every proposal unsatisfiable and fails the session over pixels that
-        // were only ever a courtesy.
+        // were only ever a courtesy. A retained first-frame admission is
+        // different: its client can be waiting for Present completion before
+        // producing another size. Keep those pixels intact and let the assigned
+        // output clip them; native retirement releases the temporary extent.
         let constraints = self.constraints.get(&surface).map_or(
             SurfaceConstraints {
                 min_size: None,
                 max_size: None,
             },
             |state| {
-                if state.recovery_extent.is_some_and(|extent| {
-                    extent.width > bounds.width || extent.height > bounds.height
-                }) {
+                if !retained_admission
+                    && state.recovery_extent.is_some_and(|extent| {
+                        extent.width > bounds.width || extent.height > bounds.height
+                    })
+                {
                     return state.declared;
                 }
                 state.effective()
@@ -717,7 +762,7 @@ impl LayoutEpochCoordinator {
             width: proposed.width.clamp(minimum.width, maximum.width),
             height: proposed.height.clamp(minimum.height, maximum.height),
         };
-        if size.width > bounds.width || size.height > bounds.height {
+        if !retained_admission && (size.width > bounds.width || size.height > bounds.height) {
             return Err(LayoutConstraintError::ExtentExceedsBounds { surface, size });
         }
         Ok(size)

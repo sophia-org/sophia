@@ -1,4 +1,26 @@
 impl PersistentLiveLayout {
+    fn retained_admission_candidate(
+        &self,
+        surface: SurfaceId,
+    ) -> Option<sophia_protocol::SurfaceTransactionKey> {
+        let extent = self.layout_epochs.recovery_extent(surface)?;
+        if self.surface_awaits_visual_candidate(surface) {
+            return self.selected_pre_admission_transaction(surface, extent)
+                .map(SurfaceTransaction::key);
+        }
+        // Once released to the renderer, the exact retirement obligation owns
+        // the pixels. An intervening policy answer must not demand a new size
+        // before that frame can complete either.
+        match self.admissions.state(surface) {
+            sophia_engine::SurfacePresentationAdmissionState::AwaitingRetirement {
+                visual_candidate, ..
+            } if self.awaiting_visual_commits.exact_candidate(visual_candidate, extent) => {
+                Some(visual_candidate)
+            }
+            _ => None,
+        }
+    }
+
     fn surface_requires_admission(&self, surface: SurfaceId) -> bool {
         !self.bypass_policy_admission
             && self.presentation_roles.get(&surface)

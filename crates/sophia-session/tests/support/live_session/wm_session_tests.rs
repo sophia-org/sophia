@@ -1368,4 +1368,7 @@ mod work_area_recovery;
 #[path = "../withdrawn_policy_snapshot.rs"]
 mod withdrawn_policy_snapshot;
 
+#[path = "../oversized_admission.rs"]
+mod oversized_admission;
+
 include!("wm_session_tests/control_lifecycle.rs");
