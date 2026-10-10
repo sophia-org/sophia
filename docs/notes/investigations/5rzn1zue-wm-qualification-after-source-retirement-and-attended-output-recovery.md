@@ -815,6 +815,61 @@ router time retain their earlier limits. Native retirement, source-loss/pixel
 qualification, disconnect with release debt, cancellation, AbortSettlement,
 receipt ACK reachability and latency remain separate work. t249/h006 stay open.
 
+## Disconnect with captured release debt: source review (2026-10-10)
+
+After integration, the next bounded owner join is automatic WM replacement
+while a captured Right press still owes its release. This is a source-only
+feasibility review of Sophia `f7f7e4141`, Hagia `22908aa` and niltempus
+`95c5c83`, not a new passing case. The reviewed restart, capture and key-routing
+files are unchanged from the existing Sophia fixture pin `f77244abe`.
+
+The existing fixture can reach this boundary without a production test API.
+Reuse `held`, supply completion and route Right down through the same capture
+owner as the presented-chord case. Dispatch that captured action and obtain its
+exact proposal, but do not commit it or release Right. Require no pending
+layout settlement before terminating only the fixture's supervised peer; this
+keeps AbortSettlement outside this case. Save the checkpoint and committed
+layout before termination. Poll automatic restart with bounded waits until the
+epoch advances, then discard the old proposal without settling it into the
+successor.
+
+`wm/public_policy/restart.rs` retains the public state object, calls
+`presentation_capture.revoke()`, revokes presentation input and clears the old
+epoch's chord ledger and router chords. Engine's `PolicyInputCapture::revoke`
+clears action targets inside debt entries without deleting the entries.
+`reset_chords` returns credits while retaining the router's physical key state.
+The assertions belong immediately after replacement, before recovery cycles:
+Right debt survives, old presentation authority and staged/in-flight work are
+gone, chord credits are full, and committed layout/checkpoint are unchanged.
+The old captured action must not enqueue a request in the new epoch.
+
+After the successor becomes Ready, route the owed Right release using supplied
+withdrawn projections. Require no policy action, no ingress and zero
+`keys_suppressed_no_focus`, then require the debt to be gone. Route an additional
+unowed Right release as a contrasting observation: with this fixture's empty
+input focus it should reach the ordinary no-focus path. Zero ingress alone
+cannot distinguish swallowed debt from an event dropped for lack of focus.
+The generic Engine test `unbound_modal_key_release_remains_consumed_after_close`
+already covers local revocation, but does not exercise real-peer replacement
+or Session routing; it was read, not rerun. Recover the occupied checkpoint
+through the replacement's own SceneChanged/Dirty exchange and exercise a fresh
+action only after releasing the old physical keys.
+
+The discriminating archived-Session mutation is to replace the restart call
+`public.presentation_capture.revoke()` with
+`public.presentation_capture = Default::default()`. It should fail the named
+post-restart debt assertion; without that assertion it should expose the owed
+release to the no-focus path. Merely omitting `revoke()` is not a valid negative
+control for this keyboard case: keyboard capture stores `None` as its debt
+target already. Pointer target invalidation needs a separate case. The new
+case and this compiled mutation have not been implemented or executed.
+
+This design preserves the existing supplied CPU content, heads, frame stamps,
+router time and layout-completion limits. It does not establish application
+delivery, native withdrawal, receipt ACKs, pointer debt, cancellation or
+AbortSettlement. No builds, product runs, hardware access or installed-session
+changes were made for this review. t249/h006 remain open.
+
 ## Connections
 
 - [t249 plan](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249) owns the unchanged acceptance requirements.
