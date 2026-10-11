@@ -173,6 +173,44 @@ the device-free 9P recipient bind/revoke seam, remaining migration controls and
 attended browser/terminal/departure acceptance remain separate. The existing
 socket conformance path is retained. No installed session was changed.
 
+## Independent C portal interoperability
+
+Signed `b6ba4c83f6ec785edbeeb10928fb5f9bafc14f67` adds an independent
+C record encoder and reader using only the generic pinned C SDK's 9P pipeline.
+The production shared server and portal export serve it. Admission, namespace
+rights and current source generation are supplied; actual kernel credentials
+are checked, but this fixture does not prove protected launch custody.
+The recipient records bytes and reports its actual effect result.
+
+Three tests pass: transfer custody and outcome, refusal with and without the
+final ACK, and separately compiled peer controls. Reads fragment events into
+13-byte chunks. The transfer case refuses malformed, truncated, stale and
+foreign records, denies an old source generation without retaining its identity,
+retries an incomplete upload, and distinguishes Submitted from Completed.
+Acknowledged replay and cancellation after settlement are refused. The controls
+send a stale negotiation epoch or corrupt the payload; neither can report
+success. These mutate peer inputs, not production implementation code.
+The withheld final ACK proves bounded revocation without attributing it to one
+of the overlapping refusal and ACK-progress deadlines.
+
+The full device-hidden `cargo xtask check` exits zero in
+`t315-c-portal-dev01/xtask-01.log`: 546 Rust test summaries report 7,603 passes,
+zero failures and 104 ignored tests. The complete five-file delta from
+`f0396d3f8` matches the dynamically enumerated pre-gate candidate hashes and
+the signed commit. The final focused run passes all three tests and records
+the C executable paths and hashes. The first focused run failed because the
+fixture offered an msize below the C SDK's minimum; the correction changed
+only the fixture. No binaries were copied into evidence.
+
+The package is
+`~/.local/state/sophia/development-evidence/t315-c-portal-dev01`.
+Its verified self-excluding `SHA256SUMS` has SHA-256
+`3838264c9ca0c90186c36a7a8065a57683c57a6cf95f66e23d509e66a30fd372`.
+The isolated wrapper uses private devices, PID/network namespaces and runtime
+directories, with display variables removed and both target aliases bound to
+the same leased cargo slot. This adds no recipient bind, physical acceptance
+or live-session claim; t315 and t142 remain open.
+
 ## Question
 
 Can t142 serve several configured X groups from one synchronous frontend while

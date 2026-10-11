@@ -217,3 +217,12 @@ and reconnect, no implicit generation rollover, and both byte/record terminal
 reservations under pressure. Require independent C and Rust SDK clients against
 the real export, with refusal draining and final-ack deadlines. Layout checks
 prove none of these runtime properties by themselves.
+
+The independent C conformance peer in `sophia-conformance/tests/portal_files.rs`
+uses the generic C SDK transport and its own portal record codec. It exercises
+fragmented events, upload custody, recipient outcomes and refusal deadlines
+against the real export. Admission and source facts are supplied, and the
+recipient records bytes; this is not a protected-launch or application-frontend
+proof. Compiled peer mutations must fail before reporting success. The
+[validation record](notes/investigations/rd9nia0s-several-x-listeners-and-confined-application-launch-validation.md#independent-c-portal-interoperability)
+binds the executed checks to their signed source and states their limits.
