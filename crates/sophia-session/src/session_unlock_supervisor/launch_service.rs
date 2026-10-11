@@ -66,3 +66,7 @@ impl LaunchService {
         }
     }
 }
+
+#[cfg(all(test, feature = "native-session"))]
+#[path = "../../tests/support/launch_coordinator.rs"]
+mod tests;

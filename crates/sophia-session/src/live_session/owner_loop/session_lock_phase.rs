@@ -323,6 +323,11 @@ macro_rules! lock_entry {
 
 macro_rules! service_session_lock {
     () => {{
+        if let Err(error) = authenticated_launches.poll(Instant::now()) {
+            crate::session_eprintln!(
+                "sophia_live_launch_authentication schema=1 status=unavailable error={error:?}"
+            );
+        }
         let applied = input_sender.applied_control_epoch() >= session_lock_input_epoch;
         match session_lock.phase() {
             crate::session_lock::SessionLockPhase::Locking { epoch, .. } => {

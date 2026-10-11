@@ -9,7 +9,7 @@
 use super::SessionFactotum;
 use crate::session_lock_input::SessionUnlockAuthenticator;
 use crate::session_unlock_supervisor::{
-    SupervisedAuthenticator, UnlockAgent, UnlockAgentLauncher, UnlockSupervision,
+    LaunchService, SupervisedAuthenticator, UnlockAgent, UnlockAgentLauncher, UnlockSupervision,
 };
 use sophia_factotum::client::{LoginVerdict, SessionClient};
 use sophia_factotum::launch::queue::{self, ConnectionOwner, Ingress};
@@ -134,18 +134,24 @@ impl Drop for FactotumAgent {
 pub(super) fn start_session_authenticator(
     factotum: Option<&SessionFactotum>,
     wake: sophia_wake::Notifier,
-) -> Option<Box<dyn SessionUnlockAuthenticator>> {
+) -> (Option<Box<dyn SessionUnlockAuthenticator>>, LaunchService) {
+    let Some(factotum) = factotum else {
+        return (None, LaunchService::default());
+    };
     match SupervisedAuthenticator::start(
-        FactotumLauncher(factotum?.clone()),
+        FactotumLauncher(factotum.clone()),
         UnlockSupervision::SESSION,
         move || wake.notify(),
     ) {
-        Ok(authenticator) => Some(Box::new(authenticator)),
+        Ok(authenticator) => {
+            let launches = authenticator.launch_service();
+            (Some(Box::new(authenticator)), launches)
+        }
         Err(error) => {
             crate::session_eprintln!(
                 "sophia_live_session_lock schema=1 status=authenticator_unavailable error={error}"
             );
-            None
+            (None, LaunchService::default())
         }
     }
 }

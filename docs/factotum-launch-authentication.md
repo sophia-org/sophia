@@ -159,12 +159,46 @@ current-custody check. The legacy path still requires `SO_PEERPIDFD`. The C
 wire test proves plain/forged/unverified refusal, successful authentication,
 fresh authentication after Tversion using the same launch channel, negotiation,
 and revocation of a retained waiting read. A second build uses the pinned C
-SDK's Tauth, afid read and attach-with-afid primitives against the same real
-owners. Its private relay and subsequent lock-file traffic remain fixture
-wire code: this proves generic SDK authentication interoperability, not a
-reusable SDK launch conversation or authenticated role bootstrap.
+SDK's reusable launch conversation against the same real owners. The helper
+owns both wire exchanges, enforces its total deadline and sets CLOEXEC on the
+provisioned channel. The lock SDK accepts its admitted root without another
+Tversion or ordinary attach, then performs its normal file bootstrap. The SDK
+case reaches the lock object and observes revocation; the raw-wire case retains
+the exact waiting-read check.
 Normal startup, other roles, in-place fragment controls, minimum-version
 Bubblewrap execution and final acceptance remain open.
+
+### Session coordinator
+
+Normal Session startup retains the launch-service handle alongside its unlock
+authenticator. One `LaunchCoordinator` polls that publication every owner turn,
+including unlocked and unlocking turns. It owns one `LaunchBook` for the current
+Factotum connection and one transport budget shared across role endpoints.
+Each role registration includes the Factotum generation; an old registration
+cannot take a channel or publish custody through a replacement book.
+
+```text
+Factotum supervisor -- current generation + ingress --> Session coordinator
+                              |                          |          |
+                     PAM on same owner                   |    shared 32-slot
+                                                         |    transport budget
+                                                   one LaunchBook
+                                                         |
+                                               <=64 role registrations
+                                                         |
+                                          reserve -> spawn -> activate
+```
+
+The launch counter survives Factotum replacement because role supervisors also
+survive and reject reused launch generations. Failed setup burns its number.
+Initialization has a five-second deadline; failure closes the shared ingress,
+and only a new supervisor publication can recover. A contended publication
+mutex does not revoke a still-live connection. Role endpoints retain their
+budget through replacements and pending cleanup.
+
+This coordinator is wired into the normal owner loop, but the lock provider
+has not yet been changed to reserve and activate through it. Authentication is
+therefore still not enabled for the desktop's provider by this checkpoint.
 
 ### Current launch authority across workers
 

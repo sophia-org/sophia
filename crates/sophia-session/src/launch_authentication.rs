@@ -18,6 +18,8 @@ use std::time::{Duration, Instant};
 
 mod custody;
 pub use custody::{Authority, WorkerAuthority};
+mod coordinator;
+pub use coordinator::{LaunchCoordinator, Registration};
 pub mod files;
 pub mod role;
 
@@ -98,7 +100,17 @@ impl LaunchBook {
         now: Instant,
         deadline: Instant,
     ) -> Result<Self, Error> {
-        if session == 0 {
+        Self::with_next_launch(session, ingress, now, deadline, 1)
+    }
+
+    fn with_next_launch(
+        session: u64,
+        ingress: Ingress,
+        now: Instant,
+        deadline: Instant,
+        next: u64,
+    ) -> Result<Self, Error> {
+        if session == 0 || next == 0 {
             return Err(Error::Invalid);
         }
         let initializing = Some(ingress.submit(Command::Initialize { session }, now, deadline)?);
@@ -107,7 +119,7 @@ impl LaunchBook {
             ingress,
             initializing,
             initialized: false,
-            next: 1,
+            next,
             records: Vec::with_capacity(MAX_DELEGATIONS),
         })
     }

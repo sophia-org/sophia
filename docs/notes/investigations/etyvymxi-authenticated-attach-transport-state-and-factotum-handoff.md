@@ -811,3 +811,42 @@ package SHA256SUMS hashes are:
 
 This is SDK/fixture qualification, not normal desktop startup integration or a
 new full-repository gate. The remaining t317 exit is unchanged.
+
+## Shared Session coordinator and Factotum recovery
+
+Session startup now retains the shared launch-service publication and creates
+one coordinator. Its nonblocking poll runs on ordinary owner turns, including
+unlocking, independently of PAM requests. The coordinator owns one registration
+book per Factotum generation and one Session-wide transport budget. A missing
+service admits nothing; an initialization timeout invalidates the shared
+ingress without retrying that same generation. Publication-lock contention
+does not revoke an existing live book.
+
+Source review caught a recovery mismatch before enabling provider launches:
+`ProcessSupervisor` retains its last launch generation across Factotum
+replacement, while a fresh book previously began again at one. The coordinator
+now preserves the next counter, including numbers burned by failed setup. The
+recovery test uses two real Factotum exports and the same protected process
+supervisor. It refuses the old registration, reaps the old process, and starts
+the replacement with a higher generation. Resetting that counter to one fails
+`Factotum replacement must not reuse a supervisor launch generation` before
+the new spawn. Sources are restored and compared under the worktree lease.
+
+`t317-coordinator-02` passes all three coordinator tests, all 17 protected
+authentication tests, all ten unlock-supervision tests, focused Clippy and
+formatting. The tests supply trusted Factotum channel admission/publication;
+the recovery case executes actual protected spawns, with no devices. The
+initial `-01` development package predates the monotonic-counter correction
+and accidentally ran zero supervision tests without `native-session`; it is
+not the final qualification. The corrected package requires all ten tests.
+
+Closed package SHA256SUMS hashes:
+
+- `t317-coordinator-02`: `133ded9bdcec6a078e11dc10b21b6eb6ef04fdef68b08f175a6da6b7f37dbfef`.
+- `t317-coordinator-generation-control-02`: `43c1a60d81fe42e41d5af63e23d5af64f2b7970c9a58d1e5b59fff079b417fa1`.
+
+The dynamic candidate inventory covers all seven changed or untracked source
+files. These documentation updates follow the runs. No full-repository gate,
+live session or merge is claimed. The normal lock provider still uses legacy
+launch/admission: connecting its reservation, spawn, activation and retirement
+to this shared coordinator is the next integration step, not a completed exit.
