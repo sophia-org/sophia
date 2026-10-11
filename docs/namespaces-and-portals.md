@@ -361,8 +361,8 @@ valid for clients outside any sandbox.
 
 ### Configuring confined application groups
 
-`--confined-group=INDEX` adds a group with a distinct, zero-capability confined
-namespace. Indices are explicit nonzero `u32` values, stable across configuration
+`--confined-group=INDEX` adds a group with a distinct confined namespace, with
+no portal capabilities by default. Indices are explicit nonzero `u32` values, stable across configuration
 reordering. Duplicate groups are refused; at most eight are accepted. The
 existing synchronous frontend serves every listener with one accepting thread.
 Worker counts and idle reclamation include every listener. The default sixteen
@@ -370,6 +370,15 @@ worker slots are divided between listeners, with any remainder reserved for
 the primary listener. With eight confined groups, each gets one slot and the
 primary gets eight. A full group defers acceptance without stopping other
 groups; incomplete X setup also occupies a slot.
+
+`--clipboard-rule=confined-7:shared` explicitly allows Clipboard and PRIMARY
+from group 7 to shared. Selectors are `shared` or a configured `confined-N`.
+Rules are directional, distinct and bounded to sixteen; the empty default
+denies cross-group transfers. Session adds only the corresponding Clipboard
+publish/request capabilities and checks the exact pair, so A-to-shared plus
+shared-to-B does not allow A-to-B. There is no per-paste prompt. The
+[portal files contract](sophia-portal-files.md) records the private transport,
+execution fence and remaining installation/physical-acceptance boundary.
 
 In normal sessions, `--confined-application=APP_ID:GROUP_ID` maps a registered
 application to a configured group. The application must also appear in the

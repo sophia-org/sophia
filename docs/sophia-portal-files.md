@@ -1,9 +1,10 @@
 # Portal transfer file contract
 
-**Live portal integration pending.** The desktop supports multiple X namespace
-listeners, but its portal file path is not yet qualified or installed. The
-existing socket clipboard coordinator is a test path. This contract specifies
-its replacement without claiming live clipboard mediation. Exact layouts are in
+**Live installation and physical acceptance pending.** Session now wires the
+private portal files service to the X clipboard coordinator. Device-free tests
+exercise the real files transport and X property delivery; they do not claim
+an installed desktop or attended clipboard acceptance. The old socket
+coordinator remains a conformance path. Exact layouts are in
 [sophia-portal-files-v1.kdl](../protocol/sophia-portal-files-v1.kdl); the
 [decision](notes/decisions/xa78u03g-keep-broker-and-portal-file-authority-and-custody-separate.md)
 records authority and compatibility choices.
@@ -14,9 +15,9 @@ The portal decision owner serves a separate 9P2000.L export. Its requester must
 have a trusted `PortalRequester` admission context identifying the exact
 protected peer UID/PID, source/target namespace pair, connection epoch and live
 namespace authority. This is a new required seam, distinct from `PortalBroker`
-(the decision owner) and HostDomain. No such production requester admission is
-claimed today. No endpoint environment variable is defined before that owner
-exists. Attach strings and paths cannot create this admission.
+(the decision owner) and HostDomain. An out-of-process protected requester is
+not yet integrated. No endpoint environment variable is defined before that
+owner exists. Attach strings and paths cannot create this admission.
 
 The accepted [in-process X requester amendment](notes/decisions/88uev9ix-admit-the-in-process-x-portal-requester-by-session-channel-custody.md)
 adds one narrow alternative: Session creates a private socketpair and gives the
@@ -29,11 +30,25 @@ and issued execution custody. Other requesters retain the protected-peer rule.
 
 Explicit startup rules may allow a directional X-group pair for Clipboard,
 including PRIMARY, with no per-paste prompt. The default rule set is empty.
+For example, `--confined-group=7 --clipboard-rule=confined-7:shared` permits
+only that direction. Both selectors must name configured groups or `shared`;
+the reverse direction needs its own rule. At most sixteen distinct pairs are
+accepted. Session derives participation bits and exact namespace pairs from
+these rules at startup.
 The owner must require both namespace participation capabilities and an exact
 configured pair; capabilities do not authorize transitive or reverse transfers.
 The recipient rechecks selection identity, generations, deadline and the lock
 fence immediately before the X property effect. The decision export never
 executes that effect itself.
+
+The live coordinator uses a bounded off-owner queue, a fresh private connection
+per transfer and a two-second transfer deadline. Lock and unlock each advance
+an execution-fence revision; queued work from before either transition cannot
+become current again. Lock waits for an earlier guarded X effect to finish,
+without waiting for source bytes or 9P progress. Shutdown closes the fence.
+After an X property effect, notification failure cannot relabel the effect as
+unexecuted. A saturated protocol recipient is disconnected by its captured
+connection identity instead of silently losing the notification.
 
 Both namespaces must match the admitted pair. A foreign or invalid namespace
 is EACCES before custody. The owner derives publish/request permissions from

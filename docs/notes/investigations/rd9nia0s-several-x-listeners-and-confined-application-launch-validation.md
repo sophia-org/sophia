@@ -10,12 +10,12 @@ tags: [investigation, session, x11, confinement]
 ## Live portal prerequisite discovered during acceptance preparation
 
 On 2026-10-10, preparing the installed-session browser/terminal check exposed
-a missing production join. Session has no consumer of X authority's
-`portal_commands` and does not construct its `clipboard_executor`. The
+a missing production join. Session had no consumer of X authority's
+`portal_commands` and did not construct its `clipboard_executor`. The
 two-listener CLIPBOARD/PRIMARY tests construct that connection themselves,
 with a headless Allow broker and supplied participation permissions. Their
 passing results prove the frontend/executor path, not live Session wiring.
-Configured confined namespaces currently have `NamespaceCapabilities::NONE`.
+Configured confined namespaces had `NamespaceCapabilities::NONE`.
 No restart or confined-browser trial was performed after this discovery.
 
 niltempus approved bringing the t315 portal-files work forward before this
@@ -106,6 +106,72 @@ This is source authority and configuration preparation. Namespace capability
 wiring, exact-pair live policy, the worker coordinator and the final-effect
 lock fence remain pending. Neither a repository gate nor an installed change
 is claimed by these focused tests.
+
+## Production files coordinator and execution fence
+
+Signed `588e6723c` records configuration and source lookup. Signed
+`51e96c81ae6658590961c7d6d0585ad248a4edca` connects Session's configured namespace participation and exact-pair
+policy to the routed X frontend. Its off-owner coordinator uses the Rust SDK
+over private socketpairs served by the production 9P core. One persistent
+export retains history across per-transfer connections; no public listener,
+endpoint environment variable or requester-supplied permission bits are added.
+
+The X recipient performs the property effect. A shared execution fence
+serializes that effect with Session's lock transition; lock, unlock and shutdown
+invalidate earlier work. The export also pins this revision so a short
+lock/unlock interval between polls cannot restore a queued payload. Source
+generation is resolved through the retained X conversion and checked again by
+the X executor. Notification routing uses the existing contained-delivery owner
+to end a stalled recipient, while settlement reports whether the property
+effect actually occurred.
+
+Eight real frontend tests pass in `t315-live-join-dev01/focused-02.log` and
+`xtask-05.log`: repeated CLIPBOARD and PRIMARY delivery, TARGETS translation
+without source-byte retrieval, policy denial, missing participation, lock then
+unlock, replaced source, and a late source. The earlier `x-files.log` has seven
+tests, before TARGETS was added. They run the production routed
+frontend, file service, Rust SDK and X executor. Namespace policy and source
+bytes are supplied by the fixture; a test consumer drains Session transaction
+batches. The lock case drives the fence directly, not an attended Session lock.
+Two fence tests cover permanent closure, deadline/revision refusal and a lock
+transition waiting for an already executing effect. A direct export test
+covers revision change while a complete payload is queued.
+
+The first isolated repository run stopped at the existing
+`normal_session_lifecycle` test with `RuntimeDirUnset`: the wrapper had removed
+`XDG_RUNTIME_DIR`. The rerun supplies a private owner-only directory under its
+private `/run`. Both runs hide host devices, `/tmp`, display environment and
+runtime sockets. This was a gate setup correction, with no production or
+existing-test change. A second run exposed a pre-existing shell-conformance
+socket path longer than `SUN_LEN` in this worktree's cargo slot. A short mount
+attempt first failed to create its mountpoint and then exposed cached binaries'
+original target path as read-only; neither attempt is accepted evidence.
+Signed `f04b20481` shortens only the shell test's scratch prefix. Its four tests
+pass. The final wrapper exposes both names of the same leased slot, with no
+additional target storage or binary copies.
+
+The full isolated `cargo xtask check` exits zero in `xtask-05.log`: 544 Rust
+test summaries report 7,599 passes, zero failures and 104 ignored tests. Clippy,
+SDK, layout and the remaining deterministic checks pass. Device-backed pixel
+proofs are explicitly not proved by this device-hidden run. All 26 changed or
+untracked candidate files, enumerated dynamically before the gate, match their
+recorded hashes afterward. The complete 22-file crates delta from `f04b20481`
+to `51e96c81a` matches those pre-gate hashes; this binds the run to the signed
+implementation. Subsequent changes are documentation only.
+
+The development package is
+`~/.local/state/sophia/development-evidence/t315-live-join-dev01`.
+Its self-excluding `SHA256SUMS` has SHA-256
+`23319a5250797ca904f409b72018f9c944a26130e02f4ad15667d222f3c70638`.
+`result.json` records the source binding, counts, seven binary path/hash
+identities and limits; `gate-environment.txt` records the setup failures.
+Slot files may change with later builds;
+the retained hashes, not continued file availability, are the evidence.
+
+This slice does not close t315 or t142. Independent C portal interoperability,
+the device-free 9P recipient bind/revoke seam, remaining migration controls and
+attended browser/terminal/departure acceptance remain separate. The existing
+socket conformance path is retained. No installed session was changed.
 
 ## Question
 
