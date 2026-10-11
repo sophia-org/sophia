@@ -33,8 +33,9 @@ int sophia_9p_version(struct sophia_9p_client *c, struct sophia_9p_handle *h)
     c->phase = 1;
     return 0;
 }
-int sophia_9p_attach(struct sophia_9p_client *c, const char *u, const char *a,
-                     struct sophia_9p_handle *h, uint32_t *fid)
+static int identity_request(struct sophia_9p_client *c, uint8_t type, uint32_t afid,
+                            const char *u, const char *a,
+                            struct sophia_9p_handle *h, uint32_t *fid)
 {
     int slot, r;
     size_t un, an;
@@ -50,12 +51,15 @@ int sophia_9p_attach(struct sophia_9p_client *c, const char *u, const char *a,
     r = p9_fid(c, &f);
     if (r)
         return r;
-    r = p9_begin(c, 104, 16 + un + an, slot, h, &b);
+    r = p9_begin(c, type, (type == 102 ? 12 : 16) + un + an, slot, h, &b);
     if (r)
         return r;
     p9_put(b, f, 4);
-    p9_put(b + 4, UINT32_MAX, 4);
-    b += 8;
+    b += 4;
+    if (type == 104) {
+        p9_put(b, afid, 4);
+        b += 4;
+    }
     text(&b, u, un);
     text(&b, a, an);
     p9_put(b, UINT32_MAX, 4);
@@ -64,6 +68,22 @@ int sophia_9p_attach(struct sophia_9p_client *c, const char *u, const char *a,
     c->next_fid = f + 1;
     *fid = f;
     return 0;
+}
+int sophia_9p_auth(struct sophia_9p_client *c, const char *u, const char *a,
+                   struct sophia_9p_handle *h, uint32_t *afid)
+{
+    return identity_request(c, 102, UINT32_MAX, u, a, h, afid);
+}
+int sophia_9p_attach_with_afid(struct sophia_9p_client *c, uint32_t afid,
+                              const char *u, const char *a,
+                              struct sophia_9p_handle *h, uint32_t *fid)
+{
+    return identity_request(c, 104, afid, u, a, h, fid);
+}
+int sophia_9p_attach(struct sophia_9p_client *c, const char *u, const char *a,
+                     struct sophia_9p_handle *h, uint32_t *fid)
+{
+    return sophia_9p_attach_with_afid(c, UINT32_MAX, u, a, h, fid);
 }
 int sophia_9p_walk(struct sophia_9p_client *c, uint32_t from, const char *const *names,
                    size_t count, struct sophia_9p_handle *h, uint32_t *fid)

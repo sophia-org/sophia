@@ -1,14 +1,14 @@
-tree 4df33c5a0a5ac748736fb22bc82384670a0e6a48
-parent 73110aa51f694cea38be0d87f53899301ad0e669
-author Mason Green <mason@greenm01.net> 1791751315 -0400
-committer Mason Green <mason@greenm01.net> 1791751315 -0400
+tree e0de43c3da52bc94eccd1822eb0c51064621e593
+parent 1a37b2da8e09f6dbd56f9c0fdabc6d425c217046
+author Mason Green <mason@greenm01.net> 1791760587 -0400
+committer Mason Green <mason@greenm01.net> 1791760587 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCasv0kxsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKjKAD+LI+7ruCDhkLJUvAYx5LY
- XBC+cfXrczHeBVklQNnEgEoA/1OO0AwdGnTRU5DRPjvB1KJceoH3b1TAk/qU2BUj
- vdQE
- =XxqM
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCaswYyxsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIF3AD/dGF/qP29Xejk6d1AbYeP
+ BvISkYK8W9W36/+jHerEPLIA/3ar5WGAnUPbvTnsDZHPBZV8XIq0hHa8azL+PqAC
+ KW8H
+ =+svw
  -----END PGP SIGNATURE-----
 
-Track the candidate authenticated attach profile and C client gap
+Add bounded Tauth and explicit afid attach to the C client

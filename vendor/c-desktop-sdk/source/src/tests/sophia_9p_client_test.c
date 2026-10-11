@@ -20,7 +20,8 @@ static void put(uint8_t *p, uint64_t v, size_t n)
 }
 static unsigned get16(const uint8_t *p) { return p[0] + 256u * p[1]; }
 static unsigned get32(const uint8_t *p) { return get16(p) + 65536u * get16(p + 2); }
-static uint16_t request(struct fixture *f, unsigned type)
+static uint16_t request_matches(struct fixture *f, unsigned type,
+                                const void *expected, size_t expected_bytes)
 {
     uint8_t b[65536];
     size_t n, at = 0;
@@ -45,7 +46,15 @@ static uint16_t request(struct fixture *f, unsigned type)
         at += (size_t)r;
     }
     assert(b[4] == type);
+    if (expected) {
+        assert(n == expected_bytes + 7);
+        assert(!memcmp(b + 7, expected, expected_bytes));
+    }
     return (uint16_t)get16(b + 5);
+}
+static uint16_t request(struct fixture *f, unsigned type)
+{
+    return request_matches(f, type, NULL, 0);
 }
 static void answer(struct fixture *f, unsigned type, uint16_t tag, const void *body, size_t n)
 {
@@ -312,6 +321,88 @@ static void reply_shape_poisoning(void)
         finish(&f);
     }
 }
+static void authenticated_attach_and_afid_custody(void)
+{
+    struct fixture f;
+    struct sophia_9p_handle h, fl;
+    struct sophia_9p_reply r;
+    uint32_t afid, root;
+    uint16_t tag, ft;
+    uint8_t auth_body[14] = {0,0,0,0, 1,0,'u', 1,0,'a', 255,255,255,255};
+    uint8_t attach_body[18] = {0,0,0,0, 0,0,0,0, 1,0,'u', 1,0,'a', 255,255,255,255};
+    uint8_t q[13] = {0x08}, denied[4] = {13}, empty[4] = {0};
+    init(&f, 2, 2);
+    assert(!sophia_9p_auth(&f.c, "u", "a", &h, &afid));
+    put(auth_body, afid, 4);
+    tag = request_matches(&f, 102, auth_body, sizeof(auth_body));
+    q[1] = 9; q[5] = 77;
+    answer(&f, 103, tag, q, sizeof(q));
+    r = take(&f, 103);
+    assert(r.qid.type == 8 && r.qid.version == 9 && r.qid.path == 77);
+    assert(!sophia_9p_read(&f.c, afid, 0, 40, &h));
+    tag = request(&f, 116);
+    answer(&f, 117, tag, empty, sizeof(empty));
+    take(&f, 117);
+    assert(!sophia_9p_attach_with_afid(&f.c, afid, "u", "a", &h, &root));
+    put(attach_body, root, 4); put(attach_body + 4, afid, 4);
+    tag = request_matches(&f, 104, attach_body, sizeof(attach_body));
+    answer(&f, 7, tag, denied, sizeof(denied));
+    assert(take(&f, 7).error == 13);
+    assert(f.c.fid_count == 1); /* Refusal frees only the root reservation. */
+    assert(!sophia_9p_attach_with_afid(&f.c, afid, "u", "a", &h, &root));
+    tag = request(&f, 104);
+    q[0] = 0x80;
+    answer(&f, 105, tag, q, sizeof(q)); take(&f, 105);
+    assert(f.c.fid_count == 2);
+    finish(&f);
+
+    init(&f, 1, 1);
+    assert(!sophia_9p_auth(&f.c, "u", "a", &h, &afid));
+    tag = request(&f, 102);
+    answer(&f, 7, tag, denied, sizeof(denied)); take(&f, 7);
+    assert(!f.c.fid_count);
+    assert(!sophia_9p_auth(&f.c, "u", "a", &h, &afid));
+    request(&f, 102);
+    assert(!sophia_9p_flush(&f.c, h, &fl)); ft = request(&f, 108);
+    answer(&f, 109, ft, NULL, 0); take(&f, 109);
+    assert(!f.c.fid_count); /* Unanswered Tauth releases its reservation. */
+    assert(!sophia_9p_auth(&f.c, "u", "a", &h, &afid));
+    tag = request(&f, 102);
+    assert(!sophia_9p_flush(&f.c, h, &fl)); ft = request(&f, 108);
+    q[0] = 8;
+    answer(&f, 103, tag, q, sizeof(q)); take(&f, 103);
+    answer(&f, 109, ft, NULL, 0); take(&f, 109);
+    assert(f.c.fid_count == 1); /* Rauth winning the race retains the afid. */
+    assert(!sophia_9p_clunk(&f.c, afid, &h)); tag = request(&f, 120);
+    answer(&f, 121, tag, NULL, 0); take(&f, 121);
+    assert(!f.c.fid_count);
+    finish(&f);
+}
+static void authentication_qid_is_not_an_ordinary_file_qid(void)
+{
+    unsigned i;
+    const uint8_t bad[] = {0, 0x80, 0x88};
+    for (i = 0; i < 6; i++) {
+        struct fixture f;
+        struct sophia_9p_handle h;
+        uint32_t fid;
+        uint16_t tag;
+        uint8_t q[14] = {8};
+        init(&f, 1, 1);
+        if (i == 5) {
+            assert(!sophia_9p_attach(&f.c, "", "", &h, &fid));
+            tag = request(&f, 104);
+            answer(&f, 105, tag, q, 13); /* QTAUTH cannot be a root. */
+        } else {
+            assert(!sophia_9p_auth(&f.c, "", "", &h, &fid));
+            tag = request(&f, 102);
+            if (i < sizeof(bad)) q[0] = bad[i];
+            answer(&f, 103, tag, q, i == 3 ? 12 : i == 4 ? 14 : 13);
+        }
+        assert(sophia_9p_service(&f.c, 4096) == SOPHIA_9P_INVALID);
+        finish(&f);
+    }
+}
 int main(void)
 {
     puts("tag wrap");
@@ -324,6 +415,9 @@ int main(void)
     preflight_and_errors();
     outstanding_read_fragmented_reply_and_eof();
     reply_shape_poisoning();
+    authenticated_attach_and_afid_custody();
+    authentication_qid_is_not_an_ordinary_file_qid();
+    puts("Tauth/afid wire and custody controls passed");
     puts("sophia_9p_client: R4-1..R4-7 controls passed");
     return 0;
 }

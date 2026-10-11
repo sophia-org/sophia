@@ -477,3 +477,25 @@ the explicit coverage limit. The profile is Sophia's t317 candidate on base
 `e855fd75acd8ac38b7b779cc5377acd5d2c0c223`, not that base's profile. Sophia's
 subsequent immutable SDK pin binds the candidate trees. No C implementation
 or public API changes; Tauth and launch authentication remain unimplemented.
+
+## t317 generic afid primitives
+
+The subsequent C implementation uses the same pinned 9P profile: Tauth returns
+an afid with QTAUTH; attach-with-afid explicitly names that conversation while
+uname/aname remain claims and n_uname is NOUID. Ordinary attach delegates with
+NOFID and preserves existing behavior. Auth refusal and a winning flush return
+the reserved fid, while Rauth winning the race retains it until clunk.
+
+Scripted tests check literal request bodies, read access on the returned afid,
+root-only cleanup after an attach refusal, auth refusal, both flush orderings,
+QTAUTH exclusion from ordinary roots, malformed qid types and record lengths.
+Launch-channel authentication and role bootstrap are not implemented by these
+primitives. Production-export interoperability remains a separate Sophia gate.
+
+The strict C suite and the same suite under clang ASan/UBSan pass. Two controls
+are refused by the tests: accepting an ordinary qid as an auth qid, and leaking
+the Tauth fid on refusal. Sources are restored and the normal suite passes
+again. Local evidence `t317-sdk-c-afid-01` has self-excluding SHA256SUMS hash
+`e277c561ca483e52e07364aef71fb26dfbcd1d7c9845e00745340bedb202d362`;
+it records binary paths/hashes, not copied executables. This result paragraph
+follows the captured candidate; implementation and tests are unchanged.

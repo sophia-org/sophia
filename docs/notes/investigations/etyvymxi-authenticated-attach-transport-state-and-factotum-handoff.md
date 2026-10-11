@@ -736,3 +736,42 @@ service, SDK clients need the conversation, other required roles need the
 same admission path, and in-place fragment controls, minimum Bubblewrap
 execution and final acceptance remain. No merge, installation or completion
 is claimed by this checkpoint.
+
+## Independent C SDK afid interoperability
+
+C SDK signed revision `2160218019841d2751c58ee74e9d20ba665dc313`
+adds Tauth and explicit attach-with-afid to the generic client. It validates
+QTAUTH only on Rauth, reclaims failed or flushed auth reservations, and retains
+an afid when Rauth wins the flush race. Ordinary attach still sends NOFID.
+The contract copy is unchanged. The strict C suite and clang ASan/UBSan suite
+pass, with controls for accepting a non-auth qid and leaking a refused auth
+reservation. `t317-sdk-c-afid-01` records those results; its SHA256SUMS hash is
+`e277c561ca483e52e07364aef71fb26dfbcd1d7c9845e00745340bedb202d362`.
+
+Sophia pins that exact archive and signed commit, with its offline tree/blob
+and contract verification passing. A second build of the protected lock peer
+uses the SDK for version, Tauth, challenge/status reads and authenticated
+attach. It reauthenticates after Tversion using the same protected launch
+channel, then reaches lock negotiation and loses its waiting read on Session
+revocation. The existing independent raw-wire build also passes. The fixture
+still drives the private relay and subsequent role-file records itself; this
+does not claim SDK role bootstrap or a reusable SDK launch conversation.
+
+A single-site control sends NOFID instead of the verified afid from the SDK.
+The C peer fails its expected Rattach assertion, and the exact joined Rust test
+exits 101 with one failure. Restoration is byte-checked, and the immutable
+snapshot verifier passes again. All **17 Session launch-authentication tests**,
+the existing legacy lock C SDK export test, focused Clippy and formatting pass.
+This delta changes the pinned C client and fixtures, not Session/runtime
+production owners. The earlier full gate remains evidence for its own
+candidate; it is not represented as a rerun of this later SDK pin.
+
+Closed, self-excluding manifests under the development evidence directory:
+
+- `t317-sdk-lock-01`: `9a9d19151d17bc4b440600165faaad7926a33a32409ecdb44d05b3afce8ddcd3`.
+- `t317-sdk-afid-control-01`: `6a8ed747253c77f884bfe4f6895ab061bab03c10819d2d181f582d97f028307f`.
+
+The complete changed/untracked candidate inventory is captured before checks;
+these result paragraphs follow it. No binaries are copied to evidence. t317
+remains open for startup and role-client integration, remaining role joins,
+in-place fragment controls, minimum Bubblewrap execution and final acceptance.

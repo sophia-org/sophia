@@ -158,7 +158,11 @@ expected-peer availability filter, supervisor-owned pidfds and every afid/
 current-custody check. The legacy path still requires `SO_PEERPIDFD`. The C
 wire test proves plain/forged/unverified refusal, successful authentication,
 fresh authentication after Tversion using the same launch channel, negotiation,
-and revocation of a retained waiting read. It is not an independent SDK result.
+and revocation of a retained waiting read. A second build uses the pinned C
+SDK's Tauth, afid read and attach-with-afid primitives against the same real
+owners. Its private relay and subsequent lock-file traffic remain fixture
+wire code: this proves generic SDK authentication interoperability, not a
+reusable SDK launch conversation or authenticated role bootstrap.
 Normal startup, other roles, in-place fragment controls, minimum-version
 Bubblewrap execution and final acceptance remain open.
 

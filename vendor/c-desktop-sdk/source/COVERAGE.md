@@ -20,9 +20,11 @@ protected-grant contract, rather than a hidden ancillary-data channel.
 ## Release 0.8.0
 
 The t317 development profile copy includes Sophia's opt-in Tauth/afid seam.
-This C SDK does not yet implement Tauth, launch-channel authentication or
-authenticated attach. Existing clients continue to use ordinary attach;
-requiring authentication on shipped roles needs a separate SDK migration.
+The generic C client implements Tauth and explicit attach-with-afid, including
+QTAUTH validation, refusal cleanup and flush-race custody. It does not yet
+implement the launch-channel conversation in role sessions. Existing role
+clients continue to use ordinary attach; requiring authentication on shipped
+roles still needs that migration and production-export qualification.
 
 | Role | File contract | Client status |
 | --- | --- | --- |

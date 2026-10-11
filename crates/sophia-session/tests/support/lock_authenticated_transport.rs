@@ -7,24 +7,38 @@ use std::os::unix::fs::DirBuilderExt;
 
 struct Peer(PathBuf);
 impl Peer {
-    fn build() -> Self {
-        let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-            .join(format!("lock-authentication-peer-{}", std::process::id()));
-        assert!(
-            std::process::Command::new("/usr/bin/cc")
-                .env_clear()
-                .env("PATH", "/usr/bin:/bin")
-                .args(["-std=c11", "-Wall", "-Wextra", "-Werror", "-O2"])
-                .arg(concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/tests/support/lock_authentication_peer.c"
-                ))
-                .arg("-o")
-                .arg(&path)
-                .status()
+    fn build(sdk: bool) -> Self {
+        let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
+            "lock-authentication-peer-{sdk}-{}",
+            std::process::id()
+        ));
+        let mut command = std::process::Command::new("/usr/bin/cc");
+        command
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .args(["-std=c11", "-Wall", "-Wextra", "-Werror", "-O2"])
+            .arg(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/support/lock_authentication_peer.c"
+            ))
+            .arg("-o")
+            .arg(&path);
+        if sdk {
+            let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../vendor/c-desktop-sdk/source/src");
+            let mut units: Vec<_> = std::fs::read_dir(source.join("nine_p"))
                 .unwrap()
-                .success()
-        );
+                .map(|entry| entry.unwrap().path())
+                .filter(|path| path.extension().is_some_and(|ext| ext == "c"))
+                .collect();
+            units.sort();
+            command
+                .arg("-DSOPHIA_TEST_C_SDK")
+                .arg("-I")
+                .arg(source)
+                .args(units);
+        }
+        assert!(command.status().unwrap().success());
         Self(path)
     }
 }
@@ -42,9 +56,19 @@ impl Drop for Directory {
 
 #[test]
 fn protected_lock_worker_authenticates_reauthenticates_and_revokes_the_actual_transport() {
-    let peer = Peer::build();
-    let root =
-        Directory(std::env::temp_dir().join(format!("t317-lock-wire-{}", std::process::id())));
+    run(false);
+}
+
+#[test]
+fn c_sdk_authenticates_and_reauthenticates_the_protected_lock_transport() {
+    run(true);
+}
+
+fn run(sdk: bool) {
+    let peer = Peer::build(sdk);
+    let root = Directory(
+        std::env::temp_dir().join(format!("t317-lock-wire-{sdk}-{}", std::process::id())),
+    );
     std::fs::DirBuilder::new()
         .mode(0o700)
         .create(&root.0)

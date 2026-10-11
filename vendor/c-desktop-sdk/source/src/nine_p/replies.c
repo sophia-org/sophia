@@ -36,6 +36,13 @@ static int decode(const struct sophia_9p_slot *s, const uint8_t *b, size_t n,
             return SOPHIA_9P_INVALID;
         r->count = p9_u32(b);
         return 0;
+    case 102:
+        if (n != 13 || b[0] != 0x08)
+            return SOPHIA_9P_INVALID;
+        r->qid.type = b[0];
+        r->qid.version = p9_u32(b + 1);
+        r->qid.path = p9_u64(b + 5);
+        return 0;
     case 104:
         return n == 13 ? qid(b, &r->qid) : SOPHIA_9P_INVALID;
     case 110:
@@ -103,7 +110,7 @@ int p9_receive(struct sophia_9p_client *c)
         c->msize = r.count;
         c->phase = 2;
     }
-    if ((s->type == 104 || s->type == 110) &&
+    if ((s->type == 102 || s->type == 104 || s->type == 110) &&
         (r.type == 7 || (s->type == 110 && r.count < s->count)))
         p9_free_fid(c, s->fid);
     if (s->type == 108) {
@@ -112,7 +119,7 @@ int p9_receive(struct sophia_9p_client *c)
             return SOPHIA_9P_INVALID;
         old->flushing = 0;
         if (old->state == P9_SENT) {
-            if (old->type == 104 || old->type == 110)
+            if (old->type == 102 || old->type == 104 || old->type == 110)
                 p9_free_fid(c, old->fid);
             memset(old, 0, sizeof(*old));
         } else if (old->state == P9_HELD)

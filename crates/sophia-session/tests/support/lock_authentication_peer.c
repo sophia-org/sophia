@@ -1,4 +1,5 @@
-/* Independent public afid + private relay client. No Sophia codec or SDK.
+/* Independent public afid + private relay client. The optional SDK build uses
+ * the pinned C 9P client for the role conversation; the default is raw wire.
  * The protected process obtains the nonce from its own role afid, never argv. */
 #define _POSIX_C_SOURCE 200809L
 #include <assert.h>
@@ -11,11 +12,15 @@
 #include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
+#ifdef SOPHIA_TEST_C_SDK
+#include "sophia_9p_client.h"
+#endif
 
 static unsigned char buf[512];
 static size_t size, reply_size;
 static int channel;
 static unsigned tag;
+static uint32_t role_root = 1, old_afid = 7;
 static void put(uint64_t n, unsigned bytes) {
     while (bytes--) { assert(size < sizeof buf); buf[size++] = n & 255; n >>= 8; }
 }
@@ -60,11 +65,12 @@ static void read_fid(unsigned fid, uint64_t offset, unsigned count, unsigned exp
     begin(116); put(fid, 4); put(offset, 8); put(count, 4); exchange(expected);
 }
 static void open_name(unsigned fid, const char *name, unsigned mode) {
-    begin(110); put(1, 4); put(fid, 4); put(1, 2); string(name); exchange(111); assert(number(7, 2) == 1);
+    begin(110); put(role_root, 4); put(fid, 4); put(1, 2); string(name); exchange(111); assert(number(7, 2) == 1);
     begin(12); put(fid, 4); put(mode, 4); exchange(13);
 }
 static void relay(int fd, unsigned *relay_tag, const unsigned char nonce[32], int first) {
-    int saved_fd = channel; unsigned saved_tag = tag;
+    int saved_fd = channel; unsigned saved_tag = tag; uint32_t saved_root = role_root;
+    role_root = 1;
     channel = fd; tag = *relay_tag;
     if (first) {
         version();
@@ -76,8 +82,50 @@ static void relay(int fd, unsigned *relay_tag, const unsigned char nonce[32], in
     exchange(119); assert(number(7, 4) == 40);
     read_fid(2, 0, 8, 117);
     assert(number(7, 4) == 8 && number(11, 4) == 1 && number(15, 4) == 0);
-    *relay_tag = tag; channel = saved_fd; tag = saved_tag;
+    *relay_tag = tag; channel = saved_fd; tag = saved_tag; role_root = saved_root;
 }
+#ifdef SOPHIA_TEST_C_SDK
+static struct sophia_9p_reply sdk_answer(struct sophia_9p_client *wire, unsigned char *data, size_t count) {
+    struct sophia_9p_reply r;
+    for (;;) {
+        assert(sophia_9p_service(wire, 4096) == 0);
+        int result = sophia_9p_peek(wire, &r);
+        if (result == 0) break;
+        assert(result == SOPHIA_9P_AGAIN);
+        struct timespec delay = {0, 1000000}; nanosleep(&delay, NULL);
+    }
+    if (data) { assert(r.type == 117 && r.count == count); memcpy(data, r.data, count); }
+    assert(sophia_9p_consume(wire, r.handle) == 0);
+    r.data = NULL;
+    return r;
+}
+static void authenticate(int relay_fd, unsigned *relay_tag, int first) {
+    struct sophia_9p_client wire;
+    struct sophia_9p_handle handle;
+    unsigned char storage[12288], challenge[40], status[8];
+    assert(sophia_9p_storage_bytes(4096, 1) == sizeof storage);
+    assert(sophia_9p_init(&wire, channel, 4096, 1, 4, storage, sizeof storage) == 0);
+    assert(sophia_9p_version(&wire, &handle) == 0);
+    assert(sdk_answer(&wire, NULL, 0).type == 101);
+    for (;;) {
+        assert(sophia_9p_auth(&wire, "lock", "lock-provider", &handle, &old_afid) == 0);
+        struct sophia_9p_reply r = sdk_answer(&wire, NULL, 0);
+        if (r.type == 103) { assert(r.qid.type == 8); break; }
+        assert(r.type == 7 && r.error == 11);
+        struct timespec delay = {0, 1000000}; nanosleep(&delay, NULL);
+    }
+    assert(sophia_9p_read(&wire, old_afid, 0, 40, &handle) == 0);
+    sdk_answer(&wire, challenge, sizeof challenge);
+    assert(!memcmp(challenge, "\1\0\0\0\1\0\0\0", 8));
+    relay(relay_fd, relay_tag, challenge + 8, first);
+    assert(sophia_9p_read(&wire, old_afid, 40, 8, &handle) == 0);
+    sdk_answer(&wire, status, sizeof status);
+    assert(!memcmp(status, "\1\0\0\0\0\0\0\0", 8));
+    assert(sophia_9p_attach_with_afid(&wire, old_afid, "lock", "lock-provider", &handle, &role_root) == 0);
+    assert(sdk_answer(&wire, NULL, 0).type == 105);
+    /* Every SDK reply is consumed before raw role-file traffic resumes. */
+}
+#else
 static void authenticate(int relay_fd, unsigned *relay_tag, int first) {
     for (;;) {
         begin(102); put(7, 4); string("lock"); string("lock-provider"); put(UINT32_MAX, 4);
@@ -96,6 +144,7 @@ static void authenticate(int relay_fd, unsigned *relay_tag, int first) {
     assert(number(7, 4) == 8 && number(11, 4) == 1 && number(15, 4) == 0);
     attach(7, 105);
 }
+#endif
 static void mark(const char *path, const char *value) {
     FILE *f = fopen(path, "w"); assert(f); assert(fputs(value, f) >= 0); assert(fclose(f) == 0);
 }
@@ -118,31 +167,37 @@ int main(int argc, char **argv) {
     /* A reset destroys fids and verdicts, but the same launch capability must
        authenticate a fresh attempt on this immutable transport identity. */
     version();
-    read_fid(7, 0, 40, 7); assert(number(7, 4) == 9);
+    read_fid(old_afid, 0, 40, 7); assert(number(7, 4) == 9);
     attach(UINT32_MAX, 7);
     authenticate(relay_fd, &relay_tag, 0);
-    open_name(2, "api", 0); read_fid(2, 0, 128, 117);
+    /* SDK retries may spend numeric fids. Allocate role-file fids after the
+       actual admitted root, not at a guessed offset from the first attempt. */
+    assert(role_root < UINT32_MAX - 6);
+    uint32_t api_fid = role_root + 1, submit_fid = role_root + 2;
+    uint32_t transaction_fid = role_root + 3, events_fid = role_root + 4;
+    uint32_t ack_fid = role_root + 5;
+    open_name(api_fid, "api", 0); read_fid(api_fid, 0, 128, 117);
     unsigned n = (unsigned)number(7, 4); assert(n < 128 && 11 + n <= reply_size);
     char api[129]; memcpy(api, buf + 11, n); api[n] = 0;
     unsigned long long epoch;
     assert(sscanf(api, "sophia-lock-files version=1 epoch=%llu", &epoch) == 1);
-    open_name(3, "submit", 1); open_name(4, "transaction", 2);
-    begin(118); put(4, 4); put(0, 8); put(48, 4);
+    open_name(submit_fid, "submit", 1); open_name(transaction_fid, "transaction", 2);
+    begin(118); put(transaction_fid, 4); put(0, 8); put(48, 4);
     put(48, 4); put(1, 2); put(256, 2); put(epoch, 8); put(1, 8); put(0, 8);
     put(1, 2); put(1, 2); put(0, 2); put(0, 2); put(1, 8);
     exchange(119); assert(number(7, 4) == 48);
-    begin(118); put(3, 4); put(0, 8); put(24, 4); put(epoch, 8); put(1, 8); put(48, 4); put(0, 4);
+    begin(118); put(submit_fid, 4); put(0, 8); put(24, 4); put(epoch, 8); put(1, 8); put(48, 4); put(0, 4);
     exchange(119); assert(number(7, 4) == 24);
-    open_name(5, "events", 0); read_fid(5, 0, 480, 117);
+    open_name(events_fid, "events", 0); read_fid(events_fid, 0, 480, 117);
     n = (unsigned)number(7, 4); assert(n > 0 && 11 + n <= reply_size);
     size_t at = 11; uint64_t sequence = 0;
     while (at < 11 + n) {
         unsigned length = (unsigned)number(at, 4); assert(length >= 32 && at + length <= 11 + n);
         assert(number(at + 8, 8) == epoch); sequence = number(at + 24, 8); at += length;
     }
-    open_name(6, "ack", 1);
-    begin(118); put(6, 4); put(0, 8); put(16, 4); put(epoch, 8); put(sequence, 8); exchange(119);
-    begin(116); put(5, 4); put(n, 8); put(480, 4); send_request();
+    open_name(ack_fid, "ack", 1);
+    begin(118); put(ack_fid, 4); put(0, 8); put(16, 4); put(epoch, 8); put(sequence, 8); exchange(119);
+    begin(116); put(events_fid, 4); put(n, 8); put(480, 4); send_request();
     mark(argv[2], "waiting\n");
     /* Revocation must wake/refuse the retained read or close the connection.
        It cannot produce another event under the retired launch. */
