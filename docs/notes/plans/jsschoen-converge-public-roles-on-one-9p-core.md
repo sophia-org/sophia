@@ -212,6 +212,10 @@ proof for each recipient path as that frontend becomes available. t255 may
 retire the old envelope only after all its existing production callers have
 accepted replacements, regardless of this split.
 
+The [signed foundation result and exit reconciliation](../investigations/rd9nia0s-several-x-listeners-and-confined-application-launch-validation.md#x-failure-migration-and-t315-reconciliation)
+bind the scoped implementation and controls to `a10b61339`. Installation,
+t142 attended acceptance, the t319 recipient and t255 retirement remain separate.
+
 ## t316
 
 Rebuild the `sophia-9p-authority` scaffold as an export on the core. Delete

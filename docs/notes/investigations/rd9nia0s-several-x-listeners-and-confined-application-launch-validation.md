@@ -319,6 +319,55 @@ tests supply owner facts; they do not provide installed-session paste evidence.
 Master and the live session remain unchanged, and t142 attended acceptance
 and t255 legacy-envelope retirement remain separate.
 
+## X failure migration and t315 reconciliation
+
+Signed `a10b61339` adds real files-coordinator cases for source disconnect and
+a SelectionNotify naming a property that was never supplied, for both
+CLIPBOARD and PRIMARY. The first focused run passed ten cases and failed the
+two missing-property cases: source capture propagated an error out of protocol
+routing and the requestor closed before its failure notification. The repair
+contains failed capture to the conversion, removes proxy property storage,
+and consumes the proxy notification. No payload reaches the executor. The
+coordinator's existing two-second deadline delivers a no-property failure;
+the tests then complete another paste on the same clients. This is source
+capture failure coverage, not an injected final property-install failure.
+
+All twelve focused files-coordinator cases pass. Restoring the old production
+capture propagation with the final fixtures makes both missing-property cases
+fail with a closed requestor (exit 101, two failed tests). The repaired bytes
+are restored before the repository gate. The sealed control package is
+`~/.local/state/sophia/development-evidence/t315-x-failures-control01`, manifest
+SHA-256 `0f4fc33d7cc5c0cd9ce1b97c46ea185ba885680a0df1db6cdac90ee4228f003a`.
+
+The isolated `cargo xtask check` exits zero. Its 549 libtest summaries report
+7,617 passes, zero failures and 104 ignored tests, including nested child
+output. The complete two-file delta from `1b4e91e81` to `a10b61339` matches the
+dynamically captured modified/untracked file set and hashes. The development
+package is `~/.local/state/sophia/development-evidence/t315-x-failures-dev01`;
+its verified self-excluding manifest SHA-256 is
+`414644c297693abe3099fb170417da9892c32be05b1507409a2feecd0934907b`.
+It retains the initial failure, corrected focused run, final gate and actual
+Cargo binary path/hash; no binary is copied.
+
+The t315 exit is reconciled at that signed candidate:
+
+| Obligation | Executed evidence and boundary |
+| --- | --- |
+| Bounded request records, no payload/descriptor/object identity | Protocol codec and KDL schema checks, including padding and truncation; payload uses the separate bounded upload file. |
+| Exact admission, foreign refusal, owner-derived permission and generation | Direct export tests, private same-kernel-peer wire refusal, and independent C malformed/stale/foreign requests. Protected context is supplied in fixtures; the live in-process requester uses the accepted Session-custody amendment, not a protected-process claim. |
+| Submitted is not execution; one terminal settlement | Export handoff and duplicate-settlement tests; queued disconnect reclaims work, issued disconnect blocks replacement until settlement; C and Rust wire peers distinguish recipient success/failure. |
+| Active/history/journal bounds and retry custody | Separate capacity tests and record/byte reservation controls above; settled IDs and Qids survive reconnect, and history exhaustion refuses without implicit generation rollover. |
+| Grant lifetime and retained-fid revocation | Generic recipient fixture exercises source generation, deadline, both namespace departures, broker restart and lock/unlock; core read-time-check mutation fails retained and waiting-read assertions. Supplied recipient owner, not a production application frontend. |
+| Independent clients and refusal deadlines | C's independent portal codec over the generic C SDK, Rust SDK client, final-ACK and withheld-ACK cases, and compiled stale/corrupt peer controls. |
+| Existing X translation outcomes | Files joins cover CLIPBOARD/PRIMARY success, TARGETS, Denied, participation refusal, expiry, stale owner, lock cycle, source disconnect and capture failure. Failures yield no-property SelectionNotify; internal error labels are not a public reason-code contract. The older direct executor tests remain in the gate. |
+| Migration ownership | Session uses the files coordinator; the legacy coordinator and socket tests remain as the t255 retirement inventory. No old caller or behavior is removed here. |
+
+This satisfies the scoped t315 foundation. t319 still owns the first real new
+9P recipient transfer; this result does not claim a complete production
+portal-files-to-9P-application handoff. t142 still requires installed, attended
+classic/confined paste and departure acceptance, and t255 owns retirement on
+the accepted desktop. No merge, installation or live-session change was made.
+
 ## Question
 
 Can t142 serve several configured X groups from one synchronous frontend while

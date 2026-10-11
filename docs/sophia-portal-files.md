@@ -230,7 +230,15 @@ journal-record and journal-byte limits. Record and byte reservation mutations
 must each fail their corresponding pressure test; owner facts are supplied.
 The [capacity validation record](notes/investigations/rd9nia0s-several-x-listeners-and-confined-application-launch-validation.md#separate-portal-capacity-boundaries)
 binds those controls and the repository gate to the signed candidate. This
-does not replace the remaining X failure-path migration evidence.
+does not replace X failure-path migration evidence, recorded in the
+[foundation reconciliation](notes/investigations/rd9nia0s-several-x-listeners-and-confined-application-launch-validation.md#x-failure-migration-and-t315-reconciliation).
+
+The live X coordinator contains a refused or malformed source capture to that
+conversion. It discards proxy property storage, passes no payload to execution,
+and ends the request through its bounded failure path. CLIPBOARD and PRIMARY
+wire tests require a no-property SelectionNotify and successful subsequent
+conversion. This is distinct from final property-install fault injection and
+does not assert a public internal-error reason code.
 
 The independent C conformance peer in `sophia-conformance/tests/portal_files.rs`
 uses the generic C SDK transport and its own portal record codec. It exercises
