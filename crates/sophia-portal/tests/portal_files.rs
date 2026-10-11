@@ -10,6 +10,9 @@ type Node = PortalFileNode;
 #[path = "support/portal_file_wire.rs"]
 mod wire;
 
+#[path = "support/portal_file_capacity.rs"]
+mod capacity;
+
 struct Authority {
     revision: u64,
     rights: bool,
