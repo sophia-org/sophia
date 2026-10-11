@@ -1,6 +1,13 @@
 /// Decoded Randr requests; payloads retain their protocol representation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum XRandrRequest {
+    RandrListOutputProperties {
+        output: u32,
+    },
+    RandrQueryOutputProperty {
+        output: u32,
+        property: XAtom,
+    },
     RandrQueryVersion {
         major_version: u32,
         minor_version: u32,

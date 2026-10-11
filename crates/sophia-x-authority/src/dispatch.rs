@@ -36,6 +36,7 @@ include!("dispatch/extensions/glx.rs");
 include!("dispatch/extensions/glx_configs.rs");
 include!("dispatch/extensions/present.rs");
 include!("dispatch/extensions/randr.rs");
+include!("dispatch/extensions/randr_properties.rs");
 include!("dispatch/extensions/shm.rs");
 include!("dispatch/extensions/shm_image.rs");
 include!("dispatch/extensions/sync.rs");
@@ -462,7 +463,7 @@ fn extension_query_result(name: &str, injection: XTestAdmission) -> XExtensionQu
             present: true,
             major_opcode: X_RANDR_MAJOR_OPCODE,
             first_event: crate::X_RANDR_FIRST_EVENT,
-            first_error: 0,
+            first_error: crate::X_RANDR_FIRST_ERROR,
         },
         crate::X_KEYBOARD_EXTENSION_NAME => XExtensionQueryResult {
             present: true,
@@ -684,7 +685,7 @@ fn x_client_outputs_from_property_read(
 
 fn randr_output_property_from_read(
     context: &XDispatchContext,
-    output: u32,
+    long_offset: u32,
     result: Result<crate::XPropertyReadReply, XPropertyError>,
 ) -> XClientOutput {
     match result {
@@ -698,7 +699,7 @@ fn randr_output_property_from_read(
         Err(error) => XClientOutput::Error(crate::XClientError {
             code: x_error_from_property_read(error),
             sequence: context.sequence,
-            resource_id: output,
+            resource_id: long_offset,
             minor_code: crate::X_RANDR_GET_OUTPUT_PROPERTY_MINOR_OPCODE.into(),
             major_code: context.major_opcode,
         }),

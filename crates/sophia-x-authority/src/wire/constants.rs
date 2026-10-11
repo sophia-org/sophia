@@ -141,6 +141,12 @@ pub const X_MIT_SHM_CREATE_SEGMENT_MINOR_OPCODE: u8 = 7;
 pub const X_RANDR_EXTENSION_NAME: &str = "RANDR";
 pub const X_RANDR_MAJOR_OPCODE: u8 = 132;
 pub const X_RANDR_FIRST_EVENT: u8 = 64;
+// Reserve RANDR's complete 1.5 error range after GLX's complete range,
+// including errors neither extension currently emits. Output is offset zero.
+pub const X_RANDR_FIRST_ERROR: u8 = X_GLX_FIRST_ERROR + X_GLX_ERROR_COUNT;
+pub const X_RANDR_ERROR_COUNT: u8 = 4;
+pub const X_RANDR_LIST_OUTPUT_PROPERTIES_MINOR_OPCODE: u8 = 10;
+pub const X_RANDR_QUERY_OUTPUT_PROPERTY_MINOR_OPCODE: u8 = 11;
 pub const X_RANDR_QUERY_VERSION_MINOR_OPCODE: u8 = 0;
 pub const X_RANDR_SELECT_INPUT_MINOR_OPCODE: u8 = 4;
 pub const X_RANDR_GET_SCREEN_SIZE_RANGE_MINOR_OPCODE: u8 = 6;

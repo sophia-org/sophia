@@ -23,6 +23,8 @@ pub enum XErrorCode {
     BadImplementation,
     /// XInput's BadDevice, at the extension's first error code.
     XiBadDevice,
+    /// RANDR's Output error, relative to its advertised error base.
+    RandrBadOutput,
     /// RENDER's own errors, at `X_RENDER_FIRST_ERROR` plus each one's offset.
     /// The protocol defines five, in this order.
     RenderPictFormat,
@@ -57,6 +59,7 @@ impl XErrorCode {
             Self::BadLength => 16,
             Self::BadImplementation => 17,
             Self::XiBadDevice => crate::X_INPUT_FIRST_ERROR,
+            Self::RandrBadOutput => crate::X_RANDR_FIRST_ERROR,
             Self::RenderPictFormat => X_RENDER_FIRST_ERROR + X_RENDER_PICT_FORMAT_ERROR_OFFSET,
             Self::RenderPicture => X_RENDER_FIRST_ERROR + X_RENDER_PICTURE_ERROR_OFFSET,
             Self::RenderPictOp => X_RENDER_FIRST_ERROR + X_RENDER_PICT_OP_ERROR_OFFSET,
