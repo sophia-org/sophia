@@ -2,17 +2,17 @@
 //! Session and spoken to over a private socket pair, and replaced by the
 //! supervisor whenever it fails.
 //!
-//! Each attempt runs on the supervisor's thread, because a PAM verdict can
-//! take seconds (the failure delay alone is two). The owner loop hands it an
-//! attempt and polls for its verdict; the thread rings the owner's wake when
-//! one arrives.
+//! The supervisor's thread advances the shared client without waiting for a
+//! PAM verdict. The owner loop hands it an attempt and polls for its verdict;
+//! the thread rings the owner's wake when one arrives.
 
 use super::SessionFactotum;
 use crate::session_lock_input::SessionUnlockAuthenticator;
 use crate::session_unlock_supervisor::{
     SupervisedAuthenticator, UnlockAgent, UnlockAgentLauncher, UnlockSupervision,
 };
-use sophia_factotum::client::{LoginVerdict, UnlockClient};
+use sophia_factotum::client::{LoginVerdict, SessionClient};
+use sophia_factotum::launch::queue::{self, ConnectionOwner, Ingress};
 use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixStream;
 use std::process::{Child, Command, Stdio};
@@ -27,9 +27,11 @@ struct FactotumLauncher(SessionFactotum);
 
 struct FactotumAgent {
     process: Child,
-    client: UnlockClient,
+    owner: ConnectionOwner,
+    ingress: Ingress,
     service: String,
     user: String,
+    local_refusal: bool,
 }
 
 impl UnlockAgentLauncher for FactotumLauncher {
@@ -56,13 +58,18 @@ impl UnlockAgentLauncher for FactotumLauncher {
             .map_err(|error| error.to_string())?;
         // An agent that refuses its helper or its peer exits before it
         // answers; it is never reported available.
-        match UnlockClient::over(session_end, HANDSHAKE) {
-            Ok(client) => Ok(FactotumAgent {
-                process,
-                client,
-                service: factotum.pam_service.clone(),
-                user: factotum.user.clone(),
-            }),
+        match SessionClient::over(session_end, HANDSHAKE) {
+            Ok(client) => {
+                let (ingress, owner) = queue::channel();
+                Ok(FactotumAgent {
+                    process,
+                    owner: owner.connect(client),
+                    ingress,
+                    service: factotum.pam_service.clone(),
+                    user: factotum.user.clone(),
+                    local_refusal: false,
+                })
+            }
             Err(error) => {
                 let _ = process.kill();
                 let _ = process.wait();
@@ -73,15 +80,41 @@ impl UnlockAgentLauncher for FactotumLauncher {
 }
 
 impl UnlockAgent for FactotumAgent {
-    fn login(&mut self, secret: &[u8]) -> Result<bool, String> {
-        match self
-            .client
-            .login(&self.service, &self.user, secret, Instant::now() + LOGIN)
-        {
-            Ok(LoginVerdict::Accepted) => Ok(true),
-            Ok(LoginVerdict::Refused(_)) => Ok(false),
+    fn launch_ingress(&self) -> Option<Ingress> {
+        Some(self.ingress.clone())
+    }
+    fn begin_login(&mut self, secret: &[u8]) -> Result<(), String> {
+        let now = Instant::now();
+        match self.owner.client_mut().begin_login(
+            &self.service,
+            &self.user,
+            secret,
+            now,
+            now + LOGIN,
+        ) {
+            Ok(()) => Ok(()),
+            // A local protocol-bound refusal is a rejected login, not an
+            // unavailable agent. The input editor can hold more than PAM's
+            // 512-byte response limit.
+            Err(sophia_factotum::client::ClientError::InvalidInput) => {
+                self.local_refusal = true;
+                Ok(())
+            }
             Err(error) => Err(format!("{error:?}")),
         }
+    }
+
+    fn poll_login(&mut self) -> Result<Option<bool>, String> {
+        let now = Instant::now();
+        self.owner.poll(now).map_err(|error| format!("{error:?}"))?;
+        if std::mem::take(&mut self.local_refusal) {
+            return Ok(Some(false));
+        }
+        self.owner
+            .client_mut()
+            .take_login(now)
+            .map(|verdict| verdict.map(|v| v == LoginVerdict::Accepted))
+            .map_err(|error| format!("{error:?}"))
     }
 
     fn gone(&mut self) -> bool {

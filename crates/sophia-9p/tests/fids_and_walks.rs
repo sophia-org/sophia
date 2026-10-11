@@ -16,9 +16,9 @@ const O_DIRECTORY: u32 = 0o200000;
 const O_LARGEFILE_CLOEXEC: u32 = 0o100000 | 0o2000000;
 
 #[test]
-fn attach_refuses_an_authentication_fid_a_used_fid_and_nofid() {
+fn attach_refuses_an_unknown_authentication_fid_a_used_fid_and_nofid() {
     let mut harness = Harness::attached();
-    assert_eq!(harness.errno(&tattach(1, 5, 7, b"", b"")), EINVAL);
+    assert_eq!(harness.errno(&tattach(1, 5, 7, b"", b"")), EBADF);
     assert_eq!(harness.errno(&tattach(1, 0, NOFID, b"", b"")), EBADF);
     assert_eq!(harness.errno(&tattach(1, NOFID, NOFID, b"", b"")), EBADF);
     // The export sees names as data and refuses an export it does not have.

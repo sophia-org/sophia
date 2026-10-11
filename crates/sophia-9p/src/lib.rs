@@ -20,6 +20,7 @@
 //!
 //! The older `sophia-9p-authority` scaffold is unrelated and unused.
 
+pub mod authentication;
 pub mod connection;
 pub mod export;
 pub mod journal;

@@ -19,14 +19,14 @@ impl Tag {
 pub struct Fid(pub u32);
 
 impl Fid {
-    /// No fid: the only valid authentication fid, since no export authenticates
-    /// through the protocol.
+    /// No fid; used when attaching to an export that does not require auth.
     pub const NOFID: Self = Self(u32::MAX);
 }
 
-/// What a qid names. Only the two node kinds an export serves exist here.
+/// What a qid names. Authentication fids are distinct from exported nodes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum QidKind {
+    Auth,
     Directory,
     File,
 }
@@ -35,6 +35,7 @@ impl QidKind {
     /// The type byte on the wire.
     pub const fn wire(self) -> u8 {
         match self {
+            Self::Auth => 0x08,
             Self::Directory => 0x80,
             Self::File => 0x00,
         }
@@ -278,6 +279,12 @@ impl Default for Limits {
 /// A decoded request. Byte strings borrow the frame they were read from.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Request<'frame> {
+    Auth {
+        afid: Fid,
+        uname: &'frame [u8],
+        aname: &'frame [u8],
+        n_uname: u32,
+    },
     Version {
         msize: u32,
         version: &'frame [u8],
@@ -344,6 +351,7 @@ pub enum Reply {
         version: &'static [u8],
     },
     Lerror(Errno),
+    Auth(Qid),
     Attach(Qid),
     Flush,
     Walk(Vec<Qid>),

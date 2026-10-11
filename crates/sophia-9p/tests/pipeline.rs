@@ -861,13 +861,15 @@ fn a_closed_server_surfaces_as_an_io_error() {
     let mut pipeline = client.unwrap();
     let (tag, _root) = pipeline.attach(b"", b"").unwrap();
     // Depending on whether the write or the read notices first, a closed
-    // peer surfaces as either a broken pipe or an end of file; either way it
-    // is an `Io` error, and it poisons the pipeline.
+    // peer can surface as a broken pipe, EOF, or reset when it closes with
+    // unread request bytes. All are `Io` errors that poison the pipeline.
     match pipeline.wait(tag, deadline()) {
         Err(PipelineError::Io(kind)) => assert!(
             matches!(
                 kind,
-                std::io::ErrorKind::BrokenPipe | std::io::ErrorKind::UnexpectedEof
+                std::io::ErrorKind::BrokenPipe
+                    | std::io::ErrorKind::UnexpectedEof
+                    | std::io::ErrorKind::ConnectionReset
             ),
             "unexpected io error kind: {kind:?}"
         ),

@@ -285,3 +285,19 @@ API compatibility with 0.2.0: no public item was removed or changed. The
 additions are the new crate and `write_secret`, `scrubbing_output` and
 `output_capacity`. `Pipeline` gains a `Drop` impl, but its fields are
 private, so no caller can move out of it and no existing code breaks.
+
+## t317 authentication foundation (development)
+
+The authentication records and pipeline operations were developed alongside
+Sophia's t317 candidate on base
+`e855fd75acd8ac38b7b779cc5377acd5d2c0c223`. The profile copy comes from that
+candidate, not the base commit. Sophia's subsequent immutable SDK pin binds
+the two trees without a circular commit reference.
+
+This adds Tauth/Rauth and explicit-afid attach, including bounded fid and tag
+custody through refusal and both flush orderings. Scripted peers check exact
+wire fields and reject malformed authentication qids. The closed-peer test
+also accepts ConnectionReset, which is a valid result when a peer closes with
+unread request bytes. There is no role-specific authentication policy here.
+Public enums gain variants, so exhaustive downstream matches must be updated;
+this is a development revision, not a new compatibility release.

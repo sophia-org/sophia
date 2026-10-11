@@ -1,5 +1,5 @@
 //! Narrow Linux ABI operations absent from the runtime's safe syscall
-//! dependency: socket peer queries and one child-process descriptor hook.
+//! dependency: socket peer queries and child-process descriptor hooks.
 use std::io;
 use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 
@@ -163,17 +163,54 @@ pub fn cloexec_inherited_fds_on_exec(command: &mut std::process::Command) {
     // errno: no allocation, logging, locking or panicking path, and it
     // captures nothing.
     unsafe {
-        command.pre_exec(|| {
-            let result = libc::syscall(
-                libc::SYS_close_range,
-                3_u32,
-                u32::MAX,
-                libc::CLOSE_RANGE_CLOEXEC,
-            );
-            if result != 0 {
+        command.pre_exec(mark_non_stdio_cloexec);
+    }
+}
+
+/// Retain exactly this owned descriptor above stdio across exec. The Command
+/// owns it until dropped. All other descriptors above stdio become CLOEXEC in
+/// the child only, including any unintentionally inheritable parent descriptor.
+/// Register this last; a later hook must not create another inheritance path.
+/// The caller owns the launch policy and must use a fresh descriptor per launch.
+pub fn inherit_one_fd_on_exec(
+    command: &mut std::process::Command,
+    descriptor: OwnedFd,
+) -> io::Result<()> {
+    use std::os::unix::process::CommandExt as _;
+    if descriptor.as_raw_fd() < 3 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "handoff overlaps stdio",
+        ));
+    }
+    // SAFETY: capture keeps the fd alive in Command; the forked child performs
+    // only async-signal-safe syscalls. No allocation, locks or logging occur.
+    // No descriptor is moved over std's exec-error pipe: it keeps its own fd.
+    unsafe {
+        command.pre_exec(move || {
+            mark_non_stdio_cloexec()?;
+            if libc::fcntl(descriptor.as_raw_fd(), libc::F_SETFD, 0) < 0 {
                 return Err(io::Error::last_os_error());
             }
             Ok(())
         });
     }
+    Ok(())
+}
+
+/// Called only from the child pre-exec hooks above.
+fn mark_non_stdio_cloexec() -> io::Result<()> {
+    // SAFETY: close_range with CLOEXEC changes flags, not ownership or memory.
+    let result = unsafe {
+        libc::syscall(
+            libc::SYS_close_range,
+            3_u32,
+            u32::MAX,
+            libc::CLOSE_RANGE_CLOEXEC,
+        )
+    };
+    if result != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
 }

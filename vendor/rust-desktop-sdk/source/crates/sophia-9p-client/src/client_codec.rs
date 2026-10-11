@@ -35,6 +35,8 @@ pub(crate) const TLOPEN: u8 = 12;
 pub(crate) const RLOPEN: u8 = 13;
 pub(crate) const TVERSION: u8 = 100;
 pub(crate) const RVERSION: u8 = 101;
+pub(crate) const TAUTH: u8 = 102;
+pub(crate) const RAUTH: u8 = 103;
 pub(crate) const TATTACH: u8 = 104;
 pub(crate) const RATTACH: u8 = 105;
 pub(crate) const TFLUSH: u8 = 108;
@@ -144,6 +146,29 @@ pub(crate) fn attach_body(
     put_string(&mut body, aname)?;
     body.extend_from_slice(&NOFID.to_le_bytes());
     Ok(body)
+}
+
+/// Tauth carries the same claims as attach, but no root fid.
+pub(crate) fn auth_body(afid: u32, uname: &[u8], aname: &[u8]) -> Result<Vec<u8>, &'static str> {
+    let mut body = afid.to_le_bytes().to_vec();
+    put_string(&mut body, uname)?;
+    put_string(&mut body, aname)?;
+    body.extend_from_slice(&NOFID.to_le_bytes());
+    Ok(body)
+}
+
+/// QTAUTH is accepted only in Rauth, never as an ordinary file/directory.
+pub(crate) fn decode_rauth(body: &[u8]) -> Option<Qid> {
+    let mut fields = Fields(body);
+    if fields.u8()? != 0x08 {
+        return None;
+    }
+    let qid = Qid {
+        kind: QidKind::Auth,
+        version: fields.u32()?,
+        path: fields.u64()?,
+    };
+    fields.0.is_empty().then_some(qid)
 }
 
 /// `Twalk fid[4] newfid[4] nwname[2] nwname*(wname[s])`. Callers bound

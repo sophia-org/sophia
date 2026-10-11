@@ -75,6 +75,15 @@ pub struct Attachment<Node> {
     pub epoch: Epoch,
 }
 
+/// An authentication conversation, already open for bounded reads/writes.
+/// Its node and handle are released by the ordinary fid custody path.
+pub struct AuthAttachment<Node, Handle> {
+    pub node: Node,
+    pub handle: Handle,
+    pub epoch: Epoch,
+    pub qid_path: u64,
+}
+
 /// The operation a check is asked about.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Operation {
@@ -138,6 +147,34 @@ pub trait Export {
     const WRITES_IN_PLACE: bool = false;
 
     fn attach(&mut self, context: &AttachContext<'_>) -> Result<Attachment<Self::Node>, Errno>;
+
+    /// Called only after afid and reply capacity checks. Claims select no
+    /// authority. Default exports do not provide authentication conversations.
+    fn auth(
+        &mut self,
+        _context: &AttachContext<'_>,
+        _afid: crate::Fid,
+    ) -> Result<AuthAttachment<Self::Node, Self::Handle>, Errno> {
+        Err(Errno::EOPNOTSUPP)
+    }
+
+    /// The owner checks exact claims, verified result, immutable transport
+    /// identity, live launch custody and policy. Root/reply capacity is already
+    /// reserved; success must publish admission atomically with this root.
+    fn attach_authenticated(
+        &mut self,
+        _context: &AttachContext<'_>,
+        _node: &Self::Node,
+        _handle: &mut Self::Handle,
+    ) -> Result<Attachment<Self::Node>, Errno> {
+        Err(Errno::EACCES)
+    }
+
+    /// All fids have been released. Cancel attempts, preserving the pinned
+    /// identity, adoption deadline and lifetime attempt budget.
+    fn wire_reset(&mut self, _connection: ConnectionId) {}
+    /// The transport, unlike Tversion's wire state, is now permanently gone.
+    fn connection_closed(&mut self, _connection: ConnectionId) {}
 
     /// Whether this operation may proceed under its epoch. Asked before every
     /// operation on a fid except release, for every node a walk reaches, and

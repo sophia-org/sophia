@@ -47,6 +47,8 @@ pub mod input_delivery;
 pub mod input_latency_samples;
 pub mod input_proof;
 #[cfg(feature = "native-session")]
+pub mod launch_authentication;
+#[cfg(feature = "native-session")]
 pub mod live_output_authority;
 pub mod native_output_completion;
 pub mod private_input;

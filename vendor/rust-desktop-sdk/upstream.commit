@@ -1,24 +1,14 @@
-tree e2aacd58ebed6eee294f838e5e7414abe43b6596
-parent 0538cade3da286a7607cdeacb7305a99b8034528
-author Mason Green <mason@greenm01.net> 1791072228 -0400
-committer Mason Green <mason@greenm01.net> 1791072584 -0400
+tree 5cfe275709df370383de506f73256d9344d2badd
+parent a111b5590d27fe2dc079220e821f0327f47baefb
+author Mason Green <mason@greenm01.net> 1791751099 -0400
+committer Mason Green <mason@greenm01.net> 1791751099 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCasGZSBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGISNAD9GHlE9K9ZZcpjZ6bJQAVk
- /nsWu+ZFwnAx9QEcWhMyThAA/1wcJKNKp59NsjqVjcjg6j5wbpepd7iOSGPjkRDN
- zysL
- =urq6
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCasvzuxsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKiHgD7BkzrauFvOsgs94NEgTS5
+ oVHLUkc29JV8EHwG+qxSpP8A/iJmoAnE6iQnazoVddLFCEBLs+tUWJ34aImOTDg4
+ +/sD
+ =TUWo
  -----END PGP SIGNATURE-----
 
-Release Rust SDK 0.3.0 with an experimental lock provider codec
-
-Adds the sophia-lock-protocol crate, a codec with no client, and
-Pipeline::write_secret with its zeroing guarantees in sophia-9p-client.
-The release also carries the WM contract documents imported since 0.2.0.
-Every spec copy is byte-identical at Sophia's signed master merge
-61d545c90 (t294). The lock contract still marks itself revision 1 (draft),
-so the lock codec is experimental until Sophia accepts it explicitly.
-
-No public item was removed or changed. Pipeline gains a Drop impl, but its
-fields are private.
+Add experimental 9P authentication records and pipeline operations

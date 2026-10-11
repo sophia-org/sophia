@@ -89,6 +89,7 @@ const S_IFDIR: u32 = 0o040000;
 const S_IFREG: u32 = 0o100000;
 
 struct FidState<Node, Handle> {
+    auth: bool,
     node: Node,
     /// The attach root this fid descends from, which `..` cannot leave.
     root: Node,
@@ -292,6 +293,9 @@ impl<E: Export> Connection<E> {
     /// Ends the connection: waiting reads are dropped unanswered and every
     /// fid is released to the export.
     pub fn close(&mut self, export: &mut E) {
+        if self.closed {
+            return;
+        }
         // A write received in place is cut off: nothing of it is committed.
         self.in_place = None;
         self.reset(export);
@@ -299,6 +303,7 @@ impl<E: Export> Connection<E> {
         self.output.clear();
         self.unwritten.clear();
         self.closed = true;
+        export.connection_closed(self.id);
     }
 
     fn frame_limit(&self) -> u32 {
@@ -413,6 +418,12 @@ impl<E: Export> Connection<E> {
         request: Request<'_>,
     ) -> Result<Option<Reply>, Fatal> {
         let reply = match request {
+            Request::Auth {
+                afid,
+                uname,
+                aname,
+                n_uname,
+            } => self.auth(export, afid, uname, aname, n_uname),
             Request::Version { msize, version } => self.version(export, msize, version),
             Request::Attach {
                 fid,
@@ -472,6 +483,55 @@ impl<E: Export> Connection<E> {
         for (_, state) in std::mem::take(&mut self.fids) {
             export.release(state.node, state.open.map(|opened| opened.handle));
         }
+        export.wire_reset(self.id);
+    }
+
+    fn auth(
+        &mut self,
+        export: &mut E,
+        afid: Fid,
+        uname: &[u8],
+        aname: &[u8],
+        n_uname: u32,
+    ) -> Reply {
+        if afid == Fid::NOFID || self.fids.contains_key(&afid) {
+            return Reply::Lerror(Errno::EBADF);
+        }
+        if self.fids.len() >= self.limits.max_fids() {
+            return Reply::Lerror(Errno::EMFILE);
+        }
+        let context = AttachContext {
+            connection: self.id,
+            peer: self.peer,
+            uname,
+            aname,
+            n_uname,
+        };
+        match export.auth(&context, afid) {
+            Ok(auth) => {
+                let qid = crate::Qid {
+                    kind: crate::QidKind::Auth,
+                    version: 0,
+                    path: auth.qid_path,
+                };
+                self.fids.insert(
+                    afid,
+                    FidState {
+                        auth: true,
+                        root: auth.node.clone(),
+                        node: auth.node,
+                        epoch: auth.epoch,
+                        open: Some(Opened {
+                            handle: auth.handle,
+                            access: OpenAccess::ReadWrite,
+                            kind: NodeKind::File,
+                        }),
+                    },
+                );
+                Reply::Auth(qid)
+            }
+            Err(error) => Reply::Lerror(error),
+        }
     }
 
     fn attach(
@@ -486,9 +546,6 @@ impl<E: Export> Connection<E> {
         if fid == Fid::NOFID || self.fids.contains_key(&fid) {
             return Reply::Lerror(Errno::EBADF);
         }
-        if afid != Fid::NOFID {
-            return Reply::Lerror(Errno::EINVAL);
-        }
         if self.fids.len() >= self.limits.max_fids() {
             return Reply::Lerror(Errno::EMFILE);
         }
@@ -499,12 +556,24 @@ impl<E: Export> Connection<E> {
             aname,
             n_uname,
         };
-        match export.attach(&context) {
+        let attachment = if afid == Fid::NOFID {
+            export.attach(&context)
+        } else {
+            let Some(auth) = self.fids.get_mut(&afid).filter(|f| f.auth) else {
+                return Reply::Lerror(Errno::EBADF);
+            };
+            let Some(opened) = auth.open.as_mut() else {
+                return Reply::Lerror(Errno::EBADF);
+            };
+            export.attach_authenticated(&context, &auth.node, &mut opened.handle)
+        };
+        match attachment {
             Ok(attachment) => {
                 let qid = export.describe(&attachment.root, None).qid();
                 self.fids.insert(
                     fid,
                     FidState {
+                        auth: false,
                         node: attachment.root.clone(),
                         root: attachment.root,
                         epoch: attachment.epoch,
@@ -574,6 +643,7 @@ impl<E: Export> Connection<E> {
                 self.fids.insert(
                     newfid,
                     FidState {
+                        auth: false,
                         node,
                         root,
                         epoch,
@@ -828,6 +898,9 @@ impl<E: Export> Connection<E> {
         let Some(state) = self.fids.get(&fid) else {
             return Reply::Lerror(Errno::EBADF);
         };
+        if state.auth {
+            return Reply::Lerror(Errno::EOPNOTSUPP);
+        }
         if let Err(errno) = self.check(export, state.epoch, &state.node, Operation::Getattr) {
             return Reply::Lerror(errno);
         }

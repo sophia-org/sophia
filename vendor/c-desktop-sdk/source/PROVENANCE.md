@@ -469,3 +469,11 @@ borrow release, wrong offsets and ignoring cancellation) fail named assertions.
 The strict C suites, generator checks and all suites under clang ASan/UBSan
 pass. Production integration and device throughput are separate Sophia gates;
 this record makes no throughput claim.
+
+## t317 profile checkpoint
+
+Only the 9P profile copy and its digest change, alongside this provenance and
+the explicit coverage limit. The profile is Sophia's t317 candidate on base
+`e855fd75acd8ac38b7b779cc5377acd5d2c0c223`, not that base's profile. Sophia's
+subsequent immutable SDK pin binds the candidate trees. No C implementation
+or public API changes; Tauth and launch authentication remain unimplemented.

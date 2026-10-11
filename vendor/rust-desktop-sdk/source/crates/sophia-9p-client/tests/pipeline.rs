@@ -14,6 +14,9 @@ use std::time::{Duration, Instant};
 use sophia_9p_client::pipeline::{Pipeline, PipelineError, PipelineLimits, Reply};
 use sophia_9p_client::records::{Errno, Fid, Qid, QidKind, Tag};
 
+#[path = "support/authentication_pipeline.rs"]
+mod authentication;
+
 // ---- a scripted peer, written from the specification ----
 
 /// One request as the scripted peer reads it, or `None` once the client has
@@ -768,11 +771,14 @@ fn a_closed_server_surfaces_as_an_io_error() {
     let mut pipeline = client.unwrap();
     let (tag, _root) = pipeline.attach(b"", b"").unwrap();
     // Depending on whether the write or the read notices first, a closed
-    // peer surfaces as either a broken pipe or an end of file; either way it
-    // is an `Io` error, and it poisons the pipeline.
+    // peer can surface as a broken pipe, EOF, or reset when it closes with
+    // unread request bytes. All are `Io` errors that poison the pipeline.
     match pipeline.wait(tag, deadline()) {
         Err(PipelineError::Io(kind)) => assert!(
-            matches!(kind, ErrorKind::BrokenPipe | ErrorKind::UnexpectedEof),
+            matches!(
+                kind,
+                ErrorKind::BrokenPipe | ErrorKind::UnexpectedEof | ErrorKind::ConnectionReset
+            ),
             "unexpected io error kind: {kind:?}"
         ),
         other => panic!("expected an Io error, got {other:?}"),

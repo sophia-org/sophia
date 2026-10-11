@@ -44,6 +44,9 @@ impl ProcessLaunchSpec {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProcessSupervisorError {
+    LaunchChannelRequired,
+    StaleLaunchGeneration,
+    ProtectedLaunchRequired,
     WrongProcess {
         expected: SupervisedProcessKind,
         actual: SupervisedProcessKind,
@@ -68,6 +71,11 @@ pub enum ProcessSupervisorError {
 impl fmt::Display for ProcessSupervisorError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::LaunchChannelRequired => f.write_str("a fresh launch channel is required"),
+            Self::StaleLaunchGeneration => f.write_str("launch generation was already spent"),
+            Self::ProtectedLaunchRequired => {
+                f.write_str("launch channel requires a protection domain")
+            }
             Self::WrongProcess { expected, actual } => write!(
                 f,
                 "supervisor command for {:?} cannot be applied to {:?}",
@@ -104,6 +112,7 @@ pub struct ProcessSupervisor {
     child: Option<ManagedChild>,
     termination_deadline: Option<Instant>,
     exit_status: Option<std::process::ExitStatus>,
+    last_launch_generation: u64,
 }
 
 #[derive(Debug)]
@@ -111,6 +120,7 @@ struct ManagedChild {
     child: Child,
     peer_pid: u32,
     protection: Option<ProtectionDomainEvidence>,
+    launch_reservation: Option<LaunchReservation>,
 }
 
 impl ProcessSupervisor {
@@ -121,6 +131,7 @@ impl ProcessSupervisor {
             child: None,
             termination_deadline: None,
             exit_status: None,
+            last_launch_generation: 0,
         }
     }
 
@@ -202,6 +213,62 @@ impl ProcessSupervisor {
         self.child
             .as_ref()
             .and_then(|child| child.protection.as_ref())
+    }
+
+    /// The generation consumed by this child's own successful protected spawn.
+    /// Session compares it with its reservation before activating the relay.
+    pub fn launch_generation(&self) -> Option<u64> {
+        self.child.as_ref().and_then(|child| {
+            child
+                .launch_reservation
+                .as_ref()
+                .map(LaunchReservation::generation)
+        })
+    }
+
+    /// Nonblocking custody check immediately before admission. try_wait caches
+    /// an observed exit in Child; the ordinary poll still reports/reaps it once.
+    /// A termination request withdraws custody before the process actually exits.
+    pub fn has_live_launch(
+        &mut self,
+        reservation: &LaunchReservation,
+        role: ProtectionDomainRole,
+    ) -> Result<bool, ProcessSupervisorError> {
+        if self.termination_deadline.is_some() {
+            return Ok(false);
+        }
+        let Some(child) = self.child.as_mut() else {
+            return Ok(false);
+        };
+        if child.launch_reservation.as_ref() != Some(reservation)
+            || child
+                .protection
+                .as_ref()
+                .is_none_or(|proof| !proof.roles.contains(&role))
+        {
+            return Ok(false);
+        }
+        child
+            .child
+            .try_wait()
+            .map(|status| status.is_none())
+            .map_err(|error| ProcessSupervisorError::WaitFailed {
+                process: self.process,
+                message: error.to_string(),
+            })
+    }
+
+    /// Consume a new channel, including on failure. Once used, ordinary start
+    /// commands cannot silently launch a replacement without authentication.
+    pub fn start_with_launch_channel(
+        &mut self,
+        channel: LaunchChannel,
+    ) -> Result<SupervisorEvent, ProcessSupervisorError> {
+        if channel.generation <= self.last_launch_generation {
+            return Err(ProcessSupervisorError::StaleLaunchGeneration);
+        }
+        self.last_launch_generation = channel.generation;
+        self.start_after_with_channel(Duration::ZERO, Some(channel))
     }
 
     pub fn apply(
@@ -338,10 +405,25 @@ impl ProcessSupervisor {
     }
 
     fn start_after(&mut self, delay: Duration) -> Result<SupervisorEvent, ProcessSupervisorError> {
+        self.start_after_with_channel(delay, None)
+    }
+
+    fn start_after_with_channel(
+        &mut self,
+        delay: Duration,
+        channel: Option<LaunchChannel>,
+    ) -> Result<SupervisorEvent, ProcessSupervisorError> {
         if self.child.is_some() {
             return Err(ProcessSupervisorError::AlreadyRunning {
                 process: self.process,
             });
+        }
+
+        if self.last_launch_generation != 0 && channel.is_none() {
+            return Err(ProcessSupervisorError::LaunchChannelRequired);
+        }
+        if channel.is_some() && self.spec.protection_domain.is_none() {
+            return Err(ProcessSupervisorError::ProtectedLaunchRequired);
         }
 
         self.exit_status = None;
@@ -351,17 +433,22 @@ impl ProcessSupervisor {
         }
 
         let managed = if let Some(domain) = &self.spec.protection_domain {
+            let result = match channel {
+                Some(channel) => {
+                    spawn_bubblewrap_with_channel(self.process, &self.spec, domain, Some(channel))
+                }
+                None => spawn_bubblewrap(self.process, &self.spec, domain),
+            };
             let protected =
-                spawn_bubblewrap(self.process, &self.spec, domain).map_err(|error| {
-                    ProcessSupervisorError::ProtectionDomainFailed {
-                        process: self.process,
-                        message: error.to_string(),
-                    }
+                result.map_err(|error| ProcessSupervisorError::ProtectionDomainFailed {
+                    process: self.process,
+                    message: error.to_string(),
                 })?;
             ManagedChild {
                 peer_pid: protected.evidence.peer_pid,
                 child: protected.child,
                 protection: Some(protected.evidence),
+                launch_reservation: protected.launch_reservation,
             }
         } else {
             let mut command = Command::new(&self.spec.program);
@@ -381,6 +468,7 @@ impl ProcessSupervisor {
                 peer_pid: child.id(),
                 child,
                 protection: None,
+                launch_reservation: None,
             }
         };
         self.child = Some(managed);

@@ -1,14 +1,14 @@
-tree f39def9534e725898e69b551a464a68261a2feb9
-parent 3f2185ea73738ea4e755599d67517510fc55c502
-author Mason Green <mason@greenm01.net> 1791088387 -0400
-committer Mason Green <mason@greenm01.net> 1791088387 -0400
+tree 4df33c5a0a5ac748736fb22bc82384670a0e6a48
+parent 73110aa51f694cea38be0d87f53899301ad0e669
+author Mason Green <mason@greenm01.net> 1791751315 -0400
+committer Mason Green <mason@greenm01.net> 1791751315 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCasHXAxsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJ5MgEAurNDlxdGdzwq8fLKuj0v
- dei6kZk0DQpWAilEmgQ+gkYBAOKxqRgKqI4ICViHLj0D3iX9R6qBrSZOnF7ISiHF
- JWIL
- =Bdmi
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCasv0kxsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKjKAD+LI+7ruCDhkLJUvAYx5LY
+ XBC+cfXrczHeBVklQNnEgEoA/1OO0AwdGnTRU5DRPjvB1KJceoH3b1TAk/qU2BUj
+ vdQE
+ =XxqM
  -----END PGP SIGNATURE-----
 
-Expose queued upload cancellation to the caller poll loop
+Track the candidate authenticated attach profile and C client gap

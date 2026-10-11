@@ -50,6 +50,12 @@ The dialect is plain 9P2000.L; wire error numbers are the Linux values
 
 ## Release 0.3.0
 
+The t317 development branch adds `Pipeline::auth` and `attach_with_afid`,
+plus authentication qids and records. These are wire primitives, not a launch
+authentication client or a claim that deployed roles require authentication.
+New public enum variants require downstream exhaustive matches to be updated.
+The profile copy describes Sophia's candidate opt-in export seam.
+
 Adds `sophia-lock-protocol`, the lock provider's experimental file contract
 codec (no client), and `Pipeline::write_secret` in `sophia-9p-client`, which zeroes
 every copy of a secret request it leaves behind. Both are additive.

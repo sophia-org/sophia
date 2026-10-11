@@ -30,6 +30,7 @@ enum Login {
     Break,
     /// The agent is found gone while idle instead of logging in.
     Vanish,
+    Pending,
 }
 
 #[derive(Default)]
@@ -37,6 +38,7 @@ struct Record {
     launches: usize,
     dropped: usize,
     secrets: Vec<Vec<u8>>,
+    polls: usize,
 }
 
 struct Launcher {
@@ -45,8 +47,11 @@ struct Launcher {
 }
 
 struct Agent {
+    ingress: sophia_factotum::launch::queue::Ingress,
+    _queue: sophia_factotum::launch::queue::Owner,
     logins: VecDeque<Login>,
     record: Arc<Mutex<Record>>,
+    pending: Option<Login>,
 }
 
 impl UnlockAgentLauncher for Launcher {
@@ -55,22 +60,42 @@ impl UnlockAgentLauncher for Launcher {
     fn launch(&mut self) -> Result<Agent, String> {
         self.record.lock().unwrap().launches += 1;
         match self.script.pop_front() {
-            Some(Launch::Agent(logins)) => Ok(Agent {
-                logins: logins.into(),
-                record: Arc::clone(&self.record),
-            }),
+            Some(Launch::Agent(logins)) => {
+                let (ingress, queue) = sophia_factotum::launch::queue::channel();
+                Ok(Agent {
+                    ingress,
+                    _queue: queue,
+                    logins: logins.into(),
+                    record: Arc::clone(&self.record),
+                    pending: None,
+                })
+            }
             Some(Launch::Refused) | None => Err("refused".into()),
         }
     }
 }
 
 impl UnlockAgent for Agent {
-    fn login(&mut self, secret: &[u8]) -> Result<bool, String> {
+    fn launch_ingress(&self) -> Option<sophia_factotum::launch::queue::Ingress> {
+        Some(self.ingress.clone())
+    }
+    fn begin_login(&mut self, secret: &[u8]) -> Result<(), String> {
         self.record.lock().unwrap().secrets.push(secret.to_vec());
-        match self.logins.pop_front() {
-            Some(Login::Accept) => Ok(true),
-            Some(Login::Refuse) => Ok(false),
-            Some(Login::Break | Login::Vanish) | None => Err("broken".into()),
+        self.pending = Some(self.logins.pop_front().ok_or("no scripted login")?);
+        Ok(())
+    }
+
+    fn poll_login(&mut self) -> Result<Option<bool>, String> {
+        self.record.lock().unwrap().polls += 1;
+        if matches!(self.pending, Some(Login::Pending)) {
+            return Ok(None);
+        }
+        match self.pending.take() {
+            Some(Login::Accept) => Ok(Some(true)),
+            Some(Login::Refuse) => Ok(Some(false)),
+            Some(Login::Break | Login::Vanish) => Err("broken".into()),
+            None => Ok(None),
+            Some(Login::Pending) => unreachable!(),
         }
     }
 
@@ -267,4 +292,177 @@ fn dropping_the_authenticator_ends_the_agent() {
     );
     std::thread::sleep(Duration::from_millis(50));
     assert_eq!(record.lock().unwrap().launches, 1, "and is not replaced");
+}
+
+#[test]
+fn a_waiting_login_keeps_turning_and_owner_drop_cancels_without_a_verdict() {
+    let (mut authenticator, record, _) = start(vec![Launch::Agent(vec![Login::Pending])]);
+    until(|| authenticator.available(), "the agent");
+    authenticator.begin(attempt(1), "pending").unwrap();
+    until(
+        || record.lock().unwrap().secrets.len() == 1,
+        "pending login admitted",
+    );
+    let before = record.lock().unwrap().polls;
+    until(
+        || record.lock().unwrap().polls >= before + 3,
+        "a pending PAM login must not block the shared connection owner",
+    );
+    assert!(authenticator.poll().is_none());
+    authenticator.begin(attempt(2), "busy").unwrap();
+    assert!(
+        authenticator.begin(attempt(3), "no-slot").is_err(),
+        "active and undelivered attempts must retain their result reservations"
+    );
+    assert_eq!(
+        verdict(&mut authenticator),
+        (attempt(2), SessionUnlockVerdict::Unavailable)
+    );
+    assert_eq!(
+        record.lock().unwrap().secrets,
+        [b"pending".to_vec()],
+        "a busy owner must not start a second PAM conversation"
+    );
+    drop(authenticator);
+    until(
+        || record.lock().unwrap().dropped == 1,
+        "dropping Session must cancel a pending login without waiting for PAM",
+    );
+    assert_eq!(record.lock().unwrap().launches, 1);
+}
+
+#[test]
+fn undelivered_verdicts_bound_admission_until_session_consumes_them() {
+    let (mut authenticator, _, wakes) = start(vec![Launch::Agent(vec![
+        Login::Refuse,
+        Login::Refuse,
+        Login::Accept,
+    ])]);
+    until(|| authenticator.available(), "the agent");
+    assert!(authenticator.begin(attempt(99), &"x".repeat(1025)).is_err());
+    authenticator.begin(attempt(1), "first").unwrap();
+    until(
+        || wakes.load(Ordering::SeqCst) == 1,
+        "first retained result",
+    );
+    authenticator.begin(attempt(2), "second").unwrap();
+    until(
+        || wakes.load(Ordering::SeqCst) == 2,
+        "second retained result",
+    );
+    assert!(
+        authenticator.begin(attempt(3), "third").is_err(),
+        "undelivered verdicts must retain their admission slots"
+    );
+    assert_eq!(
+        verdict(&mut authenticator),
+        (attempt(1), SessionUnlockVerdict::Rejected)
+    );
+    authenticator.begin(attempt(3), "third").unwrap();
+    assert_eq!(
+        verdict(&mut authenticator),
+        (attempt(2), SessionUnlockVerdict::Rejected)
+    );
+    assert_eq!(
+        verdict(&mut authenticator),
+        (attempt(3), SessionUnlockVerdict::Accepted)
+    );
+}
+
+#[test]
+fn replacement_publishes_fresh_launch_ingress_and_closes_old_tickets() {
+    use sophia_factotum::launch::{queue::Error, wire::Command};
+    let (mut authenticator, _, _) = start(vec![
+        Launch::Agent(vec![Login::Break]),
+        Launch::Agent(vec![Login::Pending]),
+    ]);
+    let service = authenticator.launch_service();
+    let mut first = None;
+    until(
+        || {
+            first = service.current();
+            first.is_some()
+        },
+        "first launch service",
+    );
+    let first = first.unwrap();
+    let now = Instant::now();
+    let mut old = first
+        .ingress
+        .submit(
+            Command::Initialize { session: 1 },
+            now,
+            now + Duration::from_secs(5),
+        )
+        .unwrap();
+    authenticator.begin(attempt(1), "break").unwrap();
+    assert_eq!(
+        verdict(&mut authenticator).1,
+        SessionUnlockVerdict::Unavailable
+    );
+    let mut next = None;
+    until(
+        || {
+            next = service
+                .current()
+                .filter(|c| c.generation > first.generation);
+            next.is_some()
+        },
+        "replacement launch service",
+    );
+    assert!(
+        matches!(old.take(Instant::now()), Err(Error::Closed)),
+        "replacing Factotum must invalidate the previous launch result"
+    );
+    assert!(!first.ingress.is_open());
+    let next = next.unwrap();
+    assert!(next.ingress.is_open());
+    drop(authenticator);
+    assert!(
+        service.current().is_none() && !next.ingress.is_open(),
+        "owner drop must withdraw launch authority before the worker next turns"
+    );
+}
+
+#[test]
+fn dropping_during_startup_cannot_publish_a_late_launch_service() {
+    use std::sync::mpsc;
+    struct Delayed {
+        started: mpsc::SyncSender<()>,
+        resume: mpsc::Receiver<()>,
+        inner: Launcher,
+    }
+    impl UnlockAgentLauncher for Delayed {
+        type Agent = Agent;
+        fn launch(&mut self) -> Result<Agent, String> {
+            self.started.send(()).unwrap();
+            self.resume.recv().unwrap();
+            self.inner.launch()
+        }
+    }
+    let (started, start) = mpsc::sync_channel(1);
+    let (resume, wait) = mpsc::sync_channel(1);
+    let record = Arc::new(Mutex::new(Record::default()));
+    let authenticator = SupervisedAuthenticator::start(
+        Delayed {
+            started,
+            resume: wait,
+            inner: Launcher {
+                script: vec![Launch::Agent(vec![])].into(),
+                record: record.clone(),
+            },
+        },
+        QUICK,
+        || {},
+    )
+    .unwrap();
+    let service = authenticator.launch_service();
+    start.recv_timeout(Duration::from_secs(2)).unwrap();
+    drop(authenticator);
+    resume.send(()).unwrap();
+    until(|| record.lock().unwrap().dropped == 1, "late agent retired");
+    assert!(
+        service.current().is_none(),
+        "closed Session cannot republish late launch authority"
+    );
 }

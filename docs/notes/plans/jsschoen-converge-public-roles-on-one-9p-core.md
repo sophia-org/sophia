@@ -247,6 +247,11 @@ no third-party path is opened in process.
 
 ## t317
 
+The [foundation checkpoint](../investigations/etyvymxi-authenticated-attach-transport-state-and-factotum-handoff.md#reproducible-foundation-checkpoint)
+pins the SDK primitives and validates the core, Factotum, launch custody and
+Session afid owners. It does not enable authentication on shipped role exports
+or satisfy the exit below; production role integration remains next.
+
 Implement the approved [t133 local authentication handoff](esnqxpqw-pidfd-and-namespace-admission-optimizations.md#local-authentication-design-and-t317-handoff-2026-10-10),
 including Session's launch-channel relay, Factotum's correlated verdict,
 immutable transport identity across Tversion and the bounded negative controls.

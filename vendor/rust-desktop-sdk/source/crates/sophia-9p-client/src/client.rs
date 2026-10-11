@@ -397,6 +397,7 @@ impl Client {
                 return Err(self.poison(ClientError::Protocol("Rreaddir entry")));
             };
             let expected = match qid.kind {
+                QidKind::Auth => return Err(self.poison(ClientError::Protocol("Rreaddir entry"))),
                 QidKind::Directory => DT_DIR,
                 QidKind::File => DT_REG,
             };

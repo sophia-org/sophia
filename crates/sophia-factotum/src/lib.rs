@@ -30,8 +30,10 @@
 //! DEALINGS IN THE SOFTWARE.
 //! ```
 //!
-//! Every byte inside its files (rpc replies, ctl lines, protocol messages,
-//! AuthInfo) is 9front's. What differs is recorded in the factotum ADR
+//! Bytes inside the ordinary factotum files (rpc replies, ctl lines, protocol
+//! messages, AuthInfo) are 9front's. The separate Session-only launch control
+//! view is Sophia's, documented in `docs/factotum-launch-authentication.md`.
+//! What differs is recorded in the factotum ADR
 //! (`docs/notes/decisions/hhbejm8k-…`): Sophia serves 9P2000.L, so file-level
 //! errors are errno values; the agent serves only its owner; protocols are
 //! `pass` and the Linux `pam` login (with `p9any` and `dp9ik` to follow); and
@@ -45,6 +47,7 @@ pub mod ctl;
 pub mod export;
 pub mod jobs;
 pub mod keyring;
+pub mod launch;
 pub mod logbuf;
 pub mod pam_helper;
 pub mod pam_wire;

@@ -194,6 +194,7 @@ impl std::error::Error for PipelineError {}
 /// not a pipeline failure.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Reply {
+    Auth(Qid),
     Attach(Qid),
     Walk(Vec<Qid>),
     Lopen { qid: Qid, iounit: u32 },
@@ -214,6 +215,7 @@ pub enum Reply {
 /// [`Pipeline::candidate_tag`] -- until the `Rflush` that settles it frees it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Outstanding {
+    Auth(u32),
     Attach(u32),
     Walk(u32, u16),
     Lopen,
@@ -233,7 +235,8 @@ fn reply_bound(outstanding: &Outstanding) -> usize {
         + match outstanding {
             Outstanding::Read(count) => *count as usize,
             Outstanding::Walk(_, names) => usize::from(*names) * QID_SIZE,
-            Outstanding::Attach(_)
+            Outstanding::Auth(_)
+            | Outstanding::Attach(_)
             | Outstanding::Lopen
             | Outstanding::Write(_)
             | Outstanding::Clunk
@@ -249,7 +252,8 @@ fn reply_footprint(reply: &Reply) -> usize {
         + match reply {
             Reply::Read(data) => data.len(),
             Reply::Walk(qids) => qids.len() * QID_SIZE,
-            Reply::Attach(_)
+            Reply::Auth(_)
+            | Reply::Attach(_)
             | Reply::Lopen { .. }
             | Reply::Write(_)
             | Reply::Clunk
@@ -357,16 +361,42 @@ impl Pipeline {
         self.fids.len()
     }
 
-    /// Queues an attach to the root the server gives this connection (`afid`
-    /// is always `NOFID`: neither side authenticates through the protocol).
+    /// Queues an unauthenticated attach. Protected exports may refuse it.
     pub fn attach(&mut self, uname: &[u8], aname: &[u8]) -> Result<(Tag, Fid), PipelineError> {
+        self.attach_with_afid(Fid::NOFID, uname, aname)
+    }
+
+    /// Queues Tauth and reserves its fid until refusal, flush or clunk.
+    /// Rauth identifies a conversation, not successful authentication.
+    pub fn auth(&mut self, uname: &[u8], aname: &[u8]) -> Result<(Tag, Fid), PipelineError> {
+        let fid = self.candidate_fid();
+        let outstanding = Outstanding::Auth(fid);
+        let bound = reply_bound(&outstanding);
+        self.check_capacity(true, bound, false)?;
+        let tag = self.candidate_tag();
+        let body = client_codec::auth_body(fid, uname, aname).map_err(PipelineError::Limit)?;
+        self.submit(client_codec::TAUTH, tag, &body, outstanding, bound, 0)?;
+        self.fids.insert(fid);
+        self.commit_fid(fid);
+        self.commit_tag(tag);
+        Ok((Tag(tag), Fid(fid)))
+    }
+
+    /// The caller completes the export's conversation first. Names remain
+    /// claims; the server verifies the afid and selects the admitted view.
+    pub fn attach_with_afid(
+        &mut self,
+        afid: Fid,
+        uname: &[u8],
+        aname: &[u8],
+    ) -> Result<(Tag, Fid), PipelineError> {
         let fid = self.candidate_fid();
         let outstanding = Outstanding::Attach(fid);
         let bound = reply_bound(&outstanding);
         self.check_capacity(true, bound, false)?;
         let tag = self.candidate_tag();
-        let body = client_codec::attach_body(fid, client_codec::NOFID, uname, aname)
-            .map_err(PipelineError::Limit)?;
+        let body =
+            client_codec::attach_body(fid, afid.0, uname, aname).map_err(PipelineError::Limit)?;
         self.submit(client_codec::TATTACH, tag, &body, outstanding, bound, 0)?;
         self.fids.insert(fid);
         self.commit_fid(fid);
@@ -833,7 +863,7 @@ impl Pipeline {
                 Outstanding::Flush(_) => {
                     return Err(self.poison(PipelineError::Protocol("Rlerror answering Tflush")));
                 }
-                Outstanding::Attach(fid) => {
+                Outstanding::Auth(fid) | Outstanding::Attach(fid) => {
                     self.fids.remove(&fid);
                 }
                 Outstanding::Walk(newfid, _) => {
@@ -850,6 +880,16 @@ impl Pipeline {
         match outstanding {
             Outstanding::Settled => {
                 Err(self.poison(PipelineError::Protocol("reply to an already-settled tag")))
+            }
+            Outstanding::Auth(_) => {
+                if kind != client_codec::RAUTH {
+                    return Err(self.poison(PipelineError::Protocol("unexpected reply type")));
+                }
+                let Some(qid) = client_codec::decode_rauth(&body) else {
+                    return Err(self.poison(PipelineError::Protocol("Rauth shape")));
+                };
+                self.resolve(tag, outstanding, Reply::Auth(qid));
+                Ok(())
             }
             Outstanding::Attach(_) => {
                 if kind != client_codec::RATTACH {
@@ -957,7 +997,7 @@ impl Pipeline {
         if let Some(unanswered) = self.in_flight.remove(&old) {
             match unanswered {
                 Outstanding::Settled => {}
-                Outstanding::Attach(fid) => {
+                Outstanding::Auth(fid) | Outstanding::Attach(fid) => {
                     self.fids.remove(&fid);
                 }
                 Outstanding::Walk(newfid, _) => {

@@ -40,7 +40,8 @@ the difference is deliberate.
 | Request | Reply | Sophia's rules |
 | --- | --- | --- |
 | `Tversion` | `Rversion` | As above. |
-| `Tattach` | `Rattach` | `afid` must be `NOFID` (no protocol authentication; `EINVAL` otherwise). A fid already in use or `NOFID` is `EBADF`; the fid table bound is `EMFILE`. `uname`, `aname` and `n_uname` reach the export as data and grant nothing; the export decides admission. |
+| `Tauth` | `Rauth` | An export may open an authentication conversation; the default is `EOPNOTSUPP`. The returned qid has type `QTAUTH` (0x08). An existing afid or `NOFID` is `EBADF`; the fid table bound is `EMFILE`. Opening the conversation grants no authority. |
+| `Tattach` | `Rattach` | `NOFID` uses the export's ordinary admission policy. Any other afid must name an authentication conversation on this connection (`EBADF` otherwise); the export must verify its verdict and current custody before admission. A root fid already in use or `NOFID` is `EBADF`; the fid table bound is `EMFILE`. `uname`, `aname` and `n_uname` are claims, never authority. |
 | `Twalk` | `Rwalk` | At most 16 names. `..` asks the export for the parent, and from the attach root it stays at the root, as 9P requires. `.`/empty names, and names containing `/` or NUL, are `ENOENT`. Walking from a file is `ENOTDIR`. |
 | `Tlopen` | `Rlopen` | Accepted flags: the access mode (read, write, read/write; mode 3 is `EINVAL`), `O_TRUNC`, `O_APPEND`, `O_DIRECTORY`, and `O_NOCTTY`, `O_NONBLOCK`, `O_LARGEFILE` and `O_CLOEXEC`, which change nothing. Any other bit is `EINVAL`. Opening a directory for writing is `EISDIR`; `O_DIRECTORY` on a file is `ENOTDIR`. The export decides each open. |
 | `Tread` | `Rread` | May wait: a read at an event file's end is answered when data arrives, or never if flushed. Waiting requests are bounded (default 32). |
@@ -56,11 +57,22 @@ authority ends at once, through fids that are already open as well.
 
 ## Refused messages
 
-`Tauth`, `Tstatfs`, `Tlcreate`, `Tsymlink`, `Tmknod`, `Trename`, `Treadlink`,
+`Tstatfs`, `Tlcreate`, `Tsymlink`, `Tmknod`, `Trename`, `Treadlink`,
 `Tsetattr`, `Txattrwalk`, `Txattrcreate`, `Tfsync`, `Tlock`, `Tgetlock`,
 `Tlink`, `Tmkdir`, `Trenameat` and `Tunlinkat` are answered
 `Rlerror EOPNOTSUPP`. Any other message type is `Rlerror ENOSYS`. Clients
 never create, rename or remove nodes: every node is the export's.
+
+Authentication fids are already open for conversation reads and writes. They
+cannot be walked or opened as ordinary files, used as directories, or queried
+with `Tgetattr`. The export checks their retained authority on each read/write,
+including retried waiting reads. `Tflush` cancels a waiting read, not its afid;
+`Tclunk` releases the conversation. `Tversion` releases all fids and notifies
+the admission owner to invalidate attempts and verdicts. Any transport-pinned
+principal and custody must survive that wire reset; disconnect notifies the
+owner separately. Transcript semantics, deadlines, quotas and trusted verdicts
+belong to the admission owner. The core seam alone does not enable launch
+authentication on existing role exports.
 
 ## Bounds
 

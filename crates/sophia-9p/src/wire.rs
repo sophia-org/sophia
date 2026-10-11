@@ -47,6 +47,7 @@ pub mod kind {
     pub const TVERSION: u8 = 100;
     pub const RVERSION: u8 = 101;
     pub const TAUTH: u8 = 102;
+    pub const RAUTH: u8 = 103;
     pub const TATTACH: u8 = 104;
     pub const RATTACH: u8 = 105;
     pub const TFLUSH: u8 = 108;
@@ -144,6 +145,10 @@ pub fn encode(tag: Tag, reply: &Reply, out: &mut Vec<u8>) -> Result<(), Unframea
             put_qid(out, qid);
             kind::RATTACH
         }
+        Reply::Auth(qid) => {
+            put_qid(out, qid);
+            kind::RAUTH
+        }
         Reply::Flush => kind::RFLUSH,
         Reply::Walk(qids) => {
             let count = u16::try_from(qids.len()).map_err(|_| Unframeable)?;
@@ -206,11 +211,15 @@ pub fn put_dirent(
     offset: u64,
     name: &[u8],
 ) -> Result<(), Unframeable> {
+    if qid.kind == QidKind::Auth {
+        return Err(Unframeable);
+    }
     put_qid(out, qid);
     out.extend_from_slice(&offset.to_le_bytes());
     out.push(match qid.kind {
         QidKind::Directory => DT_DIR,
         QidKind::File => DT_REG,
+        QidKind::Auth => return Err(Unframeable),
     });
     put_string(out, name)
 }
@@ -298,6 +307,12 @@ impl<'frame> Fields<'frame> {
                 aname: self.string()?,
                 n_uname: self.u32()?,
             },
+            kind::TAUTH => Request::Auth {
+                afid: self.fid()?,
+                uname: self.string()?,
+                aname: self.string()?,
+                n_uname: self.u32()?,
+            },
             kind::TFLUSH => Request::Flush {
                 old: Tag(self.u16()?),
             },
@@ -343,8 +358,7 @@ impl<'frame> Fields<'frame> {
                 fid: self.fid()?,
                 mask: self.u64()?,
             },
-            kind::TAUTH
-            | kind::TSTATFS
+            kind::TSTATFS
             | kind::TLCREATE
             | kind::TSYMLINK
             | kind::TMKNOD

@@ -189,6 +189,7 @@ impl<E: Export> Connection<E> {
         }
         let id = self.id;
         let Some(FidState {
+            auth: false,
             node,
             epoch,
             open: Some(opened),

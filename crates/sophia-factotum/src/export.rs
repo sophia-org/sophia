@@ -9,11 +9,14 @@
 //! Every attached connection is the agent's owner, admitted before it was
 //! adopted; the agent records each one's [`ChannelClass`] first, and an
 //! unrecorded connection cannot attach.
+//! A separate `sophia-launch-v1` attach view exposes only the private launch
+//! controller to Session. It adds nothing to the ordinary 9front tree.
 
 use crate::conversation::{Conversation, RpcFileError, RpcRead};
 use crate::ctl::{self, CtlEffect, CtlError, ListCursor, ListTooSmall};
 use crate::jobs::{ConversationId, JobSink};
 use crate::keyring::Keyring;
+use crate::launch::{control::LaunchControl, wire};
 use crate::logbuf::{LogBuf, LogReadTooShort};
 use crate::proto::{ChannelClass, Env, JobOutcome, PamVerdict, Settings};
 use sophia_9p::records::{Errno, OpenFlags};
@@ -40,6 +43,8 @@ pub enum Node {
     Rpc,
     Proto,
     Log,
+    LaunchDir,
+    LaunchRpc,
 }
 
 /// 9front's `dirtab`, in its order.
@@ -64,6 +69,8 @@ impl Node {
             Node::Log => 6,
             Node::Ctl => 7,
             Node::Needkey => 8,
+            Node::LaunchDir => 9,
+            Node::LaunchRpc => 10,
         }
     }
 
@@ -75,12 +82,14 @@ impl Node {
             Node::Rpc => 0o666,
             Node::Proto => 0o444,
             Node::Log => 0o400,
+            Node::LaunchDir => 0o500,
+            Node::LaunchRpc => 0o600,
         }
     }
 
     const fn kind(self) -> NodeKind {
         match self {
-            Node::Root | Node::Dir => NodeKind::Directory,
+            Node::Root | Node::Dir | Node::LaunchDir => NodeKind::Directory,
             _ => NodeKind::File,
         }
     }
@@ -93,6 +102,7 @@ pub enum Handle {
     Ctl(ListCursor),
     Proto(ListCursor),
     Log,
+    Launch(Box<LaunchControl>),
 }
 
 /// The agent's state behind its files.
@@ -106,6 +116,7 @@ pub struct FactotumExport {
     conversations: HashMap<ConversationId, (Conversation, ChannelClass)>,
     next_conversation: ConversationId,
     log_open: bool,
+    launch_open: bool,
     /// The class of the connection whose open of `rpc` the core is about to
     /// perform, recorded by the check that precedes it.
     opening: Option<ChannelClass>,
@@ -125,6 +136,7 @@ impl FactotumExport {
             conversations: HashMap::new(),
             next_conversation: 1,
             log_open: false,
+            launch_open: false,
             opening: None,
             jobs: None,
             outcomes: None,
@@ -241,6 +253,12 @@ impl Export for FactotumExport {
         let root = match context.aname {
             b"" => Node::Root,
             b"factotum" => Node::Dir,
+            wire::ATTACH => {
+                if self.classes.get(&context.connection) != Some(&ChannelClass::Session) {
+                    return Err(Errno::EACCES);
+                }
+                Node::LaunchDir
+            }
             _ => {
                 self.log.append("unknown mount spec".into());
                 return Err(Errno::ENOENT);
@@ -256,6 +274,11 @@ impl Export for FactotumExport {
         let Some(class) = self.classes.get(&access.connection).copied() else {
             return Err(Errno::EACCES);
         };
+        if matches!(access.node, Node::LaunchDir | Node::LaunchRpc)
+            && class != ChannelClass::Session
+        {
+            return Err(Errno::EACCES);
+        }
         // `open` is not told its connection, so the conversation's class is
         // taken from the check the core makes immediately before it.
         self.opening = matches!(access.operation, Operation::Open(_)).then_some(class);
@@ -265,6 +288,9 @@ impl Export for FactotumExport {
     fn lookup(&mut self, directory: &Node, name: WalkName<'_>) -> Result<Node, Errno> {
         match (directory, name) {
             (Node::Root, WalkName::Child(b"factotum")) => Ok(Node::Dir),
+            (Node::LaunchDir, WalkName::Parent) => Ok(Node::LaunchDir),
+            (Node::LaunchDir, WalkName::Child(b"rpc")) => Ok(Node::LaunchRpc),
+            (Node::LaunchDir, _) => Err(Errno::ENOENT),
             (Node::Dir, WalkName::Parent) => Ok(Node::Root),
             (Node::Dir, WalkName::Child(name)) => FILES
                 .iter()
@@ -306,7 +332,17 @@ impl Export for FactotumExport {
             return Err(Errno::EACCES);
         }
         match node {
-            Node::Root | Node::Dir => Ok(Handle::Directory),
+            Node::Root | Node::Dir | Node::LaunchDir => Ok(Handle::Directory),
+            Node::LaunchRpc => {
+                if self.opening.take() != Some(ChannelClass::Session) {
+                    return Err(Errno::EACCES);
+                }
+                if self.launch_open {
+                    return Err(EBUSY);
+                }
+                self.launch_open = true;
+                Ok(Handle::Launch(Box::default()))
+            }
             // Closed until a trusted prompt exists: a confirm or needkey
             // answered from an ordinary client could approve a key use the
             // user never saw.
@@ -336,12 +372,18 @@ impl Export for FactotumExport {
         &mut self,
         _node: &Node,
         handle: &mut Handle,
-        _offset: u64,
+        offset: u64,
         count: u32,
     ) -> Result<ReadOutcome, Errno> {
         let count = usize::try_from(count).unwrap_or(usize::MAX);
         match handle {
             Handle::Directory => Err(Errno::EISDIR),
+            Handle::Launch(control) => {
+                if offset != 0 {
+                    return Err(Errno::EINVAL);
+                }
+                control.read(count).map(ReadOutcome::Ready)
+            }
             Handle::Rpc(id) => self.read_rpc(*id, count),
             Handle::Ctl(cursor) => cursor
                 .read_key(&self.keyring, count)
@@ -363,11 +405,18 @@ impl Export for FactotumExport {
         &mut self,
         _node: &Node,
         handle: &mut Handle,
-        _offset: u64,
+        offset: u64,
         data: &[u8],
     ) -> Result<u32, Errno> {
         let accepted = u32::try_from(data.len()).map_err(|_| EMSGSIZE)?;
         match handle {
+            Handle::Launch(control) => {
+                if offset != 0 {
+                    return Err(Errno::EINVAL);
+                }
+                control.write(data)?;
+                Ok(accepted)
+            }
             Handle::Rpc(id) => {
                 let Some((cx, _)) = self.conversations.get_mut(id) else {
                     return Err(Errno::EBADF);
@@ -403,6 +452,7 @@ impl Export for FactotumExport {
         let children: &[(&str, Node)] = match directory {
             Node::Root => &[("factotum", Node::Dir)],
             Node::Dir => &FILES,
+            Node::LaunchDir => &[("rpc", Node::LaunchRpc)],
             _ => return Err(Errno::ENOTDIR),
         };
         let start = usize::try_from(cookie).unwrap_or(usize::MAX);
@@ -430,6 +480,7 @@ impl Export for FactotumExport {
                 }
             }
             Some(Handle::Log) => self.log_open = false,
+            Some(Handle::Launch(_)) => self.launch_open = false,
             Some(Handle::Directory | Handle::Ctl(_) | Handle::Proto(_)) | None => {}
         }
     }

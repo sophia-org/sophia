@@ -61,8 +61,9 @@ pub fn run(repo: &Path) -> Result<Vec<String>, String> {
     let revision = verify(&snapshot, repo)?;
     let manifest = snapshot.join("source/Cargo.toml");
     let manifest = manifest.to_str().ok_or("non-UTF-8 SDK path")?;
-    let target =
-        target_root(repo, std::env::var_os("CARGO_TARGET_DIR").as_deref()).join("rust-desktop-sdk");
+    // The caller owns the leased build root. Cargo distinguishes this SDK
+    // workspace by package paths; do not create another target pool below it.
+    let target = target_root(repo, std::env::var_os("CARGO_TARGET_DIR").as_deref());
     let target = target.to_str().ok_or("non-UTF-8 target path")?;
     let arguments = [
         "test",

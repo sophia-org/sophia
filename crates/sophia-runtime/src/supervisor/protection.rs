@@ -403,6 +403,7 @@ pub struct ProtectionDomainEvidence {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProtectionDomainLaunchError {
+    ReservedEnvironment,
     RoleMismatch {
         process: SupervisedProcessKind,
         required: ProtectionDomainRole,
@@ -427,12 +428,22 @@ impl std::error::Error for ProtectionDomainLaunchError {}
 pub(crate) struct ProtectedProcess {
     pub child: Child,
     pub evidence: ProtectionDomainEvidence,
+    pub launch_reservation: Option<LaunchReservation>,
 }
 
 pub(crate) fn spawn_bubblewrap(
     process: SupervisedProcessKind,
     launch: &ProcessLaunchSpec,
     domain: &ProtectionDomainSpec,
+) -> Result<ProtectedProcess, ProtectionDomainLaunchError> {
+    spawn_bubblewrap_with_channel(process, launch, domain, None)
+}
+
+pub(crate) fn spawn_bubblewrap_with_channel(
+    process: SupervisedProcessKind,
+    launch: &ProcessLaunchSpec,
+    domain: &ProtectionDomainSpec,
+    channel: Option<LaunchChannel>,
 ) -> Result<ProtectedProcess, ProtectionDomainLaunchError> {
     let required_role = required_role(process);
     if !domain.roles.contains(&required_role) {
@@ -441,10 +452,31 @@ pub(crate) fn spawn_bubblewrap(
             required: required_role,
         });
     }
-    let mut command = bubblewrap_command(launch, domain, |_| {})?;
+    let reservation = channel.as_ref().map(LaunchChannel::reservation);
+    let mut command = if let Some(channel) = channel {
+        use std::os::fd::AsRawFd as _;
+        if launch
+            .environment
+            .iter()
+            .any(|(key, _)| key == LAUNCH_AUTH_FD_ENV)
+        {
+            return Err(ProtectionDomainLaunchError::ReservedEnvironment);
+        }
+        let configured = launch
+            .clone()
+            .env(LAUNCH_AUTH_FD_ENV, channel.child.as_raw_fd().to_string());
+        let mut command = bubblewrap_command(&configured, domain, prepare_launch_host)?;
+        sophia_linux_peer::inherit_one_fd_on_exec(&mut command, channel.child.into())
+            .map_err(|error| ProtectionDomainLaunchError::Spawn(error.to_string()))?;
+        command
+    } else {
+        bubblewrap_command(launch, domain, |_| {})?
+    };
     let mut child = command
         .spawn()
         .map_err(|error| ProtectionDomainLaunchError::Spawn(error.to_string()))?;
+    // Releases the parent's captured child endpoint immediately after spawn.
+    drop(command);
     let supervisor_pid = child.id();
     let peer_pid = match wait_for_bubblewrap_peer(&mut child, supervisor_pid) {
         Ok(pid) => pid,
@@ -456,6 +488,7 @@ pub(crate) fn spawn_bubblewrap(
     };
     Ok(ProtectedProcess {
         child,
+        launch_reservation: reservation,
         evidence: ProtectionDomainEvidence {
             backend: ProtectionBackendKind::Bubblewrap,
             supervisor_pid,
@@ -463,6 +496,11 @@ pub(crate) fn spawn_bubblewrap(
             roles: domain.roles.clone(),
         },
     })
+}
+
+fn prepare_launch_host(command: &mut Command) {
+    command.env_clear();
+    sophia_linux_peer::cloexec_inherited_fds_on_exec(command);
 }
 
 /// The unspawned Bubblewrap command for one domain: every check
