@@ -240,6 +240,12 @@ must not notice); the ten-round t138 probe unchanged.
 
 ### Phase 3 -- live acceptance
 
+Accepted on 2026-10-11 on the installed v4 release. The
+[milestone record](../milestones/5ux6kxmj-t142-confined-group-portal-acceptance-on-the-installed-v4-session.md)
+binds the four attended checks, signed candidate, path-exclusion evidence and
+deterministic idle-reclaim coverage. The preparation history below retains the
+earlier prerequisite discovery; it is not the current implementation status.
+
 Preparation on 2026-10-10 found an implementation prerequisite: the tested
 portal executor is not connected to the live Session. The two-listener tests
 supply an Allow broker and participation permissions; confined live groups

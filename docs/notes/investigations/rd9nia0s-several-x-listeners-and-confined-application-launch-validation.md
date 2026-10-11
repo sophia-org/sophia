@@ -2,10 +2,19 @@
 id: rd9nia0s
 date: 2026-10-10
 kind: investigation
-status: awaiting-physical-acceptance
+status: closed
 tags: [investigation, session, x11, confinement]
 ---
 # Several X listeners and confined application launch validation
+
+## Closure, 2026-10-11
+
+The installed v4 CLIPBOARD, PRIMARY, reverse-refusal and confined-departure
+checks passed. The [acceptance milestone](../milestones/5ux6kxmj-t142-confined-group-portal-acceptance-on-the-installed-v4-session.md)
+binds the user observations, session/release identities, retained evidence and
+deterministic reclaim tests. It closes t142's acceptance; the historical pending
+statements below describe their respective earlier candidates. Slow browser
+startup remains an unquantified residual, not a claimed performance result.
 
 ## Confined software drawing fails at SysV attachment
 
