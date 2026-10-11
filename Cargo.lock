@@ -1406,8 +1406,10 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "sophia-9p",
  "sophia-config",
  "sophia-engine",
+ "sophia-portal",
  "sophia-protocol",
  "sophia-runtime",
 ]

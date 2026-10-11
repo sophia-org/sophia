@@ -59,5 +59,9 @@ sophia-engine = { path = "../sophia-engine" }
 sophia-protocol = { path = "../sophia-protocol" }
 sophia-runtime = { path = "../sophia-runtime" }
 
+[dev-dependencies]
+sophia-9p = { path = "../sophia-9p" }
+sophia-portal = { path = "../sophia-portal" }
+
 [lints]
 workspace = true

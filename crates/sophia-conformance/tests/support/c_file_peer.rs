@@ -38,7 +38,7 @@ fn make_jobs() -> usize {
 pub fn build(directory: &Path, source: &str, mutation: u32) -> PathBuf {
     assert!(matches!(
         source,
-        "shell_content_file_peer" | "shell_descriptor_file_peer"
+        "shell_content_file_peer" | "shell_descriptor_file_peer" | "portal_file_peer"
     ));
     let sdk = repository().join("vendor/c-desktop-sdk/source");
     let libraries = directory.join("sdk");
