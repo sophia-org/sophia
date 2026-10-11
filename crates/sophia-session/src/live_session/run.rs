@@ -23,7 +23,13 @@ pub(crate) fn run_persistent_xterm_session(
     // layout, so it cannot be prepared before the display is known.
     let display_number = parse_display_number(&config.display)?;
     let bound_socket_path = prepare_display_socket(&config.socket_path, display_number)?;
-    let (mut xauthority, xauthority_cookie) = LiveXAuthorityFile::create(display_number)?;
+    let (mut xauthority, xauthority_cookie) = if config.x_groups.confined.is_empty() {
+        LiveXAuthorityFile::create(display_number)?
+    } else {
+        // A confined application looks its cookie up under the sandbox hostname.
+        let sandbox = sophia_runtime::PROTECTION_DOMAIN_HOSTNAME.as_bytes();
+        LiveXAuthorityFile::create_with_local_hosts(display_number, &[sandbox])?
+    };
     // Every producer the owner loop inspects gets this before it can publish
     // anything the owner would otherwise sleep past.
     let owner_wake = OwnerWake::new()?;
@@ -215,7 +221,26 @@ pub(crate) fn run_persistent_xterm_session(
         .lock()
         .map_err(|_| "Sophia namespace registry lock was poisoned")?
         .create_namespace(config.namespace_profile, config.namespace_capabilities);
-    let xtest_namespace = x_namespace.id;
+    let mut x_namespaces = std::collections::BTreeMap::from([
+        (sophia_x_authority::XServerFrontendListenerId::PRIMARY, x_namespace.id),
+    ]);
+    let mut group_listeners = Vec::new();
+    let group_layout = socket_directories::SocketDirectoryLayout::prepare(display_number)?;
+    let group_sockets = prepare_confined_group_sockets(&group_layout, &config.x_groups.confined)?;
+    for (id, path) in &group_sockets {
+        let context = namespace_registry.lock()
+            .map_err(|_| "Sophia namespace registry lock was poisoned")?
+            .create_namespace(NamespaceProfile::Confined, NamespaceCapabilities::NONE);
+        let listener = sophia_x_authority::XServerFrontendListenerId(*id);
+        x_namespaces.insert(listener, context.id);
+        group_listeners.push((listener, path.clone(), context));
+    }
+    let xtest_listener = match config.x_groups.xtest {
+        Some(socket_directories::ClientGroup::Confined(id)) => sophia_x_authority::XServerFrontendListenerId(id),
+        _ => sophia_x_authority::XServerFrontendListenerId::PRIMARY,
+    };
+    let xtest_namespace = *x_namespaces.get(&xtest_listener)
+        .ok_or("XTEST group lost its namespace")?;
     let session_user_id = rustix::process::geteuid().as_raw();
     let launch_origins = wm_session
         .as_ref()
@@ -225,13 +250,16 @@ pub(crate) fn run_persistent_xterm_session(
     let admission_policy = Arc::new(LiveXAdmissionPolicy {
         launch_origins: launch_origins.clone(),
         registry: namespace_registry.clone(),
-        namespace: x_namespace.id,
+        namespaces: x_namespaces,
         session_user_id,
     });
     // The frontend sleeps until a service command or routed input rings this.
     // Every Session sender into it must therefore be a notifying one.
     let frontend_service_wake = sophia_wake::WakeSlot::default();
     let (mut frontend_config, client_render_devices) = include!("run/frontend_config.rs");
+    for (listener, path, context) in group_listeners {
+        frontend_config = frontend_config.with_listener(listener, path, context)?;
+    }
     let (authority_sender, authority_receiver) = sync_channel(SESSION_AUTHORITY_CAPACITY);
     let (control_ack_sender, control_ack_receiver) = sync_channel(SESSION_CONTROL_CAPACITY);
     // Completion notifications must never kill an X11 writer merely because
@@ -316,6 +344,7 @@ pub(crate) fn run_persistent_xterm_session(
         )
     }));
     wait_for_x_server_socket(&config.socket_path, &mut server)?;
+    verify_confined_group_sockets(&group_layout, &group_sockets, &mut server)?;
     let mut metadata_broker = config
         .wm_process
         .is_some()
@@ -524,6 +553,7 @@ pub(crate) fn run_persistent_xterm_session(
             xauthority.path(),
             config.control_socket.as_deref(),
             config.inspection_socket.as_deref(),
+            config.application_confinement(xauthority.path()),
             crate::diagnostics::application::LaunchContext {
                 source: crate::diagnostics::application::LaunchSource::Startup,
                 transaction: None,
@@ -894,3 +924,5 @@ pub(crate) fn run_persistent_xterm_session(
     }
     Ok(())
 }
+
+include!("run/x_groups.rs");

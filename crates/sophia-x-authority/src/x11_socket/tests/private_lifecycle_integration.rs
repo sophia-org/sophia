@@ -396,6 +396,7 @@ fn lifecycle_integration_actual_setup_both_orders_closes_exact_query_owner() {
                     client_routing: Some(registry),
                 },
                 X11ClientAdmissionContext {
+                    listener: crate::XServerFrontendListenerId::PRIMARY,
                     authorization: &XServerFrontendSetupAuthorization::default(),
                     injection_policy: None,
                 admission_policy: Some(Arc::new(LifecycleSetupPolicy(context))),
@@ -612,6 +613,7 @@ fn lifecycle_integration_actual_setup_binds_before_its_first_fallible_attachment
                 client_routing: Some(registry),
             },
             X11ClientAdmissionContext {
+                listener: crate::XServerFrontendListenerId::PRIMARY,
                 authorization: &XServerFrontendSetupAuthorization::default(),
                 injection_policy: None,
                 admission_policy: Some(Arc::new(LifecycleSetupPolicy(context))),

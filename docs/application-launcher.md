@@ -70,9 +70,10 @@ WM placement. Closing the menu does not terminate that application.
 ## Execution policy
 
 `trusted-host` is an explicit policy choice. A launched program has the same host
-user authority as the session's other registered applications. The launcher does
-not sandbox it, create a private application namespace, or grant filesystem
-confinement. A writable desktop-entry source is therefore a source of executable
+user authority unless Session explicitly maps its registered application ID to
+a confined group with `--confined-application=APP_ID:GROUP_ID`. Scanned desktop
+entries remain host launches, including entries for the same executable as a
+mapped registration. A writable desktop-entry source is therefore a source of executable
 host commands. Approve only directories whose publishers you trust at that level.
 
 The shell's existing protection domain is unchanged: catalog support adds no
@@ -87,11 +88,14 @@ precedence, localized names, `Hidden`, `NoDisplay`, `OnlyShowIn`, `NotShowIn`,
 An explicitly approved entry can itself invoke a shell; its authority is the
 host policy, not the menu parser. Unsupported or missing commands are shown as
 unavailable. Entries requiring D-Bus activation are unavailable, as are terminal
-entries without an explicit adapter. File/URI opening, desktop actions and new
-application-confinement policies are deferred. No unsupported policy falls back
-to `trusted-host`. When a confinement policy is chosen, the directory it mounts
-and the promise it keeps are already written: see *Socket Directories* in
-`namespaces-and-portals.md`.
+entries without an explicit adapter. File/URI opening, desktop actions and
+confinement of scanned desktop entries are deferred. A mapped registration
+that cannot be confined is refused, without a host fallback. See
+[confined application groups](namespaces-and-portals.md#configuring-confined-application-groups)
+for configuration, path exclusion and the restrictions on primary startup and
+terminal-adapter registrations. The catalog and its terminal adapter stay fixed
+until the next login; a registry reload changes commands behind identities but
+does not change their confinement mapping.
 
 Each opening requests a fresh immutable catalog on a worker thread. A selection
 waits in the session's bounded application-admission queue. At dispatch the worker

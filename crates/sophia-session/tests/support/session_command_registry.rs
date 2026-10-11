@@ -373,6 +373,7 @@ shift
                 &xauthority,
                 socket,
                 inspection_socket,
+                Default::default(),
                 crate::diagnostics::application::LaunchContext {
                     source: crate::diagnostics::application::LaunchSource::Shortcut,
                     transaction: Some(transaction.raw()),
@@ -412,6 +413,7 @@ shift
                 &xauthority,
                 socket,
                 inspection_socket,
+                Default::default(),
                 crate::diagnostics::application::LaunchContext {
                     source: crate::diagnostics::application::LaunchSource::Shortcut,
                     transaction: Some(transaction.raw()),

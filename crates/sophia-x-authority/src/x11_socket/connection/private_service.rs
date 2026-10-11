@@ -268,7 +268,7 @@ fn drive_routed_service(
             // A readable backlog at capacity is not runnable work. Departing
             // workers ring the owner when an admission slot becomes available.
             if accepting && frontend.active_client_worker_count() < frontend.config.max_concurrent_clients().get() {
-                fds.push(rustix::event::PollFd::new(&frontend.listener, rustix::event::PollFlags::IN));
+                fds.extend(frontend.listeners.iter().filter(|entry| frontend.listener_has_capacity(entry.id)).map(|entry| rustix::event::PollFd::new(&entry.socket, rustix::event::PollFlags::IN)));
             }
             sophia_wake::wait(&mut fds, deadline)
                 .map_err(|error| X11SetupSocketError::new(format!("frontend wait: {error}")))?;

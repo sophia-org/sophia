@@ -139,10 +139,7 @@ pub enum ClientGroup {
     Shared,
     /// One confined group. The index is the group's, not a connection's.
     ///
-    /// Constructed by the controls today, and by the per-group listeners when
-    /// the multiplexer half of the plan lands; this session runs one group,
-    /// so nothing in it names a second yet.
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// Configured at startup; unrelated to client or namespace allocation order.
     Confined(u32),
 }
 

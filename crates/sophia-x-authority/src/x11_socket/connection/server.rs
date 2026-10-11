@@ -153,6 +153,7 @@ pub fn run_x11_core_socket_server_once_channels(
             client_routing: None,
         },
         X11ClientAdmissionContext {
+            listener: crate::XServerFrontendListenerId::PRIMARY,
             authorization: &XServerFrontendSetupAuthorization::default(),
             admission_policy: None,
             injection_policy: None,
@@ -198,6 +199,7 @@ pub fn run_x11_core_socket_server_once_session_channels(
             client_routing: None,
         },
         X11ClientAdmissionContext {
+            listener: crate::XServerFrontendListenerId::PRIMARY,
             authorization: &XServerFrontendSetupAuthorization::default(),
             admission_policy: None,
             injection_policy: None,
@@ -912,6 +914,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_setup_authorization(
             client_routing: None,
         },
         X11ClientAdmissionContext {
+            listener: crate::XServerFrontendListenerId::PRIMARY,
             authorization,
             admission_policy,
             injection_policy,

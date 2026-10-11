@@ -166,6 +166,7 @@ fn peer_write_failure_input_paths_settle_once_without_killing_the_frontend() {
         frontend.workers.insert(
             worker_id,
             X11CoreClientWorker {
+                listener: crate::XServerFrontendListenerId::PRIMARY,
                 thread: std::thread::spawn(|| {}),
                 shutdown,
             },

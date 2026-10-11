@@ -258,8 +258,10 @@ presented and what the operator trusts the shell to represent. Engine cannot
 infer an honest application label from arbitrary pixels, so the extension cannot
 inherit the descriptor launcher's immutable-label assurance. This document does
 not choose a trusted identity overlay, extra confirmation, or another launcher
-policy by implication. The current `trusted-host` execution policy remains
-distinct from shell confinement and does not sandbox launched applications.
+policy by implication. Catalog execution remains distinct from shell confinement.
+Session's explicit registered-application confinement mapping applies to catalog
+launches; unmapped identities retain the `trusted-host` policy. See
+[application launcher](application-launcher.md#execution-policy).
 
 ## Acceptance And Remaining Design Work
 

@@ -246,6 +246,27 @@ trusted terminal through the portal, and the session survives the confined
 group's departure. Recorded as a milestone note with the gate reports beside
 it, in the M-series format.
 
+### t142 implementation boundary, 2026-10-10
+
+The implementation uses the synchronous listener table above and Session-owned
+registered-application mappings, not a new async runtime or a CLI executable-wide
+sandbox rule. Explicit group indices remain stable across configuration order.
+The selected directory and cookie file are read-only mounts; the original
+Tier 1 `--bind` example is superseded by this requirement, since a writable
+socket directory would let a member replace other members' endpoint.
+
+The initial confined application has private networking, no host home/runtime
+mount, and no GPU access. Startup refuses mapping the primary application or
+catalog terminal; scanned desktop entries remain host launches. These limits
+do not waive the browser/terminal physical acceptance above. The default
+sixteen workers are shared by fixed listener quotas, preserving primary capacity
+under stalled confined setup.
+
+The [implementation investigation](../investigations/rd9nia0s-several-x-listeners-and-confined-application-launch-validation.md)
+records the runtime, two-listener portal/isolation, idle reclamation and joined
+cookie-lookup controls, candidate identities and remaining gates. t142 remains
+open until its full exit is met.
+
 ### Priority and sequencing
 
 - **t141 (Phase 1): (A), after the t135 decision** or once the contract is

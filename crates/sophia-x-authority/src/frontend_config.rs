@@ -20,6 +20,7 @@ pub struct XServerFrontendConfig {
     pub(crate) service_wake: Option<sophia_wake::WakeSlot>,
     pub(crate) owner_wake: sophia_wake::WakeSlot,
     socket_path: PathBuf,
+    pub(crate) additional_listeners: Vec<FrontendListenerConfig>,
     namespace: NamespaceContext,
     setup_authorization: XServerFrontendSetupAuthorization,
     admission_policy: Option<Arc<dyn XServerFrontendAdmissionPolicy>>,
@@ -53,11 +54,19 @@ pub struct XServerFrontendConfig {
     font_path: Vec<PathBuf>,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct FrontendListenerConfig {
+    pub id: crate::XServerFrontendListenerId,
+    pub path: PathBuf,
+    pub namespace: NamespaceContext,
+}
+
 impl core::fmt::Debug for XServerFrontendConfig {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         formatter
             .debug_struct("XServerFrontendConfig")
             .field("socket_path", &self.socket_path)
+            .field("additional_listeners", &self.additional_listeners)
             .field("namespace", &self.namespace)
             .field("setup_authorization", &self.setup_authorization)
             .field("has_admission_policy", &self.admission_policy.is_some())
@@ -112,6 +121,7 @@ impl XServerFrontendConfig {
             service_wake: None,
             owner_wake: sophia_wake::WakeSlot::default(),
             socket_path,
+            additional_listeners: Vec::new(),
             namespace,
             setup_authorization: XServerFrontendSetupAuthorization::default(),
             admission_policy: None,
@@ -136,6 +146,37 @@ impl XServerFrontendConfig {
     pub fn with_service_wake(mut self, wake: sophia_wake::WakeSlot) -> Self {
         self.service_wake = Some(wake);
         self
+    }
+
+    /// Adds a transport candidate; admission still selects the client's authority.
+    /// All listeners share state, setup authorization and the global worker limit.
+    pub fn with_listener(
+        mut self,
+        id: crate::XServerFrontendListenerId,
+        path: impl Into<PathBuf>,
+        namespace: NamespaceContext,
+    ) -> Result<Self, X11SetupSocketError> {
+        let path = path.into();
+        if id == crate::XServerFrontendListenerId::PRIMARY
+            || path.as_os_str().is_empty()
+            || path == self.socket_path
+            || !namespace.is_valid()
+            || self.additional_listeners.len() >= 63
+            || self
+                .additional_listeners
+                .iter()
+                .any(|entry| entry.id == id || entry.path == path)
+        {
+            return Err(X11SetupSocketError::new(
+                "invalid or duplicate X11 listener (maximum 64)",
+            ));
+        }
+        self.additional_listeners.push(FrontendListenerConfig {
+            id,
+            path,
+            namespace,
+        });
+        Ok(self)
     }
 
     pub fn with_owner_wake(self, wake: sophia_wake::Notifier) -> Self {

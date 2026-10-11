@@ -6,8 +6,12 @@ mod development_config;
 #[path = "wm_transport_config.rs"]
 mod wm_transport_config;
 
+#[path = "confined_application_config.rs"]
+mod confined_application_config;
 #[path = "inspection_environment.rs"]
 mod inspection_environment;
+#[path = "x_group_config.rs"]
+mod x_group_config;
 
 #[test]
 fn dock_only_profile_requires_catalog_and_input_before_endpoint_construction() {

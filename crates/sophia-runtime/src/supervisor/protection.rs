@@ -13,6 +13,8 @@ use owned_filesystem::OwnedProtectionFilesystem;
 pub use owned_filesystem::{ProtectionFilesystemEntry, ProtectionFilesystemManifest};
 
 pub const DEFAULT_BUBBLEWRAP_PATH: &str = "/usr/bin/bwrap";
+/// Stable local hostname used by protected applications and their Xauthority records.
+pub const PROTECTION_DOMAIN_HOSTNAME: &str = "sophia-domain";
 /// A host's Nix store. Programs built there load their interpreter and
 /// libraries from it, so every domain sees it read-only when it exists.
 const NIX_STORE: &str = "/nix/store";
@@ -28,6 +30,11 @@ pub enum ProtectionDomainRole {
     ApplicationFrontend,
     OutputAuthority,
     LockProvider,
+    /// An ordinary X application confined to one client group. Never shares
+    /// a domain with another role, and no supervised process kind requires
+    /// it, so a supervised role can neither be launched into an application
+    /// domain nor carry one.
+    ConfinedXApplication,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -148,6 +155,11 @@ pub enum ProtectionDomainSpecError {
     NoRoles,
     ForbiddenRoleComposition {
         spatial_policy: ProtectionDomainRole,
+        conflicting: ProtectionDomainRole,
+    },
+    /// A role that must be alone in its domain was composed with another.
+    ExclusiveRole {
+        exclusive: ProtectionDomainRole,
         conflicting: ProtectionDomainRole,
     },
     RelativePath(PathBuf),
@@ -327,6 +339,15 @@ fn validate_role_composition(
     if roles.is_empty() {
         return Err(ProtectionDomainSpecError::NoRoles);
     }
+    let exclusive = ProtectionDomainRole::ConfinedXApplication;
+    if roles.contains(&exclusive)
+        && let Some(conflicting) = roles.iter().copied().find(|role| *role != exclusive)
+    {
+        return Err(ProtectionDomainSpecError::ExclusiveRole {
+            exclusive,
+            conflicting,
+        });
+    }
     if roles.contains(&ProtectionDomainRole::SpatialPolicy) {
         for conflicting in [
             ProtectionDomainRole::MetadataShell,
@@ -420,6 +441,40 @@ pub(crate) fn spawn_bubblewrap(
             required: required_role,
         });
     }
+    let mut command = bubblewrap_command(launch, domain, |_| {})?;
+    let mut child = command
+        .spawn()
+        .map_err(|error| ProtectionDomainLaunchError::Spawn(error.to_string()))?;
+    let supervisor_pid = child.id();
+    let peer_pid = match wait_for_bubblewrap_peer(&mut child, supervisor_pid) {
+        Ok(pid) => pid,
+        Err(error) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(error);
+        }
+    };
+    Ok(ProtectedProcess {
+        child,
+        evidence: ProtectionDomainEvidence {
+            backend: ProtectionBackendKind::Bubblewrap,
+            supervisor_pid,
+            peer_pid,
+            roles: domain.roles.clone(),
+        },
+    })
+}
+
+/// The unspawned Bubblewrap command for one domain: every check
+/// `spawn_bubblewrap` makes after the role, the argument list, the process
+/// group and the stdio nulling. The role check stays with the caller.
+/// `prepare_host` applies the caller's launch restrictions to both the
+/// version probe and the final command; existing roles leave them unchanged.
+pub(crate) fn bubblewrap_command(
+    launch: &ProcessLaunchSpec,
+    domain: &ProtectionDomainSpec,
+    prepare_host: fn(&mut Command),
+) -> Result<Command, ProtectionDomainLaunchError> {
     let program = PathBuf::from(&launch.program);
     if !program.is_absolute() || !program.is_file() {
         return Err(ProtectionDomainLaunchError::InvalidExecutable(program));
@@ -457,7 +512,7 @@ pub(crate) fn spawn_bubblewrap(
             bubblewrap.clone(),
         ));
     }
-    let observed_version = bubblewrap_version(bubblewrap)?;
+    let observed_version = bubblewrap_version_prepared(bubblewrap.as_os_str(), prepare_host)?;
     let parsed_version = parse_bubblewrap_version(&observed_version)
         .ok_or_else(|| ProtectionDomainLaunchError::UnsupportedVersion(observed_version.clone()))?;
     if parsed_version < MINIMUM_BUBBLEWRAP_VERSION {
@@ -481,27 +536,8 @@ pub(crate) fn spawn_bubblewrap(
     if !domain.inherited_fds.contains(&2) {
         command.stderr(Stdio::null());
     }
-    let mut child = command
-        .spawn()
-        .map_err(|error| ProtectionDomainLaunchError::Spawn(error.to_string()))?;
-    let supervisor_pid = child.id();
-    let peer_pid = match wait_for_bubblewrap_peer(&mut child, supervisor_pid) {
-        Ok(pid) => pid,
-        Err(error) => {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(error);
-        }
-    };
-    Ok(ProtectedProcess {
-        child,
-        evidence: ProtectionDomainEvidence {
-            backend: ProtectionBackendKind::Bubblewrap,
-            supervisor_pid,
-            peer_pid,
-            roles: domain.roles.clone(),
-        },
-    })
+    prepare_host(&mut command);
+    Ok(command)
 }
 
 fn required_role(process: SupervisedProcessKind) -> ProtectionDomainRole {
@@ -581,7 +617,7 @@ fn bubblewrap_arguments(
         "--cap-drop".into(),
         "ALL".into(),
         "--hostname".into(),
-        "sophia-domain".into(),
+        PROTECTION_DOMAIN_HOSTNAME.into(),
         "--clearenv".into(),
         "--ro-bind".into(),
         "/usr".into(),
@@ -737,8 +773,17 @@ pub(super) fn parse_single_child_pid(value: &str) -> Option<u32> {
 }
 
 pub fn bubblewrap_version(path: impl AsRef<OsStr>) -> Result<String, ProtectionDomainLaunchError> {
-    let output = Command::new(path)
-        .arg("--version")
+    bubblewrap_version_prepared(path.as_ref(), |_| {})
+}
+
+fn bubblewrap_version_prepared(
+    path: &OsStr,
+    prepare_host: fn(&mut Command),
+) -> Result<String, ProtectionDomainLaunchError> {
+    let mut command = Command::new(path);
+    command.arg("--version");
+    prepare_host(&mut command);
+    let output = command
         .output()
         .map_err(|error| ProtectionDomainLaunchError::Spawn(error.to_string()))?;
     if !output.status.success() {
@@ -765,3 +810,6 @@ fn parse_bubblewrap_version(value: &str) -> Option<(u32, u32, u32)> {
 
 #[path = "../../tests/support/protection_store.rs"]
 mod protection_store;
+
+#[path = "../../tests/support/protection_command.rs"]
+mod protection_command;

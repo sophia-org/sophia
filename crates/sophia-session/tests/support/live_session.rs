@@ -34,6 +34,9 @@ mod desktop_composition;
 #[path = "launch_origin_socket.rs"]
 mod launch_origin_socket;
 
+#[path = "confined_x_authentication.rs"]
+mod confined_x_authentication;
+
 #[cfg(feature = "native-session")]
 #[path = "glx_pixmap_export.rs"]
 mod glx_pixmap_export;

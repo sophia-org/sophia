@@ -15,6 +15,24 @@ impl LiveXAuthorityFile {
         directory: &std::path::Path,
         display_number: u32,
     ) -> Result<(Self, [u8; 16]), Box<dyn std::error::Error>> {
+        Self::create_in_with_local_hosts(directory, display_number, &[])
+    }
+
+    /// The same file, also naming each `extra_hosts` entry as a local host
+    /// for this display and this one cookie: a sandbox with its own hostname
+    /// looks its cookie up under that name. One cookie, no wildcard record.
+    pub(super) fn create_with_local_hosts(
+        display_number: u32,
+        extra_hosts: &[&[u8]],
+    ) -> Result<(Self, [u8; 16]), Box<dyn std::error::Error>> {
+        Self::create_in_with_local_hosts(&live_xauthority_directory(), display_number, extra_hosts)
+    }
+
+    pub(super) fn create_in_with_local_hosts(
+        directory: &std::path::Path,
+        display_number: u32,
+        extra_hosts: &[&[u8]],
+    ) -> Result<(Self, [u8; 16]), Box<dyn std::error::Error>> {
         let mut cookie = [0u8; 16];
         fill_session_random(&mut cookie)?;
         let mut nonce = [0u8; 8];
@@ -27,7 +45,7 @@ impl LiveXAuthorityFile {
             ".sophia-Xauthority-{}-{display_number}-{suffix}",
             std::process::id()
         ));
-        let record = encode_live_xauthority_record(display_number, cookie)?;
+        let record = encode_live_xauthority_records(display_number, cookie, extra_hosts)?;
         let mut file = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -101,13 +119,36 @@ pub(super) fn fill_session_random(bytes: &mut [u8]) -> Result<(), std::io::Error
     Ok(())
 }
 
+/// The host's own record first, exactly as before, then one record per extra
+/// local host not already named. Every record carries the same display and
+/// cookie.
+fn encode_live_xauthority_records(
+    display_number: u32,
+    cookie: [u8; 16],
+    extra_hosts: &[&[u8]],
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let system = rustix::system::uname();
+    let hostname = system.nodename().to_bytes();
+    let mut named: Vec<&[u8]> = vec![hostname];
+    let mut records = encode_live_xauthority_record(hostname, display_number, cookie)?;
+    for host in extra_hosts {
+        if host.is_empty() {
+            return Err("Xauthority local host name is empty".into());
+        }
+        if !named.contains(host) {
+            named.push(host);
+            records.extend(encode_live_xauthority_record(host, display_number, cookie)?);
+        }
+    }
+    Ok(records)
+}
+
 fn encode_live_xauthority_record(
+    hostname: &[u8],
     display_number: u32,
     cookie: [u8; 16],
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     const FAMILY_LOCAL: u16 = 256;
-    let system = rustix::system::uname();
-    let hostname = system.nodename().to_bytes();
     let display = display_number.to_string();
     let mut record = Vec::with_capacity(64 + hostname.len());
     record.extend_from_slice(&FAMILY_LOCAL.to_be_bytes());

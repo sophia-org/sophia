@@ -291,11 +291,30 @@ impl LiveMetadataShell {
                         } else {
                             Err("launch revoked".into())
                         };
+                        // The identity confinement is decided by: the entry at the
+                        // granted slot of the current catalog whose command is the one
+                        // verified. No such entry refuses the launch; it never falls
+                        // back to an unidentified host launch.
+                        let result = result.and_then(|command| {
+                            self.launcher
+                                .catalog
+                                .as_ref()
+                                .and_then(|c| {
+                                    c.entries.iter().find(|e| {
+                                        e.descriptor.slot == grant.slot
+                                            && e.command.as_ref() == Some(&command)
+                                    })
+                                })
+                                .map(|entry| (command, entry.identity.clone()))
+                                .ok_or_else(|| "catalog identity changed".into())
+                        });
                         let status = match result {
-                            Ok(command) => {
+                            Ok((command, identity)) => {
                                 // Filesystem work has completed on the worker. There is
                                 // no further admission queue between revalidation and exec.
-                                match spawn_catalog_child(command, config, xauthority, tx) {
+                                match spawn_catalog_child(
+                                    command, &identity, config, xauthority, tx,
+                                ) {
                                     Ok(managed) => {
                                         children.push(managed);
                                         *admission_started = Some(Instant::now());

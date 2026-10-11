@@ -146,7 +146,10 @@ fn exercise_x_origin<P: OriginPolicy>(
     let admission = Arc::new(LiveXAdmissionPolicy {
         launch_origins: origins.clone(),
         registry: Arc::new(Mutex::new(namespaces)),
-        namespace: namespace.id,
+        namespaces: std::collections::BTreeMap::from([(
+            XServerFrontendListenerId::PRIMARY,
+            namespace.id,
+        )]),
         session_user_id: rustix::process::geteuid().as_raw(),
     });
     let mut frontend = XServerFrontend::bind(

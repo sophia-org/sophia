@@ -15,6 +15,9 @@ use std::sync::mpsc::sync_channel;
 #[path = "../../tests/support/idle_wake.rs"]
 mod idle_wake;
 
+#[path = "../../tests/support/listener_idle_reclaim.rs"]
+mod listener_idle_reclaim;
+
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/support/color_allocation_cleanup.rs"

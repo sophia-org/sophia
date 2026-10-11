@@ -7,6 +7,7 @@ struct X11ClientConnectionInputs {
 
 #[cfg(unix)]
 struct X11ClientAdmissionContext<'a> {
+    listener: crate::XServerFrontendListenerId,
     authorization: &'a XServerFrontendSetupAuthorization,
     admission_policy: Option<Arc<dyn XServerFrontendAdmissionPolicy>>,
     /// Who may fake input, decided by the same instance that decided who may
@@ -466,6 +467,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         })
         .transpose()?;
     let X11ClientAdmissionContext {
+        listener,
         authorization,
         admission_policy,
         injection_policy,
@@ -495,6 +497,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             };
             if let Some(policy) = admission_policy.as_ref() {
                 let request = XServerFrontendAdmissionRequest {
+                    listener,
                     setup_authentication,
                     verified_private_input,
                     peer_credentials,

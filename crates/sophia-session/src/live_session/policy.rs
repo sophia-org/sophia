@@ -766,6 +766,7 @@ fn execute_committed_session_actions(
             xauthority,
             config.control_socket.as_deref(),
             config.inspection_socket.as_deref(),
+            config.application_confinement(xauthority),
             crate::diagnostics::application::LaunchContext {
                 source: crate::diagnostics::application::LaunchSource::Shortcut,
                 transaction: Some(intent.transaction.raw()),

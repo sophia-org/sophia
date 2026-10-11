@@ -23,6 +23,8 @@ mod session;
 mod session_profile;
 #[path = "config/wm_proof.rs"]
 mod wm_proof;
+#[path = "config/x_groups.rs"]
+mod x_groups;
 use firefox_stage::FirefoxM8StageProof;
 use input_profile::PreparedInputProfile;
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -100,6 +102,7 @@ struct PersistentXtermSessionConfig {
     /// by default, and never beside a physical proof: a synthetic source
     /// could satisfy one, and rehearsal is not acceptance.
     admit_xtest: bool,
+    x_groups: x_groups::XGroups,
     exit_after_input_proof: bool,
     input_devices: Vec<std::path::PathBuf>,
     input_seat: Option<String>,
@@ -392,14 +395,39 @@ impl PersistentXtermSessionConfig {
         }?;
         self.applications.applications.get(id)
     }
+    /// The confinement every Session launch path consults for a registered
+    /// application, with this session's cookie and group directories.
+    fn application_confinement<'a>(
+        &'a self,
+        xauthority: &'a std::path::Path,
+    ) -> crate::application_catalog::ApplicationConfinement<'a> {
+        crate::application_catalog::ApplicationConfinement::new(
+            &self.x_groups.applications,
+            &self.bubblewrap,
+            xauthority,
+            parse_display_number(&self.display).ok(),
+            |display, group| {
+                socket_directories::SocketDirectoryLayout::prepare(display)
+                    .map(|layout| layout.group_directory(socket_directories::ClientGroup::Confined(group)))
+                    .map_err(std::io::Error::other)
+            },
+        )
+    }
+
+    /// A mapped application is spawned only confined; an unmapped one exactly
+    /// as before.
     fn spawn_session_application(
         app: &SessionApplicationSpec,
         display: &str,
         xauthority: &std::path::Path,
         control_socket: Option<&std::path::Path>,
         inspection_socket: Option<&std::path::Path>,
+        confinement: crate::application_catalog::ApplicationConfinement<'_>,
         context: crate::diagnostics::application::LaunchContext,
     ) -> Result<Child, Box<dyn std::error::Error>> {
+        if let Some(confined) = confinement.command(&app.id, &app.executable, &app.arguments, None) {
+            return Ok(crate::diagnostics::application::spawn(&mut confined?, context)?);
+        }
         let mut command = std::process::Command::new(&app.executable);
         crate::application_catalog::configure_host_application_environment(
             &mut command,

@@ -243,7 +243,8 @@ impl PersistentXtermSessionConfig {
             return Err("--terminal-exec accepts at most 32 bounded arguments".into());
         }
         let expect_physical_pointer = args.iter().any(|arg| arg == "--expect-physical-pointer");
-        let admit_xtest = args.iter().any(|arg| arg == "--admit-xtest");
+        let x_groups = x_groups::XGroups::parse(args)?;
+        let admit_xtest = x_groups.xtest.is_some();
         let secondary_terminal = args.iter().any(|arg| arg == "--secondary-terminal");
         let exit_after_input_proof = args.iter().any(|arg| arg == "--exit-after-input-proof");
         let native_scanout = args.iter().any(|arg| arg == "--native-scanout");
@@ -853,14 +854,12 @@ impl PersistentXtermSessionConfig {
                 "M4 Present proof controls require --native-scanout and --terminal-exec".into(),
             );
         }
-        if admit_xtest
-            && (inject_text.is_some() || expect_physical_text.is_some() || expect_physical_pointer)
-        {
-            return Err(
-                "--admit-xtest cannot be combined with an input proof: a synthetic source could satisfy it"
-                    .into(),
-            );
-        }
+        x_groups.validate(
+            normal_session,
+            &applications,
+            application_catalog.as_ref(),
+            inject_text.is_some() || expect_physical_text.is_some() || expect_physical_pointer,
+        )?;
         if (inject_text.is_some() || expect_physical_text.is_some())
             && max_runtime.is_none()
             && max_ticks.is_none()
@@ -922,6 +921,7 @@ impl PersistentXtermSessionConfig {
                 .unwrap_or(SESSION_PHYSICAL_SEQUENCE_TIMEOUT_MSEC),
             expect_physical_pointer,
             admit_xtest,
+            x_groups,
             exit_after_input_proof,
             input_devices,
             input_seat,

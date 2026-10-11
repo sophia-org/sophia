@@ -9,7 +9,7 @@
 /// so the body is parametrised rather than copied, and each name gets its
 /// own test below.
 #[cfg(unix)]
-fn cross_namespace_executor_installs_property_and_notifies_requestor_for(selection_name: &str) {
+fn cross_namespace_executor_installs_property_and_notifies_requestor_for(selection_name: &str, listeners: bool) {
     use std::io::Write;
     use std::net::Shutdown;
     use std::num::NonZeroUsize;
@@ -26,6 +26,7 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor_for(selecti
             .as_nanos()
     ));
     let portal_path = socket_path.with_extension("portal.sock");
+    let target_path = if listeners { socket_path.with_extension("group") } else { socket_path.clone() };
     let source = NamespaceContext::new(
         NamespaceId::from_raw(860),
         NamespaceProfile::Confined,
@@ -38,15 +39,18 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor_for(selecti
         NamespaceCapabilities::NONE,
     )
     .unwrap();
-    let policy = Arc::new(SequencedXAdmissionPolicy {
+    let policy: Arc<dyn XServerFrontendAdmissionPolicy> = if listeners {
+        Arc::new(ListenerXAdmissionPolicy::new(source, target))
+    } else { Arc::new(SequencedXAdmissionPolicy {
         namespaces: vec![source, target],
         next_client: std::sync::atomic::AtomicU64::new(0),
         revoked: std::sync::Mutex::new(Vec::new()),
-    });
-    let config = XServerFrontendConfig::new_with_namespace_context(&socket_path, source)
+    }) };
+    let mut config = XServerFrontendConfig::new_with_namespace_context(&socket_path, source)
         .unwrap()
         .with_admission_policy(policy)
         .with_max_concurrent_clients(NonZeroUsize::new(2).unwrap());
+    if listeners { config = config.with_listener(XServerFrontendListenerId(7), &target_path, target).unwrap(); }
     let (executor_sender, executor_receiver) = std::sync::mpsc::sync_channel(1);
     let (request_sender, request_receiver) = std::sync::mpsc::sync_channel(1);
     let (coordinate_sender, coordinate_receiver) = std::sync::mpsc::sync_channel(1);
@@ -181,7 +185,7 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor_for(selecti
         ))
         .unwrap();
 
-    let mut requestor = connect_x_socket(&socket_path);
+    let mut requestor = connect_x_socket(&target_path);
     requestor
         .set_read_timeout(Some(X_RECORD_READ_TIMEOUT))
         .unwrap();
@@ -385,7 +389,7 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor_for(selecti
 #[cfg(unix)]
 #[test]
 fn cross_namespace_executor_installs_property_and_notifies_requestor() {
-    cross_namespace_executor_installs_property_and_notifies_requestor_for("CLIPBOARD");
+    cross_namespace_executor_installs_property_and_notifies_requestor_for("CLIPBOARD", false);
 }
 
 /// PRIMARY is predefined atom 1, so interning it by name returns the
@@ -393,7 +397,19 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor() {
 #[cfg(unix)]
 #[test]
 fn cross_namespace_executor_transfers_primary_and_notifies_requestor() {
-    cross_namespace_executor_installs_property_and_notifies_requestor_for("PRIMARY");
+    cross_namespace_executor_installs_property_and_notifies_requestor_for("PRIMARY", false);
+}
+
+#[cfg(unix)]
+#[test]
+fn listener_groups_transfer_clipboard_through_the_portal() {
+    cross_namespace_executor_installs_property_and_notifies_requestor_for("CLIPBOARD", true);
+}
+
+#[cfg(unix)]
+#[test]
+fn listener_groups_transfer_primary_through_the_portal() {
+    cross_namespace_executor_installs_property_and_notifies_requestor_for("PRIMARY", true);
 }
 
 #[test]

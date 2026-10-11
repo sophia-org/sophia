@@ -292,8 +292,10 @@ specific portal flow grants the operation.
 The live X launcher selects this profile with
 `--namespace-profile=confined`. Each run allocates a fresh confined namespace
 with explicit zero capabilities; all clients deliberately launched as part of
-that group share it. Separate group credentials on one listener remain future
-supervisor work. The socket suite proves that two policy-assigned confined
+that group share it. A session can also configure additional confined groups
+with `--confined-group=INDEX`, each on its own listener, as described below.
+Separate group credentials on one listener remain future supervisor work.
+The socket suite proves that two policy-assigned confined
 namespaces cannot map each other's windows, mutate their properties, claim
 their selections, forge a selection requestor, or emit metadata from a rejected
 foreign property write. It also proves that a rejected foreign event-mask
@@ -338,7 +340,7 @@ every group so that a client whose directory is mounted at the standard X11
 socket path sees `:<n>` and nothing about its launch has to change.
 
 **The contract a sandbox must keep.** A confined client is given exactly one
-group directory, mounted at `/tmp/.X11-unix` inside the sandbox, and is given
+group directory, mounted read-only at `/tmp/.X11-unix` inside the sandbox, and is given
 nothing else under `$XDG_RUNTIME_DIR/sophia/`. That is the whole of it. It
 names no sandbox: Bubblewrap satisfies it with one bind, an unshare-based
 launcher satisfies it with one mount, and the session refuses to know which.
@@ -357,12 +359,54 @@ separates groups, and a group that could read another's directory would have
 the cookie already. The classic path `/tmp/.X11-unix/X<n>` on the host remains
 valid for clients outside any sandbox.
 
-**What is deferred.** The launcher's execution policy still says confinement
-is deferred, and this section does not change that: the layout and the
-contract exist so that when a confinement policy is chosen it has a directory
-to mount and a promise to keep, not so that one is chosen here. Serving
-several groups from one session process is the multiplexer half of the plan
-and is tracked separately.
+### Configuring confined application groups
+
+`--confined-group=INDEX` adds a group with a distinct, zero-capability confined
+namespace. Indices are explicit nonzero `u32` values, stable across configuration
+reordering. Duplicate groups are refused; at most eight are accepted. The
+existing synchronous frontend serves every listener with one accepting thread.
+Worker counts and idle reclamation include every listener. The default sixteen
+worker slots are divided between listeners, with any remainder reserved for
+the primary listener. With eight confined groups, each gets one slot and the
+primary gets eight. A full group defers acceptance without stopping other
+groups; incomplete X setup also occupies a slot.
+
+In normal sessions, `--confined-application=APP_ID:GROUP_ID` maps a registered
+application to a configured group. The application must also appear in the
+selected catalog. Catalog launches, shortcuts and secondary startup launches
+consult the same mapping. A mapped launch that cannot be confined fails; it
+does not fall back to a host command. The primary startup application and the
+catalog terminal cannot be mapped in this implementation. Host working
+directories are refused for confined launches.
+
+The mapping names a registry identity, not an executable. Scanned desktop
+entries remain unmapped even when they invoke the same executable. This is
+not an executable-wide confinement policy, nor a new `client-launch` mode.
+
+The runtime uses the shared Bubblewrap builder with an exclusive application
+role. It mounts only the selected socket directory and the session cookie file
+read-only, supplies `DISPLAY` and `XAUTHORITY`, and gives the child private
+network, `/tmp`, `/run` and home namespaces. No host control or inspection
+endpoint is added. Private networking also excludes the host's abstract X
+sockets. This bounded launch has no host home, network, D-Bus or GPU access.
+Both the Bubblewrap version probe and launch clear the host environment and
+mark inherited descriptors above standard I/O close-on-exec; unsupported
+`close_range` fails the launch closed.
+
+Session owns the Bubblewrap monitor as the child. On Session termination of
+that process group, the sandbox is torn down; this does not deliver a graceful
+termination signal to the application in its separate session.
+
+When groups are configured, the cookie file adds a `FAMILY_LOCAL` record for
+the sandbox hostname using the same display and secret. It keeps the host
+record and uses no wildcard. Ordinary client cookie lookup therefore works
+inside the separate hostname namespace.
+
+`--admit-xtest` retains its primary-group meaning. The explicit forms are
+`--admit-xtest=shared` and `--admit-xtest=confined-INDEX`; at most one configured
+group can be selected. All forms are refused alongside an input proof.
+Physical acceptance of shared and confined applications remains the separate
+t142 live gate; deterministic socket and sandbox tests do not establish it.
 
 ## Admission
 

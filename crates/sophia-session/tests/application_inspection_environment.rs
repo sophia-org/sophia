@@ -90,6 +90,7 @@ fn catalog_environment_child() {
                     xauthority: Path::new("/nonexistent/xauthority"),
                     control_socket,
                     inspection_socket,
+                    confinement: Default::default(),
                 },
             )
             .unwrap(),

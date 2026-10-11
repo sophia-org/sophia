@@ -108,8 +108,17 @@ pub struct XServerFrontendPeerCredentials {
     pub group_id: u32,
 }
 
+/// Transport provenance assigned by the frontend owner, never by an X client.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct XServerFrontendListenerId(pub u32);
+
+impl XServerFrontendListenerId {
+    pub const PRIMARY: Self = Self(0);
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct XServerFrontendAdmissionRequest {
+    pub listener: XServerFrontendListenerId,
     pub peer_credentials: Option<XServerFrontendPeerCredentials>,
     /// Existing transport provenance. TrustedLocal in mixed private mode is
     /// not an input grant; only verified_private_input carries named evidence.

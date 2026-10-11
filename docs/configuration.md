@@ -860,6 +860,14 @@ select a catalog by name and bind `session:application-launcher`. Catalog policy
 and selection take effect at the next login. See
 [application launcher](application-launcher.md) for the complete configuration.
 
+For registered applications, Session also accepts `--confined-group=7` and
+`--confined-application=APP_ID:7`. The mapping applies to that registration's
+catalog, shortcut and secondary startup launches. It requires a normal session
+and membership in the selected catalog, and refuses the primary startup app and
+catalog terminal. Scanned desktop entries are not mapped by executable. See
+[confined application groups](namespaces-and-portals.md#configuring-confined-application-groups)
+for limits and the socket and cookie contract.
+
 ### Workspace policy
 
 Workspace numbering, layout keys and migration rules belong to the window

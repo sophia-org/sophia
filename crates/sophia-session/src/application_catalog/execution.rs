@@ -13,6 +13,8 @@ pub struct CatalogProcessEnvironment<'a> {
     pub xauthority: &'a Path,
     pub control_socket: Option<&'a Path>,
     pub inspection_socket: Option<&'a Path>,
+    /// Registered applications that launch confined; the default maps none.
+    pub confinement: super::ApplicationConfinement<'a>,
 }
 
 /// Host endpoints come only from this Session's startup permissions, never
@@ -40,14 +42,35 @@ pub fn spawn_catalog_process(
     command: &ApplicationLaunchCommand,
     environment: CatalogProcessEnvironment<'_>,
 ) -> std::io::Result<Child> {
-    spawn_catalog_process_with_transaction(command, environment, None)
+    spawn_catalog_process_with_transaction(command, environment, None, None)
 }
 
+/// `identity` is the catalog identity of the entry this command was verified
+/// from. A mapped registered application is spawned only confined; an
+/// unmapped one, or a launch with no identity, takes the host path unchanged.
 pub(crate) fn spawn_catalog_process_with_transaction(
     command: &ApplicationLaunchCommand,
     environment: CatalogProcessEnvironment<'_>,
     transaction: Option<u64>,
+    identity: Option<&str>,
 ) -> std::io::Result<Child> {
+    let context = crate::diagnostics::application::LaunchContext {
+        source: crate::diagnostics::application::LaunchSource::Catalog,
+        transaction,
+    };
+    if let Some(confined) = identity
+        .and_then(super::ApplicationConfinement::registered_id)
+        .and_then(|application| {
+            environment.confinement.command(
+                application,
+                &command.executable,
+                &command.arguments,
+                command.working_directory.as_deref(),
+            )
+        })
+    {
+        return crate::diagnostics::application::spawn(&mut confined?, context);
+    }
     let mut process = Command::new(&command.executable);
     configure_host_application_environment(
         &mut process,
@@ -67,13 +90,7 @@ pub(crate) fn spawn_catalog_process_with_transaction(
     if let Some(directory) = &command.working_directory {
         process.current_dir(directory);
     }
-    crate::diagnostics::application::spawn(
-        &mut process,
-        crate::diagnostics::application::LaunchContext {
-            source: crate::diagnostics::application::LaunchSource::Catalog,
-            transaction,
-        },
-    )
+    crate::diagnostics::application::spawn(&mut process, context)
 }
 
 /// Returned together so the process cannot be attributed using just a numeric
@@ -129,6 +146,7 @@ pub fn spawn_native_catalog(
         &command,
         environment,
         Some(launch.transaction.raw()),
+        Some(&launch.entry.identity),
     ) {
         Ok(child) => Ok(NativeCatalogChild { child, launch }),
         Err(error) => {

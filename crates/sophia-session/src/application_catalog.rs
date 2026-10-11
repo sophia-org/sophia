@@ -1,6 +1,8 @@
+mod confinement;
 mod desktop_entry;
 mod execution;
 mod native_service;
+pub use confinement::ApplicationConfinement;
 pub use execution::*;
 pub use native_service::*;
 mod publication;

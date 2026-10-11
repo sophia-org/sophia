@@ -19,6 +19,7 @@ fn environment() -> catalog::CatalogProcessEnvironment<'static> {
         xauthority: std::path::Path::new("/nonexistent"),
         control_socket: None,
         inspection_socket: None,
+        confinement: Default::default(),
     }
 }
 

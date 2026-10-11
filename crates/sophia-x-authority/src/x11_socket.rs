@@ -162,6 +162,7 @@ include!("x11_socket/routing/keyboard.rs");
 include!("x11_socket/routing/ordered_codec.rs");
 include!("x11_socket/routing/input.rs");
 include!("x11_socket/frontend/service.rs");
+include!("x11_socket/frontend/listeners.rs");
 include!("x11_socket/frontend/clipboard.rs");
 include!("x11_socket/frontend/setup.rs");
 include!("x11_socket/state.rs");
@@ -420,6 +421,7 @@ struct X11CoreClientWorkerCompletion {
 #[cfg(unix)]
 #[derive(Debug)]
 struct X11CoreClientWorker {
+    listener: crate::XServerFrontendListenerId,
     thread: std::thread::JoinHandle<()>,
     shutdown: UnixStream,
 }

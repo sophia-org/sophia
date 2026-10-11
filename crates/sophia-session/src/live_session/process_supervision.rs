@@ -65,8 +65,10 @@ impl From<crate::application_catalog::NativeCatalogChild> for ManagedSessionChil
 
 /// Shared process construction for catalog launches. The caller must consume
 /// exact admission before this effect and retain the returned child immediately.
+/// `identity` is the catalog identity the command was verified from.
 pub(super) fn spawn_catalog_child(
     command: crate::application_catalog::ApplicationLaunchCommand,
+    identity: &str,
     config: &PersistentXtermSessionConfig,
     xauthority: &std::path::Path,
     transaction: TransactionId,
@@ -78,8 +80,10 @@ pub(super) fn spawn_catalog_child(
             xauthority,
             control_socket: config.control_socket.as_deref(),
             inspection_socket: config.inspection_socket.as_deref(),
+            confinement: config.application_confinement(xauthority),
         },
         Some(transaction.raw()),
+        Some(identity),
     )?;
     let mut managed = ManagedSessionChild::for_launch(None, transaction, child);
     managed.catalog_launch = true;

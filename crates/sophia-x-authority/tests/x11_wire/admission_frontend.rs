@@ -201,8 +201,18 @@ fn x_server_frontend_revokes_distinct_admissions_for_concurrent_clients() {
 
 #[cfg(unix)]
 #[test]
-fn x_server_frontend_confined_clients_reject_cross_namespace_window_property_and_selection_access()
-{
+fn x_server_frontend_confined_clients_reject_cross_namespace_window_property_and_selection_access() {
+    confined_listener_access(false);
+}
+
+#[cfg(unix)]
+#[test]
+fn listener_groups_reject_foreign_window_property_and_selection_access() {
+    confined_listener_access(true);
+}
+
+#[cfg(unix)]
+fn confined_listener_access(listeners: bool) {
     use std::io::Write;
     use std::num::NonZeroUsize;
     use std::sync::Arc;
@@ -229,16 +239,19 @@ fn x_server_frontend_confined_clients_reject_cross_namespace_window_property_and
         NamespaceCapabilities::NONE,
     )
     .unwrap();
-    let policy = Arc::new(SequencedXAdmissionPolicy {
+    let second_path = if listeners { socket_path.with_extension("group") } else { socket_path.clone() };
+    let policy = Arc::new(ListenerXAdmissionPolicy::new(first_namespace, second_namespace));
+    let sequenced = Arc::new(SequencedXAdmissionPolicy {
         namespaces: vec![first_namespace, second_namespace],
         next_client: std::sync::atomic::AtomicU64::new(0),
         revoked: std::sync::Mutex::new(Vec::new()),
     });
     let metadata_candidates = Arc::new(std::sync::Mutex::new(0usize));
-    let config = XServerFrontendConfig::new_with_namespace_context(&socket_path, first_namespace)
+    let mut config = XServerFrontendConfig::new_with_namespace_context(&socket_path, first_namespace)
         .unwrap()
-        .with_admission_policy(policy.clone())
+        .with_admission_policy(if listeners { policy.clone() as Arc<dyn XServerFrontendAdmissionPolicy> } else { sequenced.clone() })
         .with_max_concurrent_clients(NonZeroUsize::new(2).unwrap());
+    if listeners { config = config.with_listener(XServerFrontendListenerId(7), &second_path, second_namespace).unwrap(); }
     let server_metadata_candidates = metadata_candidates.clone();
     let server = thread::spawn(move || {
         let mut frontend = XServerFrontend::bind(config).unwrap();
@@ -279,7 +292,7 @@ fn x_server_frontend_confined_clients_reject_cross_namespace_window_property_and
     // requests race and the answer is BadWindow -- correct, and about a different
     // question than the access control this test is checking.
     sync_x_connection(&mut first, XByteOrder::LittleEndian, first_window);
-    let mut second = connect_x_socket(&socket_path);
+    let mut second = connect_x_socket(&second_path);
     second
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -350,7 +363,7 @@ fn x_server_frontend_confined_clients_reject_cross_namespace_window_property_and
     drop(first);
     drop(second);
     server.join().unwrap();
-    let revoked = policy.revoked.lock().unwrap();
+    let revoked = if listeners { policy.revoked.lock().unwrap() } else { sequenced.revoked.lock().unwrap() };
     assert_eq!(revoked.len(), 2);
     assert!(
         revoked

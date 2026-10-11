@@ -105,6 +105,7 @@ impl ComponentCatalog {
                 xauthority,
                 control_socket: config.control_socket.as_deref(),
                 inspection_socket: config.inspection_socket.as_deref(),
+                confinement: config.application_confinement(xauthority),
             },
             now,
         );

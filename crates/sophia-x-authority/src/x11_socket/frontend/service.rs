@@ -9,7 +9,8 @@
 pub struct XServerFrontend {
     service_wake: sophia_wake::WakeSlot,
     config: XServerFrontendConfig,
-    listener: UnixListener,
+    listeners: Vec<FrontendListener>,
+    next_listener: usize,
     state: X11CoreSocketServerState,
     workers: BTreeMap<u64, X11CoreClientWorker>,
     worker_completions: Receiver<X11CoreClientWorkerCompletion>,
@@ -29,6 +30,7 @@ impl XServerFrontend {
     /// leftover socket. It cannot tell a leftover from a live listener; a
     /// service that must not displace one uses [`Self::bind_exclusive`].
     pub fn bind(config: XServerFrontendConfig) -> Result<Self, X11SetupSocketError> {
+        Self::validate_listeners(&config)?;
         let listener = bind_x11_core_socket_server(config.socket_path())?;
         Self::over_listener(config, listener)
     }
@@ -39,6 +41,7 @@ impl XServerFrontend {
     /// leave exactly one owner and the loser learns it lost. Nothing is
     /// unlinked, so a live listener is never displaced.
     pub fn bind_exclusive(config: XServerFrontendConfig) -> Result<Self, X11SetupSocketError> {
+        Self::validate_listeners(&config)?;
         let listener = bind_x11_core_socket_server_exclusive(config.socket_path())?;
         Self::over_listener(config, listener)
     }
@@ -49,6 +52,21 @@ impl XServerFrontend {
         mut config: XServerFrontendConfig,
         listener: UnixListener,
     ) -> Result<Self, X11SetupSocketError> {
+        let mut listeners = vec![FrontendListener::new(
+            crate::XServerFrontendListenerId::PRIMARY,
+            config.namespace(),
+            config.socket_path(),
+            listener,
+        )?];
+        for entry in &config.additional_listeners {
+            let socket = bind_x11_core_socket_server_exclusive(&entry.path)?;
+            listeners.push(FrontendListener::new(
+                entry.id,
+                entry.namespace.id,
+                &entry.path,
+                socket,
+            )?);
+        }
         let state = X11CoreSocketServerState::with_output_topology_xkb_config_and_font_path(
             config.output_topology().clone(),
             config.xkb_config(),
@@ -62,10 +80,16 @@ impl XServerFrontend {
         state.latch_pixmap_texture_support()?;
         let (worker_completion_sender, worker_completions) = std::sync::mpsc::channel();
         let (worker_admission_event_sender, worker_admission_events) = std::sync::mpsc::channel();
+        // Preserve the primary path's established caller-owned cleanup.
+        // Until construction succeeds, all newly bound paths roll back.
+        if let Some(mut path) = listeners[0].path.take() {
+            path.armed = false;
+        }
         Ok(Self {
             service_wake: sophia_wake::WakeSlot::default(),
             config,
-            listener,
+            listeners,
+            next_listener: 0,
             state,
             workers: BTreeMap::new(),
             worker_completions,
@@ -78,22 +102,28 @@ impl XServerFrontend {
         })
     }
 
-    pub fn install_device_bundle(&self, bundle: Arc<crate::XServerFrontendDeviceBundle>)
-        -> Result<(), crate::XServerFrontendDeviceBundleError>
-    {
+    pub fn install_device_bundle(
+        &self,
+        bundle: Arc<crate::XServerFrontendDeviceBundle>,
+    ) -> Result<(), crate::XServerFrontendDeviceBundleError> {
         self.state.install_device_bundle(bundle)
     }
 
-    pub fn mark_device_generation_unavailable(&self, generation: u64)
-        -> Result<(), crate::XServerFrontendDeviceBundleError>
-    {
+    pub fn mark_device_generation_unavailable(
+        &self,
+        generation: u64,
+    ) -> Result<(), crate::XServerFrontendDeviceBundleError> {
         self.state.mark_device_generation_unavailable(generation)
     }
 
     pub fn update_window_allocation_preferences(
-        &self, snapshot: crate::XWindowAllocationPreferences,
+        &self,
+        snapshot: crate::XWindowAllocationPreferences,
     ) -> Result<crate::XWindowAllocationUpdate, X11SetupSocketError> {
-        Ok(self.state.runtime.lock()
+        Ok(self
+            .state
+            .runtime
+            .lock()
             .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?
             .update_window_allocation_preferences(snapshot))
     }
@@ -238,9 +268,8 @@ impl XServerFrontend {
 
     /// Attempts to accept one routed concurrent client without blocking.
     ///
-    /// `Ok(false)` means no connection is ready. The configured worker limit
-    /// remains enforced as an error, so a service must reap completed workers
-    /// before attempting another accept.
+    /// `Ok(false)` means no listener has both a ready connection and a free
+    /// worker slot. Capacity pressure defers acceptance without stopping service.
     pub fn try_serve_next_concurrently_routed_traced(
         &mut self,
         broker: &XServerFrontendRouteBroker,
@@ -275,36 +304,18 @@ impl XServerFrontend {
         self.reap_finished_client_workers()?;
         let limit = self.config.max_concurrent_clients().get();
         if self.workers.len() >= limit {
+            if nonblocking {
+                return Ok(false);
+            }
             return Err(X11SetupSocketError::new(format!(
                 "Sophia X Server Frontend concurrent-client limit ({limit}) reached"
             )));
         }
-        let accepted = if nonblocking {
-            self.listener.set_nonblocking(true).map_err(|error| {
-                X11SetupSocketError::new(format!(
-                    "failed to make X11 core listener nonblocking: {error}"
-                ))
-            })?;
-            let accepted = self.listener.accept();
-            self.listener.set_nonblocking(false).map_err(|error| {
-                X11SetupSocketError::new(format!(
-                    "failed to restore blocking X11 core listener: {error}"
-                ))
-            })?;
-            accepted
-        } else {
-            self.listener.accept()
+        let Some((stream, listener, namespace)) = self.accept_client(nonblocking, true)? else {
+            return Ok(false);
         };
-        match accepted {
-            Ok((stream, _)) => {
-                self.spawn_client_worker(stream, observer, routing)?;
-                Ok(true)
-            }
-            Err(error) if nonblocking && error.kind() == ErrorKind::WouldBlock => Ok(false),
-            Err(error) => Err(X11SetupSocketError::new(format!(
-                "failed to accept X11 core client: {error}"
-            ))),
-        }
+        self.spawn_client_worker(stream, listener, namespace, observer, routing)?;
+        Ok(true)
     }
 
     /// Reaps every connection worker started by the concurrent APIs.
@@ -357,31 +368,32 @@ impl XServerFrontend {
     }
 
     pub fn serve_next(&mut self) -> Result<(), X11SetupSocketError> {
-        serve_x11_core_socket_listener_once_with_setup_authorization(
-            &self.listener,
-            self.config.namespace(),
-            &self.state,
-            self.config.setup_authorization(),
-            self.config.admission_policy(),
-            self.config.injection_policy(),
-            None,
-            |_| Ok(()),
-        )
+        self.serve_next_traced(|_| Ok(()))
     }
 
     pub fn serve_next_traced(
         &mut self,
-        observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
+        mut observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
     ) -> Result<(), X11SetupSocketError> {
-        serve_x11_core_socket_listener_once_with_setup_authorization(
-            &self.listener,
-            self.config.namespace(),
+        let (mut stream, listener, namespace) =
+            self.accept_client(false, false)?.expect("blocking accept");
+        serve_x11_core_socket_client_with_trace_observer_and_input(
+            &mut stream,
+            namespace,
             &self.state,
-            self.config.setup_authorization(),
-            self.config.admission_policy(),
-            self.config.injection_policy(),
-            None,
-            observer,
+            X11ClientConnectionInputs {
+                input_receiver: None,
+                control_channels: None,
+                client_routing: None,
+            },
+            X11ClientAdmissionContext {
+                listener,
+                authorization: self.config.setup_authorization(),
+                admission_policy: self.config.admission_policy(),
+                injection_policy: self.config.injection_policy(),
+                worker_admission: None,
+            },
+            move |trace| observer(trace).map(|()| None),
         )
     }
 
@@ -391,22 +403,18 @@ impl XServerFrontend {
 
     pub fn serve_forever_traced(
         &mut self,
-        observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
+        mut observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
     ) -> Result<(), X11SetupSocketError> {
-        serve_x11_core_socket_listener_with_setup_authorization(
-            &self.listener,
-            self.config.namespace(),
-            &self.state,
-            self.config.setup_authorization(),
-            self.config.admission_policy(),
-            self.config.injection_policy(),
-            observer,
-        )
+        loop {
+            self.serve_next_traced(&mut observer)?;
+        }
     }
 
     fn spawn_client_worker(
         &mut self,
         mut stream: UnixStream,
+        listener: crate::XServerFrontendListenerId,
+        namespace: NamespaceId,
         observer: Arc<X11CoreTraceObserver>,
         routing: Option<XServerFrontendRouteRegistry>,
     ) -> Result<(), X11SetupSocketError> {
@@ -415,7 +423,6 @@ impl XServerFrontend {
             X11SetupSocketError::new("Sophia X Server Frontend exhausted worker identities")
         })?;
         let state = self.state.clone();
-        let namespace = self.config.namespace();
         let authorization = self.config.setup_authorization().clone();
         let admission_policy = self.config.admission_policy();
         let injection_policy = self.config.injection_policy();
@@ -443,6 +450,7 @@ impl XServerFrontend {
                             client_routing: routing,
                         },
                         X11ClientAdmissionContext {
+                            listener,
                             authorization: &authorization,
                             admission_policy,
                             injection_policy,
@@ -464,11 +472,16 @@ impl XServerFrontend {
             })?;
         #[cfg(all(test, unix))]
         if let Some(registry) = acceptance_origin.as_ref() {
-            routing_tests::m3_acceptance::actor_started(registry, worker.thread().id(), "connection");
+            routing_tests::m3_acceptance::actor_started(
+                registry,
+                worker.thread().id(),
+                "connection",
+            );
         }
         self.workers.insert(
             worker_id,
             X11CoreClientWorker {
+                listener,
                 thread: worker,
                 shutdown,
             },

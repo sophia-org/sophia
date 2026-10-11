@@ -6,7 +6,8 @@ pub(super) mod xtest;
 pub(super) struct LiveXAdmissionPolicy {
     pub(super) launch_origins: Arc<Mutex<crate::launch_origin::LaunchOriginRegistry>>,
     pub(super) registry: Arc<Mutex<NamespaceRegistry>>,
-    pub(super) namespace: NamespaceId,
+    pub(super) namespaces:
+        std::collections::BTreeMap<sophia_x_authority::XServerFrontendListenerId, NamespaceId>,
     pub(super) session_user_id: u32,
 }
 
@@ -21,11 +22,15 @@ impl XServerFrontendAdmissionPolicy for LiveXAdmissionPolicy {
         if peer.user_id != self.session_user_id {
             return Err(XServerFrontendAdmissionError::Denied);
         }
+        let namespace = self
+            .namespaces
+            .get(&request.listener)
+            .ok_or(XServerFrontendAdmissionError::Denied)?;
         let context = self
             .registry
             .lock()
             .map_err(|_| XServerFrontendAdmissionError::Unavailable)?
-            .admit(self.namespace, request.setup_authentication)
+            .admit(*namespace, request.setup_authentication)
             .map_err(|_| XServerFrontendAdmissionError::Unavailable)?;
         if let Some(start_time) = peer.process_start_time {
             let identity = crate::launch_origin::ProcessIdentity {
@@ -45,7 +50,11 @@ impl XServerFrontendAdmissionPolicy for LiveXAdmissionPolicy {
     }
 
     fn revoke(&self, context: ClientAdmissionContext) -> Result<(), XServerFrontendAdmissionError> {
-        if context.namespace.id != self.namespace {
+        if !self
+            .namespaces
+            .values()
+            .any(|namespace| *namespace == context.namespace.id)
+        {
             return Err(XServerFrontendAdmissionError::Unavailable);
         }
         if let Ok(mut origins) = self.launch_origins.lock() {

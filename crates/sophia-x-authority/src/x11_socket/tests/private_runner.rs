@@ -622,6 +622,7 @@ fn idle_runner_loss_closes_an_actual_connection_attached_after_preparation() {
                 client_routing: Some(registry),
             },
             X11ClientAdmissionContext {
+                listener: crate::XServerFrontendListenerId::PRIMARY,
                 authorization: &XServerFrontendSetupAuthorization::default(),
                 injection_policy: None,
                 admission_policy: Some(Arc::new(LifecycleSetupPolicy(context))),
@@ -698,6 +699,7 @@ fn a_refused_actual_setup_returns_its_watchdog_slot() {
             client_routing: Some(registry),
         },
         X11ClientAdmissionContext {
+            listener: crate::XServerFrontendListenerId::PRIMARY,
             authorization: &XServerFrontendSetupAuthorization::default(),
             injection_policy: None,
                 admission_policy: None,
@@ -755,6 +757,7 @@ fn unprepared_frontend_teardown_closes_actual_setup_before_waiting_for_common() 
                     client_routing: Some(registry),
                 },
                 X11ClientAdmissionContext {
+                    listener: crate::XServerFrontendListenerId::PRIMARY,
                     authorization: &XServerFrontendSetupAuthorization::default(),
                     injection_policy: None,
                 admission_policy: Some(Arc::new(LifecycleSetupPolicy(context))),

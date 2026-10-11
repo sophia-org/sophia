@@ -1,4 +1,5 @@
-//! Linux socket operations absent from the runtime's safe syscall dependency.
+//! Narrow Linux ABI operations absent from the runtime's safe syscall
+//! dependency: socket peer queries and one child-process descriptor hook.
 use std::io;
 use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 
@@ -137,4 +138,42 @@ pub fn socket_peer_start_time(socket: BorrowedFd<'_>, pid: u32) -> io::Result<u6
         .ok_or_else(|| io::Error::other("process stat lacks start time"))?;
     alive()?;
     Ok(start)
+}
+
+/// Mark every descriptor above stdio close-on-exec in the child, after fork
+/// and before exec.
+///
+/// MARKS, DOES NOT CLOSE. `close_range(3, u32::MAX, CLOSE_RANGE_CLOEXEC)`
+/// only sets the flag, so descriptors stay open until the exec itself: the
+/// pipe `std` uses to report a failed exec keeps working, and stdio (0..=2) is
+/// untouched. The parent's descriptors and their flags are not changed.
+///
+/// FAILS CLOSED. Any failure -- `ENOSYS` before Linux 5.11 or under a seccomp
+/// filter, `EINVAL` where the flag is unsupported -- is returned from the
+/// hook, so `spawn` fails rather than exec with descriptors still inherited.
+/// There is no fallback.
+///
+/// HOOK ORDER. Hooks run in registration order. A hook registered after this
+/// one must not reopen a descriptor or clear `FD_CLOEXEC` on one that is meant
+/// to be excluded; this function installs no intentional descriptor handoff.
+pub fn cloexec_inherited_fds_on_exec(command: &mut std::process::Command) {
+    use std::os::unix::process::CommandExt as _;
+    // SAFETY: the callback runs in the forked child, where only
+    // async-signal-safe work is allowed. It makes one raw syscall and reads
+    // errno: no allocation, logging, locking or panicking path, and it
+    // captures nothing.
+    unsafe {
+        command.pre_exec(|| {
+            let result = libc::syscall(
+                libc::SYS_close_range,
+                3_u32,
+                u32::MAX,
+                libc::CLOSE_RANGE_CLOEXEC,
+            );
+            if result != 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
 }

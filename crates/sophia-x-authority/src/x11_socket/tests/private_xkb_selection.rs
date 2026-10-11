@@ -50,6 +50,7 @@ mod private_xkb_selection_tests {
                         client_routing: Some(registry),
                     },
                     X11ClientAdmissionContext {
+                        listener: crate::XServerFrontendListenerId::PRIMARY,
                         authorization: &XServerFrontendSetupAuthorization::default(),
                         injection_policy: None,
                 admission_policy: Some(Arc::new(LifecycleSetupPolicy(context))),
