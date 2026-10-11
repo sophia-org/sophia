@@ -78,6 +78,7 @@ fn queued_record_custody(owner_turns: bool) {
         .unwrap();
     let socket = transport.socket_path().to_owned();
     let (resume_tx, resume) = mpsc::channel::<()>();
+    let (settled_tx, settled) = mpsc::channel::<()>();
     let peer = std::thread::spawn(move || {
         let mut peer = Peer::connect(&socket);
         peer.setup();
@@ -99,6 +100,7 @@ fn queued_record_custody(owner_turns: bool) {
         peer.submit_acknowledged(&offer, 1);
         let negotiated = peer.next_event();
         peer.ack(&negotiated);
+        settled_tx.send(()).unwrap();
         // The reader stops until Session has filled the unsolicited share.
         resume.recv().unwrap();
         let mut generations = Vec::new();
@@ -133,8 +135,12 @@ fn queued_record_custody(owner_turns: bool) {
     // Wait for the peer's acknowledgement of Negotiated, so the unsolicited
     // share starts empty.
     let settle = Instant::now();
-    while settle.elapsed() < Duration::from_millis(50) {
+    while settled.try_recv().is_err() {
         transport.poll_io(&mut registry).unwrap();
+        assert!(
+            settle.elapsed() < Duration::from_secs(3),
+            "peer did not acknowledge Negotiated"
+        );
         std::thread::yield_now();
     }
     if owner_turns {
