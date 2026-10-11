@@ -20,6 +20,7 @@ struct Connect {
     source: NamespaceId,
     target: NamespaceId,
     revision: u64,
+    deadline: Instant,
     reply: SyncSender<Result<PortalRequesterConnection, Errno>>,
 }
 pub struct SessionPortalFileService {
@@ -60,10 +61,16 @@ impl SessionPortalFileService {
                     {
                         server.export_mut().disconnect(connection);
                     }
-                    if let Ok(request) = requests.try_recv() {
+                    // The requester may close and enqueue its successor after
+                    // this turn's socket read. Keep that successor in the
+                    // bounded queue until a later turn observes EOF; rejecting
+                    // it here makes serial transfers depend on scheduling.
+                    if active.is_none()
+                        && let Ok(request) = requests.try_recv()
+                    {
                         let result = (|| {
-                            if active.is_some() {
-                                return Err(Errno(16));
+                            if Instant::now() >= request.deadline {
+                                return Err(Errno::EIO);
                             }
                             if !server.export().authority().live()
                                 || server.export().authority().revision() != request.revision
@@ -126,6 +133,7 @@ impl SessionPortalFileService {
                 source,
                 target,
                 revision,
+                deadline: Instant::now() + Duration::from_secs(2),
                 reply,
             })
             .map_err(|_| Errno::EAGAIN)?;
