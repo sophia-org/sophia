@@ -15,6 +15,8 @@ use sophia_factotum::launch::{
 use sophia_runtime::ProcessSupervisor;
 use std::time::{Duration, Instant};
 
+mod lock;
+
 pub struct RoleScope {
     pub server: u64,
     pub connection: ConnectionId,

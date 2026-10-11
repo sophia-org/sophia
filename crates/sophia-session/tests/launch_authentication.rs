@@ -32,6 +32,9 @@ use std::{
 #[path = "support/role_authentication.rs"]
 mod role_authentication;
 
+#[path = "support/lock_authentication.rs"]
+mod lock_authentication;
+
 struct Fixture {
     book: LaunchBook,
     ingress: Ingress,

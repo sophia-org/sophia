@@ -6,8 +6,9 @@ The current t317 candidate has a generic afid seam, a private Factotum
 control exchange, a shared PAM/launch client, bounded verification ingress,
 a conversation-only child relay, protected spawn registration/activation and
 a Session afid owner. A generic role-view test joins the Rust SDK, real core,
-Factotum and a protected independent C relay peer. Shipped role exports and
-their endpoint admission are not yet migrated. Existing role
+Factotum and a protected independent C relay peer. A separate owner-level
+join now covers atomic admission into the actual lock-file export. Shipped
+role transports and their endpoint admission are not yet migrated. Existing role
 credential and pidfd requirements remain in place.
 
 ```text
@@ -69,8 +70,44 @@ invalidates the shared ingress so its connection owner closes the actual
 Factotum transport. A transport owner must poll even without peer traffic,
 close an expired transport, and retain its bounded slot until cleanup drains.
 Tversion preserves the identity pin and original first-attach deadline.
-Shipped exports still need their atomic root-publication integration, endpoint
-quota admission and role-specific controls before enabling this candidate.
+Shipped transports still need dispatch, cleanup and endpoint quota integration
+before enabling this candidate.
+
+### Atomic lock-root publication
+
+The lock-file owner offers a checked, exclusively borrowed root preparation.
+It cannot be copied, and dropping it publishes nothing. Session's `attach_lock`
+checks claims, prepares the lock view, then verifies current custody and commits
+the transport identity. Publishing the prepared root is infallible:
+
+```text
+core reserves root fid and reply space
+                |
+                v
+lock.prepare_attach -- refusal --> identity unchanged
+                |
+                v
+auth.commit_attach  -- refusal --> drop preparation; no root
+                |
+                v
+prepared.publish    ------------> identity and lock root admitted
+
+retained operation --> auth.check_admitted --> lock.check --> file operation
+```
+
+The preparation must not cross a suspension or worker handoff. Its exclusive
+borrow prevents another operation from revoking the view between preparation
+and publication. `check_lock` checks both current launch custody and lock-file
+epoch/custody; the transport must call it for ordinary operations, retried
+reads and each in-place upload fragment.
+
+This sequence is joined with real Factotum verification and a protected
+LockProvider relay, but by direct calls to the admission owner. The existing
+lock worker still dispatches its original endpoint-admitted export. Its afid
+dispatch, resets, disconnected-conversation cleanup, authority handoff from
+Session and bounded endpoint slots remain to be integrated. No SO_PEERPIDFD
+requirement has been removed. The ordinary attach path uses the same checked
+preparation and retains its existing policy.
 
 ## Private owner view
 

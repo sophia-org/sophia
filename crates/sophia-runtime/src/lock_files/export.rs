@@ -113,6 +113,27 @@ pub struct LockFileExport {
     staging: Option<Staging>,
 }
 
+/// A checked root, held exclusively until the admission owner either commits
+/// its identity or drops this preparation. Dropping it publishes nothing.
+/// The borrow prevents revocation or a competing attach between preparation
+/// and publication; callers must not suspend while holding it.
+pub struct LockFileAttachment<'a> {
+    attached: &'a mut bool,
+    epoch: Epoch,
+}
+
+impl LockFileAttachment<'_> {
+    /// Publish only after the trusted owner has committed authentication.
+    /// All fallible lock-export checks happened during preparation.
+    pub fn publish(self) -> Attachment<LockFileNode> {
+        *self.attached = true;
+        Attachment {
+            root: Node::Root,
+            epoch: self.epoch,
+        }
+    }
+}
+
 fn slice(bytes: &[u8], offset: u64, count: u32) -> Vec<u8> {
     let start = usize::try_from(offset)
         .unwrap_or(usize::MAX)
@@ -174,6 +195,22 @@ impl LockFileExport {
         }
         self.connection = Some(connection);
         Ok(())
+    }
+
+    /// Prepare the root without admitting the connection. Authentication is
+    /// owned by the caller, not by attach strings or the endpoint's PID filter.
+    pub fn prepare_attach(
+        &mut self,
+        context: &AttachContext<'_>,
+    ) -> Result<LockFileAttachment<'_>, Errno> {
+        self.live()?;
+        if self.attached || self.connection != Some(context.connection) {
+            return Err(Errno::EACCES);
+        }
+        Ok(LockFileAttachment {
+            attached: &mut self.attached,
+            epoch: Epoch(self.custody.epoch()),
+        })
     }
 
     pub fn custody(&self) -> &LockFileCustody {
@@ -295,16 +332,8 @@ impl Export for LockFileExport {
     const WRITES_IN_PLACE: bool = true;
 
     fn attach(&mut self, context: &AttachContext<'_>) -> Result<Attachment<Node>, Errno> {
-        self.live()?;
         // One attach per admitted epoch; a replacement needs a fresh stream.
-        if self.attached || self.connection != Some(context.connection) {
-            return Err(Errno::EACCES);
-        }
-        self.attached = true;
-        Ok(Attachment {
-            root: Node::Root,
-            epoch: Epoch(self.custody.epoch()),
-        })
+        Ok(self.prepare_attach(context)?.publish())
     }
 
     fn check(&mut self, access: &Access<'_, Node>) -> Result<(), Errno> {

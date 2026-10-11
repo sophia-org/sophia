@@ -551,3 +551,59 @@ export, followed by role transport lifecycle and endpoint quotas. Supported
 minimum Bubblewrap execution, independent full authentication, final role
 controls and acceptance remain open. Existing peer/pidfd checks remain enabled;
 no checkpoint code is installed in the live desktop.
+
+## Atomic lock admission owner
+
+On foundation `9f4494295`, the actual `LockFileExport` now separates checked
+root preparation from infallible publication. Preparation borrows the export
+exclusively without setting its attached flag. Session's `attach_lock` checks
+claims and prepares that root before committing identity; failure drops the
+preparation. `check_lock` combines current launch custody with the export's
+existing epoch/custody checks. The legacy attach path uses the same preparation
+and preserves its policy and one-attach-per-epoch behavior.
+
+Four added tests use real Factotum, the existing independent C relay and a
+protected process with the LockProvider role. They directly call the Session
+admission owner and actual lock-file export: unverified admission leaves both
+root and identity absent and permits a verified retry; a revoked lock view
+cannot pin a verified identity; revoking the launch after status leaves the
+prepared root unpublished; and a retained lock object loses authority even
+while file custody itself remains live. Reading the decoded Locked object is
+a protocol observation, not a physical cover claim.
+
+Three single-site controls fail first at their named assertions:
+
+- Publish during preparation: `unverified lock attach must not publish its root`.
+- Commit identity before preparing the view: `lock view refusal must precede identity commit`.
+- Skip the admission check on retained operations: `retained lock files must recheck launch custody`.
+
+Each exits 101 with exactly one failed test. The same exclusive lease covers
+mutation, compilation, restoration and the final positive gate. All dynamic
+modified/untracked hashes match after each restoration and after the gate.
+No binary is copied; paths and hashes are retained.
+
+After restoration, the full isolated `cargo xtask check` passes **7,690 tests,
+zero failed, 105 ignored across 556 summaries**, plus Clippy and repository
+checks. Devices and live-session sockets are hidden. Hardware proofs remain
+not proved, and the ignored acceptance cases retain their separate scope.
+
+Closed packages and self-excluding SHA256SUMS hashes under the development
+evidence directory:
+
+- `t317-lock-owner-01`:
+  `8050b9d6b79610e76e0e642c6f730045678dc5211645e50abe3d27a97681bbbb`.
+- `t317-lock-owner-root-control-01`:
+  `9a1582df416f5f5c8551fc739d88a8e0b1dd57d37b9d4b31eb2ca53c5e65ff18`.
+- `t317-lock-owner-identity-control-01`:
+  `48efd192a48ba5171f7f014a73d6f7a99e4fadf36f43ad1b8ffa7ddba128fa9c`.
+- `t317-lock-owner-retained-control-01`:
+  `de2a7703250de917efce16a6b83e03a43a29b3877df5ddf1afac0fc1221e4f3c`.
+
+The result documentation follows the frozen source capture. This is an owner
+join, not a migrated public lock endpoint: the lock worker still owns a plain
+`Server<LockFileExport>` on another thread, whereas Session owns the launch
+registry and supervisor. Next wire the authenticated worker without blocking
+Session or substituting cached verification for live custody, including resets,
+idle deadlines and disconnected cleanup. Per-fragment upload and waiting-read
+dispatch need that integration's controls. Existing accept filters and the
+hard SO_PEERPIDFD requirement remain; t317 stays open and nothing is installed.

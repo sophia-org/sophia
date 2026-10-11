@@ -23,7 +23,7 @@ mod service;
 #[cfg(target_os = "linux")]
 mod transport;
 
-pub use export::{LockFileExport, LockFileHandle, LockFileNode, LockFileQids};
+pub use export::{LockFileAttachment, LockFileExport, LockFileHandle, LockFileNode, LockFileQids};
 #[cfg(target_os = "linux")]
 pub use service::{
     LockFileService, LockFileServiceCommand, LockFileServiceEvent, LockFileServiceStats,
