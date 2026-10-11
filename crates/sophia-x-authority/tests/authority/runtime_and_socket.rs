@@ -145,6 +145,48 @@ fn cross_namespace_grant_installs_bounded_utf8_and_reports_stale_owner() {
         },
     };
     runtime.apply(request(transfer));
+    let retained = sophia_protocol::PortalRequest {
+        transfer: PortalTransfer {
+            transfer,
+            source_namespace: source,
+            target_namespace: target,
+            kind: PortalTransferKind::Clipboard,
+            mime_type: Some("UTF8_STRING".into()),
+            byte_size: 0,
+            decision: PortalDecision::Pending,
+            generation: 1,
+        },
+        deadline_msec: 2_000,
+    };
+    assert_eq!(runtime.clipboard_source_generation(&retained), Some(1));
+    for field in 0..5 {
+        let mut forged = retained.clone();
+        match field {
+            0 => forged.transfer.source_namespace = target,
+            1 => forged.transfer.target_namespace = source,
+            2 => forged.transfer.generation = 2,
+            3 => forged.transfer.mime_type = Some("TARGETS".into()),
+            _ => forged.transfer.transfer = PortalTransferId::from_raw(999),
+        }
+        assert_eq!(runtime.clipboard_source_generation(&forged), None,
+            "source facts require the retained conversion, field {field}");
+    }
+    let primary = atoms.intern("PRIMARY", false).unwrap().unwrap();
+    for timestamp in [11, 12] {
+        runtime.apply(XAuthorityRequestPacket {
+            transaction: TransactionId::from_raw(30 + timestamp),
+            namespace: source,
+            kind: XAuthorityRequestKind::SetSelectionOwner {
+                selection: primary,
+                owner: Some(XResourceId::new(0xc0, 1)),
+                timestamp: timestamp as u32,
+                selection_timestamp: timestamp as u32,
+                kind: XSelectionChangeKind::SetOwner,
+            },
+        });
+    }
+    assert_eq!(runtime.clipboard_source_generation(&retained), Some(1),
+        "PRIMARY changes cannot replace CLIPBOARD source facts");
     let grant = PortalGrant {
         transfer,
         source_namespace: source,
@@ -170,6 +212,8 @@ fn cross_namespace_grant_installs_bounded_utf8_and_reports_stale_owner() {
     assert_eq!(record.property_type, utf8);
     assert_eq!(record.format, 8);
     assert_eq!(record.bytes, b"hello");
+    assert_eq!(runtime.clipboard_source_generation(&retained), None,
+        "settled conversion cannot supply fresh source authority");
 
     let stale_transfer = PortalTransferId::from_raw(42);
     runtime.apply(request(stale_transfer));
@@ -188,6 +232,10 @@ fn cross_namespace_grant_installs_bounded_utf8_and_reports_stale_owner() {
         transfer: stale_transfer,
         ..grant
     };
+    let mut stale_request = retained.clone();
+    stale_request.transfer.transfer = stale_transfer;
+    assert_eq!(runtime.clipboard_source_generation(&stale_request), Some(4),
+        "current owner generation must not echo the stale request");
     let outcome = runtime
         .execute_clipboard_payload(
             stale_transfer,
@@ -225,7 +273,7 @@ fn cross_namespace_grant_installs_bounded_utf8_and_reports_stale_owner() {
     });
     let targets_grant = PortalGrant {
         transfer: targets_transfer,
-        source_generation: 2,
+        source_generation: 4,
         ..stale_grant
     };
     let outcome = runtime

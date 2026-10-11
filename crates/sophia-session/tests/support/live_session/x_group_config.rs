@@ -87,3 +87,146 @@ fn live_x_admission_refuses_unknown_listener_without_allocating_identity() {
     ));
     assert_eq!(registry.lock().unwrap().admission_count(), 0);
 }
+
+fn parse_groups(values: &[&str]) -> Result<x_groups::XGroups, Box<dyn std::error::Error>> {
+    x_groups::XGroups::parse(&values.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>())
+}
+
+#[test]
+fn clipboard_rules_are_explicit_directional_and_bounded() {
+    use socket_directories::ClientGroup::{Confined, Shared};
+    assert!(parse_groups(&[]).unwrap().clipboard_rules.is_empty());
+    let groups = parse_groups(&[
+        "--confined-group=7",
+        "--confined-group=3",
+        "--clipboard-rule=confined-7:shared",
+        "--clipboard-rule=shared:confined-7",
+        "--clipboard-rule=confined-3:confined-7",
+    ])
+    .unwrap();
+    // Argument order; the reverse of a pair is its own rule.
+    assert_eq!(
+        groups.clipboard_rules,
+        [
+            (Confined(7), Shared),
+            (Shared, Confined(7)),
+            (Confined(3), Confined(7))
+        ]
+    );
+    let refused: &[&[&str]] = &[
+        &["--clipboard-rule"],
+        &["--clipboard-rule="],
+        &["--confined-group=7", "--clipboard-rule=confined-7"],
+        &["--confined-group=7", "--clipboard-rule=confined-7:"],
+        &["--confined-group=7", "--clipboard-rule=:shared"],
+        &["--confined-group=7", "--clipboard-rule=confined-7:shared:x"],
+        &["--confined-group=7", "--clipboard-rule=confined-7:trusted"],
+        &["--confined-group=7", "--clipboard-rule=confined-0:shared"],
+        &["--confined-group=7", "--clipboard-rule=confined-07x:shared"],
+        &["--confined-group=7", "--clipboard-rule=confined-3:shared"],
+        &["--confined-group=7", "--clipboard-rule=shared:confined-3"],
+        &["--clipboard-rule=shared:shared"],
+        &[
+            "--confined-group=7",
+            "--clipboard-rule=confined-7:confined-7",
+        ],
+        &[
+            "--confined-group=7",
+            "--clipboard-rule=confined-7:shared",
+            "--clipboard-rule=confined-7:shared",
+        ],
+    ];
+    for args in refused {
+        assert!(parse_groups(args).is_err(), "must refuse {args:?}");
+    }
+    // Configuration is judged after every argument, so order does not matter.
+    assert!(parse_groups(&["--clipboard-rule=confined-7:shared", "--confined-group=7"]).is_ok());
+
+    // Sixteen pairs fit; a seventeenth is refused.
+    let mut args: Vec<String> = (1..=8).map(|id| format!("--confined-group={id}")).collect();
+    let mut pairs = Vec::new();
+    for id in 1..=8 {
+        pairs.push(format!("--clipboard-rule=confined-{id}:shared"));
+        pairs.push(format!("--clipboard-rule=shared:confined-{id}"));
+    }
+    args.extend(pairs);
+    assert_eq!(
+        x_groups::XGroups::parse(&args)
+            .unwrap()
+            .clipboard_rules
+            .len(),
+        16
+    );
+    args.push("--clipboard-rule=confined-1:confined-2".into());
+    assert!(x_groups::XGroups::parse(&args).is_err());
+}
+
+#[test]
+fn clipboard_rules_only_add_clipboard_capability_in_their_direction() {
+    use socket_directories::ClientGroup::{Confined, Shared};
+    use sophia_protocol::NamespacePortalCapability::{Clipboard, UriOpen};
+    let groups = parse_groups(&[
+        "--confined-group=7",
+        "--confined-group=3",
+        "--clipboard-rule=confined-7:shared",
+    ])
+    .unwrap();
+    let none = NamespaceCapabilities::NONE;
+    let source = groups.capabilities(Confined(7), none);
+    assert!(source.allows_publish(Clipboard) && !source.allows_request(Clipboard));
+    let target = groups.capabilities(Shared, none);
+    assert!(target.allows_request(Clipboard) && !target.allows_publish(Clipboard));
+    // A group no rule names keeps exactly its base.
+    assert_eq!(groups.capabilities(Confined(3), none), none);
+    // Only Clipboard bits are added, and nothing in the base is cleared.
+    let base = NamespaceCapabilities::NONE
+        .with_request(UriOpen)
+        .with_publish(UriOpen);
+    let augmented = groups.capabilities(Confined(7), base);
+    assert!(augmented.allows_request(UriOpen) && augmented.allows_publish(UriOpen));
+    assert_eq!(
+        augmented,
+        base.with_publish(Clipboard),
+        "only the Clipboard publish bit is added"
+    );
+    assert_eq!(
+        groups.capabilities(Shared, NamespaceCapabilities::ALL),
+        NamespaceCapabilities::ALL
+    );
+    // Both directions configured give both capabilities.
+    let both = parse_groups(&[
+        "--confined-group=7",
+        "--clipboard-rule=confined-7:shared",
+        "--clipboard-rule=shared:confined-7",
+    ])
+    .unwrap();
+    let capabilities = both.capabilities(Confined(7), none);
+    assert!(capabilities.allows_publish(Clipboard) && capabilities.allows_request(Clipboard));
+}
+
+#[test]
+fn xtest_selection_is_unchanged_by_the_shared_selector() {
+    use socket_directories::ClientGroup::{Confined, Shared};
+    assert_eq!(
+        parse_groups(&["--admit-xtest"]).unwrap().xtest,
+        Some(Shared)
+    );
+    assert_eq!(
+        parse_groups(&["--admit-xtest=shared"]).unwrap().xtest,
+        Some(Shared)
+    );
+    assert_eq!(
+        parse_groups(&["--confined-group=4", "--admit-xtest=confined-4"])
+            .unwrap()
+            .xtest,
+        Some(Confined(4))
+    );
+    for args in [
+        ["--admit-xtest=confined-0"],
+        ["--admit-xtest=trusted"],
+        ["--admit-xtest=confined-4"],
+    ] {
+        let error = parse_groups(&args).unwrap_err().to_string();
+        assert!(error.contains("--admit-xtest"), "{args:?}: {error}");
+    }
+}

@@ -10,6 +10,14 @@ pub struct XServerFrontendClipboardExecutor {
 
 #[cfg(unix)]
 impl XServerFrontendClipboardExecutor {
+    /// Read owner facts without disclosing X resource identities to policy.
+    pub fn source_generation(
+        &self,
+        request: &sophia_protocol::PortalRequest,
+    ) -> Option<u64> {
+        self.state.runtime.lock().ok()?.clipboard_source_generation(request)
+    }
+
     pub fn request_source(
         &self,
         grant: &sophia_protocol::PortalGrant,

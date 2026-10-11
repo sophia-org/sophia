@@ -1,4 +1,30 @@
 impl XAuthorityRuntime {
+     /// Resolve a retained conversion to the current owner of its exact X
+     /// selection. PRIMARY and CLIPBOARD may have different generations in
+     /// the same namespace; a requester cannot choose either by naming a
+     /// namespace or supplying a newer generation.
+     pub fn clipboard_source_generation(
+         &self,
+         request: &sophia_protocol::PortalRequest,
+     ) -> Option<u64> {
+         let transfer = &request.transfer;
+         let pending = self.pending_clipboard.get(&transfer.transfer)?;
+         let retained = &pending.portal_request.request;
+         if transfer.kind != sophia_protocol::PortalTransferKind::Clipboard
+             || transfer.source_namespace != retained.source_namespace
+             || transfer.target_namespace != retained.target_namespace
+             || transfer.generation != retained.generation
+             || transfer.byte_size != retained.byte_size
+             || transfer.mime_type.as_deref() != Some(retained.target.as_str())
+         {
+             return None;
+         }
+         self.selections
+             .owner(pending.portal_request.failure.selection, Some(retained.source_namespace))
+             .filter(|record| record.owner.is_some())
+             .map(|record| record.generation)
+     }
+
      /// Returns the core X11 selection owner visible inside one admitted
      /// namespace. Classic shared-X clients use the same namespace; confined
      /// clients cannot discover an owner from another namespace.

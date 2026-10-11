@@ -1,7 +1,22 @@
 use super::socket_directories::ClientGroup;
+use sophia_protocol::{NamespaceCapabilities, NamespacePortalCapability};
 
 /// At most this many confined groups, each with its own listener.
 const MAX_CONFINED_GROUPS: usize = 8;
+/// At most this many directional clipboard rules.
+const MAX_CLIPBOARD_RULES: usize = 16;
+
+/// `shared` or `confined-N` with N nonzero; whether N is configured is
+/// checked once every argument has been read.
+fn parse_group_selector(text: &str) -> Option<ClientGroup> {
+    if text == "shared" {
+        return Some(ClientGroup::Shared);
+    }
+    text.strip_prefix("confined-")
+        .and_then(|n| n.parse::<u32>().ok())
+        .filter(|id| *id != 0)
+        .map(ClientGroup::Confined)
+}
 
 /// Startup-only group selection. IDs name listeners, never credentials.
 #[derive(Clone, Debug, Default)]
@@ -14,6 +29,11 @@ pub(super) struct XGroups {
     /// cannot be refused at startup. Scanned desktop entries stay unmapped,
     /// including one that runs the same executable as a mapped application.
     pub applications: std::collections::BTreeMap<String, u32>,
+    /// Standing one-way clipboard acceptance, as (source, target) in
+    /// argument order: the source may publish and the target may request.
+    /// Default none. A rule grants capability only; the portal owner still
+    /// matches each transfer's exact pair and decides it.
+    pub clipboard_rules: Vec<(ClientGroup, ClientGroup)>,
 }
 
 impl XGroups {
@@ -52,16 +72,31 @@ impl XGroups {
                     return Err("XTEST may be admitted to exactly one group".into());
                 }
                 let name = arg.strip_prefix("--admit-xtest=").unwrap_or("shared");
-                groups.xtest = Some(if name == "shared" {
-                    ClientGroup::Shared
-                } else {
-                    let id = name
-                        .strip_prefix("confined-")
-                        .and_then(|n| n.parse::<u32>().ok())
-                        .filter(|id| *id != 0)
-                        .ok_or("--admit-xtest requires shared or confined-INDEX")?;
-                    ClientGroup::Confined(id)
-                });
+                groups.xtest = Some(
+                    parse_group_selector(name)
+                        .ok_or("--admit-xtest requires shared or confined-INDEX")?,
+                );
+            } else if let Some(value) = arg.strip_prefix("--clipboard-rule=") {
+                let rule = value
+                    .split_once(':')
+                    .and_then(|(source, target)| {
+                        Some((parse_group_selector(source)?, parse_group_selector(target)?))
+                    })
+                    .ok_or(
+                        "--clipboard-rule requires SOURCE:TARGET, each shared or confined-INDEX",
+                    )?;
+                if rule.0 == rule.1 {
+                    return Err("--clipboard-rule needs two distinct groups".into());
+                }
+                if groups.clipboard_rules.contains(&rule) {
+                    return Err("--clipboard-rule names a pair twice".into());
+                }
+                if groups.clipboard_rules.len() >= MAX_CLIPBOARD_RULES {
+                    return Err("--clipboard-rule accepts at most 16 pairs".into());
+                }
+                groups.clipboard_rules.push(rule);
+            } else if arg == "--clipboard-rule" {
+                return Err("use --clipboard-rule=SOURCE:TARGET".into());
             }
         }
         if let Some(ClientGroup::Confined(id)) = groups.xtest
@@ -76,7 +111,40 @@ impl XGroups {
         {
             return Err("--confined-application names an unconfigured confined group".into());
         }
+        if groups.clipboard_rules.iter().any(|(source, target)| {
+            [source, target].into_iter().any(|group| match group {
+                ClientGroup::Confined(id) => !groups.confined.contains(id),
+                ClientGroup::Shared => false,
+            })
+        }) {
+            return Err("--clipboard-rule names an unconfigured confined group".into());
+        }
         Ok(groups)
+    }
+
+    /// `base` plus the Clipboard publish and request capabilities the rules
+    /// give `group`: publish as a rule's source, request as its target. Only
+    /// Clipboard bits are ever added; nothing in `base` is cleared.
+    pub fn capabilities(
+        &self,
+        group: ClientGroup,
+        base: NamespaceCapabilities,
+    ) -> NamespaceCapabilities {
+        let clipboard = NamespacePortalCapability::Clipboard;
+        self.clipboard_rules
+            .iter()
+            .fold(base, |capabilities, (source, target)| {
+                let capabilities = if *source == group {
+                    capabilities.with_publish(clipboard)
+                } else {
+                    capabilities
+                };
+                if *target == group {
+                    capabilities.with_request(clipboard)
+                } else {
+                    capabilities
+                }
+            })
     }
 
     /// Refuse XTEST beside an input proof, and, before anything starts, an

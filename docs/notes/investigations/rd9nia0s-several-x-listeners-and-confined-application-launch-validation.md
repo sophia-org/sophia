@@ -82,6 +82,31 @@ remain unwired. Next are the production X coordinator, final-effect lock and
 source checks, and real frontend CLIPBOARD/PRIMARY joins. No installed-session
 capability or physical acceptance follows from this wire result.
 
+## Directional configuration and X source authority
+
+Signed `1c03ae883` records the portal foundation above. The next preparation
+slice adds the explicit, bounded `--clipboard-rule=SOURCE:TARGET` parser and
+directional participation helper. Five `x_group_config` tests pass with the
+`native-session` feature. An initial invocation without that feature selected
+zero tests and supplies no test evidence. The first feature-enabled offline
+attempt stopped at an uncached dependency; `cargo fetch --locked` populated the
+cache before the successful offline run, without changing the lockfile.
+
+The X recipient now exposes a read-only lookup of current source generation
+through the retained conversion. It checks the pair, target, byte size and
+request generation, then resolves that conversion's exact selection owner.
+All 66 `sophia-x-authority --test authority` tests pass, including forged
+request refusals, independence from PRIMARY changes, absence after settlement,
+and a changed CLIPBOARD owner returning a newer generation than the request.
+Selection generations use a shared allocator: adding two PRIMARY changes means
+the subsequent CLIPBOARD replacement is generation 4, not 2. The initial test
+expected 2 and failed; that fixture expectation was corrected, not the owner.
+
+This is source authority and configuration preparation. Namespace capability
+wiring, exact-pair live policy, the worker coordinator and the final-effect
+lock fence remain pending. Neither a repository gate nor an installed change
+is claimed by these focused tests.
+
 ## Question
 
 Can t142 serve several configured X groups from one synchronous frontend while
