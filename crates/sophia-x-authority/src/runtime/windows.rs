@@ -48,6 +48,13 @@ impl XAuthorityRuntime {
          read_only: bool,
          generation: u64,
      ) -> Result<(), XAuthorityRuntimeError> {
+         // Attach is the client's fallback boundary. Do not acknowledge an
+         // inaccessible OS segment and defer its failure until the first draw.
+         let mapping = self.shm_mappings.get(&shmid).and_then(Weak::upgrade)
+             .map(Ok)
+             .unwrap_or_else(|| sophia_sysv_shm::ClientMapping::attach_sysv(shmid)
+                 .map(Arc::new)
+                 .map_err(|_| XAuthorityRuntimeError::InvalidResource))?;
          self.shm_segments
              .attach(
                  namespace,
@@ -59,7 +66,8 @@ impl XAuthorityRuntime {
              .map_err(XAuthorityRuntimeError::from)?;
          // The runtime permits replacing a record. Its old mapping cannot
          // answer requests for the new backing, even with the same XID.
-         self.shm_segment_mappings.remove(&segment);
+         self.shm_mappings.insert(shmid, Arc::downgrade(&mapping));
+         self.shm_segment_mappings.insert(segment, mapping);
          self.shm_mappings.retain(|_, mapping| mapping.strong_count() != 0);
          Ok(())
      }

@@ -69,14 +69,15 @@ fn x11_dispatch_advertises_big_requests_and_replies_to_enable() {
 }
 
 #[test]
-fn x11_dispatch_mit_shm_attach_is_namespace_local_metadata() {
+fn x11_dispatch_mit_shm_attach_maps_before_acknowledging() {
+    let segment = sysv_segment::Segment::new(42);
     let namespace = NamespaceId::from_raw(45);
     let mut runtime = XAuthorityRuntime::new();
     let mut atoms = XAtomTable::new();
     let mut properties = XPropertyTable::new();
     let attach = decode_x11_core_request(
         context(namespace, 528, XByteOrder::LittleEndian),
-        &mit_shm_attach_request(XByteOrder::LittleEndian, 0x440010, 88, false),
+        &mit_shm_attach_request(XByteOrder::LittleEndian, 0x440010, segment.0, false),
     )
     .unwrap();
 
@@ -164,7 +165,11 @@ fn x11_dispatch_mit_shm_put_image_rejects_unreadable_pixels_without_publication(
     );
 
     runtime
-        .attach_shm_segment(namespace, XResourceId::new(0x440020, 1), u32::MAX, false, 1)
+        .attach_shm_descriptor_segment(
+            namespace, XResourceId::new(0x440020, 1),
+            std::sync::Arc::new(sophia_sysv_shm::ClientMapping::Descriptor(
+                sophia_sysv_shm::DescriptorMapping::create_sealed(1).unwrap().0)),
+            false, 1)
         .unwrap();
     let create = decode_x11_core_request(
         context(namespace, 530, XByteOrder::LittleEndian),
@@ -196,8 +201,7 @@ fn x11_dispatch_mit_shm_put_image_rejects_unreadable_pixels_without_publication(
         &mut properties,
     );
 
-    // Registration is not proof that the OS segment is readable. Publishing
-    // a fabricated background here used to conceal missing image payloads.
+    // An attached segment too small for the image cannot publish fabricated pixels.
     assert_eq!(attached.outputs.len(), 1);
     let response = attached.response.unwrap();
     assert!(matches!(

@@ -387,7 +387,15 @@ fn client_resource_range_release_reclaims_only_its_supported_resources() {
         )
         .unwrap();
     runtime
-        .attach_shm_segment(namespace, XResourceId::new(0x0020_0006, 1), 10, false, 1)
+        .attach_shm_descriptor_segment(
+            namespace,
+            XResourceId::new(0x0020_0006, 1),
+            std::sync::Arc::new(sophia_sysv_shm::ClientMapping::Descriptor(
+                sophia_sysv_shm::DescriptorMapping::create_sealed(4096).unwrap().0,
+            )),
+            false,
+            1,
+        )
         .unwrap();
     runtime
         .create_glx_context(namespace, XResourceId::new(0x0020_0007, 1), 3, true)

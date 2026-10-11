@@ -125,3 +125,7 @@ fn present_feedback_phases_accept_copy_and_flip_order_once() {
     assert!(flip.observe_idle());
     assert!(flip.finished());
 }
+
+#[path = "support/sysv_segment.rs"]
+mod sysv_segment;
+include!("x11_wire/shm_admission_socket.rs");

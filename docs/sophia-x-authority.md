@@ -1039,20 +1039,26 @@ are not the production transport shape.
 
 ## MIT-SHM Negotiation
 
-The frontend advertises a bounded `MIT-SHM` software-image surface. It performs
-an immutable copy for each admitted update rather than retaining a client
-shared-memory mapping.
+The frontend advertises a bounded `MIT-SHM` software-image surface. It retains
+an admitted attachment's mapping until detach or resource cleanup, and copies
+each admitted update into immutable pixels for the Engine.
 
 `QueryExtension("MIT-SHM")` returns its assigned major opcode, and minor opcode
 `0` replies to `ShmQueryVersion` with protocol version `1.2`, `shared_pixmaps =
 false`. Unsupported minor opcodes fail closed as native X request errors.
 
-`ShmAttach` records namespace-local segment metadata: the synthetic segment
-XID, client-provided `shmid`, read-only bit, and generation. For an admitted
-`XShmPutImage`, a narrow SysV SHM adapter validates segment size, attaches
-read-only, copies only the bounded image range into a new immutable CPU-buffer
-generation, and detaches immediately. The authority and Engine do not retain a
-client mapping.
+`ShmAttach` must map the OS segment before accepting its namespace-local XID,
+client-provided `shmid`, read-only bit, and generation. An inaccessible segment
+returns `BadAccess` on the attach request, so the client can choose ordinary
+`PutImage` before it starts drawing. A failed attachment leaves no new record
+and does not replace an existing mapping.
+
+Connections admitted with the `Confined` namespace profile cannot attach by
+numeric SysV ID: that ID belongs to an IPC namespace and may coincide with an
+unrelated host segment. They receive `BadAccess` even if the host has that ID.
+MIT-SHM 1.2 descriptor attachments remain available across IPC namespaces;
+core `PutImage` is also available. For an admitted `XShmPutImage`, the adapter
+copies only the bounded image range into a new immutable CPU-buffer generation.
 
 A missing, malformed, or cross-namespace segment returns a bounded native X11
 error. Pixmap targets remain local resource activity without a surface

@@ -7,6 +7,59 @@ tags: [investigation, session, x11, confinement]
 ---
 # Several X listeners and confined application launch validation
 
+## Confined software drawing fails at SysV attachment
+
+During attended acceptance on Sophia `8d507ac10`, niltempus observed a blank
+confined Firefox frame. Supplying private font configuration and software GL
+removed the fontconfig and GPU initialization errors but did not repair the
+frame. A fresh-profile Firefox launched from the shared terminal displayed
+normally; the shared terminal also displayed normally.
+
+Read-only process inspection found SysV image mappings in confined Firefox's
+private IPC namespace and no SysV mappings in Session. The runtime accepted
+`ShmAttach` as metadata and deferred OS mapping until drawing. Thus it could
+acknowledge an inaccessible segment instead of refusing at the client's fallback
+boundary. This source diagnosis and the attended comparison are retained in
+`~/.local/state/sophia/development-evidence/t142-confined-firefox-diagnosis-01`;
+they are not a captured trace of Firefox's X requests.
+
+The repair maps ordinary SysV attachments before accepting them and returns
+`BadAccess` at attach on failure. Failure leaves the old mapping unchanged.
+Connections admitted as `Confined` refuse numeric SysV attachments outright:
+an equal numeric ID in the host IPC namespace does not establish that the
+client supplied that memory. Descriptor attachments remain available. The
+public MIT-SHM documentation now also reflects the existing retained mapping
+lifetime, rather than its obsolete per-request unmap description.
+
+The generic wire regression verifies an accessible shared attachment, an
+invalid shared attachment, refusal of a valid host ID by a confined client,
+and a client in a real separate IPC namespace. After refusal, the same XID
+can be attached by descriptor and detached, and core PutImage/GetImage returns
+the expected pixels. No browser, physical input or native display is in this
+test. The complete authority suite passed with 2,265 passed, zero failed and
+three ignored across 37 summaries, including nested child output. An initial
+run failed one old fixture that expected lazy attachment; it now uses a real
+undersized descriptor to retain its unreadable-payload rejection check.
+
+Two controls independently restore the old runtime attachment or remove the
+confined-client guard. Each fails first at
+`inaccessible or confined SysV attach must fail before drawing`, exit 101,
+zero passed and one failed. Source restoration and all modified/untracked
+inputs were checked. The control package is
+`~/.local/state/sophia/development-evidence/t142-shm-controls-01`, whose
+self-excluding `SHA256SUMS` hashes to
+`44d94ee795111f2f33b11c23618124b1bd1163195241f2f4dd7bebafa8148974`.
+Development logs and the complete pre-gate changed-file hashes are in
+`~/.local/state/sophia/development-evidence/t142-shm-fix-01`.
+The isolated `cargo xtask check` exited zero: 7,616 passed, zero failed and
+105 ignored across 547 libtest summaries (including nested output), plus the
+format, lint and repository checks. It used private devices and runtime
+directories, no display credentials, the leased Cargo slot and a writable
+scratch copy of Git metadata. All pre-gate candidate hashes still matched
+afterward; the investigation update is documentation only. Native pixel
+checks correctly reported no available device, not a physical pass.
+The installed repaired browser and portal transfer remain an attended gate.
+
 ## Live portal prerequisite discovered during acceptance preparation
 
 On 2026-10-10, preparing the installed-session browser/terminal check exposed

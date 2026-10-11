@@ -2,38 +2,11 @@
 //! keep the workspace's unsafe-code prohibition.
 use sophia_protocol::{NamespaceId, Size};
 use sophia_x_authority::{XAuthorityRuntime, XResourceId, XWireClientResourceRange};
-use std::{process::Command, sync::Arc};
+use std::sync::Arc;
 
-struct Segment(u32);
-
-impl Segment {
-    fn new(value: u8) -> Self {
-        let output = Command::new("ipcmk")
-            .args(["-M", "4096"])
-            .env("LC_ALL", "C")
-            .output()
-            .expect("util-linux ipcmk creates the SysV fixture");
-        assert!(output.status.success(), "{output:?}");
-        let id = String::from_utf8(output.stdout)
-            .unwrap()
-            .split_whitespace()
-            .last()
-            .unwrap()
-            .parse()
-            .unwrap();
-        let segment = Self(id);
-        sophia_sysv_shm::write_bytes(id, 0, &[value; 16]).unwrap();
-        segment
-    }
-}
-
-impl Drop for Segment {
-    fn drop(&mut self) {
-        let _ = Command::new("ipcrm")
-            .args(["-m", &self.0.to_string()])
-            .status();
-    }
-}
+#[path = "support/sysv_segment.rs"]
+mod sysv_segment;
+use sysv_segment::Segment;
 
 const NS: NamespaceId = NamespaceId::from_raw(1);
 const SEG: XResourceId = XResourceId::new(0x200001, 1);
@@ -161,7 +134,7 @@ fn disconnect_and_segment_replacement_do_not_keep_old_mappings() {
 }
 
 #[test]
-fn invalid_sysv_attachment_stays_lazy_and_does_not_reuse_replaced_descriptor() {
+fn invalid_sysv_attachment_is_refused_without_replacing_live_descriptor() {
     let mut runtime = XAuthorityRuntime::new();
     let (mapping, _fd) = sophia_sysv_shm::DescriptorMapping::create_sealed(4096).unwrap();
     let mapping = Arc::new(sophia_sysv_shm::ClientMapping::Descriptor(mapping));
@@ -171,11 +144,11 @@ fn invalid_sysv_attachment_stays_lazy_and_does_not_reuse_replaced_descriptor() {
         .unwrap();
     runtime
         .attach_shm_segment(NS, SEG, u32::MAX, false, 2)
-        .unwrap();
+        .unwrap_err();
     assert!(
-        weak.upgrade().is_none(),
-        "replacement must release the previous backing"
+        weak.upgrade().is_some(),
+        "refused replacement must preserve the previous backing"
     );
-    assert!(runtime.shm_segment_mapping(NS, SEG).is_err());
+    assert!(runtime.shm_segment_mapping(NS, SEG).is_ok());
     runtime.detach_shm_segment(NS, SEG).unwrap();
 }

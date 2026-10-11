@@ -39,12 +39,20 @@ fn dispatch_shm_request(
                         u64::from(context.sequence),
                     ) {
                         Ok(()) => Vec::new(),
-                        Err(error) => vec![XClientOutput::Error(x_error_from_runtime(
-                            error,
-                            context.sequence,
-                            context.major_opcode,
-                            u16::from(crate::X_MIT_SHM_ATTACH_MINOR_OPCODE),
-                            u32::try_from(segment.local.raw()).unwrap_or(0)))],
+                        Err(error) => {
+                            let mut error = x_error_from_runtime(
+                                error,
+                                context.sequence,
+                                context.major_opcode,
+                                u16::from(crate::X_MIT_SHM_ATTACH_MINOR_OPCODE),
+                                u32::try_from(segment.local.raw()).unwrap_or(0));
+                            // This is an inaccessible shared-memory segment,
+                            // not a window lookup failure.
+                            if error.code == XErrorCode::BadWindow {
+                                error.code = XErrorCode::BadAccess;
+                            }
+                            vec![XClientOutput::Error(error)]
+                        }
                     };
                     XDispatchResult {
                         response: None,

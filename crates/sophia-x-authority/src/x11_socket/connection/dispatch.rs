@@ -1324,6 +1324,16 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         }) => Some((*segment, *read_only)),
                         _ => None,
                     };
+                    // A numeric SysV id is meaningful only in the server's
+                    // IPC namespace. Confined clients must pass descriptors;
+                    // accepting a coincident host id would name other memory.
+                    let confined_sysv_attach = match &request {
+                        crate::XWireRequest::Shm(crate::XShmRequest::ShmAttach { segment, .. })
+                            if client_admission.is_some_and(|context|
+                                context.namespace.profile == sophia_protocol::NamespaceProfile::Confined)
+                            => Some(*segment),
+                        _ => None,
+                    };
                     let shm_created_segment = match &request {
                         crate::XWireRequest::Shm(crate::XShmRequest::ShmCreateSegment { segment, .. }) => Some(*segment),
                         _ => None,
@@ -1879,6 +1889,20 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     let private_focus_routing = requested_input_focus.and(protocol_routing.as_ref())
                         .filter(|routing| routing.private_applied.get().is_some());
                     let mut output = match explicit_pointer_preparation {
+                        _ if confined_sysv_attach.is_some() => {
+                            runtime.begin_dispatch();
+                            XDispatchResult {
+                                response: None,
+                                outputs: vec![crate::XClientOutput::Error(crate::XClientError {
+                                    code: crate::XErrorCode::BadAccess,
+                                    sequence,
+                                    resource_id: u32::try_from(confined_sysv_attach.expect("guarded").local.raw()).unwrap_or(0),
+                                    minor_code: u16::from(crate::X_MIT_SHM_ATTACH_MINOR_OPCODE),
+                                    major_code: crate::X_MIT_SHM_MAJOR_OPCODE,
+                                })],
+                                metadata_candidates: Vec::new(),
+                            }
+                        }
                         _ if redirected_circulate.is_some() => {
                             runtime.begin_dispatch();
                             let (parent, place, candidate) = redirected_circulate.expect("redirect guard");
