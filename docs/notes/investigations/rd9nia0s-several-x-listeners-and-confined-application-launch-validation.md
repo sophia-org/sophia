@@ -2,10 +2,85 @@
 id: rd9nia0s
 date: 2026-10-10
 kind: investigation
-status: awaiting-physical-acceptance
+status: investigating
 tags: [investigation, session, x11, confinement]
 ---
 # Several X listeners and confined application launch validation
+
+## Live portal prerequisite discovered during acceptance preparation
+
+On 2026-10-10, preparing the installed-session browser/terminal check exposed
+a missing production join. Session has no consumer of X authority's
+`portal_commands` and does not construct its `clipboard_executor`. The
+two-listener CLIPBOARD/PRIMARY tests construct that connection themselves,
+with a headless Allow broker and supplied participation permissions. Their
+passing results prove the frontend/executor path, not live Session wiring.
+Configured confined namespaces currently have `NamespaceCapabilities::NONE`.
+No restart or confined-browser trial was performed after this discovery.
+
+niltempus approved bringing the t315 portal-files work forward before this
+physical gate. Implement the shared-core 9P export and the live Session join,
+derive participation from admitted namespace authority, and keep policy Deny
+unless explicitly configured. Do not connect the legacy envelope broker or
+silently supply the test's Allow permissions to live groups. Preserve the full
+t142 browser/terminal/departure exit; implementation prerequisites remain in
+addition to attended acceptance. The existing installed session is unchanged.
+
+## Portal file preparation
+
+The t315 preparation is isolated in `sophia-t315-live-portal` from master
+`356d2e366`. It adds the KDL-bound portal codec and a draft shared-core export,
+not a live requester. Thirteen codec/schema tests and eleven direct export /
+lifecycle tests pass, with focused Clippy clean. The export tests supply
+admission and owner facts; they do not prove a protected transport, a real 9P
+wire join, an independent client or live X delivery. The full repository gate
+and t315's remaining conformance controls are not claimed. Development logs
+are under `~/.local/state/sophia/development-evidence/t315-portal-files-dev01`.
+
+Review identified and corrected connection-grant ownership, queued-payload
+reclamation, owner-verified source generations and atomic decision custody.
+The added controls distinguish End's queued work from work already taken by
+the recipient. Exact submission replay ends at receipt acknowledgement;
+history and Qids survive reconnect. A failure of reserved terminal credit
+permanently fences the export instead of silently retaining active authority.
+
+The [requester amendment](../decisions/88uev9ix-admit-the-in-process-x-portal-requester-by-session-channel-custody.md)
+was accepted by niltempus on 2026-10-10: it adds private Session-channel custody
+for the in-process X coordinator alongside protected requester admission. It
+also permits the explicit one-way acceptance-login rule, confined group 7 to
+shared, without a per-paste prompt. Neither has been enabled in production.
+No new candidate is merged,
+installed or physically accepted by these preparation checks.
+
+## Private requester wire development
+
+The next uncommitted slice distinguishes `ProtectedPeer` from
+`SessionXAuthority` custody while requiring the exact admitted connection in
+both modes. A real shared-core server and Rust SDK pipeline refuse another
+socketpair created by the same process, then negotiate and carry request,
+upload and terminal settlement over the admitted connection. This is an
+executed same-kernel-peer refusal, not merely a direct export call.
+
+The reusable `PortalFileClient` uses the existing Rust SDK pipeline and one
+overall deadline. It validates receipt, request/grant and broker-generation
+correlation, retains the upload writer through accepted End, and waits for
+the recipient outcome rather than treating a write or Submitted as completion.
+Wire tests cover 65,536-byte payloads, recipient success and failure, denied
+uploads and single-use grants. The recipient in these tests records bytes and
+supplies success/failure; it is not the X executor.
+
+`t315-private-requester-dev01/tests-02.log` records 73 passing portal crate
+tests, including 13 file/export tests; `clippy-02.log` is clean with warnings
+denied. Earlier logs in that package precede the reusable client. The package
+under `~/.local/state/sophia/development-evidence/` records the complete changed
+file set and Cargo artifact hashes without copying binaries. These are focused
+development results, not the repository gate or independent C conformance.
+
+The configuration slice parses bounded directional rules and computes
+participation bits, but namespace creation and the exact-pair live policy
+remain unwired. Next are the production X coordinator, final-effect lock and
+source checks, and real frontend CLIPBOARD/PRIMARY joins. No installed-session
+capability or physical acceptance follows from this wire result.
 
 ## Question
 

@@ -240,6 +240,15 @@ must not notice); the ten-round t138 probe unchanged.
 
 ### Phase 3 -- live acceptance
 
+Preparation on 2026-10-10 found an implementation prerequisite: the tested
+portal executor is not connected to the live Session. The two-listener tests
+supply an Allow broker and participation permissions; confined live groups
+have neither. niltempus approved bringing the t315 file path forward before
+this gate. The [investigation](../investigations/rd9nia0s-several-x-listeners-and-confined-application-launch-validation.md#live-portal-prerequisite-discovered-during-acceptance-preparation)
+records the correction. The [proposed requester amendment](../decisions/88uev9ix-admit-the-in-process-x-portal-requester-by-session-channel-custody.md)
+requires a separate decision; no live permission has been enabled. This does
+not reduce the acceptance exit below.
+
 One classic group and one confined group in one session on the installed
 release: a confined browser cannot open the trusted socket, can paste into a
 trusted terminal through the portal, and the session survives the confined

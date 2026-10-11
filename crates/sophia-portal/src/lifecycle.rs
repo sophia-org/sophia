@@ -76,6 +76,54 @@ impl PortalRequestGrantLifecycle {
         Ok(())
     }
 
+    /// Admit and decide a new request atomically. File owners reserve their
+    /// journal first; a refused precondition must not leave a Pending request
+    /// behind when that reservation is dropped.
+    pub fn submit_decided(
+        &mut self,
+        mut request: PortalRequest,
+        decision: PortalPolicyDecision,
+        source_generation: u64,
+        now_msec: u64,
+    ) -> Result<Option<PortalGrant>, PortalLifecycleError> {
+        if !valid_request(&request) {
+            return Err(PortalLifecycleError::InvalidRequest);
+        }
+        if request.deadline_msec <= now_msec {
+            return Err(PortalLifecycleError::DeadlineElapsed);
+        }
+        if request.transfer.generation != source_generation {
+            return Err(PortalLifecycleError::StaleSourceGeneration);
+        }
+        if self.requests.contains_key(&request.transfer.transfer) {
+            return Err(PortalLifecycleError::DuplicateTransfer);
+        }
+        if self.pending_or_active_count() >= self.capacity {
+            return Err(PortalLifecycleError::CapacityExceeded);
+        }
+        let grant = if decision == PortalPolicyDecision::Allow {
+            request.transfer.decision = PortalDecision::Allowed;
+            Some(PortalGrant {
+                transfer: request.transfer.transfer,
+                source_namespace: request.transfer.source_namespace,
+                target_namespace: request.transfer.target_namespace,
+                kind: request.transfer.kind,
+                source_generation,
+                broker_generation: self.broker_generation,
+                deadline_msec: request.deadline_msec,
+                state: PortalGrantState::Active,
+            })
+        } else {
+            request.transfer.decision = PortalDecision::Denied;
+            None
+        };
+        self.requests.insert(request.transfer.transfer, request);
+        if let Some(grant) = &grant {
+            self.grants.insert(grant.transfer, grant.clone());
+        }
+        Ok(grant)
+    }
+
     pub fn decide(
         &mut self,
         transfer: PortalTransferId,
@@ -133,6 +181,20 @@ impl PortalRequestGrantLifecycle {
         transfer: PortalTransferId,
     ) -> Result<(), PortalLifecycleError> {
         self.active_grant_mut(transfer)?.state = PortalGrantState::Revoked;
+        Ok(())
+    }
+
+    /// Settle one deadline-expired grant without changing unrelated grants.
+    pub fn expire_transfer(
+        &mut self,
+        transfer: PortalTransferId,
+        now_msec: u64,
+    ) -> Result<(), PortalLifecycleError> {
+        let grant = self.active_grant_mut(transfer)?;
+        if grant.deadline_msec > now_msec {
+            return Err(PortalLifecycleError::InvalidRequest);
+        }
+        grant.state = PortalGrantState::Expired;
         Ok(())
     }
 

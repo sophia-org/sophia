@@ -101,6 +101,12 @@ No subsequent request is necessary to start the final ack deadline.
 
 ## Portal
 
+The accepted [in-process X requester amendment](88uev9ix-admit-the-in-process-x-portal-requester-by-session-channel-custody.md)
+adds Session-attested private-channel custody for that requester only. It amends
+the protected-requester-only requirement below; other requester admission,
+history, credit and policy/recipient separation rules remain in force. The
+following implementation-status statements describe the original decision date.
+
 There is no production portal listener or multi-namespace admission today.
 The socket and clipboard coordinator are test callers. Keep that distinction;
 do not invent a live endpoint variable or imply installed portal capability.

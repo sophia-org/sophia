@@ -185,6 +185,12 @@ t255.
 
 ## t315
 
+On 2026-10-10 niltempus selected the portal-files and live X clipboard join
+ahead of t142's attended gate, after preparation exposed the missing Session
+coordinator. The t142 exit is unchanged. This selection does not by itself
+approve a new requester admission mode or clipboard policy; those are described
+in the [proposed scoped amendment](../decisions/88uev9ix-admit-the-in-process-x-portal-requester-by-session-channel-custody.md).
+
 Serve the portal files export on the core from the designed
 [portal file contract](../../sophia-portal-files.md) with the bind executor
 model. The portal decision owner serves request, grant and revocation over

@@ -1,9 +1,9 @@
 # Portal transfer file contract
 
-**Design only.** There is no production portal listener, file export or
-multi-namespace admission in the current desktop. The existing socket and
-clipboard coordinator are test paths. This contract specifies their replacement
-without claiming those capabilities are live. Exact layouts are in
+**Live portal integration pending.** The desktop supports multiple X namespace
+listeners, but its portal file path is not yet qualified or installed. The
+existing socket clipboard coordinator is a test path. This contract specifies
+its replacement without claiming live clipboard mediation. Exact layouts are in
 [sophia-portal-files-v1.kdl](../protocol/sophia-portal-files-v1.kdl); the
 [decision](notes/decisions/xa78u03g-keep-broker-and-portal-file-authority-and-custody-separate.md)
 records authority and compatibility choices.
@@ -18,6 +18,23 @@ namespace authority. This is a new required seam, distinct from `PortalBroker`
 claimed today. No endpoint environment variable is defined before that owner
 exists. Attach strings and paths cannot create this admission.
 
+The accepted [in-process X requester amendment](notes/decisions/88uev9ix-admit-the-in-process-x-portal-requester-by-session-channel-custody.md)
+adds one narrow alternative: Session creates a private socketpair and gives the
+requester end only to its X clipboard coordinator. Session binds admission to
+the adopted connection, epoch and exact namespace pair. This attests channel
+custody, not protected-process identity; identical UID/PID on another connection
+confers nothing. There is no listener path or endpoint environment variable.
+Each transfer uses a fresh connection and epoch while the owner retains history
+and issued execution custody. Other requesters retain the protected-peer rule.
+
+Explicit startup rules may allow a directional X-group pair for Clipboard,
+including PRIMARY, with no per-paste prompt. The default rule set is empty.
+The owner must require both namespace participation capabilities and an exact
+configured pair; capabilities do not authorize transitive or reverse transfers.
+The recipient rechecks selection identity, generations, deadline and the lock
+fence immediately before the X property effect. The decision export never
+executes that effect itself.
+
 Both namespaces must match the admitted pair. A foreign or invalid namespace
 is EACCES before custody. The owner derives publish/request permissions from
 the namespace registry; it never trusts permission bits supplied by a requester.
@@ -28,8 +45,8 @@ authority corrections rather than byte-for-byte socket compatibility.
 
 Carry the implemented request/grant lifecycle, clipboard payload, completion,
 failure, expiry and revocation. All seven transfer kinds remain representable.
-Other family payloads, executors, prompt UI, production launch, multiple live
-namespaces and descriptor transfer are absent functionality. A 9P request grants
+Other family payloads and executors, prompt UI, and descriptor transfer remain
+absent functionality. A 9P request grants
 none of them. In particular an absent executor cannot report successful execution.
 Cross-namespace permission or lifecycle refusal remains a bare Denied; no reason
 is disclosed. The returned denial still correlates the request's transfer ID.

@@ -18,6 +18,7 @@ pub mod packets;
 pub mod policy_behavior;
 pub mod policy_profile;
 pub mod policy_scalars;
+pub mod portal_files;
 pub mod presentation;
 pub mod table;
 pub mod wm_files;

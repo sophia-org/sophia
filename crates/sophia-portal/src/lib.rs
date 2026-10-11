@@ -7,7 +7,9 @@
 mod broker;
 mod clipboard;
 mod drag_and_drop;
+pub mod file_client;
 mod file_handoff;
+pub mod files;
 mod lifecycle;
 mod notification;
 mod screen_capture;

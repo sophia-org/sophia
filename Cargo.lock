@@ -1489,6 +1489,8 @@ dependencies = [
 name = "sophia-portal"
 version = "0.1.0"
 dependencies = [
+ "sophia-9p",
+ "sophia-9p-client",
  "sophia-protocol",
 ]
 

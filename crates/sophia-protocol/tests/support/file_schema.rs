@@ -159,6 +159,7 @@ pub fn fields(
         let ty = text(field, "type").unwrap().to_owned();
         let mut row = None;
         let width = match ty.as_str() {
+            "u8" => 1,
             "u16" => 2,
             "u32" | "i32" => 4,
             "u64" => 8,

@@ -7,6 +7,8 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+sophia-9p = { path = "../sophia-9p" }
+sophia-9p-client.workspace = true
 sophia-protocol = { path = "../sophia-protocol" }
 
 [lints]
