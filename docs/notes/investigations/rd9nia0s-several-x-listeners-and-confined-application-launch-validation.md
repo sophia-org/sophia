@@ -189,7 +189,8 @@ Under Sophia's `.artifacts/t142-acceptance-<that hash>/`:
 
 Each package has a verified, self-excluding `SHA256SUMS`. The development
 package's `result.json` records package paths, report/manifest hashes and the
-actual Cargo artifact paths and hashes. Its own manifest SHA-256 is
+actual Cargo artifact paths and hashes. The development package's
+`SHA256SUMS` has SHA-256
 `36adafd94193741d4f788a524ca5baa02b79ba26138c3e67ba4363419510d24b`.
 No test executable was copied into evidence. The first adapter invocation
 exited 126 before execution because the scratch script lacked its execute bit;
