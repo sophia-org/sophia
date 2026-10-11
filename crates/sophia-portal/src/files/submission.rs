@@ -237,6 +237,7 @@ impl<A: PortalFileAuthority> PortalFileExport<A> {
                 self.execution = Some(PortalFileExecution {
                     grant: self.lifecycle.grant(transfer).unwrap().clone(),
                     payload: upload.bytes,
+                    authority_revision: c.authority_revision,
                 });
             } else {
                 self.lifecycle

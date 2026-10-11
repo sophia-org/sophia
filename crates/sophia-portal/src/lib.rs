@@ -7,8 +7,10 @@
 mod broker;
 mod clipboard;
 mod drag_and_drop;
+pub mod execution_fence;
 pub mod file_client;
 mod file_handoff;
+pub mod file_service;
 pub mod files;
 mod lifecycle;
 mod notification;

@@ -305,6 +305,12 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
         backpressure_observer,
     ));
     let worker_egress = ordered_egress.clone();
+    let clipboard = frontend.config.clipboard_portal.clone().map(|settings| {
+        let executor = frontend.clipboard_executor(&broker);
+        let payloads = broker.take_clipboard_payload_receiver().ok_or_else(|| X11SetupSocketError::new("clipboard payload receiver already owned"))?;
+        crate::clipboard_files::ClipboardFileCoordinator::start(settings, executor, payloads)
+            .map(Arc::new).map_err(|error| X11SetupSocketError::new(format!("clipboard files: {error}")))
+    }).transpose()?;
     if let Some(wake) = frontend.config.owner_wake.notifier() {
         ordered_egress.owner_wake.set(wake);
     }
@@ -314,6 +320,14 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
             return Err(X11SetupSocketError::new("X11 dispatch ended with unpublished authority effects"));
         }
         let batch = XAuthorityObservedTransactionBatch::from_dispatch_observation(&trace);
+        if let Some(clipboard) = &clipboard
+            && let Some(response) = &trace.result.response {
+            for command in &response.portal_commands {
+                if let crate::XAuthorityPortalCommand::PromptClipboardTransfer(transfer) = command {
+                    clipboard.enqueue(transfer.clone());
+                }
+            }
+        }
         let receipt = batch.as_ref().map(|batch| batch.transaction);
         worker_egress.submit_blocking(XAuthorityBoundedEgressEnvelope::new(trace.transaction, batch))?;
         Ok(receipt)

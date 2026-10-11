@@ -8,6 +8,7 @@
 mod atom;
 mod client_output;
 mod clipboard;
+mod clipboard_files;
 mod close_target;
 mod codec;
 mod color;
@@ -56,6 +57,7 @@ mod x11_socket;
 pub use atom::*;
 pub use client_output::*;
 pub use clipboard::*;
+pub use clipboard_files::{XClipboardPortal, XClipboardPortalPolicy};
 pub use close_target::*;
 pub use codec::*;
 pub use color::*;

@@ -17,6 +17,7 @@ const DEFAULT_MAX_CONCURRENT_CLIENTS: NonZeroUsize = match NonZeroUsize::new(16)
 
 #[derive(Clone)]
 pub struct XServerFrontendConfig {
+    pub(crate) clipboard_portal: Option<crate::XClipboardPortal>,
     pub(crate) service_wake: Option<sophia_wake::WakeSlot>,
     pub(crate) owner_wake: sophia_wake::WakeSlot,
     socket_path: PathBuf,
@@ -118,6 +119,7 @@ impl XServerFrontendConfig {
             ));
         }
         Ok(Self {
+            clipboard_portal: None,
             service_wake: None,
             owner_wake: sophia_wake::WakeSlot::default(),
             socket_path,
@@ -139,6 +141,12 @@ impl XServerFrontendConfig {
             // every test and probe independent of what the host has installed.
             font_path: Vec::new(),
         })
+    }
+
+    /// Enable the private file requester with an explicit owner policy.
+    pub fn with_clipboard_portal(mut self, portal: crate::XClipboardPortal) -> Self {
+        self.clipboard_portal = Some(portal);
+        self
     }
 
     /// All service command producers must notify this slot after publication.

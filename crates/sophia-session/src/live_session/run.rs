@@ -220,7 +220,8 @@ pub(crate) fn run_persistent_xterm_session(
     let x_namespace = namespace_registry
         .lock()
         .map_err(|_| "Sophia namespace registry lock was poisoned")?
-        .create_namespace(config.namespace_profile, config.namespace_capabilities);
+        .create_namespace(config.namespace_profile, config.x_groups.capabilities(
+            socket_directories::ClientGroup::Shared, config.namespace_capabilities));
     let mut x_namespaces = std::collections::BTreeMap::from([
         (sophia_x_authority::XServerFrontendListenerId::PRIMARY, x_namespace.id),
     ]);
@@ -230,7 +231,8 @@ pub(crate) fn run_persistent_xterm_session(
     for (id, path) in &group_sockets {
         let context = namespace_registry.lock()
             .map_err(|_| "Sophia namespace registry lock was poisoned")?
-            .create_namespace(NamespaceProfile::Confined, NamespaceCapabilities::NONE);
+            .create_namespace(NamespaceProfile::Confined, config.x_groups.capabilities(
+                socket_directories::ClientGroup::Confined(*id), NamespaceCapabilities::NONE));
         let listener = sophia_x_authority::XServerFrontendListenerId(*id);
         x_namespaces.insert(listener, context.id);
         group_listeners.push((listener, path.clone(), context));
@@ -250,13 +252,29 @@ pub(crate) fn run_persistent_xterm_session(
     let admission_policy = Arc::new(LiveXAdmissionPolicy {
         launch_origins: launch_origins.clone(),
         registry: namespace_registry.clone(),
-        namespaces: x_namespaces,
+        namespaces: x_namespaces.clone(),
         session_user_id,
     });
     // The frontend sleeps until a service command or routed input rings this.
     // Every Session sender into it must therefore be a notifying one.
     let frontend_service_wake = sophia_wake::WakeSlot::default();
     let (mut frontend_config, client_render_devices) = include!("run/frontend_config.rs");
+    let portal_fence = sophia_portal::execution_fence::PortalExecutionFence::default();
+    let group_namespace = |group: socket_directories::ClientGroup| {
+        let listener = match group {
+            socket_directories::ClientGroup::Shared => sophia_x_authority::XServerFrontendListenerId::PRIMARY,
+            socket_directories::ClientGroup::Confined(id) => sophia_x_authority::XServerFrontendListenerId(id),
+        };
+        x_namespaces.get(&listener).copied().ok_or("clipboard rule names an unavailable namespace")
+    };
+    let pairs = config.x_groups.clipboard_rules.iter().map(|&(source, target)| {
+        Ok((group_namespace(source)?, group_namespace(target)?))
+    }).collect::<Result<Vec<_>, &str>>()?;
+    frontend_config = frontend_config.with_clipboard_portal(sophia_x_authority::XClipboardPortal {
+        broker_generation: session_generation,
+        policy: Arc::new(x_frontend::portal::LiveClipboardPolicy { registry: namespace_registry.clone(), pairs }),
+        fence: portal_fence.clone(),
+    });
     for (listener, path, context) in group_listeners {
         frontend_config = frontend_config.with_listener(listener, path, context)?;
     }
@@ -730,6 +748,7 @@ pub(crate) fn run_persistent_xterm_session(
     let result = run_session_loop(
         &mut config,
         SessionLoopChannels {
+            portal_fence: &portal_fence,
             authority: &authority_receiver,
             input: &input_sender,
             control: &control_sender,

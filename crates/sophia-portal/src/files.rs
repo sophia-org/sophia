@@ -40,6 +40,11 @@ pub trait PortalFileAuthority {
     /// Nondecreasing owner-clock milliseconds, shared with request deadlines.
     fn now_msec(&self) -> u64;
     fn live(&self) -> bool;
+    /// Changes on a security transition, including lock followed by unlock.
+    /// Restoring liveness must never restore grants from an earlier interval.
+    fn revision(&self) -> u64 {
+        1
+    }
     fn allow(&self, _request: &PortalRequest) -> bool {
         false
     }
@@ -72,6 +77,7 @@ pub struct PortalRequesterAdmission {
 pub struct PortalFileExecution {
     pub grant: PortalGrant,
     pub payload: Vec<u8>,
+    pub authority_revision: u64,
 }
 
 struct Upload {
@@ -90,6 +96,7 @@ struct Accepted {
 
 struct Connection {
     admission: PortalRequesterAdmission,
+    authority_revision: u64,
     base: u64,
     attached: bool,
     revoked: bool,
@@ -169,6 +176,7 @@ impl<A: PortalFileAuthority> PortalFileExport<A> {
         self.last_epoch = admission.epoch;
         self.connection = Some(Connection {
             admission,
+            authority_revision: self.authority.revision(),
             base,
             attached: false,
             revoked: false,
@@ -220,7 +228,8 @@ impl<A: PortalFileAuthority> PortalFileExport<A> {
 
     pub fn expire(&mut self, now: Instant) {
         if self.connection.as_ref().is_some_and(|c| {
-            c.ack_deadline.is_some_and(|d| now >= d)
+            c.authority_revision != self.authority.revision()
+                || c.ack_deadline.is_some_and(|d| now >= d)
                 || c.refusal_deadline.is_some_and(|d| now >= d)
                 || self.authority.namespace(c.admission.source).is_none()
                 || self.authority.namespace(c.admission.target).is_none()

@@ -59,7 +59,7 @@ pub struct XServerFrontendRouteBroker {
     control_receiver: Receiver<XAuthorityClientControlCommand>,
     acknowledgement_receiver: Option<Receiver<XAuthorityClientControlAck>>,
     metadata_candidate_receiver: Option<Receiver<XAuthorityClientMetadataCandidate>>,
-    source_payload_receiver: Receiver<crate::ClipboardSourcePayload>,
+    source_payload_receiver: Option<Receiver<crate::ClipboardSourcePayload>>,
     raster_sender: sophia_wake::SignalSender<sophia_protocol::SurfaceRasterRequirements>,
     raster_receiver: Receiver<sophia_protocol::SurfaceRasterRequirements>,
 }
@@ -447,7 +447,7 @@ impl XServerFrontendRouteBroker {
             control_receiver,
             acknowledgement_receiver,
             metadata_candidate_receiver: Some(metadata_candidate_receiver),
-            source_payload_receiver,
+            source_payload_receiver: Some(source_payload_receiver),
             raster_sender: sophia_wake::SignalSender::new(raster_sender, service_wake),
             raster_receiver,
         };
@@ -541,7 +541,11 @@ impl XServerFrontendRouteBroker {
         &self,
         timeout: Duration,
     ) -> Result<crate::ClipboardSourcePayload, RecvTimeoutError> {
-        self.source_payload_receiver.recv_timeout(timeout)
+        self.source_payload_receiver.as_ref().ok_or(RecvTimeoutError::Disconnected)?.recv_timeout(timeout)
+    }
+
+    pub(crate) fn take_clipboard_payload_receiver(&mut self) -> Option<Receiver<crate::ClipboardSourcePayload>> {
+        self.source_payload_receiver.take()
     }
 
     /// Put this broker under a coordinator.

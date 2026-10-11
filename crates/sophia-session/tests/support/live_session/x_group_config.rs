@@ -230,3 +230,42 @@ fn xtest_selection_is_unchanged_by_the_shared_selector() {
         assert!(error.contains("--admit-xtest"), "{args:?}: {error}");
     }
 }
+
+#[test]
+fn clipboard_pair_policy_does_not_compose_rules_or_allow_reverse_flow() {
+    use sophia_x_authority::XClipboardPortalPolicy;
+    let mut registry = NamespaceRegistry::new(1).unwrap();
+    let a = registry
+        .create_namespace(NamespaceProfile::Confined, NamespaceCapabilities::ALL)
+        .id;
+    let b = registry
+        .create_namespace(NamespaceProfile::ClassicShared, NamespaceCapabilities::ALL)
+        .id;
+    let c = registry
+        .create_namespace(NamespaceProfile::Confined, NamespaceCapabilities::ALL)
+        .id;
+    let policy = x_frontend::portal::LiveClipboardPolicy {
+        registry: Arc::new(Mutex::new(registry)),
+        pairs: vec![(a, b), (b, c)],
+    };
+    let request = |source, target| sophia_protocol::PortalRequest {
+        transfer: sophia_protocol::PortalTransfer {
+            transfer: sophia_protocol::PortalTransferId::from_raw(1),
+            source_namespace: source,
+            target_namespace: target,
+            kind: sophia_protocol::PortalTransferKind::Clipboard,
+            mime_type: Some("UTF8_STRING".into()),
+            byte_size: 0,
+            decision: sophia_protocol::PortalDecision::Pending,
+            generation: 1,
+        },
+        deadline_msec: 1000,
+    };
+    assert!(policy.allow(&request(a, b)));
+    assert!(policy.allow(&request(b, c)));
+    assert!(
+        !policy.allow(&request(a, c)),
+        "A-to-B and B-to-C cannot authorize A-to-C"
+    );
+    assert!(!policy.allow(&request(b, a)), "pair rules are directional");
+}

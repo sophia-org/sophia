@@ -11,6 +11,7 @@ type Node = PortalFileNode;
 mod wire;
 
 struct Authority {
+    revision: u64,
     rights: bool,
     allow: bool,
     live: bool,
@@ -18,6 +19,9 @@ struct Authority {
     generation: u64,
 }
 impl PortalFileAuthority for Authority {
+    fn revision(&self) -> u64 {
+        self.revision
+    }
     fn source_generation(&self, _request: &PortalRequest) -> Option<u64> {
         Some(self.generation)
     }
@@ -81,6 +85,7 @@ impl Fixture {
     fn new(limits: PortalFileLimits) -> Self {
         let mut export = PortalFileExport::new(
             Authority {
+                revision: 1,
                 rights: true,
                 allow: true,
                 live: true,
@@ -511,4 +516,26 @@ fn lifecycle_atomic_decision_refusal_does_not_leave_pending_custody() {
             .unwrap()
             .is_some()
     );
+}
+
+#[test]
+fn security_revision_change_fences_queued_work_even_when_live_again() {
+    let mut f = Fixture::new(PortalFileLimits::defaults(1));
+    f.negotiate();
+    assert!(matches!(
+        f.request(1),
+        PortalBrokerResponseDecision::Allowed(_)
+    ));
+    let _writer = f.begin(1, b"pending");
+    f.end(1, 7).unwrap();
+    f.export.authority_mut().revision += 2;
+    assert!(f.export.authority().live);
+    assert!(
+        f.export.take_execution().is_none(),
+        "lock/unlock must revoke queued work"
+    );
+    assert!(matches!(
+        f.export.open(&Node::Api, OpenFlags(0)),
+        Err(Errno::ESTALE)
+    ));
 }

@@ -1,5 +1,6 @@
 use super::*;
 
+pub(super) mod portal;
 mod render_device;
 pub(super) mod xtest;
 

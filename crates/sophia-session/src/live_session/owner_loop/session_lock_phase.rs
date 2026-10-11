@@ -50,6 +50,9 @@ macro_rules! begin_session_lock {
                 $reason,
             );
         } else if let Ok(input) = input {
+            // Finish any earlier recipient effect before starting the lock.
+            // A later unlock changes revision again; old grants stay dead.
+            portal_fence.block();
             match session_lock.lock() {
                 Ok(crate::session_lock::SessionLockStart::Started(epoch)) => {
                     // Synthetic input closes before the epoch moves, so no
@@ -348,6 +351,7 @@ macro_rules! service_session_lock {
                     );
                     begin_session_lock!("unlock_repaint_failed");
                 } else if session_lock.observe_unlocked(applied) {
+                    portal_fence.unblock();
                     // Start a fresh desktop interval; never import the lock's
                     // pressed keys, compose state or lock-toggle changes.
                     locked::reset_desktop_keyboard_for_lock(

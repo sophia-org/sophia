@@ -1,4 +1,5 @@
 struct SessionLoopChannels<'a> {
+    portal_fence: &'a sophia_portal::execution_fence::PortalExecutionFence,
     authority: &'a Receiver<XAuthorityObservedTransactionBatch>,
     input: &'a XAuthorityRoutedInputSender,
     control: &'a XServerFrontendControlRouter,
@@ -357,6 +358,7 @@ fn run_session_loop(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut protocol_error_tally = SessionProtocolErrorTally::default();
     let mut failure_phase = crate::diagnostics::SessionFailurePhase::Startup;
+    let portal_fence = channels.portal_fence.clone();
     let result = run_session_loop_inner(
         config,
         channels,
@@ -365,6 +367,7 @@ fn run_session_loop(
         &mut protocol_error_tally,
         &mut failure_phase,
     );
+    portal_fence.close();
     protocol_error_tally.report();
     match result {
         Ok(()) => Ok(()),
@@ -388,6 +391,7 @@ fn run_session_loop_inner(
     failure_phase: &mut crate::diagnostics::SessionFailurePhase,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let SessionLoopChannels {
+        portal_fence,
         authority: authority_receiver,
         input: input_sender,
         control: control_sender,

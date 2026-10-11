@@ -36,7 +36,7 @@ impl XServerFrontendClipboardExecutor {
             .client_for_resource(proxy.owner)?
             .ok_or_else(|| X11SetupSocketError::new("clipboard owner disconnected"))?;
         self.routing
-            .route_protocol(
+            .route_protocol_contained(
                 target,
                 XClientEvent::SelectionRequest {
                     sequence: 0,
@@ -57,6 +57,31 @@ impl XServerFrontendClipboardExecutor {
     }
 
     pub fn execute(
+        &self,
+        grant: &sophia_protocol::PortalGrant,
+        payload: &[u8],
+    ) -> Result<crate::ClipboardSelectionExecutionOutcome, X11SetupSocketError> {
+        let outcome = self.execute_effect(grant, payload)?;
+        self.route_outcome(&outcome)?;
+        Ok(outcome)
+    }
+
+    /// Property custody has already changed before notification is routed.
+    /// A disconnected notification recipient cannot turn that effect into a
+    /// claim that no execution happened.
+    pub(crate) fn execute_portal(
+        &self,
+        grant: &sophia_protocol::PortalGrant,
+        payload: &[u8],
+    ) -> Result<crate::ClipboardSelectionExecutionOutcome, X11SetupSocketError> {
+        let outcome = self.execute_effect(grant, payload)?;
+        if let Err(error) = self.route_outcome(&outcome) {
+            tracing::warn!("portal recipient notification unavailable: {error}");
+        }
+        Ok(outcome)
+    }
+
+    fn execute_effect(
         &self,
         grant: &sophia_protocol::PortalGrant,
         payload: &[u8],
@@ -84,7 +109,6 @@ impl XServerFrontendClipboardExecutor {
         drop(properties);
         drop(atoms);
         drop(runtime);
-        self.route_outcome(&outcome)?;
         Ok(outcome)
     }
 
@@ -132,7 +156,7 @@ impl XServerFrontendClipboardExecutor {
             .client_for_resource(notify.requestor)?
             .ok_or_else(|| X11SetupSocketError::new("clipboard requestor disconnected"))?;
         self.routing
-            .route_protocol(
+            .route_protocol_contained(
                 target,
                 XClientEvent::SelectionNotify {
                     sequence: 0,

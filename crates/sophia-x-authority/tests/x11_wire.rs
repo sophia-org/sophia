@@ -71,6 +71,8 @@ include!("x11_wire/setup_failure_containment.rs");
 include!("x11_wire/xfixes_stalled_watcher.rs");
 include!("x11_wire/xfixes_namespace_isolation.rs");
 include!("x11_wire/clipboard_frontend.rs");
+#[path = "x11_wire/clipboard_files.rs"]
+mod clipboard_files;
 include!("x11_wire/socket_observation.rs");
 include!("x11_wire/map_hierarchy.rs");
 include!("x11_wire/output_reservation_socket.rs");

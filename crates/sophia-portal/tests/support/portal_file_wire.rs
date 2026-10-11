@@ -30,6 +30,7 @@ fn requester_client_reports_recipient_outcome_and_never_uploads_a_denial() {
     for (allowed, succeeded) in [(true, true), (true, false), (false, false)] {
         let export = PortalFileExport::new(
             Authority {
+                revision: 1,
                 rights: true,
                 allow: allowed,
                 live: true,
@@ -171,6 +172,7 @@ fn events(client: &mut Pipeline, root: Fid, events: Fid, offset: &mut u64) -> Ve
 fn private_requester_wire_refuses_another_socket_with_the_same_kernel_peer() {
     let export = PortalFileExport::new(
         Authority {
+            revision: 1,
             rights: true,
             allow: true,
             live: true,
