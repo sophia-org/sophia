@@ -455,19 +455,39 @@ fn build(config: &Config, report: &mut Report) -> Result<PathBuf, String> {
         return Err("build did not identify exactly one test binary".into());
     }
     let artifact = &artifacts[0];
-    let binary = Path::new(EVIDENCE).join("test-binary");
-    std::fs::copy(
+    let executable = Path::new(
         artifact["executable"]
             .as_str()
             .ok_or("missing executable")?,
-        &binary,
-    )
-    .map_err(|e| e.to_string())?;
-    report.binary = Some(
-        json!({"path":"evidence/test-binary", "sha256":identity::digest(&binary)?,
-        "features":artifact["features"],"profile":artifact["profile"],"target":artifact["target"],
-        "default_features":true,"offline":true,"locked":true}),
     );
+    let (binary, location) = if config.gate == Gate::M4 {
+        let binary = Path::new(EVIDENCE).join("test-binary");
+        std::fs::copy(executable, &binary).map_err(|error| error.to_string())?;
+        (binary, json!({"path":"evidence/test-binary"}))
+    } else {
+        let target = Path::new("/work/target");
+        let relative = executable
+            .strip_prefix(target)
+            .map_err(|_| "test executable is outside the build target")?;
+        let binary = super::binary::resolve(target, relative)?;
+        (
+            binary,
+            json!({"target_path":relative.to_str().ok_or("non-UTF-8 test executable")?}),
+        )
+    };
+    let mut record = json!({"sha256":identity::digest(&binary)?,
+        "features":artifact["features"],"profile":artifact["profile"],"target":artifact["target"],
+        "default_features":true,"offline":true,"locked":true});
+    record
+        .as_object_mut()
+        .ok_or("invalid binary record")?
+        .extend(
+            location
+                .as_object()
+                .ok_or("invalid binary location")?
+                .clone(),
+        );
+    report.binary = Some(record);
     save(report)?;
     Ok(binary)
 }

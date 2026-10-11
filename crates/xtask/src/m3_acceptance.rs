@@ -1,5 +1,6 @@
 //! One headless M3 gate, with a closed case inventory and owned child processes.
 
+mod binary;
 mod catalog;
 mod components;
 mod evidence;

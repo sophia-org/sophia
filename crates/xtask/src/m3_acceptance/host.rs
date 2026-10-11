@@ -246,9 +246,9 @@ fn execute(
         report.overall = Verdict::Fail;
         report.harness_error = Some(error);
     }
-    if gate == Gate::M5
+    if matches!(gate, Gate::M3 | Gate::M5)
         && success
-        && let Err(error) = super::m5::validate_binary(&report, &opts.output)
+        && let Err(error) = super::binary::validate(&report, &build_target)
     {
         report.overall = Verdict::Fail;
         report.harness_error = Some(error);

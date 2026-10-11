@@ -235,10 +235,10 @@ fn m5_zero_tests_timeouts_and_leaked_processes_cannot_pass() {
 }
 
 #[test]
-fn m5_changed_test_binary_is_rejected() {
+fn acceptance_target_binary_identity_and_containment_are_required() {
     let directory = std::env::temp_dir().join(format!("m5-binary-{}", std::process::id()));
-    std::fs::create_dir_all(directory.join("evidence")).unwrap();
-    let test = directory.join("evidence/test-binary");
+    std::fs::create_dir_all(directory.join("debug/deps")).unwrap();
+    let test = directory.join("debug/deps/test-binary");
     std::fs::write(&test, b"original test executable").unwrap();
     let mut report: Report = serde_json::from_value(serde_json::json!({
         "schema":1,"run_id":"fixture","purpose":"m5_acceptance",
@@ -247,22 +247,52 @@ fn m5_changed_test_binary_is_rejected() {
             "archive_sha256":"fixture","content_sha256":"fixture"},
         "build_target_namespace":"fixture","config_sha256":"fixture",
         "source_attested_inside":true,"source_unchanged_after":true,
-        "binary":{"path":"evidence/test-binary","sha256":identity::digest(&test).unwrap()}
+        "binary":{"target_path":"debug/deps/test-binary","sha256":identity::digest(&test).unwrap()}
     }))
     .unwrap();
-    m5::validate_binary(&report, &directory).unwrap();
+    super::binary::validate(&report, &directory).unwrap();
     std::fs::write(&test, b"different executable").unwrap();
     assert!(
-        m5::validate_binary(&report, &directory)
+        super::binary::validate(&report, &directory)
             .unwrap_err()
             .contains("binary identity")
     );
     std::fs::write(&test, b"original test executable").unwrap();
-    report.binary.as_mut().unwrap()["path"] = serde_json::json!("../other/test-binary");
-    assert!(m5::validate_binary(&report, &directory).is_err());
+    for invalid in [
+        "../other/test-binary",
+        "/debug/deps/test-binary",
+        "",
+        "debug/../debug/deps/test-binary",
+    ] {
+        report.binary.as_mut().unwrap()["target_path"] = serde_json::json!(invalid);
+        assert!(
+            super::binary::validate(&report, &directory).is_err(),
+            "{invalid}"
+        );
+    }
+    report.binary.as_mut().unwrap()["target_path"] = serde_json::json!("debug/deps/test-binary");
+    report.binary.as_mut().unwrap()["path"] = serde_json::json!("evidence/test-binary");
+    assert!(super::binary::validate(&report, &directory).is_err());
+    report
+        .binary
+        .as_mut()
+        .unwrap()
+        .as_object_mut()
+        .unwrap()
+        .remove("path");
+    let outside = directory.with_extension("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::rename(&test, outside.join("test-binary")).unwrap();
+    std::os::unix::fs::symlink(outside.join("test-binary"), &test).unwrap();
+    assert!(super::binary::validate(&report, &directory).is_err());
+    std::fs::remove_file(&test).unwrap();
+    std::fs::remove_dir(directory.join("debug/deps")).unwrap();
+    std::os::unix::fs::symlink(&outside, directory.join("debug/deps")).unwrap();
+    assert!(super::binary::validate(&report, &directory).is_err());
     report.binary = None;
-    assert!(m5::validate_binary(&report, &directory).is_err());
+    assert!(super::binary::validate(&report, &directory).is_err());
     std::fs::remove_dir_all(directory).unwrap();
+    std::fs::remove_dir_all(outside).unwrap();
 }
 
 #[test]

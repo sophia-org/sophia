@@ -75,19 +75,6 @@ pub(super) fn overall(rows: &[CaseResult]) -> Result<Verdict, String> {
     })
 }
 
-/// The one executable M5 runs is the Session test target; nothing else is
-/// attested, so nothing else may change under the run.
-pub(super) fn validate_binary(report: &Report, output: &Path) -> Result<(), String> {
-    let binary = report.binary.as_ref().ok_or("M5 binary evidence absent")?;
-    if binary["path"] != "evidence/test-binary"
-        || binary["sha256"].as_str()
-            != Some(&identity::digest(&output.join("evidence/test-binary"))?)
-    {
-        return Err("M5 binary identity changed after contained execution".into());
-    }
-    Ok(())
-}
-
 pub(super) fn validate_case(
     row: &Case,
     exact: &str,
