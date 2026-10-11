@@ -6,6 +6,7 @@ use std::io::{Read, Write};
 use std::os::unix::fs::DirBuilderExt;
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -21,6 +22,7 @@ use sophia_x_authority::{
 
 const PRIVATE_NAME: &[u8] = b"SOPHIA-PRIVATE-INPUT-1";
 const COOKIE: [u8; 32] = [0x6a; 32];
+static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Copy)]
 enum Order {
@@ -76,8 +78,9 @@ impl PrivateDirectory {
             .unwrap()
             .as_nanos();
         let path = PathBuf::from(format!(
-            "/tmp/sophia-private-setup-{}-{unique}",
-            std::process::id()
+            "/tmp/sophia-private-setup-{}-{unique}-{}",
+            std::process::id(),
+            NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed)
         ));
         std::fs::DirBuilder::new()
             .mode(0o700)
