@@ -21,10 +21,12 @@ protected-grant contract, rather than a hidden ancillary-data channel.
 
 The t317 development profile copy includes Sophia's opt-in Tauth/afid seam.
 The generic C client implements Tauth and explicit attach-with-afid, including
-QTAUTH validation, refusal cleanup and flush-race custody. It does not yet
-implement the launch-channel conversation in role sessions. Existing role
-clients continue to use ordinary attach; requiring authentication on shipped
-roles still needs that migration and production-export qualification.
+QTAUTH validation, refusal cleanup and flush-race custody. `sophia_launch_auth.h`
+provides the bounded launch-channel conversation over two caller-supplied
+clients. The lock client can continue from its admitted root without another
+version or attach. Existing ordinary constructors remain unchanged; applications
+must explicitly select this path. Production bootstrap integration and other
+role-client root handoffs remain open.
 
 | Role | File contract | Client status |
 | --- | --- | --- |

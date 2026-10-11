@@ -1,14 +1,14 @@
-tree e0de43c3da52bc94eccd1822eb0c51064621e593
-parent 1a37b2da8e09f6dbd56f9c0fdabc6d425c217046
-author Mason Green <mason@greenm01.net> 1791760587 -0400
-committer Mason Green <mason@greenm01.net> 1791760587 -0400
+tree 5b4cd6b4dd1787a8a0ba3761bd9f257be2313530
+parent 2160218019841d2751c58ee74e9d20ba665dc313
+author Mason Green <mason@greenm01.net> 1791761506 -0400
+committer Mason Green <mason@greenm01.net> 1791761506 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCaswYyxsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIF3AD/dGF/qP29Xejk6d1AbYeP
- BvISkYK8W9W36/+jHerEPLIA/3ar5WGAnUPbvTnsDZHPBZV8XIq0hHa8azL+PqAC
- KW8H
- =+svw
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCaswcYhsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLEYgD+LSoLD9DLXY/agZIISTqm
+ H2/lWpFVaRLBySXwBZLIVDgA/3pP9vVxN2TheIr8iivW2slsDtng2l5ysBDP5XWK
+ IhkO
+ =tpTu
  -----END PGP SIGNATURE-----
 
-Add bounded Tauth and explicit afid attach to the C client
+Add a shared nonblocking launch authentication conversation

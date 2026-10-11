@@ -775,3 +775,39 @@ The complete changed/untracked candidate inventory is captured before checks;
 these result paragraphs follow it. No binaries are copied to evidence. t317
 remains open for startup and role-client integration, remaining role joins,
 in-place fragment controls, minimum Bubblewrap execution and final acceptance.
+
+## Reusable C SDK conversation and admitted lock root
+
+Signed C SDK `52d1e1897efc42e43d8dc5020349d4a1ed519258` owns the
+bounded two-connection launch conversation. The caller supplies both clients,
+storage and monotonic time; the helper relays only its own afid challenge,
+sets CLOEXEC on the provisioned channel, enforces a five-second total deadline,
+and exposes the admitted root only after temporary handles are clunked.
+`sophia_lc_init_attached` resumes ordinary lock-file bootstrap on that root,
+without resetting the transport or issuing an unauthenticated attach.
+
+The strict C and ASan/UBSan suites pass, with controls for accepting a refused
+status, dropping the deadline, omitting CLOEXEC, and repeating ordinary attach
+in the lock constructor. The closed `t317-sdk-launch-03` package's SHA256SUMS
+hash is `dfeff9a787310c59ae5faa8eff5c7112cd9eb8e19104a675b5c8b8b74ca6319d`.
+
+The protected lock fixture now uses these public SDK entry points for both
+authentication rounds and lock-file negotiation. It reaches the current lock
+object, then observes loss of authority on Session revocation. The independent
+raw-wire fixture retains its exact waiting-read check; the SDK case does not
+claim that its final service call has already placed the same read on the wire.
+Both use real Factotum and protected launch custody, without a physical device.
+
+All 17 Session launch-authentication tests, legacy lock C SDK interoperability,
+focused Clippy, formatting and immutable SDK verification pass. Dropping the
+afid in the SDK makes the joined peer fail its conversation-service assertion;
+the exact Rust test exits 101 with one failure. Sources are restored and the
+snapshot verifier passes again. Complete modified/untracked inputs are captured
+before testing; these documentation additions follow the capture. Closed
+package SHA256SUMS hashes are:
+
+- `t317-sdk-launch-lock-01`: `672ec066f5f3f0b8cd816998c15e61b3f66f7a312e2e9592cc455458bc905262`.
+- `t317-sdk-launch-afid-control-01`: `f6d3b0dc1bff0da49818ea57fd30f01287bb718ec3a5dbdcdfe0280d33ca7f22`.
+
+This is SDK/fixture qualification, not normal desktop startup integration or a
+new full-repository gate. The remaining t317 exit is unchanged.

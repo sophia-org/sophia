@@ -84,6 +84,20 @@ The caller polls and enforces a connection deadline. See
 
 ## Build and test
 
+The development authentication API, `sophia_launch_auth.h`, borrows fresh role
+and launch-channel 9P clients and caller-supplied monotonic time. Initialize it
+with `sophia_la_init`, advance it with `sophia_la_service`, and poll both fds plus
+`sophia_la_next_wake` until ready or terminal. It relays only the challenge from
+its own afid and never falls back to ordinary attach. The total deadline is
+five seconds, including cleanup; the caller owns descriptor closure on failure.
+The helper performs no environment lookup or principal selection.
+
+On success, `sophia_la_root` names the admitted role root. For lock providers,
+pass it to `sophia_lc_init_attached`; that constructor starts at `api`, preserving
+the authentication and transport identity. It refuses a busy wire or unknown
+root. Other role constructors still need an explicit admitted-root entry point.
+This is a candidate API, not an automatic migration of existing applications.
+
 Requires a POSIX system, a C99 compiler, GNU make, ar, and sha256sum. Tests use
 Unix socket pairs; they do not discover or connect to a desktop.
 

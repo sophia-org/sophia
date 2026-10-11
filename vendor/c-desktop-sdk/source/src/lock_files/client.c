@@ -22,9 +22,9 @@ static int offer_valid(const struct sophia_lf_negotiate *offer) {
          (!offer->chord_count || (offer->capabilities & SOPHIA_LF_CAP_CHORDS)) &&
          !sophia_lf_encode(b, sizeof(b), &r, &n);
 }
-int sophia_lc_init(struct sophia_lc_client *c, struct sophia_9p_client *wire,
-                   const struct sophia_lf_negotiate *offer) {
-  if (!c || !wire || !offer || wire->phase || wire->capacity < 6 ||
+static int initialize(struct sophia_lc_client *c, struct sophia_9p_client *wire,
+                       const struct sophia_lf_negotiate *offer) {
+  if (!c || !wire || !offer || wire->terminal || wire->capacity < 6 ||
       !offer_valid(offer))
     return SOPHIA_9P_ARGUMENT;
   memset(c, 0, sizeof(*c));
@@ -33,7 +33,29 @@ int sophia_lc_init(struct sophia_lc_client *c, struct sophia_9p_client *wire,
   c->offer = *offer;
   c->next_submission = 1;
   c->object_fid = c->upload_fid = UINT32_MAX;
-  return lc_started(&c->boot_op, sophia_9p_version(wire, &c->boot_op.handle));
+  return 0;
+}
+int sophia_lc_init(struct sophia_lc_client *c, struct sophia_9p_client *wire,
+                   const struct sophia_lf_negotiate *offer) {
+  int r;
+  if (!wire || wire->phase) return SOPHIA_9P_ARGUMENT;
+  r = initialize(c, wire, offer);
+  return r ? r : lc_started(&c->boot_op, sophia_9p_version(wire, &c->boot_op.handle));
+}
+int sophia_lc_init_attached(struct sophia_lc_client *c, struct sophia_9p_client *wire,
+                            uint32_t root, const struct sophia_lf_negotiate *offer) {
+  size_t i;
+  int found = 0, r;
+  if (!wire || wire->phase != 2 || root == UINT32_MAX) return SOPHIA_9P_ARGUMENT;
+  for (i = 0; i < wire->fid_count; i++) if (wire->fids[i] == root) found = 1;
+  if (!found) return SOPHIA_9P_ARGUMENT;
+  for (i = 0; i < 2u * wire->capacity; i++)
+    if (wire->slots[i].state) return SOPHIA_9P_ARGUMENT;
+  r = initialize(c, wire, offer);
+  if (r) return r;
+  c->root = root;
+  c->bootstrap = LC_API_WALK;
+  return 0;
 }
 
 /* The whole api file, exactly one line: a valid prefix followed by anything

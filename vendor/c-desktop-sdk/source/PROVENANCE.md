@@ -499,3 +499,34 @@ again. Local evidence `t317-sdk-c-afid-01` has self-excluding SHA256SUMS hash
 `e277c561ca483e52e07364aef71fb26dfbcd1d7c9845e00745340bedb202d362`;
 it records binary paths/hashes, not copied executables. This result paragraph
 follows the captured candidate; implementation and tests are unchanged.
+
+## Shared launch conversation and lock root handoff
+
+`spec/factotum-launch-authentication.md` is copied from signed Sophia
+`6937794595d0a7d266f52d5ede65c31f3e41bc51`. It supplies the fixed challenge/status
+records and private relay view used by `sophia_launch_auth.h`. The generic 9P
+library remains independent of these Sophia-specific records.
+
+The helper owns one pending request across two caller-owned clients, copies
+bounded claims, relays its own afid's challenge, and exposes the admitted root
+only after clunking its temporary afid and relay fids. It retains the launch
+channel itself. A fixed five-second total deadline and monotonic caller time
+bound retries and silent peers. EAGAIN at Tauth is paced without renewing the
+deadline; other refusals are terminal, with no ordinary-attach fallback.
+The lock client's admitted-root constructor resumes its existing bootstrap at
+`api` without Tversion or Tattach. Scripted tests cover successful handoff,
+malformed challenge/status, relay refusal, short write, retry, deadline,
+backwards time, cancellation, retained fid counts and busy/unknown root refusal.
+Initialization marks the supplied launch-channel fd CLOEXEC before I/O and
+fails if that operation fails. This is descriptor-flag evidence; it does not
+prevent deliberate forwarding or proxying by a cooperating capability holder.
+Production interoperability and normal Session startup remain separate gates.
+
+The strict C suite and clang ASan/UBSan suite pass on the formatted candidate.
+Controls discriminate accepting a refused relay/status, omitting the total
+deadline, failing to set CLOEXEC and re-attaching the already admitted root.
+All sources are restored, compared against the complete candidate inventory,
+and the normal suite passes again. `t317-sdk-launch-03` has self-excluding
+SHA256SUMS hash `dfeff9a787310c59ae5faa8eff5c7112cd9eb8e19104a675b5c8b8b74ca6319d`.
+Only this result paragraph follows the captured candidate; executables are
+recorded by path/hash, never copied to evidence.

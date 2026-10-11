@@ -77,6 +77,12 @@ struct sophia_lc_client {
  * Negotiate as submission 1, all nonblocking. */
 int sophia_lc_init(struct sophia_lc_client *, struct sophia_9p_client *,
                    const struct sophia_lf_negotiate *offer);
+/* Continue from an already admitted root (for example sophia_la_root()). The
+ * wire must be quiescent and owned exclusively by this client afterward. No
+ * Tversion or Tattach is sent; authentication and its identity remain intact.
+ * The server still checks authority on every retained operation. */
+int sophia_lc_init_attached(struct sophia_lc_client *, struct sophia_9p_client *,
+                            uint32_t root, const struct sophia_lf_negotiate *offer);
 /* One bounded pass: queue requests, service the wire, process replies. A
  * terminal result latches; the caller closes the fd. */
 int sophia_lc_service(struct sophia_lc_client *, size_t byte_budget);

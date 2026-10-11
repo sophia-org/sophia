@@ -14,13 +14,15 @@
 #include <unistd.h>
 #ifdef SOPHIA_TEST_C_SDK
 #include "sophia_9p_client.h"
+#include "sophia_launch_auth.h"
+#include "sophia_lock_client.h"
 #endif
 
 static unsigned char buf[512];
 static size_t size, reply_size;
 static int channel;
 static unsigned tag;
-static uint32_t role_root = 1, old_afid = 7;
+static uint32_t role_root = 1;
 static void put(uint64_t n, unsigned bytes) {
     while (bytes--) { assert(size < sizeof buf); buf[size++] = n & 255; n >>= 8; }
 }
@@ -64,6 +66,7 @@ static void attach(unsigned afid, unsigned expected) {
 static void read_fid(unsigned fid, uint64_t offset, unsigned count, unsigned expected) {
     begin(116); put(fid, 4); put(offset, 8); put(count, 4); exchange(expected);
 }
+#ifndef SOPHIA_TEST_C_SDK
 static void open_name(unsigned fid, const char *name, unsigned mode) {
     begin(110); put(role_root, 4); put(fid, 4); put(1, 2); string(name); exchange(111); assert(number(7, 2) == 1);
     begin(12); put(fid, 4); put(mode, 4); exchange(13);
@@ -84,46 +87,28 @@ static void relay(int fd, unsigned *relay_tag, const unsigned char nonce[32], in
     assert(number(7, 4) == 8 && number(11, 4) == 1 && number(15, 4) == 0);
     *relay_tag = tag; channel = saved_fd; tag = saved_tag; role_root = saved_root;
 }
+#endif
 #ifdef SOPHIA_TEST_C_SDK
-static struct sophia_9p_reply sdk_answer(struct sophia_9p_client *wire, unsigned char *data, size_t count) {
-    struct sophia_9p_reply r;
-    for (;;) {
-        assert(sophia_9p_service(wire, 4096) == 0);
-        int result = sophia_9p_peek(wire, &r);
-        if (result == 0) break;
-        assert(result == SOPHIA_9P_AGAIN);
-        struct timespec delay = {0, 1000000}; nanosleep(&delay, NULL);
-    }
-    if (data) { assert(r.type == 117 && r.count == count); memcpy(data, r.data, count); }
-    assert(sophia_9p_consume(wire, r.handle) == 0);
-    r.data = NULL;
-    return r;
+static struct sophia_9p_client role_wire;
+static unsigned char role_storage[69632];
+static uint64_t now_msec(void) {
+    struct timespec now; assert(clock_gettime(CLOCK_MONOTONIC, &now) == 0);
+    return (uint64_t)now.tv_sec * 1000 + (uint64_t)now.tv_nsec / 1000000;
 }
 static void authenticate(int relay_fd, unsigned *relay_tag, int first) {
-    struct sophia_9p_client wire;
-    struct sophia_9p_handle handle;
-    unsigned char storage[12288], challenge[40], status[8];
-    assert(sophia_9p_storage_bytes(4096, 1) == sizeof storage);
-    assert(sophia_9p_init(&wire, channel, 4096, 1, 4, storage, sizeof storage) == 0);
-    assert(sophia_9p_version(&wire, &handle) == 0);
-    assert(sdk_answer(&wire, NULL, 0).type == 101);
-    for (;;) {
-        assert(sophia_9p_auth(&wire, "lock", "lock-provider", &handle, &old_afid) == 0);
-        struct sophia_9p_reply r = sdk_answer(&wire, NULL, 0);
-        if (r.type == 103) { assert(r.qid.type == 8); break; }
-        assert(r.type == 7 && r.error == 11);
+    struct sophia_9p_client relay_wire;
+    struct sophia_la_client auth;
+    unsigned char relay_storage[12288];
+    (void)relay_tag; (void)first;
+    assert(sophia_9p_init(&role_wire, channel, 4096, 8, 32, role_storage, sizeof role_storage) == 0);
+    assert(sophia_9p_init(&relay_wire, relay_fd, 4096, 1, 4, relay_storage, sizeof relay_storage) == 0);
+    assert(sophia_la_init(&auth, &role_wire, &relay_wire, "lock", "lock-provider", now_msec()) == 0);
+    while (!sophia_la_ready(&auth)) {
+        assert(sophia_la_service(&auth, now_msec(), 4096) == 0);
         struct timespec delay = {0, 1000000}; nanosleep(&delay, NULL);
     }
-    assert(sophia_9p_read(&wire, old_afid, 0, 40, &handle) == 0);
-    sdk_answer(&wire, challenge, sizeof challenge);
-    assert(!memcmp(challenge, "\1\0\0\0\1\0\0\0", 8));
-    relay(relay_fd, relay_tag, challenge + 8, first);
-    assert(sophia_9p_read(&wire, old_afid, 40, 8, &handle) == 0);
-    sdk_answer(&wire, status, sizeof status);
-    assert(!memcmp(status, "\1\0\0\0\0\0\0\0", 8));
-    assert(sophia_9p_attach_with_afid(&wire, old_afid, "lock", "lock-provider", &handle, &role_root) == 0);
-    assert(sdk_answer(&wire, NULL, 0).type == 105);
-    /* Every SDK reply is consumed before raw role-file traffic resumes. */
+    role_root = sophia_la_root(&auth);
+    assert(role_root != UINT32_MAX && (fcntl(relay_fd, F_GETFD) & FD_CLOEXEC));
 }
 #else
 static void authenticate(int relay_fd, unsigned *relay_tag, int first) {
@@ -167,9 +152,41 @@ int main(int argc, char **argv) {
     /* A reset destroys fids and verdicts, but the same launch capability must
        authenticate a fresh attempt on this immutable transport identity. */
     version();
-    read_fid(old_afid, 0, 40, 7); assert(number(7, 4) == 9);
+#ifdef SOPHIA_TEST_C_SDK
+    read_fid(role_root, 0, 40, 7); assert(number(7, 4) == 9);
+#else
+    read_fid(7, 0, 40, 7); assert(number(7, 4) == 9);
+#endif
     attach(UINT32_MAX, 7);
     authenticate(relay_fd, &relay_tag, 0);
+#ifdef SOPHIA_TEST_C_SDK
+    struct sophia_lc_client client;
+    struct sophia_lf_negotiate offer; memset(&offer, 0, sizeof offer);
+    offer.minimum_revision = offer.maximum_revision = 1;
+    offer.capabilities = SOPHIA_LF_CAP_PRESENT;
+    assert(sophia_lc_init_attached(&client, &role_wire, role_root, &offer) == 0);
+    for (;;) {
+        const struct sophia_lf_record *event = NULL;
+        assert(sophia_lc_service(&client, 4096) == 0);
+        if (sophia_lc_event(&client, &event) == 0) {
+            assert(event); assert(sophia_lc_event_consume(&client) == 0);
+        }
+        uint64_t generation;
+        if (sophia_lc_ready(&client) && sophia_lc_lock(&client, &generation)) break;
+        struct timespec delay = {0, 1000000}; nanosleep(&delay, NULL);
+    }
+    assert(sophia_lc_service(&client, 4096) == 0);
+    mark(argv[2], "waiting\n");
+    for (;;) {
+        int status = sophia_lc_service(&client, 4096);
+        if (status) {
+            assert(status == SOPHIA_9P_CLOSED || sophia_lc_state(&client) == SOPHIA_LC_STALE);
+            break;
+        }
+        struct timespec delay = {0, 1000000}; nanosleep(&delay, NULL);
+    }
+    mark(argv[2], "revoked\n");
+#else
     /* SDK retries may spend numeric fids. Allocate role-file fids after the
        actual admitted root, not at a guessed offset from the first attempt. */
     assert(role_root < UINT32_MAX - 6);
@@ -203,5 +220,6 @@ int main(int argc, char **argv) {
        It cannot produce another event under the retired launch. */
     if (receive_reply()) assert(buf[4] == 7 && number(7, 4) == 116);
     mark(argv[2], "revoked\n");
+#endif
     return 0;
 }
