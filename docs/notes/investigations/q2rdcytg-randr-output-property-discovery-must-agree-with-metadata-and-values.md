@@ -107,6 +107,13 @@ correlated invalid-output error. No live display was contacted.
 
 ### Acceptance
 
+On 2026-10-11 the installed release `niltempus-0d5efc327de170ae2fe8`
+was verified as the running normal Session, at Sophia `d8a42c66f` and
+integration `bb70f1e`. The owner reported successful graphical client startup.
+The independent client owner is checking the invocation's RANDR setting;
+successful startup alone does not establish removal of the earlier workaround.
+The candidate's complete checksum manifest verified before installation.
+
 t325 requires an installed candidate's ordinary graphical startup and rendering
 with RANDR enabled and no RANDR-disable workaround. Candidate preparation and
 installation are separate from this deterministic result. Do not stop an
