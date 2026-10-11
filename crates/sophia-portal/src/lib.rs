@@ -6,21 +6,24 @@
 
 mod broker;
 mod clipboard;
+pub mod coordinator;
 mod drag_and_drop;
 pub mod execution_fence;
 pub mod file_client;
 mod file_handoff;
 pub mod file_service;
 pub mod files;
+pub mod handlers;
 mod lifecycle;
 mod notification;
+mod pending;
+pub mod recipient_object;
 mod screen_capture;
 mod socket;
 mod types;
 mod uri_open;
 
 mod prelude {
-    pub(crate) use std::collections::BTreeMap;
 
     pub(crate) use sophia_protocol::{
         NamespaceId, PortalDecision, PortalTransfer, PortalTransferId, PortalTransferKind,

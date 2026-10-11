@@ -133,7 +133,7 @@ fn dispatch_core_property_request(
                             == Ok(crate::XMapState::Unmapped)
                         && runtime.window_policy_map_pending(context.namespace, change.window)
                             == Ok(false);
-                    let window_access = if change.window.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT) { Ok(()) } else { runtime.validate_window_access(context.namespace, change.window) };
+                    let window_access = if change.window.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT) { Ok(()) } else { validate_clipboard_property_window(context, runtime, change.window) };
                     // Both atoms must name something, and the window is
                     // checked before either: the protocol fixes that order,
                     // and a request with two things wrong must report the
@@ -283,7 +283,7 @@ fn dispatch_core_property_request(
                     let access = if window.local.raw() == u64::from(X_SETUP_DEFAULT_ROOT) {
                         Ok(())
                     } else {
-                        runtime.validate_window_access(context.namespace, window)
+                        validate_clipboard_property_window(context, runtime, window)
                     };
                     let (outputs, response) = match access {
                         Err(error) => (
@@ -400,7 +400,7 @@ fn dispatch_core_property_request(
                             properties.read_property(context.namespace, read),
                         )
                     } else if let Err(error) =
-                        runtime.validate_window_access(context.namespace, window)
+                        validate_clipboard_property_window(context, runtime, window)
                     {
                         vec![XClientOutput::Error(x_error_from_runtime(
                             error,
@@ -509,11 +509,11 @@ fn dispatch_core_property_request(
                     let validation = if destination.local.raw() == u64::from(X_SETUP_DEFAULT_ROOT) {
                         Ok(())
                     } else {
-                        runtime.validate_window_access(context.namespace, destination)
+                        validate_clipboard_property_window(context, runtime, destination)
                     }
                     .and_then(|()| {
                         requestor
-                            .map(|requestor| runtime.validate_window_access(context.namespace, requestor))
+                            .map(|requestor| validate_clipboard_property_window(context, runtime, requestor))
                             .unwrap_or(Ok(()))
                     });
                     let outputs = match validation {

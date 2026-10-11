@@ -1,5 +1,18 @@
 #[cfg(unix)]
 impl XServerFrontendRouteRegistry {
+    /// Proxy retirement also removes the connection-local mask. Clearing
+    /// only the routing index would retain one mask per completed transfer.
+    fn remove_clipboard_event_window(&self, window: XResourceId) -> Result<(), XServerFrontendRouteError> {
+        self.remove_core_event_window(window)?;
+        let selections = self.clients.lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+            .values().filter_map(|client| client.connection_state.get()
+                .map(|state| state.selections.clone())).collect::<Vec<_>>();
+        for selection in selections {
+            selection.lock().map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?.remove(window);
+        }
+        Ok(())
+    }
     fn select_core_events(
         &self,
         client: XServerFrontendClientId,

@@ -49,6 +49,8 @@ wins when prose disagrees.
 - [Namespaces and Portals](namespaces-and-portals.md) defines session identity,
   admission, isolation profiles, capabilities, portal lifecycle, and
   cross-namespace failure behavior.
+- [Portal authority](portal-authority.md) explains the common owner, protocol
+  adapters, transport custody and retained-access lifetimes with ASCII diagrams.
 - [Broker files](sophia-broker-files.md) and [portal files](sophia-portal-files.md)
   specify the target 9P replacements, separate admission, bounded custody and
   native record layouts. Their exports and SDK support are not implemented.

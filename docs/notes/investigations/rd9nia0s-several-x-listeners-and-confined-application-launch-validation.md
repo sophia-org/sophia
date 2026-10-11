@@ -2,7 +2,7 @@
 id: rd9nia0s
 date: 2026-10-10
 kind: investigation
-status: investigating
+status: awaiting-physical-acceptance
 tags: [investigation, session, x11, confinement]
 ---
 # Several X listeners and confined application launch validation
@@ -613,6 +613,82 @@ the retained second invocation used Bash and passed all three runs.
 The follow-up documentation and task-context commit changes no crates or Cargo
 files. Merge is permitted by the deterministic results; installation and the
 attended browser/terminal, portal-paste and departure check remain separate.
+
+## Unified portal authority and requestor repair, 2026-10-11
+
+On installed Sophia `941e22591fadaa6e151612e3902ee0e7518dffc0`, the
+confined browser rendered the local test page normally, but its selection did
+not paste into the shared terminal. Read-only selection inspection returned
+TARGETS while a UTF8_STRING conversion timed out. The earlier hypothesis that
+GetSelectionOwner returning None necessarily prevents the terminal from
+requesting conversion was withdrawn after reading the client implementation.
+
+A generic source fixture reproduced a concrete protocol defect: inspection of
+the temporary selection requestor failed at GetGeometry (opcode 14). This is
+not a captured browser request trace and does not establish that it is the only
+cause of the attended failure. The endpoint now answers attributes, geometry
+and tree inspection coherently, accepts only its captured connection and exact
+property/notification tuple, and retires subscriptions with capture or refusal.
+It is not a scene window, drawable or general extension window. Wrong payload
+type/format, foreign access and mismatched notifications are refused.
+
+The approved repair also moves the live transfer coordinator into
+`sophia-portal`. Source and recipient adapters retain protocol identities;
+the shared owner uses actual portal/files over the production 9P core for
+policy, grant, upload custody and terminal outcomes. Compatibility reducers
+share a bounded pending ledger, but the live X path no longer retains that
+parallel ledger. All seven kinds share lifecycle rules; the current upload
+handler executes only bounded Clipboard text/TARGETS and refuses unsupported
+kinds. The [accepted successor decision](../decisions/bdxxcof6-unify-portal-transfer-authority-across-protocol-adapters.md)
+and [ASCII architecture guide](../../portal-authority.md) document the ownership
+and lifetime boundaries.
+
+Executed joins cover X-to-X, X-to-9P, 9P-to-X and 9P-to-9P through the shared
+core and file custody, including CLIPBOARD and PRIMARY on the X adapter paths.
+The generic 9P exports have supplied admission; they are not a production 9P
+application frontend. Completed installation leaves a bound object readable
+only under its original lease. Tests exercise fresh Qids, stale retained fids,
+waiting reads, source generation, namespace rights, pair policy, deadline,
+lock/restart interval and binding revocation. Unrelated objects remain usable.
+Service/coordinator stop invalidates leases; unexpected service exit also sets
+the stop flag by ownership, without a separate injected-panic control.
+
+The candidate is based on `941e22591fadaa6e151612e3902ee0e7518dffc0`.
+`candidate-source-02.json` dynamically captures the complete 46-path tracked
+modification/untracked set before the final gate. All those bytes and the set
+were checked after both controls restored the source. Subsequent investigation,
+ADR precision and task-lane edits are documentation only.
+
+Evidence is under
+`~/.local/state/sophia/development-evidence/t142-authority-clipboard-01`.
+The isolated, device-hidden `cargo xtask check` (`xtask-02.log`) exited zero:
+7,625 passed, zero failed and 105 ignored across 549 libtest summaries, including
+nested child output. The first gate passed its tests but failed Clippy's
+needless-borrow check; the final gate includes that repair. The initial short
+exact-filter invocation ran zero tests and is explicitly not counted as
+regression execution. The development package's self-excluding `SHA256SUMS`
+has SHA-256
+`cdd589aa2a988d615efed87ad900249b4886d2df9b3ef2a0c96236f31a98ff3d`.
+
+The separate `t142-authority-controls-01` package contains two serial controls:
+
+- Removing requestor GetGeometry support fails first at
+  `clipboard requestor inspection must succeed before source delivery (opcode 14)`.
+- Removing the retained source-generation check fails the generation case in
+  `every_bound_access_rechecks_lifetime_and_waiting_reads_cannot_escape_revocation`:
+  the waiting read receives data instead of ESTALE.
+
+Both exited 101 with exactly zero passed and one failed test. Each record binds
+its test name, mutant, test executable path/hash, restored source and the complete
+unchanged input set. No executable was copied into evidence. The control
+package's self-excluding `SHA256SUMS` has SHA-256
+`9ed48a0dc4ab596de15fca34747dd049fa0c1efa7e3707fc0c21cf0702f5482d`.
+
+These results permit integration, not t142 completion. The running session was
+not modified. Installation and attended confined-to-shared CLIPBOARD/PRIMARY
+paste, reverse-direction refusal and client departure/reclaim remain required.
+Other portal executors, the 9P application frontend, remote authentication and
+physical input/scanout claims remain outside this repair.
 
 ## Connections
 

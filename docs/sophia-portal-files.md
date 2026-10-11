@@ -19,12 +19,13 @@ namespace authority. This is a new required seam, distinct from `PortalBroker`
 not yet integrated. No endpoint environment variable is defined before that
 owner exists. Attach strings and paths cannot create this admission.
 
-The accepted [in-process X requester amendment](notes/decisions/88uev9ix-admit-the-in-process-x-portal-requester-by-session-channel-custody.md)
+The accepted [protocol-authority amendment](notes/decisions/bdxxcof6-unify-portal-transfer-authority-across-protocol-adapters.md)
 adds one narrow alternative: Session creates a private socketpair and gives the
-requester end only to its X clipboard coordinator. Session binds admission to
+requester end only to its registered protocol-authority coordinator. Session binds admission to
 the adopted connection, epoch and exact namespace pair. This attests channel
 custody, not protected-process identity; identical UID/PID on another connection
 confers nothing. There is no listener path or endpoint environment variable.
+The registration identity is owner-minted, not supplied in a request or attach.
 Each transfer uses a fresh connection and epoch while the owner retains history
 and issued execution custody. Other requesters retain the protected-peer rule.
 
@@ -45,7 +46,8 @@ The live coordinator uses a bounded off-owner queue, a fresh private connection
 per transfer and a two-second transfer deadline. Lock and unlock each advance
 an execution-fence revision; queued work from before either transition cannot
 become current again. Lock waits for an earlier guarded X effect to finish,
-without waiting for source bytes or 9P progress. Shutdown closes the fence.
+without waiting for source bytes or 9P progress. Coordinator shutdown invalidates
+its leases and queued work without closing another coordinator's shared fence.
 After an X property effect, notification failure cannot relabel the effect as
 unexecuted. A saturated protocol recipient is disconnected by its captured
 connection identity instead of silently losing the notification.
@@ -135,9 +137,12 @@ its only writer; additional writers are EBUSY. Writes append or exactly repeat
 a retained range; gaps, changed bytes and overflow are refused without mutation.
 The aggregate payload allocation for the export is one 65,536-byte buffer.
 A second grant cannot allocate another payload while the slot is occupied.
-Only Clipboard has a payload encoding in this version. Begin for another kind
-returns EOPNOTSUPP before custody; a generic Allowed decision alone does not
-promise an implemented payload executor.
+Only Clipboard has a live payload encoding in this version. The export delegates
+support and payload validation to an owner-selected family handler; the default
+handler returns EOPNOTSUPP before custody for another kind. The common
+coordinator refuses unsupported kinds before source collection. A generic
+Allowed decision alone does not promise an implemented payload executor. Other
+execution forms must reuse lifecycle/custody without pretending to be uploads.
 
 PayloadEnd must match the transfer, declared length and complete uploaded bytes.
 Before its Submitted takes custody, reserve that receipt and validate the exact
@@ -160,6 +165,16 @@ revocation produce Revoked; deadline expiry produces Expired. These states
 retain the existing portal lifecycle vocabulary. Generation/namespace changes
 invalidate unexecuted grants. A disconnected peer never causes a fresh execution
 or automatic replay on its replacement connection.
+
+A retained recipient binding has a separate access lifetime. Its owner-minted
+lease keeps the original request, grant deadline, source generation, registration
+and security interval. Completed records installation once; it does not revoke
+that lease or extend it. Every object read rechecks current source facts,
+namespace participation and exact-pair policy under the execution fence.
+Security transitions advance that fence before replacing authority facts.
+Recipient replacement allocates a fresh Qid; retained old fids and waiting reads
+return ESTALE after revocation or replacement. Copied application bytes cannot
+be retracted. See [the architecture diagrams](portal-authority.md).
 
 ## Retained history and resource bounds
 

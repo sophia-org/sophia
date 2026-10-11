@@ -1,4 +1,33 @@
 impl XAuthorityRuntime {
+     pub(crate) fn register_portal_selection(&mut self, selection: crate::XAtom,
+         offer: crate::XPortalSelectionOffer) {
+         self.external_clipboard_offers.insert(selection, offer);
+     }
+
+     fn prepare_external_clipboard_request(&self, target_namespace: NamespaceId,
+         request: crate::XSelectionRequest, transfer: sophia_protocol::PortalTransferId,
+         offer: crate::XPortalSelectionOffer) -> Result<ClipboardSelectionDispatch, crate::ClipboardSelectionRequestError> {
+         if offer.source_namespace == target_namespace {
+             return Err(crate::ClipboardSelectionRequestError::SameNamespace);
+         }
+         let portal_request = crate::ClipboardSelectionPortalRequest {
+             request: sophia_portal::ClipboardTransferRequest {transfer,
+                 source_namespace: offer.source_namespace, target_namespace,
+                 target: sophia_portal::ClipboardTarget::Atom(request.target_name),
+                 byte_size: 0, generation: offer.generation},
+             failure: ClipboardSelectionFailureRequest {transfer, requestor: request.requestor,
+                 selection: request.selection, target: request.target, time: request.time},
+             property: request.property,
+         };
+         let command = sophia_portal::PortalCommand::PromptClipboardTransfer(
+             sophia_portal::ClipboardPortal::prepare_import(&portal_request.request)
+                 .map_err(crate::ClipboardSelectionRequestError::Portal)?);
+         Ok(ClipboardSelectionDispatch::CrossNamespace {portal_request, command})
+     }
+     pub(crate) fn clipboard_selection_generation(&self, namespace: NamespaceId, selection: crate::XAtom) -> Option<u64> {
+         self.selections.owner(selection, Some(namespace))
+             .filter(|record| record.owner.is_some()).map(|record| record.generation)
+     }
      /// Resolve a retained conversion to the current owner of its exact X
      /// selection. PRIMARY and CLIPBOARD may have different generations in
      /// the same namespace; a requester cannot choose either by naming a
@@ -63,10 +92,25 @@ impl XAuthorityRuntime {
          {
              return Err(ClipboardSelectionExecutionError::StaleOwnerGeneration);
          }
+         let failure = pending.portal_request.failure;
+         self.begin_clipboard_source_selection(grant, failure.selection, failure.target, failure.time)
+     }
+
+     pub(crate) fn begin_clipboard_source_selection(
+         &mut self,
+         grant: &sophia_protocol::PortalGrant,
+         selection: crate::XAtom,
+         target: crate::XAtom,
+         time: crate::XTimestamp,
+     ) -> Result<ClipboardSelectionProxy, ClipboardSelectionExecutionError> {
+         if grant.kind != sophia_protocol::PortalTransferKind::Clipboard
+             || grant.state != sophia_protocol::PortalGrantState::Active {
+             return Err(ClipboardSelectionExecutionError::Denied);
+         }
          let owner_record = self
              .selections
              .owner(
-                 pending.portal_request.failure.selection,
+                 selection,
                  Some(grant.source_namespace),
              )
              .filter(|record| record.owner.is_some())
@@ -83,14 +127,15 @@ impl XAuthorityRuntime {
              .ok_or(ClipboardSelectionExecutionError::ExecutorFailure)?;
          self.next_clipboard_proxy = self.next_clipboard_proxy.saturating_add(1);
          let proxy = ClipboardSelectionProxy {
+             client: None,
              transfer: grant.transfer,
              namespace: grant.source_namespace,
              owner,
              requestor: crate::XResourceId::new(u64::from(raw), 1),
-             selection: pending.portal_request.failure.selection,
-             target: pending.portal_request.failure.target,
-             property: pending.portal_request.failure.target,
-             time: pending.portal_request.failure.time,
+             selection,
+             target,
+             property: target,
+             time,
          };
          self.clipboard_proxies.insert(proxy.requestor, proxy);
          Ok(proxy)
@@ -100,6 +145,16 @@ impl XAuthorityRuntime {
          self.clipboard_proxies
              .get(&window)
              .is_some_and(|proxy| proxy.namespace == namespace)
+     }
+
+     pub(crate) fn clipboard_proxy(&self, window: crate::XResourceId) -> Option<&ClipboardSelectionProxy> {
+         self.clipboard_proxies.get(&window)
+     }
+
+     pub(crate) fn bind_clipboard_proxy_client(&mut self, window: crate::XResourceId, client: u64) {
+         if let Some(proxy) = self.clipboard_proxies.get_mut(&window) {
+             proxy.client = Some(client);
+         }
      }
  
      pub fn capture_clipboard_source_payload(
@@ -116,11 +171,15 @@ impl XAuthorityRuntime {
              properties.remove_window(proxy.namespace, proxy.requestor);
              return Err(ClipboardSelectionExecutionError::ExecutorFailure);
          }
-         let bytes = properties
+         let record = properties
              .get(proxy.namespace, proxy.requestor, property)
-             .map(|record| record.bytes.clone())
-             .ok_or(ClipboardSelectionExecutionError::ExecutorFailure)?;
+             .cloned();
          properties.remove_window(proxy.namespace, proxy.requestor);
+         let record = record.ok_or(ClipboardSelectionExecutionError::MissingProperty)?;
+         if record.format != 8 || record.property_type != proxy.target {
+             return Err(ClipboardSelectionExecutionError::UnsupportedTarget);
+         }
+         let bytes = record.bytes;
          if bytes.len() > crate::MAX_CLIPBOARD_TEXT_HANDOFF_BYTES {
              return Err(ClipboardSelectionExecutionError::PayloadTooLarge);
          }
@@ -156,6 +215,26 @@ impl XAuthorityRuntime {
          atoms: &mut XAtomTable,
          properties: &mut XPropertyTable,
      ) -> Result<ClipboardSelectionExecutionOutcome, ClipboardSelectionExecutionError> {
+         self.execute_clipboard_payload_inner(transfer, grant, payload, atoms, properties, false)
+     }
+
+     pub(crate) fn execute_admitted_clipboard_payload(&mut self,
+         work: &sophia_portal::files::PortalFileExecution,
+         lease: &sophia_portal::coordinator::PortalAccessLease,
+         atoms: &mut XAtomTable, properties: &mut XPropertyTable,
+     ) -> Result<ClipboardSelectionExecutionOutcome, ClipboardSelectionExecutionError> {
+         if lease.grant() != &work.grant {
+             return Err(ClipboardSelectionExecutionError::Denied);
+         }
+         self.execute_clipboard_payload_inner(work.grant.transfer, &work.grant,
+             &work.payload, atoms, properties, true)
+     }
+
+     fn execute_clipboard_payload_inner(&mut self,
+         transfer: sophia_protocol::PortalTransferId, grant: &sophia_protocol::PortalGrant,
+         payload: &[u8], atoms: &mut XAtomTable, properties: &mut XPropertyTable,
+         admitted: bool,
+     ) -> Result<ClipboardSelectionExecutionOutcome, ClipboardSelectionExecutionError> {
          let pending = self
              .pending_clipboard
              .remove(&transfer)
@@ -179,7 +258,13 @@ impl XAuthorityRuntime {
          {
              return Ok(fail(ClipboardSelectionExecutionError::StaleOwnerGeneration));
          }
-         let Some(owner) = self
+         if pending.external_source {
+             if !admitted || !self.external_clipboard_offers.get(&failure.selection).is_some_and(|offer|
+                 offer.source_namespace == grant.source_namespace && offer.generation == grant.source_generation) {
+                 return Ok(fail(ClipboardSelectionExecutionError::StaleOwnerGeneration));
+             }
+         } else {
+          let Some(owner) = self
              .selections
              .owner(
                  failure.selection,
@@ -191,6 +276,7 @@ impl XAuthorityRuntime {
          };
          if owner.generation != pending.portal_request.request.generation {
              return Ok(fail(ClipboardSelectionExecutionError::StaleOwnerGeneration));
+         }
          }
          if pending.portal_request.property == X_ATOM_NONE {
              return Ok(fail(ClipboardSelectionExecutionError::MissingProperty));

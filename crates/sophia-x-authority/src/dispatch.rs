@@ -17,6 +17,7 @@ use crate::{
 use sophia_protocol::{NamespaceId, OutputTopologySnapshot, Rect, Region, TransactionId};
 
 include!("dispatch/active_window.rs");
+include!("dispatch/clipboard_proxy.rs");
 include!("dispatch/core/drawing.rs");
 include!("dispatch/core/text.rs");
 include!("dispatch/core/grabs.rs");
@@ -187,6 +188,10 @@ fn dispatch_x11_wire_request_inner(
     timed_present: bool,
 ) -> XDispatchResult {
     runtime.begin_dispatch();
+    let request = match dispatch_clipboard_proxy(context, request, runtime, properties) {
+        Handled(result) => return result,
+        Unhandled(request) => request,
+    };
     let request = match dispatch_xfixes_request(context, request, runtime, atoms) {
         Handled(result) => return result,
         Unhandled(request) => request,

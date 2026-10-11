@@ -51,6 +51,9 @@ impl Drop for Running {
 #[derive(Clone, Copy, PartialEq)]
 enum Mode {
     Pass,
+    InspectProxy,
+    WrongType,
+    WrongFormat,
     Targets,
     Deny,
     MissingRights,
@@ -209,6 +212,66 @@ fn joined(selection_name: &str, mode: Mode) {
             }
             let proxy = read_u32(XByteOrder::LittleEndian, &event[12..16]);
             let proxy_property = read_u32(XByteOrder::LittleEndian, &event[24..28]);
+            if mode == Mode::InspectProxy {
+                // A selection owner may inspect a foreign requestor before
+                // handing it data. XGetWindowAttributes also asks GetGeometry.
+                for opcode in [3, 14, 15] {
+                    owner
+                        .write_all(&resource_request(XByteOrder::LittleEndian, opcode, proxy))
+                        .unwrap();
+                    let reply = read_x_record(&mut owner);
+                    assert_eq!(
+                        reply[0], 1,
+                        "clipboard requestor inspection must succeed before source delivery (opcode {opcode})"
+                    );
+                    let remaining = read_u32(XByteOrder::LittleEndian, &reply[4..8]) as usize * 4;
+                    std::io::Read::read_exact(&mut owner, &mut vec![0; remaining]).unwrap();
+                }
+                requestor
+                    .write_all(&resource_request(XByteOrder::LittleEndian, 14, proxy))
+                    .unwrap();
+                let refused = read_x_record(&mut requestor);
+                assert_eq!(
+                    &refused[..2],
+                    &[0, 10],
+                    "another namespace cannot inspect the source endpoint"
+                );
+                owner
+                    .write_all(&shape_select_input_request(
+                        XByteOrder::LittleEndian,
+                        proxy,
+                        true,
+                    ))
+                    .unwrap();
+                let refused = read_x_record(&mut owner);
+                assert_eq!(
+                    refused[0], 0,
+                    "a clipboard endpoint is not a general extension window"
+                );
+                owner
+                    .write_all(&send_selection_notify_request(
+                        XByteOrder::LittleEndian,
+                        proxy,
+                        read_u32(XByteOrder::LittleEndian, &event[4..8]) + 1,
+                        selection,
+                        utf8,
+                        proxy_property,
+                    ))
+                    .unwrap();
+                let refused = read_x_record(&mut owner);
+                assert_eq!(
+                    &refused[..2],
+                    &[0, 10],
+                    "an uncorrelated notification cannot consume the endpoint"
+                );
+                owner
+                    .write_all(&change_window_event_mask_request(
+                        XByteOrder::LittleEndian,
+                        proxy,
+                        (1 << 22) | (1 << 17),
+                    ))
+                    .unwrap();
+            }
             if mode == Mode::SourceDisconnected {
                 owner.shutdown(std::net::Shutdown::Both).unwrap();
             } else {
@@ -219,8 +282,12 @@ fn joined(selection_name: &str, mode: Mode) {
                             XPropertyMode::Replace,
                             proxy,
                             proxy_property,
-                            utf8,
-                            8,
+                            if mode == Mode::WrongType {
+                                X_ATOM_ATOM
+                            } else {
+                                utf8
+                            },
+                            if mode == Mode::WrongFormat { 16 } else { 8 },
                             b"files-path",
                         ))
                         .unwrap();
@@ -244,7 +311,7 @@ fn joined(selection_name: &str, mode: Mode) {
         );
         assert_eq!(
             read_u32(XByteOrder::LittleEndian, &notify[20..24]),
-            if matches!(mode, Mode::Pass | Mode::Targets) {
+            if matches!(mode, Mode::Pass | Mode::InspectProxy | Mode::Targets) {
                 property
             } else {
                 0
@@ -262,12 +329,28 @@ fn joined(selection_name: &str, mode: Mode) {
             ))
             .unwrap();
         let reply = read_x_reply(&mut requestor, XByteOrder::LittleEndian);
-        if mode == Mode::Pass {
+        if matches!(mode, Mode::Pass | Mode::InspectProxy) {
             assert_eq!(
                 &reply[32..42],
                 b"files-path",
                 "real X recipient must install the file-uploaded bytes"
             );
+            if mode == Mode::InspectProxy {
+                let changed = read_x_record(&mut owner);
+                assert_eq!(
+                    changed[0], 28,
+                    "the temporary endpoint supports its bounded property subscription"
+                );
+                let proxy = read_u32(XByteOrder::LittleEndian, &changed[4..8]);
+                owner
+                    .write_all(&resource_request(XByteOrder::LittleEndian, 14, proxy))
+                    .unwrap();
+                let retired = read_x_record(&mut owner);
+                assert_eq!(
+                    retired[0], 0,
+                    "a completed source endpoint cannot be inspected or reused"
+                );
+            }
         } else if mode == Mode::Targets {
             assert_eq!(reply[1], 32, "TARGETS uses 32-bit atoms");
             assert_eq!(
@@ -300,6 +383,17 @@ fn files_coordinator_transfers_clipboard() {
 #[test]
 fn files_coordinator_transfers_primary() {
     joined("PRIMARY", Mode::Pass);
+}
+#[test]
+fn files_coordinator_source_inspects_requestor_before_reply() {
+    for selection in ["CLIPBOARD", "PRIMARY"] {
+        joined(selection, Mode::InspectProxy);
+    }
+}
+#[test]
+fn files_coordinator_refuses_source_type_and_format_mismatches() {
+    joined("CLIPBOARD", Mode::WrongType);
+    joined("PRIMARY", Mode::WrongFormat);
 }
 #[test]
 fn files_coordinator_translates_targets_without_fetching_source_bytes() {

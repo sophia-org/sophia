@@ -57,7 +57,7 @@ mod x11_socket;
 pub use atom::*;
 pub use client_output::*;
 pub use clipboard::*;
-pub use clipboard_files::{XClipboardPortal, XClipboardPortalPolicy};
+pub use clipboard_files::{XClipboardPortal, XClipboardPortalPolicy, XClipboardSource};
 pub use close_target::*;
 pub use codec::*;
 pub use color::*;

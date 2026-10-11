@@ -707,6 +707,9 @@ fn capture_clipboard_proxy_payload(
     if !runtime.is_clipboard_proxy(namespace, requestor) {
         return Ok(());
     }
+    routing.remove_clipboard_event_window(requestor).map_err(|error| {
+        X11SetupSocketError::new(format!("clipboard subscription cleanup: {error}"))
+    })?;
     let mut properties = state
         .properties
         .lock()

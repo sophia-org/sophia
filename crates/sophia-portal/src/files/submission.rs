@@ -111,7 +111,7 @@ impl<A: PortalFileAuthority> PortalFileExport<A> {
             }
             PortalFileCandidate::PayloadBegin(begin) => {
                 let grant = self.active_grant(begin.transfer)?;
-                if grant.kind != PortalTransferKind::Clipboard {
+                if !self.authority.payload_handler().supports(grant.kind) {
                     return Err(Errno::EOPNOTSUPP);
                 }
                 if self.execution_pending(begin.transfer) {
@@ -139,13 +139,9 @@ impl<A: PortalFileAuthority> PortalFileExport<A> {
                     return Err(Errno::EINVAL);
                 }
                 let request = self.lifecycle.request(end.transfer).ok_or(Errno::EINVAL)?;
-                match request.transfer.mime_type.as_deref() {
-                    Some("TARGETS") => {}
-                    Some("UTF8_STRING" | "text/plain" | "text/plain;charset=utf-8") => {
-                        std::str::from_utf8(&upload.bytes).map_err(|_| Errno::EINVAL)?;
-                    }
-                    _ => return Err(Errno::EOPNOTSUPP),
-                }
+                self.authority
+                    .payload_handler()
+                    .validate(request, &upload.bytes)?;
                 if self.issued.is_some() {
                     return Err(EBUSY);
                 }
@@ -235,6 +231,11 @@ impl<A: PortalFileAuthority> PortalFileExport<A> {
             if execute {
                 let upload = self.upload.take().unwrap();
                 self.execution = Some(PortalFileExecution {
+                    request: self
+                        .lifecycle
+                        .request(transfer)
+                        .expect("accepted End retains its request")
+                        .clone(),
                     grant: self.lifecycle.grant(transfer).unwrap().clone(),
                     payload: upload.bytes,
                     authority_revision: c.authority_revision,

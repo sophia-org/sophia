@@ -1628,6 +1628,7 @@ dependencies = [
  "miniz_oxide",
  "rustix",
  "serde_json",
+ "sophia-9p",
  "sophia-input-authority",
  "sophia-linux-peer",
  "sophia-portal",

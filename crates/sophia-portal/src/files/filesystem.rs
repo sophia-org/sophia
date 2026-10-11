@@ -54,7 +54,7 @@ impl<A: PortalFileAuthority> Export for PortalFileExport<A> {
             || c.admission.connection != context.connection
             || match c.admission.custody {
                 PortalRequesterCustody::ProtectedPeer(peer) => context.peer != Some(peer),
-                PortalRequesterCustody::SessionXAuthority => false,
+                PortalRequesterCustody::SessionAuthority { .. } => false,
             }
         {
             return Err(Errno::EACCES);

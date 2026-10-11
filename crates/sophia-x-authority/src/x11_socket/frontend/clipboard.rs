@@ -10,6 +10,58 @@ pub struct XServerFrontendClipboardExecutor {
 
 #[cfg(unix)]
 impl XServerFrontendClipboardExecutor {
+    /// Registers a protocol-neutral source selected by the trusted owner.
+    /// X clients cannot invoke this, and no X owner window is fabricated.
+    pub fn register_portal_selection(&self, name: &str, offer: crate::XPortalSelectionOffer)
+        -> Result<(), X11SetupSocketError> {
+        if !["PRIMARY", "CLIPBOARD"].contains(&name)
+            || !offer.source_namespace.is_valid() || offer.generation == 0 {
+            return Err(X11SetupSocketError::new("invalid portal selection offer"));
+        }
+        let selection = self.state.atoms.lock()
+            .map_err(|_| X11SetupSocketError::new("atom lock poisoned"))?
+            .intern(name, false).map_err(|_| X11SetupSocketError::new("selection atom unavailable"))?
+            .expect("intern creates an atom");
+        self.state.runtime.lock().map_err(|_| X11SetupSocketError::new("runtime lock poisoned"))?
+            .register_portal_selection(selection, offer);
+        Ok(())
+    }
+    /// Called by the trusted frontend owner before serving transfers. Owning
+    /// the one payload receiver prevents competing collectors from stealing
+    /// each other's replies; this does not grant any cross-namespace access.
+    pub fn source_adapter(&self, routes: &mut XServerFrontendRouteBroker,
+        namespace: NamespaceId, selection_name: &str) -> Result<crate::XClipboardSource, X11SetupSocketError> {
+        if !["PRIMARY", "CLIPBOARD"].contains(&selection_name) {
+            return Err(X11SetupSocketError::new("unsupported portal selection"));
+        }
+        let selection = self.state.atoms.lock()
+            .map_err(|_| X11SetupSocketError::new("atom lock poisoned"))?
+            .intern(selection_name, false)
+            .map_err(|_| X11SetupSocketError::new("selection atom unavailable"))?
+            .expect("intern creates an atom");
+        let payloads = routes.take_clipboard_payload_receiver()
+            .ok_or_else(|| X11SetupSocketError::new("source collector already owned"))?;
+        Ok(crate::XClipboardSource {executor: self.clone(), payloads: Mutex::new(payloads),
+            selection: Some((namespace, selection))})
+    }
+
+    pub(crate) fn selection_source_generation(&self, namespace: NamespaceId, selection: crate::XAtom) -> Option<u64> {
+        self.state.runtime.lock().ok()?.clipboard_selection_generation(namespace, selection)
+    }
+
+    pub(crate) fn request_selection_source(&self, grant: &sophia_protocol::PortalGrant,
+        selection: crate::XAtom, target_name: &str) -> Result<crate::ClipboardSelectionProxy, X11SetupSocketError> {
+        let target = self.state.atoms.lock()
+            .map_err(|_| X11SetupSocketError::new("atom lock poisoned"))?
+            .intern(target_name, false)
+            .map_err(|_| X11SetupSocketError::new("target atom unavailable"))?
+            .expect("intern creates an atom");
+        let proxy = self.state.runtime.lock()
+            .map_err(|_| X11SetupSocketError::new("runtime lock poisoned"))?
+            .begin_clipboard_source_selection(grant, selection, target, 0)
+            .map_err(|_| X11SetupSocketError::new("selection source changed"))?;
+        self.route_source_request(proxy)
+    }
     /// Read owner facts without disclosing X resource identities to policy.
     pub fn source_generation(
         &self,
@@ -31,10 +83,18 @@ impl XServerFrontendClipboardExecutor {
             .map_err(|error| {
                 X11SetupSocketError::new(format!("clipboard source request rejected: {error:?}"))
             })?;
+        self.route_source_request(proxy)
+    }
+
+    fn route_source_request(&self, proxy: crate::ClipboardSelectionProxy)
+        -> Result<crate::ClipboardSelectionProxy, X11SetupSocketError> {
         let target = self
             .state
             .client_for_resource(proxy.owner)?
             .ok_or_else(|| X11SetupSocketError::new("clipboard owner disconnected"))?;
+        self.state.runtime.lock()
+            .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?
+            .bind_clipboard_proxy_client(proxy.requestor, target.raw());
         self.routing
             .route_protocol_contained(
                 target,
@@ -71,10 +131,16 @@ impl XServerFrontendClipboardExecutor {
     /// claim that no execution happened.
     pub(crate) fn execute_portal(
         &self,
-        grant: &sophia_protocol::PortalGrant,
-        payload: &[u8],
+        work: &sophia_portal::files::PortalFileExecution,
+        lease: &sophia_portal::coordinator::PortalAccessLease,
     ) -> Result<crate::ClipboardSelectionExecutionOutcome, X11SetupSocketError> {
-        let outcome = self.execute_effect(grant, payload)?;
+        let outcome = {
+            let mut runtime = self.state.runtime.lock().map_err(|_| X11SetupSocketError::new("runtime lock poisoned"))?;
+            let mut atoms = self.state.atoms.lock().map_err(|_| X11SetupSocketError::new("atom lock poisoned"))?;
+            let mut properties = self.state.properties.lock().map_err(|_| X11SetupSocketError::new("property lock poisoned"))?;
+            runtime.execute_admitted_clipboard_payload(work, lease, &mut atoms, &mut properties)
+                .map_err(|_| X11SetupSocketError::new("admitted clipboard effect refused"))?
+        };
         if let Err(error) = self.route_outcome(&outcome) {
             tracing::warn!("portal recipient notification unavailable: {error}");
         }
@@ -117,18 +183,26 @@ impl XServerFrontendClipboardExecutor {
         transfer: sophia_protocol::PortalTransferId,
         error: crate::ClipboardSelectionExecutionError,
     ) -> Result<crate::ClipboardSelectionExecutionOutcome, X11SetupSocketError> {
+        self.discard_source(transfer)?;
         let mut runtime = self
             .state
             .runtime
             .lock()
             .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?;
-        let proxies = runtime.discard_clipboard_proxies(transfer);
         let outcome = runtime
             .fail_clipboard_transfer(transfer, error)
             .map_err(|error| {
                 X11SetupSocketError::new(format!("clipboard failure rejected: {error:?}"))
             })?;
         drop(runtime);
+        self.route_outcome(&outcome)?;
+        Ok(outcome)
+    }
+
+    pub(crate) fn discard_source(&self, transfer: sophia_protocol::PortalTransferId) -> Result<(), X11SetupSocketError> {
+        let proxies = self.state.runtime.lock()
+            .map_err(|_| X11SetupSocketError::new("runtime lock poisoned"))?
+            .discard_clipboard_proxies(transfer);
         if !proxies.is_empty() {
             let mut properties = self
                 .state
@@ -137,10 +211,12 @@ impl XServerFrontendClipboardExecutor {
                 .map_err(|_| X11SetupSocketError::new("X11 property table lock poisoned"))?;
             for (namespace, proxy) in proxies {
                 properties.remove_window(namespace, proxy);
+                self.routing.remove_clipboard_event_window(proxy).map_err(|error| {
+                    X11SetupSocketError::new(format!("clipboard subscription cleanup: {error}"))
+                })?;
             }
         }
-        self.route_outcome(&outcome)?;
-        Ok(outcome)
+        Ok(())
     }
 
     fn route_outcome(

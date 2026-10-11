@@ -153,7 +153,7 @@ fn revocation_ends_a_waiting_bound_read_before_any_bytes_are_delivered() {
     w.owner.bind(grant, b"secret").unwrap();
     w.open(1, b"transfer");
     w.owner.ready = false;
-    assert!(w.send(116, 42, Wire::read_body(1)).is_empty());
+    assert!(w.send(116, 42, Wire::<Recipient>::read_body(1)).is_empty());
     assert_eq!(w.connection.waiting_count(), 1);
     w.owner
         .lifecycle

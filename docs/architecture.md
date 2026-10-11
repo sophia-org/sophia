@@ -1486,6 +1486,14 @@ generation, bounded metadata, and lifetime. Runtime executors retain protocol
 request context, data, handles, and UI effects. Denial maps to native protocol
 failure and never freezes the session or fabricates input.
 
+The common portal/files owner supplies custody and lifecycle for every protocol
+adapter. X selection conversion and generic 9P recipient binding use that same
+owner; family handlers retain operation-specific validation. Successful
+installation and continued permission to read a bound object are separate
+lifetimes. See [Portal authority and protocol adapters](portal-authority.md) for
+ASCII diagrams of the owners, transport, four protocol pairings and revocation.
+The generic 9P joins do not activate the application frontend scaffold.
+
 The accepted composition target uses a per-identity endpoint directory and
 discovery file, with an admitted tree per role. The first authenticated attach
 fixes a connection's principal and namespace; later attaches cannot change

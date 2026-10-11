@@ -60,10 +60,21 @@ pub struct PendingClipboardSelection {
     pub namespace: sophia_protocol::NamespaceId,
     pub portal_request: ClipboardSelectionPortalRequest,
     pub byte_order: crate::XByteOrder,
+    pub external_source: bool,
+}
+
+/// Trusted owner registration, not an X selection owner or a grant. The
+/// selected source adapter still verifies this generation at every handoff.
+#[derive(Clone, Copy, Debug)]
+pub struct XPortalSelectionOffer {
+    pub source_namespace: sophia_protocol::NamespaceId,
+    pub generation: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ClipboardSelectionProxy {
+    /// Bound by the frontend before the SelectionRequest is delivered.
+    pub client: Option<u64>,
     pub transfer: PortalTransferId,
     pub namespace: sophia_protocol::NamespaceId,
     pub owner: XResourceId,
@@ -111,6 +122,25 @@ pub fn dispatch_clipboard_selection_request(
     transfer: PortalTransferId,
     portal: &mut ClipboardPortal,
 ) -> Result<ClipboardSelectionDispatch, ClipboardSelectionRequestError> {
+    let mut dispatch = prepare_clipboard_selection_request(request, monitor, windows, transfer)?;
+    if let ClipboardSelectionDispatch::CrossNamespace {
+        portal_request,
+        command,
+    } = &mut dispatch
+    {
+        *command = portal
+            .request_import(portal_request.request.clone())
+            .map_err(ClipboardSelectionRequestError::Portal)?;
+    }
+    Ok(dispatch)
+}
+
+pub(crate) fn prepare_clipboard_selection_request(
+    request: XSelectionRequest,
+    monitor: &XSelectionMonitor,
+    windows: &XWindowTable,
+    transfer: PortalTransferId,
+) -> Result<ClipboardSelectionDispatch, ClipboardSelectionRequestError> {
     let requestor_namespace = windows
         .get(request.requestor)
         .ok_or(ClipboardSelectionRequestError::UnknownRequestorNamespace)?
@@ -139,9 +169,10 @@ pub fn dispatch_clipboard_selection_request(
     }
     let portal_request =
         clipboard_portal_request_from_selection_request(request, monitor, windows, transfer)?;
-    let command = portal
-        .request_import(portal_request.request.clone())
-        .map_err(ClipboardSelectionRequestError::Portal)?;
+    let command = PortalCommand::PromptClipboardTransfer(
+        ClipboardPortal::prepare_import(&portal_request.request)
+            .map_err(ClipboardSelectionRequestError::Portal)?,
+    );
 
     Ok(ClipboardSelectionDispatch::CrossNamespace {
         portal_request,

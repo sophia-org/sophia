@@ -255,6 +255,35 @@ trusted terminal through the portal, and the session survives the confined
 group's departure. Recorded as a milestone note with the gate reports beside
 it, in the M-series format.
 
+### Unified portal repair, 2026-10-11
+
+niltempus approved repairing the attended clipboard failure through one shared
+portal authority, reusable across protocol authorities and all portal kinds.
+The [architecture and diagrams](../../portal-authority.md) and
+[successor decision](../decisions/bdxxcof6-unify-portal-transfer-authority-across-protocol-adapters.md)
+define the boundaries. This is still part of t142 acceptance repair, not a new
+application frontend or a reduction of any t315/t318 exit.
+
+The implementation sequence is:
+
+1. Reproduce the X temporary-requestor failure with a generic wire peer; repair
+   inspection, identity correlation, bounded properties and cleanup.
+2. Share transfer admission, lifecycle, custody and outcome machinery; keep
+   family validation and protocol translation in adapters. Remove the live X
+   path's duplicate compatibility ledger.
+3. Exercise X-to-X, X-to-9P, 9P-to-X and 9P-to-9P through actual portal/files
+   custody and the shared core, labelling supplied admission and object bytes.
+4. Prove single installation separately from retained access; test original
+   deadlines, source/namespace changes, replay, lock, replacement and waiting
+   reads. Unsupported families must not execute through a generic grant.
+5. Run discriminating controls, the isolated repository gate, source/evidence
+   binding and signed integration. Prepare a release from master before the
+   attended CLIPBOARD/PRIMARY, reverse-refusal and departure/reclaim checks.
+
+The [investigation](../investigations/rd9nia0s-several-x-listeners-and-confined-application-launch-validation.md)
+owns results and limitations. Documentation must distinguish implemented
+mechanisms from checks actually run and physical acceptance still outstanding.
+
 ### t142 implementation boundary, 2026-10-10
 
 The implementation uses the synchronous listener table above and Session-owned

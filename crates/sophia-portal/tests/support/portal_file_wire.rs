@@ -49,7 +49,9 @@ fn requester_client_reports_recipient_outcome_and_never_uploads_a_denial() {
             .export_mut()
             .admit(PortalRequesterAdmission {
                 connection,
-                custody: PortalRequesterCustody::SessionXAuthority,
+                custody: PortalRequesterCustody::SessionAuthority {
+                    registration: std::num::NonZeroU64::new(1).unwrap(),
+                },
                 epoch: 1,
                 source: NamespaceId::from_raw(1),
                 target: NamespaceId::from_raw(2),
@@ -198,7 +200,9 @@ fn private_requester_wire_refuses_another_socket_with_the_same_kernel_peer() {
         .export_mut()
         .admit(PortalRequesterAdmission {
             connection,
-            custody: PortalRequesterCustody::SessionXAuthority,
+            custody: PortalRequesterCustody::SessionAuthority {
+                registration: std::num::NonZeroU64::new(1).unwrap(),
+            },
             epoch: 1,
             source: NamespaceId::from_raw(1),
             target: NamespaceId::from_raw(2),

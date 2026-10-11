@@ -48,16 +48,21 @@ pub trait PortalFileAuthority {
     fn allow(&self, _request: &PortalRequest) -> bool {
         false
     }
+    fn payload_handler(&self) -> &dyn crate::handlers::PortalPayloadHandler {
+        &crate::handlers::ClipboardPayloadHandler
+    }
 }
 
 /// Evidence selected by the trusted owner, never by an attach or file write.
 #[derive(Clone, Copy, Debug)]
 pub enum PortalRequesterCustody {
     ProtectedPeer(PeerCredentials),
-    /// Session created this connection and gave its other end only to the
-    /// in-process X coordinator. Kernel credentials do not prove this custody.
+    /// Session registered the in-process authority before creating this
+    /// connection. Kernel credentials do not prove this custody.
     /// The owner must not use this variant for accepted path connections.
-    SessionXAuthority,
+    SessionAuthority {
+        registration: std::num::NonZeroU64,
+    },
 }
 
 /// Supplied only after transport custody admission. A fresh epoch is required
@@ -75,6 +80,7 @@ pub struct PortalRequesterAdmission {
 /// executes it. The recipient must recheck its own source/recipient identity
 /// and report the actual outcome through `settle_execution` exactly once.
 pub struct PortalFileExecution {
+    pub request: PortalRequest,
     pub grant: PortalGrant,
     pub payload: Vec<u8>,
     pub authority_revision: u64,

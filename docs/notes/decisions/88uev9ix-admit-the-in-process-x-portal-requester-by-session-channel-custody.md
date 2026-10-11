@@ -2,10 +2,14 @@
 id: 88uev9ix
 date: 2026-10-10
 kind: adr
-status: accepted
+status: superseded
 tags: [adr, portal, session, protocol]
 ---
 # Admit the in-process X portal requester by Session channel custody
+
+The [protocol-neutral successor](bdxxcof6-unify-portal-transfer-authority-across-protocol-adapters.md)
+generalizes the X-only registration on 2026-10-11. The original decision below
+records its narrower scope; exact-pair custody and default-deny policy remain.
 
 ## Context
 

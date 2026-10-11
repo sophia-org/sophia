@@ -145,6 +145,8 @@ pub enum PortalCommand {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PortalError {
+    DuplicateTransfer,
+    CapacityExceeded,
     InvalidTransfer,
     InvalidNamespace,
     UnsupportedTarget,

@@ -136,3 +136,70 @@ fn lifecycle_enforces_capacity_and_unique_transfers() {
         Err(PortalLifecycleError::CapacityExceeded)
     );
 }
+
+#[test]
+fn every_portal_family_uses_the_same_single_use_and_revocation_lifecycle() {
+    for kind in [
+        PortalTransferKind::Clipboard,
+        PortalTransferKind::DragAndDrop,
+        PortalTransferKind::FileHandoff,
+        PortalTransferKind::ScreenCapture,
+        PortalTransferKind::ScreenRecording,
+        PortalTransferKind::UriOpen,
+        PortalTransferKind::Notification,
+    ] {
+        for boundary in [
+            "complete",
+            "cancel",
+            "source",
+            "namespace",
+            "deadline",
+            "broker",
+        ] {
+            let mut owner = PortalRequestGrantLifecycle::with_capacity(1, 1).unwrap();
+            let mut r = request(1, 7, 2000);
+            r.transfer.kind = kind;
+            let grant = owner
+                .submit_decided(r.clone(), PortalPolicyDecision::Allow, 7, 1)
+                .unwrap()
+                .unwrap();
+            assert_eq!(grant.kind, kind);
+            assert_eq!(
+                owner.submit(r, 1),
+                Err(PortalLifecycleError::DuplicateTransfer)
+            );
+            match boundary {
+                "complete" => owner.complete(grant.transfer).unwrap(),
+                "cancel" => owner.executor_failed(grant.transfer).unwrap(),
+                "source" => {
+                    owner.source_owner_changed(grant.source_namespace, 8);
+                }
+                "namespace" => {
+                    owner.namespace_disconnected(grant.target_namespace);
+                }
+                "deadline" => {
+                    owner.expire(2000);
+                }
+                "broker" => {
+                    owner.broker_restarted(2).unwrap();
+                }
+                _ => unreachable!(),
+            }
+            let expected = match boundary {
+                "complete" => PortalGrantState::Completed,
+                "deadline" => PortalGrantState::Expired,
+                _ => PortalGrantState::Revoked,
+            };
+            assert_eq!(
+                owner.grant(grant.transfer).unwrap().state,
+                expected,
+                "{kind:?}: {boundary}"
+            );
+            assert_eq!(
+                owner.complete(grant.transfer),
+                Err(PortalLifecycleError::GrantNotActive),
+                "{kind:?}: no replay after {boundary}"
+            );
+        }
+    }
+}

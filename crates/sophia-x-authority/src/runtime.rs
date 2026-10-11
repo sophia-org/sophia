@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::os::fd::OwnedFd;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
-use sophia_portal::ClipboardPortal;
 use sophia_protocol::{
     AuthoritySurface, NamespaceId, OutputTopologyError, OutputTopologySnapshot, Rect, Region, Size,
     TransactionId,
@@ -20,8 +19,7 @@ use crate::{
     XPoint, XPropertyChange, XPropertyMode, XPropertyTable, XPutImageSemantics, XRasterPoint,
     XRasterUnsupportedKind, XResourceKind, XResourceTable, XSelectionEvent, XSelectionMonitor,
     XShmSegmentTable, XSoftwareBufferStore, XTextDraw, XWindowLifecycleEvent, XWindowTable,
-    clipboard_selection_failure_notify, dispatch_clipboard_selection_request,
-    surface_transaction_from_drawing_update,
+    clipboard_selection_failure_notify, surface_transaction_from_drawing_update,
 };
 
 include!("runtime/clipboard.rs");
@@ -212,7 +210,7 @@ pub struct XAuthorityRuntime {
     visibility_interest: BTreeSet<crate::XResourceId>,
     shm_segments: XShmSegmentTable,
     selections: XSelectionMonitor,
-    clipboard: ClipboardPortal,
+    external_clipboard_offers: BTreeMap<crate::XAtom, crate::XPortalSelectionOffer>,
     pending_clipboard: BTreeMap<sophia_protocol::PortalTransferId, PendingClipboardSelection>,
     clipboard_proxies: BTreeMap<crate::XResourceId, ClipboardSelectionProxy>,
     next_clipboard_proxy: u32,
@@ -371,7 +369,7 @@ impl Default for XAuthorityRuntime {
             visibility_interest: BTreeSet::new(),
             shm_segments: Default::default(),
             selections: Default::default(),
-            clipboard: Default::default(),
+            external_clipboard_offers: Default::default(),
             pending_clipboard: Default::default(),
             clipboard_proxies: Default::default(),
             next_clipboard_proxy: 0,
@@ -762,6 +760,7 @@ impl XAuthorityRuntime {
                             time: *timestamp,
                         });
                 }
+                self.external_clipboard_offers.remove(selection);
             }
             XAuthorityRequestKind::RequestSelection {
                 requestor,
@@ -774,20 +773,37 @@ impl XAuthorityRuntime {
             } => {
                 self.resources
                     .lookup(request.namespace, *requestor, XResourceKind::Window)?;
-                let dispatch = dispatch_clipboard_selection_request(
-                    crate::XSelectionRequest {
-                        requestor: *requestor,
-                        selection: *selection,
-                        target: *target,
-                        target_name: target_name.clone(),
-                        property: *property,
-                        time: *time,
-                    },
-                    &self.selections,
-                    &self.windows,
-                    *transfer,
-                    &mut self.clipboard,
-                )?;
+                let selection_request = crate::XSelectionRequest {
+                    requestor: *requestor,
+                    selection: *selection,
+                    target: *target,
+                    target_name: target_name.clone(),
+                    property: *property,
+                    time: *time,
+                };
+                let external = self
+                    .external_clipboard_offers
+                    .get(selection)
+                    .copied()
+                    .filter(|_| {
+                        self.selection_owner(request.namespace, *selection)
+                            .is_none()
+                    });
+                let dispatch = if let Some(offer) = external {
+                    self.prepare_external_clipboard_request(
+                        request.namespace,
+                        selection_request,
+                        *transfer,
+                        offer,
+                    )?
+                } else {
+                    crate::clipboard::prepare_clipboard_selection_request(
+                        selection_request,
+                        &self.selections,
+                        &self.windows,
+                        *transfer,
+                    )?
+                };
                 match dispatch {
                     ClipboardSelectionDispatch::SameNamespace(request) => response
                         .selection_artifacts
@@ -796,12 +812,19 @@ impl XAuthorityRuntime {
                         portal_request,
                         command,
                     } => {
+                        if self.pending_clipboard.len() >= 64 {
+                            return Err(crate::ClipboardSelectionRequestError::Portal(
+                                sophia_portal::PortalError::CapacityExceeded,
+                            )
+                            .into());
+                        }
                         self.pending_clipboard.insert(
                             *transfer,
                             PendingClipboardSelection {
                                 namespace: request.namespace,
                                 portal_request,
                                 byte_order: XByteOrder::LittleEndian,
+                                external_source: external.is_some(),
                             },
                         );
                         if let Some(command) = XAuthorityPortalCommand::from_portal_command(command)

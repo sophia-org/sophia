@@ -3,7 +3,7 @@ use crate::types::*;
 
 #[derive(Debug, Default)]
 pub struct UriOpenPortal {
-    transfers: BTreeMap<PortalTransferId, PortalTransfer>,
+    transfers: crate::pending::PendingTransfers,
 }
 
 impl UriOpenPortal {
@@ -25,15 +25,12 @@ impl UriOpenPortal {
             generation: request.generation,
         };
 
-        self.transfers.insert(transfer.transfer, transfer.clone());
+        self.transfers.insert(transfer.clone())?;
         Ok(PortalCommand::PromptUriOpen(transfer))
     }
 
     pub fn deny(&mut self, transfer: PortalTransferId) -> Result<PortalCommand, PortalError> {
-        let transfer_state = self.pending_transfer_mut(transfer)?;
-        transfer_state.decision = PortalDecision::Denied;
-
-        Ok(PortalCommand::CancelUriOpen { transfer })
+        self.transfers.deny(transfer)
     }
 
     pub fn approve_generation(
@@ -41,15 +38,7 @@ impl UriOpenPortal {
         transfer: PortalTransferId,
         generation: u64,
     ) -> Result<PortalCommand, PortalError> {
-        let transfer_state = self.pending_transfer_mut(transfer)?;
-
-        if transfer_state.generation != generation {
-            transfer_state.decision = PortalDecision::Revoked;
-            return Ok(PortalCommand::CancelUriOpen { transfer });
-        }
-
-        transfer_state.decision = PortalDecision::Allowed;
-        Ok(PortalCommand::HandoffUriOpen { transfer })
+        self.transfers.approve_generation(transfer, generation)
     }
 
     pub fn source_owner_changed(
@@ -57,41 +46,12 @@ impl UriOpenPortal {
         source_namespace: NamespaceId,
         generation: u64,
     ) -> Vec<PortalCommand> {
-        let mut commands = Vec::new();
-
-        for transfer in self.transfers.values_mut() {
-            if transfer.source_namespace == source_namespace
-                && transfer.decision == PortalDecision::Pending
-                && transfer.generation != generation
-            {
-                transfer.decision = PortalDecision::Revoked;
-                commands.push(PortalCommand::CancelUriOpen {
-                    transfer: transfer.transfer,
-                });
-            }
-        }
-
-        commands
+        self.transfers
+            .source_owner_changed(source_namespace, generation)
     }
 
     pub fn transfer(&self, transfer: PortalTransferId) -> Option<&PortalTransfer> {
         self.transfers.get(&transfer)
-    }
-
-    fn pending_transfer_mut(
-        &mut self,
-        transfer: PortalTransferId,
-    ) -> Result<&mut PortalTransfer, PortalError> {
-        let transfer_state = self
-            .transfers
-            .get_mut(&transfer)
-            .ok_or(PortalError::UnknownTransfer)?;
-
-        if transfer_state.decision != PortalDecision::Pending {
-            return Err(PortalError::NotPending);
-        }
-
-        Ok(transfer_state)
     }
 }
 fn validate_uri_open_request(request: &UriOpenRequest) -> Result<(), PortalError> {

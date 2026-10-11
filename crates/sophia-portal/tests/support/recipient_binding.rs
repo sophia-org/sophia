@@ -205,9 +205,9 @@ impl Export for Recipient {
 }
 
 // Small raw 9P client: no export methods are invoked by client requests.
-pub struct Wire {
-    pub owner: Recipient,
-    pub connection: Connection<Recipient>,
+pub struct Wire<E: Export = Recipient> {
+    pub owner: E,
+    pub connection: Connection<E>,
 }
 #[derive(Debug)]
 pub struct Reply {
@@ -230,8 +230,13 @@ impl Reply {
 }
 impl Wire {
     pub fn new() -> Self {
+        Self::with_owner(Recipient::new())
+    }
+}
+impl<E: Export> Wire<E> {
+    pub fn with_owner(owner: E) -> Self {
         let mut s = Self {
-            owner: Recipient::new(),
+            owner,
             connection: Connection::new(ConnectionId(1), None, Limits::default()),
         };
         let mut b = 4096u32.to_le_bytes().to_vec();

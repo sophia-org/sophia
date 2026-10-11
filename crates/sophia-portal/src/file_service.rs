@@ -11,6 +11,7 @@ use std::sync::{
 };
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
+static NEXT_REGISTRATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 pub struct PortalRequesterConnection {
     pub stream: UnixStream,
@@ -28,27 +29,49 @@ pub struct SessionPortalFileService {
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
+struct StopOnExit(Arc<AtomicBool>);
+impl Drop for StopOnExit {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Release);
+    }
+}
 impl SessionPortalFileService {
     /// `execute` is the recipient handoff, not policy. It must perform its
     /// final security/source check and must not wait for transport progress.
-    pub fn spawn<A, F>(
+    pub fn spawn<A, F>(authority: A, limits: PortalFileLimits, execute: F) -> std::io::Result<Self>
+    where
+        A: PortalFileAuthority + Send + 'static,
+        F: FnMut(PortalFileExecution) -> bool + Send + 'static,
+    {
+        Self::spawn_with_stop(authority, limits, Arc::new(AtomicBool::new(false)), execute)
+    }
+
+    /// The coordinator and service share lifetime, including unexpected
+    /// transport-owner termination. Retained leases cannot outlive that owner.
+    pub(crate) fn spawn_with_stop<A, F>(
         authority: A,
         limits: PortalFileLimits,
+        stop: Arc<AtomicBool>,
         mut execute: F,
     ) -> std::io::Result<Self>
     where
         A: PortalFileAuthority + Send + 'static,
         F: FnMut(PortalFileExecution) -> bool + Send + 'static,
     {
+        let registration = NEXT_REGISTRATION
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |id| id.checked_add(1))
+            .ok()
+            .and_then(std::num::NonZeroU64::new)
+            .ok_or_else(|| std::io::Error::other("portal authority registrations exhausted"))?;
         let export = PortalFileExport::new(authority, limits)
             .map_err(|e| std::io::Error::from_raw_os_error(e.0 as i32))?;
         let mut server = Server::new(export, Limits::default())?;
         let (connect, requests) = mpsc::sync_channel::<Connect>(1);
-        let stop = Arc::new(AtomicBool::new(false));
         let stopping = stop.clone();
         let thread = std::thread::Builder::new()
             .name("portal-files".into())
             .spawn(move || {
+                let _lifetime = StopOnExit(stopping.clone());
                 let mut active = None;
                 let mut epoch = 0_u64;
                 while !stopping.load(Ordering::Acquire) {
@@ -86,7 +109,7 @@ impl SessionPortalFileService {
                                 epoch,
                                 source: request.source,
                                 target: request.target,
-                                custody: PortalRequesterCustody::SessionXAuthority,
+                                custody: PortalRequesterCustody::SessionAuthority { registration },
                             })?;
                             // The fence may change between the precheck and
                             // admission. Never re-label queued old work as a
@@ -119,7 +142,7 @@ impl SessionPortalFileService {
             thread: Some(thread),
         })
     }
-    /// Called only by the off-owner X clipboard worker. Queue pressure refuses
+    /// Called only by an off-owner transfer worker. Queue pressure refuses
     /// before creating a connection; the two-second wait never runs on Session.
     pub fn connect(
         &self,
