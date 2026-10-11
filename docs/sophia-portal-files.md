@@ -224,6 +224,14 @@ reservations under pressure. Require independent C and Rust SDK clients against
 the real export, with refusal draining and final-ack deadlines. Layout checks
 prove none of these runtime properties by themselves.
 
+The direct export capacity tests in
+`sophia-portal/tests/support/portal_file_capacity.rs` isolate active-transfer,
+journal-record and journal-byte limits. Record and byte reservation mutations
+must each fail their corresponding pressure test; owner facts are supplied.
+The [capacity validation record](notes/investigations/rd9nia0s-several-x-listeners-and-confined-application-launch-validation.md#separate-portal-capacity-boundaries)
+binds those controls and the repository gate to the signed candidate. This
+does not replace the remaining X failure-path migration evidence.
+
 The independent C conformance peer in `sophia-conformance/tests/portal_files.rs`
 uses the generic C SDK transport and its own portal record codec. It exercises
 fragmented events, upload custody, recipient outcomes and refusal deadlines

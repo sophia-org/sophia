@@ -268,6 +268,57 @@ active-limit case are still required by the contract, alongside final migration
 coverage reconciliation. This work changes neither master nor the installed
 session and does not replace t142's attended acceptance.
 
+## Separate portal capacity boundaries
+
+Signed `e25e8c51d` adds three direct export tests. Record pressure leaves byte
+capacity available; byte pressure leaves record capacity available. Both refuse
+the next request with EAGAIN, preserve its submission and transfer identity,
+publish no partial batch, and retain enough credit for exactly one correlated
+Revoked outcome. After acknowledgement the refused identity can be retried.
+The active-limit case starts with an empty journal and ample retained history:
+it accepts the submission but returns Denied, then allows that unadmitted ID
+after the older grant settles. The older settled identity remains spent.
+
+Two independent compiled production mutations remove either the record or byte
+terminal reservation from `PortalFileExport::bounds`. Each exits 101 at its
+corresponding named reservation assertion, with one failed test. The source is
+restored and both portal fixture hashes remain unchanged. The sealed control
+package is `~/.local/state/sophia/development-evidence/t315-capacity-control01`;
+its self-excluding manifest SHA-256 is
+`0276677fe9cefff0ac7cc78f1b294092ba0200596a985e6958fe5258fb34a0b6`.
+The active-limit case has positive coverage, without a mutation control.
+
+The first full gate exposed a pre-existing shell fixture race: its fixed 50 ms
+wait did not establish that Negotiated had been acknowledged, leaving two
+queued records instead of one. Signed `965b925fa` replaces the delay with a
+bounded explicit peer barrier after the ACK reply. Injecting a 150 ms delay
+before that ACK reproduces the old failure; the repaired fixture passes with
+the same injection. The second gate exposed concurrent timestamp-only scratch
+directory collisions in private X setup tests. Signed `58a2dc4c9` adds a
+process-local atomic sequence. With the clock value forced constant and seven
+test threads, the old fixture fails and the repaired fixture passes. Neither
+repair changes production code; neither injected delay nor fixed clock remains.
+
+The third isolated `cargo xtask check` exits zero: 548 libtest summaries report
+7,612 passes, zero failures and 104 ignored tests, including nested child output.
+The complete four-file delta from `3d8877953` to `e25e8c51d` equals the dynamic
+pre-gate modified/untracked file set and hashes. The development package retains
+both failed gates, focused checks, fixture experiments and final gate, plus
+artifact paths/hashes without binary copies:
+`~/.local/state/sophia/development-evidence/t315-capacity-dev01`.
+Its verified self-excluding manifest SHA-256 is
+`314b4322e2db0344f88fdeac4a321f2ff5cd31d930b5e03817cafca196739c5e`.
+
+Migration reconciliation still prevents t315 closure. The old X executor suite
+explicitly exercises Disconnected and ExecutorFailure notifications; the new
+files coordinator's joined suite does not yet exercise both corresponding
+failure paths. Its policy, participation, deadline, source-replacement and
+lock-cycle refusals are already joined. Complete the missing X outcomes and
+the contract-to-evidence reconciliation before closing t315. These capacity
+tests supply owner facts; they do not provide installed-session paste evidence.
+Master and the live session remain unchanged, and t142 attended acceptance
+and t255 legacy-envelope retirement remain separate.
+
 ## Question
 
 Can t142 serve several configured X groups from one synchronous frontend while
