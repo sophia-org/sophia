@@ -1,4 +1,8 @@
 use super::*;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use std::time::Instant;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -121,6 +125,13 @@ struct ManagedChild {
     peer_pid: u32,
     protection: Option<ProtectionDomainEvidence>,
     launch_reservation: Option<LaunchReservation>,
+    custody_active: Arc<AtomicBool>,
+}
+
+impl Drop for ManagedChild {
+    fn drop(&mut self) {
+        self.custody_active.store(false, Ordering::Release);
+    }
 }
 
 impl ProcessSupervisor {
@@ -248,14 +259,44 @@ impl ProcessSupervisor {
         {
             return Ok(false);
         }
-        child
+        let live = child
             .child
             .try_wait()
             .map(|status| status.is_none())
             .map_err(|error| ProcessSupervisorError::WaitFailed {
                 process: self.process,
                 message: error.to_string(),
-            })
+            });
+        if !matches!(live, Ok(true)) {
+            child.custody_active.store(false, Ordering::Release);
+        }
+        live
+    }
+
+    /// Hand current custody to a role worker without handing it the supervisor.
+    /// The wrapper is our unreaped child when its pidfd is opened; peer_pidfd
+    /// separately checks the protected child's parent relationship. Neither
+    /// handle is obtained from a connecting socket or a peer's identity claim.
+    pub fn launch_custody(
+        &mut self,
+        reservation: &LaunchReservation,
+        role: ProtectionDomainRole,
+    ) -> std::io::Result<Option<LaunchCustody>> {
+        if !self
+            .has_live_launch(reservation, role)
+            .map_err(std::io::Error::other)?
+        {
+            return Ok(None);
+        }
+        let Some(peer) = self.peer_pidfd()? else {
+            return Ok(None);
+        };
+        let managed = self.child.as_ref().expect("live child");
+        let pid = rustix::process::Pid::from_raw(managed.child.id() as i32)
+            .ok_or_else(|| std::io::Error::other("invalid supervised wrapper PID"))?;
+        let wrapper = rustix::process::pidfd_open(pid, rustix::process::PidfdFlags::empty())?;
+        let custody = LaunchCustody::new(managed.custody_active.clone(), wrapper, peer);
+        Ok(custody.is_live()?.then_some(custody))
     }
 
     /// Consume a new channel, including on failure. Once used, ordinary start
@@ -319,6 +360,7 @@ impl ProcessSupervisor {
         }
         self.termination_deadline = Some(Instant::now() + Duration::from_secs(2));
         let managed = self.child.as_mut().expect("checked child");
+        managed.custody_active.store(false, Ordering::Release);
         if managed
             .child
             .try_wait()
@@ -449,6 +491,7 @@ impl ProcessSupervisor {
                 child: protected.child,
                 protection: Some(protected.evidence),
                 launch_reservation: protected.launch_reservation,
+                custody_active: Arc::new(AtomicBool::new(true)),
             }
         } else {
             let mut command = Command::new(&self.spec.program);
@@ -469,6 +512,7 @@ impl ProcessSupervisor {
                 child,
                 protection: None,
                 launch_reservation: None,
+                custody_active: Arc::new(AtomicBool::new(true)),
             }
         };
         self.child = Some(managed);

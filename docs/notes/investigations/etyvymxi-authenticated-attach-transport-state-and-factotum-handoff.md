@@ -607,3 +607,76 @@ Session or substituting cached verification for live custody, including resets,
 idle deadlines and disconnected cleanup. Per-fragment upload and waiting-read
 dispatch need that integration's controls. Existing accept filters and the
 hard SO_PEERPIDFD requirement remain; t317 stays open and nothing is installed.
+
+## Worker launch custody
+
+On `a372f464d`, Session can now hand current launch authority to a role worker
+without sharing mutable supervisor or registry state. `WorkerAuthority` is
+created only for an Active registration and its exact protected spawn. Every
+qualification, final attach and retained-file check matches the verdict's
+session, identity and audience, then checks registration, Factotum connection
+and kernel process lifetime. The existing role admission owner accepts either
+direct Session authority or this worker authority; identity pinning and atomic
+root publication retain one implementation.
+
+`ProcessSupervisor::launch_custody` captures pidfds for both its unreaped
+wrapper and the checked protected peer. Zero-time polls observe spontaneous
+exit without Session polling or reaping. A shared flag withdraws custody before
+termination signals and on child retirement. Session's separate registration
+flag is withdrawn before remote Factotum cleanup. Connection loss invalidates
+the shared ingress. No clone can revive any of these authorities. This uses
+the existing `pidfd_open` platform support, not `SO_PEERPIDFD`; the live lock
+endpoint's old checks have not been removed. The
+[contract diagram](../../factotum-launch-authentication.md#current-launch-authority-across-workers)
+shows these separate owners.
+
+The focused runtime suite passes four tests, and the Session authentication
+suite passes fourteen. New runtime cases reject another reservation with the
+same numeric generation and a wrong role, observe termination before reap,
+reject revival by another live spawn, and observe natural exit without an
+owner poll while leaving the exit status for its supervisor. One new Session
+case moves the real admission and lock-file owners to another thread after
+real Factotum verification and protected relay. A local revocation is visible
+there without a worker command or remote cleanup poll. A second case proves a
+lost Factotum connection cannot publish a prepared lock root or identity.
+
+Three single-site controls fail at their named assertions:
+
+- Omit supervisor revocation: `termination must revoke worker custody before reap`.
+  Both processes are stopped and alive while TERM is pending, so kernel exit
+  cannot mask the missing flag.
+- Ignore the kernel poll result: `worker must detect kernel exit without Session progress`.
+- Omit Session registration revocation: `worker retained files must observe local revocation without a worker command`.
+
+Each exits 101 with exactly one failed test. The exclusive worktree lease
+covers the positive checks, mutations, compilation, restoration and final
+gate. A dynamic inventory captures all eleven modified/untracked candidate
+files, including the normative contract, and matches after every restoration
+and after the gate. The investigation and plan result follow that capture;
+code, tests and contract bytes are unchanged. Executable paths and hashes are
+retained, with no copied binaries.
+
+The restored, device-hidden `cargo xtask check` passes **7,694 tests, zero
+failed, 105 ignored across 556 summaries**, plus Clippy, SDK integrity and
+repository checks. Hardware proofs remain not proved on the isolated host;
+ignored acceptance tests are not counted as executed.
+
+Closed packages and self-excluding SHA256SUMS hashes under the development
+evidence directory:
+
+- `t317-worker-custody-01`:
+  `3521f175ba18a14af4cf698618bca0a041d30c2d1bc7e86ee2b1a76c8860f0e3`.
+- `t317-worker-termination-control-01`:
+  `9d093ea7e7ce77c57812fbc795b3de8720ac939edc60f79a14c51285e9d86465`.
+- `t317-worker-exit-control-01`:
+  `58ed2a962757f3eb24928602e048c257f812572735ff441099c35398f87ce429`.
+- `t317-worker-revocation-control-01`:
+  `18d099bd88eaa1d9303f03db32920f44e0a31ed0d49fd71b48c08538c811384f`.
+
+This qualifies the cross-thread authority handoff through direct owner calls,
+not authenticated dispatch in `LockFileService`. The live transport still
+needs afid dispatch, reset and idle deadlines, disconnected-conversation
+cleanup with bounded slots, and checks on retried reads and in-place upload
+fragments. Other role integration, minimum Bubblewrap execution, independent
+authentication and final acceptance remain open. No live desktop changes,
+merge or t317 completion are claimed.

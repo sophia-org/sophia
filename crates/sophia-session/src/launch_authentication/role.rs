@@ -1,7 +1,7 @@
 //! One role transport's afid conversation. The export keeps this outside its
 //! wire-reset fid table, supplies exact claims and reserves the root first.
 //! This owner never turns a wire-provided success flag into authentication.
-use super::LaunchBook;
+use super::Authority;
 use sophia_9p::{
     ConnectionId, Errno, ReadOutcome,
     authentication::{Attempt, Authentication, Identity},
@@ -12,7 +12,6 @@ use sophia_factotum::launch::{
     relay::encode_challenge,
     wire::{Command, Response},
 };
-use sophia_runtime::ProcessSupervisor;
 use std::time::{Duration, Instant};
 
 mod lock;
@@ -156,8 +155,7 @@ impl RoleAuthentication {
         offset: u64,
         count: u32,
         now: Instant,
-        book: &mut LaunchBook,
-        supervisor: &mut ProcessSupervisor,
+        authority: &mut Authority<'_>,
     ) -> Result<ReadOutcome, Errno> {
         self.poll(now)?;
         let bytes = match offset {
@@ -186,7 +184,7 @@ impl RoleAuthentication {
                 }
                 return Ok(ReadOutcome::Pending);
             }
-            self.qualify(attempt, now, book, supervisor)?;
+            self.qualify(attempt, now, authority)?;
             [1, 0, 0, 0, 0, 0, 0, 0].to_vec()
         };
         if self.state.charge(attempt, bytes, self.clock(now)?).is_err() {
@@ -202,11 +200,10 @@ impl RoleAuthentication {
         &mut self,
         attempt: Attempt,
         now: Instant,
-        book: &mut LaunchBook,
-        supervisor: &mut ProcessSupervisor,
+        authority: &mut Authority<'_>,
     ) -> Result<Identity, Errno> {
         self.poll(now)?;
-        let verdict = self.qualify(attempt, now, book, supervisor)?;
+        let verdict = self.qualify(attempt, now, authority)?;
         let identity = self
             .state
             .commit_attach(attempt, self.clock(now)?)
@@ -219,8 +216,7 @@ impl RoleAuthentication {
         &mut self,
         attempt: Attempt,
         now: Instant,
-        book: &mut LaunchBook,
-        supervisor: &mut ProcessSupervisor,
+        authority: &mut Authority<'_>,
     ) -> Result<Verdict, Errno> {
         let clock = self.clock(now)?;
         let current = self
@@ -229,7 +225,8 @@ impl RoleAuthentication {
             .filter(|c| c.attempt == attempt)
             .ok_or(Errno::ESTALE)?;
         let verdict = current.verdict.ok_or(Errno::EACCES)?;
-        book.authorize(verdict, supervisor, now)
+        authority
+            .authorize(verdict, now)
             .map_err(|_| Errno::ESTALE)?;
         if !current.qualified {
             self.state
@@ -243,13 +240,11 @@ impl RoleAuthentication {
     pub fn check_admitted(
         &mut self,
         now: Instant,
-        book: &mut LaunchBook,
-        supervisor: &mut ProcessSupervisor,
+        authority: &mut Authority<'_>,
     ) -> Result<Identity, Errno> {
         self.poll(now)?;
         let verdict = self.admitted.ok_or(Errno::EACCES)?;
-        book.authorize(verdict, supervisor, now)
-            .map_err(|_| Errno::ESTALE)
+        authority.authorize(verdict, now).map_err(|_| Errno::ESTALE)
     }
 
     pub fn release(&mut self, attempt: Attempt, now: Instant) {

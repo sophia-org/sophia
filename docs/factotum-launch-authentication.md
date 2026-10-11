@@ -104,10 +104,46 @@ reads and each in-place upload fragment.
 This sequence is joined with real Factotum verification and a protected
 LockProvider relay, but by direct calls to the admission owner. The existing
 lock worker still dispatches its original endpoint-admitted export. Its afid
-dispatch, resets, disconnected-conversation cleanup, authority handoff from
-Session and bounded endpoint slots remain to be integrated. No SO_PEERPIDFD
+dispatch, resets, disconnected-conversation cleanup and bounded endpoint slots
+remain to be integrated. No SO_PEERPIDFD
 requirement has been removed. The ordinary attach path uses the same checked
 preparation and retains its existing policy.
+
+### Current launch authority across workers
+
+Session can publish `WorkerAuthority` only for an Active registration and the
+exact protected spawn that consumed its reservation. The role admission owner
+accepts either direct Session authority or this worker handoff; it uses the
+same afid and atomic root-publication sequence in both cases.
+
+```text
+Session LaunchBook                      ProcessSupervisor
+ Active registration                     exact reservation + role
+       |                                        |
+       +------ publish WorkerAuthority ---------+
+                          |
+role worker: verdict -----+--> check session / identity / audience
+                          +--> registration still active
+                          +--> Factotum ingress still open
+                          +--> wrapper AND peer pidfds still alive
+                          +--> supervisor has not withdrawn custody
+                          |
+                          v
+                  commit identity / retained operation
+
+Session revoke ------> shared registration flag false (before remote Retire)
+termination ---------> shared custody flag false (before signaling the child)
+kernel exit ---------> pidfd readable (without a Session poll or reap)
+```
+
+These checks use atomics and zero-time kernel polls, with no worker request to
+Session and no wait on authentication I/O. A clone cannot reactivate a launch.
+The wrapper handle is captured while it is the supervisor's unreaped child;
+the peer handle uses the existing checked wrapper-child relationship. This
+retains the existing `pidfd_open` platform requirement; it neither uses nor
+removes the live endpoint's separate `SO_PEERPIDFD` requirement. The expected
+peer availability filter is unchanged. This is a handoff of launch custody,
+not a substitute for Factotum verification or role-view policy.
 
 ## Private owner view
 

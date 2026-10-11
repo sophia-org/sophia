@@ -192,3 +192,138 @@ fn an_unprotected_spawn_or_configured_descriptor_claim_cannot_take_the_channel()
     assert!(supervisor.child_id().is_none());
     eof(owner);
 }
+
+fn ready_probe(
+    probe: &Probe,
+    generation: u64,
+) -> (
+    ProcessSupervisor,
+    UnixStream,
+    sophia_runtime::LaunchReservation,
+) {
+    let mut supervisor = ProcessSupervisor::new(
+        SupervisedProcessKind::Shell,
+        launch(&probe.0).process_group(),
+    );
+    let (mut owner, channel) = LaunchChannel::reserve(generation).unwrap();
+    let reservation = channel.reservation();
+    supervisor.start_with_launch_channel(channel).unwrap();
+    owner
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    let mut ready = [0; 6];
+    owner.read_exact(&mut ready).unwrap();
+    assert_eq!(&ready, b"READY\n");
+    (supervisor, owner, reservation)
+}
+
+#[test]
+fn worker_custody_requires_the_exact_spawn_and_retires_before_reaping() {
+    let probe = Probe::build();
+    let (mut supervisor, _owner, reservation) = ready_probe(&probe, 1);
+    let (_other_owner, other) = LaunchChannel::reserve(1).unwrap();
+    assert!(
+        supervisor
+            .launch_custody(&other.reservation(), ProtectionDomainRole::MetadataShell)
+            .unwrap()
+            .is_none(),
+        "equal generation numbers cannot manufacture worker custody"
+    );
+    assert!(
+        supervisor
+            .launch_custody(&reservation, ProtectionDomainRole::LockProvider)
+            .unwrap()
+            .is_none(),
+        "worker custody must name this spawn's protected role"
+    );
+    let custody = supervisor
+        .launch_custody(&reservation, ProtectionDomainRole::MetadataShell)
+        .unwrap()
+        .unwrap();
+    let observed = custody.clone();
+    assert!(
+        std::thread::spawn(move || observed.is_live().unwrap())
+            .join()
+            .unwrap()
+    );
+    // Keep both processes alive while TERM is pending. Otherwise kernel exit
+    // could mask a missing synchronous owner revocation flag.
+    for raw in [
+        supervisor.child_id().unwrap(),
+        supervisor.peer_id().unwrap(),
+    ] {
+        let pid = rustix::process::Pid::from_raw(raw as i32).unwrap();
+        rustix::process::kill_process(pid, rustix::process::Signal::STOP).unwrap();
+        let end = Instant::now() + Duration::from_secs(2);
+        loop {
+            let status = std::fs::read_to_string(format!("/proc/{raw}/status")).unwrap();
+            if status.lines().any(|line| line.starts_with("State:\tT")) {
+                break;
+            }
+            assert!(
+                Instant::now() < end,
+                "custody control must stop both processes"
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+    assert!(custody.is_live().unwrap(), "stopping is not exiting");
+    supervisor.request_termination().unwrap();
+    assert!(
+        supervisor.child_id().is_some(),
+        "termination has not handed away child ownership"
+    );
+    assert!(
+        !custody.is_live().unwrap(),
+        "termination must revoke worker custody before reap"
+    );
+    for raw in [
+        supervisor.child_id().unwrap(),
+        supervisor.peer_id().unwrap(),
+    ] {
+        let pid = rustix::process::Pid::from_raw(raw as i32).unwrap();
+        let _ = rustix::process::kill_process(pid, rustix::process::Signal::CONT);
+    }
+    supervisor.terminate().unwrap();
+    let (mut next, _owner, next_reservation) = ready_probe(&probe, 1);
+    assert!(
+        next.launch_custody(&next_reservation, ProtectionDomainRole::MetadataShell)
+            .unwrap()
+            .unwrap()
+            .is_live()
+            .unwrap()
+    );
+    assert!(
+        !custody.is_live().unwrap(),
+        "another live spawn cannot revive retired worker custody"
+    );
+}
+
+#[test]
+fn worker_custody_observes_exit_without_a_session_poll() {
+    let probe = Probe::build();
+    let (mut supervisor, mut owner, reservation) = ready_probe(&probe, 1);
+    let custody = supervisor
+        .launch_custody(&reservation, ProtectionDomainRole::MetadataShell)
+        .unwrap()
+        .unwrap();
+    assert!(custody.is_live().unwrap());
+    owner.write_all(b"Q").unwrap();
+    let end = Instant::now() + Duration::from_secs(2);
+    while custody.is_live().unwrap() {
+        assert!(
+            Instant::now() < end,
+            "worker must detect kernel exit without Session progress"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert!(
+        supervisor.child_id().is_some(),
+        "Session has not polled or reaped the wrapper"
+    );
+    supervisor.terminate().unwrap();
+    assert!(
+        supervisor.take_exit_status().unwrap().success(),
+        "worker observation must not consume the child's exit status"
+    );
+}

@@ -252,6 +252,11 @@ pins the SDK primitives and validates the core, Factotum, launch custody and
 Session afid owners. It does not enable authentication on shipped role exports
 or satisfy the exit below; production role integration remains next.
 
+The [worker custody join](../investigations/etyvymxi-authenticated-attach-transport-state-and-factotum-handoff.md#worker-launch-custody)
+now carries current launch authority across threads with local revocation and
+kernel exit checks. Atomic lock admission uses it through direct owner calls;
+the live lock transport's afid dispatch and lifecycle integration remain next.
+
 Implement the approved [t133 local authentication handoff](esnqxpqw-pidfd-and-namespace-admission-optimizations.md#local-authentication-design-and-t317-handoff-2026-10-10),
 including Session's launch-channel relay, Factotum's correlated verdict,
 immutable transport identity across Tversion and the bounded negative controls.

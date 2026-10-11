@@ -13,8 +13,7 @@ impl RoleAuthentication {
         context: &AttachContext<'_>,
         attempt: Attempt,
         now: Instant,
-        book: &mut LaunchBook,
-        supervisor: &mut ProcessSupervisor,
+        authority: &mut Authority<'_>,
     ) -> Result<Attachment<LockFileNode>, Errno> {
         self.claims(
             context.connection,
@@ -23,7 +22,7 @@ impl RoleAuthentication {
             context.n_uname,
         )?;
         let prepared = view.prepare_attach(context)?;
-        self.commit_attach(attempt, now, book, supervisor)?;
+        self.commit_attach(attempt, now, authority)?;
         Ok(prepared.publish())
     }
 
@@ -34,10 +33,9 @@ impl RoleAuthentication {
         view: &mut LockFileExport,
         access: &Access<'_, LockFileNode>,
         now: Instant,
-        book: &mut LaunchBook,
-        supervisor: &mut ProcessSupervisor,
+        authority: &mut Authority<'_>,
     ) -> Result<(), Errno> {
-        self.check_admitted(now, book, supervisor)?;
+        self.check_admitted(now, authority)?;
         view.check(access)
     }
 }

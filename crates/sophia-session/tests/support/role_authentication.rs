@@ -3,6 +3,7 @@
 use super::*;
 use sophia_9p::{Errno, Fid, OpenFlags, ReadOutcome, export::*};
 use sophia_9p_client::pipeline::{Pipeline, PipelineLimits, Reply};
+use sophia_session::launch_authentication::Authority;
 use sophia_session::launch_authentication::role::{RoleAuthentication, RoleScope};
 
 #[derive(Clone, PartialEq, Eq)]
@@ -54,8 +55,10 @@ impl Export for Role<'_> {
         self.auth.as_mut().unwrap().commit_attach(
             *attempt,
             Instant::now(),
-            self.book,
-            self.supervisor,
+            &mut Authority::Owner {
+                book: self.book,
+                supervisor: self.supervisor,
+            },
         )?;
         Ok(Attachment {
             root: Node::Root,
@@ -69,7 +72,13 @@ impl Export for Role<'_> {
         self.auth
             .as_mut()
             .unwrap()
-            .check_admitted(Instant::now(), self.book, self.supervisor)
+            .check_admitted(
+                Instant::now(),
+                &mut Authority::Owner {
+                    book: self.book,
+                    supervisor: self.supervisor,
+                },
+            )
             .map(|_| ())
     }
     fn lookup(&mut self, node: &Node, name: WalkName<'_>) -> Result<Node, Errno> {
@@ -107,8 +116,10 @@ impl Export for Role<'_> {
                 offset,
                 count,
                 Instant::now(),
-                self.book,
-                self.supervisor,
+                &mut Authority::Owner {
+                    book: self.book,
+                    supervisor: self.supervisor,
+                },
             ),
             Node::Api => Ok(ReadOutcome::Ready(
                 b"role"[..(count as usize).min(4)].to_vec(),
@@ -346,7 +357,16 @@ fn reread_budget_cancels_the_exact_factotum_attempt() {
     let mut reads = 0;
     loop {
         f.tick(end);
-        match auth.read(attempt, 0, 40, Instant::now(), &mut f.book, &mut supervisor) {
+        match auth.read(
+            attempt,
+            0,
+            40,
+            Instant::now(),
+            &mut Authority::Owner {
+                book: &mut f.book,
+                supervisor: &mut supervisor,
+            },
+        ) {
             Ok(ReadOutcome::Pending) => {}
             Ok(ReadOutcome::Ready(bytes)) => {
                 assert_eq!(bytes.len(), 40);

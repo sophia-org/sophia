@@ -10,8 +10,14 @@ use sophia_factotum::launch::{
     wire::{Command, Response},
 };
 use sophia_runtime::{LaunchChannel, LaunchReservation, ProcessSupervisor, ProtectionDomainRole};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use std::time::{Duration, Instant};
 
+mod custody;
+pub use custody::{Authority, WorkerAuthority};
 pub mod role;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -62,6 +68,7 @@ impl From<std::io::Error> for Error {
 }
 
 struct Record {
+    worker_active: Arc<AtomicBool>,
     delegation: Delegation,
     reservation: LaunchReservation,
     role: ProtectionDomainRole,
@@ -152,6 +159,7 @@ impl LaunchBook {
             .ingress
             .submit(Command::Reserve(delegation), now, deadline)?;
         self.records.push(Record {
+            worker_active: Arc::new(AtomicBool::new(false)),
             delegation,
             reservation,
             role: policy.role,
@@ -219,6 +227,7 @@ impl LaunchBook {
                     .activate(id.0)
                     .map_err(|_| Error::Stale)?;
                 record.phase = Phase::Active;
+                record.worker_active.store(true, Ordering::Release);
                 Ok(true)
             }
             _ => {
@@ -264,6 +273,7 @@ impl LaunchBook {
             return Ok(());
         }
         record.phase = Phase::Retiring;
+        record.worker_active.store(false, Ordering::Release);
         record.channel = None;
         record.relay = None;
         record.ticket = None;

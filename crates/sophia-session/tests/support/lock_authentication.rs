@@ -4,6 +4,7 @@ use super::*;
 use sophia_9p::{Errno, OpenFlags, ReadOutcome, export::*};
 use sophia_protocol::lock_files::*;
 use sophia_runtime::lock_files::*;
+use sophia_session::launch_authentication::Authority;
 use sophia_session::launch_authentication::role::{RoleAuthentication, RoleScope};
 
 const CONNECTION: ConnectionId = ConnectionId(12);
@@ -126,8 +127,10 @@ impl Joined {
                     0,
                     40,
                     Instant::now(),
-                    &mut self.f.book,
-                    &mut self.supervisor,
+                    &mut Authority::Owner {
+                        book: &mut self.f.book,
+                        supervisor: &mut self.supervisor,
+                    },
                 )
                 .unwrap()
             {
@@ -162,8 +165,10 @@ impl Joined {
                     40,
                     8,
                     Instant::now(),
-                    &mut self.f.book,
-                    &mut self.supervisor,
+                    &mut Authority::Owner {
+                        book: &mut self.f.book,
+                        supervisor: &mut self.supervisor,
+                    },
                 )
                 .unwrap()
             {
@@ -181,8 +186,10 @@ impl Joined {
             &context(),
             self.attempt,
             Instant::now(),
-            &mut self.f.book,
-            &mut self.supervisor,
+            &mut Authority::Owner {
+                book: &mut self.f.book,
+                supervisor: &mut self.supervisor,
+            },
         )
     }
     fn check(&mut self, node: &LockFileNode, operation: Operation) -> Result<(), Errno> {
@@ -190,8 +197,10 @@ impl Joined {
             &mut self.view,
             &access(node, operation),
             Instant::now(),
-            &mut self.f.book,
-            &mut self.supervisor,
+            &mut Authority::Owner {
+                book: &mut self.f.book,
+                supervisor: &mut self.supervisor,
+            },
         )
     }
 }
@@ -283,5 +292,97 @@ fn retained_lock_object_requires_current_launch_custody() {
         j.check(&LockFileNode::Lock, Operation::Read),
         Err(Errno::ESTALE),
         "retained lock files must recheck launch custody"
+    );
+}
+
+#[test]
+fn worker_lock_admission_and_retained_files_follow_owner_revocation() {
+    let mut j = Joined::new();
+    assert!(
+        j.f.book
+            .worker_authority(j.id, &mut j.supervisor, Instant::now())
+            .is_err(),
+        "a reserved launch cannot publish worker authority"
+    );
+    j.verify();
+    let worker =
+        j.f.book
+            .worker_authority(j.id, &mut j.supervisor, Instant::now())
+            .unwrap();
+    // Move the actual owners across a thread boundary. Session retains the
+    // book/supervisor; the worker never receives a reference to either.
+    let (ready, wait_ready) = std::sync::mpsc::sync_channel(1);
+    let (resume, wait_resume) = std::sync::mpsc::sync_channel(1);
+    std::thread::scope(|scope| {
+        let auth = &mut j.auth;
+        let view = &mut j.view;
+        let attempt = j.attempt;
+        let worker = scope.spawn(move || {
+            auth.attach_lock(
+                view,
+                &context(),
+                attempt,
+                Instant::now(),
+                &mut Authority::Worker(&worker),
+            )
+            .unwrap();
+            auth.check_lock(
+                view,
+                &access(&LockFileNode::Lock, Operation::Read),
+                Instant::now(),
+                &mut Authority::Worker(&worker),
+            )
+            .unwrap();
+            ready.send(()).unwrap();
+            wait_resume.recv_timeout(Duration::from_secs(2)).unwrap();
+            assert!(
+                !view.is_revoked(),
+                "isolate launch revocation from file revocation"
+            );
+            assert_eq!(
+                auth.check_lock(
+                    view,
+                    &access(&LockFileNode::Lock, Operation::Read),
+                    Instant::now(),
+                    &mut Authority::Worker(&worker)
+                ),
+                Err(Errno::ESTALE),
+                "worker retained files must observe local revocation without a worker command"
+            );
+        });
+        wait_ready.recv_timeout(Duration::from_secs(2)).unwrap();
+        j.f.book.revoke(j.id, Instant::now()).unwrap();
+        // No Factotum or relay poll: remote cleanup has not progressed.
+        resume.send(()).unwrap();
+        worker.join().unwrap();
+    });
+}
+
+#[test]
+fn worker_lock_attach_refuses_a_lost_factotum_connection() {
+    let mut j = Joined::new();
+    j.verify();
+    let worker =
+        j.f.book
+            .worker_authority(j.id, &mut j.supervisor, Instant::now())
+            .unwrap();
+    j.f.ingress.invalidate();
+    assert!(matches!(
+        j.auth.attach_lock(
+            &mut j.view,
+            &context(),
+            j.attempt,
+            Instant::now(),
+            &mut Authority::Worker(&worker)
+        ),
+        Err(Errno::ESTALE)
+    ));
+    assert!(
+        j.auth.pinned().is_none(),
+        "connection loss must not publish worker identity"
+    );
+    assert_eq!(
+        j.view.check(&access(&LockFileNode::Root, Operation::Read)),
+        Err(Errno::ESTALE)
     );
 }
