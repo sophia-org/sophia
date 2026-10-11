@@ -711,13 +711,20 @@ fn capture_clipboard_proxy_payload(
         .properties
         .lock()
         .map_err(|_| X11SetupSocketError::new("X11 property table lock poisoned"))?;
-    let payload = runtime
+    let payload = match runtime
         .capture_clipboard_source_payload(requestor, property, &mut properties)
-        .map_err(|error| {
-            X11SetupSocketError::new(format!(
-                "failed to capture clipboard source payload: {error:?}"
-            ))
-        })?;
+    {
+        Ok(payload) => payload,
+        Err(_) => {
+            // A refused or malformed source reply fails this conversion, not
+            // the frontend. No payload reaches the executor; the coordinator's
+            // bounded wait reports failure to the original requestor.
+            properties.remove_window(namespace, requestor);
+            output.outputs.remove(index);
+            trace_selection_transfer("portal_source_captured", false);
+            return Ok(());
+        }
+    };
     routing
         .source_payload_sender
         .try_send(payload)

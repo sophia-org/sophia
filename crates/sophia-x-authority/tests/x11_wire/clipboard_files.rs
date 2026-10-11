@@ -56,6 +56,8 @@ enum Mode {
     MissingRights,
     LockCycle,
     SourceChanged,
+    SourceDisconnected,
+    MissingPayload,
     Late,
 }
 
@@ -160,7 +162,14 @@ fn joined(selection_name: &str, mode: Mode) {
         .unwrap();
     assert_eq!(read_x_record(&mut owner)[0], 1);
     let (mut requestor, window) = setup(&target_path);
-    for _ in 0..if mode == Mode::Pass { 2 } else { 1 } {
+    for round in 0..if matches!(mode, Mode::Pass | Mode::MissingPayload) {
+        2
+    } else {
+        1
+    } {
+        // A source capture failure must leave both clients and the files
+        // coordinator usable for the following conversion.
+        let mode = if round == 1 { Mode::Pass } else { mode };
         requestor
             .write_all(&convert_selection_request(
                 XByteOrder::LittleEndian,
@@ -200,27 +209,33 @@ fn joined(selection_name: &str, mode: Mode) {
             }
             let proxy = read_u32(XByteOrder::LittleEndian, &event[12..16]);
             let proxy_property = read_u32(XByteOrder::LittleEndian, &event[24..28]);
-            owner
-                .write_all(&change_property_request(
-                    XByteOrder::LittleEndian,
-                    XPropertyMode::Replace,
-                    proxy,
-                    proxy_property,
-                    utf8,
-                    8,
-                    b"files-path",
-                ))
-                .unwrap();
-            owner
-                .write_all(&send_selection_notify_request(
-                    XByteOrder::LittleEndian,
-                    proxy,
-                    read_u32(XByteOrder::LittleEndian, &event[4..8]),
-                    selection,
-                    utf8,
-                    proxy_property,
-                ))
-                .unwrap();
+            if mode == Mode::SourceDisconnected {
+                owner.shutdown(std::net::Shutdown::Both).unwrap();
+            } else {
+                if mode != Mode::MissingPayload {
+                    owner
+                        .write_all(&change_property_request(
+                            XByteOrder::LittleEndian,
+                            XPropertyMode::Replace,
+                            proxy,
+                            proxy_property,
+                            utf8,
+                            8,
+                            b"files-path",
+                        ))
+                        .unwrap();
+                }
+                owner
+                    .write_all(&send_selection_notify_request(
+                        XByteOrder::LittleEndian,
+                        proxy,
+                        read_u32(XByteOrder::LittleEndian, &event[4..8]),
+                        selection,
+                        utf8,
+                        proxy_property,
+                    ))
+                    .unwrap();
+            }
         }
         let notify = read_x_record(&mut requestor);
         assert_eq!(
@@ -310,4 +325,24 @@ fn files_coordinator_refuses_replaced_source() {
 #[test]
 fn files_coordinator_expires_a_late_source() {
     joined("CLIPBOARD", Mode::Late);
+}
+
+#[test]
+fn files_coordinator_refuses_disconnected_clipboard_source() {
+    joined("CLIPBOARD", Mode::SourceDisconnected);
+}
+
+#[test]
+fn files_coordinator_refuses_disconnected_primary_source() {
+    joined("PRIMARY", Mode::SourceDisconnected);
+}
+
+#[test]
+fn files_coordinator_refuses_clipboard_reply_without_payload() {
+    joined("CLIPBOARD", Mode::MissingPayload);
+}
+
+#[test]
+fn files_coordinator_refuses_primary_reply_without_payload() {
+    joined("PRIMARY", Mode::MissingPayload);
 }
