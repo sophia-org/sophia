@@ -50,6 +50,12 @@ After an X property effect, notification failure cannot relabel the effect as
 unexecuted. A saturated protocol recipient is disconnected by its captured
 connection identity instead of silently losing the notification.
 
+A successor private connection waits in the service's existing one-slot queue
+until the previous transport's disconnect is observed. A request whose
+two-second admission deadline expires is discarded before allocating a socket
+or epoch. This avoids a scheduling-dependent EBUSY between serial transfers;
+it does not admit two requester exports at once.
+
 Both namespaces must match the admitted pair. A foreign or invalid namespace
 is EACCES before custody. The owner derives publish/request permissions from
 the namespace registry; it never trusts permission bits supplied by a requester.
@@ -226,3 +232,14 @@ recipient records bytes; this is not a protected-launch or application-frontend
 proof. Compiled peer mutations must fail before reporting success. The
 [validation record](notes/investigations/rd9nia0s-several-x-listeners-and-confined-application-launch-validation.md#independent-c-portal-interoperability)
 binds the executed checks to their signed source and states their limits.
+
+The device-free recipient fixture in `sophia-portal/tests/recipient_binding.rs`
+uses production lifecycle grants, the execution fence and actual core wire
+dispatch. Its supplied recipient owner binds one immutable object under a
+single name, with a fresh Qid on replacement. Retained reads, metadata, walks
+and waiting-read retries fail ESTALE after revocation while unrelated recipient
+files remain usable. A compiled core mutation bypassing the read-time authority
+check fails the retained-read and waiting-read assertions. This proves the
+generic export seam, not a production 9P application frontend or a complete
+portal-files-to-recipient handoff. The first new transfer integration remains
+t319's responsibility.

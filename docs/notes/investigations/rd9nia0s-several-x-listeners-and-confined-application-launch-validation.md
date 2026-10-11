@@ -211,6 +211,63 @@ directories, with display variables removed and both target aliases bound to
 the same leased cargo slot. This adds no recipient bind, physical acceptance
 or live-session claim; t315 and t142 remain open.
 
+## Recipient bind seam and serial requester retirement
+
+Signed `f4bd8d106ae00df3f254270d6926a729ad5bddc3` adds four device-free
+recipient tests. The recipient owner, admission and object bytes are supplied;
+the portal lifecycle, execution fence and 9P core run unchanged. Requests go
+through the core's wire decoder and operation dispatch. The fixture proves
+retained-fid revocation, metadata and unopened-walk refusal, fresh replacement
+Qids, unaffected recipient status, and waiting reads that end with ESTALE before
+sampling bytes. Source generation, deadline, source/target namespace departure,
+broker restart, lock and lock/unlock each invalidate the retained grant.
+This is the generic seam required by t315, not a production application
+frontend, namespace compiler or portal-files-to-recipient handoff.
+
+The core control bypasses `Export::check` only at `read_now`. It fails first at
+`revoked bound fid must return ESTALE` and, in a separate exact test invocation,
+`waiting bound read must end with ESTALE`. Both exit 101 with one failed test.
+The control holds a worktree mutation lock, preserves both fixture hashes,
+restores the core byte-for-byte and checks the restoration against HEAD.
+The subsequent repository gate holds the same lock. Control evidence is in
+`~/.local/state/sophia/development-evidence/t315-recipient-bind-control01`;
+its verified manifest SHA-256 is
+`1072e8fef04a23ec40657fe3f803c24e77e56bba12e27c3d23109a1cb418c8b7`.
+
+The first full gate stopped on the existing PRIMARY files test waiting four
+seconds for an X record. A diagnostic run of all 562 X wire tests passed, as
+did 40 focused PRIMARY repetitions. The exact ordering of the original timeout
+was not captured. Source review exposed a separate reproducible admission race:
+a successor connect request can arrive after the old client closes but before
+the service observes EOF, producing EBUSY. A direct ordering test failed the
+old service at `next private requester must wait for previous transport
+retirement`.
+
+Signed `3ecbc41dd` repairs that race. The service leaves the successor in its
+existing one-slot queue until the old transport retires, then rechecks its
+deadline and authority before admission. An expired queued request allocates
+no socket or epoch. Both service tests and all four bind tests pass. This
+establishes the repair independently; it does not prove that this race caused
+the original X timeout. The initial new service test also required a scoped
+closure-capture compilation correction, retained in the diagnostic log.
+
+The final isolated `cargo xtask check` exits zero in `xtask-02.log`: 548 Rust
+test summaries report 7,609 passes, zero failures and 104 ignored tests. The
+complete four-file delta from `43587b98a` to `f4bd8d106` matches the dynamically
+enumerated pre-gate file set and hashes. The core restoration is checked again
+before committing. No built binary is copied into evidence; result.json records
+the two positive test binary paths/hashes and the control package identity.
+The development package is
+`~/.local/state/sophia/development-evidence/t315-recipient-bind-dev01`;
+its verified self-excluding manifest SHA-256 is
+`55ac388fffb17f613caeb5e87e12ccb22c45dfc23a100b9337f6579158cbb627`.
+
+t315 remains open. The current export pressure test lowers record and byte
+limits together, so separate discriminating byte/record cases and a distinct
+active-limit case are still required by the contract, alongside final migration
+coverage reconciliation. This work changes neither master nor the installed
+session and does not replace t142's attended acceptance.
+
 ## Question
 
 Can t142 serve several configured X groups from one synchronous frontend while
