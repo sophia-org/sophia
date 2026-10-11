@@ -2,7 +2,7 @@
 id: rd9nia0s
 date: 2026-10-10
 kind: investigation
-status: investigating
+status: awaiting-physical-acceptance
 tags: [investigation, session, x11, confinement]
 ---
 # Several X listeners and confined application launch validation
@@ -16,7 +16,8 @@ Can a Session launch expose just its selected group's socket directory?
 ## Candidate and evidence
 
 Implementation worktree `sophia-t142-confined-groups` starts at `8db916f1c`.
-The observations below concern uncommitted development bytes, not a release.
+The development runs below were bound to signed candidate `7960512ee`; its
+acceptance results are recorded below. This is not an installed release.
 Logs are retained under
 `~/.local/state/sophia/development-evidence/t142-confined-groups-01`.
 Cargo ran through the worktree's cargo-slot pool, under Bubblewrap with private
@@ -162,10 +163,41 @@ than delivering a graceful signal to the application's separate session.
 
 ## Limits
 
-The separate acceptance gates remain pending. t142 remains open. Physical
+t142 remains open for physical acceptance. Physical
 acceptance requires an installed classic/confined pair and portal transfer;
 headless results do not replace that exit. The initial sandbox denies network
 and does not provide GPU devices, host home or host runtime services.
+
+## Signed candidate and deterministic result
+
+Signed `c84c1eb6b` contains the acceptance-harness storage repair; signed
+`7960512ee0dfc0887a5730b1fa4d3c944574cd86` adds t142. The complete 57-file
+crate/Cargo delta from `8db916f1c` equals the dynamically captured
+`candidate-source-06.json` set, and each committed file hash equals the tested
+bytes. `xtask-06` exited zero: 7,558 passing results and 104 ignored across
+540 libtest summaries, including nested child output. This binds the gate
+to the signed code without treating a curated file list as a complete tree.
+
+The clean candidate's source content hash is
+`ba8c7485f09fb6fa9372fb35a2afbda379ec46e9fd7caf5791d8fc569e26048c`.
+Under Sophia's `.artifacts/t142-acceptance-<that hash>/`:
+
+- `m3-self-01`: contained harness self-tests passed; acceptance is correctly
+  labelled NOT_RUN in this separate report.
+- `m3-01`: PASS, all 20 mandatory cases.
+- `m5-01`: PASS, all eight mandatory groups.
+
+Each package has a verified, self-excluding `SHA256SUMS`. The development
+package's `result.json` records package paths, report/manifest hashes and the
+actual Cargo artifact paths and hashes. Its own manifest SHA-256 is
+`36adafd94193741d4f788a524ca5baa02b79ba26138c3e67ba4363419510d24b`.
+No test executable was copied into evidence. The first adapter invocation
+exited 126 before execution because the scratch script lacked its execute bit;
+the retained second invocation used Bash and passed all three runs.
+
+The follow-up documentation and task-context commit changes no crates or Cargo
+files. Merge is permitted by the deterministic results; installation and the
+attended browser/terminal, portal-paste and departure check remain separate.
 
 ## Connections
 
