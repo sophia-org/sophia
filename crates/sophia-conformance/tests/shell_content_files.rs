@@ -34,7 +34,8 @@ struct Scratch(PathBuf);
 impl Scratch {
     fn new() -> Self {
         let path = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
-            "shell-content-files-{}-{}",
+            // Leave room for the socket basename under a worktree cargo slot.
+            "scf-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
