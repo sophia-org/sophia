@@ -146,6 +146,12 @@ pub trait Export {
     /// the peer's stream to where the owner keeps it.
     const WRITES_IN_PLACE: bool = false;
 
+    /// Apply the bounded unauthenticated fid/request budget until a root is
+    /// attached, and again after Tversion. This selects limits, not identity.
+    fn requires_authentication(&self) -> bool {
+        false
+    }
+
     fn attach(&mut self, context: &AttachContext<'_>) -> Result<Attachment<Self::Node>, Errno>;
 
     /// Called only after afid and reply capacity checks. Claims select no

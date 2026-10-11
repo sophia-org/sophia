@@ -58,6 +58,8 @@ pub enum Fatal {
     },
     /// A reply this connection could not frame.
     Unframeable,
+    /// An unauthenticated peer exceeded its outstanding request budget.
+    UnattachedRequestLimit,
 }
 
 /// The only dialect this core speaks.
@@ -127,6 +129,7 @@ pub struct Connection<E: Export> {
     /// A complete request is buffered and waits for output room.
     stalled: bool,
     closed: bool,
+    attached: bool,
     in_place: Option<InPlace>,
     /// The request at the front of the input was not received in place
     /// when its header was whole, so it is buffered whole.
@@ -147,6 +150,7 @@ impl<E: Export> Connection<E> {
             unwritten: VecDeque::new(),
             stalled: false,
             closed: false,
+            attached: false,
             in_place: None,
             buffered_frame: false,
         }
@@ -338,7 +342,7 @@ impl<E: Export> Connection<E> {
             let Some((kind, tag)) = wire::header(frame) else {
                 return Err(Fatal::Frame(FrameError::Short(length as u32)));
             };
-            self.admit(kind, tag)?;
+            self.admit(export, kind, tag)?;
             let decoded = wire::decode(frame);
             if !self.has_room(self.reply_bound(&decoded)) {
                 self.stalled = true;
@@ -358,7 +362,14 @@ impl<E: Export> Connection<E> {
     }
 
     /// The protocol's rules on a request's header, before anything else.
-    fn admit(&self, kind: u8, tag: Tag) -> Result<(), Fatal> {
+    fn admit(&self, export: &E, kind: u8, tag: Tag) -> Result<(), Fatal> {
+        if !self.attached
+            && export.requires_authentication()
+            && self.waiting.len() + self.unwritten.len()
+                >= crate::authentication::UNATTACHED_REQUESTS
+        {
+            return Err(Fatal::UnattachedRequestLimit);
+        }
         if kind != wire::kind::TVERSION {
             if tag == Tag::NOTAG {
                 return Err(Fatal::NoTag { kind });
@@ -477,6 +488,7 @@ impl<E: Export> Connection<E> {
     }
 
     fn reset(&mut self, export: &mut E) {
+        self.attached = false;
         self.buffered_frame = false;
         self.waiting.clear();
         self.msize = None;
@@ -497,7 +509,7 @@ impl<E: Export> Connection<E> {
         if afid == Fid::NOFID || self.fids.contains_key(&afid) {
             return Reply::Lerror(Errno::EBADF);
         }
-        if self.fids.len() >= self.limits.max_fids() {
+        if self.fids.len() >= self.fid_limit(export) {
             return Reply::Lerror(Errno::EMFILE);
         }
         let context = AttachContext {
@@ -546,7 +558,7 @@ impl<E: Export> Connection<E> {
         if fid == Fid::NOFID || self.fids.contains_key(&fid) {
             return Reply::Lerror(Errno::EBADF);
         }
-        if self.fids.len() >= self.limits.max_fids() {
+        if self.fids.len() >= self.fid_limit(export) {
             return Reply::Lerror(Errno::EMFILE);
         }
         let context = AttachContext {
@@ -569,6 +581,7 @@ impl<E: Export> Connection<E> {
         };
         match attachment {
             Ok(attachment) => {
+                self.attached = true;
                 let qid = export.describe(&attachment.root, None).qid();
                 self.fids.insert(
                     fid,
@@ -583,6 +596,16 @@ impl<E: Export> Connection<E> {
                 Reply::Attach(qid)
             }
             Err(errno) => Reply::Lerror(errno),
+        }
+    }
+
+    fn fid_limit(&self, export: &E) -> usize {
+        if !self.attached && export.requires_authentication() {
+            self.limits
+                .max_fids()
+                .min(crate::authentication::UNATTACHED_FIDS)
+        } else {
+            self.limits.max_fids()
         }
     }
 

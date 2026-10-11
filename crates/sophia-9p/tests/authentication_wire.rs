@@ -46,6 +46,9 @@ impl Owner {
 impl Export for Owner {
     type Node = Node;
     type Handle = ();
+    fn requires_authentication(&self) -> bool {
+        true
+    }
     fn attach(&mut self, _: &AttachContext<'_>) -> Result<Attachment<Node>, Errno> {
         Err(Errno::EACCES)
     }
@@ -198,15 +201,92 @@ fn send(c: &mut Connection<Owner>, o: &mut Owner, b: Vec<u8>) -> Vec<Frame> {
     r
 }
 fn auth(tag: u16) -> Vec<u8> {
+    auth_fid(tag, 10)
+}
+fn auth_fid(tag: u16, fid: u32) -> Vec<u8> {
     frame(
         102,
         tag,
         Body::default()
-            .u32(10)
+            .u32(fid)
             .string(b"user")
             .string(b"view")
             .u32(u32::MAX),
     )
+}
+
+#[test]
+fn unauthenticated_fids_are_bounded_before_owner_allocation() {
+    let (mut c, mut o) = setup();
+    for fid in 10..14 {
+        assert_eq!(send(&mut c, &mut o, auth_fid(fid as u16, fid))[0].kind, 103);
+        // An expired attempt leaves its afid allocated until the peer clunks
+        // it. Supply expiration to isolate the core's independent fid budget.
+        o.state.cancel(o.attempt.unwrap());
+    }
+    assert_eq!(c.fid_count(), 4);
+    assert_eq!(
+        send(&mut c, &mut o, auth_fid(20, 14))[0].errno(),
+        Some(24),
+        "pre-auth fid capacity must refuse before starting another attempt"
+    );
+    assert_eq!(c.fid_count(), 4);
+}
+
+#[test]
+fn attach_restores_role_fid_capacity_and_version_restores_auth_capacity() {
+    let (mut c, mut o) = setup();
+    send(&mut c, &mut o, auth(1));
+    o.verdict();
+    assert_eq!(
+        send(&mut c, &mut o, tattach(2, 0, 10, b"user", b"view"))[0].kind,
+        105
+    );
+    for fid in 1..7 {
+        assert_eq!(
+            send(&mut c, &mut o, support::twalk(10 + fid as u16, 0, fid, &[]))[0].kind,
+            111,
+            "an admitted role must retain its ordinary fid capacity"
+        );
+    }
+    assert_eq!(c.fid_count(), 8);
+    send(&mut c, &mut o, tversion(u16::MAX, 8192, b"9P2000.L"));
+    assert!(o.state.pinned().is_some());
+    for fid in 10..14 {
+        assert_eq!(send(&mut c, &mut o, auth_fid(fid as u16, fid))[0].kind, 103);
+        o.state.cancel(o.attempt.unwrap());
+    }
+    assert_eq!(
+        send(&mut c, &mut o, auth_fid(20, 14))[0].errno(),
+        Some(24),
+        "Tversion must restore pre-auth wire limits without unpinning identity"
+    );
+}
+
+#[test]
+fn pre_auth_request_budget_counts_waiting_and_undrained_replies() {
+    let (mut c, mut o) = setup();
+    send(&mut c, &mut o, auth(1));
+    for tag in 2..6 {
+        assert!(send(&mut c, &mut o, tread(tag, 10, 0, 32)).is_empty());
+    }
+    assert_eq!(
+        c.receive(&mut o, &tread(6, 10, 0, 32)),
+        Err(Fatal::UnattachedRequestLimit),
+        "a fifth pending pre-auth request must not reach the owner"
+    );
+    let (mut c, mut o) = setup();
+    for tag in 1..5 {
+        let request = tattach(tag, 0, u32::MAX, b"user", b"view");
+        assert_eq!(c.receive(&mut o, &request), Ok(request.len()));
+    }
+    assert_eq!(frames(c.output()).len(), 4);
+    assert_eq!(
+        c.receive(&mut o, &tattach(5, 0, u32::MAX, b"user", b"view")),
+        Err(Fatal::UnattachedRequestLimit),
+        "undrained replies must retain pre-auth request credit"
+    );
+    assert_eq!(frames(c.output()).len(), 4);
 }
 fn setup() -> (Connection<Owner>, Owner) {
     let mut o = Owner::new();

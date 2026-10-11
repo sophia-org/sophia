@@ -11,14 +11,26 @@ use sophia_9p::{Errno, records::Limits, unix::Server};
 use sophia_protocol::lock_files::*;
 
 use super::{LockFileExport, LockFileQids, LockFileSettings, LockInbound};
+use crate::authenticated_files::{
+    AuthenticatedFiles, FileAuthentication, FileAuthenticationFactory,
+};
 use crate::{PolicyRole, PolicyRoleEndpoint, PolicyRoleEndpointError};
 
 /// A supervisor-checked provider captured before a worker handoff. Private
 /// fields keep a numeric PID from being paired with an unrelated pidfd.
-#[derive(Debug)]
 pub struct LockFileAssignee {
     pid: u32,
     pidfd: Option<OwnedFd>,
+    authentication: Option<Box<dyn FileAuthenticationFactory>>,
+}
+
+impl std::fmt::Debug for LockFileAssignee {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LockFileAssignee")
+            .field("pid", &self.pid)
+            .field("authenticated", &self.authentication.is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 impl LockFileAssignee {
@@ -27,7 +39,17 @@ impl LockFileAssignee {
     ) -> Result<Self, LockFileTransportError> {
         let pidfd = supervisor.peer_pidfd()?;
         let pid = supervisor.peer_id().ok_or(Errno::EINVAL)?;
-        Ok(Self { pid, pidfd })
+        Ok(Self {
+            pid,
+            pidfd,
+            authentication: None,
+        })
+    }
+    /// Session policy opts this protected launch into afid admission. The
+    /// expected-peer filter still applies, but socket credentials confer no root.
+    pub fn with_authentication(mut self, factory: Box<dyn FileAuthenticationFactory>) -> Self {
+        self.authentication = Some(factory);
+        self
     }
 }
 
@@ -66,7 +88,9 @@ pub struct LockFileTransport {
     qids: LockFileQids,
     limits: LockFileLimits,
     next_epoch: u64,
-    server: Option<Server<LockFileExport>>,
+    server: Option<Server<AuthenticatedFiles<LockFileExport>>>,
+    authentication: Option<Box<dyn FileAuthenticationFactory>>,
+    retiring: Vec<Box<dyn FileAuthentication>>,
     negotiation_deadline: Option<Instant>,
 }
 
@@ -108,6 +132,8 @@ impl LockFileTransport {
             limits,
             next_epoch: first_epoch,
             server: None,
+            authentication: None,
+            retiring: Vec::new(),
             negotiation_deadline: None,
         })
     }
@@ -133,6 +159,7 @@ impl LockFileTransport {
         };
         self.endpoint.authorize_supervised_pid(pid)?;
         self.assignee = pidfd;
+        self.authentication = None;
         Ok(())
     }
 
@@ -151,6 +178,7 @@ impl LockFileTransport {
     ) -> Result<(), LockFileTransportError> {
         self.endpoint.authorize_supervised_pid(assignee.pid)?;
         self.assignee = assignee.pidfd;
+        self.authentication = assignee.authentication;
         Ok(())
     }
 
@@ -158,6 +186,7 @@ impl LockFileTransport {
     /// that is still exiting keeps no claim on the role.
     pub fn revoke_assignee(&mut self) {
         self.assignee = None;
+        self.authentication = None;
     }
 
     fn assignee_alive(&self) -> Result<bool, LockFileTransportError> {
@@ -174,6 +203,9 @@ impl LockFileTransport {
         if self.server.is_some() {
             return Err(Errno::EAGAIN.into());
         }
+        if self.retiring.len() >= 8 {
+            return Ok(false);
+        }
         if !self.assignee_alive()? {
             return Ok(false);
         }
@@ -186,6 +218,12 @@ impl LockFileTransport {
         // matched: a queued socket from an earlier occupant of this PID is no
         // authority.
         let authorized = (|| {
+            if self.authentication.is_some() {
+                // Afid verification, immutable identity and current launch
+                // custody gate every operation. A socket pidfd is not required
+                // on this path; stale queued sockets cannot authenticate.
+                return self.assignee_alive();
+            }
             let connector =
                 sophia_linux_peer::socket_peer_pidfd(stream.as_fd()).map_err(|error| {
                     std::io::Error::new(
@@ -216,9 +254,21 @@ impl LockFileTransport {
                 self.qids.clone(),
             )?;
             let limits = Limits::new(65_536, 512, 16, 32, 131_072, 1).map_err(|_| Errno::EINVAL)?;
+            let export = if self.authentication.is_some() {
+                AuthenticatedFiles::pending(export)
+            } else {
+                AuthenticatedFiles::legacy(export)
+            };
             let mut server = Server::new(export, limits)?;
             let connection = server.adopt(stream).map_err(|error| error.error)?;
-            server.export_mut().bind_connection(connection)?;
+            server
+                .export_mut()
+                .files_mut()
+                .bind_connection(connection)?;
+            if let Some(factory) = &mut self.authentication {
+                let owner = factory.create(connection, Instant::now(), server.wake())?;
+                server.export_mut().install(owner)?;
+            }
             Ok::<_, LockFileTransportError>(server)
         })();
         match setup {
@@ -230,13 +280,14 @@ impl LockFileTransport {
                 return Err(error);
             }
         }
-        self.negotiation_deadline =
-            Some(Instant::now() + Duration::from_millis(self.limits.assembly_timeout_ms.into()));
+        self.negotiation_deadline = self.authentication.is_none().then(|| {
+            Instant::now() + Duration::from_millis(self.limits.assembly_timeout_ms.into())
+        });
         Ok(true)
     }
 
     pub fn export(&self) -> Option<&LockFileExport> {
-        self.server.as_ref().map(Server::export)
+        self.server.as_ref().map(|s| s.export().files())
     }
 
     /// No waiting and no unbounded queue. `false` asks the owner to call
@@ -246,23 +297,33 @@ impl LockFileTransport {
             return Ok(false);
         };
         let now = Instant::now();
-        server.export_mut().expire(now);
-        if server.export().custody().is_negotiated() {
+        if server.export_mut().poll(now).is_err() {
+            server.export_mut().files_mut().revoke();
+        }
+        server.export_mut().files_mut().expire(now);
+        if server.export().files().custody().is_negotiated() {
             self.negotiation_deadline = None;
+        } else if self.negotiation_deadline.is_none() && server.export().admitted() {
+            self.negotiation_deadline =
+                Some(now + Duration::from_millis(self.limits.assembly_timeout_ms.into()));
         }
         // A provider that never negotiates holds the role for nothing.
         if self
             .negotiation_deadline
             .is_some_and(|deadline| now >= deadline)
         {
-            server.export_mut().revoke();
+            server.export_mut().files_mut().revoke();
         }
         let running = server.turn(Some(Duration::ZERO))?;
-        Ok(running && server.connection_count() != 0 && !server.export().is_revoked())
+        Ok(running && server.connection_count() != 0 && !server.export().files().is_revoked())
     }
 
     pub fn take_inbound(&mut self) -> Option<LockInbound> {
-        self.server.as_mut()?.export_mut().take_inbound()
+        self.server
+            .as_mut()?
+            .export_mut()
+            .files_mut()
+            .take_inbound()
     }
 
     /// Runs `apply` on the connected export and wakes the server so its
@@ -272,7 +333,7 @@ impl LockFileTransport {
         apply: impl FnOnce(&mut LockFileExport) -> Result<T, Errno>,
     ) -> Result<T, LockFileTransportError> {
         let server = self.server.as_mut().ok_or(Errno::ESTALE)?;
-        let value = apply(server.export_mut())?;
+        let value = apply(server.export_mut().files_mut())?;
         server.wake().wake();
         Ok(value)
     }
@@ -308,12 +369,20 @@ impl LockFileTransport {
     /// Ends the connection; the next accepted provider gets a fresh epoch.
     pub fn disconnect(&mut self) -> Result<(), LockFileTransportError> {
         if let Some(mut server) = self.server.take() {
-            server.export_mut().revoke();
+            server.export_mut().files_mut().revoke();
             server.wake().wake();
             for _ in 0..4 {
                 if !matches!(server.turn(Some(Duration::ZERO)), Ok(true)) {
                     break;
                 }
+            }
+            server.wake().stop();
+            let _ = server.turn(Some(Duration::ZERO));
+            if let Some(owner) = server.export_mut().retire(Instant::now()) {
+                if self.retiring.len() >= 8 {
+                    return Err(Errno::ENOSPC.into());
+                }
+                self.retiring.push(owner);
             }
         }
         self.negotiation_deadline = None;
@@ -321,6 +390,15 @@ impl LockFileTransport {
             self.endpoint.release_peer(peer)?;
         }
         Ok(())
+    }
+
+    /// Continue exact cancellation while disconnected; these owners retain
+    /// their endpoint/global quota until Factotum answers or is failed closed.
+    pub fn poll_authentication_cleanup(&mut self, now: Instant) {
+        self.retiring.retain_mut(|owner| {
+            let _ = owner.poll(now);
+            !owner.drained()
+        });
     }
 }
 

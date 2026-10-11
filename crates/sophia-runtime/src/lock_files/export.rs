@@ -134,6 +134,31 @@ impl LockFileAttachment<'_> {
     }
 }
 
+impl crate::authenticated_files::PreparedFileRoot for LockFileAttachment<'_> {
+    type Node = LockFileNode;
+    fn publish(self) -> Attachment<Self::Node> {
+        self.publish()
+    }
+}
+
+impl crate::authenticated_files::ProtectedFiles for LockFileExport {
+    type Prepared<'a> = LockFileAttachment<'a>;
+    fn prepare_authenticated_root(
+        &mut self,
+        context: &AttachContext<'_>,
+    ) -> Result<Self::Prepared<'_>, Errno> {
+        self.prepare_attach(context)
+    }
+    fn allocate_auth_qid(&mut self) -> Result<u64, Errno> {
+        self.qids.allocate(1)
+    }
+    fn reset_authenticated_root(&mut self, connection: ConnectionId) {
+        if self.connection == Some(connection) {
+            self.attached = false;
+        }
+    }
+}
+
 fn slice(bytes: &[u8], offset: u64, count: u32) -> Vec<u8> {
     let start = usize::try_from(offset)
         .unwrap_or(usize::MAX)

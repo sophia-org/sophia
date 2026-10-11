@@ -10,6 +10,8 @@ pub const MAX_ATTEMPTS: u8 = 8;
 pub const ATTEMPT_MSEC: u64 = 5_000;
 pub const FIRST_ATTACH_MSEC: u64 = 10_000;
 pub const TRANSCRIPT_BYTES: usize = 4096;
+pub const UNATTACHED_FIDS: usize = 4;
+pub const UNATTACHED_REQUESTS: usize = 4;
 
 /// Opaque owner-selected identities. None comes from uname, aname or n_uname.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

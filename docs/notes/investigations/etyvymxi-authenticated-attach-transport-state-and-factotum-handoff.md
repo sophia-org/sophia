@@ -680,3 +680,59 @@ cleanup with bounded slots, and checks on retried reads and in-place upload
 fragments. Other role integration, minimum Bubblewrap execution, independent
 authentication and final acceptance remain open. No live desktop changes,
 merge or t317 completion are claimed.
+
+## Authenticated lock wire and bounded cleanup checkpoint
+
+The runtime now wraps the shipped lock-file owner in `AuthenticatedFiles`.
+Session supplies a factory carrying current protected-launch custody and one
+shared transport budget. Root preparation precedes immutable identity commit;
+publication is infallible. Pending construction cannot fall back to legacy
+attach. The explicit authenticated mode removes only its socket-pidfd check;
+the availability filter and supervisor-owned launch checks remain. Desktop
+startup still selects legacy admission and has not changed.
+
+A protected independent C peer uses raw 9P2000.L against the real lock worker,
+reads its own afid challenge and relays it through the provisioned channel.
+Real Factotum verification admits the root. The peer proves ordinary attach,
+forged claims and unverified attach are refused; Tversion invalidates the old
+afid and requires fresh authentication through the same launch channel. It then
+negotiates the lock files and loses a waiting read on Session revocation. This
+is independent wire evidence, not SDK authentication qualification.
+
+The shared core now bounds pre-attach fids and pending/undrained requests to
+four. Session's factory reserves eight transports per persistent endpoint and
+32 across endpoints, retaining slots through acknowledged remote cancellation.
+The quota join uses real launch custody and Factotum, with supplied transport
+creation. Raising either quota or the pre-auth request limit causes its named
+first assertion to fail. Each control exits 101 with one failed test, and all
+candidate bytes are restored and compared under the exclusive worktree lease.
+
+`t317-lock-wire-01` records seven core wire tests, sixteen Session launch tests,
+and the full device-hidden gate: **7,700 passed, zero failed, 105 ignored across
+557 summaries**, plus Clippy and repository checks. Its complete dynamic
+candidate inventory covers modified and untracked files before the run.
+
+Review then found that a queued connector could keep listener readiness hot
+while all eight retirement slots prevented acceptance. The follow-up excludes
+listener readiness until cleanup frees a slot. A supplied pending-cleanup
+fixture with a real queued socket proves the worker waits for the owner wake;
+removing the condition fails `full authentication cleanup must wait past queued
+listener readiness`. After restoration, runtime lib/service/transport tests,
+all sixteen Session launch tests and runtime Clippy pass. This follow-up is
+recorded separately in `t317-auth-wait-01`; the earlier full gate is not claimed
+to have run its later bytes. Documentation follows both source captures.
+
+Closed packages under the development evidence directory, with SHA256SUMS
+hashes (self-excluding manifests, verified; executable paths/hashes only):
+
+- `t317-lock-wire-01`: `4830e77a01b3c280b399c5116d7f96ef521a10e6fe07708bc522918e3065f81a`.
+- `t317-auth-endpoint-control-01`: `12b3c3d833140300db356e0d683298b2b116248f043981c93237970a6a9a4fb6`.
+- `t317-auth-global-control-01`: `5165c73b8757359ce3dbbf2bd24a5b8185aeea03eddb30d410db9fef0f7e8666`.
+- `t317-auth-requests-control-01`: `0f9c053c61faa6dd7a614e5e21793c5d2f3358b56c0dac865a9ed8a6eb6d7dd5`.
+- `t317-auth-wait-01`: `4b90ffd43df42afcd5c9a1d46c7c2c3d13bebf6db21be49b750629b835edd605`.
+
+t317 remains open: normal Session startup must consume the shared launch
+service, SDK clients need the conversation, other required roles need the
+same admission path, and in-place fragment controls, minimum Bubblewrap
+execution and final acceptance remain. No merge, installation or completion
+is claimed by this checkpoint.

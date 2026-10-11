@@ -7,9 +7,11 @@ control exchange, a shared PAM/launch client, bounded verification ingress,
 a conversation-only child relay, protected spawn registration/activation and
 a Session afid owner. A generic role-view test joins the Rust SDK, real core,
 Factotum and a protected independent C relay peer. A separate owner-level
-join now covers atomic admission into the actual lock-file export. Shipped
-role transports and their endpoint admission are not yet migrated. Existing role
-credential and pidfd requirements remain in place.
+join covers atomic admission into the actual lock-file export. The lock worker
+now supports authenticated dispatch, exercised with a protected independent C
+wire peer. Normal Session startup has not selected that mode yet; other role
+transports remain unmigrated. Legacy role credential and pidfd requirements
+remain in place.
 
 ```text
                  Session (trusted admission owner)
@@ -70,8 +72,8 @@ invalidates the shared ingress so its connection owner closes the actual
 Factotum transport. A transport owner must poll even without peer traffic,
 close an expired transport, and retain its bounded slot until cleanup drains.
 Tversion preserves the identity pin and original first-attach deadline.
-Shipped transports still need dispatch, cleanup and endpoint quota integration
-before enabling this candidate.
+The lock transport implements these hooks through `AuthenticatedFiles`; other
+transports and normal Session startup still require integration.
 
 ### Atomic lock-root publication
 
@@ -101,13 +103,64 @@ and publication. `check_lock` checks both current launch custody and lock-file
 epoch/custody; the transport must call it for ordinary operations, retried
 reads and each in-place upload fragment.
 
-This sequence is joined with real Factotum verification and a protected
-LockProvider relay, but by direct calls to the admission owner. The existing
-lock worker still dispatches its original endpoint-admitted export. Its afid
-dispatch, resets, disconnected-conversation cleanup and bounded endpoint slots
-remain to be integrated. No SO_PEERPIDFD
-requirement has been removed. The ordinary attach path uses the same checked
-preparation and retains its existing policy.
+This sequence is joined both by direct owner calls and through the real lock
+worker with a protected independent C wire peer. The ordinary legacy attach
+path uses the same checked preparation and retains its existing policy.
+
+### Authenticated lock transport (candidate, not selected at desktop startup)
+
+Session gives the lock assignee an authentication factory backed by current
+`WorkerAuthority`. A pending export refuses requests until construction installs
+that owner; failure cannot select legacy attach. The runtime adapter preserves
+the role's file semantics and in-place writes, delegating authority checks to
+Session for ordinary operations, retried reads and upload fragments.
+
+```text
+expected-peer availability filter
+             |
+             v
+Session factory -- reserve endpoint + global slot --> afid owner
+             |                                         |
+             v                                         v
+AuthenticatedFiles<LockFileExport> <-------- current launch custody
+             |
+             +-- prepare root --> commit identity --> publish root
+             +-- retained operation --> custody check --> lock file owner
+             +-- disconnect --> pending cancellation --> acknowledgement
+                                                           |
+                                                           v
+                                                    return quota slot
+```
+
+One `TransportBudget` belongs to Session; each persistent endpoint holds its
+own budget across launch replacements. Limits are 32 globally and eight per
+endpoint. This implementation conservatively retains a slot for the whole
+admitted transport as well as disconnected cleanup. Slots return after cleanup
+is acknowledged, or after failing the shared Factotum connection closed.
+An abandoned undrained authentication owner invalidates that shared ingress.
+
+Before authenticated attach, the core allows at most four fids and four
+outstanding requests, including undrained replies. A fifth request closes the
+transport before dispatch; a fifth fid receives `EMFILE`. Smaller configured
+limits still apply. Attach restores normal role limits, and Tversion restores
+pre-attach limits while preserving the pinned identity. The lock uses a 64 KiB
+msize and 128 KiB output bound. Its role-negotiation timer begins only after
+authentication; the absolute first-attach deadline is not renewed.
+
+The worker polls idle custody and authentication deadlines at a bounded 20 ms
+cadence, with Factotum answers also waking it. Disconnected cleanup remains
+bounded; when all eight retirement slots are full, listener readiness is
+excluded from the wait so a queued connector cannot cause a polling loop.
+These are progress bounds, not input latency claims.
+
+Only the explicitly authenticated path omits `SO_PEERPIDFD`. It retains the
+expected-peer availability filter, supervisor-owned pidfds and every afid/
+current-custody check. The legacy path still requires `SO_PEERPIDFD`. The C
+wire test proves plain/forged/unverified refusal, successful authentication,
+fresh authentication after Tversion using the same launch channel, negotiation,
+and revocation of a retained waiting read. It is not an independent SDK result.
+Normal startup, other roles, in-place fragment controls, minimum-version
+Bubblewrap execution and final acceptance remain open.
 
 ### Current launch authority across workers
 
@@ -140,8 +193,9 @@ These checks use atomics and zero-time kernel polls, with no worker request to
 Session and no wait on authentication I/O. A clone cannot reactivate a launch.
 The wrapper handle is captured while it is the supervisor's unreaped child;
 the peer handle uses the existing checked wrapper-child relationship. This
-retains the existing `pidfd_open` platform requirement; it neither uses nor
-removes the live endpoint's separate `SO_PEERPIDFD` requirement. The expected
+retains the existing `pidfd_open` platform requirement. The authenticated lock
+path uses this custody instead of the socket's `SO_PEERPIDFD`; the legacy path
+and current desktop startup retain that requirement. The expected
 peer availability filter is unchanged. This is a handoff of launch custody,
 not a substitute for Factotum verification or role-view policy.
 

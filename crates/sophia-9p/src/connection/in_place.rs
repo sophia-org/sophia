@@ -174,7 +174,7 @@ impl<E: Export> Connection<E> {
         if kind != wire::kind::TWRITE {
             return Ok(false);
         }
-        self.admit(kind, tag)?;
+        self.admit(export, kind, tag)?;
         let field = |at: usize, n: usize| {
             header[at..at + n]
                 .iter()

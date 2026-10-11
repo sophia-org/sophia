@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 
 mod custody;
 pub use custody::{Authority, WorkerAuthority};
+pub mod files;
 pub mod role;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

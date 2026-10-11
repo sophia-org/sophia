@@ -1,6 +1,7 @@
 #![cfg(feature = "native-session")]
 //! Actual protected spawn, child 9P relay and Factotum verdict. Session's
-//! control-channel class and launch policy are supplied; no public role yet.
+//! control-channel class and launch policy are supplied. The lock transport
+//! case also exercises the shipped role worker with an independent wire peer.
 use sophia_9p::{
     ConnectionId, Limits,
     authentication::Attempt,
@@ -34,6 +35,12 @@ mod role_authentication;
 
 #[path = "support/lock_authentication.rs"]
 mod lock_authentication;
+
+#[path = "support/lock_authenticated_transport.rs"]
+mod lock_authenticated_transport;
+
+#[path = "support/authentication_transport_budget.rs"]
+mod authentication_transport_budget;
 
 struct Fixture {
     book: LaunchBook,

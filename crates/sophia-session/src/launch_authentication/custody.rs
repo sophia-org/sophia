@@ -18,15 +18,27 @@ pub struct WorkerAuthority {
 }
 
 impl WorkerAuthority {
+    pub(super) fn session(&self) -> u64 {
+        self.session
+    }
+    pub(super) fn audience(&self) -> u64 {
+        self.delegation.audience
+    }
+    pub(super) fn ingress(&self) -> Ingress {
+        self.ingress.clone()
+    }
+    pub(super) fn live(&self) -> Result<bool, Error> {
+        Ok(self.active.load(Ordering::Acquire)
+            && self.ingress.is_open()
+            && self.custody.is_live()?
+            && self.active.load(Ordering::Acquire)
+            && self.ingress.is_open())
+    }
     fn authorize(&self, verdict: Verdict) -> Result<Identity, Error> {
         if verdict.attempt.session != self.session
             || verdict.identity != self.delegation.identity
             || verdict.attempt.audience != self.delegation.audience
-            || !self.active.load(Ordering::Acquire)
-            || !self.ingress.is_open()
-            || !self.custody.is_live()?
-            || !self.active.load(Ordering::Acquire)
-            || !self.ingress.is_open()
+            || !self.live()?
         {
             return Err(Error::Stale);
         }

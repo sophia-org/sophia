@@ -3,6 +3,7 @@
 //! Libraries emit structured diagnostics through `tracing`; binaries decide
 //! when and how to install a subscriber.
 
+pub mod authenticated_files;
 #[cfg(target_os = "linux")]
 mod broker_transport;
 #[cfg(target_os = "linux")]
