@@ -2,7 +2,7 @@ use super::*;
 use std::collections::VecDeque;
 use std::io::Write;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize};
 
 #[derive(Clone)]
 pub struct InspectionPublisher {
@@ -17,6 +17,7 @@ pub enum PublishOutcome {
 }
 
 pub(super) struct Shared {
+    pub authenticated_connections: AtomicUsize,
     /// Only clone or swap an Arc while this lock is held. Never format, copy
     /// payload bytes, allocate qids, or destroy a retired view under it.
     pub view: Mutex<Arc<Publication>>,
@@ -58,6 +59,7 @@ impl Publication {
 impl Shared {
     pub fn new(wake: UnixStream) -> Self {
         Self {
+            authenticated_connections: AtomicUsize::new(0),
             view: Mutex::new(Arc::new(Publication {
                 generation: 0,
                 snapshot: None,

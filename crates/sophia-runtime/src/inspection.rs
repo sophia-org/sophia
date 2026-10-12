@@ -1,6 +1,7 @@
-//! Independently enabled host read-only inspection. The service owns admission,
+//! Read-only inspection with separate host and authenticated admission. The service owns
 //! copied safe records and observation loss, never WM command/ACK authority.
 
+mod authenticated;
 mod export;
 mod publication;
 mod worker;
@@ -8,6 +9,7 @@ mod worker;
 #[path = "../tests/support/inspection_owner.rs"]
 mod tests;
 
+pub use authenticated::{INSPECTION_IDLE_CHECK, InspectionConnection};
 pub use publication::{InspectionPublisher, PublishOutcome};
 pub use sophia_protocol::inspection::*;
 
@@ -49,13 +51,28 @@ impl From<InspectionRecordError> for InspectionError {
 }
 
 pub struct InspectionService {
-    directory: PathBuf,
-    socket: PathBuf,
+    host_endpoint: Option<(PathBuf, PathBuf)>,
     shared: Arc<publication::Shared>,
     thread: Option<JoinHandle<()>>,
+    _private_wake: Option<UnixStream>,
 }
 
 impl InspectionService {
+    /// Create the existing publication owner without any host listener or
+    /// HostDomain admission. Session may adopt authenticated observer streams.
+    pub fn private() -> io::Result<Self> {
+        let (tx, rx) = UnixStream::pair()?;
+        tx.set_nonblocking(true)?;
+        rx.set_nonblocking(true)?;
+        Ok(Self {
+            host_endpoint: None,
+            shared: Arc::new(publication::Shared::new(tx)),
+            thread: None,
+            // Keep the bounded wake channel alive. Private connections retry
+            // through their caller's normal, bounded worker cadence.
+            _private_wake: Some(rx),
+        })
+    }
     /// Fail closed before publishing an endpoint if host admission prerequisites
     /// are unavailable. The caller may leave inspection disabled and continue.
     pub fn bind(runtime_directory: &Path) -> io::Result<Self> {
@@ -94,10 +111,10 @@ impl InspectionService {
                 .name("sophia-inspection-v1".into())
                 .spawn(move || worker::run(listener, wake_rx, domain, worker_shared))?;
             Ok(Self {
-                directory: directory.clone(),
-                socket: socket.clone(),
+                host_endpoint: Some((directory.clone(), socket.clone())),
                 shared,
                 thread: Some(thread),
+                _private_wake: None,
             })
         })();
         if setup.is_err() {
@@ -107,16 +124,25 @@ impl InspectionService {
         setup
     }
 
-    pub fn socket_path(&self) -> &Path {
-        &self.socket
+    pub fn socket_path(&self) -> Option<&Path> {
+        self.host_endpoint
+            .as_ref()
+            .map(|(_, socket)| socket.as_path())
     }
     pub fn publisher(&self) -> InspectionPublisher {
         InspectionPublisher {
             shared: self.shared.clone(),
         }
     }
+    /// Capture when publishing an observer endpoint. A later fence must refuse
+    /// adoption through that endpoint rather than retarget it to new data.
+    pub fn generation(&self) -> Option<u64> {
+        let generation = self.shared.generation.load(Ordering::SeqCst);
+        self.shared.valid(generation).then_some(generation)
+    }
     pub fn is_running(&self) -> bool {
-        self.thread.as_ref().is_some_and(|t| !t.is_finished())
+        !self.shared.stopped.load(Ordering::SeqCst)
+            && self.thread.as_ref().is_none_or(|t| !t.is_finished())
     }
 
     /// Invalidate prior attachments synchronously, without taking the publication
@@ -139,7 +165,9 @@ impl Drop for InspectionService {
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
-        let _ = std::fs::remove_file(&self.socket);
-        let _ = std::fs::remove_dir(&self.directory);
+        if let Some((directory, socket)) = &self.host_endpoint {
+            let _ = std::fs::remove_file(socket);
+            let _ = std::fs::remove_dir(directory);
+        }
     }
 }

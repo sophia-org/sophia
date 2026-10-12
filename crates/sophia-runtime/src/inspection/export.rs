@@ -8,6 +8,13 @@ use sophia_9p::export::{
 };
 use sophia_9p::records::{Errno, OpenAccess, OpenFlags};
 
+mod authentication;
+
+enum Admission {
+    Host { domain: Arc<HostDomain>, peer: Peer },
+    Authenticated(Option<ConnectionId>),
+}
+
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub(super) enum Node {
     Root,
@@ -26,8 +33,7 @@ pub(super) enum Handle {
 
 pub(super) struct InspectionExport {
     shared: Arc<Shared>,
-    domain: Arc<HostDomain>,
-    peer: Peer,
+    admission: Admission,
     generation: u64,
     base_qid: u64,
     attached: Option<ConnectionId>,
@@ -44,14 +50,23 @@ impl InspectionExport {
         peer: Peer,
     ) -> Result<Self, InspectionError> {
         let generation = shared.generation.load(Ordering::SeqCst);
+        Self::with_admission(shared, generation, Admission::Host { domain, peer })
+    }
+    pub fn authenticated(shared: Arc<Shared>, generation: u64) -> Result<Self, InspectionError> {
+        Self::with_admission(shared, generation, Admission::Authenticated(None))
+    }
+    fn with_admission(
+        shared: Arc<Shared>,
+        generation: u64,
+        admission: Admission,
+    ) -> Result<Self, InspectionError> {
         if !shared.valid(generation) {
             return Err(InspectionError::Fenced);
         }
         let base_qid = shared.qids(5)?;
         Ok(Self {
             shared,
-            domain,
-            peer,
+            admission,
             generation,
             base_qid,
             attached: None,
@@ -59,12 +74,20 @@ impl InspectionExport {
             coherent: None,
         })
     }
+    pub fn bind_connection(&mut self, connection: ConnectionId) {
+        if let Admission::Authenticated(id @ None) = &mut self.admission {
+            *id = Some(connection);
+        }
+    }
     pub fn authorized(&self) -> bool {
         self.shared.valid(self.generation)
-            && self
-                .domain
-                .check(&self.peer, &[self.shared.excluded.load(Ordering::SeqCst)])
-                .is_ok()
+            && match &self.admission {
+                Admission::Host { domain, peer } => domain
+                    .check(peer, &[self.shared.excluded.load(Ordering::SeqCst)])
+                    .is_ok(),
+                // The wrapper owns authentication and current grant checks.
+                Admission::Authenticated(_) => true,
+            }
     }
     fn current(&self) -> Result<Arc<Snapshot>, Errno> {
         let store = self.shared.view().map_err(|_| Errno::EIO)?;
@@ -115,11 +138,14 @@ impl Export for InspectionExport {
     type Handle = Handle;
 
     fn attach(&mut self, context: &AttachContext<'_>) -> Result<Attachment<Node>, Errno> {
+        let Admission::Host { peer, .. } = &self.admission else {
+            return Err(Errno::EACCES);
+        };
         if self.attached.is_some()
             || !self.authorized()
             || !context
                 .peer
-                .is_some_and(|p| p.pid > 0 && p.pid as u32 == self.peer.pid)
+                .is_some_and(|p| p.pid > 0 && p.pid as u32 == peer.pid)
         {
             return Err(Errno::EACCES);
         }

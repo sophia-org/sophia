@@ -227,6 +227,53 @@ original closed evidence packages remain unchanged.
 
 ## Connections
 
+The sixth full-gate attempt at `b6aa4b253` stops in the SDK verifier's own
+synthetic snapshot fixture: its list omitted the newly required discovery
+contract. The corresponding Rust fixture also expected ten contracts rather
+than eleven. Signed `0ae24845d` updates those fixtures; the focused C verifier
+test and nine Rust verifier tests pass. This does not turn the sixth attempt
+into an overall passing gate.
+
+### Authenticated inspection owner
+
+The existing inspection publication owner now supports a private instance with
+no HostDomain listener. Its authenticated route requires a factory, pins the
+generation captured for the namespace endpoint, and uses the existing export
+and records. Four authenticated connections are bounded independently of the
+host listener. Failed adoption releases capacity. Root preparation precedes
+authentication commitment; wire reset drops root state without retargeting the
+service. Quiet polling checks admission and source liveness before queued
+output can progress. Session still has to own endpoint dispatch and scheduling.
+
+The generic Session join launches a protected SDK peer, drives the real
+Factotum conversation, authenticates and reauthenticates inspection, reads a
+snapshot, then revokes the launch while an event read waits. The connection
+closes, the child records refusal, and the admission count returns to zero.
+Launch policy and safe snapshot data are supplied. The fixture uses existing
+protected generic shell custody with an explicitly assigned inspection
+audience; it does not add inspection authority to production shell launches.
+Automatic recipe selection and separate per-endpoint grant revocation remain
+unimplemented integration work.
+
+The closed `t318-observer-01` package records all modified and untracked
+candidate files dynamically before and after validation. Ten runtime owner
+tests, nine host-service tests (plus its invoked child), three CLI tests,
+four Session inspection tests and the protected SDK join pass. Runtime
+all-target Clippy, the Session integration-target Clippy and the source-layout
+gate pass. Formatting and `git diff --check` also pass.
+
+The separate `t318-observer-generation-control-01` changes authenticated
+adoption to read the current source generation instead of using the endpoint's
+captured generation. It fails with exit 101 at `an old namespace endpoint
+cannot adopt replacement inspection data`. All enumerated candidate hashes
+are restored. Its patch includes the then-uncommitted candidate delta against
+HEAD as well as the mutation; the recorded pre-mutation hashes identify the
+candidate. The later positive package includes an additional peer-UID assertion
+in the Session join. Neither package contains copied build output.
+Their self-excluding SHA256SUMS identities are respectively
+`8423a3776230781c12efa752badc1fa2e28a67f6eea42c3cbf7fab7025a1f4b8`
+and `97b4169f142b096bee70233a957e7bcdf4a5116181ecabeb21a82a82d27cc3ba`.
+
 Sophia now pins the published C and Rust candidates above. Both snapshot
 verifiers also compare `namespace-discovery.md` against the normative source,
 so a later contract change cannot silently leave either SDK copy behind.

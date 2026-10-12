@@ -56,7 +56,7 @@ impl LiveWmSession {
             tracing::warn!(target: "sophia_inspection", status = "disabled", %error);
             return;
         }
-        config.inspection_socket = Some(service.socket_path().to_path_buf());
+        config.inspection_socket = service.socket_path().map(std::path::Path::to_path_buf);
         public.inspection = Some(LivePolicyInspection {
             publisher: service.publisher(),
             service,

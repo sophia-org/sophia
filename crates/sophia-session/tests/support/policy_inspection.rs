@@ -3,7 +3,13 @@ use sophia_9p_client::client::{Client, ClientLimits, File};
 use sophia_protocol::inspection::*;
 
 fn attach(public: &LivePublicPolicyState) -> (Client, File) {
-    let path = public.inspection.as_ref().unwrap().service.socket_path();
+    let path = public
+        .inspection
+        .as_ref()
+        .unwrap()
+        .service
+        .socket_path()
+        .expect("host inspection endpoint");
     let mut client = Client::connect(path, ClientLimits::default()).unwrap();
     let root = client.attach(b"", b"").unwrap();
     (client, root)

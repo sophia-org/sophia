@@ -11,6 +11,9 @@ use std::time::Duration;
 #[path = "inspection_wire.rs"]
 mod wire;
 
+#[path = "inspection_authenticated.rs"]
+mod authenticated;
+
 fn value() -> InspectionSnapshot {
     InspectionSnapshot {
         session_generation: 2,

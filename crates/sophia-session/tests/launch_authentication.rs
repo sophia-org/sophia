@@ -45,6 +45,9 @@ mod authentication_transport_budget;
 #[path = "support/output_authenticated_transport.rs"]
 mod output_authenticated_transport;
 
+#[path = "support/inspection_authenticated_transport.rs"]
+mod inspection_authenticated_transport;
+
 struct Fixture {
     namespaces: std::sync::Arc<std::sync::Mutex<sophia_runtime::NamespaceRegistry>>,
     book: LaunchBook,

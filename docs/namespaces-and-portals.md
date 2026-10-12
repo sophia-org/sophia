@@ -245,6 +245,37 @@ The t318 authorized developer launcher selects an approved recipe for an
 independent executable; a requested role cannot grant itself. Directly launched
 local client provisioning remains t324, and no remote authentication is implied.
 
+The inspection implementation shares its existing publication owner between
+explicit HostDomain inspection and authenticated observer connections. A private
+owner creates no host listener. Its observer route requires a launch-authentication
+factory and the service generation captured when the namespace endpoint was
+published; it cannot substitute the owner's current generation after a fence.
+
+```text
+Session-approved launch + captured namespace endpoint generation
+    |                         |
+    | launch channel          | accepted observer stream
+    v                         v
+Factotum verdict ------> authenticated 9P attach
+                              |
+                              v
+                    existing inspection export
+                    api / snapshot / events
+                              |
+                    copied safe publication data
+
+launch/namespace revoke --> admission checks --> close retained connection
+source generation fence --------------------> refuse old endpoint and fids
+```
+
+This runtime route and its real launch-authentication join are implemented;
+automatic recipe selection, launch wiring and per-endpoint grant ownership
+remain t318 integration work. The join supplies launch policy explicitly and
+does not grant inspection to ordinary shell launches. Connection owners must
+service readiness and the 20 ms quiet check bound; revocation must not depend
+on the reader sending another request. These are liveness bounds, not latency
+claims.
+
 ### Revisions, discovery and retained authority
 
 Recipe revision identifies a naming/policy snapshot. Service identity and

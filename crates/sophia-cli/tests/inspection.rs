@@ -45,7 +45,11 @@ impl Fixture {
         let mut command = Command::new(env!("CARGO_BIN_EXE_sophia"));
         command
             .args(["inspect", "wm", "--socket"])
-            .arg(self.service.socket_path())
+            .arg(
+                self.service
+                    .socket_path()
+                    .expect("host inspection endpoint"),
+            )
             .args(args);
         command.env_remove(sophia_runtime::SOPHIA_WM_INSPECT_SOCKET_ENV);
         command

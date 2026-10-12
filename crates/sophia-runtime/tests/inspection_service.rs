@@ -73,7 +73,12 @@ fn pin(stream: &mut UnixStream, fid: u32) -> InspectionSnapshotRecord {
 fn admitted_observer_lists_only_fixed_read_only_root_and_pins_snapshot() {
     let fixture = Fixture::new();
     fixture.publish(snapshot(), None);
-    let mut stream = connect(fixture.service.socket_path());
+    let mut stream = connect(
+        fixture
+            .service
+            .socket_path()
+            .expect("host inspection endpoint"),
+    );
     let mut clone = 0_u32.to_le_bytes().to_vec();
     clone.extend_from_slice(&14_u32.to_le_bytes());
     clone.extend_from_slice(&0_u16.to_le_bytes());
@@ -131,7 +136,12 @@ fn admitted_observer_lists_only_fixed_read_only_root_and_pins_snapshot() {
 #[test]
 fn status_before_first_snapshot_is_unavailable_then_copies_safe_scalars() {
     let fixture = Fixture::new();
-    let mut stream = connect(fixture.service.socket_path());
+    let mut stream = connect(
+        fixture
+            .service
+            .socket_path()
+            .expect("host inspection endpoint"),
+    );
     opened(&mut stream, 1, b"status");
     let before = decode_inspection_status(body(&call(&mut stream, &read(4, 1, 0, 4096)))).unwrap();
     assert_eq!(
@@ -168,7 +178,12 @@ fn status_before_first_snapshot_is_unavailable_then_copies_safe_scalars() {
 fn loss_rejects_existing_watch_then_unchanged_republish_requires_fresh_pin() {
     let fixture = Fixture::new();
     fixture.publish(snapshot(), None);
-    let mut stream = connect(fixture.service.socket_path());
+    let mut stream = connect(
+        fixture
+            .service
+            .socket_path()
+            .expect("host inspection endpoint"),
+    );
     let old = pin(&mut stream, 1);
     opened(&mut stream, 2, b"events");
     stream
@@ -228,7 +243,12 @@ fn loss_rejects_existing_watch_then_unchanged_republish_requires_fresh_pin() {
 fn quiet_slow_reader_does_not_hold_publication_credit_and_gets_explicit_gap() {
     let fixture = Fixture::new();
     fixture.publish(snapshot(), None);
-    let mut stream = connect(fixture.service.socket_path());
+    let mut stream = connect(
+        fixture
+            .service
+            .socket_path()
+            .expect("host inspection endpoint"),
+    );
     let first = pin(&mut stream, 1);
     opened(&mut stream, 2, b"events");
     let deadline = Instant::now() + Duration::from_secs(3);
@@ -273,7 +293,12 @@ fn quiet_slow_reader_does_not_hold_publication_credit_and_gets_explicit_gap() {
 fn fence_closes_pending_old_authority_and_qids_continue_in_fresh_epoch() {
     let mut fixture = Fixture::new();
     fixture.publish(snapshot(), None);
-    let mut stream = connect(fixture.service.socket_path());
+    let mut stream = connect(
+        fixture
+            .service
+            .socket_path()
+            .expect("host inspection endpoint"),
+    );
     let qid = opened(&mut stream, 1, b"snapshot");
     let first = decode_inspection_snapshot(body(&call(&mut stream, &read(4, 1, 0, 4096)))).unwrap();
     opened(&mut stream, 2, b"events");
@@ -286,14 +311,25 @@ fn fence_closes_pending_old_authority_and_qids_continue_in_fresh_epoch() {
     let mut value = snapshot();
     value.wm_epoch = 10;
     fixture.publish(value, None);
-    let mut fresh = connect(fixture.service.socket_path());
+    let mut fresh = connect(
+        fixture
+            .service
+            .socket_path()
+            .expect("host inspection endpoint"),
+    );
     let new_qid = opened(&mut fresh, 1, b"snapshot");
     assert_ne!(qid, new_qid);
     let new = decode_inspection_snapshot(body(&call(&mut fresh, &read(4, 1, 0, 4096)))).unwrap();
     assert!(new.generation > first.generation);
     assert!(new.sequence > first.sequence);
     fixture.service.fence(11, Some(std::process::id())).unwrap();
-    let mut denied = UnixStream::connect(fixture.service.socket_path()).unwrap();
+    let mut denied = UnixStream::connect(
+        fixture
+            .service
+            .socket_path()
+            .expect("host inspection endpoint"),
+    )
+    .unwrap();
     denied
         .set_read_timeout(Some(Duration::from_secs(3)))
         .unwrap();
@@ -321,7 +357,10 @@ fn service_drop_closes_observer_and_removes_only_its_endpoint() {
     let fixture = Fixture::new();
     let mut service = InspectionService::bind(&fixture.root).unwrap();
     service.fence(9, None).unwrap();
-    let path = service.socket_path().to_path_buf();
+    let path = service
+        .socket_path()
+        .expect("host inspection endpoint")
+        .to_path_buf();
     let mut stream = connect(&path);
     let publisher = service.publisher();
     drop(service);
@@ -329,7 +368,13 @@ fn service_drop_closes_observer_and_removes_only_its_endpoint() {
     assert!(matches!(stream.read(&mut byte), Ok(0) | Err(_)));
     assert!(!path.exists());
     assert!(fixture.root.exists());
-    assert!(fixture.service.socket_path().exists());
+    assert!(
+        fixture
+            .service
+            .socket_path()
+            .expect("host inspection endpoint")
+            .exists()
+    );
     assert!(matches!(
         publisher.publish(snapshot(), None),
         Err(InspectionError::Stopped)
@@ -341,9 +386,22 @@ fn four_peer_sixteen_fid_and_eight_pending_limits_are_real_socket_bounds() {
     let fixture = Fixture::new();
     fixture.publish(snapshot(), None);
     let mut peers = (0..4)
-        .map(|_| connect(fixture.service.socket_path()))
+        .map(|_| {
+            connect(
+                fixture
+                    .service
+                    .socket_path()
+                    .expect("host inspection endpoint"),
+            )
+        })
         .collect::<Vec<_>>();
-    let mut extra = UnixStream::connect(fixture.service.socket_path()).unwrap();
+    let mut extra = UnixStream::connect(
+        fixture
+            .service
+            .socket_path()
+            .expect("host inspection endpoint"),
+    )
+    .unwrap();
     extra
         .set_read_timeout(Some(Duration::from_secs(3)))
         .unwrap();
@@ -398,7 +456,10 @@ fn same_uid_in_another_namespace_cannot_use_discovered_observer_socket() {
         ])
         .env(
             "SOPHIA_INSPECTION_TEST_SOCKET",
-            fixture.service.socket_path(),
+            fixture
+                .service
+                .socket_path()
+                .expect("host inspection endpoint"),
         )
         .status()
         .unwrap();
