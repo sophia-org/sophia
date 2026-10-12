@@ -2,7 +2,7 @@
 id: w1gyz791
 date: 2026-10-12
 kind: investigation
-status: investigating
+status: closed
 tags: [investigation]
 ---
 # Namespace views retain service identity across publication and revocation
@@ -21,6 +21,24 @@ must select policy automatically; users should not configure authentication,
 socket paths or namespace commands to launch installed applications.
 
 ## Evidence
+
+### Final exit reconciliation
+
+The [completion record](../milestones/svvl4q6o-namespace-recipes-preserve-authority-across-view-and-output-replacement.md)
+maps every t318 acceptance row to its owner, observation and control. The final
+output-number gap below is resolved by a supplied output-inventory test through
+the production common portal lease and recipient export. Removing the retained
+source-generation comparison makes the old handle readable instead of ESTALE;
+restoring it passes. Output facts, admission and bounded records are supplied;
+renderer capture and physical return are not claimed.
+
+Signed `e47bdaead60fd665ab910a6b4713576f250b5af8` matches every captured file in
+`t318-gate-12`, which passes the complete isolated repository gate with 7,913
+passed, zero failed and 118 ignored entries across 587 summaries. Production,
+Cargo and SDK bytes remain identical to the installed `99860d58f` candidate;
+only the additional regression test and documentation differ. The completion
+record retains package identities and the attended launch observation. Earlier
+pending statements below describe their original slice, not remaining work.
 
 ### Installed acceptance and remaining output-identity evidence
 

@@ -337,6 +337,12 @@ Depends on t275, t142 and t317.
 
 ### Recipe implementation acceptance
 
+The [t318 completion record](../milestones/svvl4q6o-namespace-recipes-preserve-authority-across-view-and-output-replacement.md)
+reconciles the exit below with the signed implementation, independent SDK
+joins, discriminating controls, final repository gate and installed launch
+observation. Supplied output records qualify the common generation fence;
+renderer capture and physical output return remain separate gates.
+
 The [implementation investigation](../investigations/w1gyz791-namespace-views-retain-service-identity-across-publication-and-revocation.md)
 records the compiler, discovery and publication foundation separately from the
 remaining authenticated Session and application-launch integration. The approved
