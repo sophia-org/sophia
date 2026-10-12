@@ -108,6 +108,14 @@ name = "sophia-desktop-ids"
 version = "0.3.0"
 
 [[package]]
+name = "sophia-launch-client"
+version = "0.3.0"
+dependencies = [
+ "rustix",
+ "sophia-9p-client",
+]
+
+[[package]]
 name = "sophia-lock-protocol"
 version = "0.3.0"
 dependencies = [

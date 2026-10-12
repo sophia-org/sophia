@@ -8,12 +8,13 @@ Sophia checkout to build.
 | --- | --- |
 | `sophia-9p-records` | 9P2000.L value records (tags, fids, qids, wire errno, requests, replies), shared with Sophia's server core. |
 | `sophia-9p-client` | Bounded 9P2000.L clients: a blocking read-only `client` and the nonblocking, pipelined `pipeline` the role clients drive. |
+| `sophia-launch-client` | Sophia's local launch-channel authentication: correlated afid exchange, bounded progress and an admitted role root. |
 | `sophia-desktop-ids` | Identifiers every role contract shares. |
 | `sophia-shell-protocol` | The shell's typed records and the `sophia_shell_fs_v1` file contract codec. |
 | `sophia-shell-client` | The shell client over the file contract. |
 | `sophia-lock-protocol` | The lock provider's `sophia_lock_fs_v1` file contract codec (experimental; see Contracts). |
 
-The shell role is the only one with a client here. The lock provider role has
+The shell role is the only one with a full role client here. The lock provider role has
 an experimental codec and no client. WM, output and admin modules arrive as
 their file contracts are implemented; nothing here claims a contract Sophia
 does not serve.
@@ -51,10 +52,54 @@ The dialect is plain 9P2000.L; wire error numbers are the Linux values
 ## Release 0.3.0
 
 The t317 development branch adds `Pipeline::auth` and `attach_with_afid`,
-plus authentication qids and records. These are wire primitives, not a launch
-authentication client or a claim that deployed roles require authentication.
+plus authentication qids and records. `sophia-launch-client` builds Sophia's
+local launch conversation on those generic wire primitives. This is not a
+claim that deployed roles require authentication.
 New public enum variants require downstream exhaustive matches to be updated.
 The profile copy describes Sophia's candidate opt-in export seam.
+
+## Local launch authentication
+
+An authorized supervisor supplies the private generation channel; the
+application supplies its already-connected role stream. Adopt those descriptors
+in the platform bootstrap and transfer exclusive ownership of both Unix streams
+to `sophia_launch_client::Client::over`. Descriptor adoption from an environment
+variable is outside this API; a number is not an authority claim.
+
+```text
+role stream                     private generation channel
+    |                                      |
+    +-- Tauth -> afid                       +-- attach/open rpc
+    +-- read own challenge ----------------+-- relay exact challenge
+    |                                      +-- read relay result
+    +-- read afid status
+    +-- attach WITH afid -> role root
+    +-- clunk afid                          +-- clunk rpc/root
+    |
+    +-- return role pipeline + root, retain generation pipeline
+```
+
+`over` negotiates both 9P versions with bounded blocking I/O. That time and the
+subsequent nonblocking exchange share one five-second deadline; `with_timeout`
+may shorten it. Drive `poll`, then `wait_for_io` when idle, until `ready`.
+`into_authenticated` returns both pipelines and the admitted root. Use that
+root directly; do not issue a plain attach. Claims are bounded to 255 bytes and
+must match Session policy; they do not choose a principal or namespace.
+
+Only `Tauth`'s `EAGAIN` is retried, without renewing the deadline. Malformed
+records, refusals and cancellation never fall back to anonymous admission.
+Dropping an unfinished conversation shuts both streams. Keep the returned
+generation pipeline for the launch lifetime. `Authenticated::reauthenticate`
+requires no outstanding requests, resets both wire conversations and verifies
+the same claims again. Old role fids are invalidated; Session retains its
+immutable transport identity. The generic pipeline does not interpret any of
+this policy.
+
+The crate's tests use independently scripted peers. Real protected-process
+interoperability belongs in Sophia and must be recorded separately; scripted
+success is not a Factotum verification claim. Linux x86_64 is the qualified
+platform; no remote authentication or prevention of intentional delegation is
+claimed.
 
 Adds `sophia-lock-protocol`, the lock provider's experimental file contract
 codec (no client), and `Pipeline::write_secret` in `sophia-9p-client`, which zeroes

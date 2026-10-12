@@ -1048,3 +1048,73 @@ afid number and the upload directory spelling before qualification. No broader
 repository gate or new minimum-Bubblewrap run is claimed for this test-only
 delta. Other roles, the independent Rust exchange, immutable admission-context
 derivation and final t317 reconciliation remain outstanding.
+
+## Independent Rust launch client
+
+Signed Rust SDK `c8e559106bc3eda1ff8abeadbd3c8d43adde2e64` adds
+`sophia-launch-client`, a separate crate around the generic 9P pipeline. It
+accepts exclusive role and provisioned-generation Unix streams, marks the
+generation descriptor CLOEXEC, and relays only the challenge read from its own
+afid. Both version handshakes and the subsequent exchange share one bounded
+deadline. Only Tauth EAGAIN is retried, without renewal. It validates whole
+challenge/status records, uses authenticated attach, clunks temporary fids,
+and returns the admitted root plus both pipelines. Reauthentication resets
+wire state and verifies the same claims through the retained generation
+channel; it does not reuse a verdict. Failure/drop closes pending authority.
+No unsafe Rust or Sophia-specific behavior was added to the generic pipeline.
+
+Eight independent scripted-peer tests cover this helper. The SDK workspace
+passes 351 tests, zero failed or ignored, all-target Clippy with warnings denied
+and formatting. Three controls independently omit the afid at attach, corrupt
+the relayed nonce, and omit CLOEXEC; each fails the corresponding named
+wire/descriptor assertion. Restored source passes all eight tests again. The
+SDK's provenance records the closed package identities; its positive
+`t317-rust-launch-sdk-01` SHA256SUMS hash is
+`cbee6ce3adab7d99257ea3b2ac72699ba76efac3ed4437cb85e5cd7bca418160`.
+
+Sophia's candidate based on `e5a083be1` pins that exact signed SDK through the
+maintained vendor command. A protected Rust child then uses the SDK against
+the shipped `LockFileService`, Session authentication factory, live launch
+book/worker custody and actual Factotum export over 9P. It authenticates,
+reauthenticates after Tversion, checks temporary-fid cleanup, reads the lock
+API, negotiates using the SDK's lock codec, acknowledges events, and retains
+an events read. The parent observes Connected, revokes the exact launch, and
+requires the child's ESTALE/closed-stream observation plus one Disconnected.
+
+The descriptor bootstrap is deliberately separate: a small test-only C exec
+shim moves the supervisor's inherited stream to stdin and execs the Rust test
+child in the same process. It performs no wire exchange and knows no challenge,
+verdict or role root. Rust marks stdin CLOEXEC and safely duplicates it into an
+owned Unix stream. This avoids adding a production test API or unsafe raw-fd
+adoption merely for the fixture. It does not qualify an application-specific
+descriptor bootstrap. Session policy, its private Factotum-channel admission
+and an empty locked scene are supplied; the role authentication, negotiation
+and revocation are real owner operations. No PAM attempt or display is used.
+
+The device-hidden join suite passes 19 tests; its one ignored entry is the
+parent-invoked Rust child, whose exact filtered execution passes in the same
+log. Both SDK pin suites (ten tests), the pinned Rust workspace's tests, focused
+Session Clippy with warnings denied and formatting pass. The actual-owner
+control replaces the Rust helper's authenticated attach with plain attach in
+an isolated temporary mutation. After real successful verification, Session
+refuses that attach with EACCES. The first child failure is
+`Rust SDK must authenticate through the protected launch channel` with
+`Remote(Errno(13))`; the parent then fails its child-success assertion. The
+vendored bytes are restored exactly to the signed upstream blob, every
+captured candidate file is unchanged, and the protected positive rerun passes.
+
+| Package | SHA256SUMS SHA-256 |
+| --- | --- |
+| `t317-rust-lock-01` | `e216307d3ebc2a0e9271f0174449256404eee9bf429db47b188052781c732bf5` |
+| `t317-rust-lock-afid-control-01` | `ba959f49b38a371508de8fb70cc2120492a49045623e9d2d5b9089f8606af114` |
+| `t317-rust-lock-restored-01` | `ec5591075237830e5fe4e7f91bddff35ee2ff6f2f1983839a55135f813df0548` |
+
+The main Cargo.lock delta adds only the two SDK path packages and their Session
+test dependencies; no registry dependency is updated. An exploratory broad
+lockfile regeneration was reverted and its build stopped. Qualification uses
+the final retained dependency versions. The Rust helper's first compile also
+corrected rustix's descriptor-operation module, and the joined fixture was
+aligned to the existing lock codec's names/signatures before qualification.
+This slice makes no new whole-repository or minimum-version execution claim.
+Other required roles, immutable admission-context derivation, deployed-client
+rollout and final contract/threat-model reconciliation still prevent t317 closure.

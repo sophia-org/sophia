@@ -1474,11 +1474,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "sophia-launch-client"
+version = "0.3.0"
+dependencies = [
+ "rustix",
+ "sophia-9p-client",
+]
+
+[[package]]
 name = "sophia-linux-peer"
 version = "0.1.0"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "sophia-lock-protocol"
+version = "0.3.0"
 
 [[package]]
 name = "sophia-policy-protocol-gen"
@@ -1576,6 +1588,8 @@ dependencies = [
  "sophia-factotum",
  "sophia-factotum-pam",
  "sophia-input-authority",
+ "sophia-launch-client",
+ "sophia-lock-protocol",
  "sophia-portal",
  "sophia-protocol",
  "sophia-renderer-live",

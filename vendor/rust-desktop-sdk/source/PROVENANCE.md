@@ -1,5 +1,36 @@
 # Provenance
 
+## t317 reusable local launch client
+
+`sophia-launch-client` is implemented here against the pinned
+`spec/factotum-launch-authentication.md` contract. It adds no Sophia-specific
+behavior to the generic 9P pipeline. It owns the role afid and private relay
+conversation, a total deadline, exact challenge/status validation, temporary
+fid cleanup and reauthentication after Tversion. Descriptor-number adoption
+belongs to the application's platform bootstrap; this crate accepts owned Unix
+streams, marks the generation channel CLOEXEC and introduces no unsafe code.
+
+On Linux x86_64, the device-hidden SDK workspace run passes 351 tests, zero
+failed or ignored, all-target Clippy with warnings denied and formatting.
+Eight new independent scripted-peer tests cover the launch client. Controls
+replace authenticated attach with plain attach, alter the relayed nonce, and
+omit CLOEXEC; each fails its named wire/descriptor assertion, and all source
+bytes are restored before an eight-test positive rerun. These are SDK controls,
+not a production Session/Factotum interoperability claim.
+
+The closed development-package SHA256SUMS identities are:
+
+| Package | Manifest SHA-256 |
+| --- | --- |
+| `t317-rust-launch-sdk-01` | `cbee6ce3adab7d99257ea3b2ac72699ba76efac3ed4437cb85e5cd7bca418160` |
+| `t317-rust-launch-afid-control-01` | `bff08b1aa30f06acd3cc3dd87e398521b6cec1e7feffc64f723a1582c7b3d641` |
+| `t317-rust-launch-nonce-control-01` | `97109739994b370bdf9ddc96a824db8e6faf0524bc4c1288679cffbb10f7e313` |
+| `t317-rust-launch-cloexec-control-01` | `406c164232d0f15a78a3cc2ea7d28ce7f884bdf23a6fdb24cd6951377a997be2` |
+| `t317-rust-launch-restored-01` | `7c144f76e96467225168e0a1a1b65043a77681ff697fb570829014e8e13417cc` |
+
+Existing contract copies are unchanged. Sophia must pin this signed SDK source
+and run its independent protected-client join before claiming that integration.
+
 Extracted from the Sophia repository (`sophia-org/sophia`), branch
 `sdk/rust-desktop-sdk` at `e47c37472` (base: master `987cfd393`, the t252
 merge). Later changes are made here first; Sophia vendors a pinned snapshot.

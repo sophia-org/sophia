@@ -8,12 +8,25 @@ use std::os::unix::fs::DirBuilderExt;
 #[path = "lock_upload_revocation.rs"]
 mod upload_revocation;
 
+#[path = "lock_rust_peer.rs"]
+mod rust_peer;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PeerKind {
+    Raw,
+    CSdk,
+    RustSdk,
+}
+
 struct Peer(PathBuf);
 impl Peer {
     fn build(sdk: bool) -> Self {
+        Self::build_kind(if sdk { PeerKind::CSdk } else { PeerKind::Raw })
+    }
+    fn build_kind(kind: PeerKind) -> Self {
         static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
-            "lock-authentication-peer-{sdk}-{}-{}",
+            "lock-authentication-peer-{kind:?}-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
@@ -22,13 +35,18 @@ impl Peer {
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
             .args(["-std=c11", "-Wall", "-Wextra", "-Werror", "-O2"])
-            .arg(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/tests/support/lock_authentication_peer.c"
-            ))
+            .arg(
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("tests/support")
+                    .join(if kind == PeerKind::RustSdk {
+                        "lock_rust_bootstrap.c"
+                    } else {
+                        "lock_authentication_peer.c"
+                    }),
+            )
             .arg("-o")
             .arg(&path);
-        if sdk {
+        if kind == PeerKind::CSdk {
             let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("../../vendor/c-desktop-sdk/source/src");
             let mut units: Vec<_> = ["nine_p", "launch_auth", "lock_files"]
@@ -70,10 +88,19 @@ fn c_sdk_authenticates_and_reauthenticates_the_protected_lock_transport() {
     run(true);
 }
 
+#[test]
+fn rust_sdk_authenticates_and_reauthenticates_the_protected_lock_transport() {
+    run_kind(PeerKind::RustSdk);
+}
+
 fn run(sdk: bool) {
-    let peer = Peer::build(sdk);
+    run_kind(if sdk { PeerKind::CSdk } else { PeerKind::Raw });
+}
+
+fn run_kind(kind: PeerKind) {
+    let peer = Peer::build_kind(kind);
     let root = Directory(
-        std::env::temp_dir().join(format!("t317-lock-wire-{sdk}-{}", std::process::id())),
+        std::env::temp_dir().join(format!("t317-lock-wire-{kind:?}-{}", std::process::id())),
     );
     std::fs::DirBuilder::new()
         .mode(0o700)
@@ -135,18 +162,21 @@ fn run(sdk: bool) {
     while f.book.phase(id) != Some(Phase::Ready) {
         f.tick(end);
     }
-    let domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::LockProvider])
+    let mut domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::LockProvider])
         .unwrap()
         .path(ProtectionPath::read_only(socket.parent().unwrap()))
         .unwrap()
         .path(ProtectionPath::read_write(&reports))
         .unwrap();
+    let mut launch = ProcessLaunchSpec::new(&peer.0);
+    if kind == PeerKind::RustSdk {
+        let executable = std::env::current_exe().unwrap();
+        domain = domain.path(ProtectionPath::read_only(&executable)).unwrap();
+        launch = launch.arg(&executable);
+    }
     let mut supervisor = ProcessSupervisor::new(
         SupervisedProcessKind::LockProvider,
-        ProcessLaunchSpec::new(&peer.0)
-            .arg(&socket)
-            .arg(&report)
-            .protection_domain(domain),
+        launch.arg(&socket).arg(&report).protection_domain(domain),
     );
     supervisor
         .start_with_launch_channel(f.book.take_channel(id, Instant::now()).unwrap())

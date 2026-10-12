@@ -16,8 +16,9 @@
   9P2000.L carries (`EAGAIN` = 11, `ESTALE` = 116, ...). They are never
   converted to or from the host's errno; host failures surface as
   `std::io::ErrorKind`.
-- OS calls go through `rustix` (`event`, `net`) and `std::os::unix`, and only
-  in `sophia-9p-client`'s connect and poll paths.
+- OS calls go through `rustix` and `std::os::unix`. The generic client owns
+  connect/poll; `sophia-launch-client` sets CLOEXEC on its adopted generation
+  channel and shuts down its exclusive streams on authentication failure.
 
 ## Known gaps
 
@@ -26,6 +27,6 @@
 - The nonblocking connect relies on `SOCK_NONBLOCK | SOCK_CLOEXEC` at socket
   creation and on Linux's `EAGAIN` for a full listen queue; BSD behaviour
   (`ECONNREFUSED` for a full queue) is untested.
-- `sophia-9p-client` has no tests of its own yet; its behaviour is tested in
-  Sophia against the real server core.
+- Generic and launch clients have independent scripted-wire tests. Sophia
+  separately owns interoperability against its actual core and authority owners.
 - No BSD build or test has run.

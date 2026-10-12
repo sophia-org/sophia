@@ -1,14 +1,14 @@
-tree d0b31d3ca108d6ef8153eb36ecb497c42d6ada15
-parent f7803dc1e5adfff1b05991c0a7addcb17ef42d4e
-author Mason Green <mason@greenm01.net> 1791765937 -0400
-committer Mason Green <mason@greenm01.net> 1791765937 -0400
+tree 642bb1143f05d060b992eb1a742c7007fbee4433
+parent 8c0140bbab85d66005469e405e214bbc4b674dd2
+author Mason Green <mason@greenm01.net> 1791767263 -0400
+committer Mason Green <mason@greenm01.net> 1791767263 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCaswtsRsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLUTgD/c7f9NmpjFWOmHFcGIzYS
- 7K0DdYM2SH2RSPsgIPttP5kA/2gmjtKIk05jkLibHrUsRPcAo6uULe4fdEtSEk8/
- NhoM
- =hU6U
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCaswy3xsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJroAD/RF2TfSsRA6AkXSkZiMKo
+ SZLOKRIiJFGpNaUvud1Mjb8BAI3XrMx2YHxJXa+uuBkLzy18BwFAKZbvLGqFX8cg
+ N/YA
+ =mS44
  -----END PGP SIGNATURE-----
 
-Record the qualified minimum-version launch contract
+Add bounded local launch authentication client

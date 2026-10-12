@@ -258,9 +258,11 @@ kernel exit checks. The [normal lock-provider join](../investigations/etyvymxi-a
 uses it through actual afid dispatch, protected spawn and replacement after
 Factotum loss. Later evidence qualifies the minimum Bubblewrap version and
 [revocation between upload fragments](../investigations/etyvymxi-authenticated-attach-transport-state-and-factotum-handoff.md#revocation-between-upload-fragments).
-Other required role/client joins, immutable admission-context derivation and
-final contract and threat-model reconciliation remain open. These checkpoints
-are not a live installation or a reduced exit.
+The [independent Rust client join](../investigations/etyvymxi-authenticated-attach-transport-state-and-factotum-handoff.md#independent-rust-launch-client)
+also covers protected authentication and reauthentication through the shipped
+lock service. Other required roles, immutable admission-context derivation,
+deployed-client rollout and final contract/threat-model reconciliation remain
+open. These checkpoints are not a live installation or a reduced exit.
 
 Implement the approved [t133 local authentication handoff](esnqxpqw-pidfd-and-namespace-admission-optimizations.md#local-authentication-design-and-t317-handoff-2026-10-10),
 including Session's launch-channel relay, Factotum's correlated verdict,
