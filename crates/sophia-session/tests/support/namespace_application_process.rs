@@ -194,7 +194,9 @@ fn namespace_provenance_is_captured_before_exec_and_before_activation() {
             policy.profile = NamespaceRecipeProfile::SharedX;
             policy.source = Some("shared".into());
             policy.developer_launch = false;
-            request.recipe = LoadedNamespaceRecipe::load(&policy, &f.root).unwrap();
+            request.recipe = LoadedNamespaceRecipe::load(&policy, &f.root)
+                .unwrap()
+                .into();
             let mut endpoint = request.approved.remove("inspection").unwrap();
             endpoint.service.interface = "portal-client".into();
             request.approved.insert("portal".into(), endpoint);

@@ -324,6 +324,34 @@ fallback. Both paths use the same Factotum registration, endpoint grant and
 retirement owners. The recipe profile must match its live namespace profile.
 Connecting this scheduler to ordinary application launch remains pending.
 
+`ApplicationRecipeSet` loads immutable policy and naming inputs on the startup
+worker. Its exact-identity selection supplies a shared snapshot to each launch;
+an unauthorized metadata request is an error, never a legacy-launch fallback.
+`RecipeLaunchTarget` binds that selection to Session's namespace context,
+principal, captured X group, portal recipient and inspection generation. It
+checks participation against the context before creating launch custody.
+Shared X retains explicit host policy, confined X reuses t142's group/cookie
+validation and sandbox grants, and observer has no X or host-admin binding.
+
+```text
+trusted recipe set + verified application identity/command
+                          |
+                  exact policy selection
+                          |
+Session X group / portal recipient / inspection generation
+                          |
+                 resolved launch + role owners
+                          |
+            namespace scheduler and managed process
+```
+
+Before spawning, the preparation worker rechecks the conventional X group's
+one-entry layout, cookie and captured socket inode. Replacement refuses rather
+than rebinding the published alias. The existing t142 pathname-validation race
+limit still applies between that check and Bubblewrap's bind; this is not a new
+claim of atomic filesystem custody. The resolver is implemented and joined to
+the scheduler; wiring all application entry points remains pending.
+
 Inspection dispatch now retains an acceptor for the exact published service
 generation. Its worker serves the client's inspection listeners through the
 existing authenticated inspection export and shares that export's connection

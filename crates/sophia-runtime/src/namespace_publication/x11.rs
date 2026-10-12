@@ -46,6 +46,23 @@ impl CapturedX11Socket {
         &self.service
     }
 
+    /// Share the captured inode across launches without resolving its old name.
+    pub fn try_clone(&self) -> io::Result<Self> {
+        Ok(Self {
+            service: self.service.clone(),
+            file: self.file.try_clone()?,
+        })
+    }
+
+    /// Check a conventional X path before launch without replacing this
+    /// capture. Publication still uses the original inode, never the new one.
+    pub fn matches_source(&self, path: &Path) -> io::Result<bool> {
+        let current = Self::capture(self.service.clone(), path)?;
+        let old = self.file.metadata()?;
+        let new = current.file.metadata()?;
+        Ok((old.dev(), old.ino()) == (new.dev(), new.ino()))
+    }
+
     pub(super) fn materialize(&self, destination: &Path) -> io::Result<()> {
         // Linux permits linkat through an O_PATH fd's proc link without
         // AT_EMPTY_PATH's capability requirement. Cross-filesystem linking or

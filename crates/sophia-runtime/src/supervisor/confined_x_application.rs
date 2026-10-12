@@ -114,6 +114,25 @@ impl ConfinedXApplicationLaunch {
     /// Bubblewrap runs with `--die-with-parent`, whose parent is the thread
     /// that spawns it: spawn from a thread that outlives the application.
     pub fn command(&self) -> Result<Command, ConfinedXApplicationError> {
+        let launch = self.spec_for_role(ProtectionDomainRole::ConfinedXApplication)?;
+        bubblewrap_command(
+            &launch,
+            launch.protection_domain.as_ref().expect("confined domain"),
+            confine_host_command,
+        )
+        .map_err(ConfinedXApplicationError::Launch)
+    }
+
+    /// The same X group and cookie grants, owned by the authenticated namespace
+    /// supervisor. This does not spawn, register or approve a client.
+    pub fn namespace_client_spec(&self) -> Result<ProcessLaunchSpec, ConfinedXApplicationError> {
+        self.spec_for_role(ProtectionDomainRole::NamespaceClient)
+    }
+
+    fn spec_for_role(
+        &self,
+        role: ProtectionDomainRole,
+    ) -> Result<ProcessLaunchSpec, ConfinedXApplicationError> {
         check_group_directory(&self.group_directory, self.display_number).map_err(|fault| {
             ConfinedXApplicationError::GroupDirectory {
                 path: self.group_directory.clone(),
@@ -126,7 +145,7 @@ impl ConfinedXApplicationLaunch {
                 fault,
             }
         })?;
-        let domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::ConfinedXApplication])
+        let domain = ProtectionDomainSpec::bubblewrap([role])
             .and_then(|domain| {
                 domain.path(ProtectionPath::read_only_at(
                     &self.group_directory,
@@ -149,8 +168,7 @@ impl ConfinedXApplicationLaunch {
             })
             .env("DISPLAY", format!(":{}", self.display_number))
             .env("XAUTHORITY", CONFINED_X_AUTHORITY_FILE);
-        bubblewrap_command(&launch, &domain, confine_host_command)
-            .map_err(ConfinedXApplicationError::Launch)
+        Ok(launch.protection_domain(domain))
     }
 }
 

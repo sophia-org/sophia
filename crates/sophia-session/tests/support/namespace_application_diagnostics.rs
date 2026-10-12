@@ -29,7 +29,9 @@ fn short_lived_namespace_applications_keep_exit_status_without_claiming_activati
             policy.profile = NamespaceRecipeProfile::SharedX;
             policy.source = Some("shared".into());
             policy.developer_launch = false;
-            request.recipe = LoadedNamespaceRecipe::load(&policy, &f.root).unwrap();
+            request.recipe = LoadedNamespaceRecipe::load(&policy, &f.root)
+                .unwrap()
+                .into();
             let mut endpoint = request.approved.remove("inspection").unwrap();
             endpoint.service.interface = "portal-client".into();
             request.approved.insert("portal".into(), endpoint);

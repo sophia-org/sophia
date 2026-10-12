@@ -59,7 +59,8 @@ fn run_boundary(boundary: &str) {
         },
         &f.root,
     )
-    .unwrap();
+    .unwrap()
+    .into();
     let mut endpoint = request.approved.remove("inspection").unwrap();
     endpoint.service.interface = "portal-client".into();
     let reference = endpoint.service.clone();

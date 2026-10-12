@@ -32,15 +32,18 @@ use std::{
 const MAX_CLIENTS: usize = 64;
 mod application;
 mod dispatch;
+mod selection;
 pub use application::{ApplicationProcess, ApplicationProcessEvent, NamespaceApplicationServices};
+pub use selection::*;
 pub const NAMESPACE_CLIENT_UNAME: &[u8] = b"namespace-client";
 
 /// Trusted policy resolution, including its containment driver and live service
 /// references. An arbitrary executable is allowed; its recipe determines reach.
 pub struct ClientLaunchRequest {
+    pub x11_target: Option<Arc<RecipeXTarget>>,
     pub diagnostic: Option<crate::diagnostics::application::PreparedLaunch>,
     pub launch: ProcessLaunchSpec,
-    pub recipe: LoadedNamespaceRecipe,
+    pub recipe: Arc<LoadedNamespaceRecipe>,
     pub namespace: NamespaceId,
     pub principal: u64,
     pub approved: BTreeMap<String, ApprovedEndpoint>,
@@ -195,6 +198,9 @@ fn prepare(
     slot: Slot,
     child_gate: sophia_runtime::ExecGateChild,
 ) -> Result<Prepared, String> {
+    if let Some(target) = &request.x11_target {
+        target.verify()?;
+    }
     let mut names = NamespaceRecipeOwner::new(
         &parent,
         registry,

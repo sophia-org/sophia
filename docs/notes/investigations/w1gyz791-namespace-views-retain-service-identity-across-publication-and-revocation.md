@@ -22,6 +22,41 @@ socket paths or namespace commands to launch installed applications.
 
 ## Evidence
 
+### Application recipe resolution
+
+The slice based on `da5ced2be` adds the common selection/resource resolver.
+Exact registered and desktop identities select immutable loaded recipes;
+metadata can confirm but cannot replace the trusted assignment. Developer
+selection remains disabled unless policy explicitly enables it, and does not
+supply administrative admission. Recipe snapshots are shared across requests
+without rereading source files on the owner turn.
+
+Resolved targets name Session's actual namespace context, principal, X listener
+capture, portal recipient and inspection acceptor. Participation cannot exceed
+the namespace, foreign groups/recipients refuse, and observer cannot inherit X,
+clipboard or host-admin reach. Confined launches reuse the same group/cookie
+validation and Bubblewrap path grants as t142. Preparation verifies the group
+and original socket inode before spawn; it never substitutes a newly bound
+listener. The t142 pathname race limit remains explicit in the contract.
+
+Tests run selected shared-host and confined commands through the real scheduler,
+Factotum activation and retirement, with supplied X sockets and cookies. They
+do not claim X setup, pixels or catalog-to-live-desktop integration. The
+device-hidden `t318-application-resolution-01` package passes 24 namespace-launch
+parents and independent child entry points, runtime library and launch-channel
+checks, the existing real confinement probes, diagnostics/authentication tests,
+Clippy, formatting, layout and diff checks. Its SHA256SUMS SHA-256 is
+`472315f043886a835b965ae38dc496228a1577dbba437afe439d5e8c1341f5d7`.
+
+`t318-application-group-control-01` omits only the selected-group comparison.
+The exact refusal test fails at `recipe must not substitute another confined
+X group`, with exit 101 and one failure. Restoration and the positive rerun
+pass; its SHA256SUMS SHA-256 is
+`8bb0a1cf84abf2f6e7a8d2b165b924b9a5c624f03c4f97b333823a7b9bbeac87`.
+Both packages retain dynamically enumerated candidate hashes and binary paths
+and hashes, with no copied binaries. This paragraph follows qualification.
+Application entry-point wiring and the developer export remain open.
+
 ### Provenance before application exec
 
 The slice based on `48c27c8ca` closes the early attribution race: recording a

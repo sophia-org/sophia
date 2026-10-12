@@ -17,17 +17,17 @@ mod portal_dispatch;
 #[path = "namespace_application_process.rs"]
 mod application_process;
 
-struct Fixture {
-    auth: factotum::Fixture,
-    service: NamespaceLaunchService,
-    root: PathBuf,
-    wake: sophia_wake::Wake,
+pub(super) struct Fixture {
+    pub(super) auth: factotum::Fixture,
+    pub(super) service: NamespaceLaunchService,
+    pub(super) root: PathBuf,
+    pub(super) wake: sophia_wake::Wake,
 }
 impl Fixture {
     fn new() -> Self {
         Self::with_profile(sophia_protocol::NamespaceProfile::Confined)
     }
-    fn with_profile(profile: sophia_protocol::NamespaceProfile) -> Self {
+    pub(super) fn with_profile(profile: sophia_protocol::NamespaceProfile) -> Self {
         Self::with_capabilities(profile, sophia_protocol::NamespaceCapabilities::NONE)
     }
     fn with_capabilities(
@@ -70,6 +70,7 @@ impl Fixture {
     }
     fn request(&self) -> ClientLaunchRequest {
         ClientLaunchRequest {
+            x11_target: None,
             diagnostic: None,
             launch: ProcessLaunchSpec::new("/usr/bin/sleep")
                 .arg("30")
@@ -88,7 +89,8 @@ impl Fixture {
                 },
                 &self.root,
             )
-            .unwrap(),
+            .unwrap()
+            .into(),
             namespace: NamespaceId::from_raw(2),
             principal: 3,
             approved: BTreeMap::from([(
@@ -118,7 +120,7 @@ impl Fixture {
             )
             .unwrap()
     }
-    fn reclaimed(&mut self) {
+    pub(super) fn reclaimed(&mut self) {
         let deadline = Instant::now() + Duration::from_secs(10);
         while self.service.occupied() != 0 {
             assert!(
@@ -285,7 +287,9 @@ fn shared_recipe_uses_host_custody_and_the_same_endpoint_grant_owner() {
     policy.profile = NamespaceRecipeProfile::SharedX;
     policy.source = Some("shared".into());
     policy.developer_launch = false;
-    request.recipe = LoadedNamespaceRecipe::load(&policy, &f.root).unwrap();
+    request.recipe = LoadedNamespaceRecipe::load(&policy, &f.root)
+        .unwrap()
+        .into();
     let mut endpoint = request.approved.remove("inspection").unwrap();
     endpoint.service.interface = "portal-client".into();
     request.approved.insert("portal".into(), endpoint);
