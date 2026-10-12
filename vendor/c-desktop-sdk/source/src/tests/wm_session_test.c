@@ -740,34 +740,36 @@ int main(void) {
     test_case = #test;                                                         \
     test();                                                                    \
   } while (0)
-  RUN(local_work_wakes_a_poll_first_caller);
-  RUN(bootstrap_and_partial_writes);
-  RUN(submitted_and_error_both_orders);
-  RUN(ealready_without_custody_is_unknown);
-  RUN(refusal_continues_without_consuming_domain);
-  RUN(retry_is_paced_and_keeps_identity);
-  RUN(held_event_and_ack_reply_block_next_transaction);
-  RUN(invalid_events_stop_custody_scan);
-  RUN(short_submit_and_final_read_preserve_observed_custody);
-  RUN(snapshot_is_complete_bound_and_pin_released);
-  RUN(mismatched_snapshot_refuses);
-  RUN(idle_partial_and_clock_deadlines);
-  RUN(complete_held_event_outlives_assembly_deadline);
-  RUN(partial_event_deadline_runs_during_pending_ack);
-  RUN(deadline_never_sends_and_close_classifies);
-  RUN(bad_limits_and_negotiation_refuse);
-  RUN(retired_output_transport_api_refuses);
-  RUN(impossible_offer_refuses_before_submission);
-  RUN(event_lengths_and_sequences_fail_immediately);
-  RUN(ack_faults_and_revocation_keep_custody);
-  RUN(snapshot_retry_is_paced_and_truncation_refuses);
-  RUN(full_retained_journal_still_observes_submitted);
-  RUN(presentation_receipt_requires_negotiated_capability);
-  RUN(lifecycle_negotiation_requires_actions_and_configuration);
-  RUN(lifecycle_cause_requires_negotiated_capability);
-  RUN(chord_negotiation_requires_the_whole_lifecycle);
-  RUN(chord_action_requires_its_own_capability);
-  RUN(held_capture_negotiation_requires_presentation_actions);
+  for (wm_attached_mode = 0; wm_attached_mode < 2; ++wm_attached_mode) {
+    RUN(local_work_wakes_a_poll_first_caller);
+    RUN(bootstrap_and_partial_writes);
+    RUN(submitted_and_error_both_orders);
+    RUN(ealready_without_custody_is_unknown);
+    RUN(refusal_continues_without_consuming_domain);
+    RUN(retry_is_paced_and_keeps_identity);
+    RUN(held_event_and_ack_reply_block_next_transaction);
+    RUN(invalid_events_stop_custody_scan);
+    RUN(short_submit_and_final_read_preserve_observed_custody);
+    RUN(snapshot_is_complete_bound_and_pin_released);
+    RUN(mismatched_snapshot_refuses);
+    RUN(idle_partial_and_clock_deadlines);
+    RUN(complete_held_event_outlives_assembly_deadline);
+    RUN(partial_event_deadline_runs_during_pending_ack);
+    RUN(deadline_never_sends_and_close_classifies);
+    RUN(bad_limits_and_negotiation_refuse);
+    RUN(retired_output_transport_api_refuses);
+    RUN(impossible_offer_refuses_before_submission);
+    RUN(event_lengths_and_sequences_fail_immediately);
+    RUN(ack_faults_and_revocation_keep_custody);
+    RUN(snapshot_retry_is_paced_and_truncation_refuses);
+    RUN(full_retained_journal_still_observes_submitted);
+    RUN(presentation_receipt_requires_negotiated_capability);
+    RUN(lifecycle_negotiation_requires_actions_and_configuration);
+    RUN(lifecycle_cause_requires_negotiated_capability);
+    RUN(chord_negotiation_requires_the_whole_lifecycle);
+    RUN(chord_action_requires_its_own_capability);
+    RUN(held_capture_negotiation_requires_presentation_actions);
+  }
 #undef RUN
   puts("wm_session_test: scripted 9P custody, snapshot and deadline controls "
        "passed");

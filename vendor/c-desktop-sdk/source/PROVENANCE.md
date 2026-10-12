@@ -580,3 +580,32 @@ normal provider startup through the protected launch channel, Factotum afid
 exchange, immutable identity and current custody. Record layouts and SDK code
 are unchanged. Sophia's provider join uses this SDK's existing launch helper
 and admitted-root lock constructor; physical/client rollout remains separate.
+
+## WM admitted-root handoff
+
+`spec/sophia-wm-files.md` now comes from signed Sophia
+`3e60e53077e4a6e7ff4b79d63b81a2b5b41c8896`, which requires authenticated attach
+for normal WM startup and replacement. Record layouts are unchanged.
+`sophia_ws_open_attached` exclusively borrows a quiescent admitted wire/root,
+checks capacity, fid ownership, pending/partial I/O and disjoint allocations,
+and starts at api without Tversion or Tattach. The existing fresh-fd constructor
+retains its behavior; an authenticated endpoint refuses its anonymous attach.
+
+The entire scripted WM session suite runs through both constructors. Scripted
+admission is supplied, not a Factotum verdict. The strict full C suite and
+clang ASan/UBSan suite pass. A reattach mutation fails at `WM handoff must not
+reattach its admitted wire`; omitting the initial drive fails at `WM bootstrap
+must schedule its first request without peer input`. Each control restores
+the captured source bytes, and the full normal suite passes again. Evidence
+records executable paths and hashes, never copied binaries.
+
+| Package | SHA256SUMS SHA-256 |
+| --- | --- |
+| `t317-wm-sdk-01` | `5f719e780b952163b15e6508b1747ba9156bc295ad599de1f5d0b56afc67363e` |
+| `t317-wm-sdk-reattach-control-01` | `347646d477574c9d5e800e6269e5577f9edbacdb713430aadbf62919a1d18962` |
+| `t317-wm-sdk-schedule-control-01` | `c465dacce28429aa2af1fd4397d63cce1d0b537e713fa201afee5b16a4770966` |
+| `t317-wm-sdk-restored-01` | `044f35d24f1d5a5e861e937771a623fae5faf0a54f926cff637c15fbcc22120e` |
+
+The contract copy/digest and this documentation follow the captured code
+candidate; no implementation or test bytes changed. Production WM-owner
+interoperability and deployed-client migration remain separate gates.

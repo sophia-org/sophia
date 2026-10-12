@@ -6,14 +6,13 @@ size_t sophia_ws_storage_bytes(uint32_t msize) {
   size_t extra = 2u * (size_t)SOPHIA_WF_MAX_RECORD + WS_JOURNAL_BYTES;
   return msize > 65536 || !wire || wire > SIZE_MAX - extra ? 0 : wire + extra;
 }
-int sophia_ws_open_fd(struct sophia_ws *s, int fd,
+static int initialize(struct sophia_ws *s,
                       const struct sophia_ws_config *config, void *storage,
                       size_t bytes, uint64_t now) {
   size_t needed, wire;
   struct sophia_ws_config copied;
   uintptr_t a = (uintptr_t)s, b = (uintptr_t)storage;
-  int r;
-  if (!s || !config || !storage || fd < 0 ||
+  if (!s || !config || !storage ||
       config->bootstrap_deadline_ms <= now ||
       (config->offer.required & config->offer.optional))
     return SOPHIA_9P_ARGUMENT;
@@ -32,10 +31,56 @@ int sophia_ws_open_fd(struct sophia_ws *s, int fd,
   s->tx = (uint8_t *)storage + wire;
   s->object = s->tx + SOPHIA_WF_MAX_RECORD;
   s->journal = s->object + SOPHIA_WF_MAX_RECORD;
-  r = sophia_9p_init(&s->wire, fd, copied.msize, WS_REQUESTS, WS_FIDS, storage,
-                     wire);
+  s->wire = &s->owned_wire;
+  return 0;
+}
+int sophia_ws_open_fd(struct sophia_ws *s, int fd,
+                      const struct sophia_ws_config *config, void *storage,
+                      size_t bytes, uint64_t now) {
+  int r;
+  if (fd < 0) return SOPHIA_9P_ARGUMENT;
+  r = initialize(s, config, storage, bytes, now);
+  if (r) return r;
+  r = sophia_9p_init(s->wire, fd, s->config.msize, WS_REQUESTS, WS_FIDS, storage,
+                     sophia_9p_storage_bytes(s->config.msize, WS_REQUESTS));
   if (!r)
     r = ws_drive(s);
+  return r ? ws_finish(s, r) : 0;
+}
+static int disjoint(const void *a, size_t an, const void *b, size_t bn) {
+  uintptr_t av = (uintptr_t)a, bv = (uintptr_t)b;
+  return av <= UINTPTR_MAX - an && bv <= UINTPTR_MAX - bn &&
+         (av + an <= bv || bv + bn <= av);
+}
+int sophia_ws_open_attached(struct sophia_ws *s, struct sophia_9p_client *wire,
+                            uint32_t root, const struct sophia_ws_config *config,
+                            void *storage, size_t bytes, uint64_t now) {
+  size_t i, wire_bytes, wm_bytes;
+  int found = 0, r;
+  if (!s || !storage || !wire || !config || wire->terminal || wire->phase != 2 ||
+      wire->capacity < WS_REQUESTS || wire->capacity > SOPHIA_9P_REQUESTS ||
+      wire->fid_limit < WS_FIDS || wire->fid_count != 1 ||
+      wire->msize != config->msize || root == SOPHIA_9P_NOFID || wire->rx_used)
+    return SOPHIA_9P_ARGUMENT;
+  wire_bytes = sophia_9p_storage_bytes(wire->offered, wire->capacity);
+  wm_bytes = sophia_ws_storage_bytes(config->msize);
+  if (!wire_bytes || !wm_bytes ||
+      !disjoint(s, sizeof(*s), wire, sizeof(*wire)) ||
+      !disjoint(s, sizeof(*s), wire->storage, wire_bytes) ||
+      !disjoint(storage, wm_bytes, wire, sizeof(*wire)) ||
+      !disjoint(storage, wm_bytes, wire->storage, wire_bytes))
+    return SOPHIA_9P_ARGUMENT;
+  for (i = 0; i < wire->fid_count; ++i)
+    if (wire->fids[i] == root) found = 1;
+  if (!found) return SOPHIA_9P_ARGUMENT;
+  for (i = 0; i < 2u * wire->capacity; ++i)
+    if (wire->slots[i].state) return SOPHIA_9P_ARGUMENT;
+  r = initialize(s, config, storage, bytes, now);
+  if (r) return r;
+  s->wire = wire;
+  s->root = root;
+  s->bootstrap = 2; /* Start at api: never reset or reattach the admitted wire. */
+  r = ws_drive(s);
   return r ? ws_finish(s, r) : 0;
 }
 int ws_finish(struct sophia_ws *s, int status) {
@@ -74,12 +119,12 @@ const struct sophia_wf_limits *sophia_ws_limits(const struct sophia_ws *s) {
 uint32_t sophia_ws_remote_error(const struct sophia_ws *s) {
   return s ? s->remote_error : 0;
 }
-int sophia_ws_poll_fd(const struct sophia_ws *s) { return s ? s->wire.fd : -1; }
+int sophia_ws_poll_fd(const struct sophia_ws *s) { return s ? s->wire->fd : -1; }
 short sophia_ws_poll_events(const struct sophia_ws *s) {
   return !s || ws_final(s)
              ? 0
              : (short)(POLLIN |
-                       (sophia_9p_wants_write(&s->wire) ? POLLOUT : 0));
+                       (sophia_9p_wants_write(s->wire) ? POLLOUT : 0));
 }
 static uint64_t earlier(uint64_t a, uint64_t b) {
   return !a || (b && b < a) ? b : a;
@@ -134,7 +179,7 @@ static int drain(struct sophia_ws *s) {
   int status = 0, have_submit = 0, end = 0, result;
   unsigned visit;
   for (visit = 0; visit < WS_REQUESTS; ++visit) {
-    result = sophia_9p_peek(&s->wire, &r);
+    result = sophia_9p_peek(s->wire, &r);
     if (result == SOPHIA_9P_AGAIN)
       break;
     if (result) {
@@ -177,7 +222,7 @@ static int drain(struct sophia_ws *s) {
       result = SOPHIA_9P_INVALID;
     if (result && !status)
       status = result;
-    result = sophia_9p_consume(&s->wire, r.handle);
+    result = sophia_9p_consume(s->wire, r.handle);
     if (result) {
       end = result;
       break;
@@ -216,7 +261,7 @@ int sophia_ws_dispatch(struct sophia_ws *s, short revents, size_t budget,
     (void)drain(s);
     return ws_finish(s, SOPHIA_9P_CLOSED);
   }
-  r = sophia_9p_service(&s->wire, budget);
+  r = sophia_9p_service(s->wire, budget);
   /* Clean EOF preserves the generic pipeline's final validated replies. */
   if (!r || r == SOPHIA_9P_CLOSED) {
     int drained = drain(s);

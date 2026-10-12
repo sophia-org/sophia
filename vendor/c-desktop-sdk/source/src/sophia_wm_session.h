@@ -43,6 +43,18 @@ size_t sophia_ws_storage_bytes(uint32_t msize);
 int sophia_ws_open_fd(struct sophia_ws *, int fd,
                       const struct sophia_ws_config *, void *storage,
                       size_t bytes, uint64_t now_ms);
+/* Begin at api on an already admitted, quiescent wire (for example the exact
+ * role wire/root returned by sophia_launch_auth). No Tversion or Tattach.
+ * Exclusively borrows wire, its storage and root until close; the caller must
+ * not use/reset them meanwhile. All borrowed allocations must be disjoint
+ * from session state and WM storage. Requires at least eight request slots
+ * and sixteen fids, and config.msize equal to the negotiated wire msize.
+ * The root must be the wire's only fid. Unknown roots, pending replies,
+ * overlapping allocations, a partial receive or a dead wire are refused.
+ * WM storage still uses sophia_ws_storage_bytes(config.msize). */
+int sophia_ws_open_attached(struct sophia_ws *, struct sophia_9p_client *,
+                            uint32_t root, const struct sophia_ws_config *,
+                            void *storage, size_t bytes, uint64_t now_ms);
 /* READY means capability negotiation, not successful profile activation.
  * Policy phase, exact semantic correlations, checkpointing and settlement are
  * the caller's decisions under the WM contract. */

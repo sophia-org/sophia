@@ -11,7 +11,7 @@ fn protected_c_sdk_recovers_after_stale_and_timed_out_projections() {
     let root = &scratch.0;
     let executable = process::compile(
         root,
-        &["nine_p", "wm_files", "wm_session"],
+        &["nine_p", "wm_files", "wm_session", "launch_auth"],
         "live_control_peer.c",
     );
     let profile = root.join("desktop.kdl");
@@ -26,8 +26,26 @@ fn protected_c_sdk_recovers_after_stale_and_timed_out_projections() {
     ])
     .unwrap();
     config.wm_socket_path = root.join("wm.sock");
+    config.factotum = Some(SessionFactotum {
+        agent: "/unused/fixture-agent".into(),
+        pam_helper: "/unused/fixture-helper".into(),
+        pam_service: "fixture".into(),
+        user: "fixture".into(),
+    });
+    let mut auth = crate::live_session::tests::lock_provider_factotum::Fixture::new();
+    let wake = OwnerWake::new().unwrap();
     let prepared = LiveWmSession::prepare_public_launch(&mut config).unwrap();
-    let started = LiveWmSession::activate_public_launch(&mut config, prepared).unwrap();
+    let started = LiveWmSession::activate_public_launch_authenticated(
+        &mut config,
+        prepared,
+        WmStartupContext {
+            launches: &mut auth.coordinator,
+            namespace: sophia_protocol::NamespaceId::from_raw(2),
+            wake: &wake,
+            registration: None,
+        },
+    )
+    .unwrap();
     let output = sophia_engine::HeadlessOutput::deterministic();
     let mut wm = LiveWmSession::from_config(&config, &[output], started, None)
         .unwrap()
@@ -39,6 +57,7 @@ fn protected_c_sdk_recovers_after_stale_and_timed_out_projections() {
     for index in 0..3 {
         let deadline = Instant::now() + Duration::from_secs(5);
         let proposal = loop {
+            auth.tick();
             let proposal = wm.poll_request(&mut layout, output, true).unwrap();
             wm.settle_desktop_reload(&mut config, true).unwrap();
             if let Some(proposal) = proposal {

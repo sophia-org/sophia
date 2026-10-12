@@ -62,6 +62,12 @@ production WM export gate has passed (Sophia `c4e17899e`).
 
 The WM session (`sophia_wm_session.h`) owns file bootstrap, immutable candidate
 submission, custody tickets, cumulative acknowledgements and snapshot pins.
+For authenticated endpoints, `sophia_ws_open_attached` continues on the exact
+quiescent wire and root returned by `sophia_launch_auth`. It borrows both
+without Tversion or another attach; callers retain their storage until close.
+The constructor requires eight request slots, sixteen fids and no other live
+fid or pending request. It schedules bootstrap immediately for poll-first
+callers. See the header for storage and overlap requirements.
 It accepts a borrowed fd and caller-owned storage; policy and profile decisions
 remain with the caller and server. See [the WM API notes](src/README-wm.md) for
 lifetimes, deadlines and evidence limits.

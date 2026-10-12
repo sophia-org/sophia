@@ -37,7 +37,8 @@ struct ws_ticket {
   uint32_t error;
 };
 struct sophia_ws {
-  struct sophia_9p_client wire;
+  struct sophia_9p_client owned_wire;
+  struct sophia_9p_client *wire;
   struct sophia_ws_config config;
   struct sophia_wf_limits limits;
   enum sophia_ws_state state;

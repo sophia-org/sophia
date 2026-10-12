@@ -26,22 +26,22 @@ int ws_object_drive(struct sophia_ws *s) {
     return 0;
   if (s->object_stage == WS_OBJECT_WALK) {
     const char *name = "snapshot";
-    r = sophia_9p_walk(&s->wire, s->root, &name, 1, &s->object_op.handle,
+    r = sophia_9p_walk(s->wire, s->root, &name, 1, &s->object_op.handle,
                        &s->object_fid);
   } else if (s->object_stage == WS_OBJECT_OPEN)
-    r = sophia_9p_lopen(&s->wire, s->object_fid, 0, &s->object_op.handle);
+    r = sophia_9p_lopen(s->wire, s->object_fid, 0, &s->object_op.handle);
   else if (s->object_stage == WS_OBJECT_READ) {
     size_t n = SOPHIA_WF_MAX_RECORD - s->object_used;
     if (!n)
       n = 1; /* EOF probe at the cap, never appended. */
-    if (n > s->wire.msize - 11u)
-      n = s->wire.msize - 11u;
+    if (n > s->wire->msize - 11u)
+      n = s->wire->msize - 11u;
     if (s->object_iounit && n > s->object_iounit)
       n = s->object_iounit;
-    r = sophia_9p_read(&s->wire, s->object_fid, s->object_used, (uint32_t)n,
+    r = sophia_9p_read(s->wire, s->object_fid, s->object_used, (uint32_t)n,
                        &s->object_op.handle);
   } else
-    r = sophia_9p_clunk(&s->wire, s->object_fid, &s->object_op.handle);
+    r = sophia_9p_clunk(s->wire, s->object_fid, &s->object_op.handle);
   return ws_started(&s->object_op, r);
 }
 int ws_object_reply(struct sophia_ws *s, const struct sophia_9p_reply *r) {

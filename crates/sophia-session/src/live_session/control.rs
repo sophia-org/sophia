@@ -182,12 +182,15 @@ impl LiveControlState {
         let Some(wm) = wm else {
             return;
         };
+        let replacement_pending = wm.control_restart.is_some()
+            || wm.authenticated_restart_pending()
+            || (wm.authentication.is_some() && wm.force_transport_restart);
         let Some(public) = wm.public.as_mut() else {
             return;
         };
         let ready = public.configured
             && !wm.degraded
-            && wm.control_restart.is_none()
+            && !replacement_pending
             && !public.transport_unavailable;
         let signature = (
             public.connection_epoch,
@@ -247,7 +250,7 @@ impl LiveControlState {
             }
         }
         if let Some((ticket, epoch, committed)) = self.restarting.take() {
-            if wm.degraded || (wm.control_restart.is_none() && public.connection_epoch != epoch) {
+            if wm.degraded || (!replacement_pending && public.connection_epoch != epoch) {
                 ticket.finish(O::Indeterminate);
             } else if ready && public.connection_epoch == epoch && wm.committed > committed {
                 ticket.finish(O::Completed);

@@ -29,6 +29,7 @@ struct wm_peer {
   size_t used, journal_size, tx_size;
   unsigned files[256];
   uint64_t sequence, acked, accepted, event_offset, last_id, selected;
+  unsigned versions, attaches;
   unsigned opens, busy_opens, submits, acks, pins, clunks, events_pending;
   uint16_t event_tag, ack_tag;
   uint32_t event_count, short_tx, object_chunk, event_chunk, ack_hold;
@@ -38,7 +39,10 @@ struct wm_peer {
   unsigned bad_event_before, wrong_epoch, wrong_kind, close_after;
   const char *api; /* Served `api` bytes; null serves the current contract. */
 };
+static unsigned wm_attached_mode;
 struct wm_rig {
+  struct sophia_9p_client admitted;
+  void *admitted_storage;
   struct wm_peer peer;
   struct sophia_ws *session;
   void *storage;
@@ -164,6 +168,7 @@ static inline void wp_request(struct wm_peer *p, const uint8_t *message) {
   const uint8_t *q = message + 7;
   uint32_t fid = (uint32_t)wp_get(q, 4);
   if (type == 100) {
+    assert(++p->versions == 1 && "WM handoff must not reset its admitted wire");
     wp_put(b, wp_get(q, 4), 4);
     wp_put(b + 4, 8, 2);
     memcpy(b + 6, "9P2000.L", 8);
@@ -172,6 +177,7 @@ static inline void wp_request(struct wm_peer *p, const uint8_t *message) {
   }
   assert(fid < 256);
   if (type == 104) {
+    assert(++p->attaches == 1 && "WM handoff must not reattach its admitted wire");
     p->files[fid] = WP_ROOT;
     b[0] = 0x80;
     wp_put(b + 5, 1, 8);
@@ -325,6 +331,22 @@ static inline void wp_pump(struct wm_peer *p) {
     p->close_after = 0;
   }
 }
+static void wire_answer(struct wm_rig *r, struct sophia_9p_handle handle) {
+  struct sophia_9p_reply reply;
+  unsigned i;
+  for (i = 0; i < 400; ++i) {
+    int result;
+    assert(!sophia_9p_service(&r->admitted, 65536));
+    wp_pump(&r->peer);
+    result = sophia_9p_peek(&r->admitted, &reply);
+    if (result == SOPHIA_9P_AGAIN) continue;
+    assert(!result && reply.type != 7);
+    assert(reply.handle.slot == handle.slot && reply.handle.serial == handle.serial);
+    assert(!sophia_9p_consume(&r->admitted, handle));
+    return;
+  }
+  assert(!"admitted wire response bound");
+}
 static inline struct wm_rig *wr_new_offer(uint64_t required,
                                           uint64_t optional) {
   struct wm_rig *r = calloc(1, sizeof(*r));
@@ -349,8 +371,69 @@ static inline struct wm_rig *wr_new_offer(uint64_t required,
   assert(!sophia_wf_encode(r->peer.limits, sizeof(r->peer.limits), 0, &value,
                            &n) &&
          n == 64);
-  assert(!sophia_ws_open_fd(r->session, r->client_fd, &cfg, r->storage,
-                            sophia_ws_storage_bytes(8192), 0));
+  if (wm_attached_mode) {
+    struct sophia_9p_handle handle;
+    uint32_t root, fid;
+    const char *api = "api";
+    size_t bytes = sophia_ws_storage_bytes(8192);
+    r->admitted_storage = malloc(sophia_9p_storage_bytes(8192, 8));
+    assert(r->admitted_storage);
+    assert(!sophia_9p_init(&r->admitted, r->client_fd, 8192, 8, 16,
+      r->admitted_storage, sophia_9p_storage_bytes(8192, 8)));
+    assert(!sophia_9p_version(&r->admitted, &handle));
+    wire_answer(r, handle);
+    /* Supplied admission, not authentication evidence: the real afid join
+       belongs to Sophia. The WM session must preserve this exact root. */
+    assert(!sophia_9p_attach(&r->admitted, "", "", &handle, &root));
+    wire_answer(r, handle);
+    assert(sophia_ws_open_attached(r->session, &r->admitted, UINT32_MAX, &cfg,
+      r->storage, bytes, 0) == SOPHIA_9P_ARGUMENT);
+    assert(sophia_ws_open_attached(r->session, &r->admitted, root + 123, &cfg,
+      r->storage, bytes, 0) == SOPHIA_9P_ARGUMENT);
+    assert(sophia_ws_open_attached(r->session, &r->admitted, root, &cfg,
+      r->storage, bytes - 1, 0) == SOPHIA_9P_ARGUMENT);
+    assert(sophia_ws_open_attached(r->session, &r->admitted, root, &cfg,
+      r->admitted_storage, bytes, 0) == SOPHIA_9P_ARGUMENT);
+    assert(sophia_ws_open_attached((void *)&r->admitted, &r->admitted, root, &cfg,
+      r->storage, bytes, 0) == SOPHIA_9P_ARGUMENT);
+    cfg.msize = 4096;
+    assert(sophia_ws_open_attached(r->session, &r->admitted, root, &cfg,
+      r->storage, bytes, 0) == SOPHIA_9P_ARGUMENT);
+    cfg.msize = 8192;
+    r->admitted.rx_used = 1;
+    assert(sophia_ws_open_attached(r->session, &r->admitted, root, &cfg,
+      r->storage, bytes, 0) == SOPHIA_9P_ARGUMENT);
+    r->admitted.rx_used = 0;
+    r->admitted.terminal = SOPHIA_9P_CLOSED;
+    assert(sophia_ws_open_attached(r->session, &r->admitted, root, &cfg,
+      r->storage, bytes, 0) == SOPHIA_9P_ARGUMENT);
+    r->admitted.terminal = 0;
+    r->admitted.capacity = 7;
+    assert(sophia_ws_open_attached(r->session, &r->admitted, root, &cfg,
+      r->storage, bytes, 0) == SOPHIA_9P_ARGUMENT);
+    r->admitted.capacity = 8;
+    r->admitted.fid_limit = 15;
+    assert(sophia_ws_open_attached(r->session, &r->admitted, root, &cfg,
+      r->storage, bytes, 0) == SOPHIA_9P_ARGUMENT);
+    r->admitted.fid_limit = 16;
+    assert(!sophia_9p_walk(&r->admitted, root, &api, 1, &handle, &fid));
+    assert(sophia_ws_open_attached(r->session, &r->admitted, root, &cfg,
+      r->storage, bytes, 0) == SOPHIA_9P_ARGUMENT);
+    wire_answer(r, handle);
+    assert(sophia_ws_open_attached(r->session, &r->admitted, root, &cfg,
+      r->storage, bytes, 0) == SOPHIA_9P_ARGUMENT); /* extra retained fid */
+    assert(!sophia_9p_clunk(&r->admitted, fid, &handle));
+    wire_answer(r, handle);
+    assert(!sophia_ws_open_attached(r->session, &r->admitted, root, &cfg,
+      r->storage, bytes, 0));
+    assert(r->peer.attaches == 1);
+  } else {
+    assert(!sophia_ws_open_fd(r->session, r->client_fd, &cfg, r->storage,
+                              sophia_ws_storage_bytes(8192), 0));
+  }
+  assert(((sophia_ws_poll_events(r->session) & POLLOUT) ||
+          sophia_ws_timeout(r->session, 0) == 0) &&
+         "WM bootstrap must schedule its first request without peer input");
   return r;
 }
 static inline struct wm_rig *wr_new_caps(uint64_t caps) {
@@ -397,6 +480,7 @@ static inline void wr_drop(struct wm_rig *r) {
   sophia_ws_close(r->session);
   close(r->client_fd);
   close(r->peer.fd);
+  free(r->admitted_storage);
   free(r->storage);
   free(r->session);
   free(r);

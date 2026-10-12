@@ -1528,3 +1528,58 @@ live rollout. Shell integration, removal of the lock transport's hard
 SO_PEERPIDFD dependency, threat-model reconciliation and final full-scope gates
 remain open. No master merge, live installation or new whole-repository gate
 is claimed by this slice.
+
+## Authenticated C WM session handoff
+
+The C SDK pin is now signed `93361918dd0213a13a2fc8bd26a7911ff7ae16e1`.
+Its `sophia_ws_open_attached` constructor continues the exact quiescent
+authenticated wire/root at api, with no Tversion or another attach. The
+borrowed state and storage must remain disjoint and alive until close; the
+constructor refuses unknown/additional fids, pending replies, partial input,
+dead wires, insufficient capacity and mismatched msize. It schedules bootstrap
+immediately, including for poll-first callers. The full scripted WM suite runs
+through both fresh-fd and admitted-root constructors. SDK strict C and clang
+ASan/UBSan suites pass; reattach and missing-first-drive controls fail at their
+named guards. SDK provenance records the four closed packages and limits.
+
+Sophia's independent C WM fixture now uses the shared launch helper when
+provisioned. Authentication failure cannot fall back to anonymous attach.
+The protected recovery test uses normal Session startup, real Factotum afids
+and the admitted-root constructor, then proves stale, timed-out and committed
+projection outcomes on the same epoch. The opt-in control-owner test is also
+run device-hidden: real C WM configuration/action traffic and two authenticated
+control-requested replacements complete only after Session commits their
+layouts. Layout completion and Factotum's trusted Session channel are supplied;
+there is no physical input, display or deployed-client claim.
+
+That join exposed a control-owner integration error: its pending-restart check
+recognized only the earlier helper-thread job, so it reported Indeterminate
+while authenticated replacement was still pending. The readiness/catalog and
+terminal-result checks now include both authenticated launch progress and the
+termination interval before that launch begins. The test deliberately holds
+each new proposal before commit and requires the request to remain unsettled.
+
+`t317-wm-c-owner-01` passes the SDK snapshot check, the protected C recovery
+test, the explicitly invoked control-owner test, 121 desktop/reload parents
+(five ignored child entries), 59 WM transport parents (four ignored entries),
+native-session all-target Clippy with warnings denied and formatting. Omitting
+the initial authentication factory fails the C child at `C WM must authenticate
+before file bootstrap`. Restoring the old pending-restart predicate fails the
+control test at `premature result: Indeterminate`. Each control returns exit
+101 with exactly one failed parent; complete source restoration then restores
+both C owner passes. The dynamic 18-file candidate inventory and bytes were
+checked again before the documentation update and commit. Evidence keeps
+executable paths/hashes rather than binary copies; the Rust fixtures compile
+their C peer from the pinned SDK sources inside the leased target.
+
+| Package | SHA256SUMS SHA-256 |
+| --- | --- |
+| `t317-wm-c-owner-01` | `93353968a38485739e17950db4395cde55f94bdde28d367a3489030f37eba491` |
+| `t317-wm-c-afid-control-01` | `92d4edef33cc012e26354449228785d53149605b9e03b2fdb1121b3a015a3c98` |
+| `t317-wm-c-settlement-control-01` | `2a5391b306820249fee48ce6b912df2df3da4307876680e10b14ceb76c7292c1` |
+| `t317-wm-c-restored-01` | `a27de6d67de9541241f2b056b121d2dfb5bf8d05d0c18049f7bd6a808b70b6cd` |
+
+The C WM SDK handoff is now joined to the normal owner, including replacement
+settlement. Deployed WM/Nim migration, shell integration and the remaining
+t317 exit gates are still open. Neither this pin nor the preceding normal-WM
+owner commit has been installed into the live desktop or merged to master.

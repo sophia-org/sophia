@@ -93,17 +93,17 @@ int ws_tx_drive(struct sophia_ws *s) {
     const char *name = "transaction";
     if (s->acked < s->submitted_sequence)
       return 0;
-    r = sophia_9p_walk(&s->wire, s->root, &name, 1, &s->tx_op.handle,
+    r = sophia_9p_walk(s->wire, s->root, &name, 1, &s->tx_op.handle,
                        &s->tx_fid);
   } else if (s->tx_stage == WS_TX_OPEN)
-    r = sophia_9p_lopen(&s->wire, s->tx_fid, 2, &s->tx_op.handle);
+    r = sophia_9p_lopen(s->wire, s->tx_fid, 2, &s->tx_op.handle);
   else if (s->tx_stage == WS_TX_WRITE) {
-    size_t n = s->tx_size - s->tx_written, maximum = s->wire.msize - 23u;
+    size_t n = s->tx_size - s->tx_written, maximum = s->wire->msize - 23u;
     if (s->tx_iounit && maximum > s->tx_iounit)
       maximum = s->tx_iounit;
     if (n > maximum)
       n = maximum;
-    r = sophia_9p_write(&s->wire, s->tx_fid, s->tx_written,
+    r = sophia_9p_write(s->wire, s->tx_fid, s->tx_written,
                         s->tx + s->tx_written, n, &s->tx_op.handle);
     if (!r && !s->assembly_deadline)
       s->assembly_deadline = ws_add(s->now, s->limits.assembly_timeout_ms);
@@ -117,13 +117,13 @@ int ws_tx_drive(struct sophia_ws *s) {
     if (sophia_wf_submit_encode(b, s->epoch, s->tx_ticket,
                                 (uint32_t)s->tx_size))
       return SOPHIA_9P_INVALID;
-    r = sophia_9p_write(&s->wire, s->submit_fid, 0, b, 24, &s->tx_op.handle);
+    r = sophia_9p_write(s->wire, s->submit_fid, 0, b, 24, &s->tx_op.handle);
     if (!r) {
       s->retry_at = 0;
       ws_set(s, s->tx_ticket, SOPHIA_WS_ISSUED, 0);
     }
   } else
-    r = sophia_9p_clunk(&s->wire, s->tx_fid, &s->tx_op.handle);
+    r = sophia_9p_clunk(s->wire, s->tx_fid, &s->tx_op.handle);
   return ws_started(&s->tx_op, r);
 }
 /* Called only after the dispatch batch's event bytes have been appended and

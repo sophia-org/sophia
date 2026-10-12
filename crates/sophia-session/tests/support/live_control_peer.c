@@ -4,8 +4,10 @@
  */
 #define _POSIX_C_SOURCE 200809L
 #include "sophia_wm_session.h"
+#include "sophia_launch_auth.h"
 #include <assert.h>
 #include <errno.h>
+#include <limits.h>
 #include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,11 +20,51 @@
 static struct sophia_ws *session;
 static uint64_t deadline;
 static int recovery;
+static struct sophia_9p_client role_wire, relay_wire;
+static void *role_storage, *relay_storage;
 
 static uint64_t now_ms(void) {
   struct timespec t;
   assert(!clock_gettime(CLOCK_MONOTONIC, &t));
   return (uint64_t)t.tv_sec * 1000 + (uint64_t)t.tv_nsec / 1000000;
+}
+
+static int open_authenticated(int fd, const struct sophia_ws_config *config,
+                              void *storage, size_t storage_bytes) {
+  const char *value = getenv("SOPHIA_LAUNCH_AUTH_FD"), *digit;
+  struct sophia_la_client auth;
+  unsigned long descriptor = 0;
+  size_t bytes = sophia_9p_storage_bytes(config->msize, 8);
+  if (!value) return 0; /* Supplied-admission fixtures only. */
+  assert(*value);
+  for (digit = value; *digit; ++digit) {
+    assert(*digit >= '0' && *digit <= '9');
+    assert(descriptor <= ((unsigned long)INT_MAX - (unsigned)(*digit - '0')) / 10);
+    descriptor = descriptor * 10 + (unsigned)(*digit - '0');
+  }
+  assert(descriptor >= 3 && (int)descriptor != fd);
+  role_storage = malloc(bytes); relay_storage = malloc(bytes);
+  assert(role_storage && relay_storage);
+  assert(!sophia_9p_init(&role_wire, fd, config->msize, 8, 16, role_storage, bytes));
+  assert(!sophia_9p_init(&relay_wire, (int)descriptor, config->msize, 8, 16, relay_storage, bytes));
+  assert(!sophia_la_init(&auth, &role_wire, &relay_wire, "wm", "spatial-policy", now_ms()));
+  while (!sophia_la_ready(&auth)) {
+    struct pollfd fds[2];
+    uint64_t now, wake;
+    int wait;
+    assert(!sophia_la_service(&auth, now_ms(), 65536) && "C WM must authenticate before file bootstrap");
+    if (sophia_la_ready(&auth)) break;
+    now = now_ms(); wake = sophia_la_next_wake(&auth);
+    wait = wake <= now ? 0 : (wake - now > 100 ? 100 : (int)(wake - now));
+    fds[0] = (struct pollfd){fd, POLLIN, 0};
+    fds[1] = (struct pollfd){(int)descriptor, POLLIN, 0};
+    if (sophia_9p_wants_write(&role_wire)) fds[0].events |= POLLOUT;
+    if (sophia_9p_wants_write(&relay_wire)) fds[1].events |= POLLOUT;
+    assert(poll(fds, 2, wait) >= 0 || errno == EINTR);
+  }
+  assert(!sophia_ws_open_attached(session, &role_wire, sophia_la_root(&auth), config,
+                                 storage, storage_bytes, now_ms()));
+  return 1;
 }
 
 static void step(void) {
@@ -185,8 +227,9 @@ int main(int argc, char **argv) {
   deadline = now_ms() + 60000;
   config.bootstrap_deadline_ms = deadline;
   session = malloc(sophia_ws_state_bytes());
-  assert(session && storage &&
-         !sophia_ws_open_fd(session, fd, &config, storage, bytes, now_ms()));
+  assert(session && storage);
+  if (!open_authenticated(fd, &config, storage, bytes))
+    assert(!sophia_ws_open_fd(session, fd, &config, storage, bytes, now_ms()));
   startup();
   if (recovery) {
     /* Native outcome values: stale, timed out, then committed. The peer waits

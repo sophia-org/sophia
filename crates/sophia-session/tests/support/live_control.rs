@@ -16,7 +16,7 @@ fn real_owner_commits_actions_and_confirms_replacement_commit() {
     let root = &scratch.0;
     let executable = process::compile(
         root,
-        &["nine_p", "wm_files", "wm_session"],
+        &["nine_p", "wm_files", "wm_session", "launch_auth"],
         "live_control_peer.c",
     );
     let profile = root.join("desktop.kdl");
@@ -30,8 +30,26 @@ fn real_owner_commits_actions_and_confirms_replacement_commit() {
     ])
     .unwrap();
     config.wm_socket_path = root.join("wm.sock");
+    config.factotum = Some(SessionFactotum {
+        agent: "/unused/fixture-agent".into(),
+        pam_helper: "/unused/fixture-helper".into(),
+        pam_service: "fixture".into(),
+        user: "fixture".into(),
+    });
+    let mut auth = crate::live_session::tests::lock_provider_factotum::Fixture::new();
+    let wake = OwnerWake::new().unwrap();
     let prepared = LiveWmSession::prepare_public_launch(&mut config).unwrap();
-    let started = LiveWmSession::activate_public_launch(&mut config, prepared).unwrap();
+    let started = LiveWmSession::activate_public_launch_authenticated(
+        &mut config,
+        prepared,
+        WmStartupContext {
+            launches: &mut auth.coordinator,
+            namespace: sophia_protocol::NamespaceId::from_raw(2),
+            wake: &wake,
+            registration: None,
+        },
+    )
+    .unwrap();
     let output = sophia_engine::HeadlessOutput::deterministic();
     let mut wm = LiveWmSession::from_config(&config, &[output], started, None)
         .unwrap()
@@ -52,6 +70,7 @@ fn real_owner_commits_actions_and_confirms_replacement_commit() {
     };
     let deadline = Instant::now() + Duration::from_secs(5);
     while wm.committed == 0 {
+        auth.tick();
         pump(&mut wm, &mut config, &mut layout, output);
         let public = wm.public.as_ref().unwrap();
         assert!(
@@ -140,8 +159,11 @@ fn real_owner_commits_actions_and_confirms_replacement_commit() {
         let deadline = Instant::now() + Duration::from_secs(8);
         let mut held_proposal = None;
         while held_proposal.is_none() {
+            auth.tick();
             scripting.service(Some(&mut wm), &layout, output, false);
             wm.poll_restart(&mut layout, output).unwrap();
+            wm.poll_wm_authentication(&mut auth.coordinator, wake.notifier(), &mut layout, output)
+                .unwrap();
             held_proposal = wm.poll_request(&mut layout, output, true).unwrap();
             wm.settle_desktop_reload(&mut config, true).unwrap();
             if client.is_finished() {
