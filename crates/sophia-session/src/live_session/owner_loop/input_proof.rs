@@ -262,6 +262,7 @@
         let withdrawn_admissions = layout.take_withdrawn_admissions();
         let session_requests = execute_committed_session_actions(
             SessionActionExecutionContext {
+                application_launch: ApplicationLaunchTurn { applications: application_launches, authentication: authenticated_launches, wake: owner_wake.notifier() },
                 config,
                 xauthority,
                 children: secondary_children,

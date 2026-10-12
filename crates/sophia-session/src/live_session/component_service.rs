@@ -22,6 +22,7 @@ pub(super) fn service_components(
     admission_started: &mut Option<Instant>,
     authenticated_launches: &mut crate::launch_authentication::LaunchCoordinator,
     owner_wake: &OwnerWake,
+    application_launches: &mut LiveApplicationLaunches,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if !available {
         catalog.cancel_open_request();
@@ -142,6 +143,11 @@ pub(super) fn service_components(
             launches,
             children,
             admission_started,
+            &mut ApplicationLaunchTurn {
+                applications: application_launches,
+                authentication: authenticated_launches,
+                wake: owner_wake.notifier(),
+            },
         )?;
         return Ok(());
     }
@@ -299,6 +305,11 @@ pub(super) fn service_components(
                 launches,
                 children,
                 admission_started,
+                &mut ApplicationLaunchTurn {
+                    applications: application_launches,
+                    authentication: authenticated_launches,
+                    wake: owner_wake.notifier(),
+                },
             )
         })??;
     } else {
@@ -309,6 +320,11 @@ pub(super) fn service_components(
             launches,
             children,
             admission_started,
+            &mut ApplicationLaunchTurn {
+                applications: application_launches,
+                authentication: authenticated_launches,
+                wake: owner_wake.notifier(),
+            },
         )?;
     }
     components.settle_revocations(Some(runtime))?;

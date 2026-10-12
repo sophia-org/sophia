@@ -309,11 +309,6 @@ impl PersistentXtermSessionConfig {
     fn applications_from_core(
         snapshot: &sophia_config::CoreConfigSnapshot,
     ) -> Result<SessionApplicationConfig, Box<dyn std::error::Error>> {
-        // Until recipe launch custody is connected here, accepting this policy
-        // would silently launch its applications with the legacy host view.
-        if !snapshot.session.namespace_policy.recipes.is_empty() {
-            return Err("namespace recipe launch integration is not yet available".into());
-        }
         let mut applications = SessionApplicationConfig::default();
         let mut names_by_id = BTreeMap::new();
         for app in &snapshot.session.applications {
@@ -417,39 +412,6 @@ impl PersistentXtermSessionConfig {
                     .map_err(std::io::Error::other)
             },
         )
-    }
-
-    /// A mapped application is spawned only confined; an unmapped one exactly
-    /// as before.
-    fn spawn_session_application(
-        app: &SessionApplicationSpec,
-        display: &str,
-        xauthority: &std::path::Path,
-        control_socket: Option<&std::path::Path>,
-        inspection_socket: Option<&std::path::Path>,
-        confinement: crate::application_catalog::ApplicationConfinement<'_>,
-        context: crate::diagnostics::application::LaunchContext,
-    ) -> Result<Child, Box<dyn std::error::Error>> {
-        if let Some(confined) = confinement.command(&app.id, &app.executable, &app.arguments, None) {
-            return Ok(crate::diagnostics::application::spawn(&mut confined?, context)?);
-        }
-        let mut command = std::process::Command::new(&app.executable);
-        crate::application_catalog::configure_host_application_environment(
-            &mut command,
-            control_socket,
-            inspection_socket,
-        );
-        command
-            .args(&app.arguments)
-            .env("DISPLAY", display)
-            .env("XAUTHORITY", xauthority)
-            .env_remove("ENV")
-            .env_remove("BASH_ENV")
-            .process_group(0)
-            .stdin(Stdio::null())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit());
-        Ok(crate::diagnostics::application::spawn(&mut command, context)?)
     }
 
     fn launch_surface_proof_requested(&self) -> bool {

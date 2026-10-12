@@ -173,7 +173,7 @@ impl LiveMetadataShell {
         }
         Ok(())
     }
-    fn launcher_launch_outcome(
+    pub(in crate::live_session) fn launcher_launch_outcome(
         &mut self,
         tx: TransactionId,
         activation: ShellLauncherActivation,
@@ -194,6 +194,7 @@ impl LiveMetadataShell {
         launches: &mut SessionLaunchQueue,
         children: &mut Vec<ManagedSessionChild>,
         admission_started: &mut Option<Instant>,
+        applications: &mut ApplicationLaunchTurn<'_>,
         runtime: &mut sophia_backend_live::LiveProductionVisualRuntime,
         scene: &sophia_renderer_live::LiveProductionCpuScene,
         mut native: Option<&mut sophia_backend_live::LiveProductionNativeScanout>,
@@ -317,28 +318,39 @@ impl LiveMetadataShell {
                         });
                         let status = match result {
                             Ok((command, identity)) => {
-                                // Filesystem work has completed on the worker. There is
-                                // no further admission queue between revalidation and exec.
+                                // Recipe preparation may still be pending. Retain the
+                                // exact activation until process readiness is observed.
                                 match spawn_catalog_child(
-                                    command, &identity, config, xauthority, tx,
+                                    command,
+                                    &identity,
+                                    config,
+                                    xauthority,
+                                    tx,
+                                    applications,
                                 ) {
-                                    Ok(managed) => {
+                                    Ok(mut managed) => {
+                                        let ready = managed.child.process_id().is_some();
+                                        if !ready {
+                                            managed.shell_launch = Some((tx, grant));
+                                        }
                                         children.push(managed);
                                         *admission_started = Some(Instant::now());
-                                        ShellLaunchStatus::Started
+                                        ready.then_some(ShellLaunchStatus::Started)
                                     }
                                     Err(_) => {
                                         launches.cancel_catalog(tx);
-                                        ShellLaunchStatus::Failed
+                                        Some(ShellLaunchStatus::Failed)
                                     }
                                 }
                             }
                             Err(_) => {
                                 launches.cancel_catalog(tx);
-                                ShellLaunchStatus::Rejected
+                                Some(ShellLaunchStatus::Rejected)
                             }
                         };
-                        self.launcher_launch_outcome(tx, grant, status)?;
+                        if let Some(status) = status {
+                            self.launcher_launch_outcome(tx, grant, status)?;
+                        }
                         if !self.launcher.revoked {
                             runtime.set_descriptor_overlay(None, scene, native.as_deref_mut())?;
                         }

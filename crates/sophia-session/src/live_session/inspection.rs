@@ -36,15 +36,19 @@ impl LiveWmSession {
         session_generation: u64,
     ) {
         config.inspection_socket = None;
-        if config.inspection_access != sophia_config::DesktopInspectionAccess::HostAdmin {
+        let host = config.inspection_access == sophia_config::DesktopInspectionAccess::HostAdmin;
+        let observer = config.core_config_state.active().session.namespace_policy.recipes.values()
+            .any(|recipe| recipe.profile == sophia_config::namespace_policy::NamespaceRecipeProfile::Observer);
+        if !host && !observer {
             return;
         }
         let Some(public) = self.public.as_mut() else {
             return;
         };
-        let result = std::env::var_os("XDG_RUNTIME_DIR")
+        let result = if host { std::env::var_os("XDG_RUNTIME_DIR")
             .ok_or_else(|| std::io::Error::other("XDG_RUNTIME_DIR is required for inspection"))
-            .and_then(|path| InspectionService::bind(std::path::Path::new(&path)));
+            .and_then(|path| InspectionService::bind(std::path::Path::new(&path)))
+        } else { InspectionService::private() };
         let mut service = match result {
             Ok(service) => service,
             Err(error) => {
@@ -73,7 +77,7 @@ impl LiveWmSession {
             refusals: 0,
         });
         public.publish_inspection();
-        tracing::info!(target: "sophia_inspection", status = "enabled", access = "host-admin");
+        tracing::info!(target: "sophia_inspection", status = "enabled", access = if host { "host-admin" } else { "authenticated-observer" });
     }
 
     fn service_inspection(&mut self, stopping: bool) {

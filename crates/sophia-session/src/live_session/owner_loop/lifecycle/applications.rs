@@ -1,8 +1,19 @@
 {
         let child_reap_started = Instant::now();
+        let primary_event = child.as_deref_mut().and_then(|child| child.poll(
+            authenticated_launches, owner_wake.notifier(), Instant::now()));
+        if matches!(&primary_event, Some(crate::namespace_launch::ApplicationProcessEvent::Started {..})) {
+            crate::session_println!("sophia_session_app schema=1 status=started id={} source=startup",
+                config.applications.startup.first().map_or("untracked", String::as_str));
+        }
+        if let Some(crate::namespace_launch::ApplicationProcessEvent::Failed(reason)) = &primary_event {
+            crate::session_eprintln!("sophia_session_app schema=3 status=failed source=startup reason={reason}");
+            primary_child_exited = true;
+            if config.startup_proof_requested() { return Err(reason.clone().into()); }
+            if config.exit_when_startup_exits { begin_session_quiescence!("startup_application_failure"); }
+        }
         if !primary_child_exited
-            && let Some(primary_child) = child.as_deref_mut()
-            && let Some(status) = primary_child.try_wait()?
+            && let Some(crate::namespace_launch::ApplicationProcessEvent::Exited(status)) = primary_event
         {
             crate::diagnostics::application::exited(primary_diagnostic, status);
             primary_exit_status = Some(status);
@@ -91,6 +102,19 @@
         while secondary_index < secondary_children.len() {
             let observed = secondary_children[secondary_index].poll(
                 authenticated_launches, owner_wake.notifier(), Instant::now());
+            if let Some(status) = secondary_children[secondary_index].shell_outcome(observed.as_ref())
+                && let Some(shell) = metadata_shell.as_mut()
+            {
+                shell.launcher_launch_outcome(status.0, status.1, status.2)?;
+            }
+            if matches!(&observed, Some(crate::namespace_launch::ApplicationProcessEvent::Started {..})) {
+                let managed = &secondary_children[secondary_index];
+                crate::session_println!("sophia_session_app schema=3 status=started id={} source=managed",
+                    managed.id.as_deref().unwrap_or("untracked"));
+                if let Some(launch) = &managed.native_catalog {
+                    crate::session_println!("sophia_native_launcher schema=1 status=process_started transaction={}", launch.transaction.raw());
+                }
+            }
             if let Some(crate::namespace_launch::ApplicationProcessEvent::Failed(reason)) = &observed {
                 let managed = &mut secondary_children[secondary_index];
                 if managed.matches_admission(session_launches) {

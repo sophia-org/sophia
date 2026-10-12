@@ -1,6 +1,68 @@
 use super::*;
 
 #[test]
+fn recipes_prepare_their_groups_and_only_selected_portal_participation() {
+    use socket_directories::ClientGroup;
+    use sophia_config::namespace_policy::*;
+    use sophia_protocol::NamespacePortalCapability;
+    let recipe = NamespaceRecipeConfig {
+        name: "browser".into(),
+        profile: NamespaceRecipeProfile::ConfinedX { group: 7 },
+        source: None,
+        request: vec![RecipePortalCapability::FileHandoff],
+        publish: vec![RecipePortalCapability::Clipboard],
+        developer_launch: false,
+    };
+    let mut policy = NamespacePolicyConfig {
+        recipes: BTreeMap::from([("browser".into(), recipe)]),
+        applications: BTreeMap::from([("registered:browser".into(), "browser".into())]),
+    };
+    let groups = x_groups::XGroups::parse_with_recipes(
+        &["--clipboard-rule=confined-7:shared".into()],
+        &policy,
+    )
+    .unwrap();
+    assert_eq!(
+        groups.confined,
+        [7],
+        "recipe must prepare its actual confined listener"
+    );
+    let caps = groups.recipe_capabilities(
+        ClientGroup::Confined(7),
+        NamespaceCapabilities::NONE,
+        &policy,
+    );
+    assert!(caps.allows_request(NamespacePortalCapability::FileHandoff));
+    assert!(caps.allows_publish(NamespacePortalCapability::Clipboard));
+    assert!(!caps.allows_request(NamespacePortalCapability::Clipboard));
+    assert_eq!(
+        groups.recipe_capabilities(
+            ClientGroup::Confined(8),
+            NamespaceCapabilities::NONE,
+            &policy
+        ),
+        NamespaceCapabilities::NONE
+    );
+    assert!(
+        x_groups::XGroups::parse_with_recipes(
+            &["--confined-application=browser:7".into()],
+            &policy
+        )
+        .is_err()
+    );
+    for group in 1..=9 {
+        let mut recipe = policy.recipes["browser"].clone();
+        recipe.name = format!("group-{group}");
+        recipe.profile = NamespaceRecipeProfile::ConfinedX { group };
+        policy.recipes.insert(recipe.name.clone(), recipe);
+    }
+    assert!(
+        x_groups::XGroups::parse_with_recipes(&[], &policy).is_err(),
+        "recipe groups must share the listener capacity bound"
+    );
+}
+
+#[test]
 fn named_x_groups_and_xtest_are_explicit_and_bounded() {
     let parse = |args: &[&str]| {
         isolated_session_config(&args.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>())

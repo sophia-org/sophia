@@ -6,6 +6,37 @@
 use crate::live_session::*;
 use std::sync::mpsc::SyncSender;
 
+/// Existing environment/custody fixtures exercise the common host constructor;
+/// recipe-selection joins live in application_recipe_launches.rs.
+#[allow(clippy::too_many_arguments)]
+pub(in crate::live_session) fn spawn_session_application(
+    app: &SessionApplicationSpec,
+    display: &str,
+    xauthority: &std::path::Path,
+    control_socket: Option<&std::path::Path>,
+    inspection_socket: Option<&std::path::Path>,
+    confinement: crate::application_catalog::ApplicationConfinement<'_>,
+    context: crate::diagnostics::application::LaunchContext,
+) -> std::io::Result<std::process::Child> {
+    crate::application_catalog::spawn_application_process(
+        &crate::application_catalog::ApplicationLaunchCommand {
+            executable: app.executable.clone(),
+            arguments: app.arguments.clone(),
+            working_directory: None,
+            namespace_recipe: None,
+        },
+        crate::application_catalog::CatalogProcessEnvironment {
+            display,
+            xauthority,
+            control_socket,
+            inspection_socket,
+            confinement,
+        },
+        Some(&format!("registered:{}", app.id)),
+        context,
+    )
+}
+
 impl RoutedInputIngress for SyncSender<XAuthorityRoutedInput> {
     fn try_send(
         &self,

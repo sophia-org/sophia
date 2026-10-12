@@ -367,7 +367,7 @@ shift
         queue.begin_next(true).unwrap();
         let retained = queue.take_admitted_command(transaction).unwrap();
         let mut child = ChildGuard(
-            PersistentXtermSessionConfig::spawn_session_application(
+            crate::live_session::tests::spawn_session_application(
                 &retained,
                 ":private-no-connection",
                 &xauthority,
@@ -407,7 +407,7 @@ shift
         }
         assert_eq!(std::fs::read(output).unwrap(), expected);
         assert!(
-            PersistentXtermSessionConfig::spawn_session_application(
+            crate::live_session::tests::spawn_session_application(
                 replacement.named_command("capture").unwrap(),
                 ":private-no-connection",
                 &xauthority,

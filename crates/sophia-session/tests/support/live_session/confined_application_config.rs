@@ -346,13 +346,13 @@ fn a_mapped_application_that_cannot_be_confined_never_launches_on_the_host() {
             .unwrap();
             assert!(child.wait().unwrap().success());
         }
-        // Startup and shortcut launches share spawn_session_application.
+        // Registered host construction retains the existing confinement mapping.
         let context = crate::diagnostics::application::LaunchContext {
             source: crate::diagnostics::application::LaunchSource::Shortcut,
             transaction: Some(1),
         };
         let spawn = |app: &SessionApplicationSpec| {
-            PersistentXtermSessionConfig::spawn_session_application(
+            crate::live_session::tests::spawn_session_application(
                 app,
                 ":47",
                 &fixture.cookie,

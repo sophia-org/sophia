@@ -184,6 +184,17 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
             1,
             "ordinary dismissal must preserve launch admission"
         );
+        let mut application_launches = LiveApplicationLaunches::default();
+        let mut authentication = crate::launch_authentication::LaunchCoordinator::new(
+            Default::default(),
+            crate::live_session::tests::lock_provider_factotum::namespaces(),
+        );
+        let wake = sophia_wake::Wake::new().unwrap();
+        let mut application_turn = ApplicationLaunchTurn {
+            applications: &mut application_launches,
+            authentication: &mut authentication,
+            wake: wake.notifier(),
+        };
         let mut children = vec![];
         let mut started = None;
         if mode == 2 {
@@ -195,6 +206,7 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
                     &mut h.queue,
                     &mut children,
                     &mut started,
+                    &mut application_turn,
                 )
                 .unwrap();
             assert_eq!(h.queue.pending_len(), 1);
@@ -207,6 +219,7 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
                     &mut h.queue,
                     &mut children,
                     &mut started,
+                    &mut application_turn,
                 )
                 .unwrap();
             assert_eq!(
@@ -233,6 +246,7 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
                         &mut h.queue,
                         &mut children,
                         &mut started,
+                        &mut application_turn,
                     )
                     .is_err()
             );
@@ -254,6 +268,7 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
                 &mut h.queue,
                 &mut children,
                 &mut started,
+                &mut application_turn,
             )
             .unwrap();
         assert_eq!(catalog.execution_owner(&h.queue), Some(GRANT));
@@ -269,6 +284,7 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
                         &mut h.queue,
                         &mut children,
                         &mut started,
+                        &mut application_turn,
                     )
                     .is_err()
             );
@@ -281,6 +297,7 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
                         &mut h.queue,
                         &mut children,
                         &mut started,
+                        &mut application_turn,
                     )
                     .is_err()
             );
@@ -297,6 +314,7 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
                     &mut h.queue,
                     &mut children,
                     &mut started,
+                    &mut application_turn,
                 )
                 .unwrap();
             assert!(h.queue.admission().is_none());
@@ -313,6 +331,7 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
                         &mut h.queue,
                         &mut children,
                         &mut started,
+                        &mut application_turn,
                     )
                     .unwrap();
                 std::thread::sleep(Duration::from_millis(1));
@@ -335,6 +354,7 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
                     &mut h.queue,
                     &mut children,
                     &mut started,
+                    &mut application_turn,
                 )
                 .unwrap();
             assert!(children[0].matches_admission(&h.queue));

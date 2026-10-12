@@ -44,6 +44,8 @@ mod chord_lifecycle_session;
 
 #[path = "policy_inspection.rs"]
 mod policy_inspection;
+#[path = "observer_recipe_owner.rs"]
+mod observer_recipe_owner;
 
 #[path = "inspection_profile_reload.rs"]
 mod inspection_profile_reload;

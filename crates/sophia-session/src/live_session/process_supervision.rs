@@ -1,7 +1,7 @@
 use super::*;
 
 pub(super) struct SessionProcessGuard {
-    pub(super) child: Option<Child>,
+    pub(super) child: Option<ManagedSessionChild>,
     pub(super) diagnostic: Option<crate::diagnostics::application::LaunchTicket>,
     pub(super) secondary_children: Vec<ManagedSessionChild>,
     pub(super) socket_path: Option<std::path::PathBuf>,
@@ -16,9 +16,32 @@ pub(super) struct ManagedSessionChild {
     pub(super) child: crate::namespace_launch::ApplicationProcess,
     pub(super) diagnostic: Option<crate::diagnostics::application::LaunchTicket>,
     pub(super) process_identity: Option<crate::launch_origin::ProcessIdentity>,
+    buffered_event: Option<crate::namespace_launch::ApplicationProcessEvent>,
+    pub(super) shell_launch: Option<(TransactionId, sophia_protocol::ShellLauncherActivation)>,
 }
 
 impl ManagedSessionChild {
+    /// A queued launch is not a Started outcome. Preserve the activation across
+    /// preparation and consume it once, including failure or exit before readiness.
+    pub(super) fn shell_outcome(
+        &mut self,
+        event: Option<&crate::namespace_launch::ApplicationProcessEvent>,
+    ) -> Option<(
+        TransactionId,
+        sophia_protocol::ShellLauncherActivation,
+        sophia_protocol::ShellLaunchStatus,
+    )> {
+        use crate::namespace_launch::ApplicationProcessEvent;
+        let status = match event? {
+            ApplicationProcessEvent::Started { .. } => sophia_protocol::ShellLaunchStatus::Started,
+            ApplicationProcessEvent::Failed(_) | ApplicationProcessEvent::Exited(_) => {
+                sophia_protocol::ShellLaunchStatus::Failed
+            }
+        };
+        let (transaction, activation) = self.shell_launch.take()?;
+        Some((transaction, activation, status))
+    }
+
     pub(super) fn matches_admission(&self, launches: &SessionLaunchQueue) -> bool {
         self.launch_transaction.is_some_and(|transaction| {
             launches.matches_child_launch(
@@ -36,6 +59,8 @@ impl ManagedSessionChild {
         let child = child.into();
         let pid = child.process_id();
         Self {
+            buffered_event: None,
+            shell_launch: None,
             id,
             launch_transaction: None,
             catalog_launch: false,
@@ -64,6 +89,9 @@ impl ManagedSessionChild {
         wake: sophia_wake::Notifier,
         now: Instant,
     ) -> Option<crate::namespace_launch::ApplicationProcessEvent> {
+        if let Some(event) = self.buffered_event.take() {
+            return Some(event);
+        }
         let event = self.child.poll(launches, wake, now);
         self.process_identity = self.child.launch_identity().or(self.process_identity);
         if let Some(crate::namespace_launch::ApplicationProcessEvent::Started { process, .. }) =
@@ -72,6 +100,19 @@ impl ManagedSessionChild {
             self.diagnostic = crate::diagnostics::application::registration(*process);
         }
         event
+    }
+
+    /// Startup's first-frame wait must advance an asynchronous launch without
+    /// consuming its first lifecycle event before the owner loop observes it.
+    pub(super) fn pump(
+        &mut self,
+        launches: &mut crate::launch_authentication::LaunchCoordinator,
+        wake: sophia_wake::Notifier,
+        now: Instant,
+    ) {
+        if self.buffered_event.is_none() {
+            self.buffered_event = self.poll(launches, wake, now);
+        }
     }
 
     pub(super) fn terminate(&mut self, grouped: bool) -> Result<(), Box<dyn std::error::Error>> {
@@ -104,18 +145,17 @@ pub(super) fn spawn_catalog_child(
     config: &PersistentXtermSessionConfig,
     xauthority: &std::path::Path,
     transaction: TransactionId,
+    applications: &mut ApplicationLaunchTurn<'_>,
 ) -> std::io::Result<ManagedSessionChild> {
-    let child = crate::application_catalog::spawn_catalog_process_with_transaction(
+    let child = applications.spawn(
+        config,
+        xauthority,
+        identity,
         &command,
-        crate::application_catalog::CatalogProcessEnvironment {
-            display: &config.display,
-            xauthority,
-            control_socket: config.control_socket.as_deref(),
-            inspection_socket: config.inspection_socket.as_deref(),
-            confinement: config.application_confinement(xauthority),
+        crate::diagnostics::application::LaunchContext {
+            source: crate::diagnostics::application::LaunchSource::Catalog,
+            transaction: Some(transaction.raw()),
         },
-        Some(transaction.raw()),
-        Some(identity),
     )?;
     let mut managed = ManagedSessionChild::for_launch(None, transaction, child);
     managed.catalog_launch = true;
@@ -177,7 +217,7 @@ pub(super) fn terminate_session_child(
 
 impl SessionProcessGuard {
     pub(super) fn new(
-        child: Option<Child>,
+        child: Option<crate::namespace_launch::ApplicationProcess>,
         secondary_children: Vec<ManagedSessionChild>,
         socket_path: std::path::PathBuf,
         grouped: bool,
@@ -185,26 +225,36 @@ impl SessionProcessGuard {
         Self {
             diagnostic: child
                 .as_ref()
-                .and_then(|child| crate::diagnostics::application::registration(child.id())),
-            child,
+                .and_then(|child| child.process_id())
+                .and_then(crate::diagnostics::application::registration),
+            child: child.map(|child| ManagedSessionChild::new(None, child)),
             secondary_children,
             socket_path: Some(socket_path),
             grouped,
         }
     }
 
-    pub(super) fn children_mut(&mut self) -> (Option<&mut Child>, &mut Vec<ManagedSessionChild>) {
+    pub(super) fn children_mut(
+        &mut self,
+    ) -> (
+        Option<&mut ManagedSessionChild>,
+        &mut Vec<ManagedSessionChild>,
+    ) {
         (self.child.as_mut(), &mut self.secondary_children)
     }
 
-    pub(super) fn add_secondary_child(&mut self, id: Option<String>, child: Child) {
+    pub(super) fn add_secondary_child(
+        &mut self,
+        id: Option<String>,
+        child: impl Into<crate::namespace_launch::ApplicationProcess>,
+    ) {
         self.secondary_children
             .push(ManagedSessionChild::new(id, child));
     }
 
     pub(super) fn terminate(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(mut child) = self.child.take() {
-            terminate_session_child(&mut child, self.grouped, self.diagnostic)?;
+            child.terminate(self.grouped)?;
         }
         for mut child in self.secondary_children.drain(..) {
             child.terminate(self.grouped)?;

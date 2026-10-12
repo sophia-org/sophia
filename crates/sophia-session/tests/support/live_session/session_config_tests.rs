@@ -14,16 +14,24 @@ mod inspection_environment;
 mod x_group_config;
 
 #[test]
-fn pending_namespace_launch_policy_cannot_silently_fall_back_to_host_launches() {
+fn namespace_launch_policy_requires_its_authentication_and_publication_owners() {
     let source =
         b"schema 2\nsession { namespace-policy { recipe \"tools\" profile=\"observer\"; }; }\n";
     let snapshot =
         sophia_config::parse_core_config(source, sophia_config::ConfigGeneration::INITIAL).unwrap();
-    let result = PersistentXtermSessionConfig::applications_from_core(&snapshot);
-    assert!(
-        result.is_err(),
-        "unwired namespace launch policy must not become a host launch"
-    );
+    assert!(PersistentXtermSessionConfig::applications_from_core(&snapshot).is_ok());
+    let policy = &snapshot.session.namespace_policy;
+    for (normal, factotum, wm) in [
+        (false, true, true),
+        (true, false, true),
+        (true, true, false),
+    ] {
+        assert!(
+            application_launches::validate_configuration(policy, normal, factotum, wm).is_err(),
+            "recipe configuration must require its real owners"
+        );
+    }
+    assert!(application_launches::validate_configuration(policy, true, true, true).is_ok());
 }
 
 #[test]

@@ -12,6 +12,7 @@ impl ComponentCatalog {
         launches: &mut SessionLaunchQueue,
         children: &mut Vec<ManagedSessionChild>,
         admission_started: &mut Option<Instant>,
+        applications: &mut ApplicationLaunchTurn<'_>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let expected = self.execution_owner(launches);
         if connection.and_then(|c| c.content_grant())
@@ -34,19 +35,16 @@ impl ComponentCatalog {
             launches,
             now,
             |command, identity, transaction| {
-                crate::application_catalog::spawn_catalog_process_with_transaction(
+                applications.spawn(
+                    config,
+                    xauthority,
+                    identity,
                     command,
-                    CatalogProcessEnvironment {
-                        display: &config.display,
-                        xauthority,
-                        control_socket: config.control_socket.as_deref(),
-                        inspection_socket: config.inspection_socket.as_deref(),
-                        confinement: config.application_confinement(xauthority),
+                    crate::diagnostics::application::LaunchContext {
+                        source: crate::diagnostics::application::LaunchSource::Catalog,
+                        transaction: Some(transaction),
                     },
-                    Some(transaction),
-                    Some(identity),
                 )
-                .map(crate::namespace_launch::ApplicationProcess::from)
             },
         );
         match event {
@@ -65,10 +63,15 @@ impl ComponentCatalog {
                         ("persistent", value.action.output.id, value.action.event_id)
                     }
                 };
+                let status = if child.child.process_id().is_some() {
+                    "process_started"
+                } else {
+                    "process_preparing"
+                };
                 children.push(ManagedSessionChild::from(child));
                 *admission_started = Some(Instant::now());
                 crate::session_println!(
-                    "sophia_catalog_launch schema=1 status=process_started transaction={} cause={} connection_epoch={} content_grant_epoch={} output={} event_id={}",
+                    "sophia_catalog_launch schema=1 status={status} transaction={} cause={} connection_epoch={} content_grant_epoch={} output={} event_id={}",
                     transaction.raw(),
                     cause,
                     grant.connection_epoch,
@@ -77,7 +80,7 @@ impl ComponentCatalog {
                     event_id
                 );
                 crate::session_println!(
-                    "sophia_native_launcher schema=1 status=process_started transaction={}",
+                    "sophia_native_launcher schema=1 status={status} transaction={}",
                     transaction.raw()
                 );
             }

@@ -26,11 +26,22 @@ const STARTUP_FRAME_DEADLINE: Duration = Duration::from_secs(5);
 pub(super) fn await_primary_startup_frame(
     config: &PersistentXtermSessionConfig,
     authority_receiver: &Receiver<XAuthorityObservedTransactionBatch>,
+    mut progress: impl FnMut(),
 ) -> Result<Option<XAuthorityObservedTransactionBatch>, String> {
     if !(config.secondary_terminal || config.applications.startup.len() > 1) {
         return Ok(None);
     }
-    match authority_receiver.recv_timeout(STARTUP_FRAME_DEADLINE) {
+    let deadline = std::time::Instant::now() + STARTUP_FRAME_DEADLINE;
+    let result = loop {
+        progress();
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        match authority_receiver.recv_timeout(remaining.min(Duration::from_millis(10))) {
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+                if std::time::Instant::now() < deadline => {}
+            result => break result,
+        }
+    };
+    match result {
         Ok(batch) => Ok(Some(batch)),
         Err(error) if config.startup_proof_requested() => Err(format!(
             "primary xterm did not publish a startup frame: {error}"

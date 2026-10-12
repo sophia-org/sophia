@@ -29,6 +29,27 @@ session {
 }
 "#;
 
+#[test]
+fn recipe_startup_groups_are_automatic_and_policy_reload_waits_for_restart() {
+    let core = DIRECT_CORE.replacen("session {", r#"session {
+        namespace-policy {
+            recipe "private-app" profile="confined-x" group=7
+            application "registered:panel" recipe="private-app"
+        }
+    "#, 1);
+    let mut fixture = ConfigFixture::from_documents(&core,
+        "schema 1\nshell { enabled #false; }\nsession { terminal \"terminal\"; startup \"panel\"; }\n",
+        &["--factotum-agent=/usr/bin/true", "--factotum-pam-helper=/usr/bin/true"]);
+    assert_eq!(fixture.config.x_groups.confined, [7]);
+    assert_eq!(fixture.config.applications.startup, ["panel"]);
+    let before = fixture.config.core_config_state.active().session.namespace_policy.clone();
+    let report = fixture.config.reload_core_config(core.replace("group=7", "group=8").as_bytes()).unwrap();
+    assert_eq!(report.disposition, sophia_config::ReloadDisposition::PendingRestart);
+    assert_eq!(fixture.config.x_groups.confined, [7]);
+    assert_eq!(fixture.config.core_config_state.active().session.namespace_policy, before,
+        "a pending recipe reload must not change the active launch authority");
+}
+
 struct ConfigFixture {
     directory: PathBuf,
     config: PersistentXtermSessionConfig,

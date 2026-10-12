@@ -15,6 +15,7 @@ pub(crate) mod lock_provider_factotum;
 mod focus_candidate;
 #[path = "live_session/production_test_helpers.rs"]
 mod production_test_helpers;
+pub(super) use production_test_helpers::spawn_session_application;
 use production_test_helpers::{completed_pointer_gesture_geometry, observe_public_output_topology};
 
 #[path = "cpu_harness_config.rs"]

@@ -322,6 +322,7 @@ impl Harness {
                 crate::live_session::tests::lock_provider_factotum::namespaces(),
             ),
             &crate::live_session::OwnerWake::new().unwrap(),
+            &mut crate::live_session::LiveApplicationLaunches::default(),
         )
         .unwrap();
     }

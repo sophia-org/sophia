@@ -22,6 +22,71 @@ socket paths or namespace commands to launch installed applications.
 
 ## Evidence
 
+### Live application recipe dispatch
+
+The slice based on `942381b16` connects normal Session launch entry points to
+one `LiveApplicationLaunches` owner. Startup captures the actual X listeners,
+namespace contexts, portal recipients and inspection generation after frontend
+readiness. Registered shortcut targets, primary and secondary startup apps,
+and verified identities from both catalogs select the same immutable recipe
+policy. Unmapped applications retain their existing launch policy. A selected
+recipe with missing resources fails instead of falling back to the host.
+
+Configuration now admits recipes when normal Session and Factotum prerequisites
+exist; observers also require the inspection publication owner. Recipe groups
+are prepared automatically within the existing group bound. Portal participation
+is combined only within an explicitly shared group and does not replace exact
+transfer policy. Recipe changes remain pending restart. Observer inspection can
+be private without a host socket; future launches capture the new generation
+after fencing, while retained old acceptors remain invalid.
+
+Primary startup now retains the managed process owner. Its first-frame barrier
+pumps authentication/preparation and buffers the lifecycle event for the main
+loop. Pending launches log preparing. Legacy shell outcomes retain their exact
+activation until readiness or failure, and native/shortcut logs no longer call
+queued preparation a started process. The raw host constructor remains shared
+with existing environment and launch-origin regression tests.
+
+`t318-live-application-launches-01` stopped at the existing source inventory's
+missing `namespace_launch/selection.rs` entry after 1,028 lib tests passed.
+Adding the correctly configured constructor to the inventory fixes the fixture,
+not production behavior. `t318-live-application-launches-02` passes the full
+Session package tests, all-target Clippy and formatting, then stops at the
+source-layout limit because a test adapter enlarged `tests/support/live_session.rs`.
+Moving that adapter into the existing production-test-helper module fixes the
+layout without changing its behavior. The final device-hidden package
+`t318-live-application-launches-03` passes all 1,029 Session lib tests (34 ignored
+entry points/opt-in cases), all-target Clippy, formatting, layout and diff checks.
+The package integration tests passed in run 02; the final delta is only this
+test-helper move. Invoked child tests also print their own summaries and must
+not be confused with additional parent cases.
+
+The new live-owner test exercises registered and desktop identities under both
+shared and confined X recipes with real supervised launch/Factotum owners. It
+also checks retained startup events and exactly-once shell outcome correlation.
+Its X listeners and scene facts are supplied; it does not claim X setup or
+pixels. The observer join uses supplied WM state with the real private inspection
+owner and verifies a fresh launch after fencing. Configuration tests cover
+automatic groups, participation direction, prerequisite refusals and policy
+reload remaining pending restart.
+
+The separate `t318-live-selection-control-01` disables the selected-recipe
+branch. It fails with exit 101 at `selected Session launch must enter namespace
+custody`, cleans the deliberately mislaunched host child, restores all candidate
+hashes and passes the exact test. Both this control and the final positive
+package dynamically enumerate the same 33 code/test candidate files before and
+after execution. Binary paths and hashes are recorded without copies. These
+documentation edits follow the runs. Package SHA256SUMS identities are:
+
+- run 01: `eed5833c98ab0c1e00a13113cf07f82708b9cfb76a3c87e3a6255cfef4ffe41f`
+- run 02: `36d977774d81b7d584aa0d248989c2da21c6df4ad64dd59a0d0ab91e69fe7667`
+- run 03: `b5246bf662af4ed8dd0a06220c84e01c864614a9b1a0e1f9c6e00a19e0ff7f0e`
+- selection control: `377e2f0cb515b9d042fb4ca5ad75d8e86d1a58cd4e4f9b4eb959a19b1385d868`
+
+This qualifies the Session launch/resource join, not an installed desktop.
+The authorized developer-launch 9P interface, final whole-repository gate and
+merge/install acceptance remain open. t318 is not complete.
+
 ### Optional protocol lifetime for ordinary X applications
 
 The slice based on `d4b24ef5c` reproduces the earlier compatibility concern:

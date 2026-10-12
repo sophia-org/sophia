@@ -126,8 +126,8 @@ pub(crate) fn run_persistent_xterm_session(
     let x_namespace = namespace_registry
         .lock()
         .map_err(|_| "Sophia namespace registry lock was poisoned")?
-        .create_namespace(config.namespace_profile, config.x_groups.capabilities(
-            socket_directories::ClientGroup::Shared, config.namespace_capabilities));
+        .create_namespace(config.namespace_profile, config.x_groups.recipe_capabilities(
+            socket_directories::ClientGroup::Shared, config.namespace_capabilities, &config.core_config_state.active().session.namespace_policy));
     let mut x_namespaces = std::collections::BTreeMap::from([
         (sophia_x_authority::XServerFrontendListenerId::PRIMARY, x_namespace.id),
     ]);
@@ -137,8 +137,8 @@ pub(crate) fn run_persistent_xterm_session(
     for (id, path) in &group_sockets {
         let context = namespace_registry.lock()
             .map_err(|_| "Sophia namespace registry lock was poisoned")?
-            .create_namespace(NamespaceProfile::Confined, config.x_groups.capabilities(
-                socket_directories::ClientGroup::Confined(*id), NamespaceCapabilities::NONE));
+            .create_namespace(NamespaceProfile::Confined, config.x_groups.recipe_capabilities(
+                socket_directories::ClientGroup::Confined(*id), NamespaceCapabilities::NONE, &config.core_config_state.active().session.namespace_policy));
         let listener = sophia_x_authority::XServerFrontendListenerId(*id);
         x_namespaces.insert(listener, context.id);
         group_listeners.push((listener, path.clone(), context));
@@ -388,6 +388,9 @@ pub(crate) fn run_persistent_xterm_session(
     }));
     wait_for_x_server_socket(&config.socket_path, &mut server)?;
     verify_confined_group_sockets(&group_layout, &group_sockets, &mut server)?;
+    let mut application_launches = LiveApplicationLaunches::prepare(
+        &config, namespace_registry.clone(), &x_namespaces, xauthority.path(),
+        session_generation, wm_session.as_ref())?;
     let mut metadata_broker = config
         .wm_process
         .is_some()
@@ -444,193 +447,7 @@ pub(crate) fn run_persistent_xterm_session(
     let input_proof_result = (config.input_proof_requested() && config.client.is_none())
         .then(|| LiveInputProofResult::create(display_number))
         .transpose()?;
-    let normal_primary = config
-        .normal_session
-        .then(|| {
-            config.applications.startup.first().map(|id| {
-                config
-                    .applications
-                    .applications
-                    .get(id)
-                    .expect("normal session startup application was validated")
-            })
-        })
-        .flatten();
-    let mut terminal_command = match (normal_primary, config.client.as_deref()) {
-        (Some(app), _) => Some(std::process::Command::new(&app.executable)),
-        (None, _) if config.normal_session => None,
-        (None, Some(client)) => Some(application_client_command(client)),
-        (None, None) => Some(std::process::Command::new(
-            terminal.as_deref().expect("xterm executable is resolved"),
-        )),
-    };
-    let (client_stdout_capture, client_stdout_file) = if config.client.is_some() {
-        let (capture, file) = LiveClientStdoutCapture::create(display_number)?;
-        (Some(capture), Some(file))
-    } else {
-        (None, None)
-    };
-    if let Some(terminal_command) = terminal_command.as_mut() {
-        crate::application_catalog::configure_host_application_environment(
-            terminal_command,
-            config.control_socket.as_deref(),
-            config.inspection_socket.as_deref(),
-        );
-        terminal_command
-            .env("DISPLAY", &config.display)
-            .env("XAUTHORITY", xauthority.path())
-            .env_remove("ENV")
-            .env_remove("BASH_ENV")
-            .stdin(Stdio::null())
-            .stderr(Stdio::inherit());
-        if let Some(app) = normal_primary {
-            terminal_command
-                .args(&app.arguments)
-                .process_group(0)
-                .stdout(Stdio::inherit());
-        } else if config.client.is_some() {
-            terminal_command
-                .env("GDK_BACKEND", "x11")
-                .env("GTK_USE_PORTAL", "0")
-                .env_remove("WAYLAND_DISPLAY")
-                .args(&config.client_args)
-                .stdout(Stdio::from(
-                    client_stdout_file.expect("application stdout file was created"),
-                ));
-        } else {
-            terminal_command
-                .args([
-                    "-cm",
-                    "-dc",
-                    "-geometry",
-                    "120x36+80+60",
-                    "-title",
-                    "Sophia Terminal",
-                ])
-                .stdout(Stdio::inherit());
-        }
-        if let Some(result) = input_proof_result.as_ref() {
-            terminal_command.env("SOPHIA_INPUT_PROOF_RESULT", result.path());
-        }
-        if config.client.is_none()
-            && let Some(proof_text) = config
-                .inject_text
-                .as_deref()
-                .or(config.expect_physical_text.as_deref())
-        {
-            terminal_command
-                .args([
-                    "-e",
-                    "sh",
-                    "-c",
-                    PRIMARY_INPUT_PROOF_SCRIPT,
-                    "sophia-input-proof",
-                ])
-                .arg(proof_text)
-                .arg(
-                    input_proof_result
-                        .as_ref()
-                        .expect("input proof result exists with proof text")
-                        .path(),
-                );
-        } else if let Some(program) = config.terminal_exec.as_deref() {
-            terminal_command
-                .env_remove("ENV")
-                .env_remove("BASH_ENV")
-                .arg("-e")
-                .arg(program)
-                .args(&config.terminal_exec_args);
-        }
-    }
-    let child = match terminal_command
-        .map(|mut command| {
-            crate::diagnostics::application::spawn(
-                &mut command,
-                crate::diagnostics::application::LaunchContext {
-                    source: crate::diagnostics::application::LaunchSource::Startup,
-                    transaction: None,
-                },
-            )
-        })
-        .transpose()
-    {
-        Ok(child) => child,
-        Err(error) if !config.startup_proof_requested() => {
-            crate::session_eprintln!(
-                "sophia_session_app schema=2 status=failed source=startup reason=spawn error={error}"
-            );
-            None
-        }
-        Err(error) => return Err(error.into()),
-    };
-    if child.is_some()
-        && let Some(app) = normal_primary
-    {
-        crate::session_println!(
-            "sophia_session_app schema=1 status=started id={} source=startup",
-            app.id
-        );
-    }
-    let mut process = SessionProcessGuard::new(
-        child,
-        Vec::new(),
-        config.socket_path.clone(),
-        config.normal_session,
-    );
-    let initial_authority_batch =
-        startup_barrier::await_primary_startup_frame(&config, &authority_receiver)?;
-    if config.secondary_terminal {
-        process.add_secondary_child(
-            None,
-            spawn_secondary_xterm(
-                terminal
-                    .as_deref()
-                    .expect("secondary terminal requires xterm"),
-                &config.display,
-                xauthority.path(),
-                config.control_socket.as_deref(),
-                config.inspection_socket.as_deref(),
-                config
-                    .inject_text
-                    .as_deref()
-                    .or(config.expect_physical_text.as_deref()),
-            )?,
-        );
-    }
-    for id in config.applications.startup.iter().skip(1) {
-        let app = config
-            .applications
-            .applications
-            .get(id)
-            .expect("normal session startup application was validated");
-        match PersistentXtermSessionConfig::spawn_session_application(
-            app,
-            &config.display,
-            xauthority.path(),
-            config.control_socket.as_deref(),
-            config.inspection_socket.as_deref(),
-            config.application_confinement(xauthority.path()),
-            crate::diagnostics::application::LaunchContext {
-                source: crate::diagnostics::application::LaunchSource::Startup,
-                transaction: None,
-            },
-        ) {
-            Ok(child) => {
-                process.add_secondary_child(Some(app.id.clone()), child);
-                crate::session_println!(
-                    "sophia_session_app schema=1 status=started id={} source=startup",
-                    app.id
-                );
-            }
-            Err(error) if !config.startup_proof_requested() => {
-                crate::session_eprintln!(
-                    "sophia_session_app schema=2 status=failed id={} source=startup reason=spawn error={error}",
-                    app.id
-                );
-            }
-            Err(error) => return Err(error),
-        }
-    }
+    let (mut process, client_stdout_capture, initial_authority_batch) = include!("run/applications.rs");
 
     let mut randr_witness = config
         .inject_output_size
@@ -801,6 +618,7 @@ pub(crate) fn run_persistent_xterm_session(
             owner_wake: &owner_wake,
         },
         SessionLoopResources {
+            application_launches: &mut application_launches,
             launch_origins: &launch_origins,
             child: primary_child,
             primary_diagnostic,

@@ -538,6 +538,7 @@ fn batch_transaction_identity_count(batch: &XAuthorityObservedTransactionBatch) 
 }
 
 struct SessionActionExecutionContext<'a> {
+    application_launch: ApplicationLaunchTurn<'a>,
     config: &'a PersistentXtermSessionConfig,
     xauthority: &'a std::path::Path,
     children: &'a mut Vec<ManagedSessionChild>,
@@ -570,6 +571,7 @@ fn execute_committed_session_actions(
     actions: &mut VecDeque<(TransactionId, WmSessionAction, Option<SurfaceId>)>,
 ) -> Result<CommittedSessionActionRequests, Box<dyn std::error::Error>> {
     let SessionActionExecutionContext {
+        mut application_launch,
         config,
         xauthority,
         children,
@@ -760,19 +762,14 @@ fn execute_committed_session_actions(
         return Ok(requests);
     };
     let spawned = if config.normal_session {
-        PersistentXtermSessionConfig::spawn_session_application(
-            &command,
-            &config.display,
-            xauthority,
-            config.control_socket.as_deref(),
-            config.inspection_socket.as_deref(),
-            config.application_confinement(xauthority),
+        application_launch.spawn_registered(
+            config, xauthority, &command,
             crate::diagnostics::application::LaunchContext {
                 source: crate::diagnostics::application::LaunchSource::Shortcut,
                 transaction: Some(intent.transaction.raw()),
             },
         )
-        .map(|child| (Some(command.id.clone()), child))
+        .map(|child| (Some(command.id.clone()), child)).map_err(Box::<dyn std::error::Error>::from)
     } else {
         spawn_approved_application(
             &command.executable.to_string_lossy(),
@@ -781,19 +778,20 @@ fn execute_committed_session_actions(
             config.control_socket.as_deref(),
             config.inspection_socket.as_deref(),
         )
-        .map(|child| (None, child))
+        .map(|child| (None, crate::namespace_launch::ApplicationProcess::from(child)))
     };
     match spawned {
         Ok((id, child)) => {
             let evidence_id = id.as_deref().unwrap_or("untracked");
+            let status = if child.process_id().is_some() { "started" } else { "preparing" };
             crate::session_println!(
-                "sophia_session_app schema=2 status=started id={evidence_id} source=action transaction={}",
+                "sophia_session_app schema=2 status={status} id={evidence_id} source=action transaction={}",
                 intent.transaction.raw(),
             );
             // Retain the schema-1 compatibility record consumed by existing
             // physical-session verifiers.
             crate::session_println!(
-                "sophia_session_app schema=1 status=started id={evidence_id} source=action"
+                "sophia_session_app schema=1 status={status} id={evidence_id} source=action"
             );
             children.push(ManagedSessionChild::for_launch(
                 id,

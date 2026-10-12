@@ -185,15 +185,17 @@ impl RecipeLaunchTarget {
             return Err("application recipe identity mismatch".into());
         }
         let policy = recipe.policy();
-        if policy
-            .request
-            .iter()
-            .any(|c| !self.context.capabilities.allows_request(capability(*c)))
-            || policy
-                .publish
-                .iter()
-                .any(|c| !self.context.capabilities.allows_publish(capability(*c)))
-        {
+        if policy.request.iter().any(|c| {
+            !self
+                .context
+                .capabilities
+                .allows_request(recipe_capability(*c))
+        }) || policy.publish.iter().any(|c| {
+            !self
+                .context
+                .capabilities
+                .allows_publish(recipe_capability(*c))
+        }) {
             return Err("recipe participation exceeds its namespace".into());
         }
         let (portal, objects) = &self.portal;
@@ -320,7 +322,7 @@ impl RecipeLaunchTarget {
 #[path = "../../tests/support/namespace_application_selection.rs"]
 mod tests;
 
-fn capability(value: RecipePortalCapability) -> NamespacePortalCapability {
+pub(crate) fn recipe_capability(value: RecipePortalCapability) -> NamespacePortalCapability {
     match value {
         RecipePortalCapability::Clipboard => NamespacePortalCapability::Clipboard,
         RecipePortalCapability::DragAndDrop => NamespacePortalCapability::DragAndDrop,

@@ -201,6 +201,7 @@ fn every_session_protection_domain_names_the_session_bubblewrap() {
                 "live_session/wm/public_policy/output_service.rs".to_owned(),
                 true
             ),
+            ("namespace_launch/selection.rs".to_owned(), true),
         ]
     );
     // And each owner is handed the session's choice, not the default: the

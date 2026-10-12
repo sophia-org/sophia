@@ -90,8 +90,10 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+mod application_launches;
 mod authority_file;
 mod component_catalog;
+use application_launches::{ApplicationLaunchTurn, LiveApplicationLaunches};
 mod component_lifecycle;
 mod component_service;
 mod cpu_visual_progress;

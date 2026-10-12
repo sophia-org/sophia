@@ -36,7 +36,48 @@ pub(super) struct XGroups {
     pub clipboard_rules: Vec<(ClientGroup, ClientGroup)>,
 }
 
+pub(super) fn namespace_profile(name: &str) -> Result<super::NamespaceProfile, Box<dyn std::error::Error>> {
+    match name {
+        "classic" | "classic-shared" => Ok(super::NamespaceProfile::ClassicShared),
+        "confined" => Ok(super::NamespaceProfile::Confined),
+        profile => Err(format!("unsupported namespace profile {profile:?}; expected classic or confined").into()),
+    }
+}
+
 impl XGroups {
+    /// Recipe group names select actual startup listeners. No application or
+    /// catalog worker can create a listener or widen a group while launching.
+    pub fn parse_with_recipes(args: &[String], policy: &sophia_config::namespace_policy::NamespacePolicyConfig) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut effective = args.to_vec();
+        let mut groups: std::collections::BTreeSet<u32> = args.iter().filter_map(|arg| arg.strip_prefix("--confined-group=")?.parse().ok()).collect();
+        for recipe in policy.recipes.values() {
+            if let sophia_config::namespace_policy::NamespaceRecipeProfile::ConfinedX { group } = recipe.profile
+                && groups.insert(group) {
+                effective.push(format!("--confined-group={group}"));
+            }
+        }
+        let selected = Self::parse(&effective)?;
+        for app in selected.applications.keys() {
+            if policy.select_application(&format!("registered:{app}"), None)?.is_some() {
+                return Err("an application cannot select both a namespace recipe and --confined-application".into());
+            }
+        }
+        Ok(selected)
+    }
+
+    pub fn recipe_capabilities(&self, group: ClientGroup, base: NamespaceCapabilities,
+        policy: &sophia_config::namespace_policy::NamespacePolicyConfig) -> NamespaceCapabilities {
+        use sophia_config::namespace_policy::NamespaceRecipeProfile;
+        let profile = match group { ClientGroup::Shared => NamespaceRecipeProfile::SharedX,
+            ClientGroup::Confined(group) => NamespaceRecipeProfile::ConfinedX {group} };
+        policy.recipes.values().filter(|recipe| recipe.profile == profile)
+            .fold(self.capabilities(group, base), |mut capabilities, recipe| {
+                for cap in &recipe.request { capabilities = capabilities.with_request(crate::namespace_launch::recipe_capability(*cap)); }
+                for cap in &recipe.publish { capabilities = capabilities.with_publish(crate::namespace_launch::recipe_capability(*cap)); }
+                capabilities
+            })
+    }
+
     pub fn parse(args: &[String]) -> Result<Self, Box<dyn std::error::Error>> {
         let mut groups = Self::default();
         for arg in args {

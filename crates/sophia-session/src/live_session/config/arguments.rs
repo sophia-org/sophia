@@ -243,23 +243,14 @@ impl PersistentXtermSessionConfig {
             return Err("--terminal-exec accepts at most 32 bounded arguments".into());
         }
         let expect_physical_pointer = args.iter().any(|arg| arg == "--expect-physical-pointer");
-        let x_groups = x_groups::XGroups::parse(args)?;
+        let x_groups = x_groups::XGroups::parse_with_recipes(args, &core_snapshot.session.namespace_policy)?;
         let admit_xtest = x_groups.xtest.is_some();
         let secondary_terminal = args.iter().any(|arg| arg == "--secondary-terminal");
         let exit_after_input_proof = args.iter().any(|arg| arg == "--exit-after-input-proof");
         let native_scanout = args.iter().any(|arg| arg == "--native-scanout");
         let namespace_profile_name = arg_value(args, "--namespace-profile")
             .unwrap_or_else(|| core_snapshot.namespace_profile.clone());
-        let namespace_profile = match namespace_profile_name.as_str() {
-            "classic" | "classic-shared" => NamespaceProfile::ClassicShared,
-            "confined" => NamespaceProfile::Confined,
-            profile => {
-                return Err(format!(
-                    "unsupported namespace profile {profile:?}; expected classic or confined"
-                )
-                .into());
-            }
-        };
+        let namespace_profile = x_groups::namespace_profile(&namespace_profile_name)?;
         let mut effective_xkb = if desktop_input.inherit_sophia {
             core_snapshot.input.xkb.clone()
         } else {
@@ -683,6 +674,7 @@ impl PersistentXtermSessionConfig {
         // most single-application proofs, and now the standalone and native
         // profiles too.
         let factotum = lock::parse_factotum(args)?;
+        application_launches::validate_configuration(&core_snapshot.session.namespace_policy, normal_session, factotum.is_some(), wm_process.is_some())?;
         let inject_session_lock = args.iter().any(|arg| arg == "--inject-session-lock");
         // A proof of the whole lock on real input: physical keys are the
         // only ones a lock takes, the authenticator is the real agent, and

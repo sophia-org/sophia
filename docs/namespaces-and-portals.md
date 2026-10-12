@@ -287,7 +287,7 @@ app recipe request ----------------------------> equality check only
                                                    |
                            naming + participation + host profile
                                                    |
-                           Session launch/view owner (integration pending)
+                           Session launch/view owner
 ```
 
 An unmapped application with no recipe request keeps the existing launch policy.
@@ -303,15 +303,24 @@ The catalog retains the resolved recipe in command equality. Its worker
 revalidates the exact catalog identity, source bytes and command before dispatch;
 changing only the desktop recipe key requires reopening the launcher. A
 `Terminal=true` wrapper preserves the application's recipe selection, rather
-than substituting the terminal entry's identity. Current raw-process launch
-paths refuse recipe commands until the asynchronous namespace launch owner is
-wired into them; they cannot silently discard the recipe and spawn on the host.
+than substituting the terminal entry's identity. Session routes the selected
+command through asynchronous namespace custody. Raw-process constructors still
+refuse recipe commands; they cannot discard the recipe and spawn on the host.
 
 Recipe policy changes require restart until live
-launch-policy replacement is implemented. The adapter and selection checks are
-implemented; Session currently refuses a nonempty recipe configuration at startup
-or reload because automatic launch custody is not connected yet. This temporary
-refusal prevents silently executing a selected recipe as a legacy host launch.
+launch-policy replacement is implemented. Recipes require a normal Session with
+Factotum configured. Observer recipes also require the WM inspection owner.
+Startup derives confined X groups from recipes before preparing listeners and
+the sandbox-hostname cookie. Explicit CLI groups remain supported within the
+same eight-group bound. Selecting both a recipe and the legacy confined-app
+mapping for one registered identity refuses configuration.
+
+Portal participation belongs to the actual namespace: recipes deliberately
+sharing an X group contribute to that group's request/publish capabilities.
+These capabilities do not approve transfers or bypass the exact clipboard-pair
+policy. Observer recipes have separate private namespaces. A policy reload
+requiring different recipes or groups remains pending restart; it does not
+mutate the running Session's listeners or launch authority.
 
 The launch scheduler now distinguishes host custody from containment. A
 `shared-x` recipe uses an explicit supervisor-owned host-client handoff: the
@@ -322,7 +331,8 @@ cannot authorize a WM, shell, lock, output or broker role. A confined recipe
 requires the exclusive namespace-client protection domain and has no host
 fallback. Both paths use the same Factotum registration, endpoint grant and
 retirement owners. The recipe profile must match its live namespace profile.
-Connecting this scheduler to ordinary application launch remains pending.
+Catalog, shortcut and startup launches now use this scheduler when trusted
+policy selects a recipe. Missing prepared resources refuse the selected launch.
 
 `ApplicationRecipeSet` loads immutable policy and naming inputs on the startup
 worker. Its exact-identity selection supplies a shared snapshot to each launch;
@@ -349,8 +359,30 @@ Before spawning, the preparation worker rechecks the conventional X group's
 one-entry layout, cookie and captured socket inode. Replacement refuses rather
 than rebinding the published alias. The existing t142 pathname-validation race
 limit still applies between that check and Bubblewrap's bind; this is not a new
-claim of atomic filesystem custody. The resolver is implemented and joined to
-the scheduler; wiring all application entry points remains pending.
+claim of atomic filesystem custody. Session captures these resources once after
+the X listeners are ready. Primary and secondary startup apps, shortcut targets,
+and both catalog paths use the same recipe/resource owner.
+
+```text
+registered startup / shortcut      verified catalog identity
+              \                         /
+               +-- Session recipe owner --+
+                         |
+           selected recipe + captured service owners
+                         |
+                 asynchronous preparation
+                         |
+         managed process readiness / failure / exit
+                         |
+              correlated launch outcome
+```
+
+Startup's first-frame wait advances authentication and preparation while
+retaining the first lifecycle event for the owner loop. A pending launch is
+reported as preparing, not started. A shell launch outcome retains its original
+activation until process readiness or failure; it cannot claim successful
+launch merely because preparation was queued. Readiness is not proof of a
+window, pixels or an authenticated application operation.
 
 Inspection dispatch now retains an acceptor for the exact published service
 generation. Its worker serves the client's inspection listeners through the
@@ -374,7 +406,15 @@ recipe endpoint + endpoint grant + captured inspection generation
 The same bounded launch dispatcher serves the
 [portal recipient view](portal-client-files.md). Its objects carry the common
 coordinator's transfer lease; opening the role does not approve transfers.
-Normal application/developer launcher call sites remain implementation work.
+Normal application call sites are connected. The authorized developer-launch
+9P interface remains implementation work and developer launch stays disabled
+by default.
+
+When an observer recipe is configured without host inspection access, Session
+creates a private inspection service without publishing a host socket. Future
+launches capture the current inspection generation after WM fencing; old
+connections remain bound to their retired generation. This does not grant
+observer clients administration or input injection.
 
 Session's managed application record can now retain ordinary host children or
 asynchronous namespace application custody. A namespace application's state is:
