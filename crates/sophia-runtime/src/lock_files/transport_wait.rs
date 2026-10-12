@@ -45,6 +45,5 @@ impl LockFileTransport {
     }
 }
 
-#[cfg(test)]
 #[path = "../../tests/support/lock_authentication_wait.rs"]
 mod tests;

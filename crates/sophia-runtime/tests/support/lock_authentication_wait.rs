@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Supplied pending cleanup isolates listener readiness from authentication.
 use super::*;
 use crate::authenticated_files::FileAuthentication;
