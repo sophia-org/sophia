@@ -949,3 +949,40 @@ No full-repository rerun is claimed for this documentation/pin delta; the
 prior provider gate remains bound to its own candidate. Remaining t317 role,
 Rust exchange, admission-context, fragment and minimum-version obligations
 are unchanged.
+
+## Minimum Bubblewrap execution
+
+At signed Sophia `09d27c2dfd15b5f5e3e496c319b80255bce0f3bc`, the actual
+Bubblewrap 0.11.2 binary passes all **26 tests**: four protected-channel tests,
+17 real launch-authentication tests and five normal lock-provider owner tests.
+This adds execution evidence to the earlier source review. The source is the
+upstream `v0.11.2` tag, commit `1b80120ef26a28e065e67f89bfef873f13bdd317`.
+The signed upstream tag is retained; local trust in its signing key is not
+claimed. Meson builds with `support_setuid=false`, and the binary is mode 0755.
+
+The host's 0.13.0 creates an outer device-hidden namespace; only inside that
+namespace is `/usr/bin/bwrap` replaced by the built 0.11.2 file. The version is
+checked there before testing. Runtime and Session then use the actual minimum
+binary for protected spawn and discovery. Tests include unintended-fd exclusion,
+channel generation/custody, C SDK afid exchange, Tversion, revocation, delayed
+spawn, and normal replacement after Factotum loss. No installed package, host
+binary, running desktop or physical device was changed.
+
+Build output stays in the leased cargo-slot root, and evidence records paths
+and hashes rather than copying binaries. The host has libcap 2.78 but lacks its
+development files. The matching Void `libcap-devel-2.78_1.x86_64.xbps` was fetched
+and checked against repository metadata SHA-256
+`cb1c0363d9c998c4f990a951e036a590d0e171d48808b2ce6faca084bdb24c9b`.
+Only its header/pkg-config input and linker symlink were extracted for this
+build; execution uses the installed libcap shared library. SELinux integration
+is disabled in this minimum-version build and is not qualified by this run.
+
+The first two attempts remain closed STOP packages: `-01` lacks the development
+dependency; `-02` built successfully but leaked its temporary pkg-config override
+into Cargo, which failed before the selected test sequence completed. `-03`
+unsets that build-only override and passes all three suites, zero failures or
+ignored tests. Its self-excluding SHA256SUMS hash is
+`75e2b2c291a2bb12096dbc5d245241b43a237b780428908819b278628fc304c2`.
+No new production code or broader gate rerun is claimed. This closes the
+minimum-version execution obligation for these Linux unprivileged launch
+paths; other t317 role, Rust client, admission-context and fragment joins remain.
