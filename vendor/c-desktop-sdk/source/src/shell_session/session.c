@@ -31,15 +31,31 @@ static int disjoint(const void *left, size_t n, const void *right, size_t m)
     return !n || !m ||
            (a <= UINTPTR_MAX - n && b <= UINTPTR_MAX - m && (a + n <= b || b + m <= a));
 }
-int sophia_ss_open_fd_staging(struct sophia_ss *s, int fd, const struct sophia_ss_config *config,
-                              void *storage, size_t bytes, void *transaction, size_t capacity)
+static int open_session(struct sophia_ss *s, int fd, struct sophia_9p_client *admitted,
+                        uint32_t root, const struct sophia_ss_config *config,
+                        void *storage, size_t bytes, void *transaction, size_t capacity)
 {
     size_t needed, wire;
     struct sophia_sf_buffers buffers;
+    struct sophia_ss_config copied;
     int r;
     if (!s || !config || !storage || !config->queue_slots || config->queue_slots > SOPHIA_SS_SLOTS)
         return SOPHIA_9P_ARGUMENT;
     needed = sophia_ss_storage_bytes(config->msize, config->queue_bytes);
+    if (admitted) {
+        size_t wire_bytes = sophia_9p_storage_bytes(admitted->offered, admitted->capacity);
+        if (!sf_session_attached_wire(admitted, root, SOPHIA_SS_FIDS) ||
+            admitted->msize != config->msize ||
+            !disjoint(s, sizeof(*s), admitted, sizeof(*admitted)) ||
+            !disjoint(s, sizeof(*s), admitted->storage, wire_bytes) ||
+            !disjoint(storage, needed, admitted, sizeof(*admitted)) ||
+            !disjoint(storage, needed, admitted->storage, wire_bytes) ||
+            !disjoint(transaction, capacity, admitted, sizeof(*admitted)) ||
+            !disjoint(transaction, capacity, admitted->storage, wire_bytes) ||
+            !disjoint(config->object_storage, config->object_capacity, admitted, sizeof(*admitted)) ||
+            !disjoint(config->object_storage, config->object_capacity, admitted->storage, wire_bytes))
+            return SOPHIA_9P_ARGUMENT;
+    } else if (fd < 0) return SOPHIA_9P_ARGUMENT;
     if (!needed || bytes < needed || !disjoint(s, sizeof(*s), storage, needed) ||
         ((!transaction) != (!capacity)) ||
         (transaction && (capacity < SOPHIA_SS_RECORD_BYTES || capacity > SOPHIA_SF_MAX_TRANSACTION)) ||
@@ -55,12 +71,19 @@ int sophia_ss_open_fd_staging(struct sophia_ss *s, int fd, const struct sophia_s
     buffers = (struct sophia_sf_buffers){config->object_storage, config->object_capacity,
                                        transaction, capacity};
     wire = sophia_9p_storage_bytes(config->msize, SOPHIA_SS_REQUESTS);
+    copied = *config;
     memset(s, 0, sizeof(*s));
-    r = sophia_9p_init(&s->wire, fd, config->msize, SOPHIA_SS_REQUESTS, SOPHIA_SS_FIDS, storage,
+    config = &copied;
+    if (admitted)
+        r = sophia_sf_client_init_attached(&s->files, admitted, root, config->offer,
+                                           config->profile, &buffers);
+    else {
+        r = sophia_9p_init(&s->wire, fd, config->msize, SOPHIA_SS_REQUESTS, SOPHIA_SS_FIDS, storage,
                        wire);
-    if (!r)
-        r = sophia_sf_client_init_buffers(&s->files, &s->wire, config->offer, config->profile,
+        if (!r)
+            r = sophia_sf_client_init_buffers(&s->files, &s->wire, config->offer, config->profile,
                                           &buffers);
+    }
     if (r) {
         s->state = SOPHIA_SS_FAILED;
         return r;
@@ -71,6 +94,23 @@ int sophia_ss_open_fd_staging(struct sophia_ss *s, int fd, const struct sophia_s
     s->next_ticket = 1;
     s->state = SOPHIA_SS_NEGOTIATING;
     return 0;
+}
+int sophia_ss_open_fd_staging(struct sophia_ss *s, int fd, const struct sophia_ss_config *config,
+                              void *storage, size_t bytes, void *transaction, size_t capacity)
+{
+    return open_session(s, fd, NULL, SOPHIA_9P_NOFID, config, storage, bytes, transaction, capacity);
+}
+int sophia_ss_open_attached(struct sophia_ss *s, struct sophia_9p_client *wire, uint32_t root,
+                           const struct sophia_ss_config *config, void *storage, size_t bytes)
+{
+    return sophia_ss_open_attached_staging(s, wire, root, config, storage, bytes, NULL, 0);
+}
+int sophia_ss_open_attached_staging(struct sophia_ss *s, struct sophia_9p_client *wire, uint32_t root,
+                                   const struct sophia_ss_config *config, void *storage, size_t bytes,
+                                   void *transaction, size_t capacity)
+{
+    if (!wire) return SOPHIA_9P_ARGUMENT;
+    return open_session(s, -1, wire, root, config, storage, bytes, transaction, capacity);
 }
 int ss_status(const struct sophia_ss *s)
 {
@@ -247,12 +287,12 @@ int sophia_ss_dispatch(struct sophia_ss *s, short revents, size_t budget, uint64
     }
     return ss_pump(s, budget);
 }
-int sophia_ss_poll_fd(const struct sophia_ss *s) { return s ? s->wire.fd : -1; }
+int sophia_ss_poll_fd(const struct sophia_ss *s) { return s && s->files.wire ? s->files.wire->fd : -1; }
 short sophia_ss_poll_events(const struct sophia_ss *s)
 {
     if (!s || ss_final(s))
         return 0;
-    return (short)(POLLIN | (sophia_9p_wants_write(&s->wire) ? POLLOUT : 0));
+    return (short)(POLLIN | (sophia_9p_wants_write(s->files.wire) ? POLLOUT : 0));
 }
 int sophia_ss_timeout(const struct sophia_ss *s, uint64_t now_ms)
 {

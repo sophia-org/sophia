@@ -3,7 +3,7 @@
 ## Native 9P file backend (t252 B7)
 
 `sophia_9p_client.h` with `nine_p/*.c` implements version, attach, walk,
-lopen, read, write, clunk and flush over an already admitted stream fd.
+lopen, read, write, clunk and flush over a connected stream fd.
 `sophia_shell_files.h`, `sophia_shell_files_content.h` and `shell_files/*.c`
 provide the independent base file records and `sophia_shell_files_client.h`
 orchestrates a file session. Compile these C99 sources together.
@@ -140,3 +140,24 @@ test. A small-buffer dock fixture also proves oversized-object refusal releases
 the pin and leaves the session usable. Neither peer starts applications or
 changes the Bemenu repository. These live flows pass against runtime
 `3856d1014`; the file gate runs two base tests and one role integration test.
+
+## Authenticated root handoff
+
+For authenticated endpoints, complete `sophia_launch_auth` first, then pass its
+role wire and admitted root to `sophia_ss_open_attached` (or `_staging` for
+external transaction storage). The session borrows that exact wire, starts at
+`api`, and never sends Tversion or a second attach. The wire must be quiescent,
+with the root as its only fid, eight request slots and at least 32 fids. Its
+negotiated msize must equal the session configuration. Keep the wire, its
+storage and the session buffers alive and exclusively owned until disposal.
+The ordinary storage sizing still applies; the embedded-wire reservation is
+unused in this mode. No fd ownership is transferred.
+
+The lower `sophia_sf_client_init_attached` provides the same handoff for callers
+using the record client directly. Native launcher and dock layers continue
+using the resulting ready shell session. A constructor failure must not cause
+an application to fall back to anonymous attach.
+
+Local tests supply admission and exercise all four profiles with inline and
+external staging, bar submission custody, invalid roots, partial input and
+overlapping storage. They do not stand in for the production Factotum join.

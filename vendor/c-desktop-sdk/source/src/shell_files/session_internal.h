@@ -12,6 +12,7 @@ int sf_session_candidate_allowed(const struct sophia_sf_client *, uint16_t);
 int sf_session_event_allowed(const struct sophia_sf_client *, const struct sophia_sf_record *);
 int sf_session_queue(struct sophia_sf_client *, const struct sophia_sf_record *);
 int sf_session_drive(struct sophia_sf_client *);
+int sf_session_attached_wire(const struct sophia_9p_client *, uint32_t root, uint16_t fids);
 int sf_session_event_parse(struct sophia_sf_client *);
 int sf_session_object_reply(struct sophia_sf_client *, const struct sophia_9p_reply *);
 int sf_session_upload_reply(struct sophia_sf_client *, const struct sophia_9p_reply *);

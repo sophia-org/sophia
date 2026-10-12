@@ -1,0 +1,214 @@
+//! A protected generic C SDK peer through the production component owner.
+use super::*;
+use std::{os::unix::fs::DirBuilderExt, path::PathBuf};
+
+struct Peer(PathBuf);
+impl Peer {
+    fn build() -> Self {
+        let target = PathBuf::from(std::env::var_os("CARGO_TARGET_DIR").expect("cargo-slot"));
+        let temporary = target.join("tmp");
+        std::fs::create_dir_all(&temporary).unwrap();
+        let binary = temporary.join(format!("t317-shell-sdk-{}", std::process::id()));
+        let source =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../vendor/c-desktop-sdk/source/src");
+        let mut units: Vec<_> = ["nine_p", "launch_auth", "shell_files", "shell_session"]
+            .into_iter()
+            .flat_map(|dir| std::fs::read_dir(source.join(dir)).unwrap())
+            .map(|entry| entry.unwrap().path())
+            .filter(|p| p.extension().is_some_and(|e| e == "c"))
+            .collect();
+        units.sort();
+        assert!(
+            std::process::Command::new("/usr/bin/cc")
+                .env_clear()
+                .env("PATH", "/usr/bin:/bin")
+                .args([
+                    "-std=c99",
+                    "-Wall",
+                    "-Wextra",
+                    "-Werror",
+                    "-pedantic",
+                    "-O2"
+                ])
+                .arg("-I")
+                .arg(source)
+                .arg(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/tests/support/shell_authentication_peer.c"
+                ))
+                .args(units)
+                .arg("-o")
+                .arg(&binary)
+                .status()
+                .unwrap()
+                .success()
+        );
+        Self(binary)
+    }
+}
+impl Drop for Peer {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+#[test]
+fn protected_shell_sdk_authenticates_all_component_roles_and_replacements() {
+    let peer = Peer::build();
+    for (name, role, audience) in [
+        ("bar", ShellComponentRole::Bar, 4),
+        ("launcher", ShellComponentRole::ApplicationLauncher, 6),
+        ("dock", ShellComponentRole::Dock, 5),
+    ] {
+        let mut auth = factotum::Fixture::new();
+        let directory =
+            std::env::temp_dir().join(format!("shell-sdk-{name}-{}", std::process::id()));
+        let reports = directory.join("reports");
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&directory)
+            .unwrap();
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&reports)
+            .unwrap();
+        let mut owner = ShellComponentProcesses::new().unwrap();
+        let slot = owner
+            .add(
+                name,
+                role,
+                &directory.join("endpoint"),
+                rustix::process::geteuid().as_raw(),
+            )
+            .unwrap();
+        owner
+            .authenticate(
+                slot,
+                LaunchPolicy {
+                    principal: audience,
+                    namespace: 2,
+                    audience,
+                    role: ProtectionDomainRole::MetadataShell,
+                },
+                name,
+                auth.coordinator.endpoint(),
+            )
+            .unwrap();
+        let wake = sophia_wake::Wake::new().unwrap();
+        let mut previous = None;
+        for attempt in 0..2 {
+            let report = reports.join(attempt.to_string());
+            let key = owner
+                .start(
+                    slot,
+                    |_, socket| {
+                        Ok(ProcessLaunchSpec::new(&peer.0)
+                            .arg(name)
+                            .arg(&report)
+                            .protection_domain(
+                                ProtectionDomainSpec::bubblewrap([
+                                    ProtectionDomainRole::MetadataShell,
+                                ])
+                                .unwrap()
+                                .path(ProtectionPath::read_only(socket.parent().unwrap()))
+                                .unwrap()
+                                .path(ProtectionPath::read_write(&reports))
+                                .unwrap(),
+                            ))
+                    },
+                    ShellContentAdmissionPolicy::Granted {
+                        discrete_input: true,
+                    },
+                )
+                .unwrap();
+            if let Some(old) = previous {
+                assert_ne!(key.grant, old, "replacement needs a fresh shell epoch");
+            }
+            let deadline = Instant::now() + Duration::from_secs(15);
+            while !report.exists() {
+                auth.tick();
+                let visit = owner.visit_authenticated(
+                    65536,
+                    &mut auth.coordinator,
+                    wake.notifier(),
+                    Instant::now(),
+                );
+                assert!(
+                    visit
+                        .negotiations
+                        .iter()
+                        .flatten()
+                        .all(|(_, result)| result.is_ok()),
+                    "shell negotiation failed: {:?}",
+                    visit.negotiations
+                );
+                let failures = owner.turn_connected();
+                assert!(
+                    failures.iter().all(Option::is_none),
+                    "shell turn failed: {failures:?}"
+                );
+                assert!(
+                    visit.processes.iter().flatten().all(|event| !matches!(
+                        event,
+                        ComponentProcessEvent::Failed(..)
+                            | ComponentProcessEvent::ProcessRetired(..)
+                    )),
+                    "authenticated shell bootstrap failed ({name}, attempt {attempt}): {:?}; {}",
+                    visit.processes,
+                    std::fs::read_to_string(report.with_extension("stderr")).unwrap_or_default()
+                );
+                assert!(
+                    Instant::now() < deadline,
+                    "authenticated shell readiness deadline"
+                );
+            }
+            let observed = std::fs::read_to_string(&report).unwrap();
+            assert_eq!(
+                observed,
+                format!("{name} ready {}\n", key.grant.connection_epoch),
+                "SDK must finish negotiation for this exact shell epoch"
+            );
+            assert_eq!(
+                owner.phase(key).unwrap(),
+                ComponentConnectionPhase::Connected
+            );
+            let registration = owner.slots[slot]
+                .authentication
+                .as_ref()
+                .unwrap()
+                .registration
+                .unwrap();
+            assert_eq!(auth.coordinator.phase(registration), Some(Phase::Active));
+            auth.coordinator
+                .revoke(registration, Instant::now())
+                .unwrap();
+            owner.visit_authenticated(
+                65536,
+                &mut auth.coordinator,
+                wake.notifier(),
+                Instant::now(),
+            );
+            assert_eq!(
+                owner.phase(key).unwrap(),
+                ComponentConnectionPhase::Revoked,
+                "authenticated shell revocation must close the admitted connection locally"
+            );
+            while owner.process_retained(key) {
+                auth.tick();
+                owner.visit_authenticated(
+                    65536,
+                    &mut auth.coordinator,
+                    wake.notifier(),
+                    Instant::now(),
+                );
+                assert!(
+                    Instant::now() < deadline,
+                    "authenticated shell reaping deadline"
+                );
+            }
+            previous = Some(key.grant);
+        }
+        drop(owner);
+        let _ = std::fs::remove_dir_all(directory);
+    }
+}

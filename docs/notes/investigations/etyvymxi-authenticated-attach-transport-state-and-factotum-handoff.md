@@ -1854,3 +1854,40 @@ Device-hidden evidence in `~/.local/state/sophia/development-evidence/`:
 Both normal shell owners now select authenticated startup. SDK/client admitted-root
 handoffs, successful client joins, final broad gates and threat-model/exit
 reconciliation still remain for t317. This candidate is not installed live.
+
+## Authenticated C shell component joins
+
+The signed C SDK `73fe8106da63e1586ab5a900401fb051bb625464` adds shell
+admitted-root constructors at both session and record-client levels. They
+borrow the exact quiescent authenticated wire, schedule the api read, and do
+not version or attach again. Sophia's immutable SDK archive now pins that
+revision; its shell contract copy matches signed Sophia `3b1cf9b82`.
+
+`protected_shell_sdk_authenticates_all_component_roles_and_replacements`
+drives the production component owner with a protected generic C peer for bar,
+launcher and dock. Each peer performs the launch-channel conversation through
+the real Factotum export, continues on the admitted root, and finishes shell
+negotiation for the exact Session-assigned epoch. Local registration revocation
+closes that connection before reaping; each role then authenticates a fresh
+replacement with a different grant. The fixture services both pending
+negotiation and connected transport turns. The trusted Session-to-Factotum
+channel is supplied by the existing fixture. No shell UI, content presentation,
+physical device or named client is qualified by this test.
+
+Device-hidden package `t317-shell-sdk-owner-01` captures the complete dynamic
+modified/untracked source set on `3b1cf9b82`, development failures, final logs
+and the test binary path/hash, without copying binaries. Its self-excluding
+manifest SHA-256 is
+`43039678879b356542cab287061662eb94492e1669db3d3d22a50bcd72cfee62`.
+The shell regression filter passed 113 tests with four existing ignores;
+all-target native-session Clippy with warnings denied, snapshot verification
+and formatting passed. A subsequent exact-epoch assertion passed the focused
+test and Clippy again. Early runs exposed fixture errors: a role enum spelling,
+missing required bar capabilities, and omitted connected-turn service. They
+are retained as failures, not qualification. No production owner change was
+needed. This checkpoint adds positive interoperability evidence; the SDK's
+reattach control and prior owner revocation controls remain separately scoped.
+
+The descriptor owner, Rust shell SDK, deployed shell-client migration, final
+broad gates and threat-model reconciliation remain open. t317 is not complete,
+and nothing from this checkpoint is installed live.

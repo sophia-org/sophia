@@ -23,10 +23,11 @@ The t317 development profile copy includes Sophia's opt-in Tauth/afid seam.
 The generic C client implements Tauth and explicit attach-with-afid, including
 QTAUTH validation, refusal cleanup and flush-race custody. `sophia_launch_auth.h`
 provides the bounded launch-channel conversation over two caller-supplied
-clients. The lock client can continue from its admitted root without another
-version or attach. Existing ordinary constructors remain unchanged; applications
-must explicitly select this path. Production bootstrap integration and other
-role-client root handoffs remain open.
+clients. Lock, output, WM and shell clients can continue from an admitted root without
+another version or attach. Existing ordinary constructors remain unchanged;
+applications must explicitly select this path. The shell handoff has scripted
+coverage for bar, launcher, dock and descriptor profiles; successful production
+shell authentication and deployed-client migration remain separate gates.
 
 | Role | File contract | Client status |
 | --- | --- | --- |

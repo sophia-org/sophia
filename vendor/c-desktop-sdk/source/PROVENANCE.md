@@ -609,3 +609,29 @@ records executable paths and hashes, never copied binaries.
 The contract copy/digest and this documentation follow the captured code
 candidate; no implementation or test bytes changed. Production WM-owner
 interoperability and deployed-client migration remain separate gates.
+
+## Shell admitted-root handoff
+
+The shell contract copy is from signed Sophia
+`3b1cf9b82f192d35c4c52d5d85a49ccba1125ad8`. Record layouts are unchanged.
+`sophia_ss_open_attached` and its external-staging form borrow the authenticated
+wire/root and schedule the api read without version or attach. The lower
+record client exposes `sophia_sf_client_init_attached`. Poll integration uses
+the borrowed connection. Legacy raw constructors retain their behavior.
+
+The strict full suite and clang ASan/UBSan suite pass. New scripted tests cover
+bar, launcher, dock and descriptor negotiation, inline/external staging, bar
+submission custody, wrong root, partial input and overlapping wire storage.
+Admission is supplied; successful production authentication remains a separate
+join. A reattach control fails at `shell handoff must not reattach its admitted
+wire`. Source is restored and the full normal suite passes again. The first
+control attempt is retained as STOP: a root diagnostic fired before the
+intended wire assertion; the diagnostic was moved after wire processing.
+
+| Package | SHA256SUMS SHA-256 |
+| --- | --- |
+| `t317-shell-sdk-handoff-dev02` | `c2b73714eb44ada432be8c950ff1114c084d3fb9451bd31d4e6ab54b27d36f7e` |
+| `t317-shell-sdk-handoff-restored01` | `bc1b1e71b5aaeeaceb403d225b0ce4a359b01489fe94b7972023c49f5c7e30bb` |
+
+Evidence records binary paths and hashes, not copies. This provenance addition
+follows the captured candidate; no implementation or test bytes changed.

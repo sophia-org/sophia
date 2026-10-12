@@ -3,6 +3,9 @@
 use super::*;
 use crate::live_session::tests::lock_provider_factotum as factotum;
 
+#[path = "authenticated_shell_sdk.rs"]
+mod sdk;
+
 fn owner(launches: &LaunchCoordinator) -> (ShellComponentProcesses, std::path::PathBuf) {
     let directory = std::env::temp_dir().join(format!(
         "shell-launch-{}-{}",

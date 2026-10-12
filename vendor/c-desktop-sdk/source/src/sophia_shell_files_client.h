@@ -98,6 +98,12 @@ int sophia_sf_client_init_profile(struct sophia_sf_client *, struct sophia_9p_cl
 int sophia_sf_client_init_buffers(struct sophia_sf_client *, struct sophia_9p_client *,
                                   struct sophia_sf_negotiate, enum sophia_sf_profile,
                                   const struct sophia_sf_buffers *);
+/* Borrow a live, quiescent admitted wire with only root retained, at least eight
+ * request slots and eight fids. Starts api immediately; no Tversion or Tattach.
+ * The wire and all buffers stay exclusive to this client until disposal. */
+int sophia_sf_client_init_attached(struct sophia_sf_client *, struct sophia_9p_client *, uint32_t root,
+                                  struct sophia_sf_negotiate, enum sophia_sf_profile,
+                                  const struct sophia_sf_buffers *);
 int sophia_sf_client_service(struct sophia_sf_client *, size_t byte_budget);
 int sophia_sf_client_ready(const struct sophia_sf_client *);
 /* Validated welcome, or NULL before negotiation. Borrowed until disposal. */

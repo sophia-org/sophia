@@ -108,6 +108,16 @@ int sophia_ss_open_fd(struct sophia_ss *, int fd, const struct sophia_ss_config 
  * not modify the session or start I/O. */
 int sophia_ss_open_fd_staging(struct sophia_ss *, int fd, const struct sophia_ss_config *,
                               void *storage, size_t bytes, void *transaction, size_t capacity);
+/* Continue on an authenticated root without version/attach. wire must be live,
+ * quiescent and retain only root, with >=REQUESTS slots, >=FIDS fids and the
+ * configured msize. It and its storage must be disjoint from all session buffers
+ * and remain exclusive/alive until close. The caller owns the wire and fd.
+ * Storage sizing is unchanged; the reserved internal wire area is unused. */
+int sophia_ss_open_attached(struct sophia_ss *, struct sophia_9p_client *, uint32_t root,
+                           const struct sophia_ss_config *, void *storage, size_t bytes);
+int sophia_ss_open_attached_staging(struct sophia_ss *, struct sophia_9p_client *, uint32_t root,
+                                   const struct sophia_ss_config *, void *storage, size_t bytes,
+                                   void *transaction, size_t capacity);
 int sophia_ss_poll_fd(const struct sophia_ss *);
 /* POLLIN while live, plus POLLOUT only while 9P output is queued; 0 when final. */
 short sophia_ss_poll_events(const struct sophia_ss *);

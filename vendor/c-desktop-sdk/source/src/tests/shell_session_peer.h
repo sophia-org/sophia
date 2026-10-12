@@ -21,6 +21,7 @@ enum { P_ACCEPT, P_SILENT, P_HOLD, P_ERROR, P_CUSTODY };
 #define OUTPUTS_QID 0x77u
 struct peer {
     int fd;
+    int attached_only;
     uint8_t in[16384];
     size_t in_used;
     uint32_t fids[64];
@@ -317,12 +318,14 @@ static inline void peer_request(struct peer *p, const uint8_t *m, size_t size)
     (void)size;
     switch (type) {
     case 100:
+        assert(!p->attached_only && "shell handoff must not reset its admitted wire");
         peer_put(b, peer_get(body, 4), 4);
         peer_put(b + 4, 8, 2);
         memcpy(b + 6, "9P2000.L", 8);
         peer_send(p, 101, tag, b, 14);
         return;
     case 104:
+        assert(!p->attached_only && "shell handoff must not reattach its admitted wire");
         peer_bind(p, (uint32_t)peer_get(body, 4), F_ROOT);
         peer_qid(b, F_ROOT);
         b[0] = 0x80;

@@ -105,8 +105,8 @@ root. Output clients pass that same wire and root to `sophia_os_open_attached`,
 which starts at `api` without resetting or reattaching the transport. It borrows
 the quiescent wire with its root as the only fid; output state and storage must
 be disjoint from that wire and its storage. Its lifecycle tests run through both
-the fresh-wire and admitted-root constructors. WM and shell constructors still
-need an explicit admitted-root entry point.
+the fresh-wire and admitted-root constructors. WM and shell clients likewise use `sophia_ws_open_attached` and
+`sophia_ss_open_attached`, respectively.
 This is a candidate API, not an automatic migration of existing applications.
 
 Requires a POSIX system, a C99 compiler, GNU make, ar, and sha256sum. Tests use

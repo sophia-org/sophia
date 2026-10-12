@@ -28,17 +28,32 @@ static int external_buffer(const struct sophia_sf_client *c, const struct sophia
                    disjoint(p, n, wire->storage,
                             sophia_9p_storage_bytes(wire->offered, wire->capacity))));
 }
-int sophia_sf_client_init_buffers(struct sophia_sf_client *c, struct sophia_9p_client *wire,
+int sf_session_attached_wire(const struct sophia_9p_client *wire, uint32_t root, uint16_t fids)
+{
+    size_t i;
+    if (!wire || wire->terminal || wire->phase != 2 || wire->capacity < 8 ||
+        wire->capacity > SOPHIA_9P_REQUESTS || wire->fid_limit < fids ||
+        wire->fid_count != 1 || wire->fids[0] != root || root == SOPHIA_9P_NOFID ||
+        wire->rx_used || !wire->storage ||
+        !sophia_9p_storage_bytes(wire->offered, wire->capacity))
+        return 0;
+    for (i = 0; i < 2u * wire->capacity; ++i)
+        if (wire->slots[i].state) return 0;
+    return 1;
+}
+static int initialize(struct sophia_sf_client *c, struct sophia_9p_client *wire,
                                   struct sophia_sf_negotiate offer, enum sophia_sf_profile profile,
-                                  const struct sophia_sf_buffers *buffers)
+                                  const struct sophia_sf_buffers *buffers, int attached, uint32_t root)
 {
     const struct sophia_sf_buffers v = buffers ? *buffers : (struct sophia_sf_buffers){0};
-    if (!c || !wire || wire->phase || !offer.minimum_revision ||
+    if (!c || !wire || (attached ? !sf_session_attached_wire(wire, root, 8) : wire->phase != 0) || !offer.minimum_revision ||
         offer.minimum_revision > offer.maximum_revision || wire->capacity < 8 ||
         profile < SOPHIA_SF_BAR || profile > SOPHIA_SF_DESCRIPTOR ||
         !external_buffer(c, wire, v.objects, v.object_capacity, 296) ||
         !external_buffer(c, wire, v.transaction, v.transaction_capacity, 8192) ||
-        !disjoint(v.objects, v.object_capacity, v.transaction, v.transaction_capacity))
+        !disjoint(v.objects, v.object_capacity, v.transaction, v.transaction_capacity) ||
+        !disjoint(c, sizeof(*c), wire, sizeof(*wire)) ||
+        !disjoint(c, sizeof(*c), wire->storage, sophia_9p_storage_bytes(wire->offered, wire->capacity)))
         return SOPHIA_9P_ARGUMENT;
     if (profile == SOPHIA_SF_DESCRIPTOR && !sf_descriptor_offer(&offer))
         return SOPHIA_9P_ARGUMENT;
@@ -59,7 +74,24 @@ int sophia_sf_client_init_buffers(struct sophia_sf_client *c, struct sophia_9p_c
     c->tx_capacity = v.transaction ? v.transaction_capacity : sizeof(c->tx);
     c->next_submission = 1;
     c->object_fid = c->upload_fid = UINT32_MAX;
+    if (attached) {
+        c->root = root;
+        c->bootstrap = 2; /* Preserve the admitted identity; start at api. */
+        return sf_session_drive(c);
+    }
     return sf_started(&c->boot_op, sophia_9p_version(wire, &c->boot_op.handle));
+}
+int sophia_sf_client_init_buffers(struct sophia_sf_client *c, struct sophia_9p_client *wire,
+                                  struct sophia_sf_negotiate offer, enum sophia_sf_profile profile,
+                                  const struct sophia_sf_buffers *buffers)
+{
+    return initialize(c, wire, offer, profile, buffers, 0, SOPHIA_9P_NOFID);
+}
+int sophia_sf_client_init_attached(struct sophia_sf_client *c, struct sophia_9p_client *wire,
+                                  uint32_t root, struct sophia_sf_negotiate offer,
+                                  enum sophia_sf_profile profile, const struct sophia_sf_buffers *buffers)
+{
+    return initialize(c, wire, offer, profile, buffers, 1, root);
 }
 int sophia_sf_client_ready(const struct sophia_sf_client *c)
 {
