@@ -1,14 +1,14 @@
-tree 13c1c259fcdd2c0f31e213c411658da90881a7a7
-parent 93361918dd0213a13a2fc8bd26a7911ff7ae16e1
-author Mason Green <mason@greenm01.net> 1791778709 -0400
-committer Mason Green <mason@greenm01.net> 1791778709 -0400
+tree 7eaa34ba662269de3e58721c133d19a5c7f8b8c0
+parent 73fe8106da63e1586ab5a900401fb051bb625464
+author Mason Green <mason@greenm01.net> 1791782140 -0400
+committer Mason Green <mason@greenm01.net> 1791782140 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCasxflRsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLslAD+PAMzNOSY7BqepaWEi9NY
- TwuYPb8Id0CWSWSqF0v0Z+ABAKzvwQ9ISDCl3FmWci7o2lZUrU4MvFxsXzw6nN9z
- izgE
- =0c5d
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCasxs/BsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGK4IQEAqG6Zbv9ruQp9N1cNRcKj
+ ILs/vuOvIDRjewTlSDWVVxgBAOl/4icxYkhvhd+MUM6tJoa0GU2JDokeu+k+l+b9
+ L1ML
+ =ZdDD
  -----END PGP SIGNATURE-----
 
-Continue shell sessions on authenticated 9P roots
+Align t317 authentication contract snapshots

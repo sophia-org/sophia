@@ -1,14 +1,14 @@
-tree 5f3048e08e0038f7335bdbf087232259e4876bbd
-parent 357f9798fc5e08dc4bdb8ae0de8724831dbcf714
-author Mason Green <mason@greenm01.net> 1791779680 -0400
-committer Mason Green <mason@greenm01.net> 1791779680 -0400
+tree 99acf61f0a0a1c44080e87409646d780354afa42
+parent 9b9e9bf1b0c7ad194f507dfdb383d25ddc1553ce
+author Mason Green <mason@greenm01.net> 1791782140 -0400
+committer Mason Green <mason@greenm01.net> 1791782140 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCasxjYBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKyTwD/QPB4jQ6+ahaAcQSdElHR
- cFhexITuoagy/SdR0k8j9fMBAMztvGNNz4/CDr73kIU7UzRFtDi4HCaoIfEWdQm2
- kDYD
- =oait
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCasxs/BsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJykQD9GKCQZb2Ryb9eHhAL6MUF
+ fxwTSpprjfi5XcH5F1S9hHEA/R1YAM8oOggLiQQYCHzoWbt8jao4WPMufC7/rQG9
+ LFQJ
+ =wlit
  -----END PGP SIGNATURE-----
 
-Align the shared WM contract with authenticated Session startup
+Align t317 authentication contract snapshots

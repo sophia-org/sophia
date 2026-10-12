@@ -6,6 +6,17 @@ The [shell file lifecycle](sophia-shell-files.md) supplies the envelope, custody
 acknowledgement, immutable object and retry rules. This profile changes no
 Engine presentation or work-area authority.
 
+An opt-in, device-hidden interoperability check accepts an independently built
+descriptor executable through `SOPHIA_DESCRIPTOR_AUTH_PEER`. Invoke the ignored
+`supplied_descriptor_client_authenticates_and_recovers` lib test in
+`sophia-session` with `native-session` enabled. It uses the production protected
+`--serve` launch contract, afid admission and descriptor owner for two successive
+launch epochs. It checks negotiation, a short idle liveness observation, local
+revocation and reaping before replacement. The caller builds and identifies its
+client; Sophia does not build or select a desktop implementation. The trusted
+Session-to-Factotum channel is supplied. No descriptor presentation, semantic
+round trip, GPU access or physical output is claimed by this check.
+
 The [acceptance decision](notes/decisions/4oapm903-carry-descriptor-families-as-native-shell-file-records.md)
 records implementation and independent-client evidence. The desktop profile
 selects a sole `shell-component` with role `descriptor`; it cannot be mixed

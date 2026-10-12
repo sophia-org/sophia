@@ -1,5 +1,15 @@
 # Extraction and contract provenance
 
+## t317 final contract reconciliation
+
+The launch-authentication and shell-descriptor contract snapshots are copied
+from signed Sophia `a41011f27dec1e82b58957099691381c03471231`.
+They document the implemented supervised role boundaries and generic supplied
+descriptor-client conformance seam. This changes documentation and its hashes
+only: no SDK source, tests, ABI or wire layout changes. Earlier execution
+evidence retains its original candidate identity. Final Sophia integration
+and release qualification remain separate gates.
+
 ## Authenticated output handoff (t317)
 
 The first joined Session run exposed an unscheduled bootstrap after successful
