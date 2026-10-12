@@ -182,6 +182,49 @@ and provenance. Sophia's snapshot verifier accepts the C pin; the existing Rust
 vendoring tool verified its new pin before replacement. Client code and public
 afid/relay records are unchanged. The full gate must be rerun on these pins.
 
+## Independent discovery clients and gate reconciliation
+
+The C SDK candidate `ba09265d1642e9fc9e7919dfd6a634855057055c` and Rust SDK
+candidate `0e5ad3638bac48b6f9633e1bc1c0476fb2a1d481` are signed and published
+on their respective `development/t318-namespace-discovery` branches. Each
+implements the signed discovery contract independently, pins a Linux generation
+directory, refuses symlinks and connects to a captured socket inode even when
+the logical path exceeds `sun_path`. Local tests replace the directory name and
+prove an already-open view still reaches the old listener. These are naming
+and SDK observations, not an authenticated Session launch join.
+
+The full C check suite passes. A namespace-only Clang UBSan trap-mode probe
+also passes; ASan was unavailable because the host linker lacks its runtime
+libraries. The Rust workspace tests, formatting and all-target Clippy pass.
+Removing each parser's declared endpoint-count check makes its truncation
+assertion fail; all candidate bytes are restored, followed by positive reruns.
+Closed packages are `t318-c-discovery-01`, `t318-rs-discovery-01`, and their
+`discovery-count-control-01` counterparts under the development evidence root.
+Each SDK's provenance records the package manifest identities.
+
+Both SDKs now support sequential authentication of another endpoint through the
+same exclusive launch relay. The previous role root is not reset, and pending
+relay work refuses instead of being discarded. The C check suite and ten Rust
+launch-client tests pass; Rust Clippy passes too. `t318-c-relay-01` and
+`t318-rs-relay-01` retain the candidate hashes and scripted-peer results. Actual
+Session multi-endpoint authentication remains a separate join.
+
+The full gate's third attempt stopped on a parallel runtime test-helper race:
+two tests compiled and deleted the same PID-only executable. Signed
+`970dc9e1b` gives each probe a unique path; all four launch-channel tests pass.
+The fourth attempt stopped during WM test setup because its refusal case used
+the shared default policy directory. Signed `f4fa77cbd` uses its fixture's
+private directory; the native-session selection suite passes five tests, with
+one ignored child entry point exercised by its parent. An earlier command
+without `native-session` selected zero tests and is not evidence for that fix.
+
+The fifth isolated run at `f4fa77cbd` passes workspace tests, SDK checks and
+Clippy, but stops at the final source-layout gate: the publication module's
+test annotation belongs in its external test file under this repository's
+convention. The annotation is moved without changing test behavior. None of
+these five attempts is recorded as an overall passing repository gate. Their
+original closed evidence packages remain unchanged.
+
 ## Connections
 
 The second full-gate attempt (`t318-gate-02`, signed `a94415e4f`) reached

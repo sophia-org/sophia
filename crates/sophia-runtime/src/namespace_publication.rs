@@ -11,7 +11,6 @@ use std::sync::{Arc, Weak};
 
 pub const MAX_RETAINED_VIEWS: usize = 64;
 
-#[cfg(test)]
 #[path = "../tests/support/namespace_publication.rs"]
 mod tests;
 

@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use super::*;
 use crate::namespace_recipe::{Input, compile};
 use std::collections::BTreeMap;
