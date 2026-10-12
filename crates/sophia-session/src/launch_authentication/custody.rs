@@ -19,6 +19,9 @@ pub struct WorkerAuthority {
 }
 
 impl WorkerAuthority {
+    pub(super) fn identity(&self) -> Identity {
+        self.delegation.identity
+    }
     pub(super) fn session(&self) -> u64 {
         self.session
     }

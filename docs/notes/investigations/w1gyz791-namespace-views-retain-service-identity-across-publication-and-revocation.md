@@ -274,6 +274,54 @@ Their self-excluding SHA256SUMS identities are respectively
 `8423a3776230781c12efa752badc1fa2e28a67f6eea42c3cbf7fab7025a1f4b8`
 and `97b4169f142b096bee70233a957e7bcdf4a5116181ecabeb21a82a82d27cc3ba`.
 
+### Independent endpoint grants
+
+The next slice puts endpoint grants in the existing namespace/admission
+registry. A lease retains namespace, principal, launch generation, audience,
+service identity/generation and registry ownership. Passive equal numbers from
+another registry cannot supply that authority. Grant-backed admission records
+and retained leases check the grant's liveness. Namespace revocation collects
+the affected admissions before fencing their grants so cleanup notifications
+remain complete. Explicit launch retirement can reclaim all of that launch's
+grants without revoking a later launch in the same namespace.
+
+Session's recipe factory binding requires the exact captured endpoint and
+owner-issued grant. Its existing role-authentication owner enforces that lease
+at transport creation, authentication, admission and quiet polling. Existing
+fixed role factories retain their explicit legacy binding path; there is no
+peer-selectable fallback from a recipe grant. The registry permits 4,096 live
+grants, reclaims revoked slots and never reuses IDs. Naming aliases clone a
+lease rather than creating authority. Live recipe policy selection and launch
+cleanup wiring remain pending; this slice does not claim those startup paths.
+
+The protected inspection join now uses grant-backed factories. A second case
+authenticates two audiences over one real launch relay using the Rust SDK,
+with two grants for the same inspection owner. Session revokes only the first
+grant while its event read waits; that read refuses/closes, and the second
+authenticated endpoint still delivers a snapshot. Whole-launch revocation
+remains a separate passing case. Policy selection, endpoint sockets and safe
+snapshot data are supplied; custody, Factotum, the 9P core and export are real.
+
+The `t318-endpoint-grants-01` package passes four discovery tests, six grant
+tests, eleven compiler tests, nine registry tests and the entire Session
+launch-authentication suite (28 parent tests; four ignored child entry points
+all invoked by parents). Runtime all-target Clippy, Session integration-target
+Clippy and the layout gate pass. A stale Clippy SDK metadata artifact initially
+reported the already-present `over_relay` method missing; a package-only
+`cargo clean -p sophia-launch-client` under the lease followed by rebuilding
+resolved it without source changes. The final package records the candidate
+files before and after all checks, with no copied build output.
+
+Two separate controls fail at named assertions and restore every enumerated
+candidate hash: omitting the grant's active-cell check fails `revoked endpoint
+grant must fence retained admission`; omitting the captured endpoint comparison
+fails `a changed service generation cannot reuse the captured grant`. The
+positive package runs after restoration. The positive, live-control and
+scope-control SHA256SUMS identities respectively are
+`2275dc2a1b6d3821d2d8d13366d78bcc2a212bd4fa2d7853a6997210497aa89e`,
+`7bbe9268a100f8f52268bdfaf4a1aca1ccea5ad5449de4e2f340a0c550d49543`,
+and `a87be6816a8c7114dd4b2388feeb0f3f35e35191ec360dcc56eeb248d0f01afc`.
+
 Sophia now pins the published C and Rust candidates above. Both snapshot
 verifiers also compare `namespace-discovery.md` against the normative source,
 so a later contract change cannot silently leave either SDK copy behind.

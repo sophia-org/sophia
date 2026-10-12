@@ -9,7 +9,7 @@ use sophia_9p::{
 use sophia_factotum::launch::queue::Ingress;
 use sophia_protocol::{ClientAdmissionContext, ClientAuthenticationMethod, NamespaceId};
 use sophia_runtime::authenticated_files::{FileAuthentication, FileAuthenticationFactory};
-use sophia_runtime::{AdmissionLease, NamespaceRegistry};
+use sophia_runtime::{AdmissionLease, EndpointGrantLease, NamespaceRegistry};
 use std::{
     sync::{
         Arc, Mutex, TryLockError,
@@ -137,7 +137,48 @@ impl EndpointBudget {
             worker,
             uname,
             aname,
+            grant: None,
         })
+    }
+
+    /// Recipe endpoints retain the exact grant selected during publication.
+    /// A matching name, service or principal cannot substitute another scope.
+    pub fn bind_grant(
+        &self,
+        worker: WorkerAuthority,
+        grant: EndpointGrantLease,
+        endpoint: &sophia_protocol::namespace_view::GrantedEndpoint,
+        uname: Vec<u8>,
+        aname: Vec<u8>,
+    ) -> Result<RoleFileFactory, Errno> {
+        let identity = worker.identity();
+        let method = ClientAuthenticationMethod::FactotumLaunch {
+            principal: identity.principal,
+            launch_generation: identity.launch,
+        };
+        if grant.endpoint() != endpoint
+            || !grant.permits(
+                NamespaceId::from_raw(identity.namespace),
+                method,
+                worker.audience(),
+            )
+        {
+            return Err(Errno::EACCES);
+        }
+        let registry = self
+            .global
+            .namespaces
+            .try_lock()
+            .map_err(|error| match error {
+                TryLockError::WouldBlock => Errno::EAGAIN,
+                TryLockError::Poisoned(_) => Errno::EIO,
+            })?;
+        if !registry.endpoint_grant_is_current(&grant) {
+            return Err(Errno::ESTALE);
+        }
+        let mut factory = self.bind(worker, uname, aname)?;
+        factory.grant = Some(grant);
+        Ok(factory)
     }
 }
 
@@ -146,6 +187,7 @@ pub struct RoleFileFactory {
     worker: WorkerAuthority,
     uname: Vec<u8>,
     aname: Vec<u8>,
+    grant: Option<EndpointGrantLease>,
 }
 impl FileAuthenticationFactory for RoleFileFactory {
     fn retire(
@@ -171,7 +213,9 @@ impl FileAuthenticationFactory for RoleFileFactory {
         now: Instant,
         wake: sophia_9p::unix::Wake,
     ) -> Result<Box<dyn FileAuthentication>, Errno> {
-        if !self.worker.live().map_err(|_| Errno::ESTALE)? {
+        if !self.worker.live().map_err(|_| Errno::ESTALE)?
+            || self.grant.as_ref().is_some_and(|grant| !grant.is_live())
+        {
             return Err(Errno::ESTALE);
         }
         let (server, permit) = self.endpoint.reserve()?;
@@ -195,6 +239,7 @@ impl FileAuthenticationFactory for RoleFileFactory {
             ingress,
             closed: false,
             admission: None,
+            grant: self.grant.clone(),
             _permit: permit,
         }))
     }
@@ -207,6 +252,7 @@ struct RoleFileAuthentication {
     ingress: Ingress,
     closed: bool,
     admission: Option<AdmissionLease>,
+    grant: Option<EndpointGrantLease>,
     _permit: Permit,
 }
 impl Drop for RoleFileAuthentication {
@@ -224,6 +270,9 @@ impl FileAuthentication for RoleFileAuthentication {
         self.auth.claims(c.connection, c.uname, c.aname, c.n_uname)
     }
     fn begin(&mut self, afid: Fid, now: Instant) -> Result<Attempt, Errno> {
+        if self.grant.as_ref().is_some_and(|grant| !grant.is_live()) {
+            return Err(Errno::ESTALE);
+        }
         self.auth.begin(afid.0, now)
     }
     fn read(
@@ -233,6 +282,9 @@ impl FileAuthentication for RoleFileAuthentication {
         count: u32,
         now: Instant,
     ) -> Result<ReadOutcome, Errno> {
+        if self.grant.as_ref().is_some_and(|grant| !grant.is_live()) {
+            return Err(Errno::ESTALE);
+        }
         self.auth.read(
             attempt,
             offset,
@@ -276,9 +328,13 @@ impl FileAuthentication for RoleFileAuthentication {
                     TryLockError::WouldBlock => Errno::EAGAIN,
                     TryLockError::Poisoned(_) => Errno::EIO,
                 })?;
-        let prepared = namespaces
-            .prepare_admission(NamespaceId::from_raw(identity.namespace), method)
-            .map_err(|_| Errno::EACCES)?;
+        let prepared = match &self.grant {
+            Some(grant) => {
+                namespaces.prepare_granted_admission(grant, method, self.worker.audience())
+            }
+            None => namespaces.prepare_admission(NamespaceId::from_raw(identity.namespace), method),
+        }
+        .map_err(|_| Errno::EACCES)?;
         self.auth.commit_attach(attempt, now, &mut authority)?;
         self.admission = Some(prepared.publish_lease());
         Ok(())
@@ -313,6 +369,7 @@ impl FileAuthentication for RoleFileAuthentication {
         if !self.closed
             && (result.is_err()
                 || !self.worker.live().unwrap_or(false)
+                || self.grant.as_ref().is_some_and(|grant| !grant.is_live())
                 || self
                     .admission
                     .as_ref()

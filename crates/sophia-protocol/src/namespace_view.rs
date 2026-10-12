@@ -27,6 +27,20 @@ pub struct ServiceReference {
     pub version: u32,
 }
 
+impl ServiceReference {
+    pub fn is_valid(&self) -> bool {
+        self.identity != 0
+            && self.generation != 0
+            && self.version != 0
+            && !self.interface.is_empty()
+            && self.interface.len() <= MAX_COMPONENT_BYTES
+            && self
+                .interface
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    }
+}
+
 /// The owner's opaque grant incarnation, scoped to the selected identity.
 /// Its contents and revocation remain with that owner, not the compiler.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

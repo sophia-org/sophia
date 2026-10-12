@@ -14,6 +14,9 @@ use crate::{SophiaErrorExt, SophiaErrorKind};
 mod admission;
 pub use admission::{AdmissionLease, PreparedAdmission};
 use admission::{AdmissionRecord, NamespaceRecord};
+mod endpoint;
+use endpoint::EndpointGrantRecord;
+pub use endpoint::{EndpointGrantLease, EndpointGrantPolicy, MAX_ENDPOINT_GRANTS};
 
 /// Session-owned namespace and client-admission registry.
 ///
@@ -27,6 +30,8 @@ pub struct NamespaceRegistry {
     namespaces: BTreeMap<NamespaceId, NamespaceRecord>,
     admissions: BTreeMap<ClientAdmissionId, AdmissionRecord>,
     live: Arc<AtomicBool>,
+    endpoint_grants: BTreeMap<u64, Arc<EndpointGrantRecord>>,
+    next_endpoint_grant: u64,
 }
 
 impl NamespaceRegistry {
@@ -41,6 +46,8 @@ impl NamespaceRegistry {
             namespaces: BTreeMap::new(),
             admissions: BTreeMap::new(),
             live: Arc::new(AtomicBool::new(true)),
+            endpoint_grants: BTreeMap::new(),
+            next_endpoint_grant: 0,
         })
     }
 
@@ -83,6 +90,8 @@ impl NamespaceRegistry {
             namespaces,
             admissions: BTreeMap::new(),
             live: Arc::new(AtomicBool::new(true)),
+            endpoint_grants: BTreeMap::new(),
+            next_endpoint_grant: 0,
         })
     }
 
@@ -172,8 +181,6 @@ impl NamespaceRegistry {
             .namespaces
             .remove(&namespace)
             .ok_or(NamespaceRegistryError::UnknownNamespace { namespace })?;
-        // One release makes every retained lease stale before map cleanup.
-        record.active.store(false, Ordering::Release);
         let clients = self
             .admissions
             .iter()
@@ -181,15 +188,22 @@ impl NamespaceRegistry {
                 (admission.context.namespace.id == namespace).then_some(*client)
             })
             .collect::<Vec<_>>();
+        // Grant-backed admissions become stale at the namespace fence too.
+        // Capture the notification set before that fence, then invalidate every
+        // retained lease with one release before bookkeeping is removed.
         let admissions = clients
-            .into_iter()
-            .filter_map(|client| self.admissions.remove(&client))
-            .filter_map(|record| {
-                let was_live = record.live();
-                record.revoke();
-                was_live.then_some(record.context)
-            })
+            .iter()
+            .filter_map(|client| self.admissions.get(client))
+            .filter(|record| record.live())
+            .map(|record| record.context)
             .collect();
+        record.active.store(false, Ordering::Release);
+        self.endpoint_grants.retain(|_, grant| grant.is_live());
+        for client in clients {
+            if let Some(record) = self.admissions.remove(&client) {
+                record.revoke();
+            }
+        }
         Ok(NamespaceRevocation {
             namespace: record.context,
             admissions,
@@ -226,11 +240,21 @@ pub enum NamespaceRegistryError {
     InvalidAuthentication,
     UnknownNamespace { namespace: NamespaceId },
     UnknownAdmission { client: ClientAdmissionId },
+    InvalidEndpointGrant,
+    EndpointGrantCapacity,
+    EndpointGrantExhausted,
+    StaleEndpointGrant,
 }
 
 impl core::fmt::Display for NamespaceRegistryError {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
+            Self::InvalidEndpointGrant => formatter.write_str("invalid endpoint grant policy"),
+            Self::EndpointGrantCapacity => formatter.write_str("endpoint grant capacity"),
+            Self::EndpointGrantExhausted => {
+                formatter.write_str("endpoint grant identity exhausted")
+            }
+            Self::StaleEndpointGrant => formatter.write_str("endpoint grant is stale or foreign"),
             Self::InvalidSessionGeneration => {
                 formatter.write_str("namespace registry session generation must be nonzero")
             }

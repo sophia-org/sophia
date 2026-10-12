@@ -18,10 +18,12 @@ impl NamespaceRecord {
 pub(super) struct AdmissionRecord {
     pub context: ClientAdmissionContext,
     active: Arc<AtomicBool>,
+    grant: Option<EndpointGrantLease>,
 }
 impl AdmissionRecord {
     pub fn live(&self) -> bool {
         self.active.load(Ordering::Acquire)
+            && self.grant.as_ref().is_none_or(EndpointGrantLease::is_live)
     }
     pub fn revoke(&self) {
         self.active.store(false, Ordering::Release);
@@ -37,6 +39,7 @@ pub struct AdmissionLease {
     active: Arc<AtomicBool>,
     namespace: Arc<AtomicBool>,
     registry: Arc<AtomicBool>,
+    grant: Option<EndpointGrantLease>,
 }
 impl AdmissionLease {
     pub fn context(&self) -> ClientAdmissionContext {
@@ -46,6 +49,7 @@ impl AdmissionLease {
         self.registry.load(Ordering::Acquire)
             && self.namespace.load(Ordering::Acquire)
             && self.active.load(Ordering::Acquire)
+            && self.grant.as_ref().is_none_or(EndpointGrantLease::is_live)
     }
 }
 impl Drop for AdmissionLease {
@@ -58,13 +62,22 @@ impl Drop for AdmissionLease {
 pub struct PreparedAdmission<'a> {
     registry: &'a mut NamespaceRegistry,
     context: ClientAdmissionContext,
+    grant: Option<EndpointGrantLease>,
 }
 impl<'a> PreparedAdmission<'a> {
     pub(super) fn new(
         registry: &'a mut NamespaceRegistry,
         context: ClientAdmissionContext,
     ) -> Self {
-        Self { registry, context }
+        Self {
+            registry,
+            context,
+            grant: None,
+        }
+    }
+    pub(super) fn with_grant(mut self, grant: EndpointGrantLease) -> Self {
+        self.grant = Some(grant);
+        self
     }
     pub fn context(&self) -> ClientAdmissionContext {
         self.context
@@ -84,6 +97,7 @@ impl<'a> PreparedAdmission<'a> {
                 .active
                 .clone(),
             registry: self.registry.live.clone(),
+            grant: self.grant.clone(),
         }
     }
     fn insert(&mut self) -> Arc<AtomicBool> {
@@ -93,6 +107,7 @@ impl<'a> PreparedAdmission<'a> {
             AdmissionRecord {
                 context: self.context,
                 active: active.clone(),
+                grant: self.grant.clone(),
             },
         );
         active

@@ -48,6 +48,9 @@ mod output_authenticated_transport;
 #[path = "support/inspection_authenticated_transport.rs"]
 mod inspection_authenticated_transport;
 
+#[path = "support/authentication_endpoint_grants.rs"]
+mod authentication_endpoint_grants;
+
 struct Fixture {
     namespaces: std::sync::Arc<std::sync::Mutex<sophia_runtime::NamespaceRegistry>>,
     book: LaunchBook,

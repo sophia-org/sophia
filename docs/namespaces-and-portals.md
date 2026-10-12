@@ -269,12 +269,42 @@ source generation fence --------------------> refuse old endpoint and fids
 ```
 
 This runtime route and its real launch-authentication join are implemented;
-automatic recipe selection, launch wiring and per-endpoint grant ownership
-remain t318 integration work. The join supplies launch policy explicitly and
+automatic recipe selection and launch wiring remain t318 integration work.
+The join supplies launch policy explicitly and
 does not grant inspection to ordinary shell launches. Connection owners must
 service readiness and the 20 ms quiet check bound; revocation must not depend
 on the reader sending another request. These are liveness bounds, not latency
 claims.
+
+Endpoint grants use Session's existing namespace/admission registry. Each
+grant pins the namespace, principal, launch generation, audience and full
+service reference. The compiler receives passive scope numbers; authentication
+workers retain an owner-issued lease and compare it with the captured endpoint.
+Matching numbers from another registry confer no authority. Aliases retain one
+grant, while independently approved clients can hold separate grants for the
+same service identity. Revoking one grant invalidates its retained admissions
+and future attaches without revoking unrelated grants or the entire launch.
+
+```text
+one service identity + generation
+        ^                   ^
+     grant A             grant B
+      /   \                 |
+   path X alias Y         path Z
+      |                     |
+ retained admission A   retained admission B
+      X                     |
+ revoke A              still permitted
+```
+
+The registry bounds live endpoint grants to 4,096 (64 launches times 64
+endpoints); aliases need no additional grant. Revoked entries reclaim capacity
+without reusing grant IDs. Namespace or registry retirement fences all affected
+leases. Session must retire a launch's grants with that launch; the existing
+supervisor custody check independently refuses a dead launch. A service
+replacement requires a fresh grant, and a failed naming publication cannot
+revive a revoked one. Live policy selection and publication ordering still
+belong to the pending Session recipe adapter.
 
 ### Revisions, discovery and retained authority
 

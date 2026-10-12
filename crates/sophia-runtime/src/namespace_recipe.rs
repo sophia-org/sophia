@@ -163,18 +163,7 @@ impl Compiler<'_> {
             return Err(Error::Scope);
         }
         let service = &endpoint.service;
-        if scope.grant == 0
-            || scope.generation == 0
-            || service.identity == 0
-            || service.generation == 0
-            || service.version == 0
-            || service.interface.is_empty()
-            || service.interface.len() > MAX_COMPONENT_BYTES
-            || !service
-                .interface
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-        {
+        if scope.grant == 0 || scope.generation == 0 || !service.is_valid() {
             return Err(Error::Identity);
         }
         Ok(())
