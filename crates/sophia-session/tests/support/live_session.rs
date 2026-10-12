@@ -8,6 +8,9 @@ use super::*;
 #[path = "../../../sophia-runtime/tests/support/shell_file_peer.rs"]
 pub(crate) mod shell_file_peer;
 
+#[path = "lock_provider_factotum.rs"]
+pub(super) mod lock_provider_factotum;
+
 #[path = "live_session/focus_candidate.rs"]
 mod focus_candidate;
 #[path = "live_session/production_test_helpers.rs"]

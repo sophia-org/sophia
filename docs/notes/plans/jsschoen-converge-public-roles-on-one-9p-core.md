@@ -249,13 +249,17 @@ no third-party path is opened in process.
 
 The [foundation checkpoint](../investigations/etyvymxi-authenticated-attach-transport-state-and-factotum-handoff.md#reproducible-foundation-checkpoint)
 pins the SDK primitives and validates the core, Factotum, launch custody and
-Session afid owners. It does not enable authentication on shipped role exports
-or satisfy the exit below; production role integration remains next.
+Session afid owners. Later checkpoints in that investigation extend it; the
+foundation alone does not satisfy the exit below.
 
 The [worker custody join](../investigations/etyvymxi-authenticated-attach-transport-state-and-factotum-handoff.md#worker-launch-custody)
 now carries current launch authority across threads with local revocation and
-kernel exit checks. Atomic lock admission uses it through direct owner calls;
-the live lock transport's afid dispatch and lifecycle integration remain next.
+kernel exit checks. The [normal lock-provider join](../investigations/etyvymxi-authenticated-attach-transport-state-and-factotum-handoff.md#normal-lock-provider-owner-and-protected-spawn)
+uses it through actual afid dispatch, protected spawn and replacement after
+Factotum loss. Other required role/client joins, immutable admission-context
+derivation, fragment revocation, minimum-version execution and final contract
+and threat-model reconciliation remain open. This checkpoint is not a live
+installation or a reduced exit.
 
 Implement the approved [t133 local authentication handoff](esnqxpqw-pidfd-and-namespace-admission-optimizations.md#local-authentication-design-and-t317-handoff-2026-10-10),
 including Session's launch-channel relay, Factotum's correlated verdict,

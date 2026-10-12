@@ -6,6 +6,8 @@ use super::session_config_tests::isolated_session_config;
 use super::*;
 use std::path::{Path, PathBuf};
 
+use super::lock_provider_factotum as factotum;
+
 struct StandIn {
     directory: PathBuf,
 }
@@ -101,6 +103,15 @@ fn the_metadata_broker_and_lock_provider_launch_the_session_bubblewrap() {
     let error = LiveMetadataBroker::start(&stand_in.path()).err().unwrap();
     assert!(stand_in.ran(&error), "{error}");
 
+    // The lock launch now finishes asynchronously. This marker is produced
+    // only by its selected version probe, before any sandboxed peer starts.
+    std::fs::write(
+        stand_in.path(),
+        "#!/bin/sh\necho lock-probe > \"$0.ran\"\necho 'bubblewrap 0.0.1'\n",
+    )
+    .unwrap();
+    let mut auth = factotum::Fixture::new();
+
     let wake = sophia_wake::Wake::new().unwrap();
     let directory = stand_in.directory.join("lock");
     // The service starts at once; the process is launched later, by a poll.
@@ -120,10 +131,26 @@ fn the_metadata_broker_and_lock_provider_launch_the_session_bubblewrap() {
         crate::session_lock_object::session_lock_file_limits(None),
         Vec::new(),
         wake.notifier(),
+        crate::launch_authentication::LaunchPolicy {
+            principal: 1,
+            namespace: 2,
+            audience: 1,
+            role: sophia_runtime::ProtectionDomainRole::LockProvider,
+        },
+        auth.coordinator.endpoint(),
     )
     .unwrap();
-    let error = provider.launch(true).err().unwrap();
-    assert!(stand_in.ran(&error), "{error}");
+    let marker = stand_in.directory.join("bwrap.ran");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while !marker.exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "lock provider did not run Session's Bubblewrap"
+        );
+        auth.tick();
+        provider.poll(std::time::Instant::now(), &mut auth.coordinator);
+    }
+    assert_eq!(std::fs::read_to_string(marker).unwrap(), "lock-probe\n");
 }
 
 /// Every production protection domain in this crate names the session's

@@ -22,6 +22,7 @@ mod coordinator;
 pub use coordinator::{LaunchCoordinator, Registration};
 pub mod files;
 pub mod role;
+pub(crate) mod spawn;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LaunchId(u64);

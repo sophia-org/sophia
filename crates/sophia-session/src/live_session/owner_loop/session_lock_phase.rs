@@ -135,6 +135,7 @@ macro_rules! service_lock_provider {
             .as_ref()
             .and_then(|devices| devices.shell_gpu_device().ok());
         if !lock_provider_tried
+            && let Some(namespace) = lock_namespace
             && let Some(snapshot) = wm_session.as_ref().and_then(|wm| wm.published_output_snapshot())
         {
             lock_provider_tried = true;
@@ -145,6 +146,8 @@ macro_rules! service_lock_provider {
                 session_lock.phase(),
                 lock_device.clone(),
                 owner_wake.notifier(),
+                namespace,
+                authenticated_launches.endpoint(),
             );
         }
         if let Some(provider) = lock_provider.as_mut() {
@@ -154,15 +157,17 @@ macro_rules! service_lock_provider {
             lock_frames.set_pacing_diagnostics(provider.pacing_enabled());
             // A direct grant follows the render device. What the old process
             // was granted ends now, while it may still be exiting.
-            if provider.follow_device(lock_device, Instant::now()) {
+            if provider.follow_device(lock_device, Instant::now(), &mut authenticated_launches) {
+                provider.take_replacement();
                 images_changed |= crate::session_lock_succession::revoke_replaced_lock_provider(
                     &mut lock_chords,
                     session_lock_input.as_mut(),
                     &mut lock_frames,
                 );
             }
-            let events = provider.poll(Instant::now());
-            if provider.take_failure() {
+            let events = provider.poll(Instant::now(), &mut authenticated_launches);
+            let replaced = provider.take_replacement();
+            if provider.take_failure() || replaced {
                 images_changed |= crate::session_lock_succession::revoke_replaced_lock_provider(
                     &mut lock_chords,
                     session_lock_input.as_mut(),

@@ -22,11 +22,18 @@ use sophia_runtime::lock_files::{
 };
 use sophia_runtime::{
     ProcessLaunchSpec, ProcessSupervisor, ProtectionDomainRole, ProtectionDomainSpec,
-    ProtectionPath, SupervisedProcessKind, SupervisorCommand,
+    ProtectionPath, SupervisedProcessKind,
 };
 
 use super::metadata_shell::gpu::ShellGpuLaunchPolicy;
+use crate::launch_authentication::{
+    LaunchCoordinator, LaunchPolicy, Phase, Registration,
+    files::EndpointBudget,
+    spawn::{ProtectedSpawn, SpawnLease},
+};
 use crate::session_lock_succession::{LockProviderStart, LockProviderSuccession};
+
+mod authentication;
 
 /// The provider's configuration file, when the profile names one.
 pub(super) const SOPHIA_LOCK_CONFIG_ENV: &str = "SOPHIA_LOCK_CONFIG";
@@ -38,7 +45,14 @@ const LONGEST_RESTART: Duration = Duration::from_secs(60);
 
 pub(super) struct LockProvider {
     service: LockFileService,
-    supervisor: ProcessSupervisor,
+    supervisor: Option<ProcessSupervisor>,
+    spawn_lease: Option<SpawnLease>,
+    spawning: Option<ProtectedSpawn>,
+    registration: Option<Registration>,
+    authorized: bool,
+    policy: LaunchPolicy,
+    endpoint: EndpointBudget,
+    replaced: bool,
     restart_at: Option<Instant>,
     backoff: Duration,
     owner_wake: sophia_wake::Notifier,
@@ -73,6 +87,8 @@ impl LockProvider {
         limits: LockFileLimits,
         reserved_chords: Vec<LockChordRequest>,
         wake: sophia_wake::Notifier,
+        policy: LaunchPolicy,
+        endpoint: EndpointBudget,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let transport = LockFileTransport::bind_for_supervised_uid(
             directory,
@@ -101,6 +117,8 @@ impl LockProvider {
             lock,
             reserved_chords,
             wake,
+            policy,
+            endpoint,
         )
     }
 
@@ -112,13 +130,22 @@ impl LockProvider {
         lock: LockObject,
         reserved_chords: Vec<LockChordRequest>,
         wake: sophia_wake::Notifier,
+        policy: LaunchPolicy,
+        endpoint: EndpointBudget,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let supervisor = ProcessSupervisor::new(SupervisedProcessKind::LockProvider, base.clone());
         let service = LockFileService::spawn(transport, lock, reserved_chords)?;
         service.set_owner_wake(wake.clone());
         Ok(Self {
             service,
-            supervisor,
+            supervisor: Some(supervisor),
+            spawn_lease: None,
+            spawning: None,
+            registration: None,
+            authorized: false,
+            policy,
+            endpoint,
+            replaced: false,
             restart_at: Some(Instant::now()),
             backoff: FIRST_RESTART,
             owner_wake: wake,
@@ -150,6 +177,7 @@ impl LockProvider {
         &mut self,
         device: Option<sophia_backend_live::LiveRenderDeviceIdentitySnapshot>,
         now: Instant,
+        launches: &mut LaunchCoordinator,
     ) -> bool {
         if self.gpu != ShellGpuMode::Direct || self.device == device || self.succession.failed() {
             return false;
@@ -159,17 +187,20 @@ impl LockProvider {
             "sophia_live_lock_provider schema=1 status=regrant device={}",
             self.device.is_some(),
         );
-        self.replace_process(now);
+        self.replace_process(now, launches);
         true
     }
 
     /// Retires the running process without waiting for it, and owes its
     /// successor a launch prepared for the latest device.
-    fn replace_process(&mut self, now: Instant) {
+    fn replace_process(&mut self, now: Instant, launches: &mut LaunchCoordinator) {
+        self.revoke_registration(launches, now);
+        self.replaced = true;
         // An authorization not yet queued is for an obsolete grant.
         self.assignee = None;
         if self.succession.device_changed()
-            && let Err(error) = self.supervisor.request_termination()
+            && let Some(supervisor) = self.supervisor.as_mut()
+            && let Err(error) = supervisor.request_termination()
         {
             crate::session_eprintln!(
                 "sophia_live_lock_provider schema=1 status=termination_failed error={error}"
@@ -208,7 +239,7 @@ impl LockProvider {
 
     /// The service stopped: nothing restarts it, since a new transport would
     /// begin its epochs again. The process is asked to exit.
-    fn fail(&mut self, reason: &str) {
+    fn fail(&mut self, reason: &str, launches: &mut LaunchCoordinator) {
         let Some(terminate) = self.succession.fail() else {
             return;
         };
@@ -217,8 +248,9 @@ impl LockProvider {
         );
         self.restart_at = None;
         self.assignee = None;
-        if terminate {
-            let _ = self.supervisor.request_termination();
+        self.revoke_registration(launches, Instant::now());
+        if terminate && let Some(supervisor) = self.supervisor.as_mut() {
+            let _ = supervisor.request_termination();
         }
     }
 
@@ -228,40 +260,50 @@ impl LockProvider {
         self.succession.failed() && !std::mem::replace(&mut self.failure_reported, true)
     }
 
+    pub(super) fn take_replacement(&mut self) -> bool {
+        std::mem::take(&mut self.replaced)
+    }
+
     /// Takes what the provider sent, notices its exit and restarts it when
     /// its delay has passed. Never blocks.
-    pub(super) fn poll(&mut self, now: Instant) -> Vec<LockFileServiceEvent> {
+    pub(super) fn poll(
+        &mut self,
+        now: Instant,
+        launches: &mut LaunchCoordinator,
+    ) -> Vec<LockFileServiceEvent> {
+        if self
+            .registration
+            .is_some_and(|r| matches!(launches.phase(r), None | Some(Phase::Retiring)))
+        {
+            self.replace_process(now, launches);
+        }
+        self.poll_spawn(now, launches);
         if self.succession.failed() {
             // Reaping continues without blocking; nothing else does.
-            if matches!(self.supervisor.poll(), Ok(Some(_))) {
+            if self
+                .supervisor
+                .as_mut()
+                .is_some_and(|s| matches!(s.poll(), Ok(Some(_))))
+            {
                 self.succession.child_reaped();
+                self.spawn_lease = None;
             }
             return Vec::new();
         }
-        self.queue_owed();
-        // A provider cannot extend the owner pass by refilling its handoff.
-        // Every publication rings the owner; another pass drains the remainder.
-        let mut taken = Vec::new();
-        while taken.len() < 8 {
-            match self.service.try_event() {
-                Ok(Some(event)) => taken.push(Ok(event)),
-                Ok(None) => break,
-                Err(_) => {
-                    taken.push(Err(()));
-                    break;
-                }
-            }
-        }
-        if taken.len() == 8 {
-            self.owner_wake.notify();
-        }
-        let events = self.admit_events(taken);
-        if self.succession.failed() {
-            return events;
-        }
-        match self.supervisor.poll() {
+        // Observe exit before admitting drained events: an old Connected or
+        // submission must not restore authority after this turn revokes it.
+        match self
+            .supervisor
+            .as_mut()
+            .map_or(Ok(None), ProcessSupervisor::poll)
+        {
             Ok(Some(_)) => {
+                self.spawn_lease = None;
                 let asked = self.succession.child_reaped();
+                self.revoke_registration(launches, now);
+                self.assignee = None;
+                self.replaced = true;
+                self.succession.device_changed();
                 if self.restart_at.is_none() {
                     if asked {
                         self.restart_at = Some(now);
@@ -280,7 +322,33 @@ impl LockProvider {
                 "sophia_live_lock_provider schema=1 status=reap_failed error={error}"
             ),
         }
-        if self.restart_at.is_some_and(|at| now >= at) {
+        self.queue_owed();
+        // A provider cannot extend the owner pass by refilling its handoff.
+        // Every publication rings the owner; another pass drains the remainder.
+        let mut taken = Vec::new();
+        while taken.len() < 8 {
+            match self.service.try_event() {
+                Ok(Some(event)) => taken.push(Ok(event)),
+                Ok(None) => break,
+                Err(_) => {
+                    taken.push(Err(()));
+                    break;
+                }
+            }
+        }
+        if taken.len() == 8 {
+            self.owner_wake.notify();
+        }
+        let events = self.admit_events(taken, launches);
+        if self.succession.failed() {
+            return events;
+        }
+        self.progress_authentication(now, launches);
+        if self.registration.is_none()
+            && self.spawning.is_none()
+            && launches.ready()
+            && self.restart_at.is_some_and(|at| now >= at)
+        {
             let admitted = self.gpu == ShellGpuMode::Denied || self.device.is_some();
             match self.succession.start(admitted) {
                 LockProviderStart::Wait => {}
@@ -292,7 +360,7 @@ impl LockProvider {
                 }
                 LockProviderStart::Start { regrant } => {
                     self.restart_at = None;
-                    if let Err(error) = self.launch(regrant) {
+                    if let Err(error) = self.reserve_launch(regrant, now, launches) {
                         crate::session_eprintln!(
                             "sophia_live_lock_provider schema=1 status=restart_failed error={error}"
                         );
@@ -312,17 +380,18 @@ impl LockProvider {
     fn admit_events(
         &mut self,
         taken: Vec<Result<LockFileServiceEvent, ()>>,
+        launches: &mut LaunchCoordinator,
     ) -> Vec<LockFileServiceEvent> {
         let mut events = Vec::new();
         for event in taken {
             let event = match event {
                 Ok(LockFileServiceEvent::Failed { message }) => {
-                    self.fail(&message);
+                    self.fail(&message, launches);
                     return Vec::new();
                 }
                 Ok(event) => event,
                 Err(()) => {
-                    self.fail("the lock file service stopped");
+                    self.fail("the lock file service stopped", launches);
                     return Vec::new();
                 }
             };
@@ -347,45 +416,6 @@ impl LockProvider {
             events.push(event);
         }
         events
-    }
-
-    /// Spawns the process, first preparing a grant from the ungranted base
-    /// for the latest device when one is owed. A failure leaves the grant
-    /// owed: no older launch is used and no grant epoch wraps.
-    pub(super) fn launch(&mut self, regrant: bool) -> Result<(), String> {
-        if regrant {
-            let epoch = self
-                .grant_epoch
-                .checked_add(1)
-                .ok_or("the lock provider's grant epoch is exhausted")?;
-            let policy = ShellGpuLaunchPolicy::new(self.gpu, self.device.clone())?;
-            let (spec, _) = policy.prepare(&self.base, epoch)?;
-            self.supervisor
-                .replace_launch_spec(spec)
-                .map_err(|error| error.to_string())?;
-            self.grant_epoch = epoch;
-            self.succession.regranted();
-        }
-        self.supervisor
-            .apply(SupervisorCommand::StartProcess {
-                process: SupervisedProcessKind::LockProvider,
-                delay: Duration::ZERO,
-            })
-            .map_err(|error| error.to_string())?
-            .ok_or("the lock provider did not start")?;
-        self.succession.child_started();
-        match LockFileAssignee::from_supervisor(&self.supervisor) {
-            Ok(assignee) => {
-                self.assignee = Some(assignee);
-                Ok(())
-            }
-            Err(error) => {
-                // A process that cannot be authorized is not kept.
-                self.succession.child_terminating();
-                let _ = self.supervisor.request_termination();
-                Err(error.to_string())
-            }
-        }
     }
 
     // No owner deadline is needed for a restart: the owner never sleeps
@@ -475,6 +505,8 @@ pub(super) fn start_session_lock_provider(
     phase: crate::session_lock::SessionLockPhase,
     render_device: Option<sophia_backend_live::LiveRenderDeviceIdentitySnapshot>,
     wake: sophia_wake::Notifier,
+    namespace: sophia_protocol::NamespaceId,
+    endpoint: EndpointBudget,
 ) -> Option<LockProvider> {
     let selection = config.lock_provider.as_ref().filter(|_| lockable)?;
     let lock = crate::session_lock_object::session_lock_object(phase, Some(snapshot));
@@ -488,6 +520,15 @@ pub(super) fn start_session_lock_provider(
         limits,
         Vec::new(),
         wake,
+        LaunchPolicy {
+            // Session's lock-service principal and audience, not uid, PID or
+            // peer-supplied claims. The namespace is allocated at startup.
+            principal: 1,
+            namespace: namespace.raw(),
+            audience: 1,
+            role: ProtectionDomainRole::LockProvider,
+        },
+        endpoint,
     ) {
         Ok(provider) => {
             crate::session_println!(

@@ -46,7 +46,7 @@ cooperating holder can delegate its existing capability. Session must still
 check live launch custody and current policy before installing a verdict or
 admitting an attach.
 
-## Role afid conversation (candidate, not enabled on shipped roles)
+## Role afid conversation (t317 candidate)
 
 The Session `RoleAuthentication` owner lives outside the core's fid table.
 An export checks its fixed, policy-selected uname/aname and connection before
@@ -72,8 +72,9 @@ invalidates the shared ingress so its connection owner closes the actual
 Factotum transport. A transport owner must poll even without peer traffic,
 close an expired transport, and retain its bounded slot until cleanup drains.
 Tversion preserves the identity pin and original first-attach deadline.
-The lock transport implements these hooks through `AuthenticatedFiles`; other
-transports and normal Session startup still require integration.
+The lock transport implements these hooks through `AuthenticatedFiles`, now
+selected by normal Session lock-provider startup in this candidate. Other
+role transports still require integration; this is not a live-install claim.
 
 ### Atomic lock-root publication
 
@@ -107,7 +108,7 @@ This sequence is joined both by direct owner calls and through the real lock
 worker with a protected independent C wire peer. The ordinary legacy attach
 path uses the same checked preparation and retains its existing policy.
 
-### Authenticated lock transport (candidate, not selected at desktop startup)
+### Authenticated lock transport
 
 Session gives the lock assignee an authentication factory backed by current
 `WorkerAuthority`. A pending export refuses requests until construction installs
@@ -165,8 +166,10 @@ provisioned channel. The lock SDK accepts its admitted root without another
 Tversion or ordinary attach, then performs its normal file bootstrap. The SDK
 case reaches the lock object and observes revocation; the raw-wire case retains
 the exact waiting-read check.
-Normal startup, other roles, in-place fragment controls, minimum-version
-Bubblewrap execution and final acceptance remain open.
+Other roles, in-place fragment controls, minimum-version Bubblewrap execution,
+external client rollout and final acceptance remain open. The lock-file
+contract and its pinned SDK copies also need their admission text reconciled
+before this candidate is released.
 
 ### Session coordinator
 
@@ -196,9 +199,41 @@ and only a new supervisor publication can recover. A contended publication
 mutex does not revoke a still-live connection. Role endpoints retain their
 budget through replacements and pending cleanup.
 
-This coordinator is wired into the normal owner loop, but the lock provider
-has not yet been changed to reserve and activate through it. Authentication is
-therefore still not enabled for the desktop's provider by this checkpoint.
+The normal lock-provider owner now reserves and activates through this
+coordinator. Session allocates a private namespace with no portal capabilities
+after allocating the X listener namespaces; X admission is unchanged. Session
+selects the lock principal and audience, and the client cannot choose either.
+
+```text
+Session owner                       bounded protected-spawn worker
+    | reserve delegation                         |
+    | wait for Factotum registration              |
+    | hand off supervisor + P ------------------>|
+    | continue Engine turns                      | spawn + protection check
+    |<------------------------- result + lifetime lease
+    | activate exact launch                      | retain spawning thread
+    | publish authenticated assignee              | until child reaped/dropped
+    v                                            |
+lock transport --> afid + current custody --> admitted lock files
+    |
+    +-- exit / Factotum loss --> revoke locally --> retire / reap / replace
+```
+
+Missing authentication admits no provider and never selects ordinary attach.
+Engine's locked cover is independent of provider availability. One worker per
+provider keeps spawn and protection discovery off the owner loop. Cancelling a
+pending spawn retains the worker until its result returns; a late success is
+terminated without authorization. Bubblewrap's parent-death signal follows the
+spawning thread, so a lifetime lease retains that thread until the supervisor
+reaps or drops its child. The owner observes exit before admitting queued
+provider events, so an old Connected event cannot restore revoked authority.
+
+The joined test uses the actual provider owner, protected C SDK child, Factotum
+export and control client, with supplied trusted Factotum channel admission.
+It authenticates, reauthenticates after Tversion and negotiates lock files.
+Factotum loss revokes the worker independently of another owner poll; normal
+owner polling then reaps and replaces the provider under a fresh registration.
+No PAM process, physical display or installed desktop is claimed by this test.
 
 ### Current launch authority across workers
 
@@ -313,13 +348,14 @@ or closed owner is `EIO`.
 
 ## Qualification boundary
 
-The generic tests use real kernel randomness, the production launch owner,
+The foundational private-owner tests use real kernel randomness, the production launch owner,
 Factotum export, 9P server and Rust pipeline. Channel class, registration and
 activation are supplied trusted facts. They do not prove protected spawn,
 Session's final custody check, child isolation, role migration or a remote
-authentication mechanism. The child afid/relay transcript is still to be
-published and implemented; these private records must never be handed to the
-child as its launch channel.
+authentication mechanism on their own. The protected joins described above
+add those local custody and lock-role observations. The published child
+afid/relay transcript is separate: these private owner records must never be
+handed to the child as its launch channel.
 
 ## Protected channel handoff
 
@@ -472,7 +508,7 @@ channel has two slots and uses nonblocking sends. Input is bounded before
 copying into the worker queue. The PAM client enforces its smaller protocol
 bound; an oversized password is a local rejection, not agent unavailability.
 This unlock accounting is distinct from the global 32-slot launch verification
-queue below, which is not yet connected to the live launch lifecycle.
+queue below, now used by the lock-provider launch lifecycle.
 
 PAM success requires the password exchange, AuthInfo naming the requested user,
 and the conversation's completed clunk. Client results retain their original
@@ -524,15 +560,15 @@ when forwarding the challenge to Factotum.
                                       exact attempt verdict to Session
                                                     |
                                       live custody + final attach checks
-                                      (next production integration)
+                                      (lock-provider integration above)
 ```
 
 The local challenge record is 40 bytes: little-endian `u32` version 1, `u32`
 kind 1, then the 32-byte nonce. A relay write and read use offset zero and whole
 records. The 8-byte status is version 1 followed by a `u32` errno, zero on
 success. A successful relay status is not itself an authenticated role attach.
-Malformed length/version/kind refuses before queueing. The final afid transcript
-and SDK exchange still need publication before role authentication is enabled.
+Malformed length/version/kind refuses before queueing. The role afid transcript
+and independent SDK exchange are described above.
 
 Reserved relays do not forward even if Factotum's activation has already
 completed. Only Session's matching activation opens that gate; a wrong launch

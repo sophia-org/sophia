@@ -1,8 +1,7 @@
-//! t294: an owner step with a provider that ignores TERM. Replacing it asks
-//! it to exit and returns at once, keeping the process in custody and its
-//! successor owed. The successor starts only after the process is killed at
-//! the end of its grace, reaped, and the service's retirement marker seen,
-//! under the next grant epoch.
+//! Protected provider replacement keeps the owner responsive and waits for
+//! reap plus the service's retirement marker before a fresh grant/launch.
+//! The application ignores TERM, but Bubblewrap may end its namespace without
+//! delivering that signal; this is not a two-second grace-duration claim.
 #![cfg(test)]
 use std::time::{Duration, Instant};
 
@@ -11,6 +10,19 @@ use sophia_runtime::ProcessLaunchSpec;
 
 use super::*;
 use crate::session_lock_succession::LockProviderStart;
+
+#[path = "lock_provider_authentication.rs"]
+mod authentication;
+use crate::live_session::tests::lock_provider_factotum as factotum;
+
+fn policy() -> LaunchPolicy {
+    LaunchPolicy {
+        principal: 1,
+        namespace: 2,
+        audience: 1,
+        role: ProtectionDomainRole::LockProvider,
+    }
+}
 
 /// The supervisor's grace between TERM and KILL. A step that waited for the
 /// process would take at least this long.
@@ -51,11 +63,9 @@ fn locked() -> LockObject {
 }
 
 #[test]
-fn a_provider_ignoring_term_does_not_hold_the_owner_step() {
+fn a_protected_provider_replacement_does_not_hold_the_owner_step() {
     let directory =
         std::env::temp_dir().join(format!("lock-provider-succession-{}", std::process::id()));
-    let ready = directory.with_extension("ready");
-    let _ = std::fs::remove_file(&ready);
     let transport = LockFileTransport::bind_for_supervised_uid(
         &directory,
         rustix::process::geteuid().as_raw(),
@@ -63,12 +73,23 @@ fn a_provider_ignoring_term_does_not_hold_the_owner_step() {
         limits(),
     )
     .unwrap();
-    let base = ProcessLaunchSpec::new("/bin/sh")
+    let reports = directory.with_extension("reports");
+    std::fs::create_dir_all(&reports).unwrap();
+    let ready = reports.join("ready");
+    let _ = std::fs::remove_file(&ready);
+    let base = ProcessLaunchSpec::new("/usr/bin/sh")
         .arg("-c")
         .arg("trap '' TERM; echo ready > \"$1\"; while :; do sleep 1; done")
         .arg("fixture")
         .arg(&ready)
-        .process_group();
+        .process_group()
+        .protection_domain(
+            ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::LockProvider])
+                .unwrap()
+                .path(ProtectionPath::read_write(&reports))
+                .unwrap(),
+        );
+    let mut auth = factotum::Fixture::new();
     let wake = sophia_wake::Wake::new().unwrap();
     let mut provider = LockProvider::with_service(
         transport,
@@ -78,47 +99,66 @@ fn a_provider_ignoring_term_does_not_hold_the_owner_step() {
         locked(),
         Vec::new(),
         wake.notifier(),
+        policy(),
+        auth.coordinator.endpoint(),
     )
     .unwrap();
-    provider.poll(Instant::now());
-    let first = provider.supervisor.child_id().expect("the first launch");
-    assert_eq!(provider.grant_epoch, 1);
     let deadline = Instant::now() + 2 * GRACE;
-    while !ready.exists() {
+    while !ready.exists()
+        || provider
+            .supervisor
+            .as_ref()
+            .and_then(ProcessSupervisor::child_id)
+            .is_none()
+    {
         assert!(Instant::now() < deadline, "the process never trapped TERM");
-        std::thread::sleep(Duration::from_millis(1));
+        auth.tick();
+        provider.poll(Instant::now(), &mut auth.coordinator);
     }
+    let first = provider.supervisor.as_ref().unwrap().child_id().unwrap();
+    assert_eq!(provider.grant_epoch, 1);
 
     let step = Instant::now();
-    provider.replace_process(Instant::now());
-    assert!(provider.poll(Instant::now()).is_empty());
+    provider.replace_process(Instant::now(), &mut auth.coordinator);
+    assert!(
+        provider
+            .poll(Instant::now(), &mut auth.coordinator)
+            .is_empty()
+    );
     assert!(
         step.elapsed() < GRACE / 2,
         "the step waited for the process"
     );
-    assert_eq!(
-        provider.supervisor.child_id(),
-        Some(first),
-        "still in custody"
-    );
-    // The marker may already have arrived; the reap cannot have.
+    // A fast protected exit still owes the service retirement barrier.
     assert_eq!(provider.succession.start(true), LockProviderStart::Wait);
     assert_eq!(provider.grant_epoch, 1, "no successor yet");
     assert!(provider.restart_at.is_some(), "the successor is still owed");
 
     let deadline = Instant::now() + 3 * GRACE;
-    while provider.grant_epoch < 2 {
+    while provider
+        .supervisor
+        .as_ref()
+        .and_then(ProcessSupervisor::child_id)
+        .is_none_or(|id| id == first)
+    {
         assert!(Instant::now() < deadline, "the provider was never replaced");
         let step = Instant::now();
-        provider.poll(Instant::now());
+        auth.tick();
+        provider.poll(Instant::now(), &mut auth.coordinator);
         assert!(step.elapsed() < GRACE / 2, "a step waited for the process");
         std::thread::sleep(Duration::from_millis(10));
     }
-    let second = provider.supervisor.child_id().expect("the successor");
+    let second = provider
+        .supervisor
+        .as_ref()
+        .unwrap()
+        .child_id()
+        .expect("the successor");
     assert_ne!(second, first);
     assert!(provider.succession.admits_provider_events());
     drop(provider);
     let _ = std::fs::remove_file(ready);
+    let _ = std::fs::remove_dir_all(reports);
 }
 
 fn idle_provider(label: &str) -> LockProvider {
@@ -140,6 +180,8 @@ fn idle_provider(label: &str) -> LockProvider {
         locked(),
         Vec::new(),
         wake.notifier(),
+        policy(),
+        crate::launch_authentication::files::TransportBudget::default().endpoint(),
     )
     .unwrap()
 }
@@ -149,6 +191,7 @@ fn idle_provider(label: &str) -> LockProvider {
 /// and Session is told once to revoke its grants.
 #[test]
 fn a_reported_service_failure_is_terminal_and_discards_its_batch() {
+    let mut launches = LaunchCoordinator::new(Default::default());
     let connected = || {
         Ok(LockFileServiceEvent::Connected {
             connection_epoch: 1,
@@ -164,15 +207,29 @@ fn a_reported_service_failure_is_terminal_and_discards_its_batch() {
         let mut provider = idle_provider(&format!("failed-{at}"));
         let mut batch = (0..7).map(|_| connected()).collect::<Vec<_>>();
         batch.insert(at, failed());
-        assert!(provider.admit_events(batch).is_empty(), "failure at {at}");
+        assert!(
+            provider.admit_events(batch, &mut launches).is_empty(),
+            "failure at {at}"
+        );
         assert!(provider.take_failure());
         assert!(!provider.take_failure(), "reported once");
-        assert!(provider.admit_events(vec![connected()]).is_empty());
-        assert!(provider.poll(Instant::now()).is_empty());
-        assert!(provider.supervisor.child_id().is_none(), "nothing launched");
+        assert!(
+            provider
+                .admit_events(vec![connected()], &mut launches)
+                .is_empty()
+        );
+        assert!(provider.poll(Instant::now(), &mut launches).is_empty());
+        assert!(
+            provider.supervisor.as_ref().unwrap().child_id().is_none(),
+            "nothing launched"
+        );
     }
     // A closed queue is the same.
     let mut provider = idle_provider("closed");
-    assert!(provider.admit_events(vec![connected(), Err(())]).is_empty());
+    assert!(
+        provider
+            .admit_events(vec![connected(), Err(())], &mut launches)
+            .is_empty()
+    );
     assert!(provider.take_failure());
 }

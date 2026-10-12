@@ -46,6 +46,7 @@ struct LoopRenderOwners {
 }
 
 struct SessionLoopStartup<'a> {
+    lock_namespace: Option<sophia_protocol::NamespaceId>,
     initial_output_realization: Option<sophia_config::DesktopOutputReconciliation>,
     initial_output_recovery: output_replacement::OutputRecovery,
     client_render_devices: Option<render_devices::LiveRenderDeviceCoordinator>,
@@ -426,6 +427,7 @@ fn run_session_loop_inner(
         initial_head_mapping,
     } = resources;
     let SessionLoopStartup {
+        lock_namespace,
         initial_output_realization,
         initial_output_recovery: mut output_recovery,
         mut output_topology_monitor,

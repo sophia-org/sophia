@@ -850,3 +850,78 @@ files. These documentation updates follow the runs. No full-repository gate,
 live session or merge is claimed. The normal lock provider still uses legacy
 launch/admission: connecting its reservation, spawn, activation and retirement
 to this shared coordinator is the next integration step, not a completed exit.
+
+## Normal lock-provider owner and protected spawn
+
+The next candidate connects normal Session lock-provider startup to the shared
+coordinator. Session supplies a private namespace without portal capabilities,
+principal and audience; X listener allocation and X admission are unchanged.
+The owner reserves before spawn and publishes an authenticated assignee only
+after the exact protected spawn and Factotum activation. Missing authentication
+starts no provider and never falls back to ordinary attach. Provider failure
+leaves Engine's existing lock cover in place.
+
+One bounded spawn worker keeps Bubblewrap discovery and protected spawn off
+the Engine owner. Cancellation retains an outstanding worker until its result
+returns, then terminates a late child without authorizing it. Bubblewrap's
+parent-death signal follows the spawning thread: the returned supervisor holds
+a lifetime lease until the child is reaped or dropped. Exits are observed
+before queued provider events are admitted, preventing old Connected events
+from restoring revoked authority.
+
+Five focused provider tests pass. The main join drives the actual provider
+owner, C SDK child, protected supervisor, Factotum export and shared client.
+Trusted Factotum channel admission and the scene are supplied; there is no
+PAM process or physical display. The child refuses plain/forged attach,
+authenticates twice across Tversion, negotiates lock files, then observes
+Factotum-loss revocation without another Session-owner poll. Normal polling
+reaps and replaces it with a fresh registration and connection epoch. Other
+cases cover unavailable authentication, delayed/cancelled spawn, device
+succession and terminal service failure. The shutdown case makes no claim
+that Bubblewrap delivers the application's TERM handler or grace interval.
+
+Three restored single-site controls pass their expected failures:
+
+- Omitting the authentication factory fails `protected SDK peer must complete authenticated lock bootstrap`.
+- Blocking on the spawn result fails `owner poll must not wait for protected spawn completion`.
+- Dropping the spawning-thread lifetime lease fails the same SDK bootstrap assertion because the protected peer does not complete.
+
+Four selected-Bubblewrap configuration tests, focused Clippy and formatting
+also pass. These are liveness bounds, not desktop latency measurements.
+The closed `t317-provider-owner-02` package retains those positives and controls
+but is **STOP** overall: its full gate found an existing panel-probe fixture
+whose permissions depended on umask. The exact test passes under 022 and fails
+with `UnsafeMode` under 000. Signed `31e72a747` gives the probe mode 0600;
+the exact test then passes under 000. Production permission checks are unchanged.
+
+`t317-provider-owner-03` is also **STOP**, after all tests and Clippy passed:
+the source-layout audit rejected a source-side `cfg(test)` test mount from the
+earlier authenticated-lock checkpoint. Signed `b98bb59c8` moves that guard to
+the already external test file. The unchanged cleanup test and layout audit
+pass; this is a mounting repair, not relocated test logic or a relaxed audit.
+
+`t317-provider-owner-04` is **PASS** for the complete device-hidden
+`cargo xtask check`: **7,707 passed, zero failed, 105 ignored, 556 Rust test
+summaries**. The gate also passes SDK checks, Clippy, layout, tooling and archive
+checks. Hardware pixel proofs are explicitly unavailable with devices hidden.
+The dynamic modified/untracked inventory covers all 12 provider source files
+and equals the earlier positive/control inventory; the two separate repairs
+are in its base `b98bb59c8701ed4a3451e2c848c6924fdc100009`. This documentation
+update follows the source capture. Binaries are recorded by path/hash only.
+
+Closed self-excluding SHA256SUMS identities:
+
+- `t317-provider-owner-04`: `5a24b01bd06a997c4142b3507026a4051a202ecc63bf8d5031cffb6f39175cec`.
+- `t317-provider-owner-02` (STOP): `4b880a5ac606a20fd2a193565d85922b1dd8b55dff461a01bf1e87017f76c277`.
+- `t317-provider-owner-03` (STOP): `3fd1f44c77bc150517cbe89489087d65b51ca3caa528618654bd8c4288afd4fd`.
+- `t317-provider-attach-control-02`: `cfc00560b85121d2cbdd7e225bac02cbc1bb6126263efa8a4f3d965f36dc9d99`.
+- `t317-provider-spawn-control-02`: `054a4e2974270a46dc3a7fa7ddb0cfc5ab698d8a002c46a32d81bd3b3aeb5478`.
+- `t317-provider-lifetime-control-02`: `6475fc605dece738ec1bdf7c3c8198b03625f3c0ec64eacae1ff9d644455913b`.
+
+t317 remains open. The lock contract and pinned SDK copies need admission-text
+reconciliation, and deployed providers must adopt the SDK authentication path
+before installation. Other required roles, the real Rust SDK exchange,
+`ClientAdmissionContext` derivation, in-place fragment revocation, execution at
+minimum Bubblewrap 0.11.2, and the final bounds/threat-model audit remain. This
+checkpoint was executed with 0.13.0; no master merge, live installation or task
+completion is claimed.

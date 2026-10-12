@@ -241,6 +241,13 @@ pub(crate) fn run_persistent_xterm_session(
         Some(socket_directories::ClientGroup::Confined(id)) => sophia_x_authority::XServerFrontendListenerId(id),
         _ => sophia_x_authority::XServerFrontendListenerId::PRIMARY,
     };
+    // The lock role has a private policy namespace and no portal participation.
+    // It does not join any X listener's namespace or change X admission.
+    let lock_namespace = if config.lock_provider.is_some() && config.factotum.is_some() {
+        Some(namespace_registry.lock()
+            .map_err(|_| "Sophia namespace registry lock was poisoned")?
+            .create_namespace(NamespaceProfile::Confined, NamespaceCapabilities::NONE).id)
+    } else { None };
     let xtest_namespace = *x_namespaces.get(&xtest_listener)
         .ok_or("XTEST group lost its namespace")?;
     let session_user_id = rustix::process::geteuid().as_raw();
@@ -783,6 +790,7 @@ pub(crate) fn run_persistent_xterm_session(
             initial_head_mapping,
         },
         SessionLoopStartup {
+            lock_namespace,
             initial_output_realization: startup_realization,
             initial_output_recovery,
             output_topology_monitor,
@@ -851,6 +859,10 @@ pub(crate) fn run_persistent_xterm_session(
     crate::session_println!("sophia_live_session_lifecycle schema=1 status=frontend_joined");
     match namespace_registry.lock() {
         Ok(mut registry) => {
+            if let Some(namespace) = lock_namespace
+                && let Err(error) = registry.revoke_namespace(namespace) {
+                outer_cleanup_failures.push(format!("lock namespace revocation failed: {error}"));
+            }
             if let Err(error) = registry.revoke_namespace(x_namespace.id) {
                 outer_cleanup_failures.push(format!("namespace revocation failed: {error}"));
             }
