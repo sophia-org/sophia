@@ -35,6 +35,9 @@ pub enum ProtectionDomainRole {
     /// it, so a supervised role can neither be launched into an application
     /// domain nor carry one.
     ConfinedXApplication,
+    /// Custody for a confined recipe client, not a shell, broker or frontend
+    /// role. Endpoint grants determine which operations it may perform.
+    NamespaceClient,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -339,14 +342,18 @@ fn validate_role_composition(
     if roles.is_empty() {
         return Err(ProtectionDomainSpecError::NoRoles);
     }
-    let exclusive = ProtectionDomainRole::ConfinedXApplication;
-    if roles.contains(&exclusive)
-        && let Some(conflicting) = roles.iter().copied().find(|role| *role != exclusive)
-    {
-        return Err(ProtectionDomainSpecError::ExclusiveRole {
-            exclusive,
-            conflicting,
-        });
+    for exclusive in [
+        ProtectionDomainRole::ConfinedXApplication,
+        ProtectionDomainRole::NamespaceClient,
+    ] {
+        if roles.contains(&exclusive)
+            && let Some(conflicting) = roles.iter().copied().find(|role| *role != exclusive)
+        {
+            return Err(ProtectionDomainSpecError::ExclusiveRole {
+                exclusive,
+                conflicting,
+            });
+        }
     }
     if roles.contains(&ProtectionDomainRole::SpatialPolicy) {
         for conflicting in [
@@ -587,6 +594,7 @@ fn required_role(process: SupervisedProcessKind) -> ProtectionDomainRole {
         SupervisedProcessKind::OutputAuthority => ProtectionDomainRole::OutputAuthority,
         SupervisedProcessKind::LockProvider => ProtectionDomainRole::LockProvider,
         SupervisedProcessKind::SophiaXAuthority => ProtectionDomainRole::ApplicationFrontend,
+        SupervisedProcessKind::NamespaceClient => ProtectionDomainRole::NamespaceClient,
     }
 }
 

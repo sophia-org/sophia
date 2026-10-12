@@ -270,8 +270,12 @@ source generation fence --------------------> refuse old endpoint and fids
 
 This runtime route and its real launch-authentication join are implemented;
 automatic recipe selection and launch wiring remain t318 integration work.
-The join supplies launch policy explicitly and
-does not grant inspection to ordinary shell launches. Connection owners must
+The join supplies launch policy explicitly and uses the exclusive
+`NamespaceClient` supervised custody role. This identifies a confined recipe
+client without borrowing shell, WM, broker or frontend custody; it grants no
+endpoint operations by itself. Session still selects each endpoint grant and
+audience independently. Shared-host application launches are unchanged.
+Connection owners must
 service readiness and the 20 ms quiet check bound; revocation must not depend
 on the reader sending another request. These are liveness bounds, not latency
 claims.

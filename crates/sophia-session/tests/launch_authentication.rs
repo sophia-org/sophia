@@ -130,6 +130,13 @@ impl Fixture {
         self.reserve_audiences(&[4])
     }
     fn reserve_audiences(&mut self, audiences: &[u64]) -> LaunchId {
+        self.reserve_role_audiences(ProtectionDomainRole::MetadataShell, audiences)
+    }
+    fn reserve_role_audiences(
+        &mut self,
+        role: ProtectionDomainRole,
+        audiences: &[u64],
+    ) -> LaunchId {
         let id = self
             .book
             .reserve_with_audiences(
@@ -137,7 +144,7 @@ impl Fixture {
                     principal: 8,
                     namespace: 9,
                     audience: 4,
-                    role: ProtectionDomainRole::MetadataShell,
+                    role,
                 },
                 sophia_factotum::launch::Audiences::new(audiences).unwrap(),
                 Instant::now(),

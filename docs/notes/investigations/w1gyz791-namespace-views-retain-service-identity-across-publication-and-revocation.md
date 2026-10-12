@@ -334,6 +334,43 @@ scope-control SHA256SUMS identities respectively are
 `7bbe9268a100f8f52268bdfaf4a1aca1ccea5ad5449de4e2f340a0c550d49543`,
 and `a87be6816a8c7114dd4b2388feeb0f3f35e35191ec360dcc56eeb248d0f01afc`.
 
+### Repository gate and namespace-client custody
+
+The complete isolated `cargo xtask check` passed at signed
+`499373cf3d31d8fcd46bef3dae69c586843921ed` in `t318-gate-08`. HEAD and the clean
+working tree were unchanged before and after the run. It used the worktree's
+cargo-slot lease, private `/dev`, `/run` and `/tmp`, a fresh private runtime
+directory, and no host display, authorization or Session environment. The closed
+package's SHA256SUMS has SHA-256
+`dd4d365bd5e9e76e4ee161128b1dd6e6c5cb2c828046268e0a3178dd02fc646a`.
+This is repository regression evidence for that commit, not completed t318
+acceptance or a physical display claim. Earlier failed gate packages remain
+under their original identities.
+
+The following slice adds an exclusive `NamespaceClient` protection role and
+matching supervised process kind. It uses the existing protected spawn and
+launch-channel custody mechanism. The role cannot compose with existing roles,
+borrow their domains, or satisfy their launch checks. It carries no implicit
+inspection, portal, shell or administrative grant. Existing shared-host and
+confined-X command launch paths are unchanged.
+
+The protected inspection tests now reserve this role and launch its matching
+process kind, replacing their previously supplied shell custody. Both independent
+Rust SDK joins pass with production publication, discovery, Factotum admission,
+retained-read revocation and unrelated endpoint progress. The fixture still
+supplies approved policy; automatic application selection and live launch
+dispatch are not claimed.
+
+The closed `t318-client-custody-01` package records all five changed code/test
+files before and after verification and the executed binary paths/hashes. Four
+runtime command tests pass, including the bidirectional role-mismatch matrix;
+all 28 Session authentication parent tests and their four child entry points
+pass. Runtime all-target and Session authentication-target Clippy, workspace
+formatting, layout and diff checks pass. Its SHA256SUMS has SHA-256
+`3ec534772676db08e9da462010c1f54f4d3539ccea2d6ec2319d40d305da8c78`.
+This focused package follows the full gate; it is not included in gate-08's
+source identity. The normative and investigation updates follow these checks.
+
 ### Session publication and grant custody
 
 `NamespaceRecipeOwner` now joins the pinned source loader, compiler, endpoint

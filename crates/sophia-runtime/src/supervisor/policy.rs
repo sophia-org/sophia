@@ -26,6 +26,8 @@ pub enum SupervisedProcessKind {
     OutputAuthority,
     SophiaXAuthority,
     LockProvider,
+    /// A recipe-selected client, with operations granted independently by Session.
+    NamespaceClient,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

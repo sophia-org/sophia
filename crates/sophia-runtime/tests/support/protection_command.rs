@@ -16,7 +16,7 @@ const EXISTING_ROLES: [ProtectionDomainRole; 7] = [
     ProtectionDomainRole::LockProvider,
 ];
 
-const SUPERVISED: [SupervisedProcessKind; 7] = [
+const SUPERVISED: [SupervisedProcessKind; 8] = [
     SupervisedProcessKind::WindowManager,
     SupervisedProcessKind::PortalBroker,
     SupervisedProcessKind::MetadataBroker,
@@ -24,6 +24,7 @@ const SUPERVISED: [SupervisedProcessKind; 7] = [
     SupervisedProcessKind::OutputAuthority,
     SupervisedProcessKind::LockProvider,
     SupervisedProcessKind::SophiaXAuthority,
+    SupervisedProcessKind::NamespaceClient,
 ];
 
 #[test]
@@ -80,7 +81,10 @@ fn no_supervised_process_launches_into_an_application_domain() {
 
 #[test]
 fn the_application_role_composes_with_nothing() {
-    for other in EXISTING_ROLES {
+    for other in EXISTING_ROLES
+        .into_iter()
+        .chain([ProtectionDomainRole::NamespaceClient])
+    {
         assert_eq!(
             ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::ConfinedXApplication, other]),
             Err(ProtectionDomainSpecError::ExclusiveRole {
@@ -90,4 +94,42 @@ fn the_application_role_composes_with_nothing() {
         );
     }
     assert!(ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::ConfinedXApplication]).is_ok());
+}
+
+#[test]
+fn namespace_clients_cannot_borrow_desktop_role_custody() {
+    let role = ProtectionDomainRole::NamespaceClient;
+    let client = SupervisedProcessKind::NamespaceClient;
+    let domain = ProtectionDomainSpec::bubblewrap([role]).unwrap();
+    let launch = ProcessLaunchSpec::new("/nonexistent-sophia-namespace-client");
+    for other in EXISTING_ROLES {
+        assert!(
+            matches!(
+                ProtectionDomainSpec::bubblewrap([role, other]),
+                Err(ProtectionDomainSpecError::ExclusiveRole { .. })
+            ),
+            "namespace-client custody must not compose with desktop roles"
+        );
+        let foreign = ProtectionDomainSpec::bubblewrap([other]).unwrap();
+        assert!(
+            matches!(
+                spawn_bubblewrap(client, &launch, &foreign),
+                Err(ProtectionDomainLaunchError::RoleMismatch { .. })
+            ),
+            "namespace clients must not launch with another role's custody"
+        );
+    }
+    for other in SUPERVISED.into_iter().filter(|kind| *kind != client) {
+        assert!(
+            matches!(
+                spawn_bubblewrap(other, &launch, &domain),
+                Err(ProtectionDomainLaunchError::RoleMismatch { .. })
+            ),
+            "desktop roles must not launch with namespace-client custody"
+        );
+    }
+    assert!(matches!(
+        spawn_bubblewrap(client, &launch, &domain),
+        Err(ProtectionDomainLaunchError::InvalidExecutable(_))
+    ));
 }

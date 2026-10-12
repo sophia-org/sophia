@@ -1,6 +1,6 @@
 //! Real launch channel, Factotum and inspection owner. The fixture assigns an
-//! inspection audience to a protected generic peer; it does not qualify recipe
-//! selection or grant inspection implicitly to production shell launches.
+//! inspection audience to a protected namespace client; it does not qualify
+//! automatic recipe selection or grant inspection implicitly to other roles.
 use super::lock_authenticated_transport::{Directory, Peer};
 use super::*;
 use sophia_protocol::namespace_view::{EndpointProtocol, ServiceAvailability, ServiceReference};
@@ -62,7 +62,7 @@ fn run(grant_only: bool) {
         )
         .unwrap();
     let mut f = Fixture::new();
-    let id = f.reserve_audiences(&[4, 5]);
+    let id = f.reserve_role_audiences(ProtectionDomainRole::NamespaceClient, &[4, 5]);
     let mut names = NamespaceRecipeOwner::new(
         &root.0,
         f.namespaces.clone(),
@@ -103,7 +103,7 @@ fn run(grant_only: bool) {
     let listener = &published.namespace.listeners[0].listener;
     let second_listener = &published.namespace.listeners[1].listener;
     let executable = std::env::current_exe().unwrap();
-    let domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::MetadataShell])
+    let domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::NamespaceClient])
         .unwrap()
         .path(ProtectionPath::read_only(endpoint))
         .unwrap()
@@ -112,7 +112,7 @@ fn run(grant_only: bool) {
         .path(ProtectionPath::read_only(&executable))
         .unwrap();
     let mut supervisor = ProcessSupervisor::new(
-        SupervisedProcessKind::Shell,
+        SupervisedProcessKind::NamespaceClient,
         ProcessLaunchSpec::new(&peer.0)
             .arg(&executable)
             .arg(&socket)
