@@ -3,6 +3,9 @@
 use super::*;
 use crate::live_session::tests::lock_provider_factotum as factotum;
 
+#[path = "authenticated_descriptor_sdk.rs"]
+mod sdk;
+
 fn shell(launches: &LaunchCoordinator) -> LiveMetadataShell {
     let mut shell = LiveMetadataShell::prepare(
         "/usr/bin/sleep",

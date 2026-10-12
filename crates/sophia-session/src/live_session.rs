@@ -1,4 +1,7 @@
 use super::prelude::*;
+#[cfg(test)]
+#[path = "../tests/support/authenticated_shell_peer.rs"]
+pub(crate) mod authenticated_shell_peer;
 #[path = "../tests/support/c_sdk_process.rs"]
 mod c_sdk_fixture_process;
 mod content_mapping_evidence;

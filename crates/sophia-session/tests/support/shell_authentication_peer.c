@@ -43,6 +43,9 @@ int main(int argc, char **argv) {
     } else if (!strcmp(argv[1], "dock")) {
         config.profile = SOPHIA_SF_DOCK;
         config.offer = (struct sophia_sf_negotiate){8, 8, 0x11a2};
+    } else if (!strcmp(argv[1], "descriptor")) {
+        config.profile = SOPHIA_SF_DESCRIPTOR;
+        config.offer = (struct sophia_sf_negotiate){1, 8, 1};
     } else assert(!strcmp(argv[1], "bar"));
     fd = socket(AF_UNIX, SOCK_STREAM, 0);
     assert(fd >= 0 && strlen(endpoint) < sizeof(address.sun_path));

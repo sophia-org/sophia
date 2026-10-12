@@ -1891,3 +1891,35 @@ reattach control and prior owner revocation controls remain separately scoped.
 The descriptor owner, Rust shell SDK, deployed shell-client migration, final
 broad gates and threat-model reconciliation remain open. t317 is not complete,
 and nothing from this checkpoint is installed live.
+
+## Authenticated descriptor SDK owner join
+
+`descriptor_sdk_authenticates_and_recovers_through_the_normal_owner` now
+completes the generic C SDK conversation through `LiveMetadataShell`, including
+its protected startup, Factotum-verdict handoff and descriptor negotiation.
+The client and owner both identify epoch 1. Revoking the registration closes
+local authority immediately; the owner reaps the child and releases the launch
+lease, waits its normal retry interval, then authenticates a new registration
+and negotiates epoch 2. The client report must match that exact epoch. Final
+shutdown leaves no child or retained attempt.
+
+The peer is the same generic shell contract peer used for the three component
+roles, with a descriptor-profile offer. Its compiler helper is mounted once
+under `cfg(test)` and shared between the tests. The one production-file change
+is that test-module mount in `live_session.rs`; runtime behavior is unchanged.
+The trusted Session-to-Factotum channel remains supplied. This is positive
+authentication/recovery coverage, not a new negative control, descriptor UI
+acceptance or physical presentation claim.
+
+Device-hidden `t317-descriptor-sdk-owner-01` retains the complete dynamic source
+inventory, logs and binary path/hash on `34890a96e`. The manifest SHA-256 is
+`a631fcf4e214dc18b5e5b9fad74141f589051fa55e7e9d7c2760b05b8c957a7e`.
+The shell filter passed 114 tests with four existing ignores. All-target
+native-session Clippy with warnings denied passed. Formatting passed after
+reordering the test-module declaration; the run preceded that ordering-only
+change. An earlier Clippy failure caught the duplicate helper mount and is
+retained in the package. No binary was copied into evidence.
+
+Generic successful C SDK joins now cover descriptor, bar, launcher and dock.
+Rust SDK and deployed-client migration, the final role inventory, broad gates
+and threat-model/exit reconciliation still remain. t317 stays open.
