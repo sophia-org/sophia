@@ -227,6 +227,18 @@ original closed evidence packages remain unchanged.
 
 ## Connections
 
+The seventh isolated gate at `49bc4aa1a` reaches the Session suite and stops
+with 996 passing tests and one failure: the confined-X layout fixture expects
+socket staleness immediately after dropping its local listeners, but the
+production probe still connects and correctly refuses to unlink a live socket.
+The fixture now waits at most two seconds for that specific live-socket refusal
+to disappear; other errors still fail immediately. Its earlier live-socket
+refusal assertion remains unchanged. This accommodates transient kernel
+references, such as descriptors retained across concurrent fork/exec, without
+weakening production cleanup. All seven confined-application configuration
+tests pass after the repair. The original `t318-gate-07` package remains failed;
+this focused rerun is not an overall repository gate result.
+
 The sixth full-gate attempt at `b6aa4b253` stops in the SDK verifier's own
 synthetic snapshot fixture: its list omitted the newly required discovery
 contract. The corresponding Rust fixture also expected ten contracts rather

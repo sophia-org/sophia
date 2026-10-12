@@ -446,7 +446,24 @@ fn group_sockets_are_prepared_before_and_confirmed_after_the_frontend_binds() {
     std::fs::remove_file(&planted).unwrap();
     // After the listeners are gone their sockets are stale and are cleared.
     drop(listeners);
-    prepare_confined_group_sockets(&layout, &[7, 3]).unwrap();
+    // Closing our handles is not proof that the kernel has released every
+    // reference: parallel child creation may still be between fork and exec.
+    // The production connect probe remains authoritative and must keep refusing
+    // a live socket. Bound the fixture's wait for actual staleness.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        match prepare_confined_group_sockets(&layout, &[7, 3]) {
+            Ok(_) => break,
+            Err(error) if error.to_string().ends_with("is already active") => {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "closed group sockets must become stale: {error}"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            Err(error) => panic!("stale group socket preparation failed: {error}"),
+        }
+    }
     assert!(std::fs::symlink_metadata(&prepared[0].1).is_err());
     std::fs::remove_dir_all(&root).unwrap();
 }
