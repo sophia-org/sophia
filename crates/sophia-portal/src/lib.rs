@@ -5,6 +5,7 @@
 //! X Authority adapter can execute without granting policy code raw X authority.
 
 mod broker;
+pub mod client_files;
 mod clipboard;
 pub mod coordinator;
 mod drag_and_drop;

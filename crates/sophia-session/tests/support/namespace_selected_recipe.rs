@@ -10,7 +10,7 @@ fn policy(profile: &str, extra: &str) -> NamespaceRecipeConfig {
 }
 fn observer_services() -> BTreeMap<String, ApprovedEndpoint> {
     let mut services = catalog(&[("inspection", 10), ("portal", 11)]);
-    services.get_mut("portal").unwrap().service.interface = "portal-requester".into();
+    services.get_mut("portal").unwrap().service.interface = "portal-client".into();
     services
 }
 
@@ -121,12 +121,7 @@ fn shared_and_confined_x_compile_the_same_fragment_with_distinct_references() {
         let loaded = LoadedNamespaceRecipe::load(&policy(profile, extra), &f.root).unwrap();
         let services = [
             ("x-group", EndpointProtocol::X11, "x11", id),
-            (
-                "portal",
-                EndpointProtocol::NineP2000L,
-                "portal-requester",
-                60,
-            ),
+            ("portal", EndpointProtocol::NineP2000L, "portal-client", 60),
         ]
         .into_iter()
         .map(|(name, protocol, interface, identity)| {

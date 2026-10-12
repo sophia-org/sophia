@@ -30,7 +30,7 @@ use std::{
 };
 
 const MAX_CLIENTS: usize = 64;
-mod inspection;
+mod dispatch;
 pub const NAMESPACE_CLIENT_UNAME: &[u8] = b"namespace-client";
 
 /// Trusted policy resolution, including its containment driver and live service
@@ -449,7 +449,7 @@ pub struct RunningNamespaceClient {
     lease: Option<SpawnLease>,
     reaper: Option<SpawnLease>,
     endpoints: Vec<ClientEndpoint>,
-    services: Vec<inspection::InspectionWorker>,
+    services: Vec<dispatch::DispatchWorker>,
 }
 impl RunningNamespaceClient {
     pub fn take_endpoints(&mut self) -> Vec<ClientEndpoint> {
@@ -464,11 +464,7 @@ impl RunningNamespaceClient {
         &mut self,
         launches: &LaunchCoordinator,
     ) -> Result<Option<std::process::ExitStatus>, String> {
-        if self
-            .services
-            .iter()
-            .any(inspection::InspectionWorker::failed)
-        {
+        if self.services.iter().any(dispatch::DispatchWorker::failed) {
             self.registration.take();
             self.names.as_mut().expect("live view").revoke_grants();
             return Err("namespace endpoint worker stopped".into());

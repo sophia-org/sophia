@@ -32,7 +32,7 @@ fn a_retired_inspection_service_does_not_revoke_the_clients_other_grant() {
     let reference = request.approved["inspection"].service.clone();
     let mut portal = request.approved["inspection"].clone();
     portal.service.identity += 1;
-    portal.service.interface = "portal-requester".into();
+    portal.service.interface = "portal-client".into();
     portal.audience += 1;
     request.approved.insert("portal".into(), portal);
     let mut pending = f
@@ -68,7 +68,7 @@ fn a_retired_inspection_service_does_not_revoke_the_clients_other_grant() {
     assert_eq!(endpoints.len(), 1);
     assert_eq!(
         endpoints[0].listener.endpoint.endpoint.service.interface,
-        "portal-requester"
+        "portal-client"
     );
     service.fence(10, None).unwrap();
     while !running.services.is_empty() {

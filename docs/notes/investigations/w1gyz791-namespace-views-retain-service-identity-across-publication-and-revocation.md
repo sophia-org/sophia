@@ -22,6 +22,50 @@ socket paths or namespace commands to launch installed applications.
 
 ## Evidence
 
+### Authenticated portal recipient dispatch
+
+The slice based on `8c12c1502` adds the
+[portal-client recipient export](../../portal-client-files.md). Recipe clients
+receive read-only objects from the existing common coordinator, not the
+trusted protocol-authority `portal-requester` upload/execute interface. The
+selected catalog now distinguishes these interfaces. No new transfer policy,
+grant type or executor was introduced. Request execution remains unavailable
+and is reported explicitly; capture remains t319.
+
+The production launch scheduler, Factotum conversation, endpoint-grant factory,
+shared 9P core and recipient lease are joined by an independently launched Rust
+SDK child. Supplied source bytes and policy produce a common coordinator grant.
+The child reads those bytes and retains a transfer fid plus a waiting watch.
+Source-generation change, lock/unlock and replacement each make the retained
+watch and data fid answer `ESTALE`, while status remains readable. In the
+replacement round a fresh fid reaches the replacement. A foreign recipient
+namespace is refused before dispatch. The fixture does not qualify live
+frontend collection, installed app launch wiring or physical capture.
+
+The negative control removes only the common lease's retained source-generation
+comparison. The SDK child fails at `transfer retirement must wake the retained
+watch with ESTALE`; its one-second wait is shorter than the supplied two-second
+grant lifetime, so natural expiry cannot satisfy the expected refusal. The
+parent subsequently fails its bounded child-progress wait. Production source
+and every captured candidate file are restored and compared before positive
+qualification. `t318-portal-client-control-01` has SHA256SUMS SHA-256
+`36a3b1f26046630b9c66cecf8cf82e285d362f38cdfb132443bcf98176baed3f`.
+
+The restored `t318-portal-client-01` package passes the full portal crate suite,
+ten namespace-launch parent tests (including four explicitly invoked SDK child
+runs), eleven namespace-view integration tests, three startup tests, and 28
+authentication parent tests with four invoked child fixtures. The ignored child
+entries in parent listings are not skipped qualification. Portal all-target
+Clippy, Session native/default library Clippy, formatting, layout and diff checks
+pass. Its SHA256SUMS SHA-256 is
+`ba246df2c0747c8322c32ecd0e1364bb554a299ce9913ad649cec527948211ee`.
+Both packages enumerate candidate files dynamically and record binary paths and
+hashes without copying build output. This paragraph follows qualification; it
+does not change the tested code. The full isolated repository gate remains to
+be rerun for the final candidate. Normal application launch integration and the
+authorized developer-launch interface remain open, and the startup refusal for
+unintegrated recipe configuration stays in place.
+
 The uncommitted foundation contains passive protocol endpoint references,
 discovery encoding, a pure runtime recipe compiler, a pinned configuration
 loader, and filesystem publication. These components do not grant access.

@@ -21,6 +21,9 @@ pub struct PortalObjectRecipient {
     state: Mutex<State>,
 }
 impl PortalObjectRecipient {
+    pub fn namespace(&self) -> NamespaceId {
+        self.namespace
+    }
     pub fn new(namespace: NamespaceId) -> Self {
         Self {
             namespace,

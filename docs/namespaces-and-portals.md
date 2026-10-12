@@ -328,14 +328,18 @@ recipe endpoint + endpoint grant + captured inspection generation
           and retained-fid checks        snapshots and event journal
 ```
 
-This is the inspection portion of launch dispatch. Portal dispatch and the
-normal application/developer launcher call sites remain implementation work.
+The same bounded launch dispatcher serves the
+[portal recipient view](portal-client-files.md). Its objects carry the common
+coordinator's transfer lease; opening the role does not approve transfers.
+Normal application/developer launcher call sites remain implementation work.
 
 `LoadedNamespaceRecipe` retains a policy snapshot together with its shipped
 naming fragment or pinned custom files. Shared and confined X use the same
 fragment; their approved group references differ. Selected publication restricts
 the service catalog to `x-group` (X11, interface `x11`) and `portal` (9P, interface
-`portal-requester`), or `inspection` and `portal` for observer. The observer's
+`portal-client`), or `inspection` and `portal` for observer. This recipient view
+is distinct from the trusted protocol-authority `portal-requester` export:
+clients receive neither its upload interface nor execution custody. The observer's
 `status` alias captures the same inspection reference and grant. A custom naming
 file may rearrange these services but cannot introduce other roles. Missing
 required services refuse the entire publication.

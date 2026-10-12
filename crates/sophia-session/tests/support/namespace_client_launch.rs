@@ -11,6 +11,9 @@ use std::time::Duration;
 #[path = "namespace_inspection_dispatch.rs"]
 mod dispatch;
 
+#[path = "namespace_portal_dispatch.rs"]
+mod portal_dispatch;
+
 struct Fixture {
     auth: factotum::Fixture,
     service: NamespaceLaunchService,
@@ -22,6 +25,12 @@ impl Fixture {
         Self::with_profile(sophia_protocol::NamespaceProfile::Confined)
     }
     fn with_profile(profile: sophia_protocol::NamespaceProfile) -> Self {
+        Self::with_capabilities(profile, sophia_protocol::NamespaceCapabilities::NONE)
+    }
+    fn with_capabilities(
+        profile: sophia_protocol::NamespaceProfile,
+        capabilities: sophia_protocol::NamespaceCapabilities,
+    ) -> Self {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         let root = std::env::temp_dir().join(format!(
             "s318-launch-{}-{}",
@@ -43,7 +52,7 @@ impl Fixture {
                 sophia_protocol::NamespaceContext::new(
                     NamespaceId::from_raw(2),
                     profile,
-                    sophia_protocol::NamespaceCapabilities::NONE,
+                    capabilities,
                 )
                 .unwrap(),
             )
@@ -274,7 +283,7 @@ fn shared_recipe_uses_host_custody_and_the_same_endpoint_grant_owner() {
     policy.developer_launch = false;
     request.recipe = LoadedNamespaceRecipe::load(&policy, &f.root).unwrap();
     let mut endpoint = request.approved.remove("inspection").unwrap();
-    endpoint.service.interface = "portal-requester".into();
+    endpoint.service.interface = "portal-client".into();
     request.approved.insert("portal".into(), endpoint);
     let mut pending = f
         .service
@@ -309,7 +318,7 @@ fn shared_recipe_uses_host_custody_and_the_same_endpoint_grant_owner() {
     assert_eq!(endpoints.len(), 1);
     assert_eq!(
         endpoints[0].listener.endpoint.endpoint.service.interface,
-        "portal-requester"
+        "portal-client"
     );
     assert_eq!(f.service.registry.lock().unwrap().endpoint_grant_count(), 1);
     drop(running);

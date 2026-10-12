@@ -1513,6 +1513,7 @@ dependencies = [
  "sophia-9p",
  "sophia-9p-client",
  "sophia-protocol",
+ "sophia-runtime",
 ]
 
 [[package]]

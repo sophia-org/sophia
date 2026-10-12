@@ -11,7 +11,7 @@ pub(super) fn validate_catalog(
     use sophia_protocol::namespace_view::EndpointProtocol;
     for (name, endpoint) in approved {
         let (protocol, interface) = match (recipe.policy().profile, name.as_str()) {
-            (_, "portal") => (EndpointProtocol::NineP2000L, "portal-requester"),
+            (_, "portal") => (EndpointProtocol::NineP2000L, "portal-client"),
             (NamespaceRecipeProfile::Observer, "inspection") => {
                 (EndpointProtocol::NineP2000L, "inspection")
             }
