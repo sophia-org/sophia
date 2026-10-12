@@ -313,7 +313,9 @@ response. Offsets do not select fragments. A short read receives `EINVAL` and
 keeps the response; a read with no response receives `ENOMSG`. Until the response
 is consumed, another write receives `EAGAIN` before applying a command. Unknown
 versions/kinds, truncation and trailing bytes are `EINVAL`. No record exceeds
-84 bytes. No nonce or response body is logged.
+556 bytes. The original commands and responses retain their encodings and
+84-byte maximum; the recipe registration command below extends only the private
+owner interface. No nonce or response body is logged.
 
 All numbers are little-endian. Every record starts with version `u32 = 1` and
 kind `u32`. An **identity** is `(principal u64, namespace u64, launch u64)`.
@@ -330,6 +332,23 @@ wire_generation u64, attempt_generation u64, afid u32)`.
 | 6 Relay | launch u64, nonce [32] | Check Session-attested registration, active state and audience; consume nonce and queue verdict; Done. |
 | 7 Take | attempt | Return Pending or consume its exact Verified result. |
 | 8 Cancel | attempt | Cancel only the exact attempt/result; Done. |
+| 9 ReserveAudiences | identity, primary_audience u64, count u32, audiences[count] u64 | Reserve one launch with an immutable approved audience set; Done. |
+
+Kind 9 has 1–64 strictly increasing, nonzero audiences, including the primary
+audience. Duplicate, unordered, empty or oversized sets refuse. Only trusted
+Session recipe policy selects the set. Kind 2 still registers exactly one
+audience; it never means all roles. Re-registering the same launch cannot extend
+its set. An older Factotum refuses the new command rather than silently reducing
+or widening policy.
+
+The same launch capability can authenticate separate connections to approved
+endpoints. Each attempt still names one exact audience, server, connection and
+afid; all successful endpoints pin the same launch identity. Session checks
+membership independently and narrows each worker to a single audience. Role
+permissions remain separate export policy: an audience set does not grant
+operations merely by authenticating. Existing launch, principal, attempt and
+transport quotas are unchanged. Abandoned kind-9 registrations use the same
+Retire cleanup as kind 2; closure or retirement invalidates the whole set.
 
 | Response kind | Body |
 | --- | --- |

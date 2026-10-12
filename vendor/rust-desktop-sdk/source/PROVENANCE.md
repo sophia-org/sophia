@@ -388,3 +388,10 @@ The WM file contract copy now matches signed Sophia
 `bd9ee9460a28870ab15876e447ef5139e462efe5`, including normal authenticated
 WM startup and replacement. No codec or client implementation changes.
 This aligns the shared contract snapshot before the Rust shell production join.
+
+## Recipe authentication audience sets
+
+The authentication contract is copied from signed Sophia `c57cc30eedce72dfeacea6ced3d49df78b26da52`.
+It adds a bounded approved-audience set on the private Session-to-Factotum
+owner interface. Public afid and launch-relay bytes are unchanged; no SDK
+implementation changes or new authentication qualification are claimed here.

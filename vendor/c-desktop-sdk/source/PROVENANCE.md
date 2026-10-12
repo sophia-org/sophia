@@ -645,3 +645,10 @@ intended wire assertion; the diagnostic was moved after wire processing.
 
 Evidence records binary paths and hashes, not copies. This provenance addition
 follows the captured candidate; no implementation or test bytes changed.
+
+## Recipe authentication audience sets
+
+The authentication contract is copied from signed Sophia `c57cc30eedce72dfeacea6ced3d49df78b26da52`.
+It adds a bounded approved-audience set on the private Session-to-Factotum
+owner interface. Public afid and launch-relay bytes are unchanged; no SDK
+implementation changes or new authentication qualification are claimed here.

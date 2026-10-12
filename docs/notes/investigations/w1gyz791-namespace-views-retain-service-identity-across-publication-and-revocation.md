@@ -173,6 +173,15 @@ The complete Session recipe resolver, discovery SDKs, observer export and
 authorized developer launcher are still pending. These APIs are not yet
 selected by ordinary application launch. No live session was modified.
 
+The audience implementation is signed `c57cc30ee`. The first isolated full gate
+(`t318-gate-01`) stopped at the C SDK's exact contract-copy check before running
+workspace tests: the SDK still held the older authentication document. The C
+SDK signed `860b5d819fa8b635d54c99dd064a44cf3a17050e` and Rust SDK signed
+`d9cb67b2393d068b7d869d2ab736fdc4fccab43c` update only that document, its digest
+and provenance. Sophia's snapshot verifier accepts the C pin; the existing Rust
+vendoring tool verified its new pin before replacement. Client code and public
+afid/relay records are unchanged. The full gate must be rerun on these pins.
+
 ## Connections
 
 - [t318 plan](../plans/jsschoen-converge-public-roles-on-one-9p-core.md#t318)

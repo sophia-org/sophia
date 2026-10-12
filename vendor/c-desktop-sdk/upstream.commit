@@ -1,14 +1,14 @@
-tree 7eaa34ba662269de3e58721c133d19a5c7f8b8c0
-parent 73fe8106da63e1586ab5a900401fb051bb625464
-author Mason Green <mason@greenm01.net> 1791782140 -0400
-committer Mason Green <mason@greenm01.net> 1791782140 -0400
+tree 7c375853442925b52141843a59602c002d5d0955
+parent e28fecd3e63133268d21538cf5107611ca0c6f31
+author Mason Green <mason@greenm01.net> 1791805157 -0400
+committer Mason Green <mason@greenm01.net> 1791805157 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCasxs/BsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGK4IQEAqG6Zbv9ruQp9N1cNRcKj
- ILs/vuOvIDRjewTlSDWVVxgBAOl/4icxYkhvhd+MUM6tJoa0GU2JDokeu+k+l+b9
- L1ML
- =ZdDD
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCaszG5RsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJ1RwD8CYZhIJzMsRfGoF98VKmi
+ w1XbDh8t9Sv/WNOTKujyYh0BAORAQ3uQPUXVJ2h8OJZgPrCmyIErDy7LHtbpDfV3
+ vsgJ
+ =sih4
  -----END PGP SIGNATURE-----
 
-Align t317 authentication contract snapshots
+docs: sync recipe authentication audience contract
