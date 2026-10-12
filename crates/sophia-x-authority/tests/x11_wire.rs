@@ -21,6 +21,8 @@ include!("x11_wire/graphics_decode.rs");
 include!("x11_wire/core_dispatch.rs");
 include!("x11_wire/dri3_dispatch.rs");
 include!("x11_wire/extensions_dispatch.rs");
+#[path = "x11_wire/randr_properties.rs"]
+mod randr_properties;
 include!("x11_wire/xkb_xi_dispatch.rs");
 include!("x11_wire/render_dispatch.rs");
 include!("x11_wire/xfixes_dispatch.rs");

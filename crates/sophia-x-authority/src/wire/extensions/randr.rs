@@ -3,6 +3,19 @@ fn decode_randr(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     match bytes[1] {
+        X_RANDR_LIST_OUTPUT_PROPERTIES_MINOR_OPCODE => {
+            require_exact_len(X_RANDR_MAJOR_OPCODE, 8, bytes.len())?;
+            Ok(XWireRequest::Randr(crate::XRandrRequest::RandrListOutputProperties {
+                output: context.byte_order.u32(&bytes[4..8]),
+            }))
+        }
+        X_RANDR_QUERY_OUTPUT_PROPERTY_MINOR_OPCODE => {
+            require_exact_len(X_RANDR_MAJOR_OPCODE, 12, bytes.len())?;
+            Ok(XWireRequest::Randr(crate::XRandrRequest::RandrQueryOutputProperty {
+                output: context.byte_order.u32(&bytes[4..8]),
+                property: context.byte_order.u32(&bytes[8..12]),
+            }))
+        }
         X_RANDR_QUERY_VERSION_MINOR_OPCODE => {
             require_len(
                 X_RANDR_MAJOR_OPCODE,
@@ -64,6 +77,11 @@ fn decode_randr(
                 X_RANDR_GET_OUTPUT_PROPERTY_REQ_LEN,
                 bytes.len(),
             )?;
+            for value in &bytes[24..26] {
+                if *value > 1 {
+                    return Err(XWireParseError::InvalidValue(u32::from(*value)));
+                }
+            }
             Ok(XWireRequest::Randr(crate::XRandrRequest::RandrGetOutputProperty {
                 output: context.byte_order.u32(&bytes[4..8]),
                 property: context.byte_order.u32(&bytes[8..12]),

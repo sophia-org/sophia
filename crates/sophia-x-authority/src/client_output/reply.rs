@@ -271,6 +271,17 @@ pub enum XClientReply {
         modes: Vec<u32>,
         name: Vec<u8>,
     },
+    RandrListOutputProperties {
+        sequence: u16,
+        atoms: Vec<crate::XAtom>,
+    },
+    RandrQueryOutputProperty {
+        sequence: u16,
+        pending: bool,
+        range: bool,
+        immutable: bool,
+        valid_values: Vec<i32>,
+    },
     RandrGetOutputProperty {
         sequence: u16,
         property_type: u32,

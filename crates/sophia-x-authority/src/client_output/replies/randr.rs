@@ -13,6 +13,8 @@ fn encode_randr_reply(
             | XClientReply::RandrGetScreenResources { .. }
             | XClientReply::RandrGetOutputInfo { .. }
             | XClientReply::RandrGetOutputProperty { .. }
+            | XClientReply::RandrListOutputProperties { .. }
+            | XClientReply::RandrQueryOutputProperty { .. }
             | XClientReply::RandrGetCrtcInfo { .. }
             | XClientReply::RandrGetOutputPrimary { .. }
             | XClientReply::RandrGetProviders { .. }
@@ -21,6 +23,28 @@ fn encode_randr_reply(
         return Err(reply);
     }
     Ok(match reply {
+        XClientReply::RandrListOutputProperties { sequence, atoms } => {
+            let mut out = vec![0; 32 + atoms.len() * 4];
+            write_reply_header(byte_order, &mut out, sequence, atoms.len() as u32);
+            put_u16(byte_order, &mut out[8..10], atoms.len() as u16);
+            for (chunk, atom) in out[32..].chunks_exact_mut(4).zip(atoms) {
+                put_u32(byte_order, chunk, atom);
+            }
+            out
+        }
+        XClientReply::RandrQueryOutputProperty {
+            sequence, pending, range, immutable, valid_values,
+        } => {
+            let mut out = vec![0; 32 + valid_values.len() * 4];
+            write_reply_header(byte_order, &mut out, sequence, valid_values.len() as u32);
+            out[8] = u8::from(pending);
+            out[9] = u8::from(range);
+            out[10] = u8::from(immutable);
+            for (chunk, value) in out[32..].chunks_exact_mut(4).zip(valid_values) {
+                put_u32(byte_order, chunk, value as u32);
+            }
+            out
+        }
                 XClientReply::RandrQueryVersion {
                     sequence,
                     major_version,

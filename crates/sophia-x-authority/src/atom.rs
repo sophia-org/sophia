@@ -8,6 +8,7 @@ pub const X_ATOM_LAST_PREDEFINED: XAtom = 68;
 pub const X_ATOM_PRIMARY: XAtom = 1;
 pub const X_ATOM_ATOM: XAtom = 4;
 pub const X_ATOM_CARDINAL: XAtom = 6;
+pub const X_ATOM_INTEGER: XAtom = 19;
 pub const X_ATOM_RESOURCE_MANAGER: XAtom = 23;
 pub const X_ATOM_STRING: XAtom = 31;
 pub const X_ATOM_WM_NAME: XAtom = 39;
@@ -196,7 +197,7 @@ const X_PREDEFINED_ATOMS: &[(XAtom, &str)] = &[
     (16, "CUT_BUFFER7"),
     (17, "DRAWABLE"),
     (18, "FONT"),
-    (19, "INTEGER"),
+    (X_ATOM_INTEGER, "INTEGER"),
     (20, "PIXMAP"),
     (21, "POINT"),
     (22, "RECTANGLE"),

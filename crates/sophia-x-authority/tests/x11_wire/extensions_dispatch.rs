@@ -483,7 +483,7 @@ fn randr_conventional_output_properties_are_valid_across_two_outputs() {
         assert_eq!(encoded[0][1], 32);
         assert_eq!(
             read_u32(XByteOrder::LittleEndian, &encoded[0][8..12]),
-            X_ATOM_CARDINAL
+            X_ATOM_INTEGER
         );
         assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][16..20]), 1);
         assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][32..36]), 0);
@@ -539,7 +539,7 @@ fn randr_conventional_output_properties_are_valid_across_two_outputs() {
     )
     .encoded_outputs(XByteOrder::LittleEndian);
     assert_eq!(invalid_output[0][0], 0);
-    assert_eq!(invalid_output[0][1], 2, "invalid output is BadValue");
+    assert_eq!(invalid_output[0][1], X_RANDR_FIRST_ERROR, "invalid output is BadOutput");
 }
 
 #[test]

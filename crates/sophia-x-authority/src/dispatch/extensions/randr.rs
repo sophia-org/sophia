@@ -4,6 +4,10 @@ fn dispatch_randr_request(
     runtime: &mut XAuthorityRuntime,
     atoms: &mut XAtomTable,
 ) -> XDispatchFamilyResult {
+    let request = match dispatch_randr_properties(context, request, runtime, atoms) {
+        Handled(result) => return Handled(result),
+        Unhandled(request) => request,
+    };
     if !matches!(
         &request,
             XWireRequest::Randr(crate::XRandrRequest::RandrQueryVersion { .. })
@@ -11,7 +15,6 @@ fn dispatch_randr_request(
             | XWireRequest::Randr(crate::XRandrRequest::RandrGetScreenSizeRange { .. })
             | XWireRequest::Randr(crate::XRandrRequest::RandrGetScreenResources { .. })
             | XWireRequest::Randr(crate::XRandrRequest::RandrGetOutputInfo { .. })
-            | XWireRequest::Randr(crate::XRandrRequest::RandrGetOutputProperty { .. })
             | XWireRequest::Randr(crate::XRandrRequest::RandrGetCrtcInfo { .. })
             | XWireRequest::Randr(crate::XRandrRequest::RandrGetCrtcGammaSize { .. })
             | XWireRequest::Randr(crate::XRandrRequest::RandrGetCrtcGamma { .. })
@@ -150,64 +153,6 @@ fn dispatch_randr_request(
                                 major_code: context.major_opcode,
                             })
                         });
-                    XDispatchResult {
-                        response: None,
-                        outputs: vec![client_output],
-                        metadata_candidates: Vec::new(),
-                    }
-                }
-                XWireRequest::Randr(crate::XRandrRequest::RandrGetOutputProperty {
-                    output,
-                    property,
-                    property_type,
-                    long_offset,
-                    long_length,
-                    delete: _,
-                    pending: _,
-                }) => {
-                    let resources = randr_resources(runtime.output_topology());
-                    let client_output = if !resources.outputs.contains(&output) {
-                        XClientOutput::Error(crate::XClientError {
-                            code: XErrorCode::BadValue,
-                            sequence: context.sequence,
-                            resource_id: output,
-                            minor_code: crate::X_RANDR_GET_OUTPUT_PROPERTY_MINOR_OPCODE.into(),
-                            major_code: context.major_opcode,
-                        })
-                    } else if atoms.name(property).is_none() {
-                        XClientOutput::Error(crate::XClientError {
-                            code: XErrorCode::BadAtom,
-                            sequence: context.sequence,
-                            resource_id: property,
-                            minor_code: crate::X_RANDR_GET_OUTPUT_PROPERTY_MINOR_OPCODE.into(),
-                            major_code: context.major_opcode,
-                        })
-                    } else if atoms.name(property)
-                        == Some(crate::X_ATOM_NAME_RANDR_NON_DESKTOP)
-                    {
-                        let mut value = Vec::with_capacity(4);
-                        context.byte_order.push_u32(&mut value, 0);
-                        randr_output_property_from_read(
-                            &context,
-                            output,
-                            crate::read_property_value(
-                                crate::X_ATOM_CARDINAL,
-                                32,
-                                &value,
-                                property_type,
-                                long_offset,
-                                long_length,
-                            ),
-                        )
-                    } else {
-                        XClientOutput::Reply(XClientReply::RandrGetOutputProperty {
-                            sequence: context.sequence,
-                            property_type: 0,
-                            bytes_after: 0,
-                            format: 0,
-                            data: Vec::new(),
-                        })
-                    };
                     XDispatchResult {
                         response: None,
                         outputs: vec![client_output],

@@ -692,7 +692,19 @@ explicit and evidence-driven:
   context lifecycle, direct MakeCurrent, GLX windows, and drawable attributes.
   Indirect rendering and server-side GLX buffer submission remain deferred.
 - RandR provides Engine-derived observation and notifications, not general
-  client-controlled mode management. MIT-SHM intentionally copies admitted
+  client-controlled mode management. Output-property listing, metadata queries,
+  and reads share the same bounded property definition for current outputs.
+  The exposed `non-desktop` property is immutable `INTEGER/32`, value zero,
+  with range 0–1 and no pending value. Conventional interned atoms such as
+  `EDID` are not advertised as properties without a supplied value. Undefined
+  metadata returns `BadName`; undefined value reads return type `None`.
+  Invalid outputs in these property requests return RANDR `BadOutput` at the
+  advertised error base; immutable deletion is refused with `BadAccess`.
+  This is a read-only observation contract, not full RANDR 1.5 conformance.
+  The ordinary property regression includes an independent C/XCB client against
+  a private frontend socket; it requires a C compiler and the `xcb` and
+  `xcb-randr` development headers and libraries, and needs no live display.
+  MIT-SHM intentionally copies admitted
   image ranges and does not expose shared pixmaps.
 - A general local listener still needs independently credentialed confined
   groups; the current classic and explicitly launched confined profiles remain
