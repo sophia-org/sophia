@@ -264,6 +264,9 @@ lock service. The [admission-context join](../investigations/etyvymxi-authentica
 now derives the lock transport's immutable context from verified identity,
 live launch custody and Session's namespace registry, preserving it across
 Tversion and enforcing namespace/admission revocation on upload fragments.
+The [output transport join](../investigations/etyvymxi-authenticated-attach-transport-state-and-factotum-handoff.md#protected-output-transport-authentication)
+qualifies protected Rust SDK authentication, reauthentication and revocation
+through the output service. Its normal startup wiring is still required.
 Other required roles, deployed-client rollout and final contract/threat-model
 reconciliation remain open. These checkpoints are not a live installation or
 a reduced exit.

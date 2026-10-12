@@ -12,25 +12,25 @@ fn answer(pipe: &mut Pipeline, tag: Tag) -> Reply {
     pipe.wait(tag, Instant::now() + Duration::from_secs(3))
         .unwrap()
 }
-fn open(pipe: &mut Pipeline, root: Fid, name: &[u8], mode: u32) -> Fid {
+pub(crate) fn open(pipe: &mut Pipeline, root: Fid, name: &[u8], mode: u32) -> Fid {
     let (tag, fid) = pipe.walk(root, &[name]).unwrap();
     assert!(matches!(answer(pipe, tag), Reply::Walk(qids) if qids.len() == 1));
     let tag = pipe.lopen(fid, mode).unwrap();
     assert!(matches!(answer(pipe, tag), Reply::Lopen { .. }));
     fid
 }
-fn read(pipe: &mut Pipeline, fid: Fid, offset: u64, count: u32) -> Vec<u8> {
+pub(crate) fn read(pipe: &mut Pipeline, fid: Fid, offset: u64, count: u32) -> Vec<u8> {
     let tag = pipe.read(fid, offset, count).unwrap();
     let Reply::Read(bytes) = answer(pipe, tag) else {
         panic!("expected file read")
     };
     bytes
 }
-fn write(pipe: &mut Pipeline, fid: Fid, bytes: &[u8]) {
+pub(crate) fn write(pipe: &mut Pipeline, fid: Fid, bytes: &[u8]) {
     let tag = pipe.write(fid, 0, bytes).unwrap();
     assert_eq!(answer(pipe, tag), Reply::Write(bytes.len() as u32));
 }
-fn authenticate(mut client: Client) -> sophia_launch_client::Authenticated {
+pub(crate) fn authenticate(mut client: Client) -> sophia_launch_client::Authenticated {
     while !client.ready() {
         client
             .poll()

@@ -1,4 +1,5 @@
 use super::*;
+use crate::authenticated_files::{PreparedFileRoot, ProtectedFiles};
 use sophia_9p::export::*;
 use sophia_9p::records::{OpenAccess, OpenFlags};
 
@@ -53,15 +54,7 @@ impl Export for OutputFileExport {
     type Handle = OutputFileHandle;
 
     fn attach(&mut self, context: &AttachContext<'_>) -> Result<Attachment<Node>, Errno> {
-        self.live()?;
-        if self.attached || self.connection != Some(context.connection) {
-            return Err(Errno::EACCES);
-        }
-        self.attached = true;
-        Ok(Attachment {
-            root: Node::Root,
-            epoch: Epoch(self.epoch),
-        })
+        Ok(self.prepare_authenticated_root(context)?.publish())
     }
 
     fn check(&mut self, access: &Access<'_, Node>) -> Result<(), Errno> {

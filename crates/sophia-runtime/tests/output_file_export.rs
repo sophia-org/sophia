@@ -13,6 +13,9 @@ use std::time::{Duration, Instant};
 #[path = "support/output_file_connection_retirement.rs"]
 mod connection_retirement;
 
+#[path = "support/output_file_authentication.rs"]
+mod authentication;
+
 fn snapshot(epoch: u64) -> OutputAuthoritySnapshot {
     OutputAuthoritySnapshot {
         topology_epoch: epoch,

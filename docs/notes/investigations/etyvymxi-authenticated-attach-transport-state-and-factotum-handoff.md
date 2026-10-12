@@ -1214,3 +1214,50 @@ tests, not namespace-registry joins. Other required roles have not been migrated
 by this change. No new whole-repository gate, minimum-Bubblewrap execution,
 deployed-client rollout, master merge or live installation is claimed. t317's
 remaining integrations and final contract/threat-model audit remain required.
+
+## Protected output transport authentication
+
+The output file transport now accepts the shared authenticated-file owner from
+its supervisor-checked assignee. Root preparation borrows the export exclusively
+and publishes nothing until verified admission commits. Tversion resets the root
+without resetting output negotiation, topology identity or logical qids. Both
+the expected-peer filter and output's SO_PEERPIDFD check remain in force. The
+worker polls authentication and retains bounded retirement owners until remote
+cancellation drains, including while role delivery is paused.
+
+A protected generic Rust SDK peer authenticates through the real Factotum,
+launch relay and OutputFileService, refuses plain attach, reauthenticates across
+Tversion, reads and negotiates output files, then retains an events read during
+launch revocation. The transport publishes one namespace admission and removes
+it on retirement. The fixture supplies Factotum's trusted Session connection
+class and one output topology; it uses Sophia's output record codec. The launch
+authentication exchange itself is the pinned Rust SDK, not a fixture exchange.
+
+Device-hidden qualification passes 505 runtime tests (18 ignored, 61 summaries),
+22 launch-authentication parent tests (two ignored child entry points, each
+executed successfully by its parent), all-target runtime/Session Clippy with
+warnings denied and formatting. `t317-output-authentication-01` remains STOP:
+Clippy rejected an explicit drop of a non-Drop preparation in a test. Replacing
+that drop with a lexical scope preserves the abandonment check; run 02 passes.
+
+The afid control replaces the SDK's verified attach with plain attach and fails
+at `Rust SDK must authenticate through the protected launch channel`. The root
+control publishes during preparation and fails at `an abandoned output root
+must remain inaccessible`. Both restore exact candidate bytes. The restored
+authentication suite and all 15 output-export tests pass. Dynamic candidate
+capture binds all 13 changed source/test files; manifests retain binary paths
+and hashes, without copying binaries.
+
+| Package | SHA256SUMS SHA-256 |
+| --- | --- |
+| `t317-output-authentication-02` | `ebe24325a260ec7bd39bc278da0605646fff5cc51e0b6dc87acde992564dd366` |
+| `t317-output-afid-control-01` | `397bc34c48d626874ce58a1b7967b9d7d40d5a05fbe5f6a8147ad2fcb7e448e5` |
+| `t317-output-root-publication-control-01` | `ec6c6a3ce38d762fb3c97e7f0fc98d3a6491b5ed540bec4bcb005522156aa3f6` |
+| `t317-output-authentication-restored-01` | `02ebc1bd0c3dcca0fccf20fc8681fd5cfdf4573bbe079514fb174abaefc5a846` |
+
+Normal output startup still selects the legacy transport admission. Enabling
+authenticated normal output, WM and shell launches requires moving the one
+shared Session coordinator before those launches and passing their registered
+launch authority to each transport. This checkpoint does not qualify that
+startup wiring, minimum-version Bubblewrap, a whole-repository gate, deployed
+clients or a live installation. These remain t317 work.

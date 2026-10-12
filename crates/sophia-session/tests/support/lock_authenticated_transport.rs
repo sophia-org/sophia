@@ -9,7 +9,7 @@ use std::os::unix::fs::DirBuilderExt;
 mod upload_revocation;
 
 #[path = "lock_rust_peer.rs"]
-mod rust_peer;
+pub(super) mod rust_peer;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PeerKind {
@@ -18,12 +18,18 @@ enum PeerKind {
     RustSdk,
 }
 
-struct Peer(PathBuf);
+pub(super) struct Peer(pub(super) PathBuf);
 impl Peer {
     fn build(sdk: bool) -> Self {
         Self::build_kind(if sdk { PeerKind::CSdk } else { PeerKind::Raw })
     }
     fn build_kind(kind: PeerKind) -> Self {
+        Self::build_child(kind, None)
+    }
+    pub(super) fn rust_child(name: &str) -> Self {
+        Self::build_child(PeerKind::RustSdk, Some(name))
+    }
+    fn build_child(kind: PeerKind, child: Option<&str>) -> Self {
         static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
             "lock-authentication-peer-{kind:?}-{}-{}",
@@ -46,6 +52,9 @@ impl Peer {
             )
             .arg("-o")
             .arg(&path);
+        if let Some(child) = child {
+            command.arg(format!("-DSOPHIA_TEST_CHILD=\"{child}\""));
+        }
         if kind == PeerKind::CSdk {
             let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("../../vendor/c-desktop-sdk/source/src");
@@ -71,7 +80,7 @@ impl Drop for Peer {
         let _ = std::fs::remove_file(&self.0);
     }
 }
-struct Directory(PathBuf);
+pub(super) struct Directory(pub(super) PathBuf);
 impl Drop for Directory {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);

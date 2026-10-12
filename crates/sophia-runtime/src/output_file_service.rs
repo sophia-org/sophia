@@ -202,6 +202,8 @@ impl Worker {
         stopped: &AtomicBool,
     ) -> Result<(), String> {
         while !stopped.load(Ordering::Acquire) {
+            self.transport
+                .poll_authentication_cleanup(std::time::Instant::now());
             if let Ok(reply) = pauses.try_recv() {
                 self.paused = true;
                 let epoch = self

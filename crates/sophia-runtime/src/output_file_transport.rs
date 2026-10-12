@@ -7,6 +7,9 @@ use sophia_9p::{Errno, records::Limits, unix::Server};
 use sophia_protocol::output_files::OutputFileLimits;
 use sophia_protocol::{OutputAuthoritySnapshot, OutputV1Outcome, TransactionId};
 
+use crate::authenticated_files::{
+    AuthenticatedFiles, FileAuthentication, FileAuthenticationFactory,
+};
 use crate::{
     AdmittedOutputProposal, OutputFileExport, OutputFileQids, OutputFileSubmission, PolicyRole,
     PolicyRoleEndpoint, PolicyRoleEndpointError,
@@ -17,10 +20,19 @@ pub const SOPHIA_OUTPUT_9P_SOCKET_ENV: &str = "SOPHIA_OUTPUT_9P_SOCKET";
 /// A supervisor-checked peer captured before a worker handoff. Private fields
 /// prevent callers from pairing a numeric PID with an unrelated pidfd. A dead
 /// assignment is retained as such; consuming it never reopens the numeric PID.
-#[derive(Debug)]
 pub struct OutputFileAssignee {
     pid: u32,
     pidfd: Option<OwnedFd>,
+    authentication: Option<Box<dyn FileAuthenticationFactory>>,
+}
+
+impl std::fmt::Debug for OutputFileAssignee {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OutputFileAssignee")
+            .field("pid", &self.pid)
+            .field("authenticated", &self.authentication.is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 impl OutputFileAssignee {
@@ -29,7 +41,18 @@ impl OutputFileAssignee {
     ) -> Result<Self, OutputFileTransportError> {
         let pidfd = supervisor.peer_pidfd()?;
         let pid = supervisor.peer_id().ok_or(Errno::EINVAL)?;
-        Ok(Self { pid, pidfd })
+        Ok(Self {
+            pid,
+            pidfd,
+            authentication: None,
+        })
+    }
+
+    /// The expected-peer filter remains in force; the factory additionally
+    /// requires verified afid admission before any output-role access.
+    pub fn with_authentication(mut self, factory: Box<dyn FileAuthenticationFactory>) -> Self {
+        self.authentication = Some(factory);
+        self
     }
 }
 
@@ -68,7 +91,9 @@ pub struct OutputFileTransport {
     qids: OutputFileQids,
     limits: OutputFileLimits,
     next_epoch: u64,
-    server: Option<Server<OutputFileExport>>,
+    server: Option<Server<AuthenticatedFiles<OutputFileExport>>>,
+    authentication: Option<Box<dyn FileAuthenticationFactory>>,
+    retiring: Vec<Box<dyn FileAuthentication>>,
     negotiation_deadline: Option<Instant>,
 }
 
@@ -94,6 +119,8 @@ impl OutputFileTransport {
             limits,
             next_epoch: first_epoch,
             server: None,
+            authentication: None,
+            retiring: Vec::new(),
             negotiation_deadline: None,
         })
     }
@@ -120,6 +147,7 @@ impl OutputFileTransport {
         };
         self.endpoint.authorize_supervised_pid(pid)?;
         self.assignee = pidfd;
+        self.authentication = None;
         Ok(())
     }
 
@@ -138,6 +166,7 @@ impl OutputFileTransport {
     ) -> Result<(), OutputFileTransportError> {
         self.endpoint.authorize_supervised_pid(assignee.pid)?;
         self.assignee = assignee.pidfd;
+        self.authentication = assignee.authentication;
         Ok(())
     }
 
@@ -172,6 +201,9 @@ impl OutputFileTransport {
     ) -> Result<bool, OutputFileTransportError> {
         if self.server.is_some() {
             return Err(Errno::EAGAIN.into());
+        }
+        if self.retiring.len() >= 8 {
+            return Ok(false);
         }
         if !self.assignee_alive()? {
             return Ok(false);
@@ -209,9 +241,21 @@ impl OutputFileTransport {
             let export =
                 OutputFileExport::new(epoch, self.limits, snapshot.clone(), self.qids.clone())?;
             let limits = Limits::new(65_536, 512, 16, 32, 131_072, 1).map_err(|_| Errno::EINVAL)?;
+            let export = if self.authentication.is_some() {
+                AuthenticatedFiles::pending(export)
+            } else {
+                AuthenticatedFiles::legacy(export)
+            };
             let mut server = Server::new(export, limits)?;
             let connection = server.adopt(stream).map_err(|error| error.error)?;
-            server.export_mut().bind_connection(connection)?;
+            server
+                .export_mut()
+                .files_mut()
+                .bind_connection(connection)?;
+            if let Some(factory) = &mut self.authentication {
+                let owner = factory.create(connection, Instant::now(), server.wake())?;
+                server.export_mut().install(owner)?;
+            }
             Ok::<_, OutputFileTransportError>(server)
         })();
         match setup {
@@ -223,19 +267,21 @@ impl OutputFileTransport {
                 return Err(error);
             }
         }
-        self.negotiation_deadline = Some(
-            Instant::now() + Duration::from_millis(self.limits.assembly_timeout_millis.into()),
-        );
+        self.negotiation_deadline = self.authentication.is_none().then(|| {
+            Instant::now() + Duration::from_millis(self.limits.assembly_timeout_millis.into())
+        });
         Ok(true)
     }
 
     pub fn export(&self) -> Option<&OutputFileExport> {
-        self.server.as_ref().map(Server::export)
+        self.server.as_ref().map(|server| server.export().files())
     }
 
     #[cfg(test)]
     pub(crate) fn export_mut(&mut self) -> Option<&mut OutputFileExport> {
-        self.server.as_mut().map(Server::export_mut)
+        self.server
+            .as_mut()
+            .map(|server| server.export_mut().files_mut())
     }
 
     #[cfg(test)]
@@ -250,28 +296,39 @@ impl OutputFileTransport {
             return Ok(false);
         };
         let now = Instant::now();
-        server.export_mut().expire(now);
+        if server.export_mut().poll(now).is_err() {
+            server.export_mut().files_mut().revoke();
+        }
+        server.export_mut().files_mut().expire(now);
         if server
             .export()
+            .files()
             .admission()
             .connection()
             .selected_capabilities()
             != 0
         {
             self.negotiation_deadline = None;
+        } else if self.negotiation_deadline.is_none() && server.export().admitted() {
+            self.negotiation_deadline =
+                Some(now + Duration::from_millis(self.limits.assembly_timeout_millis.into()));
         }
         if self
             .negotiation_deadline
             .is_some_and(|deadline| now >= deadline)
         {
-            server.export_mut().revoke();
+            server.export_mut().files_mut().revoke();
         }
         let running = server.turn(Some(Duration::ZERO))?;
-        Ok(running && server.connection_count() != 0 && !server.export().is_revoked())
+        Ok(running && server.connection_count() != 0 && !server.export().files().is_revoked())
     }
 
     pub fn take_delivery(&mut self) -> Option<OutputFileSubmission> {
-        self.server.as_mut()?.export_mut().take_delivery()
+        self.server
+            .as_mut()?
+            .export_mut()
+            .files_mut()
+            .take_delivery()
     }
 
     pub fn publish(
@@ -279,7 +336,7 @@ impl OutputFileTransport {
         snapshot: &OutputAuthoritySnapshot,
     ) -> Result<u64, OutputFileTransportError> {
         let server = self.server.as_mut().ok_or(Errno::ESTALE)?;
-        let qid = server.export_mut().publish(snapshot)?;
+        let qid = server.export_mut().files_mut().publish(snapshot)?;
         server.wake().wake();
         Ok(qid)
     }
@@ -290,7 +347,10 @@ impl OutputFileTransport {
         outcome: OutputV1Outcome,
     ) -> Result<Option<AdmittedOutputProposal>, OutputFileTransportError> {
         let server = self.server.as_mut().ok_or(Errno::ESTALE)?;
-        let promoted = server.export_mut().settle(transaction, outcome)?;
+        let promoted = server
+            .export_mut()
+            .files_mut()
+            .settle(transaction, outcome)?;
         server.wake().wake();
         Ok(promoted)
     }
@@ -300,12 +360,13 @@ impl OutputFileTransport {
         if let Some(mut server) = self.server.take() {
             abandoned = server
                 .export()
+                .files()
                 .admission()
                 .connection()
                 .clone()
                 .disconnect()
                 .map_err(|_| Errno::EINVAL)?;
-            server.export_mut().revoke();
+            server.export_mut().files_mut().revoke();
             server.wake().wake();
             // Flush bounded terminal replies, especially the final Refused
             // acknowledgment. A departed reader cannot hold supervision.
@@ -314,11 +375,27 @@ impl OutputFileTransport {
                     break;
                 }
             }
+            server.wake().stop();
+            let _ = server.turn(Some(Duration::ZERO));
+            if let Some(owner) = server.export_mut().retire(Instant::now()) {
+                if self.retiring.len() >= 8 {
+                    return Err(Errno::ENOSPC.into());
+                }
+                self.retiring.push(owner);
+            }
         }
         self.negotiation_deadline = None;
         if let Some(peer) = self.endpoint.active_peer() {
             self.endpoint.release_peer(peer)?;
         }
         Ok(abandoned)
+    }
+
+    /// Retain transport quotas until exact remote cancellation completes.
+    pub fn poll_authentication_cleanup(&mut self, now: Instant) {
+        self.retiring.retain_mut(|owner| {
+            let _ = owner.poll(now);
+            !owner.drained()
+        });
     }
 }

@@ -7,6 +7,9 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <unistd.h>
+#ifndef SOPHIA_TEST_CHILD
+#define SOPHIA_TEST_CHILD "lock_authenticated_transport::rust_peer::protected_rust_child"
+#endif
 
 int main(int argc, char **argv) {
     assert(argc == 4);
@@ -19,7 +22,7 @@ int main(int argc, char **argv) {
     assert(setenv("SOPHIA_TEST_LOCK_SOCKET", argv[2], 1) == 0);
     assert(setenv("SOPHIA_TEST_LOCK_REPORT", argv[3], 1) == 0);
     char *args[] = {argv[1], "--ignored", "--exact",
-        "lock_authenticated_transport::rust_peer::protected_rust_child",
+        SOPHIA_TEST_CHILD,
         "--nocapture", NULL};
     execv(argv[1], args);
     return 111;

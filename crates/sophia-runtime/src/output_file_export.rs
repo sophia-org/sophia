@@ -17,6 +17,8 @@ use crate::{AdmittedOutputProposal, OutputFileAdmission, OutputFileSubmission};
 
 mod filesystem;
 pub use filesystem::{OutputFileHandle, OutputFileNode};
+mod authentication;
+pub use authentication::OutputFileAttachment;
 
 /// Share this allocator across reconnects. Neither fid reuse nor a fresh
 /// connection epoch can cause a published Qid to name different bytes.
