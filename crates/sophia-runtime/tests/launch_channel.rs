@@ -41,8 +41,12 @@ fn ordinary_start(
 struct Probe(PathBuf);
 impl Probe {
     fn build() -> Self {
-        let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-            .join(format!("launch-channel-probe-{}", std::process::id()));
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
+            "launch-channel-probe-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
         let status = Command::new("/usr/bin/cc")
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
