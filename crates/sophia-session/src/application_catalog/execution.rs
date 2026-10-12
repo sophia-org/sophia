@@ -103,8 +103,8 @@ pub(crate) fn spawn_catalog_process_with_transaction(
 
 /// Returned together so the process cannot be attributed using just a numeric
 /// transaction. The Session must move both fields into managed child custody.
-pub struct NativeCatalogChild {
-    pub child: Child,
+pub struct NativeCatalogChild<C = Child> {
+    pub child: C,
     pub launch: Arc<NativeCatalogLaunch>,
 }
 
@@ -135,6 +135,32 @@ pub fn spawn_native_catalog(
     verified: Result<ApplicationLaunchCommand, String>,
     environment: CatalogProcessEnvironment<'_>,
 ) -> Result<NativeCatalogChild, NativeCatalogSpawnError> {
+    spawn_native_catalog_with(
+        connection,
+        launches,
+        launch,
+        verified,
+        |command, identity, transaction| {
+            spawn_catalog_process_with_transaction(
+                command,
+                environment,
+                Some(transaction),
+                Some(identity),
+            )
+        },
+    )
+}
+
+/// Consume exact catalog admission before invoking the Session's selected
+/// process owner. The result may be asynchronous custody; it must be retained
+/// immediately with the same origin. No deferred unowned execution is returned.
+pub fn spawn_native_catalog_with<C>(
+    connection: &ShellTransportConnection<'_>,
+    launches: &mut SessionLaunchQueue,
+    launch: Arc<NativeCatalogLaunch>,
+    verified: Result<ApplicationLaunchCommand, String>,
+    spawn: impl FnOnce(&ApplicationLaunchCommand, &str, u64) -> std::io::Result<C>,
+) -> Result<NativeCatalogChild<C>, NativeCatalogSpawnError> {
     let current = connection.content_grant();
     let command = match (current, verified) {
         (Some(grant), Ok(command))
@@ -150,12 +176,7 @@ pub fn spawn_native_catalog(
             return Err(NativeCatalogSpawnError::Refused);
         }
     };
-    match spawn_catalog_process_with_transaction(
-        &command,
-        environment,
-        Some(launch.transaction.raw()),
-        Some(&launch.entry.identity),
-    ) {
+    match spawn(&command, &launch.entry.identity, launch.transaction.raw()) {
         Ok(child) => Ok(NativeCatalogChild { child, launch }),
         Err(error) => {
             launches.cancel_native_catalog(&launch);

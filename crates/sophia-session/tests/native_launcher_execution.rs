@@ -297,25 +297,7 @@ fn native_catalog_cannot_discard_a_recipe_request_and_spawn_on_the_host() {
         working_directory: None,
         namespace_recipe: Some("private".into()),
     };
-    let policy = sophia_config::namespace_policy::NamespacePolicyConfig {
-        recipes: std::collections::BTreeMap::from([(
-            "private".into(),
-            sophia_config::namespace_policy::NamespaceRecipeConfig {
-                name: "private".into(),
-                profile: sophia_config::namespace_policy::NamespaceRecipeProfile::ConfinedX {
-                    group: 7,
-                },
-                source: None,
-                request: vec![],
-                publish: vec![],
-                developer_launch: false,
-            },
-        )]),
-        applications: ["registered:app1", "registered:app2"]
-            .into_iter()
-            .map(|id| (id.into(), "private".into()))
-            .collect(),
-    };
+    let policy = private_policy();
     let mut h = Harness::with_policy(command.clone(), policy);
     let activation = h.accept();
     assert_eq!(h.activate(activation, 0).status, 1);
@@ -343,4 +325,88 @@ fn native_catalog_cannot_discard_a_recipe_request_and_spawn_on_the_host() {
         h.queue.admission().is_none(),
         "failed recipe dispatch settles exact catalog admission"
     );
+}
+
+fn private_policy() -> sophia_config::namespace_policy::NamespacePolicyConfig {
+    sophia_config::namespace_policy::NamespacePolicyConfig {
+        recipes: std::collections::BTreeMap::from([(
+            "private".into(),
+            sophia_config::namespace_policy::NamespaceRecipeConfig {
+                name: "private".into(),
+                profile: sophia_config::namespace_policy::NamespaceRecipeProfile::ConfinedX {
+                    group: 7,
+                },
+                source: None,
+                request: vec![],
+                publish: vec![],
+                developer_launch: false,
+            },
+        )]),
+        applications: ["registered:app1", "registered:app2"]
+            .into_iter()
+            .map(|id| (id.into(), "private".into()))
+            .collect(),
+    }
+}
+
+#[test]
+fn selected_process_owner_receives_exact_recipe_once_while_launch_is_pending() {
+    let command = catalog::ApplicationLaunchCommand {
+        executable: "/bin/true".into(),
+        arguments: vec![],
+        working_directory: None,
+        namespace_recipe: Some("private".into()),
+    };
+    let mut h = Harness::with_policy(command.clone(), private_policy());
+    let activation = h.accept();
+    assert_eq!(h.activate(activation, 0).status, 1);
+    let launch = h.dispatch();
+    let connection = h.peer.transport.connection(&mut h.epochs);
+    let mut calls = 0;
+    // Supplied pending owner: this isolates admission from spawn timing. Real
+    // namespace preparation, activation and retirement have their own joins.
+    let pending = catalog::spawn_native_catalog_with(
+        &connection,
+        &mut h.queue,
+        launch.clone(),
+        Ok(command.clone()),
+        |verified, identity, transaction| {
+            calls += 1;
+            assert_eq!(verified, &command);
+            assert_eq!(identity, launch.entry.identity);
+            assert_eq!(transaction, launch.transaction.raw());
+            Ok(String::from("pending namespace custody"))
+        },
+    )
+    .unwrap();
+    assert!(std::sync::Arc::ptr_eq(&pending.launch, &launch));
+    assert_eq!(pending.child, "pending namespace custody");
+    assert!(
+        h.queue.admission().is_some(),
+        "pending launch retains catalog admission"
+    );
+    let repeated = catalog::spawn_native_catalog_with(
+        &connection,
+        &mut h.queue,
+        launch.clone(),
+        Ok(command),
+        |_, _, _| {
+            calls += 1;
+            Ok(())
+        },
+    );
+    assert!(matches!(
+        repeated,
+        Err(catalog::NativeCatalogSpawnError::Refused)
+    ));
+    assert_eq!(
+        calls, 1,
+        "catalog admission must reach a selected process owner only once"
+    );
+    assert!(
+        h.queue.admission().is_some(),
+        "duplicate must not cancel pending custody"
+    );
+    h.queue.cancel_native_catalog(&launch);
+    assert!(h.queue.admission().is_none());
 }

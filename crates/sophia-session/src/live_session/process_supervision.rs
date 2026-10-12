@@ -84,8 +84,10 @@ impl ManagedSessionChild {
     }
 }
 
-impl From<crate::application_catalog::NativeCatalogChild> for ManagedSessionChild {
-    fn from(value: crate::application_catalog::NativeCatalogChild) -> Self {
+impl<C: Into<crate::namespace_launch::ApplicationProcess>>
+    From<crate::application_catalog::NativeCatalogChild<C>> for ManagedSessionChild
+{
+    fn from(value: crate::application_catalog::NativeCatalogChild<C>) -> Self {
         let mut managed = Self::for_launch(None, value.launch.transaction, value.child);
         managed.catalog_launch = true;
         managed.native_catalog = Some(value.launch);

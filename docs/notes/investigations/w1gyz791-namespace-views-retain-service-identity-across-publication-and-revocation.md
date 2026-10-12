@@ -22,6 +22,38 @@ socket paths or namespace commands to launch installed applications.
 
 ## Evidence
 
+### Catalog process-owner handoff
+
+The slice based on `232123973` preserves one native-catalog admission/verification
+path while allowing its immediate result to own asynchronous application custody.
+`spawn_native_catalog_with` consumes the exact admission before invoking the
+selected process owner with the unchanged command, identity and transaction.
+`NativeCatalogService::service_with` uses that same operation after worker
+verification. Existing host APIs delegate to it. Session's connected native
+catalog now adopts an `ApplicationProcess`, preserving its exact origin in
+supervision; its selected-namespace branch still awaits resource-owner wiring.
+
+The new test supplies a pending owner, checks exact recipe/identity/transaction
+handoff, then repeats the attempt. Admission remains with the first owner and
+the second invocation is refused without calling the executor or cancelling
+pending custody. This is an admission test, not a namespace process or display
+claim. Existing process, revocation, timeout and stop tests pass.
+
+The device-hidden `t318-catalog-process-owner-01` package includes thirteen
+native launcher admission tests, seven execution tests, namespace scheduler and
+runtime/confinement/diagnostic/authentication regressions, Clippy, formatting,
+layout and diff checks. Its SHA256SUMS SHA-256 is
+`7600d037849ef3cf5cc0c9b8a06db8298f7495347da0afbbe5e023bfe9b2682f`.
+Dynamic candidate hashes bind the run; no binaries are copied into evidence.
+
+Source review identifies a compatibility check before ordinary X recipes can
+be enabled: a legacy X application may close the inherited optional 9P launch
+channel. The authentication owner revokes on relay EOF and the namespace process
+owner treats retired authority as a launch failure. This needs a concrete client
+test and a distinction between loss of optional 9P access and termination of an
+otherwise valid X application. No claim is made about a particular application's
+descriptor behavior. Application wiring and the developer export remain open.
+
 ### Application recipe resolution
 
 The slice based on `da5ced2be` adds the common selection/resource resolver.

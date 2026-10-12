@@ -12,10 +12,10 @@ struct PendingVerification {
     rejected: bool,
 }
 
-pub enum NativeCatalogServiceEvent {
+pub enum NativeCatalogServiceEvent<C = std::process::Child> {
     Idle,
     Catalog(u64, Result<ApplicationCatalog, String>),
-    Started(NativeCatalogChild),
+    Started(NativeCatalogChild<C>),
     Rejected,
     SpawnFailed(std::io::Error),
     Unavailable,
@@ -119,6 +119,31 @@ impl NativeCatalogService {
         environment: CatalogProcessEnvironment<'_>,
         now_msec: u64,
     ) -> NativeCatalogServiceEvent {
+        self.service_with(
+            connection,
+            launches,
+            now_msec,
+            |command, identity, transaction| {
+                execution::spawn_catalog_process_with_transaction(
+                    command,
+                    environment,
+                    Some(transaction),
+                    Some(identity),
+                )
+            },
+        )
+    }
+
+    /// The verified command reaches exactly one selected launch owner in this
+    /// visit. An asynchronous namespace process stays owned in the result;
+    /// the catalog never substitutes the legacy host launcher on refusal.
+    pub fn service_with<C>(
+        &mut self,
+        connection: Option<&ShellTransportConnection<'_>>,
+        launches: &mut SessionLaunchQueue,
+        now_msec: u64,
+        spawn: impl FnOnce(&ApplicationLaunchCommand, &str, u64) -> std::io::Result<C>,
+    ) -> NativeCatalogServiceEvent<C> {
         if now_msec < self.last_visit {
             self.request_shutdown(launches);
         }
@@ -144,12 +169,12 @@ impl NativeCatalogService {
                         launches.reject_native_before_execution(&launch);
                         return NativeCatalogServiceEvent::Rejected;
                     }
-                    return match spawn_native_catalog(
+                    return match spawn_native_catalog_with(
                         connection.unwrap(),
                         launches,
                         launch,
                         verified,
-                        environment,
+                        spawn,
                     ) {
                         Ok(child) => NativeCatalogServiceEvent::Started(child),
                         Err(NativeCatalogSpawnError::Refused) => {

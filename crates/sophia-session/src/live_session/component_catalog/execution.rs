@@ -29,17 +29,25 @@ impl ComponentCatalog {
             .service
             .as_mut()
             .ok_or("native catalog worker absent")?;
-        let event = service.service(
+        let event = service.service_with(
             connection,
             launches,
-            CatalogProcessEnvironment {
-                display: &config.display,
-                xauthority,
-                control_socket: config.control_socket.as_deref(),
-                inspection_socket: config.inspection_socket.as_deref(),
-                confinement: config.application_confinement(xauthority),
-            },
             now,
+            |command, identity, transaction| {
+                crate::application_catalog::spawn_catalog_process_with_transaction(
+                    command,
+                    CatalogProcessEnvironment {
+                        display: &config.display,
+                        xauthority,
+                        control_socket: config.control_socket.as_deref(),
+                        inspection_socket: config.inspection_socket.as_deref(),
+                        confinement: config.application_confinement(xauthority),
+                    },
+                    Some(transaction),
+                    Some(identity),
+                )
+                .map(crate::namespace_launch::ApplicationProcess::from)
+            },
         );
         match event {
             NativeCatalogServiceEvent::Started(child) => {
