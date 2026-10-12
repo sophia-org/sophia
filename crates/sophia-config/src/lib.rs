@@ -8,6 +8,7 @@ mod discovery;
 mod input_candidate;
 mod load;
 mod lock_provider;
+pub mod namespace_recipe;
 mod output_candidate;
 mod output_reconcile;
 mod parse;

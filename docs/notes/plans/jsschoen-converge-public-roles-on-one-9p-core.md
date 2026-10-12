@@ -337,6 +337,13 @@ Depends on t275, t142 and t317.
 
 ### Recipe implementation acceptance
 
+The [implementation investigation](../investigations/w1gyz791-namespace-views-retain-service-identity-across-publication-and-revocation.md)
+records the compiler, discovery and publication foundation separately from the
+remaining authenticated Session and application-launch integration. The approved
+developer launch accepts any executable under explicitly authorized recipe
+policy. Normal registered and scanned desktop applications select that policy
+automatically; recipe metadata requests authority but cannot grant it.
+
 Keep one policy recipe with naming instructions, portal participation and
 optional host policy. The compiler accepts only approved references/scopes;
 the admission/export owners enforce authority. Materialize a complete view

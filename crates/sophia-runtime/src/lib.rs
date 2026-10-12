@@ -14,6 +14,9 @@ mod host_domain;
 #[cfg(target_os = "linux")]
 pub mod inspection;
 pub mod lock_files;
+#[cfg(target_os = "linux")]
+pub mod namespace_publication;
+pub mod namespace_recipe;
 mod output_connection;
 mod output_file_admission;
 #[cfg(target_os = "linux")]

@@ -12,6 +12,7 @@ pub mod ids;
 pub mod inspection;
 pub mod ipc;
 pub mod lock_files;
+pub mod namespace_view;
 pub mod output_files;
 pub mod output_role;
 pub mod packets;
