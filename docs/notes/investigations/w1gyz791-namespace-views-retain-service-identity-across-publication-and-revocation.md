@@ -276,6 +276,37 @@ portal dispatch and retained-transfer qualification remain pending. The startup
 guard against unsupported configured recipes remains in place. No master or
 installed-session change is made by this slice.
 
+### Shared-host custody follow-up
+
+The scheduler's temporary shared-host refusal above is now replaced by an
+explicit `NamespaceClient` host handoff. It preserves inherited environment
+and host reach while the existing Linux fd adapter excludes unrelated
+descriptors. The supervisor retains the exact reservation and direct child;
+it returns no protection evidence. The custody predicate accepts that path
+only for namespace clients. Every desktop-role process is refused by the host
+entry point, and a configured protection domain cannot be silently discarded.
+Failed handoffs burn their generation. Namespace/recipe profile mismatch is
+also refused before reserving or spawning.
+
+The same startup state machine registers and activates both paths. Shared
+publication skips the sandbox bind but publishes the same immutable view and
+endpoint grants. The Session test uses a supplied portal reference and a real
+sleep process; it proves startup/grant custody, not portal protocol execution.
+The startup configuration guard remains until actual application paths use
+the scheduler.
+
+`t318-host-client-01` passes all six runtime launch-channel tests, including the
+independent C descriptor probe for the host path, refusal of all seven other
+supervised process kinds, exact-reservation checks, role exclusion and exit
+observation without a Session poll. Seven Session scheduler tests, three
+existing startup tests and the 28 launch-authentication parents pass. Runtime
+all-target Clippy, native/default Session library Clippy, formatting, layout
+and diff checks pass. The package binds the dynamically enumerated ten-file
+candidate and binary hashes, with no build-output copies. No installed or
+master state changes with this follow-up.
+Its SHA256SUMS has SHA-256
+`2cc434295e7d9d1b740e8210e6efb94a03503a1030d67eb56d8fc58668f8a627`.
+
 ## Connections
 
 The seventh isolated gate at `49bc4aa1a` reaches the Session suite and stops

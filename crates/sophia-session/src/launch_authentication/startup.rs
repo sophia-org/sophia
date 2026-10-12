@@ -26,6 +26,7 @@ pub(crate) struct Startup {
     registration: Option<Registration>,
     endpoint: EndpointBudget,
     grant: Option<sophia_runtime::EndpointGrantLease>,
+    host_namespace_client: bool,
     recipe: Recipe,
     not_before: Instant,
     deadline: Instant,
@@ -78,6 +79,7 @@ impl Startup {
             registration: None,
             endpoint,
             grant: None,
+            host_namespace_client: false,
             recipe,
             not_before,
             deadline: not_before + Duration::from_secs(10),
@@ -111,6 +113,7 @@ impl Startup {
             return Err("namespace launch grant differs from reservation".into());
         }
         let process = supervisor.process();
+        let host_namespace_client = supervisor.launch_spec().protection_domain.is_none();
         let mut startup = Self::new(
             supervisor,
             SupervisorCommand::StartProcess {
@@ -123,6 +126,7 @@ impl Startup {
         )?;
         startup.registration = Some(registration);
         startup.grant = Some(grant);
+        startup.host_namespace_client = host_namespace_client;
         Ok(startup)
     }
 
@@ -220,7 +224,12 @@ impl Startup {
                 let channel = launches
                     .take_channel(registration, now)
                     .map_err(|e| format!("role channel: {e:?}"))?;
-                self.spawning = Some(ProtectedSpawn::start(
+                let spawn = if self.host_namespace_client {
+                    ProtectedSpawn::start_host_namespace_client
+                } else {
+                    ProtectedSpawn::start
+                };
+                self.spawning = Some(spawn(
                     self.supervisor.take().ok_or("missing role supervisor")?,
                     channel,
                     wake,

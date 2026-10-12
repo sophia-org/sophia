@@ -298,6 +298,17 @@ implemented; Session currently refuses a nonempty recipe configuration at startu
 or reload because automatic launch custody is not connected yet. This temporary
 refusal prevents silently executing a selected recipe as a legacy host launch.
 
+The launch scheduler now distinguishes host custody from containment. A
+`shared-x` recipe uses an explicit supervisor-owned host-client handoff: the
+child retains normal host filesystem, network and environment access, but
+inherits no non-stdio descriptor except its fresh authentication channel.
+This records exact launch custody without claiming protection evidence. It
+cannot authorize a WM, shell, lock, output or broker role. A confined recipe
+requires the exclusive namespace-client protection domain and has no host
+fallback. Both paths use the same Factotum registration, endpoint grant and
+retirement owners. The recipe profile must match its live namespace profile.
+Connecting this scheduler to ordinary application launch remains pending.
+
 `LoadedNamespaceRecipe` retains a policy snapshot together with its shipped
 naming fragment or pinned custom files. Shared and confined X use the same
 fragment; their approved group references differ. Selected publication restricts

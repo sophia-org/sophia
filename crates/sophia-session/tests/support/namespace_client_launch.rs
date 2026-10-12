@@ -16,6 +16,9 @@ struct Fixture {
 }
 impl Fixture {
     fn new() -> Self {
+        Self::with_profile(sophia_protocol::NamespaceProfile::Confined)
+    }
+    fn with_profile(profile: sophia_protocol::NamespaceProfile) -> Self {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         let root = std::env::temp_dir().join(format!(
             "s318-launch-{}-{}",
@@ -31,7 +34,18 @@ impl Fixture {
             "namespace-recipe 1\nmount inspection roles/status\n",
         )
         .unwrap();
-        let registry = factotum::namespaces();
+        let registry = Arc::new(Mutex::new(
+            NamespaceRegistry::with_namespace(
+                31,
+                sophia_protocol::NamespaceContext::new(
+                    NamespaceId::from_raw(2),
+                    profile,
+                    sophia_protocol::NamespaceCapabilities::NONE,
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+        ));
         Self {
             auth: factotum::Fixture::with_namespaces(registry.clone()),
             service: NamespaceLaunchService::new(registry, root.clone()),
@@ -239,4 +253,78 @@ fn equal_namespace_numbers_from_another_registry_never_authorize_a_launch() {
         "namespace launch and authentication owners differ"
     );
     assert_eq!(other.occupied(), 0);
+}
+
+#[test]
+fn shared_recipe_uses_host_custody_and_the_same_endpoint_grant_owner() {
+    let mut f = Fixture::with_profile(sophia_protocol::NamespaceProfile::ClassicShared);
+    std::fs::write(
+        f.root.join("shared"),
+        "namespace-recipe 1\nmount portal roles/portal\n",
+    )
+    .unwrap();
+    let mut request = f.request();
+    request.launch = ProcessLaunchSpec::new("/usr/bin/sleep").arg("30");
+    let mut policy = request.recipe.policy().clone();
+    policy.profile = NamespaceRecipeProfile::SharedX;
+    policy.source = Some("shared".into());
+    policy.developer_launch = false;
+    request.recipe = LoadedNamespaceRecipe::load(&policy, &f.root).unwrap();
+    let mut endpoint = request.approved.remove("inspection").unwrap();
+    endpoint.service.interface = "portal-requester".into();
+    request.approved.insert("portal".into(), endpoint);
+    let mut pending = f
+        .service
+        .start(
+            request,
+            &mut f.auth.coordinator,
+            f.wake.notifier(),
+            Instant::now(),
+        )
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut running = loop {
+        assert!(Instant::now() < deadline, "shared recipe startup deadline");
+        f.auth.tick();
+        if let Some(running) = pending
+            .poll(&mut f.auth.coordinator, f.wake.notifier(), Instant::now())
+            .unwrap()
+        {
+            break running;
+        }
+    };
+    assert!(
+        running
+            .supervisor
+            .as_ref()
+            .unwrap()
+            .protection_evidence()
+            .is_none()
+    );
+    assert!(running.poll(&f.auth.coordinator).unwrap().is_none());
+    let endpoints = running.take_endpoints();
+    assert_eq!(endpoints.len(), 1);
+    assert_eq!(
+        endpoints[0].listener.endpoint.endpoint.service.interface,
+        "portal-requester"
+    );
+    assert_eq!(f.service.registry.lock().unwrap().endpoint_grant_count(), 1);
+    drop(running);
+    f.reclaimed();
+    assert_eq!(f.service.registry.lock().unwrap().endpoint_grant_count(), 0);
+}
+
+#[test]
+fn a_confined_recipe_cannot_fall_back_to_the_host() {
+    let mut f = Fixture::new();
+    let mut request = f.request();
+    request.launch.protection_domain = None;
+    let result = f.service.start(
+        request,
+        &mut f.auth.coordinator,
+        f.wake.notifier(),
+        Instant::now(),
+    );
+    assert_eq!(result.err().unwrap(), "recipe requires containment");
+    assert_eq!(f.service.occupied(), 0);
 }

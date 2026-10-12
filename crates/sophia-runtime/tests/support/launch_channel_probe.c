@@ -49,8 +49,13 @@ int main(int argc, char **argv) {
         return fail("not a connected Unix channel");
     channel = fd;
     if (fcntl(fd, F_GETFD) != 0) return fail("handoff was not inheritable");
-    if (getenv("HOME") || getenv("DISPLAY") || getenv("LD_PRELOAD"))
+    if (argc == 2 && strcmp(argv[1], "--host") == 0) {
+        const char *marker = getenv("SOPHIA_HOST_PROBE");
+        if (!marker || strcmp(marker, "preserved") != 0)
+            return fail("host launch environment lost");
+    } else if (getenv("HOME") || getenv("DISPLAY") || getenv("LD_PRELOAD")) {
         return fail("ambient environment");
+    }
 
     DIR *directory = opendir("/proc/self/fd");
     if (!directory) return fail("fd inventory");

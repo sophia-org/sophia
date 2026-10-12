@@ -1,4 +1,4 @@
-//! Bounded Session-owned launch scheduling for confined recipe clients.
+//! Bounded Session-owned launch scheduling for policy-selected recipe clients.
 //! Selection and service approval precede this owner; no peer supplies grants.
 use crate::launch_authentication::{
     LaunchCoordinator, LaunchPolicy, Phase, RegistrationOwner,
@@ -78,20 +78,36 @@ impl NamespaceLaunchService {
         if !launches.uses_namespaces(&self.registry) {
             return Err("namespace launch and authentication owners differ".into());
         }
-        if request.recipe.policy().profile == NamespaceRecipeProfile::SharedX {
-            return Err("shared-host recipes require the host launch path".into());
+        let expected_profile = match request.recipe.policy().profile {
+            NamespaceRecipeProfile::SharedX => sophia_protocol::NamespaceProfile::ClassicShared,
+            _ => sophia_protocol::NamespaceProfile::Confined,
+        };
+        let context = self
+            .registry
+            .try_lock()
+            .map_err(|_| "namespace owner unavailable")?
+            .namespace(request.namespace)
+            .ok_or("namespace retired")?;
+        if context.profile != expected_profile {
+            return Err("recipe and namespace profiles differ".into());
         }
-        let domain = request
-            .launch
-            .protection_domain
-            .as_ref()
-            .ok_or("recipe requires containment")?;
-        if domain.roles().len() != 1
-            || !domain
-                .roles()
-                .contains(&ProtectionDomainRole::NamespaceClient)
-        {
-            return Err("recipe client requires exclusive namespace-client custody".into());
+        if request.recipe.policy().profile == NamespaceRecipeProfile::SharedX {
+            if request.launch.protection_domain.is_some() {
+                return Err("shared-host recipe cannot silently change containment policy".into());
+            }
+        } else {
+            let domain = request
+                .launch
+                .protection_domain
+                .as_ref()
+                .ok_or("recipe requires containment")?;
+            if domain.roles().len() != 1
+                || !domain
+                    .roles()
+                    .contains(&ProtectionDomainRole::NamespaceClient)
+            {
+                return Err("recipe client requires exclusive namespace-client custody".into());
+            }
         }
         let audiences: Vec<_> = request
             .approved
@@ -185,14 +201,13 @@ fn prepare(
         .launch
         .environment
         .push((NAMESPACE_DIRECTORY_ENV.into(), directory.as_os_str().into()));
-    let domain = request
-        .launch
-        .protection_domain
-        .take()
-        .ok_or("missing recipe domain")?
-        .path(ProtectionPath::read_only(directory))
-        .map_err(|e| e.to_string())?;
-    request.launch.protection_domain = Some(domain);
+    if let Some(domain) = request.launch.protection_domain.take() {
+        request.launch.protection_domain = Some(
+            domain
+                .path(ProtectionPath::read_only(directory))
+                .map_err(|e| e.to_string())?,
+        );
+    }
     Ok(Prepared {
         supervisor: Some(ProcessSupervisor::new(
             SupervisedProcessKind::NamespaceClient,

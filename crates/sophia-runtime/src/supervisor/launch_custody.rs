@@ -1,4 +1,4 @@
-//! Cross-worker observation of one supervisor-owned protected launch.
+//! Cross-worker observation of one supervisor-owned launch.
 use std::{
     io,
     os::fd::OwnedFd,
@@ -9,9 +9,11 @@ use std::{
 };
 
 /// A custody check, not an authentication verdict. Only the supervisor can
-/// create it, after matching the exact reservation and protected role. Kernel
+/// create it, after matching the exact reservation and authorized custody role. Kernel
 /// handles prevent PID reuse; the owner flag withdraws custody before signals.
 /// Clones cannot extend the launch lifetime or reactivate a retired launch.
+/// Host namespace clients have no containment evidence; both handles name the
+/// directly spawned child. Protected roles retain wrapper and peer handles.
 #[derive(Clone, Debug)]
 pub struct LaunchCustody {
     inner: Arc<Observation>,

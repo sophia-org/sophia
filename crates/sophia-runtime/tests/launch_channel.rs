@@ -14,6 +14,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[path = "support/host_namespace_channel.rs"]
+mod host_namespace_channel;
+
 fn launch(program: &std::path::Path) -> ProcessLaunchSpec {
     ProcessLaunchSpec::new(program).protection_domain(
         ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::MetadataShell]).unwrap(),

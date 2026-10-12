@@ -35,8 +35,9 @@ pub enum ProtectionDomainRole {
     /// it, so a supervised role can neither be launched into an application
     /// domain nor carry one.
     ConfinedXApplication,
-    /// Custody for a confined recipe client, not a shell, broker or frontend
-    /// role. Endpoint grants determine which operations it may perform.
+    /// Custody for a recipe client, not a shell, broker or frontend role.
+    /// In a domain this requires confinement; the explicit host-client path
+    /// uses this custody role without claiming protection evidence.
     NamespaceClient,
 }
 

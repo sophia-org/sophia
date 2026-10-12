@@ -51,6 +51,7 @@ pub enum ProcessSupervisorError {
     LaunchChannelRequired,
     StaleLaunchGeneration,
     ProtectedLaunchRequired,
+    HostLaunchDomainConflict,
     WrongProcess {
         expected: SupervisedProcessKind,
         actual: SupervisedProcessKind,
@@ -79,6 +80,9 @@ impl fmt::Display for ProcessSupervisorError {
             Self::StaleLaunchGeneration => f.write_str("launch generation was already spent"),
             Self::ProtectedLaunchRequired => {
                 f.write_str("launch channel requires a protection domain")
+            }
+            Self::HostLaunchDomainConflict => {
+                f.write_str("host namespace launch cannot replace a required protection domain")
             }
             Self::WrongProcess { expected, actual } => write!(
                 f,
@@ -251,12 +255,17 @@ impl ProcessSupervisor {
         let Some(child) = self.child.as_mut() else {
             return Ok(false);
         };
-        if child.launch_reservation.as_ref() != Some(reservation)
-            || child
-                .protection
-                .as_ref()
-                .is_none_or(|proof| !proof.roles.contains(&role))
-        {
+        let role_matches = match &child.protection {
+            Some(proof) => proof.roles.contains(&role),
+            // Host application custody is deliberately weaker than protected
+            // desktop-role custody. Only the explicit host handoff below can
+            // install a reservation without protection evidence.
+            None => {
+                self.process == SupervisedProcessKind::NamespaceClient
+                    && role == ProtectionDomainRole::NamespaceClient
+            }
+        };
+        if child.launch_reservation.as_ref() != Some(reservation) || !role_matches {
             return Ok(false);
         }
         let live = child
@@ -310,6 +319,71 @@ impl ProcessSupervisor {
         }
         self.last_launch_generation = channel.generation;
         self.start_after_with_channel(Duration::ZERO, Some(channel))
+    }
+
+    /// Launch an explicitly trusted-host application without claiming a
+    /// protection domain. This path cannot authorize a desktop role, and an
+    /// ordinary unauthenticated start cannot manufacture its reservation.
+    pub fn start_host_namespace_client(
+        &mut self,
+        channel: LaunchChannel,
+    ) -> Result<SupervisorEvent, ProcessSupervisorError> {
+        self.ensure_process(SupervisedProcessKind::NamespaceClient)?;
+        if channel.generation <= self.last_launch_generation {
+            return Err(ProcessSupervisorError::StaleLaunchGeneration);
+        }
+        self.last_launch_generation = channel.generation;
+        if self.spec.protection_domain.is_some() {
+            return Err(ProcessSupervisorError::HostLaunchDomainConflict);
+        }
+        if self.child.is_some() {
+            return Err(ProcessSupervisorError::AlreadyRunning {
+                process: self.process,
+            });
+        }
+        if self
+            .spec
+            .environment
+            .iter()
+            .any(|(key, _)| key == LAUNCH_AUTH_FD_ENV)
+        {
+            return Err(ProcessSupervisorError::SpawnFailed {
+                process: self.process,
+                message: "reserved launch-channel environment".into(),
+            });
+        }
+        use std::os::fd::AsRawFd;
+        let reservation = channel.reservation();
+        let mut command = Command::new(&self.spec.program);
+        command
+            .args(&self.spec.args)
+            .envs(self.spec.environment.iter().cloned());
+        command.env(LAUNCH_AUTH_FD_ENV, channel.child.as_raw_fd().to_string());
+        if self.spec.process_group {
+            std::os::unix::process::CommandExt::process_group(&mut command, 0);
+        }
+        sophia_linux_peer::inherit_one_fd_on_exec(&mut command, channel.child.into()).map_err(
+            |error| ProcessSupervisorError::SpawnFailed {
+                process: self.process,
+                message: error.to_string(),
+            },
+        )?;
+        let child = command
+            .spawn()
+            .map_err(|error| ProcessSupervisorError::SpawnFailed {
+                process: self.process,
+                message: error.to_string(),
+            })?;
+        drop(command);
+        self.exit_status = None;
+        self.child = Some(ManagedChild {
+            peer_pid: child.id(),
+            child,
+            protection: None,
+            launch_reservation: Some(reservation),
+            custody_active: Arc::new(AtomicBool::new(true)),
+        });
+        Ok(SupervisorEvent::ProcessStarted)
     }
 
     pub fn apply(

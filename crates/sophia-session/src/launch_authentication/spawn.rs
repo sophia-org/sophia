@@ -40,9 +40,26 @@ pub(crate) struct ProtectedSpawn {
 
 impl ProtectedSpawn {
     pub fn start(
+        supervisor: ProcessSupervisor,
+        channel: LaunchChannel,
+        wake: sophia_wake::Notifier,
+    ) -> Result<Self, String> {
+        Self::start_using(supervisor, channel, wake, false)
+    }
+
+    pub(crate) fn start_host_namespace_client(
+        supervisor: ProcessSupervisor,
+        channel: LaunchChannel,
+        wake: sophia_wake::Notifier,
+    ) -> Result<Self, String> {
+        Self::start_using(supervisor, channel, wake, true)
+    }
+
+    fn start_using(
         mut supervisor: ProcessSupervisor,
         channel: LaunchChannel,
         wake: sophia_wake::Notifier,
+        host_namespace_client: bool,
     ) -> Result<Self, String> {
         let (sender, result) = mpsc::sync_channel(1);
         let (lease, lifetime) = SpawnLease::channel();
@@ -54,10 +71,13 @@ impl ProtectedSpawn {
                 let result = if worker_cancelled.load(Ordering::Acquire) {
                     Err("protected launch cancelled before spawn".into())
                 } else {
-                    supervisor
-                        .start_with_launch_channel(channel)
-                        .map(drop)
-                        .map_err(|e| e.to_string())
+                    (if host_namespace_client {
+                        supervisor.start_host_namespace_client(channel)
+                    } else {
+                        supervisor.start_with_launch_channel(channel)
+                    })
+                    .map(drop)
+                    .map_err(|e| e.to_string())
                 };
                 if worker_cancelled.load(Ordering::Acquire) {
                     let _ = supervisor.request_termination();
