@@ -184,6 +184,15 @@ afid/relay records are unchanged. The full gate must be rerun on these pins.
 
 ## Connections
 
+The second full-gate attempt (`t318-gate-02`, signed `a94415e4f`) reached
+workspace tests and stopped at `normal_session_lifecycle`: the isolation
+wrapper had removed `XDG_RUNTIME_DIR` without supplying a private replacement.
+The third wrapper creates `/run/sophia-test` with mode 0700 inside its private
+`/run` and sets that variable there. Host display, runtime and devices remain
+unavailable. The failed runs remain under their original evidence identities.
+
+- [Discovery contract](../../namespace-discovery.md) specifies the versioned
+  representation and safe SDK lookup independently of either implementation.
 - [t318 plan](../plans/jsschoen-converge-public-roles-on-one-9p-core.md#t318)
   owns implementation and acceptance.
 - [Recipe contract](../../namespaces-and-portals.md#namespace-recipe-contract-target)

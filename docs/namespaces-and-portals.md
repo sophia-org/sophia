@@ -116,6 +116,10 @@ was approved by niltempus on 2026-10-10.
 
 ## Namespace recipe contract (target)
 
+The [endpoint discovery contract](namespace-discovery.md) specifies the t318
+discovery file and SDK lookup. Its implementation status is separate from the
+recipe design below.
+
 Approved by niltempus on 2026-10-10 as the t275 design handed to t318. No recipe
 parser or composed endpoint directory is implemented by this document. The
 existing X group directory contract below remains separate and unchanged.
