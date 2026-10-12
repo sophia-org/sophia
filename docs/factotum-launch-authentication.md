@@ -8,10 +8,10 @@ a conversation-only child relay, protected spawn registration/activation and
 a Session afid owner. A generic role-view test joins the Rust SDK, real core,
 Factotum and a protected independent C relay peer. A separate owner-level
 join covers atomic admission into the actual lock-file export. The lock worker
-now supports authenticated dispatch, exercised with a protected independent C
-wire peer. Normal Session startup has not selected that mode yet; other role
-transports remain unmigrated. Legacy role credential and pidfd requirements
-remain in place.
+now uses authenticated dispatch in normal Session startup, exercised with a
+protected independent C wire peer and the reusable C SDK. Other role transports
+remain unmigrated. Their legacy credential and pidfd requirements remain in
+place; the lock path retains its expected-peer availability filter.
 
 ```text
                  Session (trusted admission owner)
@@ -168,8 +168,8 @@ case reaches the lock object and observes revocation; the raw-wire case retains
 the exact waiting-read check.
 Other roles, in-place fragment controls, minimum-version Bubblewrap execution,
 external client rollout and final acceptance remain open. The lock-file
-contract and its pinned SDK copies also need their admission text reconciled
-before this candidate is released.
+contract specifies the same admission path; SDK contract copies are verified
+byte-for-byte against both documents.
 
 ### Session coordinator
 
@@ -382,7 +382,7 @@ necessary. Neither belongs in the reusable `ProcessLaunchSpec`.
                             own protection result + generation L
                                                      v
                               Session may activate reservation L
-                              (activation join still outstanding)
+                              (exact protected spawn required)
 ```
 
 The new `start_with_launch_channel` path rejects an unprotected domain and a
@@ -403,8 +403,8 @@ Session still owns the global reservation allocator and the final Active check.
 
 Existing non-authenticated starts retain their previous behavior. This primitive
 uses the current supervisor's synchronous spawn/protection confirmation; it does
-not prove nonblocking scheduling in Session's owner loop. The role integration
-must arrange that before activation.
+not prove nonblocking scheduling on its own. The normal lock-provider join
+above runs it on a bounded worker before activation.
 
 The independent C descriptor probe runs through the production supervisor and
 the installed Bubblewrap. It checks the designated connected socket, the absence
@@ -459,8 +459,9 @@ An actual core/Factotum test holds a PAM read pending while this client complete
 the launch exchange on the same stream, then delivers a supplied PAM rejection
 to the original tag. It also checks result retention, deadlines and capacity
 recovery. Admission facts and PAM completion are supplied. The shared owner
-below now integrates this client with PAM; protected launch activation and final
-attach remain separate joins. No second privileged Factotum process or connection
+below integrates this client with PAM. The protected activation and final-attach
+joins described above add the launch-custody evidence; this control-client test
+alone does not prove it. No second privileged Factotum process or connection
 was added.
 
 ## Shared Session connection owner
@@ -489,8 +490,8 @@ zeroed on drop. An accepted write is never repeated to recover capacity.
                                            /                    \
                                     PAM job pool          launch controller
 
- Child relay / verification queue ---- joined to SessionClient in tests;
-                                      live launch lifecycle still pending
+ Child relay / verification queue ---- shared SessionClient launch ingress
+                                      normal lock-provider lifecycle
 ```
 
 The unlock supervisor uses begin/poll/take rather than waiting for a whole PAM
@@ -525,8 +526,8 @@ directions, peer loss, refusal, result custody and 130 repeated logins (past the
 pipeline's fid bound). Separate supervisor tests exercise pending-login progress,
 owner drop, bounded results and replacement with scripted agents. The concrete
 Session adapter compiles with `native-session`; an actual PAM process/physical
-lock run is not claimed. Protected-spawn activation, role attach and independent
-client exchanges remain required before t317 can close.
+lock run is not claimed. The protected lock join is separate evidence. Remaining
+role and independent Rust client exchanges are required before t317 can close.
 
 ## Provisioned relay and bounded verification ingress
 
@@ -589,9 +590,10 @@ Fatal cleanup failure closes the shared transport. Dropping the connected owner
 closes that transport and invalidates even buffered results. Completion wake
 callbacks must be nonblocking.
 
-Tests join the actual relay/core, shared client and Factotum export. They supply
-Session admission, launch activation and PAM completion; they do not yet run
-this exchange in a protected child. Full verification ingress coexists with
+Relay-focused tests join the actual relay/core, shared client and Factotum
+export. They supply Session admission, launch activation and PAM completion;
+the protected-child joins above provide the separate custody evidence.
+Full verification ingress coexists with
 an admitted PAM login. Controls discriminate a 33rd reservation and bypass of
-Session's Reserved gate. Final attach, per-role availability, aggregate afid
-transcript charging and the independent C exchange remain separate obligations.
+Session's Reserved gate. These relay tests alone do not qualify final attach,
+per-role availability, aggregate afid charging or an independent client exchange.
