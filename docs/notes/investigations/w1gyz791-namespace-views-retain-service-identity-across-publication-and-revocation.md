@@ -22,6 +22,21 @@ socket paths or namespace commands to launch installed applications.
 
 ## Evidence
 
+### Master integration and prepared release
+
+Master fast-forwarded to signed `99860d58f` after the qualified implementation
+commits; the merged development worktree was removed. The existing installed
+integration configuration was retained, changing only its Sophia lock to this
+master candidate. Signed integration commit `a400815` builds release
+`niltempus-7b8051ace95f8581d57e`; its manifest and all release checksums verify.
+The build and identities are retained in `t318-installed-01`, without copied
+build output in evidence. A temporary uncommitted Nix input override was refused
+by the release identity check; the signed lock build is the accepted result.
+
+The installer could not authenticate sudo without a terminal. It did not switch
+the current release. Installation and the ensuing user observation are pending;
+the successful build is not recorded as an installed or attended result.
+
 ### Signed candidate after credential unlock
 
 After niltempus unlocked the existing signing agent, the preserved application
