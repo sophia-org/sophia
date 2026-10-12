@@ -149,6 +149,56 @@ fn abandoned_preparation_retires_registration_and_slot() {
 }
 
 #[test]
+fn observer_cannot_discard_its_required_protocol_channel() {
+    let mut f = Fixture::new();
+    let mut request = f.request();
+    request.launch.program = "/usr/bin/bash".into();
+    request.launch.args = vec![
+        "--noprofile".into(),
+        "--norc".into(),
+        "-c".into(),
+        "fd=$SOPHIA_LAUNCH_AUTH_FD; eval \"exec $fd>&-\"; sleep 30".into(),
+    ];
+    let mut pending = f
+        .service
+        .start(
+            request,
+            &mut f.auth.coordinator,
+            f.wake.notifier(),
+            Instant::now(),
+        )
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut running = loop {
+        assert!(Instant::now() < deadline, "observer startup must settle");
+        f.auth.tick();
+        match pending.poll(&mut f.auth.coordinator, f.wake.notifier(), Instant::now()) {
+            Ok(Some(running)) => break Some(running),
+            Ok(None) => {}
+            Err(reason) => {
+                assert_eq!(reason, "role launch authority was retired");
+                break None;
+            }
+        }
+    };
+    if let Some(running) = running.as_mut() {
+        loop {
+            assert!(
+                Instant::now() < deadline,
+                "observer protocol loss must terminate its process"
+            );
+            f.auth.tick();
+            if let Err(reason) = running.poll(&f.auth.coordinator) {
+                assert_eq!(reason, "namespace client authority retired");
+                break;
+            }
+        }
+    }
+    drop(running);
+    f.reclaimed();
+}
+
+#[test]
 fn protected_recipe_client_runs_and_retires_without_blocking_the_owner() {
     let mut f = Fixture::new();
     let mut pending = f.start();

@@ -14,6 +14,9 @@ use std::os::unix::{
 };
 use std::time::Duration;
 
+#[path = "namespace_x_protocol_lifetime.rs"]
+mod protocol_lifetime;
+
 fn policy(profile: NamespaceRecipeProfile) -> NamespacePolicyConfig {
     NamespacePolicyConfig {
         recipes: BTreeMap::from([(

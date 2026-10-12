@@ -22,6 +22,52 @@ socket paths or namespace commands to launch installed applications.
 
 ## Evidence
 
+### Optional protocol lifetime for ordinary X applications
+
+The slice based on `d4b24ef5c` reproduces the earlier compatibility concern:
+a generic X-profile process closing its unused launch channel failed with
+`role launch authority was retired`. No particular application's descriptor
+behavior is assumed. Validated shared and confined X launches now retain
+process custody after exec when authentication authority retires, including
+before activation finishes. The unauthenticated outcome contains no endpoint
+factory. All 9P grants are revoked, listeners stopped, and retained authentication
+refuses ESTALE. Existing X containment, namespace identity and exit diagnostics
+remain separate. Observer and fixed-role startup still require authentication.
+
+The registry is checked before exec release and throughout process lifetime.
+Losing the X namespace still fails and reaps the process; optional protocol loss
+cannot hide it. Dropping or cancelling application custody still retires through
+the bounded background owner. A contended registry defers the owner turn rather
+than blocking it. There is no automatic reauthentication or authority revival.
+
+The device-hidden `t318-x-protocol-lifetime-02` package passes 28 namespace-launch
+parent tests, three startup tests, diagnostic/authentication and native-catalog
+regressions, Session test-target Clippy, formatting, layout and diff checks.
+Independent SDK child tests are invoked by their parents. Its SHA256SUMS SHA-256
+is `5b3d7982156068fdf722ac165943cc7cf56bb69c754509f44bffa9e8c1f6c00a`.
+The generic X fixtures supply listener/cookie facts; they do not claim X setup,
+pixels or installed desktop acceptance. They cover channel closure before and
+after activation, real exit status, retained grant/authentication refusal,
+namespace retirement, pre-exec cancellation and observer refusal.
+
+Two initial controls precede the final pre-exec ordering tightening. Disabling
+the validated X lifetime exception fails at `closing unused protocol channel
+must not terminate an X application`; omitting protocol grant revocation fails
+at `unused protocol loss must revoke retained endpoint grants`. Both require
+exit 101 and one failed test, restore every dynamically captured candidate hash,
+and pass the restored exact test. Their manifest identities are respectively
+`71580f5af0f8e1747d6f2c40e52f4b4cf8e97426483d3939deff4dee9cf4f5a8`
+(`t318-x-protocol-lifetime-control-01`) and
+`45b2d7628128364b628194cd1964621c3490990781534b6b514ccae93fd7bbbb`
+(`t318-x-protocol-grant-control-01`). The final positive package also strengthens
+the observer's exact refusal check. A third control moves exec release ahead of
+the namespace check and fails at `revoked namespace must not release the exec
+gate`, then restores and passes. `t318-x-namespace-exec-control-01` has manifest
+identity `f77d19c1c3aa779334d2663c2882b868672e7e79af78e52cb75c6c06b7e5ec61`.
+All packages retain binary paths and hashes,
+never binary copies. Live launch wiring, developer export and final qualification
+remain open; the nonempty-recipe startup guard remains in place.
+
 ### Catalog process-owner handoff
 
 The slice based on `232123973` preserves one native-catalog admission/verification

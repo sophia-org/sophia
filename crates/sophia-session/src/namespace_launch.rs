@@ -3,7 +3,7 @@
 use crate::launch_authentication::{
     LaunchCoordinator, LaunchPolicy, Phase, RegistrationOwner,
     spawn::SpawnLease,
-    startup::{Recipe, Startup},
+    startup::{ApplicationStartup, Recipe, Startup},
 };
 use crate::namespace_views::{ApprovedEndpoint, NamespaceRecipeOwner, PublishedRecipe};
 use sophia_config::namespace_policy::{LoadedNamespaceRecipe, NamespaceRecipeProfile};
@@ -98,6 +98,12 @@ impl NamespaceLaunchService {
         if context.profile != expected_profile {
             return Err("recipe and namespace profiles differ".into());
         }
+        if let Some(target) = &request.x11_target
+            && (request.recipe.policy().profile == NamespaceRecipeProfile::Observer
+                || !target.matches_context(context))
+        {
+            return Err("X application target differs from launch namespace".into());
+        }
         if request.recipe.policy().profile == NamespaceRecipeProfile::SharedX {
             if request.launch.protection_domain.is_some() {
                 return Err("shared-host recipe cannot silently change containment policy".into());
@@ -183,6 +189,7 @@ impl NamespaceLaunchService {
 }
 
 struct Prepared {
+    x_application: bool,
     diagnostic: Option<crate::diagnostics::application::PreparedLaunch>,
     supervisor: Option<ProcessSupervisor>,
     names: NamespaceRecipeOwner,
@@ -233,6 +240,7 @@ fn prepare(
         None => ProcessSupervisor::new(SupervisedProcessKind::NamespaceClient, request.launch),
     };
     Ok(Prepared {
+        x_application: request.x11_target.is_some(),
         supervisor: Some(supervisor.with_exec_gate(child_gate)),
         diagnostic: request.diagnostic,
         names,
@@ -322,7 +330,6 @@ impl PendingNamespaceClient {
         {
             return Err("namespace launch authority retired".into());
         }
-        self.capture_provenance()?;
         if self.resources.is_none() {
             match self
                 .prepared
@@ -337,6 +344,19 @@ impl PendingNamespaceClient {
                 }
             }
         }
+        match self
+            .resources
+            .as_ref()
+            .expect("prepared namespace")
+            .names
+            .namespace_is_live()
+            .map_err(|e| e.to_string())?
+        {
+            Some(true) => {}
+            Some(false) => return Err("application namespace retired".into()),
+            None => return Ok(None),
+        }
+        self.capture_provenance()?;
         let resources = self.resources.as_mut().expect("prepared namespace");
         if self.startup.is_none() {
             let primary = resources
@@ -382,28 +402,48 @@ impl PendingNamespaceClient {
                 .with_diagnostic(resources.diagnostic.take()),
             );
         }
-        let Some(started) = self
-            .startup
-            .as_mut()
-            .expect("namespace startup")
-            .poll(launches, wake, now)?
-        else {
+        let startup = self.startup.as_mut().expect("namespace startup");
+        let started = if resources.x_application && self.gate.is_none() {
+            startup.poll_x_application(launches, wake, now)?
+        } else {
+            startup
+                .poll(launches, wake, now)?
+                .map(ApplicationStartup::Authenticated)
+        };
+        let Some(started) = started else {
             return Ok(None);
         };
         let mut resources = self.resources.take().expect("prepared resources");
+        let (supervisor, diagnostic, lease, factory) = match started {
+            ApplicationStartup::Authenticated(started) => (
+                started.supervisor,
+                started.diagnostic,
+                started.lease,
+                Some(started.factory),
+            ),
+            ApplicationStartup::ProtocolUnavailable(started) => {
+                (started.supervisor, started.diagnostic, started.lease, None)
+            }
+        };
         // Install retirement custody before any fallible endpoint binding.
         let mut running = RunningNamespaceClient {
+            x_application: resources.x_application,
             registration: self.registration.take(),
-            supervisor: Some(started.supervisor),
-            diagnostic: started.diagnostic,
+            supervisor: Some(supervisor),
+            diagnostic,
             names: Some(resources.names),
             slot: Some(resources.slot),
-            lease: Some(started.lease),
+            lease: Some(lease),
             reaper: self.reaper.take(),
             endpoints: Vec::new(),
             services: Vec::new(),
         };
-        let mut primary_factory = Some(started.factory);
+        if factory.is_none() {
+            running.revoke_protocol();
+            self.finished = true;
+            return Ok(Some(running));
+        }
+        let mut primary_factory = factory;
         for listener in std::mem::take(&mut resources.published.namespace.listeners) {
             let endpoint_grant = resources
                 .published
@@ -502,6 +542,7 @@ impl Drop for RetiredPending {
 /// Keeps the view, grant owners and spawn thread alive through the child's
 /// lifetime. Dispatch must retain each endpoint view while serving its streams.
 pub struct RunningNamespaceClient {
+    x_application: bool,
     diagnostic: Option<crate::diagnostics::application::PreparedLaunch>,
     registration: Option<RegistrationOwner>,
     supervisor: Option<ProcessSupervisor>,
@@ -513,6 +554,17 @@ pub struct RunningNamespaceClient {
     services: Vec<dispatch::DispatchWorker>,
 }
 impl RunningNamespaceClient {
+    pub(super) fn protocol_available(&self) -> bool {
+        self.registration.is_some()
+    }
+    fn revoke_protocol(&mut self) {
+        self.registration.take();
+        self.names.as_mut().expect("live view").revoke_grants();
+        self.endpoints.clear();
+        for service in &self.services {
+            service.stop();
+        }
+    }
     /// The supervised process (Bubblewrap monitor for a protected launch).
     /// Keep this distinct from the actual peer identity used for admission.
     pub fn process_id(&self) -> Option<u32> {
@@ -556,13 +608,26 @@ impl RunningNamespaceClient {
         // A retired service/grant is local to that endpoint. Its normal worker
         // exit must not revoke the client's unrelated services or process.
         self.services.retain(|service| !service.finished());
-        let registration = self
+        match self
+            .names
+            .as_ref()
+            .expect("live view")
+            .namespace_is_live()
+            .map_err(|e| e.to_string())?
+        {
+            Some(true) => {}
+            Some(false) => return Err("application namespace retired".into()),
+            None => return Ok(None),
+        }
+        if self
             .registration
             .as_ref()
-            .ok_or("namespace client retired")?
-            .registration();
-        if launches.phase(registration) != Some(Phase::Active) {
-            return Err("namespace client authority retired".into());
+            .is_none_or(|owner| launches.phase(owner.registration()) != Some(Phase::Active))
+        {
+            if !self.x_application {
+                return Err("namespace client authority retired".into());
+            }
+            self.revoke_protocol();
         }
         Ok(None)
     }

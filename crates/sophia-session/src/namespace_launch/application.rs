@@ -13,7 +13,9 @@ pub struct NamespaceApplicationServices {
 }
 
 pub enum ApplicationProcessEvent {
-    /// Published once, after every selected role has its real owner installed.
+    /// Published once after dispatch installation, or after an X application
+    /// discards its optional protocol capability. This is process readiness,
+    /// not a claim that the application has authenticated or opened a window.
     Started {
         process: u32,
         peer: u32,
@@ -141,6 +143,9 @@ impl ApplicationProcess {
                 let Some(mut running) = observed? else {
                     return Ok(None);
                 };
+                if !running.protocol_available() {
+                    self.services = Default::default();
+                }
                 if let Some((reference, owner)) = self.services.inspection.take() {
                     running.serve_inspection(&reference, owner, wake.clone())?;
                 }

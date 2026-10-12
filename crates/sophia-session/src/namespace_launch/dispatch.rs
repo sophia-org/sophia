@@ -94,6 +94,9 @@ pub(super) struct DispatchWorker {
     thread: Option<JoinHandle<()>>,
 }
 impl DispatchWorker {
+    pub(super) fn stop(&self) {
+        self.stop.store(true, Ordering::Release);
+    }
     pub(super) fn finished(&self) -> bool {
         self.thread.as_ref().is_some_and(JoinHandle::is_finished)
     }

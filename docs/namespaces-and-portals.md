@@ -394,11 +394,14 @@ fork held before exec --> capture monitor PID + start time --> release exec
 supervised spawn + authentication activation + role dispatch
     |
     +-- missing/mismatched owner --> local failure + background retirement
+    +-- X app discards optional protocol --> revoke 9P --> X process retained
     |
     v
 Started (monitor PID and peer PID kept distinct)
     |
-    +-- exit / authority loss / cancellation --> revoke --> background retirement
+    +-- X app loses protocol authority --> revoke 9P; keep X process
+    +-- namespace loss / exit / cancellation --> revoke --> background retirement
+    +-- required protocol loss (observer/role) --> revoke --> retirement
 ```
 
 Started and terminal observations occur once. Session captures process provenance
@@ -427,8 +430,20 @@ spawn, activation and background retirement. The spawn worker records the
 actual spawn result; the process owner records reaped exit status, including
 cancellation. A failed dispatch still reaps and records the spawned process.
 An already reaped process reports its exit before a simultaneous authentication
-retirement can turn that exit into an authority-loss failure. This does not
-permit a still-running process whose authority has retired.
+retirement can turn that exit into an authority-loss failure.
+
+An ordinary shared or confined X application need not retain or implement the
+optional 9P launch channel. After the validated X launch passes its exec gate,
+loss of authentication authority revokes its 9P grants and dispatch without
+terminating the otherwise live X process. This also applies before authentication
+activation completes: process custody is retained without creating a factory or
+claiming Active protocol authority. Retained protocol handles become stale and
+cannot revive. The original X group, containment and process diagnostics remain
+unchanged; no new permission or host fallback is granted. Namespace liveness is
+checked independently, including before releasing exec. Namespace retirement,
+explicit cancellation and process exit still retire the application. Observers
+and fixed desktop roles retain their required protocol-lifetime rules. Started
+is a process observation, not proof of an authenticated operation or a window.
 
 A short-lived namespace application may exit before activation. Session reports
 the observed process status exactly once without inventing Started or Active

@@ -87,6 +87,17 @@ impl NamespaceRecipeOwner {
         self.publisher.directory()
     }
 
+    /// None defers the owner turn while the registry is busy. Authentication
+    /// channel loss cannot hide retirement of the underlying X namespace.
+    #[cfg(feature = "native-session")]
+    pub(crate) fn namespace_is_live(&self) -> io::Result<Option<bool>> {
+        match self.registry.try_lock() {
+            Ok(registry) => Ok(Some(registry.namespace(self.namespace).is_some())),
+            Err(TryLockError::WouldBlock) => Ok(None),
+            Err(error) => Err(registry_unavailable(error)),
+        }
+    }
+
     /// Fence operations before moving filesystem destruction to a launch worker.
     #[cfg(feature = "native-session")]
     pub(crate) fn revoke_grants(&mut self) {

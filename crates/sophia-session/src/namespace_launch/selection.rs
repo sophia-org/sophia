@@ -74,6 +74,9 @@ pub struct RecipeXTarget {
     domain: ProtectionDomainSpec,
 }
 impl RecipeXTarget {
+    pub(super) fn matches_context(&self, context: NamespaceContext) -> bool {
+        self.context == context
+    }
     pub fn capture(
         context: NamespaceContext,
         group: Option<u32>,

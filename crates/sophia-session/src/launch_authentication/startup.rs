@@ -20,6 +20,19 @@ pub(crate) struct Started {
     pub diagnostic: Option<crate::diagnostics::application::PreparedLaunch>,
 }
 
+/// An X application can discard its optional protocol channel after exec.
+/// Retain process custody without manufacturing authenticated endpoint custody.
+pub(crate) struct StartedProcess {
+    pub supervisor: ProcessSupervisor,
+    pub lease: SpawnLease,
+    pub diagnostic: Option<crate::diagnostics::application::PreparedLaunch>,
+}
+
+pub(crate) enum ApplicationStartup {
+    Authenticated(Started),
+    ProtocolUnavailable(StartedProcess),
+}
+
 pub(crate) struct Startup {
     supervisor: Option<ProcessSupervisor>,
     spawning: Option<ProtectedSpawn>,
@@ -202,12 +215,7 @@ impl Startup {
         result
     }
 
-    fn advance(
-        &mut self,
-        launches: &mut LaunchCoordinator,
-        wake: sophia_wake::Notifier,
-        now: Instant,
-    ) -> Result<Option<Started>, String> {
+    fn collect_spawn(&mut self) -> Result<(), String> {
         if let Some(spawning) = self.spawning.as_ref() {
             match spawning.poll() {
                 Ok(Some(result)) => {
@@ -224,6 +232,55 @@ impl Startup {
                 }
             }
         }
+        Ok(())
+    }
+
+    /// Only the validated X launch owner calls this, after its exec gate has
+    /// released. Protocol retirement never grants an afid or a replacement
+    /// capability; ordinary role startup continues to require authentication.
+    pub(crate) fn poll_x_application(
+        &mut self,
+        launches: &mut LaunchCoordinator,
+        wake: sophia_wake::Notifier,
+        now: Instant,
+    ) -> Result<Option<ApplicationStartup>, String> {
+        if let Err(reason) = self.collect_spawn() {
+            self.failure.get_or_insert(reason);
+        }
+        if !self.finished
+            && self.failure.is_none()
+            && now < self.deadline
+            && self.spawning.is_none()
+            && self.lease.is_some()
+            && self.registration.is_some_and(|registration| {
+                matches!(launches.phase(registration), None | Some(Phase::Retiring))
+            })
+            && let Some(supervisor) = self.supervisor.as_mut()
+            && supervisor.process() == sophia_runtime::SupervisedProcessKind::NamespaceClient
+        {
+            supervisor.poll().map_err(|e| e.to_string())?;
+            if supervisor.exit_status().is_none() && supervisor.child_id().is_some() {
+                self.finished = true;
+                return Ok(Some(ApplicationStartup::ProtocolUnavailable(
+                    StartedProcess {
+                        supervisor: self.supervisor.take().expect("spawned application"),
+                        lease: self.lease.take().expect("application spawn lease"),
+                        diagnostic: self.diagnostic.take(),
+                    },
+                )));
+            }
+        }
+        self.poll(launches, wake, now)
+            .map(|started| started.map(ApplicationStartup::Authenticated))
+    }
+
+    fn advance(
+        &mut self,
+        launches: &mut LaunchCoordinator,
+        wake: sophia_wake::Notifier,
+        now: Instant,
+    ) -> Result<Option<Started>, String> {
+        self.collect_spawn()?;
         if let Some(reason) = self.failure.as_ref() {
             return Err(reason.clone());
         }
