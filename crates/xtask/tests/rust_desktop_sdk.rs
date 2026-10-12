@@ -146,7 +146,7 @@ fn drift_in_every_contract_pair_and_an_unrecorded_digest_are_refused() {
     // Six file contracts remain after the socket schema and seven frame
     // corpora retire, the lock codec adds three (t295), and launch
     // authentication adds one (t317). Every pair gets a drift control.
-    assert_eq!(rust_desktop_sdk::CONTRACTS.len(), 10);
+    assert_eq!(rust_desktop_sdk::CONTRACTS.len(), 11);
     for (_, authoritative) in rust_desktop_sdk::CONTRACTS {
         let (root, snapshot) = scratch();
         std::fs::write(root.0.join(authoritative), b"changed contract").unwrap();

@@ -131,6 +131,7 @@ fn pinned_source_and_contract_are_both_required() {
     std::fs::write(&manifest_path, manifest_bytes).unwrap();
 
     let contracts = [
+        "docs/namespace-discovery.md".to_owned(),
         "docs/sophia-shell-descriptors.md".to_owned(),
         "protocol/sophia-shell-files-v1.kdl".to_owned(),
         "docs/sophia-9p-profile.md".to_owned(),
