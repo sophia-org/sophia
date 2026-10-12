@@ -3,6 +3,9 @@
 use super::*;
 use sophia_protocol::*;
 
+#[path = "shell_file_authentication.rs"]
+mod authentication;
+
 const EPOCH: u64 = 41;
 const BASE: u64 = 3;
 

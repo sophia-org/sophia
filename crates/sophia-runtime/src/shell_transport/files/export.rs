@@ -23,6 +23,7 @@ use sophia_protocol::{
 use super::journal::{Journal, JournalBounds};
 use sophia_9p::journal::{Staging, StagingBounds};
 
+mod authentication;
 mod inbound;
 mod objects;
 mod snapshots;
@@ -537,20 +538,14 @@ impl Export for ShellFiles {
     type Handle = Handle;
 
     fn attach(&mut self, context: &AttachContext<'_>) -> Result<Attachment<Node>, Errno> {
-        // One attach per admitted epoch; a replacement needs a fresh stream.
-        if self.revoked || self.attached || self.connection != Some(context.connection) {
-            return Err(Errno::EACCES);
-        }
-        self.attached = true;
-        Ok(Attachment {
-            root: Node::Root,
-            epoch: Epoch(self.epoch),
-        })
+        use crate::authenticated_files::{PreparedFileRoot, ProtectedFiles};
+        Ok(self.prepare_authenticated_root(context)?.publish())
     }
 
     fn check(&mut self, access: &Access<'_, Node>) -> Result<(), Errno> {
         self.expire();
         if self.revoked
+            || !self.attached
             || access.epoch != Epoch(self.epoch)
             || self.connection != Some(access.connection)
         {

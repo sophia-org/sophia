@@ -1625,3 +1625,43 @@ and client migration and the final t317 threat-model/exit reconciliation remain.
 Source review confirms the authenticated lock accept branch already avoids
 SO_PEERPIDFD; final reconciliation must verify all normal callers and retained
 controls rather than treating the legacy supplied-admission branch as production.
+
+
+## Shell root preparation
+
+The shell file export now implements `ProtectedFiles`. An exclusive preparation
+checks the bound connection, epoch liveness and single-attach rule before an
+external authentication owner can pin identity. Publication only sets the
+attached bit and returns the root; abandoning the preparation changes nothing.
+Ordinary attach uses the same preparation. `check` refuses the unpublished root.
+Auth qids share the existing monotonic component allocator with staging and
+snapshot objects. Wire reset clears only the attached bit for the bound
+connection; epoch, objects, journal and allocation watermark survive.
+
+This is an export prerequisite, not a claim that the shell reactor or Session
+launch owner already requires authentication. Those remain the next integration
+steps, followed by SDK and deployed-shell migration.
+
+Three outside-src tests cover abandoned/published roots, foreign and revoked
+connections, reset preservation, qid uniqueness and exhaustion. Device-hidden
+`cargo test --offline --locked -p sophia-runtime shell` passed 55 tests with no
+failures or ignored tests (51 shell transport unit tests and four matching
+integration tests; other targets were filtered). All-target runtime Clippy with
+warnings denied and workspace formatting passed. A guard-removal control fails
+first at `abandoned shell preparation must not admit the root`, exit 101 and
+exactly one failed test. Restored shell unit tests pass 51/51.
+
+Evidence packages under `~/.local/state/sophia/development-evidence/` bind the
+four changed implementation/test files, commands and test-binary hashes:
+
+- `t317-shell-root-01`, manifest SHA-256
+  `462125de6795b600475b375e886ef20e8834ba2c096bb6f1f8ba25768c6b9e85`.
+- `t317-shell-root-control-01`, manifest SHA-256
+  `817f3019bf93dae700a7cba6c380b352b6a01658a705905267a5ced5a6d7aeff`.
+- `t317-shell-root-restored-01`, manifest SHA-256
+  `1d647126cdfa95a037be86b2222734e80d2ba3dd37eb85f1009955127d1d3255`.
+
+The initial dev test compared an encoded object with its body alone and failed;
+that fixture error is retained in `t317-shell-root-dev01/test.log`. The corrected
+test compares the full object before and after reset. No live session, physical
+acceptance or full repository gate is claimed.
