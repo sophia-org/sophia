@@ -70,6 +70,7 @@ impl Fixture {
     }
     fn request(&self) -> ClientLaunchRequest {
         ClientLaunchRequest {
+            diagnostic: None,
             launch: ProcessLaunchSpec::new("/usr/bin/sleep")
                 .arg("30")
                 .protection_domain(

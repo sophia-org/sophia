@@ -38,6 +38,7 @@ pub const NAMESPACE_CLIENT_UNAME: &[u8] = b"namespace-client";
 /// Trusted policy resolution, including its containment driver and live service
 /// references. An arbitrary executable is allowed; its recipe determines reach.
 pub struct ClientLaunchRequest {
+    pub diagnostic: Option<crate::diagnostics::application::PreparedLaunch>,
     pub launch: ProcessLaunchSpec,
     pub recipe: LoadedNamespaceRecipe,
     pub namespace: NamespaceId,
@@ -171,6 +172,7 @@ impl NamespaceLaunchService {
 }
 
 struct Prepared {
+    diagnostic: Option<crate::diagnostics::application::PreparedLaunch>,
     supervisor: Option<ProcessSupervisor>,
     names: NamespaceRecipeOwner,
     published: PublishedRecipe,
@@ -196,14 +198,9 @@ fn prepare(
         .publish_selected_with_x11(1, &request.recipe, &request.approved, &request.x11)
         .map_err(|e| e.to_string())?;
     let directory = published.namespace.lease.directory();
-    request
+    request.launch = request
         .launch
-        .environment
-        .retain(|(key, _)| key != NAMESPACE_DIRECTORY_ENV);
-    request
-        .launch
-        .environment
-        .push((NAMESPACE_DIRECTORY_ENV.into(), directory.as_os_str().into()));
+        .env(NAMESPACE_DIRECTORY_ENV, directory.as_os_str());
     if let Some(domain) = request.launch.protection_domain.take() {
         request.launch.protection_domain = Some(
             domain
@@ -211,11 +208,18 @@ fn prepare(
                 .map_err(|e| e.to_string())?,
         );
     }
-    Ok(Prepared {
-        supervisor: Some(ProcessSupervisor::new(
+    let stderr = request.diagnostic.as_mut().and_then(|d| d.take_stderr());
+    let supervisor = match stderr {
+        Some(stderr) => ProcessSupervisor::new_with_stderr(
             SupervisedProcessKind::NamespaceClient,
             request.launch,
-        )),
+            stderr,
+        ),
+        None => ProcessSupervisor::new(SupervisedProcessKind::NamespaceClient, request.launch),
+    };
+    Ok(Prepared {
+        supervisor: Some(supervisor),
+        diagnostic: request.diagnostic,
         names,
         published,
         approved: request.approved,
@@ -309,24 +313,27 @@ impl PendingNamespaceClient {
                 audience,
                 ..self.policy
             };
-            self.startup = Some(Startup::registered_endpoint(
-                resources.supervisor.take().expect("prepared supervisor"),
-                launches.endpoint(),
-                Recipe {
-                    policy,
-                    uname: NAMESPACE_CLIENT_UNAME.to_vec(),
-                    aname: primary
-                        .endpoint
-                        .endpoint
-                        .service
-                        .interface
-                        .as_bytes()
-                        .to_vec(),
-                },
-                registration,
-                grant,
-                now,
-            )?);
+            self.startup = Some(
+                Startup::registered_endpoint(
+                    resources.supervisor.take().expect("prepared supervisor"),
+                    launches.endpoint(),
+                    Recipe {
+                        policy,
+                        uname: NAMESPACE_CLIENT_UNAME.to_vec(),
+                        aname: primary
+                            .endpoint
+                            .endpoint
+                            .service
+                            .interface
+                            .as_bytes()
+                            .to_vec(),
+                    },
+                    registration,
+                    grant,
+                    now,
+                )?
+                .with_diagnostic(resources.diagnostic.take()),
+            );
         }
         let Some(started) = self
             .startup
@@ -341,6 +348,7 @@ impl PendingNamespaceClient {
         let mut running = RunningNamespaceClient {
             registration: self.registration.take(),
             supervisor: Some(started.supervisor),
+            diagnostic: started.diagnostic,
             names: Some(resources.names),
             slot: Some(resources.slot),
             lease: Some(started.lease),
@@ -444,6 +452,7 @@ impl Drop for RetiredPending {
 /// Keeps the view, grant owners and spawn thread alive through the child's
 /// lifetime. Dispatch must retain each endpoint view while serving its streams.
 pub struct RunningNamespaceClient {
+    diagnostic: Option<crate::diagnostics::application::PreparedLaunch>,
     registration: Option<RegistrationOwner>,
     supervisor: Option<ProcessSupervisor>,
     names: Option<NamespaceRecipeOwner>,
@@ -473,6 +482,22 @@ impl RunningNamespaceClient {
         &mut self,
         launches: &LaunchCoordinator,
     ) -> Result<Option<std::process::ExitStatus>, String> {
+        // Peer-channel EOF can retire authority before this owner observes the
+        // same process exit. A reaped status is the terminal process outcome.
+        let supervisor = self
+            .supervisor
+            .as_mut()
+            .ok_or("namespace client process absent")?;
+        supervisor.poll().map_err(|e| e.to_string())?;
+        let status = supervisor.take_exit_status();
+        if let (Some(diagnostic), Some(status)) = (&self.diagnostic, status) {
+            diagnostic.exited(status);
+        }
+        if status.is_some() {
+            self.registration.take();
+            self.names.as_mut().expect("live view").revoke_grants();
+            return Ok(status);
+        }
         if self.services.iter().any(dispatch::DispatchWorker::failed) {
             self.registration.take();
             self.names.as_mut().expect("live view").revoke_grants();
@@ -489,17 +514,7 @@ impl RunningNamespaceClient {
         if launches.phase(registration) != Some(Phase::Active) {
             return Err("namespace client authority retired".into());
         }
-        let supervisor = self
-            .supervisor
-            .as_mut()
-            .ok_or("namespace client process absent")?;
-        supervisor.poll().map_err(|e| e.to_string())?;
-        let status = supervisor.take_exit_status();
-        if status.is_some() {
-            self.registration.take();
-            self.names.as_mut().expect("live view").revoke_grants();
-        }
-        Ok(status)
+        Ok(None)
     }
 }
 impl Drop for RunningNamespaceClient {
@@ -510,12 +525,27 @@ impl Drop for RunningNamespaceClient {
         }
         if let Some(reaper) = self.reaper.take() {
             reaper.retire((
-                self.supervisor.take(),
+                RetiredProcess {
+                    supervisor: self.supervisor.take(),
+                    diagnostic: self.diagnostic.take(),
+                },
                 self.names.take(),
                 std::mem::take(&mut self.services),
                 self.lease.take(),
                 self.slot.take(),
             ));
+        }
+    }
+}
+
+struct RetiredProcess {
+    supervisor: Option<ProcessSupervisor>,
+    diagnostic: Option<crate::diagnostics::application::PreparedLaunch>,
+}
+impl Drop for RetiredProcess {
+    fn drop(&mut self) {
+        if let Some(supervisor) = self.supervisor.take() {
+            crate::launch_authentication::spawn::retire_process(supervisor, self.diagnostic.take());
         }
     }
 }

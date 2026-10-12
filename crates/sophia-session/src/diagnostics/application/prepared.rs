@@ -8,6 +8,7 @@ pub struct PreparedLaunch {
     pub(super) context: LaunchContext,
     pub(super) writer: Option<OwnedFd>,
     pub(super) settled: bool,
+    pub(super) pid: Option<u32>,
 }
 impl PreparedLaunch {
     /// Move, never duplicate, the writer into the actual process supervisor.
@@ -19,6 +20,7 @@ impl PreparedLaunch {
         if !self.settled {
             record_spawn(&self.shared, self.id, self.context, Ok(pid));
             self.settled = true;
+            self.pid = Some(pid);
             self.writer.take();
         }
         LaunchTicket(self.id)
@@ -29,6 +31,13 @@ impl PreparedLaunch {
             record_spawn(&self.shared, self.id, self.context, Err(error));
             self.settled = true;
             self.writer.take();
+        }
+    }
+
+    /// Called by the process owner after an actual reap, including cancellation.
+    pub fn exited(&self, status: ExitStatus) {
+        if self.pid.is_some() {
+            record_exit(&self.shared, Some(LaunchTicket(self.id)), status);
         }
     }
 }

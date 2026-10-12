@@ -22,6 +22,50 @@ socket paths or namespace commands to launch installed applications.
 
 ## Evidence
 
+### Namespace diagnostic lifetime
+
+The slice based on `5135c0ac5` carries the prepared diagnostic record through
+the real namespace preparation and spawn workers, authentication activation,
+endpoint dispatch and process retirement. The existing spawn worker records
+the real PID or failed attempt before publishing its result. Dropped results,
+pending cancellation, activation failure and running retirement retain the
+diagnostic owner until the supervisor is reaped. The normal running poll records
+the reaped status directly. No additional spawning or cleanup thread is added.
+Publication also uses the environment setter to restore its reserved namespace
+directory variable even if a launch spec had previously removed it.
+
+One joined test exercises normal exit 17, cancellation before spawn, cancellation
+after startup, missing endpoint dispatch and failed spawn. It uses actual
+Factotum and protected NamespaceClient processes, with the existing private
+inspection owner; scene and display are absent. Exact stderr and transaction
+29 survive normal exit and running cancellation. All scenarios require a
+settled diagnostic record and EOF after the launch slot has been reclaimed.
+
+The first retirement control stopped before its intended assertion, and its
+restored run failed the same way. The diagnostic revealed `namespace client
+authority retired` on a normal process exit: authentication could observe EOF
+before the running owner polled the supervisor. The running owner now collects
+an available exit status first. A still-running child continues to require live
+authority. The initial control package remains STOP with a restoration audit;
+it is not counted as a successful negative control.
+
+The final `t318-namespace-diagnostic-retirement-control-02` omits the background
+reap-to-diagnostics update and fails at `cancel: namespace diagnostics must
+settle after retirement`, after the normal-exit round passes. Source restoration
+and an exact positive rerun pass. Its SHA256SUMS SHA-256 is
+`9290f916dea6e995687effc1c994e7bc0151a4b622fd72b6f9e6ecbbc7153919`.
+
+The device-hidden `t318-namespace-diagnostics-02` passes runtime library and
+launch-channel tests, thirteen diagnostics tests, the authentication integration
+suite and all sixteen namespace-launch parents with their child entry points.
+Runtime all-target and native Session library/test Clippy, formatting, layout
+and diff checks pass. Its SHA256SUMS SHA-256 is
+`2f050a9236f3733fc17f6c91663920ce87e445f299705e92a913d4b269c4bb26`.
+Candidate hashes are checked before and after; binaries are recorded only by
+path and hash. This paragraph follows the captured candidate. Short-lived
+applications that exit before activation, early surface attribution, ordinary
+launch callsites and the developer launch export remain integration work.
+
 ### Supervised diagnostic handoff
 
 The slice based on `4d2718fcf` separates diagnostic preparation from spawning,

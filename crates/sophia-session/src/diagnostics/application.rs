@@ -333,6 +333,7 @@ fn prepare_recorded(
         context,
         writer,
         settled: false,
+        pid: None,
     })
 }
 

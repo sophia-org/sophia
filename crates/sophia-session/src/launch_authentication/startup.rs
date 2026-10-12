@@ -17,6 +17,7 @@ pub(crate) struct Started {
     pub registration: Registration,
     pub factory: Box<dyn FileAuthenticationFactory>,
     pub lease: SpawnLease,
+    pub diagnostic: Option<crate::diagnostics::application::PreparedLaunch>,
 }
 
 pub(crate) struct Startup {
@@ -32,6 +33,7 @@ pub(crate) struct Startup {
     deadline: Instant,
     failure: Option<String>,
     finished: bool,
+    diagnostic: Option<crate::diagnostics::application::PreparedLaunch>,
 }
 
 impl Startup {
@@ -43,7 +45,7 @@ impl Startup {
             loop {
                 match spawning.poll() {
                     Ok(Some(result)) => {
-                        drop(result.supervisor);
+                        super::spawn::retire_process(result.supervisor, result.diagnostic);
                         drop(result.lease);
                         break;
                     }
@@ -52,8 +54,18 @@ impl Startup {
                 }
             }
         }
-        self.supervisor.take();
+        if let Some(supervisor) = self.supervisor.take() {
+            super::spawn::retire_process(supervisor, self.diagnostic.take());
+        }
         self.lease.take();
+    }
+
+    pub(crate) fn with_diagnostic(
+        mut self,
+        diagnostic: Option<crate::diagnostics::application::PreparedLaunch>,
+    ) -> Self {
+        self.diagnostic = diagnostic;
+        self
     }
 
     pub fn new(
@@ -85,6 +97,7 @@ impl Startup {
             deadline: not_before + Duration::from_secs(10),
             failure: None,
             finished: false,
+            diagnostic: None,
         })
     }
 
@@ -169,7 +182,13 @@ impl Startup {
                     return Ok(None);
                 }
             }
-            self.supervisor.take();
+            if let Some(supervisor) = self.supervisor.take()
+                && let (Some(diagnostic), Some(status)) =
+                    (&self.diagnostic, supervisor.exit_status())
+            {
+                diagnostic.exited(status);
+            }
+            self.diagnostic.take();
             self.lease.take();
             self.finished = true;
             return Err(self.failure.take().expect("failed launch"));
@@ -189,6 +208,7 @@ impl Startup {
                     self.spawning = None;
                     self.supervisor = Some(result.supervisor);
                     self.lease = Some(result.lease);
+                    self.diagnostic = result.diagnostic;
                     result.result?;
                 }
                 Ok(None) => {}
@@ -224,15 +244,12 @@ impl Startup {
                 let channel = launches
                     .take_channel(registration, now)
                     .map_err(|e| format!("role channel: {e:?}"))?;
-                let spawn = if self.host_namespace_client {
-                    ProtectedSpawn::start_host_namespace_client
-                } else {
-                    ProtectedSpawn::start
-                };
-                self.spawning = Some(spawn(
+                self.spawning = Some(ProtectedSpawn::start_using(
                     self.supervisor.take().ok_or("missing role supervisor")?,
                     channel,
                     wake,
+                    self.host_namespace_client,
+                    self.diagnostic.take(),
                 )?);
                 Ok(None)
             }
@@ -271,6 +288,7 @@ impl Startup {
                     registration,
                     factory: Box::new(factory),
                     lease: self.lease.take().expect("protected spawn lease"),
+                    diagnostic: self.diagnostic.take(),
                 }))
             }
             Some(Phase::Spawning) => Ok(None),

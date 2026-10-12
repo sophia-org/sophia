@@ -4,15 +4,26 @@
 use super::*;
 use sophia_runtime::inspection::InspectionService;
 
+#[path = "namespace_application_diagnostics.rs"]
+mod diagnostics;
+
 fn application(
     f: &mut Fixture,
     seconds: &str,
     dispatch: bool,
 ) -> (ApplicationProcess, InspectionService) {
-    let mut service = InspectionService::private().unwrap();
-    service.fence(1, None).unwrap();
     let mut request = f.request();
     request.launch.args = vec![seconds.into()];
+    application_request(f, request, dispatch)
+}
+
+fn application_request(
+    f: &mut Fixture,
+    mut request: ClientLaunchRequest,
+    dispatch: bool,
+) -> (ApplicationProcess, InspectionService) {
+    let mut service = InspectionService::private().unwrap();
+    service.fence(1, None).unwrap();
     request
         .approved
         .get_mut("inspection")

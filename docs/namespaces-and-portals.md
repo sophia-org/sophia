@@ -372,8 +372,8 @@ process identity. Namespace cancellation never synchronously reaps on the Sessio
 owner thread; the existing launch slot remains occupied until background cleanup
 finishes. Ordinary host children retain their existing process-group cleanup.
 The managed record preserves catalog transaction, origin and diagnostic-ticket
-fields; connecting selected commands and namespace stderr capture to this record
-remains part of launch integration.
+fields; connecting selected commands to this record remains part of launch
+integration.
 
 Application diagnostics can reserve a bounded record before asynchronous spawn
 and move its stderr writer into the existing process supervisor. The descriptor
@@ -382,9 +382,13 @@ restart. The spawn owner records the actual PID or failure and retains the
 resulting diagnostic ticket for exit observation. Dropping an unsettled
 preparation closes it as failed; diagnostics exhaustion never refuses an app.
 The ordinary command launcher uses the same reservation and settlement path.
-This handoff is qualified for host and protected processes; connecting it to
-the namespace scheduler's preparation, cancellation and activation remains
-implementation work.
+The namespace scheduler retains this diagnostic owner through preparation,
+spawn, activation and background retirement. The spawn worker records the
+actual spawn result; the process owner records reaped exit status, including
+cancellation. A failed dispatch still reaps and records the spawned process.
+An already reaped process reports its exit before a simultaneous authentication
+retirement can turn that exit into an authority-loss failure. This does not
+permit a still-running process whose authority has retired.
 
 `LoadedNamespaceRecipe` retains a policy snapshot together with its shipped
 naming fragment or pinned custom files. Shared and confined X use the same

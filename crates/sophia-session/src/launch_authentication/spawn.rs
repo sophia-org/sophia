@@ -1,4 +1,5 @@
 //! Keep the protected launcher and its peer discovery off the Session owner.
+use crate::diagnostics::application::PreparedLaunch;
 use sophia_runtime::{LaunchChannel, ProcessSupervisor};
 use std::sync::{
     Arc,
@@ -10,6 +11,18 @@ pub(crate) struct SpawnResult {
     pub supervisor: ProcessSupervisor,
     pub result: Result<(), String>,
     pub lease: SpawnLease,
+    pub diagnostic: Option<PreparedLaunch>,
+}
+
+/// Runs on the retained spawn/preparation worker for namespace applications.
+pub(crate) fn retire_process(
+    mut supervisor: ProcessSupervisor,
+    diagnostic: Option<PreparedLaunch>,
+) {
+    let _ = supervisor.terminate();
+    if let (Some(diagnostic), Some(status)) = (&diagnostic, supervisor.exit_status()) {
+        diagnostic.exited(status);
+    }
 }
 
 /// Bubblewrap's parent-death signal follows the spawning thread. Keep that
@@ -44,22 +57,15 @@ impl ProtectedSpawn {
         channel: LaunchChannel,
         wake: sophia_wake::Notifier,
     ) -> Result<Self, String> {
-        Self::start_using(supervisor, channel, wake, false)
+        Self::start_using(supervisor, channel, wake, false, None)
     }
 
-    pub(crate) fn start_host_namespace_client(
-        supervisor: ProcessSupervisor,
-        channel: LaunchChannel,
-        wake: sophia_wake::Notifier,
-    ) -> Result<Self, String> {
-        Self::start_using(supervisor, channel, wake, true)
-    }
-
-    fn start_using(
+    pub(crate) fn start_using(
         mut supervisor: ProcessSupervisor,
         channel: LaunchChannel,
         wake: sophia_wake::Notifier,
         host_namespace_client: bool,
+        mut diagnostic: Option<PreparedLaunch>,
     ) -> Result<Self, String> {
         let (sender, result) = mpsc::sync_channel(1);
         let (lease, lifetime) = SpawnLease::channel();
@@ -79,15 +85,27 @@ impl ProtectedSpawn {
                     .map(drop)
                     .map_err(|e| e.to_string())
                 };
+                if let Some(diagnostic) = diagnostic.as_mut() {
+                    match (&result, supervisor.child_id()) {
+                        (Ok(()), Some(pid)) => {
+                            diagnostic.spawned(pid);
+                        }
+                        _ => diagnostic.failed(&std::io::Error::other("supervised spawn failed")),
+                    }
+                }
                 if worker_cancelled.load(Ordering::Acquire) {
                     let _ = supervisor.request_termination();
                 }
                 // A dropped receiver drops the returned supervisor and its child.
-                let _ = sender.send(SpawnResult {
+                if let Err(returned) = sender.send(SpawnResult {
                     supervisor,
                     result,
                     lease,
-                });
+                    diagnostic,
+                }) {
+                    retire_process(returned.0.supervisor, returned.0.diagnostic);
+                    drop(returned.0.lease);
+                }
                 wake.notify();
                 if let Ok(resources) = lifetime.recv() {
                     drop(resources);
