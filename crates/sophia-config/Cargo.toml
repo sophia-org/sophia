@@ -8,7 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 kdl.workspace = true
-rustix.workspace = true
+rustix = { workspace = true, features = ["std"] }
 sha2.workspace = true
 
 [lints]

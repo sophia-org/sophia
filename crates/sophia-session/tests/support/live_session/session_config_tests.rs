@@ -14,6 +14,19 @@ mod inspection_environment;
 mod x_group_config;
 
 #[test]
+fn pending_namespace_launch_policy_cannot_silently_fall_back_to_host_launches() {
+    let source =
+        b"schema 2\nsession { namespace-policy { recipe \"tools\" profile=\"observer\"; }; }\n";
+    let snapshot =
+        sophia_config::parse_core_config(source, sophia_config::ConfigGeneration::INITIAL).unwrap();
+    let result = PersistentXtermSessionConfig::applications_from_core(&snapshot);
+    assert!(
+        result.is_err(),
+        "unwired namespace launch policy must not become a host launch"
+    );
+}
+
+#[test]
 fn dock_only_profile_requires_catalog_and_input_before_endpoint_construction() {
     use std::os::unix::fs::PermissionsExt;
     let profile =

@@ -178,6 +178,7 @@ pub struct SessionConfig {
     pub applications: Vec<ApplicationConfig>,
     pub startup: Vec<u64>,
     pub application_catalogs: Vec<ApplicationCatalogConfig>,
+    pub namespace_policy: crate::namespace_policy::NamespacePolicyConfig,
 }
 
 /// Operator-owned launch policy. Desktop entries supply commands, never policy.
@@ -380,6 +381,7 @@ impl CoreConfigDelta {
             diagnostics_changed: active.verbose_diagnostics != candidate.verbose_diagnostics
                 || active.application_stderr != candidate.application_stderr,
             restart_required: active.input.source != candidate.input.source
+                || active.session.namespace_policy != candidate.session.namespace_policy
                 || active.input.xkb != candidate.input.xkb
                 || active.outputs != candidate.outputs
                 || active.namespace_profile != candidate.namespace_profile

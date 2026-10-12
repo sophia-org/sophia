@@ -371,6 +371,36 @@ formatting, layout and diff checks pass. Its SHA256SUMS has SHA-256
 This focused package follows the full gate; it is not included in gate-08's
 source identity. The normative and investigation updates follow these checks.
 
+### Trusted launch policy adapter
+
+The core configuration now parses one bounded `session/namespace-policy` block,
+with named recipes containing profile, naming source, portal participation and
+explicit developer-launch permission. Exact registered and scanned desktop
+identities select an assigned recipe. The pure selection function accepts an
+application's requested recipe only when it equals that assignment; no assignment
+with no request preserves the existing default. Developer selection takes no
+executable allowlist and requires an explicitly enabled confined recipe. Its
+administrative admission remains a separate required launch-owner check.
+
+Observer policy is restricted to request-only screen capture. Confined-X requires
+a nonzero group; shared-X cannot authorize the developer launcher. Source names
+are normalized paths relative to trusted configuration, not application paths.
+Changes classify as requiring restart. Session currently refuses nonempty policy
+on startup/reload rather than ignoring it: automatic dispatch, group/reference
+resolution, builtin fragments and metadata extraction remain integration work.
+This refusal is temporary and is not the intended final application experience.
+
+The standalone configuration build exposed that the earlier pinned loader relied
+on workspace feature unification for Rustix's `std` integration. Its manifest now
+requests `std` directly, with no lockfile change. The closed
+`t318-recipe-policy-01` package passes all 176 configuration tests, including four
+new policy tests, and the Session refusal test. Config all-target Clippy, native
+Session library Clippy, formatting, layout and diff checks pass. Nine modified
+or untracked source files were enumerated dynamically and hashed before and after
+the run; binary identities are recorded without copies. SHA256SUMS has SHA-256
+`bbf800ce319c6e54e993979d9f4b5b645569de8a2419ac0b82fa4e9d24795130`.
+These are parser/selection and refusal results, not live recipe launch acceptance.
+
 ### Session publication and grant custody
 
 `NamespaceRecipeOwner` now joins the pinned source loader, compiler, endpoint

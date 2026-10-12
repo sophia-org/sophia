@@ -23,6 +23,7 @@ use chrome::{parse_chrome_policy, parse_compositor};
 mod wm;
 use wm::{parse_wm_actions, parse_wm_bindings};
 mod application_catalog;
+mod namespace_policy;
 
 const MODIFIER_SHIFT: u32 = 1 << 0;
 const MODIFIER_CONTROL: u32 = 1 << 1;
@@ -241,7 +242,21 @@ fn parse_schema(document: &KdlDocument) -> Result<u32, ConfigParseError> {
 fn parse_session(node: &KdlNode) -> Result<SessionConfig, ConfigParseError> {
     exact_shape(node, 0, &[], true)?;
     let children = children(node)?;
-    validate_root_names(children, &["application", "startup", "application-catalog"])?;
+    validate_root_names(
+        children,
+        &[
+            "application",
+            "startup",
+            "application-catalog",
+            "namespace-policy",
+        ],
+    )?;
+    require_singletons(children, &["namespace-policy"])?;
+    let namespace_policy = children
+        .get("namespace-policy")
+        .map(namespace_policy::parse)
+        .transpose()?
+        .unwrap_or_default();
     let mut application_catalogs = Vec::new();
     let mut applications = Vec::new();
     let mut application_ids = BTreeSet::new();
@@ -250,6 +265,7 @@ fn parse_session(node: &KdlNode) -> Result<SessionConfig, ConfigParseError> {
     let mut startup_ids = BTreeSet::new();
     for child in children.nodes() {
         match child.name().value() {
+            "namespace-policy" => {}
             "application-catalog" => {
                 let catalog = application_catalog::parse(child)?;
                 if application_catalogs.len() >= 16
@@ -311,6 +327,7 @@ fn parse_session(node: &KdlNode) -> Result<SessionConfig, ConfigParseError> {
         applications,
         startup,
         application_catalogs,
+        namespace_policy,
     })
 }
 

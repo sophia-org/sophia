@@ -204,8 +204,8 @@ These are design limits, not measured capacity. Failure publishes nothing.
 
 ### Worked policy recipes
 
-The following separates policy inputs from naming text; it does not invent
-accepted `desktop.kdl` syntax. t318 supplies the configuration adapter.
+The following separates policy inputs from naming text. The core configuration
+adapter is described below; this is not `desktop.kdl` syntax.
 
 | Recipe | Namespace and portal participation | Host policy and independent role grants |
 | --- | --- | --- |
@@ -244,6 +244,59 @@ does not edit the base naming recipe. t315/t319 own execution and capture bytes.
 The t318 authorized developer launcher selects an approved recipe for an
 independent executable; a requested role cannot grant itself. Directly launched
 local client provisioning remains t324, and no remote authentication is implied.
+
+### Trusted launch policy configuration
+
+The core `session` block accepts one `namespace-policy` block. It contains at
+most 64 named recipes and 1,024 exact application assignments. Recipe names are
+bounded to 64 lowercase ASCII letters, digits, underscores or hyphens. Application
+identities are the catalog's `registered:<id>` or `desktop:<desktop-file-id>`;
+an executable path never substitutes for an identity.
+
+```kdl
+session {
+    namespace-policy {
+        recipe "browser" profile="confined-x" group=7 {
+            request "clipboard"
+        }
+        recipe "tools" profile="observer" developer-launch=#true
+        application "registered:browser" recipe="browser"
+        application "desktop:org.example.Browser.desktop" recipe="browser"
+    }
+}
+```
+
+Profiles are `shared-x`, `confined-x` with a nonzero group, or `observer`.
+The first two have no added portal participation by default. `request` and
+`publish` select distinct participation in clipboard, drag-and-drop, file-handoff,
+screen-capture, screen-recording, URI-open or notification transfers. These
+capabilities do not approve individual transfers. Observer permits only
+screen-capture requests and supplies that default; it cannot publish or acquire
+clipboard participation. Developer launch is off by default and requires a
+confined profile plus the separately admitted administrative launch request.
+
+An optional `source="recipes/custom.ns"` names a normalized relative path under
+the trusted core configuration root for the existing pinned source loader.
+Without it, the profile requests its shipped naming fragment. Applications
+cannot provide that path. Unknown properties, duplicate names or assignments,
+unknown recipes, unsupported capabilities and excess bounds refuse the candidate.
+
+```text
+trusted core policy -- exact catalog identity --> assigned recipe
+app recipe request ----------------------------> equality check only
+                                                   |
+                           naming + participation + host profile
+                                                   |
+                           Session launch/view owner (integration pending)
+```
+
+An unmapped application with no recipe request keeps the existing launch policy.
+Metadata may confirm its assigned recipe but cannot select a different one;
+an unassigned request refuses. Recipe policy changes require restart until live
+launch-policy replacement is implemented. The adapter and selection checks are
+implemented; Session currently refuses a nonempty recipe configuration at startup
+or reload because automatic launch custody is not connected yet. This temporary
+refusal prevents silently executing a selected recipe as a legacy host launch.
 
 The inspection implementation shares its existing publication owner between
 explicit HostDomain inspection and authenticated observer connections. A private

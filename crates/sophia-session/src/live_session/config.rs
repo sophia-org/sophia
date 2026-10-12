@@ -309,6 +309,11 @@ impl PersistentXtermSessionConfig {
     fn applications_from_core(
         snapshot: &sophia_config::CoreConfigSnapshot,
     ) -> Result<SessionApplicationConfig, Box<dyn std::error::Error>> {
+        // Until recipe launch custody is connected here, accepting this policy
+        // would silently launch its applications with the legacy host view.
+        if !snapshot.session.namespace_policy.recipes.is_empty() {
+            return Err("namespace recipe launch integration is not yet available".into());
+        }
         let mut applications = SessionApplicationConfig::default();
         let mut names_by_id = BTreeMap::new();
         for app in &snapshot.session.applications {
