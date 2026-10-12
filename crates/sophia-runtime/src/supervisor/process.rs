@@ -160,6 +160,7 @@ pub struct ProcessSupervisor {
     termination_deadline: Option<Instant>,
     exit_status: Option<std::process::ExitStatus>,
     last_launch_generation: u64,
+    launch_stderr: Option<std::os::fd::OwnedFd>,
 }
 
 #[derive(Debug)]
@@ -186,7 +187,20 @@ impl ProcessSupervisor {
             termination_deadline: None,
             exit_status: None,
             last_launch_generation: 0,
+            launch_stderr: None,
         }
+    }
+
+    /// The owner supplies a single launch's stderr destination. It is moved
+    /// into the spawn command, not retained for restart or cloned with policy.
+    pub fn new_with_stderr(
+        process: SupervisedProcessKind,
+        spec: ProcessLaunchSpec,
+        stderr: std::os::fd::OwnedFd,
+    ) -> Self {
+        let mut supervisor = Self::new(process, spec);
+        supervisor.launch_stderr = Some(stderr);
+        supervisor
     }
 
     pub const fn process(&self) -> SupervisedProcessKind {
@@ -408,6 +422,9 @@ impl ProcessSupervisor {
                 message: error.to_string(),
             },
         )?;
+        if let Some(stderr) = self.launch_stderr.take() {
+            command.stderr(std::process::Stdio::from(stderr));
+        }
         let child = command
             .spawn()
             .map_err(|error| ProcessSupervisorError::SpawnFailed {
@@ -589,12 +606,13 @@ impl ProcessSupervisor {
         }
 
         let managed = if let Some(domain) = &self.spec.protection_domain {
-            let result = match channel {
-                Some(channel) => {
-                    spawn_bubblewrap_with_channel(self.process, &self.spec, domain, Some(channel))
-                }
-                None => spawn_bubblewrap(self.process, &self.spec, domain),
-            };
+            let result = super::protection::spawn_bubblewrap_with_io(
+                self.process,
+                &self.spec,
+                domain,
+                channel,
+                self.launch_stderr.take(),
+            );
             let protected =
                 result.map_err(|error| ProcessSupervisorError::ProtectionDomainFailed {
                     process: self.process,
@@ -615,6 +633,9 @@ impl ProcessSupervisor {
             #[cfg(unix)]
             if self.spec.process_group {
                 std::os::unix::process::CommandExt::process_group(&mut command, 0);
+            }
+            if let Some(stderr) = self.launch_stderr.take() {
+                command.stderr(std::process::Stdio::from(stderr));
             }
             let child = command
                 .spawn()

@@ -22,6 +22,46 @@ socket paths or namespace commands to launch installed applications.
 
 ## Evidence
 
+### Supervised diagnostic handoff
+
+The slice based on `4d2718fcf` separates diagnostic preparation from spawning,
+while retaining the existing bounded collector and ordinary launch behavior.
+The runtime supervisor accepts an owned stderr descriptor for one launch. It
+moves that descriptor into the actual host or Bubblewrap spawn and retains no
+writer for restart. Session can settle the prepared record using the actual
+spawn result and retain its diagnostic ticket. An abandoned preparation becomes
+a failed record rather than occupying the pending-record budget indefinitely.
+There is no diagnostic callback or Session dependency in the runtime.
+
+The joined tests run real host and protected NamespaceClient processes, check
+exact private stderr bytes, correlate exit 17 and transaction 7, and require EOF
+while both supervisor and prepared diagnostic owner still exist. A failed host
+spawn and an abandoned preparation also reach failed records and EOF. These are
+supervisor/diagnostics joins, not the pending namespace-scheduler integration.
+
+`t318-supervised-stderr-control-01` drops the host stderr handoff. The exact test
+fails with exit 101 at `supervisor must preserve the diagnostic stderr
+destination`; source and dynamically enumerated candidate hashes are restored.
+Its SHA256SUMS SHA-256 is
+`2c2cddd059d743ae1811d3e61a8a6129b789634ad9d324ae6d2c068e141f985b`.
+
+The final restored package, `t318-supervised-diagnostics-03`, passes 102 runtime
+library tests (one ignored), seven launch-channel tests, all thirteen diagnostic
+tests, 28 authentication parents with child entry points invoked, and fifteen
+namespace-launch parents. Runtime all-target and native Session library/test
+Clippy, formatting, layout and diff checks pass. Its SHA256SUMS SHA-256 is
+`4c9167a4862b7042ad13dd5841d339b2de98faee68865db5cf49a3b1c532b3d0`.
+The checks hide host devices, display and runtime; evidence contains binary
+paths and hashes only. This paragraph is added after qualification.
+
+Earlier packages remain retained. The first stopped at an existing diagnostic
+fixture's running-profile collision; the fixture now includes an atomic counter
+as well as PID/time in its store path, preventing same-clock-tick sharing. The
+second passed tests and Clippy but stopped because two compatibility wrappers
+were marked test-only inside production source. Removing the wrappers and
+calling the shared spawn function directly from the external tests resolved
+the layout violation. No production confinement or storage rule was weakened.
+
 ### Application launch options
 
 The follow-up to `b9a2b7331` preserves working-directory selection, environment

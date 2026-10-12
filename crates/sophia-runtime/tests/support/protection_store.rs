@@ -127,10 +127,12 @@ fn the_configured_bubblewrap_must_be_an_absolute_executable_file() {
         let launch = ProcessLaunchSpec::new(&program)
             .protection_domain(shell_domain().bubblewrap_path(&bubblewrap));
         assert_eq!(
-            spawn_bubblewrap(
+            spawn_bubblewrap_with_io(
                 SupervisedProcessKind::Shell,
                 &launch,
                 launch.protection_domain.as_ref().unwrap(),
+                None,
+                None,
             )
             .err(),
             Some(ProtectionDomainLaunchError::InvalidBubblewrap(bubblewrap))

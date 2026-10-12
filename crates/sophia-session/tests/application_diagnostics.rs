@@ -17,9 +17,13 @@ struct Fixture {
 }
 impl Fixture {
     fn new() -> Self {
+        // Concurrent tests may observe the same clock tick. Separate stores
+        // must not accidentally contend for one profile's running-session lock.
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let root = std::env::temp_dir().join(format!(
-            "application-diagnostics-{}-{}",
+            "application-diagnostics-{}-{}-{}",
             std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -87,6 +91,117 @@ fn wait_for(mut ready: impl FnMut() -> bool) {
         assert!(Instant::now() < deadline, "capture did not progress");
         std::thread::sleep(Duration::from_millis(5));
     }
+}
+
+#[test]
+fn prepared_diagnostics_follow_the_real_host_and_protected_supervisor() {
+    use sophia_runtime::{
+        LaunchChannel, ProcessLaunchSpec, ProcessSupervisor, ProtectionDomainRole,
+        ProtectionDomainSpec, SupervisedProcessKind, SupervisorEvent,
+    };
+    let fixture = Fixture::new();
+    let capture = fixture.capture();
+    for protected in [false, true] {
+        let mut prepared = capture
+            .prepare(
+                std::ffi::OsStr::new("/usr/bin/sh"),
+                context(LaunchSource::Catalog),
+            )
+            .unwrap();
+        let mut spec = ProcessLaunchSpec::new("/usr/bin/sh")
+            .arg("-c")
+            .arg("printf 'supervised-private-stderr' >&2; sleep 0.2; exit 17")
+            .stdin_null();
+        if protected {
+            spec = spec.protection_domain(
+                ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::NamespaceClient]).unwrap(),
+            );
+        }
+        let mut supervisor = ProcessSupervisor::new_with_stderr(
+            SupervisedProcessKind::NamespaceClient,
+            spec,
+            prepared.take_stderr().unwrap(),
+        );
+        assert!(
+            prepared.take_stderr().is_none(),
+            "stderr handoff is single use"
+        );
+        let (_owner, channel) = LaunchChannel::reserve(1).unwrap();
+        if protected {
+            supervisor.start_with_launch_channel(channel).unwrap();
+        } else {
+            supervisor.start_host_namespace_client(channel).unwrap();
+        }
+        let ticket = prepared.spawned(supervisor.child_id().unwrap());
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while supervisor.poll().unwrap() != Some(SupervisorEvent::ProcessExited) {
+            assert!(
+                Instant::now() < deadline,
+                "supervised diagnostic child deadline"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        capture.exited(Some(ticket), supervisor.take_exit_status().unwrap());
+        // Supervisor and prepared owner remain alive: neither may keep a writer.
+        wait_for(|| {
+            fixture
+                .records()
+                .launches
+                .values()
+                .filter(|m| m.contains("eof=true") && m.contains("exit_code=17"))
+                .count()
+                == if protected { 2 } else { 1 }
+        });
+    }
+    drop(capture);
+    let records = fixture.records();
+    for id in 1..=2 {
+        let bytes: Vec<u8> = records
+            .chunks
+            .iter()
+            .filter(|(launch, _, _)| *launch == id)
+            .flat_map(|(_, _, bytes)| bytes.iter().copied())
+            .collect();
+        assert_eq!(
+            bytes, b"supervised-private-stderr",
+            "supervisor must preserve the diagnostic stderr destination"
+        );
+        assert!(records.launches[&id].contains("transaction=7"));
+    }
+}
+
+#[test]
+fn abandoned_and_failed_preparation_release_diagnostic_records() {
+    let fixture = Fixture::new();
+    let capture = fixture.capture();
+    let executable = std::ffi::OsStr::new("/does-not-exist-t318");
+    drop(
+        capture
+            .prepare(executable, context(LaunchSource::Startup))
+            .unwrap(),
+    );
+    let mut prepared = capture
+        .prepare(executable, context(LaunchSource::Startup))
+        .unwrap();
+    let spec = sophia_runtime::ProcessLaunchSpec::new(executable);
+    let mut supervisor = sophia_runtime::ProcessSupervisor::new_with_stderr(
+        sophia_runtime::SupervisedProcessKind::NamespaceClient,
+        spec,
+        prepared.take_stderr().unwrap(),
+    );
+    let (_owner, channel) = sophia_runtime::LaunchChannel::reserve(1).unwrap();
+    let error = supervisor.start_host_namespace_client(channel).unwrap_err();
+    prepared.failed(&std::io::Error::other(error));
+    wait_for(|| {
+        fixture
+            .records()
+            .launches
+            .values()
+            .filter(|m| m.contains("eof=true") && m.contains("spawn=failed"))
+            .count()
+            == 2
+    });
+    assert!(fixture.records().chunks.is_empty());
 }
 
 #[test]

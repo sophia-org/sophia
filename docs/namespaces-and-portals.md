@@ -375,6 +375,17 @@ The managed record preserves catalog transaction, origin and diagnostic-ticket
 fields; connecting selected commands and namespace stderr capture to this record
 remains part of launch integration.
 
+Application diagnostics can reserve a bounded record before asynchronous spawn
+and move its stderr writer into the existing process supervisor. The descriptor
+belongs to one launch, is not cloned with its recipe and is not retained for a
+restart. The spawn owner records the actual PID or failure and retains the
+resulting diagnostic ticket for exit observation. Dropping an unsettled
+preparation closes it as failed; diagnostics exhaustion never refuses an app.
+The ordinary command launcher uses the same reservation and settlement path.
+This handoff is qualified for host and protected processes; connecting it to
+the namespace scheduler's preparation, cancellation and activation remains
+implementation work.
+
 `LoadedNamespaceRecipe` retains a policy snapshot together with its shipped
 naming fragment or pinned custom files. Shared and confined X use the same
 fragment; their approved group references differ. Selected publication restricts

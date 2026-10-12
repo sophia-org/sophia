@@ -440,19 +440,12 @@ pub(crate) struct ProtectedProcess {
     pub launch_reservation: Option<LaunchReservation>,
 }
 
-pub(crate) fn spawn_bubblewrap(
-    process: SupervisedProcessKind,
-    launch: &ProcessLaunchSpec,
-    domain: &ProtectionDomainSpec,
-) -> Result<ProtectedProcess, ProtectionDomainLaunchError> {
-    spawn_bubblewrap_with_channel(process, launch, domain, None)
-}
-
-pub(crate) fn spawn_bubblewrap_with_channel(
+pub(crate) fn spawn_bubblewrap_with_io(
     process: SupervisedProcessKind,
     launch: &ProcessLaunchSpec,
     domain: &ProtectionDomainSpec,
     channel: Option<LaunchChannel>,
+    stderr: Option<std::os::fd::OwnedFd>,
 ) -> Result<ProtectedProcess, ProtectionDomainLaunchError> {
     let required_role = required_role(process);
     if !domain.roles.contains(&required_role) {
@@ -481,6 +474,9 @@ pub(crate) fn spawn_bubblewrap_with_channel(
     } else {
         bubblewrap_command(launch, domain, |_| {})?
     };
+    if let Some(stderr) = stderr {
+        command.stderr(Stdio::from(stderr));
+    }
     let mut child = command
         .spawn()
         .map_err(|error| ProtectionDomainLaunchError::Spawn(error.to_string()))?;
@@ -513,7 +509,7 @@ fn prepare_launch_host(command: &mut Command) {
 }
 
 /// The unspawned Bubblewrap command for one domain: every check
-/// `spawn_bubblewrap` makes after the role, the argument list, the process
+/// `spawn_bubblewrap_with_io` makes after the role, the argument list, the process
 /// group and the stdio nulling. The role check stays with the caller.
 /// `prepare_host` applies the caller's launch restrictions to both the
 /// version probe and the final command; existing roles leave them unchanged.

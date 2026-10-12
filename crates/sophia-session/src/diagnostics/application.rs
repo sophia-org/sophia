@@ -1,6 +1,8 @@
 //! Private application diagnostics. Process execution never depends on storage progress.
 mod collector;
+mod prepared;
 mod records;
+pub use prepared::PreparedLaunch;
 
 use super::{Stamp, storage::Directory};
 use std::fs::File;
@@ -133,6 +135,14 @@ impl ApplicationCapture {
         spawn_recorded(&self.shared, command, context)
     }
 
+    pub fn prepare(
+        &self,
+        executable: &std::ffi::OsStr,
+        context: LaunchContext,
+    ) -> Option<PreparedLaunch> {
+        prepare_recorded(&self.shared, executable, context)
+    }
+
     pub fn registration(&self, pid: u32) -> Option<LaunchTicket> {
         registration_in(&self.shared, pid)
     }
@@ -182,6 +192,14 @@ pub fn spawn(command: &mut Command, context: LaunchContext) -> io::Result<Child>
     }
 }
 
+/// Reserve diagnostics before an asynchronous spawn. A missing capture or
+/// exhausted diagnostics budget never refuses the application itself.
+pub fn prepare(executable: &std::ffi::OsStr, context: LaunchContext) -> Option<PreparedLaunch> {
+    ACTIVE
+        .get()
+        .and_then(|shared| prepare_recorded(shared, executable, context))
+}
+
 pub fn registration(pid: u32) -> Option<LaunchTicket> {
     ACTIVE.get().and_then(|shared| registration_in(shared, pid))
 }
@@ -224,10 +242,37 @@ fn record_exit(shared: &Shared, ticket: Option<LaunchTicket>, status: ExitStatus
 }
 
 fn spawn_recorded(
-    shared: &Shared,
+    shared: &Arc<Shared>,
     command: &mut Command,
     context: LaunchContext,
 ) -> io::Result<Child> {
+    let Some(mut prepared) = prepare_recorded(shared, command.get_program(), context) else {
+        return command.spawn();
+    };
+    let writer = prepared.take_stderr();
+    let piped = writer.is_some();
+    if let Some(writer) = writer {
+        command.stderr(Stdio::from(writer));
+    }
+    let result = command.spawn();
+    // Release the parent's writer so child exit can produce EOF.
+    if piped {
+        command.stderr(Stdio::inherit());
+    }
+    match &result {
+        Ok(child) => {
+            prepared.spawned(child.id());
+        }
+        Err(error) => prepared.failed(error),
+    }
+    result
+}
+
+fn prepare_recorded(
+    shared: &Arc<Shared>,
+    executable: &std::ffi::OsStr,
+    context: LaunchContext,
+) -> Option<PreparedLaunch> {
     let id = shared
         .next
         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
@@ -237,7 +282,7 @@ fn spawn_recorded(
         if shared.stop.load(Ordering::Acquire) {
             return Err(io::Error::other("capture stopped"));
         }
-        let executable = command.get_program().as_bytes();
+        let executable = executable.as_bytes();
         if executable.len() > 768 {
             return Err(io::Error::other("executable identity too long"));
         }
@@ -280,17 +325,18 @@ fn spawn_recorded(
             id.unwrap_or(0)
         ));
         // A diagnostic refusal must not turn a healthy application into a failed spawn.
-        return command.spawn();
+        return None;
     };
-    let piped = writer.is_some();
-    if let Some(writer) = writer {
-        command.stderr(Stdio::from(writer));
-    }
-    let result = command.spawn();
-    // Command otherwise retains the pipe writer and would falsely prevent EOF.
-    if piped {
-        command.stderr(Stdio::inherit());
-    }
+    Some(PreparedLaunch {
+        shared: shared.clone(),
+        id,
+        context,
+        writer,
+        settled: false,
+    })
+}
+
+fn record_spawn(shared: &Shared, id: u64, context: LaunchContext, result: Result<u32, &io::Error>) {
     if let Ok(mut launches) = shared.launches.lock()
         && let Some(launch) = launches.iter_mut().find(|launch| launch.id == id)
     {
@@ -305,7 +351,7 @@ fn spawn_recorded(
                 io::ErrorKind::WouldBlock => "resource_limit",
                 _ => "spawn_failure",
             });
-        launch.pid = result.as_ref().ok().map(Child::id);
+        launch.pid = result.as_ref().ok().copied();
         launch.dirty = true;
         super::capture_line(&format!(
             "sophia_application_launch schema=1 status={} launch_id={} transaction={} reason={}",
@@ -315,5 +361,4 @@ fn spawn_recorded(
             launch.spawn_reason
         ));
     }
-    result
 }
