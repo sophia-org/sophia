@@ -16,7 +16,9 @@ pub use admission::{AdmissionLease, PreparedAdmission};
 use admission::{AdmissionRecord, NamespaceRecord};
 mod endpoint;
 use endpoint::EndpointGrantRecord;
-pub use endpoint::{EndpointGrantLease, EndpointGrantPolicy, MAX_ENDPOINT_GRANTS};
+pub use endpoint::{
+    EndpointGrantLease, EndpointGrantOwner, EndpointGrantPolicy, MAX_ENDPOINT_GRANTS,
+};
 
 /// Session-owned namespace and client-admission registry.
 ///

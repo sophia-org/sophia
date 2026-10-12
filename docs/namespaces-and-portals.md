@@ -303,8 +303,44 @@ without reusing grant IDs. Namespace or registry retirement fences all affected
 leases. Session must retire a launch's grants with that launch; the existing
 supervisor custody check independently refuses a dead launch. A service
 replacement requires a fresh grant, and a failed naming publication cannot
-revive a revoked one. Live policy selection and publication ordering still
-belong to the pending Session recipe adapter.
+revive a revoked one.
+
+Session's `NamespaceRecipeOwner` joins pinned configuration, approved service
+references, grants and filesystem publication for one launch. It first accepts
+a strictly newer policy revision and applies its authority reductions, then
+compiles and materializes the view. It rechecks pinned source bytes immediately
+before publishing. Failure drops newly issued grants and candidate resources;
+still-approved old grants remain live, reduced grants stay revoked, and the old
+naming view remains current. A failed accepted revision cannot be retried as a
+stale policy snapshot. Explicit later authorization needs a new revision and
+fresh grant incarnation.
+
+```text
+trusted pinned source + approved service catalog + launch identity
+                          |
+                          v
+              accept newer policy revision
+              retain unchanged grants / revoke reductions
+                          |
+                          v
+              compile -> materialize -> recheck source
+                          |
+                  atomic current-name replacement
+                          |
+              listeners + captured service/grant references
+                          |
+                existing authenticated role owners
+
+failure: old names remain; new grants/resources are dropped;
+         revoked grants are never restored
+```
+
+Grant custody drops without waiting for the registry mutex; connection leases
+cannot prolong it. The publication worker holds that mutex only for authority
+bookkeeping, never for filesystem I/O. Automatic application selection,
+runtime endpoint dispatch and launch scheduling remain t318 integration work.
+The protected SDK join uses this publication owner, while supplying its policy
+catalog and dispatching the resulting listeners directly to inspection.
 
 ### Revisions, discovery and retained authority
 

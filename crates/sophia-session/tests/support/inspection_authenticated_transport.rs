@@ -3,11 +3,12 @@
 //! selection or grant inspection implicitly to production shell launches.
 use super::lock_authenticated_transport::{Directory, Peer};
 use super::*;
-use sophia_protocol::namespace_view::{EndpointProtocol, ServiceReference};
+use sophia_protocol::namespace_view::{EndpointProtocol, ServiceAvailability, ServiceReference};
+use sophia_runtime::ProtectionPath;
 use sophia_runtime::inspection::*;
-use sophia_runtime::{EndpointGrantPolicy, ProtectionPath};
 use sophia_session::launch_authentication::files::TransportBudget;
-use std::os::unix::{fs::DirBuilderExt, net::UnixListener};
+use sophia_session::namespace_views::{ApprovedEndpoint, NamespaceRecipeOwner};
+use std::os::unix::fs::DirBuilderExt;
 
 #[path = "inspection_rust_peer.rs"]
 mod rust_peer;
@@ -42,16 +43,6 @@ fn run(grant_only: bool) {
         .create(&reports)
         .unwrap();
     let report = reports.join("progress");
-    let endpoint = root.0.join("endpoint");
-    std::fs::DirBuilder::new()
-        .mode(0o700)
-        .create(&endpoint)
-        .unwrap();
-    let socket = endpoint.join("inspection");
-    let listener = UnixListener::bind(&socket).unwrap();
-    listener.set_nonblocking(true).unwrap();
-    let second_listener = UnixListener::bind(endpoint.join("second")).unwrap();
-    second_listener.set_nonblocking(true).unwrap();
     let mut service = InspectionService::private().unwrap();
     service.fence(9, None).unwrap();
     service
@@ -72,10 +63,49 @@ fn run(grant_only: bool) {
         .unwrap();
     let mut f = Fixture::new();
     let id = f.reserve_audiences(&[4, 5]);
+    let mut names = NamespaceRecipeOwner::new(
+        &root.0,
+        f.namespaces.clone(),
+        sophia_protocol::NamespaceId::from_raw(9),
+        8,
+        id.generation(),
+    )
+    .unwrap();
+    std::fs::write(
+        root.0.join("recipe"),
+        "namespace-recipe 1\nmount first inspection\nmount second second\n",
+    )
+    .unwrap();
+    let recipe =
+        sophia_config::namespace_recipe::PinnedNamespaceRecipe::load(&root.0, "recipe").unwrap();
+    let approved = [("first", 4), ("second", 5)]
+        .into_iter()
+        .map(|(name, audience)| {
+            (
+                name.into(),
+                ApprovedEndpoint {
+                    service: ServiceReference {
+                        identity: 20,
+                        generation: service.generation().unwrap(),
+                        protocol: EndpointProtocol::NineP2000L,
+                        interface: "inspection".into(),
+                        version: 1,
+                    },
+                    audience,
+                    availability: ServiceAvailability::Available,
+                },
+            )
+        })
+        .collect();
+    let published = names.publish(1, &recipe, &approved).unwrap();
+    let endpoint = published.namespace.lease.directory();
+    let socket = endpoint.join("inspection");
+    let listener = &published.namespace.listeners[0].listener;
+    let second_listener = &published.namespace.listeners[1].listener;
     let executable = std::env::current_exe().unwrap();
     let domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::MetadataShell])
         .unwrap()
-        .path(ProtectionPath::read_only(&endpoint))
+        .path(ProtectionPath::read_only(endpoint))
         .unwrap()
         .path(ProtectionPath::read_write(&reports))
         .unwrap()
@@ -97,27 +127,13 @@ fn run(grant_only: bool) {
         .book
         .worker_authority(id, &mut supervisor, Instant::now())
         .unwrap();
-    let grants: Vec<_> = [4, 5]
-        .into_iter()
-        .map(|audience| {
-            f.namespaces
-                .lock()
-                .unwrap()
-                .grant_endpoint(EndpointGrantPolicy {
-                    namespace: sophia_protocol::NamespaceId::from_raw(9),
-                    principal: 8,
-                    launch_generation: id.generation(),
-                    audience,
-                    service: ServiceReference {
-                        identity: 20,
-                        generation: service.generation().unwrap(),
-                        protocol: EndpointProtocol::NineP2000L,
-                        interface: "inspection".into(),
-                        version: 1,
-                    },
-                })
-                .unwrap()
-        })
+    let grants: Vec<_> = published
+        .namespace
+        .lease
+        .view()
+        .endpoints
+        .iter()
+        .map(|e| published.grant(&e.endpoint).unwrap().clone())
         .collect();
     assert_eq!(grants[0].endpoint().service, grants[1].endpoint().service);
     assert_ne!(grants[0].endpoint().scope, grants[1].endpoint().scope);

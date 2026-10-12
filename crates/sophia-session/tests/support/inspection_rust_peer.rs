@@ -24,14 +24,17 @@ fn run(two_endpoints: bool) {
     let stdin = std::io::stdin();
     rustix::io::fcntl_setfd(&stdin, rustix::io::FdFlags::CLOEXEC).unwrap();
     let relay = UnixStream::from(rustix::io::fcntl_dupfd_cloexec(&stdin, 3).unwrap());
-    let role = UnixStream::connect(&socket).unwrap();
+    let names =
+        sophia_namespace_client::Namespace::open(std::path::Path::new(&socket).parent().unwrap())
+            .unwrap();
+    assert_eq!(names.discovery().endpoints.len(), 2);
+    let role = names.connect("inspection").unwrap();
     let admitted = authenticate(Client::over(role, relay, b"observer", b"inspection").unwrap());
     let mut admitted = authenticate(admitted.reauthenticate().unwrap());
     let mut second = if two_endpoints {
-        let path = std::path::Path::new(&socket).with_file_name("second");
         Some(authenticate(
             Client::over_relay(
-                UnixStream::connect(path).unwrap(),
+                names.connect("second").unwrap(),
                 admitted.relay,
                 b"observer",
                 b"inspection",

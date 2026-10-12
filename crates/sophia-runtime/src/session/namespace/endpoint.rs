@@ -37,6 +37,22 @@ impl EndpointGrantRecord {
 /// a listener/alias cannot revoke its peers; the registry owns revocation.
 #[derive(Clone, Debug)]
 pub struct EndpointGrantLease(Arc<EndpointGrantRecord>);
+
+/// Optional bounded policy custody. Workers receive only cloned leases;
+/// dropping this owner fences them without locking the namespace registry.
+/// The registry reclaims the resulting tombstone on its next grant allocation.
+#[derive(Debug)]
+pub struct EndpointGrantOwner(EndpointGrantLease);
+impl EndpointGrantOwner {
+    pub fn lease(&self) -> &EndpointGrantLease {
+        &self.0
+    }
+}
+impl Drop for EndpointGrantOwner {
+    fn drop(&mut self) {
+        self.0.0.active.store(false, Ordering::Release);
+    }
+}
 impl EndpointGrantLease {
     pub fn endpoint(&self) -> &GrantedEndpoint {
         &self.0.endpoint
@@ -62,6 +78,12 @@ impl EndpointGrantLease {
 }
 
 impl NamespaceRegistry {
+    pub fn own_endpoint_grant(
+        &mut self,
+        policy: EndpointGrantPolicy,
+    ) -> Result<EndpointGrantOwner, NamespaceRegistryError> {
+        self.grant_endpoint(policy).map(EndpointGrantOwner)
+    }
     /// Trusted policy issuance, before recipe compilation. No client-supplied
     /// scope or grant ID is adopted, and service restarts require a fresh grant.
     pub fn grant_endpoint(

@@ -37,6 +37,7 @@ sophia-backend-live = { path = "../sophia-backend-live", default-features = fals
 sophia-conformance = { path = "../sophia-conformance" }
 sophia-9p-client = { workspace = true }
 sophia-launch-client = { workspace = true }
+sophia-namespace-client = { workspace = true }
 sophia-lock-protocol = { workspace = true }
 sophia-shell-client = { workspace = true }
 sophia-renderer-native-egl = { path = "../sophia-renderer-native-egl", features = ["gbm-platform"] }

@@ -334,6 +334,60 @@ scope-control SHA256SUMS identities respectively are
 `7bbe9268a100f8f52268bdfaf4a1aca1ccea5ad5449de4e2f340a0c550d49543`,
 and `a87be6816a8c7114dd4b2388feeb0f3f35e35191ec360dcc56eeb248d0f01afc`.
 
+### Session publication and grant custody
+
+`NamespaceRecipeOwner` now joins the pinned source loader, compiler, endpoint
+grant registry and atomic filesystem publisher. It accepts a newer trusted
+policy revision, preserves unchanged grant owners, and drops reduced owners
+before materializing replacement names. A publication failure retains old
+names while revoked authority remains revoked. Newly issued candidate grants
+are dropped on failure; aborted IDs are not reused. Repeating the failed or
+an older accepted policy revision refuses. A later explicit authorization
+requires a fresh revision and grant incarnation.
+
+`EndpointGrantOwner` separates policy custody from the leases retained by
+workers and admissions. Its drop fences authority atomically without needing
+the registry mutex. This avoids blocking cleanup behind an admission owner
+or reviving grants during rollback. Registry tombstones reclaim at the next
+allocation. Publication holds the registry only for bookkeeping; pin checks,
+socket materialization and filesystem publication run outside that lock.
+The approved service catalog is bounded to 64 entries, deduplicates identical
+service/audience grants, and refuses inconsistent metadata or availability
+for one service incarnation.
+
+Six Session publication tests pass: private equal-name views with shared service
+identity and separate grants; A-to-B rebind with retained A permission; failed
+publication without authority revival; changed/invalid source refusal; mutex
+contention before reduction; and catalog bounds/consistency. Cleanup while the
+registry mutex is held completes within the bounded test wait. These tests
+supply policy and admission facts, so they do not claim afid verification.
+
+The protected inspection tests now obtain listeners and grant leases from this
+owner instead of constructing them separately. Their child uses the independent
+Rust namespace SDK to discover and connect before authenticating through the
+real Factotum launch channel. Both whole-launch and independent-grant revocation
+continue to pass, including progress on the second endpoint after the first is
+revoked. Endpoint dispatch is direct fixture wiring; live application recipe
+selection, scheduling and the developer launch export remain pending. X11
+endpoint materialization is not qualified by this 9P inspection join.
+
+The closed `t318-namespace-owner-01` package passes these six publication tests,
+six grant and nine registry tests, and all 28 Session launch-authentication
+parent tests (all four child entry points invoked). Runtime all-target Clippy,
+Session integration-target Clippy, workspace formatting and source layout pass.
+The package records dynamically enumerated candidate files, test binary paths
+and hashes without copying binaries, and verifies unchanged source after checks.
+Its SHA256SUMS identity is
+`6a974c43d98c67bedb1455c67b3df0b19b6e44c58d6ae6bdce24de96245e5bba`.
+The separate `t318-view-revocation-control-01` omits the policy grant owner's
+revocation on drop. It fails with exit 101 at `failed naming publication must
+not revive revoked authority`, then restores all candidate hashes. Its manifest
+identity is `5019c94752840a4a99fee5b2be8096bc78304ce92a8e6b8b91515a91a62c3d93`.
+The positive package follows restoration and includes a later catalog-metadata
+consistency check and its assertion; the control's earlier candidate is recorded
+separately. The lockfile change adds only the existing vendored namespace SDK
+as a Session test dependency.
+
 Sophia now pins the published C and Rust candidates above. Both snapshot
 verifiers also compare `namespace-discovery.md` against the normative source,
 so a later contract change cannot silently leave either SDK copy behind.
