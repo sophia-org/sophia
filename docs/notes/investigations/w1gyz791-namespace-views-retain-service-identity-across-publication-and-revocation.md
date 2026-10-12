@@ -22,6 +22,34 @@ socket paths or namespace commands to launch installed applications.
 
 ## Evidence
 
+### Installed acceptance and remaining output-identity evidence
+
+niltempus installed `niltempus-7b8051ace95f8581d57e` and entered a new live
+session. The running executable matches the installed binary, SHA-256
+`1d61d6ad48d76f46519ce93cff09c8f4d2e98c0765864fa26674bd650de30041`,
+from Sophia `99860d58f` and integration `a400815`. Startup records both native
+heads and the WM ready, and an application spawn. niltempus confirmed that
+Super+Enter and Super+B open a usable terminal and browser normally. The
+previous release remains available for rollback.
+
+The separate `t318-live-acceptance-01` package retains executable identity,
+selected startup records, recording health and the question/answer. Its
+self-excluding SHA256SUMS has SHA-256
+`65a2601b87207917621cb601e8318cbad58754fdccfb0da7754edc56cdf0631a`.
+The earlier preparation package remains unchanged: its `installed=false`
+describes that earlier observation, not this live session.
+
+The final exit audit still needs to reconcile the plan's **generation-bound
+target** row. The authenticated inspection control covers a captured service
+generation; the common portal lease control covers a supplied clipboard
+source generation. Neither is recorded as a control for a reused numeric
+output identity. The repository gate includes output-generation tests, but a
+passing broad gate alone does not establish that exact grant-retargeting
+observation and its discriminating mutation. Keep this evidence row open;
+do not relabel the clipboard join as output coverage. Physical output return
+and renderer capture remain their separate acceptance boundaries. The live
+launch observation above does not close this deterministic evidence gap.
+
 ### Master integration and prepared release
 
 Master fast-forwarded to signed `99860d58f` after the qualified implementation
