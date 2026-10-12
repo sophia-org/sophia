@@ -43,6 +43,7 @@ mod lock_authenticated_transport;
 mod authentication_transport_budget;
 
 struct Fixture {
+    namespaces: std::sync::Arc<std::sync::Mutex<sophia_runtime::NamespaceRegistry>>,
     book: LaunchBook,
     ingress: Ingress,
     owner: ConnectionOwner,
@@ -70,6 +71,18 @@ impl Fixture {
         let now = Instant::now();
         let book = LaunchBook::new(3, ingress.clone(), now, now + Duration::from_secs(5)).unwrap();
         let mut f = Self {
+            namespaces: std::sync::Arc::new(std::sync::Mutex::new(
+                sophia_runtime::NamespaceRegistry::with_namespace(
+                    31,
+                    sophia_protocol::NamespaceContext::new(
+                        sophia_protocol::NamespaceId::from_raw(9),
+                        sophia_protocol::NamespaceProfile::Confined,
+                        sophia_protocol::NamespaceCapabilities::NONE,
+                    )
+                    .unwrap(),
+                )
+                .unwrap(),
+            )),
             book,
             ingress,
             owner: owner.connect(client),

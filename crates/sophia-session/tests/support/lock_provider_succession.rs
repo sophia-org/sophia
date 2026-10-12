@@ -181,7 +181,8 @@ fn idle_provider(label: &str) -> LockProvider {
         Vec::new(),
         wake.notifier(),
         policy(),
-        crate::launch_authentication::files::TransportBudget::default().endpoint(),
+        crate::launch_authentication::files::TransportBudget::new(factotum::namespaces())
+            .endpoint(),
     )
     .unwrap()
 }
@@ -191,7 +192,7 @@ fn idle_provider(label: &str) -> LockProvider {
 /// and Session is told once to revoke its grants.
 #[test]
 fn a_reported_service_failure_is_terminal_and_discards_its_batch() {
-    let mut launches = LaunchCoordinator::new(Default::default());
+    let mut launches = LaunchCoordinator::new(Default::default(), factotum::namespaces());
     let connected = || {
         Ok(LockFileServiceEvent::Connected {
             connection_epoch: 1,

@@ -27,6 +27,9 @@ pub trait FileAuthentication: Send {
     /// A closed owner retains its quota slot until cleanup is acknowledged.
     fn drained(&self) -> bool;
     fn admitted(&self) -> bool;
+    /// Immutable facts, not proof of current authority. Use check before an
+    /// operation; namespace and launch revocation still govern retained fids.
+    fn admission_context(&self) -> Option<sophia_protocol::ClientAdmissionContext>;
     fn wait(&self, now: Instant) -> Duration;
 }
 
@@ -108,6 +111,12 @@ impl<E> AuthenticatedFiles<E> {
     }
     pub fn files_mut(&mut self) -> &mut E {
         &mut self.files
+    }
+    pub fn admission_context(&self) -> Option<sophia_protocol::ClientAdmissionContext> {
+        match &self.admission {
+            Admission::Authenticated(owner) => owner.admission_context(),
+            Admission::Legacy | Admission::Pending => None,
+        }
     }
     pub fn poll(&mut self, now: Instant) -> Result<(), Errno> {
         match &mut self.admission {

@@ -212,6 +212,16 @@ impl RoleAuthentication {
         Ok(identity)
     }
 
+    pub(super) fn prepare_identity(
+        &mut self,
+        attempt: Attempt,
+        now: Instant,
+        authority: &mut Authority<'_>,
+    ) -> Result<Identity, Errno> {
+        self.poll(now)?;
+        Ok(self.qualify(attempt, now, authority)?.identity)
+    }
+
     fn qualify(
         &mut self,
         attempt: Attempt,

@@ -3,7 +3,8 @@ use super::files::{EndpointBudget, TransportBudget};
 use super::{Error, LaunchBook, LaunchId, LaunchPolicy, Phase, WorkerAuthority};
 use crate::session_unlock_supervisor::LaunchService;
 use sophia_factotum::launch::queue::Ingress;
-use sophia_runtime::{LaunchChannel, ProcessSupervisor};
+use sophia_runtime::{LaunchChannel, NamespaceRegistry, ProcessSupervisor};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// A registration belongs to exactly one shared Factotum generation. Neither
@@ -31,13 +32,13 @@ pub struct LaunchCoordinator {
 }
 
 impl LaunchCoordinator {
-    pub fn new(service: LaunchService) -> Self {
+    pub fn new(service: LaunchService, namespaces: Arc<Mutex<NamespaceRegistry>>) -> Self {
         Self {
             service,
             current: None,
             seen: 0,
             next_launch: 1,
-            transports: TransportBudget::default(),
+            transports: TransportBudget::new(namespaces),
         }
     }
 

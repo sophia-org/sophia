@@ -186,7 +186,7 @@ fn run_kind(kind: PeerKind) {
         .book
         .worker_authority(id, &mut supervisor, Instant::now())
         .unwrap();
-    let budget = TransportBudget::default();
+    let budget = TransportBudget::new(f.namespaces.clone());
     let factory = budget
         .endpoint()
         .bind(worker, b"lock".to_vec(), b"lock-provider".to_vec())
@@ -228,6 +228,11 @@ fn run_kind(kind: PeerKind) {
                 connected, 1,
                 "independent authenticated peer must reach lock negotiation after Tversion"
             );
+            assert_eq!(
+                f.namespaces.lock().unwrap().admission_count(),
+                1,
+                "reauthentication must retain one published admission"
+            );
             f.book.revoke(id, Instant::now()).unwrap();
             revoked = true;
         }
@@ -260,4 +265,9 @@ fn run_kind(kind: PeerKind) {
         std::thread::sleep(Duration::from_millis(1));
     }
     assert_eq!(disconnected, 1);
+    assert_eq!(
+        f.namespaces.lock().unwrap().admission_count(),
+        0,
+        "retired lock transport must release its namespace admission"
+    );
 }

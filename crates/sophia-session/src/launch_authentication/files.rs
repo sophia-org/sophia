@@ -7,10 +7,12 @@ use sophia_9p::{
     ConnectionId, Errno, Fid, ReadOutcome, authentication::Attempt, export::AttachContext,
 };
 use sophia_factotum::launch::queue::Ingress;
+use sophia_protocol::{ClientAdmissionContext, ClientAuthenticationMethod, NamespaceId};
 use sophia_runtime::authenticated_files::{FileAuthentication, FileAuthenticationFactory};
+use sophia_runtime::{AdmissionLease, NamespaceRegistry};
 use std::{
     sync::{
-        Arc,
+        Arc, Mutex, TryLockError,
         atomic::{AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
@@ -19,13 +21,13 @@ use std::{
 const GLOBAL_TRANSPORTS: usize = 32;
 const ENDPOINT_TRANSPORTS: usize = 8;
 
-#[derive(Default)]
 struct Global {
     used: AtomicUsize,
     next: AtomicU64,
+    namespaces: Arc<Mutex<NamespaceRegistry>>,
 }
 /// One instance per Session, shared by every authenticated role endpoint.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct TransportBudget(Arc<Global>);
 #[derive(Clone)]
 pub struct EndpointBudget {
@@ -42,6 +44,13 @@ impl Drop for Permit {
     }
 }
 impl TransportBudget {
+    pub fn new(namespaces: Arc<Mutex<NamespaceRegistry>>) -> Self {
+        Self(Arc::new(Global {
+            used: AtomicUsize::new(0),
+            next: AtomicU64::new(0),
+            namespaces,
+        }))
+    }
     pub fn endpoint(&self) -> EndpointBudget {
         EndpointBudget {
             global: self.0.clone(),
@@ -135,6 +144,7 @@ impl FileAuthenticationFactory for RoleFileFactory {
             connection,
             ingress,
             closed: false,
+            admission: None,
             _permit: permit,
         }))
     }
@@ -146,6 +156,7 @@ struct RoleFileAuthentication {
     connection: ConnectionId,
     ingress: Ingress,
     closed: bool,
+    admission: Option<AdmissionLease>,
     _permit: Permit,
 }
 impl Drop for RoleFileAuthentication {
@@ -181,13 +192,56 @@ impl FileAuthentication for RoleFileAuthentication {
         )
     }
     fn commit(&mut self, attempt: Attempt, now: Instant) -> Result<(), Errno> {
-        self.auth
-            .commit_attach(attempt, now, &mut Authority::Worker(&self.worker))
-            .map(drop)
+        let mut authority = Authority::Worker(&self.worker);
+        let identity = self.auth.prepare_identity(attempt, now, &mut authority)?;
+        let method = ClientAuthenticationMethod::FactotumLaunch {
+            principal: identity.principal,
+            launch_generation: identity.launch,
+        };
+        if let Some(admission) = &self.admission {
+            let context = admission.context();
+            if !admission.is_live() {
+                return Err(Errno::ESTALE);
+            }
+            if context.namespace.id.raw() != identity.namespace
+                || context.auth_provenance.method != method
+            {
+                return Err(Errno::EACCES);
+            }
+            return self
+                .auth
+                .commit_attach(attempt, now, &mut authority)
+                .map(drop);
+        }
+        // Reserve the registry result before pinning authentication. Neither
+        // registry publication nor the already-prepared role root can fail
+        // afterwards. Contention refuses this attach; it never blocks a worker.
+        let mut namespaces =
+            self._permit
+                .endpoint
+                .global
+                .namespaces
+                .try_lock()
+                .map_err(|error| match error {
+                    TryLockError::WouldBlock => Errno::EAGAIN,
+                    TryLockError::Poisoned(_) => Errno::EIO,
+                })?;
+        let prepared = namespaces
+            .prepare_admission(NamespaceId::from_raw(identity.namespace), method)
+            .map_err(|_| Errno::EACCES)?;
+        self.auth.commit_attach(attempt, now, &mut authority)?;
+        self.admission = Some(prepared.publish_lease());
+        Ok(())
     }
     fn check(&mut self, connection: ConnectionId, now: Instant) -> Result<(), Errno> {
         if connection != self.connection {
             return Err(Errno::EACCES);
+        }
+        if self.closed {
+            return Err(Errno::ESTALE);
+        }
+        if !self.admission.as_ref().ok_or(Errno::EACCES)?.is_live() {
+            return Err(Errno::ESTALE);
         }
         self.auth
             .check_admitted(now, &mut Authority::Worker(&self.worker))
@@ -201,11 +255,19 @@ impl FileAuthentication for RoleFileAuthentication {
     }
     fn close(&mut self, now: Instant) {
         self.closed = true;
+        self.admission = None;
         self.auth.close(now);
     }
     fn poll(&mut self, now: Instant) -> Result<(), Errno> {
         let result = self.auth.poll(now);
-        if !self.closed && !self.worker.live().map_err(|_| Errno::ESTALE)? {
+        if !self.closed
+            && (result.is_err()
+                || !self.worker.live().unwrap_or(false)
+                || self
+                    .admission
+                    .as_ref()
+                    .is_some_and(|admission| !admission.is_live()))
+        {
             self.close(now);
             return Err(Errno::ESTALE);
         }
@@ -215,7 +277,10 @@ impl FileAuthentication for RoleFileAuthentication {
         self.auth.drained()
     }
     fn admitted(&self) -> bool {
-        self.auth.pinned().is_some()
+        self.admission.as_ref().is_some_and(AdmissionLease::is_live)
+    }
+    fn admission_context(&self) -> Option<ClientAdmissionContext> {
+        self.admission.as_ref().map(AdmissionLease::context)
     }
     fn wait(&self, _now: Instant) -> Duration {
         // Factotum answers also wake the core. This bounded idle cadence checks

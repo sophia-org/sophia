@@ -13,6 +13,9 @@ use std::sync::{
 
 struct Draining;
 impl FileAuthentication for Draining {
+    fn admission_context(&self) -> Option<sophia_protocol::ClientAdmissionContext> {
+        None
+    }
     fn claims(&self, _: &AttachContext<'_>) -> Result<(), Errno> {
         Err(Errno::ESTALE)
     }

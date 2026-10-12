@@ -1,4 +1,8 @@
 use std::collections::BTreeMap;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use sophia_protocol::{
     ClientAdmissionContext, ClientAdmissionId, ClientAuthProvenance, ClientAuthenticationMethod,
@@ -6,6 +10,10 @@ use sophia_protocol::{
 };
 
 use crate::{SophiaErrorExt, SophiaErrorKind};
+
+mod admission;
+pub use admission::{AdmissionLease, PreparedAdmission};
+use admission::{AdmissionRecord, NamespaceRecord};
 
 /// Session-owned namespace and client-admission registry.
 ///
@@ -16,8 +24,9 @@ pub struct NamespaceRegistry {
     session_generation: u64,
     namespace_ids: IdAllocator<NamespaceId>,
     admission_ids: IdAllocator<ClientAdmissionId>,
-    namespaces: BTreeMap<NamespaceId, NamespaceContext>,
-    admissions: BTreeMap<ClientAdmissionId, ClientAdmissionContext>,
+    namespaces: BTreeMap<NamespaceId, NamespaceRecord>,
+    admissions: BTreeMap<ClientAdmissionId, AdmissionRecord>,
+    live: Arc<AtomicBool>,
 }
 
 impl NamespaceRegistry {
@@ -31,6 +40,7 @@ impl NamespaceRegistry {
             admission_ids: IdAllocator::new(),
             namespaces: BTreeMap::new(),
             admissions: BTreeMap::new(),
+            live: Arc::new(AtomicBool::new(true)),
         })
     }
 
@@ -65,13 +75,14 @@ impl NamespaceRegistry {
             },
         )?;
         let mut namespaces = BTreeMap::new();
-        namespaces.insert(namespace.id, namespace);
+        namespaces.insert(namespace.id, NamespaceRecord::new(namespace));
         Ok(Self {
             session_generation,
             namespace_ids,
             admission_ids: IdAllocator::new(),
             namespaces,
             admissions: BTreeMap::new(),
+            live: Arc::new(AtomicBool::new(true)),
         })
     }
 
@@ -86,12 +97,13 @@ impl NamespaceRegistry {
     ) -> NamespaceContext {
         let context = NamespaceContext::new(self.namespace_ids.next_id(), profile, capabilities)
             .expect("namespace allocator returned an invalid ID");
-        self.namespaces.insert(context.id, context);
+        self.namespaces
+            .insert(context.id, NamespaceRecord::new(context));
         context
     }
 
     pub fn namespace(&self, namespace: NamespaceId) -> Option<NamespaceContext> {
-        self.namespaces.get(&namespace).copied()
+        self.namespaces.get(&namespace).map(|record| record.context)
     }
 
     pub fn admit(
@@ -99,20 +111,36 @@ impl NamespaceRegistry {
         namespace: NamespaceId,
         method: ClientAuthenticationMethod,
     ) -> Result<ClientAdmissionContext, NamespaceRegistryError> {
+        Ok(self.prepare_admission(namespace, method)?.publish())
+    }
+
+    /// Reserve immutable facts without publishing an admission. The exclusive
+    /// borrow keeps namespace policy fixed until the caller commits or aborts.
+    pub fn prepare_admission(
+        &mut self,
+        namespace: NamespaceId,
+        method: ClientAuthenticationMethod,
+    ) -> Result<PreparedAdmission<'_>, NamespaceRegistryError> {
         let namespace = self
             .namespace(namespace)
             .ok_or(NamespaceRegistryError::UnknownNamespace { namespace })?;
         let auth_provenance = ClientAuthProvenance::new(method, self.session_generation)
-            .expect("validated session generation became invalid");
+            .ok_or(NamespaceRegistryError::InvalidAuthentication)?;
+        // A transport can revoke its lease without taking this registry's lock.
+        // Reclaim tombstones before allocating another admission, keeping them
+        // bounded by the admissions present at the last allocation.
+        self.admissions.retain(|_, record| record.live());
         let context =
             ClientAdmissionContext::new(self.admission_ids.next_id(), namespace, auth_provenance)
                 .expect("admission allocator returned an invalid ID");
-        self.admissions.insert(context.client_id, context);
-        Ok(context)
+        Ok(PreparedAdmission::new(self, context))
     }
 
     pub fn admission(&self, client: ClientAdmissionId) -> Option<ClientAdmissionContext> {
-        self.admissions.get(&client).copied()
+        self.admissions
+            .get(&client)
+            .filter(|record| record.live())
+            .map(|record| record.context)
     }
 
     pub fn is_current_admission(&self, context: ClientAdmissionContext) -> bool {
@@ -125,32 +153,45 @@ impl NamespaceRegistry {
         &mut self,
         client: ClientAdmissionId,
     ) -> Result<ClientAdmissionContext, NamespaceRegistryError> {
-        self.admissions
+        let record = self
+            .admissions
             .remove(&client)
-            .ok_or(NamespaceRegistryError::UnknownAdmission { client })
+            .ok_or(NamespaceRegistryError::UnknownAdmission { client })?;
+        if !record.live() {
+            return Err(NamespaceRegistryError::UnknownAdmission { client });
+        }
+        record.revoke();
+        Ok(record.context)
     }
 
     pub fn revoke_namespace(
         &mut self,
         namespace: NamespaceId,
     ) -> Result<NamespaceRevocation, NamespaceRegistryError> {
-        let context = self
+        let record = self
             .namespaces
             .remove(&namespace)
             .ok_or(NamespaceRegistryError::UnknownNamespace { namespace })?;
+        // One release makes every retained lease stale before map cleanup.
+        record.active.store(false, Ordering::Release);
         let clients = self
             .admissions
             .iter()
             .filter_map(|(client, admission)| {
-                (admission.namespace.id == namespace).then_some(*client)
+                (admission.context.namespace.id == namespace).then_some(*client)
             })
             .collect::<Vec<_>>();
         let admissions = clients
             .into_iter()
             .filter_map(|client| self.admissions.remove(&client))
+            .filter_map(|record| {
+                let was_live = record.live();
+                record.revoke();
+                was_live.then_some(record.context)
+            })
             .collect();
         Ok(NamespaceRevocation {
-            namespace: context,
+            namespace: record.context,
             admissions,
         })
     }
@@ -160,7 +201,16 @@ impl NamespaceRegistry {
     }
 
     pub fn admission_count(&self) -> usize {
-        self.admissions.len()
+        self.admissions
+            .values()
+            .filter(|record| record.live())
+            .count()
+    }
+}
+
+impl Drop for NamespaceRegistry {
+    fn drop(&mut self) {
+        self.live.store(false, Ordering::Release);
     }
 }
 
@@ -173,6 +223,7 @@ pub struct NamespaceRevocation {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NamespaceRegistryError {
     InvalidSessionGeneration,
+    InvalidAuthentication,
     UnknownNamespace { namespace: NamespaceId },
     UnknownAdmission { client: ClientAdmissionId },
 }
@@ -182,6 +233,9 @@ impl core::fmt::Display for NamespaceRegistryError {
         match self {
             Self::InvalidSessionGeneration => {
                 formatter.write_str("namespace registry session generation must be nonzero")
+            }
+            Self::InvalidAuthentication => {
+                formatter.write_str("invalid client authentication provenance")
             }
             Self::UnknownNamespace { namespace } => {
                 write!(formatter, "unknown namespace {}", namespace.raw())

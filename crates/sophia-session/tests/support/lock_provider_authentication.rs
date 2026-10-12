@@ -241,7 +241,7 @@ fn normal_provider_owner_authenticates_and_recovers_after_factotum_loss() {
 #[test]
 fn unavailable_factotum_never_falls_back_to_an_ordinary_provider_launch() {
     let mut provider = idle_provider("no-factotum");
-    let mut launches = LaunchCoordinator::new(Default::default());
+    let mut launches = LaunchCoordinator::new(Default::default(), factotum::namespaces());
     assert!(provider.poll(Instant::now(), &mut launches).is_empty());
     assert!(provider.supervisor.as_ref().unwrap().child_id().is_none());
     assert!(provider.registration.is_none());

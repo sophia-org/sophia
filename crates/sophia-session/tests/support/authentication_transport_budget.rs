@@ -23,7 +23,7 @@ fn transport_slots_are_shared_bounded_and_retained_through_remote_cancellation()
         .book
         .worker_authority(id, &mut supervisor, Instant::now())
         .unwrap();
-    let budget = TransportBudget::default();
+    let budget = TransportBudget::new(f.namespaces.clone());
     let endpoints: Vec<_> = (0..5).map(|_| budget.endpoint()).collect();
     let mut factories: Vec<_> = endpoints
         .iter()

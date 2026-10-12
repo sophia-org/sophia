@@ -125,6 +125,24 @@ pub enum ClientAuthenticationMethod {
     TrustedLocal,
     PeerCredentials,
     MitMagicCookie1,
+    /// Factotum's verified principal joined to Session's live launch custody.
+    /// These identifiers are provenance, not a transferable credential.
+    FactotumLaunch {
+        principal: u64,
+        launch_generation: u64,
+    },
+}
+
+impl ClientAuthenticationMethod {
+    pub const fn is_valid(self) -> bool {
+        match self {
+            Self::FactotumLaunch {
+                principal,
+                launch_generation,
+            } => principal != 0 && launch_generation != 0,
+            _ => true,
+        }
+    }
 }
 
 /// Authentication facts safe to retain outside the secret-validation layer.
@@ -136,7 +154,7 @@ pub struct ClientAuthProvenance {
 
 impl ClientAuthProvenance {
     pub const fn new(method: ClientAuthenticationMethod, session_generation: u64) -> Option<Self> {
-        if session_generation == 0 {
+        if session_generation == 0 || !method.is_valid() {
             None
         } else {
             Some(Self {
@@ -147,7 +165,7 @@ impl ClientAuthProvenance {
     }
 
     pub const fn is_valid(self) -> bool {
-        self.session_generation != 0
+        self.session_generation != 0 && self.method.is_valid()
     }
 }
 

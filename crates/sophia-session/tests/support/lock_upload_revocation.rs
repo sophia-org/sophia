@@ -8,8 +8,31 @@ use std::os::unix::net::UnixListener;
 
 #[test]
 fn revoked_launch_refuses_the_next_in_place_upload_fragment() {
+    upload_revocation(Revocation::Launch);
+}
+
+#[test]
+fn revoked_namespace_refuses_the_next_in_place_upload_fragment() {
+    upload_revocation(Revocation::Namespace);
+}
+
+#[test]
+fn revoked_admission_refuses_the_next_in_place_upload_fragment() {
+    upload_revocation(Revocation::Admission);
+}
+
+#[derive(Debug)]
+enum Revocation {
+    Launch,
+    Namespace,
+    Admission,
+}
+
+fn upload_revocation(revocation: Revocation) {
     let peer = Peer::build(false);
-    let root = Directory(std::env::temp_dir().join(format!("t317-upload-{}", std::process::id())));
+    let root = Directory(
+        std::env::temp_dir().join(format!("t317-upload-{revocation:?}-{}", std::process::id())),
+    );
     std::fs::DirBuilder::new()
         .mode(0o700)
         .create(&root.0)
@@ -68,7 +91,7 @@ fn revoked_launch_refuses_the_next_in_place_upload_fragment() {
         .book
         .worker_authority(id, &mut supervisor, Instant::now())
         .unwrap();
-    let mut factory = TransportBudget::default()
+    let mut factory = TransportBudget::new(f.namespaces.clone())
         .endpoint()
         .bind(worker, b"lock".to_vec(), b"lock-provider".to_vec())
         .unwrap();
@@ -96,6 +119,7 @@ fn revoked_launch_refuses_the_next_in_place_upload_fragment() {
     let mut revoked = false;
     let mut prefix = 0;
     let mut discarded = 0;
+    let mut admission = None;
     let end = deadline();
     loop {
         f.tick(end);
@@ -104,7 +128,21 @@ fn revoked_launch_refuses_the_next_in_place_upload_fragment() {
         if !revoked {
             export.poll(Instant::now()).unwrap();
         }
-        if let Some(target) = connection.in_place_target(&mut export) {
+        if let Some(current) = export.admission_context() {
+            if let Some(original) = admission {
+                assert_eq!(
+                    current, original,
+                    "Tversion and reauthentication must preserve the exact admission context"
+                );
+            } else {
+                admission = Some(current);
+            }
+        }
+        let target = {
+            let _registry_busy = f.namespaces.lock().unwrap();
+            connection.in_place_target(&mut export)
+        };
+        if let Some(target) = target {
             if !revoked {
                 let InPlaceTarget::Destination(destination) = target else {
                     panic!("an authenticated resource upload must receive its prefix");
@@ -122,7 +160,41 @@ fn revoked_launch_refuses_the_next_in_place_upload_fragment() {
                         );
                         assert!(export.files().custody().upload_binding(0).is_some());
                         if prefix == 4 {
-                            f.book.revoke(id, Instant::now()).unwrap();
+                            let context =
+                                admission.expect("authenticated upload has an admission context");
+                            assert_eq!(context.namespace.id.raw(), 9);
+                            assert_eq!(
+                                context.namespace.profile,
+                                sophia_protocol::NamespaceProfile::Confined
+                            );
+                            assert_eq!(
+                                context.namespace.capabilities,
+                                sophia_protocol::NamespaceCapabilities::NONE
+                            );
+                            assert_eq!(context.auth_provenance.session_generation, 31);
+                            assert_eq!(
+                                context.auth_provenance.method,
+                                sophia_protocol::ClientAuthenticationMethod::FactotumLaunch {
+                                    principal: 8,
+                                    launch_generation: id.generation()
+                                }
+                            );
+                            let mut registry = f.namespaces.lock().unwrap();
+                            assert!(registry.is_current_admission(context));
+                            assert_eq!(
+                                registry.admission_count(),
+                                1,
+                                "only one admission is published across failed attaches and Tversion"
+                            );
+                            match revocation {
+                                Revocation::Launch => f.book.revoke(id, Instant::now()).unwrap(),
+                                Revocation::Namespace => {
+                                    registry.revoke_namespace(context.namespace.id).unwrap();
+                                }
+                                Revocation::Admission => {
+                                    registry.revoke_admission(context.client_id).unwrap();
+                                }
+                            }
                             revoked = true;
                         }
                     }
@@ -132,7 +204,15 @@ fn revoked_launch_refuses_the_next_in_place_upload_fragment() {
             } else {
                 assert!(
                     matches!(target, InPlaceTarget::Discard(_)),
-                    "revoked launch must refuse the next upload destination before idle cleanup"
+                    "{}",
+                    match revocation {
+                        Revocation::Launch =>
+                            "revoked launch must refuse the next upload destination before idle cleanup",
+                        Revocation::Namespace =>
+                            "revoked namespace must refuse the next upload destination before idle cleanup",
+                        Revocation::Admission =>
+                            "revoked admission must refuse the next upload destination before idle cleanup",
+                    }
                 );
                 let InPlaceTarget::Discard(remaining) = target else {
                     unreachable!()
@@ -181,4 +261,9 @@ fn revoked_launch_refuses_the_next_in_place_upload_fragment() {
     assert_eq!(discarded, 4);
     assert_eq!(std::fs::read_to_string(report).unwrap(), "upload-revoked\n");
     connection.close(&mut export);
+    assert_eq!(
+        f.namespaces.lock().unwrap().admission_count(),
+        0,
+        "transport close must retire its registry admission"
+    );
 }

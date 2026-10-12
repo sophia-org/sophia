@@ -28,6 +28,21 @@ struct Agent {
     wake: Wake,
     thread: Option<JoinHandle<()>>,
 }
+fn namespaces() -> std::sync::Arc<std::sync::Mutex<sophia_runtime::NamespaceRegistry>> {
+    use sophia_protocol::{NamespaceCapabilities, NamespaceContext, NamespaceId, NamespaceProfile};
+    std::sync::Arc::new(std::sync::Mutex::new(
+        sophia_runtime::NamespaceRegistry::with_namespace(
+            31,
+            NamespaceContext::new(
+                NamespaceId::from_raw(1),
+                NamespaceProfile::Confined,
+                NamespaceCapabilities::NONE,
+            )
+            .unwrap(),
+        )
+        .unwrap(),
+    ))
+}
 impl Agent {
     fn new() -> Self {
         let (client, stream) = UnixStream::pair().unwrap();
@@ -94,7 +109,7 @@ fn policy(principal: u64) -> LaunchPolicy {
 #[test]
 fn replacement_retires_old_registrations_and_preserves_supervisor_generations() {
     let service = LaunchService::default();
-    let mut coordinator = LaunchCoordinator::new(service.clone());
+    let mut coordinator = LaunchCoordinator::new(service.clone(), namespaces());
     coordinator.poll(Instant::now()).unwrap();
     assert!(!coordinator.ready());
     assert!(matches!(
@@ -167,7 +182,7 @@ fn replacement_retires_old_registrations_and_preserves_supervisor_generations() 
 #[test]
 fn role_reservations_share_one_factotum_registration_bound() {
     let service = LaunchService::default();
-    let mut coordinator = LaunchCoordinator::new(service.clone());
+    let mut coordinator = LaunchCoordinator::new(service.clone(), namespaces());
     let mut agent = Agent::new();
     assert!(service.publish(Some(agent.ingress.clone())));
     agent.until(&mut coordinator, LaunchCoordinator::ready);
@@ -198,7 +213,7 @@ fn initialization_timeout_does_not_retry_or_publish_an_unverified_book() {
     let service = LaunchService::default();
     let (ingress, _owner) = queue::channel();
     assert!(service.publish(Some(ingress.clone())));
-    let mut coordinator = LaunchCoordinator::new(service);
+    let mut coordinator = LaunchCoordinator::new(service, namespaces());
     let now = Instant::now();
     coordinator.poll(now).unwrap();
     assert!(!coordinator.ready());

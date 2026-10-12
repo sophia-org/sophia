@@ -24,12 +24,27 @@ pub struct Fixture {
     pub coordinator: LaunchCoordinator,
     pub _authenticator: Option<SupervisedAuthenticator>,
 }
+pub fn namespaces() -> std::sync::Arc<std::sync::Mutex<sophia_runtime::NamespaceRegistry>> {
+    use sophia_protocol::{NamespaceCapabilities, NamespaceContext, NamespaceId, NamespaceProfile};
+    std::sync::Arc::new(std::sync::Mutex::new(
+        sophia_runtime::NamespaceRegistry::with_namespace(
+            31,
+            NamespaceContext::new(
+                NamespaceId::from_raw(2),
+                NamespaceProfile::Confined,
+                NamespaceCapabilities::NONE,
+            )
+            .unwrap(),
+        )
+        .unwrap(),
+    ))
+}
 impl Fixture {
     pub fn new() -> Self {
         let authenticator =
             SupervisedAuthenticator::start(Launcher, UnlockSupervision::SESSION, || {}).unwrap();
         let mut f = Self {
-            coordinator: LaunchCoordinator::new(authenticator.launch_service()),
+            coordinator: LaunchCoordinator::new(authenticator.launch_service(), namespaces()),
             _authenticator: Some(authenticator),
         };
         let deadline = Instant::now() + Duration::from_secs(5);

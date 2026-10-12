@@ -790,6 +790,7 @@ pub(crate) fn run_persistent_xterm_session(
             initial_head_mapping,
         },
         SessionLoopStartup {
+            namespace_registry: namespace_registry.clone(),
             lock_namespace,
             initial_output_realization: startup_realization,
             initial_output_recovery,

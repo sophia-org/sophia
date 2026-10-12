@@ -1118,3 +1118,99 @@ aligned to the existing lock codec's names/signatures before qualification.
 This slice makes no new whole-repository or minimum-version execution claim.
 Other required roles, immutable admission-context derivation, deployed-client
 rollout and final contract/threat-model reconciliation still prevent t317 closure.
+
+## Immutable admission context and retained authority
+
+The candidate based on `a8e795fd9` joins the authenticated lock transport to
+Session's actual namespace registry. `TransportBudget` now requires that
+registry; the owner loop passes the registry used for X namespaces and the
+private lock namespace through `LaunchCoordinator`. There is no fallback
+registry, peer-selected namespace, or automatic namespace creation at attach.
+
+```text
+Factotum verdict ----> exact live WorkerAuthority
+                             |
+                     verified Identity
+                             |
+              Session NamespaceRegistry (try_lock)
+                 prepare immutable admission
+                             |
+             pin transport identity -- failure --> discard reservation
+                             |
+             publish admission + prepared role root
+                             |
+                  transport AdmissionLease
+                    |                 |
+            immutable context    live revocation flags
+                    |                 |
+              survives Tversion      +-- namespace / admission / registry
+                    |                 |
+          fresh afid, same identity   +-- retained operation checks
+                                      |   plus live launch custody
+                          close/drop -+-> revoke without registry lock
+```
+
+The passive context records the Session-selected namespace profile and portal
+capabilities, Session generation, admission ID, and sanitized Factotum principal
+and launch generation. It contains no challenge, secret, callback or custody
+handle. Factotum's connection generation and Session's generation are distinct;
+the joined fixture deliberately uses 3 and 31 respectively. A context is not
+proof of current authority: retained operations check the transport's admission
+lease and current launch custody independently.
+
+`PreparedAdmission` holds an exclusive registry borrow through the final
+identity commit. Dropping it publishes nothing and burns its reserved ID.
+Publishing the context and the already-prepared role root is infallible. A busy
+registry refuses the first attach with EAGAIN rather than blocking the worker;
+this is not a new SDK retry guarantee. Reauthentication reuses the exact context
+and does not acquire the registry mutex. X admission still uses its existing
+registry-owned lifetime and authentication methods.
+
+The transport lease observes namespace and admission revocation through local
+atomic flags. Closing or dropping it invalidates its registry entry without
+locking; registry lookup/count exclude the retired entry immediately, and the
+next admission allocation reclaims tombstones. Namespace revocation invalidates
+all of its leases before map cleanup. Registry destruction also invalidates
+retained leases. These handles live in the runtime owner, not protocol records.
+
+The existing independent C upload peer authenticates twice across Tversion,
+including its failed plain/early attaches. The receiver requires one exact
+context throughout and one published admission. New variants revoke either
+the namespace or that admission after four of eight upload bytes. The next
+fragment must be discarded with ESTALE before idle cleanup runs, while the
+registry mutex is held. The existing launch-revocation variant remains. All
+three require that transport close leaves no registry admission. The shipped
+raw, C SDK and Rust SDK service joins also check one admission after
+reauthentication and none after retirement.
+
+Device-hidden qualification passes the runtime suite (502 passed, 18 ignored
+across 61 summaries), protocol data-model tests (29), launch-authentication suite
+(21 passed, one parent-invoked child marked ignored; that protected Rust child
+executes successfully in the same log), five normal-provider tests and three
+coordinator tests. All-target Clippy for protocol, runtime and Session with
+warnings denied, formatting and diff checks pass. The initial exploratory run
+found that clearing a retired admission changed a waiting read's refusal to
+EACCES; the closed-owner check restores ESTALE before qualification.
+
+Two isolated controls test the new consequences. Removing only the retained
+admission check fails each namespace/admission variant at its named next-upload
+refusal, before idle cleanup can mask the missing guard. Clearing the context
+on wire reset fails `Tversion and reauthentication must preserve the exact
+admission context`. Both restore the exact candidate bytes; the full protected
+authentication suite passes again. Packages capture all 19 modified/untracked
+source and test files, command lines, test-binary paths and hashes, with closed
+self-excluding manifests. No binaries are copied into evidence.
+
+| Package | SHA256SUMS SHA-256 |
+| --- | --- |
+| `t317-admission-context-01` | `842982d44d1a17fcce8293d9ab7d1f92d5db78ec6b5597b80cd828b38405caae` |
+| `t317-retained-admission-check-control-01` | `8d786fe3f6516ac1913c35bac1fcdff752125564982c2b64256fd37d1b1e1539` |
+| `t317-wire-reset-context-control-01` | `513478f7b0ce1415202d24ab1932f81985e978abee1abdf6b41c939e7ae2f447` |
+| `t317-admission-context-restored-01` | `953e774df15a9b581c782297268d3eae4557b887e2eaed7d31148e68df5ec294` |
+
+This qualifies the shared admission factory through the protected lock role.
+The lower-level direct `RoleAuthentication` helpers remain conversation/pinning
+tests, not namespace-registry joins. Other required roles have not been migrated
+by this change. No new whole-repository gate, minimum-Bubblewrap execution,
+deployed-client rollout, master merge or live installation is claimed. t317's
+remaining integrations and final contract/threat-model audit remain required.
