@@ -16,6 +16,7 @@ impl LiveWmSession {
             runtime:
                 StartedPublicPolicyRuntime {
                     supervisor,
+                    authentication,
                     supervisor_state,
                     restart_policy,
                     worker,
@@ -201,6 +202,7 @@ impl LiveWmSession {
         });
         let session = Self {
             supervisor,
+            authentication,
             supervisor_state,
             restart_policy,
             socket_path,

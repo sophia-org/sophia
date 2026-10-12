@@ -5,7 +5,9 @@ impl LiveWmSession {
         _output: sophia_engine::HeadlessOutput,
         allow_new_cycle: bool,
     ) -> Result<Option<LiveWmProposal>, Box<dyn std::error::Error>> {
-        if self.control_restart.is_some() || self.degraded { return Ok(None); }
+        if self.control_restart.is_some() || self.authenticated_restart_pending() || self.degraded
+            || (self.authentication.is_some() && self.force_transport_restart)
+        { return Ok(None); }
         let chrome_style = self.candidate_chrome_style();
         let mut public = self.public.take().expect("public WM state is present");
         public.poll_output_authority()?;

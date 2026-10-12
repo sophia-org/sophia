@@ -141,6 +141,7 @@ struct LiveWmSession {
     degraded: bool,
     control_restart: Option<ControlRestartJob>,
     control_lifetime: Option<ControlProcessLifetime>,
+    authentication: Option<WmLaunchAuthentication>,
 }
 
 struct LiveWmProposal {
@@ -208,9 +209,33 @@ impl LiveWmSession {
         Ok(None)
     }
 
+    #[cfg(test)]
     fn activate_public_launch(
         config: &mut PersistentXtermSessionConfig,
         prepared_launch: Option<PreparedPublicPolicyLaunch>,
+    ) -> Result<Option<StartedPublicPolicyLaunch>, Box<dyn std::error::Error>> {
+        Self::activate_public_launch_inner(config, prepared_launch, None)
+    }
+
+    fn activate_public_launch_authenticated(
+        config: &mut PersistentXtermSessionConfig,
+        prepared_launch: Option<PreparedPublicPolicyLaunch>,
+        mut context: WmStartupContext<'_>,
+    ) -> Result<Option<StartedPublicPolicyLaunch>, Box<dyn std::error::Error>> {
+        if prepared_launch.is_some() && config.factotum.is_none() {
+            return Err("public WM requires the Session authenticator".into());
+        }
+        let result = Self::activate_public_launch_inner(config, prepared_launch, Some(&mut context));
+        if result.is_err() && let Some(registration) = context.registration {
+            let _ = context.launches.revoke(registration, Instant::now());
+        }
+        result
+    }
+
+    fn activate_public_launch_inner(
+        config: &mut PersistentXtermSessionConfig,
+        prepared_launch: Option<PreparedPublicPolicyLaunch>,
+        mut authentication: Option<&mut WmStartupContext<'_>>,
     ) -> Result<Option<StartedPublicPolicyLaunch>, Box<dyn std::error::Error>> {
         let Some(mut prepared) = prepared_launch else {
             return Ok(None);
@@ -236,7 +261,7 @@ impl LiveWmSession {
             .wm_process
             .clone()
             .ok_or("desktop profile activation requires a public WM process")?;
-        let runtime = match prepared.start_runtime(config, &process, Some(key)) {
+        let runtime = match prepared.start_runtime(config, &process, Some(key), authentication.as_deref_mut()) {
             Ok(runtime) => runtime,
             Err(error) => {
                 config.desktop_profile_activation = prepared.reject_policy_startup(
@@ -249,7 +274,9 @@ impl LiveWmSession {
                 return Err(error);
             }
         };
-        let failure = match runtime.worker.event_timeout(Duration::from_secs(5)) {
+        let failure = if let Some(context) = authentication {
+            context.wait_negotiated(&runtime.worker)
+        } else { match runtime.worker.event_timeout(Duration::from_secs(5)) {
             Ok(PolicyTransportEvent::Negotiated) => None,
             Ok(PolicyTransportEvent::Failed(error)) => Some(error),
             Ok(_) => Some("policy worker emitted normal traffic before profile admission".to_owned()),
@@ -257,7 +284,7 @@ impl LiveWmSession {
             Err(RecvTimeoutError::Disconnected) => {
                 Some("policy profile admission worker disconnected".to_owned())
             }
-        };
+        }};
         if let Some(reason) = failure {
             drop(runtime);
             config.desktop_profile_activation = prepared.reject_policy_startup(

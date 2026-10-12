@@ -30,11 +30,22 @@ impl LiveWmSession {
         &mut self,
         _output: sophia_engine::HeadlessOutput,
     ) -> Result<u64, String> {
+        if self.authenticated_restart_pending() {
+            return Err("authenticated WM replacement already active".into());
+        }
         let public = self.public.as_mut().ok_or("policy unavailable")?;
         if self.control_restart.is_some() || self.desktop_reload.is_some()
             || self.force_transport_restart || self.pending_policy_launch_spec.is_some()
         {
             return Err("restart or profile replacement already active".into());
+        }
+        if self.authentication.is_some() {
+            // Use the same settlement barrier and launch transaction as a
+            // transport-driven restart. The owner reserves this epoch once.
+            let epoch = public.next_connection_epoch;
+            epoch.checked_add(1).ok_or("WM epoch exhausted")?;
+            self.request_deliberate_restart();
+            return Ok(epoch);
         }
         let epoch = public.next_connection_epoch;
         public.next_connection_epoch = epoch.checked_add(1).ok_or("WM epoch exhausted")?;

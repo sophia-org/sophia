@@ -89,6 +89,12 @@ pub(in super::super) fn selected_transport_startup(
 ) -> (WmFileLimits, u64, u64, UnixStream) {
     let mut peer = Peer::from_stream(stream);
     peer.setup();
+    selected_transport_admitted(peer)
+}
+
+pub(in super::super) fn selected_transport_admitted(
+    mut peer: Peer,
+) -> (WmFileLimits, u64, u64, UnixStream) {
     let walk = [
         1u32.to_le_bytes().as_slice(),
         &6u32.to_le_bytes(),

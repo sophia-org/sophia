@@ -328,6 +328,7 @@ impl LiveWmSession {
         if self.desktop_reload_pending()
             || self.force_transport_restart
             || self.control_restart.is_some()
+            || self.authenticated_restart_pending()
             || self
                 .shortcuts
                 .as_ref()
@@ -488,6 +489,7 @@ impl LiveWmSession {
         self.desktop_reload_pending()
             || self.force_transport_restart
             || self.control_restart.is_some()
+            || self.authenticated_restart_pending()
             || self.public.as_ref().is_none_or(|public| !public.configured)
     }
 

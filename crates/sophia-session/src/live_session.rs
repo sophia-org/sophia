@@ -318,6 +318,6 @@ include!("live_session/output_topology_owner.rs");
 include!("live_session/owner_loop.rs");
 
 #[path = "../tests/support/live_session.rs"]
-mod tests;
+pub(crate) mod tests;
 
 include!("live_session/cpu_surface_sample.rs");

@@ -137,7 +137,8 @@ impl LiveWmSession {
         available: bool,
         application_capture_active: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let stopping = self.control_restart.is_some() || self.degraded;
+        let stopping = self.control_restart.is_some() || self.authenticated_restart_pending() || self.degraded
+            || (self.authentication.is_some() && self.force_transport_restart);
         let Some(public) = self.public.as_mut() else {
             return Ok(());
         };

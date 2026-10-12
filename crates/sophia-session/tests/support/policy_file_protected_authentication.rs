@@ -1,6 +1,9 @@
 //! Real protected launch and Factotum admission; WM semantics use the raw peer.
 use super::*;
-use crate::launch_authentication::{LaunchPolicy, Phase};
+use crate::launch_authentication::{
+    LaunchPolicy,
+    startup::{Recipe, Startup},
+};
 use crate::live_session::tests::lock_provider_factotum as factotum;
 
 const AUTH_CHILD: &str = "live_session::policy_transport_worker::ninep::pending::tests::authentication::authenticated_wm_child";
@@ -99,7 +102,7 @@ fn protected_wm_authenticates_then_negotiates_on_the_same_worker_connection() {
         .unwrap()
         .path(ProtectionPath::read_write(&markers))
         .unwrap();
-    let mut supervisor = ProcessSupervisor::new(
+    let supervisor = ProcessSupervisor::new(
         SupervisedProcessKind::WindowManager,
         ProcessLaunchSpec::new(&bootstrap)
             .arg(&executable)
@@ -108,47 +111,40 @@ fn protected_wm_authenticates_then_negotiates_on_the_same_worker_connection() {
             .protection_domain(domain),
     );
     let mut auth = factotum::Fixture::new();
-    let registration = auth
-        .coordinator
-        .reserve(
-            LaunchPolicy {
+    let wake = sophia_wake::Wake::new().unwrap();
+    let mut startup = Startup::new(
+        supervisor,
+        sophia_runtime::SupervisorCommand::StartProcess {
+            process: SupervisedProcessKind::WindowManager,
+            delay: Duration::ZERO,
+        },
+        auth.coordinator.endpoint(),
+        Recipe {
+            policy: LaunchPolicy {
                 principal: 3,
                 namespace: 2,
                 audience: 3,
                 role: ProtectionDomainRole::SpatialPolicy,
             },
-            Instant::now(),
-        )
-        .unwrap();
+            uname: b"wm".to_vec(),
+            aname: b"spatial-policy".to_vec(),
+        },
+        Instant::now(),
+    )
+    .unwrap();
     let end = Instant::now() + Duration::from_secs(10);
-    while auth.coordinator.phase(registration) != Some(Phase::Ready) {
-        assert!(Instant::now() < end, "WM registration deadline");
+    let started = loop {
+        assert!(Instant::now() < end, "authenticated WM launch deadline");
         auth.tick();
-    }
-    supervisor
-        .start_with_launch_channel(
-            auth.coordinator
-                .take_channel(registration, Instant::now())
-                .unwrap(),
-        )
-        .unwrap();
-    while !auth
-        .coordinator
-        .activate(registration, &mut supervisor, Instant::now())
-        .unwrap()
-    {
-        assert!(Instant::now() < end, "WM activation deadline");
-        auth.tick();
-    }
-    let custody = auth
-        .coordinator
-        .worker_authority(registration, &mut supervisor, Instant::now())
-        .unwrap();
-    let factory = auth
-        .coordinator
-        .endpoint()
-        .bind(custody, b"wm".to_vec(), b"spatial-policy".to_vec())
-        .unwrap();
+        if let Some(started) = startup
+            .poll(&mut auth.coordinator, wake.notifier(), Instant::now())
+            .unwrap()
+        {
+            break started;
+        }
+    };
+    let mut supervisor = started.supervisor;
+    let _lease = started.lease;
     let adapter = NinePPolicyAdapter::pending(
         endpoint,
         &supervisor,
@@ -158,7 +154,7 @@ fn protected_wm_authenticates_then_negotiates_on_the_same_worker_connection() {
             profile_required: false,
         },
         WmQids::new(),
-        Some(Box::new(factory)),
+        Some(started.factory),
     )
     .unwrap();
     let worker = PolicyTransportWorker::spawn(adapter, 9, None).unwrap();
@@ -190,5 +186,8 @@ fn protected_wm_authenticates_then_negotiates_on_the_same_worker_connection() {
         auth.coordinator.ready(),
         "WM cleanup must preserve shared Factotum"
     );
-    supervisor.request_termination().unwrap();
+    auth.coordinator
+        .revoke(started.registration, Instant::now())
+        .unwrap();
+    supervisor.terminate().unwrap();
 }

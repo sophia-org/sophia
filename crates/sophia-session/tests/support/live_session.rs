@@ -9,7 +9,7 @@ use super::*;
 pub(crate) mod shell_file_peer;
 
 #[path = "lock_provider_factotum.rs"]
-pub(super) mod lock_provider_factotum;
+pub(crate) mod lock_provider_factotum;
 
 #[path = "live_session/focus_candidate.rs"]
 mod focus_candidate;

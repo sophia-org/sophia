@@ -44,7 +44,7 @@ pub(crate) fn run_persistent_xterm_session(
     // moving into the owner loop must not replace their generation or budgets.
     let (session_unlock_authenticator, launch_service) =
         lock_authenticator::start_session_authenticator(config.factotum.as_ref(), owner_wake.notifier());
-    let authenticated_launches = crate::launch_authentication::LaunchCoordinator::new(
+    let mut authenticated_launches = crate::launch_authentication::LaunchCoordinator::new(
         launch_service, namespace_registry.clone());
     let mut scripting = LiveControlState::start(&mut config);
     scripting.set_owner_wake(&owner_wake.notifier());
@@ -123,8 +123,50 @@ pub(crate) fn run_persistent_xterm_session(
                 output_replacement::OutputRecovery::default(),
             )
         };
-    let public_policy_launch =
-        LiveWmSession::activate_public_launch(&mut config, prepared_public_launch)?;
+    let x_namespace = namespace_registry
+        .lock()
+        .map_err(|_| "Sophia namespace registry lock was poisoned")?
+        .create_namespace(config.namespace_profile, config.x_groups.capabilities(
+            socket_directories::ClientGroup::Shared, config.namespace_capabilities));
+    let mut x_namespaces = std::collections::BTreeMap::from([
+        (sophia_x_authority::XServerFrontendListenerId::PRIMARY, x_namespace.id),
+    ]);
+    let mut group_listeners = Vec::new();
+    let group_layout = socket_directories::SocketDirectoryLayout::prepare(display_number)?;
+    let group_sockets = prepare_confined_group_sockets(&group_layout, &config.x_groups.confined)?;
+    for (id, path) in &group_sockets {
+        let context = namespace_registry.lock()
+            .map_err(|_| "Sophia namespace registry lock was poisoned")?
+            .create_namespace(NamespaceProfile::Confined, config.x_groups.capabilities(
+                socket_directories::ClientGroup::Confined(*id), NamespaceCapabilities::NONE));
+        let listener = sophia_x_authority::XServerFrontendListenerId(*id);
+        x_namespaces.insert(listener, context.id);
+        group_listeners.push((listener, path.clone(), context));
+    }
+    let xtest_listener = match config.x_groups.xtest {
+        Some(socket_directories::ClientGroup::Confined(id)) => sophia_x_authority::XServerFrontendListenerId(id),
+        _ => sophia_x_authority::XServerFrontendListenerId::PRIMARY,
+    };
+    // The lock role has a private policy namespace and no portal participation.
+    // It does not join any X listener's namespace or change X admission.
+    let lock_namespace = if config.lock_provider.is_some() && config.factotum.is_some() {
+        Some(namespace_registry.lock()
+            .map_err(|_| "Sophia namespace registry lock was poisoned")?
+            .create_namespace(NamespaceProfile::Confined, NamespaceCapabilities::NONE).id)
+    } else { None };
+    let output_namespace = if config.output_process.is_some() && config.factotum.is_some() {
+        Some(namespace_registry.lock()
+            .map_err(|_| "Sophia namespace registry lock was poisoned")?
+            .create_namespace(NamespaceProfile::Confined, NamespaceCapabilities::NONE).id)
+    } else { None };
+    let wm_namespace = namespace_registry.lock()
+        .map_err(|_| "Sophia namespace registry lock was poisoned")?
+        .create_namespace(NamespaceProfile::Confined, NamespaceCapabilities::NONE).id;
+    let public_policy_launch = LiveWmSession::activate_public_launch_authenticated(
+        &mut config, prepared_public_launch, WmStartupContext {
+            launches: &mut authenticated_launches, namespace: wm_namespace,
+            wake: &owner_wake, registration: None,
+        })?;
     let mut output_authority_capabilities = None;
     let mut startup_output_activation = None;
     let mut startup_fallback_connector = None;
@@ -224,42 +266,6 @@ pub(crate) fn run_persistent_xterm_session(
     if let Some(wm) = wm_session.as_mut() {
         wm.start_inspection(&mut config, session_generation);
     }
-    let x_namespace = namespace_registry
-        .lock()
-        .map_err(|_| "Sophia namespace registry lock was poisoned")?
-        .create_namespace(config.namespace_profile, config.x_groups.capabilities(
-            socket_directories::ClientGroup::Shared, config.namespace_capabilities));
-    let mut x_namespaces = std::collections::BTreeMap::from([
-        (sophia_x_authority::XServerFrontendListenerId::PRIMARY, x_namespace.id),
-    ]);
-    let mut group_listeners = Vec::new();
-    let group_layout = socket_directories::SocketDirectoryLayout::prepare(display_number)?;
-    let group_sockets = prepare_confined_group_sockets(&group_layout, &config.x_groups.confined)?;
-    for (id, path) in &group_sockets {
-        let context = namespace_registry.lock()
-            .map_err(|_| "Sophia namespace registry lock was poisoned")?
-            .create_namespace(NamespaceProfile::Confined, config.x_groups.capabilities(
-                socket_directories::ClientGroup::Confined(*id), NamespaceCapabilities::NONE));
-        let listener = sophia_x_authority::XServerFrontendListenerId(*id);
-        x_namespaces.insert(listener, context.id);
-        group_listeners.push((listener, path.clone(), context));
-    }
-    let xtest_listener = match config.x_groups.xtest {
-        Some(socket_directories::ClientGroup::Confined(id)) => sophia_x_authority::XServerFrontendListenerId(id),
-        _ => sophia_x_authority::XServerFrontendListenerId::PRIMARY,
-    };
-    // The lock role has a private policy namespace and no portal participation.
-    // It does not join any X listener's namespace or change X admission.
-    let lock_namespace = if config.lock_provider.is_some() && config.factotum.is_some() {
-        Some(namespace_registry.lock()
-            .map_err(|_| "Sophia namespace registry lock was poisoned")?
-            .create_namespace(NamespaceProfile::Confined, NamespaceCapabilities::NONE).id)
-    } else { None };
-    let output_namespace = if config.output_process.is_some() && config.factotum.is_some() {
-        Some(namespace_registry.lock()
-            .map_err(|_| "Sophia namespace registry lock was poisoned")?
-            .create_namespace(NamespaceProfile::Confined, NamespaceCapabilities::NONE).id)
-    } else { None };
     let xtest_namespace = *x_namespaces.get(&xtest_listener)
         .ok_or("XTEST group lost its namespace")?;
     let session_user_id = rustix::process::geteuid().as_raw();

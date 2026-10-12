@@ -240,6 +240,7 @@ impl ReloadFixture {
             degraded: false,
             control_restart: None,
             control_lifetime: None,
+            authentication: None,
         };
         Self { wm, source }
     }

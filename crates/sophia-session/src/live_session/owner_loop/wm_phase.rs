@@ -37,6 +37,7 @@
             wm.request_deliberate_restart();
         }
         let _ = wm.poll_restart(&mut layout, output)?;
+        wm.poll_wm_authentication(&mut authenticated_launches, owner_wake.notifier(), &mut layout, output)?;
         if config.output_proof_readback && !wm.startup_output_topology_pending()
             && active_output_topology_preparation.is_none()
             && let Some(native) = native_scanout.as_ref()

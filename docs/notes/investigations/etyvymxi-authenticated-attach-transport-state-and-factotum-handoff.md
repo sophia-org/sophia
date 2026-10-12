@@ -1458,3 +1458,73 @@ supply no factory. They must register each launch and poll the coordinator
 during startup admission before that fallback is removed. The C/Nim WM SDK
 handoff and deployed-client migration remain open, as do shell integration and
 the final t317 closure gates. No live admission rollout is claimed here.
+
+## Normal WM owner admission
+
+Normal WM startup now requires the configured Session authenticator. It uses
+the shared launch coordinator to reserve SpatialPolicy custody, hand off a
+fresh launch channel, spawn off the owner thread, activate the actual spawn
+result and construct the authenticated file worker. Startup polls that same
+coordinator while waiting for profile admission. The private WM namespace is
+allocated after the existing X, lock and output namespaces; their allocation
+order is preserved. The protected spawn thread remains alive with its child.
+
+Automatic and control-requested replacement now share this launch transaction.
+They preserve restart backoff, endpoint quota ownership, qid allocation and the
+pending-settlement barrier. A replacement cannot advance the WM epoch until
+its own protected launch is active. Profile launch-spec replacement uses the
+same path. Retiring launch authority requests replacement, and cancellation
+reclaims the outstanding spawn and reaps its child before permitting another.
+The launch transaction waits at most ten seconds after the scheduled backoff
+for registration/spawn/activation; missing Factotum never selects raw attach.
+Nonblocking reaping leaves a period with no old worker, so request polling and
+presentation service treat an authenticated restart request as stopping even
+before the replacement transaction exists.
+
+The generic protected Rust peer proves initial authentication/profile admission,
+automatic replacement, control replacement, replacement of the launch spec,
+and replacement after explicit launch-authority revocation. Each replacement
+has fresh launch registration and increasing logical qids. The launch-spec
+case deliberately keeps the same spec and profile: it tests the replacement
+branch, not new WM policy behavior or a complete profile-reload acceptance
+campaign. Factotum's trusted Session channel and layout are supplied; protected
+spawn, launch relay, afid exchange and WM file/profile traffic are real. Existing
+raw file fixtures remain separately labelled supplied-admission tests.
+
+`t317-wm-owner-auth-02` passes three launch scheduling/cancellation tests,
+121 desktop/reload parent tests (five ignored child entries), 59 WM-file parent
+tests (four ignored entries), and the 23-test authentication suite (two ignored
+SDK child entries, both invoked by parents). All-target native-session Clippy
+with warnings denied and formatting pass. Three single-site controls each
+produce exit 101 with exactly one failed parent:
+
+- Remove the retiring-worker guard: the fixture fails at
+  `retiring authenticated WM must not require a live worker`.
+- Omit the initial worker's authentication factory: the protected child fails
+  at `normal WM owner must authenticate its protected peer` before profile
+  admission can complete.
+- Omit the replacement factory: initial admission passes, the replacement
+  child's authentication fails, and the owner fixture fails at
+  `replacement WM must finish authenticated profile admission`.
+
+Every control restores the complete dynamically captured candidate set;
+the final restored run passes all 121 desktop/reload parents. Packages retain
+commands, source hashes and executable paths/hashes, with no copied binaries.
+The complete 23-file candidate set and all restored bytes were checked again
+before the documentation update and commit. The earlier `*-01` packages remain
+valid for their earlier candidate, before the retiring-worker guard was added.
+
+| Package | SHA256SUMS SHA-256 |
+| --- | --- |
+| `t317-wm-owner-auth-02` | `35d5d7b55ccd02e5b7aa49c3a434f143ea230168536f3365e757adec7882478a` |
+| `t317-wm-owner-retiring-worker-control-02` | `0460284355294fb1d62678043c993fe0714ad46244a16a3a2608cbc26249277f` |
+| `t317-wm-owner-initial-control-02` | `f6e50ad1b79e5961d7a4447d14d05d3da22e574d50f57693f6b141a56a4d6abb` |
+| `t317-wm-owner-replacement-control-02` | `28150d20bc100f348f08b5a7c88ae36fa7c1804319c112744bf110eb793ac53d` |
+| `t317-wm-owner-restored-02` | `580c9f0076851107e85b309b6262f095de2f318fcb3b8a471078de5604bd190e` |
+
+This closes the WM owner wiring gap identified by the reactor checkpoint.
+The C/Nim WM session handoff and deployed-client migration still precede any
+live rollout. Shell integration, removal of the lock transport's hard
+SO_PEERPIDFD dependency, threat-model reconciliation and final full-scope gates
+remain open. No master merge, live installation or new whole-repository gate
+is claimed by this slice.

@@ -4,6 +4,7 @@ impl LiveWmSession {
         layout: &mut PersistentLiveLayout,
         output: sophia_engine::HeadlessOutput,
     ) -> Result<Option<LiveWmProposal>, Box<dyn std::error::Error>> {
+        if self.authenticated_restart_pending() { return Ok(None); }
         if self.control_restart.is_some() {
             self.poll_control_restart(layout, output);
             return Ok(None);
@@ -28,7 +29,11 @@ impl LiveWmSession {
                     public.fence_inspection(0, self.supervisor.peer_id());
                 }
                 if !process_exited {
-                    self.supervisor.terminate()?;
+                    if self.authentication.is_some() {
+                        self.supervisor.request_termination()?;
+                    } else {
+                        self.supervisor.terminate()?;
+                    }
                 }
                 let public = self.public.as_mut().expect("public WM state is present");
                 public.worker.take();
@@ -43,6 +48,12 @@ impl LiveWmSession {
                 return Ok(None);
             }
             PublicPolicyRestartDecision::Restart => {}
+        }
+        if self.authentication.is_some() && !process_exited {
+            self.supervisor.request_termination()?;
+            if !self.supervisor.poll_termination()? {
+                return Ok(None);
+            }
         }
         if let Some(public) = self.public.as_mut() {
             public.fence_inspection(0, self.supervisor.peer_id());
@@ -83,6 +94,18 @@ impl LiveWmSession {
             self.restart_policy,
         );
         self.supervisor_state = state;
+        if let Some(auth) = self.authentication.as_mut() {
+            let placeholder = ProcessSupervisor::new(self.supervisor.process(), self.supervisor.launch_spec().clone());
+            let supervisor = std::mem::replace(&mut self.supervisor, placeholder);
+            auth.pending = Some(WmAuthenticatedReplacement {
+                supervisor: Some(supervisor), command, transport: Some(transport),
+                epoch: next_epoch, startup: None,
+            });
+            public.transport_unavailable = true;
+            public.configured = false;
+            self.public = Some(public);
+            return Ok(None);
+        }
         let started = match self.supervisor.apply(command) {
             Ok(Some(started)) => started,
             Ok(None) => return Err("public WM supervisor did not restart the policy process".into()),
@@ -105,23 +128,29 @@ impl LiveWmSession {
                 return Ok(None);
             }
         };
-        let pid = self
-            .supervisor
-            .peer_id()
-            .ok_or("restarted public WM has no supervised PID")?;
         transport.authorize(&self.supervisor)?;
-        crate::diagnostics::capture_process_identity("wm", pid, next_epoch);
         let (state, _) = update_supervisor(self.supervisor_state.clone(), started, self.restart_policy);
         self.supervisor_state = state;
+        let worker = start_public_policy_worker(
+            transport, next_epoch, public.profile_key, public.native_presentation_capable,
+            &self.supervisor, public.wm_filesystem_qids.clone(),
+        )?;
+        self.finish_public_restart(public, worker, next_epoch, layout, output)?;
+        Ok(None)
+    }
+
+    fn finish_public_restart(
+        &mut self,
+        mut public: LivePublicPolicyState,
+        worker: PolicyTransportWorker,
+        next_epoch: u64,
+        layout: &mut PersistentLiveLayout,
+        output: sophia_engine::HeadlessOutput,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let pid = self.supervisor.peer_id().ok_or("restarted public WM has no supervised PID")?;
+        crate::diagnostics::capture_process_identity("wm", pid, next_epoch);
         public.reducer.connect(next_epoch)?;
-        public.worker = Some(start_public_policy_worker(
-            transport,
-            next_epoch,
-            public.profile_key,
-            public.native_presentation_capable,
-            &self.supervisor,
-            public.wm_filesystem_qids.clone(),
-        )?);
+        public.worker = Some(worker);
         public.connection_epoch = next_epoch;
         // The old epoch's chords, credits and records go with it, once, here.
         self.chord_ledger.clear();
@@ -164,6 +193,6 @@ impl LiveWmSession {
             "sophia_live_wm schema=4 status=restarted adapter={} epoch={next_epoch} restarts={} preserved_layout=true",
             self.policy_wire_name(), self.restarts
         );
-        Ok(None)
+        Ok(())
     }
 }

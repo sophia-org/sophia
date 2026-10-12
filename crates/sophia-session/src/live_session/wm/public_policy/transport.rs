@@ -83,6 +83,18 @@ fn start_public_policy_worker(
     supervisor: &ProcessSupervisor,
     qids: policy_transport_worker::PolicyFilesystemQids,
 ) -> Result<PolicyTransportWorker, Box<dyn std::error::Error>> {
+    start_public_policy_worker_authenticated(transport, connection_epoch, profile_key, native_scanout, supervisor, qids, None)
+}
+
+fn start_public_policy_worker_authenticated(
+    transport: PublicPolicyTransport,
+    connection_epoch: u64,
+    profile_key: Option<sophia_config::DesktopProfileActivationKey>,
+    native_scanout: bool,
+    supervisor: &ProcessSupervisor,
+    qids: policy_transport_worker::PolicyFilesystemQids,
+    authentication: Option<Box<dyn sophia_runtime::authenticated_files::FileAuthenticationFactory>>,
+) -> Result<PolicyTransportWorker, Box<dyn std::error::Error>> {
     let ceiling = if native_scanout {
         u64::MAX
     } else {
@@ -106,7 +118,7 @@ fn start_public_policy_worker(
             profile_key
                 .map(|key| policy_profile_identity(connection_epoch, key))
                 .transpose()?,
-            None,
+            authentication,
         )?),
     }
 }

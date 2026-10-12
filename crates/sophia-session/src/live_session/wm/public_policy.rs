@@ -304,6 +304,7 @@ struct StartedPublicPolicyLaunch {
 
 struct StartedPublicPolicyRuntime {
     supervisor: ProcessSupervisor,
+    authentication: Option<WmLaunchAuthentication>,
     supervisor_state: sophia_runtime::SupervisorState,
     restart_policy: RestartPolicy,
     worker: PolicyTransportWorker,
@@ -460,6 +461,7 @@ fn policy_profile_identity(
 }
 
 include!("public_policy/transport.rs");
+include!("public_policy/authentication.rs");
 include!("public_policy/output_service.rs");
 include!("public_policy/output_authentication.rs");
 
@@ -509,6 +511,7 @@ impl PreparedPublicPolicyLaunch {
         config: &PersistentXtermSessionConfig,
         process: &str,
         profile_key: Option<sophia_config::DesktopProfileActivationKey>,
+        authentication: Option<&mut WmStartupContext<'_>>,
     ) -> Result<StartedPublicPolicyRuntime, Box<dyn std::error::Error>> {
         let mut transport = bind_public_policy_transport(&self.directory, profile_key, config.wm_transport)?;
         let socket_path = transport.socket_path().to_path_buf();
@@ -537,15 +540,21 @@ impl PreparedPublicPolicyLaunch {
             restart_policy,
         );
         supervisor_state = state;
-        let started = supervisor
-            .apply(command)?
-            .ok_or("public WM supervisor did not start the policy client")?;
+        let (authentication, factory, started) = if let Some(context) = authentication {
+            let started = context.start(supervisor, command)?;
+            supervisor = started.supervisor;
+            (Some(started.authentication), Some(started.factory), SupervisorEvent::ProcessStarted)
+        } else {
+            (None, None, supervisor.apply(command)?
+                .ok_or("public WM supervisor did not start the policy client")?)
+        };
         transport.authorize(&supervisor)?;
         let (state, _) = update_supervisor(supervisor_state, started, restart_policy);
         supervisor_state = state;
-        let worker = start_public_policy_worker(transport, 1, profile_key, config.native_scanout, &supervisor, self.wm_filesystem_qids.clone())?;
+        let worker = start_public_policy_worker_authenticated(transport, 1, profile_key, config.native_scanout, &supervisor, self.wm_filesystem_qids.clone(), factory)?;
         Ok(StartedPublicPolicyRuntime {
             supervisor,
+            authentication,
             supervisor_state,
             restart_policy,
             worker,
