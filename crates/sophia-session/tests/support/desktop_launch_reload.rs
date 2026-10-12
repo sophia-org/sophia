@@ -603,6 +603,7 @@ fn panel_gate_gate_admits_only_available_actions_from_the_wm_catalog() {
     "#, &arguments);
     let overrides = wm.directory.join("probe.kdl");
     std::fs::write(&overrides, include_str!("../../../../tools/fixtures/panel_gate_desktop.kdl")).unwrap();
+    std::fs::set_permissions(&overrides, std::fs::Permissions::from_mode(0o600)).unwrap();
     // This bar-only WM deliberately has no launcher key. The native launcher
     // probe would refuse it; ordinary panel composition must still work.
     assert!(desktop_probe::require_launcher_binding(&wm.directory.join("desktop.kdl")).is_err());
