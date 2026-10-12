@@ -1,14 +1,14 @@
-tree 5b4cd6b4dd1787a8a0ba3761bd9f257be2313530
-parent 2160218019841d2751c58ee74e9d20ba665dc313
-author Mason Green <mason@greenm01.net> 1791761506 -0400
-committer Mason Green <mason@greenm01.net> 1791761506 -0400
+tree 37707342bdd3f17c2b2316bcf855cc1a25331765
+parent 98744d244c82cbc9515b8192d76432abcf7af975
+author Mason Green <mason@greenm01.net> 1791765495 -0400
+committer Mason Green <mason@greenm01.net> 1791765495 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCaswcYhsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLEYgD+LSoLD9DLXY/agZIISTqm
- H2/lWpFVaRLBySXwBZLIVDgA/3pP9vVxN2TheIr8iivW2slsDtng2l5ysBDP5XWK
- IhkO
- =tpTu
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCaswr9xsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGL1zAD/SupOQ+u3wLa4N9TDg1ZI
+ zTGMaDGQoyGa6BNaUYPuSGgBAKMhfmeEkNOCizReoDjBg56Mj2hVHA17Iv0pWgiD
+ EH4B
+ =948r
  -----END PGP SIGNATURE-----
 
-Add a shared nonblocking launch authentication conversation
+Refresh launch qualification text from the signed owner checkpoint

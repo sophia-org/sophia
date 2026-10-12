@@ -1,14 +1,14 @@
-tree 5cfe275709df370383de506f73256d9344d2badd
-parent a111b5590d27fe2dc079220e821f0327f47baefb
-author Mason Green <mason@greenm01.net> 1791751099 -0400
-committer Mason Green <mason@greenm01.net> 1791751099 -0400
+tree b09b96505d172a5db0693851fd47a323399d8984
+parent a0b1231cf4edd4fc40de58700999a7841fab0fdb
+author Mason Green <mason@greenm01.net> 1791765495 -0400
+committer Mason Green <mason@greenm01.net> 1791765495 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCasvzuxsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKiHgD7BkzrauFvOsgs94NEgTS5
- oVHLUkc29JV8EHwG+qxSpP8A/iJmoAnE6iQnazoVddLFCEBLs+tUWJ34aImOTDg4
- +/sD
- =TUWo
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCaswr9xsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKGjwD/eA7jg6umJOmgOtgln2XP
+ JePKomlHWIMFJ/ig6u1PtRcA/ROJ75Fpxyr5T2Ub4HQrHjFQ8pY5BMVw3PWLStWL
+ eNEP
+ =aJZR
  -----END PGP SIGNATURE-----
 
-Add experimental 9P authentication records and pipeline operations
+Refresh launch qualification text from the signed owner checkpoint

@@ -42,6 +42,10 @@ pub const CONTRACTS: &[(&str, &str)] = &[
     ),
     ("spec/sophia-lock-files.md", "docs/sophia-lock-files.md"),
     (
+        "spec/factotum-launch-authentication.md",
+        "docs/factotum-launch-authentication.md",
+    ),
+    (
         "spec/golden/sophia-lock-files-v1.records",
         "protocol/golden/sophia-lock-files-v1.records",
     ),

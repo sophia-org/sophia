@@ -143,6 +143,7 @@ fn pinned_source_and_contract_are_both_required() {
         "protocol/golden/sophia-wm-v1.records".to_owned(),
         "protocol/sophia-lock-files-v1.kdl".to_owned(),
         "docs/sophia-lock-files.md".to_owned(),
+        "docs/factotum-launch-authentication.md".to_owned(),
         "protocol/golden/sophia-lock-files-v1.records".to_owned(),
         "docs/references/diod-9p2000L-protocol.md".to_owned(),
     ];

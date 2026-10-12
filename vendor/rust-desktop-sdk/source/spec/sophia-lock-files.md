@@ -59,11 +59,40 @@ configured. It runs in its own protection domain with no network, its socket
 directory and configuration file read-only, and receives
 `SOPHIA_LOCK_9P_SOCKET` and, when the profile names one, `SOPHIA_LOCK_CONFIG`.
 A provider that exits is restarted after a delay doubling from 1 s to 60 s,
-reset once a replacement negotiates; it is never given up. Peer
-admission follows the output role: the endpoint retains the launched process's
-pidfd and compares it with `SO_PEERPIDFD` before and after credentials, and
-admits one attach per connection epoch. A replacement process gets a fresh
-connection epoch. Paths, attach names, UIDs, fids and qids grant nothing.
+reset once a replacement negotiates. Normal Session startup in the t317
+candidate requires [launch-channel authentication](factotum-launch-authentication.md):
+Session reserves the launch, supplies `SOPHIA_LAUNCH_AUTH_FD`, confirms the
+protected spawn and activates the exact delegation through Factotum. This
+descriptor number carries no authority without the provisioned connected
+channel. The provider authenticates with `Tauth` on the lock transport, relays
+its own afid's challenge over that channel, and uses the verified afid in
+`Tattach`. Policy-selected claims are uname `lock`, aname `lock-provider`, and
+numeric uname `NOUID`; claims cannot select the principal or namespace.
+
+The first successful attach fixes Session's principal, private namespace and
+launch identity for the transport lifetime. `Tversion` invalidates afids and
+role fids but preserves that identity and the original first-attach deadline.
+A fresh same-identity exchange is required before reattach. An ordinary attach,
+forged verdict, changed identity or stale launch is refused. Retained operations
+recheck current launch custody; Factotum loss or launch retirement revokes the
+provider without waiting for a new request. A replacement gets fresh launch
+and connection epochs. Missing authentication never selects legacy admission;
+Engine's locked cover remains independent of provider availability.
+
+The expected-peer credential filter remains an availability defense against
+unlaunched connectors, not proof of the authenticated identity. Session retains
+supervisor-owned pidfds and current-custody checks; this authenticated path does
+not require socket `SO_PEERPIDFD`. The low-level legacy runtime path still
+requires it and is not selected by normal Session provider startup. Paths,
+attach names, UIDs, fids and qids grant nothing.
+
+The C SDK's `sophia_la_client` performs the shared launch exchange;
+`sophia_lc_init_attached` starts lock-file negotiation on its admitted root
+without repeating `Tversion` or ordinary attach. Other implementations must
+follow the same public transcript. The record layouts below do not change.
+This development contract is not a claim of installed-client compatibility:
+external provider rollout and the remaining t317 acceptance gates must precede
+release.
 
 The provider is resident so that its first image is ready soon after a lock
 begins. It holds no allocation while the session is unlocked.

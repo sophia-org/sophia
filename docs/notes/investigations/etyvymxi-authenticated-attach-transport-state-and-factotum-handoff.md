@@ -925,3 +925,27 @@ before installation. Other required roles, the real Rust SDK exchange,
 minimum Bubblewrap 0.11.2, and the final bounds/threat-model audit remain. This
 checkpoint was executed with 0.13.0; no master merge, live installation or task
 completion is claimed.
+
+## Lock admission contract and SDK alignment
+
+Signed Sophia `368734300` specifies the authenticated lock-provider admission
+path without changing record layouts. `1d35469ca` reconciles the launch
+document's earlier foundation-only qualification text with the actual normal
+provider join. The C SDK pin is now
+`6d982e1a5f774690a9550721e1980fc60d7f613f`; the Rust SDK pin is
+`f7803dc1e5adfff1b05991c0a7addcb17ef42d4e`. Both SDK deltas contain only
+contract copies, digest manifests and provenance; implementation is unchanged.
+The Rust copy does not claim an implemented launch helper.
+
+Both immutable-snapshot verifiers now compare the launch-authentication
+document as well as the lock-file contract. The ten snapshot tests pass,
+including drift controls for every contract pair, followed by xtask Clippy
+with warnings denied and formatting. The first pin-test run is retained as
+STOP because the Rust test's expected pair count had not yet been raised from
+nine to ten; the corrected test executes the new pair's drift check too.
+The closed `t317-contract-pins-02` package's self-excluding SHA256SUMS hash is
+`a40c66e5d9c8e2d303cb5f8412d99ade2c2fc289746dbc1857fb7092ba0a946a`.
+No full-repository rerun is claimed for this documentation/pin delta; the
+prior provider gate remains bound to its own candidate. Remaining t317 role,
+Rust exchange, admission-context, fragment and minimum-version obligations
+are unchanged.

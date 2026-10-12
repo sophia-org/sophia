@@ -144,9 +144,9 @@ fn bad_identities_and_entries_are_refused() {
 #[test]
 fn drift_in_every_contract_pair_and_an_unrecorded_digest_are_refused() {
     // Six file contracts remain after the socket schema and seven frame
-    // corpora retire, and the lock provider codec adds three (t295). Every
-    // pair gets a drift control.
-    assert_eq!(rust_desktop_sdk::CONTRACTS.len(), 9);
+    // corpora retire, the lock codec adds three (t295), and launch
+    // authentication adds one (t317). Every pair gets a drift control.
+    assert_eq!(rust_desktop_sdk::CONTRACTS.len(), 10);
     for (_, authoritative) in rust_desktop_sdk::CONTRACTS {
         let (root, snapshot) = scratch();
         std::fs::write(root.0.join(authoritative), b"changed contract").unwrap();
