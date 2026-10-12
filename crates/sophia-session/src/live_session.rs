@@ -91,6 +91,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 mod application_launches;
+mod developer_launches;
+use developer_launches::LiveDeveloperLaunches;
 mod authority_file;
 mod component_catalog;
 use application_launches::{ApplicationLaunchTurn, LiveApplicationLaunches};

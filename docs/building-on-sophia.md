@@ -89,6 +89,12 @@ and control IPC retain separate contracts while their migrations proceed.
 
 ## Application Frontends And Shell Toolkits
 
+For a Session-launched tool, follow [Adopt a Session namespace](namespace-client-guide.md)
+to select an approved recipe, discover endpoints and authenticate through the
+independent SDKs. Normal application assignments are automatic; the explicit
+developer launcher is for independently built tools under administrator-approved
+policy. Namespace visibility never grants control or approves a portal transfer.
+
 `sophia_shell_v1` is a native Sophia role protocol independent of the protocol
 applications use. An X11 application connects to the X Server Frontend; a
 native shell connects to its separately admitted shell endpoint. A future

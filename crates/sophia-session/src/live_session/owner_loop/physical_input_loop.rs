@@ -123,6 +123,10 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         application_launches.refresh_inspection(wm_session.as_ref());
+        developer_launches.service(config, &mut ApplicationLaunchTurn {
+            applications: application_launches, authentication: authenticated_launches,
+            wake: owner_wake.notifier(),
+        }, secondary_children, logout_requested || session_quiescence.is_some());
         *failure_phase = crate::diagnostics::SessionFailurePhase::OwnerLoop;
         if let Some(refresh_millihz) = native_scanout
             .as_ref()

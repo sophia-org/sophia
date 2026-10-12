@@ -1,6 +1,7 @@
 pub(crate) fn print(verbose: bool) {
     println!("sophia {}", env!("CARGO_PKG_VERSION"));
     println!("components: engine, x-authority, protocol");
+    println!("commands: launch --socket ABSOLUTE_PATH --recipe NAME -- /absolute/program ARG...");
     println!("commands: inspect wm [--socket PATH] [--json] ls|stat PATH|status|snapshot|watch");
     println!(
         "commands: client-launch --adapter=chromium --argv-style=direct|wrapper [--check-only] -- PROGRAM ARGS..."

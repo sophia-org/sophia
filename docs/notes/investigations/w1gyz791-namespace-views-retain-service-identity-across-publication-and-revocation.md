@@ -22,6 +22,177 @@ socket paths or namespace commands to launch installed applications.
 
 ## Evidence
 
+### Final gate with the retained-fid join
+
+`t318-gate-11` passes the complete isolated `cargo xtask check`, including
+`rebind_preserves_the_authenticated_root_and_open_fid`. The log contains 586
+test summaries totaling 7,912 passed, zero failed and 118 ignored entries;
+these remain summary totals rather than unique parent-test counts. SDK, lint,
+formatting, layout and archive checks pass. Its base is `942381b16`, and its
+complete 58-file candidate, index tree and Git status remain unchanged across
+the run. Device-dependent pixels are explicitly outside this gate.
+
+The package's self-excluding SHA256SUMS identity is
+`fe5615395cca5e6013b4c25074f85a0f160ad1b5fb33d884b3e34dc4d330eae6`.
+The retained-fid and alias controls respectively have manifest identities
+`d3b1a8fc8ec4bc8ccc0d0639a856abc5c3981913150b0149caf4368713a7323e`
+and `36a52b9cad68034255eee7f424476a004db8331ac42f2a6c8ef833706894360a`.
+Both mutated production files also pass a direct diff against HEAD after the
+full gate. This paragraph follows the run; code and tests are unchanged.
+The earlier rebind audit gap below is now resolved by the joined observations
+and distinct controls, not by the broad gate alone. Signed integration and
+installed acceptance remain outstanding. Read-only signing-agent inspection
+still reports no cached key credential; the staged checkpoint is preserved.
+
+### Authenticated A-to-B rebind and retained fid
+
+The new `inspection_authenticated_transport::rebind` join closes the gap found
+below. A protected independent Rust SDK peer authenticates through real Factotum
+and the production inspection export. It opens A's snapshot at scene 4. Session
+then publishes A at scene 5 and replaces the namespace view: `inspection` names
+B (scene 9), while an alias captured before rebinding still names A. Both service
+generations already exist; publication invents neither. An additional A name
+keeps its grant live even under the deliberate alias fault, separating naming
+from permission revocation.
+
+The peer reads its retained fid as scene 4, clunks it, then opens a fresh fid on
+the same authenticated root and reads A's scene 5. A fresh authenticated
+connection through the new name reads B's scene 9. Another connection through
+the alias reads A's scene 5. Discovery separately checks identities 20 and 30;
+the old discovery object still names 20. Admission cleanup reaches zero.
+Policy, naming changes and snapshot contents are supplied; authentication,
+namespace publication, grants, 9P fids and inspection reads are production
+owners. No renderer, physical device or running application UI is claimed.
+
+The initial development command omitted the required feature and ran zero tests;
+it is not evidence. The first enabled run exposed the fixture's attempt to open
+two pinned snapshots on one connection. The fixture now clunks the retained fid
+after its assertion, respecting the existing one-snapshot contract. The joined
+parent and its invoked child then pass.
+
+Two separate controls discriminate the owners involved. `t318-rebind-snapshot-control-01`
+changes the snapshot-read arm to refresh from the service's current snapshot.
+It fails at `an open fid must keep A's pinned bytes after naming rebind`.
+`t318-rebind-alias-control-01` records ordinary binds and resolves their sources
+again after the recipe completes, deliberately replacing capture with late path
+lookup. It fails at `a bound alias must retain A instead of looking up the rebound
+name`; the retained-fid and fresh-root checks precede it and pass. This is one
+semantic alias fault implemented across the compiler's state and finalization,
+not a one-line mutation or a claim that it retargets an already-open socket.
+
+Each control runs alone under the worktree's Cargo lease, requires exit 101 and
+the exact named assertion, restores the production source to its HEAD blob,
+compares every changed/untracked candidate file, and reruns the exact positive
+test successfully. Packages record patches, logs and test-binary hashes without
+binary copies. Both manifests verify. The complete gate is rerun after adding
+the fixture; gate 10 remains evidence for its earlier candidate.
+
+### Completion audit after the repository gate
+
+The [namespace client guide](../../namespace-client-guide.md) now joins approved
+developer launch, pinned discovery, independent SDK authentication and retained
+handle behavior in one adoption path, with a generic observer example and an
+ASCII ownership diagram. It links the executed independent-SDK observer fixture
+without presenting that fixture's stdin relay convention as an application ABI.
+The links and whitespace checks pass. These are documentation-only additions
+after gate 10; production and test bytes remain at its qualified hashes.
+
+The A-to-B acceptance row needs stronger evidence before completion.
+`namespace_views::rebind_changes_new_names_without_retargeting_old_service_or_permission`
+checks captured references, an alias, admission liveness and which listener
+accepts a connection. It does not open and read an actual retained 9P fid across
+that rebind. The independent inspection and portal tests qualify retained reads
+and revocation separately, but that is not the same joined observation. No
+recorded late-lookup mutation was found for this exact row. Keep that join and
+its discriminating control outstanding rather than treating the green gate as
+proof of the whole exit. Signed integration is also pending; read-only agent
+KEYINFO shows no cached private-key passphrase, and the agent was not changed.
+
+### Complete candidate repository gate
+
+`t318-gate-10` passes `cargo xtask check` in the worktree's leased Cargo slot,
+with private `/dev`, `/run` and `/tmp`, a private runtime directory and host
+display, authorization, session-bus and SOPHIA variables removed. The log has
+586 test summaries: 7,911 passed, zero failed and 117 ignored entries. These are
+summary totals, including invoked child tests, not a count of unique parent
+tests. Compiler, formatting, layout, SDK and retained archive checks pass.
+Device-dependent pixel claims remain explicitly unproved by this gate.
+
+The package binds base `942381b162241b317bf562e2332c67f777cddc43`, all 54 changed
+or untracked files enumerated from `git diff HEAD` plus untracked files, the
+index tree and Git status. All remain identical after execution. This qualifies
+the recorded dirty candidate; it does not pretend a signed commit already
+exists. Build output stays in the leased slot. The package's self-excluding
+SHA256SUMS has SHA-256
+`72166c7da6748c7ebd18932ff81f618e818530f2bff357bbedb18c83ee7f9db8`.
+The failed gate 09 remains separately retained with manifest SHA-256
+`cb17a3a15e28e30ecada28933a6355bba9bb26b99081a8a4247fd5c4fb0377b4`.
+
+This paragraph is a post-run documentation change. The qualified production
+and test bytes are unchanged. Signing is still pending the existing agent's
+unlock; no unsigned substitute, merge or live installation has occurred.
+
+### Full-gate fixture isolation repair
+
+`t318-gate-09` binds the complete dirty candidate, including the preserved
+index, and confirms it stayed unchanged. It stops in the older confined-X
+version-probe fixture with `Text file busy` while executing its newly written
+fake Bubblewrap script, before checking environment or descriptor exclusion.
+Concurrent test forks can retain the script's writable descriptor until exec,
+even when the creating thread has closed it. The fixture now performs creation
+and both production probes in a single-test child process. The parent requires
+the child's assertion marker and successful test count. No production retry or
+confinement rule changes. The targeted six parent tests pass, with two ignored
+child entry points invoked by their parents. The failed package remains intact;
+the complete repository gate is rerun for this changed candidate.
+
+### Authorized developer launch through the shared owner
+
+The candidate based on `942381b16` adds the bounded
+[developer-launch files interface](../../developer-launch-files.md). Session
+publishes it only with explicit HostDomain administration and an enabled
+developer recipe. The shared 9P server admits the live host peer; the Session
+owner selects the exact approved recipe and launches through the same prepared
+resources and managed process lifecycle as ordinary applications. Request bytes
+cannot select a role, principal, environment or working directory.
+
+The worker owns socket parsing and peer checks. Each transport permits one
+submission, including across Tversion; exact retries do not launch twice.
+Unclaimed requests expire, disconnect cancels unclaimed work, and dispatched
+work retains its process owner. Result snapshots distinguish readiness from
+denial, failure and an uncertain outcome. The CLI preserves argv without a
+shell and never retries an uncertain submission automatically.
+
+`t318-developer-launch-02` passes the protocol codec tests, full runtime package,
+Session lib tests (1,030 passed, 34 ignored parent/opt-in entries), CLI tests,
+all-target Clippy for the four affected packages, formatting, layout and diff
+checks. Runtime coverage includes actual foreign-namespace refusal, the
+eight-connection bound, five-second unclaimed expiry, replay and disconnect.
+The Session join uses supplied scene state with real Factotum and process
+owners; it proves exact recipe permission and readiness, not native pixels.
+The CLI transport tests supply owner results rather than claiming process launch.
+
+The separate `t318-developer-permission-control-01` bypasses the recipe's
+developer permission. It fails at `developer launch must enforce the exact
+recipe permission`: the forbidden recipe returns Started instead of Denied.
+The test reaps children before its oracle. The source and candidate hashes are
+restored, and the exact positive test passes again.
+
+Run 02 captures the complete changed candidate using `git diff HEAD` plus
+untracked files, including the staged application slice. Run 01's enumeration
+omitted staged-only files, so it is not a complete candidate binding. The final
+run and control retain binary paths and hashes without copying binaries.
+Their self-excluding SHA256SUMS identities are:
+
+- developer run 01: `0277cf52337770f98a29498d57e8eace9b66dc954c8977bceaa2851b23b1ac99`
+- developer run 02: `8e76c74ba8832d926c1635268985d539bf7f6b438d522fec5d800b6a07e35162`
+- permission control: `7a61e8395f6280af5c35c9955191b58ca70c1d6ec6a2127c518d38db7b545242`
+
+These documentation changes follow qualification. The signed application-slice
+commit attempt timed out waiting for the existing signing agent; its index is
+preserved. The complete repository gate, signed integration and installed
+acceptance remain outstanding. t318 remains open.
+
 ### Live application recipe dispatch
 
 The slice based on `942381b16` connects normal Session launch entry points to

@@ -5,6 +5,7 @@ mod config;
 pub(crate) mod diagnostics;
 mod help;
 mod inspect;
+mod launch;
 mod msg;
 mod runtime;
 mod session_prepare;
@@ -54,6 +55,9 @@ mod prelude {
 }
 
 pub(crate) fn run(args: &[String], verbose: bool) -> Result<(), Box<dyn std::error::Error>> {
+    if args.first().is_some_and(|arg| arg == "launch") {
+        return launch::run(&args[1..]);
+    }
     if args.first().is_some_and(|arg| arg == "inspect") {
         return inspect::run(&args[1..]);
     }

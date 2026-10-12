@@ -51,6 +51,7 @@ OwnerHeldWork {
         || session_quiescence.is_some()
         || runtime_deadline_key_drain.is_draining()
         || scripting.owner_work_pending()
+        || developer_launches.owner_work_pending()
         || client_render_devices
             .as_ref()
             .is_some_and(render_devices::LiveRenderDeviceCoordinator::owner_work_pending)

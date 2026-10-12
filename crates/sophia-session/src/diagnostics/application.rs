@@ -29,6 +29,7 @@ pub enum LaunchSource {
     Startup,
     Shortcut,
     Catalog,
+    Developer,
 }
 
 impl LaunchSource {
@@ -37,6 +38,7 @@ impl LaunchSource {
             Self::Startup => "startup",
             Self::Shortcut => "shortcut",
             Self::Catalog => "catalog",
+            Self::Developer => "developer",
         }
     }
 }

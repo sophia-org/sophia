@@ -8,6 +8,8 @@ pub mod authenticated_files;
 mod broker_transport;
 #[cfg(target_os = "linux")]
 mod control;
+#[cfg(target_os = "linux")]
+pub mod developer_launch;
 mod error;
 #[cfg(target_os = "linux")]
 mod host_domain;

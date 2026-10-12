@@ -391,6 +391,7 @@ pub(crate) fn run_persistent_xterm_session(
     let mut application_launches = LiveApplicationLaunches::prepare(
         &config, namespace_registry.clone(), &x_namespaces, xauthority.path(),
         session_generation, wm_session.as_ref())?;
+    let mut developer_launches = LiveDeveloperLaunches::start(&config, owner_wake.notifier())?;
     let mut metadata_broker = config
         .wm_process
         .is_some()
@@ -619,6 +620,7 @@ pub(crate) fn run_persistent_xterm_session(
         },
         SessionLoopResources {
             application_launches: &mut application_launches,
+            developer_launches: &mut developer_launches,
             launch_origins: &launch_origins,
             child: primary_child,
             primary_diagnostic,

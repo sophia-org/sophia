@@ -277,6 +277,42 @@ fn reference(
 }
 
 impl ApplicationLaunchTurn<'_> {
+    pub(super) fn spawn_developer(
+        &mut self,
+        config: &PersistentXtermSessionConfig,
+        request: &sophia_protocol::developer_launch::DeveloperLaunchRequest,
+    ) -> io::Result<ApplicationProcess> {
+        let prepared = self
+            .applications
+            .prepared
+            .as_mut()
+            .ok_or_else(|| io::Error::other("namespace launch resources absent"))?;
+        if prepared.policy != config.core_config_state.active().session.namespace_policy {
+            return Err(io::Error::other(
+                "namespace launch policy changed; restart required",
+            ));
+        }
+        let recipe = prepared
+            .recipes
+            .developer(&request.recipe)
+            .map_err(|error| io::Error::new(io::ErrorKind::PermissionDenied, error))?;
+        prepared.start(
+            recipe,
+            &ApplicationLaunchCommand {
+                executable: request.executable.clone().into(),
+                arguments: request.arguments.clone(),
+                working_directory: None,
+                namespace_recipe: Some(request.recipe.clone()),
+            },
+            self.authentication,
+            self.wake.clone(),
+            LaunchContext {
+                source: crate::diagnostics::application::LaunchSource::Developer,
+                transaction: Some(u64::from(request.request)),
+            },
+        )
+    }
+
     pub(super) fn spawn_registered(
         &mut self,
         config: &PersistentXtermSessionConfig,
@@ -317,26 +353,13 @@ impl ApplicationLaunchTurn<'_> {
                 .application(identity, command)
                 .map_err(io::Error::other)?
             {
-                let principal = prepared.next_principal;
-                prepared.next_principal = principal
-                    .checked_add(1)
-                    .ok_or_else(|| io::Error::other("application principal exhausted"))?;
-                let target = prepared
-                    .targets
-                    .get_mut(&recipe.policy().name)
-                    .ok_or_else(|| io::Error::other("selected recipe resources absent"))?;
-                target.principal = principal;
-                return target
-                    .resolve(recipe, command)
-                    .map_err(io::Error::other)?
-                    .start(
-                        &prepared.service,
-                        self.authentication,
-                        self.wake.clone(),
-                        Instant::now(),
-                        context,
-                    )
-                    .map_err(io::Error::other);
+                return prepared.start(
+                    recipe,
+                    command,
+                    self.authentication,
+                    self.wake.clone(),
+                    context,
+                );
             }
         } else if !current.recipes.is_empty() {
             return Err(io::Error::other("namespace launch resources absent"));
@@ -354,5 +377,31 @@ impl ApplicationLaunchTurn<'_> {
             context,
         )
         .map(ApplicationProcess::from)
+    }
+}
+
+impl Prepared {
+    fn start(
+        &mut self,
+        recipe: Arc<sophia_config::namespace_policy::LoadedNamespaceRecipe>,
+        command: &ApplicationLaunchCommand,
+        authentication: &mut crate::launch_authentication::LaunchCoordinator,
+        wake: sophia_wake::Notifier,
+        context: LaunchContext,
+    ) -> io::Result<ApplicationProcess> {
+        let principal = self.next_principal;
+        self.next_principal = principal
+            .checked_add(1)
+            .ok_or_else(|| io::Error::other("application principal exhausted"))?;
+        let target = self
+            .targets
+            .get_mut(&recipe.policy().name)
+            .ok_or_else(|| io::Error::other("selected recipe resources absent"))?;
+        target.principal = principal;
+        target
+            .resolve(recipe, command)
+            .map_err(io::Error::other)?
+            .start(&self.service, authentication, wake, Instant::now(), context)
+            .map_err(io::Error::other)
     }
 }

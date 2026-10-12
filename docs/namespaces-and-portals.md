@@ -406,9 +406,12 @@ recipe endpoint + endpoint grant + captured inspection generation
 The same bounded launch dispatcher serves the
 [portal recipient view](portal-client-files.md). Its objects carry the common
 coordinator's transfer lease; opening the role does not approve transfers.
-Normal application call sites are connected. The authorized developer-launch
-9P interface remains implementation work and developer launch stays disabled
-by default.
+Normal application call sites are connected. The candidate's
+[developer-launch 9P interface](developer-launch-files.md) uses the same launch
+owner for an arbitrary executable under an explicitly approved recipe. It
+requires host-admin access and a recipe with developer launch enabled; it stays
+disabled by default. Its result reports process readiness, not window creation
+or successful application authentication.
 
 When an observer recipe is configured without host inspection access, Session
 creates a private inspection service without publishing a host socket. Future

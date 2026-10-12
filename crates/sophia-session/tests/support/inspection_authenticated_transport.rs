@@ -13,6 +13,9 @@ use std::os::unix::fs::DirBuilderExt;
 #[path = "inspection_rust_peer.rs"]
 mod rust_peer;
 
+#[path = "inspection_namespace_rebind.rs"]
+mod rebind;
+
 #[test]
 fn protected_peer_reads_inspection_and_revocation_ends_its_waiting_read() {
     run(false);

@@ -17,6 +17,7 @@ struct SessionLoopChannels<'a> {
 
 struct SessionLoopResources<'a> {
     application_launches: &'a mut LiveApplicationLaunches,
+    developer_launches: &'a mut LiveDeveloperLaunches,
     launch_origins: &'a Arc<Mutex<crate::launch_origin::LaunchOriginRegistry>>,
     child: Option<&'a mut ManagedSessionChild>,
     primary_diagnostic: Option<crate::diagnostics::application::LaunchTicket>,
@@ -412,6 +413,7 @@ fn run_session_loop_inner(
     } = channels;
     let SessionLoopResources {
         application_launches,
+        developer_launches,
         launch_origins,
         mut child,
         primary_diagnostic,

@@ -18,6 +18,7 @@ pub(super) struct ManagedSessionChild {
     pub(super) process_identity: Option<crate::launch_origin::ProcessIdentity>,
     buffered_event: Option<crate::namespace_launch::ApplicationProcessEvent>,
     pub(super) shell_launch: Option<(TransactionId, sophia_protocol::ShellLauncherActivation)>,
+    pub(super) developer_launch: Option<sophia_runtime::developer_launch::DeveloperLaunchTicket>,
 }
 
 impl ManagedSessionChild {
@@ -61,6 +62,7 @@ impl ManagedSessionChild {
         Self {
             buffered_event: None,
             shell_launch: None,
+            developer_launch: None,
             id,
             launch_transaction: None,
             catalog_launch: false,
@@ -93,6 +95,20 @@ impl ManagedSessionChild {
             return Some(event);
         }
         let event = self.child.poll(launches, wake, now);
+        if let Some(event) = &event
+            && let Some(ticket) = self.developer_launch.take()
+        {
+            use crate::namespace_launch::ApplicationProcessEvent;
+            use sophia_protocol::developer_launch::DeveloperLaunchStatus as Status;
+            match event {
+                ApplicationProcessEvent::Started { process, .. } => {
+                    ticket.finish(Status::Started, Some(*process));
+                }
+                ApplicationProcessEvent::Exited(_) | ApplicationProcessEvent::Failed(_) => {
+                    ticket.finish(Status::Failed, None);
+                }
+            }
+        }
         self.process_identity = self.child.launch_identity().or(self.process_identity);
         if let Some(crate::namespace_launch::ApplicationProcessEvent::Started { process, .. }) =
             &event
@@ -116,6 +132,12 @@ impl ManagedSessionChild {
     }
 
     pub(super) fn terminate(&mut self, grouped: bool) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(ticket) = self.developer_launch.take() {
+            ticket.finish(
+                sophia_protocol::developer_launch::DeveloperLaunchStatus::Unavailable,
+                None,
+            );
+        }
         if let Some(child) = self.child.host_mut() {
             terminate_session_child(child, grouped, self.diagnostic)
         } else {

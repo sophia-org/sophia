@@ -363,6 +363,23 @@ fn assert_sentinel_unchanged(sentinel: &mut std::fs::File) {
 
 #[test]
 fn the_version_probe_also_excludes_host_environment_and_descriptors() {
+    // Other tests fork concurrently. A fork during script creation can retain
+    // its writable fd until exec, making this test's exec fail with ETXTBSY.
+    // Create and execute the script in a process with no competing test forks.
+    let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+    command.args([
+        "version_probe_child",
+        "--exact",
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1",
+    ]);
+    assert_eq!(run_probe(command)["version_exclusion"], "ok");
+}
+
+#[test]
+#[ignore = "invoked by the version-probe parent in a process without competing forks"]
+fn version_probe_child() {
     let fixture = Fixture::new("version");
     let mut sentinel = inheritable_sentinel();
     let fake = fixture.root.join("bwrap");
@@ -403,6 +420,7 @@ fn the_version_probe_also_excludes_host_environment_and_descriptors() {
         "absent"
     );
     assert_sentinel_unchanged(&mut sentinel);
+    println!("probe version_exclusion ok");
 }
 
 #[test]
