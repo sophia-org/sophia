@@ -6,6 +6,144 @@ use crate::diagnostics::{
 };
 
 #[test]
+fn short_lived_namespace_applications_keep_exit_status_without_claiming_activation() {
+    for (protected, code) in [(true, 0), (true, 17), (false, 0), (false, 17)] {
+        let mut f = Fixture::with_profile(if protected {
+            sophia_protocol::NamespaceProfile::Confined
+        } else {
+            sophia_protocol::NamespaceProfile::ClassicShared
+        });
+        let store = Store::open(&f.root.join("diagnostics"), Retention::default()).unwrap();
+        let record = store.begin("early-exit", std::process::id(), "").unwrap();
+        let capture = ApplicationCapture::start(&record.path).unwrap();
+        capture.set_enabled(true);
+        let mut request = f.request();
+        if !protected {
+            request.launch.protection_domain = None;
+            std::fs::write(
+                f.root.join("shared"),
+                "namespace-recipe 1\nmount portal roles/portal\n",
+            )
+            .unwrap();
+            let mut policy = request.recipe.policy().clone();
+            policy.profile = NamespaceRecipeProfile::SharedX;
+            policy.source = Some("shared".into());
+            policy.developer_launch = false;
+            request.recipe = LoadedNamespaceRecipe::load(&policy, &f.root).unwrap();
+            let mut endpoint = request.approved.remove("inspection").unwrap();
+            endpoint.service.interface = "portal-client".into();
+            request.approved.insert("portal".into(), endpoint);
+        }
+        request.launch.program = "/usr/bin/sh".into();
+        request.launch.args = vec![
+            "-c".into(),
+            format!("printf early-stderr >&2; exit {code}").into(),
+        ];
+        request.diagnostic = capture.prepare(
+            &request.launch.program,
+            LaunchContext {
+                source: LaunchSource::Catalog,
+                transaction: Some(30),
+            },
+        );
+        let mut pending = f
+            .service
+            .start(
+                request,
+                &mut f.auth.coordinator,
+                f.wake.notifier(),
+                Instant::now(),
+            )
+            .unwrap();
+        let registration = pending.registration.as_ref().unwrap().registration();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        // Stop the owner before it takes the spawn result; the real background
+        // spawn and child run to completion without an activation poll.
+        while f.auth.coordinator.phase(registration) != Some(Phase::Spawning) {
+            f.auth.tick();
+            assert!(
+                pending
+                    .poll(&mut f.auth.coordinator, f.wake.notifier(), Instant::now())
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(Instant::now() < deadline, "early-exit spawn deadline");
+        }
+        loop {
+            let records = store.application_records(&record.id).unwrap();
+            if let Some(metadata) = records.launches.get(&1)
+                && metadata.contains("spawn=spawned")
+                && metadata.contains("eof=true")
+            {
+                let pid = metadata
+                    .split_whitespace()
+                    .find_map(|field| field.strip_prefix("pid="))
+                    .unwrap();
+                let stat = std::fs::read_to_string(format!("/proc/{pid}/stat"));
+                if stat
+                    .as_ref()
+                    .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+                    || stat.as_ref().is_ok_and(|stat| {
+                        stat.rsplit_once(')')
+                            .is_some_and(|(_, rest)| rest.split_whitespace().next() == Some("Z"))
+                    })
+                {
+                    break;
+                }
+            }
+            assert!(
+                Instant::now() < deadline,
+                "early child exit before activation"
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        let mut app =
+            ApplicationProcess::namespace(pending, NamespaceApplicationServices::default());
+        loop {
+            match poll(&mut f, &mut app) {
+                Some(ApplicationProcessEvent::Exited(status)) => {
+                    assert_eq!(
+                        status.code(),
+                        Some(code),
+                        "early exit must retain the actual process status"
+                    );
+                    break;
+                }
+                Some(ApplicationProcessEvent::Started { .. }) => {
+                    panic!("an exited client must never claim Active custody")
+                }
+                Some(ApplicationProcessEvent::Failed(reason)) => {
+                    panic!("early exit must not become a launch failure: {reason}")
+                }
+                None => {
+                    assert!(Instant::now() < deadline);
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            }
+        }
+        assert!(poll(&mut f, &mut app).is_none());
+        f.reclaimed();
+        assert_eq!(f.service.registry.lock().unwrap().endpoint_grant_count(), 0);
+        loop {
+            if store
+                .application_records(&record.id)
+                .unwrap()
+                .launches
+                .get(&1)
+                .is_some_and(|m| {
+                    m.contains("exit_observed=true") && m.contains(&format!("exit_code={code}"))
+                })
+            {
+                break;
+            }
+            assert!(Instant::now() < deadline, "early exit diagnostics settle");
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        drop(capture);
+    }
+}
+
+#[test]
 fn diagnostics_settle_on_exit_cancellation_and_failed_namespace_startup() {
     for scenario in [
         "exit",

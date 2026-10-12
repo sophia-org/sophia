@@ -167,6 +167,7 @@ impl NamespaceLaunchService {
             startup: None,
             policy,
             finished: false,
+            early_exit: None,
         })
     }
 }
@@ -242,6 +243,7 @@ pub struct PendingNamespaceClient {
     startup: Option<Startup>,
     policy: LaunchPolicy,
     finished: bool,
+    early_exit: Option<std::process::ExitStatus>,
 }
 impl PendingNamespaceClient {
     /// Call after the shared coordinator's owner turn. Pending work never waits
@@ -257,10 +259,16 @@ impl PendingNamespaceClient {
         }
         let result = self.advance(launches, wake, now);
         if result.is_err() {
+            self.early_exit = self.startup.as_mut().and_then(Startup::take_early_exit);
             self.retire();
             self.finished = true;
         }
         result
+    }
+
+    /// A process exit before activation is not an authenticated running client.
+    pub fn take_exit_status(&mut self) -> Option<std::process::ExitStatus> {
+        self.early_exit.take()
     }
     fn advance(
         &mut self,
@@ -273,7 +281,9 @@ impl PendingNamespaceClient {
             .as_ref()
             .ok_or("namespace launch cancelled")?
             .registration();
-        if matches!(launches.phase(registration), None | Some(Phase::Retiring)) {
+        if self.startup.is_none()
+            && matches!(launches.phase(registration), None | Some(Phase::Retiring))
+        {
             return Err("namespace launch authority retired".into());
         }
         if self.resources.is_none() {

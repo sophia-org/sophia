@@ -124,7 +124,12 @@ impl ApplicationProcess {
                 .map(|status| status.map(ApplicationProcessEvent::Exited))
                 .map_err(|error| error.to_string()),
             State::Preparing(pending) => {
-                let Some(mut running) = pending.poll(launches, wake.clone(), now)? else {
+                let observed = pending.poll(launches, wake.clone(), now);
+                if let Some(status) = pending.take_exit_status() {
+                    self.state = State::Finished;
+                    return Ok(Some(ApplicationProcessEvent::Exited(status)));
+                }
+                let Some(mut running) = observed? else {
                     return Ok(None);
                 };
                 if let Some((reference, owner)) = self.services.inspection.take() {

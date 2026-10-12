@@ -355,6 +355,7 @@ asynchronous namespace application custody. A namespace application's state is:
 Preparing (slot + reservation + view worker)
     |
     +-- cancellation/failure --> revoke --> background retirement
+    +-- process exits before activation --> actual exit status + retirement
     |
     v
 supervised spawn + authentication activation + role dispatch
@@ -389,6 +390,14 @@ cancellation. A failed dispatch still reaps and records the spawned process.
 An already reaped process reports its exit before a simultaneous authentication
 retirement can turn that exit into an authority-loss failure. This does not
 permit a still-running process whose authority has retired.
+
+A short-lived namespace application may exit before activation. Session reports
+the observed process status exactly once without inventing Started or Active
+custody, and retires the published grants. For protected launches the status is
+Bubblewrap's process status, as for an ordinary protected reap; it is not proof
+that an application operation succeeded. Fixed desktop roles still require a
+live ready peer. Channel EOF while the spawn worker is pending cannot erase a
+subsequent exit result; the existing startup deadline bounds that wait.
 
 `LoadedNamespaceRecipe` retains a policy snapshot together with its shipped
 naming fragment or pinned custom files. Shared and confined X use the same

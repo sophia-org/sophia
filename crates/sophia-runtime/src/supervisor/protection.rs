@@ -422,6 +422,10 @@ pub enum ProtectionDomainLaunchError {
     InvalidBinding(PathBuf),
     Spawn(String),
     StartupTimedOut,
+    ExitedBeforeReady {
+        process: u32,
+        status: std::process::ExitStatus,
+    },
     InvalidStatus(String),
     UnsupportedVersion(String),
 }
@@ -809,9 +813,10 @@ fn wait_for_bubblewrap_peer(
             .try_wait()
             .map_err(|error| ProtectionDomainLaunchError::Spawn(error.to_string()))?
         {
-            return Err(ProtectionDomainLaunchError::InvalidStatus(format!(
-                "bubblewrap exited before its role peer was ready: {status}"
-            )));
+            return Err(ProtectionDomainLaunchError::ExitedBeforeReady {
+                process: supervisor_pid,
+                status,
+            });
         }
         if let Ok(value) = std::fs::read_to_string(&children)
             && let Some(pid) = parse_single_child_pid(&value)

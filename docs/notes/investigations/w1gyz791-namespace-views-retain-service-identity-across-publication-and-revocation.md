@@ -22,6 +22,41 @@ socket paths or namespace commands to launch installed applications.
 
 ## Evidence
 
+### Short-lived namespace applications
+
+The slice based on `3760efafc` retains a typed process status when Bubblewrap
+exits before peer discovery. NamespaceClient startup can finish as Exited
+without publishing Active custody; fixed desktop roles still refuse a missing
+ready peer. A diagnostic-only spawned PID records the actual attempt even if
+already reaped and is not used as custody. Host attempts clear old diagnostic
+status before a new spawn, so failure cannot inherit a prior process result.
+
+The shared startup transaction observes a NamespaceClient's exit before checking
+activation, retaining a pending spawn result through channel EOF under its
+existing deadline. The application owner emits Exited exactly once, never
+Started for a client that already exited, and retires its reservation, endpoints
+and slot. Real protected and shared-host children exiting 0 or 17 are tested by
+withholding the owner activation poll until the child has ended. Diagnostics
+retain the same status; all endpoint grants are reclaimed. A direct readiness
+test checks the typed status of an already reaped process. Neither test claims
+an application-level semantic operation or display acceptance.
+
+The final device-hidden `t318-early-exit-02` package passes runtime library and
+launch-channel tests, thirteen application diagnostics tests, the authentication
+integration suite and seventeen namespace-launch parents with child entry points.
+Runtime all-target and native Session library/test Clippy, formatting, layout
+and diff checks pass. Its SHA256SUMS SHA-256 is
+`fe7375c29e1b4fcd13ed789bc3d3092822f17b765bbd5df8b5088076bf68b1a6`.
+
+`t318-early-exit-control-01` omits the startup exit-status handoff. The exact
+short-lived-client test fails at `early exit must not become a launch failure`
+with exit 101 and one failed test. Restoration and the exact positive rerun
+pass; its SHA256SUMS SHA-256 is
+`f42a91816e4af4fa484c5f8d16c5c743e675be5bbd0badbb05ab76280dd190c1`.
+Both packages verify dynamically enumerated candidate hashes and retain binary
+paths and hashes only. This paragraph follows qualification. Early surface
+attribution, application callsite wiring and the developer launch export remain.
+
 ### Namespace diagnostic lifetime
 
 The slice based on `5135c0ac5` carries the prepared diagnostic record through

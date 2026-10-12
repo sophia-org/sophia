@@ -28,6 +28,24 @@ const SUPERVISED: [SupervisedProcessKind; 8] = [
 ];
 
 #[test]
+fn peer_readiness_retains_an_already_exited_process_status() {
+    let mut child = Command::new("/usr/bin/sh")
+        .args(["-c", "exit 17"])
+        .spawn()
+        .unwrap();
+    let pid = child.id();
+    let status = child.wait().unwrap();
+    assert_eq!(
+        wait_for_bubblewrap_peer(&mut child, pid),
+        Err(ProtectionDomainLaunchError::ExitedBeforeReady {
+            process: pid,
+            status
+        }),
+        "readiness must retain the typed exit, not turn it into a string-only failure"
+    );
+}
+
+#[test]
 fn working_directory_never_adds_a_host_binding() {
     let domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::NamespaceClient]).unwrap();
     let program = Path::new("/usr/bin/true");

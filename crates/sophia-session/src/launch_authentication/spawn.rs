@@ -86,7 +86,7 @@ impl ProtectedSpawn {
                     .map_err(|e| e.to_string())
                 };
                 if let Some(diagnostic) = diagnostic.as_mut() {
-                    match (&result, supervisor.child_id()) {
+                    match (&result, supervisor.spawned_process_id()) {
                         (Ok(()), Some(pid)) => {
                             diagnostic.spawned(pid);
                         }

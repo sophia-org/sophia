@@ -34,6 +34,7 @@ pub(crate) struct Startup {
     failure: Option<String>,
     finished: bool,
     diagnostic: Option<crate::diagnostics::application::PreparedLaunch>,
+    early_exit: Option<std::process::ExitStatus>,
 }
 
 impl Startup {
@@ -68,6 +69,10 @@ impl Startup {
         self
     }
 
+    pub(crate) fn take_early_exit(&mut self) -> Option<std::process::ExitStatus> {
+        self.early_exit.take()
+    }
+
     pub fn new(
         supervisor: ProcessSupervisor,
         command: SupervisorCommand,
@@ -98,6 +103,7 @@ impl Startup {
             failure: None,
             finished: false,
             diagnostic: None,
+            early_exit: None,
         })
     }
 
@@ -221,8 +227,25 @@ impl Startup {
         if let Some(reason) = self.failure.as_ref() {
             return Err(reason.clone());
         }
+        // A namespace application may finish without ever using a role. Do
+        // not invent Active custody for it, or discard its real exit status.
+        if let Some(supervisor) = self.supervisor.as_mut()
+            && supervisor.process() == sophia_runtime::SupervisedProcessKind::NamespaceClient
+        {
+            supervisor.poll().map_err(|e| e.to_string())?;
+            if let Some(status) = supervisor.exit_status() {
+                self.early_exit = Some(status);
+                return Err("namespace application exited before activation".into());
+            }
+        }
         if now >= self.deadline {
             return Err("authenticated role launch deadline".into());
+        }
+        // Channel EOF may precede delivery of the spawn result. Retain the
+        // bounded worker until it reports the real process outcome; retired
+        // authority still cannot activate or serve any endpoint.
+        if self.spawning.is_some() {
+            return Ok(None);
         }
         if now < self.not_before {
             return Ok(None);

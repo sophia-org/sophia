@@ -161,6 +161,7 @@ pub struct ProcessSupervisor {
     exit_status: Option<std::process::ExitStatus>,
     last_launch_generation: u64,
     launch_stderr: Option<std::os::fd::OwnedFd>,
+    spawned_pid: Option<u32>,
 }
 
 #[derive(Debug)]
@@ -188,6 +189,7 @@ impl ProcessSupervisor {
             exit_status: None,
             last_launch_generation: 0,
             launch_stderr: None,
+            spawned_pid: None,
         }
     }
 
@@ -205,6 +207,12 @@ impl ProcessSupervisor {
 
     pub const fn process(&self) -> SupervisedProcessKind {
         self.process
+    }
+
+    /// Diagnostic identity of the last actual spawn attempt, including an
+    /// already reaped wrapper. This is never evidence of current custody.
+    pub fn spawned_process_id(&self) -> Option<u32> {
+        self.spawned_pid
     }
 
     /// Take the most recently reaped child's status once. For protected
@@ -394,6 +402,8 @@ impl ProcessSupervisor {
                 process: self.process,
             });
         }
+        self.spawned_pid = None;
+        self.exit_status = None;
         if self
             .spec
             .environment
@@ -433,6 +443,7 @@ impl ProcessSupervisor {
             })?;
         drop(command);
         self.exit_status = None;
+        self.spawned_pid = Some(child.id());
         self.child = Some(ManagedChild {
             peer_pid: child.id(),
             child,
@@ -601,6 +612,8 @@ impl ProcessSupervisor {
 
         self.exit_status = None;
 
+        self.spawned_pid = None;
+
         if !delay.is_zero() {
             std::thread::sleep(delay);
         }
@@ -613,11 +626,21 @@ impl ProcessSupervisor {
                 channel,
                 self.launch_stderr.take(),
             );
-            let protected =
-                result.map_err(|error| ProcessSupervisorError::ProtectionDomainFailed {
-                    process: self.process,
-                    message: error.to_string(),
-                })?;
+            let protected = match result {
+                Err(ProtectionDomainLaunchError::ExitedBeforeReady { process, status })
+                    if self.process == SupervisedProcessKind::NamespaceClient =>
+                {
+                    self.spawned_pid = Some(process);
+                    self.exit_status = Some(status);
+                    return Ok(SupervisorEvent::ProcessExited);
+                }
+                result => {
+                    result.map_err(|error| ProcessSupervisorError::ProtectionDomainFailed {
+                        process: self.process,
+                        message: error.to_string(),
+                    })?
+                }
+            };
             ManagedChild {
                 peer_pid: protected.evidence.peer_pid,
                 child: protected.child,
@@ -651,6 +674,7 @@ impl ProcessSupervisor {
                 custody_active: Arc::new(AtomicBool::new(true)),
             }
         };
+        self.spawned_pid = Some(managed.child.id());
         self.child = Some(managed);
         Ok(SupervisorEvent::ProcessStarted)
     }
