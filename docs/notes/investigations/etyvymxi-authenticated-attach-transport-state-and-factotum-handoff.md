@@ -1961,3 +1961,43 @@ Generic C and Rust SDK owner joins are now present for all four shell roles.
 Deployed-client migration, the remaining role inventory, broad integration
 gates, publication and threat-model/exit reconciliation still prevent t317
 closure. No master merge or live installation is claimed.
+
+## Independent descriptor client authentication
+
+The opt-in `supplied_descriptor_client_authenticates_and_recovers` check takes
+an absolute prebuilt executable and uses the normal descriptor owner without
+client-specific expectations or build steps. It authenticates two launch epochs,
+observes negotiation and idle liveness, revokes local authority, and requires
+reaping before replacement. The Session-to-Factotum channel remains supplied;
+the Factotum export, launch coordinator, protected spawn and afid dispatch run.
+
+External invocation with signed Narthex
+`244c3c8351581004fdc33ecd1acff9557b87948e` passed. That client imports signed C
+SDK `73fe8106da63e1586ab5a900401fb051bb625464`, retains its generation relay,
+and lends the authenticated role wire to the shell session without reattaching.
+The captured client output reports revision-8 readiness exactly once at each
+of epochs 1 and 2. Its separate local gate passed 22 tests. No client build,
+UI policy or named-client assertion is part of Sophia's conformance fixture.
+
+The disposable client control changes only the launch claim from `shell` to
+`wm`, preserving the descriptor audience. It reports authentication failure,
+never readiness, and the fixture fails at `supplied descriptor authentication
+deadline` with exit 101 and exactly one failed test. This establishes refusal,
+not a reason-specific server error or a semantic round trip. The original
+signed client worktree remained clean; the control lived in a separate archive.
+Stale-session messages after deliberate revocation are expected teardown output.
+
+Device-hidden package `t317-narthex-owner-01` retains candidate source hashes,
+client and test binary paths/hashes, positive and control logs, the control patch,
+and regression results. Its self-excluding manifest SHA-256 is
+`a6cf14025da687fc038e2df427a58c4d1da4707584c13fcfa42328af0f5ac747`.
+The initial invocation without `native-session` selected zero tests and is
+recorded as NOT_RUN; the corrected invocation ran and passed the exact test.
+The broader shell filter passed 116 tests with six ignores, including this
+explicitly invoked conformance entry. Native-session all-target Clippy with
+warnings denied and formatting passed. Evidence retains no binary copies.
+
+This joins authentication and recovery only. No descriptor presentation, UI,
+physical device or live installation is claimed. Remaining deployed clients,
+role inventory, broad gates, publication and threat-model reconciliation still
+prevent t317 closure.
