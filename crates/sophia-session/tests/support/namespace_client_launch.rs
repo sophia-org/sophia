@@ -8,6 +8,9 @@ use sophia_runtime::ProtectionDomainSpec;
 use std::os::unix::fs::DirBuilderExt;
 use std::time::Duration;
 
+#[path = "namespace_inspection_dispatch.rs"]
+mod dispatch;
+
 struct Fixture {
     auth: factotum::Fixture,
     service: NamespaceLaunchService,

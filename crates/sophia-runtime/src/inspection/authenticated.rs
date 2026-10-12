@@ -27,7 +27,39 @@ impl Drop for Permit {
             .fetch_sub(1, Ordering::SeqCst);
     }
 }
+
+/// A captured service generation, suitable for a namespace dispatch worker.
+/// Cloning it shares the owner's existing limits and revocation fences.
+#[derive(Clone)]
+pub struct InspectionAcceptor {
+    shared: Arc<Shared>,
+    generation: u64,
+}
+impl InspectionAcceptor {
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+    pub fn is_live(&self) -> bool {
+        self.shared.valid(self.generation)
+    }
+    pub fn adopt(
+        &self,
+        stream: UnixStream,
+        factory: Box<dyn FileAuthenticationFactory>,
+    ) -> io::Result<InspectionConnection> {
+        adopt(self.shared.clone(), self.generation, stream, factory)
+    }
+}
 impl InspectionService {
+    pub fn authenticated_acceptor(&self, generation: u64) -> io::Result<InspectionAcceptor> {
+        if !self.shared.valid(generation) {
+            return Err(io::Error::other("inspection generation retired"));
+        }
+        Ok(InspectionAcceptor {
+            shared: self.shared.clone(),
+            generation,
+        })
+    }
     /// Adopt only after the caller's launch-specific accept filter succeeds.
     /// A factory is mandatory: this route cannot fall back to HostDomain or
     /// unauthenticated attach. The caller retains its namespace view lease.
@@ -35,36 +67,43 @@ impl InspectionService {
         &self,
         stream: UnixStream,
         generation: u64,
-        mut factory: Box<dyn FileAuthenticationFactory>,
+        factory: Box<dyn FileAuthenticationFactory>,
     ) -> io::Result<InspectionConnection> {
-        self.shared
-            .authenticated_connections
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
-                (count < MAX_AUTHENTICATED_CONNECTIONS).then_some(count + 1)
-            })
-            .map_err(|_| io::Error::other("inspection connection capacity"))?;
-        let permit = Permit(self.shared.clone());
-        let files = InspectionExport::authenticated(self.shared.clone(), generation)
-            .map_err(io::Error::other)?;
-        let limits = Limits::new(64 * 1024, 512, 8, 16, 128 * 1024, 1)
-            .map_err(|_| io::Error::other("inspection limits"))?;
-        let mut server = Server::new(AuthenticatedFiles::pending(files), limits)?;
-        let connection = server.adopt(stream).map_err(|refused| refused.error)?;
-        server.export_mut().files_mut().bind_connection(connection);
-        let owner = factory
-            .create(connection, Instant::now(), server.wake())
-            .map_err(|_| io::Error::other("inspection authentication unavailable"))?;
-        server
-            .export_mut()
-            .install(owner)
-            .map_err(|_| io::Error::other("inspection authentication installation"))?;
-        Ok(InspectionConnection {
-            server,
-            factory,
-            _permit: permit,
-            closed: false,
-        })
+        adopt(self.shared.clone(), generation, stream, factory)
     }
+}
+fn adopt(
+    shared: Arc<Shared>,
+    generation: u64,
+    stream: UnixStream,
+    mut factory: Box<dyn FileAuthenticationFactory>,
+) -> io::Result<InspectionConnection> {
+    shared
+        .authenticated_connections
+        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
+            (count < MAX_AUTHENTICATED_CONNECTIONS).then_some(count + 1)
+        })
+        .map_err(|_| io::Error::other("inspection connection capacity"))?;
+    let permit = Permit(shared.clone());
+    let files = InspectionExport::authenticated(shared, generation).map_err(io::Error::other)?;
+    let limits = Limits::new(64 * 1024, 512, 8, 16, 128 * 1024, 1)
+        .map_err(|_| io::Error::other("inspection limits"))?;
+    let mut server = Server::new(AuthenticatedFiles::pending(files), limits)?;
+    let connection = server.adopt(stream).map_err(|refused| refused.error)?;
+    server.export_mut().files_mut().bind_connection(connection);
+    let owner = factory
+        .create(connection, Instant::now(), server.wake())
+        .map_err(|_| io::Error::other("inspection authentication unavailable"))?;
+    server
+        .export_mut()
+        .install(owner)
+        .map_err(|_| io::Error::other("inspection authentication installation"))?;
+    Ok(InspectionConnection {
+        server,
+        factory,
+        _permit: permit,
+        closed: false,
+    })
 }
 impl InspectionConnection {
     /// A bounded worker calls this on readiness and at least every idle bound.

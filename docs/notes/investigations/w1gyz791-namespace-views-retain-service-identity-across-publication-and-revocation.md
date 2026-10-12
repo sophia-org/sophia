@@ -307,6 +307,45 @@ master state changes with this follow-up.
 Its SHA256SUMS has SHA-256
 `2cc434295e7d9d1b740e8210e6efb94a03503a1030d67eb56d8fc58668f8a627`.
 
+### Inspection launch dispatch
+
+The recipe launch owner now dispatches inspection listeners to a captured
+acceptor from the existing inspection service. The acceptor preserves the
+service generation, connection bound and source fences. Authentication factories
+share their existing endpoint budget; cloning the dispatch reference creates
+no additional authority. The worker takes at most one connection from each
+listener per turn and checks quiet connections at the existing 20 ms idle bound.
+Dropping the launch fences its grants before background process/worker cleanup;
+the capacity slot is released after dispatch joins.
+
+A review caught an overly broad retirement rule: treating every finished
+inspection worker as a failed launch would revoke an unrelated portal grant.
+Normal service/grant retirement now removes only the finished dispatcher.
+Unexpected worker failure still retires the launch fail-closed. A regression
+test fences the real inspection service, waits for dispatch retirement, and
+requires the sleep client, registration and unrelated portal grant to survive.
+It does not claim portal traffic on that grant.
+
+The new SDK join uses the real recipe scheduler, protected launch, Factotum,
+discovery SDK, authenticated inspection export and dispatch worker. A C bootstrap
+only preserves the inherited kernel stream across exec; it knows no protocol.
+The Rust SDK child reads a published snapshot, starts a waiting event read and
+observes ESTALE or transport closure after the grant owner revokes it. The parent
+requires the child's progress markers and successful exit; the ignored child
+entry point was actually invoked. Scene records, recipe policy and service
+references are supplied. No renderer, normal launcher or portal execution is
+claimed by this test.
+
+`t318-inspection-dispatch-01` passes ten runtime inspection owner tests, nine
+Session scheduler/dispatch parents plus the invoked SDK child, three existing
+startup tests and 28 launch-authentication parents. Runtime all-target and
+native/default Session library Clippy, formatting, layout and diff checks pass.
+The dynamically captured six-file candidate is unchanged after the checks;
+binary paths and hashes are recorded without copying binaries. Its SHA256SUMS
+has SHA-256
+`f01807c909f8ede38ef70bd5e8b417e10fc05703094351f8350041d76df4eed6`.
+Actual application/developer launch call sites and portal dispatch remain open.
+
 ## Connections
 
 The seventh isolated gate at `49bc4aa1a` reaches the Session suite and stops

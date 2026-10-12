@@ -30,6 +30,7 @@ use std::{
 };
 
 const MAX_CLIENTS: usize = 64;
+mod inspection;
 pub const NAMESPACE_CLIENT_UNAME: &[u8] = b"namespace-client";
 
 /// Trusted policy resolution, including its containment driver and live service
@@ -224,6 +225,7 @@ pub struct ClientEndpoint {
     pub listener: NamespaceListener,
     pub view: NamespaceViewLease,
     pub factory: Box<dyn FileAuthenticationFactory>,
+    pub grant: sophia_runtime::EndpointGrantLease,
 }
 
 pub struct PendingNamespaceClient {
@@ -342,9 +344,15 @@ impl PendingNamespaceClient {
             lease: Some(started.lease),
             reaper: self.reaper.take(),
             endpoints: Vec::new(),
+            services: Vec::new(),
         };
         let mut primary_factory = Some(started.factory);
         for listener in std::mem::take(&mut resources.published.namespace.listeners) {
+            let endpoint_grant = resources
+                .published
+                .grant(&listener.endpoint.endpoint)
+                .ok_or("endpoint grant absent")?
+                .clone();
             let factory = if let Some(factory) = primary_factory.take() {
                 factory
             } else {
@@ -389,6 +397,7 @@ impl PendingNamespaceClient {
             running.endpoints.push(ClientEndpoint {
                 listener,
                 factory,
+                grant: endpoint_grant,
                 view: resources.published.namespace.lease.clone(),
             });
         }
@@ -440,6 +449,7 @@ pub struct RunningNamespaceClient {
     lease: Option<SpawnLease>,
     reaper: Option<SpawnLease>,
     endpoints: Vec<ClientEndpoint>,
+    services: Vec<inspection::InspectionWorker>,
 }
 impl RunningNamespaceClient {
     pub fn take_endpoints(&mut self) -> Vec<ClientEndpoint> {
@@ -454,6 +464,18 @@ impl RunningNamespaceClient {
         &mut self,
         launches: &LaunchCoordinator,
     ) -> Result<Option<std::process::ExitStatus>, String> {
+        if self
+            .services
+            .iter()
+            .any(inspection::InspectionWorker::failed)
+        {
+            self.registration.take();
+            self.names.as_mut().expect("live view").revoke_grants();
+            return Err("namespace endpoint worker stopped".into());
+        }
+        // A retired service/grant is local to that endpoint. Its normal worker
+        // exit must not revoke the client's unrelated services or process.
+        self.services.retain(|service| !service.finished());
         let registration = self
             .registration
             .as_ref()
@@ -485,8 +507,9 @@ impl Drop for RunningNamespaceClient {
             reaper.retire((
                 self.supervisor.take(),
                 self.names.take(),
-                self.slot.take(),
+                std::mem::take(&mut self.services),
                 self.lease.take(),
+                self.slot.take(),
             ));
         }
     }

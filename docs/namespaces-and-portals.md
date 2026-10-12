@@ -309,6 +309,28 @@ fallback. Both paths use the same Factotum registration, endpoint grant and
 retirement owners. The recipe profile must match its live namespace profile.
 Connecting this scheduler to ordinary application launch remains pending.
 
+Inspection dispatch now retains an acceptor for the exact published service
+generation. Its worker serves the client's inspection listeners through the
+existing authenticated inspection export and shares that export's connection
+limits. It polls quiet connections within the existing idle-check bound.
+Revoking a grant closes its retained reads; retiring the inspection service
+stops its dispatcher without revoking the client's other grants. The launch
+retirement worker joins dispatch before releasing the client slot.
+
+```text
+recipe endpoint + endpoint grant + captured inspection generation
+                              |
+                    bounded dispatch worker
+                              |
+               existing authenticated inspection export
+                    /                         \
+          Factotum admission             inspection publication
+          and retained-fid checks        snapshots and event journal
+```
+
+This is the inspection portion of launch dispatch. Portal dispatch and the
+normal application/developer launcher call sites remain implementation work.
+
 `LoadedNamespaceRecipe` retains a policy snapshot together with its shipped
 naming fragment or pinned custom files. Shared and confined X use the same
 fragment; their approved group references differ. Selected publication restricts

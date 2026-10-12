@@ -9,7 +9,7 @@ mod worker;
 #[path = "../tests/support/inspection_owner.rs"]
 mod tests;
 
-pub use authenticated::{INSPECTION_IDLE_CHECK, InspectionConnection};
+pub use authenticated::{INSPECTION_IDLE_CHECK, InspectionAcceptor, InspectionConnection};
 pub use publication::{InspectionPublisher, PublishOutcome};
 pub use sophia_protocol::inspection::*;
 
