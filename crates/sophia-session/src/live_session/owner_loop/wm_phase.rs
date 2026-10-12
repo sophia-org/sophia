@@ -44,6 +44,9 @@
         {
             output_readback_proof.baseline(native, snapshot.topology_epoch)?;
         }
+        if let Some(service) = wm.public.as_mut().and_then(|public| public.output_service.as_mut()) {
+            service.poll_authentication(output_namespace, &mut authenticated_launches, owner_wake.notifier());
+        }
         wm.poll_output_authority()?;
         output_readback_proof.check_finished()?;
         if output_peer_loss_proof.poll(Instant::now(), wm.output_peer_loss_observation()) {

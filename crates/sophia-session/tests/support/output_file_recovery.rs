@@ -332,7 +332,8 @@ fn rig(label: &str) -> Rig {
     );
     public.output_service = Some(LiveOutputService::Files {
         service,
-        supervisor: Box::new(supervisor),
+        supervisor: Some(Box::new(supervisor)),
+        authentication: None,
     });
     Rig {
         fixture,
@@ -355,7 +356,7 @@ impl Rig {
     fn supervisor(&mut self) -> &mut ProcessSupervisor {
         let LiveOutputService::Files { supervisor, .. } =
             self.public().output_service.as_mut().unwrap();
-        supervisor
+        supervisor.as_mut().unwrap()
     }
 
     fn peer(&self) -> Peer {

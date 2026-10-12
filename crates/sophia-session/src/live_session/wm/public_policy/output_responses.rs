@@ -123,6 +123,19 @@ impl LivePublicPolicyState {
                     connection_epoch,
                     abandoned,
                 } => {
+                    // The first authenticated assignee is installed after the
+                    // service starts. Its marker names the existing epoch; no
+                    // prior output peer or candidate is being replaced.
+                    if connection_epoch == 1 && abandoned.is_empty()
+                        && self.output_service.as_mut().is_some_and(|service| {
+                            let LiveOutputService::Files { authentication, .. } = service;
+                            authentication.as_mut().is_some_and(|auth| {
+                                std::mem::take(&mut auth.initial_assignment)
+                            })
+                        })
+                    {
+                        continue;
+                    }
                     self.fail_output_peer_loss_observation();
                     self.request_output_candidate_cancellation(
                         format!("output assignee replaced at epoch {connection_epoch}"),

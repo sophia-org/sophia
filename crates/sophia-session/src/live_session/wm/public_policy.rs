@@ -461,6 +461,7 @@ fn policy_profile_identity(
 
 include!("public_policy/transport.rs");
 include!("public_policy/output_service.rs");
+include!("public_policy/output_authentication.rs");
 
 impl PreparedPublicPolicyLaunch {
     fn new(config: &PersistentXtermSessionConfig) -> Result<Self, Box<dyn std::error::Error>> {

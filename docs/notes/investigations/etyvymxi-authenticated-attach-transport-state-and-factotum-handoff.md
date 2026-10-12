@@ -1284,3 +1284,61 @@ the coordinator once it depends on launch authentication; otherwise it would
 wait for an exchange whose relay cannot advance. Replacement paths must use
 fresh registrations on this same owner. This is unfinished integration work,
 not an accepted legacy fallback or a reduced t317 exit.
+
+## Normal output owner admission
+
+Normal output preparation now binds an unassigned service and retains an idle
+supervisor. It refuses configuration without Factotum before creating the
+endpoint. The running Session owner waits for its shared coordinator, reserves
+the output principal/audience (2), and launches through `ProtectedSpawn` with
+that reservation's inherited channel. Activation rechecks the actual protected
+child before passing the shared afid factory to the output worker. Its private
+namespace has no portal capabilities. No credential-only fallback remains in
+this normal launch path; the expected-peer and SO_PEERPIDFD checks still apply.
+The spawning thread's lifetime follows the retained lease.
+
+The first assignment now arrives after service creation. Its correlated marker
+names the existing epoch 1 and no abandoned proposals, so it must not cancel
+Session's startup output transaction or advance its connection epoch. The first
+exploratory join exposed the former replacement-only assumption as
+`InvalidConnectionEpoch`; the explicit initial marker fixes it. Later assignment
+and disconnect handling retain the existing cancellation path. An outstanding
+launch is not reported as an exited peer to the output proof observer.
+
+The existing supplied-topology Session fixture now boots a protected Rust SDK
+peer through this production owner. A C shim only moves its actual inherited
+descriptor to stdin and execs the same process. The SDK authenticates; the
+fixture then takes the quiescent root for its independent raw output-file
+exchange. Both automatic and administrative WM restarts preserve the output
+PID, role epoch and opened topology. Factotum's trusted Session-channel class
+and topology remain supplied. Separate tests refuse missing Factotum and keep
+the process unspawned while configured Factotum is unavailable.
+
+`t317-output-owner-01` passes 17 output-file parent tests (three ignored entries:
+two parent-invoked children and the opt-in native proof), the 22-test protected
+authentication suite with both SDK children executed, all-target Session Clippy
+with warnings denied and formatting. The output child executes successfully in
+the parent log. An exploratory Clippy run found a fixture closure reduced to one
+call; replacing it with the literal argument vector resolves that warning.
+
+The control removes the factory from the supervisor-checked assignee. The real
+SDK child fails at `normal output owner must authenticate its protected peer`,
+and the exact parent fails. After restoring all ten captured candidate files,
+the 17 output-file tests pass again. Binary paths and hashes are recorded;
+no binaries are copied into evidence.
+
+| Package | SHA256SUMS SHA-256 |
+| --- | --- |
+| `t317-output-owner-01` | `c6da0010d603ca22f6ee220a822e7cf66699df2218088c10d35d4bd87e62f30a` |
+| `t317-output-owner-afid-control-01` | `6d28e77c4fdf8f7baeaccef92dc8e016dbdfcd0c0cd96f4bb911e8fef35fbde8` |
+| `t317-output-owner-restored-01` | `35ca5a41d76f2364e85176e09adfaa539f0f1c58d44afe91c85dfc7eb2f1a684` |
+
+Output remains a one-shot role: loss of its registration fails closed and
+terminates that child; this does not introduce automatic output restart or
+command replay. The existing opt-in native-output proof still assumes a
+pre-spawned credential-only peer and needs migration together with its C client.
+It was not executed or requalified here. Output's normative contract and its
+SDK copy must be updated together with that client handoff; the old one-attach
+wording does not describe this authenticated branch. WM/shell integration,
+deployed clients, minimum-version and final repository gates remain open.
+No master merge, installation or physical acceptance is claimed.

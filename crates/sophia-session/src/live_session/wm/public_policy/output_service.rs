@@ -15,7 +15,10 @@ impl PreparedOutputTransport {
         let uid = rustix::process::geteuid().as_raw();
         let process = config.output_process.as_ref()
             .ok_or("output transport requires an explicitly configured process")?;
-        let mut transport = sophia_runtime::OutputFileTransport::bind_for_supervised_uid(
+        if config.factotum.is_none() {
+            return Err("output authority requires Session launch authentication".into());
+        }
+        let transport = sophia_runtime::OutputFileTransport::bind_for_supervised_uid(
             directory,
             uid,
             1,
@@ -36,14 +39,9 @@ impl PreparedOutputTransport {
         for argument in &config.output_process_args {
             spec = spec.arg(argument)
         }
-        let mut supervisor = ProcessSupervisor::new(SupervisedProcessKind::OutputAuthority, spec);
-        supervisor
-            .apply(sophia_runtime::SupervisorCommand::StartProcess {
-                process: SupervisedProcessKind::OutputAuthority,
-                delay: Duration::ZERO,
-            })?
-            .ok_or("output supervisor did not start its client")?;
-        transport.authorize_supervised_process(&supervisor)?;
+        // The running owner registers and spawns it without blocking rendering.
+        // There is no credential-only startup before Factotum is available.
+        let supervisor = ProcessSupervisor::new(SupervisedProcessKind::OutputAuthority, spec);
         Ok(Self::Files {
             transport: Box::new(transport),
             supervisor,
@@ -60,7 +58,8 @@ impl PreparedOutputTransport {
                 supervisor,
             } => LiveOutputService::Files {
                 service: sophia_runtime::OutputFileService::spawn(*transport, snapshot)?,
-                supervisor: Box::new(supervisor),
+                supervisor: Some(Box::new(supervisor)),
+                authentication: Some(OutputLaunchAuthentication::default()),
             },
         })
     }
@@ -69,7 +68,8 @@ impl PreparedOutputTransport {
 enum LiveOutputService {
     Files {
         service: sophia_runtime::OutputFileService,
-        supervisor: Box<ProcessSupervisor>,
+        supervisor: Option<Box<ProcessSupervisor>>,
+        authentication: Option<OutputLaunchAuthentication>,
     },
 }
 
@@ -110,7 +110,9 @@ impl LiveOutputService {
         let Self::Files {
             service,
             supervisor,
+            ..
         } = self;
+        let Some(supervisor) = supervisor.as_mut() else { return Ok(None); };
         let peer = supervisor.peer_id();
         if supervisor
             .poll()

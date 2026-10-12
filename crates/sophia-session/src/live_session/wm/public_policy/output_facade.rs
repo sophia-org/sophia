@@ -46,7 +46,12 @@ impl LiveWmSession {
 
     fn output_peer_supervisor_running(&self) -> bool {
         self.public.as_ref().and_then(|public| public.output_service.as_ref())
-            .is_some_and(|service| matches!(service, LiveOutputService::Files { supervisor, .. } if supervisor.child_id().is_some()))
+            .is_some_and(|service| {
+                let LiveOutputService::Files { supervisor, authentication, .. } = service;
+                supervisor.as_ref().is_some_and(|supervisor| supervisor.child_id().is_some())
+                    // A pending authenticated launch is not proof of exit.
+                    || authentication.as_ref().is_some_and(|auth| !auth.failed && !auth.authorized)
+            })
     }
 
     fn request_output_peer_proof_termination(
@@ -64,6 +69,7 @@ impl LiveWmSession {
         else {
             return Err("output proof has no file-role supervisor".into());
         };
+        let supervisor = supervisor.as_mut().ok_or("output proof peer is still spawning")?;
         let peer = supervisor
             .peer_id()
             .ok_or("output proof peer already departed")?;
