@@ -161,6 +161,7 @@ pub struct ProcessSupervisor {
     exit_status: Option<std::process::ExitStatus>,
     last_launch_generation: u64,
     launch_stderr: Option<std::os::fd::OwnedFd>,
+    exec_gate: Option<sophia_linux_peer::ExecGateChild>,
     spawned_pid: Option<u32>,
 }
 
@@ -189,6 +190,7 @@ impl ProcessSupervisor {
             exit_status: None,
             last_launch_generation: 0,
             launch_stderr: None,
+            exec_gate: None,
             spawned_pid: None,
         }
     }
@@ -207,6 +209,13 @@ impl ProcessSupervisor {
 
     pub const fn process(&self) -> SupervisedProcessKind {
         self.process
+    }
+
+    /// One attempt's provenance rendezvous, consumed by the actual spawn.
+    /// The caller releases it off this worker; it supplies no custody verdict.
+    pub fn with_exec_gate(mut self, gate: sophia_linux_peer::ExecGateChild) -> Self {
+        self.exec_gate = Some(gate);
+        self
     }
 
     /// Diagnostic identity of the last actual spawn attempt, including an
@@ -435,6 +444,9 @@ impl ProcessSupervisor {
         if let Some(stderr) = self.launch_stderr.take() {
             command.stderr(std::process::Stdio::from(stderr));
         }
+        if let Some(gate) = self.exec_gate.take() {
+            gate.install(&mut command);
+        }
         let child = command
             .spawn()
             .map_err(|error| ProcessSupervisorError::SpawnFailed {
@@ -625,6 +637,7 @@ impl ProcessSupervisor {
                 domain,
                 channel,
                 self.launch_stderr.take(),
+                self.exec_gate.take(),
             );
             let protected = match result {
                 Err(ProtectionDomainLaunchError::ExitedBeforeReady { process, status })
@@ -659,6 +672,9 @@ impl ProcessSupervisor {
             }
             if let Some(stderr) = self.launch_stderr.take() {
                 command.stderr(std::process::Stdio::from(stderr));
+            }
+            if let Some(gate) = self.exec_gate.take() {
+                gate.install(&mut command);
             }
             let child = command
                 .spawn()

@@ -3,6 +3,9 @@
 use std::io;
 use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 
+mod exec_gate;
+pub use exec_gate::{ExecGate, ExecGateChild};
+
 /// A reference to the connector captured by the socket, immune to numeric PID reuse.
 pub fn socket_peer_pidfd(socket: BorrowedFd<'_>) -> io::Result<OwnedFd> {
     let mut descriptor: libc::c_int = -1;

@@ -64,6 +64,18 @@ pub struct Notifier {
 }
 
 impl Notifier {
+    /// A bounded fork hook cannot upgrade a Weak or take locks after fork.
+    /// Duplicate its nonblocking, CLOEXEC eventfd before spawning instead.
+    /// Unlike a Notifier, this descriptor keeps the abandoned eventfd alive;
+    /// the spawn owner must drop it when that one attempt ends.
+    pub fn duplicate_notification_fd(&self) -> io::Result<OwnedFd> {
+        self.fd
+            .upgrade()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "wake owner retired"))?
+            .as_fd()
+            .try_clone_to_owned()
+    }
+
     pub fn notify(&self) {
         let Some(fd) = self.fd.upgrade() else { return };
         loop {

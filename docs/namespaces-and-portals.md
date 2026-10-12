@@ -358,6 +358,11 @@ Preparing (slot + reservation + view worker)
     +-- process exits before activation --> actual exit status + retirement
     |
     v
+fork held before exec --> capture monitor PID + start time --> release exec
+    |
+    +-- cancellation / revoked reservation --> prevent exec + retirement
+    |
+    v
 supervised spawn + authentication activation + role dispatch
     |
     +-- missing/mismatched owner --> local failure + background retirement
@@ -368,8 +373,14 @@ Started (monitor PID and peer PID kept distinct)
     +-- exit / authority loss / cancellation --> revoke --> background retirement
 ```
 
-Started and terminal observations occur once. Until Started there is no claimed
-process identity. Namespace cancellation never synchronously reaps on the Session
+Started and terminal observations occur once. Session captures process provenance
+before releasing the fork child to exec, so a first X connection cannot precede
+the managed launch identity. The monitor identity attributes descendants; it is
+separate from the actual peer identity and grants no authenticated authority.
+The private handshake is single-use, wakes the owner without waiting there, and
+fails closed after ten seconds or cancellation. It is consumed only by the actual
+spawn, never the containment driver's version probe. Namespace cancellation never
+synchronously reaps on the Session
 owner thread; the existing launch slot remains occupied until background cleanup
 finishes. Ordinary host children retain their existing process-group cleanup.
 The managed record preserves catalog transaction, origin and diagnostic-ticket

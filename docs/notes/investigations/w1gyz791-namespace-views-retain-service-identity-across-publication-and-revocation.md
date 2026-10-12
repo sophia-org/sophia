@@ -22,6 +22,48 @@ socket paths or namespace commands to launch installed applications.
 
 ## Evidence
 
+### Provenance before application exec
+
+The slice based on `48c27c8ca` closes the early attribution race: recording a
+namespace application's identity only at Started can miss an X connection and
+its first placement. The namespace scheduler now holds the actual fork child
+before exec, captures its PID and `/proc` start time, and releases a private
+single-use handshake. Session's managed record retains that monitor identity
+before the authority phase handles new surfaces. Authentication still names the
+actual peer and requires its own activation; provenance grants no authority.
+The containment version probe is outside this handshake. Ordinary host children
+keep their existing launch path.
+
+The Linux adapter uses only raw syscalls in the child hook, with a ten-second
+fail-closed wait. It publishes the fork PID before notifying the owner through
+a preduplicated nonblocking CLOEXEC eventfd. Dropping the owner shuts down the
+socket, including its inherited copy, so cancellation before or after fork
+prevents exec. Retirement cancels the handshake before waiting on the spawn
+worker. A revoked reservation is checked before releasing a waiting child.
+
+Direct tests execute a marker-writing child, proving release, PID correlation,
+single use and both cancellation timings. Joined tests exercise protected and
+shared-host production launches, provenance before activation, and revocation
+while fork is held. Early-exit fixtures now complete only this handshake before
+withholding activation, preserving their prior claim. No X client, WM placement
+or live desktop acceptance is claimed by this slice.
+
+The device-hidden `t318-exec-provenance-02` package passes Linux adapter and
+wake tests, 103 runtime library tests plus seven launch-channel tests, thirteen
+application diagnostics tests, 28 authentication parents, and nineteen namespace
+launch parents with their independent child entry points. Clippy, formatting,
+layout and diff checks pass. Its SHA256SUMS SHA-256 is
+`215d169b73d0ba76bbf60601537f6e3659d132d6e5a219576e4e9d2d362495d6`.
+
+`t318-exec-provenance-control-01` omits the captured identity handoff to the
+application record. The exact joined test fails at `namespace launch must retain
+the gated process identity before activation`, with exit 101 and one failure.
+Candidate restoration and the exact positive rerun pass. Its SHA256SUMS SHA-256
+is `fda2f42c13fd3295566b955a0716dc489f5887114ee36e11df55dd0700a62044`.
+Both packages bind dynamically enumerated candidate files and retain binary
+paths and hashes only. This evidence paragraph follows qualification; automatic
+application callsite wiring, developer launch and final integration remain open.
+
 ### Short-lived namespace applications
 
 The slice based on `3760efafc` retains a typed process status when Bubblewrap

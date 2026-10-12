@@ -30,6 +30,7 @@ enum State {
 }
 
 pub struct ApplicationProcess {
+    identity: Option<crate::launch_origin::ProcessIdentity>,
     state: State,
     services: NamespaceApplicationServices,
     terminal: bool,
@@ -37,6 +38,7 @@ pub struct ApplicationProcess {
 impl From<Child> for ApplicationProcess {
     fn from(child: Child) -> Self {
         Self {
+            identity: crate::launch_origin::read_process(child.id()).map(|p| p.identity),
             state: State::Host(child),
             services: Default::default(),
             terminal: false,
@@ -49,6 +51,7 @@ impl ApplicationProcess {
         services: NamespaceApplicationServices,
     ) -> Self {
         Self {
+            identity: None,
             state: State::Preparing(Box::new(pending)),
             services,
             terminal: false,
@@ -60,6 +63,11 @@ impl ApplicationProcess {
             State::Running(child) => child.process_id(),
             _ => None,
         }
+    }
+    /// Captured while the fork child was held before exec. This monitor
+    /// identity attributes descendants; it is not the authenticated peer.
+    pub fn launch_identity(&self) -> Option<crate::launch_origin::ProcessIdentity> {
+        self.identity
     }
     pub(crate) fn host_mut(&mut self) -> Option<&mut Child> {
         match &mut self.state {
@@ -125,6 +133,7 @@ impl ApplicationProcess {
                 .map_err(|error| error.to_string()),
             State::Preparing(pending) => {
                 let observed = pending.poll(launches, wake.clone(), now);
+                self.identity = pending.process_identity;
                 if let Some(status) = pending.take_exit_status() {
                     self.state = State::Finished;
                     return Ok(Some(ApplicationProcessEvent::Exited(status)));

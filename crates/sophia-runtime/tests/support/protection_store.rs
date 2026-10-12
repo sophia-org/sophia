@@ -133,6 +133,7 @@ fn the_configured_bubblewrap_must_be_an_absolute_executable_file() {
                 launch.protection_domain.as_ref().unwrap(),
                 None,
                 None,
+                None,
             )
             .err(),
             Some(ProtectionDomainLaunchError::InvalidBubblewrap(bubblewrap))

@@ -69,6 +69,13 @@ fn short_lived_namespace_applications_keep_exit_status_without_claiming_activati
             );
             assert!(Instant::now() < deadline, "early-exit spawn deadline");
         }
+        // Complete only the provenance handshake, keeping the activation
+        // owner paused while the real child exits.
+        while pending.process_identity.is_none() {
+            pending.capture_provenance().unwrap();
+            assert!(Instant::now() < deadline, "early-exit provenance deadline");
+            std::thread::sleep(Duration::from_millis(1));
+        }
         loop {
             let records = store.application_records(&record.id).unwrap();
             if let Some(metadata) = records.launches.get(&1)

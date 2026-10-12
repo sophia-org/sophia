@@ -450,6 +450,7 @@ pub(crate) fn spawn_bubblewrap_with_io(
     domain: &ProtectionDomainSpec,
     channel: Option<LaunchChannel>,
     stderr: Option<std::os::fd::OwnedFd>,
+    exec_gate: Option<sophia_linux_peer::ExecGateChild>,
 ) -> Result<ProtectedProcess, ProtectionDomainLaunchError> {
     let required_role = required_role(process);
     if !domain.roles.contains(&required_role) {
@@ -480,6 +481,9 @@ pub(crate) fn spawn_bubblewrap_with_io(
     };
     if let Some(stderr) = stderr {
         command.stderr(Stdio::from(stderr));
+    }
+    if let Some(gate) = exec_gate {
+        gate.install(&mut command);
     }
     let mut child = command
         .spawn()

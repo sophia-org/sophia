@@ -17,3 +17,4 @@ pub use launch_custody::*;
 pub use policy::*;
 pub use process::*;
 pub use protection::*;
+pub use sophia_linux_peer::{ExecGate, ExecGateChild};

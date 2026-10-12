@@ -65,10 +65,10 @@ impl ManagedSessionChild {
         now: Instant,
     ) -> Option<crate::namespace_launch::ApplicationProcessEvent> {
         let event = self.child.poll(launches, wake, now);
-        if let Some(crate::namespace_launch::ApplicationProcessEvent::Started { process, peer }) =
+        self.process_identity = self.child.launch_identity().or(self.process_identity);
+        if let Some(crate::namespace_launch::ApplicationProcessEvent::Started { process, .. }) =
             &event
         {
-            self.process_identity = crate::launch_origin::read_process(*peer).map(|p| p.identity);
             self.diagnostic = crate::diagnostics::application::registration(*process);
         }
         event

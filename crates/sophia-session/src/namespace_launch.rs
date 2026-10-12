@@ -148,10 +148,15 @@ impl NamespaceLaunchService {
         let parent = self.parent.clone();
         let (sender, prepared) = mpsc::sync_channel(1);
         let (reaper, lifetime) = SpawnLease::channel();
+        let notification = wake
+            .duplicate_notification_fd()
+            .map_err(|e| e.to_string())?;
+        let (gate, child_gate) =
+            sophia_runtime::ExecGate::new(Some(notification)).map_err(|e| e.to_string())?;
         std::thread::Builder::new()
             .name("sophia-recipe-prepare".into())
             .spawn(move || {
-                let result = prepare(request, registry, parent, generation, slot);
+                let result = prepare(request, registry, parent, generation, slot, child_gate);
                 let _ = sender.send(result);
                 wake.notify();
                 if let Ok(resources) = lifetime.recv() {
@@ -168,6 +173,8 @@ impl NamespaceLaunchService {
             policy,
             finished: false,
             early_exit: None,
+            gate: Some(gate),
+            process_identity: None,
         })
     }
 }
@@ -186,6 +193,7 @@ fn prepare(
     parent: PathBuf,
     generation: u64,
     slot: Slot,
+    child_gate: sophia_runtime::ExecGateChild,
 ) -> Result<Prepared, String> {
     let mut names = NamespaceRecipeOwner::new(
         &parent,
@@ -219,7 +227,7 @@ fn prepare(
         None => ProcessSupervisor::new(SupervisedProcessKind::NamespaceClient, request.launch),
     };
     Ok(Prepared {
-        supervisor: Some(supervisor),
+        supervisor: Some(supervisor.with_exec_gate(child_gate)),
         diagnostic: request.diagnostic,
         names,
         published,
@@ -236,6 +244,8 @@ pub struct ClientEndpoint {
 }
 
 pub struct PendingNamespaceClient {
+    gate: Option<sophia_runtime::ExecGate>,
+    process_identity: Option<crate::launch_origin::ProcessIdentity>,
     registration: Option<RegistrationOwner>,
     prepared: Option<mpsc::Receiver<Result<Prepared, String>>>,
     reaper: Option<SpawnLease>,
@@ -270,6 +280,26 @@ impl PendingNamespaceClient {
     pub fn take_exit_status(&mut self) -> Option<std::process::ExitStatus> {
         self.early_exit.take()
     }
+    fn capture_provenance(&mut self) -> Result<(), String> {
+        if let Some(gate) = self.gate.as_mut()
+            && let Some(pid) = gate.poll().map_err(|e| e.to_string())?
+        {
+            self.process_identity = Some(
+                crate::launch_origin::read_process(pid)
+                    .ok_or("gated application provenance absent")?
+                    .identity,
+            );
+            // Capture before exec: an X connection can arrive immediately
+            // after release, before authentication activation finishes.
+            self.gate
+                .take()
+                .expect("gated launch")
+                .release()
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+
     fn advance(
         &mut self,
         launches: &mut LaunchCoordinator,
@@ -281,11 +311,12 @@ impl PendingNamespaceClient {
             .as_ref()
             .ok_or("namespace launch cancelled")?
             .registration();
-        if self.startup.is_none()
+        if (self.startup.is_none() || self.gate.is_some())
             && matches!(launches.phase(registration), None | Some(Phase::Retiring))
         {
             return Err("namespace launch authority retired".into());
         }
+        self.capture_provenance()?;
         if self.resources.is_none() {
             match self
                 .prepared
@@ -426,6 +457,9 @@ impl PendingNamespaceClient {
     }
 
     fn retire(&mut self) {
+        // Cancel on the owner before retiring a worker whose spawn is waiting
+        // in pre_exec. Otherwise the two retirement owners could wait on it.
+        self.gate.take();
         self.registration.take();
         if let Some(resources) = self.resources.as_mut() {
             resources.names.revoke_grants();

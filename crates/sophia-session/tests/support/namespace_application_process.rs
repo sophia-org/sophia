@@ -172,3 +172,119 @@ fn ordinary_host_process_keeps_existing_child_custody_after_exit_observation() {
     );
     assert_eq!(f.service.occupied(), 0);
 }
+
+#[test]
+fn namespace_provenance_is_captured_before_exec_and_before_activation() {
+    for protected in [false, true] {
+        let profile = if protected {
+            sophia_protocol::NamespaceProfile::Confined
+        } else {
+            sophia_protocol::NamespaceProfile::ClassicShared
+        };
+        let mut f = Fixture::with_profile(profile);
+        let mut request = f.request();
+        if !protected {
+            request.launch.protection_domain = None;
+            std::fs::write(
+                f.root.join("shared"),
+                "namespace-recipe 1\nmount portal roles/portal\n",
+            )
+            .unwrap();
+            let mut policy = request.recipe.policy().clone();
+            policy.profile = NamespaceRecipeProfile::SharedX;
+            policy.source = Some("shared".into());
+            policy.developer_launch = false;
+            request.recipe = LoadedNamespaceRecipe::load(&policy, &f.root).unwrap();
+            let mut endpoint = request.approved.remove("inspection").unwrap();
+            endpoint.service.interface = "portal-client".into();
+            request.approved.insert("portal".into(), endpoint);
+        }
+        let mut pending = f
+            .service
+            .start(
+                request,
+                &mut f.auth.coordinator,
+                f.wake.notifier(),
+                Instant::now(),
+            )
+            .unwrap();
+        // Retain the real gate temporarily to observe the pre-exec boundary.
+        // Startup still uses the production worker, channel and supervisor.
+        let mut gate = pending.gate.take().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let pid = loop {
+            assert!(Instant::now() < deadline, "gated namespace fork deadline");
+            f.auth.tick();
+            assert!(
+                pending
+                    .poll(&mut f.auth.coordinator, f.wake.notifier(), Instant::now())
+                    .unwrap()
+                    .is_none()
+            );
+            if let Some(pid) = gate.poll().unwrap() {
+                break pid;
+            }
+        };
+        assert!(pending.process_identity.is_none());
+        let expected = crate::launch_origin::read_process(pid).unwrap().identity;
+        pending.gate = Some(gate);
+        let mut app =
+            ApplicationProcess::namespace(pending, NamespaceApplicationServices::default());
+        assert!(
+            app.poll(&mut f.auth.coordinator, f.wake.notifier(), Instant::now())
+                .is_none(),
+            "pre-exec provenance must precede service activation"
+        );
+        assert_eq!(
+            app.launch_identity(),
+            Some(expected),
+            "namespace launch must retain the gated process identity before activation"
+        );
+        assert!(app.cancel_namespace());
+        f.reclaimed();
+    }
+}
+
+#[test]
+fn revoked_launch_cancels_a_waiting_exec_handshake() {
+    let mut f = Fixture::new();
+    let mut pending = f.start();
+    let registration = pending.registration.as_ref().unwrap().registration();
+    let mut gate = pending.gate.take().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let pid = loop {
+        assert!(
+            Instant::now() < deadline,
+            "revoked fork observation deadline"
+        );
+        f.auth.tick();
+        assert!(
+            pending
+                .poll(&mut f.auth.coordinator, f.wake.notifier(), Instant::now())
+                .unwrap()
+                .is_none()
+        );
+        if let Some(pid) = gate.poll().unwrap() {
+            break pid;
+        }
+    };
+    pending.gate = Some(gate);
+    f.auth
+        .coordinator
+        .revoke(registration, Instant::now())
+        .unwrap();
+    assert!(
+        pending
+            .poll(&mut f.auth.coordinator, f.wake.notifier(), Instant::now())
+            .is_err()
+    );
+    assert!(
+        pending.process_identity.is_none(),
+        "revoked authority must not release the provenance handshake"
+    );
+    f.reclaimed();
+    assert!(
+        crate::launch_origin::read_process(pid).is_none(),
+        "cancelled fork must be reaped"
+    );
+}

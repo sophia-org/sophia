@@ -6,6 +6,25 @@ use std::time::{Duration, Instant};
 const BOUND: Duration = Duration::from_secs(2);
 
 #[test]
+fn fork_notification_uses_the_same_wake_and_refuses_an_abandoned_owner() {
+    let wake = Wake::new().unwrap();
+    let notifier = wake.notifier();
+    let fd = notifier.duplicate_notification_fd().unwrap();
+    assert_eq!(rustix::io::write(&fd, &1u64.to_ne_bytes()).unwrap(), 8);
+    assert!(wake.wait(Some(Instant::now() + BOUND)).unwrap());
+    wake.clear().unwrap();
+    assert!(!wake.wait(Some(Instant::now())).unwrap());
+    drop(wake);
+    assert_eq!(
+        notifier.duplicate_notification_fd().unwrap_err().kind(),
+        std::io::ErrorKind::BrokenPipe
+    );
+    // The bounded spawn attempt owns its duplicate independently, without
+    // making the Weak notifier report a live owner again.
+    assert_eq!(rustix::io::write(&fd, &1u64.to_ne_bytes()).unwrap(), 8);
+}
+
+#[test]
 fn rendezvous_channels_are_refused_before_a_consumer_can_sleep() {
     let error = channel::bounded::<u8>(0)
         .err()

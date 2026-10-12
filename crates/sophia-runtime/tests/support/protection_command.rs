@@ -109,7 +109,7 @@ fn no_supervised_process_launches_into_an_application_domain() {
     // is even looked at, as it was before the command was extracted.
     let launch = ProcessLaunchSpec::new("/nonexistent-sophia-application");
     for process in SUPERVISED {
-        match spawn_bubblewrap_with_io(process, &launch, &domain, None, None) {
+        match spawn_bubblewrap_with_io(process, &launch, &domain, None, None, None) {
             Err(ProtectionDomainLaunchError::RoleMismatch {
                 process: refused, ..
             }) => {
@@ -155,7 +155,7 @@ fn namespace_clients_cannot_borrow_desktop_role_custody() {
         let foreign = ProtectionDomainSpec::bubblewrap([other]).unwrap();
         assert!(
             matches!(
-                spawn_bubblewrap_with_io(client, &launch, &foreign, None, None),
+                spawn_bubblewrap_with_io(client, &launch, &foreign, None, None, None),
                 Err(ProtectionDomainLaunchError::RoleMismatch { .. })
             ),
             "namespace clients must not launch with another role's custody"
@@ -164,14 +164,14 @@ fn namespace_clients_cannot_borrow_desktop_role_custody() {
     for other in SUPERVISED.into_iter().filter(|kind| *kind != client) {
         assert!(
             matches!(
-                spawn_bubblewrap_with_io(other, &launch, &domain, None, None),
+                spawn_bubblewrap_with_io(other, &launch, &domain, None, None, None),
                 Err(ProtectionDomainLaunchError::RoleMismatch { .. })
             ),
             "desktop roles must not launch with namespace-client custody"
         );
     }
     assert!(matches!(
-        spawn_bubblewrap_with_io(client, &launch, &domain, None, None),
+        spawn_bubblewrap_with_io(client, &launch, &domain, None, None, None),
         Err(ProtectionDomainLaunchError::InvalidExecutable(_))
     ));
 }
