@@ -94,6 +94,7 @@ fn normal_wm_startup_and_both_replacements_require_fresh_authenticated_launches(
 #[test]
 fn normal_wm_without_factotum_is_refused_before_launch() {
     let mut source = ConfigFixture::new(&[]);
+    source.config.wm_socket_path = source.directory.join("selected-wm.sock");
     source.config.wm_process = Some(std::env::current_exe().unwrap().to_str().unwrap().into());
     let prepared = LiveWmSession::prepare_public_launch(&mut source.config).unwrap();
     assert!(prepared.is_some());
