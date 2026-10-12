@@ -3,6 +3,58 @@
 use super::*;
 
 #[test]
+fn application_options_reach_host_and_protected_clients() {
+    let probe = Probe::build();
+    for protected in [false, true] {
+        let mut spec = ProcessLaunchSpec::new(&probe.0)
+            .arg(if protected {
+                "--options"
+            } else {
+                "--host-options"
+            })
+            .env("SOPHIA_HOST_PROBE", "preserved")
+            .env("SOPHIA_REMOVED", "must-not-reach-child")
+            .env_remove("SOPHIA_REMOVED")
+            .env_remove("CARGO_MANIFEST_DIR")
+            .env_remove("SOPHIA_RESTORED")
+            .env("SOPHIA_RESTORED", "last")
+            .current_dir("/usr/bin")
+            .stdin_null();
+        if protected {
+            spec = spec.protection_domain(
+                ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::NamespaceClient]).unwrap(),
+            );
+        }
+        let mut supervisor = ProcessSupervisor::new(SupervisedProcessKind::NamespaceClient, spec);
+        let (mut owner, channel) = LaunchChannel::reserve(1).unwrap();
+        owner
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        if protected {
+            supervisor.start_with_launch_channel(channel).unwrap();
+        } else {
+            supervisor.start_host_namespace_client(channel).unwrap();
+        }
+        let mut ready = [0; 6];
+        owner.read_exact(&mut ready).unwrap();
+        assert_eq!(
+            &ready, b"READY\n",
+            "application launch options must survive custody setup"
+        );
+        owner.write_all(b"Q").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while supervisor.poll().unwrap() != Some(SupervisorEvent::ProcessExited) {
+            assert!(
+                Instant::now() < deadline,
+                "application option probe exit deadline"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(supervisor.take_exit_status().unwrap().success());
+    }
+}
+
+#[test]
 fn host_client_handoff_preserves_environment_but_excludes_other_descriptors_and_roles() {
     let probe = Probe::build();
     let sentinel = std::fs::File::open("/dev/null").unwrap();

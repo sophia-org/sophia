@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -49,12 +50,27 @@ int main(int argc, char **argv) {
         return fail("not a connected Unix channel");
     channel = fd;
     if (fcntl(fd, F_GETFD) != 0) return fail("handoff was not inheritable");
-    if (argc == 2 && strcmp(argv[1], "--host") == 0) {
+    if (argc == 2 && (strcmp(argv[1], "--host") == 0 || strcmp(argv[1], "--host-options") == 0)) {
         const char *marker = getenv("SOPHIA_HOST_PROBE");
         if (!marker || strcmp(marker, "preserved") != 0)
             return fail("host launch environment lost");
     } else if (getenv("HOME") || getenv("DISPLAY") || getenv("LD_PRELOAD")) {
         return fail("ambient environment");
+    }
+
+    if (argc == 2 && (strcmp(argv[1], "--options") == 0 || strcmp(argv[1], "--host-options") == 0)) {
+        char cwd[4096];
+        struct stat input, null_device;
+        if (!getcwd(cwd, sizeof(cwd)) || strcmp(cwd, "/usr/bin") != 0)
+            return fail("working directory lost");
+        if (getenv("SOPHIA_REMOVED") || getenv("CARGO_MANIFEST_DIR"))
+            return fail("removed environment survived");
+        const char *restored = getenv("SOPHIA_RESTORED");
+        if (!restored || strcmp(restored, "last") != 0)
+            return fail("last environment selection lost");
+        if (fstat(0, &input) || stat("/dev/null", &null_device) ||
+            !S_ISCHR(input.st_mode) || input.st_rdev != null_device.st_rdev)
+            return fail("stdin must be null");
     }
 
     DIR *directory = opendir("/proc/self/fd");

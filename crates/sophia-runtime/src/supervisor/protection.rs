@@ -417,6 +417,7 @@ pub enum ProtectionDomainLaunchError {
         required: ProtectionDomainRole,
     },
     InvalidExecutable(PathBuf),
+    InvalidWorkingDirectory(PathBuf),
     InvalidBubblewrap(PathBuf),
     InvalidBinding(PathBuf),
     Spawn(String),
@@ -573,7 +574,7 @@ pub(crate) fn bubblewrap_command(
     if launch.process_group {
         command.process_group(0);
     }
-    if !domain.inherited_fds.contains(&0) {
+    if launch.null_stdin || !domain.inherited_fds.contains(&0) {
         command.stdin(Stdio::null());
     }
     if !domain.inherited_fds.contains(&1) {
@@ -627,6 +628,21 @@ fn bubblewrap_arguments(
     program: &Path,
     store: Option<&Path>,
 ) -> Result<Vec<OsString>, ProtectionDomainLaunchError> {
+    // A working directory names an already visible directory. It never adds
+    // a host bind; Bubblewrap refuses an absent path inside the sandbox.
+    let working_directory = launch
+        .working_directory
+        .as_deref()
+        .unwrap_or(Path::new("/"));
+    if !working_directory.is_absolute()
+        || working_directory
+            .components()
+            .any(|part| matches!(part, Component::ParentDir | Component::CurDir))
+    {
+        return Err(ProtectionDomainLaunchError::InvalidWorkingDirectory(
+            working_directory.into(),
+        ));
+    }
     // A grant at, above or inside the store would replace or shadow part of
     // it, possibly writable; the store stays exactly the host's, read-only.
     if let Some(store) = store
@@ -735,14 +751,17 @@ fn bubblewrap_arguments(
         ]);
     }
     for (key, value) in &launch.environment {
-        args.extend(["--setenv".into(), key.clone(), value.clone()]);
+        if !launch.removed_environment.contains(key) {
+            args.extend(["--setenv".into(), key.clone(), value.clone()]);
+        }
+    }
+    args.extend(["--setenv".into(), "PATH".into(), "/usr/bin".into()]);
+    for key in &launch.removed_environment {
+        args.extend(["--unsetenv".into(), key.clone()]);
     }
     args.extend([
-        "--setenv".into(),
-        "PATH".into(),
-        "/usr/bin".into(),
         "--chdir".into(),
-        "/".into(),
+        working_directory.as_os_str().to_owned(),
         "--".into(),
         program.as_os_str().to_owned(),
     ]);

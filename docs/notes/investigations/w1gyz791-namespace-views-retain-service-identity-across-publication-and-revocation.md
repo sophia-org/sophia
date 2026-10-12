@@ -22,6 +22,30 @@ socket paths or namespace commands to launch installed applications.
 
 ## Evidence
 
+### Application launch options
+
+The follow-up to `b9a2b7331` preserves working-directory selection, environment
+removal and null stdin through the existing process supervisor. Defaults retain
+existing role behavior. Host clients apply the options to the child command;
+protected clients apply them inside Bubblewrap's already approved filesystem
+and environment. A selected working directory never creates a host bind, and
+relative or parent-traversing protected working directories refuse. Environment
+builder operations retain their order: a later assignment can restore a removed
+variable, while a later removal suppresses its assignment.
+
+An independent C child checks these options on both the trusted-host and
+protected NamespaceClient paths while exercising the actual launch-channel
+handoff. The private argument-builder test separately proves that directory
+selection adds no visibility. The device-hidden `t318-application-options-01`
+package passes the runtime crate suite, all fifteen namespace-launch parent
+tests (with child entry points invoked), runtime all-target and native Session
+library Clippy, formatting, layout and diff checks. Its SHA256SUMS SHA-256 is
+`d11d8d2ee95885c87cbefa1dd38eb06d50967245b816f9dd574d14050c7b8816`.
+The package captures candidate hashes before and after; no binaries are copied.
+This paragraph follows that captured candidate. Application callsite wiring and
+diagnostic stderr custody remain pending; these options alone do not enable
+configured recipes in a live session.
+
 ### Application process custody
 
 The slice based on `82b7ac283` gives managed applications one process owner for

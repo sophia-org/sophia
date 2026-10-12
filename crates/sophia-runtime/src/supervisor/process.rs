@@ -5,11 +5,26 @@ use std::sync::{
 };
 use std::time::Instant;
 
+fn configure_host_options(command: &mut Command, spec: &ProcessLaunchSpec) {
+    for key in &spec.removed_environment {
+        command.env_remove(key);
+    }
+    if let Some(directory) = &spec.working_directory {
+        command.current_dir(directory);
+    }
+    if spec.null_stdin {
+        command.stdin(std::process::Stdio::null());
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProcessLaunchSpec {
     pub program: OsString,
     pub args: Vec<OsString>,
     pub environment: Vec<(OsString, OsString)>,
+    pub removed_environment: Vec<OsString>,
+    pub working_directory: Option<std::path::PathBuf>,
+    pub null_stdin: bool,
     pub process_group: bool,
     pub protection_domain: Option<ProtectionDomainSpec>,
 }
@@ -20,6 +35,9 @@ impl ProcessLaunchSpec {
             program: program.into(),
             args: Vec::new(),
             environment: Vec::new(),
+            removed_environment: Vec::new(),
+            working_directory: None,
+            null_stdin: false,
             process_group: false,
             protection_domain: None,
         }
@@ -36,7 +54,28 @@ impl ProcessLaunchSpec {
     }
 
     pub fn env(mut self, key: impl Into<OsString>, value: impl Into<OsString>) -> Self {
-        self.environment.push((key.into(), value.into()));
+        let key = key.into();
+        self.removed_environment.retain(|removed| *removed != key);
+        self.environment.push((key, value.into()));
+        self
+    }
+
+    pub fn env_remove(mut self, key: impl Into<OsString>) -> Self {
+        let key = key.into();
+        self.environment.retain(|(present, _)| *present != key);
+        if !self.removed_environment.contains(&key) {
+            self.removed_environment.push(key);
+        }
+        self
+    }
+
+    pub fn current_dir(mut self, directory: impl Into<std::path::PathBuf>) -> Self {
+        self.working_directory = Some(directory.into());
+        self
+    }
+
+    pub fn stdin_null(mut self) -> Self {
+        self.null_stdin = true;
         self
     }
 
@@ -358,6 +397,7 @@ impl ProcessSupervisor {
         command
             .args(&self.spec.args)
             .envs(self.spec.environment.iter().cloned());
+        configure_host_options(&mut command, &self.spec);
         command.env(LAUNCH_AUTH_FD_ENV, channel.child.as_raw_fd().to_string());
         if self.spec.process_group {
             std::os::unix::process::CommandExt::process_group(&mut command, 0);
@@ -571,6 +611,7 @@ impl ProcessSupervisor {
             let mut command = Command::new(&self.spec.program);
             command.args(&self.spec.args);
             command.envs(self.spec.environment.iter().cloned());
+            configure_host_options(&mut command, &self.spec);
             #[cfg(unix)]
             if self.spec.process_group {
                 std::os::unix::process::CommandExt::process_group(&mut command, 0);

@@ -28,6 +28,30 @@ const SUPERVISED: [SupervisedProcessKind; 8] = [
 ];
 
 #[test]
+fn working_directory_never_adds_a_host_binding() {
+    let domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::NamespaceClient]).unwrap();
+    let program = Path::new("/usr/bin/true");
+    let base = ProcessLaunchSpec::new(program);
+    let original = bubblewrap_arguments(&base, &domain, program, None).unwrap();
+    let mut expected = original.clone();
+    let position = expected.iter().position(|arg| arg == "--chdir").unwrap() + 1;
+    expected[position] = "/not-visible-on-purpose".into();
+    let selected = base.clone().current_dir("/not-visible-on-purpose");
+    assert_eq!(
+        bubblewrap_arguments(&selected, &domain, program, None).unwrap(),
+        expected,
+        "selecting a working directory must not grant visibility"
+    );
+    for path in ["relative", "/tmp/../host"] {
+        let selected = base.clone().current_dir(path);
+        assert!(matches!(
+            bubblewrap_arguments(&selected, &domain, program, None),
+            Err(ProtectionDomainLaunchError::InvalidWorkingDirectory(_))
+        ));
+    }
+}
+
+#[test]
 fn every_existing_role_builds_exactly_its_argument_list() {
     assert!(
         Path::new(DEFAULT_BUBBLEWRAP_PATH).is_file(),
