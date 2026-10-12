@@ -22,6 +22,17 @@ socket paths or namespace commands to launch installed applications.
 
 ## Evidence
 
+### Signed candidate after credential unlock
+
+After niltempus unlocked the existing signing agent, the preserved application
+checkpoint committed as `b8d99a419`, followed by the developer interface,
+confinement fixture repair, rebind join and documentation as `ca807f1e8`.
+Both commit signatures verify. Every code/test file captured by gate 11 matches
+the signed candidate byte for byte; the only subsequent difference in that
+candidate set is this investigation's post-run evidence text. No unsigned
+commit or signing-agent reset was used. Integration and installed observation
+remain distinct from these deterministic results.
+
 ### Final gate with the retained-fid join
 
 `t318-gate-11` passes the complete isolated `cargo xtask check`, including
