@@ -92,17 +92,17 @@ int os_tx_drive(struct sophia_os *s) {
      * acknowledged (and its fid clunked, via IDLE) before the next opens. */
     if (s->acked < s->submitted_sequence)
       return 0;
-    r = sophia_9p_walk(&s->wire, s->root, &name, 1, &s->tx_op.handle,
+    r = sophia_9p_walk(s->wire, s->root, &name, 1, &s->tx_op.handle,
                        &s->tx_fid);
   } else if (s->tx_stage == OS_TX_OPEN)
-    r = sophia_9p_lopen(&s->wire, s->tx_fid, 2, &s->tx_op.handle);
+    r = sophia_9p_lopen(s->wire, s->tx_fid, 2, &s->tx_op.handle);
   else if (s->tx_stage == OS_TX_WRITE) {
-    size_t n = s->tx_size - s->tx_written, maximum = s->wire.msize - 23u;
+    size_t n = s->tx_size - s->tx_written, maximum = s->wire->msize - 23u;
     if (s->tx_iounit && maximum > s->tx_iounit)
       maximum = s->tx_iounit;
     if (n > maximum)
       n = maximum;
-    r = sophia_9p_write(&s->wire, s->tx_fid, s->tx_written,
+    r = sophia_9p_write(s->wire, s->tx_fid, s->tx_written,
                         s->tx + s->tx_written, n, &s->tx_op.handle);
     if (!r && !s->assembly_deadline)
       s->assembly_deadline = os_add(s->now, s->limits.assembly_timeout_ms);
@@ -116,14 +116,14 @@ int os_tx_drive(struct sophia_os *s) {
     if (sophia_of_submit_encode(b, s->epoch, s->tx_ticket,
                                 (uint32_t)s->tx_size))
       return SOPHIA_9P_INVALID;
-    r = sophia_9p_write(&s->wire, s->submit_fid, 0, b, sizeof(b),
+    r = sophia_9p_write(s->wire, s->submit_fid, 0, b, sizeof(b),
                         &s->tx_op.handle);
     if (!r) {
       s->retry_at = 0;
       os_set(s, s->tx_ticket, SOPHIA_OS_ISSUED, 0);
     }
   } else
-    r = sophia_9p_clunk(&s->wire, s->tx_fid, &s->tx_op.handle);
+    r = sophia_9p_clunk(s->wire, s->tx_fid, &s->tx_op.handle);
   return os_started(&s->tx_op, r);
 }
 /* Called after the dispatch batch's events have been validated. EAGAIN has

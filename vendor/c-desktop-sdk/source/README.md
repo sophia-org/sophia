@@ -95,7 +95,12 @@ The helper performs no environment lookup or principal selection.
 On success, `sophia_la_root` names the admitted role root. For lock providers,
 pass it to `sophia_lc_init_attached`; that constructor starts at `api`, preserving
 the authentication and transport identity. It refuses a busy wire or unknown
-root. Other role constructors still need an explicit admitted-root entry point.
+root. Output clients pass that same wire and root to `sophia_os_open_attached`,
+which starts at `api` without resetting or reattaching the transport. It borrows
+the quiescent wire with its root as the only fid; output state and storage must
+be disjoint from that wire and its storage. Its lifecycle tests run through both
+the fresh-wire and admitted-root constructors. WM and shell constructors still
+need an explicit admitted-root entry point.
 This is a candidate API, not an automatic migration of existing applications.
 
 Requires a POSIX system, a C99 compiler, GNU make, ar, and sha256sum. Tests use

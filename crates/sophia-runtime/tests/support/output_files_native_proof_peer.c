@@ -21,7 +21,9 @@
 #include "output_files_native_proof/arguments.h"
 #include "sophia_desktop_connection.h"
 #include "sophia_output_session.h"
+#include "sophia_launch_auth.h"
 #include <errno.h>
+#include <limits.h>
 #include <inttypes.h>
 #include <poll.h>
 #include <stdarg.h>
@@ -53,6 +55,10 @@ static struct sophia_os *session;
 static void *storage;
 static size_t storage_bytes;
 static int session_fd = -1, session_open;
+/* The output session borrows this wire after authentication. */
+static struct sophia_9p_client role_wire, relay_wire;
+static void *role_storage, *relay_storage;
+static int relay_fd = -1;
 
 static uint64_t now_ns(void) {
   struct timespec t;
@@ -95,6 +101,12 @@ static void close_session(void) {
   if (session_fd >= 0)
     close(session_fd);
   session_fd = -1;
+  if (relay_fd >= 0)
+    close(relay_fd);
+  relay_fd = -1;
+  free(role_storage);
+  free(relay_storage);
+  role_storage = relay_storage = NULL;
 }
 /* Reasons are short and whitespace-free. */
 static void finish(enum exit_code code, const char *reason) {
@@ -139,6 +151,62 @@ static void usage(const char *reason) {
 }
 
 /* ---- session ---- */
+
+/* Absence is allowed only for the supplied-admission runtime fixtures. Once
+ * provisioned, any authentication failure is terminal: never retry raw attach. */
+static int open_authenticated(const struct sophia_os_config *config) {
+  const char *value = getenv("SOPHIA_LAUNCH_AUTH_FD");
+  struct sophia_la_client auth;
+  size_t bytes = sophia_9p_storage_bytes(MSIZE, 8);
+  unsigned long descriptor = 0;
+  const char *digit;
+  if (!value)
+    return 0;
+  if (!*value)
+    finish(EXIT_SESSION, "launch-descriptor");
+  for (digit = value; *digit; ++digit) {
+    if (*digit < '0' || *digit > '9' ||
+        descriptor > ((unsigned long)INT_MAX - (unsigned)(*digit - '0')) / 10)
+      finish(EXIT_SESSION, "launch-descriptor");
+    descriptor = descriptor * 10 + (unsigned)(*digit - '0');
+  }
+  if (descriptor < 3 || (int)descriptor == session_fd)
+    finish(EXIT_SESSION, "launch-descriptor");
+  relay_fd = (int)descriptor;
+  role_storage = malloc(bytes);
+  relay_storage = malloc(bytes);
+  if (!role_storage || !relay_storage ||
+      sophia_9p_init(&role_wire, session_fd, MSIZE, 8, 16, role_storage, bytes) ||
+      sophia_9p_init(&relay_wire, relay_fd, MSIZE, 8, 16, relay_storage, bytes) ||
+      sophia_la_init(&auth, &role_wire, &relay_wire, "output", "output-authority",
+                     ms(now_ns())))
+    finish(EXIT_SESSION, "launch-authentication-init");
+  while (!sophia_la_ready(&auth)) {
+    struct pollfd fds[2];
+    uint64_t now, wake;
+    int wait;
+    if (sophia_la_service(&auth, ms(now_ns()), BUDGET))
+      finish(EXIT_SESSION, "launch-authentication");
+    if (sophia_la_ready(&auth))
+      break;
+    now = ms(now_ns());
+    wake = sophia_la_next_wake(&auth);
+    wait = wake <= now ? 0 : (wake - now > 100 ? 100 : (int)(wake - now));
+    fds[0] = (struct pollfd){session_fd, POLLIN, 0};
+    fds[1] = (struct pollfd){relay_fd, POLLIN, 0};
+    if (sophia_9p_wants_write(&role_wire))
+      fds[0].events |= POLLOUT;
+    if (sophia_9p_wants_write(&relay_wire))
+      fds[1].events |= POLLOUT;
+    if (poll(fds, 2, wait) < 0 && errno != EINTR)
+      finish(EXIT_SESSION, "launch-authentication-poll");
+  }
+  if (sophia_os_open_attached(session, &role_wire, sophia_la_root(&auth), config,
+                              storage, storage_bytes, ms(now_ns())))
+    finish(EXIT_SESSION, "authenticated-session-open");
+  record("authenticated", "handoff=admitted-root");
+  return 1;
+}
 
 static void step(uint64_t deadline) {
   struct pollfd p;
@@ -207,7 +275,8 @@ static void open_session(void) {
   config.offer.minimum_revision = config.offer.maximum_revision = 1;
   config.offer.capabilities = SOPHIA_OF_CAP_OBSERVE | SOPHIA_OF_CAP_CONFIGURE;
   config.bootstrap_deadline_ms = ms(deadline);
-  if (sophia_os_open_fd(session, session_fd, &config, storage, storage_bytes,
+  if (!open_authenticated(&config) &&
+      sophia_os_open_fd(session, session_fd, &config, storage, storage_bytes,
                         ms(now_ns())))
     finish(EXIT_SESSION, "session-open");
   session_open = 1;

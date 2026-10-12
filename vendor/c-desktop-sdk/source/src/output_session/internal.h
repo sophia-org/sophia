@@ -38,7 +38,8 @@ struct os_ticket {
   uint32_t error;
 };
 struct sophia_os {
-  struct sophia_9p_client wire;
+  struct sophia_9p_client owned_wire;
+  struct sophia_9p_client *wire;
   struct sophia_os_config config;
   struct sophia_of_limits limits;
   enum sophia_os_state state;

@@ -1342,3 +1342,47 @@ SDK copy must be updated together with that client handoff; the old one-attach
 wording does not describe this authenticated branch. WM/shell integration,
 deployed clients, minimum-version and final repository gates remain open.
 No master merge, installation or physical acceptance is claimed.
+
+## Authenticated C output proof
+
+The generic output proof now uses the public C launch client when Session
+provisions `SOPHIA_LAUNCH_AUTH_FD`, then hands its exact quiescent role wire
+and root to `sophia_os_open_attached`. Invalid descriptors or authentication
+failure terminate the client; they never select raw attach. The unprovisioned
+mode remains for the existing supplied-admission runtime fixtures. Both wire
+buffers outlive the output session, and the inherited relay is marked CLOEXEC
+by the launch client. Output records and topology semantics are unchanged.
+
+The opt-in Session fixture now drives the actual asynchronous output launch
+owner and shared authentication coordinator rather than expecting a child at
+bind time. It checks the actual protected launch identity. Its real Factotum
+export has a supplied trusted Session-channel class; topology preparation,
+apply, first presentation and rollback remain supplied. The four stages prove
+validation, unknown-mode refusal, commit-and-restore and supervisor termination
+with rollback through the authenticated C SDK connection.
+
+The first joined run authenticated but stalled until its bootstrap deadline:
+the C SDK's new admitted-root constructor had not scheduled its first request.
+Signed SDK `b8fc3a466d301e5672d78bff04866e82fe6359d6` fixes this by calling the
+same bounded bootstrap driver as the fresh-fd constructor. Both constructors
+now have a test requiring writable work or an immediate timeout without peer
+input. Omitting that call fails the named scheduling assertion; the full C
+suite passes before and after restoration. SDK provenance records those
+packages and the earlier reset and reattach controls. The updated contract
+copy comes from signed Sophia `d5c9b63a3`.
+
+`t317-output-native-auth-01` passes all 13 runtime proof tests, the one Session
+test exercising all four authenticated stages, the vendored SDK identity check,
+all-target Session Clippy with warnings denied, formatting and diff checks.
+Its `SHA256SUMS` has SHA-256
+`4110f9f790f9e0e9deff8ed1d0769f95c50dfee33ea9b1cb4104f99bf4b166a9`.
+The package captures the complete modified/untracked candidate file set and
+records executable paths/hashes. It contains no binaries. Earlier exploratory
+commands omitted `native-session` and selected zero Session tests; those are
+not counted. The failing joined run is retained in the local development logs.
+
+The legacy native-proof xtask still copies its prepared binaries into evidence;
+it was not used. This run builds directly in the leased cargo slot inside a
+device-hidden sandbox. There is no new physical acceptance, live install or
+whole-repository gate claim. Normal WM and shell authentication, deployed-client
+rollout and the remaining t317 closure gates remain required.

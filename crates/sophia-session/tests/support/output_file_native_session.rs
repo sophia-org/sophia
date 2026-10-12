@@ -2,6 +2,7 @@
 //! admission. Native preparation, apply and presentation are supplied here.
 //! No KMS access or physical restoration is implied by these observations.
 use super::*;
+use crate::live_session::tests::lock_provider_factotum as factotum;
 use std::io::{Read, Write};
 
 #[test]
@@ -25,6 +26,8 @@ fn native_proof_peer_uses_session_supervision_and_owner_settlement() {
 
 fn exercise(peer: &Path, stage: &str) {
     let mut rig = rig(&format!("native-session-{stage}"));
+    let mut auth = factotum::Fixture::new();
+    let wake = sophia_wake::Wake::new().unwrap();
     // Replace the numeric test-owner service with the production launch recipe.
     rig.public().output_service.take();
     let directory = rig.socket.parent().unwrap().to_owned();
@@ -38,6 +41,14 @@ fn exercise(peer: &Path, stage: &str) {
         sophia_protocol::OutputHeadMapping::Exact => "exact",
     };
     let config = &mut rig.fixture.source.config;
+    // The fixture serves the real Factotum export over its trusted Session
+    // connection; these paths only select the required authentication policy.
+    config.factotum = Some(SessionFactotum {
+        agent: "/unused/fixture-agent".into(),
+        pam_helper: "/unused/fixture-helper".into(),
+        pam_service: "fixture".into(),
+        user: "fixture".into(),
+    });
     config.output_process = Some(peer.to_str().unwrap().to_owned());
     config.output_process_args = vec![
         format!("--stage={stage}"),
@@ -70,13 +81,8 @@ fn exercise(peer: &Path, stage: &str) {
     }
     let prepared = PreparedOutputTransport::bind(config, &directory).unwrap();
     let PreparedOutputTransport::Files { supervisor, .. } = &prepared;
-    assert_eq!(
-        supervisor.protection_evidence().unwrap().roles,
-        [sophia_runtime::ProtectionDomainRole::OutputAuthority]
-            .into_iter()
-            .collect()
-    );
-    let peer_pid = supervisor.peer_id().unwrap();
+    assert!(supervisor.peer_id().is_none());
+    let mut peer_pid = None;
     rig.public().output_authority =
         Some(LiveOutputAuthorityOwner::new(1, baseline.clone()).unwrap());
     rig.public().output_service = Some(prepared.start(baseline.clone()).unwrap());
@@ -86,8 +92,36 @@ fn exercise(peer: &Path, stage: &str) {
     let mut rollback = None;
     loop {
         assert!(Instant::now() < deadline, "Session stage {stage} timed out");
+        auth.tick();
+        rig.public()
+            .output_service
+            .as_mut()
+            .unwrap()
+            .poll_authentication(
+                Some(sophia_protocol::NamespaceId::from_raw(2)),
+                &mut auth.coordinator,
+                wake.notifier(),
+            );
+        let LiveOutputService::Files { supervisor, .. } =
+            rig.public().output_service.as_ref().unwrap();
+        if let Some(supervisor) = supervisor.as_ref()
+            && let Some(pid) = supervisor.peer_id()
+        {
+            assert_eq!(
+                supervisor.protection_evidence().unwrap().roles,
+                [sophia_runtime::ProtectionDomainRole::OutputAuthority]
+                    .into_iter()
+                    .collect()
+            );
+            if let Some(previous) = peer_pid {
+                assert_eq!(previous, pid, "output proof must keep its launch");
+            }
+            peer_pid = Some(pid);
+        }
         rig.fixture.wm.poll_output_authority().unwrap();
-        let exit = rig.supervisor().exit_status();
+        let LiveOutputService::Files { supervisor, .. } =
+            rig.public().output_service.as_ref().unwrap();
+        let exit = supervisor.as_ref().and_then(|owner| owner.exit_status());
         assert!(
             rig.public().output_service.is_some(),
             "service failed in {stage}"
@@ -163,7 +197,7 @@ fn exercise(peer: &Path, stage: &str) {
                 && observed.disconnected
             {
                 assert!(!observed.failed);
-                assert_eq!(observed.peer, peer_pid);
+                assert_eq!(Some(observed.peer), peer_pid);
                 assert!(!rig.fixture.wm.output_peer_supervisor_running());
                 assert!(!rig.public().output_candidate_active());
                 break;
@@ -184,6 +218,7 @@ fn exercise(peer: &Path, stage: &str) {
             0
         }
     );
+    assert!(peer_pid.is_some(), "the proof used a protected launch");
     let mut expected = baseline;
     if stage == "commit-restore" {
         expected.topology_epoch += 2;

@@ -1,14 +1,14 @@
-tree eb4008e284b27f09ce1c296ee16656b69af3fc26
-parent 6d982e1a5f774690a9550721e1980fc60d7f613f
-author Mason Green <mason@greenm01.net> 1791765937 -0400
-committer Mason Green <mason@greenm01.net> 1791765937 -0400
+tree c06822652319ed0206c2b8fd5bef952433b26c64
+parent befcfbee38ec29653ab9ab7171eb74466c5d63f3
+author Mason Green <mason@greenm01.net> 1791771760 -0400
+committer Mason Green <mason@greenm01.net> 1791771760 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCaswtsRsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKRoQD+P3VKoKAbp2SWNPt/JzCH
- dZ3elr6m3Lwj2twcVUQMu1oBAIXEih9PV7Rlwfvw2Bwy6mi5PUjtws4NaOlU8U99
- SZgK
- =NnD1
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCasxEcBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKsLwEA0k6iehF/u8ahLB/oOoly
+ qJHSXWSo6citOydarRZchZUBAJ1LZ0GurDKb7gBg97g2UPz4dNpY+8YonA+ZvpeL
+ nGAB
+ =i+xV
  -----END PGP SIGNATURE-----
 
-Record the qualified minimum-version launch contract
+Schedule output bootstrap after authenticated handoff

@@ -268,8 +268,9 @@ The [output transport join](../investigations/etyvymxi-authenticated-attach-tran
 qualifies protected Rust SDK authentication, reauthentication and revocation
 through the output service. The [normal output owner](../investigations/etyvymxi-authenticated-attach-transport-state-and-factotum-handoff.md#normal-output-owner-admission)
 now registers and asynchronously launches its authenticated peer, preserving
-that peer across WM restarts. Its C client/native-proof migration and contract
-reconciliation remain required.
+that peer across WM restarts. The [C output proof migration](../investigations/etyvymxi-authenticated-attach-transport-state-and-factotum-handoff.md#authenticated-c-output-proof)
+now authenticates through that owner and continues on the admitted root;
+its native effects remain supplied rather than physical acceptance.
 Other required roles, deployed-client rollout and final contract/threat-model
 reconciliation remain open. These checkpoints are not a live installation or
 a reduced exit.

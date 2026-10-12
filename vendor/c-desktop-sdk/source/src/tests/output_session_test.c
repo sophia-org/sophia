@@ -30,7 +30,7 @@ struct peer {
   uint64_t announced_qid, published_epoch, granted, last_submit_id;
   uint16_t event_tag;
   uint32_t event_count, event_chunk, object_chunk;
-  unsigned attaches, submits, acks, tx_opens, topology_open, topology_opens;
+  unsigned versions, attaches, submits, acks, tx_opens, topology_open, topology_opens;
   unsigned topology_again, submit_again, events_pending, negotiated;
   uint32_t submit_error, wrong_qid, extra_grant, outcome_after;
   uint64_t refused;
@@ -42,6 +42,8 @@ struct rig {
   struct peer peer;
   struct sophia_os *session;
   void *storage;
+  struct sophia_9p_client admitted;
+  void *admitted_storage;
   int client_fd;
   uint64_t now;
 };
@@ -245,6 +247,7 @@ static void request(struct peer *p, const uint8_t *m) {
   const uint8_t *q = m + 7;
   uint32_t fid = (uint32_t)get(q, 4);
   if (type == 100) {
+    assert(!p->versions++ && "output role handoff must not reset the admitted transport");
     put(b, get(q, 4), 4);
     put(b + 4, 8, 2);
     memcpy(b + 6, "9P2000.L", 8);
@@ -253,7 +256,7 @@ static void request(struct peer *p, const uint8_t *m) {
   }
   assert(fid < 256);
   if (type == 104) {
-    assert(!p->attaches++); /* one admitted attach per epoch */
+    assert(!p->attaches++ && "output role handoff must not attach again");
     p->files[fid] = F_ROOT;
     b[0] = 0x80;
     put(b + 5, 1, 8);
@@ -386,6 +389,23 @@ static void pump(struct peer *p) {
   events(p);
 }
 
+static unsigned attached_mode;
+static void wire_answer(struct rig *r, struct sophia_9p_handle handle) {
+  struct sophia_9p_reply reply;
+  unsigned i;
+  for (i = 0; i < 400; ++i) {
+    int result;
+    assert(!sophia_9p_service(&r->admitted, 65536));
+    pump(&r->peer);
+    result = sophia_9p_peek(&r->admitted, &reply);
+    if (result == SOPHIA_9P_AGAIN) continue;
+    assert(!result && reply.type != 7);
+    assert(reply.handle.slot == handle.slot && reply.handle.serial == handle.serial);
+    assert(!sophia_9p_consume(&r->admitted, handle));
+    return;
+  }
+  assert(!"admitted wire response bound");
+}
 static struct rig *rig_new(uint64_t request, uint64_t granted,
                            uint16_t min_revision, uint16_t max_revision) {
   struct rig *r = calloc(1, sizeof(*r));
@@ -414,8 +434,69 @@ static struct rig *rig_new(uint64_t request, uint64_t granted,
   r->session = calloc(1, sophia_os_state_bytes());
   r->storage = malloc(sophia_os_storage_bytes(8192));
   assert(r->session && r->storage);
-  assert(!sophia_os_open_fd(r->session, r->client_fd, &cfg, r->storage,
-                            sophia_os_storage_bytes(8192), 0));
+  if (attached_mode) {
+    struct sophia_9p_handle handle;
+    uint32_t root, fid;
+    const char *api = "api";
+    size_t bytes = sophia_os_storage_bytes(8192);
+    r->admitted_storage = malloc(sophia_9p_storage_bytes(8192, 8));
+    assert(r->admitted_storage);
+    assert(!sophia_9p_init(&r->admitted, r->client_fd, 8192, 8, 16,
+      r->admitted_storage, sophia_9p_storage_bytes(8192, 8)));
+    assert(!sophia_9p_version(&r->admitted, &handle));
+    wire_answer(r, handle);
+    /* Supplied admission, not authentication evidence: the real afid join
+       belongs to Sophia. The output session must preserve this exact root. */
+    assert(!sophia_9p_attach(&r->admitted, "", "", &handle, &root));
+    wire_answer(r, handle);
+    assert(sophia_os_open_attached(r->session, &r->admitted, UINT32_MAX, &cfg,
+      r->storage, bytes, 0) == SOPHIA_9P_ARGUMENT);
+    assert(sophia_os_open_attached(r->session, &r->admitted, root + 123, &cfg,
+      r->storage, bytes, 0) == SOPHIA_9P_ARGUMENT);
+    assert(sophia_os_open_attached(r->session, &r->admitted, root, &cfg,
+      r->storage, bytes - 1, 0) == SOPHIA_9P_ARGUMENT);
+    assert(sophia_os_open_attached(r->session, &r->admitted, root, &cfg,
+      r->admitted_storage, bytes, 0) == SOPHIA_9P_ARGUMENT);
+    assert(sophia_os_open_attached((void *)&r->admitted, &r->admitted, root, &cfg,
+      r->storage, bytes, 0) == SOPHIA_9P_ARGUMENT);
+    cfg.msize = 4096;
+    assert(sophia_os_open_attached(r->session, &r->admitted, root, &cfg,
+      r->storage, bytes, 0) == SOPHIA_9P_ARGUMENT);
+    cfg.msize = 8192;
+    r->admitted.rx_used = 1;
+    assert(sophia_os_open_attached(r->session, &r->admitted, root, &cfg,
+      r->storage, bytes, 0) == SOPHIA_9P_ARGUMENT);
+    r->admitted.rx_used = 0;
+    r->admitted.terminal = SOPHIA_9P_CLOSED;
+    assert(sophia_os_open_attached(r->session, &r->admitted, root, &cfg,
+      r->storage, bytes, 0) == SOPHIA_9P_ARGUMENT);
+    r->admitted.terminal = 0;
+    r->admitted.capacity = 7;
+    assert(sophia_os_open_attached(r->session, &r->admitted, root, &cfg,
+      r->storage, bytes, 0) == SOPHIA_9P_ARGUMENT);
+    r->admitted.capacity = 8;
+    r->admitted.fid_limit = 15;
+    assert(sophia_os_open_attached(r->session, &r->admitted, root, &cfg,
+      r->storage, bytes, 0) == SOPHIA_9P_ARGUMENT);
+    r->admitted.fid_limit = 16;
+    assert(!sophia_9p_walk(&r->admitted, root, &api, 1, &handle, &fid));
+    assert(sophia_os_open_attached(r->session, &r->admitted, root, &cfg,
+      r->storage, bytes, 0) == SOPHIA_9P_ARGUMENT);
+    wire_answer(r, handle);
+    assert(sophia_os_open_attached(r->session, &r->admitted, root, &cfg,
+      r->storage, bytes, 0) == SOPHIA_9P_ARGUMENT); /* extra retained fid */
+    assert(!sophia_9p_clunk(&r->admitted, fid, &handle));
+    wire_answer(r, handle);
+    assert(!sophia_os_open_attached(r->session, &r->admitted, root, &cfg,
+      r->storage, bytes, 0));
+    assert(r->peer.attaches == 1);
+  } else {
+    assert(!sophia_os_open_fd(r->session, r->client_fd, &cfg, r->storage,
+                              sophia_os_storage_bytes(8192), 0));
+  }
+  assert(((sophia_os_poll_events(r->session) & POLLOUT) ||
+          sophia_os_timeout(r->session, 0) == 0) &&
+         "output bootstrap must schedule its first request without peer input");
   return r;
 }
 static struct rig *rig(void) { return rig_new(3, 3, 1, 1); }
@@ -455,6 +536,7 @@ static void drop(struct rig *r) {
   close(r->client_fd);
   close(r->peer.fd);
   free(r->storage);
+  free(r->admitted_storage);
   free(r->session);
   free(r);
 }
@@ -646,11 +728,13 @@ static void arguments(void) {
 }
 
 int main(void) {
-  bootstrap_and_topology();
-  proposal_outcome_and_republication();
-  retry_refusal_and_capacity();
-  observe_only_and_refusal();
-  protocol_faults();
+  for (attached_mode = 0; attached_mode < 2; ++attached_mode) {
+    bootstrap_and_topology();
+    proposal_outcome_and_republication();
+    retry_refusal_and_capacity();
+    observe_only_and_refusal();
+    protocol_faults();
+  }
   arguments();
   puts("output_session_test: ok");
   return 0;

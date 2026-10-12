@@ -124,9 +124,19 @@ newline. `limits` and `topology` are complete Object records, including their
 32-byte headers. The limits header supplies the admitted epoch for candidates,
 submit controls and acknowledgements. Discovery uses `SOPHIA_OUTPUT_9P_SOCKET`;
 clients refuse the retired `SOPHIA_OUTPUT_SOCKET` variable, even when empty.
-An endpoint must admit the supervised peer before binding its connection to
-the export. Attach strings confer no authority. Only one attach is admitted
-per epoch; version reset does not renew that grant.
+Normal Session output startup requires the supervised peer's
+[launch-channel authentication](factotum-launch-authentication.md), with claims
+`output` and `output-authority`. The expected-peer check filters acceptance;
+the verified afid, Session-selected identity and current launch custody admit
+the root. Attach strings confer no authority. Plain attach is refused. The
+client must carry the exact authenticated wire/root into its output session,
+without a second Tversion or plain attach during that handoff.
+
+Only one root is admitted at a time. Tversion invalidates wire fids, afids and
+verdicts; a fresh authentication attempt must prove the same immutable principal,
+namespace and launch. It does not renew the output grant, reset negotiation or
+change the role epoch and logical object identities. Current launch, namespace
+and admission authority are checked on retained operations as well as attach.
 
 `transaction` opens read/write, `submit` and `ack` write-only, and all other
 files read-only. Append and truncate are refused. Only one staging handle and
@@ -203,7 +213,12 @@ The selected process receives only the OutputAuthority role and
 Automatic and administrative WM restarts preserve the independent output
 process, connection epoch and topology pins. Session does not automatically
 restart this one-shot process or repeat its command. Exit requests acceptance
-pause and epoch cancellation. Admission retains a pidfd for the authorized
+pause and epoch cancellation. Session prepares the service without launching
+an unregistered peer, then reserves, spawns and activates it asynchronously
+through the shared authentication owner. Missing Factotum configuration refuses
+preparation; an unavailable Factotum leaves the process unspawned. Losing the
+launch registration fails closed and terminates the peer without command replay.
+Admission retains a pidfd for the authorized
 process and checks it before and after peer credentials, preventing a recycled
 PID from gaining authority while exit notification is pending. Protected launch
 rechecks bubblewrap's child relationship after opening the pidfd. An already

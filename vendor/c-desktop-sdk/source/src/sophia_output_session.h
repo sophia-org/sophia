@@ -46,6 +46,18 @@ size_t sophia_os_storage_bytes(uint32_t msize);
 int sophia_os_open_fd(struct sophia_os *, int fd,
                       const struct sophia_os_config *, void *storage,
                       size_t bytes, uint64_t now_ms);
+/* Begin at api on an already admitted, quiescent wire (for example the exact
+ * role wire/root returned by sophia_launch_auth). No Tversion or Tattach.
+ * Exclusively borrows wire, its storage and root until close; the caller must
+ * not use/reset them meanwhile. All borrowed allocations must be disjoint
+ * from session state and output storage. Requires at least eight request slots
+ * and sixteen fids, and config.msize equal to the negotiated wire msize.
+ * The root must be the wire's only fid. Unknown roots, pending replies,
+ * overlapping allocations, a partial receive or a dead wire are refused.
+ * Output storage still uses sophia_os_storage_bytes(config.msize). */
+int sophia_os_open_attached(struct sophia_os *, struct sophia_9p_client *,
+                            uint32_t root, const struct sophia_os_config *,
+                            void *storage, size_t bytes, uint64_t now_ms);
 enum sophia_os_state sophia_os_state(const struct sophia_os *);
 uint64_t sophia_os_epoch(const struct sophia_os *);
 uint64_t sophia_os_capabilities(const struct sophia_os *);
