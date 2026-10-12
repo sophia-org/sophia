@@ -1386,3 +1386,26 @@ it was not used. This run builds directly in the leased cargo slot inside a
 device-hidden sandbox. There is no new physical acceptance, live install or
 whole-repository gate claim. Normal WM and shell authentication, deployed-client
 rollout and the remaining t317 closure gates remain required.
+
+## WM root preparation
+
+The WM file owner now implements the shared `ProtectedFiles` preparation
+contract. Its exclusive prepared root publishes the attached bit only after
+the authentication owner can commit; dropping preparation changes no authority.
+Auth qids use the same logical allocator as WM files and snapshots. The reset
+entry point clears only the matching connection's attached bit, preserving
+the role epoch, selected capabilities and submission/domain replay watermarks.
+It cannot revive a revoked owner. Existing raw attach delegates to the same
+preparation, without gaining authenticated-reset privileges.
+
+`t317-wm-root-01` passes 56 tests in the WM 9P subtree (three remain ignored),
+including the three new preparation/reset/qid checks, plus all-target Session
+Clippy with warnings denied. Formatting and diff checks pass. The package's
+`SHA256SUMS` has SHA-256
+`9a528ac45402639c297366d13d1e16e121af2c149d9d24d395d16b6b36cd7521`.
+An initial compile exposed insufficient visibility on the prepared-root
+associated type; matching its owner's crate-internal visibility fixed it.
+The complete changed-file hash capture was made after the tests and Clippy,
+with no intervening edits. These are root mechanics, not a real afid exchange:
+the WM reactor, normal launch/replacement and deployed-client integration
+still need connection to the authentication owner.

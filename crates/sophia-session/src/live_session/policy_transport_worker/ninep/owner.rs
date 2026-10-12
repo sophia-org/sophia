@@ -1,5 +1,8 @@
 use super::*;
 use sophia_9p::connection::ConnectionId;
+use sophia_runtime::authenticated_files::{PreparedFileRoot, ProtectedFiles};
+
+mod authentication;
 
 #[path = "../../../../tests/support/policy_file_atomic_cycle.rs"]
 mod atomic_tests;
@@ -365,16 +368,7 @@ impl<C: PolicyFileCodec> Export for WmFiles<C> {
     type Node = Node;
     type Handle = Handle;
     fn attach(&mut self, context: &AttachContext<'_>) -> Result<Attachment<Node>, Errno> {
-        // One attach per admitted epoch. Version reset releases fids but does
-        // not renew role authority; reattachment needs a fresh admitted stream.
-        if self.revoked || self.attached || self.connection != Some(context.connection) {
-            return Err(Errno::EACCES);
-        }
-        self.attached = true;
-        Ok(Attachment {
-            root: Node::Root,
-            epoch: Epoch(self.epoch),
-        })
+        Ok(self.prepare_authenticated_root(context)?.publish())
     }
     fn check(&mut self, access: &Access<'_, Node>) -> Result<(), Errno> {
         self.expire();
