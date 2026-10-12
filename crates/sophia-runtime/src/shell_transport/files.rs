@@ -302,6 +302,5 @@ fn io_error(error: std::io::Error) -> ShellTransportError {
     ShellTransportError::Io(error.to_string())
 }
 
-#[cfg(test)]
 #[path = "../../tests/support/shell_file_authentication_reactor.rs"]
 mod authentication_tests;

@@ -17,6 +17,9 @@ include!("wm/layout.rs");
 include!("wm/layout_support.rs");
 include!("wm/work_area.rs");
 
+#[path = "../../tests/support/wm_launch_fixture.rs"]
+mod launch_fixture;
+
 impl LiveWmSession {
     fn reference_output(&self)->Option<sophia_protocol::OutputId> {
         self.public.as_ref().filter(|p|p.configured).map(|p|p.active_output)

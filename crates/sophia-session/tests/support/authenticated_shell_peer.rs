@@ -1,4 +1,5 @@
 //! Shared generic shell SDK compiler; binaries remain inside the leased target.
+#![cfg(test)]
 use std::path::PathBuf;
 
 #[path = "shell_rust_peer.rs"]

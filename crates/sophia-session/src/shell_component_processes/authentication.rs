@@ -17,7 +17,6 @@ pub(super) struct ComponentAuthentication {
     pub(super) stopping: bool,
 }
 
-#[cfg(test)]
 #[path = "../../tests/support/authenticated_shell_process.rs"]
 mod tests;
 

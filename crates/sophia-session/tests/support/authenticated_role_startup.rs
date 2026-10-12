@@ -1,4 +1,5 @@
 //! Launch-owner scheduling and cancellation, with no display or native device.
+#![cfg(test)]
 use super::*;
 use crate::live_session::tests::lock_provider_factotum as factotum;
 use sophia_runtime::{

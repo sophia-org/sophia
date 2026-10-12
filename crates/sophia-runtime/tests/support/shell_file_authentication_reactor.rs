@@ -1,5 +1,6 @@
 //! Supplied authority isolates reactor construction, polling and retirement.
 //! Real Factotum authentication belongs to the Session/client join.
+#![cfg(test)]
 use super::*;
 use crate::authenticated_files::FileAuthentication;
 use sophia_9p::{

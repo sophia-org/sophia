@@ -11,6 +11,14 @@ use sophia_protocol::{PolicyConfiguration, TransactionId, WmChromePolicy};
 use std::sync::mpsc::sync_channel;
 
 impl<C: PolicyFileCodec> NinePReactor<C> {
+    pub(in crate::live_session::policy_transport_worker::ninep) fn adopt_with_cancellation(
+        stream: UnixStream,
+        owner: WmFiles<C>,
+        cancellation: Arc<NinePCancellation>,
+    ) -> Result<Self, String> {
+        Self::adopt_with_authentication(stream, owner, cancellation, None)
+    }
+
     pub(in crate::live_session::policy_transport_worker) fn adopt(
         stream: UnixStream,
         owner: WmFiles<C>,

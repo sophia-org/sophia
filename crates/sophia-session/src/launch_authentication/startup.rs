@@ -200,6 +200,5 @@ impl Startup {
     }
 }
 
-#[cfg(test)]
 #[path = "../../tests/support/authenticated_role_startup.rs"]
 mod tests;

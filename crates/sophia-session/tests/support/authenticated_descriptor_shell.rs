@@ -1,5 +1,6 @@
 //! Descriptor owner lifetimes through real protected spawn. The idle peer does
 //! not authenticate or negotiate a role; client interoperability is separate.
+#![cfg(test)]
 use super::*;
 use crate::live_session::tests::lock_provider_factotum as factotum;
 

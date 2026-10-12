@@ -2048,3 +2048,63 @@ denied and formatting passed. The first compile stopped at fixture error-type
 conversion, corrected before any client join. No binaries were copied into
 evidence. The role inventory, final contracts/threat model, SDK publication
 alignment and broad final gate remain required before t317 closure.
+
+## Closure audit, layout repair and admission observations
+
+Signed Sophia `a41011f27` reconciles the role inventory and admission threat
+model. `d971f2dd6` pins C SDK `e28fecd3e63133268d21538cf5107611ca0c6f31`
+and Rust SDK `d5fe721cd0f77b64ae8f6859ee39cf0d828faffa`. Both development
+branches are published. Each SDK delta from its previous joined pin contains
+only two contract copies, their hashes and provenance; implementation files
+are unchanged.
+
+The device-hidden whole-repository run at clean `d971f2dd6` passed 7,759 tests
+with 111 ignores across 563 summaries and passed Clippy. It then **failed**
+source-layout validation: seven new test-only mounts/helpers were still marked
+in source files. Later gate stages did not run. Package
+`t317-final-candidate-01` preserves that failed result rather than promoting
+its passing tests to a full-gate claim.
+
+The repair moves module guards into their external test files and moves two
+supplied-admission helpers into `tests/support`. It neither changes the layout
+ledger nor enables a production fallback. Layout validation and native Session
+test compilation pass after the move.
+
+Two added regressions close the locked-state admission observations. A real
+lock endpoint rejects 64 sequential foreign connectors while supplied a Locked
+object: each returns UnauthorizedPeer, reaches no authentication allocation,
+and spends no epoch. The assignee then reaches the same allocation hook; its
+supplied EAGAIN publishes no role. This is a bounded connector-flood case with
+a supplied assignee/capacity refusal, not a fairness or protected-spawn proof.
+Separately, the actual launch coordinator fills all 64 registrations through
+Factotum. The normal provider owner, whose service starts locked, publishes no
+registration, child or authorization and preserves its delayed retry through
+64 owner polls. These check admission and provider behavior; Engine input and
+cover enforcement retain their separate lock tests.
+
+The existing protected C SDK lock fixture now reports process and worker
+counters around authentication/reauthentication and a 200 ms retained waiting
+read. The serial observation recorded:
+
+| Interval | Wall time | Process CPU ticks (100 Hz) | RSS before/after, KiB | Worker passes/waits |
+| --- | --- | --- | --- | --- |
+| Authenticate and reauthenticate | 133,896 us | 0 | 6,736 / 6,848 | 61 / 57 |
+| Authenticated waiting read | 200,899 us | 0 | 6,852 / 6,856 | 10 / 10 |
+
+Zero ticks means below the counter resolution, not zero CPU. Process counters
+include fixture-driving and Factotum threads and exclude the separate peer;
+RSS samples are neither peak allocation nor per-transport memory. Worker
+passes/waits describe scheduling activity, not hardware interrupts or an
+input-latency claim. No threshold was invented from these observations. The
+existing bounded-deadline and cancellation tests retain their separate failure
+oracles; this run also completes retained-read revocation and reclaims admission.
+
+Both new tests and the measured C SDK case pass. Runtime/Session all-target
+Clippy with warnings denied, formatting and whitespace checks pass. Initial
+flood attempts exposed missing test imports and then the fixture's mistaken
+expectation of `false` instead of UnauthorizedPeer; both logs are retained.
+Package `t317-closure-observations-01` captures every changed/untracked file,
+binary paths/hashes and logs; its self-excluding manifest SHA-256 is
+`d5756aead791032f180dd2d040d85de97eeadb455df26804fbb8cd7bfcca9301`.
+This prose follows that capture. A full gate on the repaired candidate and
+final integration remain required; no master merge or installation is claimed.

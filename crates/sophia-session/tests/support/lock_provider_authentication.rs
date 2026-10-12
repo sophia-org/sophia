@@ -249,6 +249,42 @@ fn unavailable_factotum_never_falls_back_to_an_ordinary_provider_launch() {
 }
 
 #[test]
+fn exhausted_launch_capacity_keeps_the_locked_provider_unavailable_and_backs_off() {
+    let mut auth = factotum::Fixture::new();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    for _ in 0..64 {
+        let registration = auth.coordinator.reserve(policy(), Instant::now()).unwrap();
+        while auth.coordinator.phase(registration) != Some(Phase::Ready) {
+            assert!(Instant::now() < deadline, "launch quota setup deadline");
+            auth.tick();
+        }
+    }
+    // This fixture's service starts with the Locked object, without a renderer.
+    let mut provider = idle_provider("full-launch-quota");
+    let now = Instant::now();
+    assert!(provider.poll(now, &mut auth.coordinator).is_empty());
+    assert!(provider.registration.is_none());
+    assert!(provider.spawning.is_none());
+    assert!(
+        provider.supervisor.as_ref().unwrap().child_id().is_none(),
+        "exhausted launch quota must not start an unauthenticated provider"
+    );
+    assert!(!provider.authorized && provider.assignee.is_none());
+    let retry = provider
+        .restart_at
+        .expect("quota refusal retains a bounded retry");
+    assert!(
+        retry > now,
+        "quota refusal must back off instead of spinning"
+    );
+    for _ in 0..64 {
+        assert!(provider.poll(now, &mut auth.coordinator).is_empty());
+        assert_eq!(provider.restart_at, Some(retry));
+        assert!(provider.registration.is_none() && provider.spawning.is_none());
+    }
+}
+
+#[test]
 fn slow_protected_spawn_does_not_block_and_cancelled_completion_cannot_authorize() {
     let directory = Directory::new("slow");
     let bubblewrap = directory.0.join("bwrap");

@@ -8,6 +8,9 @@ use std::os::unix::fs::DirBuilderExt;
 #[path = "lock_upload_revocation.rs"]
 mod upload_revocation;
 
+#[path = "authentication_observation.rs"]
+mod observation;
+
 #[path = "lock_rust_peer.rs"]
 pub(super) mod rust_peer;
 
@@ -203,6 +206,7 @@ fn run_kind(kind: PeerKind) {
     let assignee = LockFileAssignee::from_supervisor(&supervisor)
         .unwrap()
         .with_authentication(Box::new(factory));
+    let mut admission_observation = Some(observation::Observation::start(&service));
     service
         .command(LockFileServiceCommand::ReplaceSupervisedProcess(assignee))
         .unwrap();
@@ -242,6 +246,17 @@ fn run_kind(kind: PeerKind) {
                 1,
                 "reauthentication must retain one published admission"
             );
+            admission_observation
+                .take()
+                .unwrap()
+                .report("authenticate_and_reauthenticate", &service);
+            let idle = observation::Observation::start(&service);
+            let idle_end = Instant::now() + Duration::from_millis(200);
+            while Instant::now() < idle_end {
+                f.tick(end);
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            idle.report("authenticated_waiting_read", &service);
             f.book.revoke(id, Instant::now()).unwrap();
             revoked = true;
         }

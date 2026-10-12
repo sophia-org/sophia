@@ -1,5 +1,6 @@
 //! Production component launch custody with a real Factotum owner. The child
 //! intentionally sends no shell traffic: these are pre-negotiation lifetimes.
+#![cfg(test)]
 use super::*;
 use crate::live_session::tests::lock_provider_factotum as factotum;
 

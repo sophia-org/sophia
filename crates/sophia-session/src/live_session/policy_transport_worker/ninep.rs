@@ -194,15 +194,6 @@ impl PolicyAdapterStop for NinePStop {
 }
 
 impl<C: PolicyFileCodec> NinePReactor<C> {
-    #[cfg(test)]
-    fn adopt_with_cancellation(
-        stream: UnixStream,
-        owner: WmFiles<C>,
-        cancellation: Arc<NinePCancellation>,
-    ) -> Result<Self, String> {
-        Self::adopt_with_authentication(stream, owner, cancellation, None)
-    }
-
     fn adopt_with_authentication(
         stream: UnixStream,
         owner: WmFiles<C>,

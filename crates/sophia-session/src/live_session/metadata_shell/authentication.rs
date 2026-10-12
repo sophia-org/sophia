@@ -29,7 +29,6 @@ impl DescriptorAuthentication {
     }
 }
 
-#[cfg(test)]
 #[path = "../../../tests/support/authenticated_descriptor_shell.rs"]
 mod tests;
 
