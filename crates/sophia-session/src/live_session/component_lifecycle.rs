@@ -156,6 +156,8 @@ pub(super) fn stop(
     components: Option<&mut ShellComponentSession>,
     mut runtime: Option<&mut LiveProductionVisualRuntime>,
     failures: &mut Vec<String>,
+    launches: &mut crate::launch_authentication::LaunchCoordinator,
+    wake: &OwnerWake,
 ) {
     // This owner lives outside the loop even when completion returned early.
     // Stop IPC before native retirement and settle claims against the still-owned
@@ -169,7 +171,12 @@ pub(super) fn stop(
         }
         let deadline = Instant::now() + Duration::from_secs(3);
         while components.retained_processes() != 0 && Instant::now() < deadline {
-            match components.poll(64 * 1024) {
+            if let Err(error) = launches.poll(Instant::now()) {
+                failures.push(format!(
+                    "component authentication cleanup failed: {error:?}"
+                ));
+            }
+            match components.poll_authenticated(64 * 1024, launches, wake.notifier()) {
                 Ok(visit) => {
                     for event in visit.processes.into_iter().flatten() {
                         match event {

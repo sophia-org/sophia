@@ -317,6 +317,11 @@ impl Harness {
             &self.config,
             Path::new("/nonexistent-t100-xauthority"),
             &mut None,
+            &mut crate::launch_authentication::LaunchCoordinator::new(
+                Default::default(),
+                crate::live_session::tests::lock_provider_factotum::namespaces(),
+            ),
+            &crate::live_session::OwnerWake::new().unwrap(),
         )
         .unwrap();
     }

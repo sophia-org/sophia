@@ -351,7 +351,16 @@ fn component_outer_cleanup_retains_owner_until_native_disposition_and_prior_erro
     }];
     let mut runtime = super::super::LiveProductionVisualRuntime::new(&outputs, None).unwrap();
     let mut failures = Vec::new();
-    component_lifecycle::stop(owner.as_mut(), Some(&mut runtime), &mut failures);
+    component_lifecycle::stop(
+        owner.as_mut(),
+        Some(&mut runtime),
+        &mut failures,
+        &mut crate::launch_authentication::LaunchCoordinator::new(
+            Default::default(),
+            crate::live_session::tests::lock_provider_factotum::namespaces(),
+        ),
+        &crate::live_session::OwnerWake::new().unwrap(),
+    );
     assert!(failures.is_empty());
     assert!(!owner.as_ref().unwrap().process_retained(key));
     assert_eq!(owner.as_ref().unwrap().pending_revocations(), 0);

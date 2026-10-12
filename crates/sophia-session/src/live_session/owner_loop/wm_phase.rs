@@ -37,7 +37,7 @@
             wm.request_deliberate_restart();
         }
         let _ = wm.poll_restart(&mut layout, output)?;
-        wm.poll_wm_authentication(&mut authenticated_launches, owner_wake.notifier(), &mut layout, output)?;
+        wm.poll_wm_authentication(authenticated_launches, owner_wake.notifier(), &mut layout, output)?;
         if config.output_proof_readback && !wm.startup_output_topology_pending()
             && active_output_topology_preparation.is_none()
             && let Some(native) = native_scanout.as_ref()
@@ -46,7 +46,7 @@
             output_readback_proof.baseline(native, snapshot.topology_epoch)?;
         }
         if let Some(service) = wm.public.as_mut().and_then(|public| public.output_service.as_mut()) {
-            service.poll_authentication(output_namespace, &mut authenticated_launches, owner_wake.notifier());
+            service.poll_authentication(output_namespace, authenticated_launches, owner_wake.notifier());
         }
         wm.poll_output_authority()?;
         output_readback_proof.check_finished()?;

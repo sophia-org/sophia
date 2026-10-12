@@ -5,6 +5,9 @@ use sophia_runtime::*;
 use std::path::Path;
 use std::time::Duration;
 
+#[cfg(feature = "native-session")]
+mod authentication;
+
 #[cfg(all(test, feature = "native-session"))]
 #[path = "../tests/support/component_reconnect/connection.rs"]
 pub(crate) mod reconnect_fixture;
@@ -13,6 +16,22 @@ pub(crate) mod reconnect_fixture;
 struct ProcessSlot {
     key: Option<ComponentConnectionKey>,
     process: Option<ProcessSupervisor>,
+    #[cfg(feature = "native-session")]
+    authentication: Option<authentication::ComponentAuthentication>,
+}
+
+impl ProcessSlot {
+    fn retained(&self) -> bool {
+        #[cfg(feature = "native-session")]
+        if self
+            .authentication
+            .as_ref()
+            .is_some_and(|auth| auth.retained())
+        {
+            return true;
+        }
+        self.process.is_some()
+    }
 }
 
 #[derive(Debug)]
@@ -71,7 +90,7 @@ impl ShellComponentProcesses {
         prepare: impl FnOnce(ComponentConnectionKey, &Path) -> Result<ProcessLaunchSpec, String>,
         policy: ShellContentAdmissionPolicy,
     ) -> Result<ComponentConnectionKey, String> {
-        if self.slots.get(slot).is_none_or(|s| s.process.is_some()) {
+        if self.slots.get(slot).is_none_or(ProcessSlot::retained) {
             return Err("component process busy or unknown".into());
         }
         let key = self
@@ -99,6 +118,11 @@ impl ShellComponentProcesses {
                     && name != ShellTransportSelection::NineP2000L.socket_env()
             });
             spec = spec.env(wire.socket_env(), path).process_group();
+            #[cfg(feature = "native-session")]
+            if let Some(authentication) = self.slots[slot].authentication.as_mut() {
+                authentication.start(spec, policy)?;
+                return Ok(key);
+            }
             let process = self.slots[slot]
                 .process
                 .insert(ProcessSupervisor::new(SupervisedProcessKind::Shell, spec));
@@ -131,6 +155,13 @@ impl ShellComponentProcesses {
             return Err("stale component process".into());
         }
         let revoke = self.connections.close(key).map_err(|e| e.to_string());
+        #[cfg(feature = "native-session")]
+        if let Some(authentication) = slot.authentication.as_mut() {
+            // Closing the local wire removes all service authority immediately.
+            // The next authentication visit cancels/reaps a pending spawn and
+            // retires the registration before allowing another attempt.
+            authentication.stopping = true;
+        }
         let signal = slot.process.as_mut().map_or(Ok(()), |p| {
             p.request_termination().map_err(|e| e.to_string())
         });
@@ -199,6 +230,17 @@ impl ShellComponentProcesses {
         self.connections.output_pending()
     }
     pub fn authentication_wait(&self, now: std::time::Instant) -> Duration {
+        #[cfg(feature = "native-session")]
+        if self.slots.iter().any(|slot| {
+            slot.authentication
+                .as_ref()
+                .is_some_and(|auth| auth.needs_visit())
+        }) {
+            return self
+                .connections
+                .authentication_wait(now)
+                .min(Duration::from_millis(10));
+        }
         self.connections.authentication_wait(now)
     }
     pub fn turn_connected(
@@ -210,7 +252,7 @@ impl ShellComponentProcesses {
         &mut self,
         backend: B,
     ) -> Result<(usize, ContentEpochAccounting), B> {
-        if self.slots.iter().any(|slot| slot.process.is_some()) {
+        if self.slots.iter().any(ProcessSlot::retained) {
             return Err(backend);
         }
         self.connections.finish_after_backend_drop(backend)
@@ -230,6 +272,6 @@ impl ShellComponentProcesses {
     pub fn process_retained(&self, key: ComponentConnectionKey) -> bool {
         self.slots
             .get(key.slot)
-            .is_some_and(|s| s.key == Some(key) && s.process.is_some())
+            .is_some_and(|s| s.key == Some(key) && s.retained())
     }
 }

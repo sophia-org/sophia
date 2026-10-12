@@ -397,6 +397,13 @@ pub(crate) fn run_persistent_xterm_session(
     let mut session_launches = SessionLaunchQueue::default();
     let (mut shell_components, mut component_directory) =
         component_lifecycle::prepare(&config, client_render_devices.as_ref())?;
+    if let Some(components) = shell_components.as_mut() {
+        if config.factotum.is_none() {
+            return Err("shell components require Factotum launch authentication".into());
+        }
+        components.authenticate(&authenticated_launches, &mut *namespace_registry.lock()
+            .map_err(|_| "Sophia namespace registry lock was poisoned")?)?;
+    }
     let mut metadata_shell = config
         .shell_process
         .as_deref()
@@ -809,7 +816,7 @@ pub(crate) fn run_persistent_xterm_session(
         },
         SessionLoopStartup {
             session_unlock_authenticator,
-            authenticated_launches,
+            authenticated_launches: &mut authenticated_launches,
             lock_namespace,
             output_namespace,
             initial_output_realization: startup_realization,
@@ -911,6 +918,8 @@ pub(crate) fn run_persistent_xterm_session(
         shell_components.as_mut(),
         render_owners.runtime.as_mut(),
         &mut outer_cleanup_failures,
+        &mut authenticated_launches,
+        &owner_wake,
     );
     let native_finish = native_owner_retirement::finish_render_owners(
         &mut render_owners.runtime,

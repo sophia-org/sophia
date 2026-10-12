@@ -1747,3 +1747,65 @@ component unit filter is retained but counted as no coverage; the subsequent
 13-test integration target is the component evidence. No new negative-control
 or whole-repository gate is claimed by this plumbing checkpoint. Shell launch
 state machines, SDK/client migration and final t317 reconciliation remain open.
+
+## Independent shell component launch custody
+
+Normal Session preparation now assigns each independent Bar, Dock or Launcher
+its own confined namespace, without portal capabilities, and requires Factotum.
+The component process owner uses the shared nonblocking `Startup`: reserve,
+protected spawn, activation, factory installation, then role negotiation. The
+expected-peer filter remains. This changes the normal owner, not just a fixture
+entry point. Supplied-admission owners remain available to generic conformance
+tests; they are not the normal launch selection.
+
+An attempt remains retained while its spawn or supervisor is owned. Stop closes
+local service immediately, marks pending startup for cancellation, and signals
+an existing supervisor, invalidating its launch custody. Subsequent bounded
+authentication visits retire the registration and finish cancellation/reaping.
+No replacement can reuse that retained slot. The spawning-thread lease ends
+only after the supervisor is gone. Loss of active registration closes negotiation
+and reports the exact grant for presentation cleanup before waiting for exit;
+one slot's duplicate failure cannot displace another slot's event.
+
+The owner loop now borrows the launch coordinator from outer Session custody.
+This preserves it for component shutdown after any loop return. Paused component
+service still advertises pending authentication-cleanup deadlines. The existing
+WM, output and lock calls borrow that same coordinator; this is not a new book
+or a replacement Factotum generation.
+
+Two tests use the production component owner. Missing Factotum never spawns;
+cancellation retains the pending attempt until cleanup and burns its epoch.
+A real Factotum export with a protected sleep child reaches active launch
+custody, then explicit revocation immediately closes negotiation and reports
+presentation cleanup, reaps the child, releases its thread lease, and permits
+a fresh attempt. The sleep child deliberately sends no shell records. These
+tests do not prove successful client afid or role negotiation.
+
+Retained device-hidden evidence under
+`~/.local/state/sophia/development-evidence/`:
+
+- `t317-shell-process-02`: the restored candidate's shell selection passed
+  110 tests with four recorded ignores; the component selection passed 35
+  with two ignores. These selections overlap. All-target Session native-session
+  Clippy with warnings denied, the default-feature check and formatting passed.
+  The complete thirteen-file crates/Cargo change set is hashed and equals the
+  control's before/after set. Manifest SHA-256
+  `5b1fe875f809a8ceb1c8d448f291e26161f745d2764920634d7100764347340c`.
+- `t317-shell-process-control-01`: disabling the retired-registration branch
+  fails first at `launch revocation must notify presentation cleanup before reaping`,
+  exit 101 with exactly one failed test. Source restoration and all candidate
+  hashes are checked. Manifest SHA-256
+  `ed7c37381ebc84284cf8675033993fd30bb88091f62e30b97e250c53d3e1ba3d`.
+
+The positive package records test-binary paths/hashes, not copied binaries.
+The four shell ignores are one explicit GPU test, a parent-invoked protected
+child entry, and two generated harness profiles; the component selection's
+two ignores are those same generated profiles. No new hardware qualification
+is claimed. Package `t317-shell-process-01` records a collector STOP: it wrongly
+expected one libtest summary despite a parent-invoked child summary. The corrected
+package uses the final outer summaries and a restored run. Initial compile and
+Clippy failures are retained separately in it.
+
+The descriptor-shell launch owner, successful SDK/client authentication joins,
+final broad gates and threat-model reconciliation remain required for t317.
+No live installation or task completion follows from this checkpoint.

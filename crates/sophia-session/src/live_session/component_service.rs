@@ -20,12 +20,14 @@ pub(super) fn service_components(
     config: &PersistentXtermSessionConfig,
     xauthority: &std::path::Path,
     admission_started: &mut Option<Instant>,
+    authenticated_launches: &mut crate::launch_authentication::LaunchCoordinator,
+    owner_wake: &OwnerWake,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if !available {
         catalog.cancel_open_request();
     }
     components.set_presentation_available(available)?;
-    match components.poll(64 * 1024) {
+    match components.poll_authenticated(64 * 1024, authenticated_launches, owner_wake.notifier()) {
         Ok(visit) => {
             for (key, result) in visit.negotiations.into_iter().flatten() {
                 match result {

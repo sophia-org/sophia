@@ -47,7 +47,7 @@ struct LoopRenderOwners {
 
 struct SessionLoopStartup<'a> {
     session_unlock_authenticator: Option<Box<dyn crate::session_lock_input::SessionUnlockAuthenticator>>,
-    authenticated_launches: crate::launch_authentication::LaunchCoordinator,
+    authenticated_launches: &'a mut crate::launch_authentication::LaunchCoordinator,
     lock_namespace: Option<sophia_protocol::NamespaceId>,
     output_namespace: Option<sophia_protocol::NamespaceId>,
     initial_output_realization: Option<sophia_config::DesktopOutputReconciliation>,
@@ -431,7 +431,7 @@ fn run_session_loop_inner(
     } = resources;
     let SessionLoopStartup {
         mut session_unlock_authenticator,
-        mut authenticated_launches,
+        authenticated_launches,
         lock_namespace,
         output_namespace,
         initial_output_realization,

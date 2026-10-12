@@ -77,6 +77,39 @@ pub struct ShellComponentSession {
     entered_backoff: Option<usize>,
 }
 impl ShellComponentSession {
+    pub fn authenticate(
+        &mut self,
+        launches: &crate::launch_authentication::LaunchCoordinator,
+        namespaces: &mut sophia_runtime::NamespaceRegistry,
+    ) -> Result<()> {
+        for (slot, plan) in self.plans.iter().enumerate() {
+            let (principal, role) = match plan.selection().role {
+                ShellComponentRole::Bar => (4, "bar"),
+                ShellComponentRole::Dock => (5, "dock"),
+                ShellComponentRole::ApplicationLauncher => (6, "launcher"),
+                ShellComponentRole::Descriptor => {
+                    return Err("descriptor has a separate owner".into());
+                }
+            };
+            let namespace = namespaces.create_namespace(
+                sophia_protocol::NamespaceProfile::Confined,
+                sophia_protocol::NamespaceCapabilities::NONE,
+            );
+            self.processes.authenticate(
+                slot,
+                crate::launch_authentication::LaunchPolicy {
+                    principal,
+                    namespace: namespace.id.raw(),
+                    audience: principal,
+                    role: sophia_runtime::ProtectionDomainRole::MetadataShell,
+                },
+                role,
+                launches.endpoint(),
+            )?;
+        }
+        Ok(())
+    }
+
     /// `directory` is the already-created Session-private endpoint parent.
     /// Each role endpoint performs its own ownership/mode validation.
     pub fn prepare(
@@ -258,6 +291,22 @@ impl ShellComponentSession {
     /// the actual successful role negotiation, not from an advertised profile.
     pub fn poll(&mut self, bytes: usize) -> Result<ComponentProcessVisit> {
         let visit = self.processes.visit(bytes);
+        self.finish_poll(visit)
+    }
+
+    pub fn poll_authenticated(
+        &mut self,
+        bytes: usize,
+        launches: &mut crate::launch_authentication::LaunchCoordinator,
+        wake: sophia_wake::Notifier,
+    ) -> Result<ComponentProcessVisit> {
+        let visit =
+            self.processes
+                .visit_authenticated(bytes, launches, wake, std::time::Instant::now());
+        self.finish_poll(visit)
+    }
+
+    fn finish_poll(&mut self, visit: ComponentProcessVisit) -> Result<ComponentProcessVisit> {
         for event in visit.processes.iter().flatten() {
             let key = match event {
                 ComponentProcessEvent::ProcessRetired(key, _)
@@ -380,9 +429,7 @@ impl ShellComponentSession {
     }
 
     pub fn authentication_wait(&self, now: std::time::Instant) -> std::time::Duration {
-        if !self.available || self.stopping {
-            return std::time::Duration::MAX;
-        }
+        // Pausing cancels authority but still owns pending spawn/reap work.
         self.processes.authentication_wait(now)
     }
 

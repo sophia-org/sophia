@@ -52,7 +52,7 @@ refused, never silently downgraded (`docs/sophia-shell-v1-direction.md`).
 | Role to content store profile: Bar = Legacy, Dock = PersistentCatalog, Launcher = NativeLauncher | `crates/sophia-session/src/shell_component_connections.rs:170-172` |
 | Negotiation per profile: Bar up to r6 with bit 0; Launcher exactly r7 with bits 5, 7, 8, 11; Dock exactly r8 with bits 1, 5, 7, 8, 12 | `crates/sophia-runtime/src/shell_transport/negotiation_policy.rs`, `native_launcher.rs`, `catalog_candidates.rs` |
 | One private 0700 endpoint per component, one active peer, protected launch under Bubblewrap | `crates/sophia-runtime/src/policy_socket.rs`, `crates/sophia-session/src/live_session/metadata_shell/component_session.rs` |
-| Peer admission by supervisor evidence; the evidence "is a declaration the supervisor makes, not a proof" | `policy_socket.rs:270-274` (`authorize_protected_peer`) |
+| Independent components: supervisor evidence filters accept; afid verification joins Factotum identity and current launch custody | `shell_component_processes/authentication.rs`, `shell_transport/files.rs` |
 | One content epoch registry for all components: 64 MiB, three active epochs, sixteen retained | `shell_component_connections.rs:86`; `crates/sophia-runtime/src/shell_content/epoch_registry.rs:59-61, 93-95` |
 | Descriptor component: one 9P endpoint, mutually exclusive with independent content components | `crates/sophia-session/src/live_session/metadata_shell.rs` |
 | Direct GPU: a separate per-component grant; content and GPU permissions do not imply each other | ADR `mn4mzcnf`, `live_session/metadata_shell/gpu.rs` |
@@ -153,6 +153,28 @@ separate export profile on its own endpoint.
 Paths, attach names, UIDs, fids and qids grant nothing. Authority comes from
 the endpoint's admitted peer and the role profile Session fixed before the
 peer connected.
+
+### Authenticated independent launches
+
+Normal Session launches of Bar, Dock and ApplicationLauncher require Factotum.
+Session selects a separate confined namespace with no portal capabilities for
+each component. The authentication claims are `uname="shell"` and respectively
+`aname="bar"`, `"dock"` or `"launcher"`; these must match but select no authority.
+The expected-peer accept filter remains an availability defense. Root admission
+requires the verified afid and current custody under
+[launch authentication](factotum-launch-authentication.md).
+
+Registration precedes protected spawn. Pending startup retains the component
+attempt and content reservation; cancellation closes local service first and
+the owner continues cancelling/reaping before permitting a fresh attempt.
+Loss of launch authority revokes the connection and reports its grant for
+presentation cleanup without waiting for child exit. The spawning thread's
+lease remains held until the supervisor has been reaped. Session retains the
+coordinator through outer shutdown cleanup as well as the ordinary owner loop.
+
+The descriptor-shell owner and deployed SDK/client rollout remain separate
+t317 migration work. Supplied-admission conformance fixtures can still use the
+explicit legacy entry point; normal independent launches cannot fall back to it.
 
 ### Root vocabulary
 
