@@ -283,9 +283,14 @@ WM/Nim migration is now covered by the separate
 real Hagia authenticates initial launch and a fresh supervised restart, with
 empty-scene commits and a wrong-claim control. Its occupied, changed-profile and
 physical acceptance boundaries remain explicit.
-Other required roles, deployed-client rollout and final contract/threat-model
-reconciliation remain open. These checkpoints are not a live installation or
-a reduced exit.
+The [descriptor client join](../investigations/etyvymxi-authenticated-attach-transport-state-and-factotum-handoff.md#independent-descriptor-client-authentication)
+and [component client joins](../investigations/etyvymxi-authenticated-attach-transport-state-and-factotum-handoff.md#independent-component-client-authentication)
+now extend the generic C and Rust SDK owner tests to independent descriptor,
+bar, launcher and dock clients across launch generations. Their authentication
+evidence does not claim rendered content or physical acceptance. Final
+contract/threat-model reconciliation, SDK snapshot alignment, candidate-wide
+gates and integration remain open. These checkpoints are not a live
+installation or a reduced exit.
 
 Implement the approved [t133 local authentication handoff](esnqxpqw-pidfd-and-namespace-admission-optimizations.md#local-authentication-design-and-t317-handoff-2026-10-10),
 including Session's launch-channel relay, Factotum's correlated verdict,

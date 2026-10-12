@@ -149,6 +149,59 @@ SDK, overload and replacement-peer-check controls remain t317 acceptance work;
 t142 owns the confined-group proof. Existing peer checks and X admission remain
 unchanged until their respective implementation gates pass.
 
+## t317 implementation reconciliation (2026-10-12)
+
+Source reviewed at `a794e0bc8910711ab6d1ac58544e9fbb3e072f53` replaces the
+earlier t133 design-only observations above. Those dated observations remain
+historical evidence. The [implementation investigation](etyvymxi-authenticated-attach-transport-state-and-factotum-handoff.md)
+records individual source candidates, executed suites, negative controls and
+limits; this reconciliation is a source and retained-evidence review, not a new
+execution or a claim that the final candidate-wide gate passed.
+
+| Threat or boundary | Implemented defense and evidence |
+| --- | --- |
+| Claimed uname or peer-written success becomes authority | The core's authentication wire tests refuse ordinary, unverified and forged attaches. Session's role-afid join requires a correlated Factotum result plus current launch custody. Claims select neither principal nor namespace. |
+| Reset permits a different identity | Core authentication tests reject changes to principal, namespace and launch after reset. The wire test destroys the old afid with EBADF. The protected admission-context join reauthenticates through the same generation channel and preserves the exact context; its reset control discriminates context loss. |
+| Partial attach pins authority without a root | Checked root preparation precedes identity commit. A full fid table cannot pin an identity; abandoned preparation publishes nothing. Lock, WM and shell root checkpoints cover their respective owners. |
+| Stale verdict or retained fid survives revocation | Session checks custody before attach and on retained operations. The role-afid controls discriminate both checks. Protected upload controls revoke launch, namespace or admission between fragments, before idle cleanup can mask a missing guard. |
+| An unrelated launch acquires custody | A consumed channel handoff and exact protected spawn generation gate activation. Unprotected spawn and configured descriptor claims are refused. Worker custody observes launch exit and is retired before reaping. Possession still permits intentional delegation within that launch. |
+| Anonymous connectors starve custody-role admission | The expected-peer filter remains before authentication allocation. Session bounds endpoint/global transport slots and retains cleanup custody; core pre-auth fid/request bounds also apply. This provides bounded admission, not a general fair-access guarantee. |
+| Lock requires a socket pidfd on every platform | The authenticated lock branch checks the live assignee, then afid and current custody; it does not call SO_PEERPIDFD. The explicit legacy branch retains that requirement. Supervisor pidfds and the expected-peer availability filter remain. |
+| Authentication silently expands X authority | X11 still uses its existing admission owner. Launch ancestry remains an attribution hint, not namespace selection or a substitute for authentication. |
+
+Manifest integrity was rechecked for `t317-role-afid-01`,
+`t317-lock-wire-01`, `t317-admission-context-01`,
+`t317-wire-reset-context-control-01`,
+`t317-retained-admission-check-control-01` and
+`t317-component-clients-01`: every manifest entry matched its retained file.
+That check establishes package integrity, not execution at the current commit.
+Their original runs and candidate bindings remain as recorded in the linked
+investigation; later source changes require impact review or rerun.
+
+Normal supervised WM, lock, output, descriptor-shell, bar, launcher and dock
+owners now select authentication. Generic C/Rust SDK tests and independent
+client checkpoints distinguish authentication from rendered or physical
+acceptance. Metadata broker and administrative control still have their
+existing admission models; their legacy transport migrations belong to t314
+and t254. The live portal uses the accepted protocol-authority socketpair
+exception, not a protected-process or afid claim. Its out-of-process requester
+variant remains unintegrated. These boundaries are summarized in the
+[launch authentication contract](../../factotum-launch-authentication.md#transport-boundaries).
+
+Session and the supervisor remain trusted. Factotum verifies Session-attested
+nonce correlation and registration; it does not independently prove the
+holder's executable, PID or human identity. A cooperating holder can relay a
+challenge for another process's transport within the original launch's
+authority. The SDK relays its own afid challenge, but that is not a constraint
+on a malicious holder. Revocation ends authority even if the channel remains
+open. There is no remote-authentication claim, same-UID fallback or new access
+for independently launched tools; t324 retains credential provisioning and
+t318 retains authorized developer launch and namespace composition.
+
+Final SDK snapshot alignment, candidate-wide validation and integration remain
+required before t317 closure. This reconciliation changes no task state and
+claims no live installation.
+
 ## Connections
 
 - Links to [Namespaces and Portals](../../namespaces-and-portals.md)
