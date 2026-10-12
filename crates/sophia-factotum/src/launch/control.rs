@@ -62,6 +62,10 @@ impl LaunchControl {
         match command {
             Command::Initialize { .. } => unreachable!(),
             Command::Reserve(d) => owner.reserve(d, now)?,
+            Command::ReserveAudiences {
+                delegation,
+                audiences,
+            } => owner.reserve_with_audiences(delegation, audiences, now)?,
             Command::Activate { launch } => owner.activate(launch, now)?,
             Command::Retire { launch } => owner.retire(launch, now)?,
             Command::Begin {

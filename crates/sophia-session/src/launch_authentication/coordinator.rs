@@ -2,6 +2,7 @@
 use super::files::{EndpointBudget, TransportBudget};
 use super::{Error, LaunchBook, LaunchId, LaunchPolicy, Phase, WorkerAuthority};
 use crate::session_unlock_supervisor::LaunchService;
+use sophia_factotum::launch::Audiences;
 use sophia_factotum::launch::queue::Ingress;
 use sophia_runtime::{LaunchChannel, NamespaceRegistry, ProcessSupervisor};
 use std::sync::{Arc, Mutex};
@@ -94,10 +95,26 @@ impl LaunchCoordinator {
     }
 
     pub fn reserve(&mut self, policy: LaunchPolicy, now: Instant) -> Result<Registration, Error> {
+        self.reserve_with_audiences(
+            policy,
+            Audiences::new(&[policy.audience]).map_err(|_| Error::Invalid)?,
+            now,
+        )
+    }
+
+    pub fn reserve_with_audiences(
+        &mut self,
+        policy: LaunchPolicy,
+        audiences: Audiences,
+        now: Instant,
+    ) -> Result<Registration, Error> {
         let connection = self.current.as_mut().ok_or(Error::NotReady)?;
-        let launch = connection
-            .book
-            .reserve(policy, now, now + Duration::from_secs(10));
+        let launch = connection.book.reserve_with_audiences(
+            policy,
+            audiences,
+            now,
+            now + Duration::from_secs(10),
+        );
         self.next_launch = connection.book.next;
         let launch = launch?;
         Ok(Registration {
@@ -141,6 +158,21 @@ impl LaunchCoordinator {
     ) -> Result<WorkerAuthority, Error> {
         self.book(registration)?
             .worker_authority(registration.launch, supervisor, now)
+    }
+
+    pub fn worker_authority_for_audience(
+        &mut self,
+        registration: Registration,
+        audience: u64,
+        supervisor: &mut ProcessSupervisor,
+        now: Instant,
+    ) -> Result<WorkerAuthority, Error> {
+        self.book(registration)?.worker_authority_for_audience(
+            registration.launch,
+            audience,
+            supervisor,
+            now,
+        )
     }
 
     pub fn revoke(&mut self, registration: Registration, now: Instant) -> Result<(), Error> {

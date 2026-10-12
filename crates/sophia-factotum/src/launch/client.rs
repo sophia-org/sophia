@@ -206,6 +206,7 @@ fn correlated(command: Command, response: Response) -> bool {
         (
             Command::Initialize { .. }
             | Command::Reserve(_)
+            | Command::ReserveAudiences { .. }
             | Command::Activate { .. }
             | Command::Retire { .. }
             | Command::Relay { .. }

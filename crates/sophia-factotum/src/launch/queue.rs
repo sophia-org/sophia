@@ -319,9 +319,11 @@ impl Owner {
 fn cleanup(command: Command) -> Option<Command> {
     match command {
         Command::Begin { attempt, .. } => Some(Command::Cancel { attempt }),
-        Command::Reserve(delegation) => Some(Command::Retire {
-            launch: delegation.identity.launch,
-        }),
+        Command::Reserve(delegation) | Command::ReserveAudiences { delegation, .. } => {
+            Some(Command::Retire {
+                launch: delegation.identity.launch,
+            })
+        }
         Command::Activate { launch } => Some(Command::Retire { launch }),
         _ => None,
     }

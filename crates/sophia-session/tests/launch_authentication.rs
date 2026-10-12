@@ -121,15 +121,19 @@ impl Fixture {
         self.answer(ticket)
     }
     fn reserve(&mut self) -> LaunchId {
+        self.reserve_audiences(&[4])
+    }
+    fn reserve_audiences(&mut self, audiences: &[u64]) -> LaunchId {
         let id = self
             .book
-            .reserve(
+            .reserve_with_audiences(
                 LaunchPolicy {
                     principal: 8,
                     namespace: 9,
                     audience: 4,
                     role: ProtectionDomainRole::MetadataShell,
                 },
+                sophia_factotum::launch::Audiences::new(audiences).unwrap(),
                 Instant::now(),
                 deadline(),
             )
@@ -176,9 +180,11 @@ fn attempt() -> Attempt {
 struct Probe(PathBuf);
 impl Probe {
     fn build() -> Self {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
-            "launch-authentication-probe-{}",
-            std::process::id()
+            "launch-authentication-probe-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         assert!(
             std::process::Command::new("/usr/bin/cc")
@@ -266,6 +272,74 @@ fn protected_child_relay_verdict_requires_the_live_exact_launch() {
         "a termination request must withdraw launch custody before attach"
     );
     assert_eq!(f.book.phase(id), Some(Phase::Retiring));
+    supervisor.terminate().unwrap();
+    let end = deadline();
+    while f.book.phase(id).is_some() {
+        f.tick(end);
+    }
+}
+
+#[test]
+fn protected_recipe_launch_authenticates_an_approved_secondary_audience_only() {
+    let mut f = Fixture::new();
+    let probe = Probe::build();
+    let id = f.reserve_audiences(&[4, 7]);
+    let mut secondary = attempt();
+    secondary.audience = 7;
+    let Response::Challenge(nonce) = f.command(Command::Begin {
+        attempt: secondary,
+        remaining_msec: 5000,
+    }) else {
+        panic!("challenge")
+    };
+    let mut supervisor = probe.supervisor(nonce);
+    let channel = f.book.take_channel(id, Instant::now()).unwrap();
+    supervisor.start_with_launch_channel(channel).unwrap();
+    f.activate(id, &mut supervisor);
+    let end = deadline();
+    let verdict = loop {
+        assert!(Instant::now() < end, "secondary audience relay deadline");
+        match f.command(Command::Take { attempt: secondary }) {
+            Response::Verified(v) => break v,
+            Response::Pending => (),
+            _ => panic!("unexpected response"),
+        }
+    };
+    assert_eq!(
+        f.book
+            .authorize(verdict, &mut supervisor, Instant::now())
+            .unwrap(),
+        verdict.identity
+    );
+    for audience in [4, 7] {
+        assert!(
+            f.book
+                .worker_authority_for_audience(id, audience, &mut supervisor, Instant::now())
+                .is_ok()
+        );
+    }
+    assert!(
+        matches!(
+            f.book
+                .worker_authority_for_audience(id, 8, &mut supervisor, Instant::now()),
+            Err(Error::Invalid)
+        ),
+        "a worker must not acquire an unapproved recipe audience"
+    );
+    let mut forged = verdict;
+    forged.attempt.audience = 8;
+    assert!(
+        matches!(
+            f.book.authorize(forged, &mut supervisor, Instant::now()),
+            Err(Error::Stale)
+        ),
+        "Session must independently refuse an audience outside launch policy"
+    );
+    f.book.revoke(id, Instant::now()).unwrap();
+    assert!(matches!(
+        f.book.authorize(verdict, &mut supervisor, Instant::now()),
+        Err(Error::Stale)
+    ));
     supervisor.terminate().unwrap();
     let end = deadline();
     while f.book.phase(id).is_some() {

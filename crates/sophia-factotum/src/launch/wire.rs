@@ -1,22 +1,31 @@
 //! Private Session–Factotum control records, not the child's afid transcript.
-//! Fixed little-endian records: version u32, kind u32, then the exact body.
+//! Little-endian records: version u32, kind u32, then the exact body. Kind 9
+//! adds a bounded audience set; the original single-audience kind 2 is unchanged.
 
-use super::{Delegation, Nonce, Verdict};
+use super::{Audiences, Delegation, MAX_AUDIENCES, Nonce, Verdict};
 use sophia_9p::{
     ConnectionId, Errno,
     authentication::{Attempt, Identity},
 };
 
 pub const VERSION: u32 = 1;
-pub const MAX_RECORD_BYTES: usize = 84;
+pub const MAX_RECORD_BYTES: usize = 44 + 8 * MAX_AUDIENCES;
 pub const ATTACH: &[u8] = b"sophia-launch-v1";
 
 #[derive(Clone, Copy)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "owner commands retain Copy cancellation custody; the inline audience set is bounded to 64 values and the queue to 32 commands"
+)]
 pub enum Command {
     Initialize {
         session: u64,
     },
     Reserve(Delegation),
+    ReserveAudiences {
+        delegation: Delegation,
+        audiences: Audiences,
+    },
     Activate {
         launch: u64,
     },
@@ -52,6 +61,7 @@ impl Command {
         let kind = match self {
             Self::Initialize { .. } => 1,
             Self::Reserve(_) => 2,
+            Self::ReserveAudiences { .. } => 9,
             Self::Activate { .. } => 3,
             Self::Retire { .. } => 4,
             Self::Begin { .. } => 5,
@@ -65,6 +75,17 @@ impl Command {
             Self::Reserve(d) => {
                 identity_to(&mut b, d.identity);
                 u64_to(&mut b, d.audience);
+            }
+            Self::ReserveAudiences {
+                delegation,
+                audiences,
+            } => {
+                identity_to(&mut b, delegation.identity);
+                u64_to(&mut b, delegation.audience);
+                b.extend((audiences.as_slice().len() as u32).to_le_bytes());
+                for &audience in audiences.as_slice() {
+                    u64_to(&mut b, audience);
+                }
             }
             Self::Activate { launch } | Self::Retire { launch } => u64_to(&mut b, launch),
             Self::Begin {
@@ -107,6 +128,30 @@ impl Command {
             8 => Self::Cancel {
                 attempt: r.attempt()?,
             },
+            9 => {
+                let delegation = Delegation {
+                    identity: r.identity()?,
+                    audience: r.u64()?,
+                };
+                let count = usize::try_from(r.u32()?).map_err(|_| Errno::EINVAL)?;
+                if count == 0 || count > MAX_AUDIENCES {
+                    return Err(Errno::EINVAL);
+                }
+                let mut values = [0; MAX_AUDIENCES];
+                for value in &mut values[..count] {
+                    *value = r.u64()?;
+                }
+                let audiences = Audiences::new(&values[..count]).map_err(|_| Errno::EINVAL)?;
+                if audiences.as_slice() != &values[..count]
+                    || !audiences.contains(delegation.audience)
+                {
+                    return Err(Errno::EINVAL);
+                }
+                Self::ReserveAudiences {
+                    delegation,
+                    audiences,
+                }
+            }
             _ => return Err(Errno::EINVAL),
         };
         r.end()?;

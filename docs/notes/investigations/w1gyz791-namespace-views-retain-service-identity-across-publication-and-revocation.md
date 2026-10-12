@@ -88,6 +88,12 @@ pinned `O_PATH` socket fd. SDK adoption must use that mechanism, without global
 
 ## Validation and remaining work
 
+The compiler/discovery/publication foundation is signed commit `58b48fd36`.
+Its sealed development package is
+`~/.local/state/sophia/development-evidence/t318-foundation-01`; the manifest
+verified. It contains source hashes, positive logs and the restored scope
+control, not build binaries.
+
 Executed development checks:
 
 - `/tmp/t318-recipe-03.log`: four configuration, four discovery and nine
@@ -113,11 +119,59 @@ these checks. The scope control proves the compiler refusal only. It does not
 qualify authenticated foreign admission. No full repository gate has run for
 this slice.
 
-Session policy and authenticated role wiring, approved audience sets, the
+Session recipe policy and authenticated role wiring, the
 observer path, portal delivery checks, C/Rust SDK readers, catalog identities,
 the authorized developer launch command and complete acceptance remain t318
 work. Ordinary launch must cover registered and scanned desktop identities,
 preserve existing defaults, and never treat application metadata as authority.
+
+## Approved audience sets
+
+The next implementation slice adds a bounded, immutable set to private
+Session-to-Factotum registration. Existing registration still means one exact
+audience. New command 9 registers up to 64 approved audiences; its largest
+record is 556 bytes. The child afid and relay protocols do not change. This is
+authentication scope, not a role-operation grant. Session chooses it from policy
+and independently checks it before using a verdict.
+
+```text
+Session launch policy: identity I, audiences {A, B}
+                 |
+         private Factotum registration
+                 |
+       one generation-scoped launch channel
+             /                 \
+     afid attempt for A    afid attempt for B
+             |                 |
+     worker narrowed A     worker narrowed B
+             |                 |
+       role A checks       role B checks
+
+attempt for C -> refused; A verdict at B worker -> refused
+retire launch -> both workers lose local custody before remote cleanup
+```
+
+Executed checks: `/tmp/t318-audiences-01.log` has 40 passing Factotum tests;
+`/tmp/t318-audiences-02.log` reruns the new set tests and the private queue/client
+tests, including abandonment cleanup for command 9. The Session integration
+suite passes 25 tests in `/tmp/t318-session-auth-03.log` and again after controls
+in `/tmp/t318-session-auth-restored.log`. Two ignored child entrypoints are
+invoked by their parent tests. The tests use actual protected subprocesses,
+the launch channel and Factotum, with supplied Session policy; they do not
+constitute the final namespace-directory/observer join. Probe executable names
+are unique per test so concurrent tests cannot overwrite or unlink one another.
+Clippy passed for Factotum and native-session libraries with warnings denied.
+
+Controls in `~/.local/state/sophia/development-evidence/t318-audiences-02`
+remove, separately, Factotum's audience refusal and the worker's exact-audience
+comparison. Each fails its intended named assertion, exit 101 with one failed
+test. All dynamically enumerated candidate files compare equal after each
+restoration. The earlier `t318-audiences-01` controls predate the unique probe
+path repair; the second package repeats both on the repaired fixture.
+
+The complete Session recipe resolver, discovery SDKs, observer export and
+authorized developer launcher are still pending. These APIs are not yet
+selected by ordinary application launch. No live session was modified.
 
 ## Connections
 

@@ -4,7 +4,7 @@
 
 use sophia_9p::authentication::Identity;
 use sophia_factotum::launch::{
-    Delegation, MAX_DELEGATIONS, Verdict,
+    Audiences, Delegation, MAX_DELEGATIONS, Verdict,
     queue::{Error as QueueError, Ingress, Ticket},
     relay::{Relay, RelayServer},
     wire::{Command, Response},
@@ -75,6 +75,7 @@ impl From<std::io::Error> for Error {
 struct Record {
     worker_active: Arc<AtomicBool>,
     delegation: Delegation,
+    audiences: Audiences,
     reservation: LaunchReservation,
     role: ProtectionDomainRole,
     phase: Phase,
@@ -142,12 +143,25 @@ impl LaunchBook {
         now: Instant,
         deadline: Instant,
     ) -> Result<LaunchId, Error> {
+        let audiences = Audiences::new(&[policy.audience]).map_err(|_| Error::Invalid)?;
+        self.reserve_with_audiences(policy, audiences, now, deadline)
+    }
+
+    /// Session has already intersected recipe requirements with allowed role
+    /// policy. The supplied set is immutable for this launch generation.
+    pub fn reserve_with_audiences(
+        &mut self,
+        policy: LaunchPolicy,
+        audiences: Audiences,
+        now: Instant,
+        deadline: Instant,
+    ) -> Result<LaunchId, Error> {
         if !self.ready() {
             return Err(Error::NotReady);
         }
         if policy.principal == 0
             || policy.namespace == 0
-            || policy.audience == 0
+            || !audiences.contains(policy.audience)
             || deadline <= now
             || deadline.duration_since(now) > Duration::from_secs(10)
         {
@@ -170,12 +184,19 @@ impl LaunchBook {
         let (stream, channel) = LaunchChannel::reserve(generation)?;
         let reservation = channel.reservation();
         let relay = Relay::over(stream, generation, self.ingress.clone())?;
-        let ticket = self
-            .ingress
-            .submit(Command::Reserve(delegation), now, deadline)?;
+        let command = if audiences.as_slice().len() == 1 {
+            Command::Reserve(delegation)
+        } else {
+            Command::ReserveAudiences {
+                delegation,
+                audiences,
+            }
+        };
+        let ticket = self.ingress.submit(command, now, deadline)?;
         self.records.push(Record {
             worker_active: Arc::new(AtomicBool::new(false)),
             delegation,
+            audiences,
             reservation,
             role: policy.role,
             phase: Phase::Registering,
@@ -267,7 +288,7 @@ impl LaunchBook {
         let record = self.record(id)?;
         if record.phase != Phase::Active
             || record.delegation.identity != verdict.identity
-            || record.delegation.audience != verdict.attempt.audience
+            || !record.audiences.contains(verdict.attempt.audience)
         {
             return Err(Error::Stale);
         }

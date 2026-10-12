@@ -6,11 +6,13 @@
 
 use sophia_9p::authentication::{ATTEMPT_MSEC, Attempt, Identity};
 
+mod audiences;
 pub mod client;
 pub mod control;
 pub mod queue;
 pub mod relay;
 pub mod wire;
+pub use audiences::{Audiences, MAX_AUDIENCES};
 
 pub const MAX_DELEGATIONS: usize = 64;
 pub const MAX_ATTEMPTS: usize = 32;
@@ -49,6 +51,7 @@ pub enum Refusal {
 
 struct Registered {
     delegation: Delegation,
+    audiences: Audiences,
     active: bool,
 }
 
@@ -102,9 +105,23 @@ impl LaunchAuthority {
     /// Registers a reservation before spawn. Launch generations increase over
     /// this Session's lifetime and cannot be reused after rollback/retirement.
     pub fn reserve(&mut self, delegation: Delegation, now: u64) -> Result<(), Refusal> {
+        self.reserve_with_audiences(delegation, Audiences::new(&[delegation.audience])?, now)
+    }
+
+    /// Only the private Session owner may select this immutable set. Existing
+    /// single-role registration remains a singleton, never a wildcard.
+    pub fn reserve_with_audiences(
+        &mut self,
+        delegation: Delegation,
+        audiences: Audiences,
+        now: u64,
+    ) -> Result<(), Refusal> {
         self.expire(now)?;
         let identity = delegation.identity;
-        if identity.principal == 0 || identity.namespace == 0 || delegation.audience == 0 {
+        if identity.principal == 0
+            || identity.namespace == 0
+            || !audiences.contains(delegation.audience)
+        {
             return Err(Refusal::Invalid);
         }
         if identity.launch <= self.last_launch {
@@ -116,6 +133,7 @@ impl LaunchAuthority {
         self.last_launch = identity.launch;
         self.delegations.push(Registered {
             delegation,
+            audiences,
             active: false,
         });
         Ok(())
@@ -204,7 +222,10 @@ impl LaunchAuthority {
             .iter()
             .position(|p| p.nonce == Some(nonce))
             .ok_or(Refusal::Stale)?;
-        if registered.delegation.audience != self.attempts[index].attempt.audience {
+        if !registered
+            .audiences
+            .contains(self.attempts[index].attempt.audience)
+        {
             return Err(Refusal::Audience);
         }
         if !registered.active {

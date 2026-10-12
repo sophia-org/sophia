@@ -71,16 +71,20 @@ struct Joined {
 }
 impl Joined {
     fn new() -> Self {
+        Self::with_audiences(&[10])
+    }
+    fn with_audiences(audiences: &[u64]) -> Self {
         let mut f = Fixture::new();
         let id = f
             .book
-            .reserve(
+            .reserve_with_audiences(
                 LaunchPolicy {
                     principal: 8,
                     namespace: 9,
                     audience: 10,
                     role: ProtectionDomainRole::LockProvider,
                 },
+                sophia_factotum::launch::Audiences::new(audiences).unwrap(),
                 Instant::now(),
                 deadline(),
             )
@@ -383,6 +387,53 @@ fn worker_lock_attach_refuses_a_lost_factotum_connection() {
     );
     assert_eq!(
         j.view.check(&access(&LockFileNode::Root, Operation::Read)),
+        Err(Errno::ESTALE)
+    );
+}
+
+#[test]
+fn a_recipe_worker_cannot_use_another_approved_endpoints_verdict() {
+    let mut j = Joined::with_audiences(&[10, 11]);
+    j.verify();
+    let wrong =
+        j.f.book
+            .worker_authority_for_audience(j.id, 11, &mut j.supervisor, Instant::now())
+            .unwrap();
+    assert!(
+        matches!(
+            j.auth.attach_lock(
+                &mut j.view,
+                &context(),
+                j.attempt,
+                Instant::now(),
+                &mut Authority::Worker(&wrong)
+            ),
+            Err(Errno::ESTALE)
+        ),
+        "a recipe worker must remain narrowed to its own audience"
+    );
+    assert!(j.auth.pinned().is_none());
+    let right =
+        j.f.book
+            .worker_authority_for_audience(j.id, 10, &mut j.supervisor, Instant::now())
+            .unwrap();
+    j.auth
+        .attach_lock(
+            &mut j.view,
+            &context(),
+            j.attempt,
+            Instant::now(),
+            &mut Authority::Worker(&right),
+        )
+        .unwrap();
+    j.f.book.revoke(j.id, Instant::now()).unwrap();
+    assert_eq!(
+        j.auth.check_lock(
+            &mut j.view,
+            &access(&LockFileNode::Root, Operation::Read),
+            Instant::now(),
+            &mut Authority::Worker(&right)
+        ),
         Err(Errno::ESTALE)
     );
 }

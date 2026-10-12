@@ -180,23 +180,32 @@ fn dropped_challenge_is_cancelled_before_its_slot_is_reused() {
 
 #[test]
 fn dropped_reservation_is_retired_and_cannot_activate() {
-    let mut f = Fixture::new();
-    f.initialize();
-    let ticket = f.submit(Command::Reserve(delegation()), deadline());
-    assert!(matches!(
-        f.exchange(Command::Cancel {
-            attempt: attempt(2)
-        }),
-        Ok(Response::Done)
-    ));
-    drop(ticket);
-    assert!(
-        matches!(
-            f.exchange(Command::Activate { launch: 10 }),
-            Err(Error::Remote(Errno::ESTALE))
-        ),
-        "abandoned launch reservation must not become active"
-    );
+    for command in [
+        Command::Reserve(delegation()),
+        Command::ReserveAudiences {
+            delegation: delegation(),
+            audiences: sophia_factotum::launch::Audiences::new(&[delegation().audience, 99])
+                .unwrap(),
+        },
+    ] {
+        let mut f = Fixture::new();
+        f.initialize();
+        let ticket = f.submit(command, deadline());
+        assert!(matches!(
+            f.exchange(Command::Cancel {
+                attempt: attempt(2)
+            }),
+            Ok(Response::Done)
+        ));
+        drop(ticket);
+        assert!(
+            matches!(
+                f.exchange(Command::Activate { launch: 10 }),
+                Err(Error::Remote(Errno::ESTALE))
+            ),
+            "abandoned launch reservation must not become active"
+        );
+    }
 }
 
 #[test]

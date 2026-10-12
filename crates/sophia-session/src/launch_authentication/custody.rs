@@ -12,6 +12,7 @@ use std::sync::{
 pub struct WorkerAuthority {
     session: u64,
     delegation: Delegation,
+    audience: u64,
     active: Arc<AtomicBool>,
     ingress: Ingress,
     custody: LaunchCustody,
@@ -22,7 +23,7 @@ impl WorkerAuthority {
         self.session
     }
     pub(super) fn audience(&self) -> u64 {
-        self.delegation.audience
+        self.audience
     }
     pub(super) fn ingress(&self) -> Ingress {
         self.ingress.clone()
@@ -37,7 +38,7 @@ impl WorkerAuthority {
     fn authorize(&self, verdict: Verdict) -> Result<Identity, Error> {
         if verdict.attempt.session != self.session
             || verdict.identity != self.delegation.identity
-            || verdict.attempt.audience != self.delegation.audience
+            || verdict.attempt.audience != self.audience
             || !self.live()?
         {
             return Err(Error::Stale);
@@ -75,6 +76,19 @@ impl LaunchBook {
         supervisor: &mut ProcessSupervisor,
         now: Instant,
     ) -> Result<WorkerAuthority, Error> {
+        let audience = self.record(id)?.delegation.audience;
+        self.worker_authority_for_audience(id, audience, supervisor, now)
+    }
+
+    /// Narrow each endpoint worker to one approved audience. A worker cannot
+    /// use a verdict from another endpoint even within the same launch set.
+    pub fn worker_authority_for_audience(
+        &mut self,
+        id: LaunchId,
+        audience: u64,
+        supervisor: &mut ProcessSupervisor,
+        now: Instant,
+    ) -> Result<WorkerAuthority, Error> {
         if !self.ready() {
             return Err(Error::Closed);
         }
@@ -83,6 +97,9 @@ impl LaunchBook {
         let record = self.record(id)?;
         if record.phase != Phase::Active {
             return Err(Error::NotReady);
+        }
+        if !record.audiences.contains(audience) {
+            return Err(Error::Invalid);
         }
         let custody = match supervisor.launch_custody(&record.reservation, record.role)? {
             Some(custody) => custody,
@@ -94,6 +111,7 @@ impl LaunchBook {
         Ok(WorkerAuthority {
             session,
             delegation: record.delegation,
+            audience,
             active: record.worker_active.clone(),
             ingress,
             custody,
