@@ -41,10 +41,15 @@ pub fn namespaces() -> std::sync::Arc<std::sync::Mutex<sophia_runtime::Namespace
 }
 impl Fixture {
     pub fn new() -> Self {
+        Self::with_namespaces(namespaces())
+    }
+    pub fn with_namespaces(
+        namespaces: std::sync::Arc<std::sync::Mutex<sophia_runtime::NamespaceRegistry>>,
+    ) -> Self {
         let authenticator =
             SupervisedAuthenticator::start(Launcher, UnlockSupervision::SESSION, || {}).unwrap();
         let mut f = Self {
-            coordinator: LaunchCoordinator::new(authenticator.launch_service(), namespaces()),
+            coordinator: LaunchCoordinator::new(authenticator.launch_service(), namespaces),
             _authenticator: Some(authenticator),
         };
         let deadline = Instant::now() + Duration::from_secs(5);

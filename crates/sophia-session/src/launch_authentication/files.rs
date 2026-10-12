@@ -50,6 +50,9 @@ impl Drop for Permit {
     }
 }
 impl TransportBudget {
+    pub(crate) fn uses_namespaces(&self, namespaces: &Arc<Mutex<NamespaceRegistry>>) -> bool {
+        Arc::ptr_eq(&self.0.namespaces, namespaces)
+    }
     pub fn new(namespaces: Arc<Mutex<NamespaceRegistry>>) -> Self {
         let (retiring, incoming) = sync_channel(GLOBAL_TRANSPORTS);
         Self(

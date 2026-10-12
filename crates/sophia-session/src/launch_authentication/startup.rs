@@ -25,6 +25,7 @@ pub(crate) struct Startup {
     lease: Option<SpawnLease>,
     registration: Option<Registration>,
     endpoint: EndpointBudget,
+    grant: Option<sophia_runtime::EndpointGrantLease>,
     recipe: Recipe,
     not_before: Instant,
     deadline: Instant,
@@ -33,6 +34,27 @@ pub(crate) struct Startup {
 }
 
 impl Startup {
+    /// Background retirement only: retain custody and the capacity slot until
+    /// an outstanding spawn returns and its child has been reaped.
+    pub(crate) fn retire(mut self) {
+        if let Some(spawning) = self.spawning.take() {
+            spawning.cancel();
+            loop {
+                match spawning.poll() {
+                    Ok(Some(result)) => {
+                        drop(result.supervisor);
+                        drop(result.lease);
+                        break;
+                    }
+                    Ok(None) => std::thread::sleep(Duration::from_millis(1)),
+                    Err(_) => break,
+                }
+            }
+        }
+        self.supervisor.take();
+        self.lease.take();
+    }
+
     pub fn new(
         supervisor: ProcessSupervisor,
         command: SupervisorCommand,
@@ -55,12 +77,53 @@ impl Startup {
             lease: None,
             registration: None,
             endpoint,
+            grant: None,
             recipe,
             not_before,
             deadline: not_before + Duration::from_secs(10),
             failure: None,
             finished: false,
         })
+    }
+
+    /// A namespace launch prepares its view after reserving a generation.
+    /// Continue through the same spawn/activation transaction as fixed roles,
+    /// but bind the primary endpoint to its exact captured grant.
+    pub(crate) fn registered_endpoint(
+        supervisor: ProcessSupervisor,
+        endpoint: EndpointBudget,
+        recipe: Recipe,
+        registration: Registration,
+        grant: sophia_runtime::EndpointGrantLease,
+        now: Instant,
+    ) -> Result<Self, String> {
+        if grant.endpoint().scope.principal != recipe.policy.principal
+            || grant.endpoint().scope.namespace.raw() != recipe.policy.namespace
+            || !grant.permits(
+                grant.endpoint().scope.namespace,
+                sophia_protocol::ClientAuthenticationMethod::FactotumLaunch {
+                    principal: recipe.policy.principal,
+                    launch_generation: registration.launch_generation(),
+                },
+                recipe.policy.audience,
+            )
+        {
+            return Err("namespace launch grant differs from reservation".into());
+        }
+        let process = supervisor.process();
+        let mut startup = Self::new(
+            supervisor,
+            SupervisorCommand::StartProcess {
+                process,
+                delay: Duration::ZERO,
+            },
+            endpoint,
+            recipe,
+            now,
+        )?;
+        startup.registration = Some(registration);
+        startup.grant = Some(grant);
+        Ok(startup)
     }
 
     /// Revoke before cancelling a spawn. Poll until cancellation returns an
@@ -178,14 +241,21 @@ impl Startup {
                 let custody = launches
                     .worker_authority(registration, supervisor, now)
                     .map_err(|e| format!("role custody: {e:?}"))?;
-                let factory = self
-                    .endpoint
-                    .bind(
+                let factory = match &self.grant {
+                    Some(grant) => self.endpoint.bind_grant(
+                        custody,
+                        grant.clone(),
+                        grant.endpoint(),
+                        self.recipe.uname.clone(),
+                        self.recipe.aname.clone(),
+                    ),
+                    None => self.endpoint.bind(
                         custody,
                         self.recipe.uname.clone(),
                         self.recipe.aname.clone(),
-                    )
-                    .map_err(|e| format!("role endpoint: {e:?}"))?;
+                    ),
+                }
+                .map_err(|e| format!("role endpoint: {e:?}"))?;
                 self.finished = true;
                 Ok(Some(Started {
                     supervisor: self.supervisor.take().expect("started role"),

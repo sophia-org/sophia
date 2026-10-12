@@ -5,7 +5,10 @@ use crate::session_unlock_supervisor::LaunchService;
 use sophia_factotum::launch::Audiences;
 use sophia_factotum::launch::queue::Ingress;
 use sophia_runtime::{LaunchChannel, NamespaceRegistry, ProcessSupervisor};
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex, Weak,
+    atomic::{AtomicBool, Ordering},
+};
 use std::time::{Duration, Instant};
 
 /// A registration belongs to exactly one shared Factotum generation. Neither
@@ -14,6 +17,31 @@ use std::time::{Duration, Instant};
 pub struct Registration {
     connection: u64,
     launch: LaunchId,
+}
+impl Registration {
+    pub fn launch_generation(self) -> u64 {
+        self.launch.generation()
+    }
+}
+
+/// Session-thread custody for dynamically launched clients. Drop fences local
+/// workers immediately; the coordinator reclaims the remote record next turn.
+/// It cannot cross threads and race a subsequent activation on the owner.
+pub(crate) struct RegistrationOwner {
+    registration: Registration,
+    _lifetime: Arc<()>,
+    active: Arc<AtomicBool>,
+    _owner_thread: std::marker::PhantomData<std::rc::Rc<()>>,
+}
+impl RegistrationOwner {
+    pub fn registration(&self) -> Registration {
+        self.registration
+    }
+}
+impl Drop for RegistrationOwner {
+    fn drop(&mut self) {
+        self.active.store(false, Ordering::Release);
+    }
 }
 
 struct Connection {
@@ -30,6 +58,7 @@ pub struct LaunchCoordinator {
     // Preserve burned numbers even if setup failed before inserting a record.
     next_launch: u64,
     transports: TransportBudget,
+    owned: Vec<(Registration, Weak<()>)>,
 }
 
 impl LaunchCoordinator {
@@ -40,6 +69,7 @@ impl LaunchCoordinator {
             seen: 0,
             next_launch: 1,
             transports: TransportBudget::new(namespaces),
+            owned: Vec::new(),
         }
     }
 
@@ -49,10 +79,15 @@ impl LaunchCoordinator {
         self.transports.endpoint()
     }
 
+    pub(crate) fn uses_namespaces(&self, namespaces: &Arc<Mutex<NamespaceRegistry>>) -> bool {
+        self.transports.uses_namespaces(namespaces)
+    }
+
     /// Poll once per owner turn, even without a lock or pending PAM request.
     /// Failure revokes the shared generation; only a newly published connection
     /// can recover. A contended publication mutex is not connection loss.
     pub fn poll(&mut self, now: Instant) -> Result<(), Error> {
+        self.retire_dropped(now);
         self.transports.poll_retiring(now);
         if self.current.as_ref().is_some_and(|c| !c.ingress.is_open()) {
             self.current = None;
@@ -123,6 +158,47 @@ impl LaunchCoordinator {
         })
     }
 
+    pub(crate) fn reserve_owned(
+        &mut self,
+        policy: LaunchPolicy,
+        audiences: Audiences,
+        now: Instant,
+    ) -> Result<RegistrationOwner, Error> {
+        self.retire_dropped(now);
+        let registration = self.reserve_with_audiences(policy, audiences, now)?;
+        let active = self
+            .book(registration)?
+            .record(registration.launch)?
+            .worker_active
+            .clone();
+        let lifetime = Arc::new(());
+        self.owned.push((registration, Arc::downgrade(&lifetime)));
+        Ok(RegistrationOwner {
+            registration,
+            _lifetime: lifetime,
+            active,
+            _owner_thread: std::marker::PhantomData,
+        })
+    }
+
+    fn retire_dropped(&mut self, now: Instant) {
+        self.owned.retain(|(registration, owner)| {
+            let Some(connection) = self
+                .current
+                .as_mut()
+                .filter(|c| c.generation == registration.connection)
+            else {
+                return false;
+            };
+            if owner.strong_count() == 0 {
+                let _ = connection.book.revoke(registration.launch, now);
+                false
+            } else {
+                true
+            }
+        });
+    }
+
     pub fn phase(&self, registration: Registration) -> Option<Phase> {
         self.current
             .as_ref()
@@ -180,6 +256,14 @@ impl LaunchCoordinator {
     }
 
     fn book(&mut self, registration: Registration) -> Result<&mut LaunchBook, Error> {
+        if self
+            .owned
+            .iter()
+            .any(|(id, owner)| *id == registration && owner.strong_count() == 0)
+        {
+            self.retire_dropped(Instant::now());
+            return Err(Error::Stale);
+        }
         let connection = self
             .current
             .as_mut()

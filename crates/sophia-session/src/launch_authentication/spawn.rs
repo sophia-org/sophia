@@ -15,7 +15,20 @@ pub(crate) struct SpawnResult {
 /// Bubblewrap's parent-death signal follows the spawning thread. Keep that
 /// thread alive until the returned supervisor's child has been reaped/dropped.
 pub(crate) struct SpawnLease {
-    _owner: mpsc::Sender<()>,
+    owner: mpsc::Sender<Box<dyn Send>>,
+}
+impl SpawnLease {
+    pub(crate) fn channel() -> (Self, Receiver<Box<dyn Send>>) {
+        let (owner, receiver) = mpsc::channel();
+        (Self { owner }, receiver)
+    }
+    /// Transfer blocking child/resource destruction to the thread that already
+    /// owns this spawn's lifetime. There is no additional cleanup worker.
+    pub fn retire(self, resources: impl Send + 'static) {
+        // The receiver remains alive until this sole sender is dropped. A
+        // failure would mean the worker panicked; preserve normal drop cleanup.
+        let _ = self.owner.send(Box::new(resources));
+    }
 }
 
 /// One outstanding spawn per role. Cancellation retains the worker until its
@@ -32,7 +45,7 @@ impl ProtectedSpawn {
         wake: sophia_wake::Notifier,
     ) -> Result<Self, String> {
         let (sender, result) = mpsc::sync_channel(1);
-        let (lease, lifetime) = mpsc::channel();
+        let (lease, lifetime) = SpawnLease::channel();
         let cancelled = Arc::new(AtomicBool::new(false));
         let worker_cancelled = cancelled.clone();
         std::thread::Builder::new()
@@ -53,10 +66,12 @@ impl ProtectedSpawn {
                 let _ = sender.send(SpawnResult {
                     supervisor,
                     result,
-                    lease: SpawnLease { _owner: lease },
+                    lease,
                 });
                 wake.notify();
-                let _ = lifetime.recv();
+                if let Ok(resources) = lifetime.recv() {
+                    drop(resources);
+                }
             })
             .map_err(|e| e.to_string())?;
         Ok(Self { cancelled, result })

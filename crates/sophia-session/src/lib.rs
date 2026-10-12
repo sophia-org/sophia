@@ -50,6 +50,8 @@ pub mod input_proof;
 pub mod launch_authentication;
 #[cfg(feature = "native-session")]
 pub mod live_output_authority;
+#[cfg(feature = "native-session")]
+pub mod namespace_launch;
 pub mod namespace_views;
 pub mod native_output_completion;
 pub mod private_input;

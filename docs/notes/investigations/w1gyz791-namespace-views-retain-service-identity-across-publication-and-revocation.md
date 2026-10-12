@@ -225,6 +225,57 @@ convention. The annotation is moved without changing test behavior. None of
 these five attempts is recorded as an overall passing repository gate. Their
 original closed evidence packages remain unchanged.
 
+## Confined client launch scheduling
+
+Session now has a bounded recipe-client launch owner using the existing
+Factotum coordinator and protected startup transaction. Trusted callers supply
+the selected recipe, approved service references and containment policy. The
+owner rejects a different namespace registry even when its numeric namespace
+IDs match. Shared-host recipes remain refused here until their distinct launch
+path is connected; this is not an implicit confinement change for normal apps.
+
+```text
+Session owner                        retained preparation worker
+  reserve generation + slot -------> prepare immutable view
+  poll prepared view <-------------- publish result
+       |
+  existing Startup ----------------> protected spawn worker
+       |                              spawn + retain thread
+  activate custody; bind grants
+       |
+  running client + endpoint owners
+       |
+  drop/cancel: fence locally -------> retire pending spawn or child
+                                      remove view; release slot
+```
+
+Preparation, running and retirement share a 64-client bound. Dropping a pending
+or running client immediately fences its authentication workers. Remote
+registration cleanup occurs on the next coordinator turn. Background retirement
+retains the slot and view until an outstanding spawn returns and the supervisor
+reaps its child; it uses the preparation worker instead of creating an unbounded
+collection of cleanup threads. Failed endpoint binding after activation already
+has retirement custody, so that failure cannot reap on the Session owner thread.
+
+`t318-client-scheduling-01` passes five new tests using real Factotum registration
+and protected process startup: abandoned preparation, cancellation during spawn,
+failed executable, a running client with immediate quiet-endpoint revocation,
+and refusal of a different namespace owner. Cancellation may race Bubblewrap's
+setup and print a missing-source diagnostic; no cancelled launch is published.
+The three existing startup tests and 28 launch-authentication parent tests also
+pass. These tests do not run a namespace-aware application or dispatch its role
+requests; the independent SDK joins recorded above remain separate evidence.
+
+Native and default Session library Clippy, formatting, source layout and diff
+checks pass. The package dynamically records all ten changed/untracked source
+and fixture files, checks they remain unchanged, and records test-binary paths
+and hashes without copying them. Its self-excluding SHA256SUMS has SHA-256
+`cb724940c4d1520ec6a9dc7abe89dc524462bb84f2dc877d1290aaf9e2a35cfd`.
+Application launcher wiring, developer administration, shared-host launch,
+portal dispatch and retained-transfer qualification remain pending. The startup
+guard against unsupported configured recipes remains in place. No master or
+installed-session change is made by this slice.
+
 ## Connections
 
 The seventh isolated gate at `49bc4aa1a` reaches the Session suite and stops

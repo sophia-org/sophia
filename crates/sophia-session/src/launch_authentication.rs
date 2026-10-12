@@ -19,6 +19,7 @@ use std::time::{Duration, Instant};
 mod custody;
 pub use custody::{Authority, WorkerAuthority};
 mod coordinator;
+pub(crate) use coordinator::RegistrationOwner;
 pub use coordinator::{LaunchCoordinator, Registration};
 pub mod files;
 pub mod role;

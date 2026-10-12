@@ -87,6 +87,12 @@ impl NamespaceRecipeOwner {
         self.publisher.directory()
     }
 
+    /// Fence operations before moving filesystem destruction to a launch worker.
+    #[cfg(feature = "native-session")]
+    pub(crate) fn revoke_grants(&mut self) {
+        self.grants.clear();
+    }
+
     /// A fresh trusted policy revision is required even after failure. Once a
     /// reduction is accepted, retrying stale policy cannot revive old grants.
     /// The caller must keep its policy snapshot current through this operation.
