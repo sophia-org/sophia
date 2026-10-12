@@ -22,6 +22,40 @@ socket paths or namespace commands to launch installed applications.
 
 ## Evidence
 
+### Application process custody
+
+The slice based on `82b7ac283` gives managed applications one process owner for
+ordinary host children and asynchronous namespace preparation, activation,
+dispatch and retirement. A namespace application reports Started only after
+every selected endpoint has its real service owner. Missing dispatch refuses
+the launch and retires its grants and child off the Session owner thread.
+Cancellation during preparation or after activation retains the existing
+scheduler's bounded slot until retirement. Host children retain their existing
+process-group cleanup. A failed managed application settles only its matching
+admission; it does not consume another application's transaction.
+
+The restored `t318-application-process-02` package passes the native Session
+library suite (1,012 passed, 34 ignored, with child entry points invoked by their
+parents), diagnostics, native launcher admission/execution and authentication
+integration suites, both library Clippy configurations, formatting, layout and
+diff checks. The first package passed tests and Clippy but stopped at the layout
+ceiling. Child lifecycle handling was then moved into its own included domain
+file and the checks rerun. The final package's SHA256SUMS SHA-256 is
+`fb555c8939a9123abe09bfa5d59b4d07854c275916c484a05135cbd07db3f644`.
+
+The separate `t318-application-dispatch-control-01` bypasses the undispatched
+endpoint refusal and fails at `an unserved application must never be reported
+started`. Source restoration is verified; its SHA256SUMS SHA-256 is
+`22a8dbf1e08293bd5b58e5e538f9d9db755ba74719d92205c74be61fa4ef42f8`.
+The later lifecycle-file extraction does not change this control's owner.
+Both packages retain binary paths and hashes, not binary copies. This paragraph
+is added after qualification.
+
+Actual catalog, shortcut and startup recipe construction remains to be wired.
+Namespace stderr capture, startup attribution before activation and short-lived
+children also need integration before removing the configuration guard. This
+slice is process-custody qualification, not completed live recipe launch.
+
 ### Application catalog recipe selection
 
 The slice based on `823ee31b5` connects the native and legacy catalog workers

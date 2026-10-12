@@ -14,6 +14,9 @@ mod dispatch;
 #[path = "namespace_portal_dispatch.rs"]
 mod portal_dispatch;
 
+#[path = "namespace_application_process.rs"]
+mod application_process;
+
 struct Fixture {
     auth: factotum::Fixture,
     service: NamespaceLaunchService,

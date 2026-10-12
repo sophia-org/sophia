@@ -30,7 +30,9 @@ use std::{
 };
 
 const MAX_CLIENTS: usize = 64;
+mod application;
 mod dispatch;
+pub use application::{ApplicationProcess, ApplicationProcessEvent, NamespaceApplicationServices};
 pub const NAMESPACE_CLIENT_UNAME: &[u8] = b"namespace-client";
 
 /// Trusted policy resolution, including its containment driver and live service
@@ -452,6 +454,13 @@ pub struct RunningNamespaceClient {
     services: Vec<dispatch::DispatchWorker>,
 }
 impl RunningNamespaceClient {
+    /// The supervised process (Bubblewrap monitor for a protected launch).
+    /// Keep this distinct from the actual peer identity used for admission.
+    pub fn process_id(&self) -> Option<u32> {
+        self.supervisor
+            .as_ref()
+            .and_then(ProcessSupervisor::child_id)
+    }
     pub fn take_endpoints(&mut self) -> Vec<ClientEndpoint> {
         std::mem::take(&mut self.endpoints)
     }

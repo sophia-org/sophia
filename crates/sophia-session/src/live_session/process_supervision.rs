@@ -13,7 +13,7 @@ pub(super) struct ManagedSessionChild {
     pub(super) launch_transaction: Option<TransactionId>,
     pub(super) catalog_launch: bool,
     pub(super) native_catalog: Option<std::sync::Arc<crate::session_actions::NativeCatalogLaunch>>,
-    pub(super) child: Child,
+    pub(super) child: crate::namespace_launch::ApplicationProcess,
     pub(super) diagnostic: Option<crate::diagnostics::application::LaunchTicket>,
     pub(super) process_identity: Option<crate::launch_origin::ProcessIdentity>,
 }
@@ -29,27 +29,57 @@ impl ManagedSessionChild {
         })
     }
 
-    pub(super) fn new(id: Option<String>, child: Child) -> Self {
+    pub(super) fn new(
+        id: Option<String>,
+        child: impl Into<crate::namespace_launch::ApplicationProcess>,
+    ) -> Self {
+        let child = child.into();
+        let pid = child.process_id();
         Self {
             id,
             launch_transaction: None,
             catalog_launch: false,
             native_catalog: None,
-            process_identity: crate::launch_origin::read_process(child.id()).map(|p| p.identity),
-            diagnostic: crate::diagnostics::application::registration(child.id()),
+            process_identity: pid
+                .and_then(crate::launch_origin::read_process)
+                .map(|p| p.identity),
+            diagnostic: pid.and_then(crate::diagnostics::application::registration),
             child,
         }
     }
 
-    pub(super) fn for_launch(id: Option<String>, transaction: TransactionId, child: Child) -> Self {
-        Self {
-            id,
-            launch_transaction: Some(transaction),
-            catalog_launch: false,
-            native_catalog: None,
-            process_identity: crate::launch_origin::read_process(child.id()).map(|p| p.identity),
-            diagnostic: crate::diagnostics::application::registration(child.id()),
-            child,
+    pub(super) fn for_launch(
+        id: Option<String>,
+        transaction: TransactionId,
+        child: impl Into<crate::namespace_launch::ApplicationProcess>,
+    ) -> Self {
+        let mut child = Self::new(id, child);
+        child.launch_transaction = Some(transaction);
+        child
+    }
+
+    pub(super) fn poll(
+        &mut self,
+        launches: &mut crate::launch_authentication::LaunchCoordinator,
+        wake: sophia_wake::Notifier,
+        now: Instant,
+    ) -> Option<crate::namespace_launch::ApplicationProcessEvent> {
+        let event = self.child.poll(launches, wake, now);
+        if let Some(crate::namespace_launch::ApplicationProcessEvent::Started { process, peer }) =
+            &event
+        {
+            self.process_identity = crate::launch_origin::read_process(*peer).map(|p| p.identity);
+            self.diagnostic = crate::diagnostics::application::registration(*process);
+        }
+        event
+    }
+
+    pub(super) fn terminate(&mut self, grouped: bool) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(child) = self.child.host_mut() {
+            terminate_session_child(child, grouped, self.diagnostic)
+        } else {
+            self.child.cancel_namespace();
+            Ok(())
         }
     }
 }
@@ -175,7 +205,7 @@ impl SessionProcessGuard {
             terminate_session_child(&mut child, self.grouped, self.diagnostic)?;
         }
         for mut child in self.secondary_children.drain(..) {
-            terminate_session_child(&mut child.child, self.grouped, child.diagnostic)?;
+            child.terminate(self.grouped)?;
         }
         if let Some(socket_path) = self.socket_path.as_ref() {
             match std::fs::remove_file(socket_path) {

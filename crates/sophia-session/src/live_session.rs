@@ -137,7 +137,6 @@ use policy_transport_worker::{
 };
 use process_supervision::{
     ManagedSessionChild, SessionProcessGuard, managed_child_exit_is_nonfatal, spawn_catalog_child,
-    terminate_session_child,
 };
 use proof_artifacts::{LiveClientStdoutCapture, LiveInputProofResult};
 use shutdown::{

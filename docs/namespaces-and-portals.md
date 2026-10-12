@@ -348,6 +348,33 @@ The same bounded launch dispatcher serves the
 coordinator's transfer lease; opening the role does not approve transfers.
 Normal application/developer launcher call sites remain implementation work.
 
+Session's managed application record can now retain ordinary host children or
+asynchronous namespace application custody. A namespace application's state is:
+
+```text
+Preparing (slot + reservation + view worker)
+    |
+    +-- cancellation/failure --> revoke --> background retirement
+    |
+    v
+supervised spawn + authentication activation + role dispatch
+    |
+    +-- missing/mismatched owner --> local failure + background retirement
+    |
+    v
+Started (monitor PID and peer PID kept distinct)
+    |
+    +-- exit / authority loss / cancellation --> revoke --> background retirement
+```
+
+Started and terminal observations occur once. Until Started there is no claimed
+process identity. Namespace cancellation never synchronously reaps on the Session
+owner thread; the existing launch slot remains occupied until background cleanup
+finishes. Ordinary host children retain their existing process-group cleanup.
+The managed record preserves catalog transaction, origin and diagnostic-ticket
+fields; connecting selected commands and namespace stderr capture to this record
+remains part of launch integration.
+
 `LoadedNamespaceRecipe` retains a policy snapshot together with its shipped
 naming fragment or pinned custom files. Shared and confined X use the same
 fragment; their approved group references differ. Selected publication restricts

@@ -338,7 +338,15 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
                 )
                 .unwrap();
             assert!(children[0].matches_admission(&h.queue));
-            assert!(children[0].child.wait().unwrap().success());
+            assert!(
+                children[0]
+                    .child
+                    .host_mut()
+                    .unwrap()
+                    .wait()
+                    .unwrap()
+                    .success()
+            );
         }
         let mut failures = vec![];
         catalog.stop(&mut h.queue, &mut failures);
