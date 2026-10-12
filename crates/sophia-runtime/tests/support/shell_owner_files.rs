@@ -45,7 +45,9 @@ impl Peer {
             (bytes, limits)
         });
         export.complete_negotiation(limits, t.capabilities).unwrap();
-        t.wire = Some(Box::new(ShellFileWire::adopt(local, export).unwrap()));
+        t.wire = Some(Box::new(
+            ShellFileWire::adopt(local, export, None, false).unwrap(),
+        ));
         let mut peer = Self {
             raw: raw::Peer::from_stream(remote),
             epoch: t.connection_epoch,

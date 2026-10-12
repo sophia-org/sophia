@@ -13,6 +13,7 @@ use sophia_protocol::shell_files::{
 
 use super::ShellTransportError;
 use crate::ContentStoreProfile;
+use crate::authenticated_files::{AuthenticatedFiles, FileAuthenticationFactory};
 
 mod export;
 mod journal;
@@ -67,7 +68,8 @@ pub(super) fn role_bounds(profile: Option<ContentStoreProfile>) -> (&'static str
 }
 
 pub(super) struct ShellFileWire {
-    server: Server<ShellFiles>,
+    server: Server<AuthenticatedFiles<ShellFiles>>,
+    authentication: Option<Box<dyn FileAuthenticationFactory>>,
     publication_pending: bool,
     turns: u64,
 }
@@ -78,27 +80,55 @@ impl ShellFileWire {
     pub(super) fn adopt(
         stream: UnixStream,
         export: ShellFiles,
+        authentication: Option<Box<dyn FileAuthenticationFactory>>,
+        authentication_required: bool,
     ) -> Result<Self, ShellTransportError> {
+        if authentication_required && authentication.is_none() {
+            return Err(ShellTransportError::Io(
+                "shell authentication factory unavailable".into(),
+            ));
+        }
         let limits = Limits::new(65536, 512, 16, 32, 131072, 1)
             .map_err(|error| ShellTransportError::Io(format!("9P limits: {error:?}")))?;
+        let export = if authentication_required || authentication.is_some() {
+            AuthenticatedFiles::pending(export)
+        } else {
+            AuthenticatedFiles::legacy(export)
+        };
         let mut server = Server::new(export, limits).map_err(io_error)?;
         let connection = server
             .adopt(stream)
             .map_err(|refused| io_error(refused.error))?;
-        server.export_mut().bind_connection(connection);
-        Ok(Self {
+        server.export_mut().files_mut().bind_connection(connection);
+        let mut wire = Self {
             server,
+            authentication,
             publication_pending: false,
             turns: 0,
-        })
+        };
+        if let Some(factory) = &mut wire.authentication {
+            let owner = factory
+                .create(connection, Instant::now(), wire.server.wake())
+                .map_err(|error| {
+                    ShellTransportError::Io(format!("shell authentication: {error:?}"))
+                })?;
+            wire.server.export_mut().install(owner).map_err(|error| {
+                ShellTransportError::Io(format!("shell authentication install: {error:?}"))
+            })?;
+        }
+        Ok(wire)
     }
 
     pub(super) fn export(&self) -> &ShellFiles {
-        self.server.export()
+        self.server.export().files()
     }
 
     pub(super) fn export_mut(&mut self) -> &mut ShellFiles {
-        self.server.export_mut()
+        self.server.export_mut().files_mut()
+    }
+
+    pub(super) fn authentication_wait(&self, now: Instant) -> Duration {
+        self.server.export().wait(now)
     }
 
     /// The server's readiness, borrowed for the owner's wait. The next
@@ -117,6 +147,10 @@ impl ShellFileWire {
     }
 
     fn service(&mut self, flush_only: bool) -> Result<(), ShellTransportError> {
+        self.server
+            .export_mut()
+            .poll(Instant::now())
+            .map_err(|_| ShellTransportError::NotConnected)?;
         self.turns = self.turns.saturating_add(1);
         self.publication_pending = false;
         let live = if flush_only {
@@ -126,10 +160,14 @@ impl ShellFileWire {
         }
         .map_err(io_error)?;
         if !live || self.server.connection_count() == 0 {
-            self.server.export_mut().revoke();
+            self.export_mut().revoke();
             return Err(ShellTransportError::NotConnected);
         }
-        self.server.export_mut().expire();
+        self.server
+            .export_mut()
+            .poll(Instant::now())
+            .map_err(|_| ShellTransportError::NotConnected)?;
+        self.export_mut().expire();
         Ok(())
     }
 
@@ -149,7 +187,7 @@ impl ShellFileWire {
         body: &[u8],
         credited: bool,
     ) -> Result<bool, ShellTransportError> {
-        match self.server.export_mut().append_event(kind, body, credited) {
+        match self.export_mut().append_event(kind, body, credited) {
             Ok(_) => {
                 self.publication_pending = true;
                 self.server.wake().wake();
@@ -169,7 +207,6 @@ impl ShellFileWire {
         credited: bool,
     ) -> Result<bool, ShellTransportError> {
         let published = self
-            .server
             .export_mut()
             .publish_object(kind, body, credited)
             .map_err(|error| ShellTransportError::Io(format!("shell object: {error:?}")))?;
@@ -201,13 +238,25 @@ impl ShellFileWire {
     /// such as the acknowledgement of a terminal event, so the peer observes
     /// the revocation rather than a bare EOF.
     pub(super) fn revoke(&mut self) {
-        self.server.export_mut().revoke();
+        self.export_mut().revoke();
         self.server.wake().wake();
         for _ in 0..REVOKE_TURNS {
             match self.server.turn(Some(Duration::ZERO)) {
                 Ok(true) if self.server.connection_count() > 0 => {}
                 _ => break,
             }
+        }
+    }
+}
+
+impl Drop for ShellFileWire {
+    fn drop(&mut self) {
+        if let Some(owner) = self.server.export_mut().retire(Instant::now())
+            && let Some(factory) = &mut self.authentication
+        {
+            // Session retains quota until the remote cancellation settles.
+            // A refused handoff drops closed custody, never reopens admission.
+            let _ = factory.retire(owner);
         }
     }
 }
@@ -252,3 +301,7 @@ pub(super) fn encode_refused(
 fn io_error(error: std::io::Error) -> ShellTransportError {
     ShellTransportError::Io(error.to_string())
 }
+
+#[cfg(test)]
+#[path = "../../tests/support/shell_file_authentication_reactor.rs"]
+mod authentication_tests;

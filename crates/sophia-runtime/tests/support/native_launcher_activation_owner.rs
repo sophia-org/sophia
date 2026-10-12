@@ -106,7 +106,9 @@ impl Fixture {
         export
             .complete_negotiation(Some((bytes, limits)), transport.capabilities)
             .unwrap();
-        transport.wire = Some(Box::new(ShellFileWire::adopt(local, export).unwrap()));
+        transport.wire = Some(Box::new(
+            ShellFileWire::adopt(local, export, None, false).unwrap(),
+        ));
         let mut fixture = Self {
             transport,
             epochs,

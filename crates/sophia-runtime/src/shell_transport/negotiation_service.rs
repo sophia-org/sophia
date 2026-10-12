@@ -206,7 +206,10 @@ impl ShellComponentTransport {
                 Instant::now(),
             );
             pending.stage = Stage::Files(Box::new(super::files::ShellFileWire::adopt(
-                stream, export,
+                stream,
+                export,
+                self.authentication.take(),
+                self.authentication_required,
             )?));
         }
         let Stage::Files(wire) = &mut pending.stage else {

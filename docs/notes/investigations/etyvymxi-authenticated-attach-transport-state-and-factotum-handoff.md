@@ -1665,3 +1665,47 @@ The initial dev test compared an encoded object with its body alone and failed;
 that fixture error is retained in `t317-shell-root-dev01/test.log`. The corrected
 test compares the full object before and after reset. No live session, physical
 acceptance or full repository gate is claimed.
+
+
+## Shell reactor authentication custody
+
+`ShellFileWire` now wraps its role export in `AuthenticatedFiles`. A Session
+factory is installed before the first reactor turn. The transport's explicit
+`authorize_authenticated_peer` retains the expected-peer filter and makes the
+selection sticky: legacy authorization cannot downgrade it, and another stream
+requires another factory. A missing or failed required factory closes the
+accepted stream rather than returning a legacy wire.
+
+The reactor polls authentication before and after each bounded turn, including
+idle turns, and exposes the authentication wait deadline to its owning Session.
+On drop it closes authentication and hands retained cleanup custody to the
+factory's Session retirement path. It does not wait for another thread.
+Disconnect captures the final logical qid watermark after bounded revocation
+turns; a revoked export cannot allocate another authentication qid.
+
+Outside-src supplied-authority tests check factory failure, missing-factory
+refusal, afid-required mode, an idle revocation, the retained wait deadline and
+exactly one close/retirement handoff. These are reactor mechanics, not a real
+Factotum conversation. Session's shell launch factories, owner wait integration,
+SDK constructors and deployed shell clients remain to be migrated.
+
+Final device-hidden packages under `~/.local/state/sophia/development-evidence/`:
+
+- `t317-shell-reactor-02`: 57 runtime shell-filtered tests passed, no failures
+  or ignores; all-target runtime Clippy with warnings denied and formatting
+  passed. Manifest SHA-256
+  `fbf9fc91cd2a36de498545cfac0031446431e4725869357d7bea6a971020b9bc`.
+- `t317-shell-reactor-control-02`: removing the required-factory check returns
+  a pending wire and fails first at `required shell authentication must never
+  fall back`, exit 101, exactly one failed test. This proves construction
+  refusal, not successful authority verification. Manifest SHA-256
+  `d409ad563760fe3ed9d84ef955c7c6663c896d29ef7b70978305408095e2a71a`.
+- `t317-shell-reactor-restored-02`: 53 shell unit tests passed after restoration.
+  Manifest SHA-256
+  `bd0a6901d56d1530e35471f872887a217a51cc735fcc9cb677e1e5c8bf95b48f`.
+
+The complete eight-file candidate set and binary paths/hashes are retained;
+no binary was copied into evidence. The earlier -01 packages predate the final
+revocation-watermark correction. The dev01 compile failure named two existing
+supplied-admission fixture constructors, now explicitly using legacy mode.
+No normal shell launch is claimed authenticated by this checkpoint alone.

@@ -59,6 +59,13 @@ fn shell_root_refuses_foreign_connections_and_revoked_epochs() {
         Err(Errno::EACCES)
     ));
     files.revoke();
+    let next = files.next_qid();
+    assert_eq!(files.allocate_auth_qid(), Err(Errno::ESTALE));
+    assert_eq!(
+        files.next_qid(),
+        next,
+        "revoked shell must not allocate another auth qid"
+    );
     assert!(matches!(
         files.prepare_authenticated_root(&claims(1)),
         Err(Errno::EACCES)

@@ -36,6 +36,9 @@ impl ProtectedFiles for ShellFiles {
     }
 
     fn allocate_auth_qid(&mut self) -> Result<u64, Errno> {
+        if self.revoked {
+            return Err(Errno::ESTALE);
+        }
         // Auth fids and role objects share the component's monotonic allocator.
         self.allocate_qid()
     }

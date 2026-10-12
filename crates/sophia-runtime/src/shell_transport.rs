@@ -112,6 +112,8 @@ impl From<ContentAllocationError> for ShellTransportError {
 
 pub struct ShellComponentTransport {
     endpoint: RoleEndpoint,
+    authentication: Option<Box<dyn crate::authenticated_files::FileAuthenticationFactory>>,
+    authentication_required: bool,
     /// The current epoch's protected 9P connection.
     wire: Option<Box<files::ShellFileWire>>,
     /// The component's next logical qid, continued across file epochs.
@@ -153,6 +155,8 @@ impl ShellComponentTransport {
                 PolicyRole::Shell,
                 expected_uid,
             )?,
+            authentication: None,
+            authentication_required: false,
             wire: None,
             file_qids: 1,
             negotiation: None,
@@ -181,8 +185,40 @@ impl ShellComponentTransport {
         &mut self,
         evidence: &ProtectionDomainEvidence,
     ) -> Result<(), ShellTransportError> {
+        if self.authentication_required {
+            return Err(ShellTransportError::Io(
+                "authenticated shell cannot downgrade admission".into(),
+            ));
+        }
         self.endpoint.authorize_protected_peer(evidence)?;
         Ok(())
+    }
+
+    /// Retains the expected-peer availability filter; identity and authority
+    /// come only from the factory installed before the first server turn.
+    pub fn authorize_authenticated_peer(
+        &mut self,
+        evidence: &ProtectionDomainEvidence,
+        factory: Box<dyn crate::authenticated_files::FileAuthenticationFactory>,
+    ) -> Result<(), ShellTransportError> {
+        if self.wire.is_some() || self.negotiation.is_some() {
+            return Err(ShellTransportError::WrongContentGrant);
+        }
+        self.endpoint.authorize_protected_peer(evidence)?;
+        self.authentication = Some(factory);
+        self.authentication_required = true;
+        Ok(())
+    }
+
+    /// Authentication has idle deadlines even when no role records are ready.
+    pub fn authentication_wait(&self, now: std::time::Instant) -> Duration {
+        self.wire
+            .as_ref()
+            .or_else(|| match self.negotiation.as_ref().map(|p| &p.stage) {
+                Some(negotiation_service::Stage::Files(files)) => Some(files),
+                _ => None,
+            })
+            .map_or(Duration::MAX, |wire| wire.authentication_wait(now))
     }
 
     pub fn socket_path(&self) -> &Path {
@@ -202,8 +238,10 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<(), ShellTransportError> {
         if let Some(mut files) = self.wire.take() {
-            self.file_qids = files.export().next_qid();
             files.revoke();
+            // Revocation drains bounded server turns before the connection
+            // closes. Carry the final allocator watermark to the next epoch.
+            self.file_qids = files.export().next_qid();
         }
         if let Some(next) = self.negotiation.as_ref().and_then(|p| p.file_qids()) {
             self.file_qids = next;
