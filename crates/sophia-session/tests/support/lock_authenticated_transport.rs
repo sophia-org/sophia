@@ -5,12 +5,17 @@ use sophia_runtime::{ProtectionPath, lock_files::*};
 use sophia_session::launch_authentication::files::TransportBudget;
 use std::os::unix::fs::DirBuilderExt;
 
+#[path = "lock_upload_revocation.rs"]
+mod upload_revocation;
+
 struct Peer(PathBuf);
 impl Peer {
     fn build(sdk: bool) -> Self {
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
-            "lock-authentication-peer-{sdk}-{}",
-            std::process::id()
+            "lock-authentication-peer-{sdk}-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         let mut command = std::process::Command::new("/usr/bin/cc");
         command

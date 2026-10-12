@@ -256,10 +256,11 @@ The [worker custody join](../investigations/etyvymxi-authenticated-attach-transp
 now carries current launch authority across threads with local revocation and
 kernel exit checks. The [normal lock-provider join](../investigations/etyvymxi-authenticated-attach-transport-state-and-factotum-handoff.md#normal-lock-provider-owner-and-protected-spawn)
 uses it through actual afid dispatch, protected spawn and replacement after
-Factotum loss. Other required role/client joins, immutable admission-context
-derivation, fragment revocation, minimum-version execution and final contract
-and threat-model reconciliation remain open. This checkpoint is not a live
-installation or a reduced exit.
+Factotum loss. Later evidence qualifies the minimum Bubblewrap version and
+[revocation between upload fragments](../investigations/etyvymxi-authenticated-attach-transport-state-and-factotum-handoff.md#revocation-between-upload-fragments).
+Other required role/client joins, immutable admission-context derivation and
+final contract and threat-model reconciliation remain open. These checkpoints
+are not a live installation or a reduced exit.
 
 Implement the approved [t133 local authentication handoff](esnqxpqw-pidfd-and-namespace-admission-optimizations.md#local-authentication-design-and-t317-handoff-2026-10-10),
 including Session's launch-channel relay, Factotum's correlated verdict,

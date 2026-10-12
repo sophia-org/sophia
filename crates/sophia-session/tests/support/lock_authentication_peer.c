@@ -55,7 +55,13 @@ static int receive_reply(void) {
     assert(number(5, 2) == tag); ++tag;
     return 1;
 }
-static void exchange(unsigned kind) { send_request(); assert(receive_reply()); assert(buf[4] == kind); }
+static void exchange(unsigned kind) {
+    send_request(); assert(receive_reply());
+    if (buf[4] != kind)
+        fprintf(stderr, "tag=%u expected=%u actual=%u errno=%llu\n",
+                tag - 1, kind, buf[4], (unsigned long long)(buf[4] == 7 ? number(7, 4) : 0));
+    assert(buf[4] == kind);
+}
 static void version(void) {
     tag = 65535; begin(100); put(512, 4); string("9P2000.L"); exchange(101); tag = 1;
 }
@@ -135,7 +141,7 @@ static void mark(const char *path, const char *value) {
 }
 int main(int argc, char **argv) {
     alarm(20);
-    assert(argc == 3);
+    assert(argc == 3 || (argc == 4 && strcmp(argv[3], "upload") == 0));
     const char *fd = getenv("SOPHIA_LAUNCH_AUTH_FD"); assert(fd);
     int relay_fd = atoi(fd); assert(relay_fd > 2);
     assert(fcntl(relay_fd, F_SETFD, FD_CLOEXEC) == 0);
@@ -214,6 +220,29 @@ int main(int argc, char **argv) {
     }
     open_name(ack_fid, "ack", 1);
     begin(118); put(ack_fid, 4); put(0, 8); put(16, 4); put(epoch, 8); put(sequence, 8); exchange(119);
+    if (argc == 4) {
+        /* A real resource upload. The receiver chooses the fragment boundary;
+           the child sends one write and requires a correlated ESTALE reply. */
+        begin(120); put(transaction_fid, 4); exchange(121);
+        open_name(transaction_fid, "transaction", 2);
+        begin(118); put(transaction_fid, 4); put(0, 8); put(72, 4);
+        put(72, 4); put(1, 2); put(258, 2); put(epoch, 8); put(2, 8); put(0, 8);
+        put(2, 8); put(1, 8); put(1, 8); put(2, 4); put(1, 4);
+        put(0, 2); put(1, 2); put(0, 4);
+        exchange(119); assert(number(7, 4) == 72);
+        begin(118); put(submit_fid, 4); put(0, 8); put(24, 4);
+        put(epoch, 8); put(2, 8); put(72, 4); put(0, 4); exchange(119);
+        /* Raw authentication retains afid 7 until clunk/transport close. */
+        unsigned upload_fid = 8;
+        begin(110); put(role_root, 4); put(upload_fid, 4); put(2, 2);
+        string("upload"); string("0"); exchange(111); assert(number(7, 2) == 2);
+        begin(12); put(upload_fid, 4); put(1, 4); exchange(13);
+        begin(118); put(upload_fid, 4); put(0, 8); put(8, 4);
+        for (unsigned i = 0; i < 8; ++i) put(0x5a, 1);
+        exchange(7); assert(number(7, 4) == 116);
+        mark(argv[2], "upload-revoked\n");
+        return 0;
+    }
     begin(116); put(events_fid, 4); put(n, 8); put(480, 4); send_request();
     mark(argv[2], "waiting\n");
     /* Revocation must wake/refuse the retained read or close the connection.

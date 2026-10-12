@@ -27,7 +27,7 @@ fn access(node: &LockFileNode, operation: Operation) -> Access<'_, LockFileNode>
         operation,
     }
 }
-fn view() -> LockFileExport {
+pub(super) fn view() -> LockFileExport {
     let mut view = LockFileExport::new(
         LockFileSettings {
             epoch: EPOCH,

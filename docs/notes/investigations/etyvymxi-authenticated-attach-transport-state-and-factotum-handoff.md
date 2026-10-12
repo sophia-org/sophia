@@ -995,3 +995,56 @@ drift check and formatting pass again. The closed `t317-contract-pins-03`
 SHA256SUMS hash is
 `19110baec0946074f9fbe52874e9eb4e507f18207633979320a0b30f219c1fc0`.
 The verifier implementation is unchanged from the Clippy-qualified `-02` run.
+
+## Revocation between upload fragments
+
+The next test-only candidate, based on `011eb7b0c`, joins the production 9P
+`Connection`, `AuthenticatedFiles<LockFileExport>`, Session's
+`RoleFileAuthentication` and `WorkerAuthority`, the launch book and real
+Factotum. A protected independent C peer reads its own afid challenge, relays it
+through its provisioned channel, authenticates again after `Tversion`, and
+negotiates the lock export. It submits a real ResourceBegin and writes eight
+pixel bytes to `upload/0`; no authentication verdict or upload binding is
+supplied by the fixture.
+
+The fixture drives the production connection directly and chooses a receive
+boundary after four bytes. Those bytes enter the lock owner's private upload
+destination, with no write reply yet. It then revokes the launch and asks for
+the next destination. The core must return Discard before idle authentication
+cleanup runs. The remaining four bytes are drained; the client checks the exact
+write tag and `ESTALE` response. This proves fragment refusal independently of
+the final write-commit and idle-disconnect defenses. It does not claim a
+ResourceEnd, accepted image, rendering or physical display.
+
+The one-site control in `connection/in_place.rs` changes
+`export.check(&access).map(...)` to
+`export.check(&access).or(Ok(())).map(...)`, ignoring the fragment authority
+refusal. The first failure is the named assertion:
+`revoked launch must refuse the next upload destination before idle cleanup`.
+The control leaves the final commit check intact. Restoration is checked
+against HEAD, all four dynamically captured modified/untracked fixture files
+are unchanged, and the restored exact test passes. No production change is
+retained. The shared C peer also reports unexpected reply kind/tag/errno, and
+its test executable names are unique across concurrent test cases.
+
+Device-hidden qualification runs all 18 launch-authentication tests (zero
+failures or ignored), focused Clippy with warnings denied, and formatting.
+The self-excluding SHA256SUMS identities are:
+
+| Package | Manifest SHA-256 |
+| --- | --- |
+| `t317-upload-revocation-01` | `162d0ec44b75496fd0acb635276ecb48d45f88f810da5b1f5f56941ccd247a4d` |
+| `t317-upload-fragment-control-01` | `d2887acaf960dc3ac23e0da11ee2c7b7552546448c535e8fb831aec559d07ae3` |
+| `t317-upload-restored-01` | `e38493dfcd4f27760aeb26041b9aa304d373d75c1e0130841f7a973313d070cf` |
+
+This is a supplied receive schedule around actual production owners, not the
+normal lock service's scheduling loop. Session launch policy, the Factotum
+Session-channel admission and the empty locked scene are supplied. The earlier
+normal-provider join covers the shipped worker and idle retirement; this case
+specifically prevents that stronger teardown path from masking a broken
+fragment guard. Exploratory fixture failures corrected overlapping sandbox
+mounts, message limits, reuse of a consumed transaction handle, an occupied
+afid number and the upload directory spelling before qualification. No broader
+repository gate or new minimum-Bubblewrap run is claimed for this test-only
+delta. Other roles, the independent Rust exchange, immutable admission-context
+derivation and final t317 reconciliation remain outstanding.
