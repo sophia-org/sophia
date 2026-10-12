@@ -1709,3 +1709,41 @@ no binary was copied into evidence. The earlier -01 packages predate the final
 revocation-watermark correction. The dev01 compile failure named two existing
 supplied-admission fixture constructors, now explicitly using legacy mode.
 No normal shell launch is claimed authenticated by this checkpoint alone.
+
+## Shell owner negotiation and wait plumbing
+
+The single-shell facade now exposes separate begin/poll descriptor negotiation
+and authenticated-peer authorization. Its existing blocking entry point uses
+the same begin/poll operations. Independent component connections can likewise
+install a factory before negotiation; their existing supplied-admission path
+retains the same reservation, failure cleanup and phase transitions.
+
+Authentication deadlines now propagate from the reactor through both shell
+owners into Session's idle wait, with a `shell_authentication` wait reason.
+Paused or stopping owners do not advertise deadlines they cannot service.
+The diagnostic capture allowlist retains this reason alongside existing wait
+attribution. These interfaces prepare the launch migration; normal shell spawn
+still uses the old owner and is not yet claimed authenticated.
+
+A supplied-authority regression starts nonblocking descriptor negotiation,
+installs an accepted idle wire, observes its authentication deadline, then
+revokes its authority. The next negotiation poll fails and returns closed
+custody exactly once. It does not exercise protected spawn or Factotum.
+
+Device-hidden package `t317-shell-owner-plumbing-01` under
+`~/.local/state/sophia/development-evidence/` records the complete ten-file
+source delta from `b8aa48bfe`, source hashes, test-binary paths/hashes and logs.
+Its self-excluding manifest SHA-256 is
+`69451cd612635e8575453c656599f2accbe6db4fb7587ecfda4ffc960e4b990a`.
+The runtime shell filter passed 58 tests, Session owner-wake passed 21, and
+the component-connection file integration target passed 13, with no failures
+or ignores. All-target runtime/Session native-session Clippy with warnings
+denied and formatting passed. No binaries were copied into the package.
+
+Retained development failures cover two fixture mistakes (polling before
+supplied authorization and trying to remove an already owner-removed directory)
+and the wait reason's initially missing diagnostic allowlist entry. The empty
+component unit filter is retained but counted as no coverage; the subsequent
+13-test integration target is the component evidence. No new negative-control
+or whole-repository gate is claimed by this plumbing checkpoint. Shell launch
+state machines, SDK/client migration and final t317 reconciliation remain open.

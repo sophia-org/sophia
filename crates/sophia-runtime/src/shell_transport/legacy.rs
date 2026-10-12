@@ -33,4 +33,9 @@ impl ShellSessionTransport {
     pub fn output_pending(&self) -> bool {
         self.state.output_pending()
     }
+
+    /// Authentication deadlines belong to the same owner as wire readiness.
+    pub fn authentication_wait(&self, now: std::time::Instant) -> std::time::Duration {
+        self.state.authentication_wait(now)
+    }
 }

@@ -45,10 +45,12 @@
     if let Some(shell) = metadata_shell.as_ref() {
         shell_wires.extend(shell.poll_fds());
         shell_output_pending |= shell.output_pending();
+        plan.cap(shell.authentication_wait(now), R::ShellAuthentication);
     }
     if let Some(components) = shell_components.as_ref().filter(|_| runtime.is_some()) {
         shell_wires.extend(components.poll_fds());
         shell_output_pending |= components.output_pending();
+        plan.cap(components.authentication_wait(now), R::ShellAuthentication);
     }
     if shell_output_pending {
         plan.pending(R::ShellOutput);

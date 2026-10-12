@@ -119,7 +119,7 @@ pub fn reduced_record(line: &str) -> Option<String> {
                     "maintenance" | "input" | "input_receipts" | "frames" | "topology"
                     | "seat" | "shell_interaction" | "lifecycle" | "cursor" | "controls"
                     | "proof" | "frame_deadline" | "present" | "native_deadline"
-                    | "shortcut" | "shell_output" | "pacer" | "service"));
+                    | "shortcut" | "shell_output" | "pacer" | "service" | "shell_authentication"));
             if known && !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit())
                 && value.parse::<u64>().is_ok()
             {

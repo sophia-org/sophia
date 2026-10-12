@@ -116,21 +116,36 @@ impl ShellSessionTransport {
         timeout: Duration,
         content_policy: ShellContentAdmissionPolicy,
     ) -> Result<ShellV1ServerWelcome, ShellTransportError> {
+        self.begin_descriptor_file_negotiation(connection_epoch, timeout, content_policy)?;
+        self.finish_file_negotiation()
+    }
+
+    /// Begin without waiting so Session can keep servicing launch authentication.
+    pub fn begin_descriptor_file_negotiation(
+        &mut self,
+        connection_epoch: u64,
+        timeout: Duration,
+        content_policy: ShellContentAdmissionPolicy,
+    ) -> Result<(), ShellTransportError> {
         self.state.begin_descriptor_file_negotiation(
             &self.content_epochs,
             connection_epoch,
             timeout,
             content_policy,
-        )?;
-        self.finish_file_negotiation()
+        )
+    }
+
+    pub fn poll_file_negotiation(
+        &mut self,
+        byte_budget: usize,
+    ) -> Result<Option<ShellV1ServerWelcome>, ShellTransportError> {
+        self.state
+            .poll_negotiation(&mut self.content_epochs, byte_budget)
     }
 
     fn finish_file_negotiation(&mut self) -> Result<ShellV1ServerWelcome, ShellTransportError> {
         loop {
-            if let Some(welcome) = self
-                .state
-                .poll_negotiation(&mut self.content_epochs, 64 * 1024)?
-            {
+            if let Some(welcome) = self.poll_file_negotiation(64 * 1024)? {
                 return Ok(welcome);
             }
             std::thread::sleep(Duration::from_millis(2));
@@ -150,5 +165,13 @@ impl ShellSessionTransport {
         evidence: &ProtectionDomainEvidence,
     ) -> Result<(), ShellTransportError> {
         self.state.authorize_protected_peer(evidence)
+    }
+
+    pub fn authorize_authenticated_peer(
+        &mut self,
+        evidence: &ProtectionDomainEvidence,
+        factory: Box<dyn crate::authenticated_files::FileAuthenticationFactory>,
+    ) -> Result<(), ShellTransportError> {
+        self.state.authorize_authenticated_peer(evidence, factory)
     }
 }

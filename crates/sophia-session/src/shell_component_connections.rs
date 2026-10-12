@@ -257,19 +257,44 @@ impl ShellComponentConnections {
         timeout: Duration,
         policy: ShellContentAdmissionPolicy,
     ) -> Result<(), ComponentConnectionError> {
+        self.begin_admitted_negotiation(key, evidence, timeout, policy, None)
+    }
+
+    pub fn begin_authenticated_negotiation(
+        &mut self,
+        key: ComponentConnectionKey,
+        evidence: &ProtectionDomainEvidence,
+        timeout: Duration,
+        policy: ShellContentAdmissionPolicy,
+        factory: Box<dyn sophia_runtime::authenticated_files::FileAuthenticationFactory>,
+    ) -> Result<(), ComponentConnectionError> {
+        self.begin_admitted_negotiation(key, evidence, timeout, policy, Some(factory))
+    }
+
+    fn begin_admitted_negotiation(
+        &mut self,
+        key: ComponentConnectionKey,
+        evidence: &ProtectionDomainEvidence,
+        timeout: Duration,
+        policy: ShellContentAdmissionPolicy,
+        factory: Option<Box<dyn sophia_runtime::authenticated_files::FileAuthenticationFactory>>,
+    ) -> Result<(), ComponentConnectionError> {
         self.require_phase(key, ComponentConnectionPhase::Reserved)?;
         let connection = &mut self.connections[key.slot];
-        let result = connection
-            .transport
-            .authorize_protected_peer(evidence)
-            .and_then(|()| {
-                connection.transport.begin_file_negotiation(
-                    &self.epochs,
-                    key.grant.connection_epoch,
-                    timeout,
-                    policy,
-                )
-            });
+        let admission = match factory {
+            Some(factory) => connection
+                .transport
+                .authorize_authenticated_peer(evidence, factory),
+            None => connection.transport.authorize_protected_peer(evidence),
+        };
+        let result = admission.and_then(|()| {
+            connection.transport.begin_file_negotiation(
+                &self.epochs,
+                key.grant.connection_epoch,
+                timeout,
+                policy,
+            )
+        });
         if let Err(error) = result {
             let _ = self.close(key);
             return Err(error.into());
@@ -333,6 +358,24 @@ impl ShellComponentConnections {
             })
             .flat_map(|connection| connection.transport.poll_fds())
             .collect()
+    }
+
+    /// Only serviced attempts may shorten the owner wait.
+    pub fn authentication_wait(&self, now: std::time::Instant) -> std::time::Duration {
+        self.connections
+            .iter()
+            .filter(|connection| {
+                matches!(
+                    connection.attempt,
+                    Some((
+                        _,
+                        ComponentConnectionPhase::Negotiating | ComponentConnectionPhase::Connected
+                    ))
+                )
+            })
+            .map(|connection| connection.transport.authentication_wait(now))
+            .min()
+            .unwrap_or(std::time::Duration::MAX)
     }
 
     /// Whether a connected wire holds records its next turn can move.

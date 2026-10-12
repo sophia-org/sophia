@@ -198,6 +198,9 @@ impl ShellComponentProcesses {
     pub fn output_pending(&self) -> bool {
         self.connections.output_pending()
     }
+    pub fn authentication_wait(&self, now: std::time::Instant) -> Duration {
+        self.connections.authentication_wait(now)
+    }
     pub fn turn_connected(
         &mut self,
     ) -> [Option<(ComponentConnectionKey, ShellTransportError)>; MAX_SHELL_COMPONENTS] {

@@ -162,3 +162,63 @@ fn shell_reactor_polls_idle_authority_and_hands_closed_custody_back_once() {
         "shell cleanup must return to its Session owner"
     );
 }
+
+#[test]
+fn shell_session_nonblocking_negotiation_exposes_idle_authentication_deadline() {
+    use crate::shell_transport::negotiation_service::Stage;
+    use crate::{ShellContentAdmissionPolicy, ShellSessionTransport};
+
+    let directory = std::env::temp_dir().join(format!(
+        "shell-auth-wait-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let mut transport = ShellSessionTransport::bind_for_supervised_uid(
+        &directory,
+        rustix::process::geteuid().as_raw(),
+    )
+    .unwrap();
+    assert_eq!(transport.authentication_wait(Instant::now()), Duration::MAX);
+    transport
+        .begin_descriptor_file_negotiation(
+            1,
+            Duration::from_secs(5),
+            ShellContentAdmissionPolicy::Denied,
+        )
+        .unwrap();
+    // Supply only the accepted socket and authority owner. Production negotiation
+    // must poll it even when the peer sends no role traffic.
+    let state = Arc::new(State::default());
+    let (local, _peer) = UnixStream::pair().unwrap();
+    let wire = ShellFileWire::adopt(
+        local,
+        export(),
+        Some(Box::new(Factory {
+            state: state.clone(),
+            refuse: false,
+        })),
+        true,
+    )
+    .unwrap();
+    transport.state.negotiation.as_mut().unwrap().stage = Stage::Files(Box::new(wire));
+    assert_eq!(
+        transport.authentication_wait(Instant::now()),
+        Duration::from_millis(17),
+        "pending shell authentication must cap the Session wait"
+    );
+    assert_eq!(transport.poll_file_negotiation(65536).unwrap(), None);
+    assert!(state.polls.load(Ordering::SeqCst) >= 2);
+    state.revoked.store(true, Ordering::SeqCst);
+    assert!(
+        transport.poll_file_negotiation(65536).is_err(),
+        "idle authentication revocation must terminate negotiation"
+    );
+    assert_eq!(transport.authentication_wait(Instant::now()), Duration::MAX);
+    assert_eq!(state.closed.load(Ordering::SeqCst), 1);
+    assert_eq!(state.retired.load(Ordering::SeqCst), 1);
+    drop(transport);
+    assert!(!directory.exists(), "endpoint owner removes its directory");
+}

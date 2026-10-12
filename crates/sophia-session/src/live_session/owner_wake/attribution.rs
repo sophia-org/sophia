@@ -24,9 +24,10 @@ pub(crate) enum WaitReason {
     ShellOutput,
     Pacer,
     Service,
+    ShellAuthentication,
 }
 
-const NAMES: [&str; 18] = [
+const NAMES: [&str; 19] = [
     "maintenance",
     "input",
     "input_receipts",
@@ -45,6 +46,7 @@ const NAMES: [&str; 18] = [
     "shell_output",
     "pacer",
     "service",
+    "shell_authentication",
 ];
 
 #[derive(Clone, Copy, Debug)]

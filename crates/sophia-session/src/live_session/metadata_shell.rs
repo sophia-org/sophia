@@ -169,6 +169,13 @@ impl LiveMetadataShell {
         self.connected && !self.presentation_paused && self.transport.output_pending()
     }
 
+    pub(in crate::live_session) fn authentication_wait(&self, now: Instant) -> Duration {
+        if !self.connected || self.presentation_paused {
+            return Duration::MAX;
+        }
+        self.transport.authentication_wait(now)
+    }
+
     /// Keeps a shell connection from accepting obligations while native
     /// presentation is unavailable. Revocation closes every accepted response
     /// lifecycle on the old connection; resumption negotiates a fresh grant.

@@ -379,6 +379,13 @@ impl ShellComponentSession {
         self.available && !self.stopping && self.processes.output_pending()
     }
 
+    pub fn authentication_wait(&self, now: std::time::Instant) -> std::time::Duration {
+        if !self.available || self.stopping {
+            return std::time::Duration::MAX;
+        }
+        self.processes.authentication_wait(now)
+    }
+
     /// Exact connected attempt plus current presentation permission is required
     /// on every borrow. Retained old service metadata grants no IPC authority.
     pub fn with_service<T>(
