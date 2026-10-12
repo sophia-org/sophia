@@ -24,9 +24,17 @@ impl NinePPolicyAdapter {
         epoch: u64,
         limits: WmFileLimits,
         qids: WmQids,
+        authentication: Option<Box<dyn FileAuthenticationFactory>>,
     ) -> Result<Self, String> {
         Ok(Self {
-            startup: FileStartup::pending(endpoint, supervisor, epoch, limits, qids)?,
+            startup: FileStartup::pending(
+                endpoint,
+                supervisor,
+                epoch,
+                limits,
+                qids,
+                authentication,
+            )?,
         })
     }
     fn run<T>(
@@ -57,7 +65,7 @@ impl PolicyAdapter for NinePPolicyAdapter {
         self.startup
             .reactor()
             .ok()
-            .and_then(|r| r.server.export().selected_capabilities())
+            .and_then(|r| r.server.export().files().selected_capabilities())
             .unwrap_or(0)
     }
     fn receive_within(
@@ -88,6 +96,7 @@ impl PolicyAdapter for NinePPolicyAdapter {
             let selected = reactor
                 .server
                 .export()
+                .files()
                 .selected_capabilities()
                 .ok_or("WM file not negotiated")?;
             match command {

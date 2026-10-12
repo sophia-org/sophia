@@ -15,6 +15,9 @@ use std::sync::atomic::AtomicU64;
 const CHILD: &str =
     "live_session::policy_transport_worker::ninep::pending::tests::protected_endpoint_child";
 static NEXT: AtomicU64 = AtomicU64::new(0);
+
+#[path = "policy_file_protected_authentication.rs"]
+mod authentication;
 struct Directory(PathBuf);
 impl Directory {
     fn new() -> Self {
@@ -161,6 +164,7 @@ fn actual_protected_child_reaches_existing_worker_negotiation() {
             profile_required: false,
         },
         WmQids::new(),
+        None,
     )
     .unwrap();
     let worker = PolicyTransportWorker::spawn(adapter, 9, None).unwrap();

@@ -29,6 +29,7 @@ impl FileStartup {
                 cancellation.clone(),
             )?),
             endpoint: None,
+            authentication: None,
             cancellation,
             epoch,
             limits,
@@ -394,6 +395,10 @@ pub(in super::super) fn negotiate(peer: &mut Peer, caps: u64) {
 
 pub(in super::super) fn negotiate_at(peer: &mut Peer, caps: u64, epoch: u64) {
     peer.setup();
+    negotiate_opened(peer, caps, epoch);
+}
+
+pub(in super::super) fn negotiate_opened(peer: &mut Peer, caps: u64, epoch: u64) {
     let mut offer_header = header(WmFileKind::Negotiate, 1);
     offer_header.connection_epoch = epoch;
     let offer = encode_wm_file_negotiate(
@@ -479,6 +484,7 @@ fn supplied_stream_orders_negotiated_before_exact_profile_reducer_exchange() {
             .unwrap()
             .server
             .export()
+            .files()
             .selected_capabilities(),
         Some(caps)
     );

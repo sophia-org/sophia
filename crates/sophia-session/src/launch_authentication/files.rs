@@ -14,6 +14,7 @@ use std::{
     sync::{
         Arc, Mutex, TryLockError,
         atomic::{AtomicU64, AtomicUsize, Ordering},
+        mpsc::{Receiver, SyncSender, TrySendError, sync_channel},
     },
     time::{Duration, Instant},
 };
@@ -25,10 +26,15 @@ struct Global {
     used: AtomicUsize,
     next: AtomicU64,
     namespaces: Arc<Mutex<NamespaceRegistry>>,
+    retiring: SyncSender<Box<dyn FileAuthentication>>,
+}
+struct Retiring {
+    incoming: Receiver<Box<dyn FileAuthentication>>,
+    owners: Vec<Box<dyn FileAuthentication>>,
 }
 /// One instance per Session, shared by every authenticated role endpoint.
 #[derive(Clone)]
-pub struct TransportBudget(Arc<Global>);
+pub struct TransportBudget(Arc<Global>, Arc<Mutex<Retiring>>);
 #[derive(Clone)]
 pub struct EndpointBudget {
     global: Arc<Global>,
@@ -45,17 +51,44 @@ impl Drop for Permit {
 }
 impl TransportBudget {
     pub fn new(namespaces: Arc<Mutex<NamespaceRegistry>>) -> Self {
-        Self(Arc::new(Global {
-            used: AtomicUsize::new(0),
-            next: AtomicU64::new(0),
-            namespaces,
-        }))
+        let (retiring, incoming) = sync_channel(GLOBAL_TRANSPORTS);
+        Self(
+            Arc::new(Global {
+                used: AtomicUsize::new(0),
+                next: AtomicU64::new(0),
+                namespaces,
+                retiring,
+            }),
+            Arc::new(Mutex::new(Retiring {
+                incoming,
+                owners: Vec::new(),
+            })),
+        )
     }
     pub fn endpoint(&self) -> EndpointBudget {
         EndpointBudget {
             global: self.0.clone(),
             used: Arc::new(AtomicUsize::new(0)),
         }
+    }
+
+    /// Closed owners keep their permits until remote cancellation completes.
+    /// The receiver is owned separately from permits, avoiding a retention
+    /// cycle when Session drops its last budget owner.
+    pub fn poll_retiring(&self, now: Instant) {
+        let Ok(mut retiring) = self.1.try_lock() else {
+            return;
+        };
+        while retiring.owners.len() < GLOBAL_TRANSPORTS {
+            let Ok(owner) = retiring.incoming.try_recv() else {
+                break;
+            };
+            retiring.owners.push(owner);
+        }
+        retiring.owners.retain_mut(|owner| {
+            let _ = owner.poll(now);
+            !owner.drained()
+        });
     }
 }
 impl EndpointBudget {
@@ -115,6 +148,23 @@ pub struct RoleFileFactory {
     aname: Vec<u8>,
 }
 impl FileAuthenticationFactory for RoleFileFactory {
+    fn retire(
+        &mut self,
+        mut owner: Box<dyn FileAuthentication>,
+    ) -> Result<(), Box<dyn FileAuthentication>> {
+        owner.close(Instant::now());
+        if owner.drained() {
+            return Ok(());
+        }
+        self.endpoint
+            .global
+            .retiring
+            .try_send(owner)
+            .map_err(|error| match error {
+                TrySendError::Full(owner) | TrySendError::Disconnected(owner) => owner,
+            })
+    }
+
     fn create(
         &mut self,
         connection: ConnectionId,

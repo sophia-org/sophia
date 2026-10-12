@@ -52,6 +52,7 @@ impl LaunchCoordinator {
     /// Failure revokes the shared generation; only a newly published connection
     /// can recover. A contended publication mutex is not connection loss.
     pub fn poll(&mut self, now: Instant) -> Result<(), Error> {
+        self.transports.poll_retiring(now);
         if self.current.as_ref().is_some_and(|c| !c.ingress.is_open()) {
             self.current = None;
         }

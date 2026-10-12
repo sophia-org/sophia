@@ -106,6 +106,7 @@ fn start_public_policy_worker(
             profile_key
                 .map(|key| policy_profile_identity(connection_epoch, key))
                 .transpose()?,
+            None,
         )?),
     }
 }

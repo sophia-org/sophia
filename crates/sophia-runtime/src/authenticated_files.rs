@@ -42,6 +42,16 @@ pub trait FileAuthenticationFactory: Send {
         now: Instant,
         wake: sophia_9p::unix::Wake,
     ) -> Result<Box<dyn FileAuthentication>, Errno>;
+
+    /// Hand closed transport custody to its Session cleanup loop without
+    /// waiting on that loop from a worker being joined. Refusal returns custody
+    /// to the caller for fail-closed disposal.
+    fn retire(
+        &mut self,
+        owner: Box<dyn FileAuthentication>,
+    ) -> Result<(), Box<dyn FileAuthentication>> {
+        Err(owner)
+    }
 }
 
 /// The role policy has checked its root; publication cannot subsequently fail.

@@ -8,6 +8,7 @@ use sophia_9p::{
     unix::{Server, Wake},
 };
 use sophia_protocol::wm_files::*;
+use sophia_runtime::authenticated_files::{AuthenticatedFiles, FileAuthenticationFactory};
 use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -34,9 +35,15 @@ impl super::PolicyTransportWorker {
         limits: WmFileLimits,
         qids: super::PolicyFilesystemQids,
         identity: Option<sophia_protocol::PolicyProfileIdentity>,
+        authentication: Option<Box<dyn FileAuthenticationFactory>>,
     ) -> Result<Self, String> {
         let adapter = runtime_adapter::NinePPolicyAdapter::pending(
-            endpoint, supervisor, epoch, limits, qids.0,
+            endpoint,
+            supervisor,
+            epoch,
+            limits,
+            qids.0,
+            authentication,
         )?;
         let profile = identity.map(|identity| super::adapter::PolicyProfileAdmission {
             connection_epoch: identity.connection_epoch,
@@ -110,7 +117,8 @@ pub(super) trait PolicyFileCodec {
 const REVOKE_TURNS: usize = 4;
 
 pub(super) struct NinePReactor<C: PolicyFileCodec> {
-    server: Server<WmFiles<C>>,
+    server: Server<AuthenticatedFiles<WmFiles<C>>>,
+    authentication: Option<Box<dyn FileAuthenticationFactory>>,
     stopped: Arc<AtomicBool>,
     _cancellation: Arc<NinePCancellation>,
 }
@@ -121,6 +129,13 @@ impl<C: PolicyFileCodec> Drop for NinePReactor<C> {
     fn drop(&mut self) {
         if self.stopped.load(Ordering::SeqCst) {
             self.revoke_and_flush();
+        }
+        if let Some(owner) = self.server.export_mut().retire(Instant::now())
+            && let Some(factory) = &mut self.authentication
+        {
+            // Session may currently be joining this thread. Transfer cleanup
+            // without waiting; rejected custody drops fail-closed.
+            let _ = factory.retire(owner);
         }
     }
 }
@@ -179,10 +194,20 @@ impl PolicyAdapterStop for NinePStop {
 }
 
 impl<C: PolicyFileCodec> NinePReactor<C> {
+    #[cfg(test)]
     fn adopt_with_cancellation(
         stream: UnixStream,
         owner: WmFiles<C>,
         cancellation: Arc<NinePCancellation>,
+    ) -> Result<Self, String> {
+        Self::adopt_with_authentication(stream, owner, cancellation, None)
+    }
+
+    fn adopt_with_authentication(
+        stream: UnixStream,
+        owner: WmFiles<C>,
+        cancellation: Arc<NinePCancellation>,
+        mut authentication: Option<Box<dyn FileAuthenticationFactory>>,
     ) -> Result<Self, String> {
         if cancellation.stopped.load(Ordering::SeqCst) {
             return Err("WM file stopped before adoption".into());
@@ -190,16 +215,31 @@ impl<C: PolicyFileCodec> NinePReactor<C> {
         // WM-specific bounds: 512-byte minimum permits fragment transport,
         // sixteen waits leave room for event reads plus flush/control traffic.
         // One connection is already admitted; this reactor is not a listener.
+        let owner = if authentication.is_some() {
+            AuthenticatedFiles::pending(owner)
+        } else {
+            AuthenticatedFiles::legacy(owner)
+        };
         let mut server = Server::new(
             owner,
             Limits::new(65536, 512, 16, 32, 131072, 1).map_err(|e| format!("9P limits: {e:?}"))?,
         )
         .map_err(|e| e.to_string())?;
         let connection = server.adopt(stream).map_err(|e| e.error.to_string())?;
-        server.export_mut().bind_connection(connection);
+        server.export_mut().files_mut().bind_connection(connection);
+        if let Some(factory) = &mut authentication {
+            let owner = factory
+                .create(connection, Instant::now(), server.wake())
+                .map_err(|error| format!("WM authentication admission: {error:?}"))?;
+            server
+                .export_mut()
+                .install(owner)
+                .map_err(|error| format!("WM authentication owner: {error:?}"))?;
+        }
         cancellation.install(server.wake())?;
         Ok(Self {
             server,
+            authentication,
             stopped: cancellation.stopped.clone(),
             _cancellation: cancellation,
         })
@@ -207,7 +247,7 @@ impl<C: PolicyFileCodec> NinePReactor<C> {
     /// Ends the epoch. A few nonblocking turns answer every waiting read
     /// ESTALE and flush replies already owed before the socket closes.
     fn revoke_and_flush(&mut self) {
-        self.server.export_mut().revoke();
+        self.server.export_mut().files_mut().revoke();
         self.server.wake().wake();
         for _ in 0..REVOKE_TURNS {
             match self.server.turn(Some(Duration::ZERO)) {
@@ -217,7 +257,7 @@ impl<C: PolicyFileCodec> NinePReactor<C> {
         }
     }
     pub(super) fn owner_mut(&mut self) -> &mut WmFiles<C> {
-        self.server.export_mut()
+        self.server.export_mut().files_mut()
     }
 
     fn turn(&mut self, timeout: Duration) -> Result<(), String> {
@@ -225,15 +265,28 @@ impl<C: PolicyFileCodec> NinePReactor<C> {
             self.revoke_and_flush();
             return Err("WM file stopped".into());
         }
+        self.server
+            .export_mut()
+            .poll(Instant::now())
+            .map_err(|error| format!("WM authentication expired: {error:?}"))?;
         // Staging expiry is another wake deadline, not progress-based renewal.
-        let timeout = self.server.export_mut().next_wait(timeout);
+        let timeout = self
+            .server
+            .export_mut()
+            .files_mut()
+            .next_wait(timeout)
+            .min(self.server.export().wait(Instant::now()));
         if !self.server.turn(Some(timeout)).map_err(|e| e.to_string())?
             || self.server.connection_count() == 0
         {
-            self.server.export_mut().revoke();
+            self.server.export_mut().files_mut().revoke();
             return Err("WM file connection ended".into());
         }
-        self.server.export_mut().expire();
+        self.server
+            .export_mut()
+            .poll(Instant::now())
+            .map_err(|error| format!("WM authentication expired: {error:?}"))?;
+        self.server.export_mut().files_mut().expire();
         Ok(())
     }
 
@@ -244,6 +297,7 @@ impl<C: PolicyFileCodec> NinePReactor<C> {
     ) -> Result<Option<PolicyAdapterEvent>, String> {
         self.server
             .export_mut()
+            .files_mut()
             .offer(permit)
             .map_err(|e| format!("WM file receive: {e:?}"))?;
         let deadline = Instant::now() + timeout;
@@ -251,7 +305,7 @@ impl<C: PolicyFileCodec> NinePReactor<C> {
             loop {
                 // Even zero-time polling gives buffered socket requests a turn.
                 self.turn(deadline.saturating_duration_since(Instant::now()))?;
-                if let Some(event) = self.server.export_mut().take_delivery() {
+                if let Some(event) = self.server.export_mut().files_mut().take_delivery() {
                     return Ok(Some(event));
                 }
                 if Instant::now() >= deadline {
@@ -259,7 +313,7 @@ impl<C: PolicyFileCodec> NinePReactor<C> {
                 }
             }
         })();
-        self.server.export_mut().withdraw_permit();
+        self.server.export_mut().files_mut().withdraw_permit();
         result
     }
 
@@ -270,6 +324,7 @@ impl<C: PolicyFileCodec> NinePReactor<C> {
     ) -> Result<Option<PolicyAdapterEvent>, String> {
         self.server
             .export_mut()
+            .files_mut()
             .offer(permit)
             .map_err(|e| format!("WM file receive: {e:?}"))?;
         // Unlike active receive, any readiness returns control to the driver.
@@ -277,8 +332,8 @@ impl<C: PolicyFileCodec> NinePReactor<C> {
         // interpret it as a semantic event or renew an active response budget.
         let result = self
             .turn(cap)
-            .map(|()| self.server.export_mut().take_delivery());
-        self.server.export_mut().withdraw_permit();
+            .map(|()| self.server.export_mut().files_mut().take_delivery());
+        self.server.export_mut().files_mut().withdraw_permit();
         result
     }
 
@@ -301,6 +356,7 @@ impl<C: PolicyFileCodec> NinePReactor<C> {
             match self
                 .server
                 .export_mut()
+                .files_mut()
                 .append_encoded_event_checked(kind, &encode, stopped, deadline)
             {
                 Ok(_) => {
@@ -327,11 +383,12 @@ impl<C: PolicyFileCodec> NinePReactor<C> {
         deadline: Instant,
     ) -> Result<(), String> {
         loop {
-            match self
-                .server
-                .export_mut()
-                .publish_cycle(snapshot, cycle, &self.stopped, deadline)
-            {
+            match self.server.export_mut().files_mut().publish_cycle(
+                snapshot,
+                cycle,
+                &self.stopped,
+                deadline,
+            ) {
                 Ok(_) => {
                     self.server.wake().wake();
                     return Ok(());
@@ -349,6 +406,9 @@ mod custody_tests;
 
 #[path = "../../../tests/support/policy_file_replay.rs"]
 mod replay_tests;
+
+#[path = "../../../tests/support/policy_file_authenticated_reactor.rs"]
+mod authenticated_reactor_tests;
 
 #[path = "../../../tests/support/policy_receipt_credit_peer.rs"]
 pub(in crate::live_session) mod receipt_credit_peer;

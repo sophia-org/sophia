@@ -21,6 +21,7 @@ pub(super) struct FileStartup {
     cancellation: Arc<NinePCancellation>,
     epoch: u64,
     limits: WmFileLimits,
+    authentication: Option<Box<dyn FileAuthenticationFactory>>,
 }
 impl Drop for FileStartup {
     fn drop(&mut self) {
@@ -60,6 +61,7 @@ impl FileStartup {
         epoch: u64,
         limits: WmFileLimits,
         qids: WmQids,
+        authentication: Option<Box<dyn FileAuthenticationFactory>>,
     ) -> Result<Self, String> {
         let endpoint = super::pending::PendingEndpoint::authorize(endpoint, supervisor, qids)?;
         Ok(Self {
@@ -68,6 +70,7 @@ impl FileStartup {
             cancellation: NinePCancellation::new(),
             epoch,
             limits,
+            authentication,
         })
     }
     pub(super) fn admit(
@@ -101,10 +104,11 @@ impl FileStartup {
             let owner =
                 WmFiles::awaiting_negotiation(self.epoch, self.limits, qids, TypedFileCodec)
                     .map_err(|e| format!("WM file limits: {e:?}"))?;
-            self.reactor = Some(NinePReactor::adopt_with_cancellation(
+            self.reactor = Some(NinePReactor::adopt_with_authentication(
                 stream,
                 owner,
                 self.cancellation.clone(),
+                self.authentication.take(),
             )?);
         }
         let reactor = self.reactor.as_mut().ok_or("WM file admission closed")?;

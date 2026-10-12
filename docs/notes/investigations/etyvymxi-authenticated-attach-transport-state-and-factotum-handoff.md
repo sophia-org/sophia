@@ -1409,3 +1409,52 @@ The complete changed-file hash capture was made after the tests and Clippy,
 with no intervening edits. These are root mechanics, not a real afid exchange:
 the WM reactor, normal launch/replacement and deployed-client integration
 still need connection to the authentication owner.
+
+## Authenticated WM reactor
+
+The WM reactor now wraps its existing file owner in `AuthenticatedFiles`.
+An owner-supplied factory travels through worker creation and endpoint startup;
+authenticated construction installs it before any reactor turn. Factory refusal
+closes the socket, and pre-adoption cancellation reserves no authentication.
+Every reactor turn polls the authentication owner and bounds idle waits by its
+deadline cadence. WM semantics still belong to the existing file owner.
+
+Dropping a worker cannot wait for Session, which may be joining that thread.
+The factory can hand closed authentication custody to the Session transport
+budget's bounded retirement channel. The coordinator polls it even without a
+current Factotum generation. Pending owners retain endpoint/global permits
+until exact remote cancellation completes; a failed handoff retains fail-closed
+disposal. The receiver is owned separately from the permits, so its final drop
+drains queued owners rather than retaining an Arc cycle. The real-Factotum
+capacity test proves that handoff returns no early credit, eventual cancellation
+returns one slot, and cleanup preserves other launches.
+
+The protected WM test reserves and activates actual SpatialPolicy launch
+custody, then starts the production pending-endpoint adapter with the resulting
+factory. A C descriptor shim execs the generic Rust SDK child unchanged. The
+SDK authenticates through Factotum; its quiescent root then passes to the raw
+WM fixture for Negotiate/Submitted/ACK traffic without Tversion or reattach.
+Factotum's trusted Session-channel class is supplied. This is a real protected
+WM transport join, not yet the normal desktop startup owner or a deployed WM.
+
+`t317-wm-reactor-auth-01` passes 59 WM-file parent tests (four ignored entries,
+including the parent-invoked authenticated child), the 23-test authentication
+suite with both SDK children executed, all-target Session Clippy with warnings
+denied and formatting. Discarding the factory at reactor adoption fails the
+protected child at `protected WM must authenticate before file negotiation`
+and then its exact parent. Restoring all candidate bytes restores the 59-test
+pass. Packages record dynamic source hashes and executable identities, without
+binary copies. The reused driver calls its WM subtree log `output.log`; the
+recorded command and test paths identify the actual WM scope.
+
+| Package | SHA256SUMS SHA-256 |
+| --- | --- |
+| `t317-wm-reactor-auth-01` | `c670dfc6845ad8a9c43f8590d7e2aeb44587788d46b23871e45de377e51c8e62` |
+| `t317-wm-reactor-afid-control-01` | `4283fa83c704f5b9418d5e9a54ddded358c40d4d18bf5e9ea1901caf999ba9bd` |
+| `t317-wm-reactor-restored-01` | `a129eef377a511a7a497121458133dc400978a140ebcad3b8d8aa9042eee5fbe` |
+
+Normal WM startup, automatic/control restart and profile replacement still
+supply no factory. They must register each launch and poll the coordinator
+during startup admission before that fallback is removed. The C/Nim WM SDK
+handoff and deployed-client migration remain open, as do shell integration and
+the final t317 closure gates. No live admission rollout is claimed here.

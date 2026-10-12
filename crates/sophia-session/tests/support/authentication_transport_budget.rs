@@ -6,6 +6,15 @@ use sophia_session::launch_authentication::files::TransportBudget;
 
 #[test]
 fn transport_slots_are_shared_bounded_and_retained_through_remote_cancellation() {
+    exercise(false);
+}
+
+#[test]
+fn worker_retirement_keeps_its_slot_until_session_drains_remote_cancellation() {
+    exercise(true);
+}
+
+fn exercise(handoff: bool) {
     let mut f = Fixture::new();
     let id = f.reserve();
     let domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::MetadataShell]).unwrap();
@@ -80,14 +89,35 @@ fn transport_slots_are_shared_bounded_and_retained_through_remote_cancellation()
         factories[0].create(ConnectionId(1), Instant::now(), f.wake.clone()),
         Err(Errno::EAGAIN)
     ));
-    while !retiring.drained() {
-        f.tick(end);
-        assert_eq!(retiring.poll(Instant::now()), Err(Errno::ESTALE));
-    }
-    drop(retiring);
-    let replacement = factories[0]
-        .create(ConnectionId(1), Instant::now(), f.wake.clone())
-        .expect("acknowledged cancellation returns exactly one transport slot");
+    let replacement = if handoff {
+        assert!(factories[0].retire(retiring).is_ok());
+        budget.poll_retiring(Instant::now());
+        assert!(
+            matches!(
+                factories[0].create(ConnectionId(1), Instant::now(), f.wake.clone()),
+                Err(Errno::EAGAIN)
+            ),
+            "handing off cleanup cannot return transport credit early"
+        );
+        loop {
+            f.tick(end);
+            budget.poll_retiring(Instant::now());
+            match factories[0].create(ConnectionId(1), Instant::now(), f.wake.clone()) {
+                Ok(owner) => break owner,
+                Err(Errno::EAGAIN) => (),
+                Err(error) => panic!("retired launch lost its authority: {error:?}"),
+            }
+        }
+    } else {
+        while !retiring.drained() {
+            f.tick(end);
+            assert_eq!(retiring.poll(Instant::now()), Err(Errno::ESTALE));
+        }
+        drop(retiring);
+        factories[0]
+            .create(ConnectionId(1), Instant::now(), f.wake.clone())
+            .expect("acknowledged cancellation returns exactly one transport slot")
+    };
     assert!(
         f.ingress.is_open(),
         "normal cleanup preserves other launches"
