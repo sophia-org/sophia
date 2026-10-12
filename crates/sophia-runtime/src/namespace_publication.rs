@@ -11,6 +11,9 @@ use std::sync::{Arc, Weak};
 
 pub const MAX_RETAINED_VIEWS: usize = 64;
 
+mod x11;
+pub use x11::CapturedX11Socket;
+
 #[path = "../tests/support/namespace_publication.rs"]
 mod tests;
 
@@ -132,13 +135,25 @@ impl NamespacePublisher {
         view: CompiledNamespace,
         discovery: NamespaceDiscovery,
     ) -> io::Result<PreparedNamespace> {
-        self.prepare_inner(view, discovery, |_| Ok(()))
+        self.prepare_with_x11(view, discovery, &[])
+    }
+
+    /// X11 endpoints alias already-owned frontend sockets. Only 9P endpoints
+    /// return new listeners for direct dispatch to their existing role owner.
+    pub fn prepare_with_x11(
+        &mut self,
+        view: CompiledNamespace,
+        discovery: NamespaceDiscovery,
+        x11: &[CapturedX11Socket],
+    ) -> io::Result<PreparedNamespace> {
+        self.prepare_inner(view, discovery, x11, |_| Ok(()))
     }
 
     fn prepare_inner(
         &mut self,
         view: CompiledNamespace,
         discovery: NamespaceDiscovery,
+        x11: &[CapturedX11Socket],
         mut after_bind: impl FnMut(usize) -> io::Result<()>,
     ) -> io::Result<PreparedNamespace> {
         if view.namespace != self.namespace
@@ -164,6 +179,23 @@ impl NamespacePublisher {
             }
         }
         let bytes = encode_discovery(&discovery).map_err(io::Error::other)?;
+        if x11.len() > MAX_ENDPOINTS
+            || x11.iter().enumerate().any(|(i, socket)| {
+                x11[..i]
+                    .iter()
+                    .any(|prior| prior.service() == socket.service())
+            })
+        {
+            return Err(refused("ambiguous or excessive X11 socket captures"));
+        }
+        if view.endpoints.iter().any(|endpoint| {
+            endpoint.endpoint.service.protocol == EndpointProtocol::X11
+                && !x11
+                    .iter()
+                    .any(|socket| socket.service() == &endpoint.endpoint.service)
+        }) {
+            return Err(refused("X11 endpoint has no captured frontend socket"));
+        }
         self.retained.retain(|r| r.strong_count() > 0);
         if self.retained.len() >= MAX_RETAINED_VIEWS {
             return Err(refused("namespace retained view capacity exhausted"));
@@ -183,13 +215,21 @@ impl NamespacePublisher {
         let lease = NamespaceViewLease(resources);
         let mut listeners = Vec::new();
         let root = fs::File::open(&self.directory)?;
-        for endpoint in &lease.view().endpoints {
+        for (index, endpoint) in lease.view().endpoints.iter().enumerate() {
             let path = lease.directory().join(&endpoint.path);
             if let Some(parent) = path.parent() {
                 fs::DirBuilder::new()
                     .recursive(true)
                     .mode(0o700)
                     .create(parent)?;
+            }
+            if endpoint.endpoint.service.protocol == EndpointProtocol::X11 {
+                x11.iter()
+                    .find(|socket| socket.service() == &endpoint.endpoint.service)
+                    .expect("captures validated before materialization")
+                    .materialize(&path)?;
+                after_bind(index + 1)?;
+                continue;
             }
             // Bind through a pinned directory descriptor, then rename the
             // socket inode into the view. Logical names need not fit sun_path;
@@ -204,7 +244,7 @@ impl NamespacePublisher {
                 endpoint: endpoint.clone(),
                 listener,
             });
-            after_bind(listeners.len())?;
+            after_bind(index + 1)?;
         }
         let mut file = fs::OpenOptions::new()
             .write(true)

@@ -3,7 +3,7 @@
 use sophia_config::namespace_recipe::PinnedNamespaceRecipe;
 use sophia_protocol::{ClientAuthenticationMethod, NamespaceId, namespace_view::*};
 use sophia_runtime::namespace_publication::{
-    NamespacePublisher, NamespaceViewLease, PublishedNamespace,
+    CapturedX11Socket, NamespacePublisher, NamespaceViewLease, PublishedNamespace,
 };
 use sophia_runtime::namespace_recipe::{Input, compile};
 use sophia_runtime::{
@@ -13,6 +13,9 @@ use std::collections::BTreeMap;
 use std::io;
 use std::path::Path;
 use std::sync::{Arc, Mutex, TryLockError};
+
+mod source;
+use source::NamingInput;
 
 /// Already approved by Session policy. A recipe may name this service; it
 /// cannot supply this record or obtain a service absent from this catalog.
@@ -93,6 +96,39 @@ impl NamespaceRecipeOwner {
         recipe: &PinnedNamespaceRecipe,
         approved: &BTreeMap<String, ApprovedEndpoint>,
     ) -> io::Result<PublishedRecipe> {
+        self.publish_input(revision, NamingInput::Pinned(recipe), approved, &[])
+    }
+
+    /// Publish the naming part of a selected recipe. The launch owner must
+    /// resolve its host policy and portal participation before approving this
+    /// catalog; neither naming nor this method can supply those permissions.
+    pub fn publish_selected(
+        &mut self,
+        revision: u64,
+        recipe: &sophia_config::namespace_policy::LoadedNamespaceRecipe,
+        approved: &BTreeMap<String, ApprovedEndpoint>,
+    ) -> io::Result<PublishedRecipe> {
+        self.publish_selected_with_x11(revision, recipe, approved, &[])
+    }
+
+    pub fn publish_selected_with_x11(
+        &mut self,
+        revision: u64,
+        recipe: &sophia_config::namespace_policy::LoadedNamespaceRecipe,
+        approved: &BTreeMap<String, ApprovedEndpoint>,
+        x11: &[CapturedX11Socket],
+    ) -> io::Result<PublishedRecipe> {
+        source::validate_catalog(recipe, approved)?;
+        self.publish_input(revision, NamingInput::Selected(recipe), approved, x11)
+    }
+
+    fn publish_input(
+        &mut self,
+        revision: u64,
+        recipe: NamingInput<'_>,
+        approved: &BTreeMap<String, ApprovedEndpoint>,
+        x11: &[CapturedX11Socket],
+    ) -> io::Result<PublishedRecipe> {
         if revision <= self.policy_revision {
             return Err(refused("stale namespace policy revision"));
         }
@@ -127,7 +163,7 @@ impl NamespaceRecipeOwner {
                     })
                     .collect(),
             };
-            let prepared = self.publisher.prepare(view, discovery)?;
+            let prepared = self.publisher.prepare_with_x11(view, discovery, x11)?;
             // Materialization may take time. Never publish bytes from a replaced
             // trusted source, even if authority reduction has already happened.
             recipe.verify()?;

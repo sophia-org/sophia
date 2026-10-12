@@ -3,6 +3,9 @@
 #[path = "namespace_sdk.rs"]
 mod sdk;
 
+#[path = "namespace_x11_publication.rs"]
+mod x11_publication;
+
 use super::*;
 use crate::namespace_recipe::{Input, compile};
 use std::collections::BTreeMap;
@@ -109,7 +112,7 @@ fn failed_materialization_and_failed_publication_preserve_the_old_view() {
     let old = p.publish(prepared).unwrap();
     let (v, d) = candidate(2, 20);
     assert!(
-        p.prepare_inner(v, d, |n| if n == 1 {
+        p.prepare_inner(v, d, &[], |n| if n == 1 {
             Err(io::Error::other("injected endpoint failure"))
         } else {
             Ok(())

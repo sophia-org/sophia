@@ -2,6 +2,9 @@
 //! neither executable paths nor recipe names supplied by a client grant it.
 use std::collections::BTreeMap;
 
+mod source;
+pub use source::LoadedNamespaceRecipe;
+
 pub const MAX_NAMESPACE_RECIPES: usize = 64;
 pub const MAX_NAMESPACE_APPLICATIONS: usize = 1024;
 

@@ -387,7 +387,8 @@ a nonzero group; shared-X cannot authorize the developer launcher. Source names
 are normalized paths relative to trusted configuration, not application paths.
 Changes classify as requiring restart. Session currently refuses nonempty policy
 on startup/reload rather than ignoring it: automatic dispatch, group/reference
-resolution, builtin fragments and metadata extraction remain integration work.
+resolution and metadata extraction remain integration work. The following slice
+supplies the builtin fragments and their publication path.
 This refusal is temporary and is not the intended final application experience.
 
 The standalone configuration build exposed that the earlier pinned loader relied
@@ -400,6 +401,49 @@ or untracked source files were enumerated dynamically and hashed before and afte
 the run; binary identities are recorded without copies. SHA256SUMS has SHA-256
 `bbf800ce319c6e54e993979d9f4b5b645569de8a2419ac0b82fa4e9d24795130`.
 These are parser/selection and refusal results, not live recipe launch acceptance.
+
+### Selected recipe publication and X11 socket capture
+
+`LoadedNamespaceRecipe` snapshots trusted recipe configuration and either the
+shipped shared/confined-X or observer fragment, or the existing pinned custom
+source loader. Both source forms use one compiler/publication transaction.
+Selected publication refuses catalogs outside the profile's service/interface
+set. Tests cover immutable selection, observer aliases, extra-role/interface
+refusal, missing-service rollback, custom include replacement and distinct X
+references under the same shipped naming fragment.
+
+The publisher previously created listeners for every protocol. It now creates
+listeners only for 9P role dispatch. X11 requires a Session-supplied
+`CapturedX11Socket`, which pins an owned socket using `O_PATH` and links its
+inode into the candidate view. Tests rename and replace the original pathname
+before materialization: both aliases retain the old inode and connect to the
+old listener, while the replacement accepts nothing. Socket mode is unchanged.
+Missing captures, wrong generations, fully unlinked sources, symlinks, regular
+files and nonprivate group directories refuse. A failure immediately after
+linking removes candidate aliases, preserves the old publication and restores
+the original socket's link count; that listener still accepts a connection.
+
+A configured confined-X recipe now reaches that existing supplied listener
+through the independent Rust SDK's discovery and connection path. Only its
+portal endpoint allocates a new listener. These are actual Unix socket and
+inode observations, not X11 setup, cookie, namespace-admission or live-launch
+acceptance. Cross-filesystem aliases fail closed; Session must choose the
+publication filesystem accordingly. No input/render owner or X frontend proxy
+was added.
+
+The closed `t318-selected-publication-01` package passes ten runtime publication
+tests (including the C/Rust discovery join), eleven Session view tests and all
+28 authentication parent tests with four invoked children. Config/runtime
+all-target and Session integration-target Clippy, workspace formatting, layout
+and diff checks pass. SHA256SUMS has SHA-256
+`1e6497a5ba6cdc9aef5808c78ab8c2a9ef4db6aea23b5dc828ca2656b8f1f30e`.
+The follow-up `t318-selected-publication-02` adds only the post-link fault test;
+all eleven runtime publication tests, runtime all-target Clippy, formatting,
+layout and diff checks pass. Its manifest identity is
+`4f49ef278ee6d04e6bb549b30b38d1a1e064e31ca2e24f23763feacd7c861b98`.
+Both packages enumerate and hash ten candidate code/test files before and after.
+Their only source-hash difference is the added runtime test. Binary paths and
+hashes are retained without copies; these documentation changes follow the runs.
 
 ### Session publication and grant custody
 

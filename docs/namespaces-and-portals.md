@@ -298,6 +298,40 @@ implemented; Session currently refuses a nonempty recipe configuration at startu
 or reload because automatic launch custody is not connected yet. This temporary
 refusal prevents silently executing a selected recipe as a legacy host launch.
 
+`LoadedNamespaceRecipe` retains a policy snapshot together with its shipped
+naming fragment or pinned custom files. Shared and confined X use the same
+fragment; their approved group references differ. Selected publication restricts
+the service catalog to `x-group` (X11, interface `x11`) and `portal` (9P, interface
+`portal-requester`), or `inspection` and `portal` for observer. The observer's
+`status` alias captures the same inspection reference and grant. A custom naming
+file may rearrange these services but cannot introduce other roles. Missing
+required services refuse the entire publication.
+
+```text
+selected policy + pinned source + Session-approved references
+                             |
+                      existing compiler
+                             |
+                     private candidate view
+                     /                    \
+             9P role endpoints          X11 endpoint
+             new local listeners        hard link to captured socket inode
+                     |                    |
+             existing role owners       existing frontend listener
+                     \                    /
+                      atomic publication
+```
+
+X11 materialization captures an owned socket in a private group directory using
+an `O_PATH` descriptor. Linux `linkat` through that descriptor creates aliases
+without resolving the original pathname again, changing socket permissions, or
+creating a proxy. Source and view must support hard links on the same filesystem;
+failure refuses publication, with no copying or pathname fallback. Candidate
+cleanup removes only its names, leaving the frontend socket intact. The one-entry
+X group directory is unchanged. X11 setup, cookie authentication, namespace
+admission and revocation remain frontend responsibilities; the alias supplies
+none of those permissions.
+
 The inspection implementation shares its existing publication owner between
 explicit HostDomain inspection and authenticated observer connections. A private
 owner creates no host listener. Its observer route requires a launch-authentication

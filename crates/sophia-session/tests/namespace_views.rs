@@ -14,6 +14,9 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
+#[path = "support/namespace_selected_recipe.rs"]
+mod selected_recipe;
+
 struct Fixture {
     root: PathBuf,
     registry: Arc<Mutex<NamespaceRegistry>>,
