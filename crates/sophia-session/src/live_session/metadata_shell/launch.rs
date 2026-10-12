@@ -2,6 +2,7 @@
 use super::*;
 
 impl LiveMetadataShell {
+    #[cfg(test)]
     pub(in crate::live_session) fn start(
         executable: &str,
         panel_thickness: Option<u16>,
@@ -69,6 +70,7 @@ impl LiveMetadataShell {
             reference: LiveReferenceSession::default(),
             launcher: LiveLauncherSession::default(),
             supervisor,
+            authentication: None,
             base_launch_spec: spec,
             gpu,
             transport,
@@ -128,3 +130,28 @@ impl LiveMetadataShell {
 #[cfg(test)]
 #[path = "../../../tests/support/shell_startup.rs"]
 mod tests;
+
+pub(super) fn record_gpu_launch(peer_pid: u32, gpu: Option<gpu::ShellGpuLaunchEvidence>) {
+    match gpu {
+        Some(gpu) => crate::session_println!(
+            "sophia_live_shell_gpu schema=1 status=granted mode=direct peer_pid={} grant_epoch={} device_major={} device_minor={} pci_bus_id={} pci_vendor_id={} pci_device_id={}",
+            peer_pid,
+            gpu.epoch,
+            gpu.major,
+            gpu.minor,
+            gpu.pci_bus_id.as_deref().unwrap_or("none"),
+            gpu.pci_vendor_id
+                .map(|value| format!("{value:04x}"))
+                .as_deref()
+                .unwrap_or("none"),
+            gpu.pci_device_id
+                .map(|value| format!("{value:04x}"))
+                .as_deref()
+                .unwrap_or("none"),
+        ),
+        None => crate::session_println!(
+            "sophia_live_shell_gpu schema=1 status=denied mode=denied peer_pid={} grant_epoch=0",
+            peer_pid,
+        ),
+    }
+}

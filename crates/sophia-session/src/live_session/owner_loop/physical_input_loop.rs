@@ -326,7 +326,7 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
             shell.observe_outputs(&outputs)?;
             let reference_was_active=shell.reference_busy();
             let mut revoke_shell_input = false;
-            let shell_operational = match shell.poll() {
+            let shell_operational = match shell.poll_authenticated(authenticated_launches, owner_wake.notifier()) {
                 Ok(LiveMetadataShellPoll::Healthy) => true,
                 Ok(LiveMetadataShellPoll::Connected { .. } | LiveMetadataShellPoll::Reconnected { .. }) => {
                     revoke_shell_input = true;

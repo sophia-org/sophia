@@ -1809,3 +1809,48 @@ Clippy failures are retained separately in it.
 The descriptor-shell launch owner, successful SDK/client authentication joins,
 final broad gates and threat-model reconciliation remain required for t317.
 No live installation or task completion follows from this checkpoint.
+
+## Descriptor shell launch custody
+
+Normal descriptor-shell preparation now requires Factotum and fixes a separate
+confined namespace with no portal capabilities. Its claims are `shell` and
+`descriptor`. Initial headless startup, native-presentation resumption and
+replacement advance through the shared `Startup` on owner turns. The former
+synchronous convenience constructor is now test-only. Existing supplied-peer
+fixtures keep their explicitly legacy path; the normal owner selects
+authentication before any child can start.
+
+Pause, transport failure and GPU replacement stop local admission and retain
+pending spawn cleanup. Active authority is checked before wire service or
+negotiation. A failed/cancelled attempt burns its connection epoch; a completed
+negotiation retains the established increment rule. Cancellation/reaping must
+finish before a replacement starts, and the spawn-thread lease remains until
+the supervisor is gone. Outer Session shutdown drains that same retained owner
+with the surviving launch coordinator. Content grants and retained render
+claims continue through the existing retirement ledger. GPU launch evidence
+uses a shared emitter rather than a second logging implementation.
+
+The descriptor tests use a real Factotum export and protected idle child.
+They prove no spawn without Factotum, retained cancellation while paused,
+epoch burning, pending negotiation closed on registration revocation, and
+reaping/lease release on shutdown. The child intentionally performs no afid or
+shell negotiation: successful client interoperability remains unqualified.
+
+Device-hidden evidence in `~/.local/state/sophia/development-evidence/`:
+
+- `t317-descriptor-process-01`: restored shell selection, 112 passed, zero
+  failed, four recorded ignores; all-target Session native-session Clippy with
+  warnings denied and formatting passed. The four ignores are the same GPU,
+  parent-invoked child and generated-profile boundaries recorded above.
+  All seven changed/new crates files are captured dynamically and match the
+  control's restored set. Manifest SHA-256
+  `f3ed7f27ed33c878106105a57e0d917823c14406195614925d2ed74cd3f4b634`.
+- `t317-descriptor-process-control-01`: disabling the retired-registration
+  check fails first at `revoked descriptor launch must close pending negotiation`,
+  exit 101 with exactly one failed test. Its mutation patch, binary path/hash
+  and before/after source hashes are retained; no binary is copied. Manifest
+  SHA-256 `c57f35d042502388618768be68f027ad9babb4ab715bf5cf6ccddf4274cd298d`.
+
+Both normal shell owners now select authenticated startup. SDK/client admitted-root
+handoffs, successful client joins, final broad gates and threat-model/exit
+reconciliation still remain for t317. This candidate is not installed live.

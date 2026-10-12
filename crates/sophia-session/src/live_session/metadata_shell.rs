@@ -13,6 +13,7 @@ pub(in crate::live_session) mod gpu;
 pub(crate) mod gpu_content_proof;
 pub(crate) mod indicators;
 
+mod authentication;
 pub(crate) mod component_launch;
 pub(crate) mod component_session;
 mod launch;
@@ -106,6 +107,7 @@ pub(super) struct LiveMetadataShell {
     reference: LiveReferenceSession,
     launcher: LiveLauncherSession,
     supervisor: ProcessSupervisor,
+    authentication: Option<authentication::DescriptorAuthentication>,
     base_launch_spec: ProcessLaunchSpec,
     gpu: gpu::ShellGpuLaunchPolicy,
     transport: sophia_runtime::ShellSessionTransport,
@@ -158,7 +160,9 @@ impl LiveMetadataShell {
     /// pass's `poll` turns that wire. Nothing is subscribed while paused, when
     /// `poll` does not turn it.
     pub(in crate::live_session) fn poll_fds(&self) -> Vec<rustix::event::PollFd<'_>> {
-        if !self.connected || self.presentation_paused {
+        if self.presentation_paused
+            || (!self.connected && !self.authentication.as_ref().is_some_and(|a| a.negotiating))
+        {
             return Vec::new();
         }
         self.transport.poll_fds()
@@ -170,6 +174,16 @@ impl LiveMetadataShell {
     }
 
     pub(in crate::live_session) fn authentication_wait(&self, now: Instant) -> Duration {
+        if self
+            .authentication
+            .as_ref()
+            .is_some_and(|a| a.needs_visit())
+        {
+            return self
+                .transport
+                .authentication_wait(now)
+                .min(Duration::from_millis(10));
+        }
         if !self.connected || self.presentation_paused {
             return Duration::MAX;
         }
@@ -198,7 +212,7 @@ impl LiveMetadataShell {
         if self.presentation_paused {
             return Ok(false);
         }
-        self.supervisor.terminate()?;
+        self.stop_process()?;
         self.connected = false;
         self.retire_connection_state(reason)?;
         self.presentation_paused = true;
@@ -213,6 +227,12 @@ impl LiveMetadataShell {
         &mut self,
         reason: &str,
     ) -> Result<LiveMetadataShellPoll, Box<dyn std::error::Error>> {
+        if self.authentication.is_some() {
+            self.stop_process()?;
+            self.connected = false;
+            self.retire_connection_state(reason)?;
+            return Ok(LiveMetadataShellPoll::Unavailable);
+        }
         self.supervisor.terminate()?;
         self.connected = false;
         if self.presentation_paused {
@@ -233,7 +253,10 @@ impl LiveMetadataShell {
         if !self.gpu.replace_device(device) {
             return Ok(false);
         }
-        self.supervisor.terminate()?;
+        self.stop_process()?;
+        if self.authentication.is_some() {
+            self.retire_connection_state("device_identity_changed")?;
+        }
         self.connected = false;
         self.reconnect_at = None;
         crate::session_eprintln!(
@@ -739,28 +762,7 @@ impl LiveMetadataShell {
             }
         };
         crate::diagnostics::capture_process_identity("shell", evidence.peer_pid, connection_epoch);
-        match gpu {
-            Some(gpu) => crate::session_println!(
-                "sophia_live_shell_gpu schema=1 status=granted mode=direct peer_pid={} grant_epoch={} device_major={} device_minor={} pci_bus_id={} pci_vendor_id={} pci_device_id={}",
-                evidence.peer_pid,
-                gpu.epoch,
-                gpu.major,
-                gpu.minor,
-                gpu.pci_bus_id.as_deref().unwrap_or("none"),
-                gpu.pci_vendor_id
-                    .map(|value| format!("{value:04x}"))
-                    .as_deref()
-                    .unwrap_or("none"),
-                gpu.pci_device_id
-                    .map(|value| format!("{value:04x}"))
-                    .as_deref()
-                    .unwrap_or("none"),
-            ),
-            None => crate::session_println!(
-                "sophia_live_shell_gpu schema=1 status=denied mode=denied peer_pid={} grant_epoch=0",
-                evidence.peer_pid,
-            ),
-        }
+        launch::record_gpu_launch(evidence.peer_pid, gpu);
         Ok((
             evidence.peer_pid,
             welcome.selected_revision,

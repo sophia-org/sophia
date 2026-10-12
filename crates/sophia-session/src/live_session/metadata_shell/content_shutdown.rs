@@ -10,7 +10,7 @@ impl LiveMetadataShell {
         self.reconnect_at = None;
         self.connected = false;
         let disconnect = self.retire_connection_state("session_shutdown");
-        let terminate = self.supervisor.terminate();
+        let terminate = self.stop_process();
         disconnect?;
         terminate?;
         Ok(())

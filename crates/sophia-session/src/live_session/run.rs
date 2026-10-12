@@ -417,12 +417,10 @@ pub(crate) fn run_persistent_xterm_session(
                         .shell_gpu_device()?,
                 ),
             };
-            let construct = if native_scanout.is_some() {
-                LiveMetadataShell::prepare
-            } else {
-                LiveMetadataShell::start
-            };
-            construct(
+            if config.factotum.is_none() {
+                return Err("descriptor shell requires Factotum launch authentication".into());
+            }
+            let mut shell = LiveMetadataShell::prepare(
                 process,
                 config.shell_panel_thickness,
                 config.shell_content_enabled,
@@ -431,7 +429,15 @@ pub(crate) fn run_persistent_xterm_session(
                 gpu_device,
                 config.shell_config.as_deref(),
                 &config.bubblewrap,
-            )
+            )?;
+            let namespace = namespace_registry.lock()
+                .map_err(|_| "Sophia namespace registry lock was poisoned")?
+                .create_namespace(NamespaceProfile::Confined, NamespaceCapabilities::NONE).id;
+            shell.authenticate(namespace, &authenticated_launches)?;
+            if native_scanout.is_none() {
+                shell.set_presentation_available(true, "headless_startup")?;
+            }
+            Ok::<_, Box<dyn std::error::Error>>(shell)
         })
         .transpose()?;
 
@@ -909,7 +915,7 @@ pub(crate) fn run_persistent_xterm_session(
     // All rendering owners survived the loop, including singleton custody in
     // the visual runtime. Earlier errors do not waive their disposition.
     if let Some(shell) = metadata_shell.as_mut()
-        && let Err(error) = shell.stop_for_session_shutdown()
+        && let Err(error) = shell.finish_authentication_shutdown(&mut authenticated_launches, owner_wake.notifier())
     {
         outer_cleanup_failures.push(format!("shell admission shutdown failed: {error}"));
     }
