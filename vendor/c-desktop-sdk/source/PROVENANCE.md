@@ -534,7 +534,7 @@ recorded by path/hash, never copied to evidence.
 ## Normal lock-provider admission contract
 
 `spec/sophia-lock-files.md` and `spec/factotum-launch-authentication.md` now
-come from signed Sophia `1d35469ca287adfeb7203d5a08dae1fa7ecfa666`. They describe
+come from signed Sophia `49eacf6462cfbe1eec8195ddeed5a1090c932447`. They describe
 normal provider startup through the protected launch channel, Factotum afid
 exchange, immutable identity and current custody. Record layouts and SDK code
 are unchanged. Sophia's provider join uses this SDK's existing launch helper

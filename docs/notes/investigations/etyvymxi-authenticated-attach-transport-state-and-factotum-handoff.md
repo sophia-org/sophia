@@ -986,3 +986,12 @@ ignored tests. Its self-excluding SHA256SUMS hash is
 No new production code or broader gate rerun is claimed. This closes the
 minimum-version execution obligation for these Linux unprivileged launch
 paths; other t317 role, Rust client, admission-context and fragment joins remain.
+
+The qualification-text follow-up is copied from signed Sophia `49eacf646` into
+signed C SDK `48a2d6083f03c67c0679b060fdf35f59d992ede5` and Rust SDK
+`8c0140bbab85d66005469e405e214bbc4b674dd2`. The final immutable snapshots
+contain no SDK implementation delta. All ten pin tests, every contract-pair
+drift check and formatting pass again. The closed `t317-contract-pins-03`
+SHA256SUMS hash is
+`19110baec0946074f9fbe52874e9eb4e507f18207633979320a0b30f219c1fc0`.
+The verifier implementation is unchanged from the Clippy-qualified `-02` run.

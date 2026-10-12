@@ -1,14 +1,14 @@
-tree 37707342bdd3f17c2b2316bcf855cc1a25331765
-parent 98744d244c82cbc9515b8192d76432abcf7af975
-author Mason Green <mason@greenm01.net> 1791765495 -0400
-committer Mason Green <mason@greenm01.net> 1791765495 -0400
+tree eb4008e284b27f09ce1c296ee16656b69af3fc26
+parent 6d982e1a5f774690a9550721e1980fc60d7f613f
+author Mason Green <mason@greenm01.net> 1791765937 -0400
+committer Mason Green <mason@greenm01.net> 1791765937 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCaswr9xsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGL1zAD/SupOQ+u3wLa4N9TDg1ZI
- zTGMaDGQoyGa6BNaUYPuSGgBAKMhfmeEkNOCizReoDjBg56Mj2hVHA17Iv0pWgiD
- EH4B
- =948r
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCaswtsRsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKRoQD+P3VKoKAbp2SWNPt/JzCH
+ dZ3elr6m3Lwj2twcVUQMu1oBAIXEih9PV7Rlwfvw2Bwy6mi5PUjtws4NaOlU8U99
+ SZgK
+ =NnD1
  -----END PGP SIGNATURE-----
 
-Refresh launch qualification text from the signed owner checkpoint
+Record the qualified minimum-version launch contract

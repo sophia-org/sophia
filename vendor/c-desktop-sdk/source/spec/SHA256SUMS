@@ -1,4 +1,4 @@
-b5efca9c6598933717991b34f8e06decc7a209b10c25ae150241e86d60d8fce2  spec/factotum-launch-authentication.md
+daccfa2a9dfdb19c0c5bc0545368c31ef872f2ca5302f0c88f74f5b552245cff  spec/factotum-launch-authentication.md
 590ecd61cc5eb1c4262f8f641108aef9e982160d7fa5040e3eb8c857fdfa4fe2  spec/golden/sophia-lock-files-v1.records
 709a7cafc0a64bae0b3464167cb809dbc67a6fe600ffa4885346b632d21f68ee  spec/golden/sophia-wm-v1.records
 27e56f02f27efa2eb5c449021c9a8162a77b9fafdef0946eec5c757e8b8a3850  spec/references/diod-9p2000L-protocol.md

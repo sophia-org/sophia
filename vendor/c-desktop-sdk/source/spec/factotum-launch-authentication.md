@@ -166,8 +166,8 @@ provisioned channel. The lock SDK accepts its admitted root without another
 Tversion or ordinary attach, then performs its normal file bootstrap. The SDK
 case reaches the lock object and observes revocation; the raw-wire case retains
 the exact waiting-read check.
-Other roles, in-place fragment controls, minimum-version Bubblewrap execution,
-external client rollout and final acceptance remain open. The lock-file
+Other roles, in-place fragment controls, external client rollout and final
+acceptance remain open. The lock-file
 contract specifies the same admission path; SDK contract copies are verified
 byte-for-byte against both documents.
 
@@ -416,9 +416,11 @@ exchange. Fork and intentional capability transfer are not prevented.
 
 The supported minimum's [Bubblewrap 0.11.2 source](https://github.com/containers/bubblewrap/blob/v0.11.2/bubblewrap.c)
 closes passed descriptors in its monitor while preserving them for the
-application child. This was read, not executed. The current handoff test uses
-the installed 0.13.0; execution at 0.11.2 remains a prerequisite before claiming
-minimum-version qualification. No live desktop or device is used by these tests.
+application child. The supported path uses unprivileged user namespaces, not
+setuid mode. The [minimum-version execution record](notes/investigations/etyvymxi-authenticated-attach-transport-state-and-factotum-handoff.md#minimum-bubblewrap-execution)
+binds the upstream source and built binary to the protected-handoff and lock
+authentication tests. Build inputs, versions and qualification limits belong
+to that record. No live desktop or device is used by those tests.
 
 ## Nonblocking control client
 
