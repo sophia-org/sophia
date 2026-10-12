@@ -125,6 +125,7 @@ struct HeldRead {
 }
 
 pub struct Peer {
+    pub attaches: usize,
     stream: UnixStream,
     inbuf: Vec<u8>,
     closed: bool,
@@ -258,6 +259,7 @@ impl Peer {
         .unwrap();
         edit_limits(&mut limits);
         let mut peer = Self {
+            attaches: 0,
             stream,
             inbuf: Vec::new(),
             closed: false,
@@ -450,6 +452,8 @@ impl Peer {
     fn handle(&mut self, kind: u8, tag: u16, body: Vec<u8>) {
         match kind {
             TATTACH => {
+                self.attaches += 1;
+                assert_eq!(self.attaches, 1, "shell handoff must not attach again");
                 self.fids.insert(u32_at(&body, 0), String::new());
                 self.send(RATTACH, tag, &qid(0x80, 1));
             }

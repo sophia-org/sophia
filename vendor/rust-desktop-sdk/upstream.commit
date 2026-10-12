@@ -1,14 +1,14 @@
-tree 642bb1143f05d060b992eb1a742c7007fbee4433
-parent 8c0140bbab85d66005469e405e214bbc4b674dd2
-author Mason Green <mason@greenm01.net> 1791767263 -0400
-committer Mason Green <mason@greenm01.net> 1791767263 -0400
+tree 5f3048e08e0038f7335bdbf087232259e4876bbd
+parent 357f9798fc5e08dc4bdb8ae0de8724831dbcf714
+author Mason Green <mason@greenm01.net> 1791779680 -0400
+committer Mason Green <mason@greenm01.net> 1791779680 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCaswy3xsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJroAD/RF2TfSsRA6AkXSkZiMKo
- SZLOKRIiJFGpNaUvud1Mjb8BAI3XrMx2YHxJXa+uuBkLzy18BwFAKZbvLGqFX8cg
- N/YA
- =mS44
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCasxjYBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKyTwD/QPB4jQ6+ahaAcQSdElHR
+ cFhexITuoagy/SdR0k8j9fMBAMztvGNNz4/CDr73kIU7UzRFtDi4HCaoIfEWdQm2
+ kDYD
+ =oait
  -----END PGP SIGNATURE-----
 
-Add bounded local launch authentication client
+Align the shared WM contract with authenticated Session startup

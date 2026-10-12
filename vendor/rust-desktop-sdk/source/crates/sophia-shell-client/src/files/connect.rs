@@ -139,7 +139,31 @@ impl FileWire {
             Reply::Attach(_) => {}
             _ => return Err(ShellClientError::Protocol("attach refused")),
         }
+        Self::negotiate(pipeline, root, options, deadline)
+    }
 
+    pub(crate) fn from_attached(
+        pipeline: Pipeline,
+        root: Fid,
+        options: &ShellClientOptions,
+    ) -> Result<(Self, ShellV1ServerWelcome, VecDeque<Inbound>), ShellClientError> {
+        if pipeline.is_poisoned() || pipeline.outstanding() != 0 || pipeline.fid_count() != 1 {
+            return Err(ShellClientError::Protocol(
+                "shell handoff requires a quiescent sole root",
+            ));
+        }
+        let deadline = Instant::now()
+            .checked_add(options.handshake_timeout)
+            .ok_or(ShellClientError::Protocol("handshake deadline overflow"))?;
+        Self::negotiate(pipeline, root, options, deadline)
+    }
+
+    fn negotiate(
+        mut pipeline: Pipeline,
+        root: Fid,
+        options: &ShellClientOptions,
+        deadline: Instant,
+    ) -> Result<(Self, ShellV1ServerWelcome, VecDeque<Inbound>), ShellClientError> {
         let api_fid = open_fixed(&mut pipeline, root, b"api", O_RDONLY, deadline)?;
         let tag = pipeline.read(api_fid, 0, crate::SHELL_FILES_API_LINE_MAX_BYTES)?;
         let api_line = match wait_ok(&mut pipeline, tag, deadline)? {

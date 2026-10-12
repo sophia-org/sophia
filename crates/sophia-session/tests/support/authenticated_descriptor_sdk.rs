@@ -5,8 +5,22 @@ use std::os::unix::fs::DirBuilderExt;
 
 #[test]
 fn descriptor_sdk_authenticates_and_recovers_through_the_normal_owner() {
-    let peer = peer::Peer::build("descriptor");
-    let reports = std::env::temp_dir().join(format!("descriptor-sdk-{}", std::process::id()));
+    exercise(false);
+}
+
+#[test]
+fn descriptor_rust_sdk_authenticates_and_recovers_through_the_normal_owner() {
+    exercise(true);
+}
+
+fn exercise(rust: bool) {
+    let peer = if rust {
+        peer::Peer::rust("descriptor")
+    } else {
+        peer::Peer::build("descriptor")
+    };
+    let reports =
+        std::env::temp_dir().join(format!("descriptor-sdk-{rust}-{}", std::process::id()));
     std::fs::DirBuilder::new()
         .mode(0o700)
         .create(&reports)
@@ -34,6 +48,23 @@ fn descriptor_sdk_authenticates_and_recovers_through_the_normal_owner() {
             .path(sophia_runtime::ProtectionPath::read_write(&reports))
             .unwrap(),
     );
+    if rust {
+        let executable = std::env::current_exe().unwrap();
+        shell.base_launch_spec.args = vec![
+            executable.clone().into_os_string(),
+            shell.transport.socket_path().as_os_str().to_owned(),
+            report.clone().into_os_string(),
+        ];
+        shell.base_launch_spec.protection_domain = Some(
+            shell
+                .base_launch_spec
+                .protection_domain
+                .take()
+                .unwrap()
+                .path(sophia_runtime::ProtectionPath::read_only(executable))
+                .unwrap(),
+        );
+    }
     shell
         .authenticate(sophia_protocol::NamespaceId::from_raw(2), &auth.coordinator)
         .unwrap();

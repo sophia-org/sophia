@@ -1923,3 +1923,41 @@ retained in the package. No binary was copied into evidence.
 Generic successful C SDK joins now cover descriptor, bar, launcher and dock.
 Rust SDK and deployed-client migration, the final role inventory, broad gates
 and threat-model/exit reconciliation still remain. t317 stays open.
+
+## Rust shell SDK production-owner joins
+
+The Rust SDK's signed `357f9798fc5e08dc4bdb8ae0de8724831dbcf714` adds
+`ShellConnection::from_attached`: it owns the quiescent role pipeline and sole
+root, then negotiates from `api` without resetting or attaching again. Its
+scripted tests cover all four shell profiles; the reattach control and restored
+352-test workspace result are recorded in that SDK's provenance. Signed
+`9b9e9bf1b0c7ad194f507dfdb383d25ddc1553ce` additionally aligns its shared WM
+contract copy with `bd9ee9460`, without an implementation change. Sophia now
+imports that exact development revision through the verified vendor command.
+Publication/release and deployed-client adoption are still separate work.
+
+The generic protected Rust peer uses only the pinned SDK for the afid exchange
+and shell negotiation. The existing C bootstrap only moves the inherited
+kernel channel to stdin and execs the Rust child; it supplies no challenge,
+verdict or role root. Both the descriptor owner and the independent component
+owner run this peer. Descriptor, bar, launcher and dock each authenticate,
+report their exact Session epoch, lose local authority on registration
+revocation, are reaped, and authenticate a replacement with fresh identity.
+The generation-channel pipeline remains alive alongside the shell connection.
+The same owner assertions continue to run against the C peer.
+
+Device-hidden package `t317-rust-shell-owners-01` captures the complete dynamic
+modified/untracked inventory on `bd9ee9460`, vendor command, focused and broader
+logs, and binary path/hash. Its manifest SHA-256 is
+`8c80e0be3373df2a6383766370401454606347d04e53d5643d7a38221dc3d984`.
+The shell filter passed 116 tests with five ignores. The additional ignore is
+the Rust child entry invoked by these parents, not an untested launch path.
+All-target native-session Clippy with warnings denied, formatting and the Rust
+SDK snapshot gate passed; that gate also ran all 352 SDK tests. No binary was
+copied into evidence. The trusted Session-to-Factotum channel remains supplied;
+this does not qualify any deployed UI, rendering or physical device.
+
+Generic C and Rust SDK owner joins are now present for all four shell roles.
+Deployed-client migration, the remaining role inventory, broad integration
+gates, publication and threat-model/exit reconciliation still prevent t317
+closure. No master merge or live installation is claimed.

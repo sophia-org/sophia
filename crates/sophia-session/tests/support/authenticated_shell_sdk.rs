@@ -6,7 +6,20 @@ use crate::live_session::authenticated_shell_peer::Peer;
 
 #[test]
 fn protected_shell_sdk_authenticates_all_component_roles_and_replacements() {
-    let peer = Peer::build("components");
+    exercise(false);
+}
+
+#[test]
+fn protected_rust_shell_sdk_authenticates_all_component_roles_and_replacements() {
+    exercise(true);
+}
+
+fn exercise(rust: bool) {
+    let peer = if rust {
+        Peer::rust("components")
+    } else {
+        Peer::build("components")
+    };
     for (name, role, audience) in [
         ("bar", ShellComponentRole::Bar, 4),
         ("launcher", ShellComponentRole::ApplicationLauncher, 6),
@@ -14,7 +27,7 @@ fn protected_shell_sdk_authenticates_all_component_roles_and_replacements() {
     ] {
         let mut auth = factotum::Fixture::new();
         let directory =
-            std::env::temp_dir().join(format!("shell-sdk-{name}-{}", std::process::id()));
+            std::env::temp_dir().join(format!("shell-sdk-{rust}-{name}-{}", std::process::id()));
         let reports = directory.join("reports");
         std::fs::DirBuilder::new()
             .mode(0o700)
@@ -54,7 +67,7 @@ fn protected_shell_sdk_authenticates_all_component_roles_and_replacements() {
                 .start(
                     slot,
                     |_, socket| {
-                        Ok(ProcessLaunchSpec::new(&peer.0)
+                        let mut spec = ProcessLaunchSpec::new(&peer.0)
                             .arg(name)
                             .arg(&report)
                             .protection_domain(
@@ -66,7 +79,24 @@ fn protected_shell_sdk_authenticates_all_component_roles_and_replacements() {
                                 .unwrap()
                                 .path(ProtectionPath::read_write(&reports))
                                 .unwrap(),
-                            ))
+                            );
+                        if rust {
+                            let executable = std::env::current_exe().unwrap();
+                            spec.args = vec![
+                                executable.clone().into_os_string(),
+                                socket.as_os_str().to_owned(),
+                                report.clone().into_os_string(),
+                            ];
+                            spec = spec.env("SOPHIA_TEST_SHELL_ROLE", name);
+                            spec.protection_domain = Some(
+                                spec.protection_domain
+                                    .take()
+                                    .unwrap()
+                                    .path(ProtectionPath::read_only(executable))
+                                    .unwrap(),
+                            );
+                        }
+                        Ok(spec)
                     },
                     ShellContentAdmissionPolicy::Granted {
                         discrete_input: true,

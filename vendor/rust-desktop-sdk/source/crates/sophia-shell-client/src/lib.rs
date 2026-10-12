@@ -106,6 +106,32 @@ pub struct ShellConnection {
 }
 
 impl ShellConnection {
+    /// Continue on the exact role pipeline/root returned by launch
+    /// authentication, without Tversion or another attach. Takes exclusive
+    /// ownership; the root must be the only live fid and all replies drained.
+    /// Keep the separate generation-channel owner alive for this launch.
+    /// Failure closes this role connection and never falls back to plain attach.
+    pub fn from_attached(
+        pipeline: sophia_9p_client::pipeline::Pipeline,
+        root: sophia_9p_records::Fid,
+        options: ShellClientOptions,
+    ) -> Result<Self, ShellClientError> {
+        if options.minimum_revision == 0
+            || options.minimum_revision > options.maximum_revision
+            || options.handshake_timeout.is_zero()
+        {
+            return Err(ShellClientError::UnsupportedRevision);
+        }
+        let (wire, welcome, inbox) = files::FileWire::from_attached(pipeline, root, &options)?;
+        Ok(Self {
+            wire: Box::new(wire),
+            welcome,
+            output: outbox::ClientOutbox::default(),
+            inbox,
+            ledger: custody::Ledger::default(),
+        })
+    }
+
     /// Connect over the native 9P file wire: Pipeline connect, attach, open
     /// the fixed nodes, then validate the selected contract. The
     /// attach's connection epoch (every record header must carry it) is read

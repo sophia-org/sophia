@@ -86,6 +86,16 @@ may shorten it. Drive `poll`, then `wait_for_io` when idle, until `ready`.
 root directly; do not issue a plain attach. Claims are bounded to 255 bytes and
 must match Session policy; they do not choose a principal or namespace.
 
+Shell clients pass that role pipeline and root to
+`ShellConnection::from_attached`. It takes exclusive ownership and starts with
+the shell `api` read, without another version or attach. The pipeline must be
+healthy and quiescent, with the root as its only live fid. Keep the separate
+generation-channel pipeline alive for the launch. Failure closes the role
+connection; it does not trigger an anonymous fallback. The shell negotiation
+has its own configured timeout after authentication. Scripted tests cover bar,
+launcher, dock and descriptor handoffs; a production authentication join and
+application migration remain separate qualifications.
+
 Only `Tauth`'s `EAGAIN` is retried, without renewing the deadline. Malformed
 records, refusals and cancellation never fall back to anonymous admission.
 Dropping an unfinished conversation shuts both streams. Keep the returned

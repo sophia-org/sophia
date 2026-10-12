@@ -1,8 +1,25 @@
 //! Shared generic shell SDK compiler; binaries remain inside the leased target.
 use std::path::PathBuf;
 
+#[path = "shell_rust_peer.rs"]
+mod rust_peer;
+
 pub(crate) struct Peer(pub(crate) PathBuf);
 impl Peer {
+    pub(crate) fn rust(label: &str) -> Self {
+        let target = PathBuf::from(std::env::var_os("CARGO_TARGET_DIR").expect("cargo-slot"));
+        let temporary = target.join("tmp");
+        std::fs::create_dir_all(&temporary).unwrap();
+        let binary = temporary.join(format!("t317-shell-rust-{label}-{}", std::process::id()));
+        assert!(std::process::Command::new("/usr/bin/cc")
+            .env_clear().env("PATH", "/usr/bin:/bin")
+            .args(["-std=c99", "-Wall", "-Wextra", "-Werror", "-pedantic", "-O2",
+                "-DSOPHIA_TEST_CHILD=\"live_session::authenticated_shell_peer::rust_peer::protected_shell_child\""])
+            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/lock_rust_bootstrap.c"))
+            .arg("-o").arg(&binary).status().unwrap().success());
+        Self(binary)
+    }
+
     pub(crate) fn build(label: &str) -> Self {
         let target = PathBuf::from(std::env::var_os("CARGO_TARGET_DIR").expect("cargo-slot"));
         let temporary = target.join("tmp");

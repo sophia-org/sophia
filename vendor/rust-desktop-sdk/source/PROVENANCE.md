@@ -342,3 +342,39 @@ channel, Factotum afid exchange, immutable identity and current custody selected
 by the candidate's normal lock-provider startup. Record layouts and Rust code
 are unchanged. This SDK still provides only the generic afid primitives;
 the reusable launch exchange and a real protected Rust peer remain t317 work.
+
+## Shell authenticated-root handoff
+
+`ShellConnection::from_attached` takes exclusive ownership of the role pipeline
+and root returned by the launch client. It refuses poisoned, busy or multi-fid
+pipelines, then shares the ordinary shell negotiation beginning at `api`,
+without Tversion or a second attach. It does not select claims or automatically
+adopt environment descriptors. The generation channel remains the caller's.
+The shell contract copy is from signed Sophia
+`bd9ee9460a28870ab15876e447ef5139e462efe5`; its record layout is unchanged.
+
+Scripted supplied-admission tests negotiate all four shell profiles, confirm
+the single attach and epoch, and observe both custody acknowledgements. They
+do not qualify the production Factotum join. A reattach mutation fails at
+`shell handoff must not attach again`; all captured fixture bytes are restored.
+The restored full workspace passes 352 tests with zero ignores, all-target
+Clippy with warnings denied, and formatting. The contract hash check passes
+from `spec/`; an earlier invocation from the repository root failed to locate
+the files and is retained in the log.
+
+| Package | SHA256SUMS SHA-256 |
+| --- | --- |
+| `t317-rust-shell-control-01` | `3e907f85d5aab68c45a473919e321047c37386185993dbc7633446116bd1ee2f` |
+| `t317-rust-shell-handoff-01` | `8831bf871112944b935bdfc55f47c0f50af5268ed77818883bd18eed49881f4c` |
+
+The positive package retains executable paths/hashes, never binary copies.
+This provenance addition follows the captured candidate; implementation and
+tests are unchanged. Production interoperability and deployed-client migration
+remain separate gates.
+
+## Shared WM contract reconciliation
+
+The WM file contract copy now matches signed Sophia
+`bd9ee9460a28870ab15876e447ef5139e462efe5`, including normal authenticated
+WM startup and replacement. No codec or client implementation changes.
+This aligns the shared contract snapshot before the Rust shell production join.

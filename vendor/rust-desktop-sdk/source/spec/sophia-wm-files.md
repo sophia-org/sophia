@@ -50,6 +50,25 @@ used alongside another WM writer or acquire authority from `uname`,
 `aname`, a numeric UID, a fid or a qid. An unauthorized second attach refuses;
 cloning the admitted root does not create another role or epoch.
 
+Normal Session startup requires its configured Factotum service. Before
+spawning the WM, Session registers a private SpatialPolicy launch and gives
+the child its generation-scoped launch channel. The WM authenticates an afid
+through the [launch authentication protocol](factotum-launch-authentication.md)
+and attaches with `uname=wm` and `aname=spatial-policy`. These names must match
+Session policy; they select no authority. The first successful attach pins
+the principal and private namespace to the connection. An attach without a
+verified afid is refused. Clients must continue WM file negotiation on that
+admitted root, without resetting the connection or attaching anonymously.
+
+Automatic restart, control-requested restart and launch-spec replacement
+register a new protected launch. They retain the endpoint's authentication
+budget and logical file-qid allocator, but never reuse the predecessor's
+launch verdict. Registration, protected spawn and activation are polled by
+Session; pending layout settlement is still aborted before replacement can
+advance the WM epoch. Expected-peer credential checks remain an accept filter,
+separate from authenticated authority. Supplied-admission fixtures exercise
+file semantics separately and do not establish normal-launch authentication.
+
 9P negotiates the base version `9P2000.L` and its message-size limit. WM API
 negotiation is separate: the file family is `sophia_wm_fs_v1`, API version 1.
 The server publishes its admitted epoch, API range, capability ceiling and
