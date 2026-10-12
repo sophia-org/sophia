@@ -46,7 +46,8 @@ struct LoopRenderOwners {
 }
 
 struct SessionLoopStartup<'a> {
-    namespace_registry: Arc<std::sync::Mutex<sophia_runtime::NamespaceRegistry>>,
+    session_unlock_authenticator: Option<Box<dyn crate::session_lock_input::SessionUnlockAuthenticator>>,
+    authenticated_launches: crate::launch_authentication::LaunchCoordinator,
     lock_namespace: Option<sophia_protocol::NamespaceId>,
     initial_output_realization: Option<sophia_config::DesktopOutputReconciliation>,
     initial_output_recovery: output_replacement::OutputRecovery,
@@ -428,7 +429,8 @@ fn run_session_loop_inner(
         initial_head_mapping,
     } = resources;
     let SessionLoopStartup {
-        namespace_registry,
+        mut session_unlock_authenticator,
+        mut authenticated_launches,
         lock_namespace,
         initial_output_realization,
         initial_output_recovery: mut output_recovery,
@@ -618,11 +620,6 @@ fn run_session_loop_inner(
     // the X frontend has applied it.
     let mut session_lock_input_epoch = 0_u64;
     let mut session_lock_cursor_hidden = false;
-    // A lock is refused without an authenticator to end it.
-    let (mut session_unlock_authenticator, launch_service) =
-        lock_authenticator::start_session_authenticator(config.factotum.as_ref(), owner_wake.notifier());
-    let mut authenticated_launches =
-        crate::launch_authentication::LaunchCoordinator::new(launch_service, namespace_registry);
     // The lock's renderer, started once a topology is published. A lock
     // never waits for it.
     let mut lock_provider: Option<lock_provider::LockProvider> = None;

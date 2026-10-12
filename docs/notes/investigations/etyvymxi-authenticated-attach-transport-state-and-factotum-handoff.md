@@ -1261,3 +1261,26 @@ shared Session coordinator before those launches and passing their registered
 launch authority to each transport. This checkpoint does not qualify that
 startup wiring, minimum-version Bubblewrap, a whole-repository gate, deployed
 clients or a live installation. These remain t317 work.
+
+## Shared authentication owner before role startup
+
+Session now creates its generation, namespace registry, supervised authenticator
+and launch coordinator immediately after its owner wake, before activating
+public role processes. It moves those same owners into the running loop instead
+of creating a second coordinator there. Namespace allocation remains in its
+existing order; no X namespace or capability changes accompany the relocation.
+Startup errors drop the owners through their existing cleanup paths.
+
+`t317-early-coordinator-01` records a device-hidden native-session compile,
+three shared-coordinator regressions, five normal-provider regressions and
+formatting, all passing. Its self-excluding manifest has SHA-256
+`f46b0bcbd611fdc939187fbb29839a48f03817982813ee4169915eb3496136e1`;
+the dynamic candidate records both changed source files. These tests cover the
+existing owners, not an authenticated normal WM/output/shell startup.
+
+Those launches still need policy namespaces, reservations and transport
+factories. In particular, WM activation's blocking negotiation wait must poll
+the coordinator once it depends on launch authentication; otherwise it would
+wait for an exchange whose relay cannot advance. Replacement paths must use
+fresh registrations on this same owner. This is unfinished integration work,
+not an accepted legacy fallback or a reduced t317 exit.

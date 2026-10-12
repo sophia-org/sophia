@@ -33,6 +33,19 @@ pub(crate) fn run_persistent_xterm_session(
     // Every producer the owner loop inspects gets this before it can publish
     // anything the owner would otherwise sleep past.
     let owner_wake = OwnerWake::new()?;
+    let session_generation = NEXT_SESSION_GENERATION
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |generation| {
+            generation.checked_add(1)
+        })
+        .map_err(|_| "Sophia session generation exhausted")?;
+    let namespace_registry = Arc::new(Mutex::new(NamespaceRegistry::new(session_generation)?));
+    // One authenticator and launch owner serve startup and the running Session.
+    // Starting them here lets role launches register before spawning a peer;
+    // moving into the owner loop must not replace their generation or budgets.
+    let (session_unlock_authenticator, launch_service) =
+        lock_authenticator::start_session_authenticator(config.factotum.as_ref(), owner_wake.notifier());
+    let authenticated_launches = crate::launch_authentication::LaunchCoordinator::new(
+        launch_service, namespace_registry.clone());
     let mut scripting = LiveControlState::start(&mut config);
     scripting.set_owner_wake(&owner_wake.notifier());
     let gpu_admission = sophia_backend_live::LiveGpuAdmission::new(
@@ -208,15 +221,9 @@ pub(crate) fn run_persistent_xterm_session(
     // the group directory is; `config.socket_path` stays what every client and
     // tool names, and reaches this through the link made above.
     let server_path = bound_socket_path.clone();
-    let session_generation = NEXT_SESSION_GENERATION
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |generation| {
-            generation.checked_add(1)
-        })
-        .map_err(|_| "Sophia session generation exhausted")?;
     if let Some(wm) = wm_session.as_mut() {
         wm.start_inspection(&mut config, session_generation);
     }
-    let namespace_registry = Arc::new(Mutex::new(NamespaceRegistry::new(session_generation)?));
     let x_namespace = namespace_registry
         .lock()
         .map_err(|_| "Sophia namespace registry lock was poisoned")?
@@ -790,7 +797,8 @@ pub(crate) fn run_persistent_xterm_session(
             initial_head_mapping,
         },
         SessionLoopStartup {
-            namespace_registry: namespace_registry.clone(),
+            session_unlock_authenticator,
+            authenticated_launches,
             lock_namespace,
             initial_output_realization: startup_realization,
             initial_output_recovery,
