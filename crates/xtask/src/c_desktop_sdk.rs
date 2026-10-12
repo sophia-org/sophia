@@ -63,6 +63,7 @@ pub fn verify(snapshot: &Path, repo: &Path) -> Result<String, String> {
     let commit = read(&snapshot.join("upstream.commit"))?;
     crate::git_tree::verify_commit(&commit, &manifest.revision, &inventory.tree)?;
     for (local, authoritative) in [
+        ("spec/namespace-discovery.md", "docs/namespace-discovery.md"),
         (
             "spec/sophia-shell-descriptors.md",
             "docs/sophia-shell-descriptors.md",

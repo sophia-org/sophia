@@ -97,6 +97,25 @@ fn duplicate_stream(pipe: &Pipeline) -> Result<UnixStream, Error> {
 }
 
 impl Client {
+    /// Authenticate another endpoint using exclusive ownership of the launch's
+    /// quiescent relay. Only the relay is reset: previously admitted role
+    /// pipelines and their fids remain owned by the caller and are untouched.
+    /// Do not retain another driver or duplicate of the relay. As with `over`,
+    /// conversation failure shuts the relay and may revoke the whole launch.
+    pub fn over_relay(
+        role: UnixStream,
+        relay: Pipeline,
+        uname: &[u8],
+        aname: &[u8],
+    ) -> Result<Self, Error> {
+        if relay.outstanding() != 0 {
+            return Err(Error::Invalid("pending requests on shared launch relay"));
+        }
+        let stream = duplicate_stream(&relay)?;
+        drop(relay);
+        Self::over(role, stream, uname, aname)
+    }
+
     pub fn over(
         role: UnixStream,
         relay: UnixStream,

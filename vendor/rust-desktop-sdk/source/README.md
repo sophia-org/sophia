@@ -9,6 +9,7 @@ Sophia checkout to build.
 | `sophia-9p-records` | 9P2000.L value records (tags, fids, qids, wire errno, requests, replies), shared with Sophia's server core. |
 | `sophia-9p-client` | Bounded 9P2000.L clients: a blocking read-only `client` and the nonblocking, pipelined `pipeline` the role clients drive. |
 | `sophia-launch-client` | Sophia's local launch-channel authentication: correlated afid exchange, bounded progress and an admitted role root. |
+| `sophia-namespace-client` | Bounded discovery parsing and Linux lookup against a pinned namespace directory; endpoint visibility confers no authority. |
 | `sophia-desktop-ids` | Identifiers every role contract shares. |
 | `sophia-shell-protocol` | The shell's typed records and the `sophia_shell_fs_v1` file contract codec. |
 | `sophia-shell-client` | The shell client over the file contract. |
@@ -26,6 +27,23 @@ descriptor client role follows `spec/sophia-shell-files-v1.kdl` and
 disclosure; Sophia separately tests these clients against its production export.
 
 ## Contracts
+
+`spec/namespace-discovery.md` defines namespace discovery. On Linux,
+`sophia_namespace_client::Namespace::from_env()` pins the exact directory in
+`SOPHIA_NAMESPACE_DIR`; `discovery()` exposes passive endpoint metadata and
+`connect(path)` returns an owned, nonblocking, close-on-exec Unix stream.
+Check protocol, interface and version before connecting, then use the existing
+protocol authentication client. Keep the namespace object for subsequent
+lookups in the same generation. No method follows a mutable `current` symlink
+or changes the process working directory. Local tests are not yet a production
+Session launch qualification.
+
+For several 9P endpoints in one approved recipe, keep the admitted role pipeline
+and pass its returned relay pipeline to `sophia_launch_client::Client::over_relay`
+with the next endpoint stream. This transfers exclusive relay ownership and
+refuses outstanding work. Only the relay is reset; existing role roots remain
+untouched. Do not duplicate the relay between drivers. Authentication failure
+closes the relay and can revoke the launch; there is no unauthenticated retry.
 
 `spec/sophia-shell-files-v1.kdl` is a pinned copy of the file contract Sophia
 owns (`protocol/sophia-shell-files-v1.kdl` in the Sophia repository).

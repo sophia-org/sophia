@@ -1,0 +1,15 @@
+[package]
+name = "sophia-namespace-client"
+description = "Bounded discovery of Session-selected Sophia endpoint views."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+rustix = { workspace = true, features = ["fs", "net", "std"] }
+
+[lints]
+workspace = true

@@ -19,6 +19,12 @@ protected-grant contract, rather than a hidden ancillary-data channel.
 
 ## Release 0.8.0
 
+The t318 discovery module independently parses the bounded v1 namespace file
+and pins Linux directory/socket identities. Literal and local-socket tests
+cover truncation, malformed paths, counts, long paths, replacement and symlink
+refusal. It neither authenticates a role nor grants authority; production
+Session publication and launch interoperability are separate gates.
+
 The t317 development profile copy includes Sophia's opt-in Tauth/afid seam.
 The generic C client implements Tauth and explicit attach-with-afid, including
 QTAUTH validation, refusal cleanup and flush-race custody. `sophia_launch_auth.h`

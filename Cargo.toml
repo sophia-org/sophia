@@ -90,6 +90,7 @@ sophia-9p-client = { path = "vendor/rust-desktop-sdk/source/crates/sophia-9p-cli
 sophia-9p-records = { path = "vendor/rust-desktop-sdk/source/crates/sophia-9p-records" }
 sophia-desktop-ids = { path = "vendor/rust-desktop-sdk/source/crates/sophia-desktop-ids" }
 sophia-launch-client = { path = "vendor/rust-desktop-sdk/source/crates/sophia-launch-client" }
+sophia-namespace-client = { path = "vendor/rust-desktop-sdk/source/crates/sophia-namespace-client" }
 sophia-lock-protocol = { path = "vendor/rust-desktop-sdk/source/crates/sophia-lock-protocol" }
 sophia-shell-client = { path = "vendor/rust-desktop-sdk/source/crates/sophia-shell-client" }
 sophia-shell-protocol = { path = "vendor/rust-desktop-sdk/source/crates/sophia-shell-protocol" }

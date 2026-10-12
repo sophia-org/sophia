@@ -180,8 +180,11 @@ fn role(mut s: UnixStream, case: Case, rounds: u8, signal: std::sync::mpsc::Sync
     }
     eof(&mut s);
 }
-fn relay(mut s: UnixStream, case: Case, rounds: u8) {
-    for round in 0..rounds {
+fn relay(s: UnixStream, case: Case, rounds: u8) {
+    relay_rounds(s, case, 0..rounds);
+}
+fn relay_rounds(mut s: UnixStream, case: Case, rounds: impl IntoIterator<Item = u8>) {
+    for round in rounds {
         version(&mut s);
         let attach = request(&mut s, 104);
         assert_eq!(u32_at(&attach.body, 4), u32::MAX);
@@ -254,6 +257,56 @@ fn relay(mut s: UnixStream, case: Case, rounds: u8) {
         }
     }
     eof(&mut s);
+}
+
+#[test]
+fn another_endpoint_cannot_discard_pending_relay_work() {
+    let (mut client, jobs) = start(Case::Good, 1, Duration::from_secs(2));
+    drive(&mut client).unwrap();
+    let mut authenticated = client.into_authenticated().unwrap();
+    authenticated
+        .relay
+        .attach(b"", b"sophia-launch-relay-v1")
+        .unwrap();
+    let (role, _peer) = UnixStream::pair().unwrap();
+    assert!(matches!(
+        Client::over_relay(role, authenticated.relay, b"lock", b"lock-provider"),
+        Err(Error::Invalid("pending requests on shared launch relay"))
+    ));
+    drop(authenticated.role);
+    for job in jobs {
+        job.join().unwrap();
+    }
+}
+
+#[test]
+fn one_launch_relay_authenticates_two_endpoints_without_resetting_the_first() {
+    let (first, first_peer) = UnixStream::pair().unwrap();
+    let (second, second_peer) = UnixStream::pair().unwrap();
+    let (channel, relay_peer) = UnixStream::pair().unwrap();
+    for s in [&first_peer, &second_peer, &relay_peer] {
+        s.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+    }
+    let (signal, _received) = std::sync::mpsc::sync_channel(2);
+    let next_signal = signal.clone();
+    let a = std::thread::spawn(move || role(first_peer, Case::Good, 1, signal));
+    let b = std::thread::spawn(move || role(second_peer, Case::Good, 1, next_signal));
+    let p = std::thread::spawn(move || relay_rounds(relay_peer, Case::Good, [0, 0]));
+    let mut first = Client::over(first, channel, b"lock", b"lock-provider").unwrap();
+    drive(&mut first).unwrap();
+    let first = first.into_authenticated().unwrap();
+    let mut second = Client::over_relay(second, first.relay, b"lock", b"lock-provider").unwrap();
+    drive(&mut second).unwrap();
+    let second = second.into_authenticated().unwrap();
+    assert_eq!(first.role.outstanding(), 0);
+    assert_ne!(first.root.0, u32::MAX);
+    // The first script expects EOF after its one authentication exchange. A
+    // Tversion or any other reset sent there makes that independent peer fail.
+    drop(first.role);
+    drop(second);
+    a.join().unwrap();
+    b.join().unwrap();
+    p.join().unwrap();
 }
 fn start(case: Case, rounds: u8, timeout: Duration) -> (Client, Vec<JoinHandle<()>>) {
     let (client, jobs, _) = start_with_signal(case, rounds, timeout);

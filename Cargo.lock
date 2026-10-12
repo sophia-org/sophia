@@ -1493,6 +1493,13 @@ name = "sophia-lock-protocol"
 version = "0.3.0"
 
 [[package]]
+name = "sophia-namespace-client"
+version = "0.3.0"
+dependencies = [
+ "rustix",
+]
+
+[[package]]
 name = "sophia-policy-protocol-gen"
 version = "0.1.0"
 dependencies = [
@@ -1557,6 +1564,7 @@ dependencies = [
  "sophia-9p",
  "sophia-engine",
  "sophia-linux-peer",
+ "sophia-namespace-client",
  "sophia-protocol",
  "sophia-shell-client",
  "sophia-wake",

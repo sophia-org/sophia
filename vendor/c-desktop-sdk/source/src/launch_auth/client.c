@@ -60,6 +60,32 @@ int sophia_la_init(struct sophia_la_client *c, struct sophia_9p_client *role,
     *c = next;
     return 0;
 }
+int sophia_la_next_endpoint(struct sophia_la_client *c,
+                            const struct sophia_la_client *completed,
+                            struct sophia_9p_client *role, const char *uname,
+                            const char *aname, uint64_t now) {
+    struct sophia_9p_client *relay;
+    char checked[256];
+    size_t i, bytes;
+    int result;
+    if (!c || !completed || !sophia_la_ready(completed) || !role ||
+        role == completed->role || !(relay = completed->relay) || role == relay ||
+        role->fd == relay->fd || role->fd == completed->role->fd || role->phase || role->terminal ||
+        role->fid_limit < 2 || !role->storage || now > UINT64_MAX - 5000 ||
+        claim(checked, uname) || claim(checked, aname))
+        return SOPHIA_9P_ARGUMENT;
+    if (relay->terminal || relay->phase != 2 || relay->fid_count || relay->rx_used)
+        return SOPHIA_9P_BUSY;
+    for (i = 0; i < SOPHIA_9P_REQUESTS * 2; ++i)
+        if (relay->slots[i].state)
+            return SOPHIA_9P_BUSY;
+    bytes = sophia_9p_storage_bytes(relay->offered, relay->capacity);
+    result = sophia_9p_init(relay, relay->fd, relay->offered, relay->capacity,
+                            relay->fid_limit, relay->storage, bytes);
+    if (result)
+        return result;
+    return sophia_la_init(c, role, relay, uname, aname, now);
+}
 static int start(struct sophia_la_client *c) {
     const char *rpc = "rpc";
     switch (c->stage) {

@@ -25,6 +25,15 @@ struct sophia_la_client {
 int sophia_la_init(struct sophia_la_client *, struct sophia_9p_client *role,
                    struct sophia_9p_client *relay, const char *uname, const char *aname,
                    uint64_t now_msec);
+/* Start on a fresh endpoint using a completed conversation's quiescent relay.
+ * Resets only the relay's wire state, leaving the earlier role root untouched.
+ * The caller transfers exclusive use of the relay/storage to the new client;
+ * never drive the previous conversation again. It may be the same auth struct.
+ * Refuses pending replies, requests or relay fids instead of discarding them. */
+int sophia_la_next_endpoint(struct sophia_la_client *,
+                            const struct sophia_la_client *completed,
+                            struct sophia_9p_client *new_role,
+                            const char *uname, const char *aname, uint64_t now_msec);
 /* One bounded pass, at most one reply consumed and one service call per wire.
  * 0 means no terminal error, not ready. Time is caller-supplied monotonic ms;
  * a backwards clock or the fixed five-second total deadline fails closed. */

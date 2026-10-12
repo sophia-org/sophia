@@ -17,6 +17,7 @@ const REPOSITORY: &str = "https://github.com/sophia-org/sophia-desktop-sdk-rs";
 
 /// Each SDK copy, and the Sophia file it must equal byte for byte.
 pub const CONTRACTS: &[(&str, &str)] = &[
+    ("spec/namespace-discovery.md", "docs/namespace-discovery.md"),
     (
         "spec/sophia-shell-files-v1.kdl",
         "protocol/sophia-shell-files-v1.kdl",

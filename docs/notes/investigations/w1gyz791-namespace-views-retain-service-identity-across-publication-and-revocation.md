@@ -227,6 +227,23 @@ original closed evidence packages remain unchanged.
 
 ## Connections
 
+Sophia now pins the published C and Rust candidates above. Both snapshot
+verifiers also compare `namespace-discovery.md` against the normative source,
+so a later contract change cannot silently leave either SDK copy behind.
+The runtime's seven publication tests pass, including a new generic join that
+runs both independent SDKs against the production publisher. It checks a
+361-byte endpoint path, a second alias, service generations, and connections
+to retained A versus replacement B listeners. The peers send a marker solely
+to identify the connected listener: no role traffic, grant or authenticated
+operation is claimed. Production role-owner dispatch remains pending.
+
+The SDK snapshot gates, runtime all-target Clippy and source-layout gate pass.
+The closed `t318-sophia-discovery-01` package records the dynamically enumerated
+candidate files before and after the seven-test publisher rerun and retains
+the gate logs. Its SHA256SUMS has SHA-256
+`967097ae6a4bc78777984b6508ce967b61783f9bddcb43aeb102e4fe420b75ae`.
+This paragraph follows that captured candidate; code and fixtures are unchanged.
+
 The second full-gate attempt (`t318-gate-02`, signed `a94415e4f`) reached
 workspace tests and stopped at `normal_session_lifecycle`: the isolation
 wrapper had removed `XDG_RUNTIME_DIR` without supplying a private replacement.

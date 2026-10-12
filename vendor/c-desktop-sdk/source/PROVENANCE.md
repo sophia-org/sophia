@@ -652,3 +652,28 @@ The authentication contract is copied from signed Sophia `c57cc30eedce72dfeacea6
 It adds a bounded approved-audience set on the private Session-to-Factotum
 owner interface. Public afid and launch-relay bytes are unchanged; no SDK
 implementation changes or new authentication qualification are claimed here.
+
+## Namespace discovery foundation
+
+`spec/namespace-discovery.md` is copied without modification from signed Sophia
+`2ef7e39b984dfba12f346c1f4d2b98e08edb6d65`. The discovery parser and Linux directory lookup are
+implemented independently against that contract. Local socket tests cover pinned
+directory identity, long endpoint names, symlink refusal and descriptor flags.
+These tests do not claim Session launch integration or authentication; endpoint
+visibility never grants permission.
+
+Qualification: the full C `make check` suite and the namespace UBSan trap-mode probe pass. ASan was not run: the linker could not find its runtime libraries. Removing the declared endpoint-count check makes the complete-line truncation test fail. The source and all candidate files were restored byte-for-byte. This control qualifies truncation refusal, not authentication or a live Session launch.
+
+- `t318-c-discovery-01`: SHA256SUMS `52a43273353fe43ed83e4e5a45fc1a7b0e79a9bd15c5e1d929e829f6e2c3a41c`.
+- `t318-c-discovery-count-control-01`: SHA256SUMS `f74ef362887be288ebaafdebe5d159ce0fc0bdb5655888e06ab7210adb21dac1`.
+
+## Sequential recipe endpoint authentication
+
+The launch helper can reuse the completed conversation's exclusive, quiescent
+relay for another endpoint without resetting the first role transport. Pending
+relay work refuses. Independent scripted peers exercise both properties; no
+production multi-endpoint launch is claimed by this SDK-only run. The C check suite passes.
+
+Evidence `t318-c-relay-01` has SHA256SUMS SHA-256
+`226a7028ea678c8f2bb3b2082541c3365b8eeb1013bc6850afc52d3c950125ea`. The candidate hashes cover
+all modified/untracked files at the run; this provenance addition follows it.

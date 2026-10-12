@@ -149,6 +149,44 @@ static int drive(struct fixture *f, uint64_t origin) {
     assert(0);
     return 0;
 }
+static void reuse_launch_relay(void) {
+    struct fixture f;
+    struct sophia_9p_client next;
+    struct sophia_la_client completed;
+    uint8_t storage[12288], byte;
+    int previous[2];
+    uint32_t old_root;
+    init(&f, 0, 100);
+    assert(!drive(&f, 100));
+    completed = f.auth;
+    old_root = sophia_la_root(&completed);
+    previous[0] = f.role[0]; previous[1] = f.role[1];
+    assert(!socketpair(AF_UNIX, SOCK_STREAM, 0, f.role));
+    assert(!sophia_9p_init(&next, f.role[0], 4096, 1, 2, storage, sizeof storage));
+    assert(!sophia_la_next_endpoint(&f.auth, &completed, &next, "role", "view", 1000));
+    assert(!drive(&f, 1000));
+    assert(f.root_attaches == 2 && f.writes == 2 && f.clunks == 6);
+    assert(f.r.fid_count == 1 && f.r.fids[0] == old_root);
+    assert(next.fid_count == 1 && !f.p.fid_count);
+    assert(recv(previous[1], &byte, 1, MSG_DONTWAIT) == -1 &&
+           (errno == EAGAIN || errno == EWOULDBLOCK));
+    {
+        struct sophia_9p_handle pending;
+        struct sophia_9p_client fresh;
+        struct sophia_la_client refused;
+        uint8_t fresh_storage[12288];
+        uint32_t fid;
+        int pair[2];
+        assert(!socketpair(AF_UNIX, SOCK_STREAM, 0, pair));
+        assert(!sophia_9p_init(&fresh, pair[0], 4096, 1, 2, fresh_storage, sizeof fresh_storage));
+        assert(!sophia_9p_attach(&f.p, "", "sophia-launch-relay-v1", &pending, &fid));
+        assert(sophia_la_next_endpoint(&refused, &f.auth, &fresh, "role", "view", 2000) == SOPHIA_9P_BUSY);
+        assert(f.p.phase == 2 && f.p.fid_count == 1 && sophia_9p_wants_write(&f.p));
+        close(pair[0]); close(pair[1]);
+    }
+    close(previous[0]); close(previous[1]);
+    finish(&f);
+}
 int main(void) {
     struct fixture f;
     unsigned mode;
@@ -203,6 +241,7 @@ int main(void) {
     assert(sophia_la_service(&f.auth, 5000, 4096) == SOPHIA_9P_CLOSED);
     assert(f.auths == 1 && !f.root_attaches);
     finish(&f);
+    reuse_launch_relay();
     puts("launch authentication: own challenge, exact status, no fallback, cleanup, retry and "
          "deadline passed");
     return 0;

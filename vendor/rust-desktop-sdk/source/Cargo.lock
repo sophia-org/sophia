@@ -123,6 +123,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sophia-namespace-client"
+version = "0.3.0"
+dependencies = [
+ "rustix",
+]
+
+[[package]]
 name = "sophia-shell-client"
 version = "0.3.0"
 dependencies = [

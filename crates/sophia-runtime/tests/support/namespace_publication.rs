@@ -1,5 +1,8 @@
 #![cfg(test)]
 
+#[path = "namespace_sdk.rs"]
+mod sdk;
+
 use super::*;
 use crate::namespace_recipe::{Input, compile};
 use std::collections::BTreeMap;

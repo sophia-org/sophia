@@ -1,14 +1,14 @@
-tree 7c375853442925b52141843a59602c002d5d0955
-parent e28fecd3e63133268d21538cf5107611ca0c6f31
-author Mason Green <mason@greenm01.net> 1791805157 -0400
-committer Mason Green <mason@greenm01.net> 1791805157 -0400
+tree 5062f72cd3a5023e377ba3c403b0726ad959d810
+parent 8bb069e13afb076f08431cf299a64d2305330ea7
+author Mason Green <mason@greenm01.net> 1791806792 -0400
+committer Mason Green <mason@greenm01.net> 1791806792 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCaszG5RsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJ1RwD8CYZhIJzMsRfGoF98VKmi
- w1XbDh8t9Sv/WNOTKujyYh0BAORAQ3uQPUXVJ2h8OJZgPrCmyIErDy7LHtbpDfV3
- vsgJ
- =sih4
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCaszNSBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKBZgD+OmMJCREgzpKkzvD4aVMz
+ aoHKlvKolL2xHh+EpgPWD4ABAPLfzznaNKXJzIdNIw8e5hGkYZhK7POj/LbzBvxc
+ TdUJ
+ =6yIe
  -----END PGP SIGNATURE-----
 
-docs: sync recipe authentication audience contract
+feat(auth): reuse quiescent launch relay for another endpoint
