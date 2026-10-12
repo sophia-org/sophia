@@ -54,6 +54,14 @@ pub(crate) fn spawn_catalog_process_with_transaction(
     transaction: Option<u64>,
     identity: Option<&str>,
 ) -> std::io::Result<Child> {
+    // Recipe launches must enter the asynchronous namespace owner. Until that
+    // owner consumes this command, neither catalog path may discard a request
+    // and fall through to an ordinary host or legacy confined launch.
+    if command.namespace_recipe.is_some() {
+        return Err(std::io::Error::other(
+            "namespace recipe requires the namespace launch owner",
+        ));
+    }
     let context = crate::diagnostics::application::LaunchContext {
         source: crate::diagnostics::application::LaunchSource::Catalog,
         transaction,

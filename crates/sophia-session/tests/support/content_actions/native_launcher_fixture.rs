@@ -22,9 +22,16 @@ impl Harness {
             executable: std::env::current_exe().unwrap(),
             arguments: vec![],
             working_directory: None,
+            namespace_recipe: None,
         })
     }
     pub fn with_command(command: ApplicationLaunchCommand) -> Self {
+        Self::with_policy(command, Default::default())
+    }
+    pub fn with_policy(
+        command: ApplicationLaunchCommand,
+        namespace_policy: sophia_config::namespace_policy::NamespacePolicyConfig,
+    ) -> Self {
         let mut epochs = empty();
         let mut peer = Peer::connected(&mut epochs);
         let allocations = peer.allocation(&mut epochs);
@@ -44,6 +51,7 @@ impl Harness {
             },
             &registered,
             &ApplicationCatalogEnvironment {
+                namespace_policy,
                 search_path: vec![],
                 locale: "C".into(),
                 current_desktop: vec![],

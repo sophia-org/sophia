@@ -29,6 +29,7 @@ fn transient_connection_cannot_execute_a_persistent_cause_with_the_same_grant() 
         executable: "/bin/true".into(),
         arguments: vec![],
         working_directory: None,
+        namespace_recipe: None,
     });
     let entry = h.catalog.entry(1).unwrap();
     let activation = CatalogActivation {
@@ -97,6 +98,7 @@ fn service(command: catalog::ApplicationLaunchCommand) -> catalog::NativeCatalog
             })
             .into(),
         catalog::ApplicationCatalogEnvironment {
+            namespace_policy: Default::default(),
             search_path: vec![],
             locale: "C".into(),
             current_desktop: vec![],
@@ -112,6 +114,7 @@ fn worker_to_process_join_preserves_revocation_deadline_and_stop_boundaries() {
             executable: "/bin/true".into(),
             arguments: vec![],
             working_directory: None,
+            namespace_recipe: None,
         };
         let mut h = Harness::with_command(command.clone());
         let activation = h.accept();
@@ -200,6 +203,7 @@ fn stopping_during_catalog_refresh_drains_result_before_join_without_publication
         executable: "/bin/true".into(),
         arguments: vec![],
         working_directory: None,
+        namespace_recipe: None,
     };
     let mut owner = service(command);
     let mut launches = SessionLaunchQueue::default();
@@ -228,6 +232,7 @@ fn terminal_drain_joins_refresh_without_environment_or_connection() {
         executable: "/bin/true".into(),
         arguments: vec![],
         working_directory: None,
+        namespace_recipe: None,
     });
     let mut queue = SessionLaunchQueue::default();
     assert!(owner.refresh(7));
@@ -250,6 +255,7 @@ fn terminal_drain_rejects_exact_queued_verification_and_never_executes_it() {
         executable: "/bin/true".into(),
         arguments: vec![],
         working_directory: None,
+        namespace_recipe: None,
     };
     let mut h = Harness::with_command(command.clone());
     let activation = h.accept();
@@ -281,4 +287,60 @@ fn terminal_drain_rejects_exact_queued_verification_and_never_executes_it() {
     assert!(h.queue.admission().is_none());
     assert!(owner.drain_shutdown(&mut h.queue).unwrap());
     assert!(!owner.refresh(9));
+}
+
+#[test]
+fn native_catalog_cannot_discard_a_recipe_request_and_spawn_on_the_host() {
+    let command = catalog::ApplicationLaunchCommand {
+        executable: "/bin/true".into(),
+        arguments: vec![],
+        working_directory: None,
+        namespace_recipe: Some("private".into()),
+    };
+    let policy = sophia_config::namespace_policy::NamespacePolicyConfig {
+        recipes: std::collections::BTreeMap::from([(
+            "private".into(),
+            sophia_config::namespace_policy::NamespaceRecipeConfig {
+                name: "private".into(),
+                profile: sophia_config::namespace_policy::NamespaceRecipeProfile::ConfinedX {
+                    group: 7,
+                },
+                source: None,
+                request: vec![],
+                publish: vec![],
+                developer_launch: false,
+            },
+        )]),
+        applications: ["registered:app1", "registered:app2"]
+            .into_iter()
+            .map(|id| (id.into(), "private".into()))
+            .collect(),
+    };
+    let mut h = Harness::with_policy(command.clone(), policy);
+    let activation = h.accept();
+    assert_eq!(h.activate(activation, 0).status, 1);
+    let launch = h.dispatch();
+    let connection = h.peer.transport.connection(&mut h.epochs);
+    match catalog::spawn_native_catalog(
+        &connection,
+        &mut h.queue,
+        launch,
+        Ok(command),
+        environment(),
+    ) {
+        Err(catalog::NativeCatalogSpawnError::Spawn(error)) => {
+            assert!(error.to_string().contains("namespace launch owner"))
+        }
+        Err(catalog::NativeCatalogSpawnError::Refused) => {
+            panic!("fixture must reach the process selection boundary")
+        }
+        Ok(mut child) => {
+            let _ = child.child.wait();
+            panic!("native recipe request must not launch on the host");
+        }
+    }
+    assert!(
+        h.queue.admission().is_none(),
+        "failed recipe dispatch settles exact catalog admission"
+    );
 }

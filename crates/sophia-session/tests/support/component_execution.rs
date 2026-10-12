@@ -60,6 +60,7 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
             executable: "/bin/true".into(),
             arguments: vec![],
             working_directory: None,
+            namespace_recipe: None,
         };
         let mut h = Harness::with_command(command);
         let mut catalog = component_catalog::ComponentCatalog::default();

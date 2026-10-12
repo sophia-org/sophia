@@ -284,6 +284,16 @@ pub(super) fn parse(
             executable,
             arguments: argv[1..].to_vec(),
             working_directory,
+            namespace_recipe: match fields.get("X-Sophia-NamespaceRecipe") {
+                Some(value) => {
+                    let value = unescape(value)?;
+                    if !sophia_config::namespace_policy::valid_recipe_name(&value) {
+                        return None;
+                    }
+                    Some(value)
+                }
+                None => None,
+            },
         };
         if fields.get("Terminal").is_some_and(|v| v == "true") {
             let terminal = terminal?;
@@ -295,6 +305,7 @@ pub(super) fn parse(
                 executable: terminal.executable.clone(),
                 arguments: args,
                 working_directory: command.working_directory,
+                namespace_recipe: command.namespace_recipe,
             };
         }
         Some(command)

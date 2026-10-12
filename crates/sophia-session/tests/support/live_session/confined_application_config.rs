@@ -315,6 +315,7 @@ fn a_mapped_application_that_cannot_be_confined_never_launches_on_the_host() {
             executable: PathBuf::from("/usr/bin/true"),
             arguments: Vec::new(),
             working_directory: None,
+            namespace_recipe: None,
         };
         let environment = || crate::application_catalog::CatalogProcessEnvironment {
             display: ":47",

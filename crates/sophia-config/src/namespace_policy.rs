@@ -8,6 +8,14 @@ pub use source::LoadedNamespaceRecipe;
 pub const MAX_NAMESPACE_RECIPES: usize = 64;
 pub const MAX_NAMESPACE_APPLICATIONS: usize = 1024;
 
+pub fn valid_recipe_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && name
+            .bytes()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, b'-' | b'_'))
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NamespaceRecipeProfile {
     SharedX,

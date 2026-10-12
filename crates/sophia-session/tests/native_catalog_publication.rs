@@ -25,6 +25,7 @@ fn publication(epoch: u64, count: usize) -> PublishedApplicationCatalog {
                 executable: std::env::current_exe().unwrap(),
                 arguments: vec![],
                 working_directory: None,
+                namespace_recipe: None,
             },
         })
         .collect::<Vec<_>>();
@@ -38,6 +39,7 @@ fn publication(epoch: u64, count: usize) -> PublishedApplicationCatalog {
         },
         &registered,
         &ApplicationCatalogEnvironment {
+            namespace_policy: Default::default(),
             search_path: vec![],
             locale: "C".into(),
             current_desktop: vec![],

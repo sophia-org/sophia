@@ -177,6 +177,19 @@ pub fn build_application_catalog(
         {
             return Err("invalid or duplicate catalog identity".into());
         }
+        if let Some(command) = entry.command.as_mut() {
+            match environment
+                .namespace_policy
+                .select_application(&entry.identity, command.namespace_recipe.as_deref())
+            {
+                Ok(Some(recipe)) => command.namespace_recipe = Some(recipe.name.clone()),
+                Ok(None) => {}
+                Err(_) => {
+                    entry.command = None;
+                    entry.descriptor.available = false;
+                }
+            }
+        }
         entry.descriptor.slot = (index + 1) as u16;
     }
     Ok(catalog)

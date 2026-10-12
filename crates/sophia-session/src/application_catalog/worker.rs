@@ -5,7 +5,7 @@ use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 
 enum CatalogJob {
     Refresh(u64),
-    Verify(u64, ApplicationCatalogEntry),
+    Verify(u64, Box<ApplicationCatalogEntry>),
     VerifyNative(Arc<NativeCatalogLaunch>),
 }
 pub enum ApplicationCatalogWorkerResult {
@@ -69,7 +69,7 @@ impl ApplicationCatalogWorker {
         self.submit(CatalogJob::Refresh(id))
     }
     pub fn verify(&mut self, id: u64, entry: ApplicationCatalogEntry) -> bool {
-        self.submit(CatalogJob::Verify(id, entry))
+        self.submit(CatalogJob::Verify(id, Box::new(entry)))
     }
     /// Retains the exact queue payload through filesystem verification. A
     /// successful result is data, not execution authority: the Session must
@@ -152,7 +152,8 @@ fn verify_snapshot(
 ) -> Result<ApplicationLaunchCommand, String> {
     let catalog = snapshot?;
     let current = catalog.entries.iter().find(|entry| {
-        entry.source == expected.source
+        entry.identity == expected.identity
+            && entry.source == expected.source
             && entry.command == expected.command
             && entry.descriptor.label == expected.descriptor.label
             && entry.descriptor.available

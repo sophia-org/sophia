@@ -233,6 +233,7 @@ fn native_worker_returns_exact_queue_owner_without_restoring_revoked_authority()
                     vec![]
                 },
                 working_directory: None,
+                namespace_recipe: None,
             },
         });
         let mut worker = ApplicationCatalogWorker::start(
@@ -245,6 +246,7 @@ fn native_worker_returns_exact_queue_owner_without_restoring_revoked_authority()
             },
             registered.into(),
             ApplicationCatalogEnvironment {
+                namespace_policy: Default::default(),
                 search_path: vec![],
                 locale: "C".into(),
                 current_desktop: vec![],
@@ -393,6 +395,7 @@ fn native_process_spawn_retains_origin_and_duplicate_cannot_cancel_started_child
         executable: "/bin/true".into(),
         arguments: vec![],
         working_directory: None,
+        namespace_recipe: None,
     };
     let mut h = Harness::with_command(command.clone());
     let activation = h.accept();
@@ -453,6 +456,7 @@ fn native_spawn_refuses_failed_verification_and_revoked_connection_before_effect
             executable: "/bin/true".into(),
             arguments: vec![],
             working_directory: None,
+            namespace_recipe: None,
         };
         let mut h = Harness::with_command(command.clone());
         let activation = h.accept();
@@ -493,6 +497,7 @@ fn native_spawn_error_settles_exact_attempt_without_retry() {
         executable: "/bin/true".into(),
         arguments: vec![],
         working_directory: Some("/nonexistent-native-launch-fixture".into()),
+        namespace_recipe: None,
     };
     let mut h = Harness::with_command(command.clone());
     let activation = h.accept();

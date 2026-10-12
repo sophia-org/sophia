@@ -453,6 +453,7 @@ fn real_catalog_spawn_uses_the_shared_registration_without_display_io() {
         executable: "/bin/sh".into(),
         arguments: vec!["-c".into(), "printf catalogue >&2".into()],
         working_directory: None,
+        namespace_recipe: None,
     };
     let mut child = spawn_catalog_process(
         &command,

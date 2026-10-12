@@ -53,7 +53,11 @@ fn recipe(node: &KdlNode) -> Result<NamespaceRecipeConfig, ConfigParseError> {
         true,
     )?;
     let name = string_argument(node, 0, 1, 64)?.to_owned();
-    validate_identifier(&name, "namespace recipe name")?;
+    if !valid_recipe_name(&name) {
+        return schema_error(
+            "namespace recipe name accepts 1-64 lowercase ASCII letters, digits, '-' and '_'",
+        );
+    }
     let group = optional_integer_property_u64(node, "group", 1, u32::MAX.into())?;
     let profile = match required_string_property(node, "profile", 1, 32)? {
         "shared-x" if group.is_none() => NamespaceRecipeProfile::SharedX,

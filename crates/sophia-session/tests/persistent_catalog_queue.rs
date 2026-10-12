@@ -20,9 +20,11 @@ fn entry() -> Arc<ApplicationCatalogEntry> {
                 executable: std::env::current_exe().unwrap(),
                 arguments: vec![],
                 working_directory: None,
+                namespace_recipe: None,
             },
         }],
         &ApplicationCatalogEnvironment {
+            namespace_policy: Default::default(),
             search_path: vec![],
             locale: "C".into(),
             current_desktop: vec![],

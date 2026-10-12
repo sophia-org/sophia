@@ -75,6 +75,7 @@ impl ComponentCatalog {
                         executable: app.executable.clone(),
                         arguments: app.arguments.clone(),
                         working_directory: None,
+                        namespace_recipe: None,
                     },
                 })
                 .collect();
@@ -82,7 +83,7 @@ impl ComponentCatalog {
             self.service = Some(NativeCatalogService::start(
                 catalog,
                 registered,
-                environment(),
+                environment(config),
             )?);
             self.started = Some(Instant::now());
         }
@@ -266,8 +267,14 @@ impl ComponentCatalog {
     }
 }
 
-fn environment() -> ApplicationCatalogEnvironment {
+fn environment(config: &PersistentXtermSessionConfig) -> ApplicationCatalogEnvironment {
     ApplicationCatalogEnvironment {
+        namespace_policy: config
+            .core_config_state
+            .active()
+            .session
+            .namespace_policy
+            .clone(),
         search_path: std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
             .filter(|p| p.is_absolute())
             .collect(),

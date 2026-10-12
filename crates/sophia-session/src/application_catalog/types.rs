@@ -10,6 +10,9 @@ pub struct ApplicationLaunchCommand {
     pub executable: PathBuf,
     pub arguments: Vec<String>,
     pub working_directory: Option<PathBuf>,
+    /// Metadata requests policy; the scanner resolves it against its trusted
+    /// snapshot. Retained in command equality so dispatch cannot erase it.
+    pub namespace_recipe: Option<String>,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RegisteredCatalogApplication {
@@ -18,6 +21,7 @@ pub struct RegisteredCatalogApplication {
 }
 #[derive(Clone, Debug)]
 pub struct ApplicationCatalogEnvironment {
+    pub namespace_policy: sophia_config::namespace_policy::NamespacePolicyConfig,
     pub search_path: Vec<PathBuf>,
     pub locale: String,
     pub current_desktop: Vec<String>,

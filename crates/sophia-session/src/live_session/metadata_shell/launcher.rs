@@ -211,10 +211,17 @@ impl LiveMetadataShell {
                         executable: app.executable.clone(),
                         arguments: app.arguments.clone(),
                         working_directory: None,
+                        namespace_recipe: None,
                     },
                 })
                 .collect();
             let environment = ApplicationCatalogEnvironment {
+                namespace_policy: config
+                    .core_config_state
+                    .active()
+                    .session
+                    .namespace_policy
+                    .clone(),
                 search_path: std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
                     .filter(|p| p.is_absolute())
                     .collect(),

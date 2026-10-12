@@ -22,6 +22,50 @@ socket paths or namespace commands to launch installed applications.
 
 ## Evidence
 
+### Application catalog recipe selection
+
+The slice based on `823ee31b5` connects the native and legacy catalog workers
+to the trusted core namespace-policy snapshot. Both registered and scanned
+desktop identities acquire their assigned recipe without metadata or user
+commands. An optional `X-Sophia-NamespaceRecipe` key may only confirm that
+assignment; invalid or unapproved requests produce unavailable entries. The
+configuration parser and desktop parser share one recipe-name validator.
+
+The resolved recipe is part of command equality and survives `Terminal=true`
+wrapping. Source-byte revalidation detects a recipe-only desktop edit. Worker
+verification now requires the exact retained catalog identity as well as bytes,
+command and label; equal executable or command data cannot substitute another
+application identity. The raw-process catalog dispatch still refuses resolved
+recipe commands pending asynchronous owner integration, rather than dropping
+the recipe and launching on the host. The existing startup configuration guard
+also remains. This is catalog selection qualification, not completed app launch
+integration or an installed desktop claim.
+
+`t318-catalog-identity-control-01` removes the worker's exact-identity comparison.
+The retained-command test fails at `worker must retain exact catalog identity`
+with exit 101 and one failed test. Candidate hashes are restored and verified;
+its SHA256SUMS SHA-256 is
+`d67fd6102d4e80ffbcfb59583a32a7f6e1303923911d48526fbd7af20fb5f0a7`.
+The first positive package stopped at Clippy's large-enum warning after tests
+passed. Boxing the legacy worker's retained catalog entry fixed that warning;
+it does not change the comparison exercised by the earlier control.
+
+The restored final candidate passes `t318-catalog-recipes-02`: four configuration
+policy tests; the application catalog, diagnostics, inspection environment,
+native catalog publication, native launcher admission/execution and persistent
+catalog queue integration suites; the connected component-execution test; and
+seven legacy confined-app configuration tests. Config all-target Clippy, Session
+native/default library Clippy, formatting, source layout and diff checks pass.
+The package dynamically enumerates modified files and verifies their hashes
+after execution; binary identities are paths and hashes only. Its SHA256SUMS
+SHA-256 is
+`dd3079bf55cf40a3b4524eb63ec72e706cd2b90358a80f50205c44dba2c11661`.
+This evidence paragraph is added after those checks. The next integration must
+retain pending namespace startup and running client custody alongside existing
+child diagnostics, catalog admission and launch-origin attribution, across both
+catalogs, shortcuts and startup apps. No raw-process path may ignore a selected
+recipe when the startup guard is removed.
+
 ### Authenticated portal recipient dispatch
 
 The slice based on `8c12c1502` adds the

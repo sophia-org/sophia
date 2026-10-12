@@ -81,6 +81,7 @@ fn catalog_environment_child() {
                 inspection_socket.map_or("unset", |path| path.to_str().unwrap()).into(),
             ],
             working_directory: None,
+            namespace_recipe: None,
         };
         let mut child = ChildGuard(
             spawn_catalog_process(

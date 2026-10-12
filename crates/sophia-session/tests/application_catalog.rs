@@ -25,6 +25,7 @@ impl Drop for Directory {
 }
 fn environment() -> ApplicationCatalogEnvironment {
     ApplicationCatalogEnvironment {
+        namespace_policy: Default::default(),
         search_path: vec!["/usr/bin".into(), "/bin".into()],
         locale: "sr_RS.UTF-8@latin".into(),
         current_desktop: vec!["Sophia".into()],
@@ -202,6 +203,7 @@ fn terminal_adapter_is_explicit_and_sources_cannot_escape_via_symlinks_or_fifos(
             executable: "/bin/echo".into(),
             arguments: vec!["prefix".into()],
             working_directory: None,
+            namespace_recipe: None,
         },
     }];
     let catalog = build_application_catalog(&config, &registry, &environment()).unwrap();
@@ -290,4 +292,182 @@ fn stable_identity_is_not_label_slot_or_locale_and_publication_is_atomic() {
     let mut no_transaction = value;
     no_transaction.transaction = TransactionId::from_raw(0);
     assert!(encode_shell_file_catalog(header, &no_transaction).is_err());
+}
+
+fn recipient_policy(identities: &[&str]) -> sophia_config::namespace_policy::NamespacePolicyConfig {
+    use sophia_config::namespace_policy::*;
+    NamespacePolicyConfig {
+        recipes: std::collections::BTreeMap::from([(
+            "private".into(),
+            NamespaceRecipeConfig {
+                name: "private".into(),
+                profile: NamespaceRecipeProfile::ConfinedX { group: 7 },
+                source: None,
+                request: vec![],
+                publish: vec![],
+                developer_launch: false,
+            },
+        )]),
+        applications: identities
+            .iter()
+            .map(|id| ((*id).into(), "private".into()))
+            .collect(),
+    }
+}
+#[test]
+fn desktop_recipe_request_survives_verification_and_cannot_grant_policy() {
+    let source = Directory::new();
+    let body = "[Desktop Entry]\nType=Application\nName=Client\nExec=/bin/true\nX-Sophia-NamespaceRecipe=private\n";
+    source.entry("client.desktop", body);
+    let config = config(vec![source.0.clone()]);
+    let mut env = environment();
+    let unapproved = build_application_catalog(&config, &[], &env).unwrap();
+    assert!(
+        !unapproved.entries[0].descriptor.available,
+        "metadata alone must not grant a recipe"
+    );
+    assert!(unapproved.entries[0].command.is_none());
+    env.namespace_policy = recipient_policy(&["desktop:client.desktop"]);
+    source.entry("other.desktop", body);
+    let catalog = build_application_catalog(&config, &[], &env).unwrap();
+    let entry = catalog
+        .entries
+        .iter()
+        .find(|e| e.identity == "desktop:client.desktop")
+        .unwrap();
+    let command = revalidate_catalog_entry(entry).unwrap();
+    assert_eq!(command.namespace_recipe.as_deref(), Some("private"));
+    assert!(
+        !catalog
+            .entries
+            .iter()
+            .find(|e| e.identity == "desktop:other.desktop")
+            .unwrap()
+            .descriptor
+            .available,
+        "equal executable and metadata cannot borrow another identity's assignment"
+    );
+    source.entry("client.desktop", &body.replace("=private", "=shared"));
+    assert!(
+        revalidate_catalog_entry(entry).is_err(),
+        "changing only recipe metadata must invalidate the retained command"
+    );
+}
+
+#[test]
+fn invalid_recipe_metadata_is_unavailable_and_terminal_wrapping_keeps_the_request() {
+    let source = Directory::new();
+    for invalid in [
+        "".to_owned(),
+        "Private".into(),
+        "../private".into(),
+        "x".repeat(65),
+        "a\\sb".into(),
+    ] {
+        source.entry("client.desktop", &format!("[Desktop Entry]\nType=Application\nName=Client\nExec=/bin/true\nX-Sophia-NamespaceRecipe={invalid}\n"));
+        let catalog =
+            build_application_catalog(&config(vec![source.0.clone()]), &[], &environment())
+                .unwrap();
+        assert!(
+            !catalog.entries[0].descriptor.available,
+            "invalid request {invalid:?}"
+        );
+        assert!(catalog.entries[0].command.is_none());
+    }
+    source.entry("client.desktop", "[Desktop Entry]\nType=Application\nName=Client\nExec=/bin/true\nTerminal=true\nX-Sophia-NamespaceRecipe=private\n");
+    let mut config = config(vec![source.0.clone()]);
+    config.terminal = Some("terminal".into());
+    let registry = [RegisteredCatalogApplication {
+        name: "terminal".into(),
+        command: ApplicationLaunchCommand {
+            executable: "/bin/echo".into(),
+            arguments: vec![],
+            working_directory: None,
+            namespace_recipe: None,
+        },
+    }];
+    let mut env = environment();
+    env.namespace_policy = recipient_policy(&["desktop:client.desktop"]);
+    let catalog = build_application_catalog(&config, &registry, &env).unwrap();
+    let command = revalidate_catalog_entry(&catalog.entries[0]).unwrap();
+    assert_eq!(command.executable, Path::new("/bin/echo"));
+    assert_eq!(
+        command.namespace_recipe.as_deref(),
+        Some("private"),
+        "terminal wrapping cannot erase the application's request"
+    );
+    let result = spawn_catalog_process(
+        &command,
+        CatalogProcessEnvironment {
+            display: ":unavailable",
+            xauthority: Path::new("/nonexistent"),
+            control_socket: None,
+            inspection_socket: None,
+            confinement: Default::default(),
+        },
+    );
+    match result {
+        Err(error) => assert!(error.to_string().contains("namespace launch owner")),
+        Ok(mut child) => {
+            let _ = child.wait();
+            panic!("recipe metadata must not fall through to a host launch");
+        }
+    }
+}
+
+#[test]
+fn assigned_recipes_are_automatic_and_worker_verification_keeps_exact_identity() {
+    let source = Directory::new();
+    source.entry(
+        "client.desktop",
+        "[Desktop Entry]\nType=Application\nName=Client\nExec=/bin/true\n",
+    );
+    let mut config = config(vec![source.0.clone()]);
+    config.applications.push("client".into());
+    let registered = vec![RegisteredCatalogApplication {
+        name: "client".into(),
+        command: ApplicationLaunchCommand {
+            executable: "/bin/true".into(),
+            arguments: vec![],
+            working_directory: None,
+            namespace_recipe: None,
+        },
+    }];
+    let mut env = environment();
+    env.namespace_policy = recipient_policy(&["registered:client", "desktop:client.desktop"]);
+    let mut worker = ApplicationCatalogWorker::start(config, registered, env).unwrap();
+    assert!(worker.refresh(1));
+    let ApplicationCatalogWorkerResult::Built(1, Ok(catalog)) = wait(&mut worker) else {
+        panic!("catalog publication");
+    };
+    assert_eq!(catalog.entries.len(), 2);
+    for entry in &catalog.entries {
+        assert!(entry.descriptor.available);
+        assert_eq!(
+            entry.command.as_ref().unwrap().namespace_recipe.as_deref(),
+            Some("private"),
+            "trusted assignment must select policy without application metadata"
+        );
+    }
+    let mut forged = catalog.entries[0].clone();
+    forged.identity = "registered:unassigned".into();
+    assert!(worker.verify(2, forged));
+    assert!(
+        matches!(
+            wait(&mut worker),
+            ApplicationCatalogWorkerResult::Verified(2, Err(_))
+        ),
+        "worker must retain exact catalog identity"
+    );
+    assert!(worker.verify(3, catalog.entries[0].clone()));
+    let ApplicationCatalogWorkerResult::Verified(3, Ok(command)) = wait(&mut worker) else {
+        panic!("exact command must still verify");
+    };
+    assert_eq!(command.namespace_recipe.as_deref(), Some("private"));
+    worker.request_shutdown();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    while !worker.poll_shutdown().unwrap() {
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
 }

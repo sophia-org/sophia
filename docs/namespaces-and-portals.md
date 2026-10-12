@@ -292,7 +292,22 @@ app recipe request ----------------------------> equality check only
 
 An unmapped application with no recipe request keeps the existing launch policy.
 Metadata may confirm its assigned recipe but cannot select a different one;
-an unassigned request refuses. Recipe policy changes require restart until live
+an unassigned request refuses. Desktop files use the optional
+`X-Sophia-NamespaceRecipe=browser` key in `[Desktop Entry]`. Its value uses the
+same 1–64 character recipe-name grammar as trusted configuration. Missing
+metadata does not opt out of an assigned recipe: both registered and scanned
+applications receive their trusted assignment automatically. Invalid or
+unapproved requests remain visible as unavailable catalog entries.
+
+The catalog retains the resolved recipe in command equality. Its worker
+revalidates the exact catalog identity, source bytes and command before dispatch;
+changing only the desktop recipe key requires reopening the launcher. A
+`Terminal=true` wrapper preserves the application's recipe selection, rather
+than substituting the terminal entry's identity. Current raw-process launch
+paths refuse recipe commands until the asynchronous namespace launch owner is
+wired into them; they cannot silently discard the recipe and spawn on the host.
+
+Recipe policy changes require restart until live
 launch-policy replacement is implemented. The adapter and selection checks are
 implemented; Session currently refuses a nonempty recipe configuration at startup
 or reload because automatic launch custody is not connected yet. This temporary
