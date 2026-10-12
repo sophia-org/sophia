@@ -24,11 +24,13 @@ interfaces:
 The [accepted one-core decision](docs/notes/decisions/zsx0tk4k-serve-every-public-role-from-one-9p-core-with-namespaces-as-composed-trees-and-portals-as-binds.md)
 uses one shared 9P implementation with separately authorized role exports.
 Per-identity endpoint directories and role trees are derived from admission;
-grants remain checked on retained handles. The t317 candidate implements
+grants remain checked on retained handles. t317 implements
 authenticated attach for supervised WM, lock, output and shell roles;
 [qualification and trust boundaries](docs/factotum-launch-authentication.md)
-remain distinct from an installed release. Namespace composition and an
-output-capture CLI remain implementation targets. The [delivery plan](docs/notes/plans/jsschoen-converge-public-roles-on-one-9p-core.md#first-deliverable-and-dependency-order)
+remain explicit. t318 implements admission-derived namespace recipes,
+automatic application selection and an authorized developer launcher; see the
+[namespace client guide](docs/namespace-client-guide.md). Renderer capture and
+an output-capture CLI remain implementation targets. The [delivery plan](docs/notes/plans/jsschoen-converge-public-roles-on-one-9p-core.md#first-deliverable-and-dependency-order)
 starts with a bounded observer interface; the native application frontend
 and input driving are separate deliverables.
 

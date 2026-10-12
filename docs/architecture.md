@@ -46,8 +46,11 @@ further specifies the target: every public 9P role, including the later
 application authority, is an export on `sophia-9p`. Role owners retain their
 admission, state and execution; no forwarding root combines their authorities.
 The application scaffold's separate codec and FUSE service claim are not the
-target. Authenticated attach and namespace composition remain unimplemented;
-existing role contracts and X11 behavior do not change through this decision.
+target. Authenticated attach and admission-derived namespace composition are
+implemented for supervised clients. The [namespace client guide](namespace-client-guide.md)
+describes discovery, role authentication and approved launch policy. The 9P
+application frontend and renderer capture remain separate work; namespace
+composition does not change X11 admission or merge role authority.
 
 ## System Shape
 

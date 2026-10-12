@@ -52,7 +52,7 @@ admission, and revocation belong in `sophia-runtime` and its session supervisor.
 Each frontend owns the protocol-specific adapter that consumes an admitted
 context.
 
-## Accepted composition target (not yet implemented)
+## Accepted composition and remaining capture target
 
 The [2026-10-09 one-core decision](notes/decisions/zsx0tk4k-serve-every-public-role-from-one-9p-core-with-namespaces-as-composed-trees-and-portals-as-binds.md)
 extends this contract with admission-derived recipes. Each identity receives
@@ -81,16 +81,17 @@ Observer, operator and driver recipes contain independent grants. The shipped
 target observer has status, inspection and explicitly authorized capture,
 with no injection or administrative authority. Separate identities are the
 default for observation and driving; combining grants requires explicit
-operator policy. This target does not assert that the current admission or
-capture implementation already provides these guarantees.
+operator policy. Namespace recipes and supervised admission are implemented.
+Renderer capture remains a target: a recipe's request permission is not a
+capture implementation or approval.
 
 The [admission boundary design](notes/plans/esnqxpqw-pidfd-and-namespace-admission-optimizations.md#local-authentication-design-and-t317-handoff-2026-10-10)
 and [recipe review](notes/investigations/kcfh2hdg-adopting-the-plan-9-namespace-model-in-sophia.md#t275-recipe-design-result-2026-10-10)
-map this target to current source and required device-free controls. The recipe
-contract below and the authentication handoff are approved implementation
-targets, not additional supported interfaces.
+map the design to source and required device-free controls. The
+[implementation investigation](notes/investigations/w1gyz791-namespace-views-retain-service-identity-across-publication-and-revocation.md)
+records the recipe, launch and retained-authority qualification.
 
-The proposed first local authentication target uses a supervisor-provisioned private
+The first local authentication implementation uses a supervisor-provisioned private
 conversation channel and a Factotum verdict bound to one 9P authentication
 attempt. It proves possession of that launch's delegated capability, not a
 current PID or executable image. Session still checks the live role assignment
@@ -103,11 +104,11 @@ The approved initial observer/operator bootstrap requires an authorized Session
 launch from trusted configuration or an admitted administrative path. A socket
 path or same UID is not an unlaunched-client fallback. Independent credential
 provisioning for ad-hoc or remote clients remains a later authentication design;
-the first capture CLI must retain this bootstrap requirement. No existing X
-admission, role peer check or supported 9P operation changes in this design.
+the first capture CLI must retain this bootstrap requirement. X admission and
+role-specific operations retain their separate contracts.
 Independent components remain standalone programs using the protocol and SDK.
-[t318](notes/plans/jsschoen-converge-public-roles-on-one-9p-core.md#t318) must
-provide an authorized developer launch command before this experience is ready;
+[t318](notes/plans/jsschoen-converge-public-roles-on-one-9p-core.md#t318) provides
+an [authorized developer launch command](developer-launch-files.md);
 requesting a role cannot grant it. Local authentication for independently
 launched tools and applications is an explicit
 [t324 follow-on](notes/plans/jsschoen-converge-public-roles-on-one-9p-core.md#t324),
@@ -115,6 +116,10 @@ not a permanent requirement that Sophia launch every application. This staging
 was approved by niltempus on 2026-10-10.
 
 ## Namespace recipe contract (target)
+
+The recipe and supervised launch contract below is implemented; the heading is
+retained for existing links. Renderer capture and independently provisioned
+local clients remain the explicit t319 and t324 follow-ons.
 
 The [endpoint discovery contract](namespace-discovery.md) specifies the t318
 discovery file and SDK lookup. Its implementation status is separate from the
@@ -555,8 +560,8 @@ launch/namespace revoke --> admission checks --> close retained connection
 source generation fence --------------------> refuse old endpoint and fids
 ```
 
-This runtime route and its real launch-authentication join are implemented;
-automatic recipe selection and launch wiring remain t318 integration work.
+This runtime route, its real launch-authentication join, automatic recipe
+selection and Session launch wiring are implemented.
 The join supplies launch policy explicitly and uses the exclusive
 `NamespaceClient` supervised custody role. This identifies a confined recipe
 client without borrowing shell, WM, broker or frontend custody; it grants no
@@ -629,7 +634,7 @@ failure: old names remain; new grants/resources are dropped;
 Grant custody drops without waiting for the registry mutex; connection leases
 cannot prolong it. The publication worker holds that mutex only for authority
 bookkeeping, never for filesystem I/O. Automatic application selection,
-runtime endpoint dispatch and launch scheduling remain t318 integration work.
+runtime endpoint dispatch and launch scheduling use this publication owner.
 The protected SDK join uses this publication owner, while supplying its policy
 catalog and dispatching the resulting listeners directly to inspection.
 
