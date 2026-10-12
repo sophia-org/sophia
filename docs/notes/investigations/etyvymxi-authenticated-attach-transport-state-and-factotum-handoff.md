@@ -2001,3 +2001,50 @@ This joins authentication and recovery only. No descriptor presentation, UI,
 physical device or live installation is claimed. Remaining deployed clients,
 role inventory, broad gates, publication and threat-model reconciliation still
 prevent t317 closure.
+
+## Independent component client authentication
+
+The opt-in `supplied_component_client_authenticates_across_launches` check uses
+the normal component process owner, protected spawn, Factotum export and afid
+dispatch. The caller supplies `SOPHIA_COMPONENT_AUTH_PEER`, role (`bar`, `dock`
+or `launcher`), optional absolute `SOPHIA_COMPONENT_AUTH_CONFIG`, and
+`SOPHIA_COMPONENT_AUTH_END=exit|revoke`. It builds no client and has no UI or
+rendering expectations. Each of two launches must negotiate while its launch
+registration is Active. Replacement requires a different epoch and registration;
+reaping must leave neither a Connected role nor Active launch custody.
+The trusted Session-to-Factotum channel remains supplied.
+
+The exit mode deliberately supplies no GPU grant and permits termination only
+after authenticated negotiation. It does not assert successful rendering or
+application-level readiness. The revoke mode requires 250 ms of connected
+liveness, then explicit local revocation and reaping. These are distinct
+qualification boundaries, not interchangeable substitutes.
+
+External invocations passed with these signed client sources:
+
+| Client | Source | Observed boundary |
+| --- | --- | --- |
+| Bemenu | `6e2efd96e2256a138ed9928387e83d3c30585937` | Revision 7 negotiation at epochs 1 and 2; headless connected liveness, explicit revocation and reaping |
+| Lom | `dc65f561f8c9522f6a09d3e5f386d32226228bfd` | Revision 6 transport record at both epochs, then explicit refusal because no direct GPU grant exists; reaped before fresh launch |
+| Provlita | `da4a15adb9a6555441653a9dd9ec0e4d69f3d6af` | Revision 8 transport record at both epochs, then the same GPU-permission refusal; reaped before fresh launch |
+
+Client-specific transport records and expected GPU refusal text were checked
+externally against captured output; they are not assertions in Sophia's generic
+fixture. The supplied-executable hashes matched before and after each final run.
+Rust client target slots were leased throughout those runs. This is evidence of
+their actual startup adapters reaching authenticated file negotiation, not just
+of the generic SDK peers. It does not qualify GPU admission, rendering, content
+presentation, normal UI service, or a live installation. No new per-client
+wrong-claim mutation is claimed; generic admission controls, the earlier Nim
+wrong-claim control, and each client's local fd-refusal checks retain their own
+scopes.
+
+Package `t317-component-clients-01` retains the dynamic Sophia candidate inventory,
+client source identities, binary paths/hashes and all logs. Its manifest SHA-256
+is `e8a4cccb449ea0789213a5f02141bbfca44b6cd7d0f7d17cb2c705df4430cba1`.
+The final shell filter passed 116 tests with seven ignores; the new opt-in entry
+was run separately three times. Native-session all-target Clippy with warnings
+denied and formatting passed. The first compile stopped at fixture error-type
+conversion, corrected before any client join. No binaries were copied into
+evidence. The role inventory, final contracts/threat model, SDK publication
+alignment and broad final gate remain required before t317 closure.
