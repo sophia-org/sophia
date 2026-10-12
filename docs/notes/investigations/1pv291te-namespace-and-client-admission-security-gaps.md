@@ -198,9 +198,9 @@ open. There is no remote-authentication claim, same-UID fallback or new access
 for independently launched tools; t324 retains credential provisioning and
 t318 retains authorized developer launch and namespace composition.
 
-Final SDK snapshot alignment, candidate-wide validation and integration remain
-required before t317 closure. This reconciliation changes no task state and
-claims no live installation.
+The [final t317 record](../milestones/k4f1hsl4-authenticated-launch-admission-meets-the-t317-exit.md)
+adds SDK snapshot alignment, candidate-wide validation and integration to this
+source review. It preserves the limits above and claims no live installation.
 
 ## Connections
 

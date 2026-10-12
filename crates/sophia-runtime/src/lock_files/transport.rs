@@ -1,8 +1,9 @@
 //! Nonblocking 9P turns for the supervised lock provider. Admission follows
-//! the output role: the endpoint checks the numeric credentials, and both the
-//! connector's `SO_PEERPIDFD` and the launched process's pidfd must still be
-//! alive before any byte reaches 9P. Every admitted connection gets a fresh
-//! epoch, so nothing a replaced provider submitted can match its successor.
+//! the endpoint's expected-peer filter and live assignee check precede 9P.
+//! Authenticated connections additionally require an afid and current launch
+//! custody; only the legacy branch requires the connector's `SO_PEERPIDFD`.
+//! Every admitted connection gets a fresh epoch, so nothing a replaced provider
+//! submitted can match its successor.
 use std::os::fd::{AsFd, OwnedFd};
 use std::path::Path;
 use std::time::{Duration, Instant};

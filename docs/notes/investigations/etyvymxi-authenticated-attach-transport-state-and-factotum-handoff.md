@@ -2,12 +2,17 @@
 id: etyvymxi
 date: 2026-10-11
 kind: investigation
-status: investigating
+status: closed
 tags: [investigation, 9p, security]
 ---
 # Authenticated attach transport state and Factotum handoff
 
 ## Scope
+
+The [final exit reconciliation](../milestones/k4f1hsl4-authenticated-launch-admission-meets-the-t317-exit.md)
+records the completed admission work and its qualification boundaries. The
+dated checkpoints below retain their original candidates, failures and limits;
+their statements of remaining work describe those checkpoints.
 
 Begin [t317](../plans/jsschoen-converge-public-roles-on-one-9p-core.md#t317)
 with the transport state prescribed by the approved

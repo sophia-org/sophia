@@ -287,10 +287,11 @@ The [descriptor client join](../investigations/etyvymxi-authenticated-attach-tra
 and [component client joins](../investigations/etyvymxi-authenticated-attach-transport-state-and-factotum-handoff.md#independent-component-client-authentication)
 now extend the generic C and Rust SDK owner tests to independent descriptor,
 bar, launcher and dock clients across launch generations. Their authentication
-evidence does not claim rendered content or physical acceptance. Final
-contract/threat-model reconciliation, SDK snapshot alignment, candidate-wide
-gates and integration remain open. These checkpoints are not a live
-installation or a reduced exit.
+evidence does not claim rendered content or physical acceptance. The
+[final exit reconciliation](../milestones/k4f1hsl4-authenticated-launch-admission-meets-the-t317-exit.md)
+records contract/threat-model reconciliation, SDK alignment, the combined-tree
+gate and client integration. The result establishes the original admission
+exit below; it is not a live installation or physical acceptance.
 
 Implement the approved [t133 local authentication handoff](esnqxpqw-pidfd-and-namespace-admission-optimizations.md#local-authentication-design-and-t317-handoff-2026-10-10),
 including Session's launch-channel relay, Factotum's correlated verdict,
