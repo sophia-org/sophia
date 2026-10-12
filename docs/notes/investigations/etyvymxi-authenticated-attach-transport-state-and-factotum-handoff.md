@@ -1583,3 +1583,45 @@ The C WM SDK handoff is now joined to the normal owner, including replacement
 settlement. Deployed WM/Nim migration, shell integration and the remaining
 t317 exit gates are still open. Neither this pin nor the preceding normal-WM
 owner commit has been installed into the live desktop or merged to master.
+
+
+## Deployed Nim WM authentication
+
+Hagia signed `60d6331cecdd874a098bd31f29afd0b912cab927` vendors C SDK
+`93361918dd0213a13a2fc8bd26a7911ff7ae16e1` and uses its launch helper followed
+by the admitted-root WM constructor. Authentication stays in the SDK; the Nim
+adapter polls both wires and retains the borrowed role state until teardown.
+The generation-scoped relay remains close-on-exec and closes with the owner.
+There is no retry through raw attach after an authentication error.
+
+External fixture `tests/external/authenticated_launch.rs` belongs to Hagia.
+An isolated source overlay mounted it against Sophia `a24934b15`; Sophia's
+tracked source remained clean. Real Hagia, protected launch, production afid
+owners and the Factotum export completed profile admission and an empty-scene
+policy commit, then supervised restart acquired a fresh launch registration
+and committed at epoch 2. Factotum's trusted Session channel, the empty scene
+and layout completion were supplied. No physical-session claim is made.
+
+Evidence under `~/.local/state/sophia/development-evidence/`:
+`t317-hagia-auth-02` and `t317-hagia-auth-restored-01` pass;
+`t317-hagia-claim-control-01` changes the client's claim to `forged-wm` and
+fails at the expected authentication/startup boundary before any cycle.
+Restoration is hash-checked, and both positive builds have binary SHA-256
+`b9157502a8ad1fe527536670696b6c5521a7534eccf5077cd56d0ee4829bad91`.
+`t317-hagia-local-02` passes the strict SDK suite, 529 Nim checks and CLI gates.
+The earlier local-01 package is STOP: all scripts passed, but Nimble could not
+write its metadata in the read-only sandbox. Auth-01 is a retained fixture
+compilation failure, corrected before execution.
+
+`t317-hagia-binding-01` binds all 50 changed implementation/test/vendor files
+to the signed Hagia commit and records the restored overlay test-binary hash.
+Packages carry self-excluding manifests; binaries remain build artifacts, not
+evidence copies. Hagia's investigation `cy81sff5` records the client details.
+
+This closes the deployed Nim client's initial/restart authentication checkpoint.
+It does not establish occupied recovery, changed-profile replacement or physical
+acceptance, and does not close h006's separate release obligations. Shell owner
+and client migration and the final t317 threat-model/exit reconciliation remain.
+Source review confirms the authenticated lock accept branch already avoids
+SO_PEERPIDFD; final reconciliation must verify all normal callers and retained
+controls rather than treating the legacy supplied-admission branch as production.

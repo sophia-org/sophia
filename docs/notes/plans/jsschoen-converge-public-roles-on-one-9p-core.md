@@ -278,7 +278,11 @@ peer does not qualify a deployed WM's SDK migration.
 The [C WM handoff](../investigations/etyvymxi-authenticated-attach-transport-state-and-factotum-handoff.md#authenticated-c-wm-session-handoff)
 now continues on the authenticated root and qualifies projection recovery and
 control-requested replacement settlement through the normal owner. Deployed
-WM/Nim migration remains separate.
+WM/Nim migration is now covered by the separate
+[deployed Nim checkpoint](../investigations/etyvymxi-authenticated-attach-transport-state-and-factotum-handoff.md#deployed-nim-wm-authentication):
+real Hagia authenticates initial launch and a fresh supervised restart, with
+empty-scene commits and a wrong-claim control. Its occupied, changed-profile and
+physical acceptance boundaries remain explicit.
 Other required roles, deployed-client rollout and final contract/threat-model
 reconciliation remain open. These checkpoints are not a live installation or
 a reduced exit.
