@@ -26,11 +26,10 @@
 //! parked in that window waits for its budget rather than being released
 //! early; admission refuses and removal revokes such a presentation.
 //!
-//! Fixture limit: drive_gpu_presentation itself, which takes the concrete
-//! native scanout, is not executed. Its DMA-BUF import and mixed-frame build,
-//! its gate and busy-output checks, and its computation of first_presentation
-//! run only on a device; the tests pass first_presentation as the driver
-//! computes it (a committed surface, or a spent budget, is not first).
+//! The uncaptured-Present cases below supply first_presentation as the driver
+//! computes it (a committed surface, or a spent budget, is not first). The DMA
+//! submodule executes the shared driver with simulated worker allocation and
+//! device completion; it does not import a DMA-BUF into a GPU.
 use super::presentation_instances::{
     commit_cpu_surface, presentation_output, published, rect, region, shown_instance,
 };
@@ -39,6 +38,8 @@ use std::time::{Duration, Instant};
 
 #[path = "presentation_clock_placement.rs"]
 mod clock_placement;
+#[path = "presentation_dma.rs"]
+mod dma;
 
 const PRESENT_IMAGE: u64 = 437;
 

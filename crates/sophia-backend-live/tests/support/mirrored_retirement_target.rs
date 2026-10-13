@@ -46,27 +46,35 @@ impl NativeRetirementTarget for MirroredTarget {
 
     fn promote_renderer_image(
         &mut self,
-        _: LiveRendererImageId,
+        image: LiveRendererImageId,
     ) -> Result<usize, LiveRendererScanoutBufferExportDetail> {
-        panic!("CPU-only retirement fixture cannot promote GPU images")
+        Ok(usize::from(
+            self.images
+                .get_mut(&image)
+                .is_some_and(|image| image.promote()),
+        ))
     }
 
     fn promote_renderer_image_for_previews(
         &mut self,
-        _: LiveRendererImageId,
+        image: LiveRendererImageId,
         _: Option<SurfaceId>,
-        _: &BTreeSet<OutputId>,
-        _: &BTreeSet<OutputId>,
+        capturing: &BTreeSet<OutputId>,
+        previews: &BTreeSet<OutputId>,
     ) -> Result<(usize, Result<(), LivePreviewImageRefusal>), LiveRendererScanoutBufferExportDetail>
     {
-        panic!("CPU-only retirement fixture cannot prepare GPU previews")
+        assert!(
+            previews.is_subset(capturing),
+            "fixture cannot prepare cross-store GPU previews"
+        );
+        Ok((self.promote_renderer_image(image)?, Ok(())))
     }
 
     fn evict_renderer_image(
         &mut self,
-        _: LiveRendererImageId,
+        image: LiveRendererImageId,
     ) -> Result<usize, LiveRendererScanoutBufferExportDetail> {
-        panic!("CPU-only retirement fixture cannot evict GPU images")
+        Ok(usize::from(self.images.remove(&image).is_some()))
     }
 }
 

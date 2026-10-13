@@ -1,3 +1,5 @@
+pub use sophia_renderer_native_egl::NativeRendererImageCustody as LiveRendererImageCustody;
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct LiveRendererImageId(u64);
 

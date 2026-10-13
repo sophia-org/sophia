@@ -57,7 +57,7 @@ pub use import::*;
 pub use indicator_strip::*;
 pub use presentation::*;
 pub use production_cpu_scene::*;
-pub use renderer_image::LiveRendererImageId;
+pub use renderer_image::{LiveRendererImageCustody, LiveRendererImageId};
 pub use scanout_buffer::*;
 pub use text_raster::*;
 

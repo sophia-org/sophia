@@ -9,6 +9,8 @@ use crate::{
 };
 use std::{cell::Cell, rc::Rc};
 
+#[path = "mirrored_present_target.rs"]
+mod present;
 #[path = "mirrored_retirement_target.rs"]
 mod retirement;
 #[path = "mirrored_topology_target.rs"]
@@ -19,6 +21,7 @@ pub(super) struct Head {
     pub(super) pending: Option<crate::PendingRenderedFrame>,
     pub(super) prepared: Option<crate::BoxedRenderedPrimaryPlaneScanoutSubmission>,
     pub(super) content: Option<crate::LiveProductionScanoutContent>,
+    pub(super) logical_checksum: Option<u64>,
     pub(super) presented: Option<crate::LiveProductionScanoutContent>,
     pub(super) custody: crate::PersistentScanoutCustody,
     pub(super) frames: OutputFramePresentationState,
@@ -53,6 +56,7 @@ pub(super) struct MirroredTarget {
     pub(super) frame_service_available: bool,
     pub(super) retirements: Option<LiveProductionPageFlipTracker>,
     pub(super) completion_inputs: VecDeque<(OutputId, usize)>,
+    pub(super) images: BTreeMap<LiveRendererImageId, LiveRendererImageCustody<Vec<u8>, ()>>,
 }
 
 impl MirroredTarget {
@@ -77,6 +81,7 @@ impl MirroredTarget {
                     pending: None,
                     prepared: None,
                     content: None,
+                    logical_checksum: None,
                     presented: None,
                     custody: Default::default(),
                     frames: OutputFramePresentationState::new(*output).unwrap(),
@@ -125,6 +130,7 @@ impl MirroredTarget {
             frame_service_available: true,
             retirements: None,
             completion_inputs: VecDeque::new(),
+            images: BTreeMap::new(),
         }
     }
 
@@ -193,6 +199,21 @@ impl MirroredTarget {
             let head = &mut self.heads[*index];
             let frame = head.content.unwrap().frame().raw();
             let pending = head.pending.take().unwrap();
+            // Worker completion is supplied. Image identity comes from the
+            // actual queued layer; the allocation is a device-free stand-in.
+            if let crate::PendingRenderedFrame::Mixed(frame, _) = &pending {
+                for layer in &frame.layers {
+                    if let LiveOwnedMixedCompositionLayer::DmaBuf {
+                        image_id, frame, ..
+                    } = layer
+                    {
+                        self.images.entry(*image_id).or_insert_with(|| {
+                            let bytes = u64::from(frame.width) * u64::from(frame.height) * 4;
+                            LiveRendererImageCustody::staged(vec![0; bytes as usize], None, bytes)
+                        });
+                    }
+                }
+            }
             let submission = copy_submission(
                 pending,
                 head.target,
@@ -209,7 +230,7 @@ impl MirroredTarget {
                 scene_generation: frame,
                 head: head.target.head,
                 target_generation: native.target_generation(),
-                logical_content_checksum: head.content.unwrap().logical_checksum().unwrap(),
+                logical_content_checksum: head.logical_checksum.unwrap(),
             };
             assert!(matches!(
                 self.cohorts
@@ -336,6 +357,7 @@ impl MirroredTarget {
 
     pub(super) fn teardown(&mut self) {
         self.queue.clear();
+        self.images.clear();
         for head in &mut self.heads {
             head.pending = None;
             assert!(head.prepared.is_none());
@@ -432,6 +454,9 @@ impl CompositionInstaller for MirroredTarget {
             .unwrap();
         head.frames.mark_rendering().unwrap();
         head.content = Some(queued.content);
+        // Present content carries transaction identity; the installed generation
+        // carries the composition checksum shared by its physical heads.
+        head.logical_checksum = installation.checksum;
         head.pending = Some(crate::PendingRenderedFrame::Mixed(
             queued.frame,
             Some(queued.identity),
