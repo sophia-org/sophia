@@ -8,6 +8,10 @@ tags: [plan, milestone]
 
 ## Current qualification boundary (2026-10-12)
 
+For resumption, read the [stopping point and procedure](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#stopping-point-and-resume-procedure-2026-10-12)
+first: it binds the 23-case baseline, separates completed foundations from the
+remaining exits, and identifies coverage consolidation as the next action.
+
 The [current-source audit](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md)
 reconciles this historical migration plan with the SDK-based, 9P-only desktop.
 The older opt-in/current-IPC language below describes the original milestone;

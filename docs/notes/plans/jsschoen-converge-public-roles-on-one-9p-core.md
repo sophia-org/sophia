@@ -41,6 +41,10 @@ and none can be designed around it later.
 
 ## First deliverable and dependency order
 
+The [October 12 stopping-point reconciliation](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#progress-against-zsx0tk4k-and-ernn0bkv)
+maps delivered admission/composition/portal foundations and remaining work back
+to zsx0tk4k and ernn0bkv. It does not promote capture or change the queue.
+
 niltempus approved the reviewed direction on 2026-10-09 and requested the
 critical path. The first usable deliverable is a generic observer CLI that
 reads bounded status and captures one explicitly authorized output, including

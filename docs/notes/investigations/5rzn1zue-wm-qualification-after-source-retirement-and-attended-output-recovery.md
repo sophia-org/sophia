@@ -7,10 +7,93 @@ tags: [validation, protocol, policy]
 ---
 # WM qualification after source retirement and attended output recovery
 
-Latest result: the [authenticated twenty-case baseline and software-Present
-admission join](#authenticated-baseline-and-headless-software-present-admission-2026-10-12)
-resume qualification after the t317/t318 foundation. Historical maps below keep
+Latest result: the [twenty-three-case backend-revocation result](#backend-revocation-before-withdrawal-settlement-2026-10-12)
+extends qualification after the t317/t318 foundation. Historical maps below keep
 their dated scope; the latest result does not close the full t249 exit.
+
+## Stopping point and resume procedure (2026-10-12)
+
+niltempus requested a durable stopping point. Work through backend revocation
+is signed and merged into local master: Sophia `4eecb432e`, Hagia `9bb7deb`,
+and niltempus `0a0853d`. These are the pre-handoff documentation heads, not new
+runtime candidates. The qualified fixture/runner pair is Hagia `0b1a1c1` and
+niltempus `990fe2a`, against Sophia `1b476dbdcc30215fe7ee5841e5a872f136ebb3a0`.
+The later commits change documentation only. The final `t249-backend-01` run
+passes all 23 cases; two compiled controls discriminate notification consumption
+and generation correlation before same-turn withdrawal settlement. The result
+section below binds the manifests, checks and source audit.
+
+At handoff there is no running qualification job, uncommitted implementation,
+pending installation or required live-session action from this slice. Its
+worktrees, pinned checkout, disposable source/build root and temporary tools
+have been removed. Unrelated historical and parallel worktrees remain outside
+this handoff. Evidence under `~/.local/state/sophia/development-evidence/` stays
+local; Git carries identities and results, not the raw evidence packages or
+executables. Repository publication is separate from evidence backup and from
+installing a release.
+
+Resume with t249/h006; do not reopen completed t323/t133/t275/t142/t315/t317/t318
+or promote the candidate capture task implicitly. `todo.md` remains the sole
+queue. The first useful action is a read-only consolidation of the dated
+coverage matrix against the subsequent results, rather than another small
+fixture chosen from an obsolete gap row. In particular, Manage admission,
+backing CPU admission, mirrored receipt consensus, source-generation repaint,
+reused-surface recovery, journal-credit independence, software-Present admission
+and three actual presentation-service branches now have scoped evidence.
+
+The closure review must resolve these four groups against the unchanged plan:
+
+| Group | Remaining assessment or qualification |
+| --- | --- |
+| WM capabilities | Pointer drag/cancel/focus and pointer presentation targets; overview, tab/translation groups, indicators, launch origin/context, multiple logical outputs and output actions/keys. Map existing tests and attended evidence before adding joins. |
+| Input and recovery | Application-held keys, protected-action bypass, pointer debt, and relevant lock/reload/lost-head transitions and capacity failures. Reuse t323's exact capacity and identity results without expanding their claims. |
+| Backend owners | Native publication installation, native Present retirement and automatic source-repaint scheduling. Existing simulated mirror completion and headless copy retirement do not qualify these remaining owners. |
+| Measurement and final gates | Complete offer/admit/replace/settle accounting, a prospectively reviewed comparator after legacy source retirement, then the required latency/resource campaign and signed-candidate integration. Inspection/export evidence needs candidate impact review. |
+
+For each obligation, name its owner, current evidence, remaining boundary and
+minimal discriminating control. A fixture limit is not automatically a new
+feature or a requirement to test every state combination. Preserve the failed
+historical campaign and numeric budgets. Do not begin an hours-long campaign
+until the small accounting diagnostic and comparison method are accepted.
+After t249, t250 owns its separate attended daily-configuration and rollback
+exit; this handoff changes no task ordering or acceptance requirement.
+
+To reproduce the baseline, create a clean pinned Sophia worktree at the full
+commit above and clean Hagia/niltempus checkouts at the qualified pair (or review
+later source changes). Compile `tools/wm_lifecycle.rs` with the recorded Rust
+toolchain, then run its documented command through `cargo-slot sophia` using
+the default Sophia pool and a new evidence directory. The runner creates the
+marked disposable source root and binds all 15 modules and five owner spans.
+Never reuse a historical output directory, run the frozen legacy pairing on
+master, invent a target directory, or copy binaries into evidence. Control and
+check scripts are retained in their own packages; their old base/source paths
+must be reviewed before a new experiment. No baseline rerun is needed merely
+to resume reading or update documentation.
+
+### Progress against zsx0tk4k and ernn0bkv
+
+The [one-core ADR](../decisions/zsx0tk4k-serve-every-public-role-from-one-9p-core-with-namespaces-as-composed-trees-and-portals-as-binds.md)
+is accepted architecture; the [Plan 9 integration concept](../concepts/ernn0bkv-plan-9-integration-points-for-sophia.md)
+contains both implemented foundations and deliberately later directions.
+Neither is a task with a meaningful percentage complete. This is a dated
+reconciliation, not a second task ledger:
+
+| Architectural part | Evidence at this stopping point |
+| --- | --- |
+| Shared 9P core and desktop role exports | Core and WM/shell/output/lock/Factotum/inspection foundations exist; t323 readiness is complete. Full WM and shell qualification remains t249/t250 and t252. |
+| Immutable authenticated identity and launch custody | t133/t317 complete for the approved local Session-provisioned model. This is not arbitrary shell-launched or remote-client authentication; t324 is separate. |
+| Confined groups, recipes, discovery and retained identity | t142/t275/t318 complete within their recorded exits. Naming, permission and service identity remain separate; no combined forwarding root is claimed. |
+| Unified portal foundation and recipient execution | t315 complete, with the live X clipboard work and generic bind/revoke foundation. This does not implement every portal kind or a native 9P application frontend. |
+| Capture observer, the first new 9P transfer | t319 remains candidate work, including renderer snapshots, lock/revoke controls, measurements and attended acceptance. A bounded status slice is also required; full t257 remains separate. |
+| All public roles on one core | Administration t254 and broker t314 remain open; complete compatibility retirement t255 therefore remains open. |
+| Native applications and third-party translators | Naming the full protocol-authority contract t321 and rebuilding the application scaffold t316 remain open. t320 designs input injection; application APIs, service delegation and recursive re-export are not delivered by t318. |
+| Broader Plan 9 directions | Plumber-like URI/file/notification delivery and other portal executors remain scoped follow-ons (t046). Plain 9P2000/portability t256, comprehensive status t257, and remote admission/forwarding are not current delivery claims. |
+
+The strongest completed portion is now admission, confinement, composition and
+portal custody. The full observer milestone still needs capture and its
+qualification; the broader architecture still needs the remaining migrations,
+application authority and later portability work. The next selected critical
+task remains WM qualification, not all of these directions at once.
 
 ## Reboot handoff (2026-10-10)
 
