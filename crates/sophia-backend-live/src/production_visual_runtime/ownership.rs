@@ -10,6 +10,10 @@
 
 use super::*;
 
+#[cfg(test)]
+#[path = "../../tests/support/native_submission_ownership.rs"]
+mod tests;
+
 /// Everything that disagreed when a retirement failed the ownership check.
 ///
 /// The check used to end the session with a sentence naming nothing, so the
@@ -216,9 +220,9 @@ impl LiveProductionVisualRuntime {
     /// overtook a pending present skips that present, settling its client as
     /// Skipped, because the plane has moved on and the wait can never end.
     /// Half-matching identity stays fatal, with every fact in the message.
-    pub(super) fn settle_submission_ownership(
+    pub(super) fn settle_submission_ownership<T: NativeSubmissionTarget>(
         &mut self,
-        native_scanout: &mut LiveProductionNativeScanout,
+        native_scanout: &mut T,
         output: OutputId,
         submitted_content: LiveProductionScanoutContent,
         expected_present: Option<(LiveProductionNativeFrameId, TransactionId)>,

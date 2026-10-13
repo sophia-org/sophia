@@ -59,6 +59,8 @@ mod projection;
 pub use projection::presented_keyboard_scope;
 mod retirement_target;
 use retirement_target::NativeRetirementTarget;
+mod submission_target;
+use submission_target::NativeSubmissionTarget;
 mod service;
 mod session_lock;
 pub use session_lock::LiveSessionLockCoverage;
