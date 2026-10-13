@@ -75,6 +75,37 @@ incident step is to reproduce the application's geometry inputs in isolation,
 then fix the responsible boundary with a discriminating regression. Do not infer
 an application-specific cause from the synthetic overflow test.
 
+## Follow-up: isolate the client without retrying the desktop
+
+After the diagnostic commit, the packaged application was run against an
+existing Xvfb in a separate mount, PID, network and IPC namespace. It received
+an empty home/config/runtime directory and no GPU device. The application tree
+was read-only; no account profile or live desktop socket was exposed. GPU
+acceleration and Electron's inner sandbox were disabled for this outer-sandbox
+probe, and X11 was selected explicitly.
+
+The mapped 1280 by 720 window published `WM_NORMAL_HINTS` maximum dimensions
+of **2147483647 by 2147483647**, both immediately and after a one-second wait.
+That supplies independent client-side evidence for the extreme maximum-size
+path already reproduced by the Session snapshot test. Adding positive chrome
+clearance to either dimension overflows `i32`. The failure is in Sophia's
+conversion of a maximum constraint, not an actual request to allocate a buffer
+that large.
+
+This strongly identifies the incident trigger, but is not a replay of the
+original live session: the capture used Xvfb and a fresh profile, while the
+Sophia regression supplies the constraint to the real snapshot owner. The
+private capture package's self-excluding manifest verifies with SHA-256
+`e22168189cbe31a2797546e301e1d4f411e4dcfbb773f766a0f2cec936272321`.
+It records the packaged executable's hash and sandbox conditions; no binary was
+copied into evidence.
+
+The behavioral repair remains separate from this diagnostics commit: define
+maximum-constraint conversion over the representable outer-size range, without
+wrapping arithmetic or silently changing actual geometry. Cover the extreme
+bound and ordinary bounds with generic regressions, and assess impossible
+minimum sizes separately so an application hint cannot end the desktop.
+
 ## Connections
 
 - [Daily diagnostics](e84g9ivq-durable-daily-session-diagnostics-and-incident-markers.md)
