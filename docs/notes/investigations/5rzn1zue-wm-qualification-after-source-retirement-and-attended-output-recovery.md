@@ -15,26 +15,28 @@ October 10 capability maps or the original three-case migration plan. Task
 status stays in `todo.md`. The complete WM acceptance exit, including measurement,
 has not passed. Do not reopen t317/t318 or repeat their attended acceptance.
 
-The qualified external baseline is **28 passing cases**: signed Hagia
-`76bc923d18bf3618e86bdca8eadd7489439554ab`, niltempus runner
-`3a4de80ebe864ec0fb72024b77e91ac3230e6b56`, and Sophia pin
-`7697a9102af6d9900e3de6acd7be78c55b97e94b`. The
+The qualified external baseline is **29 passing cases**: signed Hagia
+`9fb5e83fe2f4b7e9783190a83ffe5bb802d3dc2c`, niltempus runner
+`92e9337cb42b0fcb53f9f20d34c975189fc8bbd1`, and Sophia pin
+`27bce5c96adb0461e59c3a6de0284bac10a379a2`. The new case joins
+[native publication installation](#native-publication-installation-2026-10-13).
+The
 [input-transition result](#routed-input-and-capture-transitions-2026-10-13)
 strengthens five existing cases: routed hover, move/resize Cancel, protected
 terminal precedence and pointer release debt across revocation/reconnect.
 The earlier [geometry repair](#routed-pointer-geometry-repair-2026-10-13)
 preserves a stationary Begin. Supplied events, layers, revocation triggers and
 completion do not prove physical input, frontend delivery or native pixels.
-The final package is `~/.local/state/sophia/development-evidence/t249-input-transitions-01`;
+The final package is `~/.local/state/sophia/development-evidence/t249-native-install-pair01`;
 its manifest is
-`2bf72637a1e2aafe99fef61264aad924b39c8a63931d19cae778e9895ec67a8b`.
+`aeeea8030e128b9e9efa25ddb0613a8d498f9df0fb1e8aad9ef2506fc84c852a`.
 The linked result binds the full generic gate, controls, pin review and audit.
 
 The refreshed pin includes numeric geometry diagnostics and the direct
 input-debt regressions. The diagnostics preserve errors; they do not fix
 extreme maximum-size overflow. All five mirrored production spans are unchanged.
-The full isolated generic gate passes, and the external audit verifies 3,262
-pinned inputs, nineteen mounted inputs, exact results and the pointer ledgers.
+The full isolated generic gate passes, and the external audit verifies 3,263
+pinned inputs, twenty mounted inputs and all 29 exact results.
 
 Package **A** now has its ordinary routing/capture joins. Lock and output-loss
 transitions remain shared obligations in C/D, not implied by a supplied Cancel.
@@ -53,7 +55,7 @@ duplicating them with a named peer.
 F's [native publication installation](#native-publication-installation-2026-10-13)
 now queues real Hagia's publication through a shared production owner with
 simulated initialization/completion. Generic and external controls pass, as
-does the full generic gate. The signed 29-case pair still needs binding.
+does the full generic gate. The signed 29-case pair and source audit pass.
 Native Present retirement and automatic source-only repaint scheduling remain
 open; their concrete service/cycle paths are the next F boundary.
 
@@ -3528,8 +3530,19 @@ This includes workspace tests, strict Clippy, SDK and archive checks. Device
 pixel checks remain unproved. The first gate stopped on module ordering before
 tests; the corrected order is the only difference from the development
 archive. The new external runner lists 29 cases and its fourteen active unit
-tests pass. Final signed pin, complete external rerun and source binding still
-follow; these development results are not that final package.
+tests pass. The final signed pair is Sophia `27bce5c96`, Hagia `9fb5e83` and
+niltempus `92e9337`. All 29 cases pass in `t249-native-install-pair01`, manifest
+`aeeea8030e128b9e9efa25ddb0613a8d498f9df0fb1e8aad9ef2506fc84c852a`.
+Strict Clippy on the mounted external fixture, fixture formatting, Hagia
+layout and fourteen runner tests pass in `t249-native-install-checks01`,
+manifest `76bd1107850acfe9304befbcbfd2fae408a32cc50507cfcae6226bbe9f4a6dce`.
+The audit binds the generic gate's exact patch and new test to the signed pin,
+checks all 3,263 pinned inputs and twenty mounted inputs, verifies signatures
+and requires every case's exact one-test success. All five mirrored production
+spans are unchanged. `t249-native-install-pair-audit01` has manifest
+`59a988a1d9f6254361bfb3e6e333e2ca0573fec6bf9f415f12e060824923bd24`.
+Both completed native-install build archives were removed under their leases;
+the fixed Cargo pool and retained source/evidence remain.
 
 F is not closed. `run_cpu_production_cycle` still selects native work through
 the concrete target, and the old repaint fixture explicitly queues its second
