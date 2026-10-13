@@ -9,6 +9,11 @@ tags: [validation, protocol, policy]
 
 ## Current resumption
 
+The [automatic native CPU repaint](#automatic-native-cpu-repaint-2026-10-13)
+development case, two behavioral controls and full generic gate pass. Binding
+the strengthened case to a signed external pair is the next step; the qualified
+baseline below remains unchanged until that run and its audit pass.
+
 Resume Sophia t249 / Hagia h006 using the
 [row dispositions](#remaining-row-dispositions-2026-10-13), not the dated
 October 10 capability maps or the original three-case migration plan. Task
@@ -60,9 +65,9 @@ The [native software-admission join](#native-software-admission-2026-10-13)
 now carries a real-peer Manage candidate through the CPU cycle's native
 framing decision, native retirement and Session admission progress. The case,
 three controls, full generic gate and signed 30-case pair pass. DMA retirement
-and automatic source-only repaint scheduling remain open. Next, replace the
-repaint fixture's explicit queue call with the shared CPU cycle's native path;
-retain exact publication and sampled-source identities. Continue B/C alongside
+remains open. The development repaint case now replaces the fixture's explicit
+queue call with the shared CPU cycle's native path; it retains exact publication
+and sampled-source identities. Continue B/C alongside
 the remaining F work without treating either as waived.
 
 The [Session comparator prototype](#session-comparator-prototype-2026-10-13)
@@ -3666,6 +3671,40 @@ and automatic source-only preview repaint still need execution. Initialization,
 authority input, frontend control acknowledgements, worker execution and device
 completion are supplied; GPU import, scanout and device pixels remain unproved.
 The other B–F packages and the unchanged measurement campaign remain required.
+
+## Automatic native CPU repaint (2026-10-13)
+
+Hagia's existing `sdk_presented_source_repaint_preserves_identity` case now
+requires the shared native CPU cycle to schedule a source-only repaint. Its
+initial presentation still uses an explicit queue call. After a complete CPU
+source update, the fixture calls `run_cpu_cycle` and observes the submitted
+frame through a new read-only test-support accessor. It neither queues nor
+submits that repaint itself. Both simulated mirror heads must then retain the
+publication, receipt, stamp and instance identities while displaying the new
+source generation and retained CPU bytes. No new WM request is admitted.
+
+Two behavioral controls distinguish scheduling from composition. Omitting
+`ordinary_repaint::admit` fails the native-repaint scheduling assertion.
+Discarding the updated presented tier fails the identity assertion. The first
+scheduling-control attempt failed to compile and is not behavioral evidence;
+the corrected control fails the intended assertion. Restoring both production
+spans yields a passing case.
+
+Development package `t249-native-repaint-20261013-01` retains source overlays,
+controls and results. Its manifest is
+`f9b23c5f2675ef0714b069f34bac72c4d3f9f0b0de8ffe46a71fc44f7ed4a1be`.
+The audit checks 5,112 Sophia and 481 Hagia base inputs plus the overlays.
+The full device-hidden generic gate passes in `t249-native-repaint-gate01`,
+manifest `be9428622c5c602a178e166f98171b43f1710d236701ff8b2fcf6095deda34ad`.
+Sophia changes only the test-support accessor; production scheduling already
+used the shared cycle. Signed Hagia candidate
+`0ec1498202d885c21da24aa1e9eecbac48cf6d3f` contains the stronger fixture.
+The complete signed external pair and its source audit remain pending.
+
+Initialization, worker preparation and device completion are simulated. This
+proves the immediate CPU cycle's automatic scheduling with real Hagia policy;
+it does not prove physical pixels, GPU import, DMA Present retirement or a
+separate deferred-service scheduling path. B–E and measurement remain open.
 
 ## Connections
 

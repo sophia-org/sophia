@@ -46,6 +46,10 @@ impl SessionPolicyPresentationFixture {
         self.target.queue.pending(output)
     }
 
+    pub fn submitted_frame(&self, output: OutputId) -> Option<LiveProductionNativeFrameId> {
+        NativeRetirementTarget::submitted_frame(&self.target, output)
+    }
+
     pub fn track_native_retirements(&mut self) {
         self.target.track_retirements();
     }
