@@ -6,7 +6,7 @@ tags: [plan, milestone]
 ---
 # Migrate the Hagia WM role to admitted 9P2000.L files
 
-## Current qualification boundary (2026-10-10)
+## Current qualification boundary (2026-10-12)
 
 The [current-source audit](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md)
 reconciles this historical migration plan with the SDK-based, 9P-only desktop.
@@ -14,11 +14,14 @@ The older opt-in/current-IPC language below describes the original milestone;
 the accepted retirement amendment governs current product selection and
 whole-release rollback. Output has also migrated. Neither change closes t249.
 
-The latest baseline is the eighteen-case `t249-repaint-02` run; the dated
-investigation records its successors to the early slices summarized below.
-The [t323 readiness gate](jsschoen-converge-public-roles-on-one-9p-core.md#t323)
-is now the immediate prerequisite for further shared-core migration, followed
-by the role-facing foundation and a return to full t249 qualification.
+The latest baseline is the twenty-case `t249-present-admission-02` run on
+Sophia `1b476dbdc`, with authenticated real-Hagia startup and replacement.
+The [new result](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#authenticated-baseline-and-headless-software-present-admission-2026-10-12)
+adds headless software-Present retirement through the backend and Session
+admission owners, with two discriminating controls. The shared-core readiness
+and role-facing foundations, including t317/t318, have completed their scoped
+exits; full WM qualification has resumed. Native service selection, remaining
+capability joins and reproducible measurement still require qualification.
 
 The historical two-wire Hagia runner is frozen at its pinned source and must
 not be run against current master or silently rebased. The first current
@@ -36,8 +39,10 @@ checks typed intent acceptance/refusal and lost-peer recovery without executing
 an operation. The subsequent
 [stalled-peer slice](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#stalled-live-peer-recovery-2026-10-10)
 proves recovery driven by the production response deadline while the peer is
-still alive. Presentation/input joins, including real-peer receipt credit,
-and a reviewed measurement method remain. The old
+still alive. The dated investigation records subsequent presentation/input
+joins and the t323 journal-credit result without broadening their scope.
+Remaining presentation/input paths and a reviewed measurement method are still
+required. The old
 80-run campaign remains refused, the numeric budgets remain unchanged, and
 occupied-output acceptance is reused only for its demonstrated scope.
 

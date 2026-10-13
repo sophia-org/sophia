@@ -7,6 +7,11 @@ tags: [validation, protocol, policy]
 ---
 # WM qualification after source retirement and attended output recovery
 
+Latest result: the [authenticated twenty-case baseline and software-Present
+admission join](#authenticated-baseline-and-headless-software-present-admission-2026-10-12)
+resume qualification after the t317/t318 foundation. Historical maps below keep
+their dated scope; the latest result does not close the full t249 exit.
+
 ## Reboot handoff (2026-10-10)
 
 Resume update: B and A below are integrated. Read the
@@ -1135,6 +1140,9 @@ adds retired-frame stamp and receipt consensus for one output with two mirror
 heads. It does not cover multiple logical outputs or the native service tail.
 The [source-only repaint successor](#source-only-preview-repaint-2026-10-10)
 separates preview source capture from the still-open production scheduling join.
+The [software-Present successor](#authenticated-baseline-and-headless-software-present-admission-2026-10-12)
+adds headless copy retirement and Session admission completion. Native Present
+retirement and native service selection remain distinct requirements.
 
 This is a revisable coverage baseline, not a frozen feature list or a reduced
 exit. Every defined capability and explicit acceptance requirement stays in
@@ -1961,6 +1969,110 @@ admission review, t275 recipe design, t142 confined groups, t317 attach identity
 and t318 namespace composition. The existing t249 coverage matrix, production
 backend joins, measurement/comparator obligations and separate t250 physical
 acceptance remain unchanged. No desktop component was installed or reloaded.
+
+## Authenticated baseline and headless software-Present admission (2026-10-12)
+
+After t317/t318, the old external baseline cannot launch current Hagia through
+the unauthenticated test startup. Signed Hagia `8e36eab` updates the nineteen
+cases to Session's authenticated startup and asynchronous replacement owners.
+A generic Sophia fixture supplies trusted Session-to-Factotum channel admission;
+the actual Factotum export/client, launch relay and ordinary Hagia authentication
+run. The fixture drives coordinator progress while waiting for replacement and
+requires an Active registration in each recorded observation. AbortSettlement
+still fences the old epoch until settlement; successor epoch assertions then
+wait for authentication. The Factotum process bootstrap is not qualified here.
+
+Signed niltempus `347d115` reviews the new Sophia pin
+`1b476dbdcc30215fe7ee5841e5a872f136ebb3a0`. Four bound glue spans are unchanged;
+the presentation-service span now includes authentication in its stopping
+calculation. That calculation and the native selection/install tail remain
+outside the external helper. The clean nineteen-case run
+`t249-authenticated-01` passes before extending admission coverage.
+
+Signed Hagia `afcc1d100f35a3b4cfdcee5fea3ae99a2454edf2` adds the twentieth case,
+`sdk_occupied_manage_admits_software_present`, sharing the CPU admission setup
+instead of copying it. A supplied software-Present submission accompanies the
+first CPU frame. Production intake classifies the exact candidate as
+PresentedBuffer, quarantines it and reconciles real Hagia's Manage placement
+to its safe extent. Supplied frontend control answers let the layout commit;
+the candidate must still be AwaitingRetirement.
+
+The next projected authority batch releases that frame to the ordinary CPU
+backend. Its without-native copy settlement generates the typed retired record;
+the fixture requires the exact candidate and source extent. Native frame,
+submission and timing fields are zero and are asserted as such. A direct call
+to Session's `record_native_software_present_retirement` completes admission.
+The following backing frame must reach generation 2 without quarantine before
+the case checks Managed state, released planning/recovery state, committed
+focus and checkpoint correlation. Both frames have retained-byte and headless
+interior-pixel checks, inherited from the shared CPU setup.
+
+Two archived-source controls compile and each fails its predicted assertion
+with exit 101 and one failed test:
+
+- Omit `complete_admission_retirement` only in the software retirement owner:
+  the backend record passes, but the next frame stays quarantined at generation
+  1. First failure: “a retired admission's next frame must reach production”.
+- Increment the candidate transaction only in the backend's without-native
+  retirement record: first failure is “production must retire the exact
+  software Present candidate”, before the Session owner call.
+
+The controls hold both the Cargo slot and source lease, check both affected
+production files against the pin, bind every mounted input and restore sources.
+No worktree production file is mutated. Restored-overlay strict Clippy,
+formatting, runner tests and Hagia layout pass. No general product or full
+Nim/formal gate is claimed for these external fixture/tool changes.
+
+### Archive freshness correction
+
+The first signed twenty-case run (`t249-present-admission-01`) remains STOP.
+Despite byte-correct restoration, re-extraction restored Git's old modification
+times, and Cargo reused the compiled backend mutant. The exact-record assertion
+caught transaction 721 instead of 720. The log rebuilt Session but not backend.
+This is a runner freshness fault, not a production admission failure.
+
+Signed niltempus `0e8249260ac4bf786f4255c6857d6f4f3cde8b2f` extracts archives
+with `tar --touch`: content is unchanged, but workspace input timestamps force
+Cargo to reconsider prior artifacts. Registry dependencies remain reusable.
+A regression test extracts a commit dated in 2000 and requires its source to
+be newer than a simulated prior build. Removing the option fails that named
+assertion, one failure and exit 101. Fourteen runner tests pass, with one
+internal child fixture ignored for direct invocation.
+
+The clean final pair, Sophia `1b476dbdc`, Hagia `afcc1d1`, runner `0e82492`,
+passes all twenty individually selected cases in `t249-present-admission-02`:
+`lifecycle=3 occupied=7 operations=3 slow_peer=1 presented=6 native=false`.
+Its log rebuilds both backend and Session. The final audit checks 3,257 archived
+inputs against pinned blobs, every mounted input, twenty exact passing result
+lines and all retained manifests. It is an integrity audit, not another run.
+
+Packages live under `~/.local/state/sophia/development-evidence/`:
+
+| Package | SHA-256 of its self-excluding SHA256SUMS |
+| --- | --- |
+| `t249-authenticated-01` | `0370ecddf6e24cdd4d8a91553e546c19695e65c09c55e190d0bc6b83ae47c0c2` |
+| `t249-present-admission-dev01` | `6f9e72c71b6a0b18808a1924ad4eb53b487ae3179786d087006165ea7082c657` |
+| `t249-present-admission-session-control01` | `8033e19f5da5cef572067e6ba49e1d52a3a508ae9790ba86f11fcba183fc83af` |
+| `t249-present-admission-backend-control01` | `87ab2034b206c76f0df05b212fa82b88bfc15144cbafd6dd08176b5676f3e937` |
+| `t249-present-admission-checks01` | `6d0aca05b4bbdcbe916ee543aa07c9b56826dd6f99cc321882cf10e5fbc4d06d` |
+| `t249-present-admission-01` (STOP) | `4a9f9da4535f1ecd70445aaf755cb7450f74814b8baebf84a284f868761400f6` |
+| `t249-archive-freshness-01` | `23e2435d8024ea925389664d9ec575a999e267583e442d192c26d7060e12f066` |
+| `t249-present-admission-02` | `c846231e5b0f8a888124e4dc59b5f9fc8288df8ab32b835178e8fc3fe0bfe9bb` |
+| `t249-present-admission-audit01` | `6fcab87de72eb6dc37ecffb67ef47423d46d1c11c69d06798a48fda0bf62a0b4` |
+| `t249-present-admission-cleanup01` | `8591edceeca303f5e4b785c6af0958f3310b9898f7f7ee5eba7dc47a72b1bce0` |
+
+The leased cleanup removes the marked build root after all jobs finish. Records
+retain binary paths and hashes, never built binaries. No installed component
+or production source changed. Earlier controls remain evidence at their original
+pins; the refreshed positive baseline does not re-execute them.
+
+This closes the bounded headless software-Present admission join. The fixture
+drives record drainage and the Session owner call, so native service selection,
+native software/DMA-BUF Present retirement and page flips are not claimed.
+The next production boundary is presentation-service stop/revocation/withdrawal
+ordering and its native installation/repaint path. Remaining capability-map
+items, launch contexts, measurement/comparator work and isolated integration
+exits stay required by t249; actual device/physical acceptance remains t250.
 
 ## Connections
 
