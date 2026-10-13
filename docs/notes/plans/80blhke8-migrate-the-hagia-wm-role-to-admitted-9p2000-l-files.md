@@ -14,12 +14,13 @@ The older opt-in/current-IPC language below describes the original milestone;
 the accepted retirement amendment governs current product selection and
 whole-release rollback. Output has also migrated. Neither change closes t249.
 
-The latest baseline is the twenty-one-case `t249-service-01` run on
+The latest baseline is the twenty-two-case `t249-stop-01` run on
 Sophia `1b476dbdc`, with authenticated real-Hagia startup and replacement.
-The [new result](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#production-presentation-service-availability-and-withdrawal-2026-10-12)
-joins the actual presentation-service owner for supplied availability loss,
-runtime withdrawal and availability-gated settlement, with three discriminating
-controls. The preceding headless software-Present admission join remains in
+The [new result](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#requested-restart-at-the-presentation-service-boundary-2026-10-12)
+joins the actual presentation-service owner before requested authenticated
+restart: immediate revocation and withdrawal settlement while stopping, followed
+by successor recovery, with two discriminating controls. The preceding
+availability-loss and headless software-Present admission joins remain in
 the suite. The shared-core readiness and role-facing foundations, including
 t317/t318, have completed their scoped exits; full WM qualification has resumed.
 Other service branches, native installation and scheduling, remaining capability

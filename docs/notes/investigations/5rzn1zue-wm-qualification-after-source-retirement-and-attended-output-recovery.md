@@ -2158,6 +2158,92 @@ The leased cleanup removes the marked build root after all jobs finish.
 Records contain binary paths and hashes, not built binaries. No production or
 installed component changes. t249 and Hagia h006 retain their full exits.
 
+## Requested restart at the presentation-service boundary (2026-10-12)
+
+The next external case reuses the mirror-target prefix and calls Session's
+actual `begin_control_restart` on the authenticated Hagia peer. Before any
+replacement poll, that owner requests deliberate restart and fences inspection;
+the old peer, epoch and presentation are still present. Availability stays true,
+transport remains available, no legacy control job exists and authenticated
+replacement has not started. This isolates the service's stopping path from
+availability-loss and transport-unavailable revocation.
+
+The actual `service_presented_policy` owner must issue the exact Revoked and
+remove the installed publication before replacement. The old supervised peer
+must still be alive and the checkpoint unchanged. The fixture chooses to retire
+the replacement frame before polling restart: one mirror cannot withdraw it,
+both mirrors produce Withdrawn, and another service call produces no duplicate.
+This proves that available service can settle withdrawal while stopping. These
+are locally queued receipts; no delivery to the old peer is claimed.
+
+The fixture then drives the production replacement and authentication owners.
+The successor has a new peer and epoch, unchanged committed state/checkpoint,
+returned chord credit and no old ledger. Both recovery cycles answer without
+reopening the switcher or changing focus. A final non-admitting poll and child
+check observe health before teardown, not a new round trip.
+
+The controls are deliberately narrower than changing the entire stopping
+calculation. Removing only `stopping` from the revocation condition leaves it
+true for suppressing the headless install tail, so that fallback cannot mask a
+missing revoke. The second control incorrectly requires `!stopping` to settle
+withdrawals. Their predicted first failures are respectively:
+
+- `stopping service must revoke before replacing the peer`;
+- `available stopping service must settle the retired replacement`.
+
+Both controls compiled and failed exactly one selected test with exit 101 at
+those first assertions. They hold the source and Cargo leases, compare the
+service file with the pinned blob, and verify restoration, all mounted inputs
+and the unchanged ordinary Hagia binary. The positive run passes twenty-two
+cases. Strict restored-overlay Clippy, fixture/runner formatting, fourteen
+runner tests (one internal child fixture ignored) and Hagia layout also pass.
+
+Under `~/.local/state/sophia/development-evidence/`, self-excluding manifest
+SHA-256 values are:
+
+| Package | Manifest SHA-256 |
+| --- | --- |
+| `t249-stop-dev01` | `d91a33818efadb361ec015bcb4a249c683c05df86e20370e0c0220e5829136b6` |
+| `t249-stop-dev02` | `0d8051f3068c15d6811321a78d079a217ff65cad2c28f3c54245fc77e2d0b736` |
+| `t249-stop-revoke-control01` | `07ef43b33f0db5eb8eec65d650fafbb5c808bcc637df4090df6f07290facf88e` |
+| `t249-stop-settle-control01` | `1cf1079b9f16c3c38cd876a6b9fd3ac6632b61b899c6aff0eea7fa7a55810ea4` |
+| `t249-stop-checks01` | `b16e0739562af850fb3e4e2208070ea85141fc88309578d5d10bf9d31ca27b39` |
+
+Development 01 passed before the added final health check and redundant-borrow
+cleanup. Development 02, the controls and checks bind the tightened fixture.
+The prior availability-loss case is rerun with the extracted shared prefix;
+its earlier controls retain their original fixture identities.
+
+Backend-initiated revocation remains open. With `native=None`, removing its
+handler can be masked by either availability-loss revocation or the headless
+install fallback; another passing receipt test would not discriminate that
+handler. No production seam is changed here. The new case covers the requested
+restart path, not every stopping condition, native installation, frame scheduling
+or physical completion. Initial installation/observation, CPU source supply and
+simulated head completion keep the previous case's explicit limits.
+
+Signed Hagia `cee1534f6155a4592d7c5f245877a41cb42c898a` and niltempus
+`b92bc80d91818914fd697bbda6851e1106c8b2e6`, at unchanged Sophia
+`1b476dbdcc30215fe7ee5841e5a872f136ebb3a0`, pass all twenty-two cases in
+`t249-stop-01`: `lifecycle=3 occupied=7 operations=3 slow_peer=1 presented=8
+native=false`. Its manifest is
+`3c87489510d20ea3b3a3b932cf01a31e654a0f77ef9e8cd561f58bf8c223938c`.
+
+`t249-stop-audit01` verifies 3,257 archived crate/Cargo/vendor inputs against
+pinned Git blobs, the mount and fifteen external modules, unchanged fixtures
+from development 02 and both controls, twenty-two exact passing results, both
+signatures and six package manifests. Its manifest is
+`f5d6bec8a28be815040f92d2a1ed7f59bab82b52ee22f3b5093b1c07ffed7b01`.
+This is an integrity audit, not another execution. All five bound owner spans
+remain unchanged. Subsequent result commits are documentation only.
+
+`t249-stop-cleanup01` removes the marked build root under the lease; manifest
+`16b57adc1104ef267993a9731f8f6a30356a57d2fae8599c7a83027facf36b6a`.
+Records retain paths and hashes, never built binaries. No general product gate,
+full Nim/formal rerun, production edit or installed-session update is claimed.
+t249/h006 remain open with their full capability, native-owner and measurement
+requirements.
+
 ## Connections
 
 - [t249 plan](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249) owns the unchanged acceptance requirements.
