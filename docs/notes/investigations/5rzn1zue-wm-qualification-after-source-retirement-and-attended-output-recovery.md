@@ -13,7 +13,8 @@ The [DMA admission join](#dma-admission-and-qualified-pair-2026-10-13) now passe
 with real Hagia, actual GPU authority intake, composed retirement and Session's
 DMA recorder. Image-promotion and admission-retirement controls fail their named
 assertions. The listed A–F joins are covered under their stated limits.
-Continue **comparator accounting, resource probes and the reviewed measurement
+The refreshed comparator now passes a small [open-loop accounting diagnostic](#open-loop-accounting-2026-10-13).
+Continue **rejection/failure controls, resource probes and the reviewed measurement
 campaign**, then complete the independent SDK/export impact review and final exit
 binding. The complete t249/h006 exit has not passed.
 
@@ -51,15 +52,21 @@ pixel copying, stable-device evidence or physical scanout is proved.
 The [Session comparator prototype](#session-comparator-prototype-2026-10-13)
 runs both transports below the same enqueue, coalescing and settlement owners,
 using one current Hagia binary and its normal profile/checkpoint loop.
-Finite diagnostics and a coalescing control pass, but timing remains unqualified.
-Refresh its older source pins before the campaign. Finish open-loop scheduling,
-rejected/unresolved accounting, resource probes and method review. Preserve the
+The refreshed archive uses Sophia `0c75896b4` and Hagia `2ba92d984`. At both
+60 and 120 Hz, both arms settle all 240 offered updates. A delayed-start pair
+records sixteen replacements and 224 settlements per arm, with no unresolved
+offers. Removing a settlement or replacement edge fails the ledger verifier.
+These are finite diagnostics; timing remains unqualified. Exercise actual
+capacity rejection and explicit failure reporting, then finish resource probes
+and method review. Preserve the
 five alternating pairs, 10,000 admitted updates per run, both rates under both loads
 and the relative and absolute budgets.
 
 The completed DMA development and qualification archives are removed.
-`~/.cache/t249-session-comparator-build` remains for the next comparator
-experiment. No qualification job or live-session operation is running.
+`~/.cache/t249-measurement-build` holds the refreshed comparator and diagnostic;
+the earlier `t249-session-comparator-build` is also retained. Experiment scripts
+are preserved in `t249-open-loop-accounting-20261013-01`. No qualification job or
+live-session operation is running.
 
 ## Stopping point and resume procedure (2026-10-12)
 
@@ -4173,6 +4180,70 @@ records `t249-dma-admission-dev-cleanup01` and
 `t249-dma-admission-pair-cleanup01`. The earlier driver/intake archive is also
 removed in `t249-dma-retirement-cleanup01`. Only the comparator archive remains
 for t249. No job is running and nothing was pushed.
+
+## Open-loop accounting (2026-10-13)
+
+The comparator now uses archived Sophia
+`0c75896b4cc53d6e24df6409b04be2dffe0d005b` and Hagia
+`2ba92d984d0317ced163c1137d9641fddfce226d`. The test-only historical transport
+adaptation remains below the actual Session queue, projection and settlement
+owners. Both arms run one current Hagia binary with its ordinary profile and
+checkpoint loop. Production checkouts are unchanged by the experiment.
+
+A new external Rust diagnostic schedules move and resize updates against
+absolute deadlines. Each owner pass enqueues every overdue offer before polling
+the peer; settlement cannot postpone the schedule or delete an offer. The
+diagnostic records scheduled and enqueue times, admission, replacement edges,
+observed dispatch, correlated request/transaction and layout settlement. It
+checks the surviving geometry at dispatch, proposal and commit. Begin/end
+checkpoint checks remain outside the timed updates. Checkpoint persistence
+continues normally in Hagia, but the driver does not wait for each checkpoint
+between offers.
+
+Three direct-binary pairs pass, each with 240 offers divided equally between
+move and resize:
+
+| Schedule | Result in each transport |
+| --- | --- |
+| 60 Hz | 240 admitted, 240 settled, no replacement or unresolved offer |
+| 120 Hz | 240 admitted, 240 settled, no replacement or unresolved offer |
+| 120 Hz, 80 ms initial scheduling delay per interaction | 240 admitted, sixteen replaced, 224 settled, no unresolved offer |
+
+All pairs have identical offer identities, geometries, admission decisions,
+replacement edges, requests and transactions after removing the four clock
+fields. No survivor filtering is used. The delayed case retains about 70 ms of
+enqueue lateness and catches up the scheduled offers; it is an accounting
+control, not a latency sample. Removing a recorded settlement fails the verifier.
+In the delayed case, removing a replacement edge also fails it. A separate
+post-run audit checks conservation and request uniqueness. No capacity rejection
+occurred, so that branch still needs an actual-owner diagnostic.
+
+The initial compilation failed because Session does not directly depend on
+`serde`; the diagnostic now constructs JSON through its existing `serde_json`
+dependency. The first run omitted the production owner's wake attachment. Its
+ledger retained 120 offers, 59 replacements, sixty settlements and one unresolved
+offer when the drain deadline failed. Calling the existing `attach_owner_wake`
+before waiting fixes that fixture error. A second run completed its first
+interaction but called the older finite diagnostic's replacement-specific
+control on a begin/end-only ledger; the diagnostic now validates those boundary
+offers without that inapplicable control. All failures remain in the evidence.
+
+Package `~/.local/state/sophia/development-evidence/t249-open-loop-accounting-20261013-01`
+has self-excluding manifest SHA-256
+`37fc5432f813603cc2d378f17c4291b1ee8abad9ebfd6a67a64cc981a72fc162`.
+It preserves scripts, logs, per-offer ledgers, comparisons, adaptation patches,
+added sources and binary paths/hashes. Its source audit checks all 5,119 tracked
+Sophia inputs and 485 tracked Hagia inputs, with the same eight changed Sophia
+wiring files and one changed Hagia entry point as the earlier prototype.
+Execution hides devices and the host user runtime; Rust uses the existing Cargo
+slot. The retained archive is `~/.cache/t249-measurement-build`.
+
+This proves the finite open-loop accounting path, not performance acceptance.
+Resource probes, actual capacity rejection, stronger failure records, matched
+release build modes and prospective method review remain before the unchanged
+five-pair campaign. Owner wait counters are observations, not measurements of
+all process or scheduler wakes. Supplied layout completion does not prove
+application ACKs or physical presentation. No latency budget is declared passed.
 
 ## Connections
 
