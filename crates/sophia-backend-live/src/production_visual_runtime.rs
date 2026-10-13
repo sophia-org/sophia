@@ -28,13 +28,13 @@ mod compositor_graphics;
 #[cfg(test)]
 #[path = "../tests/support/lifecycle_tests.rs"]
 mod lifecycle_tests;
-#[cfg(test)]
-#[path = "../tests/support/native_submission_ownership.rs"]
-mod native_submission_ownership_tests;
 #[cfg(any(test, feature = "test-support"))]
 #[allow(dead_code)]
 #[path = "../tests/support/mirrored_composition_target.rs"]
 mod mirrored_composition_test_target;
+#[cfg(test)]
+#[path = "../tests/support/native_submission_ownership.rs"]
+mod native_submission_ownership_tests;
 mod ordinary_repaint;
 mod output_composition;
 mod policy_presentation;
