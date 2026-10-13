@@ -56,8 +56,11 @@ F's [native publication installation](#native-publication-installation-2026-10-1
 now queues real Hagia's publication through a shared production owner with
 simulated initialization/completion. Generic and external controls pass, as
 does the full generic gate. The signed 29-case pair and source audit pass.
-Native Present retirement and automatic source-only repaint scheduling remain
-open; their concrete service/cycle paths are the next F boundary.
+The [retirement interface](#native-retirement-interface-2026-10-13) now runs
+software settlement through the shared native owner and passes the full gate.
+Its submission is supplied; real-peer admission, DMA retirement and automatic
+source-only repaint scheduling remain open. The qualified external pin above
+does not yet include this candidate.
 
 The [Session comparator prototype](#session-comparator-prototype-2026-10-13)
 now runs both transports below the same actual enqueue, coalescing and
@@ -3555,6 +3558,56 @@ identity/ownership decisions, not supply a final `LiveProductionRetiredPresent`
 directly to Session. Software and DMA-BUF retirement remain distinct joins,
 with their resulting candidate carried into admission progress. Actual GPU
 import, scanout and physical presentation remain outside this test.
+
+## Native retirement interface (2026-10-13)
+
+The native retirement owner can now run against a private
+`NativeRetirementTarget`. The installed entry point delegates to the same body:
+observe the submitted frame before consuming completion, retire shell claims
+and displaced direct content, select the software or DMA owner, settle that
+owner and publish input. The target supplies completion and renderer-image
+custody operations. GPU finalization and direct-image promotion retain their
+existing bodies behind the same interface. The page-flip tracker now owns the
+unchanged conversion from accepted feedback to a native retirement record.
+
+The WM-neutral regression stages a software Present through the real
+composition queue and mirror custody. Its supplied device completion enters
+`complete_mirror_head`, then the production page-flip tracker and shared native
+retirement body. No final retirement record is supplied. Two transactions
+exercise opposite head-completion orders, exact candidate/frame correlation,
+primary-paced settlement and consumption exactly once. The test target refuses
+GPU custody operations; it cannot stand in for a DMA proof.
+
+The first test incorrectly required every mirror head before application
+Present settlement. Execution and the mirror lifecycle owner showed why that
+was wrong: the primary owns logical Present completion. WM Presented receipts
+separately require all-head agreement. The corrected test preserves that
+distinction. Removing the software settlement call fails the named assertion
+`native retirement must settle the software Present`; restoring the exact
+source passes. The control script initially expected an earlier assertion,
+but its cleanup restored the source. The retained log and source hash verify
+the actual failure and restoration.
+
+Development evidence is
+`~/.local/state/sophia/development-evidence/t249-native-retirement-dev01`,
+manifest `d57da57f2d3bf85683144e99571ce3dda07490815650243bb13ff568239c9caa`.
+The full device-hidden `cargo xtask check` passes against base
+`4326edd56af05720ca4fddba02dc4ffc8043ec3b` and the retained patch/additions in
+`t249-native-retirement-gate01`, manifest
+`29605fe2abc4564527fbbabc0d650b06884f2080f515e9ecd539cb4db3d93c5f`.
+The gate includes the new regression, workspace checks, strict Clippy and SDK
+checks. Device pixel proofs remain unproved. No build archive or extra Cargo
+target directory was created.
+
+This resolves the shared retirement body's reachability, not F's whole exit.
+The software submission is still supplied before staging. Next, preserve the
+CPU cycle's native framing decision so a real Hagia Manage candidate reaches
+this path and then Session's `record_native_software_present_retirement` and
+admission progress. The existing headless Manage fixture settles before native
+framing and cannot prove that join. DMA image custody and finalization need
+their own executed path. Automatic repaint still needs the CPU cycle/service
+owner; an explicit fixture repaint call is insufficient. The external pin and
+29-case evidence remain unchanged until a reviewed pair rerun.
 
 ## Connections
 

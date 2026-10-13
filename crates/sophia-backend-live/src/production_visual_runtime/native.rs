@@ -757,6 +757,15 @@ impl LiveProductionVisualRuntime {
         selected_output: OutputId,
         draining: bool,
     ) -> Result<Option<LiveProductionRetiredPresent>, Box<dyn std::error::Error>> {
+        self.retire_native_output_on_target(native_scanout, selected_output, draining)
+    }
+
+    pub(super) fn retire_native_output_on_target<T: NativeRetirementTarget>(
+        &mut self,
+        native_scanout: &mut T,
+        selected_output: OutputId,
+        draining: bool,
+    ) -> Result<Option<LiveProductionRetiredPresent>, Box<dyn std::error::Error>> {
         let index = self
             .outputs
             .output_index(selected_output)
@@ -777,11 +786,7 @@ impl LiveProductionVisualRuntime {
             .runtime
             .assembly_mut()
             .replace_committed_surfaces(committed);
-        if draining {
-            native_scanout.retire_ready_for_drain(selected_output, &mut output.runtime)?;
-        } else {
-            native_scanout.retire_ready_and_retry_cleanup(selected_output, &mut output.runtime)?;
-        }
+        native_scanout.retire_ready(selected_output, &mut output.runtime, draining)?;
         if let Some(retirement) = native_scanout.take_presentation_feedback(selected_output) {
             self.settle_shell_retirement_claims(selected_output, retirement.frame);
             // Any retirement on this output means a successor flip has taken
@@ -792,7 +797,7 @@ impl LiveProductionVisualRuntime {
             // composition, and the direct frame it replaced is owed its
             // release just the same.
             // See `PresentFlipOwnership.tla`, `SuccessorComposedRetires`.
-            self.idle_superseded_direct_present(selected_output, Some(native_scanout))?;
+            self.idle_superseded_direct_present_on_target(selected_output, Some(native_scanout))?;
             match reduce_live_production_native_retirement_owner(
                 retirement.frame,
                 retirement.content,
@@ -811,8 +816,11 @@ impl LiveProductionVisualRuntime {
                     return Ok(None);
                 }
                 LiveProductionNativeRetirementOwner::SubmittedDmaPresent => {
-                    let retired =
-                        self.finalize_gpu_page_flip(native_scanout, selected_output, retirement)?;
+                    let retired = self.finalize_gpu_page_flip_on_target(
+                        native_scanout,
+                        selected_output,
+                        retirement,
+                    )?;
                     if retired.is_some() {
                         self.publish_presented_input_layers(native_scanout);
                     }

@@ -9,6 +9,8 @@ use crate::{
 };
 use std::{cell::Cell, rc::Rc};
 
+#[path = "mirrored_retirement_target.rs"]
+mod retirement;
 #[path = "mirrored_topology_target.rs"]
 mod topology;
 
@@ -49,6 +51,8 @@ pub(super) struct MirroredTarget {
     pub(super) preview_failures: BTreeMap<OutputId, crate::LivePreviewFrameFailure>,
     pub(super) preview_withdraw_ready: bool,
     pub(super) frame_service_available: bool,
+    pub(super) retirements: Option<LiveProductionPageFlipTracker>,
+    pub(super) completion_inputs: VecDeque<(OutputId, usize)>,
 }
 
 impl MirroredTarget {
@@ -119,6 +123,8 @@ impl MirroredTarget {
             preview_failures: BTreeMap::new(),
             preview_withdraw_ready: true,
             frame_service_available: true,
+            retirements: None,
+            completion_inputs: VecDeque::new(),
         }
     }
 
@@ -238,6 +244,10 @@ impl MirroredTarget {
             ));
             head.frames.promote_rendering_to_submitted().unwrap();
         }
+        if let Some(retirements) = self.retirements.as_mut() {
+            let frame = self.groups[&output].logically_submitted_frame().unwrap();
+            retirements.submit(output, frame.raw()).unwrap();
+        }
     }
 
     pub(super) fn flip(&mut self, output: OutputId, sibling: usize) {
@@ -289,6 +299,26 @@ impl MirroredTarget {
             crate::LiveRendererFrameSlotId::from_index((frame.raw() % 2) as usize).unwrap(),
             presented.snapshot,
         );
+        if result.logical == Some(crate::LiveProductionMirrorHeadTransition::GroupReady)
+            && let Some(retirements) = self.retirements.as_mut()
+        {
+            let (serial, ust) = self.groups[&output].flip_timing().unwrap();
+            let content = head.presented.unwrap();
+            retirements
+                .observe_native_page_flip(
+                    output,
+                    serial,
+                    ust,
+                    Some(crate::LiveProductionNativeRetirementContent {
+                        content,
+                        submission: frame.raw(),
+                        direct: false,
+                        layout_witness: None,
+                        clocks: self.cohorts[&(output, frame.raw())].clocks(),
+                    }),
+                )
+                .unwrap();
+        }
         self.cohorts
             .retain(|_, cohort| !cohort.generation_releasable());
     }

@@ -614,6 +614,14 @@ impl LiveProductionVisualRuntime {
         output: OutputId,
         native_scanout: Option<&mut crate::LiveProductionNativeScanout>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.idle_superseded_direct_present_on_target(output, native_scanout)
+    }
+
+    pub(super) fn idle_superseded_direct_present_on_target<T: NativeRetirementTarget>(
+        &mut self,
+        output: OutputId,
+        native_scanout: Option<&mut T>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let Some(transaction) = self.displayed_direct_presents.remove(&output) else {
             return Ok(());
         };

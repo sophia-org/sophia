@@ -10,6 +10,8 @@ mod presentation_installation;
 mod presentation_instances;
 #[path = "presentation_present.rs"]
 mod presentation_present;
+#[path = "presentation_retirement.rs"]
+mod presentation_retirement;
 #[path = "session_lock_coverage.rs"]
 mod session_lock_coverage;
 #[path = "software_output_idle.rs"]

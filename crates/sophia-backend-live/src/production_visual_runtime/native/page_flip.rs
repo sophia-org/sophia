@@ -12,6 +12,15 @@ impl LiveProductionVisualRuntime {
         output: OutputId,
         retirement: LiveProductionNativeFrameRetirement,
     ) -> Result<Option<LiveProductionRetiredPresent>, Box<dyn std::error::Error>> {
+        self.finalize_gpu_page_flip_on_target(native_scanout, output, retirement)
+    }
+
+    pub(super) fn finalize_gpu_page_flip_on_target<T: NativeRetirementTarget>(
+        &mut self,
+        native_scanout: &mut T,
+        output: OutputId,
+        retirement: LiveProductionNativeFrameRetirement,
+    ) -> Result<Option<LiveProductionRetiredPresent>, Box<dyn std::error::Error>> {
         if reduce_live_production_native_retirement_owner(
             retirement.frame,
             retirement.content,

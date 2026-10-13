@@ -260,6 +260,26 @@ impl LiveProductionPageFlipTracker {
         Ok(())
     }
 
+    pub(crate) fn take_frame_retirement(
+        &mut self,
+        output: OutputId,
+    ) -> Option<crate::LiveProductionNativeFrameRetirement> {
+        let (retirement, native) = self.take_native_retirement(output)?;
+        let native = native?;
+        let content = native.content;
+        Some(crate::LiveProductionNativeFrameRetirement {
+            output,
+            frame: content.frame(),
+            submission: retirement.cycle,
+            content,
+            direct: native.direct,
+            layout_witness: native.layout_witness,
+            ust: retirement.retirement.ust,
+            msc: retirement.retirement.msc,
+            clocks: native.clocks,
+        })
+    }
+
     pub(crate) fn take_native_retirement(
         &mut self,
         output: OutputId,

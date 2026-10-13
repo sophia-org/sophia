@@ -55,6 +55,8 @@ mod ownership;
 mod present;
 mod projection;
 pub use projection::presented_keyboard_scope;
+mod retirement_target;
+use retirement_target::NativeRetirementTarget;
 mod service;
 mod session_lock;
 pub use session_lock::LiveSessionLockCoverage;

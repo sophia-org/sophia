@@ -3,20 +3,7 @@ impl LiveProductionNativeScanout {
         &mut self,
         output: OutputId,
     ) -> Option<LiveProductionNativeFrameRetirement> {
-        let (retirement, native) = self.production_page_flips.take_native_retirement(output)?;
-        let native = native?;
-        let content = native.content;
-        Some(LiveProductionNativeFrameRetirement {
-            output,
-            frame: content.frame(),
-            submission: retirement.cycle,
-            content,
-            direct: native.direct,
-            layout_witness: native.layout_witness,
-            ust: retirement.retirement.ust,
-            msc: retirement.retirement.msc,
-            clocks: native.clocks,
-        })
+        self.production_page_flips.take_frame_retirement(output)
     }
 
     pub fn pending_kernel_page_flip_timestamps(&self) -> usize {
