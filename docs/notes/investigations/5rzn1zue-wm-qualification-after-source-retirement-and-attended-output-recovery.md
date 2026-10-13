@@ -17,6 +17,12 @@ their stated limits. Continue **DMA retirement through its production owners**,
 then finish the reviewed measurement campaign and final candidate binding.
 The complete t249/h006 exit has not passed.
 
+The [DMA submission seam](#dma-submission-boundary-2026-10-13) now executes the
+existing submission-settlement owner without devices. Its focused control,
+331 backend library tests and strict Clippy pass. This changes Sophia after
+the qualified pin below; it is not yet a new external-pair candidate. Next join
+renderer-image promotion and the driver's initial submission path to retirement.
+
 Use the [row dispositions](#remaining-row-dispositions-2026-10-13) and
 [t249 acceptance criteria](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249).
 Task status stays in `todo.md`; case count is not a completion percentage.
@@ -3964,6 +3970,53 @@ smallest resource seam and review its source pin before writing the real-peer
 case. Supplying final retirement records or taking only the direct-scanout branch
 would leave the composed DMA owner unproved. Measurement and final qualification
 remain open.
+
+## DMA submission boundary (2026-10-13)
+
+The first DMA seam makes `settle_submission_ownership` generic over a private
+`NativeSubmissionTarget`. The target supplies the submitted frame, feedback
+discard and deferred mirror activation. The native implementation delegates to
+the same three methods as before. Classification, cohort advancement and
+resource submission remain in the unchanged settlement body. This does not
+change the public protocol or introduce a client-specific fixture.
+
+The generic backend regression prepares a real Engine candidate and a two-output
+Present cohort, with registered resource custody and supplied frame identities.
+The first output leaves resources Ready. A mismatched transaction cannot advance
+the cohort. The matching second output changes resources to Submitted; duplicate
+submission cannot repeat resource settlement. The Engine's committed surface set
+remains empty because submission is not retirement. Plane descriptors use
+`/dev/null`; no DMA import or device operation is attempted.
+
+An archived control omits resource submission. It fails at `complete cohort must
+submit retained Present resources`, observing Ready instead of Submitted.
+Restoration passes, as do all 331 backend library tests with `test-support` and
+strict Clippy for the backend library and tests. Formatting and diff checks pass.
+The first invocation incorrectly requested Session's `native-session` feature
+on the backend crate and was refused before compilation; its log is retained.
+
+Package `t249-dma-submission-dev01` has manifest
+`f390756d4f30f15e31abfde5179be9478b1f64ab1174579e9b598ca0dce3af09`.
+It records base `f15de92cf6c0a6599647fd99f8b628f614b90def`, the candidate patch,
+both added files, controls, commands and a 5,112-input source audit. The audit
+checks the settlement body is byte-for-byte unchanged. The signed implementation
+is `ecbd84e6f`; the build archive was removed under its lease, recorded in
+`t249-dma-submission-dev-cleanup01`. No external Hagia case was added or rerun.
+The 42-case pair remains qualified only at its recorded Sophia pin.
+
+DMA retirement is still open. `present.rs::drive_gpu_presentation` prepares the
+candidate, composes its DMA sources, queues frames and creates the rendering
+cohort. Its immediate-submission branch updates resources inline; later native
+service uses the settlement method tested here. The eventual joined case must
+execute the applicable production path rather than supplying a final cohort.
+For composed retirement, `native/page_flip.rs` requires staged renderer-image
+promotion before committing Engine state and releasing the client's source.
+The image record in the EGL context couples its staged/promoted state to GBM
+buffer custody. A resource abstraction must preserve that actual transition;
+returning a fake promotion count from the CPU fixture would not qualify it.
+The native queue, mirror custody, retirement tracker and Session admission owner
+must then carry the exact candidate through completion. Device completion may
+remain simulated; physical rendering and scanout remain t250.
 
 ## Connections
 
