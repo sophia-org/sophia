@@ -6,6 +6,14 @@ impl LiveProductionVisualRuntime {
         scene: &LiveProductionCpuScene,
         native_scanout: Option<&mut LiveProductionNativeScanout>,
     ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
+        self.drive_gpu_presentation_on_target(scene, native_scanout)
+    }
+
+    pub(super) fn drive_gpu_presentation_on_target<T: NativePresentTarget>(
+        &mut self,
+        scene: &LiveProductionCpuScene,
+        native_scanout: Option<&mut T>,
+    ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
         let transaction = match self
             .present_scheduler
             .poll_gate(self.presentation_feedback.resources_mut(), Instant::now())?
