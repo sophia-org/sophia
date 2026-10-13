@@ -753,6 +753,20 @@ impl LiveWmSession {
         let Some(public) = self.public.as_mut() else {
             return Ok(LiveWmRequestAdmission::Duplicate);
         };
+        // Routing observes committed content rectangles. Policy consumes outer
+        // allocations; sending content directly would inset chrome twice,
+        // shrinking even a stationary Begin. Use the committed visual style.
+        let Ok(geometry) =
+            sophia_engine::outer_surface_geometry(interaction.geometry, self.visual_chrome)
+        else {
+            crate::session_eprintln!(
+                "sophia_live_wm_pointer schema=2 status=interaction_dropped reason=geometry_overflow phase={:?} mode={:?} surface={}",
+                interaction.phase,
+                interaction.mode,
+                interaction.surface.index(),
+            );
+            return Ok(LiveWmRequestAdmission::Duplicate);
+        };
         // Neither miss below is the session's failure. Both used to be raised
         // with `?`, which the owner loop treats as fatal, and a Super+button
         // on a window whose placement was between two committed layouts took
@@ -763,7 +777,7 @@ impl LiveWmSession {
             FloatingPointerOutline {
                 surface: interaction.surface,
                 start: interaction.start,
-                geometry: interaction.geometry,
+                geometry,
             },
             &wm_output_bounds(&public.outputs),
         ) else {

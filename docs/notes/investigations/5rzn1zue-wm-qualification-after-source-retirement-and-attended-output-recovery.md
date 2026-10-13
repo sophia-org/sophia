@@ -41,7 +41,12 @@ Final pairing must review and test the eventual pin change.
 
 Continue package **A** with production pointer routing and capture: resolve
 registered pointer bindings into exact real-peer interactions and check
-swallowed pointer releases after revocation/reconnect. The focused-client
+swallowed pointer releases after revocation/reconnect. The new routed case
+exposed a [content/outer geometry defect](#routed-pointer-geometry-repair-2026-10-13).
+The repair passes the full isolated generic gate and three external development
+cases. Next, advance the external Sophia pin with the recorded impact review
+and run the complete pair; the 28-case development run is not a qualified baseline.
+The focused-client
 held-key boundary is now joined. The [direct input-debt regressions](#direct-input-debt-overflow-2026-10-13)
 exercise the 128-debt boundary and fail-closed latch without a peer; protected-action
 precedence remains, with lock/output-loss shared with C/D.
@@ -56,8 +61,9 @@ ledger is only a diagnostic; rejected/unresolved accounting and compatible
 old/new workloads remain necessary. Native installation, retirement and
 scheduling owners also remain t249 obligations even when completion is
 simulated. Only actual device/pixel/timing acceptance belongs to t250.
-The previous slice's disposable build tree and worktrees were removed;
-no qualification job or live-session operation is required to resume.
+The current diagnostic build root is `~/.cache/t249-routing-build`; the detached
+source checkout is `~/dev/sophia-t249-routing` at the old pin. No job is running.
+Reuse them under the runner's lease for the next pairing, then remove them.
 
 ## Stopping point and resume procedure (2026-10-12)
 
@@ -3044,6 +3050,70 @@ This supplies the direct capacity witness missing from the earlier closure
 audit. It does not add a real-Hagia case, establish Session routing or reconnect,
 or change the 27-case external baseline. Final candidate binding, the remaining
 A–F joins and measurement exit remain open.
+
+## Routed pointer geometry repair (2026-10-13)
+
+The new external `sdk_pointer_routing_selects_exact_interactions` case routes
+Super and pointer events through Session before admitting interactions to real
+Hagia. It checks the bound move/resize buttons, rejects an unbound button and
+missing modifier, observes coalesced updates, rejects the wrong release button,
+and commits the exact peer proposal. Events and one renderable input layer are
+supplied; this is not physical input, frontend delivery or imported-pixel evidence.
+
+Review of the first passing development trace found an incorrect expectation:
+the routed Begin shrank content from `(101,81,298,198)` to `(102,82,296,196)`
+without motion. Routing starts with committed content geometry, while policy
+interprets its interaction rectangle as an outer allocation. Session applied
+chrome clearance a second time when reconciling the proposal. A no-motion
+assertion reproduces the defect on the old pin. The earlier 28-case development
+pass, `t249-routing-dev03`, therefore does not qualify the added case.
+
+`LiveWmSession::enqueue_pointer_interaction` now converts content to outer
+geometry with the committed visual chrome before clamping and admission.
+Unrepresentable geometry drops that interaction without ending Session.
+The external direct-admission fixtures now supply content rectangles while
+retaining independent outer-geometry expectations. The routed fixture asserts
+that a stationary Begin preserves committed content; move and resize updates
+must then produce the expected deltas.
+
+Two WM-neutral regressions cover every interaction phase, committed rather
+than pending chrome, unchanged state before settlement, coordinate/size overflow
+and valid admission after a dropped interaction. Bypassing the conversion at
+the queue boundary fails the named stationary-allocation assertion. Restoring
+the source makes both tests pass. The full device-hidden `cargo xtask check`
+passes with umask `0022`, including strict Clippy, SDK checks and archives.
+Device/pixel proofs remain unavailable in that environment. The tested candidate
+is base `0aff88c570481b476c2e76abf6856d3ef312ccca` plus
+`t249-pointer-geometry-gate01/final-candidate.patch`.
+
+Evidence under `~/.local/state/sophia/development-evidence/`:
+
+| Package | Result | SHA-256 of self-excluding manifest |
+| --- | --- | --- |
+| `t249-pointer-geometry-repro01` | Expected no-motion failure on old production source | `c159f643d92f0b12fb5cd80149788bd3e5c143d77fa60b22f88335eb4090bdc3` |
+| `t249-pointer-geometry-fix01` | Three selected external pointer cases pass with the candidate method overlaid | `b8a4848f6c2c5877b408e595826a70713f16bb00a6205df89ff6d7ce64a0a523` |
+| `t249-pointer-geometry-gate01` | Named negative control, two restored regressions and full isolated gate pass | `e6dc357a879178b72e9d5ae12f8c215d011bdb61c37372e865259e2c3951e61e` |
+
+The external experiment's wrapper exited 1 because it expected four tests;
+Cargo selected and passed three. Pointer focus resides in another module and
+was not selected. The archived production source was restored byte-for-byte.
+The first generic command omitted `native-session` and selected zero tests;
+it is not validation. The first full check refused a prose-only API change
+that differed from the SDK snapshot. That clarification was removed, leaving
+the existing contract unchanged, before the passing full check.
+
+The runner's 14 tests pass serially, with one child helper ignored. A parallel
+invocation failed the lease-reacquisition assertion; no runner fix or parallel
+suite pass is claimed. Hagia's data-layout check passes. These terminal results
+are recorded in the gate package's result text.
+
+Prospective pin review confirms that all five mirrored production spans still
+match their recorded hashes. Since the old pin, production changes add numeric
+geometry diagnostics while preserving errors; other changes add tests and
+context tooling. This repair changes the directly called admission owner.
+The full external suite must run against the signed new pin before its result
+can replace the qualified 27-case baseline. Package A's capture/reconnect
+obligations, B–F and the unchanged measurement exit remain open.
 
 ## Connections
 

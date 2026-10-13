@@ -30,6 +30,8 @@ pub(super) struct FloatingPointerPolicyInteraction {
     pub phase: sophia_protocol::PolicyInteractionPhase,
     pub start: sophia_protocol::WmPointerPosition,
     pub current: sophia_protocol::WmPointerPosition,
+    /// Client-content geometry from the committed input layer. Session converts
+    /// it to an outer allocation when admitting the policy request.
     pub geometry: Rect,
 }
 

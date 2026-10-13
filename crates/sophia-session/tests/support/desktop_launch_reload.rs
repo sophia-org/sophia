@@ -10,6 +10,9 @@ mod policy_active_focus;
 #[path = "policy_stale_click_focus.rs"]
 mod policy_stale_click_focus;
 
+#[path = "policy_pointer_geometry.rs"]
+mod policy_pointer_geometry;
+
 #[path = "../../../sophia-config/examples/desktop_profile_probe.rs"]
 mod desktop_probe;
 
