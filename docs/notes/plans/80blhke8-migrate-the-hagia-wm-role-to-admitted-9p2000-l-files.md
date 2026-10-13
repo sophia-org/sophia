@@ -6,11 +6,13 @@ tags: [plan, milestone]
 ---
 # Migrate the Hagia WM role to admitted 9P2000.L files
 
-## Current qualification boundary (2026-10-12)
+## Current qualification boundary (2026-10-13)
 
 For resumption, read the [stopping point and procedure](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#stopping-point-and-resume-procedure-2026-10-12)
-first: it binds the 23-case baseline, separates completed foundations from the
-remaining exits, and identifies coverage consolidation as the next action.
+first: it binds the 23-case baseline and separates completed foundations from
+the remaining exits. The [October 13 matrix](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#twenty-three-case-coverage-reconciliation-2026-10-13)
+completes that consolidation; pointer interaction and accounting preflight are
+the next bounded work.
 
 The [current-source audit](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md)
 reconciles this historical migration plan with the SDK-based, 9P-only desktop.
@@ -160,9 +162,37 @@ join, inspection, measurement or rollback exit below is removed. The
 [milestone record](../milestones/dueqd6r0-separate-shared-core-readiness-from-full-wm-qualification.md)
 records the approval and evidence boundary.
 
-Use the [October 10 coverage reconciliation](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#fourteen-case-coverage-reconciliation-2026-10-10)
+Use the [October 13 coverage reconciliation](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#twenty-three-case-coverage-reconciliation-2026-10-13)
 for current work; retain the original workload and qualification requirements
 below as the acceptance basis, subject only to recorded later decisions.
+
+#### Qualification sequence after the 23-case baseline
+
+These are work packages within t249, not new queue tasks or reduced exits:
+
+1. Join pointer move/resize/coalescing/cancel through the actual Session owner
+   and real Hagia, and prove complete per-offer accounting on a small diagnostic.
+   Review comparator feasibility here, before investing in a full campaign.
+2. Cover the remaining input/policy families in bounded groups: pointer focus
+   and presentation targets, application-held/protected capture and pointer
+   debt; then tab/translation/indicator behavior and relevant reload/lock
+   transitions. Reuse generic evidence after impact review where it suffices.
+3. Join frozen launch/output contexts and multiple logical outputs, including
+   output actions/keys and admission recovery where current evidence is missing.
+4. Resolve native installation, native Present retirement and source-repaint
+   scheduling owner joins. A simulated completion may be labelled; skipping the
+   production owner is not a physical-acceptance deferral.
+5. Run the unchanged latency/resource gate only after accounting and a compatible
+   comparator are reviewed. No unavailable comparator or failed budget silently
+   becomes a passing absolute-only measurement.
+6. Bind inspection/export reuse, affected isolated integration gates and the
+   complete coverage record to signed final candidates; then hand off t250's
+   separate attended qualification and whole-release rollback.
+
+The matrix names owners, retained evidence and remaining boundaries for every
+capability and explicit plan phrase. Counts of cases or work packages are not a
+completion percentage. Newly discovered required paths are assessed against
+the existing exit rather than automatically expanding the product scope.
 
 The [2026-09-28 retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)
 allows experimental WM/shell source retirement before this qualification is
