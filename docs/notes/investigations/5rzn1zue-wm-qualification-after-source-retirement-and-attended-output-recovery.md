@@ -9,93 +9,52 @@ tags: [validation, protocol, policy]
 
 ## Current resumption
 
-The [occupied reload and registry](#occupied-reload-and-registry-2026-10-13)
-cases and four omission controls pass. Together with lock reset, they cover
-C's listed owner joins under their supplied-input limits. Continue B's policy
-projection, D/E's output and overview joins, and DMA retirement; the measurement
-campaign remains required.
+The [policy projection families](#policy-projection-families-2026-10-13)
+now pass with real Hagia, five mutation controls and candidate-bound local
+SDK/policy tests. B's listed joins are covered under their supplied-input
+limits. Continue **D/E's launch, logical-output and overview joins**, resolve
+the remaining **DMA retirement** owner path early, then finish the reviewed
+measurement campaign. The complete t249/h006 exit has not passed.
 
-Resume Sophia t249 / Hagia h006 using the
-[row dispositions](#remaining-row-dispositions-2026-10-13), not the dated
-October 10 capability maps or the original three-case migration plan. Task
-status stays in `todo.md`. The complete WM acceptance exit, including measurement,
-has not passed. Do not reopen t317/t318 or repeat their attended acceptance.
+Use the [row dispositions](#remaining-row-dispositions-2026-10-13) and
+[t249 acceptance criteria](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249).
+Task status stays in `todo.md`; case count is not a completion percentage.
+Do not reopen t317/t318 or repeat their attended acceptance.
 
-The qualified external baseline is **34 passing cases**: signed Hagia
-`42f3fa7cfd2c3f158996c3500b20809e006f1ffc`, niltempus runner
-`45b2b68d4c325f04e0e8723fa37f1c416768d8e3`, and Sophia pin
-`469371bf4ba6f9f87af5485d3967709d907426ee`. The latest pair joins occupied
-overview reload/rollback, registry cancellation and catalog revalidation.
-The preceding pairs qualify occupied keyboard reset at supplied lock entry and automatic
-source-only CPU repaint and
-[native software admission](#native-software-admission-2026-10-13), following
-[native publication installation](#native-publication-installation-2026-10-13). The
-[input-transition result](#routed-input-and-capture-transitions-2026-10-13)
-strengthens five existing cases: routed hover, move/resize Cancel, protected
-terminal precedence and pointer release debt across revocation/reconnect.
-The earlier [geometry repair](#routed-pointer-geometry-repair-2026-10-13)
-preserves a stationary Begin. Supplied events, layers, revocation triggers and
-completion do not prove physical input, frontend delivery or native pixels.
-The final package is `~/.local/state/sophia/development-evidence/t249-occupied-reload-pair01`;
-its manifest is
-`5b47871c283bfbce47db0c82b54f3d4c06a27b88fefed5a7d11bed7202cbe2d7`.
-The linked result binds the full generic gate, controls, pin review and audit.
+The qualified baseline is **37 passing external cases**: signed Hagia
+`1e7e9ecdc31bb6d4918773bd3d9a0f545ba4cef1`, niltempus runner
+`83669a770ad6d94628631035eac0820978726574`, and unchanged Sophia pin
+`469371bf4ba6f9f87af5485d3967709d907426ee`.
+Package `t249-policy-projection-pair01` has manifest
+`cd94a96dac30c09edf944edfa6ff75adf1acdad79bd9bb7f4798e3b695b631b7`.
+The linked result records strict Clippy, formatting, layout, runner tests,
+source binding and cleanup. Its audit verifies 3,268 pinned inputs, twenty-one
+mounted inputs, all exact results and unchanged generic-gate inputs and
+production glue.
 
-The refreshed pin includes numeric geometry diagnostics and the direct
-input-debt regressions. The diagnostics preserve errors; they do not fix
-extreme maximum-size overflow. All five mirrored production spans are unchanged.
-The full isolated generic gate passes, and the external audit verifies 3,268
-pinned inputs, twenty mounted inputs and all 34 exact results.
+A's ordinary routing/capture joins and C's
+[occupied reload and registry](#occupied-reload-and-registry-2026-10-13) and
+[lock reset](#occupied-lock-reset-2026-10-13) joins remain qualified.
+B adds tab selection, indicator activation and scrolling geometry. These
+cases supply observations, events and completion; they do not prove physical
+input, frontend delivery, shell UI or device pixels.
 
-Package **A** now has its ordinary routing/capture joins. C's production
-keyboard-reset boundary is joined with supplied lock entry; output loss remains
-D's obligation. A supplied Cancel does not establish either transition.
-Continue **B** with real-peer tab/translation/chrome/indicator projection.
-C's occupied reload, catalog revocation and registry cancellation now have
-real-peer joins alongside keyboard reset.
-The [focused-client held-key boundary](#focused-application-held-capture-2026-10-13)
-is joined through local ingress, with supplied focus and completion. The
-[direct input-debt regressions](#direct-input-debt-overflow-2026-10-13)
-cover the 128-debt bound and permanent fail-closed latch without a peer.
-Packages B–F below consolidate the remaining policy,
-reload, launch/output, overview and native-backend joins. They have explicit
-observations and controls; they are not a promise of six tests. Reuse current
-generic proofs for local bounds, chord refusal and inspection rather than
-duplicating them with a named peer.
-
-F's [native publication installation](#native-publication-installation-2026-10-13)
-now queues real Hagia's publication through a shared production owner with
-simulated initialization/completion. Generic and external controls pass, as
-does the full generic gate. The signed 29-case pair and source audit pass.
-The [native software-admission join](#native-software-admission-2026-10-13)
-now carries a real-peer Manage candidate through the CPU cycle's native
-framing decision, native retirement and Session admission progress. The case,
-three controls, full generic gate and signed 30-case pair pass. DMA retirement
-remains open. The qualified repaint case now replaces the fixture's explicit
-queue call with the shared CPU cycle's native path; it retains exact publication
-and sampled-source identities. Continue B alongside
-the remaining F work without treating either as waived.
+F already covers [native publication installation](#native-publication-installation-2026-10-13),
+[native software admission](#native-software-admission-2026-10-13) and
+[automatic CPU repaint](#automatic-native-cpu-repaint-2026-10-13).
+DMA retirement must still execute its actual production owners. Simulated
+completion is allowed when labelled; skipping an owner is not a t250 deferral.
 
 The [Session comparator prototype](#session-comparator-prototype-2026-10-13)
-now runs both transports below the same actual enqueue, coalescing and
-settlement owners, using one current Hagia binary and its normal
-profile/checkpoint loop. Coalescing, cancellation and refusal/recovery cases
-pass in both arms with matching recorded projections and checkpoints. Both
-arms detect an omitted coalescing transition. Supplied protected admission is
-identical; authenticated startup is outside this comparison. The earlier
-[client](#paired-comparator-clients-2026-10-13) and
-[driver](#comparator-driver-prototype-2026-10-13) checks retain their exact scope.
-Comparator feasibility has advanced beyond the reduced worker. Before timing,
-finish open-loop scheduling, complete rejection/unresolved accounting, resource
-probes and the review of the campaign method. The finite accepted-offer ledger
-is still only a diagnostic. Continue B and resolve F's owner reachability
-early; these comparator cases do not close those packages.
-Native installation, retirement and
-scheduling owners also remain t249 obligations even when completion is
-simulated. Only actual device/pixel/timing acceptance belongs to t250.
-The source archive at `~/.cache/t249-session-comparator-build` remains for the
-next experiment; its overlay is retained in the linked evidence package.
-No qualification job or live-session operation is running.
+runs both transports below the same enqueue, coalescing and settlement owners,
+using one current Hagia binary and its normal profile/checkpoint loop.
+Finite diagnostics and a coalescing control pass, but timing remains unqualified.
+Before the campaign, finish open-loop scheduling, rejected/unresolved accounting,
+resource probes and method review. Preserve the relative and absolute budgets.
+
+Both completed projection build archives and the clean source worktree are
+removed. `~/.cache/t249-session-comparator-build` remains for the next comparator
+experiment. No qualification job or live-session operation is running.
 
 ## Stopping point and resume procedure (2026-10-12)
 
@@ -2904,6 +2863,9 @@ the peer checkpoint, chrome conversion and exact hit/activation identity.
 Use stale-member/publication and omitted-translation controls. Reuse Hagia's
 candidate-bound pure layout/workspace tests for algorithm variants; this is
 not permission to treat one layout as every policy algorithm.
+The [policy projection result](#policy-projection-families-2026-10-13) now
+covers these joins and binds the local policy suite to the candidate, under
+its stated supplied-input and transport limits.
 
 **C — Reload and security cancellation.** Reload with occupied windows and
 an active presentation/chord; cover accepted replacement and rejected profile.
@@ -3817,6 +3779,56 @@ replacements are supplied to their actual owners. Input, content and device
 completion remain supplied, and no installed session is operated. Overview
 publication here does not establish E's nonzero pointer-target selection or
 multi-output identity. B, D/E, DMA retirement and measurement remain open.
+
+## Policy projection families (2026-10-13)
+
+Three new cases join real Hagia's frame-tree tab selection, scroller indicator
+activation and scrolling translations to Session. The tab case checks exact
+membership, stale-generation/wrong-output refusal, commit-only focus and an
+independent content-geometry oracle for the tab strip and negotiated chrome.
+The indicator case uses the production hit and activation classifiers, checks
+inside/outside hits and stale publication/action refusal, and correlates the
+actual peer request by output, action and serial. Empty-workspace focus changes
+only at commit. The translation case checks exact group/epoch, checkpoint camera
+offset and committed content positions across a nonzero scroll and its return.
+
+Five controls weaken tab identity, omit translation or chrome clearance, or
+weaken indicator generation/action checks. Each fails its named assertion;
+all three restored cases pass. The first translation fixture's two columns
+fit without scrolling, so its nonzero-offset precondition failed. Fixed
+900-pixel columns make the missing translation observable. This was a fixture
+correction, not a production defect.
+
+The full isolated `nimble test` suite passes: local SDK, independent file corpus,
+layout/workspace algorithms, policy model and ordinary-binary lifecycle tests.
+The first wrapper failed saving Nimble metadata to a read-only directory after
+the tests passed. A second lacked the package index. The successful run uses
+private metadata and read-only installed dependencies; all attempts are retained.
+Development package `t249-policy-projection-20261013-01` has manifest
+`81b757c3dd52e163992d7de8a66f9481d6f3216182f854cdfe11da64fed738fc`.
+Its audit records 5,112 Sophia and 481 Hagia base inputs, additions and overlays.
+
+The signed pair (Hagia `1e7e9ec`, runner `83669a7`, Sophia `469371bf4`) passes
+all 37 cases in `t249-policy-projection-pair01`, manifest
+`cd94a96dac30c09edf944edfa6ff75adf1acdad79bd9bb7f4798e3b695b631b7`.
+Strict external Clippy, fixture formatting, Hagia layout and fourteen runner
+tests pass in `t249-policy-projection-checks01`, manifest
+`1febb789e509133d0f1a567b7cbdca97aea6ad1cc646349f4fdf209b465575b7`.
+The audit verifies signatures, 3,268 pinned inputs, twenty-one mounted inputs,
+every exact result and unchanged generic-gate inputs and production glue.
+`t249-policy-projection-pair-audit01` has manifest
+`55d24cdbf13603daa46e6296567cc223a279b09ab68e1d5ba51a158686d53480`.
+Both build archives are removed under their leases; the detached source
+worktree was clean, including ignored files, before removal. Cleanup records
+are `t249-policy-projection-pair-cleanup01` and
+`t249-policy-projection-dev-cleanup01`.
+
+B's listed joins are covered under these limits. Surface observations,
+settlement and shell snapshot epoch are supplied. The cases do not operate a
+shell UI, traverse broker activation transport, deliver frontend events or
+prove physical pixels. Generic authorization/raster evidence remains reused
+at its existing scope. No Sophia production code changes in this package.
+D/E, DMA retirement, measurement and final qualification remain open.
 
 ## Connections
 
