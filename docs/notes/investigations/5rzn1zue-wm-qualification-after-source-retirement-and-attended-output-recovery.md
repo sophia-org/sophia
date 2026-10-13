@@ -16,10 +16,16 @@ assertions. The listed A–F joins are covered under their stated limits.
 The refreshed comparator now passes a small [open-loop accounting diagnostic](#open-loop-accounting-2026-10-13).
 The [capacity/failure controls and CPU/idle probes](#measurement-controls-and-cpu-observations-2026-10-13)
 also pass. [Socket traces](#observed-protocol-exchanges-2026-10-13) now reconstruct
-actual protocol exchanges and transferred bytes. Continue **allocation/copy
-probes and the reviewed measurement
-campaign**, then complete the independent SDK/export impact review and final exit
-binding. The complete t249/h006 exit has not passed.
+actual protocol exchanges and transferred bytes. [Allocation probes](#allocation-counters-2026-10-13)
+and [compiler copy counters](#copied-byte-counters-2026-10-13) now pass both arms.
+The [uninstrumented release pair](#release-build-preflight-2026-10-13) also passes
+its small accounting preflight at both rates. The [prospective method](#prospective-campaign-method-2026-10-13)
+is recorded. The **full latency campaign stopped after its first pair**:
+file resize coalesced 33 updates while frames coalesced none. The numeric
+percentile checks passed, but the unequal populations refuse the comparison.
+Diagnose the recorded 155.8 ms stall before another campaign; preserve this
+failure and the unchanged budgets. Resource profiles, the independent SDK/export
+rerun and final exit binding remain. The complete t249/h006 exit has not passed.
 
 Use the [row dispositions](#remaining-row-dispositions-2026-10-13) and
 [t249 acceptance criteria](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249).
@@ -65,17 +71,20 @@ produce explicit failures with unresolved and unoffered counts. CPU and idle
 snapshots now cover both processes and their live threads. These are finite
 diagnostics; timing remains unqualified. The traced pair preserves all 240
 settlements and reconstructs 9P RPC replies and legacy acknowledgments without
-unmatched exchanges. Add allocation and copied-byte probes, review the scope of
-resource intervals, protocol exchanges and wake observations, and
-prepare matched release builds. Preserve the
-five alternating pairs, 10,000 admitted updates per run, both rates under both loads
+unmatched exchanges. Allocation and copy probes now preserve the same 240
+settlements. Their source audit, controls and explicit coverage limits are saved;
+profiling does not qualify latency. The release pair has no profiling hooks and
+settles all 240 updates at both rates. The campaign now uses the frozen method
+for resource intervals, protocol exchanges, wake observations and outcomes.
+Preserve the five alternating pairs, 10,000 admitted updates per run, both rates under both loads
 and the relative and absolute budgets.
 
 The completed DMA development and qualification archives are removed.
 `~/.cache/t249-measurement-build` holds the refreshed comparator and diagnostic;
 the earlier `t249-session-comparator-build` is also retained. Experiment scripts
-are preserved in `t249-wire-observations-20261013-01`. No qualification job or
-live-session operation is running.
+are preserved with the corresponding probe packages. The failed latency run
+is `t249-campaign-20261013-01`; its driver exited with status 1 after preserving
+both arms. No measurement or live-session operation is running.
 
 ## Stopping point and resume procedure (2026-10-12)
 
@@ -4391,6 +4400,209 @@ Next, instrument actual allocation and copy operations with explicit coverage,
 then finish resource/method review and matched release builds. Keep profiling
 overhead separate from latency acceptance. The original five-pair, rate/load and
 relative/absolute latency requirements remain unchanged.
+
+## Allocation counters (2026-10-13)
+
+Both comparator arms now run with allocation counters. Rust's global allocator
+forwards every operation to `System`; the counters distinguish allocations,
+reallocations, requested sizes, frees and failures. Nim's existing heaptrack
+hooks count raw allocations and frees within its pooled allocator. Hagia also
+allocates the C SDK's backing storage through Nim. These are allocation events
+and requested bytes, not resident memory, live objects or allocator page traffic.
+
+The controls check Rust alignment, zeroing and preserved data after reallocation.
+Nim's known-size control records three allocations, 224 requested bytes and three
+frees; compiling without its hooks fails the same assertion. The probe is
+statically linked into Hagia because the protected launcher does not expose
+the Cargo library directory. The two failed dynamic-link attempts remain in
+the evidence. Neither changes launch protection.
+
+The joined pair admits and settles all 240 updates with identical offer
+identities and no replacements or unresolved work. Rust reports no allocation
+failure. Its move/resize intervals record 76,443/76,442 allocation calls for
+files and 52,505/52,504 for frames, with reallocations counted separately.
+Nim's whole-process totals are 581,539 raw allocations and 159,255,049 requested
+bytes for files, and 740,862 allocations and 1,255,625,177 bytes for frames.
+The different Rust and Nim intervals must not be combined into one steady-state
+total: Rust samples bracket the workload, drain and End checkpoint, while Nim
+reports at exit, including startup and teardown. Fixture and reporting work
+also needs to remain explicit in the campaign method.
+
+Package `~/.local/state/sophia/development-evidence/t249-allocation-observations-20261013-01`
+has self-excluding manifest SHA-256
+`d77044dd2ca83953400ead3030a4175f4abb52f4ee6ca85c39573e7d770b2045`.
+It contains commands, controls, failed attempts, counts, binary identities and
+the complete tracked-source/overlay audit against the same archived pair.
+These diagnostic counts do not qualify latency.
+
+## Copied-byte counters (2026-10-13)
+
+The isolated comparator now counts executed compiler memory-copy operations.
+LLVM transforms `memcpy` and `memmove` intrinsics into hooks before machine-code
+lowering; linker wrappers also catch ordinary calls in statically linked code.
+The hooks forward to libc and add each operation's requested byte count once.
+This catches fixed-size intrinsic copies that a libc-only probe would miss.
+Both transports use the same instrumented binaries: Rust 1.96.1/LLVM 22.1.2
+and Nim 2.2.12 compiled with Clang 21.1.8.
+
+These counts exclude scalar assignments, register moves, already-inlined copies
+inside the precompiled standard library, copies internal to shared system
+libraries, kernel/device copies and zero-fill bytes. They describe executed
+bulk-copy operations in the recorded coverage, not all memory traffic. The
+Rust profiling build bypasses the sanitizer ABI guard for its precompiled
+standard library; no such option enters the latency build. The hooks implement
+no race detection. Ordinary-access, atomic and function-entry instrumentation
+are disabled, and the final symbol audit finds only the expected hooks.
+
+The Rust and C controls both count two copies totalling 97 bytes and one
+overlapping move of 33 bytes, preserving the resulting data. Disabling intrinsic
+instrumentation fails the Rust count assertion. The expanded control also checks
+zero fill. It caught an instrumentation fault: LLVM redirected a hook's own
+`memset` reference back into that hook. The first joined run failed its binary
+hash check; an attempted opaque call still recursed. The corrected hook uses
+`__real_memset`, resolved by the linker after LLVM's transformation. Final
+disassembly verifies its call to libc. The failed attempts remain recorded.
+
+The corrected joined pair admits and settles all 240 updates with identical
+offer identities, no replacement or unresolved work, and no Rust allocation
+failure. Hagia records 70,437,433 `memcpy` bytes for files and 1,112,869,299 for
+frames over its complete process lifetime; moves add 126 and 23 bytes,
+respectively. Session's workload intervals and separate allocation/copy fields
+are retained in `comparison.json`. The same interval and observer-work limits
+as the allocation probe apply. No latency result is accepted from this build.
+
+Package `~/.local/state/sophia/development-evidence/t249-copy-observations-20261013-01`
+has self-excluding manifest SHA-256
+`b3eea41637db5edd01f9c6339d2c429c1a7449e07d30bcae8f21b67fc1041cc4`.
+It preserves the full source audit, commands, controls, failed attempts, binary
+identities, symbol/disassembly checks, coverage definition and paired counts.
+The uninstrumented release build below removes these hooks for latency
+qualification. The original five-pair, rate/load, workload and numeric budgets
+remain unchanged.
+
+## Release-build preflight (2026-10-13)
+
+The comparator now has a separate latency build: Rust's ordinary release
+profile and Nim's ordinary `-d:release`, without allocator, copy or sanitizer
+instrumentation. Both transports use the same Session and Hagia binaries.
+Symbol checks find no copy hooks or experimental global allocator; resource
+snapshots confirm the disabled counters stay zero. Every archived source file
+matches the preceding copy-probe audit; only build options differ.
+
+At both 60 and 120 Hz, each arm admits and settles all 240 offered updates,
+with matching identities and no replacement, rejection or unresolved work.
+The retained report has all percentiles and maxima. These are short preflight
+runs, not the five-pair acceptance campaign.
+
+Package `~/.local/state/sophia/development-evidence/t249-release-preflight-20261013-01`
+has self-excluding manifest SHA-256
+`b910d9955b563f238856bd62195792e52574d9c14ab43e77753c96db8e3b960d`.
+It preserves build/run commands, binary hashes, complete per-offer ledgers and
+the exact source binding. No diagnostic or build remains running.
+
+Freeze the prospective method next, including comparator compatibility,
+resource coverage/intervals, CPU load and affinity, alternating order, complete
+outcome accounting and percentile calculation. Then run the unchanged campaign:
+five alternating pairs for each rate/load condition, with the original
+10,000-update move and resize scope, the +1/+2 ms relative budgets and the
+one-interval absolute p99 budget. Keep failures and differing survivor sets
+visible; never filter them into a passing comparison.
+
+## Prospective campaign method (2026-10-13)
+
+The reviewed comparison uses the current Session queue, coalescing, reducer and
+layout-settlement owners with one current Hagia policy implementation. Only the
+transport adapter changes. The source audit records the restored frame adapter
+and experimental selection; the finite parity and negative controls establish
+the joins used by this pointer workload. This is a compatible transport
+comparison on the current policy/owner pair, not a comparison between whole
+historical releases. Protected launch, profile activation, capability ceiling,
+normal checkpoint persistence, scene and geometry sequence are identical.
+Frontend observations and completion remain supplied; this is control-path
+measurement, not physical input-to-photon acceptance.
+
+The release binary identities are frozen in `release-binaries.json` in
+`t249-release-preflight-20261013-01`. The campaign verifies those hashes and
+every source input against the copy-probe audit before starting. Its script and
+`method.json` are saved before the first acceptance run, and the method digest
+is checked before every arm. Builds and profiling hooks are absent from the
+latency runs.
+
+Run conditions, chosen before campaign results:
+
+- Run 10,000 Move updates followed by 10,000 Resize updates per arm. Retain
+  the existing Begin/End boundaries and setup, periodic geometry sequence,
+  open-loop schedule, production coalescing and normal checkpoint loop.
+- Run five pairs at 60 Hz idle, 120 Hz idle, 60 Hz with CPU load, then 120 Hz
+  with CPU load. Odd-numbered pairs run frames first; even pairs run files
+  first. Each arm starts a fresh protected peer and the same scene.
+- Pin both fixture processes and imposed load to CPUs 0–3, four distinct
+  physical cores on this host, at nice 10. Idle means no imposed load. The load
+  condition adds two deterministic integer-mixing workers on those same CPUs,
+  with a one-second warmup. Record iterations, wall time and process CPU ticks;
+  refuse a load condition that supplies less than 1.5 CPU seconds per wall
+  second. No host affinity, governor or other process is changed.
+- Use enqueue-to-correlated-settlement latency and nearest-rank quantiles.
+  Report p50/p95/p99 and maximum separately for Move and Resize, together with
+  enqueue lateness and every offered/admitted/coalesced/settled identity.
+  Coalesced offers have no fabricated settlement latency. Compare the complete
+  normalized ledgers, removing only their four clock fields; differing outcome
+  populations refuse the relative comparison. Never select matching survivors.
+- Each mode in every pair must meet files p95 ≤ frames p95 +1 ms, files p99 ≤
+  frames p99 +2 ms, and file p99 ≤16.67 ms at 60 Hz or ≤8.33 ms at 120 Hz.
+  Refuse failed or missing runs, rejected/unresolved/unoffered work, disconnects,
+  timeouts and queue occupancy beyond the existing bound of sixteen.
+- Preserve both arms of the first failing pair and stop. Later pairs remain
+  explicitly unexecuted; no automatic retry, altered threshold or discarded
+  failure can produce a pass. A passing campaign requires all twenty pairs.
+
+The campaign verifier independently checks the ledger conservation, replacement
+edges, unique requests, clock ordering and per-mode population. Retained
+preflight ledgers pass; deleting a settlement, duplicating a request or changing
+an offer's mode fails in each arm. Per-run commands, relevant environment,
+process handles and host CPU/load snapshots accompany the raw ledgers.
+
+Resource measurement stays separate from latency acceptance. The plain campaign
+retains process/thread CPU and owner-wait observations. Afterward, use one
+instrumented pair per rate/load condition with the same 20,000-update workload
+for allocation/copy totals and traced protocol exchanges, plus the existing
+separate idle fixture. Keep each metric's recorded scope: Session workload/drain/
+End-checkpoint intervals, Hagia's whole-process counters, complete socket
+connections, owner wake observations and kernel scheduling counters are distinct
+units. Do not add unlike intervals, call syscall bytes memory-copy bytes, or
+claim every kernel wake or copy is measured. The copy-coverage exclusions above
+remain explicit. Profiling timings cannot satisfy latency budgets.
+
+The campaign is an isolated, reproducible experiment. It changes no production
+source or installed session. Final SDK/export impact review, complete coverage
+binding and signed candidates remain necessary after measurement succeeds.
+
+The run started in
+`~/.local/state/sophia/development-evidence/t249-campaign-20261013-01` with method
+SHA-256 `c93f1aedb776cf50732f44191c124b69ddfed4d40a6061347d4250ec8b253adf`.
+The load control supplied 1.99 CPU seconds in 1.0004 wall seconds, then stopped
+cleanly. The first 60 Hz idle pair failed the complete-outcome comparison, and
+the driver exited with status 1. Nineteen pairs remain unexecuted. Both arms
+admitted all 20,000 updates without rejected, unresolved or unoffered work.
+Frames settled all 10,000 updates in each mode. Files settled all 10,000 moves,
+but settled 9,967 resizes and coalesced 33. File resize reached 155.816522 ms
+maximum enqueue-to-settlement latency. Every numeric percentile check passed;
+that cannot qualify unequal outcome populations. The saved `progress.json`,
+raw ledgers, logs and frozen method retain the failure. No automatic retry or
+resource run followed. The stall's cause is not yet established; checkpoint
+persistence, scheduling and allocation behavior remain hypotheses, not findings.
+
+The read-only final SDK impact review confirms that current Sophia's crate,
+Cargo and vendor inputs still equal qualified pin `47086bd25734a0c7d5348b909e88501aa4a79715`.
+Hagia differs from `7723c9c56082fb24f2ef4636a91b3f166d84e828` only in the external-test
+README among its source/test/vendor/tool inputs. All 154 vendored SDK files
+verify against revision `93361918dd0213a13a2fc8bd26a7911ff7ae16e1`.
+The older export run predates changed server and SDK inputs, so both named
+independent Nim startup/cycle cases require a final-pair rerun. Run that gate
+after measurements to preserve the quiet window. Package
+`t249-final-sdk-impact-20261013-01` retains the comparisons and unchanged gate;
+its manifest is `8955e1713f966bc21db74597ac0d8a0de534af37d8c1119bab65126b5dd712b8`.
+No build or test ran for this review.
 
 ## Connections
 
