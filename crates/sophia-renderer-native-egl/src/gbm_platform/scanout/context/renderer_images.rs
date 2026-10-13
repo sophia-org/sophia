@@ -156,10 +156,9 @@ where
         let Some(image) = self.renderer_images.get_mut(&image_id) else {
             return Ok(false);
         };
-        if image.state == NativeRendererImageState::Promoted {
+        if !image.promote() {
             return Ok(false);
         }
-        image.state = NativeRendererImageState::Promoted;
         self.stats.snapshot_promotions = self.stats.snapshot_promotions.saturating_add(1);
         Ok(true)
     }
@@ -170,7 +169,7 @@ where
         let Some(image) = self.renderer_images.get(&image_id) else {
             return Ok(None);
         };
-        if image.state != NativeRendererImageState::Promoted {
+        if !image.is_promoted() {
             return Ok(None);
         }
         if let Some(captured) = &image.pooled {
@@ -237,7 +236,7 @@ where
         if self
             .renderer_images
             .get(&image_id)
-            .is_none_or(|image| image.state != NativeRendererImageState::Staged)
+            .is_none_or(|image| image.is_promoted())
         {
             return Ok(false);
         }
@@ -295,12 +294,7 @@ where
         }
         self.renderer_images.insert(
             image_id,
-            NativeRendererImage {
-                buffer,
-                pooled,
-                state: NativeRendererImageState::Staged,
-                bytes,
-            },
+            NativeRendererImage::staged(buffer, pooled, bytes),
         );
         self.renderer_image_bytes = self.renderer_image_bytes.saturating_add(bytes);
         self.stats.snapshot_captures = self.stats.snapshot_captures.saturating_add(1);

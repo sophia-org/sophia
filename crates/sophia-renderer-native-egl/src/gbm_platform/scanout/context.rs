@@ -81,18 +81,10 @@ pub struct NativeGbmRenderedScanoutContext<T: std::os::fd::AsFd> {
     transfer_sources: std::collections::BTreeMap<(u32, u64), usize>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum NativeRendererImageState {
-    Staged,
-    Promoted,
-}
-
-struct NativeRendererImage {
-    buffer: std::rc::Rc<NativeGbmOwnedScanoutBuffer>,
-    pooled: Option<NativePooledCapture>,
-    state: NativeRendererImageState,
-    bytes: u64,
-}
+type NativeRendererImage = crate::NativeRendererImageCustody<
+    std::rc::Rc<NativeGbmOwnedScanoutBuffer>,
+    NativePooledCapture,
+>;
 
 struct NativeRenderTarget {
     width: u32,
