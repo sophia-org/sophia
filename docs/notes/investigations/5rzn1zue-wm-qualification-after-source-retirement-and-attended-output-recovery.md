@@ -15,32 +15,36 @@ October 10 capability maps or the original three-case migration plan. Task
 status stays in `todo.md`. The complete WM acceptance exit, including measurement,
 has not passed. Do not reopen t317/t318 or repeat their attended acceptance.
 
-The qualified external baseline is **26 passing cases**: signed Hagia
-`883561e43cc5ff7e048c3a7f36cc7afbac9101fb`, niltempus runner
-`bfd60965c617486569c3d496ab563db791db03ee`, and Sophia pin
+The qualified external baseline is **27 passing cases**: signed Hagia
+`10c4496d509bbcda73b333a6b49288f02f1e8ad6`, niltempus runner
+`1e404aa985968a93ff9601bfaf6e60026e4fd2ed`, and Sophia pin
 `1b476dbdcc30215fe7ee5841e5a872f136ebb3a0`. The
-[pointer-focus result](#profile-gated-pointer-focus-2026-10-13) adds negotiated
-hover admission, exact surface identity, real-peer refusal recovery and
-commit-only promotion. Both guard-removal controls fail at their intended
-assertions. Hover observations and layout completion are supplied; physical
-routing, frontend delivery and latency are not implied. The final package is
-`~/.local/state/sophia/development-evidence/t249-focus-01`; its manifest hash
-is `bee178529fcc8a0523b47fbe69d21d97a2f0ae57055a6bbc167eb2cdaca222ee`.
-The linked result binds its audit, checks and controls.
+[focused-application result](#focused-application-held-capture-2026-10-13)
+adds a routed client press before presentation, capture waiting for its release,
+and an exact captured action answered and committed by real Hagia. Initial
+Presented stamps are backend-derived from simulated mirror completion. Focus
+and input events are supplied, application ingress is local, and closing
+replacement completion is supplied; frontend delivery and physical input are
+not implied. The application-held-key guard control fails its named assertion.
+The final package is `~/.local/state/sophia/development-evidence/t249-capture-01`;
+its manifest hash is
+`b7b1430521c8f5e28088e034c617ab6b5e4e16a55424c3dbcc1b20ebea61d2b9`.
+The linked result binds its audit, checks and control.
 
 Master `fa8aa8588` subsequently merges numeric WM geometry diagnostics. Its
 crate/Cargo/vendor tree equals the source tested by
 `wm-geometry-diagnostics-01/xtask-05.log`. The new closure audit binds that
 retained generic execution and 37 named evidence witnesses to this source;
-it does not rerun tests or rebrand the 26-case pair as a master run. The
+it does not rerun tests or rebrand the 27-case pair as a master run. The
 diagnostics preserve errors and do not fix the extreme maximum-size overflow.
 Final pairing must review and test the eventual pin change.
 
-Next implement package **A**, routed pointer and capture: use the production
-routing owners with the real peer, retaining exact button/key identities and
-checking swallowed releases after revocation. Include a genuinely focused
-client's held key; the existing generic test supplies the held-key state but
-has no input focus. Packages B–F below consolidate the remaining policy,
+Continue package **A** with production pointer routing and capture: resolve
+registered pointer bindings into exact real-peer interactions and check
+swallowed pointer releases after revocation/reconnect. The focused-client
+held-key boundary is now joined; protected-action precedence and the direct
+128-debt overflow witness remain, with lock/output-loss shared with C/D.
+Packages B–F below consolidate the remaining policy,
 reload, launch/output, overview and native-backend joins. They have explicit
 observations and controls; they are not a promise of six tests. Reuse current
 generic proofs for local bounds, chord refusal and inspection rather than
@@ -2789,7 +2793,10 @@ assertions, not for adjacent integration claims:
   witness for it and does not infer one from receipt capacity.
 - **Capture:** `a_held_capture_waits_for_a_held_application_key` supplies
   `SessionClientKeyState` and checks routing into the no-focus path. It does
-  not prove a focused client's sequence. Protected-route precedence and
+  not prove a focused client's sequence. The later
+  [focused-application join](#focused-application-held-capture-2026-10-13)
+  closes that boundary through actual routing into local ingress, with a real
+  Hagia continuation. Protected-route precedence and
   queue-forced revocation have generic execution, but the real-peer capture
   transition remains A.
 - **Inspection:** `safe_owner_view_and_reported_outcomes_use_the_wm_file_wire`
@@ -2837,13 +2844,13 @@ the same owner appears in several capability rows.
 | 19 PRESENTATION_ACTIONS | E, share D/F | Nonzero pointer target identity reaches the exact peer action, rejects old target/publication/output identity, and preserves ordinary focus until committed. Reuse current receipt consensus/service proofs. |
 | 20 ACTION_LIFECYCLE | Retain | Real-peer lifecycle plus current generic credit/dead-policy/opener refusal is sufficient. No additional peer credit-exhaustion case. |
 | 21 CHORD_ACTIONS | C, share A | Retain matching-loss cancellation. Exercise registry-replacement and lock-reset triggers with exact terminal identity/credit return; cancellation must not become Released or replayed authority. |
-| 22 HELD_CAPTURE | A, share C/D | Focused application-held keys, protected bypass and pointer debt across revocation/reconnect/lock/output loss. Reuse generic local refusal/capacity evidence without claiming application delivery from a no-focus test. |
+| 22 HELD_CAPTURE | A, share C/D | Focused application-held keys now have the 27th real-peer case, through local ingress with supplied focus/events. Protected bypass and pointer debt across revocation/reconnect/lock/output loss remain. Reuse generic local refusal/capacity evidence without claiming frontend delivery. |
 
 ### Bounded packages and their pass conditions
 
 **A — Routed input and capture.** Use production pointer/keyboard routing and
 the existing real-peer lifecycle. Check exact action/interaction identities,
-the focused client's held sequence, protected precedence and one swallowed
+the focused client's held sequence (now joined below), protected precedence and one swallowed
 release after revocation; a duplicate release must reach ordinary routing.
 Share lock/output-loss scenarios with C/D. Controls must break routing selection
 or debt retention and fail the corresponding behavioral assertion before a
@@ -2925,6 +2932,67 @@ admitted updates at each specified rate/load combination, relative p95/p99
 budgets and the absolute interval limit. No campaign ran for this assessment.
 Scope additions require a concrete uncovered
 existing obligation, not a desire to increase the case count.
+
+## Focused application held capture (2026-10-13)
+
+`sdk_presented_capture_waits_for_focused_application` closes the focused-client
+part of package A without supplying the client-key ledger. After the ordinary
+real-Hagia Held prefix, before presentation, Engine focus selects the already
+committed surface and Session's actual router sends a non-modifier press into
+local application ingress. That successful route creates the held-key state.
+Both mirrored heads then retire the switcher through the production backend
+composition/publication owners and simulated completion, producing Presented.
+
+While the first key remains held, Right press/release reaches the same exact
+surface and produces no policy action or capture debt. The final held release
+also reaches the application target. Requests, queue and checkpoint remain
+unchanged. A fresh Right is then consumed by Held capture, carries the exact
+receipt identity, and reaches real Hagia through Session's presentation-action
+owner. Its release is swallowed; releasing the followed chord commits the
+expected new focus in both Session and Hagia's checkpoint. A final non-admitting
+poll observes a healthy running peer; it is not a round trip.
+
+The fixture supplies Engine focus selection, events, CPU content, scheduling
+and initial mirror submit/flip. It observes local ingress, not an X application's
+receipt of those events. The inherited prefix uses a supplied installation head;
+closing replacement completion is supplied. No hardware input, native scheduling,
+device pixels, latency, lock or protected-session-action claim is added. Pointer
+debt and the remaining A/C/D transitions stay open.
+
+The archived control changes only the `held_client_keys != 0` term of
+`input/routing/key.rs`'s `application_active` predicate to false. The initial
+press still routes before presentation; once Presented, Right is incorrectly
+captured and the first failure is `held capture must leave an application-owned
+key sequence at its focused target`. It compiles, exits 101, and reports exactly
+one failed test. The source, nineteen mounted inputs and ordinary Hagia binary
+are restored or compared before closing the control record. No installed or
+repository production source is mutated.
+
+Signed candidate identities are Hagia
+`10c4496d509bbcda73b333a6b49288f02f1e8ad6`, runner
+`1e404aa985968a93ff9601bfaf6e60026e4fd2ed`, and unchanged Sophia pin
+`1b476dbdcc30215fe7ee5841e5a872f136ebb3a0`. All five bound production glue
+spans are unchanged. The final clean pair passes 27 individually listed and
+invoked cases: lifecycle 3, occupied 7, pointer 3, operations 3, slow peer 1,
+presented 10. No runtime code or public test API changes.
+
+Packages under `~/.local/state/sophia/development-evidence/`, with SHA-256 of
+each self-excluding `SHA256SUMS`:
+
+| Package | Result | Manifest SHA-256 |
+| --- | --- | --- |
+| `t249-capture-dev01` | PASS 27 development cases | `571402a8041a1199e0fdacbd4e0c5af905f22a05b6c17c7d1d747df2ec26c4e7` |
+| `t249-capture-control01` | PASS expected named failure, exit 101 | `064d57901755e8f3e10a929da0e0ae5a48e8993a80fca5b68dc538cfa30f3c5c` |
+| `t249-capture-checks01` | PASS restored strict Clippy, formatting, 14 runner tests (one child ignored), Hagia layout | `a7bbb8a7e84dad242e981957b56b05a527b06929cd39892de026618fc63b7ac9` |
+| `t249-capture-01` | PASS signed clean pair, 27 cases | `b7b1430521c8f5e28088e034c617ab6b5e4e16a55424c3dbcc1b20ebea61d2b9` |
+| `t249-capture-audit01` | PASS source and evidence binding | `1866ae9536edf5def7aa4da4ebad185688ae455025690065d6439b76e1e1500c` |
+
+The read-only audit checks 3,257 pinned source inputs, nineteen mounted inputs
+(eighteen external modules and the mount), signed candidate blobs, exact case
+results, all four preceding manifests and the unchanged pointer-accounting
+ledgers. It is integrity evidence, not another execution or measurement.
+Leased cleanup removes the marked disposable build root; evidence retains
+binary paths and hashes, never copied build products. t249/h006 remain open.
 
 ## Connections
 
