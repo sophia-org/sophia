@@ -17,11 +17,13 @@ their stated limits. Continue **DMA retirement through its production owners**,
 then finish the reviewed measurement campaign and final candidate binding.
 The complete t249/h006 exit has not passed.
 
-The [DMA submission seam](#dma-submission-boundary-2026-10-13) now executes the
-existing submission-settlement owner without devices. Its focused control,
-331 backend library tests and strict Clippy pass. This changes Sophia after
-the qualified pin below; it is not yet a new external-pair candidate. Next join
-renderer-image promotion and the driver's initial submission path to retirement.
+The [DMA submission seam](#dma-submission-boundary-2026-10-13),
+[image custody and shared driver](#dma-image-custody-and-driver-boundary-2026-10-13)
+are implemented and checked. This changes Sophia after the qualified pin below;
+it is not yet a new external-pair candidate. Next extend the mirrored fixture
+to capture image custody from queued DMA layers and run the shared driver through
+backend-derived retirement and Session admission. Do not supply the final cohort
+or substitute a successful promotion count for the actual custody transition.
 
 Use the [row dispositions](#remaining-row-dispositions-2026-10-13) and
 [t249 acceptance criteria](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249).
@@ -4017,6 +4019,55 @@ returning a fake promotion count from the CPU fixture would not qualify it.
 The native queue, mirror custody, retirement tracker and Session admission owner
 must then carry the exact candidate through completion. Device completion may
 remain simulated; physical rendering and scanout remain t250.
+
+## DMA image custody and driver boundary (2026-10-13)
+
+Signed Sophia `ef1c47c86` separates captured image custody from its device
+resource type. `NativeRendererImageCustody` owns the allocation, optional pool
+owner, byte charge and staged/promoted state. The EGL context uses this same
+record for capture, promotion, export eligibility and rollback eligibility;
+capture admission, GBM buffers, pool cleanup and statistics stay with their
+existing owners. Promotion changes state once without replacing or releasing
+either resource.
+
+Two isolated regressions check exact allocation identity, pool custody, byte
+charge, duplicate promotion, staged discard and final owner release. Omitting
+the promotion state change fails at `promotion must persist on the captured
+allocation`; restoration passes. All 28 renderer library tests with
+`gbm-platform`, strict renderer Clippy and a backend `test-support` compilation
+check pass. Package `t249-image-custody-dev01`, manifest
+`3df9def690b4ec2d291a52f76233d606bcc231db192133a37f7fc60fff51abe7`,
+retains the patch, added files, commands, control and a 5,114-input source audit.
+These tests substitute resource owners; they do not import or copy GPU pixels.
+
+Signed Sophia `f018b45cc` adds the private `NativePresentTarget` boundary.
+The public native driver calls `drive_gpu_presentation_on_target`, whose body
+is unchanged. It retains gate polling, Engine preparation, DMA source selection,
+head composition, frame queueing, rendering-cohort construction and immediate
+submission accounting. The native implementation forwards device operations
+to their existing methods. This permits the next fixture to execute the actual
+driver rather than constructing its final submitted cohort.
+
+Backend compilation, all 331 backend library tests with `test-support` and strict
+Clippy pass. Package `t249-dma-driver-dev01`, manifest
+`985a3ab0ffe5fa16e310918410d12b1f0558066176b8b29f38a5323a46d970a8`,
+audits 5,116 base inputs and verifies the driver body is byte-for-byte unchanged.
+This verifies the refactor and native implementation compile; it does not yet
+execute a supplied target through the composed DMA retirement branch.
+The shared build archive was removed after verifying both manifests; cleanup
+is recorded in `t249-image-driver-cleanup01`.
+
+Next implement `NativePresentTarget` and `NativeSubmissionTarget` for the existing
+mirrored target. Its production queue already accepts `MixedPresent` content.
+At simulated worker completion, derive staged image identity from the actual
+queued DMA layer and retain a supplied allocation in the shared custody owner.
+Promotion must look up and advance that owner; missing or duplicate images must
+not report success. Run the shared driver from an admitted Present, then the
+actual page-flip tracker, composed retirement and Session admission owners.
+Controls must omit promotion/retirement and fail before a timeout. The fixture
+may supply worker/device completion and resource allocation, but cannot claim
+GBM import, pixel copying or physical scanout. No external case or refreshed
+42-case Sophia pin is established by these preparatory changes.
 
 ## Connections
 
