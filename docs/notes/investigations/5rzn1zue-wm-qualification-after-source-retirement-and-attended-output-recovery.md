@@ -24,8 +24,9 @@ is recorded. The **full latency campaign stopped after its first pair**:
 file resize coalesced 33 updates while frames coalesced none. The numeric
 percentile checks passed, but the unequal populations refuse the comparison.
 Diagnose the recorded 155.8 ms stall before another campaign; preserve this
-failure and the unchanged budgets. Resource profiles, the independent SDK/export
-rerun and final exit binding remain. The complete t249/h006 exit has not passed.
+failure and the unchanged budgets. The independent SDK/export rerun now passes
+both cases. Resource profiles and final exit binding remain after latency
+qualification. The complete t249/h006 exit has not passed.
 
 Use the [row dispositions](#remaining-row-dispositions-2026-10-13) and
 [t249 acceptance criteria](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249).
@@ -84,7 +85,10 @@ The completed DMA development and qualification archives are removed.
 the earlier `t249-session-comparator-build` is also retained. Experiment scripts
 are preserved with the corresponding probe packages. The failed latency run
 is `t249-campaign-20261013-01`; its driver exited with status 1 after preserving
-both arms. No measurement or live-session operation is running.
+both arms. The separate [fsync diagnostic and final SDK gate](#fsync-diagnostic-and-final-sdk-gate-2026-10-13)
+are complete. Both traced arms settled all 20,000 updates, with no reproduced
+stall. The failed campaign remains unqualified; the diagnostic is not an
+acceptance retry. No measurement, build or live-session operation is running.
 
 ## Stopping point and resume procedure (2026-10-12)
 
@@ -4591,6 +4595,8 @@ that cannot qualify unequal outcome populations. The saved `progress.json`,
 raw ledgers, logs and frozen method retain the failure. No automatic retry or
 resource run followed. The stall's cause is not yet established; checkpoint
 persistence, scheduling and allocation behavior remain hypotheses, not findings.
+The failed package's self-excluding manifest is
+`8ad88db1af862e051ad20f1fee274c790e635f1e7c83c331de0c0ee83e4de6d7`.
 
 The read-only final SDK impact review confirms that current Sophia's crate,
 Cargo and vendor inputs still equal qualified pin `47086bd25734a0c7d5348b909e88501aa4a79715`.
@@ -4603,6 +4609,39 @@ after measurements to preserve the quiet window. Package
 `t249-final-sdk-impact-20261013-01` retains the comparisons and unchanged gate;
 its manifest is `8955e1713f966bc21db74597ac0d8a0de534af37d8c1119bab65126b5dd712b8`.
 No build or test ran for this review.
+
+## Fsync diagnostic and final SDK gate (2026-10-13)
+
+The failed file arm's largest delay was after dispatch: 155.796083 ms in
+service and 0.020439 ms in the queue. Its prior checkpoint log entry predates
+dispatch, but that entry alone cannot rule out a blocked log write or other
+work after the timestamp. The cause remains unestablished.
+
+The bounded diagnostic retained the same release binaries, scene, normal
+checkpoint loop, 20,000-update workload, CPU affinity and priority. It ran
+files then frames at 60 Hz without imposed load. A seccomp-filtered strace
+recorded fsync/fdatasync calls; these timings cannot qualify latency.
+Both arms settled every update without coalescing. Maximum enqueue-to-settlement
+latency was 1.270068 ms for files and 1.429302 ms for frames. Each arm completed
+40,012 checkpoint sync calls and nine setup sync calls, all successfully;
+the longest were 0.038 ms and 0.041 ms respectively. This run did not reproduce
+the original stall and supplies no proof of its cause. Checkpoint paths were
+inside the isolated tmpfs, not evidence of physical-disk durability costs.
+Package `t249-fsync-diagnostic-20261013-01` retains the method, raw traces,
+complete ledgers and analysis. Its manifest is
+`7806d105805391e500f1d707d5da9de253e5aa26cbb0ca322fed7a0710c60570`.
+
+After the diagnostic exited, Hagia's unchanged `tools/check_sdk_export.sh`
+passed both `independent_nim_supplied_stream_startup` and
+`independent_nim_supplied_stream_cycle` against Sophia `6f2f74204` and Hagia
+`2ba92d984`. All tracked source hashes and repository identities matched before
+and after execution. The source record includes the then-uncommitted
+investigation update; it changes no compiled input. The gate ran offline with
+devices, network and desktop runtime hidden, using the ordinary main checkouts
+and a fixed Cargo slot. Package `t249-final-sdk-export-20261013-01` has manifest
+`532d96f601b9bdf312b441ce98a3ec04699e38a2897ad4314b1be90274179a3b`.
+This closes the required independent export rerun under supplied admission and
+scripted-outcome limits. It does not qualify physical presentation or latency.
 
 ## Connections
 
