@@ -9,33 +9,35 @@ tags: [validation, protocol, policy]
 
 ## Current resumption
 
-The [policy projection families](#policy-projection-families-2026-10-13)
-now pass with real Hagia, five mutation controls and candidate-bound local
-SDK/policy tests. B's listed joins are covered under their supplied-input
-limits. Continue **D/E's launch, logical-output and overview joins**, resolve
-the remaining **DMA retirement** owner path early, then finish the reviewed
-measurement campaign. The complete t249/h006 exit has not passed.
+The [launch and logical-output recovery](#launch-and-logical-output-recovery-2026-10-13)
+cases now pass with four mutation controls. Frozen launch destinations,
+empty-output activation, occupied transfer/loss, output keys/actions and hidden
+Manage rearming have real-peer joins. Continue **overview pointer targets and
+output-loss capture/debt**, resolve the remaining **DMA retirement** owner path
+early, then finish the reviewed measurement campaign. The complete t249/h006
+exit has not passed.
 
 Use the [row dispositions](#remaining-row-dispositions-2026-10-13) and
 [t249 acceptance criteria](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249).
 Task status stays in `todo.md`; case count is not a completion percentage.
 Do not reopen t317/t318 or repeat their attended acceptance.
 
-The qualified baseline is **37 passing external cases**: signed Hagia
-`1e7e9ecdc31bb6d4918773bd3d9a0f545ba4cef1`, niltempus runner
-`83669a770ad6d94628631035eac0820978726574`, and unchanged Sophia pin
+The qualified baseline is **40 passing external cases**: signed Hagia
+`b86f18111b159713e7e09b1bb0e5f002380630af`, niltempus runner
+`46e08e4a044b11e83481f680a160108f3553d487`, and unchanged Sophia pin
 `469371bf4ba6f9f87af5485d3967709d907426ee`.
-Package `t249-policy-projection-pair01` has manifest
-`cd94a96dac30c09edf944edfa6ff75adf1acdad79bd9bb7f4798e3b695b631b7`.
+Package `t249-launch-outputs-pair01` has manifest
+`2f3e1ae39851ecf39521d639d3d308c4eced84a105b4b309ef7986dcbe01d6c7`.
 The linked result records strict Clippy, formatting, layout, runner tests,
-source binding and cleanup. Its audit verifies 3,268 pinned inputs, twenty-one
+source binding and cleanup. Its audit verifies 3,268 pinned inputs, twenty-two
 mounted inputs, all exact results and unchanged generic-gate inputs and
 production glue.
 
 A's ordinary routing/capture joins and C's
 [occupied reload and registry](#occupied-reload-and-registry-2026-10-13) and
 [lock reset](#occupied-lock-reset-2026-10-13) joins remain qualified.
-B adds tab selection, indicator activation and scrolling geometry. These
+B adds tab selection, indicator activation and scrolling geometry; the launch
+package retains B's passing local suite by verifying 427 unchanged inputs. These
 cases supply observations, events and completion; they do not prove physical
 input, frontend delivery, shell UI or device pixels.
 
@@ -52,7 +54,7 @@ Finite diagnostics and a coalescing control pass, but timing remains unqualified
 Before the campaign, finish open-loop scheduling, rejected/unresolved accounting,
 resource probes and method review. Preserve the relative and absolute budgets.
 
-Both completed projection build archives and the clean source worktree are
+Both completed launch/output build archives and the clean source worktree are
 removed. `~/.cache/t249-session-comparator-build` remains for the next comparator
 experiment. No qualification job or live-session operation is running.
 
@@ -2886,6 +2888,10 @@ identity can redirect placement and no admission re-ask loop survives recovery.
 Controls substitute current for frozen context, weaken an exact output identity,
 or omit Manage rearming, each against a named behavioral assertion. Share
 output loss/debt with A and per-output presentation identity with E.
+The [launch/output result](#launch-and-logical-output-recovery-2026-10-13)
+covers frozen origin/context, empty-output activation, occupied transfer/loss,
+key/action replacement and hidden Manage rearming. Output-loss capture/debt
+remains shared with E's presentation-target work.
 
 **E — Overview and pointer targets.** Compose actual peer overview instances
 and regions, derive target identity from the backend frame, then route a
@@ -3829,6 +3835,65 @@ shell UI, traverse broker activation transport, deliver frontend events or
 prove physical pixels. Generic authorization/raster evidence remains reused
 at its existing scope. No Sophia production code changes in this package.
 D/E, DMA retirement, measurement and final qualification remain open.
+
+## Launch and logical-output recovery (2026-10-13)
+
+Three cases join real Hagia to Session's launch registry, output-update,
+request and restart owners. A child's token is frozen before focus moves to a
+second empty output; its Manage answer preserves the original destination
+without stealing active output. A captured output token survives a workspace
+change and places a child on its original hidden workspace. Stale epoch and
+output-generation records refuse attribution. That hidden admission receives
+one settled policy answer, then stops requesting Manage. Automatic peer
+replacement rearms it before any new commit can clear the old cache; its fresh
+answer settles it again.
+
+The assigned-workspace case transfers an occupied window to a second logical
+output, changes that output's connector and key, and withdraws its queued
+predecessor action before peer dispatch. After loss, both windows belong to
+the surviving output. Return preserves exact key ownership. A fresh action
+carries the expected output, generation, action and serial; it selects that
+output's assigned workspace without changing its sibling's view. The recorded
+replacement and loss projections independently show surface 47/generation 5
+on output 2 before loss and on output 1 afterward. This precondition audit is
+`t249-launch-outputs-loss-audit01`, manifest
+`7cfb100a3bacffcbf1074c8b9a456e66ded70acc37a5e52e82ff25fb62085b70`.
+
+Four controls substitute current for frozen launch context, weaken output
+context/action generations, and omit Manage rearming. Each fails its named
+assertion; all three restored cases pass. The queued-action control checks
+Session's predicate before later protocol rejection could mask its omission.
+Development failures exposed fixture mistakes: the shell snapshot contains
+every output's indicators, its slots are zero-based, and startup relayout may
+coalesce. The final fixture selects exact output/slot, observes scene advance,
+and uses assigned workspaces to test policy-key consumption. No production
+change was needed.
+
+Development `t249-launch-outputs-20261013-02` has manifest
+`9603287066796a4ed7b3c0fd38058a083b8b056d7252c8273c9749268afc5415`.
+The audit retains 5,112 Sophia and 482 Hagia base inputs plus overlays. It
+verifies 427 unchanged local-policy inputs against the passing suite in
+`t249-policy-projection-20261013-01`; no local Nim suite rerun is claimed.
+The signed pair (Hagia `b86f181`, runner `46e08e4`, Sophia `469371bf4`) passes
+all 40 cases in `t249-launch-outputs-pair01`, manifest
+`2f3e1ae39851ecf39521d639d3d308c4eced84a105b4b309ef7986dcbe01d6c7`.
+Strict external Clippy, formatting, Hagia layout and fourteen runner tests
+pass in `t249-launch-outputs-checks01`, manifest
+`09323d6188ee7d4b54fc750515179cc8505d6a63ee934d2d4fa43338bef37a38`.
+The final audit verifies signatures, 3,268 pinned inputs, twenty-two mounted
+inputs, all exact results and unchanged generic-gate inputs and production
+glue. `t249-launch-outputs-pair-audit01` has manifest
+`02f7b21c18af8cbc3926a783e69f607c4bb2d46315c2b95fac55538beef1b6b8`.
+Both build archives are removed under their leases; the detached source
+worktree was clean, including ignored files, before removal.
+
+Process/topology facts, catalog capture and completion are supplied. Generic
+authenticated-X ancestry and catalog authorization/queue proofs remain reused
+at their existing scope. These cases do not prove physical hotplug, process
+execution, frontend delivery or pixel admission. The restart case concerns a
+settled policy answer whose hidden visual admission remains pending. Output-loss
+capture/debt and overview pointer targets remain open, as do DMA retirement,
+measurement and final qualification. Sophia production code is unchanged.
 
 ## Connections
 
