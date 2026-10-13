@@ -46,6 +46,40 @@ impl SessionPolicyPresentationFixture {
         self.target.queue.pending(output)
     }
 
+    pub fn track_native_retirements(&mut self) {
+        self.target.track_retirements();
+    }
+
+    pub fn run_cpu_cycle(
+        &mut self,
+        runtime: &mut LiveProductionVisualRuntime,
+        request: LiveProductionCycleRequest<'_>,
+    ) -> Result<CpuCycleOutcome, Box<dyn std::error::Error>> {
+        runtime.run_cpu_cycle_on_target(request, Some(&mut self.target))
+    }
+
+    pub fn stage_software_present(
+        &mut self,
+        runtime: &mut LiveProductionVisualRuntime,
+        output: OutputId,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        runtime.stage_software_present_frame(&mut self.target, output)
+    }
+
+    /// Supply one device completion to the native retirement owner. The
+    /// submitted frame, retirement record and candidate remain owner-derived.
+    pub fn simulate_native_retirement(
+        &mut self,
+        runtime: &mut LiveProductionVisualRuntime,
+        output: OutputId,
+        head_index: usize,
+    ) -> Result<Option<LiveProductionRetiredPresent>, Box<dyn std::error::Error>> {
+        self.target
+            .completion_inputs
+            .push_back((output, head_index));
+        runtime.retire_native_output_on_target(&mut self.target, output, false)
+    }
+
     /// Read the instances captured in each head's retired frame. Source
     /// generations come from frame capture, not the requested publication.
     /// A head without a retired frame contributes an empty list.

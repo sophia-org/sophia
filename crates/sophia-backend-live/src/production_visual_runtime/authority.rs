@@ -466,7 +466,15 @@ impl LiveProductionVisualRuntime {
     pub(super) fn release_removed_presentations(
         &mut self,
         removed_surfaces: &[SurfaceId],
-        mut native_scanout: Option<&mut LiveProductionNativeScanout>,
+        native_scanout: Option<&mut LiveProductionNativeScanout>,
+    ) -> Result<(), crate::LiveRendererScanoutBufferExportDetail> {
+        self.release_removed_presentations_on_target(removed_surfaces, native_scanout)
+    }
+
+    pub(super) fn release_removed_presentations_on_target<T: NativeRetirementTarget>(
+        &mut self,
+        removed_surfaces: &[SurfaceId],
+        mut native_scanout: Option<&mut T>,
     ) -> Result<(), crate::LiveRendererScanoutBufferExportDetail> {
         self.revoke_policy_presentation_for_removed(removed_surfaces);
         self.source_availability.prune(removed_surfaces);

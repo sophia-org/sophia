@@ -69,3 +69,29 @@ impl NativeRetirementTarget for MirroredTarget {
         panic!("CPU-only retirement fixture cannot evict GPU images")
     }
 }
+
+impl NativeCycleTarget for MirroredTarget {
+    fn set_translation_motion_active(&mut self, _: bool) {}
+
+    fn initialize_head_composition(
+        &mut self,
+        _: OutputId,
+        _: &mut LiveBackendRuntimeAssembly,
+        _: Vec<LiveProductionHeadCompositionFrame>,
+    ) -> Result<LiveProductionNativeFrameId, Box<dyn std::error::Error>> {
+        Err("fixture requires explicit simulated initialization".into())
+    }
+
+    fn run_tick(
+        &mut self,
+        output: OutputId,
+        runtime: &mut LiveBackendRuntimeAssembly,
+        input: CompositorBackendTickInput,
+    ) -> Result<LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
+        if self.queue.pending(output) && self.ready(output) {
+            self.install(output)?;
+            self.prepare(output);
+        }
+        Ok(runtime.run_tick(input)?)
+    }
+}

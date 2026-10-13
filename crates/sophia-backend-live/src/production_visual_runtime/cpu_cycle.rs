@@ -1,8 +1,18 @@
 impl LiveProductionVisualRuntime {
     pub fn run_cpu_production_cycle(
         &mut self,
-        request: LiveProductionCycleRequest<'_>,
+        mut request: LiveProductionCycleRequest<'_>,
     ) -> Result<CpuCycleOutcome, Box<dyn std::error::Error>> {
+        let target = request.native_scanout.take();
+        self.run_cpu_cycle_on_target(request, target)
+    }
+
+    pub(super) fn run_cpu_cycle_on_target<T: NativeCycleTarget>(
+        &mut self,
+        request: LiveProductionCycleRequest<'_>,
+        mut native_scanout: Option<&mut T>,
+    ) -> Result<CpuCycleOutcome, Box<dyn std::error::Error>> {
+        assert!(request.native_scanout.is_none(), "native target is passed separately");
         let LiveProductionCycleRequest {
             batch,
             scene,
@@ -11,7 +21,7 @@ impl LiveProductionVisualRuntime {
             cursor_presentation,
             defer_frame,
             output_descriptors,
-            mut native_scanout,
+            native_scanout: _,
             wm_update,
             presentation_layout,
             geometry_routed_surfaces,
@@ -90,7 +100,7 @@ impl LiveProductionVisualRuntime {
             );
         }
         let removed_surfaces = authority_batch_removed_surfaces(&batch);
-        self.release_removed_presentations(&removed_surfaces, native_scanout.as_deref_mut())?;
+        self.release_removed_presentations_on_target(&removed_surfaces, native_scanout.as_deref_mut())?;
         let rebased_groups = batch.groups;
         self.enqueue_software_presents(&rebased_groups)?;
         let software_present_frame_required = !self.software_presents_unframed.is_empty();
@@ -213,7 +223,7 @@ impl LiveProductionVisualRuntime {
                                         display_list,
                                         None,
                                     )?;
-                                    let targets = native_scanout.head_render_targets(output_id);
+                                    let targets = native_scanout.head_targets(output_id);
                                     let plans = sophia_engine::build_output_head_plans(
                                         &scene,
                                         &targets,

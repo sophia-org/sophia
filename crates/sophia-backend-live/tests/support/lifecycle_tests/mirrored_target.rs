@@ -14,6 +14,8 @@ mod presentation_present;
 mod presentation_retirement;
 #[path = "session_lock_coverage.rs"]
 mod session_lock_coverage;
+#[path = "software_native_cycle.rs"]
+mod software_native_cycle;
 #[path = "software_output_idle.rs"]
 mod software_output_idle;
 #[path = "mirrored_intake_tests.rs"]

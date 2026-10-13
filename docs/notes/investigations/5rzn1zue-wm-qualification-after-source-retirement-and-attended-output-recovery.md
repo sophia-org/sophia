@@ -56,11 +56,12 @@ F's [native publication installation](#native-publication-installation-2026-10-1
 now queues real Hagia's publication through a shared production owner with
 simulated initialization/completion. Generic and external controls pass, as
 does the full generic gate. The signed 29-case pair and source audit pass.
-The [retirement interface](#native-retirement-interface-2026-10-13) now runs
-software settlement through the shared native owner and passes the full gate.
-Its submission is supplied; real-peer admission, DMA retirement and automatic
-source-only repaint scheduling remain open. The qualified external pin above
-does not yet include this candidate.
+The [native software-admission join](#native-software-admission-2026-10-13)
+now carries a real-peer Manage candidate through the CPU cycle's native
+framing decision, native retirement and Session admission progress. The case,
+three controls and full generic gate pass; its signed 30-case pair still needs
+binding. DMA retirement and automatic source-only repaint scheduling remain
+open. The qualified external pin above does not yet include this candidate.
 
 The [Session comparator prototype](#session-comparator-prototype-2026-10-13)
 now runs both transports below the same actual enqueue, coalescing and
@@ -3608,6 +3609,51 @@ framing and cannot prove that join. DMA image custody and finalization need
 their own executed path. Automatic repaint still needs the CPU cycle/service
 owner; an explicit fixture repaint call is insufficient. The external pin and
 29-case evidence remain unchanged until a reviewed pair rerun.
+
+## Native software admission (2026-10-13)
+
+Real Hagia's software-Present admission now reaches the native framing and
+retirement owners. A private `NativeCycleTarget` supplies translation state,
+initialization and tick operations. The installed public entry point keeps its
+existing request type and delegates to the same CPU-cycle body; native selection,
+software framing and repaint admission remain there. Surface-removal image
+eviction likewise delegates without changing its body. The test target requires
+explicit simulated initialization and rejects GPU image-custody operations.
+
+The generic regression submits a complete CPU authority batch with software
+Present, requires the cycle to retain its native frame instead of settling
+headlessly, and derives the exact candidate from native retirement. The external
+case extends Hagia's existing Manage scenario: Session quarantines the first
+frame, real Hagia places it, supplied control acknowledgements release it, and
+the shared CPU cycle frames it. Production queue, custody, page-flip tracker
+and retirement owners produce its exact candidate/frame. A sibling completion
+cannot settle admission; the primary completion can. Session's retirement owner
+then releases admission, and the next client frame commits without another
+Manage request. The final drain/call is fixture-driven; this does not prove the
+outer native service loop or physical delivery.
+
+Three archived controls omit native framing, backend software settlement and
+Session admission retirement respectively. Each fails its named behavioral
+assertion before a deadline. In the last control, the subsequent client frame
+remains at the old buffer and generation. Restoration passes. Development
+package `t249-native-cycle-20261013-01` has manifest
+`52a6b6cdcb7299c6e30eafba9f9537915f4c33693e2843eeafdba9619c0d4bc9`;
+the audit retains all 5,110 Sophia and 481 Hagia base inputs and every overlay
+change. Its source starts at Sophia `0e236baa7` and Hagia `5edbcbb`.
+The external fixture's later introductory comment changes no behavior.
+
+The full device-hidden `cargo xtask check` passes for the retained candidate
+patch and two new source files in `t249-native-cycle-gate01`, manifest
+`035cdd1ca5103d59dc5558e99bef9c427bf878198d7f1db003c8263a25ddd5b7`.
+This includes the new regression, workspace tests, strict Clippy and SDK checks.
+Hagia layout and fourteen runner tests pass. The signed pin and full 30-case
+rerun remain to be bound; the earlier 29-case package keeps its original pin.
+
+Software retirement's production join has development evidence. DMA retirement
+and automatic source-only preview repaint still need execution. Initialization,
+authority input, frontend control acknowledgements, worker execution and device
+completion are supplied; GPU import, scanout and device pixels remain unproved.
+The other B–F packages and the unchanged measurement campaign remain required.
 
 ## Connections
 
