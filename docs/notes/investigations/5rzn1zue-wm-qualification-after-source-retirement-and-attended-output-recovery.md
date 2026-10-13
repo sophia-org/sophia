@@ -7,11 +7,13 @@ tags: [validation, protocol, policy]
 ---
 # WM qualification after source retirement and attended output recovery
 
-Latest result: the [twenty-three-case backend-revocation result](#backend-revocation-before-withdrawal-settlement-2026-10-12)
+Latest result: the [pointer interaction and bounded accounting result](#pointer-interaction-and-bounded-offer-accounting-2026-10-13)
 extends qualification after the t317/t318 foundation. Historical maps below keep
 their dated scope; the latest result does not close the full t249 exit.
 The [October 13 consolidated matrix](#twenty-three-case-coverage-reconciliation-2026-10-13)
 is now the current coverage reference; the October 10 maps are historical.
+Its pointer row is updated by the 25-case result below. The October 12 stopping
+point remains historical; resume from the newer result's final paragraph.
 
 ## Stopping point and resume procedure (2026-10-12)
 
@@ -2427,7 +2429,8 @@ No build, test, mutant or measurement campaign ran during this reconciliation.
 
 Evidence notation below is deliberately scoped:
 
-- **J**: the named path runs in the current 23-case real-Hagia suite. Every
+- **J**: the named path runs in the real-Hagia suite: 23 cases at consolidation,
+  extended to 25 by the pointer result below. Every
   case uses authenticated launch with a supplied trusted Factotum channel.
   Supplied scene/input/frontend answers and simulated device completion retain
   their case-specific limits in Hagia's `tests/external/README.md`.
@@ -2450,7 +2453,7 @@ another crate is named. The bit inventory is `sophia-protocol/src/wm_rows.rs`.
 | 0 | BINDINGS: shortcut router and `input/routing.rs` | J keyboard bindings and captured keys | Pointer bindings and their production routing join. |
 | 1 | ACTIONS: `wm/session.rs`, public-policy request/commit owners | J focus, fullscreen, switcher and terminal intent | Other action families below; do not infer all actions from one successful catalog action. |
 | 2 | MULTI_OUTPUT: output authority and policy output ownership | A occupied migration/return | Current peer proposals across multiple logical outputs and output-scoped presentation identity. Two mirrored heads are one logical output. |
-| 3 | POINTER_INTERACTIONS: `enqueue_pointer_interaction`, queue coalescing/security cancel | S current generic pointer-interaction tests; frozen historical peer fixture | Current authenticated peer Begin/Update/End/Cancel, exact queued replacement and committed geometry. This is also the measurement prerequisite. |
+| 3 | POINTER_INTERACTIONS: `enqueue_pointer_interaction`, queue coalescing/security cancel | J authenticated peer Move/Resize Begin/Update/End, Cancel, exact queue replacement and correlated committed geometry; see the pointer result below | Physical pointer/button routing, debt and rejected/unresolved workload accounting. The bounded ledger does not close the measurement gate. |
 | 4 | CHROME: proposal admission and Engine chrome composition/hit testing | J configuration admission | Behavioral chrome geometry/hit-testing evidence and its owner join; configuration alone proves no pixels. |
 | 5 | POLICY_DIRTY: request admission and restart recovery | J startup, occupied restart, disconnect, response deadline and abort recovery | Retain these cases; no standalone new Dirty case required merely to increase coverage count. |
 | 6 | CONFIGURATION: reload/profile owners | J startup and replacement, rejected-profile preservation | Occupied/presented reload and catalog-invalid revocation/cancellation evidence. |
@@ -2531,6 +2534,101 @@ replacement edge from the diagnostic and require conservation validation to
 refuse it. Select unique mutation sites and named first failures after inspecting
 the actual fixture, rather than claiming these predictions as control results.
 No new production observability API is authorized by this diagnostic design.
+
+## Pointer interaction and bounded offer accounting (2026-10-13)
+
+Hagia's new `tests/external/pointer.rs`, mounted externally by niltempus,
+calls `enqueue_pointer_interaction` against the occupied authenticated peer.
+The Sophia pin remains `1b476dbdcc30215fe7ee5841e5a872f136ebb3a0`; no
+production code or test-support API changes. The two cases follow the bounded
+design above, with direct owner calls rather than copied owner-loop glue.
+
+For Move and Resize, a Begin proposal remains unsettled while two distinct
+Updates and End are offered. The actual queue must replace the first Update
+with the second; neither queued motion nor the uncommitted candidate changes
+the checkpoint or committed layers. Begin, surviving Update and End then
+commit through their correlated epoch/request/transaction identities. Hagia's
+checkpoint retains outer floating geometry; Session applies the negotiated
+one-pixel chrome clearance and commits content geometry. Both are checked.
+
+For cancellation, queued Update and End disappear, Cancel precedes an unrelated
+relayout, and that relayout survives. After Begin commits, the Cancel answer
+retains its geometry despite a deliberately different Cancel outline. This
+checks cancellation of queued work, not undo of committed work. A fresh Begin
+and End then commit. A final non-admitting poll checks transport health, empty
+queue and a live peer; it is not a round trip.
+
+Each case writes `pointer-accounting.json`. The first has eight offers: six
+committed and two replaced. The second has six: four committed and two cancelled
+by the named later Cancel. Dispatched offers retain epoch/request/transaction;
+replaced or cancelled offers retain their successor edge and no fabricated
+settlement time. Both ledgers refuse a deliberately removed edge. Timestamps
+end after checkpoint observation and are diagnostic only. The fixtures admit
+every offered input; rejected/unresolved offers, scheduled arrival, load,
+replay comparability and latency measurement remain unqualified.
+
+The first development attempt is retained as STOP for a fixture compile error
+(`Rect::width` is signed). The second is STOP for incorrectly comparing outer
+policy geometry to Session's content geometry. The correction asserts the
+one-pixel clearance and checks each representation independently. Neither
+failure required a production change. Development 03 passes all twenty-five
+cases. Both archived single-site controls compile and exit 101 with one failed
+test at the intended first assertion:
+
+- Replacing `*pending = cause` with a no-op in `enqueue_public_policy_cause`
+  fails `queued pointer update must retain the latest offered geometry`.
+- Omitting the same-source `queue.retain` in
+  `enqueue_public_policy_security_cancel` fails `pointer cancel must remove
+  obsolete queued interaction work`.
+
+Each experiment holds the source and Cargo leases, requires the original pin
+blob and unique anchor, then restores and verifies the source, seventeen
+mounted inputs and ordinary Hagia binary. These are queue-owner controls;
+the missing-edge control is a local ledger check, not a production mutation.
+
+| Package | Manifest SHA-256 |
+| --- | --- |
+| `t249-pointer-dev01` (STOP) | `c824311f3d35eab2598abc0ebd29cdccc328f7dcd920ca0534224f5e8beefd69` |
+| `t249-pointer-dev02` (STOP) | `7aecb893dc230e650314afe7d3e41d29c1bf66d3ee0f25daeff0c9f86bff9fb9` |
+| `t249-pointer-dev03` | `a55daf8eac107293661630ac93905672b6c2ce999e47060001fed2548a04dd0f` |
+| `t249-pointer-update-control01` | `4604a1cdbecd39a2a00913180e7c2a65d2d3a23ba0c888326e9684a7eecd1a7c` |
+| `t249-pointer-cancel-control01` | `6f13b4884036b1282694a31e7c678b4c13b4865f1f2cb3e108779c52c16984a7` |
+| `t249-pointer-checks01` | `ed11151051c38cdf637eddc2ea43aa930b939c62c6365f3bd0090b47d47d37e5` |
+
+The checks package passes restored-overlay strict Clippy, fixture/runner
+formatting, fourteen runner tests (one child fixture ignored) and Hagia layout.
+The signed implementation candidates are Hagia `15fa04a` and niltempus
+`30b35cd`; all five bound production spans remain unchanged. A full Sophia
+repository gate is not claimed for this external-test-only change.
+
+The clean signed pair passes all twenty-five cases in `t249-pointer-01`,
+manifest `2510b5371e4563020eeb89fd5abb14203e777f54f99deb13d14b251d4dd12518`.
+Read-only `t249-pointer-audit01` verifies 3,257 unchanged pinned crate/Cargo/vendor
+inputs, the mount and sixteen external modules, their signed Hagia blobs,
+matching development/control inputs, twenty-five exact passing results and
+seven package manifests including both STOPs. It independently checks the
+two JSON ledgers' identities, counts, successor links and absent settlement
+times on replaced/cancelled offers. Audit manifest:
+`dcfddd42fa4fdf5871e54d17261cdd66a65e6cfcee7cb4317446de7da9b305b9`.
+The runner removes the marked disposable build root under its lease in
+`t249-pointer-cleanup01`. Evidence retains source, paths and hashes, not copied
+executables. Subsequent result-note commits change documentation only.
+
+Supplied boundaries: surface facts and initial layers, pointer geometry,
+interleaving, and layout completion. This does not run physical pointer/button
+routing, configure ACKs, release debt, pixels or native scheduling. Those
+owners, the remaining capability/backend joins and the measurement gate still
+belong to t249; t317/t318 acceptance is not reopened.
+
+Resume t249/h006 from this 25-case pair and the matrix's remaining-boundary
+column. The next bounded assessment is pointer-focus admission and physical
+pointer routing/debt: distinguish the profile-gated `enqueue_pointer_focus`
+owner from the already qualified generic `enqueue_focus` identity guard and
+direct interaction queue. Map existing executed generic evidence before adding
+the smallest missing real-peer join and control. Do not repeat the completed
+pointer queue slice or t317/t318 acceptance. The ledger is a preflight for
+accepted offers only; rejected/unresolved accounting, the prospective comparison
+method and measurement campaign are still separate required work.
 
 ## Connections
 

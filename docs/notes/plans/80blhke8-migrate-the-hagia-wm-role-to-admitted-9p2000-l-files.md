@@ -8,11 +8,12 @@ tags: [plan, milestone]
 
 ## Current qualification boundary (2026-10-13)
 
-For resumption, read the [stopping point and procedure](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#stopping-point-and-resume-procedure-2026-10-12)
-first: it binds the 23-case baseline and separates completed foundations from
-the remaining exits. The [October 13 matrix](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#twenty-three-case-coverage-reconciliation-2026-10-13)
-completes that consolidation; pointer interaction and accounting preflight are
-the next bounded work.
+For resumption, read the [pointer result and next boundary](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#pointer-interaction-and-bounded-offer-accounting-2026-10-13)
+first. The [October 13 matrix](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#twenty-three-case-coverage-reconciliation-2026-10-13)
+now includes that scoped pointer join. The earlier
+[stopping-point procedure](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#stopping-point-and-resume-procedure-2026-10-12)
+still separates the completed foundations from the remaining exits; use the
+new 25-case baseline for subsequent qualification.
 
 The [current-source audit](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md)
 reconciles this historical migration plan with the SDK-based, 9P-only desktop.
@@ -20,9 +21,13 @@ The older opt-in/current-IPC language below describes the original milestone;
 the accepted retirement amendment governs current product selection and
 whole-release rollback. Output has also migrated. Neither change closes t249.
 
-The latest baseline is the twenty-three-case `t249-backend-01` run on
-Sophia `1b476dbdc`, with authenticated real-Hagia startup and replacement.
-The [new result](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#backend-revocation-before-withdrawal-settlement-2026-10-12)
+The latest baseline is the twenty-five-case `t249-pointer-01` run on
+Sophia `1b476dbdc`, Hagia `15fa04a` and runner `30b35cd`, with authenticated
+startup and replacement. It adds real-peer Move/Resize settlement, Update
+coalescing and Cancel queue purging, two discriminating controls and a bounded
+per-offer ledger. Physical pointer routing and the full measurement accounting
+method remain open. The preceding
+[backend result](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#backend-revocation-before-withdrawal-settlement-2026-10-12)
 joins backend source-removal revocation to the actual presentation-service
 owner: notification consumption and identity correlation precede same-turn
 withdrawal settlement, with two discriminating controls and a correlated Hagia
