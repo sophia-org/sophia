@@ -1368,6 +1368,9 @@ mod work_area_recovery;
 #[path = "../withdrawn_policy_snapshot.rs"]
 mod withdrawn_policy_snapshot;
 
+#[path = "../wm_geometry_diagnostics.rs"]
+mod wm_geometry_diagnostics;
+
 #[path = "../oversized_admission.rs"]
 mod oversized_admission;
 

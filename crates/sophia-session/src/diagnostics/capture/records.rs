@@ -302,6 +302,13 @@ pub fn reduced_record(line: &str) -> Option<String> {
             }
             continue;
         }
+        if name == "sophia_wm_geometry_failure" {
+            if super::wm_geometry::field(key, value) {
+                result.push(' ');
+                result.push_str(field);
+            }
+            continue;
+        }
         if super::wm_pointer::record(name) {
             if super::wm_pointer::field(name, key, value) {
                 result.push(' ');

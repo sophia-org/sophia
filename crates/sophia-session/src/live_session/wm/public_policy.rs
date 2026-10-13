@@ -674,13 +674,24 @@ fn public_policy_surface_snapshots(
                 sophia_protocol::PolicySurfaceKind::Unknown
             }
         };
+        use crate::diagnostics::wm_geometry::{Context, Operation, report_failure};
+        let geometry_context = Context {
+            operation: Operation::SnapshotConstraints,
+            surface,
+            output: current_output.get(&surface).copied(),
+            clearance: chrome.clearance(),
+            geometry: facts.geometry,
+            constraints: Some(facts.constraints),
+            requested_size: None,
+        };
         surfaces.push(sophia_protocol::PolicySurfaceSnapshot {
             surface,
             generation: state_generation.max(1),
             current_output: current_output.get(&surface).copied(),
             kind,
             capabilities: sophia_protocol::LayoutNodeCapabilities::STANDARD_TOPLEVEL,
-            constraints: sophia_engine::outer_surface_constraints(facts.constraints, chrome)?,
+            constraints: sophia_engine::outer_surface_constraints(facts.constraints, chrome)
+                .map_err(|cause| report_failure(geometry_context, cause))?,
             exact_size: None,
             requested_state: committed_presentation
                 .get(&surface)
@@ -695,7 +706,16 @@ fn public_policy_surface_snapshots(
                 .get(&surface)
                 .copied()
                 .map(Ok)
-                .unwrap_or_else(|| sophia_engine::outer_surface_geometry(facts.geometry, chrome))?,
+                .unwrap_or_else(|| sophia_engine::outer_surface_geometry(facts.geometry, chrome))
+                .map_err(|cause| {
+                    report_failure(
+                        Context {
+                            operation: Operation::SnapshotGeometry,
+                            ..geometry_context
+                        },
+                        cause,
+                    )
+                })?,
         });
     }
     surfaces.sort_by_key(|surface| surface.surface);

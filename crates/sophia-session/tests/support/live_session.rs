@@ -731,7 +731,7 @@ fn a_session_failure_carries_the_requests_the_session_refused() {
     }
     assert_eq!(
         session_failure_with_refused_requests("physical input sequence timed out", &tally),
-        "physical input sequence timed out; the session also refused 7 X requests by_opcode=[139/8/3x7]"
+        "physical input sequence timed out; nonfatal_x_request_refusals=7 by_opcode=[139/8/3x7]"
     );
 
     // The refusals reported and the refusals counted reconcile: `total` covers
