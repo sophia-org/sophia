@@ -16,17 +16,18 @@ status stays in `todo.md`. The complete WM acceptance exit, including measuremen
 has not passed. Do not reopen t317/t318 or repeat their attended acceptance.
 
 The qualified external baseline is **28 passing cases**: signed Hagia
-`bc0b192b713967e584b3f349befaedce71ff52d3`, niltempus runner
-`4857e9b846a775679a1460043f9e28c573f3f539`, and Sophia pin
+`76bc923d18bf3618e86bdca8eadd7489439554ab`, niltempus runner
+`3a4de80ebe864ec0fb72024b77e91ac3230e6b56`, and Sophia pin
 `7697a9102af6d9900e3de6acd7be78c55b97e94b`. The
-[routed-pointer result](#routed-pointer-geometry-repair-2026-10-13) joins exact
-move/resize selection, Begin/Update/End, coalescing and release identity through
-production routing and real Hagia. It exposed and fixed a stationary-Begin
-shrink caused by applying chrome clearance twice. Supplied events and a
-renderable layer do not prove physical input, frontend delivery or pixels.
-The final package is `~/.local/state/sophia/development-evidence/t249-routing-01`;
+[input-transition result](#routed-input-and-capture-transitions-2026-10-13)
+strengthens five existing cases: routed hover, move/resize Cancel, protected
+terminal precedence and pointer release debt across revocation/reconnect.
+The earlier [geometry repair](#routed-pointer-geometry-repair-2026-10-13)
+preserves a stationary Begin. Supplied events, layers, revocation triggers and
+completion do not prove physical input, frontend delivery or native pixels.
+The final package is `~/.local/state/sophia/development-evidence/t249-input-transitions-01`;
 its manifest is
-`2020dc3354fd7aa1df13bd53a883cb474c128276936b0e0d0e8f2efe57269eda`.
+`2bf72637a1e2aafe99fef61264aad924b39c8a63931d19cae778e9895ec67a8b`.
 The linked result binds the full generic gate, controls, pin review and audit.
 
 The refreshed pin includes numeric geometry diagnostics and the direct
@@ -35,9 +36,10 @@ extreme maximum-size overflow. All five mirrored production spans are unchanged.
 The full isolated generic gate passes, and the external audit verifies 3,262
 pinned inputs, nineteen mounted inputs, exact results and the pointer ledgers.
 
-Continue package **A** with routed cancellation, hover focus, protected-action precedence
-and swallowed pointer releases across revocation/reconnect. Check that a
-duplicate release returns to ordinary routing. Share lock/output-loss with C/D.
+Package **A** now has its ordinary routing/capture joins. Lock and output-loss
+transitions remain shared obligations in C/D, not implied by a supplied Cancel.
+Continue **B/C** with real-peer tab/translation/chrome/indicator projection and
+occupied accepted/refused reload, catalog revocation and actual lock reset.
 The [focused-client held-key boundary](#focused-application-held-capture-2026-10-13)
 is joined through local ingress, with supplied focus and completion. The
 [direct input-debt regressions](#direct-input-debt-overflow-2026-10-13)
@@ -48,7 +50,10 @@ observations and controls; they are not a promise of six tests. Reuse current
 generic proofs for local bounds, chord refusal and inspection rather than
 duplicating them with a named peer.
 
-Resolve the measurement comparator before a campaign. The accepted-offer
+Resolve the measurement comparator before a campaign. The [source feasibility
+audit](#comparator-feasibility-2026-10-13) identifies common adapter boundaries
+but four retired driver events still require a compatibility prototype.
+The accepted-offer
 ledger is only a diagnostic; rejected/unresolved accounting and compatible
 old/new workloads remain necessary. Native installation, retirement and
 scheduling owners also remain t249 obligations even when completion is
@@ -2824,7 +2829,7 @@ the same owner appears in several capability rows.
 | 0 BINDINGS | Retain | The later routed-pointer case joins exact move/resize selection to real Hagia and rejects unbound buttons or missing modifiers. The wrong-button control fails its named assertion. Existing keyboard proof is retained. |
 | 1 ACTIONS | Share B/D/E | Retain qualified focus/fullscreen/session intent. Bind Hagia's layout/workspace/floating policy regressions to the candidate, and join the missing indicator/tab/output/presented-target action families below. No case per spelling or keybinding. |
 | 2 MULTI_OUTPUT | D, share E | Two distinct logical outputs with occupied transfer and output-specific identity, including loss/replacement. Mirrored heads and attended topology evidence alone do not close this. |
-| 3 POINTER_INTERACTIONS | A; measurement separately | Retain the two direct-owner queue cases and the later routed Begin/Update/End proof. Routed Cancel remains; retain accounting rather than repeat direct queue controls. |
+| 3 POINTER_INTERACTIONS | Retain; measurement separately | The direct queue cases and routed Begin/Update/End/Cancel proof now execute with real Hagia. Cancel's security trigger is supplied; actual lock/output-loss triggers remain C/D. Retain accounting rather than repeat direct queue controls. |
 | 4 CHROME | B, share A | Real-peer chrome policy reaches content/outer geometry conversion and the matching chrome hit owner; inside/outside hits must discriminate. Extreme hint diagnostics are not a geometry repair or this join. |
 | 5 POLICY_DIRTY | Retain | Existing real-peer startup/recovery and refusal continuations qualify this owner. No new standalone Dirty case. |
 | 6 CONFIGURATION | C | Occupied/presented accepted reload and refused candidate preserve the correct checkpoint, catalog and authority; invalidated presentation/chord authority cannot survive registry replacement. |
@@ -2834,7 +2839,7 @@ the same owner appears in several capability rows.
 | 10 LAUNCH_PLACEMENT | D and F | Retain Manage-source, CPU and headless Present admission. Join unsettled-Manage recovery/rearm in D and native PresentedBuffer admission retirement in F. |
 | 11 TAB_GROUPS | B | Actual peer group membership and selection commit through Session; stale member/generation is refused without retargeting. Reuse Engine chrome tests for independent raster invariants. |
 | 12 TRANSLATION_GROUPS | B | Actual peer group reaches reconciliation and committed translated positions; omission/wrong member must alter the observed result. Reuse generic duplicate/cross-output rejection. |
-| 13 POINTER_FOCUS | Share A/D | The 26th case closes negotiated direct admission/refusal/commit. A covers production hover generation; D covers real-peer empty-other-output activation. Generic frontend handoff evidence is reusable under its exact scope. |
+| 13 POINTER_FOCUS | D | The existing case now joins production hover generation and physical-input queue admission to real-peer refusal/commit. D still owns empty-other-output activation. Generic frontend handoff evidence is reusable under its exact scope. |
 | 14 LAUNCH_ORIGIN | D | Freeze origin before map, change current focus/context, then carry the frozen origin through real Manage. Reuse the real-X-child capture test instead of another process-ancestry test. |
 | 15 OUTPUT_ACTIONS | D | Correlated real-peer action targets the exact live logical output; stale output identity cannot change committed state. |
 | 16 OUTPUT_POLICY_KEYS | Share D | Keys and actions stay associated through output replacement; no borrowing a sibling or predecessor's key. Do not create a separate topology campaign. |
@@ -2843,7 +2848,7 @@ the same owner appears in several capability rows.
 | 19 PRESENTATION_ACTIONS | E, share D/F | Nonzero pointer target identity reaches the exact peer action, rejects old target/publication/output identity, and preserves ordinary focus until committed. Reuse current receipt consensus/service proofs. |
 | 20 ACTION_LIFECYCLE | Retain | Real-peer lifecycle plus current generic credit/dead-policy/opener refusal is sufficient. No additional peer credit-exhaustion case. |
 | 21 CHORD_ACTIONS | C, share A | Retain matching-loss cancellation. Exercise registry-replacement and lock-reset triggers with exact terminal identity/credit return; cancellation must not become Released or replayed authority. |
-| 22 HELD_CAPTURE | A, share C/D | Focused application-held keys now have the 27th real-peer case, through local ingress with supplied focus/events. Protected bypass and pointer debt across revocation/reconnect/lock/output loss remain. Reuse generic local refusal/capacity evidence without claiming frontend delivery. |
+| 22 HELD_CAPTURE | C/D | Focused application-held keys, protected terminal precedence and pointer debt across revocation/reconnect now have real-peer joins. Actual lock reset and output loss remain shared C/D work. Reuse generic local refusal/capacity evidence without claiming frontend delivery. |
 
 ### Bounded packages and their pass conditions
 
@@ -3128,6 +3133,102 @@ manifest `2463221e9f545b0b0304753282abcbae01ac9428850629de38976ed01f49381d`.
 The clean detached source worktree is removed too. Package A's routed Cancel,
 protected precedence and capture/reconnect obligations, B–F and the unchanged
 measurement exit remain open. No installed or live-session component changed.
+
+## Routed input and capture transitions (2026-10-13)
+
+Five existing cases now close package A's remaining ordinary input joins;
+the suite still has 28 cases. The signed pair is Hagia
+`76bc923d18bf3618e86bdca8eadd7489439554ab`, niltempus
+`3a4de80ebe864ec0fb72024b77e91ac3230e6b56`, and unchanged Sophia pin
+`7697a9102af6d9900e3de6acd7be78c55b97e94b`. Only Hagia's external fixtures
+changed. The runner's source and Sophia's production/generic-test inputs remain
+bound to the previous gates.
+
+- **Hover:** supplied motion and one renderable layer pass through production
+  hit testing into the exact output/surface observation. The physical-input
+  queue discards unnegotiated hover; enabled hover reaches the existing real-peer
+  refusal/recovery/commit checks. Clearing the router's target fails the named
+  exact-hover assertion.
+- **Cancel:** actual routed move/resize state receives a supplied revocation
+  trigger. The grab owner emits the exact Cancel, clears its authority and
+  cannot emit End on the subsequent button release. Real Hagia preserves the
+  committed Begin geometry. Leaving the grab active fails the named assertion.
+  The ledger has twelve committed offers, four replacements and two cancellations.
+  This does not execute a lock, seat or output-topology trigger.
+- **Pointer debt:** the revocation and automatic-restart cases each route a
+  press in publication-covered background before the transition. Debt survives
+  revocation/replacement; the owed release is swallowed once, and a duplicate
+  reaches ordinary no-target routing. Removing button debts during revoke fails
+  both named preservation assertions. This is not target-action activation or
+  frontend delivery; overview pointer targets remain E.
+- **Protected precedence:** while real Hagia's Held publication is active,
+  the configured terminal shortcut bypasses its Return binding, produces the
+  protected intent and acquires no policy capture debt. Removing that bypass
+  fails the named assertion. The fixture executes no launch. Actual lock reset
+  and output-loss cancellation remain C/D.
+
+All five targeted cases pass, all five negative-control assertions fail as
+intended, and every restored case passes. Strict Clippy on the restored overlay,
+six fixture-format checks and Hagia's layout check pass. The clean signed pair
+then passes the complete 28-case suite. The audit verifies 3,262 pinned inputs,
+nineteen mounted inputs, exact fixture/control identity, all one-test results,
+four package manifests and all three pointer ledgers.
+
+Evidence under `~/.local/state/sophia/development-evidence/`:
+
+| Package | SHA-256 of self-excluding manifest |
+| --- | --- |
+| `t249-input-transitions-dev04` (five targeted cases) | `b7008d855029d2baa943c640044033b77ad71dfbfd4342e7d2ca0a35c74cbf91` |
+| `t249-input-transitions-controls01` | `afd672d82d20f36ae3e55eed267933789ebf1768d1fc399ffd3804d2df6ae7b0` |
+| `t249-input-transitions-checks01` | `098e3f79a412ef7b0146c1d4770b23b7429bc5c9baca4d0645d20482b98334f0` |
+| `t249-input-transitions-01` (signed pair) | `2bf72637a1e2aafe99fef61264aad924b39c8a63931d19cae778e9895ec67a8b` |
+| `t249-input-transitions-audit01` | `ee4076485ca9b3667fa7c56b6fc3df2e776c253068b342591e793374d40c56b6` |
+| `t249-input-transitions-cleanup01` | `7951043ee695611ad0debf3b35611bfd0deea4f70a72deefb3af9ea3a5a0c7dc` |
+
+Earlier attempts remain separate: the first hover and pointer-debt suites pass;
+`dev02` stops on a Cancel expectation that ignored the later wrong-button
+event's updated position; `dev03` stops because the fixture correctly refuses
+a lock binding without lock capability. The final protected test uses its
+already configured terminal authority. No product fix or acceptance relaxation
+was needed. The temporary build root and clean detached worktree are removed.
+t249/h006 remain open for B–F, shared security transitions and measurement.
+
+## Comparator feasibility (2026-10-13)
+
+A source audit found a possible route to a compatible comparator, but no
+comparator has been built or accepted. Hagia's `PolicyWire` callback declaration
+is byte-identical between historical `e8b56a3195ac11f44e100bc4ed903c0d3cb72e9a`
+and current `fdaa44fa36651c84bc08f3b1a1d367b3b8c78dc6`. The historical
+`policy_client.nim::frameWire` implements that boundary. A test-only adapter
+could therefore use the current policy loop and reducer on both transports,
+instead of comparing different Hagia releases. Codec and record compatibility
+still need proof; the callback declaration alone cannot establish it.
+
+Sophia also retains its semantic `PolicyAdapter` boundary. The historical
+221-line IPC adapter at `be6e5888d79f2e89bd7fdfbee3455f8aa7eb6390` is not
+drop-in code: the current driver no longer accepts `ProjectionPending`,
+`MalformedProjection`, `ProjectionDiscarded` or `UnexpectedProfileCompletion`.
+Ignoring those events would change refusal and phase behavior. A port must
+preserve them, their bounds and their timing before it can be a comparator.
+
+The next feasibility experiment is a small, external, test-only pairing:
+the same current Hagia policy loop on both arms, the same current Session
+enqueue/coalescing/settlement owners, and a reviewed restoration of the legacy
+wire adapters below those boundaries. Require identical normalized snapshots,
+proposals and terminal identities on a fixed finite workload, plus malformed,
+partial, refusal and disconnect controls. Keep production IPC retired. Record
+all adapter and driver changes and review any difference in the measured path
+before proposing a campaign. If that requires changing the acceptance method,
+record the decision prospectively; do not call a historical mechanism run a
+current qualification.
+
+The source-only package is
+`~/.local/state/sophia/development-evidence/t249-comparator-feasibility-20261013-01`;
+its manifest is
+`cf57094a33dc418cb2bb7cdd6e23be730994af946bdee6a61539487784b9bddd`.
+It retains both adapter sources, the boundary diffs and exact revisions.
+No build, workload, performance result or acceptance-method change follows
+from this audit. The relative and absolute budgets remain unchanged.
 
 ## Connections
 
