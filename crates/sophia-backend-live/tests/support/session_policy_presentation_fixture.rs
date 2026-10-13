@@ -25,6 +25,27 @@ impl SessionPolicyPresentationFixture {
             .collect()
     }
 
+    /// Supply completed native initialization without opening a device. Frame
+    /// queueing, publication installation and retirement remain separate.
+    pub fn simulate_initialization(&self, runtime: &mut LiveProductionVisualRuntime) {
+        for output in &self.outputs {
+            runtime.outputs.mark_native_initialized(*output).unwrap();
+        }
+    }
+
+    pub fn install(
+        &mut self,
+        runtime: &mut LiveProductionVisualRuntime,
+        scene: &LiveProductionCpuScene,
+        publication: Option<LivePolicyPresentation>,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        runtime.set_policy_presentation_on_target(publication, scene, Some(&mut self.target))
+    }
+
+    pub fn queued(&self, output: OutputId) -> bool {
+        self.target.queue.pending(output)
+    }
+
     /// Read the instances captured in each head's retired frame. Source
     /// generations come from frame capture, not the requested publication.
     /// A head without a retired frame contributes an empty list.

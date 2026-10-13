@@ -410,6 +410,19 @@ impl CompositionInstaller for MirroredTarget {
     }
 }
 
+impl composition_target::PolicyPresentationTarget for MirroredTarget {
+    fn prepare_preview_images(
+        &mut self,
+        demand: &BTreeMap<LiveRendererImageId, (SurfaceId, BTreeSet<OutputId>)>,
+    ) -> Result<(), crate::LivePreviewImageRefusal> {
+        // This fixture owns CPU sources only; it cannot fabricate GPU imports.
+        match demand.keys().next().copied() {
+            Some(image) => Err(crate::LivePreviewImageRefusal::Missing { image }),
+            None => Ok(()),
+        }
+    }
+}
+
 impl NativeCompositionTarget for MirroredTarget {
     fn frame_owner(&self) -> crate::NativeFrameOwner {
         self.owner

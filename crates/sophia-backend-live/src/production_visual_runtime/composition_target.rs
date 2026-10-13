@@ -61,6 +61,24 @@ pub(crate) trait NativeCompositionTarget {
     }
 }
 
+/// Publication installation prepares the displayed images before queueing
+/// any frame that samples them. The device owner retains import custody.
+pub(crate) trait PolicyPresentationTarget: NativeCompositionTarget {
+    fn prepare_preview_images(
+        &mut self,
+        demand: &BTreeMap<LiveRendererImageId, (SurfaceId, BTreeSet<OutputId>)>,
+    ) -> Result<(), crate::LivePreviewImageRefusal>;
+}
+
+impl PolicyPresentationTarget for LiveProductionNativeScanout {
+    fn prepare_preview_images(
+        &mut self,
+        demand: &BTreeMap<LiveRendererImageId, (SurfaceId, BTreeSet<OutputId>)>,
+    ) -> Result<(), crate::LivePreviewImageRefusal> {
+        LiveProductionNativeScanout::prepare_preview_images(self, demand)
+    }
+}
+
 impl NativeCompositionTarget for LiveProductionNativeScanout {
     fn frame_owner(&self) -> crate::NativeFrameOwner {
         self.frame_owner()

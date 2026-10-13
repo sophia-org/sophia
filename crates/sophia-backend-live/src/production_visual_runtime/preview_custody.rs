@@ -8,9 +8,9 @@ type PreviewPresentFrames = (
 );
 
 impl LiveProductionVisualRuntime {
-    pub(super) fn prepare_policy_preview_images(
+    pub(super) fn prepare_policy_preview_images<T: composition_target::PolicyPresentationTarget>(
         &mut self,
-        native: &mut LiveProductionNativeScanout,
+        native: &mut T,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let mut demand = BTreeMap::<_, (SurfaceId, BTreeSet<OutputId>)>::new();
         if let Some(publication) = &self.policy_presentation {

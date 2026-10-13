@@ -4,6 +4,8 @@ use crate::production_visual_runtime::mirrored_composition_test_target::Mirrored
 
 #[path = "presentation_geometry.rs"]
 mod presentation_geometry;
+#[path = "presentation_installation.rs"]
+mod presentation_installation;
 #[path = "presentation_instances.rs"]
 mod presentation_instances;
 #[path = "presentation_present.rs"]

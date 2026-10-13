@@ -407,6 +407,17 @@ impl LiveProductionVisualRuntime {
         scene: &LiveProductionCpuScene,
         native_scanout: Option<&mut LiveProductionNativeScanout>,
     ) -> Result<bool, Box<dyn std::error::Error>> {
+        self.set_policy_presentation_on_target(presentation, scene, native_scanout)
+    }
+
+    pub(in crate::production_visual_runtime) fn set_policy_presentation_on_target<
+        T: composition_target::PolicyPresentationTarget,
+    >(
+        &mut self,
+        presentation: Option<LivePolicyPresentation>,
+        scene: &LiveProductionCpuScene,
+        native_scanout: Option<&mut T>,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
         if self.policy_presentation == presentation {
             return Ok(false);
         }

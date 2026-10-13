@@ -50,6 +50,13 @@ observations and controls; they are not a promise of six tests. Reuse current
 generic proofs for local bounds, chord refusal and inspection rather than
 duplicating them with a named peer.
 
+F's [native publication installation](#native-publication-installation-2026-10-13)
+now queues real Hagia's publication through a shared production owner with
+simulated initialization/completion. Generic and external controls pass, as
+does the full generic gate. The signed 29-case pair still needs binding.
+Native Present retirement and automatic source-only repaint scheduling remain
+open; their concrete service/cycle paths are the next F boundary.
+
 The [Session comparator prototype](#session-comparator-prototype-2026-10-13)
 now runs both transports below the same actual enqueue, coalescing and
 settlement owners, using one current Hagia binary and its normal
@@ -3473,6 +3480,68 @@ is fixture-paced, waits for checkpoint replacement and records only accepted
 pointer offers. A campaign still needs open-loop scheduling, rejected and
 unresolved accounting, resource measurements, matched build modes and method
 review before the unchanged rate/load and latency gates run.
+
+## Native publication installation (2026-10-13)
+
+F's publication-installation path can now run without a device while retaining
+its production owner. The native setter delegates to
+`set_policy_presentation_on_target`; a private `PolicyPresentationTarget`
+extends the existing composition-target interface with image preparation.
+The native implementation forwards to its existing image-custody operation.
+Session likewise retains one validation, installation and receipt-admission
+body, with the target setter supplied at its boundary. Its installed native
+entry point calls that same body. No client-specific code enters Sophia.
+
+The WM-neutral test commits a CPU source, supplies initialized native outputs
+and requires installation itself to queue a frame. Simulated mirror retirement
+produces the exact publication/instance stamp. An unchanged publication cannot
+queue another frame; queue refusal restores the old publication; withdrawal
+queues its clearing frame. The fixture refuses GPU image preparation instead
+of pretending to own imported images.
+
+Hagia's new external case uses its ordinary authenticated launch and shared
+Held-chord prefix. The prefix accepts an installation operation so the new
+case can enter the actual shared Session and backend owners before any runtime
+publication exists. The case contains no fixture queue call. It checks queued
+work immediately, then requires both simulated mirror completions before the
+exact Presented receipt appears. Hagia's production policy and wire code are
+unchanged. Its other cases retain the original installation operation.
+
+Both tests pass. A control removes only the native setter's retained-queue
+call. The generic case fails at `publication installation must queue its native
+frame`; the external case fails at `Session installation must queue the native
+publication`. Both are assertion failures before a deadline, and restoration
+passes both cases again. Development evidence is
+`~/.local/state/sophia/development-evidence/t249-native-install-20261013-01`;
+manifest SHA-256
+`4e5c1b9f3963707c972c3661ce98ce332db3aa5ddad422a120c6a4f4e4ac16d0`.
+It retains every overlay addition/change and audits all 5,106 Sophia and 480
+Hagia base inputs. Binary paths and hashes are recorded without copied build
+products. Device initialization, CPU sources, mapped facts, router time and
+device completion remain supplied.
+
+The candidate starts at Sophia `bb216712632236c268871d42252c81ac75108bea`.
+The full device-hidden `cargo xtask check` passes for the retained patch and
+new generic test in `t249-native-install-gate02`; manifest
+`4c94b00aa96a60b6cba5d1267fe69ad11f047aa856aaf10bdb192c432f0dd918`.
+This includes workspace tests, strict Clippy, SDK and archive checks. Device
+pixel checks remain unproved. The first gate stopped on module ordering before
+tests; the corrected order is the only difference from the development
+archive. The new external runner lists 29 cases and its fourteen active unit
+tests pass. Final signed pin, complete external rerun and source binding still
+follow; these development results are not that final package.
+
+F is not closed. `run_cpu_production_cycle` still selects native work through
+the concrete target, and the old repaint fixture explicitly queues its second
+frame. Calling `service_ordinary_repaints` alone would not prove that the source
+commit created its scheduling obligation. Native Present retirement also
+still enters `retire_native_scanout_output_with_mode` through a concrete owner.
+That function observes the submitted frame before consuming backend retirement,
+then selects software or DMA-BUF settlement. The next seam must retain those
+identity/ownership decisions, not supply a final `LiveProductionRetiredPresent`
+directly to Session. Software and DMA-BUF retirement remain distinct joins,
+with their resulting candidate carried into admission progress. Actual GPU
+import, scanout and physical presentation remain outside this test.
 
 ## Connections
 

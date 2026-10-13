@@ -67,8 +67,31 @@ impl LiveWmSession {
         scene: &LiveProductionCpuScene,
         native_retirement: bool,
         application_capture_active: bool,
-        native: Option<&mut LiveProductionNativeScanout>,
+        mut native: Option<&mut LiveProductionNativeScanout>,
         heads: &[sophia_engine::HeadRenderTarget],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.install_committed_policy_presentation_with(
+            runtime,
+            native_retirement,
+            application_capture_active,
+            heads,
+            |runtime, desired| runtime.set_policy_presentation(desired, scene, native.as_deref_mut()),
+        )
+    }
+
+    /// Validation and receipt admission have one owner regardless of how the
+    /// target prepares images and queues its frame. The setter must complete
+    /// before input can acquire the new publication.
+    fn install_committed_policy_presentation_with(
+        &mut self,
+        runtime: &mut LiveProductionVisualRuntime,
+        native_retirement: bool,
+        application_capture_active: bool,
+        heads: &[sophia_engine::HeadRenderTarget],
+        mut install: impl FnMut(
+            &mut LiveProductionVisualRuntime,
+            Option<sophia_backend_live::LivePolicyPresentation>,
+        ) -> Result<bool, Box<dyn std::error::Error>>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let Some(public) = self.public.as_mut() else {
             return Ok(());
@@ -111,10 +134,10 @@ impl LiveWmSession {
                         .is_err()
             }) {
                 public.revoke_live_presentation();
-                runtime.set_policy_presentation(None, scene, native)?;
+                install(runtime, None)?;
                 return Ok(());
             }
-            runtime.set_policy_presentation(desired.clone(), scene, native)?;
+            install(runtime, desired.clone())?;
         }
         if let Some(desired) = desired {
             let receipts = public
