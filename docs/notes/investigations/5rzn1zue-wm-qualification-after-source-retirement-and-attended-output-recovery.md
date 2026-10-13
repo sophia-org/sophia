@@ -15,7 +15,9 @@ DMA recorder. Image-promotion and admission-retirement controls fail their named
 assertions. The listed A–F joins are covered under their stated limits.
 The refreshed comparator now passes a small [open-loop accounting diagnostic](#open-loop-accounting-2026-10-13).
 The [capacity/failure controls and CPU/idle probes](#measurement-controls-and-cpu-observations-2026-10-13)
-also pass. Continue **remaining resource probes and the reviewed measurement
+also pass. [Socket traces](#observed-protocol-exchanges-2026-10-13) now reconstruct
+actual protocol exchanges and transferred bytes. Continue **allocation/copy
+probes and the reviewed measurement
 campaign**, then complete the independent SDK/export impact review and final exit
 binding. The complete t249/h006 exit has not passed.
 
@@ -61,8 +63,10 @@ The full-queue diagnostic rejects a seventeenth offer without changing its
 sixteen accepted predecessors. Service suppression and fixture-child exit
 produce explicit failures with unresolved and unoffered counts. CPU and idle
 snapshots now cover both processes and their live threads. These are finite
-diagnostics; timing remains unqualified. Add allocation, copied-byte and protocol
-round-trip probes, review wake-measurement scope and the complete method, and
+diagnostics; timing remains unqualified. The traced pair preserves all 240
+settlements and reconstructs 9P RPC replies and legacy acknowledgments without
+unmatched exchanges. Add allocation and copied-byte probes, review the scope of
+resource intervals, protocol exchanges and wake observations, and
 prepare matched release builds. Preserve the
 five alternating pairs, 10,000 admitted updates per run, both rates under both loads
 and the relative and absolute budgets.
@@ -70,7 +74,7 @@ and the relative and absolute budgets.
 The completed DMA development and qualification archives are removed.
 `~/.cache/t249-measurement-build` holds the refreshed comparator and diagnostic;
 the earlier `t249-session-comparator-build` is also retained. Experiment scripts
-are preserved in `t249-measurement-controls-20261013-01`. No qualification job or
+are preserved in `t249-wire-observations-20261013-01`. No qualification job or
 live-session operation is running.
 
 ## Stopping point and resume procedure (2026-10-12)
@@ -4319,6 +4323,74 @@ release builds before the unchanged five alternating pairs of 10,000 admitted
 updates at both rates and both loads. No comparative latency or resource budget
 passes on the strength of these finite diagnostics. The archive remains at
 `~/.cache/t249-measurement-build`; no diagnostic job is running.
+
+## Observed protocol exchanges (2026-10-13)
+
+The unchanged comparator binaries now run under `strace` inside the isolated,
+device-hidden fixture. Two traced pairs pass; the final pair adds syscall
+durations so a blocking receive's completion is not mistaken for its entry
+time. Each arm offers, admits and settles all 240 updates without replacement,
+rejection or unresolved work. Their offer identities and dispositions match
+after removing clock fields. Tracing adds overhead, so these runs cannot satisfy
+the latency gate.
+
+The analysis selects Hagia's single WM socket from its successful connection,
+retains its descriptor and socket identity, and reconstructs packets across
+successful sends and receives. It verifies that captured bytes cover each syscall's
+returned count, validates framing, and refuses unexpected socket reuse, partial
+packets, duplicate outstanding request tags and unmatched replies. Failed
+nonblocking reads remain counted separately. Removing a received acknowledgment
+causes correlation to fail in both transports.
+
+For the complete connection, including startup, begin/end work and intentional
+teardown, the final pair records:
+
+| Observation | Files | Historical frames |
+| --- | ---: | ---: |
+| Successful client sends | 4,731 | 2,464 |
+| Bytes sent by Hagia | 416,093 | 355,564 |
+| Bytes received by Hagia | 6,249,000 | 6,204,364 |
+| Completed explicit exchanges | 4,731 tag-correlated RPC replies | 250 frame acknowledgments |
+| Unmatched exchanges / trailing partial bytes | 0 / 0 | 0 / 0 |
+
+The exchange units differ. The files count includes version, attach, walk, open,
+read, write and clunk RPCs. The frame count includes hello, profile preparation,
+profile activation, configuration and 246 projection End/Outcome exchanges;
+unsolicited snapshots and individual chunk frames are recorded but do not each
+become an acknowledgment. The 246 projections include two setup requests, two
+Begins, two Ends and 240 scheduled updates. Each scheduled frame outcome's
+epoch, request and transaction agrees with the Session ledger. These counts
+describe observed protocol work; they are not a transport speed ratio.
+
+One file reply is `Rlerror` with errno 116, and both arms reach EOF during
+intentional teardown. Syscall completion times place these events after the
+successful workload ledger was written. They remain in the report rather than
+being silently removed. No exchange remains pending at the end of the trace.
+Steady-state campaign intervals still need an explicit boundary in the reviewed
+measurement method.
+
+The source review also rules out two incomplete probes. Hagia's current binary
+imports `mmap` but does not directly import `malloc`, `calloc` or `realloc`; its
+Nim runtime uses a pooled allocator. A libc-only allocation counter would miss
+logical Nim allocations. The installed runtime has raw allocation/free hooks
+for heaptrack and optional allocation-call statistics. Both binaries import
+`memcpy` and `memmove`, but interception alone would not cover inlined copies.
+The package records runtime source hashes and selected dynamic symbols for the
+next probe. Socket bytes must not be relabelled memory-copy volume.
+
+Package `~/.local/state/sophia/development-evidence/t249-wire-observations-20261013-01`
+has self-excluding manifest SHA-256
+`037b033660901532e85348bf8b3abbe7e148744fae2cda71695ef3ae097870ee`.
+It preserves compressed raw traces with verified uncompressed hashes, packet and
+exchange ledgers, the missing-reply controls, source audit, scripts, commands and
+binary identities. The audit again binds all 5,119 Sophia and 485 Hagia tracked
+inputs to the archived revisions. No production source or compiler output was
+changed for tracing. No diagnostic job is running.
+
+Next, instrument actual allocation and copy operations with explicit coverage,
+then finish resource/method review and matched release builds. Keep profiling
+overhead separate from latency acceptance. The original five-pair, rate/load and
+relative/absolute latency requirements remain unchanged.
 
 ## Connections
 
