@@ -7,13 +7,52 @@ tags: [validation, protocol, policy]
 ---
 # WM qualification after source retirement and attended output recovery
 
-Latest result: the [profile-gated pointer-focus result](#profile-gated-pointer-focus-2026-10-13)
-extends qualification after the t317/t318 foundation. Historical maps below keep
-their dated scope; the latest result does not close the full t249 exit.
-The [October 13 consolidated matrix](#twenty-three-case-coverage-reconciliation-2026-10-13)
-is now the current coverage reference; the October 10 maps are historical.
-Its pointer rows are updated by the 26-case result below. The October 12 stopping
-point remains historical; resume from the newer result's final paragraph.
+## Current resumption
+
+Resume Sophia t249 / Hagia h006 using the
+[row dispositions](#remaining-row-dispositions-2026-10-13), not the dated
+October 10 capability maps or the original three-case migration plan. Task
+status stays in `todo.md`. The complete WM acceptance exit, including measurement,
+has not passed. Do not reopen t317/t318 or repeat their attended acceptance.
+
+The qualified external baseline is **26 passing cases**: signed Hagia
+`883561e43cc5ff7e048c3a7f36cc7afbac9101fb`, niltempus runner
+`bfd60965c617486569c3d496ab563db791db03ee`, and Sophia pin
+`1b476dbdcc30215fe7ee5841e5a872f136ebb3a0`. The
+[pointer-focus result](#profile-gated-pointer-focus-2026-10-13) adds negotiated
+hover admission, exact surface identity, real-peer refusal recovery and
+commit-only promotion. Both guard-removal controls fail at their intended
+assertions. Hover observations and layout completion are supplied; physical
+routing, frontend delivery and latency are not implied. The final package is
+`~/.local/state/sophia/development-evidence/t249-focus-01`; its manifest hash
+is `bee178529fcc8a0523b47fbe69d21d97a2f0ae57055a6bbc167eb2cdaca222ee`.
+The linked result binds its audit, checks and controls.
+
+Master `fa8aa8588` subsequently merges numeric WM geometry diagnostics. Its
+crate/Cargo/vendor tree equals the source tested by
+`wm-geometry-diagnostics-01/xtask-05.log`. The new closure audit binds that
+retained generic execution and 37 named evidence witnesses to this source;
+it does not rerun tests or rebrand the 26-case pair as a master run. The
+diagnostics preserve errors and do not fix the extreme maximum-size overflow.
+Final pairing must review and test the eventual pin change.
+
+Next implement package **A**, routed pointer and capture: use the production
+routing owners with the real peer, retaining exact button/key identities and
+checking swallowed releases after revocation. Include a genuinely focused
+client's held key; the existing generic test supplies the held-key state but
+has no input focus. Packages B–F below consolidate the remaining policy,
+reload, launch/output, overview and native-backend joins. They have explicit
+observations and controls; they are not a promise of six tests. Reuse current
+generic proofs for local bounds, chord refusal and inspection rather than
+duplicating them with a named peer.
+
+Resolve the measurement comparator before a campaign. The accepted-offer
+ledger is only a diagnostic; rejected/unresolved accounting and compatible
+old/new workloads remain necessary. Native installation, retirement and
+scheduling owners also remain t249 obligations even when completion is
+simulated. Only actual device/pixel/timing acceptance belongs to t250.
+The previous slice's disposable build tree and worktrees were removed;
+no qualification job or live-session operation is required to resume.
 
 ## Stopping point and resume procedure (2026-10-12)
 
@@ -2430,7 +2469,7 @@ No build, test, mutant or measurement campaign ran during this reconciliation.
 Evidence notation below is deliberately scoped:
 
 - **J**: the named path runs in the real-Hagia suite: 23 cases at consolidation,
-  extended to 25 by the pointer result below. Every
+  extended to 26 by the pointer and pointer-focus results below. Every
   case uses authenticated launch with a supplied trusted Factotum channel.
   Supplied scene/input/frontend answers and simulated device completion retain
   their case-specific limits in Hagia's `tests/external/README.md`.
@@ -2702,6 +2741,190 @@ the existing generic evidence, then add only the missing real-peer join and
 discriminating control. Do not repeat the qualified direct interaction queue,
 pointer-focus admission or t317/t318 acceptance. Native installation/scheduling,
 the other capability rows and the measurement gate remain open.
+
+## Remaining row dispositions (2026-10-13)
+
+This assessment settles what evidence each row needs; it does **not** declare
+the missing joins executed. It supersedes open-ended "assess" language in the
+consolidated matrix. The original exit and numeric budgets are unchanged.
+One test may discharge several obligations, and one package may require several
+tests. There is no justified final test count yet.
+
+### Evidence reuse and source binding
+
+Read-only package `t249-closure-audit-20261013-01` verifies the diagnostics
+gate, final 26-case pair and pair audit manifests. It matches the complete
+ten-file dynamic candidate capture to the `930b7e02b..fa8aa8588` crate/Cargo
+delta and every candidate hash to its committed blob. The vendor tree is
+unchanged; the base's crate/Cargo/vendor tree equals the external Sophia pin.
+Thus the generic gate's tested tree equals master `fa8aa8588` in those inputs.
+This is source binding, not another gate execution. Later tooling changes need
+their own impact review.
+
+The audit retains all 7,921 line-exact `test ... ok` occurrences, with original
+line numbers, and requires 37 named witnesses for the dispositions below.
+Occurrences are not asserted to be distinct tests or complete suite totals.
+Its self-excluding manifest SHA-256 is
+`2317b9a123e007a528cb407e90ffcfbca8c561cd9b98da6b81ea3c3b915ddb6e`.
+The source log remains `wm-geometry-diagnostics-01/xtask-05.log`, whose package
+manifest is `8720b147844aafe0c42242202226329d4546db31f610224b183def0d9e0a66f7`.
+No builds or tests ran for this assessment.
+
+The current generic executions replace "source read only" for their exact
+assertions, not for adjacent integration claims:
+
+- **Chord refusal:** `eight_credits_bound_open_chords_and_undelivered_ends`,
+  `an_unconfigured_policy_withholds_the_opener_and_returns_its_credit`,
+  `a_configured_but_dead_policy_withholds_chord_openers`,
+  `a_refused_opener_discards_its_joins_and_terminal`, and
+  `a_shortcut_refused_for_credit_is_no_presentation_activation` exercise local
+  credit/refusal owners. A refused opener never reaches the peer, so another
+  real-Hagia refusal case adds no missing consumer behavior. Retain these with
+  the existing real-peer Begin/Held/End/Cancel cases.
+- **Capacity:** `policy_presentation_revocation_survives_full_lifecycle_delivery_queue`
+  covers the receipt-overflow latch; the executed journal-credit join separately
+  covers actual transport pressure. These are different capacities. The
+  `PolicyInputCapture::remember` 128-debt exhaustion latch still needs a direct
+  boundary witness identified or added in A; this audit found no qualifying
+  witness for it and does not infer one from receipt capacity.
+- **Capture:** `a_held_capture_waits_for_a_held_application_key` supplies
+  `SessionClientKeyState` and checks routing into the no-focus path. It does
+  not prove a focused client's sequence. Protected-route precedence and
+  queue-forced revocation have generic execution, but the real-peer capture
+  transition remains A.
+- **Inspection:** `safe_owner_view_and_reported_outcomes_use_the_wm_file_wire`
+  uses the actual admitted inspection service with a capture worker, not a
+  second WM settlement. `receipt_queue_reports_only_after_acceptance_and_terminal_drop_revokes`
+  distinguishes command acceptance from refusal. The immutable read-only root,
+  malformed/truncated capture, authenticated protected observer and recipe
+  revocation tests also execute. Reuse this owner decomposition; do not require
+  Hagia to duplicate observer authority or reinterpret a queue receipt as an
+  acknowledged/committed WM outcome.
+- **Output, projection and launch:** executed generic tests cover empty-output
+  focus settlement, exact output placement, partial projections, tab commit,
+  translation membership, stale indicator actions and frozen authenticated
+  launch origin. They support B/D but do not show actual Hagia producing and
+  consuming those combinations. The exact names and log lines are in the audit.
+
+### Every capability row
+
+"Retain" means no additional feature-specific join is required for the stated
+obligation; final candidate binding still applies. A–F refer to the bounded
+packages below. "Share" prohibits creating a duplicate fixture merely because
+the same owner appears in several capability rows.
+
+| Bit | Disposition | Evidence needed to finish the remaining boundary |
+| --- | --- | --- |
+| 0 BINDINGS | A | Resolve a registered pointer binding through actual routing into the exact real-peer action/interaction; an unbound or wrong-button input must not activate it. Existing keyboard proof is retained. |
+| 1 ACTIONS | Share B/D/E | Retain qualified focus/fullscreen/session intent. Bind Hagia's layout/workspace/floating policy regressions to the candidate, and join the missing indicator/tab/output/presented-target action families below. No case per spelling or keybinding. |
+| 2 MULTI_OUTPUT | D, share E | Two distinct logical outputs with occupied transfer and output-specific identity, including loss/replacement. Mirrored heads and attended topology evidence alone do not close this. |
+| 3 POINTER_INTERACTIONS | A; measurement separately | Retain the two direct-owner queue cases. Produce Begin/Update/End/Cancel through routing with exact target and release behavior; retain accounting rather than repeat direct queue controls. |
+| 4 CHROME | B, share A | Real-peer chrome policy reaches content/outer geometry conversion and the matching chrome hit owner; inside/outside hits must discriminate. Extreme hint diagnostics are not a geometry repair or this join. |
+| 5 POLICY_DIRTY | Retain | Existing real-peer startup/recovery and refusal continuations qualify this owner. No new standalone Dirty case. |
+| 6 CONFIGURATION | C | Occupied/presented accepted reload and refused candidate preserve the correct checkpoint, catalog and authority; invalidated presentation/chord authority cannot survive registry replacement. |
+| 7 SESSION_OPERATIONS | Retain | Existing accepted/refused/disconnected correlated intents suffice. Application execution stays outside this WM qualification. |
+| 8 INDICATORS | B | Real-peer publication and correlated activation, with stale publication/action refusal. Generic shell validation remains reusable; no new shell UI test. |
+| 9 PROFILE_ACTIVATION | Share C | Use the same occupied reload/rollback sequence as bit 6; retain existing startup handshake tests. |
+| 10 LAUNCH_PLACEMENT | D and F | Retain Manage-source, CPU and headless Present admission. Join unsettled-Manage recovery/rearm in D and native PresentedBuffer admission retirement in F. |
+| 11 TAB_GROUPS | B | Actual peer group membership and selection commit through Session; stale member/generation is refused without retargeting. Reuse Engine chrome tests for independent raster invariants. |
+| 12 TRANSLATION_GROUPS | B | Actual peer group reaches reconciliation and committed translated positions; omission/wrong member must alter the observed result. Reuse generic duplicate/cross-output rejection. |
+| 13 POINTER_FOCUS | Share A/D | The 26th case closes negotiated direct admission/refusal/commit. A covers production hover generation; D covers real-peer empty-other-output activation. Generic frontend handoff evidence is reusable under its exact scope. |
+| 14 LAUNCH_ORIGIN | D | Freeze origin before map, change current focus/context, then carry the frozen origin through real Manage. Reuse the real-X-child capture test instead of another process-ancestry test. |
+| 15 OUTPUT_ACTIONS | D | Correlated real-peer action targets the exact live logical output; stale output identity cannot change committed state. |
+| 16 OUTPUT_POLICY_KEYS | Share D | Keys and actions stay associated through output replacement; no borrowing a sibling or predecessor's key. Do not create a separate topology campaign. |
+| 17 OUTPUT_LAUNCH_CONTEXT | Share D | Matching epoch/output generation reaches real-peer launch placement; stale context is refused. Pair with frozen origin and output replacement. |
+| 18 SURFACE_INSTANCES | E and F | Retain switcher, sampled-generation repaint and backend revocation. E joins overview instances/regions; F runs actual install/repaint scheduling owners. |
+| 19 PRESENTATION_ACTIONS | E, share D/F | Nonzero pointer target identity reaches the exact peer action, rejects old target/publication/output identity, and preserves ordinary focus until committed. Reuse current receipt consensus/service proofs. |
+| 20 ACTION_LIFECYCLE | Retain | Real-peer lifecycle plus current generic credit/dead-policy/opener refusal is sufficient. No additional peer credit-exhaustion case. |
+| 21 CHORD_ACTIONS | C, share A | Retain matching-loss cancellation. Exercise registry-replacement and lock-reset triggers with exact terminal identity/credit return; cancellation must not become Released or replayed authority. |
+| 22 HELD_CAPTURE | A, share C/D | Focused application-held keys, protected bypass and pointer debt across revocation/reconnect/lock/output loss. Reuse generic local refusal/capacity evidence without claiming application delivery from a no-focus test. |
+
+### Bounded packages and their pass conditions
+
+**A — Routed input and capture.** Use production pointer/keyboard routing and
+the existing real-peer lifecycle. Check exact action/interaction identities,
+the focused client's held sequence, protected precedence and one swallowed
+release after revocation; a duplicate release must reach ordinary routing.
+Share lock/output-loss scenarios with C/D. Controls must break routing selection
+or debt retention and fail the corresponding behavioral assertion before a
+timeout. Add a generic direct overflow regression if the input-debt latch has
+no existing witness; do not manufacture 128 peer cycles merely to fill it.
+
+**B — Policy projection families.** A tab-capable layout and a translated
+scrolling layout must publish real membership, geometry, indicators and
+actions through Session. Check committed group membership and focus against
+the peer checkpoint, chrome conversion and exact hit/activation identity.
+Use stale-member/publication and omitted-translation controls. Reuse Hagia's
+candidate-bound pure layout/workspace tests for algorithm variants; this is
+not permission to treat one layout as every policy algorithm.
+
+**C — Reload and security cancellation.** Reload with occupied windows and
+an active presentation/chord; cover accepted replacement and rejected profile.
+Require correct checkpoint preservation/promotion, old catalog refusal and
+exact cancellation/credit return. The lock owner must reset input authority
+before routing resumes. Controls omit registry revocation/cancellation or
+the lock reset. Supplied lock state is allowed only if the actual reset owner
+runs and is labelled; no physical lock acceptance is implied.
+
+**D — Launch and two logical outputs.** Freeze origin/output context, then
+change current focus before Manage so borrowing current state is observable.
+Exercise output keys/actions, empty-output activation, loss/replacement and
+pending-Manage restart/rearm with a real peer. Assert no stale context or
+identity can redirect placement and no admission re-ask loop survives recovery.
+Controls substitute current for frozen context, weaken an exact output identity,
+or omit Manage rearming, each against a named behavioral assertion. Share
+output loss/debt with A and per-output presentation identity with E.
+
+**E — Overview and pointer targets.** Compose actual peer overview instances
+and regions, derive target identity from the backend frame, then route a
+nonzero target activation to the peer. Require exact target selection and
+commit-only ordinary focus; stale publication/target/output must refuse.
+Use an identity-weakened or wrong-target control. Existing two-head consensus
+does not need another clone; multiple logical outputs share D's setup.
+
+**F — Native backend owner joins.** Resolve reachability before writing a
+large fixture: native publication installation, native Present admission
+retirement (software and DMA-BUF paths where their owners differ), and automatic
+source-only repaint scheduling must execute their production owners. Existing
+mirrored-target composition and supplied completions do not execute the
+concrete native-selection tail. Prefer an existing WM-neutral test seam; if
+insufficient, propose the smallest test-support or production abstraction
+change with a pin review. Do not silently bypass the owner or move the gap to
+t250. Required observations are install identity, backend-generated retirement
+correlation followed by admission progress, and repaint queued without an
+explicit fixture repaint call. Controls omit the relevant owner transition.
+Device completion may be simulated and labelled; actual scanout and photon
+timing remain physical acceptance.
+
+Control descriptions above are requirements for future experiments, not
+claims that mutation anchors or feasibility have already been verified.
+
+### Non-capability exits and limits
+
+| Obligation | Settled disposition |
+| --- | --- |
+| Checkpoint/refusal/timeout/settlement | Retain the existing real-peer cases; C/D/F supply only their genuinely missing transitions. Supplied timeouts remain supplied. |
+| Source-only repaint | Retain production sampled-generation/stamp evidence and fail-closed resolver control; automatic scheduling is F. No preview-pixel or readback-control overclaim. |
+| All-head consensus | Retain the backend-derived two-mirror proof and both controls. Distinct logical-output identity is D/E; no duplicate consensus-only case. |
+| Protected/application capture and debt | A, with C/D transition sharing. Actual device input is t250; production routing owners remain t249. |
+| Reconnect with reused numeric identities | Retain the real-peer surface-generation focus proof plus generic presentation epoch checks. Do not repeat a restart solely for this phrase; D/E cover their own distinct identities. |
+| Revocation/debt independent of credit | Retain current executed journal RECORD/owner-slot proof and shared-core reply bounds. Read-withholding remains source inference; no Session reply-byte exhaustion claim or new required duplicate join. |
+| Capacity latches | Receipt overflow is executed generic evidence. Input-debt overflow needs the direct witness in A. Bounds are local owner obligations, not mandatory real-peer traffic generators. |
+| Immutable snapshots/malformed records/replay/driver phase | Reuse t323 ownership decisions and current gate's exact shared-core/WM tests. No domain-specific copy of generic flush races. Recheck changed owners at final pin. |
+| Inspection and Submitted-versus-semantic labels | Reuse current admitted read-only inspection, malformed-capture and command-acceptance tests plus actual WM settlement cases. Maintain their separate claims; final reporting must not call Submitted a commit. |
+| Independent SDK/export | Current gate executes the C SDK exchange and the 26 cases run ordinary Hagia's SDK. The opt-in Nim startup/cycle peers are still a final-pair rerun/impact-review item, not executed by this generic gate. |
+| Measurement | Not closed. Complete rejected/unresolved as well as accepted/replaced/dispatched/settled accounting; review a compatible old/new comparator before any campaign. Historical IPC source retirement makes that a concrete methodology dependency. Do not replace the relative budget with absolute-only timing. |
+| Signed final candidates/integration | Refresh the reviewed Sophia pin, run affected generic/client gates and the complete external suite, verify controls/manifests/source identity, then sign the final coverage record. No new feature test is needed merely for signature binding. |
+| Physical acceptance/rollback | t250 owns attended daily use, device pixels/input-to-photon and whole-release rollback. This does not waive F or other production-owner joins. |
+
+Execution order remains A, B/C, D/E, F, then final binding and the reviewed
+measurement campaign. Comparator and F feasibility should be resolved early
+enough to avoid discovering an unmeetable exit after the other tests. The
+unchanged measurement gate requires five alternating pairs of at least 10,000
+admitted updates at each specified rate/load combination, relative p95/p99
+budgets and the absolute interval limit. No campaign ran for this assessment.
+Scope additions require a concrete uncovered
+existing obligation, not a desire to increase the case count.
 
 ## Connections
 

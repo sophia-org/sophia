@@ -8,9 +8,10 @@ tags: [plan, milestone]
 
 ## Current qualification boundary (2026-10-13)
 
-For resumption, read the [pointer-focus result and next boundary](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#profile-gated-pointer-focus-2026-10-13)
-first. The [October 13 matrix](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#twenty-three-case-coverage-reconciliation-2026-10-13)
-now includes the scoped interaction and pointer-focus joins. The earlier
+For resumption, read the [Current resumption summary](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#current-resumption)
+and [remaining row dispositions](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#remaining-row-dispositions-2026-10-13)
+first. They retain the 26-case baseline, reuse bound generic execution and assign
+each remaining capability/explicit exit a specific proof obligation. The earlier
 [stopping-point procedure](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#stopping-point-and-resume-procedure-2026-10-12)
 still separates the completed foundations from the remaining exits; use the
 new 26-case baseline for subsequent qualification.
@@ -169,9 +170,12 @@ join, inspection, measurement or rollback exit below is removed. The
 [milestone record](../milestones/dueqd6r0-separate-shared-core-readiness-from-full-wm-qualification.md)
 records the approval and evidence boundary.
 
-Use the [October 13 coverage reconciliation](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#twenty-three-case-coverage-reconciliation-2026-10-13)
-for current work; retain the original workload and qualification requirements
-below as the acceptance basis, subject only to recorded later decisions.
+Start with the [Current resumption summary](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#current-resumption)
+and [remaining row dispositions](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#remaining-row-dispositions-2026-10-13).
+They map every capability and explicit requirement to retained evidence,
+bounded packages A–F, or measurement/final-binding prerequisites. The original
+workload and qualification requirements below remain the acceptance basis,
+subject only to recorded later decisions. Case count is not the exit.
 
 #### Qualification sequence after the 23-case baseline
 
