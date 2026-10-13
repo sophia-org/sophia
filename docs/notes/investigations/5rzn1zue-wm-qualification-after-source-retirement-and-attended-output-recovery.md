@@ -9,40 +9,29 @@ tags: [validation, protocol, policy]
 
 ## Current resumption
 
-The [overview and output-loss](#overview-targets-and-output-loss-debt-2026-10-13)
-cases now pass with three mutation controls. Backend-derived pointer targets
-reach exact Hagia selection; logical-output loss revokes presentation input
-while preserving one swallowed release. The listed A–E joins are covered under
-their stated limits. Continue **DMA retirement through its production owners**,
-then finish the reviewed measurement campaign and final candidate binding.
-The complete t249/h006 exit has not passed.
-
-The [DMA submission seam](#dma-submission-boundary-2026-10-13),
-[image custody and shared driver](#dma-image-custody-and-driver-boundary-2026-10-13)
-are implemented and checked. The [composed DMA fixture](#composed-dma-retirement-2026-10-13)
-now runs the shared driver through backend-derived retirement and actual image
-custody promotion. Its 332 backend tests, strict Clippy and promotion control pass.
-This changes Sophia after the qualified pin below; it is not yet a new
-external-pair candidate. Next join the actual GPU authority intake and Session's
-DMA retirement recorder to real-Hagia admission. Their concrete native parameters
-still need a narrow resource boundary. Do not supply the final cohort or replace
-the DMA recorder with the software recorder.
+The [DMA admission join](#dma-admission-and-qualified-pair-2026-10-13) now passes
+with real Hagia, actual GPU authority intake, composed retirement and Session's
+DMA recorder. Image-promotion and admission-retirement controls fail their named
+assertions. The listed A–F joins are covered under their stated limits.
+Continue **comparator accounting, resource probes and the reviewed measurement
+campaign**, then complete the independent SDK/export impact review and final exit
+binding. The complete t249/h006 exit has not passed.
 
 Use the [row dispositions](#remaining-row-dispositions-2026-10-13) and
 [t249 acceptance criteria](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249).
 Task status stays in `todo.md`; case count is not a completion percentage.
 Do not reopen t317/t318 or repeat their attended acceptance.
 
-The qualified baseline is **42 passing external cases**: signed Hagia
-`1963a48b74ba418e68a717ef79265900b117d156`, niltempus runner
-`b0892b0404b960bf6c8c2c1c3c06908d27ec7909`, and unchanged Sophia pin
-`469371bf4ba6f9f87af5485d3967709d907426ee`.
-Package `t249-overview-targets-pair01` has manifest
-`7f3598ae93e5931e1e018194d3b5f4024e95dc5ac1b068846e622fb7e1c45b43`.
-The linked result records strict Clippy, formatting, layout, runner tests,
-source binding and cleanup. Its audit verifies 3,268 pinned inputs, twenty-three
-mounted inputs, all exact results and unchanged generic-gate inputs and
-production glue.
+The qualified baseline is **43 passing external cases**: signed Hagia
+`7723c9c56082fb24f2ef4636a91b3f166d84e828`, niltempus runner
+`ce877ec8f0a39364b37774cb9b01ac7d55ed7e73`, and Sophia pin
+`47086bd25734a0c7d5348b909e88501aa4a79715`.
+Package `t249-dma-admission-pair01` has manifest
+`8ad7e81511a546ff1f4be06c64a52f16a16f198cb26d03f067f8ba9d4705942f`.
+The complete generic gate passes at this pin. The linked result records strict
+Clippy, formatting, layout and runner tests. Its audit verifies 3,275 pinned
+inputs, twenty-four mounted inputs, all exact results and unchanged production
+glue. Hagia's local policy suite is bound through 427 unchanged inputs.
 
 A's ordinary routing/capture joins and C's
 [occupied reload and registry](#occupied-reload-and-registry-2026-10-13) and
@@ -55,20 +44,22 @@ input, frontend delivery, shell UI or device pixels.
 F already covers [native publication installation](#native-publication-installation-2026-10-13),
 [native software admission](#native-software-admission-2026-10-13) and
 [automatic CPU repaint](#automatic-native-cpu-repaint-2026-10-13).
-DMA retirement must still execute its actual production owners. Simulated
-completion is allowed when labelled; skipping an owner is not a t250 deferral.
+The DMA join adds the actual intake, submission, image custody, retirement and
+admission owners. Allocation and completion remain simulated; no GPU import,
+pixel copying, stable-device evidence or physical scanout is proved.
 
 The [Session comparator prototype](#session-comparator-prototype-2026-10-13)
 runs both transports below the same enqueue, coalescing and settlement owners,
 using one current Hagia binary and its normal profile/checkpoint loop.
 Finite diagnostics and a coalescing control pass, but timing remains unqualified.
-Before the campaign, finish open-loop scheduling, rejected/unresolved accounting,
-resource probes and method review. Preserve the relative and absolute budgets.
+Refresh its older source pins before the campaign. Finish open-loop scheduling,
+rejected/unresolved accounting, resource probes and method review. Preserve the
+five alternating pairs, 10,000 admitted updates per run, both rates under both loads
+and the relative and absolute budgets.
 
-The completed overview build archives and the clean source worktree are
-removed. `~/.cache/t249-session-comparator-build` remains for the next comparator
-experiment. `~/.cache/t249-dma-retirement-build` remains for the Session DMA join.
-No qualification job or live-session operation is running.
+The completed DMA development and qualification archives are removed.
+`~/.cache/t249-session-comparator-build` remains for the next comparator
+experiment. No qualification job or live-session operation is running.
 
 ## Stopping point and resume procedure (2026-10-12)
 
@@ -4111,6 +4102,77 @@ substitute software retirement or an independently constructed final candidate.
 The complete generic gate, external pair, measurement campaign and final binding
 remain open. The build archive is retained for the next experiment; no job is
 running.
+
+## DMA admission and qualified pair (2026-10-13)
+
+The DMA join now runs from Session's quarantined authority candidate to Managed
+admission with real Hagia. Buffer registration reaches production before the
+candidate is released. Hagia proposes placement, Session reconciles it to the
+safe extent, and supplied frontend acknowledgements release the exact group.
+The shared GPU authority cycle registers and admits resources, creates the
+Engine candidate and queues the native composition. The fixture supplies worker
+allocation and device completion. Sibling completion cannot commit; primary
+retirement promotes the captured image and commits the exact buffer and geometry.
+Session remains AwaitingRetirement until its DMA recorder consumes that result.
+The next CPU frame advances generation without another Manage request.
+
+Sophia `337b18f3a` shares GPU intake, prepared authority execution and native
+initialization through the existing target traits. Session's DMA recorder takes
+device observations through a closure invoked at the same point in its body.
+The production wrapper still reads stability and nonzero pixels from native
+scanout. The fixture supplies false/zero, so it cannot claim startup visual
+evidence. An audit compares six shared owner bodies after only the recorded
+target/observation substitutions. No final cohort or retirement record is
+supplied by the fixture.
+
+Development package `t249-dma-admission-dev01`, manifest
+`763fe68533c22ff13370c952545a99b0ce2d8e973b9ed9cd6b506f4c11c9ccb9`,
+passes the DMA case and all three earlier admission variants, 333 backend tests,
+strict backend/Session Clippy, formatting and Hagia layout. Removing Session's
+DMA admission-retirement transition fails the named Managed assertion; restoring
+it passes. The earlier image-promotion control remains separate backend evidence.
+The source audit verifies 5,119 Sophia and 484 Hagia base files, eleven and two
+changed/added files, and twenty-four copied external source files. One copied
+authentication fixture is not mounted by this suite.
+
+The first complete generic run passed tests and Clippy but found an unrecorded
+test mount from the earlier submission seam. The mount moved beside the existing
+visual-runtime fixtures; a subsequent formatting check required declaration
+ordering. Both failed runs remain recorded. The corrected signed Sophia pin is
+`47086bd25734a0c7d5348b909e88501aa4a79715`.
+
+Final qualification packages under `~/.local/state/sophia/development-evidence/`:
+
+- `t249-dma-admission-gate03`, manifest
+  `f8c11a2624f033a47fde833b0afdfdc8613316810090df84d54dc027d63d055f`,
+  passes the complete device-hidden `cargo xtask check` at the corrected pin.
+- `t249-dma-admission-pair01`, manifest
+  `8ad7e81511a546ff1f4be06c64a52f16a16f198cb26d03f067f8ba9d4705942f`,
+  passes all 43 exact cases with signed Hagia
+  `7723c9c56082fb24f2ef4636a91b3f166d84e828` and runner
+  `ce877ec8f0a39364b37774cb9b01ac7d55ed7e73`.
+- `t249-dma-admission-checks01`, manifest
+  `1bf93bbe3843d13689cf65d38534148c17adafb1ccff32899c223260c4a84121`,
+  passes strict external-overlay Clippy, fixture formatting, Hagia layout and
+  fourteen runner tests. Its child-process helper remains intentionally ignored.
+- `t249-dma-admission-pair-audit01`, manifest
+  `8d4e13dc7e96351db68d3c5acd72252050061e3adcb55c88eba9847893365d4d`,
+  verifies signatures, the generic-gate binding, 3,275 pinned inputs, twenty-four
+  mounted files, all exact results and unchanged production glue. It binds
+  Hagia's local policy suite through 427 unchanged inputs.
+
+The listed A–F owner joins are covered under their recorded limits. Supplied
+authority observations, worker storage and device completion do not prove GPU
+import, pixel copying, frontend delivery or physical scanout. The independent
+Nim SDK/export peers still need their final-pair rerun/impact review. Measurement
+requires a refreshed comparator, complete accounting, resource probes and the
+unchanged campaign and budgets; no timing acceptance follows from these cases.
+
+The development and qualification build archives are removed, with cleanup
+records `t249-dma-admission-dev-cleanup01` and
+`t249-dma-admission-pair-cleanup01`. The earlier driver/intake archive is also
+removed in `t249-dma-retirement-cleanup01`. Only the comparator archive remains
+for t249. No job is running and nothing was pushed.
 
 ## Connections
 
