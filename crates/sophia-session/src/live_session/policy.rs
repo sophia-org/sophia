@@ -109,7 +109,7 @@ fn session_failure_with_refused_requests(
         return failure.to_owned();
     }
     format!(
-        "{failure}; the session also refused {} X requests by_opcode=[{}]",
+        "{failure}; nonfatal_x_request_refusals={} by_opcode=[{}]",
         tally.total(),
         tally.summary()
     )

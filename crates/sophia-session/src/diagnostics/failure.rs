@@ -321,6 +321,9 @@ const INVARIANT_CODES: &[(&str, &str)] = &[
 ];
 
 pub fn failure_code(error: &(dyn std::error::Error + 'static)) -> &'static str {
+    if let Some(code) = super::wm_geometry::failure_code(error) {
+        return code;
+    }
     if let Some(code) = super::recovery::failure_code(error) {
         return code;
     }
@@ -351,6 +354,9 @@ pub fn failure_code(error: &(dyn std::error::Error + 'static)) -> &'static str {
 }
 
 pub(super) fn approved_failure_code(value: &str) -> bool {
+    if super::wm_geometry::CODES.contains(&value) {
+        return true;
+    }
     PREVIEW_REFUSAL_CODES.contains(&value)
         || super::recovery::CODES.contains(&value)
         || super::output_profile::CODES.contains(&value)

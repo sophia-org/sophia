@@ -33,8 +33,19 @@ fn reconcile_public_policy_proposal(
             } else {
                 work_bounds
             };
+            use crate::diagnostics::wm_geometry::{Context, Operation, report_failure};
+            let geometry_context = Context {
+                operation: Operation::AllocationBounds,
+                surface: placement.surface,
+                output: Some(output.output),
+                clearance: chrome.clearance(),
+                geometry: allocation_bounds,
+                constraints: None,
+                requested_size: placement.requested_size,
+            };
             let content_bounds =
-                sophia_engine::content_surface_geometry(allocation_bounds, chrome)?;
+                sophia_engine::content_surface_geometry(allocation_bounds, chrome)
+                    .map_err(|cause| report_failure(geometry_context, cause))?;
             let transaction = sophia_protocol::LayoutTransaction {
                 transaction: proposal.transaction,
                 requested_sizes: placement
@@ -61,7 +72,17 @@ fn reconcile_public_policy_proposal(
                     .unwrap_or(u32::MAX),
             };
             let transaction =
-                sophia_engine::apply_surface_chrome_clearance(&transaction, chrome)?;
+                sophia_engine::apply_surface_chrome_clearance(&transaction, chrome)
+                    .map_err(|cause| {
+                        report_failure(
+                            Context {
+                                operation: Operation::ProposalContent,
+                                geometry: placement.geometry,
+                                ..geometry_context
+                            },
+                            cause,
+                        )
+                    })?;
             // An ordinary first frame can exceed this output. Admit its exact
             // retained pixels before requesting a new size: a Present-driven
             // client may need that retirement to draw again. Its output owner
@@ -88,7 +109,18 @@ fn reconcile_public_policy_proposal(
                 .iter()
                 .find(|request| request.surface == placement.surface)
                 .map(|request| request.size);
-            let outer_geometry = sophia_engine::outer_surface_geometry(content_geometry, chrome)?;
+            let outer_geometry = sophia_engine::outer_surface_geometry(content_geometry, chrome)
+                .map_err(|cause| {
+                    report_failure(
+                        Context {
+                            operation: Operation::ReconciledOuter,
+                            geometry: content_geometry,
+                            requested_size: content_requested_size,
+                            ..geometry_context
+                        },
+                        cause,
+                    )
+                })?;
             let outer_requested_size = placement.requested_size.map(|_| sophia_protocol::Size {
                 width: outer_geometry.width,
                 height: outer_geometry.height,

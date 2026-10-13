@@ -13,6 +13,7 @@ mod selection;
 mod session_lock;
 mod shell_action;
 mod shell_component;
+pub(crate) mod wm_geometry;
 mod wm_pointer;
 mod xtest;
 pub use recovery::SessionCompletionFailure;
