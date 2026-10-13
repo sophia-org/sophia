@@ -42,8 +42,9 @@ Final pairing must review and test the eventual pin change.
 Continue package **A** with production pointer routing and capture: resolve
 registered pointer bindings into exact real-peer interactions and check
 swallowed pointer releases after revocation/reconnect. The focused-client
-held-key boundary is now joined; protected-action precedence and the direct
-128-debt overflow witness remain, with lock/output-loss shared with C/D.
+held-key boundary is now joined. The [direct input-debt regressions](#direct-input-debt-overflow-2026-10-13)
+exercise the 128-debt boundary and fail-closed latch without a peer; protected-action
+precedence remains, with lock/output-loss shared with C/D.
 Packages B–F below consolidate the remaining policy,
 reload, launch/output, overview and native-backend joins. They have explicit
 observations and controls; they are not a promise of six tests. Reuse current
@@ -2788,9 +2789,10 @@ assertions, not for adjacent integration claims:
 - **Capacity:** `policy_presentation_revocation_survives_full_lifecycle_delivery_queue`
   covers the receipt-overflow latch; the executed journal-credit join separately
   covers actual transport pressure. These are different capacities. The
-  `PolicyInputCapture::remember` 128-debt exhaustion latch still needs a direct
-  boundary witness identified or added in A; this audit found no qualifying
-  witness for it and does not infer one from receipt capacity.
+  This audit found no qualifying witness for the
+  `PolicyInputCapture::remember` 128-debt exhaustion latch and does not infer
+  one from receipt capacity. The later [direct overflow regressions](#direct-input-debt-overflow-2026-10-13)
+  supply that separate local boundary witness.
 - **Capture:** `a_held_capture_waits_for_a_held_application_key` supplies
   `SessionClientKeyState` and checks routing into the no-focus path. It does
   not prove a focused client's sequence. The later
@@ -2916,7 +2918,7 @@ claims that mutation anchors or feasibility have already been verified.
 | Protected/application capture and debt | A, with C/D transition sharing. Actual device input is t250; production routing owners remain t249. |
 | Reconnect with reused numeric identities | Retain the real-peer surface-generation focus proof plus generic presentation epoch checks. Do not repeat a restart solely for this phrase; D/E cover their own distinct identities. |
 | Revocation/debt independent of credit | Retain current executed journal RECORD/owner-slot proof and shared-core reply bounds. Read-withholding remains source inference; no Session reply-byte exhaustion claim or new required duplicate join. |
-| Capacity latches | Receipt overflow is executed generic evidence. Input-debt overflow needs the direct witness in A. Bounds are local owner obligations, not mandatory real-peer traffic generators. |
+| Capacity latches | Receipt overflow is executed generic evidence. The later [input-debt regressions](#direct-input-debt-overflow-2026-10-13) supply A's direct overflow witness. Bounds are local owner obligations, not mandatory real-peer traffic generators. |
 | Immutable snapshots/malformed records/replay/driver phase | Reuse t323 ownership decisions and current gate's exact shared-core/WM tests. No domain-specific copy of generic flush races. Recheck changed owners at final pin. |
 | Inspection and Submitted-versus-semantic labels | Reuse current admitted read-only inspection, malformed-capture and command-acceptance tests plus actual WM settlement cases. Maintain their separate claims; final reporting must not call Submitted a commit. |
 | Independent SDK/export | Current gate executes the C SDK exchange and the 26 cases run ordinary Hagia's SDK. The opt-in Nim startup/cycle peers are still a final-pair rerun/impact-review item, not executed by this generic gate. |
@@ -2993,6 +2995,55 @@ results, all four preceding manifests and the unchanged pointer-accounting
 ledgers. It is integrity evidence, not another execution or measurement.
 Leased cleanup removes the marked disposable build root; evidence retains
 binary paths and hashes, never copied build products. t249/h006 remain open.
+
+## Direct input-debt overflow (2026-10-13)
+
+Package A's local capacity witness now exercises `PolicyInputCapture` through
+its public API in `crates/sophia-engine/tests/presented_policy.rs`. The candidate
+is Sophia base `1c37ef803319f9f4c5edd6f9ce1f3bb9137011b1` plus the retained
+`candidate.patch`; production source is unchanged.
+
+`input_debt_overflow_revokes_actions_and_latches_after_debts_are_drained`
+admits 128 distinct pointer debts, proves repeated presses spend no new slot,
+and requires `CapacityExceeded` on the 129th. With presentation still current,
+every release is consumed without activating the captured action, including the
+unrecorded overflow press. Draining all debts, revoking and removing the device
+cannot reopen input. A fresh application's owned sequence still passes.
+
+`keyboard_and_pointer_debts_share_the_same_overflow_bound` fills 127 pointer
+debts, admits a key as debt 128 and refuses the next key. Both `key` and
+`block_key` admission paths must reach the same bound. Their releases remain
+consumed after exhaustion; application-owned input still passes.
+
+All 13 tests in the integration target pass. A negative control omits only
+`remember`'s overflow `self.revoke()` call while retaining the exhausted latch.
+It fails at `overflow must swallow release 1 without activating`: a live target
+would otherwise receive an action from its old captured press. Production source
+was restored byte-for-byte before rerunning the passing target.
+
+Evidence is under
+`~/.local/state/sophia/development-evidence/t249-input-debt-20261013-01/`:
+`base-revision.txt`, `candidate.patch`, `positive.log`,
+`control-description.txt` and `control-no-revoke.log`. The full device-hidden
+`cargo xtask check` passes in `xtask-check-umask022.log`, including workspace
+tests, strict Clippy, SDK checks and the retained archive verifiers. Actual
+GPU proofs report no device and remain unproved. The self-excluding
+`SHA256SUMS` digest is
+`7967ad9fd048f783f63599eb9a8dd93b850a0b29a45df8d4620262796cd1863a`.
+
+The initial ordinary check was stopped during compilation, before hardware
+phases. The first isolated run passed Rust tests and Clippy but failed the
+bootstrap fixture's trust check: inherited umask `0002` made its bundle
+group-writable. The same test failed outside isolation and passed with umask
+`0022`. The final full run uses `0022`; no product source changed for this
+environment issue. `commands.txt` retains the invocations and failed attempts.
+The intervening policy commit `ced1e770c` changes only `docs/agent-context.md`;
+the tested code remains the recorded base plus the test patch.
+
+This supplies the direct capacity witness missing from the earlier closure
+audit. It does not add a real-Hagia case, establish Session routing or reconnect,
+or change the 27-case external baseline. Final candidate binding, the remaining
+A–F joins and measurement exit remain open.
 
 ## Connections
 

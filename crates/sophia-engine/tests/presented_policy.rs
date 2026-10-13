@@ -297,3 +297,123 @@ fn reconnect_cannot_reuse_an_old_action_when_publication_and_target_ids_repeat()
     assert!(!state.action_is_current(4, old.action, old.identity));
     assert!(state.action_is_current(4, new.action, new.identity));
 }
+
+#[test]
+fn input_debt_overflow_revokes_actions_and_latches_after_debts_are_drained() {
+    let state = clickable();
+    let mut capture = PolicyInputCapture::default();
+    let seat = SeatId::from_raw(1);
+    let hit = state.pointer_hit(OutputId::from_raw(1), Point { x: 10.0, y: 10.0 });
+    assert!(matches!(hit, PolicyPointerHit::Action(_)));
+
+    // Each device owes one release. Repeats must not spend another debt slot.
+    for id in 1..=128 {
+        let device = DeviceId::from_raw(id);
+        for _ in 0..2 {
+            assert_eq!(
+                capture.pointer(&state, seat, device, 1, true, hit, false),
+                PolicyInputDisposition::Consumed
+            );
+        }
+        assert!(!capture.exhausted(), "debt {id} is within the bound");
+    }
+    let overflow = DeviceId::from_raw(129);
+    assert_eq!(
+        capture.pointer(&state, seat, overflow, 1, true, hit, false),
+        PolicyInputDisposition::CapacityExceeded
+    );
+    assert!(capture.exhausted());
+
+    // Presentation remains current: only the overflow owner's revocation
+    // prevents the previously captured releases from activating their target.
+    for id in 1..=129 {
+        assert_eq!(
+            capture.pointer(&state, seat, DeviceId::from_raw(id), 1, false, hit, false),
+            PolicyInputDisposition::Consumed,
+            "overflow must swallow release {id} without activating"
+        );
+    }
+    capture.revoke();
+    capture.remove_device(overflow);
+    assert!(capture.exhausted());
+    let replacement = DeviceId::from_raw(130);
+    for pressed in [true, false] {
+        assert_eq!(
+            capture.pointer(
+                &state,
+                seat,
+                replacement,
+                1,
+                pressed,
+                PolicyPointerHit::Pass,
+                false
+            ),
+            PolicyInputDisposition::Consumed,
+            "draining debt and removing a device must not reopen input"
+        );
+        assert_eq!(
+            capture.pointer(&state, seat, replacement, 2, pressed, hit, true),
+            PolicyInputDisposition::Pass,
+            "overflow cannot acquire an application-owned sequence"
+        );
+    }
+}
+
+#[test]
+fn keyboard_and_pointer_debts_share_the_same_overflow_bound() {
+    let state = clickable();
+    let seat = SeatId::from_raw(1);
+    let device = DeviceId::from_raw(2);
+    let modifiers = WmModifierMask { bits: 0 };
+
+    // Exercise both keyboard admission paths at the shared pointer/key bound.
+    for blocking in [false, true] {
+        let mut capture = PolicyInputCapture::default();
+        for button in 1..=127 {
+            assert_eq!(
+                capture.pointer(
+                    &state,
+                    seat,
+                    device,
+                    button,
+                    true,
+                    PolicyPointerHit::Blocked,
+                    false
+                ),
+                PolicyInputDisposition::Consumed
+            );
+        }
+        for (keycode, expected) in [
+            (30, PolicyInputDisposition::Consumed),
+            (31, PolicyInputDisposition::CapacityExceeded),
+        ] {
+            let result = if blocking {
+                capture.block_key(seat, device, keycode, true, false, false)
+            } else {
+                capture.key(&state, seat, device, keycode, true, modifiers, false)
+            };
+            assert_eq!(result, expected, "keyboard admission blocking={blocking}");
+            assert_eq!(capture.exhausted(), keycode == 31);
+        }
+        for keycode in [30, 31, 32] {
+            assert_eq!(
+                capture.key(&state, seat, device, keycode, false, modifiers, false),
+                PolicyInputDisposition::Consumed
+            );
+            assert_eq!(
+                capture.block_key(seat, device, keycode, false, false, false),
+                PolicyInputDisposition::Consumed
+            );
+        }
+        for pressed in [true, false] {
+            assert_eq!(
+                capture.key(&state, seat, device, 33, pressed, modifiers, true),
+                PolicyInputDisposition::Pass
+            );
+            assert_eq!(
+                capture.block_key(seat, device, 33, pressed, true, false),
+                PolicyInputDisposition::Pass
+            );
+        }
+    }
+}
