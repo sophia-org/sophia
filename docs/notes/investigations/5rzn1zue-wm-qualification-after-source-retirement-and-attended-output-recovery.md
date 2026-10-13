@@ -15,41 +15,33 @@ October 10 capability maps or the original three-case migration plan. Task
 status stays in `todo.md`. The complete WM acceptance exit, including measurement,
 has not passed. Do not reopen t317/t318 or repeat their attended acceptance.
 
-The qualified external baseline is **27 passing cases**: signed Hagia
-`10c4496d509bbcda73b333a6b49288f02f1e8ad6`, niltempus runner
-`1e404aa985968a93ff9601bfaf6e60026e4fd2ed`, and Sophia pin
-`1b476dbdcc30215fe7ee5841e5a872f136ebb3a0`. The
-[focused-application result](#focused-application-held-capture-2026-10-13)
-adds a routed client press before presentation, capture waiting for its release,
-and an exact captured action answered and committed by real Hagia. Initial
-Presented stamps are backend-derived from simulated mirror completion. Focus
-and input events are supplied, application ingress is local, and closing
-replacement completion is supplied; frontend delivery and physical input are
-not implied. The application-held-key guard control fails its named assertion.
-The final package is `~/.local/state/sophia/development-evidence/t249-capture-01`;
-its manifest hash is
-`b7b1430521c8f5e28088e034c617ab6b5e4e16a55424c3dbcc1b20ebea61d2b9`.
-The linked result binds its audit, checks and control.
+The qualified external baseline is **28 passing cases**: signed Hagia
+`bc0b192b713967e584b3f349befaedce71ff52d3`, niltempus runner
+`4857e9b846a775679a1460043f9e28c573f3f539`, and Sophia pin
+`7697a9102af6d9900e3de6acd7be78c55b97e94b`. The
+[routed-pointer result](#routed-pointer-geometry-repair-2026-10-13) joins exact
+move/resize selection, Begin/Update/End, coalescing and release identity through
+production routing and real Hagia. It exposed and fixed a stationary-Begin
+shrink caused by applying chrome clearance twice. Supplied events and a
+renderable layer do not prove physical input, frontend delivery or pixels.
+The final package is `~/.local/state/sophia/development-evidence/t249-routing-01`;
+its manifest is
+`2020dc3354fd7aa1df13bd53a883cb474c128276936b0e0d0e8f2efe57269eda`.
+The linked result binds the full generic gate, controls, pin review and audit.
 
-Master `fa8aa8588` subsequently merges numeric WM geometry diagnostics. Its
-crate/Cargo/vendor tree equals the source tested by
-`wm-geometry-diagnostics-01/xtask-05.log`. The new closure audit binds that
-retained generic execution and 37 named evidence witnesses to this source;
-it does not rerun tests or rebrand the 27-case pair as a master run. The
-diagnostics preserve errors and do not fix the extreme maximum-size overflow.
-Final pairing must review and test the eventual pin change.
+The refreshed pin includes numeric geometry diagnostics and the direct
+input-debt regressions. The diagnostics preserve errors; they do not fix
+extreme maximum-size overflow. All five mirrored production spans are unchanged.
+The full isolated generic gate passes, and the external audit verifies 3,262
+pinned inputs, nineteen mounted inputs, exact results and the pointer ledgers.
 
-Continue package **A** with production pointer routing and capture: resolve
-registered pointer bindings into exact real-peer interactions and check
-swallowed pointer releases after revocation/reconnect. The new routed case
-exposed a [content/outer geometry defect](#routed-pointer-geometry-repair-2026-10-13).
-The repair passes the full isolated generic gate and three external development
-cases. Next, advance the external Sophia pin with the recorded impact review
-and run the complete pair; the 28-case development run is not a qualified baseline.
-The focused-client
-held-key boundary is now joined. The [direct input-debt regressions](#direct-input-debt-overflow-2026-10-13)
-exercise the 128-debt boundary and fail-closed latch without a peer; protected-action
-precedence remains, with lock/output-loss shared with C/D.
+Continue package **A** with routed cancellation, hover focus, protected-action precedence
+and swallowed pointer releases across revocation/reconnect. Check that a
+duplicate release returns to ordinary routing. Share lock/output-loss with C/D.
+The [focused-client held-key boundary](#focused-application-held-capture-2026-10-13)
+is joined through local ingress, with supplied focus and completion. The
+[direct input-debt regressions](#direct-input-debt-overflow-2026-10-13)
+cover the 128-debt bound and permanent fail-closed latch without a peer.
 Packages B–F below consolidate the remaining policy,
 reload, launch/output, overview and native-backend joins. They have explicit
 observations and controls; they are not a promise of six tests. Reuse current
@@ -61,9 +53,8 @@ ledger is only a diagnostic; rejected/unresolved accounting and compatible
 old/new workloads remain necessary. Native installation, retirement and
 scheduling owners also remain t249 obligations even when completion is
 simulated. Only actual device/pixel/timing acceptance belongs to t250.
-The current diagnostic build root is `~/.cache/t249-routing-build`; the detached
-source checkout is `~/dev/sophia-t249-routing` at the old pin. No job is running.
-Reuse them under the runner's lease for the next pairing, then remove them.
+The diagnostic build root and detached source checkout were removed after
+the audit. No qualification job or live-session operation is running.
 
 ## Stopping point and resume procedure (2026-10-12)
 
@@ -2830,10 +2821,10 @@ the same owner appears in several capability rows.
 
 | Bit | Disposition | Evidence needed to finish the remaining boundary |
 | --- | --- | --- |
-| 0 BINDINGS | A | Resolve a registered pointer binding through actual routing into the exact real-peer action/interaction; an unbound or wrong-button input must not activate it. Existing keyboard proof is retained. |
+| 0 BINDINGS | Retain | The later routed-pointer case joins exact move/resize selection to real Hagia and rejects unbound buttons or missing modifiers. The wrong-button control fails its named assertion. Existing keyboard proof is retained. |
 | 1 ACTIONS | Share B/D/E | Retain qualified focus/fullscreen/session intent. Bind Hagia's layout/workspace/floating policy regressions to the candidate, and join the missing indicator/tab/output/presented-target action families below. No case per spelling or keybinding. |
 | 2 MULTI_OUTPUT | D, share E | Two distinct logical outputs with occupied transfer and output-specific identity, including loss/replacement. Mirrored heads and attended topology evidence alone do not close this. |
-| 3 POINTER_INTERACTIONS | A; measurement separately | Retain the two direct-owner queue cases. Produce Begin/Update/End/Cancel through routing with exact target and release behavior; retain accounting rather than repeat direct queue controls. |
+| 3 POINTER_INTERACTIONS | A; measurement separately | Retain the two direct-owner queue cases and the later routed Begin/Update/End proof. Routed Cancel remains; retain accounting rather than repeat direct queue controls. |
 | 4 CHROME | B, share A | Real-peer chrome policy reaches content/outer geometry conversion and the matching chrome hit owner; inside/outside hits must discriminate. Extreme hint diagnostics are not a geometry repair or this join. |
 | 5 POLICY_DIRTY | Retain | Existing real-peer startup/recovery and refusal continuations qualify this owner. No new standalone Dirty case. |
 | 6 CONFIGURATION | C | Occupied/presented accepted reload and refused candidate preserve the correct checkpoint, catalog and authority; invalidated presentation/chord authority cannot survive registry replacement. |
@@ -3111,9 +3102,32 @@ Prospective pin review confirms that all five mirrored production spans still
 match their recorded hashes. Since the old pin, production changes add numeric
 geometry diagnostics while preserving errors; other changes add tests and
 context tooling. This repair changes the directly called admission owner.
-The full external suite must run against the signed new pin before its result
-can replace the qualified 27-case baseline. Package A's capture/reconnect
-obligations, B–F and the unchanged measurement exit remain open.
+The signed clean pair now passes all 28 cases in `t249-routing-01`: Hagia
+`bc0b192b713967e584b3f349befaedce71ff52d3`, runner
+`4857e9b846a775679a1460043f9e28c573f3f539`, Sophia
+`7697a9102af6d9900e3de6acd7be78c55b97e94b`. Its manifest is
+`2020dc3354fd7aa1df13bd53a883cb474c128276936b0e0d0e8f2efe57269eda`.
+
+`t249-routing-audit01` verifies 3,262 pinned crate/Cargo/vendor inputs,
+nineteen mounted inputs, the exact mount addition, signed fixture/runner
+candidates, 28 one-test results and four package manifests. Its manifest is
+`e2fbabde48587a436a83769a92aec99d996bad7dfdfe9f6238ba6eb036f231be`.
+The routed ledger has eight committed offers and two replacements with exact
+successor edges; both earlier pointer ledgers retain their expected counts.
+This accepted-offer diagnostic does not supply rejected/unresolved campaign
+accounting or latency evidence.
+
+The current-pin wrong-button control and restored pass are in
+`t249-routing-control02`, manifest
+`ed96ec7ba35f8a32c8968e6ef93e9904bf6e4f0254af242501a1b542d60e87f0`.
+Restored-overlay strict Clippy, formatting, fourteen serial runner tests and
+Hagia layout pass in `t249-routing-checks01`, manifest
+`c5a686a54370c38c317fb5b770106100370486843a1a3cbc6c5f406f9e5d7498`.
+Leased cleanup removes the marked build root; `t249-routing-cleanup01` has
+manifest `2463221e9f545b0b0304753282abcbae01ac9428850629de38976ed01f49381d`.
+The clean detached source worktree is removed too. Package A's routed Cancel,
+protected precedence and capture/reconnect obligations, B–F and the unchanged
+measurement exit remain open. No installed or live-session component changed.
 
 ## Connections
 
