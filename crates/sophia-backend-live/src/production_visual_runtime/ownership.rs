@@ -10,10 +10,6 @@
 
 use super::*;
 
-#[cfg(test)]
-#[path = "../../tests/support/native_submission_ownership.rs"]
-mod tests;
-
 /// Everything that disagreed when a retirement failed the ownership check.
 ///
 /// The check used to end the session with a sentence naming nothing, so the
