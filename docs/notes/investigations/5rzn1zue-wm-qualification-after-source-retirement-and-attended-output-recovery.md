@@ -55,7 +55,11 @@ runs the current reducer through both adapters on the same eight finite cycles,
 with identical decoded inputs and matching complete proposals. Sophia's
 driver/settlement boundary remains unproved; this is not yet an accepted
 comparator. The [source audit](#comparator-feasibility-2026-10-13)
-identifies four retired driver events whose behavior must be preserved.
+identified four retired driver events; the [driver prototype](#comparator-driver-prototype-2026-10-13)
+now preserves those branches with named controls. Next, mount both adapters
+beneath the same actual Session owners. The exact external prototype remains
+in `/tmp/t249-legacy-wire`, with a complete retained source copy in its evidence
+package; no test process is running.
 The accepted-offer
 ledger is only a diagnostic; rejected/unresolved accounting and compatible
 old/new workloads remain necessary. Native installation, retirement and
@@ -3333,6 +3337,63 @@ whose current form has an associated error type and neutral
 `PolicyProfileIoError`. Preserve that conversion, phase restrictions and exact
 refusals in the port; test them before reviewing a measured path. Production IPC
 remains retired. No comparator approval or campaign follows from this result.
+
+## Comparator driver prototype (2026-10-13)
+
+The historical WM wire code now compiles against current Sophia semantic
+records in a separate experimental crate. No production source or installed
+listener changed. The source audit maps 35 historical/current inputs and
+verifies 3,263 current crate, vendor and Cargo files against signed Sophia
+`2d4268c8bb96eb5217d3864d79af49c98c5bce10`.
+
+The port makes compatibility changes explicit. New chord/lifecycle causes are
+refused by the legacy validators and encoder. Decoded legacy configurations
+have no lifecycle rows; encoding a current configuration with such rows fails
+instead of discarding authority. Binary codec errors retain their variants and
+fields. The transport implements the current profile-I/O associated error type
+and preserves all six neutral error variants. The final dependency lock is
+seeded from current Sophia; the earlier exploratory compile used newer cached
+dependencies and is not the final test build.
+
+The external crate copies the current worker, one-slot channels, wake signaling
+and driver, restoring the former partial-projection branch. Its structural
+overlay omits the unused 9P module/QID wrapper and repository-only test mounts.
+Four Unix-stream tests execute the restored frame transport with a scripted
+peer: fragmented complete transfer, Dirty before Begin, Dirty refusal after
+Begin, malformed assembled focus identity and partial-transfer disconnect.
+The positive proposal has no placements. It proves transport through the
+driver, not admission by Engine or a settled layout.
+
+Four further tests cover the driver's discarded, malformed and unexpected
+profile events with supplied semantic events, denial of Dirty after Pending,
+exact profile-I/O error conversion, and refusal of lifecycle rows on the old
+wire. These checks do not claim wire-triggered discarded/profile completions
+or an actual profile handoff. All eight tests pass. Three controls remove the
+pending transition, corrupt the stale-profile error mapping, or remove the
+lifecycle-row refusal. Each fails its named assertion; restoring the sources
+passes all eight tests again. No timeout counts as a successful refusal.
+
+The first malformed fixture used output ID zero, which wire decoding leaves
+to semantic admission. That attempt failed; the final case uses a partial
+optional-focus identity, which the decoder owns. Build logs retain unused/dead
+code warnings in this deliberately incomplete crate. No strict-Clippy pass is
+claimed.
+
+Evidence is in
+`~/.local/state/sophia/development-evidence/t249-comparator-driver-20261013-01`;
+its self-excluding manifest SHA-256 is
+`25524b5b5f761105c82961b60d3b31d74013fd5469320f09d8c7e9faa5497170`.
+It retains the complete experimental crate, lock, source map, adaptation patch,
+commands, logs, controls and hashes, without binaries or build output. The
+working prototype remains at `/tmp/t249-legacy-wire` for the next join; Cargo
+used the existing Sophia slot pool. No process remains running.
+
+Next, mount the restored adapter and current file adapter below the same
+actual `LiveWmSession` enqueue, coalescing and settlement owners, with the same
+current Hagia loop. This reduced worker fixture cannot replace that join. The
+normal profile/checkpoint loop, complete accounting and reviewed performance
+campaign also remain open. Neither this prototype nor the preceding paired
+client result is an accepted performance comparator.
 
 ## Connections
 
