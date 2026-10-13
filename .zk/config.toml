@@ -55,6 +55,7 @@ shell = "/bin/sh"
 pager = ""
 
 [alias]
+context = 'cargo-slot sophia cargo xtask context "$@"'
 investigate = 'zk new "$ZK_NOTEBOOK_DIR/docs/notes/investigations" "$@"'
 concept = 'zk new "$ZK_NOTEBOOK_DIR/docs/notes/concepts" "$@"'
 adr = 'zk new "$ZK_NOTEBOOK_DIR/docs/notes/decisions" "$@"'

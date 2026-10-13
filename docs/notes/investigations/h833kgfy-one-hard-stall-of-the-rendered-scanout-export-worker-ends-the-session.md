@@ -211,3 +211,11 @@ scanout.
   the earlier lesson that one late frame must not end a session.
 - [Authority and lifecycle hardening](../plans/queue-13-authority-and-lifecycle-hardening.md) --
   t032, the page-flip callback bound this sits beside.
+
+## t191 history moved from the task queue (2026-10-13)
+
+Retained verbatim from the task description; dates and remaining-work claims
+below describe that record, not a new validation run. Task state stays in
+[the queue](../../../todo.md).
+
+Make an abandoned render worker the output's failure, not the session's, and replace it: after t186 a render that never returns within ten seconds quarantines the facade and the failure still ends the session through the Present cohort (production_visual_runtime/native.rs, 'Present output cohort failed'), and the worker core (one thread per DRM device) is never replaced. Degrade that output alone, keep the others presenting, and respawn the core with a fresh EGL context under the live scanout, with the previous session's MissingSource(DmaBuf) ending reviewed in the same seam. Red is a fixture where one output's worker never returns while another keeps presenting. Scoped 2026-09-25, no source change: (1) after the ten-second abandon the facade quarantines and answers one Failed(WorkerStalled) poll, which the exporter reports Degraded and the native tick (production_visual_runtime/native.rs run_native_pending_output) turns into ScanoutExportFailed and so the session's retirement failure; every later submit answers WorkerPending, so an output whose worker was abandoned would otherwise look pending forever with the last frame kept on scanout; (2) the worker registry (exporter/worker/lifecycle.rs reserve) refuses a successor for a device whose previous worker has not finished, and an abandoned worker stuck in a GPU call never finishes, so a replacement needs a reservation that admits a successor beside an abandoned worker and forgets the old thread; (3) on a single-output desktop, the operator's, degrading the output without replacing the worker leaves a frozen screen with live clients, worse than the display manager's restart after the exit, so the degrade and the replacement land together, the exit kept as the last resort when the successor fails too.

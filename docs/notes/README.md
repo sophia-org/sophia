@@ -33,6 +33,10 @@ The SQLite index is local, ignored by Git, and rebuildable.
 
 ## Choose the right record
 
+For agent startup, long-session checkpoints and parallel handoffs, use the
+[bounded context workflow](../agent-context.md). It reads the current task and
+specific sections without loading an investigation's whole history.
+
 | Kind | Use it for | Status |
 | --- | --- | --- |
 | Investigation | A coherent incident, experiment, or open question | `investigating`, `implemented`, `awaiting-physical-acceptance`, `closed` |

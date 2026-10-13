@@ -101,6 +101,9 @@ Trusted applications can share a namespace and use the traditional X11 object mo
 
 Investigations and design decisions live in the [development notebook](docs/notes/README.md). Current work is tracked in [todo.md](todo.md); contributors should follow the [work-tracking guide](docs/work-tracking.md).
 
+Agents can retrieve bounded task context with `zk context task t249` (or `cargo-slot sophia cargo xtask context task t249`).
+The [context guide](docs/agent-context.md) covers section reads and session handoffs.
+
 ## Status
 
 Sophia is a research prototype. X11 is the current application protocol, and the Rust frontend implements a subset of it. Application compatibility and end-to-end validation remain in progress.

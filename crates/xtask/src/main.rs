@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 
 mod c_desktop_sdk;
 mod check;
+mod context;
 mod git_tree;
 mod headless_client_gate;
 mod m3_acceptance;
@@ -40,6 +41,7 @@ fn main() -> std::process::ExitCode {
 
 fn run(arguments: &[String]) -> Result<(), String> {
     match arguments.first().map(String::as_str) {
+        Some("context") => context::run(&workspace_root()?, &arguments[1..]).map(print_lines),
         Some("check") => check::run(&workspace_root()?, &arguments[1..]).map(print_lines),
         Some("vendor-rust-desktop-sdk") => {
             rust_desktop_sdk::vendor(&workspace_root()?, &arguments[1..]).map(print_lines)
@@ -258,6 +260,9 @@ fn print_lines(lines: Vec<String>) {
 
 const USAGE: &str = "\
 usage: cargo xtask <command>
+
+  context task ID | outline PATH | read PATH[#HEADING] [--max-bytes=N]
+      Read bounded task context with source hashes; no model or network calls.
 
   check [layout]
       Run the full offline gate, or only the exact source-layout debt gate.
