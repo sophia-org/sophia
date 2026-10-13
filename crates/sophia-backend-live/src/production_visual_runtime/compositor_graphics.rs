@@ -247,9 +247,9 @@ pub fn live_surfaces_owned_by_output(
 }
 
 impl LiveProductionVisualRuntime {
-    pub(super) fn cpu_output_head_composition_frames_from_layers(
+    pub(super) fn cpu_output_head_composition_frames_from_layers<T: NativeCompositionTarget>(
         &self,
-        native_scanout: &LiveProductionNativeScanout,
+        native_scanout: &T,
         cpu_layers: &[LiveCpuPresentationLayer],
         scene_generation: u64,
     ) -> Result<HeadCompositionFramesByOutput, Box<dyn std::error::Error>> {

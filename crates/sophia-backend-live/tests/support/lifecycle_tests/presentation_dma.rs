@@ -4,6 +4,15 @@ use super::*;
 
 #[test]
 fn native_dma_driver_retires_the_exact_candidate_after_image_promotion() {
+    retire_candidate(false);
+}
+
+#[test]
+fn native_dma_authority_cycle_retires_its_admitted_candidate() {
+    retire_candidate(true);
+}
+
+fn retire_candidate(authority_cycle: bool) {
     let outputs = [outputs()[0]];
     let output = outputs[0].id;
     let application = SurfaceId::new(7, 1);
@@ -23,16 +32,79 @@ fn native_dma_driver_retires_the_exact_candidate_after_image_promotion() {
         .unwrap();
     scene.runtime.presentation_order = vec![application];
     scene.runtime.surface_outputs.insert(application, output);
-    let (transaction, candidate) = scene.queue_present(900, Instant::now());
-    scene
-        .runtime
-        .surface_content_stream
-        .begin(candidate)
-        .unwrap();
-    scene
-        .runtime
-        .drive_gpu_presentation_on_target(&scene.scene, Some(&mut scene.target))
-        .unwrap();
+    let (transaction, candidate) = if authority_cycle {
+        let transaction = TransactionId::from_raw(900);
+        let handle = BufferHandle::from_raw(900);
+        let group = present_group(transaction, application, handle);
+        let candidate = authority_group_present_owners(&group).unwrap()[0];
+        let geometry = group.transactions[0].target_geometry;
+        let layout = [LayerSnapshot {
+            translation: None,
+            surface: application,
+            authority_local_id: None,
+            namespace: None,
+            stack_rank: 0,
+            geometry,
+            source: candidate.target_buffer,
+            source_size: group.transactions[0].presentation_extent,
+            damage: Region::single(geometry),
+            opacity: 1.0,
+            crop: None,
+            transform: Transform::IDENTITY,
+            generation: 1,
+            resize_sync: ResizeSyncCapability::ImplicitOnly,
+            output: Some(output),
+            input_region: None,
+        }];
+        let batch = LiveProductionAuthorityBatch {
+            groups: vec![group],
+            dma_buf_registrations: vec![crate::LiveProductionDmaBufRegistration {
+                descriptor: present_descriptor(handle),
+                plane_fds: vec![std::sync::Arc::new(
+                    std::fs::File::open("/dev/null").unwrap().into(),
+                )],
+            }],
+            fence_registrations: vec![],
+            released_dma_bufs: vec![],
+            released_fences: vec![],
+        };
+        scene
+            .runtime
+            .run_gpu_cycle_on_target(
+                LiveProductionCycleRequest {
+                    batch: &batch,
+                    scene: &mut scene.scene,
+                    raised_surface: None,
+                    focused_surface: None,
+                    cursor_presentation: crate::LiveProductionCursorPresentation::Software(None),
+                    defer_frame: false,
+                    output_descriptors: &outputs,
+                    native_scanout: None,
+                    wm_update: None,
+                    presentation_layout: &layout,
+                    geometry_routed_surfaces: &[],
+                    chrome_surfaces: &[],
+                    indicator_publication: None,
+                    staged_cpu_buffer_handles: &[],
+                },
+                Some(&mut scene.target),
+            )
+            .unwrap();
+        assert_eq!(scene.runtime.surface_content_stream.active_len(), 1);
+        (transaction, candidate)
+    } else {
+        let (transaction, candidate) = scene.queue_present(900, Instant::now());
+        scene
+            .runtime
+            .surface_content_stream
+            .begin(candidate)
+            .unwrap();
+        scene
+            .runtime
+            .drive_gpu_presentation_on_target(&scene.scene, Some(&mut scene.target))
+            .unwrap();
+        (transaction, candidate)
+    };
     assert!(
         scene.target.queue.pending(output),
         "DMA driver must queue the Present frame"

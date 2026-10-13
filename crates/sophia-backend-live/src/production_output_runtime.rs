@@ -141,6 +141,17 @@ impl LiveProductionOutputRuntimeSet {
         output: OutputId,
         frames: Vec<crate::LiveProductionHeadCompositionFrame>,
     ) -> Result<crate::LiveProductionNativeFrameId, Box<dyn Error>> {
+        self.initialize_head_composition_on_target(native_scanout, output, frames)
+    }
+
+    pub(crate) fn initialize_head_composition_on_target<
+        T: crate::production_visual_runtime::NativeCycleTarget,
+    >(
+        &mut self,
+        native_scanout: &mut T,
+        output: OutputId,
+        frames: Vec<crate::LiveProductionHeadCompositionFrame>,
+    ) -> Result<crate::LiveProductionNativeFrameId, Box<dyn Error>> {
         let output_runtime = self
             .outputs
             .get_mut(&output)

@@ -19,7 +19,7 @@ pub use background_present::LivePresentClockPlacement;
 mod completion_wait;
 mod composition_target;
 mod cycle_target;
-use cycle_target::NativeCycleTarget;
+pub(crate) use cycle_target::NativeCycleTarget;
 #[cfg(any(test, feature = "test-support"))]
 #[allow(dead_code)]
 #[path = "../tests/support/composition_target.rs"]

@@ -1,7 +1,7 @@
 impl LiveProductionVisualRuntime {
     pub fn run_gpu_production_cycle(
         &mut self,
-        request: LiveProductionCycleRequest<'_>,
+        mut request: LiveProductionCycleRequest<'_>,
     ) -> Result<
         (
             LiveProductionCpuSubmission,
@@ -10,6 +10,26 @@ impl LiveProductionVisualRuntime {
         ),
         Box<dyn std::error::Error>,
     > {
+        let target = request.native_scanout.take();
+        self.run_gpu_cycle_on_target(request, target)
+    }
+
+    pub(super) fn run_gpu_cycle_on_target<T: NativePresentTarget>(
+        &mut self,
+        request: LiveProductionCycleRequest<'_>,
+        native_scanout: Option<&mut T>,
+    ) -> Result<
+        (
+            LiveProductionCpuSubmission,
+            Vec<CommittedSurfaceState>,
+            LiveProductionCpuProgress,
+        ),
+        Box<dyn std::error::Error>,
+    > {
+        assert!(
+            request.native_scanout.is_none(),
+            "native target is passed separately"
+        );
         let LiveProductionCycleRequest {
             batch,
             scene,
@@ -18,7 +38,7 @@ impl LiveProductionVisualRuntime {
             cursor_presentation,
             defer_frame,
             output_descriptors,
-            native_scanout,
+            native_scanout: _,
             wm_update,
             presentation_layout,
             geometry_routed_surfaces,
@@ -94,7 +114,7 @@ impl LiveProductionVisualRuntime {
         };
         let cpu_layers =
             scene.presentation_variant_layers(&committed_surfaces, &self.sampled_surface_order());
-        let tick = self.run_batch(
+        let tick = self.run_batch_on_target(
             &batch,
             presentation_layout,
             if defer_frame { None } else { native_scanout },

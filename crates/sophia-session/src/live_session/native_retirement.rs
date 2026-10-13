@@ -47,11 +47,35 @@ pub(super) fn record_native_present_retirement(
     startup_surface_presentations: &mut StartupSurfacePresentationEvidence,
     startup_readiness: &mut SessionStartupReadiness,
 ) -> NativePresentRetirementObservation {
+    record_native_present_retirement_with_observation(
+        recording,
+        retired,
+        retired_present_surfaces,
+        startup_surface_presentations,
+        startup_readiness,
+        |retired| {
+            (
+                runtime.stable_present(native_scanout, retired.transaction, &retired.outputs),
+                native_scanout.presented_mixed_nonzero_rgb_pixels(retired.transaction),
+            )
+        },
+    )
+}
+
+/// Admission consumes the backend's exact retired candidate. Device stability
+/// and pixel observations are read afterward and affect startup evidence only.
+pub(super) fn record_native_present_retirement_with_observation(
+    recording: NativePresentRecording<'_>,
+    retired: LiveProductionRetiredPresent,
+    retired_present_surfaces: &mut BTreeMap<SurfaceId, TransactionId>,
+    startup_surface_presentations: &mut StartupSurfacePresentationEvidence,
+    startup_readiness: &mut SessionStartupReadiness,
+    observe: impl FnOnce(&LiveProductionRetiredPresent) -> (bool, usize),
+) -> NativePresentRetirementObservation {
     let NativePresentRecording { layout, evidence } = recording;
     let _ = layout.complete_visual_commit(retired.candidate, retired.source_size);
     layout.complete_admission_retirement(retired.candidate);
-    let stable = runtime.stable_present(native_scanout, retired.transaction, &retired.outputs);
-    let nonzero_rgb_pixels = native_scanout.presented_mixed_nonzero_rgb_pixels(retired.transaction);
+    let (stable, nonzero_rgb_pixels) = observe(&retired);
     retired_present_surfaces.insert(retired.surface, retired.transaction);
     if stable {
         startup_surface_presentations.observe_stable(retired.surface, nonzero_rgb_pixels);

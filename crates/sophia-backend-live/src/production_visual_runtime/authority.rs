@@ -463,14 +463,6 @@ impl LiveProductionVisualRuntime {
         self.present_feedback.push_back(outcome);
     }
 
-    pub(super) fn release_removed_presentations(
-        &mut self,
-        removed_surfaces: &[SurfaceId],
-        native_scanout: Option<&mut LiveProductionNativeScanout>,
-    ) -> Result<(), crate::LiveRendererScanoutBufferExportDetail> {
-        self.release_removed_presentations_on_target(removed_surfaces, native_scanout)
-    }
-
     pub(super) fn release_removed_presentations_on_target<T: NativeRetirementTarget>(
         &mut self,
         removed_surfaces: &[SurfaceId],
@@ -597,11 +589,11 @@ impl LiveProductionVisualRuntime {
         })
     }
 
-    pub(super) fn run_prepared_authority_transactions_with_targets(
+    pub(super) fn run_prepared_authority_transactions_with_targets<T: NativeCycleTarget>(
         &mut self,
         prepared: LiveProductionPreparedAuthorityBatch,
         event_count: usize,
-        mut native_scanout: Option<&mut LiveProductionNativeScanout>,
+        mut native_scanout: Option<&mut T>,
         native_head_frames: Option<Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>>,
         wm_update: Option<WmTransactionUpdate>,
     ) -> Result<LiveProductionPreparedAuthorityRun, Box<dyn std::error::Error>> {
@@ -678,7 +670,7 @@ impl LiveProductionVisualRuntime {
                                     }));
                                 }
                             } else {
-                                outputs.initialize_native_head_composition(
+                                outputs.initialize_head_composition_on_target(
                                     native_scanout,
                                     output_id,
                                     frames,

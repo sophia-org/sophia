@@ -3,20 +3,51 @@ impl LiveProductionVisualRuntime {
         &mut self,
         batch: &LiveProductionAuthorityBatch,
         presentation_layout: &[LayerSnapshot],
-        mut native_scanout: Option<&mut LiveProductionNativeScanout>,
+        native_scanout: Option<&mut LiveProductionNativeScanout>,
+        native_frames: Option<Vec<LiveProductionComposedFrame>>,
+        scene: &LiveProductionCpuScene,
+        cpu_layers: Vec<LiveCpuPresentationLayer>,
+        wm_update: Option<WmTransactionUpdate>,
+    ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
+        self.run_batch_on_target(
+            batch,
+            presentation_layout,
+            native_scanout,
+            native_frames,
+            scene,
+            cpu_layers,
+            wm_update,
+        )
+    }
+
+    pub(super) fn run_batch_on_target<T: NativePresentTarget>(
+        &mut self,
+        batch: &LiveProductionAuthorityBatch,
+        presentation_layout: &[LayerSnapshot],
+        mut native_scanout: Option<&mut T>,
         native_frames: Option<Vec<LiveProductionComposedFrame>>,
         scene: &LiveProductionCpuScene,
         cpu_layers: Vec<LiveCpuPresentationLayer>,
         wm_update: Option<WmTransactionUpdate>,
     ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
         batch.validate()?;
-        self.reclaim_background_presentation_capacity(batch.groups.iter().map(|group|
-            group.present_submissions.len() + group.software_present_submissions.len()).sum());
+        self.reclaim_background_presentation_capacity(
+            batch
+                .groups
+                .iter()
+                .map(|group| {
+                    group.present_submissions.len() + group.software_present_submissions.len()
+                })
+                .sum(),
+        );
         self.presentation_feedback
             .observe_authority_resource_registrations(batch)?;
         let _ = self.reject_superseded_surface_content()?;
         let removed_surfaces = authority_batch_removed_surfaces(batch);
-        self.release_removed_presentations(&removed_surfaces, native_scanout.as_deref_mut())?;
+        self.release_removed_presentations_on_target(
+            &removed_surfaces,
+            native_scanout.as_deref_mut(),
+        )?;
         self.displayed_surfaces
             .retain(|surface, _| !removed_surfaces.contains(surface));
         let mut authority_groups = Vec::new();
@@ -61,7 +92,7 @@ impl LiveProductionVisualRuntime {
             if !self.present_scheduler.has_eligible() {
                 return self.run_observation_tick();
             }
-            return self.drive_gpu_presentation(scene, native_scanout.as_deref_mut());
+            return self.drive_gpu_presentation_on_target(scene, native_scanout.as_deref_mut());
         }
         if authority_groups.is_empty() {
             return self.run_observation_tick();

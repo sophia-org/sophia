@@ -260,7 +260,7 @@ fn preview_recovery_rebuilds_the_original_present_candidate_and_client_planes() 
     fixture.runtime.present_scheduler.mark_rendering(submitted);
     fixture
         .runtime
-        .release_removed_presentations(&[fixture.previewed], None)
+        .release_removed_presentations_on_target::<MirroredTarget>(&[fixture.previewed], None)
         .unwrap();
     fixture
         .runtime

@@ -939,7 +939,7 @@ fn a_missing_source_refuses_the_presentation_whole_and_removal_revokes_it_whole(
 
     // Removal revokes the whole publication, and says so once.
     runtime
-        .release_removed_presentations(&[shown], None)
+        .release_removed_presentations_on_target::<MirroredTarget>(&[shown], None)
         .unwrap();
     assert_eq!(runtime.policy_presentation(), None);
     assert_eq!(

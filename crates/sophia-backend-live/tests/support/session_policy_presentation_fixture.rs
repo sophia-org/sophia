@@ -70,6 +70,45 @@ impl SessionPolicyPresentationFixture {
         runtime.stage_software_present_frame(&mut self.target, output)
     }
 
+    pub fn run_gpu_cycle(
+        &mut self,
+        runtime: &mut LiveProductionVisualRuntime,
+        request: LiveProductionCycleRequest<'_>,
+    ) -> Result<
+        (
+            LiveProductionCpuSubmission,
+            Vec<CommittedSurfaceState>,
+            LiveProductionCpuProgress,
+        ),
+        Box<dyn std::error::Error>,
+    > {
+        runtime.run_gpu_cycle_on_target(request, Some(&mut self.target))
+    }
+
+    /// Supply worker completion, then transfer the actual queued frame through
+    /// deferred submission ownership. Neither frame nor transaction is supplied.
+    pub fn simulate_dma_submit(
+        &mut self,
+        runtime: &mut LiveProductionVisualRuntime,
+        output: OutputId,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.simulate_submit(output);
+        let frame = NativeRetirementTarget::submitted_frame(&self.target, output)
+            .ok_or("fixture has no submitted DMA frame")?;
+        let content = NativePresentTarget::submitted_content(&self.target, output)
+            .ok_or("fixture has no submitted DMA content")?;
+        let transaction = runtime
+            .present_scheduler
+            .in_flight_transaction()
+            .ok_or("fixture has no in-flight Present")?;
+        runtime.settle_submission_ownership(
+            &mut self.target,
+            output,
+            content,
+            Some((frame, transaction)),
+        )
+    }
+
     /// Supply one device completion to the native retirement owner. The
     /// submitted frame, retirement record and candidate remain owner-derived.
     pub fn simulate_native_retirement(
