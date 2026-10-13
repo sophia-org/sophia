@@ -2244,6 +2244,83 @@ full Nim/formal rerun, production edit or installed-session update is claimed.
 t249/h006 remain open with their full capability, native-owner and measurement
 requirements.
 
+## Backend revocation before withdrawal settlement (2026-10-12)
+
+The twenty-third external case closes a bounded part of the backend-notification
+gap without a production refactor. A missing notification handler can still be
+masked by later observation or headless installation when checking Revoked
+alone. The service order provides a stronger oracle: when the backend's
+source-removal notification and a completed unstamped replacement are ready
+together, consumption must precede withdrawal settlement in that same call.
+
+After a real-Hagia switcher reaches Presented on both mirrored target heads,
+the fixture supplies removal of a sampled source through Session authority
+observation and `enqueue_surface_removed`, then production projection and CPU
+intake. The backend removes the installed publication and creates its own
+revocation record. The existing mirror target composes the replacement and
+simulates both head completions, with no Session service between them. Session's
+reducer still holds the old publication, and transport is healthy and available.
+The actual `service_presented_policy` must queue the exact original identity's
+Revoked then Withdrawn in this one call, and neither repeats on another call.
+
+The first correlated real-Hagia SceneChanged answer closes the switcher,
+excludes the departed source and preserves the original focus. Commit and
+checkpoint agree on the two remaining windows. A final non-admitting poll and
+supervisor check observe peer health, not a new round trip.
+
+Two archived single-site controls compile and fail the selected test with exit
+101 at `backend revocation must reach withdrawal settlement in the same service
+turn`. One discards the actual backend notification in Session; the other
+increments the publication generation in the backend's removal record. Both
+produce Revoked alone: a later branch revokes after the settlement phase. This
+qualifies notification correlation and ordering, not a claim that those faults
+would leave authority live indefinitely. Both source files are compared with
+the pin before and after each experiment; all mounted inputs and the ordinary
+Hagia binary remain unchanged under the source and Cargo leases.
+
+Development 01 is retained STOP: the first fixture assumed CPU composition
+was completed policy retirement. The replacement must instead retire through
+both target heads. Development 02 corrects that fixture boundary and passes
+twenty-three cases. Strict restored-overlay Clippy, fixture/runner formatting,
+fourteen runner tests (one internal child fixture ignored) and Hagia layout pass.
+Self-excluding manifest SHA-256 values under the development-evidence directory:
+
+| Package | Manifest SHA-256 |
+| --- | --- |
+| `t249-backend-dev01` (STOP) | `c003e6b28cd76a29e8552f08becb20c739ec32d7a66b04ffbac460ccdee61ad3` |
+| `t249-backend-dev02` | `1cbf852146d3a8cb7560af768fe54ecf1839ea2d59f4d9e8789fff16215fd779` |
+| `t249-backend-notification-control01` | `77bfe5278c03f42941c1de17e5f94d8ba20e1559511faff2c82b63c620eb1712` |
+| `t249-backend-identity-control01` | `bc691ec69a69a0baf46d1e8519f6c7ca44b1393e95381b3cbdebc7b016760504` |
+| `t249-backend-checks01` | `5839cf093985ad9fbeb1e8be903bfaaf90dda67ec56fd6f25b99240975378426` |
+
+Removal, CPU sources, scheduling, device completion and the interleaving are
+supplied. Records, receipts and retired frame stamps are production-derived.
+Initial installation and Presented observation retain the inherited supplied
+head and abbreviated-helper limits. This source-removal path does not qualify
+every backend failure, native installation, repaint scheduling or physical
+completion. No production source, test API or installed session changed;
+t249/h006 keep their remaining capability, native-owner and measurement exits.
+
+Signed Hagia `0b1a1c1d9d5141449f96de260d0fda5bf970a4a8` and niltempus
+`990fe2ab7f533f14587e2d009377ec3033fbba62`, at unchanged Sophia
+`1b476dbdcc30215fe7ee5841e5a872f136ebb3a0`, pass all twenty-three cases in
+`t249-backend-01`: `lifecycle=3 occupied=7 operations=3 slow_peer=1 presented=9
+native=false`. Manifest:
+`1dee210a319d73db7c67555ac23478aafc8ea0ce762c7e3ea10fba7bb9e3bf72`.
+
+`t249-backend-audit01` verifies 3,257 pinned crate/Cargo/vendor inputs, the mount
+and fifteen external modules, unchanged fixtures from development 02 and both
+controls, twenty-three exact passing results, both signatures and six package
+manifests, including the preserved STOP. Its manifest is
+`ceb7b56d8f595a328b791e347c1e8b4c9f4ea29a6be7d045ebd40ab8d1cd1432`.
+This is an integrity audit, not another execution. All five bound owner spans
+remain unchanged. Subsequent result commits are documentation only.
+
+Leased cleanup `t249-backend-cleanup01` removes the marked disposable build
+root; manifest `cd22ab0723bfa5466bc02c693da7945f990c1a58046a2d108213f7fb74ba7311`.
+Evidence retains executable paths and hashes, never copied binaries. No full
+Sophia/Nim/formal product gate is claimed for these external-test-only changes.
+
 ## Connections
 
 - [t249 plan](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249) owns the unchanged acceptance requirements.
