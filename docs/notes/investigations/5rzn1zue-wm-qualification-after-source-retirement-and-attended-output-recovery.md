@@ -50,10 +50,11 @@ observations and controls; they are not a promise of six tests. Reuse current
 generic proofs for local bounds, chord refusal and inspection rather than
 duplicating them with a named peer.
 
-Resolve the measurement comparator before a campaign. The [client prototype](#comparator-client-prototype-2026-10-13)
-runs the current reducer through the retired frame adapter on eight finite
-cycles. The SDK arm and Sophia driver/settlement boundary remain unproved;
-this is not yet an accepted comparator. The [source audit](#comparator-feasibility-2026-10-13)
+Resolve the measurement comparator before a campaign. The [paired client prototype](#paired-comparator-clients-2026-10-13)
+runs the current reducer through both adapters on the same eight finite cycles,
+with identical decoded inputs and matching complete proposals. Sophia's
+driver/settlement boundary remains unproved; this is not yet an accepted
+comparator. The [source audit](#comparator-feasibility-2026-10-13)
 identifies four retired driver events whose behavior must be preserved.
 The accepted-offer
 ledger is only a diagnostic; rejected/unresolved accounting and compatible
@@ -3279,6 +3280,59 @@ the same current Sophia enqueue/coalescing/settlement owners. Preserve and test
 partial-transfer phase restrictions, malformed/discarded transfer refusal and
 unexpected profile completion before reviewing the measured path. No campaign,
 performance result or acceptance-method change is claimed.
+
+## Paired comparator clients (2026-10-13)
+
+The SDK arm now passes the same finite workload as the
+[frame-client prototype](#comparator-client-prototype-2026-10-13). One executable
+contains the unchanged current Hagia policy loop, session and reducer, the
+pinned SDK's production `fileWire`, and the separately named historical frame
+adapter. The audit again matches all 480 tracked Hagia files to signed
+`a4f056b`. The frame entry now requests configuration capability at negotiation
+to match the SDK's requirements. Both arms select exactly `1039871`: the
+original capability set without profile activation or pointer focus. Neither
+fixture installs a profile or configuration; newer chord, lifecycle and held
+capture capabilities are not selected.
+
+An independent Python socket server supplies the 9P files, object reads,
+candidate custody, journal acknowledgments and semantic outcomes. Both arms
+use the same eight reference cycles, including a refused Move Update and
+Resize Cancel. They match every decoded snapshot, request and domain
+transaction, and every complete proposal record. The normal and fragmented
+runs produce byte-identical neutral JSON traces across the two adapters.
+Fragmentation splits transport writes and, on the SDK arm, snapshot and journal
+reads into seven-byte pieces. No production codec or policy source was changed.
+
+Both arms refuse all five negative modes: partial snapshot/transfer, malformed
+reserved bytes, an unsupported lifecycle cause, a mismatched outcome and a
+disconnect after the server has received a complete proposal. Error text is
+transport-specific. The SDK refuses the unsupported event during admission
+dispatch because the supplied server publishes it immediately after
+negotiation. The disconnect precedes SDK candidate acknowledgment; it does not
+prove disconnection after custody or settlement. Every negative run terminates
+by an observed error, without using a deadline as acceptance.
+
+Evidence is in
+`~/.local/state/sophia/development-evidence/t249-comparator-pair-20261013-01`;
+the self-excluding manifest SHA-256 is
+`190eab5936c49e28ec82a83d880de7aa2eac7174a44d07bfe34b1327456c8806`.
+The package verifies its preceding client package and retains exact additions,
+source hashes, preparation/probe scripts, reference data, both arms' traces and
+logs, SDK request observations, compiler identity and the shared binary hash.
+No binary or cache is retained in evidence. The disposable source, binary and
+Nim cache were removed after capture.
+
+This establishes finite client-adapter equivalence for the selected pointer
+workload. Both servers and all outcomes remain supplied. Sophia's driver,
+admission, coalescing and settlement owners, the normal profile/checkpoint loop,
+and timing remain untested here. Next, restore the retired frame transport only
+in an external test overlay below common current Session owners. The driver
+diff retains a small former partial-projection branch, but restoring it alone
+is insufficient: historical transport code also implements a profile-I/O trait
+whose current form has an associated error type and neutral
+`PolicyProfileIoError`. Preserve that conversion, phase restrictions and exact
+refusals in the port; test them before reviewing a measured path. Production IPC
+remains retired. No comparator approval or campaign follows from this result.
 
 ## Connections
 
