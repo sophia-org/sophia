@@ -14,7 +14,8 @@ with real Hagia, actual GPU authority intake, composed retirement and Session's
 DMA recorder. Image-promotion and admission-retirement controls fail their named
 assertions. The listed A–F joins are covered under their stated limits.
 The refreshed comparator now passes a small [open-loop accounting diagnostic](#open-loop-accounting-2026-10-13).
-Continue **rejection/failure controls, resource probes and the reviewed measurement
+The [capacity/failure controls and CPU/idle probes](#measurement-controls-and-cpu-observations-2026-10-13)
+also pass. Continue **remaining resource probes and the reviewed measurement
 campaign**, then complete the independent SDK/export impact review and final exit
 binding. The complete t249/h006 exit has not passed.
 
@@ -56,16 +57,20 @@ The refreshed archive uses Sophia `0c75896b4` and Hagia `2ba92d984`. At both
 60 and 120 Hz, both arms settle all 240 offered updates. A delayed-start pair
 records sixteen replacements and 224 settlements per arm, with no unresolved
 offers. Removing a settlement or replacement edge fails the ledger verifier.
-These are finite diagnostics; timing remains unqualified. Exercise actual
-capacity rejection and explicit failure reporting, then finish resource probes
-and method review. Preserve the
+The full-queue diagnostic rejects a seventeenth offer without changing its
+sixteen accepted predecessors. Service suppression and fixture-child exit
+produce explicit failures with unresolved and unoffered counts. CPU and idle
+snapshots now cover both processes and their live threads. These are finite
+diagnostics; timing remains unqualified. Add allocation, copied-byte and protocol
+round-trip probes, review wake-measurement scope and the complete method, and
+prepare matched release builds. Preserve the
 five alternating pairs, 10,000 admitted updates per run, both rates under both loads
 and the relative and absolute budgets.
 
 The completed DMA development and qualification archives are removed.
 `~/.cache/t249-measurement-build` holds the refreshed comparator and diagnostic;
 the earlier `t249-session-comparator-build` is also retained. Experiment scripts
-are preserved in `t249-open-loop-accounting-20261013-01`. No qualification job or
+are preserved in `t249-measurement-controls-20261013-01`. No qualification job or
 live-session operation is running.
 
 ## Stopping point and resume procedure (2026-10-12)
@@ -4244,6 +4249,76 @@ release build modes and prospective method review remain before the unchanged
 five-pair campaign. Owner wait counters are observations, not measurements of
 all process or scheduler wakes. Supplied layout completion does not prove
 application ACKs or physical presentation. No latency budget is declared passed.
+
+## Measurement controls and CPU observations (2026-10-13)
+
+The refreshed comparator now exercises capacity rejection and explicit failed
+runs. It also captures CPU and thread observations during active and idle
+intervals. Both transports use the same final diagnostic binary and Hagia binary
+from the archived source pair recorded above. This remains an isolated experiment,
+not the performance campaign.
+
+The capacity case queues eight complete begin/end gestures through the actual
+Session admission owner without polling the worker. Sixteen accepted requests
+fill its bound; the next update returns `RejectedCapacity`. The queue remains
+byte-for-byte equal under its debug representation. All sixteen accepted requests
+then receive correlated proposals, commit and agree with Hagia's checkpoint.
+The rejected update has no request, transaction or settlement. The ledger reports
+seventeen offers, sixteen admissions, one rejection, sixteen settlements and no
+unresolved work. A control that fabricates settlement for the rejected row fails
+the verifier. Both transports produce identical disposition records after
+removing timestamps. This deliberately queued diagnostic is not a latency run.
+
+Failed runs now preserve the failure stage, message, observation time and peer
+state alongside unresolved and unoffered counts. An offer row exists before the
+enqueue call, so an enqueue failure cannot silently remove that attempt. Two
+controls fail in both transports and pass the external failure-accounting check:
+
+- Suppressing worker service retains 120 admitted updates: 119 replacement
+  edges and one unresolved survivor. The drain deadline fails; 120 further
+  planned offers remain unoffered.
+- Requesting termination of the fixture's own supervised child after its first
+  offer records `peer_exit`, one unresolved admitted update and 239 unoffered
+  updates. No installed process is touched.
+
+The normal 120 Hz run still admits and settles all 240 updates in each arm.
+The post-run audit independently verifies admission conservation, unique request
+identities, replacement edges and the distinction between unresolved work and
+inputs never offered. It refuses a failure as a successful accounted run.
+
+CPU snapshots retain `/proc` process and per-thread `stat`, thread `status` and
+`schedstat`, along with clock-tick frequency and the observation's time bounds.
+The audit verifies unchanged process/thread start identities, the same live
+thread set, and monotonic counters before taking differences. Active intervals
+include the scheduled updates, drain and final End checkpoint; Begin setup is
+excluded. Both raw counters and derived deltas remain available. Process CPU
+ticks are coarse; live-thread runtime offers finer observations. These counters
+include fixture work and do not isolate the transport's cost.
+
+A separate two-second idle interval has no admitted work. Each arm records one
+Session owner wait, no worker ring and one deadline return. Per-thread runtime,
+run-queue time, scheduler timeslices and voluntary/involuntary context switches
+are retained separately. They are different observations, not interchangeable
+counts of all scheduler wakeups. The two-second diagnostic does not establish a
+long-term idle budget or physical-session behavior.
+
+Evidence package
+`~/.local/state/sophia/development-evidence/t249-measurement-controls-20261013-01`
+has self-excluding manifest SHA-256
+`64aa41e2b2a18be7825a888f8b54c310aea30dffb6353e4f74d4e867b3d14e55`.
+It retains the five final diagnostic pairs, earlier development runs, source
+overlay, scripts, analysis and binary paths/hashes. The audit compares all 5,119
+Sophia and 485 Hagia tracked inputs against the exact archived Git revisions;
+the later documentation commit is not substituted for the source baseline.
+Only the existing eight Sophia adaptation files and Hagia entry point differ
+among tracked inputs. All execution hides devices and the host runtime.
+
+Next, measure allocation, copied bytes and protocol round trips, and review the
+scope of wake observations. Complete the prospective method review and matched
+release builds before the unchanged five alternating pairs of 10,000 admitted
+updates at both rates and both loads. No comparative latency or resource budget
+passes on the strength of these finite diagnostics. The archive remains at
+`~/.cache/t249-measurement-build`; no diagnostic job is running.
 
 ## Connections
 
