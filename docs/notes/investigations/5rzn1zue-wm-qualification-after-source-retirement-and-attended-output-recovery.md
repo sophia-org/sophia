@@ -9,9 +9,9 @@ tags: [validation, protocol, policy]
 
 ## Current resumption
 
-The [automatic native CPU repaint](#automatic-native-cpu-repaint-2026-10-13)
-case, two behavioral controls, full generic gate and signed external pair pass.
-Continue B/C's policy and security transitions and resolve DMA retirement;
+The [occupied lock reset](#occupied-lock-reset-2026-10-13) case and its omission
+control pass, following automatic native CPU repaint. Continue B/C's policy
+projection and occupied reload/registry transitions and resolve DMA retirement;
 the measurement campaign remains required.
 
 Resume Sophia t249 / Hagia h006 using the
@@ -20,11 +20,12 @@ October 10 capability maps or the original three-case migration plan. Task
 status stays in `todo.md`. The complete WM acceptance exit, including measurement,
 has not passed. Do not reopen t317/t318 or repeat their attended acceptance.
 
-The qualified external baseline is **30 passing cases**: signed Hagia
-`0ec1498202d885c21da24aa1e9eecbac48cf6d3f`, niltempus runner
-`5dec7e453f31770659e5124589471f7860696469`, and Sophia pin
-`469371bf4ba6f9f87af5485d3967709d907426ee`. The latest pair strengthens
-automatic source-only CPU repaint; the preceding new case joins
+The qualified external baseline is **31 passing cases**: signed Hagia
+`19a9d04193996a27cb083ac608cad671ae7b7d2a`, niltempus runner
+`18758c790aa9d80d603b3f815c52789eced7a754`, and Sophia pin
+`469371bf4ba6f9f87af5485d3967709d907426ee`. The latest pair joins occupied
+keyboard reset at supplied lock entry. The preceding pairs qualify automatic
+source-only CPU repaint and
 [native software admission](#native-software-admission-2026-10-13), following
 [native publication installation](#native-publication-installation-2026-10-13). The
 [input-transition result](#routed-input-and-capture-transitions-2026-10-13)
@@ -33,21 +34,22 @@ terminal precedence and pointer release debt across revocation/reconnect.
 The earlier [geometry repair](#routed-pointer-geometry-repair-2026-10-13)
 preserves a stationary Begin. Supplied events, layers, revocation triggers and
 completion do not prove physical input, frontend delivery or native pixels.
-The final package is `~/.local/state/sophia/development-evidence/t249-native-repaint-pair01`;
+The final package is `~/.local/state/sophia/development-evidence/t249-lock-reset-pair01`;
 its manifest is
-`805e315831a075d7b7b2c563936095795ee6627f4e548eb003f4f5d80c2db45b`.
+`a2ff07a09c3954682f57a1ee2b2745ccb1e723746c5302a328fe37de782a046b`.
 The linked result binds the full generic gate, controls, pin review and audit.
 
 The refreshed pin includes numeric geometry diagnostics and the direct
 input-debt regressions. The diagnostics preserve errors; they do not fix
 extreme maximum-size overflow. All five mirrored production spans are unchanged.
 The full isolated generic gate passes, and the external audit verifies 3,268
-pinned inputs, twenty mounted inputs and all 30 exact results.
+pinned inputs, twenty mounted inputs and all 31 exact results.
 
-Package **A** now has its ordinary routing/capture joins. Lock and output-loss
-transitions remain shared obligations in C/D, not implied by a supplied Cancel.
+Package **A** now has its ordinary routing/capture joins. C's production
+keyboard-reset boundary is joined with supplied lock entry; output loss remains
+D's obligation. A supplied Cancel does not establish either transition.
 Continue **B/C** with real-peer tab/translation/chrome/indicator projection and
-occupied accepted/refused reload, catalog revocation and actual lock reset.
+occupied accepted/refused reload and catalog revocation.
 The [focused-client held-key boundary](#focused-application-held-capture-2026-10-13)
 is joined through local ingress, with supplied focus and completion. The
 [direct input-debt regressions](#direct-input-debt-overflow-2026-10-13)
@@ -3717,6 +3719,47 @@ Initialization, worker preparation and device completion are simulated. This
 proves the immediate CPU cycle's automatic scheduling with real Hagia policy;
 it does not prove physical pixels, GPU import, DMA Present retirement or a
 separate deferred-service scheduling path. B–E and measurement remain open.
+
+## Occupied lock reset (2026-10-13)
+
+Hagia's new `sdk_presented_lock_reset_preserves_focus` case calls
+`reset_desktop_keyboard_for_lock` after the production matching-loss owner,
+as the lock-entry branch does. Real Hagia has an occupied Held switcher at
+this boundary. Reset must forget the held Alt modifier before desktop routing
+resumes. One exact Cancelled terminal closes the switcher without changing
+ordinary focus and returns its credit. A bare Tab cannot reuse the old
+modifier; a fresh chord still commits its selection. The existing matching-loss
+case shares the settlement assertions and still passes.
+
+Omitting only `shortcuts.clear_seat(seat)` from the reset owner fails
+`lock reset must forget the old chord's held modifier`: the modifier mask is
+4 rather than 0. Restoration passes. Development package
+`t249-lock-reset-20261013-01` retains the control and source audit; its manifest
+is `5535d30952d74775425908ae0acf6b876c16f22430cdfbacc215fcaab19f2072`.
+The audit verifies 5,112 Sophia and 481 Hagia base inputs plus the overlay.
+
+Signed Hagia `19a9d04193996a27cb083ac608cad671ae7b7d2a` and runner
+`18758c790aa9d80d603b3f815c52789eced7a754` pass all 31 cases at unchanged
+Sophia pin `469371bf4ba6f9f87af5485d3967709d907426ee`.
+`t249-lock-reset-pair01` has manifest
+`a2ff07a09c3954682f57a1ee2b2745ccb1e723746c5302a328fe37de782a046b`.
+Strict external Clippy, fixture formatting, Hagia layout and fourteen runner
+tests pass in `t249-lock-reset-checks01`, manifest
+`e663331740d1529495308a1bc19ffe86cce279e38df45d3b90f227f9e1f71a34`.
+The audit reuses the repaint generic gate after proving its inputs unchanged;
+it verifies 3,268 pinned inputs, twenty mounted inputs, signatures, unchanged
+production glue and all exact results. `t249-lock-reset-pair-audit01` has
+manifest `a07a37e66fdf20899a19b9da77df97f3e99caeafc4167ae0b7e81479d8b7ace5`.
+Both build archives and the clean source-only detached worktree are removed.
+
+Lock entry, content and completion are supplied. No lock provider or live
+session is operated, and this case does not establish physical locking or
+every security-epoch transition. C's occupied accepted/refused reload and
+registry replacement remain open. Source review finds that
+`reload_desktop_profile` defers while `shortcut_idle` is false, including a
+held chord or tracked down key. The next reload case must preserve that
+boundary, then exercise replacement after settlement; forcing a busy reload
+would test a different contract. B, D/E, DMA retirement and measurement remain.
 
 ## Connections
 
