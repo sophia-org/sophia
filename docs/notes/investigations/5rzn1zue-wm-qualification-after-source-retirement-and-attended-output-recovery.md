@@ -15,28 +15,28 @@ October 10 capability maps or the original three-case migration plan. Task
 status stays in `todo.md`. The complete WM acceptance exit, including measurement,
 has not passed. Do not reopen t317/t318 or repeat their attended acceptance.
 
-The qualified external baseline is **29 passing cases**: signed Hagia
-`9fb5e83fe2f4b7e9783190a83ffe5bb802d3dc2c`, niltempus runner
-`92e9337cb42b0fcb53f9f20d34c975189fc8bbd1`, and Sophia pin
-`27bce5c96adb0461e59c3a6de0284bac10a379a2`. The new case joins
-[native publication installation](#native-publication-installation-2026-10-13).
-The
+The qualified external baseline is **30 passing cases**: signed Hagia
+`f5e78d7a045b10fa1c5a8fb6abcf301019e64773`, niltempus runner
+`de567dbc2f6917685bc14147fb151e2fbe07a5c1`, and Sophia pin
+`03600e1c218dcf2dc7a9b7f674319ed6866a39c6`. The new case joins
+[native software admission](#native-software-admission-2026-10-13), following
+[native publication installation](#native-publication-installation-2026-10-13). The
 [input-transition result](#routed-input-and-capture-transitions-2026-10-13)
 strengthens five existing cases: routed hover, move/resize Cancel, protected
 terminal precedence and pointer release debt across revocation/reconnect.
 The earlier [geometry repair](#routed-pointer-geometry-repair-2026-10-13)
 preserves a stationary Begin. Supplied events, layers, revocation triggers and
 completion do not prove physical input, frontend delivery or native pixels.
-The final package is `~/.local/state/sophia/development-evidence/t249-native-install-pair01`;
+The final package is `~/.local/state/sophia/development-evidence/t249-native-cycle-pair01`;
 its manifest is
-`aeeea8030e128b9e9efa25ddb0613a8d498f9df0fb1e8aad9ef2506fc84c852a`.
+`df2c855b947ed89f3ecd219c99053096f13a363ff5302ac3be0a058297930ef5`.
 The linked result binds the full generic gate, controls, pin review and audit.
 
 The refreshed pin includes numeric geometry diagnostics and the direct
 input-debt regressions. The diagnostics preserve errors; they do not fix
 extreme maximum-size overflow. All five mirrored production spans are unchanged.
-The full isolated generic gate passes, and the external audit verifies 3,263
-pinned inputs, twenty mounted inputs and all 29 exact results.
+The full isolated generic gate passes, and the external audit verifies 3,268
+pinned inputs, twenty mounted inputs and all 30 exact results.
 
 Package **A** now has its ordinary routing/capture joins. Lock and output-loss
 transitions remain shared obligations in C/D, not implied by a supplied Cancel.
@@ -59,9 +59,11 @@ does the full generic gate. The signed 29-case pair and source audit pass.
 The [native software-admission join](#native-software-admission-2026-10-13)
 now carries a real-peer Manage candidate through the CPU cycle's native
 framing decision, native retirement and Session admission progress. The case,
-three controls and full generic gate pass; its signed 30-case pair still needs
-binding. DMA retirement and automatic source-only repaint scheduling remain
-open. The qualified external pin above does not yet include this candidate.
+three controls, full generic gate and signed 30-case pair pass. DMA retirement
+and automatic source-only repaint scheduling remain open. Next, replace the
+repaint fixture's explicit queue call with the shared CPU cycle's native path;
+retain exact publication and sampled-source identities. Continue B/C alongside
+the remaining F work without treating either as waived.
 
 The [Session comparator prototype](#session-comparator-prototype-2026-10-13)
 now runs both transports below the same actual enqueue, coalescing and
@@ -3646,8 +3648,18 @@ The full device-hidden `cargo xtask check` passes for the retained candidate
 patch and two new source files in `t249-native-cycle-gate01`, manifest
 `035cdd1ca5103d59dc5558e99bef9c427bf878198d7f1db003c8263a25ddd5b7`.
 This includes the new regression, workspace tests, strict Clippy and SDK checks.
-Hagia layout and fourteen runner tests pass. The signed pin and full 30-case
-rerun remain to be bound; the earlier 29-case package keeps its original pin.
+The signed pair (Sophia `03600e1c2`, Hagia `f5e78d7`, runner `de567db`)
+passes all 30 cases in `t249-native-cycle-pair01`, manifest
+`df2c855b947ed89f3ecd219c99053096f13a363ff5302ac3be0a058297930ef5`.
+Strict external Clippy, fixture formatting, Hagia layout and fourteen runner
+tests pass in `t249-native-cycle-checks01`, manifest
+`ec6c379dc5bb6bbb5f5bdc92fe9edf9557928357458c7602a8a7d7b42eb1ef7a`.
+The audit binds the generic gate's patch and additions to the signed pin,
+verifies 3,268 pinned inputs, twenty mounted inputs, all 30 exact results and
+unchanged mirrored production spans. `t249-native-cycle-pair-audit01` has
+manifest `367effa668d467a0d29c1d37f607d80e15c7902b835f6ddc3eda08c6086bc8b5`.
+Both completed build archives were removed under their leases. The fixed Cargo
+pool and source/evidence remain; the separate comparator archive is retained.
 
 Software retirement's production join has development evidence. DMA retirement
 and automatic source-only preview repaint still need execution. Initialization,
