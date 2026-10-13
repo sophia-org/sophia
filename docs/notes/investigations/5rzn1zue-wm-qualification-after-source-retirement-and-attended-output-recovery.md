@@ -10,9 +10,9 @@ tags: [validation, protocol, policy]
 ## Current resumption
 
 The [automatic native CPU repaint](#automatic-native-cpu-repaint-2026-10-13)
-development case, two behavioral controls and full generic gate pass. Binding
-the strengthened case to a signed external pair is the next step; the qualified
-baseline below remains unchanged until that run and its audit pass.
+case, two behavioral controls, full generic gate and signed external pair pass.
+Continue B/C's policy and security transitions and resolve DMA retirement;
+the measurement campaign remains required.
 
 Resume Sophia t249 / Hagia h006 using the
 [row dispositions](#remaining-row-dispositions-2026-10-13), not the dated
@@ -21,9 +21,10 @@ status stays in `todo.md`. The complete WM acceptance exit, including measuremen
 has not passed. Do not reopen t317/t318 or repeat their attended acceptance.
 
 The qualified external baseline is **30 passing cases**: signed Hagia
-`f5e78d7a045b10fa1c5a8fb6abcf301019e64773`, niltempus runner
-`de567dbc2f6917685bc14147fb151e2fbe07a5c1`, and Sophia pin
-`03600e1c218dcf2dc7a9b7f674319ed6866a39c6`. The new case joins
+`0ec1498202d885c21da24aa1e9eecbac48cf6d3f`, niltempus runner
+`5dec7e453f31770659e5124589471f7860696469`, and Sophia pin
+`469371bf4ba6f9f87af5485d3967709d907426ee`. The latest pair strengthens
+automatic source-only CPU repaint; the preceding new case joins
 [native software admission](#native-software-admission-2026-10-13), following
 [native publication installation](#native-publication-installation-2026-10-13). The
 [input-transition result](#routed-input-and-capture-transitions-2026-10-13)
@@ -32,9 +33,9 @@ terminal precedence and pointer release debt across revocation/reconnect.
 The earlier [geometry repair](#routed-pointer-geometry-repair-2026-10-13)
 preserves a stationary Begin. Supplied events, layers, revocation triggers and
 completion do not prove physical input, frontend delivery or native pixels.
-The final package is `~/.local/state/sophia/development-evidence/t249-native-cycle-pair01`;
+The final package is `~/.local/state/sophia/development-evidence/t249-native-repaint-pair01`;
 its manifest is
-`df2c855b947ed89f3ecd219c99053096f13a363ff5302ac3be0a058297930ef5`.
+`805e315831a075d7b7b2c563936095795ee6627f4e548eb003f4f5d80c2db45b`.
 The linked result binds the full generic gate, controls, pin review and audit.
 
 The refreshed pin includes numeric geometry diagnostics and the direct
@@ -65,7 +66,7 @@ The [native software-admission join](#native-software-admission-2026-10-13)
 now carries a real-peer Manage candidate through the CPU cycle's native
 framing decision, native retirement and Session admission progress. The case,
 three controls, full generic gate and signed 30-case pair pass. DMA retirement
-remains open. The development repaint case now replaces the fixture's explicit
+remains open. The qualified repaint case now replaces the fixture's explicit
 queue call with the shared CPU cycle's native path; it retains exact publication
 and sampled-source identities. Continue B/C alongside
 the remaining F work without treating either as waived.
@@ -3699,7 +3700,18 @@ manifest `be9428622c5c602a178e166f98171b43f1710d236701ff8b2fcf6095deda34ad`.
 Sophia changes only the test-support accessor; production scheduling already
 used the shared cycle. Signed Hagia candidate
 `0ec1498202d885c21da24aa1e9eecbac48cf6d3f` contains the stronger fixture.
-The complete signed external pair and its source audit remain pending.
+The signed pair (Sophia `469371bf4`, Hagia `0ec1498`, runner `5dec7e4`)
+passes all 30 exact cases in `t249-native-repaint-pair01`, manifest
+`805e315831a075d7b7b2c563936095795ee6627f4e548eb003f4f5d80c2db45b`.
+Strict external Clippy, fixture formatting, Hagia layout and fourteen runner
+tests pass in `t249-native-repaint-checks01`, manifest
+`fc264e68f3cf6505c9f69b2111265e086fea3b7ece9a83e8d85c26204da3dd33`.
+The source audit binds the generic gate to the signed Sophia delta and checks
+3,268 pinned inputs, twenty mounted inputs, every exact result and unchanged
+production glue. `t249-native-repaint-pair-audit01` has manifest
+`c217118e49abef2dd7fefec3ce89169d0ef7b1c8a795984ba9cc2ef827804f1a`.
+Both completed build archives were removed under their leases; evidence and
+the separate comparator archive remain.
 
 Initialization, worker preparation and device completion are simulated. This
 proves the immediate CPU cycle's automatic scheduling with real Hagia policy;
