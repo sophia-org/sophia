@@ -50,23 +50,26 @@ observations and controls; they are not a promise of six tests. Reuse current
 generic proofs for local bounds, chord refusal and inspection rather than
 duplicating them with a named peer.
 
-Resolve the measurement comparator before a campaign. The [paired client prototype](#paired-comparator-clients-2026-10-13)
-runs the current reducer through both adapters on the same eight finite cycles,
-with identical decoded inputs and matching complete proposals. Sophia's
-driver/settlement boundary remains unproved; this is not yet an accepted
-comparator. The [source audit](#comparator-feasibility-2026-10-13)
-identified four retired driver events; the [driver prototype](#comparator-driver-prototype-2026-10-13)
-now preserves those branches with named controls. Next, mount both adapters
-beneath the same actual Session owners. The exact external prototype remains
-in `/tmp/t249-legacy-wire`, with a complete retained source copy in its evidence
-package; no test process is running.
-The accepted-offer
-ledger is only a diagnostic; rejected/unresolved accounting and compatible
-old/new workloads remain necessary. Native installation, retirement and
+The [Session comparator prototype](#session-comparator-prototype-2026-10-13)
+now runs both transports below the same actual enqueue, coalescing and
+settlement owners, using one current Hagia binary and its normal
+profile/checkpoint loop. Coalescing, cancellation and refusal/recovery cases
+pass in both arms with matching recorded projections and checkpoints. Both
+arms detect an omitted coalescing transition. Supplied protected admission is
+identical; authenticated startup is outside this comparison. The earlier
+[client](#paired-comparator-clients-2026-10-13) and
+[driver](#comparator-driver-prototype-2026-10-13) checks retain their exact scope.
+Comparator feasibility has advanced beyond the reduced worker. Before timing,
+finish open-loop scheduling, complete rejection/unresolved accounting, resource
+probes and the review of the campaign method. The finite accepted-offer ledger
+is still only a diagnostic. Continue B/C and resolve F's owner reachability
+early; these comparator cases do not close those packages.
+Native installation, retirement and
 scheduling owners also remain t249 obligations even when completion is
 simulated. Only actual device/pixel/timing acceptance belongs to t250.
-The diagnostic build root and detached source checkout were removed after
-the audit. No qualification job or live-session operation is running.
+The source archive at `~/.cache/t249-session-comparator-build` remains for the
+next experiment; its overlay is retained in the linked evidence package.
+No qualification job or live-session operation is running.
 
 ## Stopping point and resume procedure (2026-10-12)
 
@@ -3394,6 +3397,82 @@ current Hagia loop. This reduced worker fixture cannot replace that join. The
 normal profile/checkpoint loop, complete accounting and reviewed performance
 campaign also remain open. Neither this prototype nor the preceding paired
 client result is an accepted performance comparator.
+
+## Session comparator prototype (2026-10-13)
+
+Both transports now reach the actual current `LiveWmSession` enqueue,
+coalescing and settlement owners. The experiment archives Sophia
+`ebee8104213416368f32d8e59eef65a50da348c1` and Hagia
+`a4f056b`, adds the external historical-wire crate from the preceding
+prototype, and mounts Hagia's current lifecycle fixture. Production checkouts
+remain unchanged. One Hagia binary selects either adapter through an explicit
+experimental argument; its reducer, projection, profile handoff, configuration
+and checkpoint loop remain current and unchanged.
+
+The Session overlay adds a test-only endpoint/worker selection and restores
+the four historical adapter events and partial-projection driver branch. It
+does not replace the actual queue, projection reducer, layout commit or outcome
+settlement. Both arms use the existing supplied-admission test entry point,
+protected process launch, exact profile activation and the same capability
+ceiling. Each negotiates 253,951 with 175 actions for this profile. The frame
+endpoint receives actual supervisor protection evidence through a forwarding
+method; neither arm hand-writes that evidence. This compares steady-state WM
+work, not t317 authenticated startup or every newer capability.
+
+Three existing external cases pass in each arm:
+
+- Move/resize coalescing admits eight offers, commits six and replaces two.
+  The queue retains the latest update; staged work cannot change layout or
+  checkpoint, and correlated settlement agrees with Hagia's saved model.
+- Cancel removes obsolete queued interaction work while preserving unrelated
+  relayout. A fresh interaction still commits afterward. Its six offers have
+  four committed and two cancelled dispositions.
+- Occupied focus settlement covers commit, supplied timeout, stale rejection
+  and recovery. Refused candidates cannot publish focus or replace the
+  checkpoint; recovery cannot replay the refused action.
+
+For those pairs, all recorded projections, checkpoints, profile documents and
+startup observations are byte-identical. Pointer ledgers match after removing
+only their two clock fields. The complete ledger bytes remain available.
+These observations complement the preceding independent wire/client checks;
+they do not claim every internal record was captured by this fixture.
+
+A control omits the production queue's replacement assignment while retaining
+its `Duplicate` admission result. Both transports fail at
+`queued pointer update must retain the latest offered geometry`, before any
+deadline. Restoring the source passes both arms. The first restored run also
+compiles inside its PID namespace, so its process IDs and path-dependent full
+profile digest differ from its partner; those observations are retained and
+are not declared equal. A further pair invokes the same restored test binary
+directly, outside compilation, and passes the exact comparison again.
+
+The first compile failed on the experiment's `OsString`/`String` argument
+assertion. The first launch refused the experimental CLI argument because it
+also reached the ordinary endpoint parser; startup then timed out. The final
+entry point consumes that argument before endpoint validation. These are
+retained experiment failures, not accepted negative controls or product bugs.
+
+Evidence is in
+`~/.local/state/sophia/development-evidence/t249-session-comparator-20261013-01`.
+Its self-excluding manifest SHA-256 is
+`edcebe35dd53806f5bdaf634920b3ff2ffe273379971c08aa6f6310534eef22c`.
+The audit binds all 5,106 tracked Sophia files and 480 tracked Hagia files to
+the archive, records every changed or added input, and retains the overlay,
+adaptation patch, experiment scripts, commands, logs, ledgers and comparisons.
+Eight tracked Sophia files differ for dependency wiring, adapter selection,
+driver compatibility and the test mount; Hagia's only changed tracked file is
+its entry point. Queue and settlement sources are byte-identical after the
+control. Binary paths and hashes are recorded without copying build products.
+All execution hides devices and the host user runtime directory; Rust uses
+the existing Sophia Cargo slot. The source/build archive remains at
+`~/.cache/t249-session-comparator-build` for continued work, with no test running.
+
+This resolves the missing actual-Session join for the prototype's finite
+workloads. It does not close B–F or admit a performance result. The diagnostic
+is fixture-paced, waits for checkpoint replacement and records only accepted
+pointer offers. A campaign still needs open-loop scheduling, rejected and
+unresolved accounting, resource measurements, matched build modes and method
+review before the unchanged rate/load and latency gates run.
 
 ## Connections
 
