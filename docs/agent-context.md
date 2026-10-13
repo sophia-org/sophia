@@ -1,4 +1,13 @@
-# Bounded context for development agents
+# Project notes and agent recall
+
+Keep zk useful to people. Decisions, normative contracts, acceptance criteria
+and evidence belong in the source documents. Keep a readable `Current resumption`
+in the owning investigation, even when Mem0 is available. `todo.md` remains the
+task ledger; mandatory working rules belong in `AGENTS.md`.
+
+Write for human readers using *Dreyer's English*: clear, concise, idiomatic prose
+and concrete wording. Omit needless jargon and agent-oriented boilerplate.
+Preserve exact contracts, candidate identities and evidence limits.
 
 Start with the agent instructions and README, then select the assigned task or
 use `zk queue`. Read the task's scope and exit before acting. Read architectural
@@ -69,7 +78,30 @@ conversation. Return findings, changed paths, checks and evidence limits. Record
 durable findings in their owning note before handing off. Agree on file ownership
 through Herdr when available; a note or task lane is not a distributed lock.
 
-## Measure before adding memory services
+## Use Mem0 to find sources
+
+Mem0 provides concise agent recall for project `sophia`. Store short source
+pointers, useful search terms, recurring pitfalls and summaries that will help
+future work. Include the source path and heading, plus its revision. For
+uncommitted text, use a content hash and make clear that it identifies local
+bytes, not a tested or merged candidate.
+
+Search at task start when prior work may help, normally returning at most three
+results. Verify relevant source sections with `zk context` before acting. Read
+working rules from the current `AGENTS.md`; a remembered summary cannot replace
+them. If memory is unavailable or unhelpful, use zk and fff.
+
+After updating a durable source, save concise recall under a stable key when
+it adds value. Read an existing entry before replacing it and pass its returned
+version as `expected_version`. On a conflict, re-read the entry and source before
+deciding what to save. Avoid repeated searches and unchanged writes without a
+reason. Memories do not update themselves when files change.
+
+Do not create a second task ledger, copy whole notes or transcripts, or store
+credentials. Memory is a source-discovery aid, not acceptance evidence or task
+ownership. Keep the human-readable handoff and exact evidence in zk.
+
+## Measure the benefit
 
 For t249, compare the bytes and words of its whole linked plan and current
 investigation with the selected task section and current resumption section.
@@ -78,7 +110,7 @@ acceptance limits. This measures retrieved context size, not total API tokens or
 avoided reasoning. Actual savings require agent usage records on comparable work,
 including repeated reads, output, cache accounting and any memory extraction.
 
-Evaluate Mem0 later as a way to discover source sections. Include its processing
-and retrieval costs in the comparison; retain normative contracts, task ordering
-and exact acceptance evidence in their existing files. This pilot configures no
-external provider and uploads no notes.
+Include memory searches, writes and processing costs in the comparison. The
+local Mem0 service is available, but availability and successful recall do not
+establish token savings. Claim savings only when comparable usage measurements
+support them.
