@@ -2074,6 +2074,90 @@ ordering and its native installation/repaint path. Remaining capability-map
 items, launch contexts, measurement/comparator work and isolated integration
 exits stay required by t249; actual device/physical acceptance remains t250.
 
+## Production presentation-service availability and withdrawal (2026-10-12)
+
+The twenty-first external Hagia case calls Session's actual
+`service_presented_policy` method. It does not add a production test API or
+copy that method. Sophia remains at `1b476dbdc`; the existing service glue span
+already binds the source, and all five span hashes remain unchanged.
+
+The inherited Held prefix installs the switcher against a supplied head. The
+backend's existing mirror target then composes the publication and derives its
+Presented stamp after simulated completion on both heads. Initial observation
+still uses the abbreviated fixture helper. From availability loss onward, the
+case calls only the production service owner for revocation, runtime withdrawal
+and withdrawal settlement.
+
+With a healthy transport and supplied `available=false`, the service must emit
+the exact Revoked identity and remove the runtime's installed publication. The
+first correlated real-Hagia SceneChanged answer must close the switcher while
+preserving W1 focus. The fixture commits that answer without calling its install
+helper, then requests replacement composition. Completing both mirror heads
+still cannot issue Withdrawn while service remains unavailable. Restoring
+availability settles the same identity once; the install tail sees no desired
+publication. The last non-admitting poll and supervisor check observe a healthy,
+unchanged peer before teardown; they are not a round trip. Availability alone
+leaves the chord open, so this is not lock cancellation or release-debt evidence.
+
+Three single-site archived-source controls compile, exit 101 and fail exactly
+one selected test at the intended first assertion:
+
+| Mutation inside the service owner | Named failure |
+| --- | --- |
+| Remove `!available` from revocation conditions | `unavailable service must revoke the presented identity` |
+| Omit pending withdrawal's runtime `set_policy_presentation(None, ...)` | `service withdrawal must remove the installed publication` |
+| Settle withdrawals without the availability gate | `unavailable service must defer Withdrawn even after replacement retirement` |
+
+The second control fails before replacement composition could fail for an
+unchanged installed frame. The third reaches retirement before it fails; earlier
+revocation and runtime-removal assertions pass. Each holds the source and Cargo
+leases, requires original source bytes from the pin, and verifies restored
+source, all mounted inputs and the ordinary Hagia binary. No production
+worktree is mutated. Strict restored-overlay Clippy, formatting, fourteen
+runner tests (one internal child fixture ignored) and Hagia layout pass.
+
+This closes only the availability-loss and withdrawal branches. Device
+availability detection, stopping/authentication branches, consumption of
+backend-initiated revocation, native publication installation and source-repaint
+scheduling remain distinct t249 boundaries. The fixture supplies CPU content,
+availability, composition requests and device submit/flip completion; no real
+scanout, timing or physical acceptance is claimed. Remaining capability joins,
+launch contexts, measurement/comparator and integration exits stay open.
+
+### Source and retained records
+
+Signed Hagia `351da950019dc3be627119ddd1eb4a6abfbe28ef` and niltempus
+`cd22bed0c2fe43f4be1ee179f8905534a43faa41`, against unchanged Sophia
+`1b476dbdcc30215fe7ee5841e5a872f136ebb3a0`, pass all twenty-one individually
+selected cases in `t249-service-01`:
+`lifecycle=3 occupied=7 operations=3 slow_peer=1 presented=7 native=false`.
+The final archive refresh rebuilds workspace sources after the controls.
+
+The read-only audit verifies 2,937 archived crate/Cargo inputs against pinned
+Git blobs, the test mount and fifteen external modules, unchanged fixture bytes
+from the development run and controls, twenty-one exact passing results, both
+candidate signatures and six self-excluding manifests. This binds the result;
+it is not another execution. The scoped checks do not claim a general product
+gate or a full Nim/formal rerun. Later documentation-only commits record the
+result without changing either qualified fixture or runner source.
+
+Packages under `~/.local/state/sophia/development-evidence/`:
+
+| Package | SHA-256 of its self-excluding SHA256SUMS |
+| --- | --- |
+| `t249-service-dev01` | `a1daa9c0ffa871a8e6c469dc02590e1e258622166041c450523ef532d463a65c` |
+| `t249-service-revoke-control01` | `bcb88630e1a781051a9aa0f7d6360146f7e1e1f326f70320e92c4cd6c990284c` |
+| `t249-service-remove-control01` | `6a9869175db99c7cea08529a780e01619410c6902173dc3d754f7cb14926f168` |
+| `t249-service-settle-control01` | `c14478587818244cf74448794e5f03e82ca59c91ce978ea3d8d1e5a88be6e6ab` |
+| `t249-service-checks01` | `f3bf51ae41a3a1a384df626e8073daa1299a0d4399e034bdfa9e03d0dd1e5603` |
+| `t249-service-01` | `8b2041d439cd7c420a96fdd2c308fbee035b9488269e39f986c8ddd6ef7d49c0` |
+| `t249-service-audit01` | `442f61af02ddb23cd1e888523250a293a84352371040c5464d640de120b2f1a7` |
+| `t249-service-cleanup01` | `659dbc69c7a8af0082bac9c25252dba90eff7b2882ff0cc93abe080104959a8f` |
+
+The leased cleanup removes the marked build root after all jobs finish.
+Records contain binary paths and hashes, not built binaries. No production or
+installed component changes. t249 and Hagia h006 retain their full exits.
+
 ## Connections
 
 - [t249 plan](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249) owns the unchanged acceptance requirements.

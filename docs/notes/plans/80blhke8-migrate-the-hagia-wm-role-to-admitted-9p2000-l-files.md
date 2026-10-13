@@ -14,14 +14,16 @@ The older opt-in/current-IPC language below describes the original milestone;
 the accepted retirement amendment governs current product selection and
 whole-release rollback. Output has also migrated. Neither change closes t249.
 
-The latest baseline is the twenty-case `t249-present-admission-02` run on
+The latest baseline is the twenty-one-case `t249-service-01` run on
 Sophia `1b476dbdc`, with authenticated real-Hagia startup and replacement.
-The [new result](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#authenticated-baseline-and-headless-software-present-admission-2026-10-12)
-adds headless software-Present retirement through the backend and Session
-admission owners, with two discriminating controls. The shared-core readiness
-and role-facing foundations, including t317/t318, have completed their scoped
-exits; full WM qualification has resumed. Native service selection, remaining
-capability joins and reproducible measurement still require qualification.
+The [new result](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#production-presentation-service-availability-and-withdrawal-2026-10-12)
+joins the actual presentation-service owner for supplied availability loss,
+runtime withdrawal and availability-gated settlement, with three discriminating
+controls. The preceding headless software-Present admission join remains in
+the suite. The shared-core readiness and role-facing foundations, including
+t317/t318, have completed their scoped exits; full WM qualification has resumed.
+Other service branches, native installation and scheduling, remaining capability
+joins and reproducible measurement still require qualification.
 
 The historical two-wire Hagia runner is frozen at its pinned source and must
 not be run against current master or silently rebased. The first current
