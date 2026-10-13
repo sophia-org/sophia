@@ -7,12 +7,12 @@ tags: [validation, protocol, policy]
 ---
 # WM qualification after source retirement and attended output recovery
 
-Latest result: the [pointer interaction and bounded accounting result](#pointer-interaction-and-bounded-offer-accounting-2026-10-13)
+Latest result: the [profile-gated pointer-focus result](#profile-gated-pointer-focus-2026-10-13)
 extends qualification after the t317/t318 foundation. Historical maps below keep
 their dated scope; the latest result does not close the full t249 exit.
 The [October 13 consolidated matrix](#twenty-three-case-coverage-reconciliation-2026-10-13)
 is now the current coverage reference; the October 10 maps are historical.
-Its pointer row is updated by the 25-case result below. The October 12 stopping
+Its pointer rows are updated by the 26-case result below. The October 12 stopping
 point remains historical; resume from the newer result's final paragraph.
 
 ## Stopping point and resume procedure (2026-10-12)
@@ -2463,7 +2463,7 @@ another crate is named. The bit inventory is `sophia-protocol/src/wm_rows.rs`.
 | 10 | LAUNCH_PLACEMENT: Manage, layout staging/commit and retirement | J exact Manage source settlement, CPU backing admission and software-Present copy retirement; retained bytes and headless interior pixel | Native Present admission, launch context and unsettled-Manage recovery remain separate. The old claim that no case calls Manage is superseded. |
 | 11 | TAB_GROUPS: projection reducer, indicator/tab admission and Engine chrome | S Hagia tab projection and generic Engine tests | Current peer membership/selection through the Session owner, including stale member refusal. |
 | 12 | TRANSLATION_GROUPS: request reconciliation and Engine translation | S Hagia/Engine translation tests | Current peer translated placements and group membership through reconciliation. |
-| 13 | POINTER_FOCUS: `enqueue_pointer_focus`, negotiated profile and commit | S `policy_active_focus.rs` | Enabling profile plus real-peer accepted/refused focus and no activation before commit. The reused-ID case calls `enqueue_focus`, not this owner. |
+| 13 | POINTER_FOCUS: `enqueue_pointer_focus`, negotiated profile and commit | J enabling profile, exact hover identity, correlated real-peer answer, timeout recovery and commit-only focus/checkpoint promotion | Supplied hover observations and completion; physical hit testing/routing, frontend focus delivery and empty-other-output activation remain open. The reused-ID case separately calls `enqueue_focus`. |
 | 14 | LAUNCH_ORIGIN: launch-origin registry and request snapshot | S `tests/launch_origin.rs` and Hagia origin policy tests | Frozen origin reaches a real Manage cycle without borrowing a newer focus/context or a reused identity. |
 | 15 | OUTPUT_ACTIONS: output operation admission and policy ownership | A topology return; S combined-output tests | Current peer output action and refusal with exact output identity. |
 | 16 | OUTPUT_POLICY_KEYS: output-key reconciliation/publication | A topology return within its recorded identities | Output-key/action composition and replacement correlation; share a multi-output fixture with bits 2/15/17. |
@@ -2489,7 +2489,7 @@ another crate is named. The bit inventory is `sophia-protocol/src/wm_rows.rs`.
 | Read-only inspection and Submitted-versus-semantic labels | Retained inspection/export and t317/t318 admitted-view evidence are reuse candidates. Bind the exact candidate and malformed/truncated controls; do not label old captured bytes as current live admission. |
 | Independent SDK/export | Retained `t323-sdk-export-01` runs the two opt-in Nim peers; J ordinary Hagia uses the current SDK and authenticated launch. The older supplied-stream tests and Factotum bootstrap retain their own scopes and need impact review at final pairing. |
 | Measurement/resource costs | Still unqualified. Required: complete offer/admit/replace/dispatch/settle accounting, agreed compatible comparator, then distributions, CPU, allocation, copied bytes, wakes, round trips and bounded queues. Historical failed campaigns stay refused. |
-| Signed candidates, isolation and physical boundary | The 23-case pair is signed and bound with controls. Final affected gates must bind the eventual candidate. t250 owns attended daily configuration and rollback; production-owner gaps above remain in t249. |
+| Signed candidates, isolation and physical boundary | The latest 26-case pair is signed and bound with controls. Final affected gates must bind the eventual candidate. t250 owns attended daily configuration and rollback; production-owner gaps above remain in t249. |
 
 Capacity latches, reload/registry changes, lock reset, output loss and Manage
 retry are review targets within these rows. They are not newly invented product
@@ -2620,15 +2620,88 @@ routing, configure ACKs, release debt, pixels or native scheduling. Those
 owners, the remaining capability/backend joins and the measurement gate still
 belong to t249; t317/t318 acceptance is not reopened.
 
-Resume t249/h006 from this 25-case pair and the matrix's remaining-boundary
-column. The next bounded assessment is pointer-focus admission and physical
-pointer routing/debt: distinguish the profile-gated `enqueue_pointer_focus`
+At this slice's completion, the next assessment was the 25-case pair's remaining
+pointer boundary. The subsequent focus result below now supersedes this resume
+instruction. The assessment distinguishes the
+profile-gated `enqueue_pointer_focus`
 owner from the already qualified generic `enqueue_focus` identity guard and
 direct interaction queue. Map existing executed generic evidence before adding
 the smallest missing real-peer join and control. Do not repeat the completed
 pointer queue slice or t317/t318 acceptance. The ledger is a preflight for
 accepted offers only; rejected/unresolved accounting, the prospective comparison
 method and measurement campaign are still separate required work.
+
+## Profile-gated pointer focus (2026-10-13)
+
+The new external `pointer_focus_sdk.rs` case calls Session's
+`enqueue_pointer_focus` owner with authenticated ordinary Hagia. It first
+proves that the default profile cannot admit a hover request, then starts a
+separate peer with `focus-follows-mouse #true`. Profile selection no longer
+implicitly selects the fixture's native-presentation ceiling. Sophia remains
+pinned to `1b476dbdcc30215fe7ee5841e5a872f136ebb3a0`; no production or
+test-support seam changes.
+
+With the enabling profile, a stale surface generation, departed output,
+already focused target and empty hover on the active output leave the queue,
+request count, committed focus and checkpoint unchanged. A fresh target
+coalesces and real Hagia answers the exact PointerFocus cause, but focus and
+checkpoint remain committed to the old target. A supplied TimedOut result
+settles the candidate without promotion. The correlated SceneChanged recovery
+confirms the old focus; a new hover with a fresh request/transaction then commits
+and agrees with Hagia's checkpoint. Final health checks poll without admitting
+work and observe a live peer; they are not a round trip.
+
+Development 01 is retained as STOP before compilation: the overlay refused
+to replace the pin's existing generic `pointer_focus.rs`. The external module
+was renamed `pointer_focus_sdk.rs`. Development 02 passes all 26 cases.
+Both single-site controls compile, exit 101 and fail one test at their named
+first assertion:
+
+- Bypassing the negotiated-capability guard in `enqueue_pointer_focus` fails
+  `unnegotiated pointer focus must not enter the owner queue`.
+- Matching only `SurfaceId::index` in PointerFocus's subject-liveness guard
+  fails `stale hover identity must not target a current numeric surface`.
+
+These are synchronous admission controls, before dispatch or timeout. Each
+experiment requires both source files to equal the pin, holds the archive and
+Cargo leases, then restores and verifies both sources, all eighteen mounted
+inputs and the ordinary Hagia binary. Restored-overlay strict Clippy,
+fixture/runner formatting, fourteen runner tests (one child fixture ignored)
+and Hagia layout pass. No full Sophia product gate is claimed for this external
+test-only change; the five copied-owner span hashes are unchanged.
+
+| Package | Manifest SHA-256 |
+| --- | --- |
+| `t249-focus-dev01` (STOP) | `a5b07b9b5e373e28eb1a22727163f0e0c01e8de289d425e2d02e1bbd481219af` |
+| `t249-focus-dev02` | `d897a57e65b79e9984f6ec72b307f688c18a3f01f129841df8e0eabcdbc15176` |
+| `t249-focus-gate-control01` | `e3c5cf613a956eeec7c743b9487b2371888f3db69c6ea57ea04aa27f5ec36841` |
+| `t249-focus-identity-control01` | `2753624dfffce5f990533ea2f242c53cd09b223a3498135441316cf8bbce61cf` |
+| `t249-focus-checks01` | `92e2c8ac06d7e62678188e95ff38b079aedc815404c3390d20241c8f53b1437d` |
+
+The clean signed Hagia `883561e` / niltempus runner `bfd6096` pair passes
+all 26 cases in `t249-focus-01`, manifest
+`bee178529fcc8a0523b47fbe69d21d97a2f0ae57055a6bbc167eb2cdaca222ee`.
+The read-only audit verifies 3,257 unchanged pinned crate/Cargo/vendor inputs,
+the mount and seventeen external modules, their signed source, identical
+development/control fixture bytes, all 26 exact passing results, six package
+manifests and the two retained interaction ledgers. Audit manifest:
+`a5b1ca479592305cba78356c6219d5107acbe7f2bf55b5662075ad255485c6cb`.
+Leased `t249-focus-cleanup01` removes the marked disposable build root. Evidence
+contains executable paths and hashes, not binaries. Later result commits change
+documentation only; nothing is installed or reloaded.
+
+Supplied boundaries remain explicit: hover observations, occupied surface facts,
+interleaving and layout completion. The fixture does not run the hover producer's
+physical hit testing, routing/occlusion checks or frontend focus delivery. It
+uses one output, so empty hover on another output is not qualified. It does not
+claim pointer-button debt or latency. Bit 13 gains only this owner-level subset.
+
+Resume t249/h006 with physical pointer routing/debt as the next bounded
+assessment. Trace the pointer binding and captured-button/release owners, map
+the existing generic evidence, then add only the missing real-peer join and
+discriminating control. Do not repeat the qualified direct interaction queue,
+pointer-focus admission or t317/t318 acceptance. Native installation/scheduling,
+the other capability rows and the measurement gate remain open.
 
 ## Connections
 
