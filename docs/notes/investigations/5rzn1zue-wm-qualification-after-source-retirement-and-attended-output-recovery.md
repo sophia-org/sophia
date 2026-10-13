@@ -9,27 +9,27 @@ tags: [validation, protocol, policy]
 
 ## Current resumption
 
-The [launch and logical-output recovery](#launch-and-logical-output-recovery-2026-10-13)
-cases now pass with four mutation controls. Frozen launch destinations,
-empty-output activation, occupied transfer/loss, output keys/actions and hidden
-Manage rearming have real-peer joins. Continue **overview pointer targets and
-output-loss capture/debt**, resolve the remaining **DMA retirement** owner path
-early, then finish the reviewed measurement campaign. The complete t249/h006
-exit has not passed.
+The [overview and output-loss](#overview-targets-and-output-loss-debt-2026-10-13)
+cases now pass with three mutation controls. Backend-derived pointer targets
+reach exact Hagia selection; logical-output loss revokes presentation input
+while preserving one swallowed release. The listed A–E joins are covered under
+their stated limits. Continue **DMA retirement through its production owners**,
+then finish the reviewed measurement campaign and final candidate binding.
+The complete t249/h006 exit has not passed.
 
 Use the [row dispositions](#remaining-row-dispositions-2026-10-13) and
 [t249 acceptance criteria](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249).
 Task status stays in `todo.md`; case count is not a completion percentage.
 Do not reopen t317/t318 or repeat their attended acceptance.
 
-The qualified baseline is **40 passing external cases**: signed Hagia
-`b86f18111b159713e7e09b1bb0e5f002380630af`, niltempus runner
-`46e08e4a044b11e83481f680a160108f3553d487`, and unchanged Sophia pin
+The qualified baseline is **42 passing external cases**: signed Hagia
+`1963a48b74ba418e68a717ef79265900b117d156`, niltempus runner
+`b0892b0404b960bf6c8c2c1c3c06908d27ec7909`, and unchanged Sophia pin
 `469371bf4ba6f9f87af5485d3967709d907426ee`.
-Package `t249-launch-outputs-pair01` has manifest
-`2f3e1ae39851ecf39521d639d3d308c4eced84a105b4b309ef7986dcbe01d6c7`.
+Package `t249-overview-targets-pair01` has manifest
+`7f3598ae93e5931e1e018194d3b5f4024e95dc5ac1b068846e622fb7e1c45b43`.
 The linked result records strict Clippy, formatting, layout, runner tests,
-source binding and cleanup. Its audit verifies 3,268 pinned inputs, twenty-two
+source binding and cleanup. Its audit verifies 3,268 pinned inputs, twenty-three
 mounted inputs, all exact results and unchanged generic-gate inputs and
 production glue.
 
@@ -54,7 +54,7 @@ Finite diagnostics and a coalescing control pass, but timing remains unqualified
 Before the campaign, finish open-loop scheduling, rejected/unresolved accounting,
 resource probes and method review. Preserve the relative and absolute budgets.
 
-Both completed launch/output build archives and the clean source worktree are
+The completed overview build archives and the clean source worktree are
 removed. `~/.cache/t249-session-comparator-build` remains for the next comparator
 experiment. No qualification job or live-session operation is running.
 
@@ -2890,8 +2890,9 @@ or omit Manage rearming, each against a named behavioral assertion. Share
 output loss/debt with A and per-output presentation identity with E.
 The [launch/output result](#launch-and-logical-output-recovery-2026-10-13)
 covers frozen origin/context, empty-output activation, occupied transfer/loss,
-key/action replacement and hidden Manage rearming. Output-loss capture/debt
-remains shared with E's presentation-target work.
+key/action replacement and hidden Manage rearming. The later
+[overview result](#overview-targets-and-output-loss-debt-2026-10-13) covers the
+shared output-loss capture/debt obligation.
 
 **E — Overview and pointer targets.** Compose actual peer overview instances
 and regions, derive target identity from the backend frame, then route a
@@ -2899,6 +2900,8 @@ nonzero target activation to the peer. Require exact target selection and
 commit-only ordinary focus; stale publication/target/output must refuse.
 Use an identity-weakened or wrong-target control. Existing two-head consensus
 does not need another clone; multiple logical outputs share D's setup.
+The later [overview result](#overview-targets-and-output-loss-debt-2026-10-13)
+covers these joins, with source content, input and device completion supplied.
 
 **F — Native backend owner joins.** Resolve reachability before writing a
 large fixture: native publication installation, native Present admission
@@ -3894,6 +3897,73 @@ execution, frontend delivery or pixel admission. The restart case concerns a
 settled policy answer whose hidden visual admission remains pending. Output-loss
 capture/debt and overview pointer targets remain open, as do DMA retirement,
 measurement and final qualification. Sophia production code is unchanged.
+
+## Overview targets and output-loss debt (2026-10-13)
+
+Two new real-Hagia cases cover E's overview target selection and the shared
+A/D output-loss release debt. The signed candidates are Hagia
+`1963a48b74ba418e68a717ef79265900b117d156` and niltempus runner
+`b0892b0404b960bf6c8c2c1c3c06908d27ec7909`, against unchanged Sophia pin
+`469371bf4ba6f9f87af5485d3967709d907426ee`. No production code changed.
+
+`sdk_overview_pointer_commits_exact_target` composes actual overview instances
+and regions on two logical outputs. Both outputs retire backend-derived
+publication stamps, including the peer's region identities. The fixture reads
+a nonzero instance identity and source from the retired frame, then routes its
+press/release through Session's physical-input owner. The exact presented action
+reaches Hagia and selects that source. Ordinary focus and checkpoint bytes stay
+unchanged until commit. Stale target/publication generations, borrowing another
+live output and replay after withdrawal cannot enter the peer queue.
+
+`sdk_overview_output_loss_preserves_release_debt` presses an overview instance
+on the output that will disappear. Session's output-update owner changes the
+scene and its revalidation owner revokes input before another frame. The old
+action is refused, real Hagia closes the overview, and backend withdrawal
+retires. The captured release is swallowed once; a duplicate returns to ordinary
+routing without an action. The surviving output retains its ordinary focus.
+
+Three archived controls weaken the instance-generation check, omit changed-scene
+revalidation, or discard capture debt during revalidation. Each fails its named
+behavioral assertion before any timeout. Original production bytes are restored
+before both cases pass again. The first development run failed because the
+fixture gave the CPU scene the combined desktop width; that constructor expects
+the primary output's size. The corrected fixture and the failed run are retained.
+
+Evidence under `~/.local/state/sophia/development-evidence/`:
+
+- `t249-overview-targets-20261013-01`, manifest
+  `ca7a5d4387b579ff6318df715a62e15aad9444490eea3c4c0fdbf13234f8b665`,
+  retains the controls and restored cases, audits 5,112 Sophia and 483 Hagia
+  base inputs plus overlays, and verifies 427 unchanged local-policy inputs
+  against the earlier passing Hagia suite.
+- `t249-overview-targets-pair01`, manifest
+  `7f3598ae93e5931e1e018194d3b5f4024e95dc5ac1b068846e622fb7e1c45b43`,
+  passes all 42 exact external cases with ordinary Hagia and its vendored SDK.
+- `t249-overview-targets-checks01`, manifest
+  `a55d9245c2f3dcd774ee841017287e7a49807aa18ffd2497e74ecb3424d3731a`,
+  passes strict external Clippy, fixture formatting, Hagia layout and fourteen
+  runner tests; the runner's child-process helper remains intentionally ignored.
+- `t249-overview-targets-pair-audit01`, manifest
+  `e9ca4b03ca293f866cc7c8306359bcc86778b23be346429236a4db8d2153bade`,
+  verifies signatures, 3,268 pinned inputs, twenty-three mounted inputs, all
+  exact results, generic-gate reuse and the five unchanged production glue spans.
+
+CPU content, topology, events, initialization and device completion are supplied.
+The backend fixture retains its original heads to retire withdrawal after
+Session's logical-output loss; it does not simulate native connector removal.
+No physical input, frontend delivery, DMA import or device pixels are proved.
+Both build archives and the clean source worktree are removed; cleanup records
+are `t249-overview-targets-dev-cleanup01` and
+`t249-overview-targets-pair-cleanup01`.
+
+The next required join is DMA Present retirement. The existing retirement target
+already shares the page-flip settlement owner, but its CPU fixture deliberately
+refuses GPU image promotion. `ownership.rs::settle_submission_ownership` and
+the renderer-image promotion path still require native resources. Resolve the
+smallest resource seam and review its source pin before writing the real-peer
+case. Supplying final retirement records or taking only the direct-scanout branch
+would leave the composed DMA owner unproved. Measurement and final qualification
+remain open.
 
 ## Connections
 
