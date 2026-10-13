@@ -19,11 +19,14 @@ The complete t249/h006 exit has not passed.
 
 The [DMA submission seam](#dma-submission-boundary-2026-10-13),
 [image custody and shared driver](#dma-image-custody-and-driver-boundary-2026-10-13)
-are implemented and checked. This changes Sophia after the qualified pin below;
-it is not yet a new external-pair candidate. Next extend the mirrored fixture
-to capture image custody from queued DMA layers and run the shared driver through
-backend-derived retirement and Session admission. Do not supply the final cohort
-or substitute a successful promotion count for the actual custody transition.
+are implemented and checked. The [composed DMA fixture](#composed-dma-retirement-2026-10-13)
+now runs the shared driver through backend-derived retirement and actual image
+custody promotion. Its 332 backend tests, strict Clippy and promotion control pass.
+This changes Sophia after the qualified pin below; it is not yet a new
+external-pair candidate. Next join the actual GPU authority intake and Session's
+DMA retirement recorder to real-Hagia admission. Their concrete native parameters
+still need a narrow resource boundary. Do not supply the final cohort or replace
+the DMA recorder with the software recorder.
 
 Use the [row dispositions](#remaining-row-dispositions-2026-10-13) and
 [t249 acceptance criteria](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249).
@@ -64,7 +67,8 @@ resource probes and method review. Preserve the relative and absolute budgets.
 
 The completed overview build archives and the clean source worktree are
 removed. `~/.cache/t249-session-comparator-build` remains for the next comparator
-experiment. No qualification job or live-session operation is running.
+experiment. `~/.cache/t249-dma-retirement-build` remains for the Session DMA join.
+No qualification job or live-session operation is running.
 
 ## Stopping point and resume procedure (2026-10-12)
 
@@ -4068,6 +4072,45 @@ Controls must omit promotion/retirement and fail before a timeout. The fixture
 may supply worker/device completion and resource allocation, but cannot claim
 GBM import, pixel copying or physical scanout. No external case or refreshed
 42-case Sophia pin is established by these preparatory changes.
+
+## Composed DMA retirement (2026-10-13)
+
+Signed Sophia `7faa3a7359715d090c3db20f42d6f6c39c191b64` adds a generic
+driver-to-retirement test using the existing mirrored target. The shared GPU
+driver prepares the Engine candidate and queues its actual DMA layers. Simulated
+worker completion derives image identities from those layers and retains supplied
+storage in the same custody type used by the native renderer. The installation's
+composition checksum supplies each head candidate; `MixedPresent` content itself
+has no logical checksum.
+
+The test executes deferred submission ownership and the page-flip retirement
+owner. A sibling completion leaves the image staged and Engine uncommitted.
+Primary completion promotes the exact image, commits the exact candidate and
+buffer, releases the surface-content owner, and returns backend-derived clocks.
+Copied Present feedback is `Idle` then `Complete`, as the production feedback
+contract requires. A second retirement produces no candidate. Teardown releases
+the supplied image storage and framebuffer owners.
+
+Evidence `~/.local/state/sophia/development-evidence/t249-dma-retirement-dev01`
+has manifest
+`5f6adbfa7d76dc86a07b4882b4a001dd8fda041dc223d66c6bae0e4ebac8c029`.
+All 332 backend library tests and strict library/test Clippy pass with devices
+hidden. Formatting and diff checks pass. The source audit verifies 5,117 base
+files plus seven changed or added files against the tested archive. A negative
+control removes the custody transition while retaining its successful return;
+the focused case fails at “DMA retirement must promote its captured image.”
+Restoring the transition passes. Initial failed development runs are retained.
+
+This test supplies authority admission, worker allocation and device completion.
+It proves neither GPU import nor pixel copying, physical scanout or the Session
+admission join. The next join must execute GPU authority intake and
+`record_native_present_retirement`; the latter still needs concrete native
+scanout for stability and pixel-count observations. Preserve those observations
+at a narrow boundary and retain the actual admission/evidence recorder. Do not
+substitute software retirement or an independently constructed final candidate.
+The complete generic gate, external pair, measurement campaign and final binding
+remain open. The build archive is retained for the next experiment; no job is
+running.
 
 ## Connections
 
