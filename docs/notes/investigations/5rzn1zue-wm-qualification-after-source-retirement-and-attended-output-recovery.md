@@ -50,9 +50,11 @@ observations and controls; they are not a promise of six tests. Reuse current
 generic proofs for local bounds, chord refusal and inspection rather than
 duplicating them with a named peer.
 
-Resolve the measurement comparator before a campaign. The [source feasibility
-audit](#comparator-feasibility-2026-10-13) identifies common adapter boundaries
-but four retired driver events still require a compatibility prototype.
+Resolve the measurement comparator before a campaign. The [client prototype](#comparator-client-prototype-2026-10-13)
+runs the current reducer through the retired frame adapter on eight finite
+cycles. The SDK arm and Sophia driver/settlement boundary remain unproved;
+this is not yet an accepted comparator. The [source audit](#comparator-feasibility-2026-10-13)
+identifies four retired driver events whose behavior must be preserved.
 The accepted-offer
 ledger is only a diagnostic; rejected/unresolved accounting and compatible
 old/new workloads remain necessary. Native installation, retirement and
@@ -3229,6 +3231,54 @@ its manifest is
 It retains both adapter sources, the boundary diffs and exact revisions.
 No build, workload, performance result or acceptance-method change follows
 from this audit. The relative and absolute budgets remain unchanged.
+
+## Comparator client prototype (2026-10-13)
+
+A disposable copy of signed Hagia `a4f056b` now compiles the retired frame
+adapter against the current policy loop, session and reducer. The audit matches
+all 480 tracked files to that revision. Seven historical adapter/codec modules
+from `e8b56a3195ac11f44e100bc4ed903c0d3cb72e9a` were added under separate names;
+the frame types re-export current neutral records. No current source was
+replaced. The initial compiler failure exposed the two newer causes,
+`actionLifecycle` and `chordAction`. The legacy decoder now explicitly refuses
+them because its negotiation does not offer those capabilities. This does not
+extend the old protocol or claim full current capability parity.
+
+The finite workload has eight cycles: scene change, Move Begin, two Updates,
+End, and Resize Begin, Update and Cancel. One Move Update receives a supplied
+`rejectedInvalid` outcome. A direct run of the current reducer supplies the
+reference proposals and subsequent state. An independent socket server packs
+the input records and compares every returned projection record, including
+indicators, translation membership and surface/output launch contexts. The
+client's trace also matches every decoded snapshot, request and transaction.
+Both ordinary delivery and seven-byte fragments pass all eight cycles.
+
+Five negative runs terminate with their expected diagnostics: partial snapshot
+followed by EOF, nonzero reserved header bytes, an unnegotiated lifecycle cause,
+a mismatched outcome request and disconnect after a complete proposal. None
+uses a timeout as a passing refusal. Development attempts found an invalid
+fixture surface kind and an omitted launch-context expectation; both were
+corrected before the final run. The evidence records these limits and failures.
+
+The package is
+`~/.local/state/sophia/development-evidence/t249-comparator-client-20261013-01`;
+its self-excluding manifest SHA-256 is
+`1a64410146f6063dfc32339298bb8fc392d556edabfbc5a5bc1a956e9f1a5d81`.
+It retains the added source, preparation and probe scripts, reference records,
+results, logs, compiler identity, unchanged-source hashes and binary hashes.
+It contains no binaries or build cache. The disposable source and Nim cache
+were removed after capture.
+
+This proves a client-side compatibility route for the pointer workload, not a
+paired transport comparator. The server and outcomes are supplied; the probe
+does not run Sophia's admission, queue, driver or settlement owners, the SDK
+arm, or the normal profile/checkpoint loop. Surface indices are nonzero, so
+historical identity exceptions remain outside this result. Next, run the same
+finite inputs through the current SDK adapter, then join both adapters below
+the same current Sophia enqueue/coalescing/settlement owners. Preserve and test
+partial-transfer phase restrictions, malformed/discarded transfer refusal and
+unexpected profile completion before reviewing the measured path. No campaign,
+performance result or acceptance-method change is claimed.
 
 ## Connections
 
