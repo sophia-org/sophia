@@ -536,6 +536,13 @@ successor work.
 
 ## t324
 
+The [OSC 7501 investigation](../investigations/0photrwd-osc-7501-reports-program-status-through-admitted-notification-clients.md)
+distinguishes terminal status from authentication. An untrusted report that a
+program needs authentication or approval cannot prove identity, trigger trusted
+credential entry or grant permission. t324 remains independent of terminal
+protocol support; optional status presentation uses the normal notification
+route under t046.
+
 Deliver local credential provisioning and authentication for independently
 launched tools and future 9P application clients. This follow-on preserves the
 ordinary-client target approved by niltempus on 2026-10-10; implementation needs

@@ -53,6 +53,23 @@ locked, a capture or frame handoff is refused and none in flight completes
 after the lock is applied
 ([lock plan](8jcykhdc-secure-session-lock-authority-and-lock-provider-role.md#t292-session-lock-state-and-input)).
 
+The [OSC 7501 investigation](../investigations/0photrwd-osc-7501-reports-program-status-through-admitted-notification-clients.md)
+adds terminal-originated status notifications as a use case for the generic
+notification route. Parsing, task records, progress aggregation and selection
+of notification-worthy transitions stay in the terminal or multiplexer.
+Sophia admits the sender and bounds delivery; program-supplied labels confer
+no identity or permission. Authentication/approval status must not become
+trusted credential entry, grant approval or automatic input. No OSC-specific
+service, Engine parser or public wire format is introduced by this requirement.
+
+Notification acceptance must cover denied/foreign grants, spoofed labels,
+hostile text, explicit handling of text-size limits, rate and queue bounds,
+sender replacement, revocation and stale status. Use independent generic
+clients in Sophia tests. Terminal repositories own OSC parsing and prompt/reset
+lifetimes; task clearing must not silently imply desktop dismissal. Keep rich
+task trees outside the initial notification route. This adds no separate task
+or change to the critical-path order.
+
 The [2026-10-09 screenshot report](../investigations/id869143-x11-drawable-readback-and-an-operator-capture-path.md)
 adds an operator and agent use case: one authorized image of a selected window
 or composed output, including accelerated content. A minimal CLI/provider
