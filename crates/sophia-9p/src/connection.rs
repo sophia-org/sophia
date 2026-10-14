@@ -1,7 +1,7 @@
 //! One connection's protocol state, without I/O.
 //!
 //! Bytes go in through [`Connection::receive`]; reply frames come out of
-//! [`Connection::output`]. Requests are answered in arrival order, one at a
+//! [`Connection::write_output`]. Requests are answered in arrival order, one at a
 //! time, except reads the export makes wait, which are answered when
 //! [`Connection::retry_waiting`] finds them ready or they are flushed,
 //! clunked, or cancelled by a new version or by [`Connection::close`].
@@ -33,7 +33,9 @@ use crate::export::{
 use crate::records::{Attr, Errno, Fid, Limits, OpenAccess, OpenFlags, Reply, Request, Tag};
 use crate::wire::{self, DIRENT_FIXED, FrameError, IO_HEADER, READ_OVERHEAD};
 
+mod delivery;
 mod in_place;
+use delivery::QueuedReply;
 pub use in_place::InPlaceTarget;
 use in_place::{InPlace, WRITE_HEADER, WRITE_REPLY};
 
@@ -125,7 +127,9 @@ pub struct Connection<E: Export> {
     /// The tag and unwritten length of each reply in `output`, in order. A
     /// tag stays in use until its whole reply is written: before that the
     /// client cannot have it, so a request reusing the tag is a violation.
-    unwritten: VecDeque<(Tag, usize)>,
+    unwritten: VecDeque<QueuedReply<E::Node>>,
+    /// Set only by a ready read and consumed by its immediately following send.
+    read_delivery: Option<(E::Node, Epoch)>,
     /// A complete request is buffered and waits for output room.
     stalled: bool,
     closed: bool,
@@ -148,6 +152,7 @@ impl<E: Export> Connection<E> {
             input: Vec::new(),
             output: Vec::new(),
             unwritten: VecDeque::new(),
+            read_delivery: None,
             stalled: false,
             closed: false,
             attached: false,
@@ -171,27 +176,6 @@ impl<E: Export> Connection<E> {
 
     pub fn waiting_count(&self) -> usize {
         self.waiting.len()
-    }
-
-    /// Reply bytes not yet written.
-    pub fn output(&self) -> &[u8] {
-        &self.output
-    }
-
-    /// The peer took `count` bytes of [`Self::output`]. Call
-    /// [`Self::resume`] and [`Self::retry_waiting`] afterwards: requests held
-    /// for want of room may now proceed.
-    pub fn sent(&mut self, count: usize) {
-        let mut count = count.min(self.output.len());
-        self.output.drain(..count);
-        while let Some((_, remaining)) = self.unwritten.front_mut() {
-            if count < *remaining {
-                *remaining -= count;
-                break;
-            }
-            count -= *remaining;
-            self.unwritten.pop_front();
-        }
     }
 
     /// How many more input bytes this connection will take now. Zero while
@@ -306,6 +290,7 @@ impl<E: Export> Connection<E> {
         self.input.clear();
         self.output.clear();
         self.unwritten.clear();
+        self.read_delivery = None;
         self.closed = true;
         export.connection_closed(self.id);
     }
@@ -378,10 +363,7 @@ impl<E: Export> Connection<E> {
                 return Err(Fatal::BeforeVersion { kind });
             }
             if self.waiting.iter().any(|waiting| waiting.tag == tag)
-                || self
-                    .unwritten
-                    .iter()
-                    .any(|(unwritten, _)| *unwritten == tag)
+                || self.unwritten.iter().any(|reply| reply.tag == tag)
             {
                 return Err(Fatal::DuplicateTag(tag));
             }
@@ -417,7 +399,11 @@ impl<E: Export> Connection<E> {
     fn send(&mut self, tag: Tag, reply: &Reply) -> Result<(), Fatal> {
         let start = self.output.len();
         wire::encode(tag, reply, &mut self.output).map_err(|_| Fatal::Unframeable)?;
-        self.unwritten.push_back((tag, self.output.len() - start));
+        self.unwritten.push_back(QueuedReply {
+            tag,
+            remaining: self.output.len() - start,
+            delivery: self.read_delivery.take(),
+        });
         Ok(())
     }
 
@@ -801,7 +787,12 @@ impl<E: Export> Connection<E> {
             Ok(ReadOutcome::Ready(data)) if data.len() > count as usize => {
                 Some(Reply::Lerror(Errno::EIO))
             }
-            Ok(ReadOutcome::Ready(data)) => Some(Reply::Read(data)),
+            Ok(ReadOutcome::Ready(data)) => {
+                if export.guard_read_delivery(&state.node) {
+                    self.read_delivery = Some((state.node.clone(), state.epoch));
+                }
+                Some(Reply::Read(data))
+            }
             Ok(ReadOutcome::Pending) => None,
             Err(errno) => Some(Reply::Lerror(errno)),
         }

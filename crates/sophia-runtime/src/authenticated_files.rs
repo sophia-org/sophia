@@ -244,6 +244,28 @@ impl<E: ProtectedFiles> Export for AuthenticatedFiles<E> {
             }
         }
     }
+    fn guard_read_delivery(&self, node: &Self::Node) -> bool {
+        matches!(node, AuthenticatedNode::File(node) if self.files.guard_read_delivery(node))
+    }
+    fn with_delivery<T>(
+        &mut self,
+        access: &Access<'_, Self::Node>,
+        deliver: impl FnOnce() -> T,
+    ) -> Result<T, Errno> {
+        self.check(access)?;
+        match access.node {
+            AuthenticatedNode::File(node) => self.files.with_delivery(
+                &Access {
+                    connection: access.connection,
+                    epoch: access.epoch,
+                    node,
+                    operation: access.operation,
+                },
+                deliver,
+            ),
+            _ => Ok(deliver()),
+        }
+    }
     fn lookup(&mut self, node: &Self::Node, name: WalkName<'_>) -> Result<Self::Node, Errno> {
         let AuthenticatedNode::File(node) = node else {
             return Err(Errno::EACCES);

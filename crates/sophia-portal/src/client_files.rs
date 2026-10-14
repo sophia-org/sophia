@@ -132,6 +132,25 @@ impl ProtectedFiles for PortalClientFiles {
 impl Export for PortalClientFiles {
     type Node = Node;
     type Handle = Handle;
+    fn guard_read_delivery(&self, node: &Node) -> bool {
+        matches!(
+            node,
+            Node::Transfer { .. } | Node::FrameInfo { .. } | Node::Frame { .. }
+        )
+    }
+    fn with_delivery<T>(
+        &mut self,
+        access: &Access<'_, Node>,
+        deliver: impl FnOnce() -> T,
+    ) -> Result<T, Errno> {
+        self.check(access)?;
+        match access.node {
+            Node::Transfer { object, .. }
+            | Node::FrameInfo { object, .. }
+            | Node::Frame { object, .. } => self.objects.with_delivery(*object, deliver),
+            _ => Ok(deliver()),
+        }
+    }
     fn attach(&mut self, _: &AttachContext<'_>) -> Result<Attachment<Node>, Errno> {
         Err(Errno::EACCES)
     }

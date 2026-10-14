@@ -49,6 +49,16 @@ impl PortalObjectRecipient {
                 .collect()
         })
     }
+    /// Keep the exact binding and its source authority live for one bounded,
+    /// nonblocking socket write. The callback must not reenter this owner.
+    pub(crate) fn with_delivery<T>(
+        &self,
+        qid: u64,
+        deliver: impl FnOnce() -> T,
+    ) -> Result<T, Errno> {
+        self.with_object(qid, |_| deliver())
+    }
+
     fn with_object<T>(&self, qid: u64, read: impl FnOnce(&Object) -> T) -> Result<T, Errno> {
         let object = {
             let state = self.state.lock().map_err(|_| Errno::EIO)?;

@@ -51,6 +51,14 @@ lease. A stale object answers `ESTALE` while unrelated status access on the
 authenticated role remains available. Endpoint-grant or launch revocation
 instead retires the role itself.
 
+Queued `transfer`, `frame-info` and `frame` replies retain their original
+object identity. Each nonblocking socket write holds the recipient lease,
+source-generation guard and lock barrier. Revocation therefore prevents any
+further bytes from entering the socket. If a queued reply loses authority,
+the server closes the connection and drops its unsent bytes; it cannot replace
+a partly sent reply with an error. Fresh stale reads still answer `ESTALE`.
+Bytes already accepted by the kernel before revocation cannot be recalled.
+
 Only read-only opens are accepted. Unknown control names are absent. No
 descriptors cross the 9P stream. `Tversion` clears wire fids and requires fresh
 authentication under the same pinned launch identity; it does not reset object

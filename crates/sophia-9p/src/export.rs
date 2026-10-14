@@ -187,6 +187,24 @@ pub trait Export {
     /// again whenever a waiting read is retried.
     fn check(&mut self, access: &Access<'_, Self::Node>) -> Result<(), Errno>;
 
+    /// Retain this read's node and epoch until its reply has left the queue.
+    fn guard_read_delivery(&self, _node: &Self::Node) -> bool {
+        false
+    }
+
+    /// Run one nonblocking transport write under the owner's delivery guard.
+    /// Revocable exports must keep their authority guard held across `deliver`.
+    /// The callback must not wait or reenter the export. Failure requires the
+    /// driver to close the connection: a reply may already be partly written.
+    fn with_delivery<T>(
+        &mut self,
+        access: &Access<'_, Self::Node>,
+        deliver: impl FnOnce() -> T,
+    ) -> Result<T, Errno> {
+        self.check(access)?;
+        Ok(deliver())
+    }
+
     fn lookup(&mut self, directory: &Self::Node, name: WalkName<'_>) -> Result<Self::Node, Errno>;
 
     /// A node's metadata, or, given the handle of an open fid, that opened

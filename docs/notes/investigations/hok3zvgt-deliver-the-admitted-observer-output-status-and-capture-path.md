@@ -24,10 +24,9 @@ Existing authentication, HostDomain admission and revocation still apply.
 
 This is an aggregate status slice, not the complete observer or capture exit.
 It deliberately labels the native retirement count as an owner counter, not a
-per-output presentation generation. Still required: per-output capture identity,
-immutable composed-output readback (CPU and accelerated content), renderer and
-lock/revocation joins, an admitted CLI, negative controls, capture-on/off
-measurements and attended qualification. No current-session installation,
+per-output presentation generation. Still required: the native presentation
+join, request admission, aggregate retention bounds, an admitted CLI,
+capture-on/off measurements and attended qualification. No current-session installation,
 reload, input injection or screenshot is performed by this implementation.
 
 An installed-session KVM failure interrupted this work at 13:38 UTC. Its
@@ -42,6 +41,9 @@ It returns bounded immutable RGBA8 bytes; the CPU/GPU pixel and lifetime test
 passes on the isolated render node. The portal recipient now binds a small
 frame record and separately retained image under one common lease. Its source
 pins a selected presentation and serializes output replacement with reads.
+Queued recipient replies now retain that authority through each nonblocking
+socket write. Revocation closes a transport with unsent protected bytes,
+including a partly written reply. Socket-backpressure tests cover this boundary.
 The live renderer-worker/completion identity, request admission, aggregate
 retention bounds and CLI remain unconnected. Do not treat supplied presentation
 records in the portal tests as proof that KMS presented a frame.
@@ -92,14 +94,35 @@ replace an opened image, and an output replacement must not revive its grant.
 
 ## Contract and validation
 
-The final delivery barrier still needs an explicit connection-level join.
-`PortalClientConnection::poll` drives the shared 9P server, whose connection
-queues encoded replies after an export read. A successful guarded read alone
-does not prove that queued image bytes cannot be written after lock. The live
-capture path must cancel or fence unsent replies before applying that lock,
-with a real socket/backpressure control. Holding the existing execution mutex
-around the whole server turn would re-enter it during export reads and is not
-a valid solution. Keep this separate from the tested source/read barrier.
+The shared 9P core now retains the node and epoch of each protected read until
+its reply leaves the queue. It checks the exact recipient binding under the
+common execution and source guards during each nonblocking socket write.
+Unguarded replies ahead of it may be batched, but cannot carry protected bytes
+past their check. Clunking or reusing a fid does not change queued authority.
+Revocation closes the connection and drops the remainder; a partly sent frame
+cannot be replaced with `ESTALE`. Bytes already in the kernel before revocation
+cannot be recalled. The whole server turn never holds the execution mutex.
+
+The socket tests fill a real Unix send buffer to `WouldBlock`, revoke the
+original authority, drain the padding and require EOF without image bytes.
+They also cover a partial header, fid reuse, an unguarded prefix and cleanup by
+the production Unix driver. Portal tests separately exercise real recipient
+leases against lock, binding revocation and output withdrawal after a read.
+These tests do not establish the still-pending native presentation join or
+live request admission.
+
+As a negative control, bypassing `write_output` in the Unix driver made the
+backpressure test receive a byte after revocation instead of EOF. The guarded
+driver was restored, and all tests in `sophia-9p`, `sophia-portal` and
+`sophia-runtime` passed. Evidence is under
+`~/.local/state/sophia/development-evidence/t319-delivery/`; `negative.log`
+records the deliberate failure and `final-focused.log` the restored tests.
+The initial workspace gate passed tests and lint but refused the connection
+file's size. Moving delivery into its own module brought the parent below the
+limit; the separate layout gate passed.
+The final full `cargo-slot sophia cargo xtask check` passed, including the
+isolated native pixel checks. Its `workspace-check-final.log` has SHA-256
+`00f67077eb8b5efebde00f44dd9a2de1539f9d35655966554bba6e8e3116c315`.
 
 ### Capture record and recipient binding
 

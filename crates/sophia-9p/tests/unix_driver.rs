@@ -132,6 +132,51 @@ fn a_listener_client_walks_opens_and_reads() {
 }
 
 #[test]
+fn revoked_backpressured_reply_closes_the_unix_transport() {
+    let mut export = StaticExport::new();
+    export.guarded = true;
+    let mut server = Server::new(export, Limits::default()).unwrap();
+    let (mut client, socket) = UnixStream::pair().unwrap();
+    let mut fill = socket.try_clone().unwrap();
+    server
+        .adopt(socket)
+        .map_err(|refused| refused.error)
+        .unwrap();
+    client
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    for request in [
+        tversion(NOTAG, 8192, b"9P2000.L"),
+        tattach(1, 0, NOFID, b"", b""),
+        twalk(2, 0, 1, &[b"info"]),
+        tlopen(3, 1, 0),
+    ] {
+        client.write_all(&request).unwrap();
+        server.turn(Some(Duration::ZERO)).unwrap();
+        reply(&mut client);
+    }
+    let mut filled = 0;
+    loop {
+        match fill.write(&[0xa5; 4096]) {
+            Ok(n) => filled += n,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+            result => panic!("unexpected fill result: {result:?}"),
+        }
+    }
+    client.write_all(&tread(4, 1, 0, 4000)).unwrap();
+    server.turn(Some(Duration::ZERO)).unwrap();
+    assert_eq!(server.export().state().reads, 1);
+    server.export().revoke(sophia_9p::Epoch(1));
+    let mut padding = vec![0; filled];
+    client.read_exact(&mut padding).unwrap();
+    assert!(padding.iter().all(|b| *b == 0xa5));
+    drop(fill);
+    server.flush().unwrap();
+    assert_eq!(client.read(&mut [0; 1]).unwrap(), 0);
+    assert_eq!(server.export().state().released.len(), 2);
+}
+
+#[test]
 fn an_adopted_socket_is_served_like_an_accepted_one() {
     let (ours, theirs) = UnixStream::pair().unwrap();
     let mut server = Server::new(StaticExport::new(), Limits::default()).unwrap();

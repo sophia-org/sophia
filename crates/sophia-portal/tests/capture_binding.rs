@@ -216,6 +216,58 @@ fn lock_and_binding_revocation_stale_record_and_pixels_without_unlock_revival() 
 }
 
 #[test]
+fn socket_delivery_rechecks_lock_binding_and_output_after_read() {
+    use std::io::{Read, Write};
+    use std::os::unix::net::UnixStream;
+    for revoke in 0..3 {
+        let fence = PortalExecutionFence::default();
+        let mut view = View::new(7, fence.clone());
+        assert_eq!(view.transfer(1, 9), Ok(()));
+        for name in [b"transfer".as_slice(), b"frame-info", b"frame"] {
+            let node = view.node(name);
+            assert!(view.files.guard_read_delivery(&node));
+        }
+        let node = view.node(b"frame");
+        let ReadOutcome::Ready(bytes) = view.read(&node, 32).unwrap() else {
+            panic!("ready image")
+        };
+        let (mut tx, mut rx) = UnixStream::pair().unwrap();
+        tx.set_nonblocking(true).unwrap();
+        let access = Access {
+            connection: ConnectionId(1),
+            epoch: Epoch(7),
+            node: &node,
+            operation: Operation::Read,
+        };
+        assert_eq!(
+            view.files
+                .with_delivery(&access, || tx.write(&bytes))
+                .unwrap()
+                .unwrap(),
+            32
+        );
+        let mut first = [0; 32];
+        rx.read_exact(&mut first).unwrap();
+        assert_eq!(first, [17; 32]);
+        match revoke {
+            0 => {
+                fence.block();
+            }
+            1 => view.objects.revoke(),
+            _ => view.source.withdraw(),
+        }
+        assert_eq!(
+            view.files
+                .with_delivery(&access, || tx.write(&bytes))
+                .unwrap_err(),
+            Errno::ESTALE
+        );
+        drop(tx);
+        assert_eq!(rx.read(&mut [0; 1]).unwrap(), 0);
+    }
+}
+
+#[test]
 fn withdrawal_waits_for_an_earlier_read_and_refuses_later_reads() {
     use std::sync::mpsc;
     let source = Arc::new(OutputCaptureSource::new(OutputId::from_raw(7), 9).unwrap());

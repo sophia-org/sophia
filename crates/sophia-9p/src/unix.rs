@@ -394,7 +394,14 @@ impl<E: Export> Server<E> {
     /// reads use the room that made.
     fn write(export: &mut E, slot: &mut Slot<E>) {
         while !slot.ended && !slot.connection.output().is_empty() {
-            match slot.stream.write(slot.connection.output()) {
+            let result = slot
+                .connection
+                .write_output(export, |bytes| slot.stream.write(bytes));
+            let Ok(result) = result else {
+                slot.ended = true;
+                return;
+            };
+            match result {
                 Ok(0) => slot.ended = true,
                 Ok(count) => {
                     slot.connection.sent(count);

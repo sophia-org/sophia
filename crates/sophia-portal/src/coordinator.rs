@@ -108,8 +108,9 @@ impl PortalAccessLease {
     pub fn grant(&self) -> &PortalGrant {
         &self.grant
     }
-    /// The check and read share the lock/security barrier. `read` must not
-    /// block, access a transport or call back into the same fence or source.
+    /// The check and read share the lock/security barrier. `read` may perform
+    /// one nonblocking transport write, but must not wait or call back into
+    /// the same fence or source.
     pub fn with_access<T>(&self, read: impl FnOnce() -> T) -> Option<T> {
         if !self.accepted.load(Ordering::Acquire) {
             return None;

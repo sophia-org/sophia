@@ -98,6 +98,7 @@ pub struct Shared {
 #[derive(Clone, Default)]
 pub struct StaticExport {
     shared: Arc<Mutex<Shared>>,
+    pub guarded: bool,
 }
 
 impl StaticExport {
@@ -128,6 +129,22 @@ pub struct Handle {
 impl Export for StaticExport {
     type Node = Node;
     type Handle = Handle;
+
+    fn guard_read_delivery(&self, _: &Node) -> bool {
+        self.guarded
+    }
+
+    fn with_delivery<T>(
+        &mut self,
+        access: &Access<'_, Node>,
+        deliver: impl FnOnce() -> T,
+    ) -> Result<T, Errno> {
+        let state = self.state();
+        if state.revoked.contains(&access.epoch) {
+            return Err(Errno::ESTALE);
+        }
+        Ok(deliver())
+    }
 
     fn attach(&mut self, context: &AttachContext<'_>) -> Result<Attachment<Node>, Errno> {
         let mut state = self.state();
