@@ -116,6 +116,53 @@ fn callback(serial: u64) -> LivePageFlipCallbackReport {
 }
 
 #[test]
+fn capture_is_unavailable_until_matching_native_presentation_and_dies_with_custody() {
+    let identity = crate::NativeFrameOwner::new().frame(
+        sophia_protocol::OutputId::from_raw(7),
+        sophia_engine::RenderHeadId::from_raw(17),
+        3,
+        12,
+    );
+    let lease = crate::scanout::rendered_scanout::exporter::worker::tests::capture_lease(identity);
+    let correlation = lease.correlation();
+    let pool = Rc::new(RefCell::new(LiveRendererFrameSlotPool::new()));
+    let mut frame = submission(&pool, 10);
+    frame.scanout_buffer = Box::new(crate::NativeGbmRenderedScanoutOwner::Worker(lease));
+    frame.correlation = Some(correlation);
+    let mut custody = PersistentScanoutCustody::default();
+    let device = Device::default();
+    custody.accept_submission(frame).unwrap();
+    assert!(custody.capture_for(identity).is_none());
+    assert!(matches!(
+        custody.present(&device, &callback(3), Some(identity)),
+        PersistentFlipOutcome::Waiting
+    ));
+    assert!(custody.capture_for(identity).is_none());
+    assert!(matches!(
+        custody.present(&device, &callback(4), None),
+        PersistentFlipOutcome::IdentityMismatch
+    ));
+    assert!(custody.capture_for(identity).is_none());
+    assert!(matches!(
+        custody.present(&device, &callback(4), Some(identity)),
+        PersistentFlipOutcome::Presented { .. }
+    ));
+    assert_eq!(
+        custody.capture_for(identity).unwrap().image().rgba(),
+        [17; 1024]
+    );
+    let replacement = crate::NativeFrameOwner::new().frame(
+        identity.output(),
+        identity.head(),
+        identity.target_generation(),
+        identity.frame(),
+    );
+    assert!(custody.capture_for(replacement).is_none());
+    custody.retire_displayed(&device).unwrap();
+    assert!(custody.capture_for(identity).is_none());
+}
+
+#[test]
 fn topology_handoff_leaves_room_for_candidate_and_rollback_after_ordinary_presentation() {
     let pool = Rc::new(RefCell::new(LiveRendererFrameSlotPool::new()));
     let device = Device::default();

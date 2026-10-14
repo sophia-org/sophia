@@ -110,6 +110,7 @@ pub struct LiveRendererWorkerMetrics {
 
 #[derive(Debug)]
 pub struct NativeGbmRendererWorkerScanoutLease {
+    pub(super) capture: Option<super::LiveNativeFrameCapture>,
     descriptor: LiveRendererScanoutBufferDescriptor,
     correlation: LiveRendererFrameCorrelation,
     output: LiveRendererWorkerOutputKey,
@@ -120,6 +121,14 @@ pub struct NativeGbmRendererWorkerScanoutLease {
 }
 
 impl NativeGbmRendererWorkerScanoutLease {
+    pub(crate) fn capture_for(
+        &self,
+        expected: super::LiveNativeFrameIdentity,
+    ) -> Option<super::LiveNativeFrameCapture> {
+        let capture = self.capture.as_ref()?;
+        (self.correlation.native == Some(expected) && capture.identity() == expected)
+            .then(|| capture.clone())
+    }
     pub const fn correlation(&self) -> LiveRendererFrameCorrelation {
         self.correlation
     }
@@ -447,6 +456,20 @@ impl NativeGbmRendererWorker {
         preferred_modifiers: Vec<u64>,
         output_format: Option<sophia_renderer_live::LiveCompositionFormatRequest>,
     ) -> Result<(), LiveRendererScanoutBufferExportDetail> {
+        self.submit_with_capture(target, frame, preferred_modifiers, output_format, false)
+    }
+
+    pub(crate) fn submit_with_capture(
+        &mut self,
+        target: LiveGbmEglFrameTargetRecord,
+        frame: PendingRenderedFrame,
+        preferred_modifiers: Vec<u64>,
+        output_format: Option<sophia_renderer_live::LiveCompositionFormatRequest>,
+        capture: bool,
+    ) -> Result<(), LiveRendererScanoutBufferExportDetail> {
+        if capture && !matches!(&frame, PendingRenderedFrame::Mixed(_, Some(_))) {
+            return Err(LiveRendererScanoutBufferExportDetail::ComposeRefused);
+        }
         if self.quarantined || self.in_flight.is_some() || self.stalled.is_some() {
             return Err(LiveRendererScanoutBufferExportDetail::WorkerPending);
         }
@@ -458,6 +481,7 @@ impl NativeGbmRendererWorker {
         self.next_request_id = next_request_id;
         let correlation = frame_correlation(&frame, Some(request_id));
         let command = WorkerCommand::Render {
+            capture,
             output: self.output,
             request_id,
             target,
@@ -475,6 +499,7 @@ impl NativeGbmRendererWorker {
                 }
             })?;
         self.in_flight = Some(InFlightRequest {
+            capture,
             request_id,
             correlation,
             output_format,
@@ -546,6 +571,11 @@ impl NativeGbmRendererWorker {
                 }
                 if result.request_id != in_flight.request_id
                     || result.correlation != in_flight.correlation
+                    || matches!(&result.outcome, WorkerOutcome::Exported { descriptor, capture, .. }
+                        if capture.is_some() != in_flight.capture || capture.as_ref().is_some_and(|capture|
+                            Some(capture.identity()) != result.correlation.native
+                            || i64::from(capture.image().width()) != i64::from(descriptor.size.width)
+                            || i64::from(capture.image().height()) != i64::from(descriptor.size.height)))
                     || matches!(&result.outcome, WorkerOutcome::Exported { descriptor, .. }
                         if matches!(in_flight.output_format, Some(sophia_renderer_live::LiveCompositionFormatRequest::Required(format)) if descriptor.format != format))
                     || matches!(&result.outcome, WorkerOutcome::Deferred(frame)
@@ -575,12 +605,14 @@ impl NativeGbmRendererWorker {
                 );
                 match result.outcome {
                     WorkerOutcome::Exported {
+                        capture,
                         descriptor,
                         lease_id,
                         slot_token,
                     } => {
                         self.metrics.completions = self.metrics.completions.saturating_add(1);
                         WorkerPoll::Exported(NativeGbmRendererWorkerScanoutLease {
+                            capture,
                             output: self.output,
                             correlation: result.correlation,
                             descriptor,
@@ -721,6 +753,7 @@ struct DiscardedWorkerLease {
 }
 
 struct InFlightRequest {
+    capture: bool,
     request_id: LiveRendererWorkerRequestId,
     correlation: LiveRendererFrameCorrelation,
     output_format: Option<sophia_renderer_live::LiveCompositionFormatRequest>,
@@ -743,6 +776,7 @@ enum WorkerCommand {
         claim: Arc<OutputClaim>,
     },
     Render {
+        capture: bool,
         output: LiveRendererWorkerOutputKey,
         request_id: LiveRendererWorkerRequestId,
         target: LiveGbmEglFrameTargetRecord,
@@ -823,6 +857,7 @@ struct WorkerRestoreImageResult {
 
 enum WorkerOutcome {
     Exported {
+        capture: Option<super::LiveNativeFrameCapture>,
         descriptor: LiveRendererScanoutBufferDescriptor,
         lease_id: LiveRendererWorkerLeaseId,
         slot_token: LiveRendererFrameSlotToken,
@@ -900,7 +935,7 @@ fn worker_outcome_name(outcome: &WorkerOutcome) -> &'static str {
 include!("worker/damage.rs");
 mod service;
 #[path = "../../../../tests/support/renderer_worker.rs"]
-mod tests;
+pub(crate) mod tests;
 
 use service::run_worker;
 

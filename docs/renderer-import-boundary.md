@@ -107,9 +107,24 @@ imported GPU content follow the same pixel path. A failed export returns no
 snapshot; later rendering or context destruction cannot change returned bytes.
 Ordinary exports do not enable this readback.
 
+The worker can request this readback in the exact target slot of an identified
+native composition. Its result carries the immutable image with the scanout
+lease. The worker checks the requested image's native identity and dimensions;
+missing, unsolicited or mismatched images invalidate the result. A capture
+request belongs to one queued frame and forces composition for that frame even
+when direct scanout would otherwise be eligible. Supersession does not transfer
+the request to the replacement frame.
+
+The native output owner exposes an image only from displayed custody with the
+same owner, output, head, target generation and frame. Submission or render
+completion alone is insufficient. For mirrors, every enabled head must have a
+matching image and the group must converge on the same frame; the returned
+image is the configured primary head's composition. A topology or native-owner
+replacement cannot reuse the old identity.
+
 This is a renderer primitive, not a public capture interface or a presentation
-receipt. Session must still select immutable sources, identify the presented
-output generation, authorize the recipient, and fence delivery against lock,
+receipt by itself. Session must still connect the confirmed native image to a
+generation-bound source, authorize the recipient, and fence delivery against lock,
 revocation and output replacement. No portal grant is implied by owning a
 snapshot. Aggregate retention limits and the admitted capture CLI remain part
 of t319's delivery work.

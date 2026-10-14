@@ -163,12 +163,23 @@ where
             super::super::worker::frame_correlation(&frame, None),
             std::time::Instant::now(),
         );
-        match worker.submit(
-            target,
-            frame,
-            self.preferred_modifiers.clone(),
-            output_format.map(sophia_renderer_live::LiveCompositionFormatRequest::Preferred),
-        ) {
+        let capture = self.capture_requested.is_some_and(|expected| {
+            super::super::worker::frame_correlation(&frame, None).native == Some(expected)
+        });
+        let format =
+            output_format.map(sophia_renderer_live::LiveCompositionFormatRequest::Preferred);
+        let submitted = if capture {
+            worker.submit_with_capture(
+                target,
+                frame,
+                self.preferred_modifiers.clone(),
+                format,
+                true,
+            )
+        } else {
+            worker.submit(target, frame, self.preferred_modifiers.clone(), format)
+        };
+        match submitted {
             Ok(()) => {
                 if let Some(correlation) = worker.in_flight_correlation() {
                     self.layout_probe

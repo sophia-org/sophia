@@ -23,6 +23,17 @@ pub struct LiveProductionOutputRuntimeSet {
 }
 
 impl LiveProductionOutputRuntimeSet {
+    pub(crate) fn capture_for(
+        &self,
+        expected: crate::LiveNativeFrameIdentity,
+    ) -> Option<crate::LiveNativeFrameCapture> {
+        self.outputs
+            .get(&expected.output())?
+            .runtime
+            .primary_output_state()
+            .scanout_custody
+            .capture_for(expected)
+    }
     pub fn new(
         outputs: &[HeadlessOutput],
         committed_surfaces: &[CommittedSurfaceState],

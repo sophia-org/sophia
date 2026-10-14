@@ -56,6 +56,25 @@ pub(crate) enum PersistentFlipOutcome {
 }
 
 impl PersistentScanoutCustody {
+    #[cfg(feature = "gbm-probe")]
+    pub(crate) fn capture_for(
+        &self,
+        expected: crate::LiveNativeFrameIdentity,
+    ) -> Option<crate::LiveNativeFrameCapture> {
+        let displayed = self.displayed()?;
+        if displayed.correlation()?.native != Some(expected) {
+            return None;
+        }
+        let crate::NativeGbmRenderedScanoutOwner::Worker(lease) =
+            displayed
+                .scanout_buffer
+                .downcast_ref::<crate::NativeGbmRenderedScanoutOwner>()?
+        else {
+            return None;
+        };
+        lease.capture_for(expected)
+    }
+
     pub(crate) fn submitted(&self) -> Option<&BoxedRenderedPrimaryPlaneScanoutSubmission> {
         self.submitted.as_ref().map(|owner| &owner.payload)
     }

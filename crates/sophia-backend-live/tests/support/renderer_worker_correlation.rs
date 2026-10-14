@@ -92,6 +92,7 @@ fn exported_outcome() -> WorkerOutcome {
         panic!("empty slot pool refused a lease");
     };
     WorkerOutcome::Exported {
+        capture: None,
         descriptor: super::LiveRendererScanoutBufferDescriptor::new(
             Size {
                 width: 16,
@@ -340,6 +341,7 @@ fn the_service_derives_result_identity_from_the_owned_frame() {
     let correlation = super::frame_correlation(&mixed_job(51), Some(request_id));
     commands
         .send(WorkerCommand::Render {
+            capture: false,
             output,
             request_id,
             target: LiveGbmEglFrameTargetRecord::new(Size {
@@ -574,6 +576,7 @@ fn output_format_requests_cross_the_worker_boundary_without_relabeling() {
             descriptor,
             lease_id,
             slot_token,
+            ..
         } = &mut outcome
         else {
             unreachable!()

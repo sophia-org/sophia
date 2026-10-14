@@ -39,6 +39,7 @@ mod present_clock;
 mod presentation_timing;
 #[cfg(test)]
 pub(crate) use presentation_timing::{PresentedTimingHead, completed_timing};
+mod capture;
 mod settled_mirror;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use composition_admission::{NativeCompositionOutput, prepare_native_composition_batch};

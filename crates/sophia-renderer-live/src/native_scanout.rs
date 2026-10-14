@@ -11,6 +11,7 @@ use sophia_protocol::{DRM_FORMAT_ARGB8888, DRM_FORMAT_XRGB8888, Rect, Transform}
 pub use sophia_renderer_native_egl::{
     NativeCompositionFormatRequest as LiveCompositionFormatRequest,
     NativeCompositionOutputRequest as LiveCompositionOutputRequest,
+    NativeCompositionSnapshot as LiveCompositionSnapshot,
 };
 
 mod image_reads;

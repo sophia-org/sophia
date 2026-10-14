@@ -57,6 +57,7 @@ where
     last_target_lifecycle: Option<LiveGbmEglFrameTargetLifecycleReport>,
     pub(super) last_export_status: Option<LiveRendererScanoutBufferExportStatus>,
     pub(super) pending_frame: Option<PendingRenderedFrame>,
+    pub(super) capture_requested: Option<super::LiveNativeFrameIdentity>,
     pub(super) frame_offered_at: Option<std::time::Instant>,
     pub(super) cost: crate::DirectScanoutCost,
     direct_cpu_bootstrap_armed: bool,
@@ -168,6 +169,7 @@ where
             last_target_lifecycle: None,
             last_export_status: None,
             pending_frame: None,
+            capture_requested: None,
             frame_offered_at: None,
             cost: crate::DirectScanoutCost::default(),
             direct_cpu_bootstrap_armed: false,
@@ -436,6 +438,9 @@ where
 
     /// Install the newest frame, counting whatever it displaced.
     pub(super) fn replace_pending_frame(&mut self, frame: PendingRenderedFrame) {
+        if self.capture_requested != super::worker::frame_correlation(&frame, None).native {
+            self.capture_requested = None;
+        }
         self.invalidate_layout_probe();
         self.requeue_pending_frame(frame);
     }
@@ -477,6 +482,28 @@ where
 
     pub const fn pending_dmabuf_frame(&self) -> bool {
         matches!(self.pending_frame, Some(PendingRenderedFrame::DmaBuf(_)))
+    }
+
+    /// Trusted capture scheduling for this exact queued native frame. A
+    /// superseding frame never inherits the request. No application grant is
+    /// created here; the Session admission path must supply that separately.
+    pub fn request_pending_frame_capture(
+        &mut self,
+        expected: super::LiveNativeFrameIdentity,
+    ) -> bool {
+        if !self.can_capture_pending_frame(expected) {
+            return false;
+        }
+        self.capture_requested = Some(expected);
+        true
+    }
+
+    pub(crate) fn can_capture_pending_frame(
+        &self,
+        expected: super::LiveNativeFrameIdentity,
+    ) -> bool {
+        self.worker.is_some()
+            && matches!(&self.pending_frame, Some(PendingRenderedFrame::Mixed(_, Some(identity))) if *identity == expected)
     }
 
     pub fn set_pending_mixed_frame(

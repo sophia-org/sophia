@@ -128,6 +128,7 @@ pub(super) fn run_worker<D>(
                 }
             }
             WorkerCommand::Render {
+                capture,
                 output,
                 request_id,
                 target,
@@ -169,6 +170,7 @@ pub(super) fn run_worker<D>(
                             },
                             &mut next_lease_id,
                             state,
+                            capture,
                         )
                     },
                 );
@@ -399,6 +401,7 @@ fn render_frame<D>(
     request: sophia_renderer_live::LiveCompositionOutputRequest<'_>,
     next_lease_id: &mut u64,
     state: &mut WorkerOutputState,
+    capture: bool,
 ) -> WorkerOutcome
 where
     D: AsFd,
@@ -421,6 +424,7 @@ where
         next_lease_id,
         slot_token,
         state,
+        capture,
     );
     if matches!(outcome, WorkerOutcome::Failed(_)) {
         // A render that failed may have written part of its damage, so the
@@ -441,12 +445,15 @@ fn render_frame_in_slot<D>(
     next_lease_id: &mut u64,
     slot_token: LiveRendererFrameSlotToken,
     state: &mut WorkerOutputState,
+    capture: bool,
 ) -> WorkerOutcome
 where
     D: AsFd,
 {
     let target_set = output.target_set();
     let frame_slot = slot_token.slot_id().index();
+    let native = super::frame_correlation(&frame, None).native;
+    let mut snapshot = None;
     let (report, cpu) = match frame {
         PendingRenderedFrame::Cpu {
             frame,
@@ -533,14 +540,26 @@ where
                 frame.output_damage_snapshot.as_ref(),
                 target.size,
             );
-            let report = match context.export_owned_mixed_frame_in_frame_slot(
-                target_set,
-                frame_slot,
-                target,
-                &frame,
-                request,
-                repaint.as_ref(),
-            ) {
+            let result = if capture {
+                context.export_owned_mixed_frame_with_snapshot_in_frame_slot(
+                    target_set,
+                    frame_slot,
+                    target,
+                    &frame,
+                    request,
+                    &mut snapshot,
+                )
+            } else {
+                context.export_owned_mixed_frame_in_frame_slot(
+                    target_set,
+                    frame_slot,
+                    target,
+                    &frame,
+                    request,
+                    repaint.as_ref(),
+                )
+            };
+            let report = match result {
                 Ok(report) => report,
                 Err(LiveMixedCompositionError::Renderer(detail)) => {
                     return WorkerOutcome::Failed(detail);
@@ -601,6 +620,9 @@ where
         },
     );
     WorkerOutcome::Exported {
+        capture: native
+            .zip(snapshot)
+            .map(|(identity, image)| super::super::LiveNativeFrameCapture::new(identity, image)),
         descriptor,
         lease_id,
         slot_token,

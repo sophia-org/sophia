@@ -24,8 +24,8 @@ Existing authentication, HostDomain admission and revocation still apply.
 
 This is an aggregate status slice, not the complete observer or capture exit.
 It deliberately labels the native retirement count as an owner counter, not a
-per-output presentation generation. Still required: the native presentation
-join, request admission, aggregate retention bounds, an admitted CLI,
+per-output presentation generation. Still required: Session capture request
+admission and publication, aggregate retention bounds, an admitted CLI,
 capture-on/off measurements and attended qualification. No current-session installation,
 reload, input injection or screenshot is performed by this implementation.
 
@@ -44,9 +44,13 @@ pins a selected presentation and serializes output replacement with reads.
 Queued recipient replies now retain that authority through each nonblocking
 socket write. Revocation closes a transport with unsent protected bytes,
 including a partly written reply. Socket-backpressure tests cover this boundary.
-The live renderer-worker/completion identity, request admission, aggregate
-retention bounds and CLI remain unconnected. Do not treat supplied presentation
-records in the portal tests as proof that KMS presented a frame.
+The renderer worker now carries requested image bytes with its exact native
+frame and scanout lease. The native output owner returns them only from matching
+displayed custody; mirrors require every enabled head to converge. Capture
+forces composition for its exact queued frame, including direct candidates.
+Session request admission, publication into the generation-bound portal source,
+aggregate retention bounds and CLI remain unconnected. The tests use supplied
+completion callbacks; they do not establish physical KMS capture acceptance.
 
 ## Source findings
 
@@ -82,9 +86,11 @@ owner, output, head, target-generation and frame fields in
 `scanout/rendered_scanout/exporter/native_identity.rs`. Reuse the actual
 completion identity rather than deriving a receipt from a scene trace or a
 render request. `LiveProductionHeadCompositionFrame` retains the per-head
-composition inputs. Its route through the renderer worker is the next capture
-join; direct scanout also needs an explicit composed-image path when capture is
-requested. Do not claim the current primitive handles that join.
+composition inputs. Requested snapshots now follow that route through the worker
+and displayed custody. The remaining Session join must map the full native
+owner/output/head-target identity to a fresh portal source incarnation, publish
+only the confirmed frame, and invalidate that source on replacement. Neither a
+scene counter nor a hash of native fields is a substitute for this mapping.
 
 Session already creates a `PortalExecutionFence` in `live_session/run.rs` and
 blocks/unblocks it in `owner_loop/session_lock_phase.rs`. Capture must share
@@ -93,6 +99,46 @@ frame's immutable presentation identity: ordinary later frames must not silently
 replace an opened image, and an output replacement must not revive its grant.
 
 ## Contract and validation
+
+### Native frame and presentation join
+
+`request_pending_output_capture` checks every queued head before scheduling
+readback. Each worker reads the same frame slot that supplies its exported
+buffer. The image and native identity stay with the lease through submission,
+failure and retirement. `presented_output_capture` consults displayed custody,
+checks current head generations and mirror convergence, and returns the primary
+head's immutable image. These trusted backend methods create no recipient grant.
+
+The worker controls reject a missing image, a foreign native owner and wrong
+dimensions. Another control proves that a superseding frame cannot inherit a
+capture request. A valid direct candidate takes the composed path only when
+capture is requested. Real custody tests with supplied callbacks refuse reads
+before presentation, after an old callback and with a mismatched identity;
+retiring displayed custody removes access. Letting submitted custody satisfy the
+read deliberately fails the pre-presentation assertion.
+
+The isolated GPU-worker test checks exact pixels from a CPU texture and a
+DMA-BUF drawn by a separate GPU context. It also checks that ordinary rendering
+returns no image and later renders leave a retained image unchanged. Evidence
+is in `~/.local/state/sophia/development-evidence/t319-native-capture/`.
+The test grants only render-node access; it supplies native identities and
+does not perform KMS presentation, live capture, portal admission or a physical
+mirror test. Existing mirror lifecycle tests remain separate from attended
+capture qualification.
+
+The full repository gate passed; `workspace-check.log` has SHA-256
+`27027a345bc45a87b9e5418fedb9775e50e63edfbff4a90387dd74be1807230b`.
+A later isolated run passed its pixel assertions but aborted on process exit
+with `corrupted double-linked list`. The fixture had omitted explicit worker
+shutdown and join. After adding those before producer destruction, five
+consecutive isolated runs exited cleanly and retained pixels remained readable
+after both contexts were destroyed. Their binary SHA-256 is
+`ccd7eb555f7d0b8623808395ee5e231f407359081fbbe046aa5404e9f9d3fe98`.
+The `undrained-*` files retain the failed exit; `drained-0-*` through
+`drained-4-*` record the corrected runs. Only the ignored test fixture changed
+after the full gate; backend tests and strict Clippy were rerun.
+
+### Queued recipient replies
 
 The shared 9P core now retains the node and epoch of each protected read until
 its reply leaves the queue. It checks the exact recipient binding under the

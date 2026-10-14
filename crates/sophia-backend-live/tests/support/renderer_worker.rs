@@ -93,6 +93,7 @@ fn register_claim(
 fn render(commands: &SyncSender<WorkerCommand>, output: LiveRendererWorkerOutputKey, request: u64) {
     commands
         .send(WorkerCommand::Render {
+            capture: false,
             output,
             request_id: LiveRendererWorkerRequestId(request),
             target: LiveGbmEglFrameTargetRecord::new(Size {
@@ -247,4 +248,8 @@ include!(concat!(
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/support/renderer_worker_stall.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/renderer_worker_capture.rs"
 ));

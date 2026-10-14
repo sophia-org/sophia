@@ -25,7 +25,7 @@ where
         request: LiveCompositionOutputRequest<'_>,
     ) -> Result<NativeGbmOwnedScanoutBufferExportReport, LiveMixedCompositionError> {
         self.export_owned_mixed_frame_with_modifiers_and_frame_slot(
-            target, frame, request, None, None,
+            target, frame, request, None, None, None,
         )
     }
 
@@ -53,6 +53,23 @@ where
         )
     }
 
+    /// Read back the same composed target that supplies this scanout owner.
+    /// Presentation and disclosure authority remain with the caller.
+    pub fn export_owned_mixed_frame_with_snapshot_in_frame_slot(
+        &mut self,
+        set: sophia_renderer_native_egl::NativeFrameTargetSetId,
+        frame_slot: usize,
+        target: LiveGbmEglFrameTargetRecord,
+        frame: &LiveOwnedMixedCompositionFrame,
+        request: LiveCompositionOutputRequest<'_>,
+        snapshot: &mut Option<sophia_renderer_native_egl::NativeCompositionSnapshot>,
+    ) -> Result<NativeGbmOwnedScanoutBufferExportReport, LiveMixedCompositionError> {
+        *snapshot = None;
+        self.export_owned_mixed_frame_with_modifiers_and_frame_slot(
+            target, frame, request, Some((set, frame_slot)), None, Some(snapshot),
+        )
+    }
+
     pub fn export_owned_mixed_frame_in_frame_slot(
         &mut self,
         set: sophia_renderer_native_egl::NativeFrameTargetSetId,
@@ -68,6 +85,7 @@ where
             request,
             Some((set, frame_slot)),
             repaint,
+            None,
         )
     }
 
@@ -78,6 +96,7 @@ where
         request: LiveCompositionOutputRequest<'_>,
         frame_slot: Option<(sophia_renderer_native_egl::NativeFrameTargetSetId, usize)>,
         repaint: Option<&sophia_renderer_native_egl::NativeCompositionRepaintTable>,
+        snapshot: Option<&mut Option<sophia_renderer_native_egl::NativeCompositionSnapshot>>,
     ) -> Result<NativeGbmOwnedScanoutBufferExportReport, LiveMixedCompositionError> {
         if !request.is_valid() {
             return Err(LiveMixedCompositionError::InvalidOutput);
@@ -173,6 +192,7 @@ where
             frame.trace,
             frame_slot,
             repaint,
+            snapshot,
         )
     }
 }

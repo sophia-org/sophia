@@ -6,7 +6,11 @@ mod native_identity;
 pub use native_identity::LiveNativeFrameIdentity;
 #[cfg(feature = "libdrm-events")]
 pub(crate) use native_identity::NativeFrameOwner;
+#[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
+mod capture;
 mod direct;
+#[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
+pub use capture::LiveNativeFrameCapture;
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 mod discovery;
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
@@ -22,7 +26,7 @@ mod native;
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 mod slot_damage_history;
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
-mod worker;
+pub(crate) mod worker;
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 pub use discovery::*;

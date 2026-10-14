@@ -579,6 +579,18 @@ where
         Ok((report, snapshot))
     }
 
+    pub fn export_composed_with_snapshot_in_frame_slot(
+        &mut self,
+        set: NativeFrameTargetSetId,
+        frame_slot: usize,
+        frame: NativeCompositionFrame<'_>,
+        request: NativeCompositionOutputRequest<'_>,
+    ) -> Result<(NativeGbmOwnedScanoutBufferExportReport, crate::NativeCompositionSnapshot), NativeGbmScanoutBufferExportDetail> {
+        self.with_frame_target_slot(set, frame_slot, |context| {
+            context.export_composed_with_snapshot(frame, request)
+        }).ok_or(NativeGbmScanoutBufferExportDetail::InvalidTarget)?
+    }
+
     pub fn export_composed_owned_scanout_buffer(
         &mut self,
         frame: NativeCompositionFrame<'_>,

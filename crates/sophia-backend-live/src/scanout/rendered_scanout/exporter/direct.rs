@@ -46,6 +46,15 @@ where
         // disagreement between the two is a refusal, not a flip: the cost of
         // refusing wrongly is one composed frame, and the cost of flipping
         // wrongly is the wrong image on someone's screen.
+        if self.capture_requested.is_some_and(|expected| {
+            self.pending_frame
+                .as_ref()
+                .and_then(|frame| super::worker::frame_correlation(frame, None).native)
+                == Some(expected)
+        }) {
+            // Capture must read the composed output, including every layer.
+            return None;
+        }
         if !self.direct_scanout_enabled
             || !matches!(
                 self.pending_frame,
