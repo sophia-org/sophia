@@ -1,5 +1,20 @@
 # Private graphics probes
 
+`gl_first_frame.c` draws three exact RGB stripes through CPU core requests,
+GLX or EGL (`cpu`, `glx`, `egl`). It reports the GL renderer and waits for `q`
+on stdin before cleanup. Its usual caller supplies a private frontend; physical
+capture qualification must explicitly select the live display and credentials.
+The window uses override-redirect geometry so WM layout does not alter the
+pattern. Occluded pixels are not part of the comparison.
+
+`cargo xtask capture-grant-probe OUTPUT_ID replacement|expiry` is an opt-in
+wire probe. Run the built xtask executable through an explicitly authorized
+capture recipe. It checks that old frame and record fids return `ESTALE` after
+replacement or expiry, while a new grant exposes a newer presentation. The
+replacement check must finish within 1.5 seconds of the first request so the
+two-second lease cannot explain staleness. This does not test output replacement
+or lock cancellation. It never launches a session or selects an output itself.
+
 ## Protected shell GPU/content proof
 
 `sophia shell-gpu-content-proof` accepts an explicit client, geometry, outcome

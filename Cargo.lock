@@ -2175,7 +2175,12 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "sophia-9p-client",
  "sophia-conformance",
+ "sophia-launch-client",
+ "sophia-namespace-client",
+ "sophia-protocol",
+ "sophia-runtime",
 ]
 
 [[package]]

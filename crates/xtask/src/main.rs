@@ -12,6 +12,7 @@
 use std::path::{Path, PathBuf};
 
 mod c_desktop_sdk;
+mod capture_grant_probe;
 mod check;
 mod context;
 mod git_tree;
@@ -41,6 +42,9 @@ fn main() -> std::process::ExitCode {
 
 fn run(arguments: &[String]) -> Result<(), String> {
     match arguments.first().map(String::as_str) {
+        Some("capture-grant-probe") => capture_grant_probe::run(&arguments[1..])
+            .map(|report| eprintln!("{report}"))
+            .map_err(|error| error.to_string()),
         Some("context") => context::run(&workspace_root()?, &arguments[1..]).map(print_lines),
         Some("check") => check::run(&workspace_root()?, &arguments[1..]).map(print_lines),
         Some("vendor-rust-desktop-sdk") => {
@@ -260,6 +264,9 @@ fn print_lines(lines: Vec<String>) {
 
 const USAGE: &str = "\
 usage: cargo xtask <command>
+
+  capture-grant-probe OUTPUT_ID replacement|expiry
+      Check capture fids through an explicitly admitted recipient; no auto-launch.
 
   context task ID | outline PATH | read PATH[#HEADING] [--max-bytes=N]
       Read bounded task context with source hashes; no model or network calls.

@@ -9,6 +9,59 @@ tags: [investigation, protocol, capture]
 
 ## Current resumption
 
+The repaired release `niltempus-1ce83e7579cba2b564c9` is installed and running
+(Sophia `629cb8a80`, integration `243605d`). Capture now succeeds on both
+physical outputs. Launch 2 returned output 1, generation 1, presentation 885:
+2560×1440 RGBA, 14,745,600 bytes, FNV-1a `4852afff10148408`. Launch 3 returned
+output 2, generation 2, presentation 1352: 1920×1080 RGBA, 8,294,400 bytes,
+FNV-1a `7f4a8fe20ae7204f`. Both exited successfully; their recorded process
+lifetimes were 497 ms and 472 ms. These are individual observations, not a
+performance qualification.
+
+The session evidence is
+`~/.local/state/sophia/sessions/00000001792003516767-bbb488ca-c687-4eff-aec7-76fe840a8dbc`.
+The capture evidence directory
+`~/.local/state/sophia/development-evidence/t319-session-capture/` contains
+`repaired-live-output1.log`, `repaired-live-output2.log` and
+`repaired-live-launches.log`. The active configuration approves capture only
+on DP-1 and HDMI-A-1 of `pci-0000:03:00.0`.
+
+Known CPU, GLX and EGL pixels now match on physical output 1. Each admitted
+capture matched 82,800 exact RGBA pixels in the visible three-stripe pattern;
+GLX and EGL reported the Radeon RX 7900 GRE renderer. The baseline contained
+no matching stripe rows. The top 24 rows were occluded and excluded. The
+experiment and its hashes are preserved as `physical-pixel-experiment.json`,
+`physical-pixel-experiment.py` and `physical-pixel-hashes.log`; launch records
+are in `physical-pixel-launches.log`. No image files or binaries were archived.
+
+The live grant probe also passes. On output 1, replacing the capture made
+both retained fids return `ESTALE` before lease expiry, while a new fid read a
+newer presentation (23659 → 23661). On output 2, expiry made both retained
+fids stale; a subsequent grant was readable (19756 → 19853). See
+`physical-grant-replacement-final.log` and `physical-grant-expiry.log`. These are
+grant replacement and expiry checks, not output replacement or lock checks.
+
+t319 remains open: mirror convergence, lock cancellation, stale handles after
+output loss/replacement, independent replacement output identity, availability
+and recovery observations, and bounded capture-on/off costs remain. Next,
+extend the admitted probe for attended lock and output changes. The full gate
+and packaged checks passed before installation, as recorded below; the new
+probe gate passed in `physical-probes-check-final.log`, including workspace
+tests, strict Clippy, layout and graphics checks. The first run stopped at the
+layout rule because the new module printed directly; the final version returns
+its report to the existing dispatcher. `physical-probes-check.log` preserves
+that failed run.
+The rebuilt final dispatcher also passed live (38278 → 38280), recorded in
+`physical-grant-dispatcher-final.log` with `physical-grant-final-hashes.log`.
+
+The grant probe reads the current request serial before allocating its next
+one. Its first two launches (13 and 14) incorrectly assumed serial 1 and were
+refused; they are probe failures, not capture failures. The final replacement
+check bounds the entire interval through both stale replies to 1.5 seconds,
+measured from before the first request. The normal lease lasts two seconds.
+
+## Repair checkpoint before installation, 2026-10-14
+
 The matched release `niltempus-1822c8ad7c891b0a9bd3` is installed and running
 in the daily session (Sophia `7c95a419b`, integration `46f1e5c`). The active
 core configuration approves capture only on DP-1 and HDMI-A-1 of

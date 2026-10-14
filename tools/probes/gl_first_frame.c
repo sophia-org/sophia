@@ -31,7 +31,7 @@ static Window window(Display *display, XVisualInfo *visual, Colormap *colormap) 
         .colormap = *colormap,
         .override_redirect = True,
     };
-    /* Private frontend fixture has no window manager or visible outputs. */
+    /* Keep probe geometry independent of window-manager layout policy. */
     Window created = XCreateWindow(display, DefaultRootWindow(display), 0, 0, WIDTH, HEIGHT,
                                    0, visual->depth, InputOutput, visual->visual,
                                    CWColormap | CWOverrideRedirect, &attributes);
@@ -42,6 +42,7 @@ static Window window(Display *display, XVisualInfo *visual, Colormap *colormap) 
 }
 
 static void draw(void) {
+    printf("gl_first_frame renderer=%s\n", glGetString(GL_RENDERER));
     const unsigned char colors[3][3] = {{0x21, 0x43, 0x65}, {0xab, 0xcd, 0xef}, {0x11, 0x99, 0xdd}};
     glDisable(GL_DITHER);
     glViewport(0, 0, WIDTH, HEIGHT);
@@ -148,12 +149,36 @@ static void run_egl(Display *display) {
     XFree(visual);
 }
 
+static void run_cpu(Display *display) {
+    XVisualInfo visual;
+    require(XMatchVisualInfo(display, DefaultScreen(display), 24, TrueColor, &visual),
+            "cpu_visual");
+    require(visual.red_mask == 0xff0000 && visual.green_mask == 0xff00 &&
+            visual.blue_mask == 0xff, "cpu_color_masks");
+    Colormap colormap;
+    Window drawable = window(display, &visual, &colormap);
+    GC gc = XCreateGC(display, drawable, 0, NULL);
+    const unsigned long colors[] = {0x214365, 0xabcdef, 0x1199dd};
+    for (int stripe = 0; stripe < 3; ++stripe) {
+        XSetForeground(display, gc, colors[stripe]);
+        XFillRectangle(display, drawable, gc, stripe * (WIDTH / 3), 0,
+                       WIDTH / 3, HEIGHT);
+    }
+    await_capture(display, "cpu");
+    XFreeGC(display, gc);
+    XDestroyWindow(display, drawable);
+    XFreeColormap(display, colormap);
+}
+
 int main(int argc, char **argv) {
-    require(argc == 2 && (!strcmp(argv[1], "glx") || !strcmp(argv[1], "egl")), "arguments");
+    require(argc == 2 && (!strcmp(argv[1], "glx") || !strcmp(argv[1], "egl") ||
+                         !strcmp(argv[1], "cpu")), "arguments");
     Display *display = XOpenDisplay(NULL);
     require(display != NULL, "connect");
     XSetErrorHandler(record_error);
-    if (!strcmp(argv[1], "egl")) run_egl(display); else run_glx(display);
+    if (!strcmp(argv[1], "cpu")) run_cpu(display);
+    else if (!strcmp(argv[1], "egl")) run_egl(display);
+    else run_glx(display);
     XSync(display, False);
     require(!x_error, "cleanup");
     XCloseDisplay(display);
