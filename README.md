@@ -8,7 +8,7 @@ X11 remains a first-class frontend, with a native authority written from scratch
 
 Visit [sophia.gg](https://sophia.gg) for the project overview and development posts. To build a window manager, shell, or desktop environment, start with [Building on Sophia](docs/building-on-sophia.md).
 
-## The Shape
+## Architecture
 
 Each component has a defined authority:
 
@@ -32,29 +32,54 @@ qualification remain open. The [delivery plan](docs/notes/plans/jsschoen-converg
 starts with a bounded observer interface; the native application frontend
 and input driving are separate deliverables.
 
+Target architecture, including the planned 9P application authority. Session
+owners admit and route public role operations before they reach Engine.
+
 ```text
-  X11 clients              9P clients: WM · shells · output
-        │                  lock · factotum · inspection · portals
-        ▼                              │
-  ┌────────────────┐          ┌────────────────────┐
-  │ X AUTHORITY    │          │ SHARED 9P CORE     │
-  │ Native Rust    │          │ 9P2000.L           │
-  │ Built from     │          │ Separate exports   │
-  │ scratch        │          │ and endpoints      │
-  └───────┬────────┘          └────────┬───────────┘
-          │     admitted transactions, │
-          │     proposals and commands │
-          └──────────────┬─────────────┘
-                         ▼
-                  SESSION OWNERS
-              admission · routing · policy
-                         │
-                         ▼
-                   SOPHIA ENGINE
-        input · scene · commits · rendering · scanout
-                         │
-                         ▼
-                     DRM / KMS
+===============================================================================================
+                                      HARDWARE AND KERNEL
+===============================================================================================
+[ Physical input devices ]                                                  [ Display output ]
+    |                                                                                     ^
+    | libinput                                                                    DRM/KMS |
+    |                                                                                     |
+    |   +----------------------+   +----------------------+   +----------------------+    |
+    |   | EXTERNAL WM          |   | EXTERNAL SHELL       |   | PORTALS              |    |
+    |   | Opaque snapshots     |   | Sanitized metadata   |   | Authorized transfers |    |
+    |   | Layout / focus       |   | Descriptors, content |   | Between namespaces   |    |
+    |   +----------------------+   +----------------------+   +----------------------+    |
+    |               ^                          ^                          ^               |
+    |               |                          |                          |               |
+    |               |   Shared 9P core, separate role exports           |               |
+    |               |                          |                          |               |
+    |               v                          v                          v               |
+    |   +----------------------------------------------------------------------------+    |
+    |   | SOPHIA ENGINE: COMPOSITOR AUTHORITY                                        |    |
+    +-->| Scene graph | hit-testing | damage tracking | frame scheduling             |    |
+        | Atomic geometry + pixel commits | rendering | scanout                      |----+
+        +----------------------------------------------------------------------------+
+                          ^                                        ^
+                          | Admitted surface / buffer transactions |
+                          | Routed input / configure / lifecycle   |
+                          v                                        v
+        +-----------------------------------+    +-----------------------------------+
+        | X11 APPLICATION AUTHORITY         |    | 9P APP AUTHORITY (planned)        |
+        | X resources / protocol state      |    | Fids / app files / buffer intake  |
+        | Native Rust, built from scratch   |    | Translate client state            |
+        +-----------------------------------+    +-----------------------------------+
+                          ^                                        ^
+                          | X11                          9P2000.L  |
+                          v                                        v
+               Namespace admission routes each app to its protocol authority.
+
+        +-----------------------------------+    +-----------------------------------+
+        | PRIVATE NAMESPACE A               |    | PRIVATE NAMESPACE B               |
+        | X11 and/or 9P applications        |    | X11 and/or 9P applications        |
+        | Only admitted endpoints mounted   |    | Only admitted endpoints mounted   |
+        +-----------------------------------+    +-----------------------------------+
+
+        Namespaces separate trust domains; either may contain both client types.
+        Portals authorize specific transfers without joining the namespaces.
 ```
 
 Administration and the metadata broker still await migration from the legacy
@@ -112,9 +137,9 @@ WM, shell, output, lock, factotum, inspection and portal file exports use the
 shared core. The portal decision files are wired into Session's X clipboard
 coordinator; their physical acceptance remains separate from implementation.
 Authenticated launch attachment and namespace composition have landed.
-Capture and its CLI are implemented, but live capture currently times out;
+Capture and its CLI deliver frames from both physical outputs;
 [t319](docs/notes/investigations/hok3zvgt-deliver-the-admitted-observer-output-status-and-capture-path.md#current-resumption)
-tracks the repair and remaining physical and performance qualification.
+tracks the remaining output-replacement, lock and performance qualification.
 
 An explicit protected output process receives the output role; without one,
 Session owns profile configuration without an output listener.
