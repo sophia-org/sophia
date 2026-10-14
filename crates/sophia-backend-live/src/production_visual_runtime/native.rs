@@ -504,8 +504,7 @@ impl LiveProductionVisualRuntime {
                 content: Vec::new(),
             })
             .collect();
-        let retained_outputs = outputs.iter().map(|output| output.id).collect();
-        let _ = self.retain_shell_content_outputs(&retained_outputs)?;
+        let _ = self.retain_shell_content_outputs(outputs)?;
         self.translations.settle();
         self.translation_deadlines.clear();
         native_scanout.stop_translation_motion();

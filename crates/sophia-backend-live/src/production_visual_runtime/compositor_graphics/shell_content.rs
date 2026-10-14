@@ -183,29 +183,51 @@ impl LiveProductionVisualRuntime {
         removed
     }
 
-    /// Drops content for outputs that no longer exist after a quiescent
-    /// topology replacement. Presentation claims must already have been
-    /// revoked with their shell connection.
+    /// Drops content whose output disappeared or changed pixel size after a
+    /// quiescent topology replacement. An output number alone cannot make an
+    /// old allocation valid. Its presentation claims must first be revoked.
     pub(in crate::production_visual_runtime) fn retain_shell_content_outputs(
         &mut self,
-        outputs: &BTreeSet<OutputId>,
+        outputs: &[HeadlessOutput],
     ) -> Result<usize, Box<dyn std::error::Error>> {
+        let compatible = |key: &ShellContentKey| {
+            outputs
+                .iter()
+                .find(|output| output.id == key.0)
+                .is_some_and(|output| {
+                    self.shell_content.get(key).is_none_or(|owned| {
+                        owned
+                            .frame
+                            .images
+                            .iter()
+                            .all(|image| image.output_size_px == output.size)
+                    })
+                })
+        };
         if self
             .retained_projection_retirements
             .keys()
-            .any(|(output, _)| !outputs.contains(output))
+            .any(|key| !compatible(key))
             || self
                 .queued_shell_retirements
-                .keys()
-                .any(|(output, _)| !outputs.contains(output))
+                .iter()
+                .any(|((output, _), claims)| {
+                    !outputs.iter().any(|candidate| candidate.id == *output)
+                        || claims.keys().any(|key| !compatible(key))
+                })
         {
             return Err(
                 "native topology replacement would orphan a shell content retirement claim".into(),
             );
         }
+        let retained: BTreeSet<_> = self
+            .shell_content
+            .keys()
+            .filter(|key| compatible(key))
+            .copied()
+            .collect();
         let before = self.shell_content.len();
-        self.shell_content
-            .retain(|(output, _), _| outputs.contains(output));
+        self.shell_content.retain(|key, _| retained.contains(key));
         Ok(before.saturating_sub(self.shell_content.len()))
     }
 

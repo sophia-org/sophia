@@ -20,6 +20,8 @@ mod software_native_cycle;
 mod software_output_idle;
 #[path = "mirrored_intake_tests.rs"]
 mod tests;
+#[path = "topology_shell.rs"]
+mod topology_shell;
 
 impl IntegrationTarget for MirroredTarget {
     fn queued(&self) -> &crate::DeferredNativeCompositions {

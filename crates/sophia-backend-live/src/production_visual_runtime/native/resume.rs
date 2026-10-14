@@ -160,6 +160,14 @@ impl LiveProductionVisualRuntime {
     ) -> Result<(), Box<dyn std::error::Error>> {
         // Install the runtime privately, lower the restored scene for every
         // native head, and synchronously present each complete output cohort.
+        let descriptors = (0..resumed_outputs.output_count())
+            .map(|index| {
+                resumed_outputs
+                    .output_descriptor(index)
+                    .expect("registered output")
+            })
+            .collect::<Vec<_>>();
+        self.retain_shell_content_outputs(&descriptors)?;
         self.outputs = resumed_outputs;
         self.native_suspended = false;
         self.resume_input_projections()?;
