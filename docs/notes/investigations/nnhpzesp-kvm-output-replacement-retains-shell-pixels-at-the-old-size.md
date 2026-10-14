@@ -15,10 +15,13 @@ output size`; cleanup also reported retained surface presentation ownership.
 The observer work was uninstalled and is not the running candidate. Repair this
 recovery regression before continuing t319 capture work.
 
-The candidate fix withdraws shell frames whose output disappeared or changed
+Signed fix `1e2c9e50a` withdraws shell frames whose output disappeared or changed
 pixel size, both during native resume and during a quiescent topology rebind.
-It refuses to discard an unrevoked presentation claim. Deterministic tests and
-an attended KVM switch on a matched release remain required; no fix is installed.
+It refuses to discard an unrevoked presentation claim. The deterministic gate
+passed and the matched recovery release is built. Installation needs the owner's
+sudo authentication: run `~/t327-install` on crunch, then log in to the new
+release. No fix is installed yet. An attended KVM away/back check and review of
+the resulting session/cleanup evidence remain required.
 
 ## Evidence
 
@@ -91,6 +94,25 @@ passed in the separate four-test run; Clippy checked the final source.
 Logs are retained in
 `~/.local/state/sophia/development-evidence/t327-kvm-size-20261014/`.
 This is not physical KVM acceptance.
+
+## Recovery release
+
+Release `niltempus-9fcf63fe095175ee564d` contains Sophia `1e2c9e50a`, Hagia
+`2ba92d984d0317ced163c1137d9641fddfce226d`, and integration
+`0dbec396b86704867e0bfba20d1ce47ed6bee875`. Only Sophia's flake lock entry
+changed. Hagia, narthex, Lom, Bemenu and kleis executables compare byte for byte
+with the installed release. The Nix build and complete checksum verification
+passed. Observer commit `146344c48` is excluded from this release.
+
+Built store path:
+`/nix/store/v2fpkdiv3ml6v5n22hy8vz1rjyd7mdk0-niltempus-desktop-niltempus-9fcf63fe095175ee564d`.
+The install command stopped because sudo requires a password and a terminal.
+`current` remains `niltempus-e8818395183f05263ccc`, and `previous` remains
+`niltempus-7b8051ace95f8581d57e`. The installer created a GC root for the new
+store path before reaching sudo; the prepared artifact remains available.
+The short `~/t327-install` launcher invokes the normal installer with that
+exact store path and passes `bash -n`. Build, checksum and failed-install logs
+are retained beside the deterministic evidence.
 
 ## Connections
 
