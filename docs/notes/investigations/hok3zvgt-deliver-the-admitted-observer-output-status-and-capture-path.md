@@ -145,9 +145,24 @@ and HDMI-A-1 connectors on `pci-0000:03:00.0`; the active core config is unchang
 The source-layout audit passes after placing test-only markers in their external
 test files, following the existing repository convention.
 
-Next, build the matched desktop candidate and collect capture-on/off performance
-and attended physical/mirror/lock/revoke evidence. The deterministic checks pass;
-this does not establish live capture acceptance. The task remains open.
+The matched candidate is built: `niltempus-1822c8ad7c891b0a9bd3`, Sophia
+`7c95a419b`, integration `46f1e5c`. All 87 packaged checksums pass; Hagia,
+narthex, Lom, Bemenu, kleis and the preflight executable match the current
+release byte for byte. The packaged CLI passes the authenticated 4K transfer
+test in 0.96 seconds. Its fixture needed one correction: the protected launcher
+already mounts the Nix store, so an explicit executable bind inside it was
+redundant and correctly refused. No production code changed for that correction.
+
+Store path:
+`/nix/store/66a6irs4ik9h368a4fxnhfbl27084rv1-niltempus-desktop-niltempus-1822c8ad7c891b0a9bd3`.
+The short `~/t319-install` command installs that exact release and the validated
+core config, after checking its expected hash and backing up the original.
+Installation requires an interactive sudo password; `sudo -n true` refused.
+The current session and active configuration remain unchanged.
+
+Next, install the candidate and log into it, then collect capture-on/off
+performance and attended physical/mirror/lock/revoke evidence. The deterministic
+checks pass; this does not establish live capture acceptance. The task remains open.
 
 ## Portal retention budget
 

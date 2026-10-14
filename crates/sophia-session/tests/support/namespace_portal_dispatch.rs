@@ -124,8 +124,6 @@ fn run_boundary(boundary: &str) {
             .protection_domain(
                 ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::NamespaceClient])
                     .unwrap()
-                    .path(ProtectionPath::read_only(&cli))
-                    .unwrap()
                     .path(ProtectionPath::read_write(&reports))
                     .unwrap(),
             );
