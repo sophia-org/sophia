@@ -185,6 +185,14 @@ percentile bounds. It preserves every numerical budget and accounting/failure
 requirement below, retains the original failed campaign, and requires an audit
 of all twenty pairs. It does not waive resource measurements or final binding.
 
+The separately [approved resource comparison](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#proposed-resource-comparison-decision-2026-10-14)
+compares total resource use for identical offered workloads while reporting each
+arm's settled and coalesced counts. It retains complete accounting and protocol
+checks, preserves the original failed run, and makes no equal-completed-work
+claim when the outcomes differ. Instrumented timings cannot satisfy the latency
+budgets. All four rate/load conditions and the separate idle probes remain
+required.
+
 These are work packages within t249, not new queue tasks or reduced exits:
 
 1. Join pointer move/resize/coalescing/cancel through the actual Session owner
