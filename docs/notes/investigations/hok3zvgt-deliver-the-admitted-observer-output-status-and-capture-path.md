@@ -9,6 +9,35 @@ tags: [investigation, protocol, capture]
 
 ## Current resumption
 
+The matched release `niltempus-1822c8ad7c891b0a9bd3` is installed and running
+in the daily session (Sophia `7c95a419b`, integration `46f1e5c`). The active
+core configuration approves capture only on DP-1 and HDMI-A-1 of
+`pci-0000:03:00.0`. Installation and login are complete.
+
+Live capture is failing. Authenticated requests for output 1 and output 2
+expire after about ten seconds with `capture refused: Cancelled`. No physical
+image has been delivered. The diagnostic CLI confirms the request reaches
+`Capturing` before expiry (launch 8); Session intake works. The next step is
+to distinguish native scheduling, displayed custody and portal installation.
+This diagnostic ran against the installed session without restarting it.
+
+The session evidence is
+`~/.local/state/sophia/sessions/00000001792000065910-2683c23a-6360-423a-bdbb-72ca69d1ed22`.
+Its application stderr records capture failures for launches 2, 5 and 6.
+Launches 3 and 4 instead failed because a shell wrapper could not see the
+`/opt` executable path inside its namespace; they are not capture evidence.
+The Nix-store executable is visible to the wrapper.
+
+The full repository gate and authenticated supplied-pixel CLI tests passed
+before installation; the packaged 4K transfer took 0.96 seconds. Those results
+do not qualify the physical renderer-to-recipient path. t319 remains open:
+resolve this timeout, then prove physical CPU/GPU pixels, mirror convergence,
+lock cancellation, stale handles after revocation and output replacement,
+independent replacement identity, and bounded capture-on/off costs. Do not
+advance to attended lock or KVM checks until ordinary capture succeeds.
+
+## Integration checkpoint before installation, 2026-10-14
+
 niltempus explicitly promoted the zsx0tk4k/ernn0bkv observer milestone ahead
 of CPU optimization on October 14. t319 now includes the narrow t257 output
 availability prerequisite; the task ledger owns order. t289 remains open behind
