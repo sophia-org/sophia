@@ -21,7 +21,8 @@ claim every workflow on both heads.
 
 The non-disruptive release audit and attended seven-phase rehearsal pass.
 Whole-release fallback login has passed by operator observation and session
-identity; return to the candidate remains pending. The operator-triggered WM restart
+identity. Return to the candidate is confirmed by the new session identity and
+WM readiness; its post-return visual confirmation remains pending. The operator-triggered WM restart
 has also passed: the session logged
 `restart_requested` at boot millisecond 436341656, then `restarted epoch=2
 restarts=1 preserved_layout=true` at 436341898. The operator confirmed the
@@ -36,7 +37,7 @@ and logged in again; no running process was replaced in place.
 At initial audit, `previous` named the faulty
 `niltempus-a986fef4f64b032edc11`, so plain rollback was unsuitable. The explicitly verified fallback is
 `niltempus-7b8051ace95f8581d57e`. Its store root and sealed files remain intact.
-Fallback login now passes; return to the candidate remains unobserved. Task state
+Fallback login and return to the candidate are recorded below. Task state
 stays in `todo.md`; this is not a t250 completion record.
 
 ## Candidate and packaging incident
@@ -88,6 +89,12 @@ records Sophia `99860d58f911af381233edf336b953c8b81364b4`, binary SHA-256
 and WM ready at epoch 1. The operator reports that the desktop appears normal.
 This proves the fallback login; it does not repeat every earlier UI check.
 
+After `~/t250-return`, the operator reported completion. Session
+`00000001791983659719-c1d52663-c983-40ea-8edf-06758946730d` confirms return to
+`niltempus-e8818395183f05263ccc`, Sophia `d5938f2ad`, and the original
+candidate binary and profile hashes. Its WM reached ready at epoch 1.
+The operator has not yet explicitly confirmed post-return visual behavior.
+
 The attended rehearsal at `20261014T130523Z` passed startup readiness, WM
 restart, unchanged-profile reload, rejected-profile reload, restored-profile
 reload, restart after rollback and logout. `candidate.txt` records session
@@ -104,8 +111,8 @@ preserved the layout in the session log and appeared normal to the operator.
 The new exact-release rehearsal supplies profile recovery and shutdown
 evidence independently of September 26's historical result.
 Physical pointer-drag/presentation evidence remains distinct from t249's
-control-path budgets. Return from the verified fallback to the candidate remains
-to be observed.
+control-path budgets. The candidate has restarted after the fallback trial;
+post-return visual confirmation remains to be recorded.
 
 After logging out and logging in on tty4, run from `~/dev/niltempus`:
 
