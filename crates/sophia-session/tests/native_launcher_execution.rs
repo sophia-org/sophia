@@ -340,6 +340,7 @@ fn private_policy() -> sophia_config::namespace_policy::NamespacePolicyConfig {
                 request: vec![],
                 publish: vec![],
                 developer_launch: false,
+                capture_outputs: vec![],
             },
         )]),
         applications: ["registered:app1", "registered:app2"]

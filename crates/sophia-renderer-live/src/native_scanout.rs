@@ -12,6 +12,7 @@ pub use sophia_renderer_native_egl::{
     NativeCompositionFormatRequest as LiveCompositionFormatRequest,
     NativeCompositionOutputRequest as LiveCompositionOutputRequest,
     NativeCompositionSnapshot as LiveCompositionSnapshot,
+    SnapshotReservation as LiveSnapshotReservation,
 };
 
 mod image_reads;

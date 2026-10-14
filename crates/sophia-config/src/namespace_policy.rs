@@ -7,6 +7,7 @@ pub use source::LoadedNamespaceRecipe;
 
 pub const MAX_NAMESPACE_RECIPES: usize = 64;
 pub const MAX_NAMESPACE_APPLICATIONS: usize = 1024;
+pub const MAX_CAPTURE_OUTPUTS: usize = 16;
 
 pub fn valid_recipe_name(name: &str) -> bool {
     !name.is_empty()
@@ -44,6 +45,9 @@ pub struct NamespaceRecipeConfig {
     pub request: Vec<RecipePortalCapability>,
     pub publish: Vec<RecipePortalCapability>,
     pub developer_launch: bool,
+    /// Trusted approval for these output connectors, separate from the ability
+    /// to request capture. Session still checks lock and native incarnation.
+    pub capture_outputs: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

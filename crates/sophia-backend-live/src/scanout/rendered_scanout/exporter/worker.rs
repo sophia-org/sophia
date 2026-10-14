@@ -22,6 +22,9 @@ use std::sync::{Arc, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
+pub(crate) type CaptureReservation =
+    Arc<std::sync::Mutex<Option<sophia_renderer_live::LiveSnapshotReservation>>>;
+
 mod head_imports;
 mod lifecycle;
 mod maintenance;
@@ -467,6 +470,34 @@ impl NativeGbmRendererWorker {
         output_format: Option<sophia_renderer_live::LiveCompositionFormatRequest>,
         capture: bool,
     ) -> Result<(), LiveRendererScanoutBufferExportDetail> {
+        let reservation = if capture {
+            let reservation = sophia_renderer_live::LiveSnapshotReservation::for_image(
+                target.size.width.try_into().unwrap_or(0),
+                target.size.height.try_into().unwrap_or(0),
+            )
+            .ok_or(LiveRendererScanoutBufferExportDetail::ComposeRefused)?;
+            Some(Arc::new(std::sync::Mutex::new(Some(reservation))))
+        } else {
+            None
+        };
+        self.submit_reserved_capture(
+            target,
+            frame,
+            preferred_modifiers,
+            output_format,
+            reservation,
+        )
+    }
+
+    pub(crate) fn submit_reserved_capture(
+        &mut self,
+        target: LiveGbmEglFrameTargetRecord,
+        frame: PendingRenderedFrame,
+        preferred_modifiers: Vec<u64>,
+        output_format: Option<sophia_renderer_live::LiveCompositionFormatRequest>,
+        reservation: Option<CaptureReservation>,
+    ) -> Result<(), LiveRendererScanoutBufferExportDetail> {
+        let capture = reservation.is_some();
         if capture && !matches!(&frame, PendingRenderedFrame::Mixed(_, Some(_))) {
             return Err(LiveRendererScanoutBufferExportDetail::ComposeRefused);
         }
@@ -481,7 +512,7 @@ impl NativeGbmRendererWorker {
         self.next_request_id = next_request_id;
         let correlation = frame_correlation(&frame, Some(request_id));
         let command = WorkerCommand::Render {
-            capture,
+            capture: reservation,
             output: self.output,
             request_id,
             target,
@@ -761,6 +792,10 @@ struct InFlightRequest {
     soft_stall_reported: bool,
 }
 
+// The bounded channel already accounts for these fixed-size cells. Boxing the
+// frame to save one reservation pointer here would allocate on every ordinary
+// render, including the capture-off path.
+#[allow(clippy::large_enum_variant)]
 enum WorkerCommand {
     /// Attach an output, giving the worker the channel its results go home on
     /// and the metrics handle its own slot pool publishes to.
@@ -776,7 +811,7 @@ enum WorkerCommand {
         claim: Arc<OutputClaim>,
     },
     Render {
-        capture: bool,
+        capture: Option<CaptureReservation>,
         output: LiveRendererWorkerOutputKey,
         request_id: LiveRendererWorkerRequestId,
         target: LiveGbmEglFrameTargetRecord,

@@ -94,14 +94,29 @@ fn recipe(node: &KdlNode) -> Result<NamespaceRecipeConfig, ConfigParseError> {
         request: Vec::new(),
         publish: Vec::new(),
         developer_launch: optional_bool_property(node, "developer-launch", false)?,
+        capture_outputs: Vec::new(),
     };
     if recipe.developer_launch && profile == NamespaceRecipeProfile::SharedX {
         return schema_error("developer namespace launch requires a confined profile");
     }
     if let Some(body) = node.children() {
-        validate_root_names(body, &["request", "publish"])?;
+        validate_root_names(body, &["request", "publish", "capture-output"])?;
         for child in body.nodes() {
             exact_shape(child, 1, &[], false)?;
+            if child.name().value() == "capture-output" {
+                let output = string_argument(child, 0, 1, 256)?;
+                if profile != NamespaceRecipeProfile::Observer
+                    || !crate::output_candidate::valid_desktop_output_connector(output)
+                    || recipe.capture_outputs.len() >= MAX_CAPTURE_OUTPUTS
+                    || recipe.capture_outputs.iter().any(|old| old == output)
+                {
+                    return schema_error(
+                        "capture-output requires an observer and distinct bounded connector names",
+                    );
+                }
+                recipe.capture_outputs.push(output.to_owned());
+                continue;
+            }
             let capability = match string_argument(child, 0, 1, 32)? {
                 "clipboard" => RecipePortalCapability::Clipboard,
                 "drag-and-drop" => RecipePortalCapability::DragAndDrop,

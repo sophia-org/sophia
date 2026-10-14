@@ -30,7 +30,8 @@ authenticated attach for supervised WM, lock, output and shell roles;
 remain explicit. t318 implements admission-derived namespace recipes,
 automatic application selection and an authorized developer launcher; see the
 [namespace client guide](docs/namespace-client-guide.md). Renderer capture and
-an output-capture CLI remain implementation targets. The [delivery plan](docs/notes/plans/jsschoen-converge-public-roles-on-one-9p-core.md#first-deliverable-and-dependency-order)
+an admitted output-capture CLI are implemented; physical and performance
+qualification remain open. The [delivery plan](docs/notes/plans/jsschoen-converge-public-roles-on-one-9p-core.md#first-deliverable-and-dependency-order)
 starts with a bounded observer interface; the native application frontend
 and input driving are separate deliverables.
 

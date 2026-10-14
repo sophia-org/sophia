@@ -12,7 +12,7 @@ fn observer_recipe_uses_private_inspection_and_refreshes_after_fencing() {
     snapshot.session.namespace_policy = NamespacePolicyConfig {
         recipes: BTreeMap::from([("observer".into(), NamespaceRecipeConfig {
             name: "observer".into(), profile: NamespaceRecipeProfile::Observer,
-            source: None, request: vec![RecipePortalCapability::ScreenCapture], publish: vec![], developer_launch: false,
+            source: None, request: vec![RecipePortalCapability::ScreenCapture], publish: vec![], developer_launch: false, capture_outputs: vec![],
         })]), applications: BTreeMap::from([("registered:probe".into(), "observer".into())]),
     };
     config.core_config_state = sophia_config::CoreConfigState::from_snapshot(snapshot);

@@ -82,8 +82,8 @@ target observer has status, inspection and explicitly authorized capture,
 with no injection or administrative authority. Separate identities are the
 default for observation and driving; combining grants requires explicit
 operator policy. Namespace recipes and supervised admission are implemented.
-Renderer capture remains a target: a recipe's request permission is not a
-capture implementation or approval.
+Renderer capture and its admitted CLI are implemented and remain under physical
+qualification. A recipe's request permission alone does not approve capture.
 
 The [admission boundary design](notes/plans/esnqxpqw-pidfd-and-namespace-admission-optimizations.md#local-authentication-design-and-t317-handoff-2026-10-10)
 and [recipe review](notes/investigations/kcfh2hdg-adopting-the-plan-9-namespace-model-in-sophia.md#t275-recipe-design-result-2026-10-10)
@@ -279,6 +279,15 @@ capabilities do not approve individual transfers. Observer permits only
 screen-capture requests and supplies that default; it cannot publish or acquire
 clipboard participation. Developer launch is off by default and requires a
 confined profile plus the separately admitted administrative launch request.
+
+An observer recipe may separately list `capture-output "DP-1"` entries to
+approve capture of named outputs. Omission approves none; request participation
+alone never approves capture. At most sixteen distinct connector names are
+accepted, using the desktop output naming grammar (including a GPU-qualified
+name such as `pci-0000:03:00.0/DP-1`). Wildcards are not accepted. These entries
+are trusted restart-bound policy, not application metadata. The live capture
+integration must resolve each requested output against its current native owner,
+refuse ambiguous names and apply the lock fence before granting a transfer.
 
 An optional `source="recipes/custom.ns"` names a normalized relative path under
 the trusted core configuration root for the existing pinned source loader.

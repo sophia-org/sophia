@@ -14,6 +14,10 @@ pub struct PortalClientConnection {
     closed: bool,
 }
 impl PortalClientConnection {
+    /// Borrow the common driver's readiness set; this conveys no authority.
+    pub fn poll_fds(&self) -> Vec<rustix::event::PollFd<'_>> {
+        self.server.poll_fds()
+    }
     pub fn adopt(
         stream: UnixStream,
         namespace: NamespaceId,

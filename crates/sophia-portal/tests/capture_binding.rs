@@ -428,6 +428,24 @@ fn lock_during_collection_cannot_install_an_inflight_image() {
 }
 
 #[test]
+fn delayed_native_work_cannot_acquire_a_fresh_interval_after_lock_unlock() {
+    let fence = PortalExecutionFence::default();
+    let view = View::new(7, fence.clone());
+    let admitted = fence.revision();
+    fence.block();
+    fence.unblock();
+    assert!(
+        view.coordinator
+            .enqueue_at_revision(transfer(1, 9), admitted)
+            .recv_timeout(Duration::from_secs(3))
+            .unwrap()
+            .is_err()
+    );
+    assert_eq!(view.objects.current(), Err(Errno::ENOENT));
+    assert_eq!(view.transfer(2, 9), Ok(()));
+}
+
+#[test]
 fn invalid_or_repeated_presentations_never_replace_current_pixels() {
     let mut view = View::new(7, PortalExecutionFence::default());
     assert!(!view.source.publish(image(8, 9, 2, 88)));

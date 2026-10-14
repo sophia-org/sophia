@@ -14,7 +14,9 @@ use std::{io, path::Path};
 #[derive(Default)]
 pub(super) struct LiveApplicationLaunches {
     prepared: Option<Prepared>,
+    captures: Option<capture::SessionCaptures>,
 }
+mod capture;
 struct Prepared {
     policy: NamespacePolicyConfig,
     recipes: ApplicationRecipeSet,
@@ -235,6 +237,7 @@ impl LiveApplicationLaunches {
             );
         }
         Ok(Self {
+            captures: None,
             prepared: Some(Prepared {
                 policy: policy.clone(),
                 recipes,

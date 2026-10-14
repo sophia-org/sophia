@@ -63,10 +63,11 @@ where
         frame: &LiveOwnedMixedCompositionFrame,
         request: LiveCompositionOutputRequest<'_>,
         snapshot: &mut Option<sophia_renderer_native_egl::NativeCompositionSnapshot>,
+        reservation: sophia_renderer_native_egl::SnapshotReservation,
     ) -> Result<NativeGbmOwnedScanoutBufferExportReport, LiveMixedCompositionError> {
         *snapshot = None;
         self.export_owned_mixed_frame_with_modifiers_and_frame_slot(
-            target, frame, request, Some((set, frame_slot)), None, Some(snapshot),
+            target, frame, request, Some((set, frame_slot)), None, Some((snapshot, reservation)),
         )
     }
 
@@ -96,7 +97,7 @@ where
         request: LiveCompositionOutputRequest<'_>,
         frame_slot: Option<(sophia_renderer_native_egl::NativeFrameTargetSetId, usize)>,
         repaint: Option<&sophia_renderer_native_egl::NativeCompositionRepaintTable>,
-        snapshot: Option<&mut Option<sophia_renderer_native_egl::NativeCompositionSnapshot>>,
+        snapshot: Option<(&mut Option<sophia_renderer_native_egl::NativeCompositionSnapshot>, sophia_renderer_native_egl::SnapshotReservation)>,
     ) -> Result<NativeGbmOwnedScanoutBufferExportReport, LiveMixedCompositionError> {
         if !request.is_valid() {
             return Err(LiveMixedCompositionError::InvalidOutput);

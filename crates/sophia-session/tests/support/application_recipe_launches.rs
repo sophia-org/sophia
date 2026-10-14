@@ -34,6 +34,7 @@ fn session_selects_recipe_owners_for_registered_and_desktop_launches() {
             request: vec![],
             publish: vec![],
             developer_launch: false,
+            capture_outputs: vec![],
         };
         let policy = NamespacePolicyConfig {
             recipes: BTreeMap::from([("app".into(), recipe)]),

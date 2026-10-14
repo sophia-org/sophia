@@ -30,7 +30,7 @@ where
         trace: Option<LiveCompositionTrace>,
         frame_slot: Option<(sophia_renderer_native_egl::NativeFrameTargetSetId, usize)>,
         repaint: Option<&sophia_renderer_native_egl::NativeCompositionRepaintTable>,
-        snapshot: Option<&mut Option<sophia_renderer_native_egl::NativeCompositionSnapshot>>,
+        snapshot: Option<(&mut Option<sophia_renderer_native_egl::NativeCompositionSnapshot>, sophia_renderer_native_egl::SnapshotReservation)>,
     ) -> Result<NativeGbmOwnedScanoutBufferExportReport, LiveMixedCompositionError> {
         if !request.is_valid() || !target.is_valid_scanout_target() {
             return Err(LiveMixedCompositionError::InvalidOutput);
@@ -168,13 +168,13 @@ where
             }),
             repaint,
         };
-        let report = if let Some(snapshot) = snapshot {
+        let report = if let Some((snapshot, reservation)) = snapshot {
             *snapshot = None;
             let result = match frame_slot {
-                Some((set, slot)) => self.inner.export_composed_with_snapshot_in_frame_slot(
-                    set, slot, native_frame, request,
+                Some((set, slot)) => self.inner.export_composed_with_reserved_snapshot_in_frame_slot(
+                    set, slot, native_frame, request, reservation,
                 ),
-                None => self.inner.export_composed_with_snapshot(native_frame, request),
+                None => self.inner.export_composed_with_reserved_snapshot(native_frame, request, reservation),
             };
             let (report, image) = result.map_err(|detail| {
                 LiveMixedCompositionError::Renderer(

@@ -341,7 +341,7 @@ fn the_service_derives_result_identity_from_the_owned_frame() {
     let correlation = super::frame_correlation(&mixed_job(51), Some(request_id));
     commands
         .send(WorkerCommand::Render {
-            capture: false,
+            capture: None,
             output,
             request_id,
             target: LiveGbmEglFrameTargetRecord::new(Size {

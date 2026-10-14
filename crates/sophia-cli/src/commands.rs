@@ -1,5 +1,6 @@
 #[cfg(feature = "native-session")]
 mod backend;
+mod capture;
 mod client_launch;
 mod config;
 pub(crate) mod diagnostics;
@@ -55,6 +56,9 @@ mod prelude {
 }
 
 pub(crate) fn run(args: &[String], verbose: bool) -> Result<(), Box<dyn std::error::Error>> {
+    if args.first().is_some_and(|arg| arg == "capture") {
+        return capture::run(&args[1..]);
+    }
     if args.first().is_some_and(|arg| arg == "launch") {
         return launch::run(&args[1..]);
     }

@@ -106,6 +106,8 @@
         polled_monitor_notice.or_else(|| deferred_output_topology_notice.take())
     };
     if let Some(notice) = monitor_notice {
+        // Revoke at observation, before the rescan's debounce or retirement.
+        application_launches.revoke_captures();
         let advance_security_epoch = output_topology_owner.begin_rescan(notice.sequence)?;
         output_topology_retry_at = Some(output_replacement::runtime_output_notice_deadline(
             Instant::now(), output_topology_retry_at,

@@ -10,9 +10,11 @@ This is separate from the [portal coordinator files](sophia-portal-files.md).
 The `portal-requester` admission contract still belongs to trusted protocol
 authorities. A namespace client cannot upload payloads, approve transfers or
 claim executor custody through this endpoint. Client-originated requests are
-not implemented here: `api` and `status` explicitly report
-`request=unavailable`. The renderer readback and recipient binding primitives
-exist; the live presentation, request and CLI connections remain t319 work.
+available unless the trusted owner supplies a capture request queue: otherwise
+`api` and `status` report `request=unavailable`. The optional request files below
+exist; Session supplies them for explicitly capture-approved observer recipes.
+The integration and admitted CLI are under t319 qualification and have not
+been installed. Physical/performance evidence remains required.
 
 ```text
 Session-selected recipe / endpoint grant
@@ -59,7 +61,8 @@ the server closes the connection and drops its unsent bytes; it cannot replace
 a partly sent reply with an error. Fresh stale reads still answer `ESTALE`.
 Bytes already accepted by the kernel before revocation cannot be recalled.
 
-Only read-only opens are accepted. Unknown control names are absent. No
+Only read-only opens are accepted except for the optional `capture` request file.
+Unknown control names are absent. No
 descriptors cross the 9P stream. `Tversion` clears wire fids and requires fresh
 authentication under the same pinned launch identity; it does not reset object
 identity allocation. Open `api` and `status` snapshots retain their original
@@ -77,6 +80,31 @@ not copies of earlier payloads. Transfer approval, source collection and
 recipient installation use the existing common coordinator; this export adds
 no second transfer policy or grant type. Tests may supply policy and source
 bytes without making an application-frontend or renderer claim.
+
+## Optional output-capture requests
+
+A trusted recipient owner may supply a `CaptureRequestQueue`. Such an endpoint
+advertises `request=output-capture-v1` and adds `capture` and `capture-status`.
+The same authenticated root owns both. A queue admits one outstanding request
+and holds no image bytes. It does not authorize a transfer: Session must apply
+its explicit output policy and the common coordinator before publishing pixels.
+
+`capture` accepts only write-only opens and one complete 24-byte write at offset
+zero. Its three little-endian u64 fields are version 1, a nonzero request serial,
+and a nonzero output identity. Serials must increase within the recipient owner;
+they correlate requests and never select a grant, namespace or native frame.
+Malformed writes return `EINVAL`, overlapping requests `EAGAIN`, old serials
+`ESTALE`, and admission while locked or closed `EACCES`.
+
+`capture-status` is a read-only immutable open snapshot with four little-endian
+u64 fields: version 1, request serial, output identity and state. States are
+0 idle, 1 queued, 2 capturing, 3 ready, 4 denied, 5 unavailable, 6 pressure and
+7 cancelled. Idle has zero serial and output; all other states identify the
+request. A status record is historical information, not authority to read a
+frame. Requests expire after ten seconds and are tied to the lock-fence revision.
+Unlock cannot revive a queued or active request from an earlier revision.
+Only the queue's exact trusted work token can settle it, and a late completion
+cannot settle a replacement request or another recipient's queue.
 
 ## Output-capture bindings
 
@@ -125,23 +153,28 @@ owner still retains it. Old wire fids hold identities, so they do not retain
 the old frame after recipient replacement. Capacity refusal preserves existing
 bindings.
 
-Session must share one budget across recipients and reserve before scheduling
-readback. This primitive bounds portal custody, not separate references held
-by the native renderer or scanout leases. Native in-flight images, mirror-head
-readbacks and cancellation cleanup still need scheduling bounds in the Session
-integration; constructing separate budgets per recipient would not establish
-a session-wide bound.
+Session shares one portal budget across recipients and reserves before
+scheduling readback. Native images have a separate process-wide cap of 128 MiB
+and eight images, including mirror heads and scanout leases. Every head's native
+reservation must succeed before capture is marked on any head. Reservations
+follow deferred work and are consumed once by readback; snapshot clones retain
+the same charge until their last reference is dropped. Constructing separate
+portal budgets per recipient would not establish a session-wide bound.
 
-Retained reads take the common execution fence, then the source-generation
-guard, then the recipient binding guard. Each read copies at most 64 KiB while
-holding these guards; it does not wait for transport progress. Output withdrawal
+Retained reads take the common execution fence, then the native output lifetime
+guard, the source-generation guard and the recipient binding guard. Native
+preview failure, topology preparation and native owner destruction withdraw the
+lifetime guard synchronously; delivery does not wait for another Session poll.
+Each read copies at most 64 KiB while holding these guards; it does not wait
+for transport progress. Output withdrawal
 waits for earlier guarded reads, and subsequent reads refuse. Session lock,
 grant expiry and coordinator teardown still fence access through the common
 lease. Unlock cannot revive an earlier grant. Bytes already delivered remain
 with the recipient.
 
-These are storage and handoff contracts, not a live screenshot feature. Session
-must still connect actual renderer/completion identity, request admission,
-aggregate image retention limits and the CLI. Supplied-presentation tests prove
+The Session integration is still under qualification. Its state-machine checks
+and authenticated CLI tests pass, including an exact 4K transfer within the
+unchanged grant deadline. Physical and performance evidence remain incomplete.
+Supplied-presentation tests prove
 binding and stale-handle behavior; they do not prove native presentation or
 final network-delivery timing across a live lock.

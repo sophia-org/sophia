@@ -46,7 +46,22 @@ impl CaptureRetentionBudget {
     /// Reserve before scheduling readback. Failure leaves existing images live.
     /// This accounts for retention; it grants no authority to capture an output.
     pub fn reserve(&self, info: OutputCaptureFrameInfo) -> Option<CaptureReservation> {
-        let bytes = info.byte_len()?;
+        info.byte_len()?;
+        let mut reservation = self.reserve_storage(info.width, info.height)?;
+        reservation.info = Some(info);
+        Some(reservation)
+    }
+
+    /// Capacity can be reserved before the native owner mints a frame identity.
+    pub fn reserve_storage(&self, width: u32, height: u32) -> Option<CaptureReservation> {
+        let bytes = OutputCaptureFrameInfo {
+            output: sophia_protocol::OutputId::from_raw(1),
+            output_generation: 1,
+            presentation_generation: 1,
+            width,
+            height,
+        }
+        .byte_len()?;
         let mut used = self.0.used.lock().ok()?;
         let next = CaptureRetentionUsage {
             bytes: used.bytes.checked_add(bytes)?,
@@ -58,7 +73,9 @@ impl CaptureRetentionBudget {
         *used = next;
         Some(CaptureReservation {
             budget: self.clone(),
-            info,
+            info: None,
+            width,
+            height,
             bytes,
         })
     }
@@ -72,18 +89,35 @@ impl CaptureRetentionBudget {
 /// the charge follows the frame through source selection and recipient custody.
 pub struct CaptureReservation {
     budget: CaptureRetentionBudget,
-    info: OutputCaptureFrameInfo,
+    info: Option<OutputCaptureFrameInfo>,
+    width: u32,
+    height: u32,
     bytes: usize,
 }
 
 impl CaptureReservation {
     /// The trusted adapter must separately verify completed presentation identity.
     pub fn complete(self, rgba: Arc<[u8]>) -> Option<PortalCaptureFrame> {
+        let info = self.info?;
+        self.complete_with_info(info, rgba)
+    }
+    pub fn complete_with_info(
+        self,
+        info: OutputCaptureFrameInfo,
+        rgba: Arc<[u8]>,
+    ) -> Option<PortalCaptureFrame> {
+        if info.width != self.width
+            || info.height != self.height
+            || info.byte_len()? != self.bytes
+            || self.info.is_some_and(|reserved| reserved != info)
+        {
+            return None;
+        }
         if rgba.len() != self.bytes {
             return None;
         }
         Some(PortalCaptureFrame {
-            info: self.info,
+            info,
             rgba,
             _reservation: self,
         })

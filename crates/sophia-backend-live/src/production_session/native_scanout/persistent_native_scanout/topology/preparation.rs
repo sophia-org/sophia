@@ -8,6 +8,7 @@ impl LiveProductionNativeScanout {
         candidate_frames: Vec<crate::LiveProductionHeadCompositionFrame>,
         rollback_frames: Vec<crate::LiveProductionHeadCompositionFrame>,
     ) -> Result<LiveProductionNativeTopologyPreparationReport, Box<dyn std::error::Error>> {
+        self.capture_validity.clear();
         self.invalidate_layout_probes();
         self.service_layout_probe_cleanup();
         if self.output_topology_preparation.is_some() {

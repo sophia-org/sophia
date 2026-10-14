@@ -1376,6 +1376,8 @@ dependencies = [
  "sophia-broker",
  "sophia-config",
  "sophia-engine",
+ "sophia-launch-client",
+ "sophia-namespace-client",
  "sophia-portal",
  "sophia-protocol",
  "sophia-runtime",
@@ -1510,6 +1512,7 @@ dependencies = [
 name = "sophia-portal"
 version = "0.1.0"
 dependencies = [
+ "rustix",
  "sophia-9p",
  "sophia-9p-client",
  "sophia-protocol",

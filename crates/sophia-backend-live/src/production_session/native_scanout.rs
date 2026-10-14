@@ -17,8 +17,9 @@ mod persistent_native_scanout;
 pub use persistent_native_scanout::{
     LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL, LiveNativeCompletionWait, LiveNativeOutputRequest,
     LiveOutputAllocationContext, LiveOutputAllocationFormatPreference,
-    LiveOutputAllocationPreference, LivePersistentRenderMetrics, LivePreviewFrameFailure,
-    LivePreviewImageRefusal, LiveProductionCompletionTimestamp, LiveProductionCpuFrameQueueStatus,
+    LiveOutputAllocationPreference, LiveOutputCaptureTarget, LiveOutputCaptureValidity,
+    LivePersistentRenderMetrics, LivePreviewFrameFailure, LivePreviewImageRefusal,
+    LiveProductionCompletionTimestamp, LiveProductionCpuFrameQueueStatus,
     LiveProductionDirectScanoutTotals, LiveProductionHeadCompositionFrame,
     LiveProductionKmsCompletionSource, LiveProductionMirrorGenerationQueue,
     LiveProductionMirrorGroupBegin, LiveProductionMirrorGroupLifecycle,

@@ -804,6 +804,7 @@ fn run_session_loop_inner(
                 startup_required_submissions = None;
                 native_evidence.close(&NativeEvidenceSnapshot::capture(&native), $reason);
             }
+            application_launches.revoke_captures();
             native_retirement.begin(native_scanout, $mode, $reason)?;
         }};
         ($reason:literal) => { close_native_owner!($reason, RetirementMode::Drained) };

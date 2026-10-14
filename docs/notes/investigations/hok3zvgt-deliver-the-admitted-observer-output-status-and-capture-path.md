@@ -22,12 +22,10 @@ nonblocking lock attempt; contention withdraws new observations until a later
 successful report. Opening a file pins an observation, never capture authority.
 Existing authentication, HostDomain admission and revocation still apply.
 
-This is an aggregate status slice, not the complete observer or capture exit.
-It deliberately labels the native retirement count as an owner counter, not a
-per-output presentation generation. Still required: Session capture request
-admission and publication, aggregate retention bounds, an admitted CLI,
-capture-on/off measurements and attended qualification. No current-session installation,
-reload, input injection or screenshot is performed by this implementation.
+The status view labels the native retirement count as an owner counter, not a
+per-output presentation generation. Capture now has the integration described
+below. Its release, capture-on/off measurements and attended qualification
+remain outstanding; none of this draft is installed in the current session.
 
 An installed-session KVM failure interrupted this work at 13:38 UTC. Its
 [recovery investigation](nnhpzesp-kvm-output-replacement-retains-shell-pixels-at-the-old-size.md)
@@ -51,19 +49,105 @@ forces composition for its exact queued frame, including direct candidates.
 Portal frames now require a reservation from a shared retention budget, capped
 at 128 MiB and eight frames. Reservations and retained frames share the cap;
 source/recipient sharing does not double-charge an image, and replacement
-releases its charge once the last frame reference is gone. Session request
-admission, publication into the generation-bound portal source, reservation
-before native readback, native custody bounds and CLI remain unconnected. The tests use supplied
-completion callbacks; they do not establish physical KMS capture acceptance.
+releases its charge once the last frame reference is gone. The Session join
+described below is a draft under qualification. Tests use supplied completion callbacks;
+they do not establish physical KMS capture acceptance.
 
-The next integration must authorize the target separately from its observer
-request capability. Use one Session budget and the existing lock fence.
+The integration authorizes the target separately from its observer
+request capability, using one Session budget and the existing lock fence.
 `run_native_pending_output` stages and submits in one call, so admission after
 that call is too late to mark the exact queued composition for readback. Reserve
 and mark it before submission, then publish only matching displayed custody.
 All enabled mirror heads need accounting even though the recipient receives
 only the primary image. Withdraw the portal source when native owner or head
 targets change; a renderer frame number alone is not an output incarnation.
+
+The integration checkpoint is ready for a matched release. Observer recipes
+now parse an explicit bounded `capture-output` connector allowlist, defaulting
+to no approval. The optional portal `capture` and `capture-status` files use
+fixed-size versioned records and one outstanding request per recipient. Session
+now supplies those queues for explicitly approved recipes and services them in
+the owner loop. It reserves portal storage, resolves the primary connector,
+tracks the full native owner/head-target incarnation, queues a fresh retained
+composition, waits for its displayed identity and uses the common coordinator
+to bind the image. Planned topology preparation and native retirement revoke
+capture bindings first. This candidate has not been installed.
+
+The queue uses the common lock fence, a ten-second deadline and owner-specific
+work tokens. Coordinator enqueue now preserves that original fence revision:
+delayed rendering cannot obtain a fresh interval after lock/unlock. Regression
+tests pass for that race, replay, overlapping requests, cross-owner completion
+and the optional file semantics. Native snapshot storage now has a process-wide
+128 MiB/eight-image cap, including clones held by workers and scanout leases;
+its reservation and lifetime test passes. Portal capacity can be reserved by
+dimensions before a native frame identity exists.
+
+Native capacity is now reserved for every head before marking capture. The
+worker carries a shared, single-consumption reservation through deferral and
+passes it into readback; the renderer checks the reserved length before
+allocation. Pressure therefore leaves the queued composition ordinary instead
+of failing its export. Superseding a requested frame releases its reservation;
+Session retries a fresh frame within the original request deadline. Expired
+recipient bindings release portal storage on the next service turn.
+
+`sophia capture OUTPUT_ID [--output NEW_FILE.pam]` now uses the admitted namespace
+and launch authentication. The Linux adapter duplicates the inherited socket;
+the CLI retains its attested process identity without a shell handoff. The
+standalone test exposed a high-descriptor failure in the earlier `/bin/sh`
+bootstrap, which has been removed. The CLI reads bounded frame bytes,
+rechecks its retained record, reports both generations and a pixel checksum,
+and optionally creates a PAM file in an approved writable path. The real
+namespace/authentication/portal test ran the CLI against supplied 2×2 pixels
+and verified the exact output file. A separate test now launches the built CLI
+through the production supervisor with its inherited channel and also passes.
+Both use supplied pixels; neither proves physical capture. Descriptor tests
+verify independent ownership, close-on-exec and invalid-number rejection.
+
+The isolated GPU worker test passed after the reservation change, with CPU and
+GPU pixels and explicit worker shutdown. Its result, stdout and stderr are in
+`~/.local/state/sophia/development-evidence/t319-session-capture/`; the test
+binary SHA-256 was
+`3689fe2d372c182effc18812ddcd39cfaeee7b3686301c7950cead66827dc1d8`.
+The capture-filtered backend suite passed (15 tests, one ignored GPU test run
+separately). The final `cargo-slot sophia cargo xtask check` passed, including
+workspace tests, doctests, strict Clippy, layout and conformance checks, and the
+gate's buffer-age and GLX/EGL pixel checks. Its complete log is
+`integration-check.log` in the Session capture evidence directory.
+
+Four supplied-backend Session tests pass: presentation waiting and output
+replacement, unauthorized targets and memory pressure, lock cancellation, and
+retry after a newer frame supersedes the request. Hotplug observation now
+revokes capture before the rescan delay. Seat loss and topology quarantine
+suspend capture service, and voluntary seat handoff revokes before suspension.
+The output-loss audit found a race between native preview failure and the next
+Session service turn. A native lifetime guard now surrounds the source checks
+and protected delivery. Preview failure, topology preparation and owner drop
+withdraw it synchronously. Both lifetime tests pass: withdrawal stales retained
+readers without a Session poll, and waits for an existing guarded delivery.
+Collection releases the native guard before consulting the execution fence to
+preserve lock order; installation and delivery recheck native validity.
+The four Session tests also pass with this guard. The first full gate reached
+doctests but had compiled its dependencies before the guard edit; a complete
+run against settled source subsequently passed as recorded above.
+
+A new standalone 4K transfer check exposed grant expiry during sequential
+reads. The CLI now pipelines four bounded reads, and namespace dispatch waits
+on socket readiness instead of sleeping between requests. The grant deadline
+is unchanged. The 4K retest passes: all 33,177,600 bytes match the supplied
+pixels, with the complete test finishing in 1.06 seconds. This establishes
+bounded transfer capacity on this host, not physical capture or a quiet-window
+performance comparison. Its log is `cli-4k-readiness.log` in the Session capture
+evidence directory.
+
+The prepared next-session core config is recorded as `next-session-core.kdl`
+beside the test evidence. It validates and approves only the configured DP-1
+and HDMI-A-1 connectors on `pci-0000:03:00.0`; the active core config is unchanged.
+The source-layout audit passes after placing test-only markers in their external
+test files, following the existing repository convention.
+
+Next, build the matched desktop candidate and collect capture-on/off performance
+and attended physical/mirror/lock/revoke evidence. The deterministic checks pass;
+this does not establish live capture acceptance. The task remains open.
 
 ## Portal retention budget
 

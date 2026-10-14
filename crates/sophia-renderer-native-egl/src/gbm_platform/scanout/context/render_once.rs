@@ -78,6 +78,7 @@ where
                 NativeCompositionReadback {
                     proof: capture_pixels,
                     snapshot: self.readback_requested.then_some(&mut self.readback),
+                    reservation: self.readback_reservation.take(),
                 },
                 false,
                 self.buffer_age_supported,
@@ -207,6 +208,7 @@ where
                 NativeCompositionReadback {
                     proof: capture_pixels,
                     snapshot: self.readback_requested.then_some(&mut self.readback),
+                    reservation: self.readback_reservation.take(),
                 },
                 false,
                 self.buffer_age_supported,

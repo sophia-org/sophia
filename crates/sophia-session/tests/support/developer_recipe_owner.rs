@@ -36,7 +36,7 @@ fn developer_launch_requires_both_host_administration_and_explicit_recipe_permis
     assert!(LiveDeveloperLaunches::start(config,wake.notifier()).unwrap().socket_path().is_none(),"default recipes cannot publish developer launch");
     let mut snapshot=config.core_config_state.active().clone();
     snapshot.session.namespace_policy=NamespacePolicyConfig {recipes:[("tools",true),("closed",false)].into_iter().map(|(name,enabled)| (name.into(),NamespaceRecipeConfig {
-        name:name.into(), profile:NamespaceRecipeProfile::Observer,source:None,request:vec![RecipePortalCapability::ScreenCapture],publish:vec![],developer_launch:enabled,
+        name:name.into(), profile:NamespaceRecipeProfile::Observer,source:None,request:vec![RecipePortalCapability::ScreenCapture],publish:vec![],developer_launch:enabled, capture_outputs: vec![],
     })).collect(),applications:BTreeMap::new()};
     config.core_config_state=sophia_config::CoreConfigState::from_snapshot(snapshot);
     config.control_access=sophia_config::DesktopControlAccess::Disabled;

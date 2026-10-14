@@ -72,6 +72,7 @@ pub struct NativeGbmRenderedScanoutContext<T: std::os::fd::AsFd> {
     /// a session hot path is exactly what the budget exists to prevent.
     capture_pixels_always: bool,
     readback_requested: bool,
+    readback_reservation: Option<crate::SnapshotReservation>,
     readback: Option<crate::NativeCompositionSnapshot>,
     render_timing_enabled: bool,
     import_cache_capacity: usize,
@@ -256,6 +257,7 @@ where
             last_render_target_generation: None,
             capture_pixels_always: false,
             readback_requested: false,
+            readback_reservation: None,
             readback: None,
             render_timing_enabled: false,
         })
@@ -564,13 +566,26 @@ where
         frame: NativeCompositionFrame<'_>,
         request: NativeCompositionOutputRequest<'_>,
     ) -> Result<(NativeGbmOwnedScanoutBufferExportReport, crate::NativeCompositionSnapshot), NativeGbmScanoutBufferExportDetail> {
+        let reservation = crate::SnapshotReservation::for_image(frame.width, frame.height)
+            .ok_or(NativeGbmScanoutBufferExportDetail::InvalidTarget)?;
+        self.export_composed_with_reserved_snapshot(frame, request, reservation)
+    }
+
+    pub fn export_composed_with_reserved_snapshot(
+        &mut self,
+        frame: NativeCompositionFrame<'_>,
+        request: NativeCompositionOutputRequest<'_>,
+        reservation: crate::SnapshotReservation,
+    ) -> Result<(NativeGbmOwnedScanoutBufferExportReport, crate::NativeCompositionSnapshot), NativeGbmScanoutBufferExportDetail> {
         if crate::NativeCompositionSnapshot::byte_len(frame.width, frame.height).is_none() {
             return Err(NativeGbmScanoutBufferExportDetail::InvalidTarget);
         }
         self.readback = None;
+        self.readback_reservation = Some(reservation);
         self.readback_requested = true;
         let report = self.export_composed_owned_scanout_buffer(frame, request);
         self.readback_requested = false;
+        self.readback_reservation = None;
         let snapshot = self.readback.take();
         if report.buffer.is_none() {
             return Err(report.detail);
@@ -588,6 +603,19 @@ where
     ) -> Result<(NativeGbmOwnedScanoutBufferExportReport, crate::NativeCompositionSnapshot), NativeGbmScanoutBufferExportDetail> {
         self.with_frame_target_slot(set, frame_slot, |context| {
             context.export_composed_with_snapshot(frame, request)
+        }).ok_or(NativeGbmScanoutBufferExportDetail::InvalidTarget)?
+    }
+
+    pub fn export_composed_with_reserved_snapshot_in_frame_slot(
+        &mut self,
+        set: NativeFrameTargetSetId,
+        frame_slot: usize,
+        frame: NativeCompositionFrame<'_>,
+        request: NativeCompositionOutputRequest<'_>,
+        reservation: crate::SnapshotReservation,
+    ) -> Result<(NativeGbmOwnedScanoutBufferExportReport, crate::NativeCompositionSnapshot), NativeGbmScanoutBufferExportDetail> {
+        self.with_frame_target_slot(set, frame_slot, |context| {
+            context.export_composed_with_reserved_snapshot(frame, request, reservation)
         }).ok_or(NativeGbmScanoutBufferExportDetail::InvalidTarget)?
     }
 

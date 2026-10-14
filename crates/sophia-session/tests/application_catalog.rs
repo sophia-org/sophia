@@ -306,6 +306,7 @@ fn recipient_policy(identities: &[&str]) -> sophia_config::namespace_policy::Nam
                 request: vec![],
                 publish: vec![],
                 developer_launch: false,
+                capture_outputs: vec![],
             },
         )]),
         applications: identities

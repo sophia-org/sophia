@@ -1,5 +1,10 @@
 {
     include!("lifecycle/seat.rs");
+    if render_owners.seat_active && !output_topology_owner.input_quarantined() {
+        application_launches.service_captures(native_scanout.as_mut(), runtime.as_mut(), scene);
+    } else {
+        application_launches.revoke_captures();
+    }
     include!("lifecycle/applications.rs");
         InputDeliveryPhase {
                     sender: Some(input_sender),

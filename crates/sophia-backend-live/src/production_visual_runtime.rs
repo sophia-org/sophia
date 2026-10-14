@@ -15,6 +15,7 @@ type CpuCycleOutcome = (
 
 mod authority;
 mod background_present;
+mod output_capture;
 pub use background_present::LivePresentClockPlacement;
 mod completion_wait;
 mod composition_target;

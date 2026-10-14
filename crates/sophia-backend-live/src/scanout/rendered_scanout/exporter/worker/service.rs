@@ -401,7 +401,7 @@ fn render_frame<D>(
     request: sophia_renderer_live::LiveCompositionOutputRequest<'_>,
     next_lease_id: &mut u64,
     state: &mut WorkerOutputState,
-    capture: bool,
+    capture: Option<super::CaptureReservation>,
 ) -> WorkerOutcome
 where
     D: AsFd,
@@ -445,7 +445,7 @@ fn render_frame_in_slot<D>(
     next_lease_id: &mut u64,
     slot_token: LiveRendererFrameSlotToken,
     state: &mut WorkerOutputState,
-    capture: bool,
+    capture: Option<super::CaptureReservation>,
 ) -> WorkerOutcome
 where
     D: AsFd,
@@ -540,7 +540,16 @@ where
                 frame.output_damage_snapshot.as_ref(),
                 target.size,
             );
-            let result = if capture {
+            let result = if let Some(reservation) = capture {
+                let Some(reservation) = reservation
+                    .lock()
+                    .ok()
+                    .and_then(|mut reserved| reserved.take())
+                else {
+                    return WorkerOutcome::Failed(
+                        LiveRendererScanoutBufferExportDetail::ComposeRefused,
+                    );
+                };
                 context.export_owned_mixed_frame_with_snapshot_in_frame_slot(
                     target_set,
                     frame_slot,
@@ -548,6 +557,7 @@ where
                     &frame,
                     request,
                     &mut snapshot,
+                    reservation,
                 )
             } else {
                 context.export_owned_mixed_frame_in_frame_slot(

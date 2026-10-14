@@ -12,6 +12,7 @@ fn recipes_prepare_their_groups_and_only_selected_portal_participation() {
         request: vec![RecipePortalCapability::FileHandoff],
         publish: vec![RecipePortalCapability::Clipboard],
         developer_launch: false,
+        capture_outputs: vec![],
     };
     let mut policy = NamespacePolicyConfig {
         recipes: BTreeMap::from([("browser".into(), recipe)]),

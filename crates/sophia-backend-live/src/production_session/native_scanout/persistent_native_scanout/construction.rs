@@ -454,6 +454,7 @@ impl LiveProductionNativeScanout {
             render_devices: render_devices::LiveRenderDeviceState::new(),
             preview_images: Default::default(),
             preview_failures: BTreeMap::new(),
+            capture_validity: BTreeMap::new(),
             output_lifecycles,
             output_cohorts: BTreeMap::new(),
             deferred_mirror_generations: composition_queue::DeferredNativeCompositions::default(),

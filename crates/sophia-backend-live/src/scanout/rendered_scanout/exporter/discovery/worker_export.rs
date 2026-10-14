@@ -169,12 +169,12 @@ where
         let format =
             output_format.map(sophia_renderer_live::LiveCompositionFormatRequest::Preferred);
         let submitted = if capture {
-            worker.submit_with_capture(
+            worker.submit_reserved_capture(
                 target,
                 frame,
                 self.preferred_modifiers.clone(),
                 format,
-                true,
+                self.capture_reservation.clone(),
             )
         } else {
             worker.submit(target, frame, self.preferred_modifiers.clone(), format)

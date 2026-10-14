@@ -4,6 +4,9 @@ if let Some(controller) = seat_controller.as_mut() {
                 seat_state = seat_state.observe(event);
             }
             render_owners.seat_active = seat_state == sophia_backend_live::LiveSeatState::Active;
+            if !render_owners.seat_active {
+                application_launches.revoke_captures();
+            }
             if seat_state == sophia_backend_live::LiveSeatState::Active
                 && native_recovery_allowed!()
                 && let Some((terminal, queued_at)) = pending_virtual_terminal
@@ -57,6 +60,7 @@ if let Some(controller) = seat_controller.as_mut() {
                     application_route_leases.control_epoch(),
                 );
                 physical_input.take();
+                application_launches.revoke_captures();
                 pause_metadata_shell_presentation!("seat_release");
                 let quiesced = if let (Some(runtime), Some(native)) =
                     (runtime.as_mut(), native_scanout.as_mut())

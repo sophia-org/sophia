@@ -20,6 +20,7 @@ struct State {
 pub struct PortalObjectRecipient {
     namespace: NamespaceId,
     state: Mutex<State>,
+    capture_requests: Option<Arc<crate::capture_requests::CaptureRequestQueue>>,
 }
 impl PortalObjectRecipient {
     pub fn namespace(&self) -> NamespaceId {
@@ -28,11 +29,22 @@ impl PortalObjectRecipient {
     pub fn new(namespace: NamespaceId) -> Self {
         Self {
             namespace,
+            capture_requests: None,
             state: Mutex::new(State {
                 next: 1,
                 current: None,
             }),
         }
+    }
+    pub fn with_capture_requests(
+        mut self,
+        requests: Arc<crate::capture_requests::CaptureRequestQueue>,
+    ) -> Self {
+        self.capture_requests = Some(requests);
+        self
+    }
+    pub fn capture_requests(&self) -> Option<&Arc<crate::capture_requests::CaptureRequestQueue>> {
+        self.capture_requests.as_ref()
     }
     /// The export's check/open/metadata/read paths all use this same check.
     /// A removed incarnation is stale, even when the pathname has a successor.

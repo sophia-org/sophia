@@ -107,6 +107,12 @@ imported GPU content follow the same pixel path. A failed export returns no
 snapshot; later rendering or context destruction cannot change returned bytes.
 Ordinary exports do not enable this readback.
 
+Native snapshots share a process-wide limit of 128 MiB and eight images. The
+output owner reserves capacity for every enabled head before marking capture;
+the worker retains that reservation across deferral and consumes it once at
+readback. Clones share the charge until the last reference is released.
+Capacity refusal leaves ordinary rendering available.
+
 The worker can request this readback in the exact target slot of an identified
 native composition. Its result carries the immutable image with the scanout
 lease. The worker checks the requested image's native identity and dimensions;
@@ -123,11 +129,11 @@ image is the configured primary head's composition. A topology or native-owner
 replacement cannot reuse the old identity.
 
 This is a renderer primitive, not a public capture interface or a presentation
-receipt by itself. Session must still connect the confirmed native image to a
-generation-bound source, authorize the recipient, and fence delivery against lock,
+receipt by itself. Session connects the confirmed native image to a
+generation-bound source, authorizes the recipient, and fences delivery against lock,
 revocation and output replacement. No portal grant is implied by owning a
-snapshot. Aggregate retention limits and the admitted capture CLI remain part
-of t319's delivery work.
+snapshot. The Session join and admitted CLI are implemented; t319's physical
+and performance qualification remain open.
 
 ## Damage provenance
 

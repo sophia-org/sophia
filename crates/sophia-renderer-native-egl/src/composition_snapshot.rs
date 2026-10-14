@@ -1,4 +1,38 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+#[path = "../tests/support/snapshot_retention.rs"]
+mod retention_tests;
+
+static RETAINED: Mutex<(usize, usize)> = Mutex::new((0, 0));
+pub const NATIVE_SNAPSHOT_RETAINED_BYTES: usize = 128 * 1024 * 1024;
+pub const NATIVE_SNAPSHOT_RETAINED_IMAGES: usize = 8;
+
+pub struct SnapshotReservation {
+    bytes: usize,
+}
+impl SnapshotReservation {
+    pub(crate) fn byte_len(&self) -> usize {
+        self.bytes
+    }
+    pub fn for_image(width: u32, height: u32) -> Option<Self> {
+        Self::reserve(NativeCompositionSnapshot::byte_len(width, height)?)
+    }
+    pub(crate) fn reserve(bytes: usize) -> Option<Self> {
+        let mut used = RETAINED.lock().ok()?;
+        let next = used.0.checked_add(bytes)?;
+        if next > NATIVE_SNAPSHOT_RETAINED_BYTES || used.1 >= NATIVE_SNAPSHOT_RETAINED_IMAGES {
+            return None;
+        }
+        *used = (next, used.1 + 1);
+        Some(Self { bytes })
+    }
+}
+impl Drop for SnapshotReservation {
+    fn drop(&mut self) {
+        let mut used = RETAINED.lock().unwrap_or_else(|error| error.into_inner());
+        used.0 -= self.bytes;
+        used.1 -= 1;
+    }
+}
 
 /// One tightly packed RGBA8 image, in top-to-bottom row order. This owns no
 /// native handles and grants no permission to disclose its pixels.
@@ -6,7 +40,9 @@ use std::sync::Arc;
 pub struct NativeCompositionSnapshot {
     width: u32,
     height: u32,
-    rgba: Arc<[u8]>,
+    rgba: Arc<Vec<u8>>,
+    // Shared across snapshot clones, including displayed scanout custody.
+    _reservation: Arc<SnapshotReservation>,
 }
 
 /// Bounds each readback before allocation, including driver-facing dimensions.
@@ -26,10 +62,24 @@ impl NativeCompositionSnapshot {
 
     /// Takes private storage; later renders cannot overwrite an earlier image.
     pub fn from_rgba(width: u32, height: u32, rgba: Vec<u8>) -> Option<Self> {
+        let reservation = SnapshotReservation::reserve(Self::byte_len(width, height)?)?;
+        Self::from_reserved(width, height, rgba, reservation)
+    }
+
+    pub(crate) fn from_reserved(
+        width: u32,
+        height: u32,
+        rgba: Vec<u8>,
+        reservation: SnapshotReservation,
+    ) -> Option<Self> {
+        if reservation.bytes != rgba.len() {
+            return None;
+        }
         (Self::byte_len(width, height)? == rgba.len()).then(|| Self {
             width,
             height,
-            rgba: rgba.into(),
+            rgba: Arc::new(rgba),
+            _reservation: Arc::new(reservation),
         })
     }
 

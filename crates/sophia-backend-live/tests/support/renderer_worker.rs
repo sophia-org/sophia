@@ -93,7 +93,7 @@ fn register_claim(
 fn render(commands: &SyncSender<WorkerCommand>, output: LiveRendererWorkerOutputKey, request: u64) {
     commands
         .send(WorkerCommand::Render {
-            capture: false,
+            capture: None,
             output,
             request_id: LiveRendererWorkerRequestId(request),
             target: LiveGbmEglFrameTargetRecord::new(Size {

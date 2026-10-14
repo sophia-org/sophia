@@ -4,6 +4,10 @@
 use super::*;
 use sophia_9p_client::pipeline::{Pipeline, Reply};
 use sophia_9p_client::records::Fid;
+#[path = "../../../sophia-cli/src/commands/capture.rs"]
+mod capture_cli;
+#[path = "namespace_capture_fixture.rs"]
+mod capture_fixture;
 #[path = "../../../sophia-portal/tests/support/client_object_fixture.rs"]
 mod objects;
 
@@ -20,11 +24,35 @@ fn portal_boundaries_revoke_retained_sdk_reads_without_closing_the_role() {
         run_boundary(boundary);
     }
 }
+#[test]
+fn capture_cli_reads_one_image_through_real_namespace_launch_authentication() {
+    run_boundary("capture");
+}
+#[test]
+#[ignore = "requires SOPHIA_TEST_CAPTURE_CLI naming the built generic Sophia CLI"]
+fn capture_cli_bootstrap_uses_the_attested_launch_channel() {
+    run_boundary("capture-bootstrap");
+}
+#[test]
+#[ignore = "requires SOPHIA_TEST_CAPTURE_CLI naming the built generic Sophia CLI"]
+fn capture_cli_reads_a_4k_image_within_the_existing_grant_deadline() {
+    run_boundary("capture-bootstrap-large");
+}
 fn run_boundary(boundary: &str) {
+    let is_capture = boundary.starts_with("capture");
+    let standalone = boundary.starts_with("capture-bootstrap");
+    let (width, height) = if boundary.ends_with("-large") {
+        (3840, 2160)
+    } else {
+        (2, 2)
+    };
     let mut f = Fixture::with_capabilities(
         sophia_protocol::NamespaceProfile::Confined,
-        sophia_protocol::NamespaceCapabilities::NONE
-            .with_request(sophia_protocol::NamespacePortalCapability::Clipboard),
+        sophia_protocol::NamespaceCapabilities::NONE.with_request(if is_capture {
+            sophia_protocol::NamespacePortalCapability::ScreenCapture
+        } else {
+            sophia_protocol::NamespacePortalCapability::Clipboard
+        }),
     );
     std::fs::write(
         f.root.join("recipe"),
@@ -32,10 +60,12 @@ fn run_boundary(boundary: &str) {
     )
     .unwrap();
     let objects = objects::Fixture::new();
+    let capture = is_capture.then(|| capture_fixture::Fixture::new(width, height));
     let executable = std::env::current_exe().unwrap();
-    let bootstrap = Bootstrap(
-        executable.with_file_name(format!("recipe-portal-bootstrap-{}", std::process::id())),
-    );
+    let bootstrap = Bootstrap(executable.with_file_name(format!(
+        "recipe-portal-bootstrap-{}-{boundary}",
+        std::process::id()
+    )));
     assert!(std::process::Command::new("/usr/bin/cc").env_clear().env("PATH", "/usr/bin:/bin")
         .args(["-std=c11", "-Wall", "-Wextra", "-Werror", "-O2"])
         .arg("-DSOPHIA_TEST_CHILD=\"namespace_launch::tests::portal_dispatch::recipe_portal_child\"")
@@ -53,9 +83,14 @@ fn run_boundary(boundary: &str) {
             name: "recipient".into(),
             profile: NamespaceRecipeProfile::ConfinedX { group: 7 },
             source: Some("recipe".into()),
-            request: vec![sophia_config::namespace_policy::RecipePortalCapability::Clipboard],
+            request: vec![if is_capture {
+                sophia_config::namespace_policy::RecipePortalCapability::ScreenCapture
+            } else {
+                sophia_config::namespace_policy::RecipePortalCapability::Clipboard
+            }],
             publish: vec![],
             developer_launch: true,
+            capture_outputs: vec![],
         },
         &f.root,
     )
@@ -78,6 +113,23 @@ fn run_boundary(boundary: &str) {
                 .path(ProtectionPath::read_write(&reports))
                 .unwrap(),
         );
+    if standalone {
+        let cli =
+            PathBuf::from(std::env::var_os("SOPHIA_TEST_CAPTURE_CLI").expect("built CLI path"));
+        request.launch = ProcessLaunchSpec::new(&cli)
+            .arg("capture")
+            .arg("7")
+            .arg("--output")
+            .arg(report.with_extension("pam"))
+            .protection_domain(
+                ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::NamespaceClient])
+                    .unwrap()
+                    .path(ProtectionPath::read_only(&cli))
+                    .unwrap()
+                    .path(ProtectionPath::read_write(&reports))
+                    .unwrap(),
+            );
+    }
     let mut pending = f
         .service
         .start(
@@ -107,29 +159,48 @@ fn run_boundary(boundary: &str) {
             .is_err()
     );
     running
-        .serve_portal(&reference, objects.objects.clone(), f.wake.notifier())
+        .serve_portal(
+            &reference,
+            capture.as_ref().map_or_else(
+                || objects.objects.clone(),
+                |capture| capture.objects.clone(),
+            ),
+            f.wake.notifier(),
+        )
         .unwrap();
-    for phase in ["ready\n", "waiting\n", "revoked\n"] {
-        while std::fs::read_to_string(&report).ok().as_deref() != Some(phase) {
-            assert!(Instant::now() < deadline, "portal SDK phase {phase}");
+    if let Some(capture) = capture {
+        while if standalone {
+            !report.with_extension("pam").exists()
+        } else {
+            std::fs::read_to_string(&report).ok().as_deref() != Some("captured\n")
+        } {
+            assert!(Instant::now() < deadline, "capture CLI deadline");
             f.auth.tick();
+            capture.service();
         }
-        if phase == "ready\n" {
-            objects.transfer(1);
-        }
-        if phase == "waiting\n" {
-            assert!(
-                objects.objects.current().is_ok(),
-                "grant is live before source change"
-            );
-            match boundary {
-                "generation" => objects.source.0.store(10, Ordering::Release),
-                "lock" => {
-                    objects.fence.block();
-                    objects.fence.unblock();
+    } else {
+        for phase in ["ready\n", "waiting\n", "revoked\n"] {
+            while std::fs::read_to_string(&report).ok().as_deref() != Some(phase) {
+                assert!(Instant::now() < deadline, "portal SDK phase {phase}");
+                f.auth.tick();
+            }
+            if phase == "ready\n" {
+                objects.transfer(1);
+            }
+            if phase == "waiting\n" {
+                assert!(
+                    objects.objects.current().is_ok(),
+                    "grant is live before source change"
+                );
+                match boundary {
+                    "generation" => objects.source.0.store(10, Ordering::Release),
+                    "lock" => {
+                        objects.fence.block();
+                        objects.fence.unblock();
+                    }
+                    "replacement" => objects.transfer(2),
+                    _ => unreachable!(),
                 }
-                "replacement" => objects.transfer(2),
-                _ => unreachable!(),
             }
         }
     }
@@ -142,6 +213,17 @@ fn run_boundary(boundary: &str) {
             assert!(status.success());
             break;
         }
+    }
+    if is_capture {
+        let bytes = std::fs::read(report.with_extension("pam")).unwrap();
+        assert_eq!(
+            bytes,
+            [
+                format!("P7\nWIDTH {width}\nHEIGHT {height}\nDEPTH 4\nMAXVAL 255\nTUPLTYPE RGB_ALPHA\nENDHDR\n").as_bytes(),
+                &vec![17; width as usize * height as usize * 4]
+            ]
+            .concat()
+        );
     }
     drop(running);
     f.reclaimed();
@@ -161,6 +243,18 @@ fn open(pipe: &mut Pipeline, root: Fid, name: &[u8]) -> Fid {
 #[ignore = "parent launches the SDK child through the namespace scheduler"]
 fn recipe_portal_child() {
     let report = std::env::var_os("SOPHIA_TEST_LOCK_REPORT").unwrap();
+    if std::env::var("SOPHIA_TEST_PORTAL_BOUNDARY").unwrap() == "capture" {
+        let path = PathBuf::from(&report).with_extension("pam");
+        capture_cli::run(&[
+            "--relay-stdin".into(),
+            "7".into(),
+            "--output".into(),
+            path.to_string_lossy().into_owned(),
+        ])
+        .unwrap();
+        std::fs::write(report, "captured\n").unwrap();
+        return;
+    }
     let directory = std::env::var_os(NAMESPACE_DIRECTORY_ENV).unwrap();
     let stdin = std::io::stdin();
     rustix::io::fcntl_setfd(&stdin, rustix::io::FdFlags::CLOEXEC).unwrap();

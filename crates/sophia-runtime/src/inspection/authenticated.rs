@@ -106,6 +106,10 @@ fn adopt(
     })
 }
 impl InspectionConnection {
+    /// Borrow the common driver's readiness set for a combined owner wait.
+    pub fn poll_fds(&self) -> Vec<rustix::event::PollFd<'_>> {
+        self.server.poll_fds()
+    }
     /// A bounded worker calls this on readiness and at least every idle bound.
     /// Waiting reads are retried only through the normal 9P core and its checks.
     pub fn poll(&mut self) -> io::Result<bool> {

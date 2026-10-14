@@ -15,6 +15,8 @@ pub enum PortalClientNode {
     Root,
     Api,
     Status,
+    Capture,
+    CaptureStatus,
     Transfer { object: u64, qid: u64 },
     FrameInfo { object: u64, qid: u64 },
     Frame { object: u64, qid: u64 },
@@ -51,7 +53,7 @@ impl PortalClientFiles {
             epoch,
             connection: None,
             attached: false,
-            next_qid: 4,
+            next_qid: 6,
             binding: None,
         })
     }
@@ -77,6 +79,11 @@ impl PortalClientFiles {
         Ok(binding)
     }
     fn checked(&self, node: &Node) -> Result<(), Errno> {
+        if matches!(node, Node::Capture | Node::CaptureStatus)
+            && self.objects.capture_requests().is_none()
+        {
+            return Err(Errno::ENOENT);
+        }
         if let Node::Transfer { object, .. }
         | Node::Watch { object, .. }
         | Node::FrameInfo { object, .. }
@@ -161,7 +168,7 @@ impl Export for PortalClientFiles {
         {
             return Err(Errno::ESTALE);
         }
-        if matches!(access.operation, Operation::Write) {
+        if matches!(access.operation, Operation::Write) && *access.node != Node::Capture {
             return Err(Errno::EACCES);
         }
         self.checked(access.node)
@@ -174,6 +181,14 @@ impl Export for PortalClientFiles {
             WalkName::Parent => Ok(Node::Root),
             WalkName::Child(b"api") => Ok(Node::Api),
             WalkName::Child(b"status") => Ok(Node::Status),
+            WalkName::Child(name @ (b"capture" | b"capture-status")) => {
+                self.objects.capture_requests().ok_or(Errno::ENOENT)?;
+                Ok(if name == b"capture" {
+                    Node::Capture
+                } else {
+                    Node::CaptureStatus
+                })
+            }
             WalkName::Child(b"transfer") => {
                 let (object, qid) = self.binding()?;
                 Ok(Node::Transfer { object, qid })
@@ -210,6 +225,8 @@ impl Export for PortalClientFiles {
                 Node::Root => (1, 0),
                 Node::Api => (2, 0),
                 Node::Status => (3, 0),
+                Node::Capture => (4, 0),
+                Node::CaptureStatus => (5, 0),
                 Node::Transfer { object, qid } | Node::FrameInfo { object, qid } => {
                     (*qid, self.objects.size(*object).unwrap_or(0))
                 }
@@ -228,22 +245,36 @@ impl Export for PortalClientFiles {
             qid_path: qid,
             qid_version: 0,
             size,
-            permissions: if *node == Node::Root { 0o500 } else { 0o400 },
+            permissions: match node {
+                Node::Root => 0o500,
+                Node::Capture => 0o200,
+                _ => 0o400,
+            },
         }
     }
     fn open(&mut self, node: &Node, flags: OpenFlags) -> Result<Handle, Errno> {
-        if flags.0 != 0 {
+        if flags.0 != if *node == Node::Capture { 1 } else { 0 } {
             return Err(Errno::EACCES);
         }
         self.checked(node)?;
         let bytes = match node {
             Node::Api => format!(
-                "sophia-portal-client version=1 epoch={} request=unavailable fd_transfer=none\n",
-                self.epoch
+                "sophia-portal-client version=1 epoch={} request={} fd_transfer=none\n",
+                self.epoch,
+                if self.objects.capture_requests().is_some() {
+                    "output-capture-v1"
+                } else {
+                    "unavailable"
+                }
             )
             .into_bytes(),
             Node::Status => format!(
-                "request=unavailable transfer={}\n",
+                "request={} transfer={}\n",
+                if self.objects.capture_requests().is_some() {
+                    "output-capture-v1"
+                } else {
+                    "unavailable"
+                },
                 match self.objects.current() {
                     Ok(_) => "ready",
                     Err(Errno::ENOENT) => "absent",
@@ -251,6 +282,14 @@ impl Export for PortalClientFiles {
                 }
             )
             .into_bytes(),
+            Node::CaptureStatus => self
+                .objects
+                .capture_requests()
+                .ok_or(Errno::ENOENT)?
+                .status()
+                .encode()
+                .ok_or(Errno::EIO)?
+                .to_vec(),
             _ => return Ok(Handle::Plain),
         };
         Ok(Handle::Snapshot {
@@ -268,7 +307,7 @@ impl Export for PortalClientFiles {
         self.checked(node)?;
         match (node, handle) {
             (Node::Root, _) => Err(Errno::EISDIR),
-            (Node::Api | Node::Status, Handle::Snapshot { bytes, .. }) => {
+            (Node::Api | Node::Status | Node::CaptureStatus, Handle::Snapshot { bytes, .. }) => {
                 let start = usize::try_from(offset)
                     .unwrap_or(usize::MAX)
                     .min(bytes.len());
@@ -294,8 +333,35 @@ impl Export for PortalClientFiles {
             _ => Err(Errno::EIO),
         }
     }
-    fn write(&mut self, _: &Node, _: &mut Handle, _: u64, _: &[u8]) -> Result<u32, Errno> {
-        Err(Errno::EACCES)
+    fn write(
+        &mut self,
+        node: &Node,
+        _: &mut Handle,
+        offset: u64,
+        bytes: &[u8],
+    ) -> Result<u32, Errno> {
+        if *node != Node::Capture {
+            return Err(Errno::EACCES);
+        }
+        if offset != 0 {
+            return Err(Errno::EINVAL);
+        }
+        let request = sophia_protocol::output_capture_request::OutputCaptureRequest::decode(bytes)
+            .ok_or(Errno::EINVAL)?;
+        self.objects
+            .capture_requests()
+            .ok_or(Errno::ENOENT)?
+            .submit(request)
+            .map_err(|error| {
+                use crate::capture_requests::CaptureRequestError as Error;
+                match error {
+                    Error::Invalid => Errno::EINVAL,
+                    Error::Busy => Errno::EAGAIN,
+                    Error::Denied => Errno::EACCES,
+                    Error::Stale => Errno::ESTALE,
+                }
+            })?;
+        Ok(bytes.len() as u32)
     }
     fn readdir(
         &mut self,
@@ -315,6 +381,8 @@ impl Export for PortalClientFiles {
             b"watch",
             b"frame-info",
             b"frame",
+            b"capture",
+            b"capture-status",
         ]
         .into_iter()
         .enumerate()

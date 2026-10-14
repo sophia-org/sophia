@@ -182,6 +182,7 @@
                                 )?;
                                 let heads = plan.heads.len();
                                 let outputs = plan.outputs.len();
+                                application_launches.revoke_captures();
                                 let report = native.begin_output_topology_preparation(
                                     plan,
                                     rollback,

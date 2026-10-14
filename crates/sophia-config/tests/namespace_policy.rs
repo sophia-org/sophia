@@ -55,6 +55,7 @@ fn identities_select_policy_and_metadata_never_grants_it() {
         vec![RecipePortalCapability::ScreenCapture]
     );
     assert!(observer.publish.is_empty());
+    assert!(observer.capture_outputs.is_empty());
     assert_eq!(
         policy.select_developer("restricted"),
         Err(NamespaceSelectionError::DeveloperLaunchDenied)
@@ -62,6 +63,48 @@ fn identities_select_policy_and_metadata_never_grants_it() {
     assert_eq!(
         policy.select_developer("unknown"),
         Err(NamespaceSelectionError::UnknownRecipe)
+    );
+}
+
+#[test]
+fn capture_approval_is_explicit_output_scoped_and_restart_bound() {
+    let old = parse(r#"recipe "tools" profile="observer" developer-launch=#true"#).unwrap();
+    let approved = parse(
+        r#"recipe "tools" profile="observer" developer-launch=#true {
+        capture-output "DP-1"
+        capture-output "pci-0000:03:00.0/HDMI-A-1"
+    }"#,
+    )
+    .unwrap();
+    assert_eq!(
+        approved.session.namespace_policy.recipes["tools"].capture_outputs,
+        ["DP-1", "pci-0000:03:00.0/HDMI-A-1"]
+    );
+    assert!(CoreConfigDelta::between(&old, &approved).restart_required);
+    for bad in [
+        r#"recipe "tools" profile="shared-x" { capture-output "DP-1"; }"#,
+        r#"recipe "tools" profile="confined-x" group=7 { capture-output "DP-1"; }"#,
+        r#"recipe "tools" profile="observer" { capture-output "*"; }"#,
+        r#"recipe "tools" profile="observer" { capture-output ""; }"#,
+        r#"recipe "tools" profile="observer" { capture-output "DP-1"; capture-output "DP-1"; }"#,
+        r#"recipe "tools" profile="observer" { capture-output "DP-1" grant=#true; }"#,
+    ] {
+        assert!(parse(bad).is_err(), "accepted {bad}");
+    }
+    let entries = (0..MAX_CAPTURE_OUTPUTS)
+        .map(|i| format!("capture-output \"DP-{i}\";\n"))
+        .collect::<String>();
+    assert!(
+        parse(&format!(
+            "recipe \"tools\" profile=\"observer\" {{ {entries} }}"
+        ))
+        .is_ok()
+    );
+    assert!(
+        parse(&format!(
+            "recipe \"tools\" profile=\"observer\" {{ {entries} capture-output \"extra\"; }}"
+        ))
+        .is_err()
     );
 }
 

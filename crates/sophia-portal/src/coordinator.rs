@@ -348,10 +348,19 @@ impl PortalTransferCoordinator {
         &self,
         transfer: PortalTransfer,
     ) -> mpsc::Receiver<Result<(), PortalTransferFailure>> {
+        self.enqueue_at_revision(transfer, self.fence.revision())
+    }
+    /// Preserve the security interval of work admitted before asynchronous
+    /// rendering. Lock/unlock must not turn that work into a fresh request.
+    pub fn enqueue_at_revision(
+        &self,
+        transfer: PortalTransfer,
+        revision: u64,
+    ) -> mpsc::Receiver<Result<(), PortalTransferFailure>> {
         let (completion, result) = mpsc::sync_channel(1);
         if let Err(error) = self.sender.try_send(Work {
             transfer,
-            revision: self.fence.revision(),
+            revision,
             completion,
         }) {
             let work = match error {

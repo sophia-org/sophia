@@ -10,6 +10,19 @@ use std::{
 /// registration and generation; neither comes from this environment variable.
 pub const LAUNCH_AUTH_FD_ENV: &str = "SOPHIA_LAUNCH_AUTH_FD";
 
+/// Open a private duplicate of the inherited launch channel. Its descriptor
+/// number is only a locator; the caller must still perform launch authentication.
+pub fn inherited_launch_channel() -> io::Result<UnixStream> {
+    let descriptor = std::env::var(LAUNCH_AUTH_FD_ENV)
+        .ok()
+        .and_then(|value| value.parse::<i32>().ok())
+        .filter(|descriptor| *descriptor >= 3)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid launch channel"))?;
+    let stream = UnixStream::from(sophia_linux_peer::duplicate_inherited_fd(descriptor)?);
+    stream.peer_addr()?;
+    Ok(stream)
+}
+
 #[derive(Debug)]
 pub struct LaunchChannel {
     pub(super) generation: u64,

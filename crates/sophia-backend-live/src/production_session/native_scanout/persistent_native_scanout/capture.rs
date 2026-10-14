@@ -1,7 +1,59 @@
 //! Capture follows native custody, never a render request or a scene counter.
 use super::*;
 
+/// Trusted Session facts. Equality covers the full output incarnation, not
+/// just its numeric output ID or a scene generation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LiveOutputCaptureTarget {
+    pub owner: u64,
+    pub output: OutputId,
+    pub primary: sophia_engine::RenderHeadId,
+    pub heads: Vec<sophia_engine::HeadRenderTarget>,
+}
+
 impl LiveProductionNativeScanout {
+    pub fn output_capture_validity(
+        &mut self,
+        output: OutputId,
+    ) -> Option<LiveOutputCaptureValidity> {
+        self.output_capture_target(output)?;
+        Some(self.capture_validity.entry(output).or_default().0.clone())
+    }
+    pub fn output_capture_target(&self, output: OutputId) -> Option<LiveOutputCaptureTarget> {
+        if !self.output_topology_allows_frame_service() || self.has_preview_frame_failure(output) {
+            return None;
+        }
+        let primary = self.heads.get(self.primary_head_index(output)?)?.head;
+        let heads = self.head_render_targets(output);
+        if heads.is_empty() || heads.len() != self.head_indices(output).len() {
+            return None;
+        }
+        Some(LiveOutputCaptureTarget {
+            owner: self.native_frame_owner.raw(),
+            output,
+            primary,
+            heads,
+        })
+    }
+
+    /// Names come from trusted policy. An unqualified name must resolve to one
+    /// physical head even when more than one GPU is present.
+    pub fn output_capture_allowed(&self, output: OutputId, allowed: &[String]) -> bool {
+        let Some(primary) = self
+            .primary_head_index(output)
+            .map(|index| self.heads[index].head)
+        else {
+            return false;
+        };
+        allowed.iter().any(|name| {
+            let mut matches = self.head_table.records().iter().filter(|record| {
+                record.connector_name == *name
+                    || (!name.contains('/')
+                        && record.connector_name.rsplit('/').next() == Some(name.as_str()))
+            });
+            matches.next().is_some_and(|record| record.head == primary) && matches.next().is_none()
+        })
+    }
     /// Schedule readback for the exact queued composition on every enabled
     /// head. Session must authorize the recipient before requesting this work.
     /// No later frame inherits a request that was superseded.
@@ -11,6 +63,7 @@ impl LiveProductionNativeScanout {
             return false;
         }
         let mut expected = Vec::with_capacity(indices.len());
+        let targets = self.head_render_targets(output);
         let mut frame = None;
         for index in indices {
             let Some(identity) = self.exporters[index]
@@ -30,11 +83,20 @@ impl LiveProductionNativeScanout {
                 return false;
             }
             frame = Some(identity.frame());
-            expected.push((index, identity));
+            let Some(target) = targets.iter().find(|target| target.head == head.head) else {
+                return false;
+            };
+            let Some(reservation) = sophia_renderer_live::LiveSnapshotReservation::for_image(
+                target.native_size.width.try_into().unwrap_or(0),
+                target.native_size.height.try_into().unwrap_or(0),
+            ) else {
+                return false;
+            };
+            expected.push((index, identity, reservation));
         }
-        expected
-            .into_iter()
-            .all(|(index, identity)| self.exporters[index].request_pending_frame_capture(identity))
+        expected.into_iter().all(|(index, identity, reservation)| {
+            self.exporters[index].request_pending_frame_capture(identity, reservation)
+        })
     }
 
     /// Return the primary head's immutable image only when every enabled head

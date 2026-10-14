@@ -58,6 +58,7 @@ where
     pub(super) last_export_status: Option<LiveRendererScanoutBufferExportStatus>,
     pub(super) pending_frame: Option<PendingRenderedFrame>,
     pub(super) capture_requested: Option<super::LiveNativeFrameIdentity>,
+    pub(super) capture_reservation: Option<super::worker::CaptureReservation>,
     pub(super) frame_offered_at: Option<std::time::Instant>,
     pub(super) cost: crate::DirectScanoutCost,
     direct_cpu_bootstrap_armed: bool,
@@ -170,6 +171,7 @@ where
             last_export_status: None,
             pending_frame: None,
             capture_requested: None,
+            capture_reservation: None,
             frame_offered_at: None,
             cost: crate::DirectScanoutCost::default(),
             direct_cpu_bootstrap_armed: false,
@@ -440,6 +442,7 @@ where
     pub(super) fn replace_pending_frame(&mut self, frame: PendingRenderedFrame) {
         if self.capture_requested != super::worker::frame_correlation(&frame, None).native {
             self.capture_requested = None;
+            self.capture_reservation = None;
         }
         self.invalidate_layout_probe();
         self.requeue_pending_frame(frame);
@@ -490,11 +493,15 @@ where
     pub fn request_pending_frame_capture(
         &mut self,
         expected: super::LiveNativeFrameIdentity,
+        reservation: sophia_renderer_live::LiveSnapshotReservation,
     ) -> bool {
         if !self.can_capture_pending_frame(expected) {
             return false;
         }
         self.capture_requested = Some(expected);
+        self.capture_reservation = Some(std::sync::Arc::new(std::sync::Mutex::new(Some(
+            reservation,
+        ))));
         true
     }
 

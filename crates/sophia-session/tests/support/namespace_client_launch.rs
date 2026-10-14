@@ -86,6 +86,7 @@ impl Fixture {
                     request: vec![],
                     publish: vec![],
                     developer_launch: true,
+                    capture_outputs: vec![],
                 },
                 &self.root,
             )

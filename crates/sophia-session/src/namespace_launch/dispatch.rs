@@ -49,6 +49,12 @@ impl Owner {
     }
 }
 impl Connection {
+    fn poll_fds(&self) -> Vec<rustix::event::PollFd<'_>> {
+        match self {
+            Self::Inspection(connection) => connection.poll_fds(),
+            Self::Portal(connection) => connection.poll_fds(),
+        }
+    }
     fn poll(&mut self) -> std::io::Result<bool> {
         match self {
             Self::Inspection(connection) => connection.poll(),
@@ -239,7 +245,18 @@ fn run(mut listeners: Vec<Listener>, owner: Owner, stop: Arc<AtomicBool>) -> std
                 Err(error) => return Err(error),
             }
         }
-        std::thread::sleep(INSPECTION_IDLE_CHECK);
+        // Wake promptly for bytes and authentication progress. The idle bound
+        // remains the deadline for checking quiet admission and revocation.
+        let mut fds: Vec<_> = connections.iter().flat_map(Connection::poll_fds).collect();
+        fds.extend(listeners.iter().map(|listener| {
+            rustix::event::PollFd::new(&listener.endpoint.listener, rustix::event::PollFlags::IN)
+        }));
+        let timeout = rustix::event::Timespec::try_from(INSPECTION_IDLE_CHECK)
+            .map_err(std::io::Error::other)?;
+        match rustix::event::poll(&mut fds, Some(&timeout)) {
+            Ok(_) | Err(rustix::io::Errno::INTR) => {}
+            Err(error) => return Err(error.into()),
+        }
     }
     Ok(())
 }

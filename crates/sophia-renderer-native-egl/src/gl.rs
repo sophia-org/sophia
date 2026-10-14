@@ -732,9 +732,13 @@ impl PersistentXrgb8888GlPipeline {
 
     pub(crate) fn read_composition_snapshot(
         &self,
+        reservation: crate::SnapshotReservation,
     ) -> Result<crate::NativeCompositionSnapshot, NativeEglDrawSmokeStatus> {
         let len = crate::NativeCompositionSnapshot::byte_len(self.width, self.height)
             .ok_or(NativeEglDrawSmokeStatus::GlUnavailable)?;
+        if reservation.byte_len() != len {
+            return Err(NativeEglDrawSmokeStatus::GlUnavailable);
+        }
         let mut rgba = Vec::new();
         rgba.try_reserve_exact(len)
             .map_err(|_| NativeEglDrawSmokeStatus::GlUnavailable)?;
@@ -761,7 +765,7 @@ impl PersistentXrgb8888GlPipeline {
             let (before, after) = rgba.split_at_mut(other * stride);
             before[row * stride..(row + 1) * stride].swap_with_slice(&mut after[..stride]);
         }
-        crate::NativeCompositionSnapshot::from_rgba(self.width, self.height, rgba)
+        crate::NativeCompositionSnapshot::from_reserved(self.width, self.height, rgba, reservation)
             .ok_or(NativeEglDrawSmokeStatus::GlUnavailable)
     }
 

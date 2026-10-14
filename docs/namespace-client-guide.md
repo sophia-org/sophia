@@ -31,6 +31,31 @@ capture or confer administration or input injection. Starting the program
 directly from a shell does not provision its launch capability. A Started
 result means process readiness, not a successful role operation or a window.
 
+## Capture one output
+
+For output capture, the observer recipe also needs explicit trusted approval:
+
+```kdl
+recipe "capture" profile="observer" developer-launch=#true {
+    capture-output "pci-0000:03:00.0/DP-1"
+}
+```
+
+Launch the installed CLI through that recipe, using the output ID from the
+admitted output view:
+
+```sh
+sophia launch --socket /absolute/session/launch.sock --recipe capture -- /absolute/sophia capture OUTPUT_ID
+```
+
+The child reports the output incarnation, presentation generation, dimensions
+and pixel checksum. `--output NEW_FILE.pam` also writes an image when its
+namespace explicitly admits a writable destination; the standard observer
+recipe does not grant access to the host's home directory. The CLI pipelines
+bounded reads under one expiring grant. Lock, revocation or output replacement
+can cancel a read; it does not retry with a different grant. This path remains
+under release and physical qualification.
+
 ## Discover, authenticate, then use the role
 
 ```text

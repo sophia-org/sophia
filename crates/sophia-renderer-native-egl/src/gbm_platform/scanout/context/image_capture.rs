@@ -159,7 +159,7 @@ impl<T: std::os::fd::AsFd> NativeGbmRenderedScanoutContext<T> {
                     import_reuse: false,
                 },
                 frame,
-                NativeCompositionReadback { proof: false, snapshot: None },
+                NativeCompositionReadback { proof: false, snapshot: None, reservation: None },
                 true,
                 self.buffer_age_supported,
             );

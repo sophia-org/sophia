@@ -6,6 +6,19 @@ use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 mod exec_gate;
 pub use exec_gate::{ExecGate, ExecGateChild};
 
+/// Duplicate an inherited descriptor without claiming ownership of its number.
+/// An invalid number returns EBADF; callers must authenticate the channel.
+pub fn duplicate_inherited_fd(descriptor: i32) -> io::Result<OwnedFd> {
+    // SAFETY: fcntl accepts any integer descriptor and validates it in the
+    // kernel. No Rust borrow or ownership is asserted for the supplied number.
+    let duplicate = unsafe { libc::fcntl(descriptor, libc::F_DUPFD_CLOEXEC, 3) };
+    if duplicate < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: successful F_DUPFD_CLOEXEC returns a fresh owned descriptor.
+    Ok(unsafe { OwnedFd::from_raw_fd(duplicate) })
+}
+
 /// A reference to the connector captured by the socket, immune to numeric PID reuse.
 pub fn socket_peer_pidfd(socket: BorrowedFd<'_>) -> io::Result<OwnedFd> {
     let mut descriptor: libc::c_int = -1;

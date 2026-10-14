@@ -40,6 +40,9 @@ mod presentation_timing;
 #[cfg(test)]
 pub(crate) use presentation_timing::{PresentedTimingHead, completed_timing};
 mod capture;
+pub use capture::LiveOutputCaptureTarget;
+mod capture_validity;
+pub use capture_validity::LiveOutputCaptureValidity;
 mod settled_mirror;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use composition_admission::{NativeCompositionOutput, prepare_native_composition_batch};
@@ -109,6 +112,9 @@ pub use topology::*;
 pub use topology_readback::LiveProductionOutputKmsReadback;
 
 pub struct LiveProductionNativeScanout {
+    // Fields drop in declaration order: withdraw retained readers before
+    // destroying any native group or head resources.
+    capture_validity: BTreeMap<OutputId, capture_validity::CaptureValidityOwner>,
     /// Submit-to-flip samples; the offer-to-submit half lives per
     /// exporter, and `direct_scanout_cost` merges the two.
     cost: crate::DirectScanoutCost,

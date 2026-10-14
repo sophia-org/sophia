@@ -28,6 +28,7 @@ fn policy(profile: NamespaceRecipeProfile) -> NamespacePolicyConfig {
                 request: vec![],
                 publish: vec![],
                 developer_launch: false,
+                capture_outputs: vec![],
             },
         )]),
         applications: BTreeMap::from([

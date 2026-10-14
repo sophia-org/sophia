@@ -89,6 +89,7 @@ impl LiveProductionNativeScanout {
         &mut self,
         failure: LivePreviewFrameFailure,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.capture_validity.remove(&failure.output);
         record_failure(&mut self.preview_failures, failure).map_err(Into::into)
     }
 

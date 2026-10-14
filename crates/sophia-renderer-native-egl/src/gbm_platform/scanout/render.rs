@@ -431,6 +431,7 @@ fn query_native_surface_buffer_age(
 struct NativeCompositionReadback<'a> {
     proof: bool,
     snapshot: Option<&'a mut Option<crate::NativeCompositionSnapshot>>,
+    reservation: Option<crate::SnapshotReservation>,
 }
 
 fn render_native_target_composition(
@@ -774,8 +775,8 @@ fn render_native_target_composition(
                     ),
                 }
             }
-            if let Some(readback) = readback.snapshot {
-                *readback = Some(target.pipeline.read_composition_snapshot()
+            if let Some(snapshot) = readback.snapshot {
+                *snapshot = Some(target.pipeline.read_composition_snapshot(readback.reservation.ok_or(NativeGbmScanoutBufferExportDetail::InvalidTarget)?)
                     .map_err(|_| NativeGbmScanoutBufferExportDetail::CompositionFinishFailed)?);
             }
             egl.swap_buffers(display, egl_surface)

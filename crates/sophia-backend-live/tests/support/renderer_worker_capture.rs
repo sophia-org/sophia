@@ -45,14 +45,14 @@ fn capture_request_cannot_follow_a_superseding_frame() {
         unreachable!()
     };
     exporter.set_pending_identified_mixed_frame(frame, Some(expected));
-    assert!(!exporter.request_pending_frame_capture(other));
-    assert!(exporter.request_pending_frame_capture(expected));
+    assert!(!exporter.request_pending_frame_capture(other, sophia_renderer_live::LiveSnapshotReservation::for_image(16, 16).unwrap()));
+    assert!(exporter.request_pending_frame_capture(expected, sophia_renderer_live::LiveSnapshotReservation::for_image(16, 16).unwrap()));
     let super::PendingRenderedFrame::Mixed(frame, _) = capture_job(other, 18) else {
         unreachable!()
     };
     exporter.set_pending_identified_mixed_frame(frame, Some(other));
     assert!(exporter.capture_requested.is_none());
-    assert!(!exporter.request_pending_frame_capture(expected));
+    assert!(!exporter.request_pending_frame_capture(expected, sophia_renderer_live::LiveSnapshotReservation::for_image(16, 16).unwrap()));
 }
 
 #[test]
@@ -107,7 +107,7 @@ fn requested_capture_bypasses_an_otherwise_valid_direct_candidate() {
         };
         exporter.set_pending_identified_mixed_frame(frame, Some(identity));
         if capture {
-            assert!(exporter.request_pending_frame_capture(identity));
+            assert!(exporter.request_pending_frame_capture(identity, sophia_renderer_live::LiveSnapshotReservation::for_image(16, 16).unwrap()));
         }
         let direct = exporter.try_direct_scanout_export(
             LiveGbmEglFrameTargetRecord::new(Size {
@@ -148,7 +148,7 @@ pub(crate) fn capture_lease(
     else {
         panic!("render")
     };
-    assert!(capture);
+    assert!(capture.is_some());
     let correlation = super::frame_correlation(&frame, Some(request_id));
     let mut outcome = exported_outcome();
     let WorkerOutcome::Exported { capture, .. } = &mut outcome else {

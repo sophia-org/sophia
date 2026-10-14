@@ -6,6 +6,7 @@
 
 mod broker;
 pub mod capture_frame;
+pub mod capture_requests;
 pub mod client_files;
 mod clipboard;
 pub mod coordinator;
