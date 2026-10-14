@@ -20,7 +20,12 @@ of two heads, authentication checking and unlock. These observations do not
 claim every workflow on both heads.
 
 The non-disruptive release audit and rehearsal preparation pass. The next
-attended checks concern recovery with application state preserved.
+attended checks concern rejected-profile recovery, shutdown and whole-release
+rollback. The operator-triggered WM restart has passed: the session logged
+`restart_requested` at boot millisecond 436341656, then `restarted epoch=2
+restarts=1 preserved_layout=true` at 436341898. The operator confirmed the
+desktop remained normal and the restart was not noticeable. The 242 ms between
+those records is an event interval, not a measured visual interruption.
 The existing rehearsal must run after logout on tty4; it deliberately restarts
 the WM, rejects a profile and logs out. No live restart, profile change,
 shutdown or release switch was performed during this audit.
@@ -75,9 +80,10 @@ failed campaign is relabeled and no benchmark is rerun merely for this audit.
 
 Floating, moving and resizing the active Kitty window passed by operator
 observation on this candidate. This is an attended functional check, not a
-numeric input-to-photon measurement. Ordinary-use recovery
-must preserve input and application state. Exact-release startup/refusal,
-restart, rejected-profile rollback and shutdown need the attended rehearsal;
+numeric input-to-photon measurement. The subsequent requested WM restart
+preserved the layout in the session log and appeared normal to the operator.
+Exact-release startup/refusal, rejected-profile rollback and shutdown still
+need the attended rehearsal;
 September 26's earlier successful rehearsal does not substitute for it.
 Physical pointer-drag/presentation evidence remains distinct from t249's
 control-path budgets. Whole-release rollback needs an actual compatible relaunch.
