@@ -157,6 +157,11 @@ transport measurements, preserving the exact native/simulated distinction.
 
 ### t250 — Qualify the WM daily configuration
 
+The [October 14 installed-candidate audit](../investigations/hovf14r3-qualify-the-october-14-daily-desktop-and-whole-release-rollback.md)
+records the corrected release, attended ordinary-use reports, verified fallback
+artifacts and the remaining recovery and physical checks. It preserves the
+failed packaging attempt and does not close this task.
+
 The source-retirement amendment above separates t269 from this qualification.
 After retirement, the rollback deliverable is a verified whole release; the
 historical same-binary current-IPC selection remains evidence of the earlier
