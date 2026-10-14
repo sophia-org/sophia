@@ -160,6 +160,13 @@ whole-candidate acceptance remain separate.
 
 ### t249
 
+The [final development qualification](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#final-development-qualification-and-coverage-2026-10-14)
+binds all capability and owner joins, inspection/SDK reuse, the complete generic
+gate, all twenty latency pairs and the approved resource comparison to signed
+candidates. It preserves failed campaigns and the explicit supplied-input limits.
+Attended qualification and whole-release rollback remain t250's separate exit;
+Hagia h006 retains its own release-build obligation. The task ledger owns status.
+
 The [approved shared-core sequence](jsschoen-converge-public-roles-on-one-9p-core.md#t323)
 extracts t323 as the immediate readiness gate and retains the eighteen-case
 regression baseline. Full t249 resumes after the role-facing admission and

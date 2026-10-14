@@ -2,174 +2,47 @@
 id: 5rzn1zue
 date: 2026-10-10
 kind: investigation
-status: investigating
+status: closed
 tags: [validation, protocol, policy]
 ---
 # WM qualification after source retirement and attended output recovery
 
 ## Current resumption
 
-The full resource collector has stopped with a comparison failure. At 120 Hz
-idle, files settled 19,999 updates and coalesced one; frames settled all 20,000.
-Both account for every offer, with no rejection or unresolved update. The
-60 Hz idle pair settled all 20,000 updates in both arms. The frozen resource
-method requires identical outcome populations, so this run cannot qualify the
-resource comparison. Loaded profiles and the final plain idle probes did not
-run. Preserve `t249-resource-campaign-20261014-01` and its failure review;
-analyze the retained traces before deciding on another measurement. Do not
-retry automatically or weaken the comparison after the result.
-The failed package's manifest is
-`dec77d32f0aad91105dd9fa9fde6446af88d2f2bb8855d97c319e23c2311b0b1`.
-The [trace audit](#resource-comparison-failure-and-trace-audit-2026-10-14)
-now verifies complete protocol exchanges in all four captured arms. It does
-not qualify the unequal resource populations or establish the stall's cause.
-The [resource reporting proposal](#proposed-resource-comparison-decision-2026-10-14)
-has now been explicitly approved by niltempus. Its six invalid-input/accounting
-controls are rejected. Prepare the missing loaded pairs and plain idle probes,
-then obtain a fresh host window before collection. Preserve the failed run.
-The approved supplement is now running in
-`t249-resource-supplement-20261014-01`, process session `53328`; verify that
-handle before taking action. Claude confirmed the renewed hold from 11:53:56 UTC
-and relayed Astra's acknowledgement at 11:54 UTC. The supplement runs the two
-missing loaded pairs, then the two plain idle probes. No rebuild is involved.
-The frozen preparation manifest is
-`2837a73dd23c18095f2e9ca77dc80faced507cc16854f08a95004039b21f2458`.
+The [final development qualification](#final-development-qualification-and-coverage-2026-10-14)
+now satisfies t249's owner, capability, inspection, independent SDK, integration,
+latency and resource requirements under the two explicitly approved measurement
+decisions. Task status stays in `todo.md` and the monthly completion ledger.
 
-The approved twenty-pair latency result remains qualified. The resource hold
-has been released to Claude and Astra. Reported transfers, text edits and the
-owner-authorized Git push at 10:58:26.59–10:58:28.47 UTC are retained with the
-resource evidence; their presence does not establish the cause of coalescing.
-Resource interpretation and final candidate binding still prevent t249 closure.
-The paragraphs below retain the preceding campaign history.
+The qualified implementation pins are Sophia `47086bd25734a0c7d5348b909e88501aa4a79715`,
+Hagia `7723c9c56082fb24f2ef4636a91b3f166d84e828` and external runner
+`ce877ec8f0a39364b37774cb9b01ac7d55ed7e73`. The final audit binds their unchanged
+implementations to signed candidate heads, all 43 external cases and the
+complete generic gate, including 37 named witnesses. The result below maps all
+23 capability bits and the non-capability exits to their evidence and limits.
 
-The [DMA admission join](#dma-admission-and-qualified-pair-2026-10-13) now passes
-with real Hagia, actual GPU authority intake, composed retirement and Session's
-DMA recorder. Image-promotion and admission-retirement controls fail their named
-assertions. The listed A–F joins are covered under their stated limits.
-The refreshed comparator now passes a small [open-loop accounting diagnostic](#open-loop-accounting-2026-10-13).
-The [capacity/failure controls and CPU/idle probes](#measurement-controls-and-cpu-observations-2026-10-13)
-also pass. [Socket traces](#observed-protocol-exchanges-2026-10-13) now reconstruct
-actual protocol exchanges and transferred bytes. [Allocation probes](#allocation-counters-2026-10-13)
-and [compiler copy counters](#copied-byte-counters-2026-10-13) now pass both arms.
-The [uninstrumented release pair](#release-build-preflight-2026-10-13) also passes
-its small accounting preflight at both rates. The [prospective method](#prospective-campaign-method-2026-10-13)
-is recorded. The **full latency campaign stopped after its first pair**:
-file resize coalesced 33 updates while frames coalesced none. The numeric
-percentile checks passed, but the unequal populations refuse the comparison.
-The stall did not reproduce in the bounded fsync diagnostic. One [follow-up
-campaign with scheduling observations](#follow-up-campaign-with-scheduling-observations-2026-10-14)
-stopped after its first pair. Its scheduler samples localize the recurrent
-stall to Hagia's kernel write wait; the [capture correction](#memory-log-capture-correction-2026-10-14)
-removes persistent log writes from the timed path. Preserve both failed runs
-and the unchanged budgets. The independent SDK/export rerun now passes
-both cases. Resource profiles and final exit binding remain after latency
-qualification. The complete t249/h006 exit has not passed.
+All twenty required latency pairs qualify under conservative all-admitted
+percentile bounds. All numerical budgets remain unchanged. The original failed
+campaigns are preserved; coalesced updates have no invented settlement times.
+The [resource result](#approved-resource-result-2026-10-14) covers all four
+rate/load conditions and both idle probes. It reports total costs with actual
+settled/coalesced counts, without claiming equal completed work or a universal
+speedup. Its full tables are in the sealed `RESOURCE-REPORT.md`.
 
-The corrected campaign stopped at 120 Hz loaded pair 4: frames coalesced one
-move after a scheduler delay; files settled every update. All numeric budgets
-passed, but exact outcomes differed. Later coordination established Git packing,
-bulk transfers and short multithreaded PDF builds during the supposed quiet
-window. Preserve all nineteen measured pairs as diagnostic evidence; none
-qualifies its intended host condition. See the [refusal and revised host hold](#loaded-comparison-refusal-and-host-hold-2026-10-14).
-Campaign05 collected fresh pairs after every local agent acknowledged the
-explicit hold, then stopped at its first 120 Hz loaded pair. Preserve its
-[scheduling-delay refusal](#exclusive-window-scheduling-delay-2026-10-14).
-Campaign06 completed the four missing pairs, and the approved combined latency
-audit passed. Full resource capture is now running under the renewed host hold.
-Keep the same accounting and numerical limits. The earlier
-partial replacement and combined audit preparation is superseded and must not run.
+Final audit: `t249-final-exit-audit-20261014-01`, manifest
+`f5813d5c8fe2cceda57b1e361be820ae0f5df759d3fbd65dee4f72461ca6ad98`.
+Combined resources: `t249-approved-resources-20261014-01`, manifest
+`5840c9f793c7522de9c5dd1edfe242c37b035ae084584343ad26b4b4e25fa652`.
+The final result below retains the other package identities.
 
-Campaign05 has passed all five pairs in each idle condition, with identical
-outcomes and no coalesced updates. The highest file p99 across those pairs is
-0.563773 ms at 60 Hz and 0.531381 ms at 120 Hz. The largest file-minus-frame
-p95/p99 differences are 0.003687/0.006262 ms at 60 Hz and
-0.040758/0.020388 ms at 120 Hz. These are interim results from the retained
-`progress.json`; the final raw-ledger and host-window audit remains required.
-All five 60 Hz CPU-load pairs also pass, with identical outcomes and no
-coalescing. Their highest file p99 is 0.508518 ms; the largest file-minus-frame
-p95/p99 differences are 0.010009/0.026520 ms. Recorded load is at least
-1.995631 CPU seconds per wall second in every arm, above the required 1.5.
-The first 120 Hz CPU-load pair failed exact outcome agreement: frames coalesced
-two moves, while files settled every update. Numeric budgets passed. That
-condition, the final latency audit, resource profiles and final candidate
-binding remain open. The [short scheduling diagnostic and comparison proposal](#scheduling-diagnostic-and-comparison-proposal-2026-10-14)
-did not establish a scheduling fix. niltempus has now explicitly approved the
-[conservative comparison decision](#approved-conservative-comparison-2026-10-14).
-Audit every retained campaign05 pair under that rule and collect the four
-missing 120 Hz loaded pairs under a renewed host hold. Preserve the sealed
-original failure. The candidate source-impact audit below is complete; latency
-qualification now passes under the approved rule; resources and final closure
-remain open. See the [combined result](#approved-latency-result-and-resource-preflight-2026-10-14).
+No measurement, build or host hold is active. Both disposable comparator
+archives are removed after source-preservation and liveness checks. Nothing
+was installed, reloaded or pushed. Do not restart a completed campaign from an
+older resumption paragraph. Do not reopen t317/t318.
 
-Use the [row dispositions](#remaining-row-dispositions-2026-10-13) and
-[t249 acceptance criteria](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249).
-Task status stays in `todo.md`; case count is not a completion percentage.
-Do not reopen t317/t318 or repeat their attended acceptance.
-
-The qualified baseline is **43 passing external cases**: signed Hagia
-`7723c9c56082fb24f2ef4636a91b3f166d84e828`, niltempus runner
-`ce877ec8f0a39364b37774cb9b01ac7d55ed7e73`, and Sophia pin
-`47086bd25734a0c7d5348b909e88501aa4a79715`.
-Package `t249-dma-admission-pair01` has manifest
-`8ad7e81511a546ff1f4be06c64a52f16a16f198cb26d03f067f8ba9d4705942f`.
-The complete generic gate passes at this pin. The linked result records strict
-Clippy, formatting, layout and runner tests. Its audit verifies 3,275 pinned
-inputs, twenty-four mounted inputs, all exact results and unchanged production
-glue. Hagia's local policy suite is bound through 427 unchanged inputs.
-
-A's ordinary routing/capture joins and C's
-[occupied reload and registry](#occupied-reload-and-registry-2026-10-13) and
-[lock reset](#occupied-lock-reset-2026-10-13) joins remain qualified.
-B adds tab selection, indicator activation and scrolling geometry; the launch
-package retains B's passing local suite by verifying 427 unchanged inputs. These
-cases supply observations, events and completion; they do not prove physical
-input, frontend delivery, shell UI or device pixels.
-
-F already covers [native publication installation](#native-publication-installation-2026-10-13),
-[native software admission](#native-software-admission-2026-10-13) and
-[automatic CPU repaint](#automatic-native-cpu-repaint-2026-10-13).
-The DMA join adds the actual intake, submission, image custody, retirement and
-admission owners. Allocation and completion remain simulated; no GPU import,
-pixel copying, stable-device evidence or physical scanout is proved.
-
-The [Session comparator prototype](#session-comparator-prototype-2026-10-13)
-runs both transports below the same enqueue, coalescing and settlement owners,
-using one current Hagia binary and its normal profile/checkpoint loop.
-The refreshed archive uses Sophia `0c75896b4` and Hagia `2ba92d984`. At both
-60 and 120 Hz, both arms settle all 240 offered updates. A delayed-start pair
-records sixteen replacements and 224 settlements per arm, with no unresolved
-offers. Removing a settlement or replacement edge fails the ledger verifier.
-The full-queue diagnostic rejects a seventeenth offer without changing its
-sixteen accepted predecessors. Service suppression and fixture-child exit
-produce explicit failures with unresolved and unoffered counts. CPU and idle
-snapshots now cover both processes and their live threads. These are finite
-diagnostics; timing remains unqualified. The traced pair preserves all 240
-settlements and reconstructs 9P RPC replies and legacy acknowledgments without
-unmatched exchanges. Allocation and copy probes now preserve the same 240
-settlements. Their source audit, controls and explicit coverage limits are saved;
-profiling does not qualify latency. The release pair has no profiling hooks and
-settles all 240 updates at both rates. The campaign now uses the frozen method
-for resource intervals, protocol exchanges, wake observations and outcomes.
-Preserve the five alternating pairs, 10,000 admitted updates per run, both rates under both loads
-and the relative and absolute budgets.
-
-The completed DMA development and qualification archives are removed.
-`~/.cache/t249-measurement-build` holds the refreshed comparator and diagnostic;
-the earlier `t249-session-comparator-build` is also retained. Experiment scripts
-are preserved with the corresponding probe packages. The failed latency run
-is `t249-campaign-20261013-01`; its driver exited with status 1 after preserving
-both arms. The separate [fsync diagnostic and final SDK gate](#fsync-diagnostic-and-final-sdk-gate-2026-10-13)
-are complete. Both traced arms settled all 20,000 updates, with no reproduced
-stall. The failed campaign remains unqualified; the diagnostic is not an
-acceptance retry. The follow-up campaign `t249-campaign-20261014-02` exited
-with status 1 after its first pair. The corrected campaign
-`t249-campaign-20261014-03` exited with status 1 after its nineteenth pair.
-The fresh `t249-campaign-20261014-05` exited with status 1 after its sixteenth
-pair. Its process handle is terminal. The approved supplement
-`t249-campaign-20261014-06` also ended; its four pairs passed. The first resource
-capture stopped and remains sealed as failed. Its approved supplement is the
-only live measurement, as recorded at the start of this section. No build or
-live-session operation is running.
+The next acceptance boundary is t250: attended daily use, physical input/display
+and whole-release rollback. Hagia h006 also retains its own reviewed
+release-build obligation. This development qualification closes neither boundary.
 
 ## Stopping point and resume procedure (2026-10-12)
 
@@ -5238,3 +5111,143 @@ release-mode comparator includes a test-only restored transport and does not
 by itself qualify an ordinary production release. Do not close h006 solely
 because the paired t249 evidence is complete. Its release obligation and t250's
 attended acceptance must retain their own evidence and task dispositions.
+
+## Approved resource result (2026-10-14)
+
+The supplement completed all four loaded arms and both plain idle probes with
+exit status 0. The combined audit verified all eight resource arms, including
+both retained idle pairs, against their sealed inputs. It checked identical
+offered identities and geometry, complete accounting and replacement chains,
+load, process identity, allocation/copy counters, complete socket streams and
+correlated replies. Missing-reply controls fail in every arm. Recorded stale
+handle errors and EOF follow the completed workload ledger during intentional
+teardown. No rejected or unresolved update is accepted.
+
+Each arm admitted 20,000 updates. Outcomes remain explicit:
+
+| Condition | Frames settled / coalesced | Files settled / coalesced | Maximum queue plus in-flight |
+| --- | ---: | ---: | ---: |
+| 60 Hz idle | 20,000 / 0 | 20,000 / 0 | 1 |
+| 120 Hz idle | 20,000 / 0 | 19,999 / 1 | 2 |
+| 60 Hz CPU load | 20,000 / 0 | 19,997 / 3 | 2 |
+| 120 Hz CPU load | 20,000 / 0 | 19,983 / 17 | 2 |
+
+The original resource run remains failed under its original identical-outcome
+rule. This combined result applies the separately approved offered-workload
+rule; it does not turn coalesced updates into measured completions.
+
+The plain latency campaign supplies uninstrumented CPU observations. Median
+Session CPU seconds for the 20,000-update workload are 3.75/5.59 for frames/files
+at 60 Hz idle, 3.43/5.26 at 120 Hz idle, 3.02/4.57 at 60 Hz loaded and
+2.60/4.36 at 120 Hz loaded. Hagia's corresponding medians are 9.46/8.04,
+7.92/7.90, 9.49/8.39 and 9.16/8.18. These intervals include scheduled updates,
+drain and the End checkpoint, excluding Begin. They are CPU seconds, not wall
+latency; the report retains ranges across all five pairs.
+
+The fully settled 60 Hz idle resource pair illustrates the counter scopes.
+Rust requested 2.276/2.968 billion allocation bytes for frames/files, plus
+1.9995/1.9905 billion reallocation-request bytes. Its measured bulk copies were
+8.402/10.230 billion bytes. Hagia's whole-process allocation requests were
+102.094/12.751 billion bytes and its measured bulk copies 90.496/5.709 billion.
+These cumulative counts are not peak memory. Rust workload counters and Hagia
+whole-process counters have different boundaries and are not added together.
+The report retains every condition, not only this equal-population example.
+
+Each frame connection had 20,010 acknowledged exchanges; file connections had
+379,846–380,171 tag-correlated RPCs, including setup and teardown. These are
+different protocol units, not equal-cost operations. Both two-second plain idle
+probes recorded one owner wait/deadline, no ring-ready return and no advancing
+process CPU ticks at 100 Hz. That is 10 ms resolution, not proof of zero work.
+Owner waits and context switches do not measure every kernel wake. Compiler
+copy counters exclude scalar/pre-inlined copies, shared-library internals,
+kernel/device copies and memset bytes. Profiling timings do not qualify latency.
+
+Package `t249-resource-supplement-20261014-01` is sealed with raw traces under
+manifest `dbfdfbe8a68bdfaaac93fbb4c204e4f0bd54b292fb27e40937ca7df74d5354b9`.
+The combined report is `t249-approved-resources-20261014-01`, manifest
+`5840c9f793c7522de9c5dd1edfe242c37b035ae084584343ad26b4b4e25fa652`.
+Its `RESOURCE-REPORT.md` gives the full tables; `resource-summary.json` retains
+counter scopes, process/thread scheduling observations and protocol accounting.
+Host reports remain attached. The renewed hold was released after collection;
+reported earlier-window activity remains disclosed rather than attributed as a
+proven cause of a stall.
+
+## Final development qualification and coverage (2026-10-14)
+
+The t249 development exit is satisfied under the two explicitly approved
+measurement decisions. This is qualification of the current SDK-based WM role
+and its Session/backend owners, not installed-desktop or physical acceptance.
+
+The signed candidate heads audited before this final record are Sophia
+`a21bc868fa7e128f276efaf89a4089aeb64faa73`, Hagia
+`2ba92d984d0317ced163c1137d9641fddfce226d` and niltempus runner
+`ce877ec8f0a39364b37774cb9b01ac7d55ed7e73`. Sophia's implementation equals
+qualified pin `47086bd25734a0c7d5348b909e88501aa4a79715`; Hagia's implementation
+equals `7723c9c56082fb24f2ef4636a91b3f166d84e828`; the runner is unchanged.
+The recorded deltas are documentation only. Subsequent coverage and task-ledger
+commits do not change implementation, fixtures, dependencies or build inputs.
+
+The final audit rechecks 813 retained files across eight packages, all 43 exact
+external cases, the runner identity and valid candidate signatures. All 37 named
+generic witnesses from the row-disposition audit also occur as exact successful
+test names in the current complete generic gate. Package
+`t249-final-exit-audit-20261014-01` has manifest
+`f5813d5c8fe2cceda57b1e361be820ae0f5df759d3fbd65dee4f72461ca6ad98`.
+This is evidence and source binding, not another execution of unchanged tests.
+
+The [23-row disposition map](#remaining-row-dispositions-2026-10-13) retains the
+precise obligations. Its remaining owner joins are discharged as follows:
+
+| Coverage | Capability bits | Final evidence and boundary |
+| --- | --- | --- |
+| A: routed input and capture | 0, 3, 13, 22 | [Routed transitions](#routed-input-and-capture-transitions-2026-10-13), focused-application capture and direct input-debt overflow run the production routing, queue and debt owners with real Hagia continuations. Device events are supplied; frontend delivery is not claimed. |
+| B: policy projections | 1, 4, 8, 11, 12 | [Projection families](#policy-projection-families-2026-10-13) join tabs, translation, indicators, chrome geometry and correlated activation. The local policy suite is bound through 427 unchanged inputs; one layout is not substituted for every policy algorithm. |
+| C: reload and security | 6, 9, 21, 22 | [Occupied reload/registry](#occupied-reload-and-registry-2026-10-13) and [lock reset](#occupied-lock-reset-2026-10-13) cover accepted/refused replacement, checkpoint/catalog authority and exact cancellation. Catalog capture, entry and completion retain their supplied boundaries. |
+| D: launch and logical outputs | 2, 10, 14, 15, 16, 17 | [Launch/output recovery](#launch-and-logical-output-recovery-2026-10-13) covers frozen origin/context, empty-output activation, occupied transfer/loss, key/action replacement and pending-Manage rearming. Process/topology observations are supplied; physical hotplug and application execution are not claimed. |
+| E: overview targets | 18, 19 | [Overview/output-loss debt](#overview-targets-and-output-loss-debt-2026-10-13) joins actual peer instances and regions, backend-derived pointer identity, commit-only focus, stale refusal and swallowed release debt. Device completion remains supplied. |
+| F: native owner joins | 10, 18 | [Native installation](#native-publication-installation-2026-10-13), software Present, [automatic repaint](#automatic-native-cpu-repaint-2026-10-13) and [DMA admission](#dma-admission-and-qualified-pair-2026-10-13) execute the actual intake, submission, custody, retirement and admission owners. GPU import, nonzero device pixels and physical scanout are not claimed. |
+| Retained role behavior | 5, 7, 20 | Startup/recovery PolicyDirty, accepted/refused/disconnected session intents and Begin/Held/End/Cancel remain in the qualified external suite. Current generic credit/dead-policy/opener-refusal tests supply their separate local boundaries. |
+
+The non-capability obligations are also retained at their proper scope:
+
+- Checkpoint preservation, timeout/restart, settlement and reused numeric
+  identities have real-peer cases. Supplied timeouts remain supplied.
+- All-head receipt consensus uses the backend-derived two-head proof and its
+  controls. D/E separately cover distinct logical outputs.
+- Inspection uses the actual admitted read-only service and capture worker.
+  Submitted command acceptance is not relabelled as a committed WM outcome.
+- Immutable snapshots, malformed records, replay and driver phase ownership
+  reuse the current generic gate and shared-core decisions. Receipt overflow,
+  input-debt capacity and journal pressure retain separate witnesses; no new
+  claim of Session reply-byte exhaustion is made.
+- The independent Nim SDK/export startup and cycle rerun passes both cases;
+  its source-impact record binds the unchanged SDK and client. The complete
+  generic gate, strict external Clippy, formatting, layout and runner checks
+  remain bound to the qualified pins.
+- Latency uses all twenty required pairs: five alternating pairs at each rate
+  and load, 10,000 move plus 10,000 resize offers per arm. All numerical budgets
+  pass the approved all-admitted bounds. Worst file p99 upper bounds are
+  0.563773/0.531381 ms idle and 0.508518/0.489852 ms loaded at 60/120 Hz.
+  All p50/p95/p99 values, maxima and accounting remain in the sealed ledgers.
+  Observed maxima are 27.592424 ms for frames and 25.737978 ms for files;
+  maxima have not been hidden or recast as percentile failures. Four coalesced
+  offers across the plain campaign retain unknown individual settlement times.
+  No timeout, disconnect, rejection, unresolved work or unbounded queue is
+  accepted. The original failed campaigns remain visibly failed.
+- Resource costs now cover every required condition, allocation/copy scope,
+  protocol exchange, CPU observation, idle probe and queue bound under the
+  separately approved rule, as reported above. No universal speedup or equal
+  completed-work cost is inferred.
+
+Both disposable comparator archives were removed after acquiring their leases,
+checking that no process used them, verifying every source file against the
+preserved audit and checking that changed/added source overlays remain in the
+sealed evidence. Small experiment sources were retained; binaries were not
+copied into evidence. Shared Cargo slots and historical worktrees were left
+alone. Cleanup package `t249-measurement-cleanup-20261014-01` has manifest
+`b7d2c148842ecbb2646babd5003cb8aa4eec269851ed7ebc5931067832bb0411`.
+
+No measurement, build, installation, reload or host hold remains active.
+`t250` retains attended daily use, device pixels/input-to-photon acceptance and
+whole-release rollback. Hagia h006 retains its separate reviewed release-build
+obligation; this paired development result does not close that task by itself.
