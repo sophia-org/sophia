@@ -24,6 +24,14 @@ error (`mirror-present-regression-red.log`). The full deterministic gate passed
 in `mirror-present-check.log`, including workspace tests, strict Clippy, layout,
 tooling and GLX/EGL graphics checks. Installation and attended retry remain pending.
 
+The repaired release is `niltempus-26ecbdd5cb1bdb38b7d9`, built from Sophia
+`fa1064f35` and integration `863c425`. Build, release checksums and the mirror
+profile's Session/Hagia preflight pass. The evidence symlink
+`mirror-present-release` names its Nix output. `~/install-sophia-fix` installs
+that exact output and then replaces the temporary mirror launcher/profile with
+versions naming the repaired release. Installation needs the operator's sudo
+credential; neither the current release nor the mirror entry has switched yet.
+
 The temporary login entry is `/usr/share/wayland-sessions/sophia-mirror.desktop`
 (Sophia Mirror Test). Its launcher and profile are under the evidence directory's
 `mirror-preparation/`. The profile derives from the installed packaged desktop,
