@@ -56,6 +56,51 @@ Completing the core does not authorize a new application API, an enabled input
 driver, a desktop UI suite or the separate portability program. The input task
 remains design-only, and the application task remains a scaffold migration.
 
+The same day's follow-up adds independent-client credentials (t324), real
+confined applications (t045), additional provider admission (t109), role
+discovery/status (t257), complete wire references (t259), and the remaining
+physical lock acceptance (t297) before t289. The provider prerequisite chain
+includes t104/t105/t106 and their open t097/t100 prerequisites. Reconcile their
+criteria against t252 and existing evidence before implementing anything:
+reuse accepted results, identify missing proofs, and keep named desktop-client
+assembly and tests in their owning repositories. Promotion does not authorize
+weakening an exit or repeating an already accepted campaign by default.
+
+Two bounded reviews precede this work: t328 audits the remaining t031/t032
+lifecycle gaps, and t329 reviews t069 device negotiation. They do not promote
+those entire implementation backlogs. Their findings must name any correctness
+blocker that needs an explicit queue change before optimization. The broader
+GPU negotiation exit may require upstream client changes and is not an
+unbounded prerequisite for t289. Task order and dependencies remain in todo.md.
+
+## t328
+
+Audit the remaining t031/t032 authority and delivery gaps against current
+production code and the accepted topology, capture and role-lifecycle evidence.
+Cover queued geometry/input/policy work across topology epochs, bounded
+page-flip reads, broker error handling, input delivery, route-lease sends and
+configuration publication. Do not treat old task wording as proof of a current
+bug. Exit: each named gap has a source-backed disposition (already covered,
+still present, or unresolved), linked evidence and a bounded proposed repair
+and validation scope where needed. Identify blockers to architecture acceptance
+and propose their queue placement; this audit alone authorizes no broad repair
+or closure of t031/t032. Read-only inspection and existing evidence suffice
+unless a named uncertainty needs a focused reproduction.
+
+## t329
+
+Review t069's remaining device-negotiation exit before Engine optimization.
+Trace the current advertisement, allocation, import and presentation contracts;
+reconcile accepted evidence and the temporary client workarounds. Separate
+Sophia-owned gaps from advisory protocol limits and failures inside upstream
+clients before submission. Exit: a source-backed inventory, a bounded next
+experiment for each unresolved boundary, and a recommendation on which repairs
+must precede t289. Do not claim universal negotiation from a supported-client
+list, reopen accepted device tests without a named gap, or block indefinitely
+on upstream changes. Full t069 implementation retains its separate task.
+
+## Observer delivery sequence (historical)
+
 On October 14, after t249/t250 completion, niltempus explicitly prioritized the
 zsx0tk4k/ernn0bkv observer milestone ahead of CPU optimization. t319 is promoted
 to the critical lane, including its bounded t257 output-status prerequisite.
