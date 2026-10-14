@@ -9,6 +9,45 @@ tags: [investigation, protocol, capture]
 
 ## Current resumption
 
+The daily session runs `niltempus-1ce83e7579cba2b564c9` (Sophia `629cb8a80`,
+integration `243605d`). The repaired capture path works on both physical
+outputs. Exact CPU, GLX and EGL pixels match on output 1; capture replacement
+and expiry make old handles stale while new grants remain readable. These
+results and their limits are recorded in the physical checkpoint below.
+
+The admitted output-status baseline also passed: thirty fresh snapshots in
+three seconds reported stable availability, topology generation 2 and owner
+generation 1, with advancing retirement counts. This does not prove recovery.
+The session is
+`~/.local/state/sophia/sessions/00000001792003516767-bbb488ca-c687-4eff-aec7-76fe840a8dbc`;
+qualification logs are under
+`~/.local/state/sophia/development-evidence/t319-session-capture/`.
+
+Next are the attended lock and KVM checks. The xtask capture probe has bounded
+`lock` and `output-change` modes, paired with `output-status-probe` for recovery
+observations. No test changes topology or injects input. Launch 19 reached its
+three-minute limit without a lock event and has exited. Wait for the operator's
+“ready” before arming another run; the user has already been asked. No attended
+probe is running now, and no reinstall is needed for these tools.
+
+Keep the evidence distinctions exact. Requesting another capture already
+revokes the preceding binding. Only a readable handle becoming stale without
+another request, within 1.5 seconds of the original request, can attribute
+revocation to the attended event rather than replacement or two-second expiry.
+The lock probe labels this `live_handle_revoked`; sampled pending cancellation
+is a separate observation. Deterministic Session and guarded-delivery tests
+cover late native completion, backpressure and partial replies. Output recovery
+must additionally yield a strictly newer output incarnation and leave both old
+handles stale. Do not infer recovery from the stable baseline.
+
+t319 remains open for attended lock/cancellation, output loss and replacement,
+recovery status, mirror convergence, and capture-on/off costs. The last committed
+full gate and the combined attended-probe gate passed; the latter is recorded
+in `attended-probes-check.log`. The authentication refactor retained the passing
+physical replacement result in launch 21 (81451 → 81454).
+
+## Physical pixel and grant checkpoint, 2026-10-14
+
 The repaired release `niltempus-1ce83e7579cba2b564c9` is installed and running
 (Sophia `629cb8a80`, integration `243605d`). Capture now succeeds on both
 physical outputs. Launch 2 returned output 1, generation 1, presentation 885:
@@ -44,7 +83,7 @@ grant replacement and expiry checks, not output replacement or lock checks.
 t319 remains open: mirror convergence, lock cancellation, stale handles after
 output loss/replacement, independent replacement output identity, availability
 and recovery observations, and bounded capture-on/off costs remain. Next,
-extend the admitted probe for attended lock and output changes. The full gate
+run the prepared attended lock probe, then add output-change observations. The full gate
 and packaged checks passed before installation, as recorded below; the new
 probe gate passed in `physical-probes-check-final.log`, including workspace
 tests, strict Clippy, layout and graphics checks. The first run stopped at the
@@ -53,6 +92,29 @@ its report to the existing dispatcher. `physical-probes-check.log` preserves
 that failed run.
 The rebuilt final dispatcher also passed live (38278 → 38280), recorded in
 `physical-grant-dispatcher-final.log` with `physical-grant-final-hashes.log`.
+
+The uncommitted `lock` mode builds and passes strict xtask Clippy and layout
+checks. Launch 19 armed successfully, then reached its 180-second timeout
+without an observed lock event. It has exited; do not treat it as running or
+as lock acceptance. `physical-lock-unattended-timeout.log` preserves the result.
+Wait for the operator to be ready before another bounded run. The probe checks
+cancelled status, denied capture writes and stale handles before lease expiry,
+then requires a fresh capture after unlock without reviving old handles.
+Its pending-state samples complement, rather than replace, the deterministic
+Session delayed-completion test and 9P guarded-delivery backpressure tests.
+The audit caught an attribution trap before any lock acceptance: Session revokes
+the previous binding when it takes a replacement request. The revised probe
+reports `live_handle_revoked=true` only after a successful retained read becomes
+stale without another capture request. Pending cancellation is reported
+separately. The guarded-delivery audit passed both tests, including real
+socket backpressure with a partly written reply (`guarded-delivery-audit.log`).
+
+The new read-only `output-status-probe` passed a three-second admitted baseline
+in launch 20: 30 snapshots, availability `available`, topology generation 2,
+owner generation 1, stable recovery, no retry or failure, and owner retirements
+67960 → 68090. Evidence is `physical-output-status-baseline.log`. This proves
+the live status path, not recovery during output loss. The probe samples fresh
+bounded records and reports structural changes for the attended KVM test.
 
 The grant probe reads the current request serial before allocating its next
 one. Its first two launches (13 and 14) incorrectly assumed serial 1 and were

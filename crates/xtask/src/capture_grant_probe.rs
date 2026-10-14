@@ -16,39 +16,37 @@ use std::{
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-pub fn run(args: &[String]) -> Result<String> {
+mod lock;
+mod output_change;
+mod output_status;
+pub use output_status::run as observe_output;
+
+pub fn run(args: &[String], mut report: impl FnMut(&str)) -> Result<String> {
     let [output, mode] = args else {
         return Err(
-            "capture-grant-probe OUTPUT_ID replacement|expiry (admitted launch only)".into(),
+            "capture-grant-probe OUTPUT_ID replacement|expiry|lock|output-change (admitted launch only)".into(),
         );
     };
-    if !matches!(mode.as_str(), "replacement" | "expiry") {
+    if !matches!(
+        mode.as_str(),
+        "replacement" | "expiry" | "lock" | "output-change"
+    ) {
         return Err("unknown capture grant probe mode".into());
     }
     let output = OutputId::from_raw(output.parse()?);
     if !output.is_valid() {
         return Err("invalid output".into());
     }
-    let directory =
-        std::env::var_os(NAMESPACE_DIRECTORY_ENV).ok_or("admitted namespace required")?;
-    let names = sophia_namespace_client::Namespace::open(Path::new(&directory))?;
-    let mut auth = sophia_launch_client::Client::over(
-        names.connect("roles/portal")?,
-        sophia_runtime::inherited_launch_channel()?,
-        b"namespace-client",
-        b"portal-client",
-    )?;
     let deadline = Instant::now() + Duration::from_secs(30);
-    while !auth.ready() {
-        if Instant::now() >= deadline {
-            return Err("authentication timeout".into());
-        }
-        auth.poll()?;
-        auth.wait_for_io(Duration::from_millis(10))?;
-    }
-    let mut admitted = auth.into_authenticated()?;
+    let mut admitted = authenticate("roles/portal", b"portal-client", deadline)?;
     let pipe = &mut admitted.role;
     let root = admitted.root;
+    if mode == "lock" {
+        return lock::run(pipe, root, output, &mut report);
+    }
+    if mode == "output-change" {
+        return output_change::run(pipe, root, output, &mut report);
+    }
     let previous = status(pipe, root, deadline)?;
     let serial = previous
         .request
@@ -117,6 +115,30 @@ pub fn run(args: &[String]) -> Result<String> {
         old.presentation_generation,
         new.presentation_generation
     ))
+}
+
+fn authenticate(
+    path: &str,
+    interface: &[u8],
+    deadline: Instant,
+) -> Result<sophia_launch_client::Authenticated> {
+    let directory =
+        std::env::var_os(NAMESPACE_DIRECTORY_ENV).ok_or("admitted namespace required")?;
+    let names = sophia_namespace_client::Namespace::open(Path::new(&directory))?;
+    let mut auth = sophia_launch_client::Client::over(
+        names.connect(path)?,
+        sophia_runtime::inherited_launch_channel()?,
+        b"namespace-client",
+        interface,
+    )?;
+    while !auth.ready() {
+        if Instant::now() >= deadline {
+            return Err("authentication timeout".into());
+        }
+        auth.poll()?;
+        auth.wait_for_io(Duration::from_millis(10))?;
+    }
+    Ok(auth.into_authenticated()?)
 }
 
 fn reply(pipe: &mut Pipeline, tag: Tag, deadline: Instant) -> Result<Reply> {

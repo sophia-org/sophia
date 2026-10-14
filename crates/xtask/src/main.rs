@@ -42,9 +42,15 @@ fn main() -> std::process::ExitCode {
 
 fn run(arguments: &[String]) -> Result<(), String> {
     match arguments.first().map(String::as_str) {
-        Some("capture-grant-probe") => capture_grant_probe::run(&arguments[1..])
-            .map(|report| eprintln!("{report}"))
-            .map_err(|error| error.to_string()),
+        Some("output-status-probe") => {
+            capture_grant_probe::observe_output(&arguments[1..], |event| eprintln!("{event}"))
+                .map_err(|error| error.to_string())
+        }
+        Some("capture-grant-probe") => {
+            capture_grant_probe::run(&arguments[1..], |event| eprintln!("{event}"))
+                .map(|report| eprintln!("{report}"))
+                .map_err(|error| error.to_string())
+        }
         Some("context") => context::run(&workspace_root()?, &arguments[1..]).map(print_lines),
         Some("check") => check::run(&workspace_root()?, &arguments[1..]).map(print_lines),
         Some("vendor-rust-desktop-sdk") => {
@@ -265,7 +271,10 @@ fn print_lines(lines: Vec<String>) {
 const USAGE: &str = "\
 usage: cargo xtask <command>
 
-  capture-grant-probe OUTPUT_ID replacement|expiry
+  output-status-probe SECONDS
+      Observe bounded output availability for 1..=180 seconds through an admitted recipe.
+
+  capture-grant-probe OUTPUT_ID replacement|expiry|lock|output-change
       Check capture fids through an explicitly admitted recipient; no auto-launch.
 
   context task ID | outline PATH | read PATH[#HEADING] [--max-bytes=N]

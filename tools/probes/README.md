@@ -15,6 +15,35 @@ replacement check must finish within 1.5 seconds of the first request so the
 two-second lease cannot explain staleness. This does not test output replacement
 or lock cancellation. It never launches a session or selects an output itself.
 
+The `lock` mode arms a bounded three-minute attended probe. It keeps the last
+readable frame while requesting its successor, reports `stage=armed`, and waits
+for the operator to lock and unlock normally. It requires a cancelled request,
+`EACCES` for new capture writes, and `ESTALE` on both retained handles within
+1.5 seconds of their request. `live_handle_revoked=true` additionally requires
+a successful retained read followed by `ESTALE` without an intervening capture
+request: requesting a replacement itself revokes the previous binding. After
+unlock, the old handles must remain stale
+and a new request must expose a newer presentation. `pending_before_cancel`
+records a sampled pending state followed by cancellation; it does not establish
+the precise instant of native completion. Deterministic fence tests cover that
+race. The probe itself cannot lock, unlock or inject input.
+
+`cargo xtask output-status-probe SECONDS` observes `output-status` through the
+admitted `roles/status` endpoint for 1–180 seconds. It reads a fresh bounded
+snapshot every 100 ms and reports structural changes plus a final observation.
+Each read has a two-second deadline. Retirement counters remain in the reports
+but do not trigger extra lines on their own. This probe changes no output policy
+and makes no capture request; its records carry no capture authority.
+
+The `output-change` capture mode also has a three-minute attended window. It
+requires a previously readable image to become stale before lease expiry,
+without an intervening capture request. After recovery, both old handles must
+remain stale and a new capture of the selected logical output must name a
+strictly newer output incarnation. Pair it with the status observer for recovery
+evidence. A change that meets initial capture or handle setup can refuse the
+probe and require another run; that refusal is not acceptance. The probe never
+changes topology or treats a timeout as output loss.
+
 ## Protected shell GPU/content proof
 
 `sophia shell-gpu-content-proof` accepts an explicit client, geometry, outcome
