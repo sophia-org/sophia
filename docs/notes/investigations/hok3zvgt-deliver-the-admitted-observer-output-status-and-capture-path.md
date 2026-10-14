@@ -33,6 +33,20 @@ gate passed, including workspace tests, strict checks and the host's buffer-age
 and GLX/EGL pixel checks. Its log is `queued-capture-check.log` in the capture
 evidence directory. No repaired build is installed yet.
 
+The repair is signed and pushed as `629cb8a80`. The matched release is
+`niltempus-1ce83e7579cba2b564c9`, integration `243605d`, at
+`/nix/store/57l1rciwpd1j9badxf8hb8ijf7ms3a6a-niltempus-desktop-niltempus-1ce83e7579cba2b564c9`.
+All 87 packaged checksums pass, and the packaged CLI passes the authenticated
+33,177,600-byte supplied-pixel transfer in 1.00 second. Hagia, narthex, Lom,
+Bemenu, kleis and the preflight executable are unchanged byte for byte.
+The logs are `queued-capture-desktop.log`, `queued-capture-checksums.log` and
+`queued-capture-packaged-cli.log` in the capture evidence directory.
+
+`~/t319-install` now selects this exact repaired release. Its shell syntax and
+the capture configuration validate; the active configuration already matches.
+`sudo -n true` still requires a password. Next, run the installer, log out and
+back in, then retry ordinary capture before the remaining physical gates.
+
 The session evidence is
 `~/.local/state/sophia/sessions/00000001792000065910-2683c23a-6360-423a-bdbb-72ca69d1ed22`.
 Its application stderr records capture failures for launches 2, 5 and 6.
