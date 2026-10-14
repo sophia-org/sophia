@@ -2,7 +2,7 @@
 id: hovf14r3
 date: 2026-10-14
 kind: investigation
-status: investigating
+status: closed
 tags: [investigation, session, validation]
 ---
 # Qualify the October 14 daily desktop and whole-release rollback
@@ -22,7 +22,7 @@ claim every workflow on both heads.
 The non-disruptive release audit and attended seven-phase rehearsal pass.
 Whole-release fallback login has passed by operator observation and session
 identity. Return to the candidate is confirmed by the new session identity and
-WM readiness; its post-return visual confirmation remains pending. The operator-triggered WM restart
+WM readiness; the operator confirmed normal appearance and behavior afterward. The operator-triggered WM restart
 has also passed: the session logged
 `restart_requested` at boot millisecond 436341656, then `restarted epoch=2
 restarts=1 preserved_layout=true` at 436341898. The operator confirmed the
@@ -38,7 +38,7 @@ At initial audit, `previous` named the faulty
 `niltempus-a986fef4f64b032edc11`, so plain rollback was unsuitable. The explicitly verified fallback is
 `niltempus-7b8051ace95f8581d57e`. Its store root and sealed files remain intact.
 Fallback login and return to the candidate are recorded below. Task state
-stays in `todo.md`; this is not a t250 completion record.
+stays in the task ledger; the final acceptance below supports t250 completion.
 
 ## Candidate and packaging incident
 
@@ -80,7 +80,7 @@ and resource comparisons for the unchanged qualified implementation. Those
 control-path results are not installed input-to-photon measurements. No old
 failed campaign is relabeled and no benchmark is rerun merely for this audit.
 
-## Remaining acceptance and prepared commands
+## Attended recovery and rollback record
 
 The whole-release rollback trial selected `niltempus-7b8051ace95f8581d57e`.
 The new session `00000001791983420468-4ed544a0-3965-4dad-b086-5320613babd6`
@@ -93,7 +93,7 @@ After `~/t250-return`, the operator reported completion. Session
 `00000001791983659719-c1d52663-c983-40ea-8edf-06758946730d` confirms return to
 `niltempus-e8818395183f05263ccc`, Sophia `d5938f2ad`, and the original
 candidate binary and profile hashes. Its WM reached ready at epoch 1.
-The operator has not yet explicitly confirmed post-return visual behavior.
+The operator explicitly confirmed normal appearance and behavior after return.
 
 The attended rehearsal at `20261014T130523Z` passed startup readiness, WM
 restart, unchanged-profile reload, rejected-profile reload, restored-profile
@@ -112,7 +112,7 @@ The new exact-release rehearsal supplies profile recovery and shutdown
 evidence independently of September 26's historical result.
 Physical pointer-drag/presentation evidence remains distinct from t249's
 control-path budgets. The candidate has restarted after the fallback trial;
-post-return visual confirmation remains to be recorded.
+post-return visual confirmation has passed.
 
 After logging out and logging in on tty4, run from `~/dev/niltempus`:
 
@@ -133,8 +133,38 @@ Restore the exact candidate through the same owner and log in again:
 ~/dev/niltempus/tools/desktop install ~/.local/state/sophia-niltempus-desktop/gcroots/niltempus-e8818395183f05263ccc
 ```
 
-These commands are prepared instructions, not evidence that they ran. They
-switch the next login's complete release; they do not replace running binaries.
+These are the commands used through the short operator launchers. The session
+identities and reports above establish their observed results. They switch the
+next login's complete release; they do not replace running binaries.
+
+## Final acceptance on October 14
+
+The pinned daily configuration satisfies t250. The accepted t249 control-path
+budgets are reused for its unchanged Sophia/Hagia implementations; installed
+functional observations remain separately classified. No numeric
+input-to-photon claim is made. The exact release passes build and profile
+validation, ordinary layout/focus/navigation and float/move/resize, seamless
+requested WM restart, all seven recovery phases, clean shutdown, and compatible
+whole-release fallback and return. The operator confirmed normal behavior on
+both releases. `previous` now points to the verified fallback, not the faulty
+packaging attempt.
+
+Final evidence is `t250-final-acceptance-20261014-01`, manifest SHA-256
+`989f8a9fa3728fe2ff6b682bc8edddddc176f4b837e9b029bc5f00992527de86`.
+It preserves rehearsal outcomes, fallback/return identities and paired offline
+startup profile preflight. The valid profile is accepted; the same profile
+with view-count 10 is refused by policy validation. Both copies have mode 0600.
+An initial direct check of the rejected source instead hit its mode 0664;
+that result is retained. It does not invalidate the live rehearsal, whose
+copy into the existing mode-0644 desktop.kdl preserves the destination mode.
+Direct Hagia checks of the full desktop file are not policy checks: Sophia
+extracts the policy before invoking Hagia. Those exploratory errors remain
+classified in the evidence.
+
+This accepts the selected WM daily configuration, not every shell workflow,
+every topology, future capture or the broader desktop milestone. t252, t101,
+t081, t018 and t020 retain their own exits. Earlier failed latency campaigns
+and the bad packaging attempt remain failures.
 
 ## Connections
 
