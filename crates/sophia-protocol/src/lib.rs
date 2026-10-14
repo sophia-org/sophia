@@ -7,6 +7,7 @@ pub mod admin_files;
 mod byte_cursor;
 pub mod capacity;
 mod codec_error;
+pub mod control_records;
 pub mod cursor;
 pub mod developer_launch;
 pub mod geometry;

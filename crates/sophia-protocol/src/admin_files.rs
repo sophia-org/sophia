@@ -2,7 +2,10 @@
 //!
 //! Parsing establishes syntax only. Admission, catalog freshness, replay and
 //! execution remain the responsibility of the administrative owner.
-use crate::{ControlCommand, ControlOutcome, ControlOwner, validate_control_name};
+use crate::control_records::{ControlCommand, ControlOutcome, ControlOwner, validate_control_name};
+
+mod discovery;
+pub use discovery::*;
 
 pub const ADMIN_LINE_MAX_BYTES: usize = 512;
 pub const ADMIN_DETAIL_MAX_BYTES: usize = 256;
@@ -34,7 +37,7 @@ pub struct AdminOutcome {
     pub detail: String,
 }
 
-fn fields<'a>(bytes: &'a [u8], kind: &str) -> Result<[&'a str; 5], AdminLineError> {
+fn line(bytes: &[u8]) -> Result<&str, AdminLineError> {
     if bytes.len() > ADMIN_LINE_MAX_BYTES {
         return Err(AdminLineError);
     }
@@ -43,6 +46,11 @@ fn fields<'a>(bytes: &'a [u8], kind: &str) -> Result<[&'a str; 5], AdminLineErro
     if body.chars().any(char::is_control) {
         return Err(AdminLineError);
     }
+    Ok(body)
+}
+
+fn fields<'a>(bytes: &'a [u8], kind: &str) -> Result<[&'a str; 5], AdminLineError> {
+    let body = line(bytes)?;
     let mut parts = body.splitn(7, ' ');
     if parts.next() != Some("v1") || parts.next() != Some(kind) {
         return Err(AdminLineError);

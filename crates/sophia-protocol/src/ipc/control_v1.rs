@@ -2,9 +2,7 @@
 use super::cursor::{Cursor, push_u16, push_u32, push_u64};
 use super::{IpcCodecError, SOPHIA_IPC_MAX_PAYLOAD_LEN};
 
-/// The largest catalog any revision allows: 256 WM actions plus the session
-/// operations of the highest revision. A welcome states its own revision's cap.
-pub const CONTROL_MAX_COMMANDS: usize = 259;
+pub use crate::control_records::*;
 /// The highest revision this implementation speaks.
 pub const CONTROL_REVISION: u16 = 2;
 
@@ -13,7 +11,7 @@ pub const CONTROL_REVISION: u16 = 2;
 pub const fn control_session_operations(revision: u16) -> &'static [&'static str] {
     match revision {
         1 => &["reload-profile", "restart-wm"],
-        _ => &["logout", "reload-profile", "restart-wm"],
+        _ => CONTROL_SESSION_OPERATIONS,
     }
 }
 
@@ -22,80 +20,9 @@ pub const fn control_max_commands(revision: u16) -> usize {
     256 + control_session_operations(revision).len()
 }
 
-/// A session operation of any revision. The frame codec is revision-agnostic;
-/// the negotiated revision decides what a connection may see and invoke.
-pub fn control_session_operation(name: &str) -> bool {
-    control_session_operations(CONTROL_REVISION).contains(&name)
-}
 pub const CONTROL_FRAME_TIMEOUT_MS: u32 = 2000;
 pub const CONTROL_COMMAND_TIMEOUT_MS: u32 = 10000;
 pub const CONTROL_IDLE_TIMEOUT_MS: u32 = 60000;
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-#[repr(u16)]
-pub enum ControlOwner {
-    Policy = 1,
-    Session = 2,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u16)]
-pub enum ControlOutcome {
-    Committed = 1,
-    Completed = 2,
-    Unchanged = 3,
-    Rejected = 4,
-    Stale = 5,
-    Denied = 6,
-    Unavailable = 7,
-    Overloaded = 8,
-    TimedOut = 9,
-    Indeterminate = 10,
-}
-
-impl ControlOutcome {
-    pub fn from_wire(value: u16) -> Result<Self, IpcCodecError> {
-        outcome(value)
-    }
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Committed => "committed",
-            Self::Completed => "completed",
-            Self::Unchanged => "unchanged",
-            Self::Rejected => "rejected",
-            Self::Stale => "stale",
-            Self::Denied => "denied",
-            Self::Unavailable => "unavailable",
-            Self::Overloaded => "overloaded",
-            Self::TimedOut => "timed-out",
-            Self::Indeterminate => "indeterminate",
-        }
-    }
-    pub const fn success(self) -> bool {
-        matches!(self, Self::Committed | Self::Completed | Self::Unchanged)
-    }
-}
-
-impl ControlOwner {
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Policy => "policy",
-            Self::Session => "session",
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct ControlCommand {
-    pub owner: ControlOwner,
-    pub name: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ControlCatalog {
-    pub generation: u64,
-    pub commands: Vec<ControlCommand>,
-}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ControlWelcome {
@@ -145,33 +72,6 @@ fn owner(raw: u16) -> Result<ControlOwner, IpcCodecError> {
         _ => Err(invalid()),
     }
 }
-fn outcome(raw: u16) -> Result<ControlOutcome, IpcCodecError> {
-    Ok(match raw {
-        1 => ControlOutcome::Committed,
-        2 => ControlOutcome::Completed,
-        3 => ControlOutcome::Unchanged,
-        4 => ControlOutcome::Rejected,
-        5 => ControlOutcome::Stale,
-        6 => ControlOutcome::Denied,
-        7 => ControlOutcome::Unavailable,
-        8 => ControlOutcome::Overloaded,
-        9 => ControlOutcome::TimedOut,
-        10 => ControlOutcome::Indeterminate,
-        _ => return Err(invalid()),
-    })
-}
-
-pub fn validate_control_name(name: &str) -> Result<(), IpcCodecError> {
-    require(
-        !name.is_empty()
-            && name.len() <= 128
-            && name.trim() == name
-            && name
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b' ' | b'-' | b'_' | b'.')),
-    )
-}
-
 fn text(
     cursor: &mut Cursor<'_>,
     length: usize,
@@ -304,7 +204,7 @@ pub fn decode_control_frame(bytes: &[u8]) -> Result<(u64, ControlMessage), IpcCo
         133 => {
             let generation = c.u64()?;
             require(generation > 0)?;
-            let outcome = outcome(c.u16()?)?;
+            let outcome = ControlOutcome::from_wire(c.u16()?)?;
             let length = c.u16()? as usize;
             ControlMessage::Outcome {
                 generation,
@@ -404,25 +304,4 @@ pub fn encode_control_frame(id: u64, message: &ControlMessage) -> Result<Vec<u8>
     // Encoding observes exactly the same strict semantic contract as decoding.
     decode_control_frame(&frame)?;
     Ok(frame)
-}
-
-/// Refuse invalid owner catalogs before making them discoverable.
-pub fn validate_control_catalog(catalog: &ControlCatalog) -> Result<(), IpcCodecError> {
-    require(catalog.generation != 0 && catalog.commands.len() <= CONTROL_MAX_COMMANDS)?;
-    require(catalog.commands.windows(2).all(|pair| pair[0] < pair[1]))?;
-    require(
-        catalog
-            .commands
-            .iter()
-            .filter(|c| c.owner == ControlOwner::Policy)
-            .count()
-            <= 256,
-    )?;
-    for command in &catalog.commands {
-        validate_control_name(&command.name)?;
-        require(
-            command.owner != ControlOwner::Session || control_session_operation(&command.name),
-        )?;
-    }
-    Ok(())
 }

@@ -626,7 +626,8 @@ restoration on the exact candidate before t253 can close.
 ### t254 — Migrate administrative commands
 
 The [October 14 codec foundation](../investigations/t75i0gx8-define-bounded-administrative-file-records-before-migrating-control.md)
-defines bounded `ctl`/outcome lines and independent literal controls. It does
+defines bounded invocation, discovery, catalog and status records, shared
+transport-neutral command types, and independent literal controls. It does
 not supply an export or change the live command transport; the remaining
 admission, lifecycle, discovery and migration work stays under this exit.
 
