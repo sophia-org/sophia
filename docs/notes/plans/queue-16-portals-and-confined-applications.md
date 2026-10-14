@@ -70,6 +70,15 @@ lifetimes; task clearing must not silently imply desktop dismissal. Keep rich
 task trees outside the initial notification route. This adds no separate task
 or change to the critical-path order.
 
+The approved [Kitty/Ghostty interoperability cases](../investigations/u399qgtv-kitty-protocols-as-interoperability-evidence-for-sophia-portals.md)
+also require exact binary/MIME clipboard delivery with explicit overflow
+failure; trusted prompt attribution derived from admission rather than caller
+names; sender- and generation-bound notification replacement, dismissal and
+activation; and typed drag/file handoff that never interprets a remote path as
+a local file. Test stale and foreign notification actions and failed-transfer
+effects on retained clipboard data. Terminal protocols remain client-side;
+Sophia's generic conformance tests must not depend on a named terminal.
+
 The [2026-10-09 screenshot report](../investigations/id869143-x11-drawable-readback-and-an-operator-capture-path.md)
 adds an operator and agent use case: one authorized image of a selected window
 or composed output, including accelerated content. A minimal CLI/provider
