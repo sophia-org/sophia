@@ -48,6 +48,41 @@ full gate and the combined attended-probe gate passed; the latter is recorded
 in `attended-probes-check.log`. The authentication refactor retained the passing
 physical replacement result in launch 21 (81451 → 81454).
 
+The acceptance audit below leaves only attended qualification: lock/unlock,
+KVM loss/return with recovery status and a new output incarnation, then mirror
+capture and its costs. Those checks need the operator present. The requested
+“ready” has not arrived; launch 19 expired, and all later probes have exited.
+Do not restart the three-minute lock loop or alter the daily display layout
+while waiting. No build, capture probe or quiet-window hold remains active.
+
+## Acceptance evidence audit, 2026-10-14
+
+The scope is [t319](../plans/jsschoen-converge-public-roles-on-one-9p-core.md#t319)
+and its [t046 capture constraints](../plans/queue-16-portals-and-confined-applications.md#t046).
+The task remains open. The task ledger records t315 complete on October 10 and
+t318 complete on October 12; this audit does not reopen their acceptance.
+
+| Requirement | Evidence and remaining limit |
+| --- | --- |
+| Explicit admission and bounded output-only requests | The installed CLI uses the selected capture recipe. `capture_request_files.rs` proves opt-in files, authenticated access, malformed-request refusal and lock fencing; Session's capture tests reject foreign pixels and pressure without disturbing an existing grant. These tests passed in `attended-probes-check.log`. |
+| CLI image, dimensions and presentation identity | Physical captures pass on both configured outputs. The larger output also completed forty validated transfers in the cost run. This does not establish a mirror capture. |
+| Known CPU and accelerated pixels | The physical CPU, GLX and EGL pattern checks each matched 82,800 visible RGBA pixels. The GPU renderer was the Radeon RX 7900 GRE. Occluded rows were excluded from the pixel comparison. |
+| Crop, occlusion and cursor semantics | The [recipient contract](../../portal-client-files.md#image-extent-occlusion-and-cursor) now declares the full primary-head image, visible composition, clipping and omission of Session's pointer sprite. Source inspection follows `queue_output_capture`, `compose_native_head_frames_from_sources`, `output_scene_snapshot_from_committed_in_view` and `read_composition_snapshot`: the native scene receives no cursor, and readback copies the whole target and reverses its rows. This documents current behavior, not a new rendering path. |
+| Lock refusal and no completion after lock | Deterministic tests cover delayed native completion, lock during collection, delivery rechecks and real socket backpressure, including a partial reply. The prepared live probe has no attended result: launch 19 timed out without a lock event. The physical gate remains open. |
+| Retained handles, cancellation and replacement | Physical grant replacement and expiry pass. Session and portal tests cover output replacement, collection cancellation and no unlock revival. KVM loss/return must still prove live stale handles, a fresh output incarnation and independent replacement access. |
+| Bounded status and recovery | The admitted live baseline passes. The codec and Session tests cover bounded fields and separation from retained topology. Physical unavailable/recovering/available observations remain open; an available-only baseline is insufficient. |
+| Mirror disclosure | The native accessor checks every enabled head's frame identity, displayed custody and converged group before returning the primary image. Existing custody and mirror lifecycle tests do not substitute for the pending physical mirror capture. |
+| Retention and costs | The contract bounds image size, count and shared budgets; budget/custody and pressure tests pass. The ordinary two-output desktop's off/on/on/off measurement is recorded below. Mirror costs have not been measured. |
+| No added input or descriptor authority | The observer selection admits inspection and screen capture, not an operator or driver recipe. No XTEST request was introduced. These files carry bounded RGBA bytes and records, not descriptors; DMA-BUF recording remains the separate deferred kind. |
+
+The delivery-race evidence includes
+`crates/sophia-session/tests/support/session_output_capture.rs`,
+`crates/sophia-portal/tests/capture_binding.rs` and
+`crates/sophia-9p/tests/guarded_delivery.rs`. The full gate and focused
+guarded-delivery audit passed. The live tools reject unadmitted execution and
+invalid duration/output arguments. No missing physical result is promoted to
+acceptance by those deterministic checks.
+
 ## Capture costs in the daily session, 2026-10-14
 
 The installed release above was measured without changing affinity, topology or

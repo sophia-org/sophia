@@ -178,3 +178,23 @@ unchanged grant deadline. Physical and performance evidence remain incomplete.
 Supplied-presentation tests prove
 binding and stale-handle behavior; they do not prove native presentation or
 final network-delivery timing across a live lock.
+
+### Image extent, occlusion and cursor
+
+Version 1 captures the entire native composition of the selected logical
+output's primary head. Dimensions and coordinates are native image pixels,
+after that head's projection and clipping. There is no window selector or crop
+rectangle in the request, and the image does not combine separate outputs.
+For a mirror group, all enabled heads must converge on the selected frame
+before disclosure; the returned image is the configured primary head's image.
+
+The image contains the visible application and shell layers in their composed
+order. Covered content stays covered, and content outside the output is clipped.
+This interface does not recover the unobscured pixels of a covered window.
+Capture forces composition even when direct scanout would otherwise be eligible.
+
+Session's pointer sprite is omitted. Native capture builds its scene without a
+software cursor and does not sample the separate hardware cursor plane. A cursor
+painted by an application into its own content remains part of those pixels.
+The returned rows run from top to bottom; no cursor metadata or separate cursor
+image is attached to the grant.

@@ -56,6 +56,11 @@ bounded reads under one expiring grant. Lock, revocation or output replacement
 can cancel a read; it does not retry with a different grant. This path remains
 under release and physical qualification.
 
+The image covers the selected output's full primary-head composition, with
+visible occlusion and clipping preserved. It omits Session's pointer sprite;
+there is no crop or window-capture option. See the
+[image semantics](portal-client-files.md#image-extent-occlusion-and-cursor).
+
 ## Discover, authenticate, then use the role
 
 ```text
