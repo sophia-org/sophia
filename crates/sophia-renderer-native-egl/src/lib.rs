@@ -1,4 +1,6 @@
+mod composition_snapshot;
 mod default_display;
+pub use composition_snapshot::*;
 mod dmabuf_sync;
 mod gl;
 mod image_custody;

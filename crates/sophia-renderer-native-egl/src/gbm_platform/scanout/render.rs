@@ -428,6 +428,11 @@ fn query_native_surface_buffer_age(
     }
 }
 
+struct NativeCompositionReadback<'a> {
+    proof: bool,
+    snapshot: Option<&'a mut Option<crate::NativeCompositionSnapshot>>,
+}
+
 fn render_native_target_composition(
     egl: &khronos_egl::DynamicInstance<khronos_egl::EGL1_5>,
     display: khronos_egl::Display,
@@ -436,7 +441,7 @@ fn render_native_target_composition(
     import_cache: &mut NativeDmaBufImportCache,
     snapshots: NativeSnapshotCompositionResources<'_>,
     frame: NativeCompositionFrame<'_>,
-    capture_pixels: bool,
+    readback: NativeCompositionReadback<'_>,
     preserve_target_alpha: bool,
     buffer_age_supported: bool,
 ) -> Result<
@@ -747,7 +752,7 @@ fn render_native_target_composition(
                     }
                 }
             }
-            if capture_pixels {
+            if readback.proof {
                 match target.pipeline.read_composition_pixels() {
                     Ok(metrics) => {
                         tracing::info!(
@@ -768,6 +773,10 @@ fn render_native_target_composition(
                         target.height,
                     ),
                 }
+            }
+            if let Some(readback) = readback.snapshot {
+                *readback = Some(target.pipeline.read_composition_snapshot()
+                    .map_err(|_| NativeGbmScanoutBufferExportDetail::CompositionFinishFailed)?);
             }
             egl.swap_buffers(display, egl_surface)
                 .map_err(|_| NativeGbmScanoutBufferExportDetail::EglSwapBuffersFailed)

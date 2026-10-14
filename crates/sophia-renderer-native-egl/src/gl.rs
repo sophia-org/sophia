@@ -730,6 +730,41 @@ impl PersistentXrgb8888GlPipeline {
         })
     }
 
+    pub(crate) fn read_composition_snapshot(
+        &self,
+    ) -> Result<crate::NativeCompositionSnapshot, NativeEglDrawSmokeStatus> {
+        let len = crate::NativeCompositionSnapshot::byte_len(self.width, self.height)
+            .ok_or(NativeEglDrawSmokeStatus::GlUnavailable)?;
+        let mut rgba = Vec::new();
+        rgba.try_reserve_exact(len)
+            .map_err(|_| NativeEglDrawSmokeStatus::GlUnavailable)?;
+        rgba.resize(len, 0);
+        unsafe {
+            self.gl.read_pixels(
+                0,
+                0,
+                self.width as i32,
+                self.height as i32,
+                glow::RGBA,
+                glow::UNSIGNED_BYTE,
+                glow::PixelPackData::Slice(Some(&mut rgba)),
+            );
+            if self.gl.get_error() != glow::NO_ERROR {
+                return Err(NativeEglDrawSmokeStatus::GlUnavailable);
+            }
+        }
+        // GL's first row is the bottom of the output. Public images start at
+        // the top; swap in place without a second image-sized allocation.
+        let stride = self.width as usize * 4;
+        for row in 0..self.height as usize / 2 {
+            let other = self.height as usize - row - 1;
+            let (before, after) = rgba.split_at_mut(other * stride);
+            before[row * stride..(row + 1) * stride].swap_with_slice(&mut after[..stride]);
+        }
+        crate::NativeCompositionSnapshot::from_rgba(self.width, self.height, rgba)
+            .ok_or(NativeEglDrawSmokeStatus::GlUnavailable)
+    }
+
     pub(crate) fn read_composition_region_pixels(
         &self,
         region: GlCompositionRect,

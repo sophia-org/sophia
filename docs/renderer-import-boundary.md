@@ -96,6 +96,24 @@ This reuses execution resources without pooling capture storage or retaining
 mutable client imports. Per-head composition targets, image custody, KMS
 retirement and transfer completion retain their existing owners.
 
+### Explicit composed-image readback
+
+The native renderer's `export_composed_with_snapshot` operation returns one
+immutable RGBA8 image alongside its rendered buffer. Rows run from top to bottom;
+storage is tightly packed, has no native handles and is limited to 64 MiB per
+image. Invalid dimensions and oversized images are refused before allocation.
+Readback runs after composition and before the buffer swap, so CPU uploads and
+imported GPU content follow the same pixel path. A failed export returns no
+snapshot; later rendering or context destruction cannot change returned bytes.
+Ordinary exports do not enable this readback.
+
+This is a renderer primitive, not a public capture interface or a presentation
+receipt. Session must still select immutable sources, identify the presented
+output generation, authorize the recipient, and fence delivery against lock,
+revocation and output replacement. No portal grant is implied by owning a
+snapshot. Aggregate retention limits and the admitted capture CLI remain part
+of t319's delivery work.
+
 ## Damage provenance
 
 Engine retains up to 16 transitions per surface, 32 rectangles per transition

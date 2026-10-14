@@ -35,8 +35,13 @@ An installed-session KVM failure interrupted this work at 13:38 UTC. Its
 records the completed repair: the matched release survived an attended KVM
 away/back switch and subsequent normal logout with clean native resource
 disposition. The observer changes were not installed when the failure occurred
-and remain excluded from that release. Resume the immutable renderer readback
-and authorized capture binding described below.
+and remain excluded from that release.
+
+The native renderer now has an explicit composed-image readback operation.
+It returns bounded immutable RGBA8 bytes; the CPU/GPU pixel and lifetime test
+passes on the isolated render node. Next connect this primitive to the retained
+presented-output identity and the recipient grant. Do not treat a rendered buffer
+as proof that KMS presented it, or the renderer's snapshot as disclosure authority.
 
 ## Source findings
 
@@ -60,12 +65,60 @@ it through `namespace_launch/dispatch.rs`; that is where the admitted request
 must meet its recipient. `sophia-portal/src/recipient_object.rs` currently limits
 generic objects to 65,536 bytes, so it cannot carry a full output image unchanged.
 The native renderer's `PersistentXrgb8888GlPipeline::read_composition_pixels`
-currently returns diagnostic metrics, not retained image bytes. Its diagnostic
-capture switch is not an authorized screenshot mechanism. Add bounded immutable readback at the
-renderer boundary, then bind it through the capture grant with the output's
-actual presentation identity and lock/revocation checks.
+returns diagnostic metrics, not retained image bytes. Its diagnostic capture
+switch is not an authorized screenshot mechanism. The new explicit readback
+supplies bounded immutable bytes at the renderer boundary; the next join must
+bind them through the capture grant with the output's actual presentation
+identity and lock/revocation checks.
+
+The backend already mints `LiveNativeFrameIdentity` with independent native
+owner, output, head, target-generation and frame fields in
+`scanout/rendered_scanout/exporter/native_identity.rs`. Reuse the actual
+completion identity rather than deriving a receipt from a scene trace or a
+render request. `LiveProductionHeadCompositionFrame` retains the per-head
+composition inputs. Its route through the renderer worker is the next capture
+join; direct scanout also needs an explicit composed-image path when capture is
+requested. Do not claim the current primitive handles that join.
+
+Session already creates a `PortalExecutionFence` in `live_session/run.rs` and
+blocks/unblocks it in `owner_loop/session_lock_phase.rs`. Capture must share
+that barrier. Keep output-incarnation validity separate from the selected
+frame's immutable presentation identity: ordinary later frames must not silently
+replace an opened image, and an output replacement must not revive its grant.
 
 ## Contract and validation
+
+### Composed-image readback
+
+`NativeGbmRenderedScanoutContext::export_composed_with_snapshot` reads the full
+composed image before swap. A snapshot owns tightly packed, top-down RGBA8 bytes
+with a 64 MiB limit checked before allocation. Ordinary exports do not request
+readback. Failed requests return no image and cannot reuse an earlier result.
+The image has no native handles and survives later renders and context teardown.
+
+The new `composition_snapshot` tests reject invalid bounds and mismatched byte
+counts, retain immutable storage, and compare exact pixels from a CPU upload
+and an independent GPU producer's DMA-BUF. The native test also checks a fresh
+capture after an invalid request and retains both original images after later
+rendering and destruction of both contexts. Removing the GL row reversal makes
+the test fail with the red and blue rows exchanged; the reversal was restored.
+Strict crate Clippy and the full `umask 022; cargo-slot sophia cargo xtask check`
+gate passed, including workspace tests, strict workspace Clippy, SDK checks,
+render-node pixel checks and evidence verifiers.
+
+Native evidence lives in
+`~/.local/state/sophia/development-evidence/t319-composition-snapshot-final/`;
+the deliberate failure is in the adjacent `t319-composition-snapshot-negative/`.
+The passing test binary has SHA-256
+`f183b7e667a5d7fe7be0d3114ae5625141d01dad879eaba40960375fb8699fe6`;
+the full gate log has SHA-256
+`ce21b116f476fd1f5881b0896f498c13e8a60d66594280b982ca3292c7975550`.
+The runner admitted only PCI `0000:03:00.0`'s render node, with primary DRM,
+physical input, VT and live display sockets absent. No live screenshot or
+desktop replacement was performed. This validates renderer readback, not the
+remaining grant, presentation-identity, lock/revoke, CLI or performance exits.
+
+### Aggregate status
 
 The new status line is documented in `docs/sophia-wm-inspection.md`. It is
 read-only and bounded below 1024 bytes. Absent/fenced reports and lost

@@ -71,6 +71,8 @@ pub struct NativeGbmRenderedScanoutContext<T: std::os::fd::AsFd> {
     /// proof budget. For equivalence smokes only: per-frame `glReadPixels` on
     /// a session hot path is exactly what the budget exists to prevent.
     capture_pixels_always: bool,
+    readback_requested: bool,
+    readback: Option<crate::NativeCompositionSnapshot>,
     render_timing_enabled: bool,
     import_cache_capacity: usize,
     renderer_images: std::collections::BTreeMap<NativeRendererImageId, NativeRendererImage>,
@@ -253,6 +255,8 @@ where
             last_render_repaint: NativeCompositionRepaintOutcome::Full,
             last_render_target_generation: None,
             capture_pixels_always: false,
+            readback_requested: false,
+            readback: None,
             render_timing_enabled: false,
         })
     }
@@ -549,6 +553,30 @@ where
                 format: None,
             },
         )
+    }
+
+    /// Explicit offscreen readback for an already admitted capture operation.
+    /// The caller still owns authorization and presentation identity. This
+    /// returns no image when rendering or export fails and never enables
+    /// readback on a subsequent ordinary render.
+    pub fn export_composed_with_snapshot(
+        &mut self,
+        frame: NativeCompositionFrame<'_>,
+        request: NativeCompositionOutputRequest<'_>,
+    ) -> Result<(NativeGbmOwnedScanoutBufferExportReport, crate::NativeCompositionSnapshot), NativeGbmScanoutBufferExportDetail> {
+        if crate::NativeCompositionSnapshot::byte_len(frame.width, frame.height).is_none() {
+            return Err(NativeGbmScanoutBufferExportDetail::InvalidTarget);
+        }
+        self.readback = None;
+        self.readback_requested = true;
+        let report = self.export_composed_owned_scanout_buffer(frame, request);
+        self.readback_requested = false;
+        let snapshot = self.readback.take();
+        if report.buffer.is_none() {
+            return Err(report.detail);
+        }
+        let snapshot = snapshot.ok_or(NativeGbmScanoutBufferExportDetail::CompositionFinishFailed)?;
+        Ok((report, snapshot))
     }
 
     pub fn export_composed_owned_scanout_buffer(

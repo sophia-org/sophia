@@ -75,7 +75,10 @@ where
                     import_reuse: self.snapshot_import_reuse_enabled,
                 },
                 frame,
-                capture_pixels,
+                NativeCompositionReadback {
+                    proof: capture_pixels,
+                    snapshot: self.readback_requested.then_some(&mut self.readback),
+                },
                 false,
                 self.buffer_age_supported,
             );
@@ -201,7 +204,10 @@ where
                     import_reuse: self.snapshot_import_reuse_enabled,
                 },
                 frame,
-                capture_pixels,
+                NativeCompositionReadback {
+                    proof: capture_pixels,
+                    snapshot: self.readback_requested.then_some(&mut self.readback),
+                },
                 false,
                 self.buffer_age_supported,
             );
