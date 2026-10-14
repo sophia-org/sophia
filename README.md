@@ -37,7 +37,7 @@ The drawing below shows the target, including the planned 9P application fronten
     |   +----------------------+   +----------------------+   +----------------------+    |
     |               ^                          ^                          ^               |
     |               |                          |                          |               |
-    |               |   Shared 9P core, separate role exports           |               |
+    |               |   Shared 9P core, separate role exports             |               |
     |               |                          |                          |               |
     |               v                          v                          v               |
     |   +----------------------------------------------------------------------------+    |
