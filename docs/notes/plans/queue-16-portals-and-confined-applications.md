@@ -24,6 +24,14 @@ grant and recovery gates.
 
 ## t046
 
+On October 14, after t319 acceptance, niltempus explicitly included the
+remaining portal paths in the core architecture to finish before Engine
+optimization. This promotes the existing scope to implementation and
+acceptance; it does not waive the audits or per-slice gates below. Reuse the
+accepted output-capture evidence from t319. Audit and deliver the remaining
+clipboard/INCR, Xdnd, URI/file launch, prompt, notification and descriptor-handoff
+paths through their existing owners, with minimal independent clients.
+
 Add evidence-driven X11 `INCR`, Xdnd, URI/file launch, prompts,
 notifications, and capture/FD handoff through portals.
 

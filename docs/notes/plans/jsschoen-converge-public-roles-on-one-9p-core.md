@@ -41,6 +41,21 @@ and none can be designed around it later.
 
 ## First deliverable and dependency order
 
+After t319 acceptance on October 14, niltempus prioritized completion of the
+core architecture, including the remaining t046 portal paths, before Engine
+optimization. This supersedes the observer-only priority below. The remaining
+scope includes shell qualification, administration and broker migration, the
+common authority records and application scaffold, input-injection design,
+legacy-interface retirement and the portal executors. Task order and promotion
+live in `todo.md`; t289 follows acceptance of this scope. Its added dependencies
+record this delivery priority, not a claim that optimization technically needs
+every portal. Correctness repairs still take priority when failures arise.
+
+Each portal path retains t046's audit and per-recipient acceptance gates.
+Completing the core does not authorize a new application API, an enabled input
+driver, a desktop UI suite or the separate portability program. The input task
+remains design-only, and the application task remains a scaffold migration.
+
 On October 14, after t249/t250 completion, niltempus explicitly prioritized the
 zsx0tk4k/ernn0bkv observer milestone ahead of CPU optimization. t319 is promoted
 to the critical lane, including its bounded t257 output-status prerequisite.
@@ -102,7 +117,9 @@ every role; t319 requires that slice, not completion of the whole t257 row.
 
 Administration and broker migration (t254/t314), the neutral authority records
 and application scaffold (t321/t316), later clipboard/INCR/Xdnd/URI/prompt
-executors (t046), and portability/plain 9P (t256) remain separate work. t320's
+executors (t046), and portability/plain 9P (t256) remain separate from the
+observer milestone. The later October 14 priority above promotes the remaining
+architecture and portal work, but not portability. t320's
 injection design retains its approved place, but implementing or enabling a
 driver is not a screenshot prerequisite. t255 still requires accepted exports
 and measurements for every legacy production caller before retirement.
