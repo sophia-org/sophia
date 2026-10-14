@@ -9,6 +9,59 @@ tags: [investigation, protocol, capture]
 
 ## Current resumption
 
+The repaired release `niltempus-eb8be6b503fa8bca3815` is installed and running
+in Sophia Mirror Test, from Sophia `a29663a06` and integration `6aa4dda`.
+Session `00000001792010055475-11c676e1-c49d-478a-be7b-ec81ad3d539c`
+survived beyond five minutes, including the capture measurement. No native
+stall or fatal failure was recorded during that observation. Kitty remained
+running. This is bounded physical evidence, not a long-duration stability claim
+or proof of the previous timeout's exact cause.
+
+Mirror capture passed: the first request returned the full 2560×1440 primary
+image, followed by 31 successful measured captures. The native completion log
+reports two heads. Capture costs and limits are recorded below. The earlier
+CPU/GLX/EGL pixel, lock/unlock, grant and KVM results remain in the acceptance
+audit; deterministic race tests remain distinct from physical results.
+
+The remaining step is to return to the normal **Sophia niltempus Desktop**
+login, remove the temporary Mirror Test entry, then finish the ledger and
+documentation cleanup. The normal login still selects its packaged two-output
+profile. Do not rebuild or repeat the completed capture campaign without a
+new failure or uncovered criterion. No capture probe or quiet-window hold is
+active. The task ledger remains authoritative for closure.
+
+## Physical mirror capture and costs, 2026-10-14
+
+The live command line names the repaired release and explicit
+`mirror-preparation/mirror-desktop.kdl`. DP-1 is the 2560×1440 primary; HDMI-A-1
+mirrors it with `fit`. Launch 2 returned output 1, output generation 1,
+presentation generation 7328 and 14,745,600 RGBA bytes, with FNV-1a64
+`d8752557aa2c1048`. Its process exited zero in 567 ms.
+`physical-mirror-capture.log` preserves this result under
+`~/.local/state/sophia/development-evidence/t319-session-capture/`.
+
+The same session completed an off/on/on/off experiment at
+20:37:36–20:38:58 UTC. Each phase lasted roughly twenty seconds; the on phases
+completed 15 and 16 captures. All 31 exited zero with the expected dimensions
+and byte count. Sophia used 7.578%, 15.343%, 14.992% and 7.775% of one CPU core
+in phase order. RSS started at 177.410 MiB, peaked at 209.543 MiB and ended at
+181.723 MiB: a 32.133 MiB peak increase and 4.313 MiB retained at the final
+sample. Capture-process lifetimes ranged from 474 to 1,716 ms, with median
+659 ms and nearest-rank p95 1,633 ms. These include process startup and delivery,
+not just renderer readback.
+
+`mirror-capture-cost-20261014T203736Z/` retains the experiment, full samples,
+launch reports and `analysis.json`. This was a live desktop workload, without
+isolation or affinity changes. RSS was sampled about every 100 ms; background
+processes and DRM clients about every second. GPU allocations may be shared
+between clients. No screenshot bytes were archived. These measurements apply
+to this mirrored primary and release, not larger outputs or sustained recording.
+
+## Mirror repair history before the successful retry
+
+The following checkpoint records the failed attempts and preparation before
+the installed retry above; its pending-installation statements are historical.
+
 The repaired release was installed and the operator retried mirroring. Kitty
 launched and both heads displayed the desktop, but session
 `00000001792008593350-af959301-fa3c-4b03-8af9-8940db87543b`
@@ -158,14 +211,14 @@ t318 complete on October 12; this audit does not reopen their acceptance.
 | Requirement | Evidence and remaining limit |
 | --- | --- |
 | Explicit admission and bounded output-only requests | The installed CLI uses the selected capture recipe. `capture_request_files.rs` proves opt-in files, authenticated access, malformed-request refusal and lock fencing; Session's capture tests reject foreign pixels and pressure without disturbing an existing grant. These tests passed in `attended-probes-check.log`. |
-| CLI image, dimensions and presentation identity | Physical captures pass on both configured outputs. The larger output also completed forty validated transfers in the cost run. This does not establish a mirror capture. |
+| CLI image, dimensions and presentation identity | Physical captures pass on both configured outputs. The larger output completed forty validated transfers in the ordinary cost run; the repaired mirrored session completed its first capture and 31 measured transfers, as recorded above. |
 | Known CPU and accelerated pixels | The physical CPU, GLX and EGL pattern checks each matched 82,800 visible RGBA pixels. The GPU renderer was the Radeon RX 7900 GRE. Occluded rows were excluded from the pixel comparison. |
 | Crop, occlusion and cursor semantics | The [recipient contract](../../portal-client-files.md#image-extent-occlusion-and-cursor) now declares the full primary-head image, visible composition, clipping and omission of Session's pointer sprite. Source inspection follows `queue_output_capture`, `compose_native_head_frames_from_sources`, `output_scene_snapshot_from_committed_in_view` and `read_composition_snapshot`: the native scene receives no cursor, and readback copies the whole target and reverses its rows. This documents current behavior, not a new rendering path. |
 | Lock refusal and no completion after lock | Launch 62 proves live-handle revocation before expiry, refusal while locked, no revival of old handles and fresh capture after unlock. It did not sample pending native cancellation. Deterministic tests cover delayed native completion, lock during collection, delivery rechecks and real socket backpressure, including a partial reply. |
 | Retained handles, cancellation and replacement | Physical grant replacement and expiry pass. Launch 66 proves KVM loss/return revokes live handles before expiry and provides an independently readable replacement with output generation 1 → 3. Session and portal tests cover collection cancellation and no unlock revival. |
 | Bounded status and recovery | Launch 65 observed available → recovering/quarantined with retained topology 2, then its connection was fenced during WM replacement, as required by the inspection contract. Fresh authenticated launch 67 observed available/stable with topology 4 and owner generation 3. These are separate observations across an authority change, not a continuous watch. The codec and Session tests cover bounded fields and separation from retained topology. |
-| Mirror disclosure | The native accessor checks every enabled head's frame identity, displayed custody and converged group before returning the primary image. Existing custody and mirror lifecycle tests do not substitute for the pending physical mirror capture. |
-| Retention and costs | The contract bounds image size, count and shared budgets; budget/custody and pressure tests pass. The ordinary two-output desktop's off/on/on/off measurement is recorded below. Mirror costs have not been measured. |
+| Mirror disclosure | The native accessor checks every enabled head's frame identity, displayed custody and converged group before returning the primary image. Physical mirror capture passed on release `niltempus-eb8be6b503fa8bca3815`; the two-head completion log and bounded run support that result. |
+| Retention and costs | The contract bounds image size, count and shared budgets; budget/custody and pressure tests pass. Ordinary and mirrored off/on/on/off measurements are recorded here, with live-workload and sampling limits. |
 | No added input or descriptor authority | The observer selection admits inspection and screen capture, not an operator or driver recipe. No XTEST request was introduced. These files carry bounded RGBA bytes and records, not descriptors; DMA-BUF recording remains the separate deferred kind. |
 
 The delivery-race evidence includes
