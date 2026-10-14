@@ -41,8 +41,8 @@ qualifies its intended host condition. See the [refusal and revised host hold](#
 Campaign05 collected fresh pairs after every local agent acknowledged the
 explicit hold, then stopped at its first 120 Hz loaded pair. Preserve its
 [scheduling-delay refusal](#exclusive-window-scheduling-delay-2026-10-14).
-No measurement is running and the host hold is released. Keep the same
-accounting and numerical limits; no automatic retry is scheduled. The earlier
+Campaign06 is collecting the four missing pairs under the approved comparison
+and a renewed host hold. Keep the same accounting and numerical limits. The earlier
 partial replacement and combined audit preparation is superseded and must not run.
 
 Campaign05 has passed all five pairs in each idle condition, with identical
@@ -130,8 +130,9 @@ acceptance retry. The follow-up campaign `t249-campaign-20261014-02` exited
 with status 1 after its first pair. The corrected campaign
 `t249-campaign-20261014-03` exited with status 1 after its nineteenth pair.
 The fresh `t249-campaign-20261014-05` exited with status 1 after its sixteenth
-pair. Its process handle is terminal. No build, measurement or live-session
-operation is running.
+pair. Its process handle is terminal. The approved supplement
+`t249-campaign-20261014-06` is running; verify its live handle before resuming.
+No build or live-session operation is running.
 
 ## Stopping point and resume procedure (2026-10-12)
 
@@ -5011,6 +5012,24 @@ host hold and review for the new window. A new combined audit must bind all
 twenty pairs and both host windows; it must not rewrite campaign05's failure or
 claim that all twenty pairs came from one new run. Earlier campaigns remain
 diagnostic and excluded. Physical acceptance remains separate.
+
+All sixteen retained pairs pass the approved comparison after rechecking raw
+accounting, saved statistics, binary/source hashes, load and scheduling records.
+The retained audit alone is not full qualification. Package
+`t249-approved-retained-audit-20261014-01` has manifest
+`724dabae2e4798f9b50b7eab3618ee817d7df0e4c5cf6e1e279911cc893d45f9`.
+Claude and Astra confirmed a renewed host hold from 10:16 UTC, including
+compilation, rendering, tests, simulations, Git packing, bulk transfers and
+SSH relays. Campaign06 now collects the four missing pairs. Its source SHA-256
+is `693d1f1f00f8a5e171c0b6f0cca7bffd400fdd3cef1c83a435742f8c91a081d9`.
+The collector, comparator, audit and complete resource pipeline are preserved
+in `t249-approved-preparation-20261014-01`, manifest
+`455e13f364b4145073890d845b44b2023cb286fc6ef1a5f26b09d524d045bebd`.
+After the supplement succeeds, obtain the final host-window review and run
+`/tmp/t249-approved-latency-audit.py`. The revised resource collector requires
+its combined twenty-pair audit; the original campaign05 remains sealed and
+failed under its original rule. Resource outcome-accounting checks and the
+separate preflight, full capture, analysis and sealing sequence remain required.
 
 ## Connections
 
