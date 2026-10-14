@@ -410,6 +410,14 @@ historical; operations requiring a live output must reject stale identity.
 
 ## t319
 
+The [acceptance audit](../investigations/hok3zvgt-deliver-the-admitted-observer-output-status-and-capture-path.md#acceptance-evidence-audit-2026-10-14)
+records the delivered output-only capture bind and bounded status view, with
+physical pixel, lock, KVM and mirror results, measured costs and deterministic
+race coverage. The installed release is `niltempus-eb8be6b503fa8bca3815`
+(Sophia `a29663a06`, integration `6aa4dda`). Physical observations and their
+limits are recorded separately from deterministic checks. Later t046 portal
+executors and DMA-BUF recording are outside this delivery.
+
 The first CLI uses t318's authorized launch path. Starting it directly from an
 unadmitted shell does not create grants or bypass authentication.
 

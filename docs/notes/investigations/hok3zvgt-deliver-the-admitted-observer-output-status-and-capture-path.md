@@ -9,8 +9,8 @@ tags: [investigation, protocol, capture]
 
 ## Current resumption
 
-The repaired release `niltempus-eb8be6b503fa8bca3815` is installed and running
-in Sophia Mirror Test, from Sophia `a29663a06` and integration `6aa4dda`.
+The repaired release `niltempus-eb8be6b503fa8bca3815` is installed, from
+Sophia `a29663a06` and integration `6aa4dda`. Its Sophia Mirror Test
 Session `00000001792010055475-11c676e1-c49d-478a-be7b-ec81ad3d539c`
 survived beyond five minutes, including the capture measurement. No native
 stall or fatal failure was recorded during that observation. Kitty remained
@@ -23,12 +23,14 @@ reports two heads. Capture costs and limits are recorded below. The earlier
 CPU/GLX/EGL pixel, lock/unlock, grant and KVM results remain in the acceptance
 audit; deterministic race tests remain distinct from physical results.
 
-The remaining step is to return to the normal **Sophia niltempus Desktop**
-login, remove the temporary Mirror Test entry, then finish the ledger and
-documentation cleanup. The normal login still selects its packaged two-output
-profile. Do not rebuild or repeat the completed capture campaign without a
-new failure or uncovered criterion. No capture probe or quiet-window hold is
-active. The task ledger remains authoritative for closure.
+The operator returned to the normal **Sophia niltempus Desktop** login.
+Live PID 11624 selects the repaired release's packaged `desktop.kdl`, rather
+than the temporary mirror profile. The operator removed
+`/usr/share/wayland-sessions/sophia-mirror.desktop`; its absence was verified.
+The normal login selects its packaged two-output profile. No capture probe or
+quiet-window hold is active. The acceptance audit below records the delivered
+scope and its limits; the task ledger owns completion. Later portal executors,
+input injection and DMA-BUF recording remain separate work.
 
 ## Physical mirror capture and costs, 2026-10-14
 
@@ -205,7 +207,8 @@ No capture probe or quiet-window hold remains active.
 
 The scope is [t319](../plans/jsschoen-converge-public-roles-on-one-9p-core.md#t319)
 and its [t046 capture constraints](../plans/queue-16-portals-and-confined-applications.md#t046).
-The task remains open. The task ledger records t315 complete on October 10 and
+The audited capture scope has acceptance evidence for each requirement below.
+The task ledger records t315 complete on October 10 and
 t318 complete on October 12; this audit does not reopen their acceptance.
 
 | Requirement | Evidence and remaining limit |
