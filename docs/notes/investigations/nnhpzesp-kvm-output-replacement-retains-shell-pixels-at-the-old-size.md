@@ -2,7 +2,7 @@
 id: nnhpzesp
 date: 2026-10-14
 kind: investigation
-status: investigating
+status: resolved
 tags: [investigation, topology, rendering, recovery]
 ---
 # KVM output replacement retains shell pixels at the old size
@@ -21,8 +21,10 @@ It refuses to discard an unrevoked presentation claim. The deterministic gate
 passed and the matched recovery release is installed. niltempus confirmed that
 the new live session survived switching the KVM away and back. The recording
 shows two outputs becoming one, then two again; both retired native owners
-settled without in-flight work or pending cleanup. Normal logout and its final
-presentation/resource cleanup remain to be checked before closing this repair.
+settled without in-flight work or pending cleanup. The subsequent normal logout
+exited successfully, drained native work, and released the recorded renderer
+resources. The owner logged back into the same repaired release. Resume t319
+observer and capture delivery.
 
 ## Evidence
 
@@ -130,8 +132,31 @@ No stale-output-size or fatal error appeared in the inspected log.
 
 At sequence 91440, recording remained running, with zero storage errors,
 discarded records or rotated bytes; 50109 records were suppressed. This live
-check establishes recovery and native-owner retirement, not final presentation
-shutdown. The session has not yet exited, so that separate cleanup check remains.
+check establishes recovery and native-owner retirement. Final shutdown was
+checked separately below.
+
+## Logout and resource disposition
+
+The owner then logged out normally and returned. The tested session exited with
+status 0 and returned to the display manager without emergency handoff.
+Quiescence completed at sequence 174592 with no pending controls, native work,
+transaction, surface or generation. Native suspension drained at 174593; owner 3
+settled at 174595 with no in-flight work or pending cleanup. At 174599, the final
+resource record reports zero snapshot entries and bytes, zero import-cache
+entries, and zero leased frame slots. Shell components reached quiescence at
+174641. The stale-size and retained-presentation shutdown failures did not recur.
+
+The final recorder state is stopped, with zero discarded records, rotated bytes
+or storage errors and 107445 suppressed records. The installed `sophia session
+keep` command preserved this session under
+`~/.local/state/sophia/session-investigations/00000001791986556232-e379ffa5-3f8f-4013-b517-b580c55b318d-90fefc71-3066-44d0-95f3-212cf4fc5afb`.
+
+The new session,
+`00000001791987258468-93af989b-0562-47f4-85a0-f06d6094bdb7`, reports the same
+release commit and binary hash. Its recorder was running at sequence 7583 with
+zero discarded records or storage errors. This acceptance covers the observed
+two-monitor KVM recovery and subsequent normal logout; it does not establish
+every hotplug topology or error-path shutdown.
 
 ## Connections
 

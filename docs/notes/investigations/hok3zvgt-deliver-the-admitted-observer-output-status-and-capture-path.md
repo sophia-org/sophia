@@ -32,8 +32,11 @@ reload, input injection or screenshot is performed by this implementation.
 
 An installed-session KVM failure interrupted this work at 13:38 UTC. Its
 [recovery investigation](nnhpzesp-kvm-output-replacement-retains-shell-pixels-at-the-old-size.md)
-owns the immediate repair. The observer changes were not installed when it
-occurred.
+records the completed repair: the matched release survived an attended KVM
+away/back switch and subsequent normal logout with clean native resource
+disposition. The observer changes were not installed when the failure occurred
+and remain excluded from that release. Resume the immutable renderer readback
+and authorized capture binding described below.
 
 ## Source findings
 
