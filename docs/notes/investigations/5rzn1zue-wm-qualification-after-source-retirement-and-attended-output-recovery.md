@@ -24,8 +24,9 @@ The [trace audit](#resource-comparison-failure-and-trace-audit-2026-10-14)
 now verifies complete protocol exchanges in all four captured arms. It does
 not qualify the unequal resource populations or establish the stall's cause.
 The [resource reporting proposal](#proposed-resource-comparison-decision-2026-10-14)
-is ready for a separate decision. Its six invalid-input/accounting controls
-are rejected. It is not approved and must not authorize further collection yet.
+has now been explicitly approved by niltempus. Its six invalid-input/accounting
+controls are rejected. Prepare the missing loaded pairs and plain idle probes,
+then obtain a fresh host window before collection. Preserve the failed run.
 
 The approved twenty-pair latency result remains qualified. The resource hold
 has been released to Claude and Astra. Reported transfers, text edits and the
@@ -5164,9 +5165,10 @@ blindly, select matching survivors or silently weaken its outcome guard.
 
 ## Proposed resource comparison decision (2026-10-14)
 
-This proposal is not approved. The frozen resource comparison still refuses
-unequal outcome populations. The earlier approval addressed latency percentile
-bounds; it did not approve this resource-method change.
+niltempus explicitly approved this proposal after reviewing its consequences.
+This separate decision changes the frozen resource comparison after failure;
+the original run remains failed under its original rule. The earlier approval
+addressed latency percentile bounds only. No latency budget changes here.
 
 Compare resource use for the same offered workload while retaining each arm's
 actual outcomes. Both arms must admit the same 20,000 ordered move/resize
@@ -5202,7 +5204,8 @@ falsify the coalesced count, corrupt a replacement edge or exceed the queue
 bound. All six are rejected. The proposal package
 `t249-resource-comparison-proposal-20261014-01` has manifest
 `b26aae60a4ccf96aa4d22ce7750d96a130d233c766f592c69dc294a6323db461`.
-Its result is explicitly `proposal_only_not_approved`; it is not acceptance.
+Its preserved result is explicitly `proposal_only_not_approved`; it predates
+this approval and is not acceptance. The approval does not rewrite that artifact.
 
 ## Candidate impact while the resource decision is pending (2026-10-14)
 
