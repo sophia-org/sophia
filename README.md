@@ -4,13 +4,13 @@ Sophia is a secure Linux desktop inspired by Plan 9, with atomic display transac
 
 Window managers and shells talk to Sophia through small file trees served by one shared 9P2000.L core. Each role keeps its own endpoint and its own permissions. You can write one in whatever language you like without touching the compositor.
 
-X11 is a full frontend, not a compatibility layer. Sophia's X server is new code, written from scratch in Rust. It owns X11 resources and delivery rules, while Engine only ever sees surfaces, buffers and layout transactions. No application protocol reaches the rendering core.
+X11 is a full frontend, not a compatibility layer. Sophia's X server is new code, written from scratch in Rust. It owns X11 resources and delivery rules, while Engine only ever sees surfaces, buffers and layout transactions.
 
 The project site is [sophia.gg](https://sophia.gg). If you want to write a window manager, a shell or a whole desktop, start with [Building on Sophia](docs/building-on-sophia.md).
 
 ## Architecture
 
-Each part has one job and the authority to do it:
+Sophia has five main parts:
 
 - **Engine** owns the input devices, the scene graph, frame timing, visual commits, rendering and the display.
 - **The X server** (`sophia-x-authority`) accepts X11 connections, manages resources, enforces protocol rules, and turns client requests into Engine transactions.
@@ -75,7 +75,7 @@ Administration and the metadata broker still use the old socket protocol and wil
 
 ### Files and namespaces
 
-The session builds each identity's socket directory and discovery file from trusted policy, and each endpoint serves its own role tree. When a launched client attaches, it proves its identity, and that identity is fixed for the connection. The server checks permissions on every new operation and on files that are already open. X11 keeps its own admission checks. A kernel mount is a convenience, never a permission.
+The session builds each identity's socket directory and discovery file from trusted policy, and each endpoint serves its own role tree. When a launched client attaches, it proves its identity, and that identity is fixed for the connection. The server checks permissions on every new operation and on files that are already open. X11 keeps its own admission checks. Mounting a path doesn't grant permission to use it.
 
 The roles share file operations, not a record format. Small commands and discovery use lines of text; window-manager and shell traffic keeps compact binary records. Sophia borrows Plan 9's namespaces and file interface but not its draw protocol, because Engine already does the drawing.
 
@@ -85,7 +85,7 @@ The portal service decides whether a transfer may happen, from a few fixed facts
 
 A resize is a transaction: the new size and the matching pixels commit together. If a client stalls, Engine keeps showing the last complete frame until the new one is ready.
 
-### A window manager that can't snoop
+### A window manager without client data
 
 The window manager gets anonymous layout nodes and returns proposals. It can't see XIDs, window titles, process IDs, namespace identities or clipboard contents. It runs outside the rendering loop, so you can change layout policy without touching presentation or input.
 
