@@ -114,6 +114,24 @@ then answer `ESTALE`. Output withdrawal or replacement independently invalidates
 both files without revoking another output's grant. A new incarnation requires
 a strictly greater output generation.
 
+Every `PortalCaptureFrame` requires a reservation from a shared
+`CaptureRetentionBudget`. One budget permits at most 128 MiB and eight frames;
+owners may choose smaller limits. Pending reservations count toward both
+limits. Completing a reservation requires exactly the reserved byte length;
+cancellation or an invalid completion releases the charge. Sharing a frame
+between source and recipient does not charge it twice. Its charge remains
+until the last frame reference is dropped, including after revocation if an
+owner still retains it. Old wire fids hold identities, so they do not retain
+the old frame after recipient replacement. Capacity refusal preserves existing
+bindings.
+
+Session must share one budget across recipients and reserve before scheduling
+readback. This primitive bounds portal custody, not separate references held
+by the native renderer or scanout leases. Native in-flight images, mirror-head
+readbacks and cancellation cleanup still need scheduling bounds in the Session
+integration; constructing separate budgets per recipient would not establish
+a session-wide bound.
+
 Retained reads take the common execution fence, then the source-generation
 guard, then the recipient binding guard. Each read copies at most 64 KiB while
 holding these guards; it does not wait for transport progress. Output withdrawal

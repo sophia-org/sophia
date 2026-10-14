@@ -2,7 +2,7 @@
 //! Renderer pixels and native completion identity have separate qualification.
 use sophia_9p::{ConnectionId, Errno, OpenFlags, export::*};
 use sophia_portal::{
-    capture_frame::PortalCaptureFrame,
+    capture_frame::{CaptureRetentionBudget, PortalCaptureFrame},
     client_files::{PortalClientFiles, PortalClientNode as Node},
     coordinator::*,
     execution_fence::PortalExecutionFence,
@@ -44,18 +44,33 @@ impl PortalPolicy for Policy {
     }
 }
 fn image(output: u64, incarnation: u64, presentation: u64, byte: u8) -> Arc<PortalCaptureFrame> {
+    budgeted_image(
+        &CaptureRetentionBudget::default(),
+        output,
+        incarnation,
+        presentation,
+        byte,
+    )
+}
+fn budgeted_image(
+    budget: &CaptureRetentionBudget,
+    output: u64,
+    incarnation: u64,
+    presentation: u64,
+    byte: u8,
+) -> Arc<PortalCaptureFrame> {
     Arc::new(
-        PortalCaptureFrame::new(
-            OutputCaptureFrameInfo {
+        budget
+            .reserve(OutputCaptureFrameInfo {
                 output: OutputId::from_raw(output),
                 output_generation: incarnation,
                 presentation_generation: presentation,
                 width: 256,
                 height: 256,
-            },
-            vec![byte; 256 * 256 * 4].into(),
-        )
-        .unwrap(),
+            })
+            .unwrap()
+            .complete(vec![byte; 256 * 256 * 4].into())
+            .unwrap(),
     )
 }
 struct View {
@@ -66,8 +81,15 @@ struct View {
 }
 impl View {
     fn new(output: u64, fence: PortalExecutionFence) -> Self {
+        Self::with_budget(output, fence, &CaptureRetentionBudget::default())
+    }
+    fn with_budget(
+        output: u64,
+        fence: PortalExecutionFence,
+        budget: &CaptureRetentionBudget,
+    ) -> Self {
         let source = Arc::new(OutputCaptureSource::new(OutputId::from_raw(output), 9).unwrap());
-        assert!(source.publish(image(output, 9, 1, 17)));
+        assert!(source.publish(budgeted_image(budget, output, 9, 1, 17)));
         let objects = Arc::new(PortalObjectRecipient::new(NamespaceId::from_raw(2)));
         let coordinator = PortalTransferCoordinator::start(
             Arc::new(Policy),
@@ -122,6 +144,36 @@ impl View {
         let mut handle = self.files.open(node, OpenFlags(0))?;
         self.files.read(node, &mut handle, 0, count)
     }
+}
+
+#[test]
+fn shared_budget_follows_source_and_recipient_custody_across_replacement() {
+    let bytes = 256 * 256 * 4;
+    let budget = CaptureRetentionBudget::new(2 * bytes, 2).unwrap();
+    let mut view = View::with_budget(7, PortalExecutionFence::default(), &budget);
+    assert_eq!(view.transfer(1, 9), Ok(()));
+    let old = view.node(b"frame");
+    let next = budgeted_image(&budget, 7, 9, 2, 29);
+    let info = next.info();
+    assert!(view.source.publish(next));
+    assert_eq!(budget.usage().unwrap().bytes, 2 * bytes);
+    assert!(budget.reserve(info).is_none());
+    assert_eq!(view.read(&old, 4), Ok(ReadOutcome::Ready(vec![17; 4])));
+
+    // Replacing the recipient frees the old image even while its fid exists.
+    assert_eq!(view.transfer(2, 9), Ok(()));
+    assert_eq!(view.read(&old, 4), Err(Errno::ESTALE));
+    assert_eq!(budget.usage().unwrap().bytes, bytes);
+    let other = View::with_budget(8, PortalExecutionFence::default(), &budget);
+    assert_eq!(budget.usage().unwrap().bytes, 2 * bytes);
+    assert!(budget.reserve(info).is_none());
+    view.source.withdraw();
+    // Revoked pixels still occupy storage until recipient custody releases them.
+    assert_eq!(budget.usage().unwrap().bytes, 2 * bytes);
+    view.objects.revoke();
+    assert_eq!(budget.usage().unwrap().bytes, bytes);
+    drop(other);
+    assert_eq!(budget.usage().unwrap().bytes, 0);
 }
 
 #[test]
@@ -385,7 +437,13 @@ fn invalid_or_repeated_presentations_never_replace_current_pixels() {
     let pixels = view.node(b"frame");
     assert_eq!(view.read(&pixels, 4), Ok(ReadOutcome::Ready(vec![17; 4])));
     let info = image(7, 9, 1, 17).info();
-    assert!(PortalCaptureFrame::new(info, vec![0; 1].into()).is_none());
+    assert!(
+        CaptureRetentionBudget::default()
+            .reserve(info)
+            .unwrap()
+            .complete(vec![0; 1].into())
+            .is_none()
+    );
 }
 
 struct WrongImageSource {

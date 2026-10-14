@@ -48,9 +48,49 @@ The renderer worker now carries requested image bytes with its exact native
 frame and scanout lease. The native output owner returns them only from matching
 displayed custody; mirrors require every enabled head to converge. Capture
 forces composition for its exact queued frame, including direct candidates.
-Session request admission, publication into the generation-bound portal source,
-aggregate retention bounds and CLI remain unconnected. The tests use supplied
+Portal frames now require a reservation from a shared retention budget, capped
+at 128 MiB and eight frames. Reservations and retained frames share the cap;
+source/recipient sharing does not double-charge an image, and replacement
+releases its charge once the last frame reference is gone. Session request
+admission, publication into the generation-bound portal source, reservation
+before native readback, native custody bounds and CLI remain unconnected. The tests use supplied
 completion callbacks; they do not establish physical KMS capture acceptance.
+
+The next integration must authorize the target separately from its observer
+request capability. Use one Session budget and the existing lock fence.
+`run_native_pending_output` stages and submits in one call, so admission after
+that call is too late to mark the exact queued composition for readback. Reserve
+and mark it before submission, then publish only matching displayed custody.
+All enabled mirror heads need accounting even though the recipient receives
+only the primary image. Withdraw the portal source when native owner or head
+targets change; a renderer frame number alone is not an output incarnation.
+
+## Portal retention budget
+
+The frame constructor now consumes a reservation rather than accepting
+unaccounted pixels. Reservations validate the existing 64 MiB per-image record
+limit and atomically charge both bytes and frame count. Invalid completion,
+cancellation and final frame release return capacity. Pressure leaves the
+current recipient object unchanged. An old fid holds only identity and cannot
+keep an image charged after recipient replacement. Revocation alone does not
+free retained storage, so its charge remains until the owner releases it.
+
+Tests exercise simultaneous reservations, independent byte/count limits,
+cancellation, malformed storage, shared references, two output sources using
+one budget, and replacement through the real common coordinator. These establish
+the portal storage primitive. They do not bound native scanout references or
+prove that Session shares one budget; that wiring remains required.
+
+The full `cargo-slot sophia cargo xtask check` passed, including strict Clippy
+and the existing isolated graphics checks. All nine capture-binding tests and
+three retention tests passed. Changing the capacity refusal from either limit
+to both limits made the independent-limit test fail; restoring the check made
+both suites pass again. Logs are under
+`~/.local/state/sophia/development-evidence/t319-capture-retention/`:
+`workspace-check.log`, `negative.log` and `targeted-final.log`. The workspace
+log SHA-256 is
+`6f798b8d535601c8cf73a1f85e633acd654af8302102709c73a872c451e814ee`.
+No live installation or physical capture qualification was performed.
 
 ## Source findings
 
