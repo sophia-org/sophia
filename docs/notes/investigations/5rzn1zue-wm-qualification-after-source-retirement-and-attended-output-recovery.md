@@ -41,8 +41,9 @@ qualifies its intended host condition. See the [refusal and revised host hold](#
 Campaign05 collected fresh pairs after every local agent acknowledged the
 explicit hold, then stopped at its first 120 Hz loaded pair. Preserve its
 [scheduling-delay refusal](#exclusive-window-scheduling-delay-2026-10-14).
-Campaign06 is collecting the four missing pairs under the approved comparison
-and a renewed host hold. Keep the same accounting and numerical limits. The earlier
+Campaign06 completed the four missing pairs, and the approved combined latency
+audit passed. Full resource capture is now running under the renewed host hold.
+Keep the same accounting and numerical limits. The earlier
 partial replacement and combined audit preparation is superseded and must not run.
 
 Campaign05 has passed all five pairs in each idle condition, with identical
@@ -64,7 +65,8 @@ did not establish a scheduling fix. niltempus has now explicitly approved the
 Audit every retained campaign05 pair under that rule and collect the four
 missing 120 Hz loaded pairs under a renewed host hold. Preserve the sealed
 original failure. The candidate source-impact audit below is complete; latency
-qualification, resources and final closure remain open.
+qualification now passes under the approved rule; resources and final closure
+remain open. See the [combined result](#approved-latency-result-and-resource-preflight-2026-10-14).
 
 Use the [row dispositions](#remaining-row-dispositions-2026-10-13) and
 [t249 acceptance criteria](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249).
@@ -131,8 +133,9 @@ with status 1 after its first pair. The corrected campaign
 `t249-campaign-20261014-03` exited with status 1 after its nineteenth pair.
 The fresh `t249-campaign-20261014-05` exited with status 1 after its sixteenth
 pair. Its process handle is terminal. The approved supplement
-`t249-campaign-20261014-06` is running; verify its live handle before resuming.
-No build or live-session operation is running.
+`t249-campaign-20261014-06` also ended; its four pairs passed. Full resource
+capture is running in `t249-resource-campaign-20261014-01`; verify its live
+handle before resuming. No build or live-session operation is running.
 
 ## Stopping point and resume procedure (2026-10-12)
 
@@ -5030,6 +5033,51 @@ After the supplement succeeds, obtain the final host-window review and run
 its combined twenty-pair audit; the original campaign05 remains sealed and
 failed under its original rule. Resource outcome-accounting checks and the
 separate preflight, full capture, analysis and sealing sequence remain required.
+
+## Approved latency result and resource preflight (2026-10-14)
+
+The four supplement pairs passed and exited successfully at 10:42:25 UTC.
+Its sealed manifest is
+`a29142c74723c522ab1fb4af82f61b3f46a24141483ae5fe3f74093a66c00b68`.
+The combined audit independently rechecked all twenty pairs, their raw ledgers,
+ordinary statistics, conservative bounds, offered inputs, queue/accounting
+requirements, load records, source/binary hashes and both host windows. The
+original campaign05 remains sealed and failed under its original comparison.
+Package `t249-approved-latency-20261014-01` has manifest
+`627626c9902b2bf9977461ce46690d8f6930f6fce9ef9cb4746bac8260110eef`.
+
+| Condition | Passing pairs | Highest file p99 upper bound | Largest p95 addition bound | Largest p99 addition bound |
+| --- | ---: | ---: | ---: | ---: |
+| 60 Hz idle | 5 | 0.563773 ms | 0.003687 ms | 0.006262 ms |
+| 120 Hz idle | 5 | 0.531381 ms | 0.040758 ms | 0.020388 ms |
+| 60 Hz CPU load | 5 | 0.508518 ms | 0.010009 ms | 0.026520 ms |
+| 120 Hz CPU load | 5 | 0.489852 ms | 0.005071 ms | 0.028885 ms |
+
+The loaded 120 Hz condition includes two coalesced frame moves in retained pair
+1 and two coalesced file resizes in supplement pair 5. All four remain in the
+rank bounds. The latter arm's observed maximum is 25.737978 ms; its conservative
+resize p99 upper bound is 0.484312 ms. Maxima are reported, not hidden by the
+percentile result. All other measured arms have no coalescing. No timeout,
+disconnect, rejected or unresolved work was accepted.
+
+Claude's final report identifies no prohibited host work during the renewed
+window. It records light text reads/edits, small remote SSH/API commands and a
+few seconds of repository grep at 10:37:40, with no activity after 10:37:52.
+Astra remained idle after acknowledging the hold. These are activity reports,
+not proof of exclusive system use. Both window reviews are retained in the
+combined audit. The hold continues for resource measurements.
+
+The resource preflight completed all four 240-update arms and both two-second
+idle samples. Every update settled; paired outcomes match. Wire analysis
+correlated 250 explicit frame exchanges or 4,731 9P exchanges per connection,
+including setup and intentional teardown. Removing a reply failed the control
+in every arm. Allocation/copy counters, process identities, teardown timing,
+trace integrity and lossless compression checks passed. The preflight manifest
+is `cbae0d9f6d6be42a9342b297d674576b7f351e56a2376e765f440bbc4509f541`.
+
+Full capture now runs the instrumented 20,000-update pair in each condition,
+then plain idle samples. Profiling timing is not latency acceptance. Resource
+analysis, sealing, the final coverage record and task completion remain open.
 
 ## Connections
 
