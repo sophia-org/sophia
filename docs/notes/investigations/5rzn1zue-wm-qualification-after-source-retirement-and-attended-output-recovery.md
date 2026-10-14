@@ -58,8 +58,9 @@ p95/p99 differences are 0.010009/0.026520 ms. Recorded load is at least
 The first 120 Hz CPU-load pair failed exact outcome agreement: frames coalesced
 two moves, while files settled every update. Numeric budgets passed. That
 condition, the final latency audit, resource profiles and final candidate
-binding remain open. Diagnose the legacy worker's scheduling delay before
-choosing another measurement; do not rerun until one happens to pass.
+binding remain open. The [short scheduling diagnostic and comparison proposal](#scheduling-diagnostic-and-comparison-proposal-2026-10-14)
+did not establish a scheduling fix. The proposed comparison change is not
+approved; do not apply it or rerun until one happens to pass.
 
 Use the [row dispositions](#remaining-row-dispositions-2026-10-13) and
 [t249 acceptance criteria](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249).
@@ -4917,6 +4918,61 @@ cores on this host. Affinity does not reserve them. Before another acceptance
 run, investigate scheduling with a bounded diagnostic and record any prospective
 method change. Preserve this refusal and the numeric budgets; a lucky repeat or
 silently dropping coalesced observations cannot qualify t249.
+
+## Scheduling diagnostic and comparison proposal (2026-10-14)
+
+A bounded diagnostic compared four and twelve physical cores at nice 10 and
+nice 0, using the same release binaries and 2,400 updates per arm at 120 Hz.
+Two load workers ran per four available cores. The observer stayed on CPU 4,
+outside each measured CPU set. All eight arms completed, and each pair had
+identical outcomes with no coalescing. The largest observed settlement latency
+was 1.291248 ms. Wider-core cases had smaller sampled worker run-queue increments,
+but this short run cannot establish a fix for the rare scheduling delay. No
+acceptance retry follows from it. Claude reported no competing local work;
+the host hold remained released. Package
+`t249-scheduling-diagnostic-20261014-01` has manifest
+`a8474d709a5e1d37f62ca4925f131df8d7235952563ce96057097b7279ef0ce4`.
+
+The frozen comparison requires identical realised outcomes after removing four
+clock fields. The plan requires identical input, coalescing policy and complete
+accounting, but allows coalescing to be recorded. Independent scheduling can
+change which updates coalesce even with the same input and policy. Requiring
+identical realised replacements makes a rare delay in the old transport refuse
+comparison even when files settle every update within the existing budgets.
+
+The following replacement is **proposed, not approved**:
+
+- Keep every admitted update in the percentile denominator. Retain the full
+  accounting and report coalesced counts; do not assign them invented settlement
+  times or omit them from the comparison.
+- Bound each coalesced update's unobserved individual latency between zero and
+  infinity. Compare the file percentile's upper bound against the frame
+  percentile's lower bound. Require the same +1 ms p95, +2 ms p99 and absolute
+  file-p99 limits. Refuse comparison if the bounds cannot establish them.
+- Require identical offered identities, modes and geometries, the same policy
+  and owners, valid replacement chains, bounded queues and complete settlement
+  accounting. Preserve timeout, disconnect, rejection and unresolved-work
+  refusals and the existing deterministic controls. Report settled-only measured
+  distributions separately from the bounds.
+- Reanalyse every retained campaign05 pair without selecting favourable runs.
+  If approved, collect the four missing 120 Hz loaded pairs in their prescribed
+  alternating order under a newly confirmed host window. Keep the original
+  failed campaign sealed and visibly failed under its original rule. The
+  combined audit must still prove all twenty pairs before resource collection.
+
+The proposal's calculation covers all sixteen retained pairs. For the failed
+move pair, the conservative p95 and p99 differences are 0.000631 and 0.003046 ms;
+file p99 is 0.446580 ms. These are proposal results, not acceptance. Exact-data,
+missing-data monotonicity and insufficient-observation controls pass. The bounds
+describe uncertainty about individual coalesced outcomes; they are not measured
+settlements for those updates. Package `t249-quantile-bound-proposal-20261014-01`
+has manifest
+`209053088815ffba54aa6ffd595d2c99de74ef6843d7034e92af41d6c42e16ca`.
+
+This changes the frozen comparison after a failure, although no numeric budget
+changes. Obtain a separate recorded decision before using it for acceptance.
+Resource measurements, final candidate binding and the independent physical
+acceptance boundary remain unchanged.
 
 ## Connections
 
