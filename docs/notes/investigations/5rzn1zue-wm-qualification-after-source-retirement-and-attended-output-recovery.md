@@ -27,6 +27,13 @@ The [resource reporting proposal](#proposed-resource-comparison-decision-2026-10
 has now been explicitly approved by niltempus. Its six invalid-input/accounting
 controls are rejected. Prepare the missing loaded pairs and plain idle probes,
 then obtain a fresh host window before collection. Preserve the failed run.
+The approved supplement is now running in
+`t249-resource-supplement-20261014-01`, process session `53328`; verify that
+handle before taking action. Claude confirmed the renewed hold from 11:53:56 UTC
+and relayed Astra's acknowledgement at 11:54 UTC. The supplement runs the two
+missing loaded pairs, then the two plain idle probes. No rebuild is involved.
+The frozen preparation manifest is
+`2837a73dd23c18095f2e9ca77dc80faced507cc16854f08a95004039b21f2458`.
 
 The approved twenty-pair latency result remains qualified. The resource hold
 has been released to Claude and Astra. Reported transfers, text edits and the
@@ -159,9 +166,10 @@ with status 1 after its first pair. The corrected campaign
 `t249-campaign-20261014-03` exited with status 1 after its nineteenth pair.
 The fresh `t249-campaign-20261014-05` exited with status 1 after its sixteenth
 pair. Its process handle is terminal. The approved supplement
-`t249-campaign-20261014-06` also ended; its four pairs passed. Full resource
-capture is running in `t249-resource-campaign-20261014-01`; verify its live
-handle before resuming. No build or live-session operation is running.
+`t249-campaign-20261014-06` also ended; its four pairs passed. The first resource
+capture stopped and remains sealed as failed. Its approved supplement is the
+only live measurement, as recorded at the start of this section. No build or
+live-session operation is running.
 
 ## Stopping point and resume procedure (2026-10-12)
 
