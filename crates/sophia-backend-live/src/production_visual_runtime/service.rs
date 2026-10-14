@@ -1,5 +1,21 @@
 use super::*;
 
+pub(super) fn native_service_phase(
+    runtime: (bool, bool),
+    all_heads: (bool, bool),
+    primary_lane: Option<(bool, bool)>,
+    retirement_protected: bool,
+) -> OutputNativeFramePhase {
+    // A protected successor cannot be submitted until the old cohort retires.
+    // Keep servicing its siblings even after the primary becomes idle.
+    let heads = if retirement_protected {
+        all_heads
+    } else {
+        primary_lane.unwrap_or(all_heads)
+    };
+    reduce_output_native_frame_phase(runtime.0 || heads.0, runtime.1 || heads.1)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum LiveProductionCursorPresentation {
     HardwarePlane,
@@ -285,25 +301,28 @@ impl LiveProductionVisualRuntime {
                 let in_flight = self
                     .outputs
                     .output_native_scanout_in_flight(index)
-                    .ok_or("production output in-flight state was not registered")?
-                    || if primary_lane {
-                        native_scanout.primary_scanout_in_flight(output)
-                    } else {
-                        native_scanout.output_in_flight(output)
-                    };
+                    .ok_or("production output in-flight state was not registered")?;
                 let cleanup_pending = self
                     .outputs
                     .output_native_cleanup_pending(index)
-                    .ok_or("production output cleanup state was not registered")?
-                    || if primary_lane {
-                        native_scanout.primary_cleanup_pending(output)
-                    } else {
-                        native_scanout.output_cleanup_pending(output)
-                    };
+                    .ok_or("production output cleanup state was not registered")?;
                 Ok(OutputFrameServiceObservation {
                     output,
                     primary: output == primary,
-                    native_phase: reduce_output_native_frame_phase(in_flight, cleanup_pending),
+                    native_phase: native_service_phase(
+                        (in_flight, cleanup_pending),
+                        (
+                            native_scanout.output_in_flight(output),
+                            native_scanout.output_cleanup_pending(output),
+                        ),
+                        primary_lane.then(|| {
+                            (
+                                native_scanout.primary_scanout_in_flight(output),
+                                native_scanout.primary_cleanup_pending(output),
+                            )
+                        }),
+                        native_scanout.output_retirement_protected(output),
+                    ),
                     // Native work owed to this output only. A waiting software
                     // present is reported once on the request instead, so the
                     // reducer can tell "this output owes a frame" apart from

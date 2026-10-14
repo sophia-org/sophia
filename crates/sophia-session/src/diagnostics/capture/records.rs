@@ -8,6 +8,9 @@ pub fn reduced_record(line: &str) -> Option<String> {
         return None;
     }
     // Judged whole, ahead of the shared key filter, which would drop `detail`.
+    if name == "sophia_native_stall" {
+        return super::native_stall::reduce(fields);
+    }
     if super::renderer_worker::record(name) {
         return super::renderer_worker::reduce(name, fields);
     }

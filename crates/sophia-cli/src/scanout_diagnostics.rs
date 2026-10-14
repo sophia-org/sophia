@@ -41,6 +41,7 @@ impl<S: Subscriber> Layer<S> for ScanoutDiagnostics {
                     line.split_whitespace().next(),
                     Some(
                         "sophia_live_atomic_test"
+                            | "sophia_native_stall"
                             | "sophia_live_layout_probe"
                             | "sophia_shell_native_binding"
                             | "sophia_shell_native_completion"

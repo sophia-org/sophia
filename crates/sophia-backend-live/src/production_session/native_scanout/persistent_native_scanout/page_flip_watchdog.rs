@@ -63,6 +63,16 @@ impl LiveProductionNativeScanout {
                 .session
                 .page_flip_poller_cumulative_diagnostics();
             tracing::error!(
+                target: "sophia_scanout_evidence",
+                "sophia_native_stall schema=1 head={} output={} age_ms={} retirements={} ledger_pending={} completion_fence={:?} completion_mode={:?} out_fence_retirements={} late_events={} poller_pending={} decoded={} rejected={}",
+                head.head.raw(), head.output.id.raw(), age.as_millis(),
+                head.retirements, head.pending_callback.is_some(),
+                head.completion_fence_status, head.completion_mode,
+                head.out_fence_retirements, head.late_page_flip_events,
+                diagnostics.pending_callbacks, cumulative.decoded_callbacks,
+                cumulative.rejected_callbacks,
+            );
+            tracing::error!(
                 "sophia_live_native_page_flip_stall schema=3 status=hard_stall output={} head={} index={} group={} age_ms={} generation={} submissions={} retirements={} callbacks={} ever_retired={} callback_serial={} in_flight_ticks={} submitted_sequence={} peer_age_ms=[{}] completion_mode={:?} completion_fence={:?} completion_ledger_pending={} out_fence_retirements={} late_page_flip_events={} completion_fence_errors={} poller_pending={} poller_routes={} poller_last_read={:?} poller_last_decoded={} poller_last_rejected={} poller_read_calls={} poller_would_block_reads={} poller_read_failures={} poller_decoded_total={} poller_rejected_total={} poller_emitted_total={} action=terminate_session",
                 head.output.id.raw(),
                 head.head.raw(),

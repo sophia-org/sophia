@@ -9,6 +9,29 @@ tags: [investigation, protocol, capture]
 
 ## Current resumption
 
+The repaired release was installed and the operator retried mirroring. Kitty
+launched and both heads displayed the desktop, but session
+`00000001792008593350-af959301-fa3c-4b03-8af9-8940db87543b`
+then failed: `native page flip exceeded the 500 ms hard-stall boundary on head 2
+after 551 retirements`. No capture request had been launched. This is not mirror
+acceptance, and the first repair did not establish a stable mirrored session.
+
+The next repair addresses a distinct scheduling gap: a queued Present selected
+the primary-only service lane after primary completion, hiding an unfinished
+sibling with a protected retirement. The reducer then selected Present rather
+than PollRetirement. `mirror-service-red.log` reproduces that wrong decision;
+the new observation tests pass with all-head service while retirement is
+protected. Unprotected repaints retain primary pacing. The live timeout's exact
+cause is not yet proved: the existing detailed watchdog event was not retained
+by daily-session diagnostics. A bounded `sophia_native_stall` record now forwards
+completion-fence, callback-ledger and poller facts for a recurrence. The 500 ms
+boundary is unchanged. The first full gate passed tests and lint, then rejected
+the test module's registration location. Moving that registration into the
+existing external harness passed the focused tests and layout check.
+`mirror-service-check-final.log` records the passing full rerun: workspace tests,
+strict Clippy, layout, tooling, buffer-age and GLX/EGL graphics checks.
+Do not retry mirroring before this candidate is validated and installed.
+
 Mirror qualification found a production failure before any capture: the
 temporary mirrored session displayed both heads, then exited when the operator
 launched Kitty. Session
@@ -30,7 +53,7 @@ profile's Session/Hagia preflight pass. The evidence symlink
 `mirror-present-release` names its Nix output. `~/install-sophia-fix` installs
 that exact output and then replaces the temporary mirror launcher/profile with
 versions naming the repaired release. Installation needs the operator's sudo
-credential; neither the current release nor the mirror entry has switched yet.
+credential; the operator installed it and retried, with the timeout above.
 
 The temporary login entry is `/usr/share/wayland-sessions/sophia-mirror.desktop`
 (Sophia Mirror Test). Its launcher and profile are under the evidence directory's

@@ -13,6 +13,8 @@ mod policy_composition;
 mod popout_removal;
 #[path = "lifecycle_tests/resources.rs"]
 mod resources;
+#[path = "frame_service_observation.rs"]
+mod service_observation;
 #[path = "lifecycle_tests/startup.rs"]
 mod startup;
 #[path = "lifecycle_tests/target.rs"]

@@ -4,6 +4,7 @@ mod capture;
 mod commands;
 mod failure;
 mod input_device;
+mod native_stall;
 mod output_profile;
 mod output_resolution;
 mod recovery;
