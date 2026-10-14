@@ -5203,3 +5203,27 @@ bound. All six are rejected. The proposal package
 `t249-resource-comparison-proposal-20261014-01` has manifest
 `b26aae60a4ccf96aa4d22ce7750d96a130d233c766f592c69dc294a6323db461`.
 Its result is explicitly `proposal_only_not_approved`; it is not acceptance.
+
+## Candidate impact while the resource decision is pending (2026-10-14)
+
+A fresh audit binds signed Sophia `9b14d6ae26d7aea51ab341b29c120db491a37005`,
+Hagia `2ba92d984d0317ced163c1137d9641fddfce226d` and niltempus runner
+`ce877ec8f0a39364b37774cb9b01ac7d55ed7e73` to the qualified implementation pins.
+All three worktrees were clean. Sophia differs only in this investigation and
+the owning plan; Hagia differs only in its plan and external-test README; the
+runner is unchanged. Signatures verify. The audit rechecks 790 files across
+the 43-case pair, generic gate, supporting checks, pair audit and final SDK gate,
+and checks the runner hash and exact distinct case list.
+
+Package `t249-candidate-impact-20261014-02` has manifest
+`0ff400b126f8b83d82cf816e28a51cd31cf768778e41bfe997cc50f74266d71d`.
+This supports evidence reuse for unchanged code. It is not new test execution,
+resource acceptance or final task completion. The resource proposal remains
+unapproved; no new measurement or host hold was started.
+
+Hagia's README separately requires reviewed dependency and toolchain inventories
+for a release build. Its roadmap and h006 plan retain that obligation. The
+release-mode comparator includes a test-only restored transport and does not
+by itself qualify an ordinary production release. Do not close h006 solely
+because the paired t249 evidence is complete. Its release obligation and t250's
+attended acceptance must retain their own evidence and task dispositions.
