@@ -23,11 +23,42 @@ The session is
 qualification logs are under
 `~/.local/state/sophia/development-evidence/t319-session-capture/`.
 
-Next are the attended lock and KVM checks. The xtask capture probe has bounded
+The attended lock/unlock check passed in launch 62. Both live handles became
+stale 152 ms after the request, before grant expiry and without an intervening
+capture request. Capture was refused while locked (132 denied requests).
+After unlock, the old handles stayed stale and a fresh image was readable;
+presentation generation advanced from 128144 to 129289. The probe exited zero.
+`physical-lock-launch62.log` and `physical-lock-launch62-identity.log` preserve
+the result. This run did not sample pending native cancellation
+(`pending_before_cancel=false`); that race remains covered by deterministic tests.
+
+The KVM is on the larger DisplayPort monitor (output 1), as corrected by the
+operator. Launches 63–64 targeted the wrong output and were stopped; they are
+not acceptance evidence. The corrected KVM capture check passed in launch 66:
+both old handles became stale 242 ms after the request, without an intervening
+request. Output generation advanced from 1 to 3, one request was unavailable,
+and a new image was readable while old handles remained stale. Launch 65's
+status watcher observed `recovering`/`quarantined` with retained topology 2,
+then exited with `9P socket: broken pipe`. A fresh watcher (launch 67) read
+thirty available/stable snapshots with topology 4 and owner generation 3.
+Logs are `physical-kvm-launch{65,66,67}.log` and
+`physical-kvm-launch-identities.log` in the evidence directory above.
+The disconnect follows the existing inspection fence: recovery restarted the
+WM (events 1292212 and 1292228); `poll_public_restart` fences inspection before
+replacement, and `Shared::fence` invalidates the old generation. The contract
+in `docs/sophia-wm-inspection.md` explicitly revokes old attachments on WM
+replacement and forbids silent reconnection. `physical-kvm-recovery-events.log`
+preserves the correlation. Launch 65 is an interrupted observation, not a
+passing continuous watch; launch 67 independently authenticates recovered
+status. Together they establish recovery across the required authority change.
+No production transport change is needed. Physical mirror capture and its costs
+remain open.
+
+The xtask capture probe has bounded
 `lock` and `output-change` modes, paired with `output-status-probe` for recovery
 observations. No test changes topology or injects input. Launch 19 reached its
-three-minute limit without a lock event and has exited. Wait for the operator's
-“ready” before arming another run; the user has already been asked. No attended
+three-minute limit without a lock event and has exited. Launch 62 supersedes
+that unattended attempt with the result above. No attended
 probe is running now, and no reinstall is needed for these tools.
 
 Keep the evidence distinctions exact. Requesting another capture already
@@ -40,20 +71,21 @@ cover late native completion, backpressure and partial replies. Output recovery
 must additionally yield a strictly newer output incarnation and leave both old
 handles stale. Do not infer recovery from the stable baseline.
 
-t319 remains open for attended lock/cancellation, output loss and replacement,
-recovery status, and mirror qualification. Capture-on/off costs have now been
+t319 remains open for mirror qualification.
+Capture-on/off costs have now been
 measured for the ordinary two-output desktop, as recorded below; mirror costs
 and larger-output costs are not established. The last committed
 full gate and the combined attended-probe gate passed; the latter is recorded
 in `attended-probes-check.log`. The authentication refactor retained the passing
 physical replacement result in launch 21 (81451 → 81454).
 
-The acceptance audit below leaves only attended qualification: lock/unlock,
-KVM loss/return with recovery status and a new output incarnation, then mirror
-capture and its costs. Those checks need the operator present. The requested
-“ready” has not arrived; launch 19 expired, and all later probes have exited.
-Do not restart the three-minute lock loop or alter the daily display layout
-while waiting. No build, capture probe or quiet-window hold remains active.
+The operator completed lock/unlock and KVM loss/return. Next qualify mirror
+capture and its costs. A validated temporary desktop profile is prepared at
+`mirror-preparation/mirror-desktop.kdl` under the evidence directory, with an
+unchanged backup at `mirror-preparation/original-desktop.kdl`. It mirrors HDMI
+onto the DisplayPort primary with `fit`; it has not been installed. Arrange a
+new attended session before activating it, then restore the daily profile after
+qualification. No build, capture probe or quiet-window hold remains active.
 
 ## Acceptance evidence audit, 2026-10-14
 
@@ -68,9 +100,9 @@ t318 complete on October 12; this audit does not reopen their acceptance.
 | CLI image, dimensions and presentation identity | Physical captures pass on both configured outputs. The larger output also completed forty validated transfers in the cost run. This does not establish a mirror capture. |
 | Known CPU and accelerated pixels | The physical CPU, GLX and EGL pattern checks each matched 82,800 visible RGBA pixels. The GPU renderer was the Radeon RX 7900 GRE. Occluded rows were excluded from the pixel comparison. |
 | Crop, occlusion and cursor semantics | The [recipient contract](../../portal-client-files.md#image-extent-occlusion-and-cursor) now declares the full primary-head image, visible composition, clipping and omission of Session's pointer sprite. Source inspection follows `queue_output_capture`, `compose_native_head_frames_from_sources`, `output_scene_snapshot_from_committed_in_view` and `read_composition_snapshot`: the native scene receives no cursor, and readback copies the whole target and reverses its rows. This documents current behavior, not a new rendering path. |
-| Lock refusal and no completion after lock | Deterministic tests cover delayed native completion, lock during collection, delivery rechecks and real socket backpressure, including a partial reply. The prepared live probe has no attended result: launch 19 timed out without a lock event. The physical gate remains open. |
-| Retained handles, cancellation and replacement | Physical grant replacement and expiry pass. Session and portal tests cover output replacement, collection cancellation and no unlock revival. KVM loss/return must still prove live stale handles, a fresh output incarnation and independent replacement access. |
-| Bounded status and recovery | The admitted live baseline passes. The codec and Session tests cover bounded fields and separation from retained topology. Physical unavailable/recovering/available observations remain open; an available-only baseline is insufficient. |
+| Lock refusal and no completion after lock | Launch 62 proves live-handle revocation before expiry, refusal while locked, no revival of old handles and fresh capture after unlock. It did not sample pending native cancellation. Deterministic tests cover delayed native completion, lock during collection, delivery rechecks and real socket backpressure, including a partial reply. |
+| Retained handles, cancellation and replacement | Physical grant replacement and expiry pass. Launch 66 proves KVM loss/return revokes live handles before expiry and provides an independently readable replacement with output generation 1 → 3. Session and portal tests cover collection cancellation and no unlock revival. |
+| Bounded status and recovery | Launch 65 observed available → recovering/quarantined with retained topology 2, then its connection was fenced during WM replacement, as required by the inspection contract. Fresh authenticated launch 67 observed available/stable with topology 4 and owner generation 3. These are separate observations across an authority change, not a continuous watch. The codec and Session tests cover bounded fields and separation from retained topology. |
 | Mirror disclosure | The native accessor checks every enabled head's frame identity, displayed custody and converged group before returning the primary image. Existing custody and mirror lifecycle tests do not substitute for the pending physical mirror capture. |
 | Retention and costs | The contract bounds image size, count and shared budgets; budget/custody and pressure tests pass. The ordinary two-output desktop's off/on/on/off measurement is recorded below. Mirror costs have not been measured. |
 | No added input or descriptor authority | The observer selection admits inspection and screen capture, not an operator or driver recipe. No XTEST request was introduced. These files carry bounded RGBA bytes and records, not descriptors; DMA-BUF recording remains the separate deferred kind. |
