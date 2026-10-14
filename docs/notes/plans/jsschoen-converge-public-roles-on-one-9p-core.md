@@ -111,6 +111,10 @@ must precede t289. Do not claim universal negotiation from a supported-client
 list, reopen accepted device tests without a named gap, or block indefinitely
 on upstream changes. Full t069 implementation retains its separate task.
 
+The [October 14 review](../investigations/ikvvl6an-review-device-negotiation-gaps-before-architecture-acceptance.md)
+records the current source inventory and bounded experiments. It retains the
+normal-client and physical recovery limits without reopening accepted D1 work.
+
 ## Observer delivery sequence (historical)
 
 On October 14, after t249/t250 completion, niltempus explicitly prioritized the
