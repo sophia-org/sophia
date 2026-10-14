@@ -19,16 +19,17 @@ window, moved it and resized it successfully in this same session. The retained 
 of two heads, authentication checking and unlock. These observations do not
 claim every workflow on both heads.
 
-The non-disruptive release audit and rehearsal preparation pass. The next
-attended checks concern rejected-profile recovery, shutdown and whole-release
-rollback. The operator-triggered WM restart has passed: the session logged
+The non-disruptive release audit and attended seven-phase rehearsal pass.
+Whole-release rollback remains unobserved. The operator-triggered WM restart
+has also passed: the session logged
 `restart_requested` at boot millisecond 436341656, then `restarted epoch=2
 restarts=1 preserved_layout=true` at 436341898. The operator confirmed the
 desktop remained normal and the restart was not noticeable. The 242 ms between
 those records is an event interval, not a measured visual interruption.
-The existing rehearsal must run after logout on tty4; it deliberately restarts
-the WM, rejects a profile and logs out. No live restart, profile change,
-shutdown or release switch was performed during this audit.
+After explicit agreement to log out, the operator ran the existing rehearsal
+on tty4 through `~/t250-check`. All seven phases passed and the session exited
+0. The rehearsal used a private profile copy and the exact sealed release.
+No release switch has been performed by this audit.
 
 Do not use `tools/desktop rollback` now: `previous` names the faulty
 `niltempus-a986fef4f64b032edc11`. The explicitly verified fallback is
@@ -78,13 +79,21 @@ failed campaign is relabeled and no benchmark is rerun merely for this audit.
 
 ## Remaining acceptance and prepared commands
 
+The attended rehearsal at `20261014T130523Z` passed startup readiness, WM
+restart, unchanged-profile reload, rejected-profile reload, restored-profile
+reload, restart after rollback and logout. `candidate.txt` records session
+exit 0; `phases.ndjson` contains exactly seven passing phases and `replies.tsv`
+records the matching control outcomes. Raw evidence is
+`t250-rehearsal-niltempus-e8818395183f05263ccc-9p2000.L-20261014T130523Z`
+under the development-evidence directory. This establishes runtime profile
+refusal and recovery, not a separate invalid-startup experiment.
+
 Floating, moving and resizing the active Kitty window passed by operator
 observation on this candidate. This is an attended functional check, not a
 numeric input-to-photon measurement. The subsequent requested WM restart
 preserved the layout in the session log and appeared normal to the operator.
-Exact-release startup/refusal, rejected-profile rollback and shutdown still
-need the attended rehearsal;
-September 26's earlier successful rehearsal does not substitute for it.
+The new exact-release rehearsal supplies profile recovery and shutdown
+evidence independently of September 26's historical result.
 Physical pointer-drag/presentation evidence remains distinct from t249's
 control-path budgets. Whole-release rollback needs an actual compatible relaunch.
 
