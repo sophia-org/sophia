@@ -23,8 +23,12 @@ its small accounting preflight at both rates. The [prospective method](#prospect
 is recorded. The **full latency campaign stopped after its first pair**:
 file resize coalesced 33 updates while frames coalesced none. The numeric
 percentile checks passed, but the unequal populations refuse the comparison.
-Diagnose the recorded 155.8 ms stall before another campaign; preserve this
-failure and the unchanged budgets. The independent SDK/export rerun now passes
+The stall did not reproduce in the bounded fsync diagnostic. One [follow-up
+campaign with scheduling observations](#follow-up-campaign-with-scheduling-observations-2026-10-14)
+stopped after its first pair. Its scheduler samples localize the recurrent
+stall to Hagia's kernel write wait; the [capture correction](#memory-log-capture-correction-2026-10-14)
+removes persistent log writes from the timed path. Preserve both failed runs
+and the unchanged budgets. The independent SDK/export rerun now passes
 both cases. Resource profiles and final exit binding remain after latency
 qualification. The complete t249/h006 exit has not passed.
 
@@ -88,7 +92,9 @@ is `t249-campaign-20261013-01`; its driver exited with status 1 after preserving
 both arms. The separate [fsync diagnostic and final SDK gate](#fsync-diagnostic-and-final-sdk-gate-2026-10-13)
 are complete. Both traced arms settled all 20,000 updates, with no reproduced
 stall. The failed campaign remains unqualified; the diagnostic is not an
-acceptance retry. No measurement, build or live-session operation is running.
+acceptance retry. The follow-up campaign `t249-campaign-20261014-02` exited
+with status 1 after its first pair. No measurement, build or live-session
+operation is running.
 
 ## Stopping point and resume procedure (2026-10-12)
 
@@ -4666,6 +4672,41 @@ scheduler trace. Both transports receive the same observer.
 The frozen method, observer source and control are saved before execution in
 `t249-campaign-20261014-02`. This campaign still must pass all twenty pairs;
 the earlier diagnostic and passing SDK gate substitute for none of them.
+Execution started with method SHA-256
+`6b3cd0fe6ba0aeec1e15b74ef873efae5a988195ed05e2e9435015b364f5300c`.
+
+## Memory log capture correction (2026-10-14)
+
+The monitored campaign stopped after its first 60 Hz idle pair. Frames
+coalesced four move updates; files settled all 20,000 updates. All numeric
+percentile checks passed, but the complete outcomes differed, so the pair
+failed. The remaining nineteen pairs did not run.
+
+The frame arm's longest service delay was 51.105498 ms. During that delay,
+Hagia repeatedly appeared in state D with kernel wait `do_get_write_access`;
+its CPU runtime and runnable-wait counters stayed unchanged. Session's
+transport worker waited in `unix_stream_read_generic`. The other three frame
+service delays above 10 ms also coincide with that peer write wait. Clock
+alignment uses millisecond checkpoint timestamps and observer clock brackets,
+so the saved analysis labels it approximate rather than claiming exact
+syscall timing.
+
+The runner directs stdout and stderr to an ext4 evidence log. A live descriptor
+inspection in the file arm confirms that path; other persistent writable
+evidence is not open in the peer, apart from the inherited unused archive
+lease. Normal checkpoint files live on isolated tmpfs. This evidence supports
+capture-log writes as the source of the observed wait. It does not retroactively
+prove the cause of the first, unobserved file stall.
+
+For the next campaign, capture the same stdout/stderr bytes in an anonymous
+memory file and copy them to evidence only after each arm exits. Keep normal
+logging, checkpoint persistence, both release binaries, workload, scheduling
+observer, CPU conditions and every acceptance rule unchanged. A child control
+preserved all 1,048,580 bytes from stdout and stderr in order. Refuse a captured
+log exceeding 64 MiB. The correction changes evidence storage, not production
+behavior or the latency definition. Freeze this method in
+`t249-campaign-20261014-03`; retain both earlier failures and stop at the first
+failing complete pair again.
 
 ## Connections
 
