@@ -18,10 +18,11 @@ recovery regression before continuing t319 capture work.
 Signed fix `1e2c9e50a` withdraws shell frames whose output disappeared or changed
 pixel size, both during native resume and during a quiescent topology rebind.
 It refuses to discard an unrevoked presentation claim. The deterministic gate
-passed and the matched recovery release is built. Installation needs the owner's
-sudo authentication: run `~/t327-install` on crunch, then log in to the new
-release. No fix is installed yet. An attended KVM away/back check and review of
-the resulting session/cleanup evidence remain required.
+passed and the matched recovery release is installed. niltempus confirmed that
+the new live session survived switching the KVM away and back. The recording
+shows two outputs becoming one, then two again; both retired native owners
+settled without in-flight work or pending cleanup. Normal logout and its final
+presentation/resource cleanup remain to be checked before closing this repair.
 
 ## Evidence
 
@@ -106,13 +107,31 @@ passed. Observer commit `146344c48` is excluded from this release.
 
 Built store path:
 `/nix/store/v2fpkdiv3ml6v5n22hy8vz1rjyd7mdk0-niltempus-desktop-niltempus-9fcf63fe095175ee564d`.
-The install command stopped because sudo requires a password and a terminal.
-`current` remains `niltempus-e8818395183f05263ccc`, and `previous` remains
-`niltempus-7b8051ace95f8581d57e`. The installer created a GC root for the new
-store path before reaching sudo; the prepared artifact remains available.
+The first install attempt stopped because sudo requires a password and a terminal.
+The owner subsequently installed the release; `current` now resolves to
+`niltempus-9fcf63fe095175ee564d`. The installer created a GC root for the new
+store path.
 The short `~/t327-install` launcher invokes the normal installer with that
 exact store path and passes `bash -n`. Build, checksum and failed-install logs
 are retained beside the deterministic evidence.
+
+## Attended recovery
+
+niltempus confirmed that the session survived switching the KVM away and back.
+The running session is
+`00000001791986556232-e379ffa5-3f8f-4013-b517-b580c55b318d`, with Sophia
+`1e2c9e50a0eddd5b26286a8530bfa6a288e62e47` and binary SHA-256
+`74c84c80398c565d34322115b5d35b4266677db830738c406defde5e0b80d07d`.
+Its retained `events.0.log` records native owner 1 settled at sequence 11934,
+one output resolved at 11937, owner 2 settled at 12197, and two outputs committed
+under owner 3 at 12377. Both retirements report `in_flight=false` and
+`cleanup_pending=false`. Subsequent events present shell content on both outputs.
+No stale-output-size or fatal error appeared in the inspected log.
+
+At sequence 91440, recording remained running, with zero storage errors,
+discarded records or rotated bytes; 50109 records were suppressed. This live
+check establishes recovery and native-owner retirement, not final presentation
+shutdown. The session has not yet exited, so that separate cleanup check remains.
 
 ## Connections
 
