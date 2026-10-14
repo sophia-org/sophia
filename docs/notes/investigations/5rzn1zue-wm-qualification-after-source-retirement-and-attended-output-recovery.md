@@ -23,6 +23,9 @@ The failed package's manifest is
 The [trace audit](#resource-comparison-failure-and-trace-audit-2026-10-14)
 now verifies complete protocol exchanges in all four captured arms. It does
 not qualify the unequal resource populations or establish the stall's cause.
+The [resource reporting proposal](#proposed-resource-comparison-decision-2026-10-14)
+is ready for a separate decision. Its six invalid-input/accounting controls
+are rejected. It is not approved and must not authorize further collection yet.
 
 The approved twenty-pair latency result remains qualified. The resource hold
 has been released to Claude and Astra. Reported transfers, text edits and the
@@ -5158,3 +5161,45 @@ Next, review how to measure resource costs without conflating observer overhead
 and unequal completed work. Preserve identical offered workloads, full accounting,
 all failures and the existing latency decision. Do not retry this campaign
 blindly, select matching survivors or silently weaken its outcome guard.
+
+## Proposed resource comparison decision (2026-10-14)
+
+This proposal is not approved. The frozen resource comparison still refuses
+unequal outcome populations. The earlier approval addressed latency percentile
+bounds; it did not approve this resource-method change.
+
+Compare resource use for the same offered workload while retaining each arm's
+actual outcomes. Both arms must admit the same 20,000 ordered move/resize
+identities and geometries, with the same scene, policy, binaries, affinity,
+priority and load. Keep the existing validator, including replacement chains,
+unique requests, bounded queues and zero rejected, unresolved or unoffered work.
+Recompute settled and coalesced totals from the ledger rather than trusting
+summary counters. No missing offer or reply is excused by this proposal.
+
+Report each arm's raw resource totals and its admitted, settled and coalesced
+counts together. A cost divided by 20,000 is cost per admitted offer, not cost
+per completed update. Do not select matching survivors, invent the cost of an
+unperformed update, or describe unequal populations as equal completed work.
+Keep Rust workload intervals, Nim whole-process counters, protocol connection
+totals and plain idle measurements separate. Retain all copy/wake coverage
+limits. Use the qualified plain campaign for latency and uninstrumented CPU
+observations; traced resource timings cannot establish production latency or
+an uninstrumented CPU speedup.
+
+If approved, retain both existing idle pairs without selection and collect the
+missing 60 Hz and 120 Hz CPU-load pairs in the original alternating order,
+followed by the two plain idle probes. Obtain a fresh host window first. Keep
+20,000 updates per instrumented arm and the existing binaries, trace capture,
+allocation/copy counters and protocol checks. Stop on any accounting, protocol,
+load or capture failure; do not retry automatically. Audit all four conditions,
+record the reported host activity, and preserve the original failed package
+unchanged. This proposal supplies a resource comparison with explicit outcome
+limits; it does not declare a resource speedup or waive final candidate binding.
+
+A disposable verifier checks both retained pairs under the proposed input and
+accounting rule. Controls change a geometry, remove an offer or settlement,
+falsify the coalesced count, corrupt a replacement edge or exceed the queue
+bound. All six are rejected. The proposal package
+`t249-resource-comparison-proposal-20261014-01` has manifest
+`b26aae60a4ccf96aa4d22ce7750d96a130d233c766f592c69dc294a6323db461`.
+Its result is explicitly `proposal_only_not_approved`; it is not acceptance.
