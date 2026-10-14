@@ -94,6 +94,11 @@ and propose their queue placement; this audit alone authorizes no broad repair
 or closure of t031/t032. Read-only inspection and existing evidence suffice
 unless a named uncertainty needs a focused reproduction.
 
+The [October 14 audit](../investigations/jxcqbd04-audit-remaining-topology-and-delivery-obligations-before-architecture-acceptance.md)
+records each disposition at `8a12afc1f`, including the confirmed blocking
+route-lease sends and the unresolved queued-geometry and historical-site
+questions. It proposes bounded follow-up work without promoting t031/t032.
+
 ## t329
 
 Review t069's remaining device-negotiation exit before Engine optimization.
