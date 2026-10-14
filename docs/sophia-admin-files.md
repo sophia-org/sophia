@@ -97,8 +97,10 @@ invoke them.
 
 ## Proposed file lifecycle
 
-These rules guide the next export slice. They are not implemented by the codecs
-and need cancellation/replay modeling before the runtime migration.
+These rules guide the next export slice. They are not implemented by the codecs.
+The [bounded lifecycle model](../validation/specula/admin-file-lifecycle/README.md)
+checks cancellation, replay, status retention and unsettled execution custody.
+Runtime integration, admission and restart evidence remain required.
 
 | File | Open mode | Read or write behavior |
 | --- | --- | --- |

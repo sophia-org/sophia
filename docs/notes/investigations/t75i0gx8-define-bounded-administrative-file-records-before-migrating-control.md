@@ -23,12 +23,18 @@ types. This is not a running administrative export, and
 the legacy service remains active. No endpoint, default or installed session
 has changed. t254 remains open.
 
-Next model the proposed file lifecycle, then connect the shared-core export to
-the existing ControlTicket claim/settlement owner. Preserve HostDomain checks
-at attach and dispatch. The draft specifies snapshot reads, complete offset-zero
-writes, bounded pending/outcome custody and no automatic replay. Model
-cancellation/replay and terminal custody before changing those owners; a line
-parser does not prove their temporal invariants.
+The [bounded lifecycle model](../../../validation/specula/admin-file-lifecycle/README.md)
+now passes its safety hunt and design trace; three deliberately faulty variants
+and one false-settlement trace fail as expected. It preserves the distinction
+between a published result and settled execution. It is not a runtime trace or
+a proof of service restart recovery.
+
+Next connect the shared-core export to the existing ControlTicket claim/settlement
+owner. Preserve HostDomain checks at attach and dispatch, per-connection request
+watermarks through wire resets, bounded snapshot pins, and transport/command
+deadlines. Implement and test runtime cancellation and late-completion fencing;
+extend the model for service restart before claiming that gate. No endpoint,
+default or installed session has changed.
 
 ## Evidence
 
@@ -66,11 +72,20 @@ are bounded before allocation. Literal vectors, malformed records and a full
 The [proposed lifecycle](../../sophia-admin-files.md#proposed-file-lifecycle)
 keeps status reads non-consuming and makes a newer accepted invocation
 acknowledge the previous outcome. Complete control lines avoid a second partial
-write accumulator. This remains a proposal pending a temporal model and runtime
-tests, especially flush versus dispatch, capacity refusal, retained snapshots,
+write accumulator. The bounded temporal model now passes; runtime
+tests remain, especially flush versus dispatch, capacity refusal, retained snapshots,
 indeterminate outcomes and restart. No lifecycle claim follows from codec tests.
 
 ## Validation and remaining work
+
+The lifecycle model built on `5cea0350b` passed both final searches: 970,253
+distinct states at depth 44, with no queued states remaining. It covers two
+connections, two request identities per connection, two catalog generations
+and one execution slot. The valid eleven-event design trace passed; the false
+settlement trace could not complete. Replay, premature reclaim and consuming
+status reads each violated their intended invariant. Results, exact commands,
+limits and the source-to-action map are retained in the model directory.
+No production Rust changed in this model slice, so no rebuild was needed.
 
 The three focused protocol tests pass. They cover literal bytes, invalid
 records, exact size boundaries and every outcome, including Indeterminate.
