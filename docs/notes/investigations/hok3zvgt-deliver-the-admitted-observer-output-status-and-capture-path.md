@@ -41,10 +41,62 @@ must additionally yield a strictly newer output incarnation and leave both old
 handles stale. Do not infer recovery from the stable baseline.
 
 t319 remains open for attended lock/cancellation, output loss and replacement,
-recovery status, mirror convergence, and capture-on/off costs. The last committed
+recovery status, and mirror qualification. Capture-on/off costs have now been
+measured for the ordinary two-output desktop, as recorded below; mirror costs
+and larger-output costs are not established. The last committed
 full gate and the combined attended-probe gate passed; the latter is recorded
 in `attended-probes-check.log`. The authentication refactor retained the passing
 physical replacement result in launch 21 (81451 → 81454).
+
+## Capture costs in the daily session, 2026-10-14
+
+The installed release above was measured without changing affinity, topology or
+desktop applications. Four roughly twenty-second periods ran in off/on/on/off
+order. Each on period completed twenty admitted captures of output 1, the
+larger configured output (2560×1440). All forty processes exited successfully
+and reported exactly 14,745,600 RGBA bytes. No screenshot image was archived.
+
+| Period | Captures | Session CPU, % of one core | Session RSS at end, MiB | Sampled peak RSS, MiB |
+| --- | ---: | ---: | ---: | ---: |
+| Off, first | 0 | 6.309 | 193.590 | 193.590 |
+| On, first | 20 | 10.792 | 222.191 | 222.660 |
+| On, second | 20 | 10.926 | 222.117 | 222.715 |
+| Off, final | 0 | 6.310 | 194.629 | 222.117 |
+
+The on periods used 4.48–4.62 percentage points more of one CPU core than the
+off periods at roughly one screenshot per second. Sampled peak RSS was
+29.125 MiB above the initial baseline; the final reading was 1.039 MiB above
+it. The final off-period peak includes the preceding capture's retained image.
+Process lifetimes, including sandbox startup, authentication and transfer,
+were 478–549 ms, median 513.5 ms, nearest-rank p95 539 ms. These are supervised
+process lifetimes, not renderer-only latency or launch-RPC latency.
+
+Per-client DRM resident VRAM peaks were unchanged across the four periods.
+Client 4359's resident GTT peak rose by 14,745,600 bytes during capture. The
+raw client records are retained; shared allocations prevent treating a sum
+across clients as unique GPU memory. No whole-system or GPU-wide memory bound
+is inferred from process RSS.
+
+This was a live workload, not an isolated idle benchmark. Two DOSBox processes
+each used about 5.6–5.8% of one core throughout; Codex used about 2.0–2.1% and
+the sampler about 1.8%. The sampled process inventories contained no cargo,
+rustc, Typst, git, scp or tar processes. Sampling cannot exclude short activity
+between observations. Muse had reached its usage limit and did not acknowledge
+the requested quiet window; no hold is claimed. The matching off periods and
+stable principal background processes support the comparison on this run,
+not a universal latency or overhead guarantee.
+
+Evidence is under the capture evidence directory in
+`capture-cost-20261014T192705Z/`: `experiment.py`, `result.json`, `analysis.json`
+and `launches.log`. The disposable experiment samples Session CPU/RSS about
+every 100 ms and background processes and DRM clients about once per second.
+It checks Session process identity and validates every capture against the
+launch journal afterward. `result.json` has SHA-256
+`37913fefbeebc6f654f94648dc0cc817d0e3fe3f5e50c115615f5fddc45cda22`;
+the experiment has SHA-256
+`bf0eb520b911cb7dd52b899b47986d49ef537d29de97d07cc8d9993037e0d504`.
+This closes the ordinary configured-desktop measurement, not attended lock,
+output replacement, mirrors, or the distinct larger-image limits.
 
 ## Physical pixel and grant checkpoint, 2026-10-14
 
