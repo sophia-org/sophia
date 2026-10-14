@@ -9,6 +9,25 @@ tags: [validation, protocol, policy]
 
 ## Current resumption
 
+The full resource collector has stopped with a comparison failure. At 120 Hz
+idle, files settled 19,999 updates and coalesced one; frames settled all 20,000.
+Both account for every offer, with no rejection or unresolved update. The
+60 Hz idle pair settled all 20,000 updates in both arms. The frozen resource
+method requires identical outcome populations, so this run cannot qualify the
+resource comparison. Loaded profiles and the final plain idle probes did not
+run. Preserve `t249-resource-campaign-20261014-01` and its failure review;
+analyze the retained traces before deciding on another measurement. Do not
+retry automatically or weaken the comparison after the result.
+The failed package's manifest is
+`dec77d32f0aad91105dd9fa9fde6446af88d2f2bb8855d97c319e23c2311b0b1`.
+
+The approved twenty-pair latency result remains qualified. The resource hold
+has been released to Claude and Astra. Reported transfers, text edits and the
+owner-authorized Git push at 10:58:26.59–10:58:28.47 UTC are retained with the
+resource evidence; their presence does not establish the cause of coalescing.
+Resource interpretation and final candidate binding still prevent t249 closure.
+The paragraphs below retain the preceding campaign history.
+
 The [DMA admission join](#dma-admission-and-qualified-pair-2026-10-13) now passes
 with real Hagia, actual GPU authority intake, composed retirement and Session's
 DMA recorder. Image-promotion and admission-retirement controls fail their named
