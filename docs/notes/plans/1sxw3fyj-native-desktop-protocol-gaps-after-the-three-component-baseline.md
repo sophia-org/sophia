@@ -9,7 +9,7 @@ tags: [plan, shell, protocol, developer-experience]
 The [audit](../investigations/vle7mt47-native-desktop-capability-audit-separates-contracts-from-client-ui.md)
 and [developer map](../../native-desktop-capabilities.md) separate platform
 contracts from UI choices. [todo.md](../../../todo.md) alone owns task state.
-These candidates do not authorize implementation or new desktop applications.
+Task promotion lives in the queue; this plan does not authorize new desktop applications.
 A minimal independent probe is sufficient; change a reference UI only when
 needed to prove a generic contract.
 
@@ -54,6 +54,14 @@ composition, stale edits, focus replacement, output loss, cancellation, bounded
 text and backpressure controls. No production keyboard/IME UI, toolkit
 dependency or unrestricted injection is included.
 
+The October 14 Kitty review adds press/repeat/release, physical key identity
+versus committed text, modifier and shortcut semantics, and held keys across
+focus replacement or teardown to this exit. Audit existing contracts first;
+record which cases are already covered and specify any missing semantics with
+generic deterministic probes. CSI encoding and terminal negotiation stay in
+clients. niltempus promoted this contract work before t289; it does not add a
+production IME or expand t320's injection authority.
+
 ## t112
 
 **Native accessibility boundary.** Owner: Session authorization and client
@@ -86,8 +94,9 @@ required. Promotion must name the first bounded service slice.
 
 Close existing popout/lifecycle obligations before broadening their consumers.
 t109 is the first new presentation foundation; notification/background provider
-joins retain t046/t049. t110–t113 are independent contract candidates, not an
-implied sequential desktop build. Do not duplicate these tasks in client repos.
+joins retain t046/t049. The October 14 promotion places t111 after t106 and
+before portal acceptance and optimization. t110, t112 and t113 remain separate
+candidates. Do not duplicate these tasks in client repos.
 
 Every promoted implementation needs bounded malformed/stale/denied tests,
 cross-client failure isolation, exact release, documented wire and an independent

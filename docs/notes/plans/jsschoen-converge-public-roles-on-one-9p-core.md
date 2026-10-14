@@ -73,6 +73,13 @@ blocker that needs an explicit queue change before optimization. The broader
 GPU negotiation exit may require upstream client changes and is not an
 unbounded prerequisite for t289. Task order and dependencies remain in todo.md.
 
+The October 14 Kitty/Ghostty follow-up adds cursor acceptance (t067) and the
+native text/input contract (t111) before optimization. It strengthens t046's
+transfer, notification and status exits and t324's credential controls. The
+[protocol review](../investigations/u399qgtv-kitty-protocols-as-interoperability-evidence-for-sophia-portals.md)
+records the sources and boundaries. Graphics workload coverage belongs to t289
+after these architecture gates; terminal escape parsing remains client-owned.
+
 ## t328
 
 Audit the remaining t031/t032 authority and delivery gaps against current
@@ -534,6 +541,12 @@ a device-free test list covering accept, refuse, revoke, lock and provenance,
 and no implementation. This precedes any application API under t316's
 successor work.
 
+The Kitty keyboard comparison must account for press, repeat and release,
+modifier state and held keys during focus replacement, cancellation and lock.
+Document how these cases relate to routed input without confusing physical key
+events with text commits. Reuse t111's text boundary when available; neither
+task imports terminal encoding or authorizes additional injection rights.
+
 ## t324
 
 The [OSC 7501 investigation](../investigations/0photrwd-osc-7501-reports-program-status-through-admitted-notification-clients.md)
@@ -563,6 +576,13 @@ escalation. Record credential storage and intentional delegation limits, and
 prove revocation of retained authority. Remote authentication and application
 frontend behavior remain separately scoped; an authenticated connection alone
 does not establish either. Keep X application admission unchanged.
+
+The Kitty/Ghostty review adds explicit controls: caller-supplied names cannot
+become trusted prompt identities; terminal permission passwords and one-time
+paste tokens cannot serve as Sophia credentials; and cancellation must be
+bound to the admitted principal and live request, with foreign, stale and
+post-revocation attempts refused. A correlation ID or recent timestamp alone
+does not authorize an operation. t046 proves these rules at portal execution.
 
 ## Connections
 

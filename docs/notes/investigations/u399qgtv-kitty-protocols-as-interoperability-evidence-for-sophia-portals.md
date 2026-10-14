@@ -19,8 +19,11 @@ The research is complete. The approved portal cases are part of t046's existing 
 Protocol translation remains in terminal clients; Sophia owns the admitted
 underlying transfers. Generic clients prove Sophia contracts. Named terminal
 interoperability belongs in external integration repositories. The broader
-review below distinguishes useful acceptance cases from proposed new features;
-it does not promote every terminal extension into the architecture backlog.
+review below now feeds the critical path by niltempus's subsequent approval:
+t067 cursor acceptance, t111 input/text contracts, t320 input-design review,
+t324 authority controls and t046 portal acceptance precede t289. Graphics
+workloads belong to t289. The queue owns execution order; terminal-local
+features remain outside Sophia's core scope.
 
 ## Evidence
 
@@ -70,7 +73,9 @@ continue to apply; this note grants no extra input or remote-file authority.
 
 ## Broader review
 
-These are recommendations for existing owners, not newly promoted tasks.
+The initial recommendations below were promoted by niltempus on October 14,
+including the Ghostty findings. Their owning plans now carry measurable exits;
+the queue promotes t067 and t111 and makes them prerequisites of t289.
 
 | Protocol | Useful lesson for Sophia | Boundary and owner |
 | --- | --- | --- |
@@ -112,7 +117,7 @@ This is specification and code-informed research, not a live interoperability
 result. t046 owns the executable acceptance and any contract amendments needed
 to implement these cases. Do not infer a working provider from policy reducer
 types. Reuse accepted capture evidence; no new capture campaign is required.
-The broader protocol review above is research, not task promotion.
+The research is complete; promotion does not imply implementation or acceptance.
 
 ## Connections
 

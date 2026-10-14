@@ -36,6 +36,14 @@ Exit:
   hand-run live samples. The operator's live check remains the final
   acceptance.
 
+The October 14 [Kitty/Ghostty review](../investigations/u399qgtv-kitty-protocols-as-interoperability-evidence-for-sophia-portals.md)
+adds image placement, reuse, deletion, resizing and animation to the workload
+review after the architecture gates. Record which cases existing generic
+fixtures cover; add bounded coverage for missing cases and retain matched
+results, including a no-change outcome. Named-terminal runs belong in external
+integration tooling. They supplement the accepted benchmark; they do not move
+terminal parsing or image-cache policy into Engine or reopen t319 capture.
+
 ## Direct-capture import experiment (2026-10-04)
 
 On installed master `1f35fb527`, the renderer imports a source for validation,

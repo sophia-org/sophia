@@ -34,6 +34,15 @@ shapes from application identity or pointer position.
 
 ## Acceptance
 
+On 2026-10-14, niltempus promoted this work before Engine optimization after
+the [Kitty protocol review](u399qgtv-kitty-protocols-as-interoperability-evidence-for-sophia-portals.md).
+First audit the current implementation; the historical report does not prove
+the defect persists. Reuse accepted evidence where it covers these exits.
+Generic tests must cover shape replacement, leaving a target, focus/window
+changes and owner teardown without retaining another client's cursor. Kitty's
+OSC 22 stack and restoration are external interoperability probes: the terminal
+owns that stack, and Sophia presents the resulting application cursor.
+
 In an installed session, hovering over a hyperlink that requests a hand cursor
 must show that cursor. Leaving the link must restore the cursor appropriate to
 the new target. Repeat the transition and move between application windows to

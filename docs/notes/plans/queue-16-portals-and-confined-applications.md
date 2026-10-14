@@ -79,6 +79,17 @@ a local file. Test stale and foreign notification actions and failed-transfer
 effects on retained clipboard data. Terminal protocols remain client-side;
 Sophia's generic conformance tests must not depend on a named terminal.
 
+The October 14 follow-up makes the broader transfer findings acceptance
+requirements too. Preserve the complete MIME offer through executor custody
+and prove selection of a non-first type. Bind user-initiated paste grants to
+one recipient, selection generation and transfer; reject reuse after completion,
+replacement or revocation. For file handoff, prove destination confinement,
+directory/link handling, byte bounds and cleanup after cancellation or failure.
+Cancellation must reject foreign and stale requests. These cases include
+Ghostty's prompt-attribution lesson and the historical clipboard truncation
+report; retain the OSC 7501 status cases above. Terminal passwords, labels and
+request IDs supply no Sophia authority.
+
 The [2026-10-09 screenshot report](../investigations/id869143-x11-drawable-readback-and-an-operator-capture-path.md)
 adds an operator and agent use case: one authorized image of a selected window
 or composed output, including accelerated content. A minimal CLI/provider
