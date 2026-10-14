@@ -61,6 +61,10 @@ condition, the final latency audit, resource profiles and final candidate
 binding remain open. The [short scheduling diagnostic and comparison proposal](#scheduling-diagnostic-and-comparison-proposal-2026-10-14)
 did not establish a scheduling fix. The proposed comparison change is not
 approved; do not apply it or rerun until one happens to pass.
+The comparison-method decision has been requested from niltempus and remains
+unanswered. No dependent measurement or acceptance reanalysis may proceed on
+the assumption that silence approves it. The candidate source-impact audit
+below is complete; latency qualification, resources and final closure remain open.
 
 Use the [row dispositions](#remaining-row-dispositions-2026-10-13) and
 [t249 acceptance criteria](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249).
@@ -4973,6 +4977,18 @@ This changes the frozen comparison after a failure, although no numeric budget
 changes. Obtain a separate recorded decision before using it for acceptance.
 Resource measurements, final candidate binding and the independent physical
 acceptance boundary remain unchanged.
+
+While that decision was pending, a source-impact audit verified signed Sophia
+`75dea9c521fd202eb025b840affc79269ffa7d71`, Hagia
+`2ba92d984d0317ced163c1137d9641fddfce226d` and niltempus
+`ce877ec8f0a39364b37774cb9b01ac7d55ed7e73` against the qualified pins. All three
+worktrees were clean. Sophia differed only in this investigation; Hagia differed
+only in its plan and `tests/external/README.md`; the external runner was unchanged.
+The audit verified 790 files across the retained pair audit, 43-case external
+pair, generic gate, supporting checks and final SDK gate. This establishes source
+impact and evidence integrity, not a new execution or a latency/resource pass.
+Package `t249-candidate-impact-20261014-01` has manifest
+`1fd0ab248bd70469e530d29919369ff1bfe7e5f2c8fbb3300c004ab50f2a76a7`.
 
 ## Connections
 
