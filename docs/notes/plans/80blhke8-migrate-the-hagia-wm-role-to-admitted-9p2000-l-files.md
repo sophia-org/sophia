@@ -273,12 +273,14 @@ transport and uses existing revoke/settle/restart barriers before a fresh owner
 is admitted.
 
 Sophia's mandatory tests remain WM-neutral. Hagia policy assertions and real
-Hagia lifecycle pairing belong to Hagia's optional `tools/sophia_pairing` gate.
-Private Session joins use an isolated pinned Sophia revision plus a recorded,
-hashed test-only source overlay; they never claim an unmodified Sophia checkout
-or add a production test API. Generic protocol, admission, reducer, replay and
-backend tests remain in Sophia. Pairing must list and run each required test,
-refusing missing or zero-test runs.
+Hagia lifecycle assertions belong to Hagia's `tests/external` sources. The
+external niltempus `tools/wm_lifecycle.rs` runner mounts those sources into an
+isolated pinned Sophia archive with a recorded, hashed test-only overlay. The
+older `tools/sophia_pairing` gate remains historical; it does not qualify the
+current SDK candidate. These private Session joins never claim an unmodified
+Sophia checkout or add a production test API. Generic protocol, admission,
+reducer, replay and backend tests remain in Sophia. Pairing must list and run
+each required test, refusing missing or zero-test runs.
 
 ### Working arrangement
 
