@@ -38,10 +38,28 @@ passed, but exact outcomes differed. Later coordination established Git packing,
 bulk transfers and short multithreaded PDF builds during the supposed quiet
 window. Preserve all nineteen measured pairs as diagnostic evidence; none
 qualifies its intended host condition. See the [refusal and revised host hold](#loaded-comparison-refusal-and-host-hold-2026-10-14).
-Campaign05 now collects all twenty pairs afresh after every local agent
-acknowledged the explicit hold. Keep the same binaries, workload, load,
-accounting and numerical limits. The earlier partial replacement and combined
-audit preparation is superseded and must not run.
+Campaign05 collected fresh pairs after every local agent acknowledged the
+explicit hold, then stopped at its first 120 Hz loaded pair. Preserve its
+[scheduling-delay refusal](#exclusive-window-scheduling-delay-2026-10-14).
+No measurement is running and the host hold is released. Keep the same
+accounting and numerical limits; no automatic retry is scheduled. The earlier
+partial replacement and combined audit preparation is superseded and must not run.
+
+Campaign05 has passed all five pairs in each idle condition, with identical
+outcomes and no coalesced updates. The highest file p99 across those pairs is
+0.563773 ms at 60 Hz and 0.531381 ms at 120 Hz. The largest file-minus-frame
+p95/p99 differences are 0.003687/0.006262 ms at 60 Hz and
+0.040758/0.020388 ms at 120 Hz. These are interim results from the retained
+`progress.json`; the final raw-ledger and host-window audit remains required.
+All five 60 Hz CPU-load pairs also pass, with identical outcomes and no
+coalescing. Their highest file p99 is 0.508518 ms; the largest file-minus-frame
+p95/p99 differences are 0.010009/0.026520 ms. Recorded load is at least
+1.995631 CPU seconds per wall second in every arm, above the required 1.5.
+The first 120 Hz CPU-load pair failed exact outcome agreement: frames coalesced
+two moves, while files settled every update. Numeric budgets passed. That
+condition, the final latency audit, resource profiles and final candidate
+binding remain open. Diagnose the legacy worker's scheduling delay before
+choosing another measurement; do not rerun until one happens to pass.
 
 Use the [row dispositions](#remaining-row-dispositions-2026-10-13) and
 [t249 acceptance criteria](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249).
@@ -106,8 +124,9 @@ stall. The failed campaign remains unqualified; the diagnostic is not an
 acceptance retry. The follow-up campaign `t249-campaign-20261014-02` exited
 with status 1 after its first pair. The corrected campaign
 `t249-campaign-20261014-03` exited with status 1 after its nineteenth pair.
-The fresh `t249-campaign-20261014-05` is running; verify its live process handle
-before resuming. No build or live-session operation is running.
+The fresh `t249-campaign-20261014-05` exited with status 1 after its sixteenth
+pair. Its process handle is terminal. No build, measurement or live-session
+operation is running.
 
 ## Stopping point and resume procedure (2026-10-12)
 
@@ -4860,6 +4879,44 @@ successful terminal campaign, obtain a fresh host-window review and run
 load checks must pass before the revised resource collector will start.
 Resource preflight, missing-reply controls, full capture, analysis and sealing
 remain mandatory. No resource run has executed.
+
+## Exclusive-window scheduling delay (2026-10-14)
+
+Campaign05 stopped after its sixteenth pair, the first at 120 Hz under CPU load.
+The preceding fifteen pairs passed. In the failed pair, frames settled 9,998
+moves and coalesced two; files settled all 10,000 moves. Both arms settled every
+resize. All numerical percentile budgets passed, but the frozen exact-outcome
+comparison refused the pair. The remaining four pairs did not run. The driver
+exited with status 1; resource collection and the final latency audit remain
+gated. No automatic retry is scheduled.
+
+The frame arm ran from 05:25:33 to 05:28:21 UTC. Offer 4581 spent 27.576834 ms
+in service; offers 4582 and 4583 were replaced before dispatch. Scheduler samples
+show the restored `sophia-policy-v1` worker runnable twice with unchanged CPU
+runtime, followed by a 27.911405 ms increase in its run-queue time. Hagia remained
+asleep in `unix_stream_read_generic`. This localizes a scheduling delay in the
+legacy worker; the 20 ms samples do not identify its scheduler cause. Clock
+alignment uses checkpoint timestamps and remains approximate. The observed
+maximum enqueue-to-settlement latency was 27.592424 ms. File move/resize p99
+was 0.446580/0.450417 ms, with no coalescing.
+
+Claude reports no commands, subagents or background jobs during the failed arm.
+Its last hold-confirmation command was at 03:04:52 UTC; its next command was at
+05:31:28, after release. A remote context compaction at 03:59:17 appended a few
+kilobytes to its local session log. Claude also reports that Astra ran no commands
+during the hold. These reports do not support attributing the failed arm to
+another agent. The host hold was released after the driver stopped.
+
+The package retains `failure-review.json`, both raw ledgers, load and scheduler
+records, and `experiment-stall-analysis.py`. Its 805-file manifest has SHA-256
+`089d9c753896d9f80d10b58b5f219f6e192e8d6f44124276c75df0b59ff74007`.
+The worker source uses a bounded
+command channel and ordinary thread scheduling. Fixture and two load workers
+shared affinity to CPUs 0–3 and nice 10; those CPU IDs are four distinct physical
+cores on this host. Affinity does not reserve them. Before another acceptance
+run, investigate scheduling with a bounded diagnostic and record any prospective
+method change. Preserve this refusal and the numeric budgets; a lucky repeat or
+silently dropping coalesced observations cannot qualify t249.
 
 ## Connections
 
