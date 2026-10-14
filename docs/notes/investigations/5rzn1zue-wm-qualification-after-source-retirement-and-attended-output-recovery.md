@@ -32,6 +32,15 @@ and the unchanged budgets. The independent SDK/export rerun now passes
 both cases. Resource profiles and final exit binding remain after latency
 qualification. The complete t249/h006 exit has not passed.
 
+The corrected campaign's first 60 Hz idle block overlaps another agent's
+builds and tests. Preserve all five pairs as diagnostic results, regardless
+of their numerical outcomes; they cannot establish the idle baseline.
+The other agent reports no remaining heavy work on crunch after
+2026-10-14 01:07:18 UTC and has agreed to hold further jobs. Continue the
+remaining conditions only after checking their start times against that
+boundary, then collect a complete replacement 60 Hz idle block under the
+same frozen measurement rules. See [shared-host interference](#shared-host-interference-2026-10-14).
+
 Use the [row dispositions](#remaining-row-dispositions-2026-10-13) and
 [t249 acceptance criteria](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249).
 Task status stays in `todo.md`; case count is not a completion percentage.
@@ -93,8 +102,9 @@ both arms. The separate [fsync diagnostic and final SDK gate](#fsync-diagnostic-
 are complete. Both traced arms settled all 20,000 updates, with no reproduced
 stall. The failed campaign remains unqualified; the diagnostic is not an
 acceptance retry. The follow-up campaign `t249-campaign-20261014-02` exited
-with status 1 after its first pair. No measurement, build or live-session
-operation is running.
+with status 1 after its first pair. The corrected campaign
+`t249-campaign-20261014-03` is now running; verify its process handle before
+resuming. No build or live-session operation is running.
 
 ## Stopping point and resume procedure (2026-10-12)
 
@@ -4681,6 +4691,8 @@ The monitored campaign stopped after its first 60 Hz idle pair. Frames
 coalesced four move updates; files settled all 20,000 updates. All numeric
 percentile checks passed, but the complete outcomes differed, so the pair
 failed. The remaining nineteen pairs did not run.
+The package manifest is
+`b57ec5f377bf61713096f41852de876a1089bd5c835d97469a7fbdde4a2166cf`.
 
 The frame arm's longest service delay was 51.105498 ms. During that delay,
 Hagia repeatedly appeared in state D with kernel wait `do_get_write_access`;
@@ -4707,6 +4719,64 @@ log exceeding 64 MiB. The correction changes evidence storage, not production
 behavior or the latency definition. Freeze this method in
 `t249-campaign-20261014-03`; retain both earlier failures and stop at the first
 failing complete pair again.
+Execution started with method SHA-256
+`9129699af3605a304256b62a18843e83c111a87c8aeb94e23404c7adb4bac7b9`.
+
+## Prepared resource capture (2026-10-14)
+
+Package `t249-resource-preparation-20261014-01` preserves the resource collector,
+protocol analysis and sealing scripts. Its manifest is
+`61f6db556dcb517630f238f5589893b06a93560bef12ee3bf1a8bb7ac25d906d`.
+These scripts have passed syntax checks only; no resource run has executed.
+They require all twenty latency pairs to pass, then a small capture preflight
+with complete accounting and missing-reply controls before the full profiles.
+Changing a capture script after preflight refuses the full run.
+
+The collector keeps stdout/stderr in memory and raw traces in private tmpfs,
+then saves them after the traced processes exit. Trace storage has a monitored
+8 GiB limit; the tracer uses CPU 4 while the fixture and imposed load use
+CPUs 0–3. Profiling overhead remains explicit. Verified compression preserves
+each raw trace's digest, and allocation, copy, CPU, protocol and idle-wait
+observations retain their distinct scopes. This preparation supplies no
+performance result or acceptance evidence.
+
+## Shared-host interference (2026-10-14)
+
+At niltempus's request, coordination through Herdr established that the
+nostrian-conquest agent had run unpinned builds and tests on crunch throughout
+the corrected campaign's first condition. The reported intervals are
+approximately 20:15–20:31, 20:31–20:33, 20:37–20:51 and 20:55–21:05 EDT,
+followed by a workspace test from 21:05 to 21:07:18 EDT on October 13.
+The jobs used normal priority and shared the fixture's CPUs and storage.
+Short Chromium checks also ran. These times are the other agent's report,
+not a retrospective process trace.
+
+Exclude the entire five-pair 60 Hz idle block from idle qualification,
+including passing results. This decision was made before the fifth pair
+finished and is based on environmental interference, not measured latency.
+Retain every result. No budget, accounting rule, binary or fixture changes.
+The remaining conditions may count only if both arms start after the reported
+quiet boundary, 2026-10-14 01:07:18 UTC, and no further heavy work overlaps.
+The other agent agreed to hold heavy jobs on crunch and use other machines.
+
+After the current campaign exits, collect five alternating 60 Hz idle pairs
+under the unchanged method in a separate package. Bind those results and the
+remaining fifteen clean pairs in the final audit; the current driver's raw
+twenty-pair success flag alone cannot qualify latency. Preserve failures and
+stop at the first failing complete pair. Resource capture must wait for that
+combined audit. Pinning unrelated jobs to other
+logical CPUs would not establish isolation from sibling cores, memory or disk.
+
+The replacement collector, combined audit and revised resource launch guard
+are preserved in `t249-quiet-window-preparation-20261014-01`, manifest
+`1a6c4724916b32ff9601d2c11856bda3d7f6f69038ea434829814066c65277e9`.
+They have passed syntax checks and source-diff review only. The replacement
+collector requires the current campaign to finish and release its lease,
+then writes `t249-campaign-20261014-04`. The audit requires a fresh quiet-window
+review, verifies identical measurement rules, recomputes all twenty selected
+pairs and seals both input packages. The resource collector requires that
+combined audit; the original audit refuses to run with unresolved interference.
+The remaining resource scripts are unchanged from their earlier preparation.
 
 ## Connections
 
