@@ -32,14 +32,16 @@ and the unchanged budgets. The independent SDK/export rerun now passes
 both cases. Resource profiles and final exit binding remain after latency
 qualification. The complete t249/h006 exit has not passed.
 
-The corrected campaign's first 60 Hz idle block overlaps another agent's
-builds and tests. Preserve all five pairs as diagnostic results, regardless
-of their numerical outcomes; they cannot establish the idle baseline.
-The other agent reports no remaining heavy work on crunch after
-2026-10-14 01:07:18 UTC and has agreed to hold further jobs. Continue the
-remaining conditions only after checking their start times against that
-boundary, then collect a complete replacement 60 Hz idle block under the
-same frozen measurement rules. See [shared-host interference](#shared-host-interference-2026-10-14).
+The corrected campaign stopped at 120 Hz loaded pair 4: frames coalesced one
+move after a scheduler delay; files settled every update. All numeric budgets
+passed, but exact outcomes differed. Later coordination established Git packing,
+bulk transfers and short multithreaded PDF builds during the supposed quiet
+window. Preserve all nineteen measured pairs as diagnostic evidence; none
+qualifies its intended host condition. See the [refusal and revised host hold](#loaded-comparison-refusal-and-host-hold-2026-10-14).
+Campaign05 now collects all twenty pairs afresh after every local agent
+acknowledged the explicit hold. Keep the same binaries, workload, load,
+accounting and numerical limits. The earlier partial replacement and combined
+audit preparation is superseded and must not run.
 
 Use the [row dispositions](#remaining-row-dispositions-2026-10-13) and
 [t249 acceptance criteria](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249).
@@ -103,8 +105,9 @@ are complete. Both traced arms settled all 20,000 updates, with no reproduced
 stall. The failed campaign remains unqualified; the diagnostic is not an
 acceptance retry. The follow-up campaign `t249-campaign-20261014-02` exited
 with status 1 after its first pair. The corrected campaign
-`t249-campaign-20261014-03` is now running; verify its process handle before
-resuming. No build or live-session operation is running.
+`t249-campaign-20261014-03` exited with status 1 after its nineteenth pair.
+The fresh `t249-campaign-20261014-05` is running; verify its live process handle
+before resuming. No build or live-session operation is running.
 
 ## Stopping point and resume procedure (2026-10-12)
 
@@ -4759,6 +4762,19 @@ The remaining conditions may count only if both arms start after the reported
 quiet boundary, 2026-10-14 01:07:18 UTC, and no further heavy work overlaps.
 The other agent agreed to hold heavy jobs on crunch and use other machines.
 
+All five subsequent 120 Hz idle pairs pass, with complete matching outcomes
+and no coalesced updates. Every arm began after the reported quiet boundary.
+The highest file p99 is 0.532123 ms; the largest file overhead is 0.036790 ms
+at p95 and 0.022413 ms at p99. These are the saved pair results, pending the
+final raw-ledger audit.
+
+All five 60 Hz loaded pairs also pass with complete matching outcomes and no
+coalesced updates. The highest file p99 is 0.514981 ms; the largest file overhead
+is 0.014588 ms at p95 and 0.044445 ms at p99. The load workers used at least
+1.9955 CPU seconds per wall second in every arm, above the required 1.5.
+Every arm began after the quiet boundary. These saved results still require the
+final raw-ledger audit. The 120 Hz loaded condition is now running.
+
 After the current campaign exits, collect five alternating 60 Hz idle pairs
 under the unchanged method in a separate package. Bind those results and the
 remaining fifteen clean pairs in the final audit; the current driver's raw
@@ -4777,6 +4793,73 @@ review, verifies identical measurement rules, recomputes all twenty selected
 pairs and seals both input packages. The resource collector requires that
 combined audit; the original audit refuses to run with unresolved interference.
 The remaining resource scripts are unchanged from their earlier preparation.
+
+## Loaded comparison refusal and host hold (2026-10-14)
+
+Campaign `t249-campaign-20261014-03` stopped after 120 Hz loaded pair 4.
+Its sealed manifest is
+`54e04ac65788c97697424850779ec87fa60dd24887e49db818dafbed89ff9c49`.
+Eighteen pairs passed their numerical and exact-outcome checks; the nineteenth
+passed every numerical budget but differed in outcomes. The last planned pair
+did not run. In the failed pair, files settled all 20,000 offers. Frames settled
+9,999 move offers and all 10,000 resize offers; move offer 2167 was replaced by
+2168 while offer 2166 was in flight. No offer was rejected or unresolved.
+
+Offer 2166 took 17.670610 ms from enqueue to settlement. Nearby scheduler
+samples show the frame transport worker runnable without additional CPU time,
+followed by 17.849777 ms of added run-queue delay. Hagia remained asleep in
+`unix_stream_read_generic`. This localizes scheduling delay in the restored
+frame transport worker, unlike the earlier peer log-write wait. Sampling and
+clock alignment remain approximate; they do not identify the competing process.
+
+The other agent's later history corrects the earlier quiet-window assumption.
+It reports local Git packing during full-repository pushes at 01:13:18–01:13:37
+and 01:19:03–01:19:17 UTC, bulk SSH relay transfers at 01:24:36–01:24:56 and
+01:35:07–01:35:12, and short multithreaded Typst builds from 01:38:18 onward.
+The builds recurred during both loaded conditions, including activity by the
+other agent's reviewers. The first Typst build followed the 120 Hz idle block,
+but packing and transfers overlapped it. These are reported transcript and
+file times, not a complete host process trace. They establish uncontrolled
+work in each intended condition without proving which job caused the stall.
+
+Exclude the whole campaign from host-condition qualification, including its
+passing pairs. Preserve every result and failure. The earlier five-pair
+replacement and mixed-package audit were prepared but never executed; their
+prerequisites now refuse this failed campaign. They are superseded.
+
+A diagnostic explored conservative quantile bounds for coalesced offers,
+without attributing an individual settlement to them. That proposal is not
+adopted and supplies no acceptance result. Exact outcome matching and every
+numerical budget remain unchanged for the next campaign.
+
+Before that campaign, obtain an explicit hold from all local agents on
+compilation, rendering (including Typst/PDF/Chromium), tests, simulations,
+Git packing and bulk transfers, including streams relayed through crunch.
+Ordinary light edits and small remote control commands may continue. Collect
+all twenty pairs afresh; stop and preserve both arms at the first failing pair.
+Do not retry automatically. Keep resource capture behind successful latency
+qualification and release the host hold after timing and resource work ends.
+
+Claude confirmed its own hold and Astra's acknowledgements at 03:02 and
+03:03 UTC. No other subagents or background jobs were reported. The written
+hold is `t249-exclusive-window-20261014-01.json`. The fresh collector writes
+`t249-campaign-20261014-05`; its prepared source SHA-256 is
+`64ce5e5beebf93e8db975b0d681341df788d7190f9a76616dc9e9427a3ae467b`.
+Source-diff review confirms that only the destination, prior-run prerequisites,
+host-hold provenance and explanation changed. The twenty-pair schedule,
+measurement and refusal logic are unchanged. Campaign04 was prepared for the
+superseded partial replacement and never ran.
+Campaign05 started with frozen method SHA-256
+`5013b81d90f83c2c0e944a10646ae3a955e9cbd41512b30db40c173532cff83f`.
+The collector, revised audit and complete resource scripts are preserved in
+`t249-exclusive-preparation-20261014-01`, manifest
+`cc96d3e906cdb08052bebcf29f7111a6f5484f1bb2978a07eda9efe8fa944f05`.
+Only syntax and source-diff checks have run for this preparation. After a
+successful terminal campaign, obtain a fresh host-window review and run
+`/tmp/t249-exclusive-latency-audit.py`. Its raw-ledger, source, binary and
+load checks must pass before the revised resource collector will start.
+Resource preflight, missing-reply controls, full capture, analysis and sealing
+remain mandatory. No resource run has executed.
 
 ## Connections
 
