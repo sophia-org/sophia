@@ -287,6 +287,12 @@ them here.
 
 ### t252 — Join and accept the shell path
 
+The [October 14 qualification review](../investigations/lvlbjomq-qualify-the-shell-file-path-against-current-owners-and-independent-clients.md)
+reconciles the historical progress below with current generic owner/peer tests,
+repairs the protected launcher fixture's missing owner turn, and records the
+remaining paired, measured and physical gates. The E1 independent descriptor
+gap was resolved by t271; do not treat the older open wording as current status.
+
 The source-retirement amendment separates compatibility removal from the
 remaining measured and physical acceptance here. Independent lifecycle and
 semantic coverage remains mandatory. Narthex rollback means a compatible

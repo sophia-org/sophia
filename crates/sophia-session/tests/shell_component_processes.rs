@@ -786,6 +786,13 @@ fn joined_launcher_evidence_requires_exact_current_negotiation() {
         // fetching Limits and submit a resource before deliberately stopping
         // it, so this test does not race the client's handshake acknowledgement.
         loop {
+            // Connected wires advance on the Session owner's turn. Borrowing
+            // the resource service alone does not service new socket readiness.
+            let visit = owner.poll(64 * 1024).unwrap();
+            assert!(visit.processes.iter().all(Option::is_none));
+            for (_, result) in visit.negotiations.into_iter().flatten() {
+                result.unwrap();
+            }
             let ready = owner
                 .with_service(key, |_, transport| {
                     transport.service_content_resources(1).unwrap();
