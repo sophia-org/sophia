@@ -46,20 +46,9 @@ impl CaptureBackend for NativeCaptureBackend<'_> {
     fn retains(&self, output: OutputId, frame: u64) -> bool {
         // The opaque native ID is not constructed from a requester value.
         // Compare against owner-held content to decide whether to retry.
-        self.native.as_ref().is_some_and(|native| {
-            native.head_indices(output).into_iter().any(|index| {
-                let head = &native.heads[index];
-                [
-                    head.pending_content,
-                    head.rendering_content,
-                    head.submitted_content,
-                    head.presented_content,
-                ]
-                .into_iter()
-                .flatten()
-                .any(|content| content.frame().raw() == frame)
-            })
-        })
+        self.native
+            .as_ref()
+            .is_some_and(|native| native.output_capture_frame_retained(output, frame))
     }
     fn presented(&mut self, output: OutputId, frame: u64) -> Option<PresentedCapture> {
         let capture = self

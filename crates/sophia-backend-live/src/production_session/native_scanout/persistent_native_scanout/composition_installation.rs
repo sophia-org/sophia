@@ -196,6 +196,10 @@ impl CompositionInstaller for LiveProductionNativeScanout {
         head.pending_content = Some(queued.content);
         head.queue_output_damage_snapshot(queued.output_damage_snapshot);
         exporter.set_pending_identified_mixed_frame(queued.frame, Some(identity));
+        if let Some(reservation) = queued.capture_reservation {
+            // Installation and marking are one owner turn, before worker service.
+            let _ = exporter.request_pending_frame_capture(identity, reservation);
+        }
     }
 }
 

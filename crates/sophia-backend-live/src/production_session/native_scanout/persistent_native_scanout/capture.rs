@@ -57,46 +57,42 @@ impl LiveProductionNativeScanout {
     /// Schedule readback for the exact queued composition on every enabled
     /// head. Session must authorize the recipient before requesting this work.
     /// No later frame inherits a request that was superseded.
-    pub fn request_pending_output_capture(&mut self, output: OutputId) -> bool {
+    pub fn request_pending_output_capture(
+        &mut self,
+        output: OutputId,
+        frame: LiveProductionNativeFrameId,
+    ) -> bool {
         let indices = self.head_indices(output);
-        if indices.is_empty() {
+        if indices.is_empty()
+            || indices
+                .iter()
+                .any(|index| !self.exporters[*index].worker_enabled())
+        {
             return false;
         }
-        let mut expected = Vec::with_capacity(indices.len());
-        let targets = self.head_render_targets(output);
-        let mut frame = None;
-        for index in indices {
-            let Some(identity) = self.exporters[index]
-                .queued_frame_correlation()
-                .and_then(|c| c.native)
-            else {
-                return false;
-            };
-            let head = &self.heads[index];
-            if !self.exporters[index].can_capture_pending_frame(identity)
-                || identity.owner() != self.native_frame_owner.raw()
-                || identity.output() != output
-                || identity.head() != head.head
-                || identity.target_generation() != head.target_generation
-                || frame.is_some_and(|frame| frame != identity.frame())
-            {
-                return false;
-            }
-            frame = Some(identity.frame());
-            let Some(target) = targets.iter().find(|target| target.head == head.head) else {
-                return false;
-            };
-            let Some(reservation) = sophia_renderer_live::LiveSnapshotReservation::for_image(
-                target.native_size.width.try_into().unwrap_or(0),
-                target.native_size.height.try_into().unwrap_or(0),
-            ) else {
-                return false;
-            };
-            expected.push((index, identity, reservation));
-        }
-        expected.into_iter().all(|(index, identity, reservation)| {
-            self.exporters[index].request_pending_frame_capture(identity, reservation)
-        })
+        // Admission owns the complete lowered batch here. The exporter does
+        // not receive it until activation; inspecting its pending slot now
+        // would miss every newly admitted capture.
+        self.deferred_mirror_generations
+            .request_capture(output, frame)
+    }
+
+    pub fn output_capture_frame_retained(&self, output: OutputId, frame: u64) -> bool {
+        self.deferred_mirror_generations
+            .get(output)
+            .is_some_and(|generation| generation.frame.raw() == frame)
+            || self.head_indices(output).into_iter().any(|index| {
+                let head = &self.heads[index];
+                [
+                    head.pending_content,
+                    head.rendering_content,
+                    head.submitted_content,
+                    head.presented_content,
+                ]
+                .into_iter()
+                .flatten()
+                .any(|content| content.frame().raw() == frame)
+            })
     }
 
     /// Return the primary head's immutable image only when every enabled head

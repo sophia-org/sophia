@@ -18,8 +18,20 @@ Live capture is failing. Authenticated requests for output 1 and output 2
 expire after about ten seconds with `capture refused: Cancelled`. No physical
 image has been delivered. The diagnostic CLI confirms the request reaches
 `Capturing` before expiry (launch 8); Session intake works. The next step is
-to distinguish native scheduling, displayed custody and portal installation.
-This diagnostic ran against the installed session without restarting it.
+to verify the queued-frame repair below on the physical session. This diagnostic
+ran against the installed session without restarting it.
+
+Source inspection found the missed handoff: composition admission stores the
+frame in `DeferredNativeCompositions`, but the capture request searched the
+exporter's pending slot before activation had populated it. The request could
+never mark its newly admitted frame. The repair reserves readback storage on
+the queued generation and carries each head's reservation through installation
+to its exporter. Session also counts a deferred generation as retained when
+deciding whether to retry. Three queue regressions pass: deferred ownership,
+supersession without inherited capture, and all-head refusal. The full repository
+gate passed, including workspace tests, strict checks and the host's buffer-age
+and GLX/EGL pixel checks. Its log is `queued-capture-check.log` in the capture
+evidence directory. No repaired build is installed yet.
 
 The session evidence is
 `~/.local/state/sophia/sessions/00000001792000065910-2683c23a-6360-423a-bdbb-72ca69d1ed22`.

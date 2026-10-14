@@ -71,6 +71,7 @@ pub(super) fn run(args: &[String]) -> Result<()> {
         return Err("capture request write refused".into());
     }
     close(pipe, capture, deadline)?;
+    let mut last_pending = OutputCaptureState::Queued;
     loop {
         let state = status(pipe, root, deadline)?;
         if state.request != Some(request) {
@@ -79,12 +80,18 @@ pub(super) fn run(args: &[String]) -> Result<()> {
         match state.state {
             OutputCaptureState::Ready => break,
             OutputCaptureState::Queued | OutputCaptureState::Capturing => {
+                last_pending = state.state;
                 if Instant::now() >= deadline {
-                    return Err("capture deadline".into());
+                    return Err(format!("capture deadline while {last_pending:?}").into());
                 }
                 std::thread::sleep(Duration::from_millis(10));
             }
-            other => return Err(format!("capture refused: {other:?}").into()),
+            other => {
+                return Err(format!(
+                    "capture refused: {other:?} (last observed: {last_pending:?})"
+                )
+                .into());
+            }
         }
     }
     let record = opened(pipe, root, b"frame-info", 0, deadline)?;

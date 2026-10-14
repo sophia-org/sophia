@@ -14,6 +14,7 @@ pub(crate) struct LiveProductionQueuedMirrorGeneration {
 }
 
 pub(crate) struct LiveProductionQueuedMirrorHeadFrame {
+    pub(crate) capture_reservation: Option<sophia_renderer_live::LiveSnapshotReservation>,
     pub(crate) head_index: usize,
     pub(crate) identity: crate::LiveNativeFrameIdentity,
     pub(crate) content: LiveProductionScanoutContent,
@@ -68,6 +69,45 @@ pub(crate) enum DeferredCompositionOffer {
 }
 
 impl DeferredNativeCompositions {
+    /// Capture belongs to the queued generation before an exporter owns it.
+    /// Reserve every head first; refusal leaves the composition ordinary.
+    pub(crate) fn request_capture(
+        &mut self,
+        output: OutputId,
+        frame: LiveProductionNativeFrameId,
+    ) -> bool {
+        let Some(generation) = self.generations.get_mut(&output) else {
+            return false;
+        };
+        if generation.frame != frame
+            || generation.heads.is_empty()
+            || generation
+                .heads
+                .iter()
+                .any(|head| head.capture_reservation.is_some())
+        {
+            return false;
+        }
+        let reservations = generation
+            .heads
+            .iter()
+            .map(|head| {
+                let size = head.output_damage_snapshot.as_ref()?.output.size;
+                sophia_renderer_live::LiveSnapshotReservation::for_image(
+                    size.width.try_into().ok()?,
+                    size.height.try_into().ok()?,
+                )
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(reservations) = reservations else {
+            return false;
+        };
+        for (head, reservation) in generation.heads.iter_mut().zip(reservations) {
+            head.capture_reservation = Some(reservation);
+        }
+        true
+    }
+
     /// First-frame ownership is in this queue before exporters may be serviced.
     /// Expectations come from the installed topology and returned admission IDs.
     pub(crate) fn validate_first_frames(

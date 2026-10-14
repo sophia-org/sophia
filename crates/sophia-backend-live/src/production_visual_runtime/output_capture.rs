@@ -39,10 +39,10 @@ impl LiveProductionVisualRuntime {
         let Some(frame) = queued.get(&output).copied() else {
             return Ok(None);
         };
-        // No worker service occurs between installation and this exact-frame
-        // request. A successor cannot inherit it if normal rendering overtakes it.
+        // Mark the admitted queue owner before activation hands it to exporters.
+        // A successor cannot inherit this frame's reservation.
         Ok(native
-            .request_pending_output_capture(output)
+            .request_pending_output_capture(output, frame)
             .then_some(frame))
     }
 

@@ -107,6 +107,7 @@ pub(crate) fn prepare_native_composition_batch(
                     .remove(&target.head)
                     .expect("validated head coverage");
                 LiveProductionQueuedMirrorHeadFrame {
+                    capture_reservation: None,
                     head_index: *index,
                     identity: owner.frame(
                         output,

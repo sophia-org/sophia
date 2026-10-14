@@ -109,6 +109,7 @@ fn generation_with_owner(
                     software_cursor: None,
                 };
                 LiveProductionQueuedMirrorHeadFrame {
+                    capture_reservation: None,
                     head_index,
                     identity: owner.frame(
                         output,
@@ -170,6 +171,96 @@ fn blocked() -> (
             nonzero_rgb_pixels: 0,
         }),
     )
+}
+
+#[test]
+fn capture_reservation_travels_with_the_admitted_generation_before_exporter_handoff() {
+    let (_store, lease) = content_resource();
+    let output = OutputId::from_raw(1);
+    let mut queue = DeferredNativeCompositions::default();
+    let offered = generation(&lease, output, 3);
+    let frame = offered.frame;
+    assert!(
+        queue
+            .admit_batch(vec![offered], &BTreeSet::from([output]))
+            .is_ok()
+    );
+    assert!(!queue.request_capture(output, LiveProductionNativeFrameId::from_raw(2)));
+    assert!(queue.request_capture(output, frame));
+    assert!(!queue.request_capture(output, frame));
+    let (active, content) = blocked();
+    assert!(queue.take_ready(output, active, None, content).is_none());
+    assert!(
+        queue
+            .get(output)
+            .unwrap()
+            .heads
+            .iter()
+            .all(|head| head.capture_reservation.is_some())
+    );
+    let ready = queue.take_ready(output, active, active, content).unwrap();
+    assert_eq!(ready.frame, frame);
+    assert!(
+        ready
+            .heads
+            .iter()
+            .all(|head| head.capture_reservation.is_some())
+    );
+}
+
+#[test]
+fn capture_reservation_does_not_follow_a_superseding_queued_generation() {
+    let (_store, lease) = content_resource();
+    let output = OutputId::from_raw(1);
+    let configured = BTreeSet::from([output]);
+    let mut queue = DeferredNativeCompositions::default();
+    assert!(
+        queue
+            .admit_batch(vec![generation(&lease, output, 3)], &configured)
+            .is_ok()
+    );
+    assert!(queue.request_capture(output, LiveProductionNativeFrameId::from_raw(3)));
+    assert!(
+        queue
+            .admit_batch(vec![generation(&lease, output, 4)], &configured)
+            .is_ok()
+    );
+    assert!(!queue.request_capture(output, LiveProductionNativeFrameId::from_raw(3)));
+    let successor = queue.take_ready(output, None, None, None).unwrap();
+    assert!(
+        successor
+            .heads
+            .iter()
+            .all(|head| head.capture_reservation.is_none())
+    );
+}
+
+#[test]
+fn capture_reservation_refusal_leaves_every_head_ordinary() {
+    let (_store, lease) = content_resource();
+    let output = OutputId::from_raw(1);
+    let mut offered = generation(&lease, output, 3);
+    offered.heads[1]
+        .output_damage_snapshot
+        .as_mut()
+        .unwrap()
+        .output
+        .size
+        .width = i32::MAX;
+    let mut queue = DeferredNativeCompositions::default();
+    assert!(
+        queue
+            .admit_batch(vec![offered], &BTreeSet::from([output]))
+            .is_ok()
+    );
+    assert!(!queue.request_capture(output, LiveProductionNativeFrameId::from_raw(3)));
+    let ordinary = queue.take_ready(output, None, None, None).unwrap();
+    assert!(
+        ordinary
+            .heads
+            .iter()
+            .all(|head| head.capture_reservation.is_none())
+    );
 }
 
 fn retire(

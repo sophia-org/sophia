@@ -113,6 +113,7 @@ impl LiveProductionNativeScanout {
                     },
                 };
                 LiveProductionQueuedMirrorHeadFrame {
+                    capture_reservation: None,
                     head_index,
                     identity: self.native_frame_identity(head_index, output, frame_id),
                     content: LiveProductionScanoutContent::Cpu {
