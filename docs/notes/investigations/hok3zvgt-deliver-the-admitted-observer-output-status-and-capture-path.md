@@ -32,6 +32,15 @@ existing external harness passed the focused tests and layout check.
 strict Clippy, layout, tooling, buffer-age and GLX/EGL graphics checks.
 Do not retry mirroring before this candidate is validated and installed.
 
+Candidate `niltempus-eb8be6b503fa8bca3815` is built from Sophia `a29663a06`
+and integration `6aa4dda`. Build, checksums and the mirror profile's Session/Hagia
+preflight pass. `mirror-service-release` points to the Nix output, with build
+details in `mirror-service-build.log`. `~/install-sophia-fix` now installs this
+candidate and updates the Mirror Test launcher/profile. Installation needs sudo
+and remains pending. After installation, verify the live identity and allow a
+longer mirrored run before attempting capture and cost measurement. Do not
+claim the physical timeout resolved from the scheduler regression alone.
+
 Mirror qualification found a production failure before any capture: the
 temporary mirrored session displayed both heads, then exited when the operator
 launched Kitty. Session
