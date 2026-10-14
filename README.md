@@ -1,39 +1,26 @@
 # Sophia
 
-Sophia is an experimental display server and compositor shaped by Plan 9: a shared file protocol, a namespace composed for each identity, and explicit grants between namespaces. Engine controls physical input and display output, committing window geometry and pixels together. Separate components handle application protocols, window layout, shell UI, and transfers between isolated applications.
+Sophia is an experimental desktop for Linux, built on an idea from Plan 9: every client gets its own view of the system, and the server checks every step it takes. Engine owns the input devices and the display, and it commits each window's geometry and pixels together, so you never see one without the other. Everything else runs in separate processes: the X server, the window manager, the shell, and the portals that move data between isolated applications.
 
-Window managers and shells run as separate processes and use role files on a shared 9P2000.L core. Each export keeps its own endpoint and authority. You can write clients in the language of your choice without rebuilding the compositor.
+Window managers and shells talk to Sophia through small file trees served by one shared 9P2000.L core. Each role keeps its own endpoint and its own permissions. You can write one in whatever language you like without touching the compositor.
 
-X11 remains a first-class frontend, with a native authority written from scratch in Rust. It owns X11 resources and delivery rules; Engine works with surfaces, buffers, and layout transactions. Application protocol details stay outside the rendering core.
+X11 is a full frontend, not a compatibility layer. Sophia's X server is new code, written from scratch in Rust. It owns X11 resources and delivery rules, while Engine only ever sees surfaces, buffers and layout transactions. No application protocol reaches the rendering core.
 
-Visit [sophia.gg](https://sophia.gg) for the project overview and development posts. To build a window manager, shell, or desktop environment, start with [Building on Sophia](docs/building-on-sophia.md).
+The project site is [sophia.gg](https://sophia.gg). If you want to write a window manager, a shell or a whole desktop, start with [Building on Sophia](docs/building-on-sophia.md).
 
 ## Architecture
 
-Each component has a defined authority:
+Each part has one job and the authority to do it:
 
-- **Sophia Engine** owns physical input, the scene graph, frame scheduling, visual commits, rendering, and display output.
-- **Sophia X Server Frontend** accepts X11 connections, manages resources, enforces protocol rules, and translates client state into Engine transactions. It is written in Rust in `sophia-x-authority`.
-- **Sophia WM** proposes layout and focus through `sophia_wm_v1`. It handles workspaces and keybindings using opaque layout nodes and surface handles. [Hagia](https://github.com/sophia-org/hagia) is the reference window manager.
-- **Sophia Shell** supplies panels, launchers, and switchers through `sophia_shell_v1` and requests space along screen edges. Shells receive sanitized metadata through the broker. They can submit UI descriptors or, with permission, their own rendered content; the Engine controls placement, presentation, and input. [Narthex](https://github.com/sophia-org/narthex) is the descriptor shell reference.
-- **Sophia Portals** broker transfers between namespaces, such as clipboard sharing, drag-and-drop, and screen capture. Each transfer requires authorization for a specific recipient.
+- **Engine** owns the input devices, the scene graph, frame timing, visual commits, rendering and the display.
+- **The X server** (`sophia-x-authority`) accepts X11 connections, manages resources, enforces protocol rules, and turns client requests into Engine transactions.
+- **The window manager** proposes layout and focus. It handles workspaces and key bindings using anonymous layout nodes and surface handles, and never sees titles, process IDs or pixels. [Hagia](https://github.com/sophia-org/hagia) is the reference window manager.
+- **Shells** supply panels, launchers and switchers, and can reserve space along a screen edge. They receive window metadata only after the broker has filtered it. A shell can describe UI elements for Engine to draw or, with permission, submit its own pixels; either way Engine decides placement, presentation and input. [Narthex](https://github.com/sophia-org/narthex) is the reference shell for the first model.
+- **Portals** move data between namespaces: clipboard, drag-and-drop and screen capture. Each transfer needs a grant for one specific recipient.
 
-The [accepted one-core decision](docs/notes/decisions/zsx0tk4k-serve-every-public-role-from-one-9p-core-with-namespaces-as-composed-trees-and-portals-as-binds.md)
-uses one shared 9P implementation with separately authorized role exports.
-Per-identity endpoint directories and role trees are derived from admission;
-grants remain checked on retained handles. t317 implements
-authenticated attach for supervised WM, lock, output and shell roles;
-[qualification and trust boundaries](docs/factotum-launch-authentication.md)
-remain explicit. t318 implements admission-derived namespace recipes,
-automatic application selection and an authorized developer launcher; see the
-[namespace client guide](docs/namespace-client-guide.md). Renderer capture and
-an admitted output-capture CLI are implemented; physical and performance
-qualification remain open. The [delivery plan](docs/notes/plans/jsschoen-converge-public-roles-on-one-9p-core.md#first-deliverable-and-dependency-order)
-starts with a bounded observer interface; the native application frontend
-and input driving are separate deliverables.
+All public roles share one 9P implementation but keep separate exports and permissions; the [one-core decision](docs/notes/decisions/zsx0tk4k-serve-every-public-role-from-one-9p-core-with-namespaces-as-composed-trees-and-portals-as-binds.md) explains why. The session builds each client's socket directory and file trees from the identity it proved and the grants it holds, and the server keeps checking those grants on files the client already has open. The window manager, lock, output and shell now authenticate when they connect; the [factotum guide](docs/factotum-launch-authentication.md) spells out what that does and doesn't prove. Per-client namespaces and an authorized developer launcher are described in the [namespace client guide](docs/namespace-client-guide.md). The [delivery plan](docs/notes/plans/jsschoen-converge-public-roles-on-one-9p-core.md#first-deliverable-and-dependency-order) gives the order of the remaining work; the native application frontend and input driving come later, as separate pieces.
 
-Target architecture, including the planned 9P application authority. Session
-owners admit and route public role operations before they reach Engine.
+The drawing below shows the target, including the planned 9P application frontend. The session admits and routes every public role operation before it reaches Engine.
 
 ```text
 ===============================================================================================
@@ -82,78 +69,47 @@ owners admit and route public role operations before they reach Engine.
         Portals authorize specific transfers without joining the namespaces.
 ```
 
-Administration and the metadata broker still await migration from the legacy
-socket envelope. The 9P application authority and the common protocol-authority
-contract remain planned; the diagram does not show them as completed paths.
+Administration and the metadata broker still use the old socket protocol and will move to the core later. The 9P application frontend and the shared contract between frontends and Engine are planned; the drawing doesn't show them as finished.
 
 ## Design
 
-### File interfaces and composed namespaces
+### Files and namespaces
 
-Session derives each identity's socket directory and discovery file from trusted
-policy. Each endpoint serves its own role tree. Authenticated attach fixes
-identity for the admitted launch paths, and the server checks authority on
-retained handles as well as new operations. X11 keeps its own admission checks.
-Kernel mounts do not confer authority.
+The session builds each identity's socket directory and discovery file from trusted policy, and each endpoint serves its own role tree. When a launched client attaches, it proves its identity, and that identity is fixed for the connection. The server checks permissions on every new operation and on files that are already open. X11 keeps its own admission checks. A kernel mount is a convenience, never a permission.
 
-The roles share file operations, not one record format. Small controls and
-discovery can use text; WM and shell traffic keeps compact binary records.
-Sophia borrows Plan 9's namespaces and file interfaces without adopting its
-draw protocol. Engine continues to own composition.
+The roles share file operations, not a record format. Small commands and discovery use lines of text; window-manager and shell traffic keeps compact binary records. Sophia borrows Plan 9's namespaces and file interface but not its draw protocol, because Engine already does the drawing.
 
-Portal policy decides on bounded facts; the recipient's frontend executes the
-transfer. A 9P recipient receives a grant-bound object in its tree, with retained
-handles becoming stale on revocation. An X recipient uses X semantics. Capture
-is the first output bind: a frame record and bounded screenshot bytes for an
-authorized output. Descriptors belong on a separate channel, never in the 9P
-stream. Capture grants imply no input-injection permission.
+The portal service decides whether a transfer may happen, from a few fixed facts, and the receiving frontend carries it out. A 9P client gets one object bound into its tree, and if the grant is revoked, its open files go stale. An X client gets ordinary X semantics. Screen capture is the first portal: a frame record and the screenshot bytes for one authorized output. File descriptors travel on a separate channel, never in the 9P stream, and a capture grant never lets anyone inject input.
 
 ### Geometry and pixels together
 
-A resize is a visual transaction: new geometry and matching pixels commit together. If a client stalls, the Engine keeps the last committed visual state until a replacement is ready.
+A resize is a transaction: the new size and the matching pixels commit together. If a client stalls, Engine keeps showing the last complete frame until the new one is ready.
 
-### Window management without client metadata
+### A window manager that can't snoop
 
-The window manager receives opaque layout nodes and returns policy proposals. It has no access to XIDs, window titles, process IDs, namespace identities, or clipboard contents. It runs outside the rendering loop, so layout policy can change without taking over presentation or physical input.
+The window manager gets anonymous layout nodes and returns proposals. It can't see XIDs, window titles, process IDs, namespace identities or clipboard contents. It runs outside the rendering loop, so you can change layout policy without touching presentation or input.
 
 ### Namespace isolation
 
-Trusted applications can share a namespace and use the traditional X11 object model. Applications that need isolation run in separate namespaces, where cross-namespace resource lookups fail closed. A portal authorizes a specific data transfer without opening either namespace to general access.
+Trusted applications can share a namespace and use the familiar X11 object model. Applications that need isolation run in separate namespaces, where lookups across the boundary fail. A portal grants one transfer without opening either namespace to the other.
 
 ## Documentation
 
-[Building on Sophia](docs/building-on-sophia.md) describes the component interfaces and how to use them. The [Strategic Roadmap](docs/strategic-roadmap.md) outlines the migration from monorepo incubation to autonomous satellite repositories under `sophia-org`. The [documentation index](docs/README.md) links to architecture, protocol, configuration, and security specifications.
+[Building on Sophia](docs/building-on-sophia.md) describes the component interfaces and how to use them. The [strategic roadmap](docs/strategic-roadmap.md) describes how parts of this repository will move into their own repositories under `sophia-org`. The [documentation index](docs/README.md) links to the architecture, protocol, configuration and security specifications.
 
-Investigations and design decisions live in the [development notebook](docs/notes/README.md). Current work is tracked in [todo.md](todo.md); contributors should follow the [work-tracking guide](docs/work-tracking.md).
+Investigations and design decisions live in the [development notebook](docs/notes/README.md). Open work is tracked in [todo.md](todo.md); contributors should follow the [work-tracking guide](docs/work-tracking.md).
 
-Agents can retrieve bounded task context with `zk context task t319` (or `cargo-slot sophia cargo xtask context task t319`).
-The [context guide](docs/agent-context.md) covers section reads and session handoffs.
+Agents can load the context for a task with `zk context task t319` (or `cargo-slot sophia cargo xtask context task t319`). The [context guide](docs/agent-context.md) covers section reads and handoffs.
 
 ## Status
 
-Sophia is a research prototype. X11 is the current application protocol, and the Rust frontend implements a subset of it. Application compatibility and end-to-end validation remain in progress.
+Sophia is a research prototype, though it runs my desktop every day. X11 is the only application protocol so far, and the Rust X server implements part of it. Application compatibility and end-to-end testing are still in progress.
 
-WM, shell, output, lock, factotum, inspection and portal file exports use the
-shared core. The portal decision files are wired into Session's X clipboard
-coordinator; their physical acceptance remains separate from implementation.
-Authenticated launch attachment and namespace composition have landed.
-Capture and its CLI deliver frames from both physical outputs;
-[t319](docs/notes/investigations/hok3zvgt-deliver-the-admitted-observer-output-status-and-capture-path.md#current-resumption)
-tracks the remaining output-replacement, lock and performance qualification.
+The window-manager, shell, output, lock, factotum, inspection and portal roles all run on the shared core. The portal decision files drive the session's X clipboard, though they still need testing on real hardware. Authenticated connections and per-client namespaces have landed. Screen capture works on both physical displays, and locking the screen or changing a display revokes old grants on time; capture of mirrored displays is still being tested under [t319](docs/notes/investigations/hok3zvgt-deliver-the-admitted-observer-output-status-and-capture-path.md#current-resumption).
 
-An explicit protected output process receives the output role; without one,
-Session owns profile configuration without an output listener.
-[Read-only WM inspection](docs/sophia-wm-inspection.md) has a separate host-domain
-permission and endpoint. Administration, the metadata broker, the common
-protocol-authority contract and the 9P application authority remain unfinished.
-The [delivery plan](docs/notes/plans/jsschoen-converge-public-roles-on-one-9p-core.md)
-separates their implementation and acceptance gates.
+The output role goes only to a protected output process named in the profile; without one, the session applies the profile itself and nobody else gets the role. [Read-only window-manager inspection](docs/sophia-wm-inspection.md) has its own permission and endpoint. Administration, the metadata broker, the shared contract between frontends and Engine, and the 9P application frontend are unfinished. The [delivery plan](docs/notes/plans/jsschoen-converge-public-roles-on-one-9p-core.md) keeps their implementation and acceptance separate.
 
-Wayland is possible but off the roadmap. A third party could build a compatibility
-layer as a client of the planned 9P application authority, carrying its clients
-as separate identities. That path depends on the application authority landing.
-Agents use the same admitted interfaces as other clients; observer, operator
-and driver name independent grant recipes, not special agent privileges.
+Wayland is possible but off the roadmap. Someone could write a compatibility layer as a client of the planned 9P application frontend, carrying its clients as separate identities, once that frontend exists. Agents use the same interfaces as every other client; observer, operator and driver are independent sets of grants, not special agent privileges.
 
 ## License
 
