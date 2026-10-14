@@ -41,6 +41,31 @@ pub enum PortalTransferFailure {
 
 /// Collection may wait off the Session owner thread, bounded by `wait`.
 pub trait PortalSource: Send + Sync {
+    /// Serialize source replacement with a retained recipient read. Sources
+    /// protected entirely by the common execution fence may use this default;
+    /// independently replaceable outputs must hold their own generation guard.
+    fn with_generation(
+        &self,
+        request: &PortalRequest,
+        generation: u64,
+        effect: &mut dyn FnMut(),
+    ) -> bool {
+        if self.generation(request) != Some(generation) {
+            return false;
+        }
+        effect();
+        true
+    }
+    /// Optional renderer-owned image for this exact grant. The coordinator
+    /// transports only its bounded record; the recipient obtains bytes from
+    /// this trusted source, never from a requester-selected path or handle.
+    fn capture_frame(
+        &self,
+        _request: &PortalRequest,
+        _grant: &PortalGrant,
+    ) -> Option<Arc<crate::capture_frame::PortalCaptureFrame>> {
+        None
+    }
     /// Read current authority facts without I/O. Generations never repeat
     /// within a registration; replacement/teardown advances the shared fence.
     fn generation(&self, request: &PortalRequest) -> Option<u64>;
@@ -75,24 +100,43 @@ pub struct PortalAccessLease {
     accepted: Arc<AtomicBool>,
 }
 impl PortalAccessLease {
+    /// Called only by the recipient inside the common execution fence. Do not
+    /// call with_access here: acceptance is published after installation.
+    pub(crate) fn capture_frame(&self) -> Option<Arc<crate::capture_frame::PortalCaptureFrame>> {
+        self.source.capture_frame(&self.request, &self.grant)
+    }
     pub fn grant(&self) -> &PortalGrant {
         &self.grant
     }
     /// The check and read share the lock/security barrier. `read` must not
-    /// block, access a transport or call back into the same fence.
+    /// block, access a transport or call back into the same fence or source.
     pub fn with_access<T>(&self, read: impl FnOnce() -> T) -> Option<T> {
         if !self.accepted.load(Ordering::Acquire) {
             return None;
         }
         self.fence
             .execute(self.revision, self.grant.deadline_msec, || {
-                self.current().then(read)
+                let mut read = Some(read);
+                let mut result = None;
+                let current = self.source.with_generation(
+                    &self.request,
+                    self.grant.source_generation,
+                    &mut || {
+                        if self.policy_current() {
+                            result = read.take().map(|read| read());
+                        }
+                    },
+                );
+                current.then_some(result).flatten()
             })
             .flatten()
     }
     fn current(&self) -> bool {
+        self.source.generation(&self.request) == Some(self.grant.source_generation)
+            && self.policy_current()
+    }
+    fn policy_current(&self) -> bool {
         !self.stopped.load(Ordering::Acquire)
-            && self.source.generation(&self.request) == Some(self.grant.source_generation)
             && self
                 .policy
                 .namespace(self.grant.source_namespace)

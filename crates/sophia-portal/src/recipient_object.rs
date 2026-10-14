@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 struct Object {
     lease: PortalAccessLease,
     bytes: Vec<u8>,
+    frame: Option<Arc<crate::capture_frame::PortalCaptureFrame>>,
 }
 struct State {
     next: u64,
@@ -36,7 +37,8 @@ impl PortalObjectRecipient {
     /// The export's check/open/metadata/read paths all use this same check.
     /// A removed incarnation is stale, even when the pathname has a successor.
     pub fn read(&self, qid: u64, offset: u64, count: u32) -> Result<Vec<u8>, Errno> {
-        self.with_payload(qid, |bytes| {
+        self.with_object(qid, |object| {
+            let bytes = &object.bytes;
             let start = usize::try_from(offset)
                 .unwrap_or(usize::MAX)
                 .min(bytes.len());
@@ -47,7 +49,7 @@ impl PortalObjectRecipient {
                 .collect()
         })
     }
-    fn with_payload<T>(&self, qid: u64, read: impl FnOnce(&[u8]) -> T) -> Result<T, Errno> {
+    fn with_object<T>(&self, qid: u64, read: impl FnOnce(&Object) -> T) -> Result<T, Errno> {
         let object = {
             let state = self.state.lock().map_err(|_| Errno::EIO)?;
             state
@@ -68,7 +70,7 @@ impl PortalObjectRecipient {
                 {
                     return Err(Errno::ESTALE);
                 }
-                Ok(read(&object.bytes))
+                Ok(read(&object))
             })
             .ok_or(Errno::ESTALE)?
     }
@@ -85,7 +87,32 @@ impl PortalObjectRecipient {
         Ok(qid)
     }
     pub fn size(&self, qid: u64) -> Result<u64, Errno> {
-        self.with_payload(qid, |bytes| bytes.len() as u64)
+        self.with_object(qid, |object| object.bytes.len() as u64)
+    }
+    pub fn frame_size(&self, qid: u64) -> Result<u64, Errno> {
+        self.with_object(qid, |object| {
+            object
+                .frame
+                .as_ref()
+                .map(|frame| frame.rgba().len() as u64)
+                .ok_or(Errno::ENOENT)
+        })?
+    }
+    pub fn read_frame(&self, qid: u64, offset: u64, count: u32) -> Result<Vec<u8>, Errno> {
+        self.with_object(qid, |object| {
+            let frame = object.frame.as_ref().ok_or(Errno::ENOENT)?;
+            let bytes = frame.rgba();
+            let start = usize::try_from(offset)
+                .unwrap_or(usize::MAX)
+                .min(bytes.len());
+            // Keep the security barrier bounded even for an oversized caller
+            // count. 9P permits short reads; the client continues by offset.
+            Ok(bytes[start..]
+                .iter()
+                .take(count.min(65536) as usize)
+                .copied()
+                .collect())
+        })?
     }
     /// Revoking the frontend's binding never revives an older object.
     pub fn revoke(&self) {
@@ -102,6 +129,29 @@ impl PortalRecipient for PortalObjectRecipient {
         {
             return false;
         }
+        let frame = if work.request.transfer.mime_type.as_deref()
+            == Some(sophia_protocol::output_capture::OUTPUT_CAPTURE_MIME)
+        {
+            if work.grant.kind != sophia_protocol::PortalTransferKind::ScreenCapture {
+                return false;
+            }
+            let Some(frame) = lease.capture_frame() else {
+                return false;
+            };
+            if frame
+                .info()
+                .encode()
+                .as_ref()
+                .map(|record| record.as_slice())
+                != Some(work.payload.as_slice())
+                || frame.info().output_generation != work.grant.source_generation
+            {
+                return false;
+            }
+            Some(frame)
+        } else {
+            None
+        };
         let Ok(mut state) = self.state.lock() else {
             return false;
         };
@@ -116,6 +166,7 @@ impl PortalRecipient for PortalObjectRecipient {
             Arc::new(Object {
                 lease,
                 bytes: work.payload.clone(),
+                frame,
             }),
         ));
         state.next = next;

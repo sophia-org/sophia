@@ -16,6 +16,8 @@ pub enum PortalClientNode {
     Api,
     Status,
     Transfer { object: u64, qid: u64 },
+    FrameInfo { object: u64, qid: u64 },
+    Frame { object: u64, qid: u64 },
     Watch { object: u64, qid: u64 },
 }
 use PortalClientNode as Node;
@@ -70,13 +72,20 @@ impl PortalClientFiles {
         if let Some(binding) = self.binding.filter(|(current, _)| *current == object) {
             return Ok(binding);
         }
-        let binding = (object, self.qids(2)?);
+        let binding = (object, self.qids(4)?);
         self.binding = Some(binding);
         Ok(binding)
     }
     fn checked(&self, node: &Node) -> Result<(), Errno> {
-        if let Node::Transfer { object, .. } | Node::Watch { object, .. } = node {
+        if let Node::Transfer { object, .. }
+        | Node::Watch { object, .. }
+        | Node::FrameInfo { object, .. }
+        | Node::Frame { object, .. } = node
+        {
             self.objects.read(*object, 0, 0)?;
+        }
+        if let Node::FrameInfo { object, .. } | Node::Frame { object, .. } = node {
+            self.objects.frame_size(*object)?;
         }
         Ok(())
     }
@@ -157,6 +166,21 @@ impl Export for PortalClientFiles {
                     qid: qid + 1,
                 })
             }
+            WalkName::Child(name @ (b"frame-info" | b"frame")) => {
+                let (object, qid) = self.binding()?;
+                self.objects.frame_size(object)?;
+                if name == b"frame-info" {
+                    Ok(Node::FrameInfo {
+                        object,
+                        qid: qid + 2,
+                    })
+                } else {
+                    Ok(Node::Frame {
+                        object,
+                        qid: qid + 3,
+                    })
+                }
+            }
             _ => Err(Errno::ENOENT),
         }
     }
@@ -167,7 +191,12 @@ impl Export for PortalClientFiles {
                 Node::Root => (1, 0),
                 Node::Api => (2, 0),
                 Node::Status => (3, 0),
-                Node::Transfer { object, qid } => (*qid, self.objects.size(*object).unwrap_or(0)),
+                Node::Transfer { object, qid } | Node::FrameInfo { object, qid } => {
+                    (*qid, self.objects.size(*object).unwrap_or(0))
+                }
+                Node::Frame { object, qid } => {
+                    (*qid, self.objects.frame_size(*object).unwrap_or(0))
+                }
                 Node::Watch { qid, .. } => (*qid, 0),
             },
         };
@@ -232,9 +261,13 @@ impl Export for PortalClientFiles {
                         .collect(),
                 ))
             }
-            (Node::Transfer { object, .. }, _) => self
+            (Node::Transfer { object, .. } | Node::FrameInfo { object, .. }, _) => self
                 .objects
                 .read(*object, offset, count)
+                .map(ReadOutcome::Ready),
+            (Node::Frame { object, .. }, _) => self
+                .objects
+                .read_frame(*object, offset, count)
                 .map(ReadOutcome::Ready),
             (Node::Watch { .. }, _) if offset != 0 => Err(Errno::EINVAL),
             (Node::Watch { .. }, _) if count == 0 => Ok(ReadOutcome::Ready(Vec::new())),
@@ -256,9 +289,16 @@ impl Export for PortalClientFiles {
             return Err(Errno::ENOTDIR);
         }
         let mut entries = Vec::new();
-        for (index, name) in [b"api".as_slice(), b"status", b"transfer", b"watch"]
-            .into_iter()
-            .enumerate()
+        for (index, name) in [
+            b"api".as_slice(),
+            b"status",
+            b"transfer",
+            b"watch",
+            b"frame-info",
+            b"frame",
+        ]
+        .into_iter()
+        .enumerate()
         {
             if (index as u64) < cookie || entries.len() == max {
                 continue;

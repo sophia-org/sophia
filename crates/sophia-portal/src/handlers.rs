@@ -2,6 +2,26 @@
 use sophia_9p::Errno;
 use sophia_protocol::{PortalRequest, PortalTransferKind};
 
+pub struct OutputCapturePayloadHandler;
+impl PortalPayloadHandler for OutputCapturePayloadHandler {
+    fn supports(&self, kind: PortalTransferKind) -> bool {
+        kind == PortalTransferKind::ScreenCapture
+    }
+    fn validate(&self, request: &PortalRequest, payload: &[u8]) -> Result<(), Errno> {
+        use sophia_protocol::output_capture::{OUTPUT_CAPTURE_MIME, OutputCaptureFrameInfo};
+        if !self.supports(request.transfer.kind)
+            || request.transfer.mime_type.as_deref() != Some(OUTPUT_CAPTURE_MIME)
+        {
+            return Err(Errno::EOPNOTSUPP);
+        }
+        let info = OutputCaptureFrameInfo::decode(payload).ok_or(Errno::EINVAL)?;
+        if info.output_generation != request.transfer.generation {
+            return Err(Errno::ESTALE);
+        }
+        Ok(())
+    }
+}
+
 /// A bounded upload handler. Other execution representations require their
 /// own admitted handoff; registering a kind does not invent such a handoff.
 pub trait PortalPayloadHandler: Send + Sync {

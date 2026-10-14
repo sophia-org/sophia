@@ -39,9 +39,12 @@ and remain excluded from that release.
 
 The native renderer now has an explicit composed-image readback operation.
 It returns bounded immutable RGBA8 bytes; the CPU/GPU pixel and lifetime test
-passes on the isolated render node. Next connect this primitive to the retained
-presented-output identity and the recipient grant. Do not treat a rendered buffer
-as proof that KMS presented it, or the renderer's snapshot as disclosure authority.
+passes on the isolated render node. The portal recipient now binds a small
+frame record and separately retained image under one common lease. Its source
+pins a selected presentation and serializes output replacement with reads.
+The live renderer-worker/completion identity, request admission, aggregate
+retention bounds and CLI remain unconnected. Do not treat supplied presentation
+records in the portal tests as proof that KMS presented a frame.
 
 ## Source findings
 
@@ -62,8 +65,9 @@ and portal-recipient endpoints, so no ambient screenshot socket is needed.
 The next implementation must join three existing boundaries. Session creates
 each observer's recipient in `live_session/application_launches.rs` and serves
 it through `namespace_launch/dispatch.rs`; that is where the admitted request
-must meet its recipient. `sophia-portal/src/recipient_object.rs` currently limits
-generic objects to 65,536 bytes, so it cannot carry a full output image unchanged.
+must meet its recipient. `sophia-portal/src/recipient_object.rs` limits generic
+objects to 65,536 bytes. Capture keeps that bound for its record and retains the
+image separately under the same lease.
 The native renderer's `PersistentXrgb8888GlPipeline::read_composition_pixels`
 returns diagnostic metrics, not retained image bytes. Its diagnostic capture
 switch is not an authorized screenshot mechanism. The new explicit readback
@@ -87,6 +91,51 @@ frame's immutable presentation identity: ordinary later frames must not silently
 replace an opened image, and an output replacement must not revive its grant.
 
 ## Contract and validation
+
+The final delivery barrier still needs an explicit connection-level join.
+`PortalClientConnection::poll` drives the shared 9P server, whose connection
+queues encoded replies after an export read. A successful guarded read alone
+does not prove that queued image bytes cannot be written after lock. The live
+capture path must cancel or fence unsent replies before applying that lock,
+with a real socket/backpressure control. Holding the existing execution mutex
+around the whole server turn would re-enter it during export reads and is not
+a valid solution. Keep this separate from the tested source/read barrier.
+
+### Capture record and recipient binding
+
+The new passive 64-byte record names an output incarnation and a completed
+presentation, with dimensions, stride and RGBA8 format. `OutputCaptureSource`
+selects one immutable image for a handoff; the common coordinator authorizes the
+record, and recipient installation obtains that exact image from the trusted
+source. The upload protocol's 64 KiB bound is unchanged. The recipient exposes
+`frame-info` and `frame`, with one shared revocable lease and fresh binding qids.
+The [recipient contract](../../portal-client-files.md#output-capture-bindings)
+owns the format and read semantics.
+
+The source-generation guard extends the common lease's read barrier. Its lock
+order is execution fence, source, recipient. Publication and output withdrawal
+take only the source guard; binding revocation takes only the recipient guard.
+Later presentations do not alter an opened image. Output withdrawal waits for
+an earlier guarded read; replacement cannot reuse an incarnation. Lock applied
+during collection prevents installation, and unlock does not revive old access.
+
+Seven capture-binding tests pass with the real common coordinator, lease and
+recipient export and supplied presentation records. They cover a 256 KiB image
+through bounded reads, exact record/image agreement, later-frame immutability,
+fresh binding identity, output replacement with an unrelated output still
+usable, lock/revoke behavior, withdrawal/read serialization and refusal of
+invalid presentations. The record codec also passes an independent fixed-byte
+fixture and malformed-field checks. Removing the output-generation comparison
+from the guarded read made the replacement control expose old pixels rather
+than return `ESTALE`; the comparison was restored and all controls pass.
+
+The portal/protocol suites, seven capture-binding controls, record-codec test
+and full `umask 022; cargo-slot sophia cargo xtask check` gate passed. The full
+gate includes workspace tests, strict Clippy, SDK checks, render-node pixel
+checks and evidence verifiers. Logs are retained under
+`~/.local/state/sophia/development-evidence/t319-capture-binding/`.
+These are supplied-presentation tests, not live renderer or network-delivery
+acceptance. The production Session capture path is not installed or connected.
 
 ### Composed-image readback
 
