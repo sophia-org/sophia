@@ -20,6 +20,9 @@ analyze the retained traces before deciding on another measurement. Do not
 retry automatically or weaken the comparison after the result.
 The failed package's manifest is
 `dec77d32f0aad91105dd9fa9fde6446af88d2f2bb8855d97c319e23c2311b0b1`.
+The [trace audit](#resource-comparison-failure-and-trace-audit-2026-10-14)
+now verifies complete protocol exchanges in all four captured arms. It does
+not qualify the unequal resource populations or establish the stall's cause.
 
 The approved twenty-pair latency result remains qualified. The resource hold
 has been released to Claude and Astra. Reported transfers, text edits and the
@@ -5104,3 +5107,54 @@ analysis, sealing, the final coverage record and task completion remain open.
 - [WM reactor investigation](87juczar-wm-file-reactor-waits-behind-the-driver-command-channel.md) preserves the measured failure and scheduling correction.
 - [Observer delivery plan](../plans/jsschoen-converge-public-roles-on-one-9p-core.md#first-deliverable-and-dependency-order) separates prerequisites from the repository queue.
 - [t310 acceptance](ig4obtxu-copies-and-rasterization-dominate-after-kms-mapping-retention.md) owns the current occupied-output evidence.
+
+## Resource comparison failure and trace audit (2026-10-14)
+
+The full resource collector exited with status 1 after the 120 Hz idle pair.
+At 60 Hz, both transports admitted and settled all 20,000 updates. At 120 Hz,
+files settled 19,999 and coalesced move 1571 into move 1572; frames settled all
+20,000. Every offer is accounted for. Neither arm rejected work or left it
+unresolved. Maximum owner queue plus in-flight occupancy was two for the
+120 Hz file arm and one for the other three. The frozen resource method
+requires identical normalized outcomes, so it refused this comparison. Loaded
+resource pairs and the concluding plain idle probes did not run.
+
+The original package remains failed and sealed as
+`t249-resource-campaign-20261014-01`, manifest
+`dec77d32f0aad91105dd9fa9fde6446af88d2f2bb8855d97c319e23c2311b0b1`.
+A separate diagnostic verified every file against that manifest and reconstructed
+the complete peer socket streams in all four arms. Each frame arm has 20,010
+acknowledged exchanges. The 60 Hz file arm has 380,171 tag-correlated RPCs;
+the 120 Hz file arm has 380,150. These counts include setup and teardown and
+are different protocol units, not equal-cost operations. Removing a reply
+fails the exchange validator in every arm. Recorded EOF and stale-handle
+errors occur after the completed workload ledger, during intentional teardown.
+There are no unmatched exchanges or leftover partial packet bytes.
+
+Package `t249-resource-failure-analysis-20261014-01` has manifest
+`f0f806412f52d725b08a7289a5bf9b5bc4e97412307420c8a5a578a81d4ed7ec`.
+It preserves raw resource intervals, allocator counters, the slowest offers,
+longest peer socket calls and exact socket-window timestamps. It does not
+convert the failed campaign into qualification.
+
+The traced 120 Hz file move distribution has settled-only p50 5.256357 ms,
+p99 5.643573 ms and maximum 19.541111 ms. Its resize p99 is 5.622644 ms.
+The corresponding frame p99 values are 2.467668 and 2.463490 ms. These are
+instrumented observations, not latency acceptance results. Their scale is
+consistent with substantial profiling overhead compared with the qualified
+plain idle runs; the evidence does not isolate tracing from every other
+instrumentation or scheduling effect, nor establish the cause of coalescing.
+Do not use these timings to replace or invalidate the separate plain campaign.
+
+Claude's activity reports are retained with the failed package. The reported
+owner-authorized Git packing/upload at 10:58:26.59–10:58:28.47 UTC overlaps the
+120 Hz file socket window, 10:55:43.915983–10:58:30.986832 UTC. The frame socket
+window began at 10:58:39.479436 UTC and ended at 11:01:26.215934 UTC. Later
+reported edits and transfers from 11:17 onward occurred after these measurements.
+Other small transfers and edits remain disclosed; no exclusive-host claim is
+made. The hold was released after the collector's terminal result was verified.
+
+Next, review how to measure resource costs without conflating observer overhead
+and unequal completed work. Preserve identical offered workloads, full accounting,
+all failures and the existing latency decision. Do not retry this campaign
+blindly, select matching survivors or silently weaken its outcome guard.
