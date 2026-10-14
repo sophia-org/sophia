@@ -59,12 +59,12 @@ The first 120 Hz CPU-load pair failed exact outcome agreement: frames coalesced
 two moves, while files settled every update. Numeric budgets passed. That
 condition, the final latency audit, resource profiles and final candidate
 binding remain open. The [short scheduling diagnostic and comparison proposal](#scheduling-diagnostic-and-comparison-proposal-2026-10-14)
-did not establish a scheduling fix. The proposed comparison change is not
-approved; do not apply it or rerun until one happens to pass.
-The comparison-method decision has been requested from niltempus and remains
-unanswered. No dependent measurement or acceptance reanalysis may proceed on
-the assumption that silence approves it. The candidate source-impact audit
-below is complete; latency qualification, resources and final closure remain open.
+did not establish a scheduling fix. niltempus has now explicitly approved the
+[conservative comparison decision](#approved-conservative-comparison-2026-10-14).
+Audit every retained campaign05 pair under that rule and collect the four
+missing 120 Hz loaded pairs under a renewed host hold. Preserve the sealed
+original failure. The candidate source-impact audit below is complete; latency
+qualification, resources and final closure remain open.
 
 Use the [row dispositions](#remaining-row-dispositions-2026-10-13) and
 [t249 acceptance criteria](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249).
@@ -4989,6 +4989,28 @@ pair, generic gate, supporting checks and final SDK gate. This establishes sourc
 impact and evidence integrity, not a new execution or a latency/resource pass.
 Package `t249-candidate-impact-20261014-01` has manifest
 `1fd0ab248bd70469e530d29919369ff1bfe7e5f2c8fbb3300c004ab50f2a76a7`.
+
+## Approved conservative comparison (2026-10-14)
+
+After reviewing the consequences, niltempus explicitly approved the comparison
+proposal above. This is a change to the frozen comparison rule after failure,
+not a claim that the original campaign passed. Preserve its sealed result.
+
+The approved rule includes every admitted update in percentile rank bounds.
+Coalesced updates have unknown individual settlement times, bounded by zero
+and infinity. Compare file upper bounds with frame lower bounds, retaining
+the +1 ms p95, +2 ms p99 and absolute file-p99 limits. All input, accounting,
+replacement-chain, owner, queue, timeout, disconnect and failure requirements
+in the proposal remain mandatory. Record ordinary settled-only statistics
+separately. The approval does not waive resource or final candidate checks.
+
+Apply the rule to all sixteen retained campaign05 pairs without selection, then
+collect the missing 120 Hz loaded pairs 2–5 in their original alternating order.
+Use the same binaries, workload, CPU affinity, priority and load. Obtain a fresh
+host hold and review for the new window. A new combined audit must bind all
+twenty pairs and both host windows; it must not rewrite campaign05's failure or
+claim that all twenty pairs came from one new run. Earlier campaigns remain
+diagnostic and excluded. Physical acceptance remains separate.
 
 ## Connections
 

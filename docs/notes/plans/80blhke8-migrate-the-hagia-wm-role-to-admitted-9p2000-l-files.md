@@ -179,6 +179,12 @@ subject only to recorded later decisions. Case count is not the exit.
 
 #### Qualification sequence after the 23-case baseline
 
+The [approved conservative comparison](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#approved-conservative-comparison-2026-10-14)
+replaces the experiment's identical-outcome requirement with all-admitted
+percentile bounds. It preserves every numerical budget and accounting/failure
+requirement below, retains the original failed campaign, and requires an audit
+of all twenty pairs. It does not waive resource measurements or final binding.
+
 These are work packages within t249, not new queue tasks or reduced exits:
 
 1. Join pointer move/resize/coalescing/cancel through the actual Session owner
