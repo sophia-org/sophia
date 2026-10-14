@@ -4643,6 +4643,30 @@ and a fixed Cargo slot. Package `t249-final-sdk-export-20261013-01` has manifest
 This closes the required independent export rerun under supplied admission and
 scripted-outcome limits. It does not qualify physical presentation or latency.
 
+## Follow-up campaign with scheduling observations (2026-10-14)
+
+Run one follow-up campaign after the complete fsync diagnostic failed to
+reproduce the stall in either arm. This is a recorded experimental decision,
+not a correction of an established cause. Preserve the first failed campaign.
+The source, release binaries, workload, affinity, priority, load, twenty-pair
+schedule, complete-outcome comparison and all numeric budgets remain unchanged.
+Stop again after the first failing complete pair; do not retry automatically.
+
+The added observer samples the fixture process tree every 20 ms. It records
+each thread's runtime, runnable wait, scheduling count, state and kernel wait
+channel, with monotonic/wall-clock brackets and process start identities.
+It runs on CPU 4, outside the fixture and imposed load's CPUs 0–3. Samples
+remain in bounded memory until the arm exits; output writes do not run beside
+the measured fixture. A child control alternated computation and sleep and
+verified both states and increasing CPU time. Missing observations fail the
+arm rather than silently qualifying a run without the promised diagnostic.
+These periodic observations can miss short waits and are not a complete
+scheduler trace. Both transports receive the same observer.
+
+The frozen method, observer source and control are saved before execution in
+`t249-campaign-20261014-02`. This campaign still must pass all twenty pairs;
+the earlier diagnostic and passing SDK gate substitute for none of them.
+
 ## Connections
 
 - [t249 plan](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249) owns the unchanged acceptance requirements.
