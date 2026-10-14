@@ -14,12 +14,13 @@ release is `niltempus-e8818395183f05263ccc`: Sophia `d5938f2ad`, Hagia
 `2ba92d9`, integration `38b5b6d`, with explicit WM 9P2000.L selection. The
 ordinary session is `00000001791981993103-12d43227-7ebd-4663-be34-b144d1aff63e`.
 The operator reports working Lom, application launcher, overview, workspaces,
-Alt-Tab and screen lock/unlock. The retained events corroborate lock, coverage
+Alt-Tab and screen lock/unlock. The operator also floated the active Kitty
+window, moved it and resized it successfully in this same session. The retained events corroborate lock, coverage
 of two heads, authentication checking and unlock. These observations do not
 claim every workflow on both heads.
 
 The non-disruptive release audit and rehearsal preparation pass. The next
-attended checks are move/resize and recovery with application state preserved.
+attended checks concern recovery with application state preserved.
 The existing rehearsal must run after logout on tty4; it deliberately restarts
 the WM, rejects a profile and logs out. No live restart, profile change,
 shutdown or release switch was performed during this audit.
@@ -72,7 +73,9 @@ failed campaign is relabeled and no benchmark is rerun merely for this audit.
 
 ## Remaining acceptance and prepared commands
 
-Move/resize has not yet been reported for this candidate. Ordinary-use recovery
+Floating, moving and resizing the active Kitty window passed by operator
+observation on this candidate. This is an attended functional check, not a
+numeric input-to-photon measurement. Ordinary-use recovery
 must preserve input and application state. Exact-release startup/refusal,
 restart, rejected-profile rollback and shutdown need the attended rehearsal;
 September 26's earlier successful rehearsal does not substitute for it.
