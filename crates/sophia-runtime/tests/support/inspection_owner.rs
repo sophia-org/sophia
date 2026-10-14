@@ -14,6 +14,9 @@ mod wire;
 #[path = "inspection_authenticated.rs"]
 mod authenticated;
 
+#[path = "inspection_output_status.rs"]
+mod output_status;
+
 fn value() -> InspectionSnapshot {
     InspectionSnapshot {
         session_generation: 2,

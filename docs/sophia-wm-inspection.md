@@ -71,11 +71,33 @@ renderer is not a live disclosure interface.
 
 | Path | Access | Meaning |
 | --- | --- | --- |
-| `/` | 0500 | Fixed `api`, `status`, `snapshot`, `events` enumeration |
+| `/` | 0500 | Fixed `api`, `status`, `snapshot`, `events`, `output-status` enumeration |
 | `api` | 0400 | ASCII family, schema, bounds and interpretation |
 | `status` | 0400 | Availability, generations, selected wire/capabilities, event floor/tail and loss generation |
 | `snapshot` | 0400 | Immutable object pinned at open, with its correlated sequence and next event byte offset |
 | `events` | 0400 | Retained NDJSON owner reports, addressed by observer byte offset |
+| `output-status` | 0400 | Bounded output-owner observation, separate from retained policy geometry |
+
+`output-status` is an additive text view for the observer milestone. Each open
+copies one immutable observation; reopen to observe changes. Before an owner
+report, after a connection fence, or while a publication was lost to contention,
+open returns EAGAIN. Existing admission and retained-handle revocation apply.
+It does not change snapshot/event cursors or grant capture authority.
+
+The single ASCII line starts `sophia-output-status version=1` and contains
+`availability` (unavailable, waiting, recovering or available),
+`topology_generation`, `owner_generation`, `owner_retirements`,
+`recovery_stage`, `retry_at_session_msec` (an absolute session-relative deadline
+or `none`), `failure_stage`, `failure_code`, `failure_errno`, and
+`capture_authority=none`. Integers use decimal. Tokens have at most 48 ASCII
+alphanumeric/underscore bytes; free-form backend errors and paths are absent.
+The fixed fields bound the line below 1024 bytes.
+
+Availability follows the native owner and seat, not the WM's retained output
+list. Retirement count is scoped to its native owner; it is not an image's
+presentation generation or proof that every head presented. This aggregate
+view alone cannot select or authorize the future per-output capture. The capture
+contract must bind its own output, presentation and revocation identities.
 
 JSON has schema 1, stable field/enum names and escaped strings. Every u64 is a
 canonical decimal string, including capability masks, so clients do not lose

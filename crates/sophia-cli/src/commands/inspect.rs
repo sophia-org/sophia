@@ -10,7 +10,7 @@ use std::io::{Write, stdout};
 use std::time::{Duration, Instant};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
-const NAMES: [&str; 4] = ["api", "status", "snapshot", "events"];
+const NAMES: [&str; 5] = ["api", "status", "snapshot", "events", "output-status"];
 
 pub(super) fn run(args: &[String]) -> Result<()> {
     if matches!(args, [arg] if arg == "--help" || arg == "-h")
@@ -34,10 +34,12 @@ pub(super) fn run(args: &[String]) -> Result<()> {
             let mut directory = client.walk(&root, &[])?;
             client.open(&mut directory, true)?;
             let entries = client.list_all(&directory, NAMES.len())?;
-            if !entries
-                .iter()
-                .map(|entry| entry.name.as_slice())
-                .eq(NAMES.map(str::as_bytes))
+            // Older inspection services lack the additive output-status view.
+            if !(entries.len() == 4 || entries.len() == NAMES.len())
+                || !entries
+                    .iter()
+                    .map(|entry| entry.name.as_slice())
+                    .eq(NAMES[..entries.len()].iter().map(|name| name.as_bytes()))
             {
                 return Err("inspection root vocabulary changed".into());
             }

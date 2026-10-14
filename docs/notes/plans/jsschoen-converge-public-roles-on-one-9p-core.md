@@ -41,6 +41,15 @@ and none can be designed around it later.
 
 ## First deliverable and dependency order
 
+On October 14, after t249/t250 completion, niltempus explicitly prioritized the
+zsx0tk4k/ernn0bkv observer milestone ahead of CPU optimization. t319 is promoted
+to the critical lane, including its bounded t257 output-status prerequisite.
+The broader t257 per-role status work is not promoted. The already completed
+admission, recipe and portal foundations are reused. This authorizes status,
+capture and their qualification, not input injection or native application work.
+The [observer implementation record](../investigations/hok3zvgt-deliver-the-admitted-observer-output-status-and-capture-path.md)
+tracks the implementation and remaining gates. Task order stays in todo.md.
+
 The [October 12 stopping-point reconciliation](../investigations/5rzn1zue-wm-qualification-after-source-retirement-and-attended-output-recovery.md#progress-against-zsx0tk4k-and-ernn0bkv)
 maps delivered admission/composition/portal foundations and remaining work back
 to zsx0tk4k and ernn0bkv. It does not promote capture or change the queue.

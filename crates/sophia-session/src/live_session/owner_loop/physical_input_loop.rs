@@ -118,6 +118,42 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
         // Flush the preceding turn before any early-continue path.
         if let Some(wm) = wm_session.as_mut() {
             wm.service_inspection(logout_requested || session_quiescence.is_some());
+            if wm.public.as_ref().is_some_and(|p| p.inspection.is_some()) {
+                let native_available = runtime.as_ref().zip(native_scanout.as_ref())
+                    .is_some_and(|(runtime, native)| runtime.shell_content_presentation_available(native));
+                let active = seat_state == sophia_backend_live::LiveSeatState::Active;
+                let stable = output_topology_owner.phase == LiveOutputTopologyPhase::Stable
+                    && !output_topology_owner.presentation_pending;
+                let availability = if !active || logout_requested || session_quiescence.is_some()
+                    || (native_scanout.is_none() && stable) {
+                    sophia_protocol::inspection::OutputAvailability::Unavailable
+                } else if output_topology_waiting_for_output && native_scanout.is_none() {
+                    sophia_protocol::inspection::OutputAvailability::Waiting
+                } else if native_available && stable {
+                    sophia_protocol::inspection::OutputAvailability::Available
+                } else {
+                    sophia_protocol::inspection::OutputAvailability::Recovering
+                };
+                let stage = match output_topology_owner.phase {
+                    LiveOutputTopologyPhase::Stable => "stable",
+                    LiveOutputTopologyPhase::Quarantined(_) => "quarantined",
+                    LiveOutputTopologyPhase::Rebuilt => "rebuilt",
+                    LiveOutputTopologyPhase::Published => "published",
+                    LiveOutputTopologyPhase::AwaitingPresentation => "awaiting_presentation",
+                };
+                let (failure_stage, failure_code, failure_errno, _) =
+                    output_topology_waiting_identity.unwrap_or(("none", "none", 0, "none"));
+                wm.publish_output_status(sophia_protocol::inspection::OutputStatus {
+                    availability,
+                    topology_generation: output_topology_owner.publication_generation,
+                    owner_generation: native_scanout.as_ref().map_or(0, |n| n.retirement_owner_identity()),
+                    owner_retirements: native_scanout.as_ref().map_or(0, |n| n.retirements as u64),
+                    recovery_stage: stage,
+                    retry_at_session_msec: output_topology_retry_at.map(|at|
+                        u64::try_from(at.saturating_duration_since(started).as_millis()).unwrap_or(u64::MAX)),
+                    failure_stage, failure_code, failure_errno,
+                });
+            }
             if wm.public.as_ref().is_none_or(|public| public.inspection.is_none()) {
                 config.inspection_socket = None;
             }

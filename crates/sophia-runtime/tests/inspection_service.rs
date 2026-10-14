@@ -70,6 +70,41 @@ fn pin(stream: &mut UnixStream, fid: u32) -> InspectionSnapshotRecord {
 }
 
 #[test]
+fn output_status_wire_is_bounded_read_only_and_fenced() {
+    let mut fixture = Fixture::new();
+    let mut stream = connect(fixture.service.socket_path().unwrap());
+    let publisher = fixture.service.publisher();
+    assert!(publisher.publish_output_status(OutputStatus {
+        availability: OutputAvailability::Waiting,
+        topology_generation: 8,
+        owner_generation: 0,
+        owner_retirements: 0,
+        recovery_stage: "quarantined",
+        retry_at_session_msec: Some(5000),
+        failure_stage: "availability",
+        failure_code: "none",
+        failure_errno: 0,
+    }));
+    opened(&mut stream, 1, b"output-status");
+    let first = call(&mut stream, &read(4, 1, 0, 13));
+    let rest = call(&mut stream, &read(5, 1, 13, 4096));
+    let text = [body(&first), body(&rest)].concat();
+    assert!(text.len() < 1024);
+    let text = String::from_utf8(text).unwrap();
+    assert!(text.contains("availability=waiting"));
+    assert!(text.contains("owner_generation=0"));
+    assert!(text.ends_with("capture_authority=none\n"));
+    call(&mut stream, &walk(6, 2, b"output-status"));
+    assert_eq!(errno(&call(&mut stream, &open(7, 2, 1))), 13);
+    fixture.service.fence(10, None).unwrap();
+    // The transport may close the revoked connection before dispatching read.
+    if stream.write_all(&read(8, 1, 0, 4096)).is_ok() {
+        let response = receive(&mut stream);
+        assert!(response.is_err() || response.is_ok_and(|r| r[4] == 7 && errno(&r) == 116));
+    }
+}
+
+#[test]
 fn admitted_observer_lists_only_fixed_read_only_root_and_pins_snapshot() {
     let fixture = Fixture::new();
     fixture.publish(snapshot(), None);
@@ -102,7 +137,8 @@ fn admitted_observer_lists_only_fixed_read_only_root_and_pins_snapshot() {
             b"api".to_vec(),
             b"status".to_vec(),
             b"snapshot".to_vec(),
-            b"events".to_vec()
+            b"events".to_vec(),
+            b"output-status".to_vec()
         ]
     );
     call(&mut stream, &clunk(8, 14));

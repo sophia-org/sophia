@@ -4,9 +4,11 @@
 
 mod codec;
 mod format;
+mod output_status;
 
 pub use codec::*;
 pub use format::*;
+pub use output_status::*;
 
 use serde::{Deserialize, Serialize};
 

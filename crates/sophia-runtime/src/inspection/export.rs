@@ -22,6 +22,7 @@ pub(super) enum Node {
     Status,
     Snapshot,
     Events,
+    OutputStatus,
 }
 
 pub(super) enum Handle {
@@ -63,7 +64,7 @@ impl InspectionExport {
         if !shared.valid(generation) {
             return Err(InspectionError::Fenced);
         }
-        let base_qid = shared.qids(5)?;
+        let base_qid = shared.qids(6)?;
         Ok(Self {
             shared,
             admission,
@@ -107,6 +108,7 @@ impl InspectionExport {
                 Node::Status => 2,
                 Node::Snapshot => 3,
                 Node::Events => 4,
+                Node::OutputStatus => 5,
             }
     }
     fn status(&self) -> Result<Vec<u8>, Errno> {
@@ -180,6 +182,7 @@ impl Export for InspectionExport {
             WalkName::Child(b"status") => Ok(Node::Status),
             WalkName::Child(b"snapshot") => Ok(Node::Snapshot),
             WalkName::Child(b"events") => Ok(Node::Events),
+            WalkName::Child(b"output-status") => Ok(Node::OutputStatus),
             WalkName::Child(_) => Err(Errno::ENOENT),
         }
     }
@@ -207,6 +210,18 @@ impl Export for InspectionExport {
         }
         match node {
             Node::Root => Ok(Handle::Directory),
+            Node::OutputStatus => {
+                let value = *self.shared.output_status.lock().map_err(|_| Errno::EIO)?;
+                let (generation, value) = value.ok_or(Errno::EAGAIN)?;
+                if generation != self.generation
+                    || !self.shared.output_status_valid.load(Ordering::SeqCst)
+                {
+                    return Err(Errno::EAGAIN);
+                }
+                let bytes = encode_output_status(&value).ok_or(Errno::EIO)?;
+                let qid = self.shared.qids(1).map_err(|_| Errno::ENOSPC)?;
+                Ok(Handle::Bytes { qid, bytes })
+            }
             Node::Api | Node::Status => {
                 let bytes = if *node == Node::Api {
                     inspection_api_text().into_bytes()
@@ -332,11 +347,12 @@ impl Export for InspectionExport {
         if *directory != Node::Root || !matches!(handle, Handle::Directory) {
             return Err(Errno::ENOTDIR);
         }
-        let children: [(&[u8], Node); 4] = [
+        let children: [(&[u8], Node); 5] = [
             (b"api", Node::Api),
             (b"status", Node::Status),
             (b"snapshot", Node::Snapshot),
             (b"events", Node::Events),
+            (b"output-status", Node::OutputStatus),
         ];
         let start = usize::try_from(cookie).map_err(|_| Errno::EINVAL)?;
         if start > children.len() {

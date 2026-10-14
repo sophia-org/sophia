@@ -17,6 +17,8 @@ pub enum PublishOutcome {
 }
 
 pub(super) struct Shared {
+    pub output_status: Mutex<Option<(u64, OutputStatus)>>,
+    pub output_status_valid: AtomicBool,
     pub authenticated_connections: AtomicUsize,
     /// Only clone or swap an Arc while this lock is held. Never format, copy
     /// payload bytes, allocate qids, or destroy a retired view under it.
@@ -59,6 +61,8 @@ impl Publication {
 impl Shared {
     pub fn new(wake: UnixStream) -> Self {
         Self {
+            output_status: Mutex::new(None),
+            output_status_valid: AtomicBool::new(false),
             authenticated_connections: AtomicUsize::new(0),
             view: Mutex::new(Arc::new(Publication {
                 generation: 0,
@@ -143,6 +147,30 @@ impl Shared {
 }
 
 impl InspectionPublisher {
+    /// Copy one bounded owner observation without waiting for an observer.
+    /// Contention withdraws availability until the next successful report.
+    pub fn publish_output_status(&self, value: OutputStatus) -> bool {
+        let generation = self.shared.generation.load(Ordering::SeqCst);
+        if !self.shared.valid(generation) {
+            self.shared
+                .output_status_valid
+                .store(false, Ordering::SeqCst);
+            return false;
+        }
+        let Ok(mut slot) = self.shared.output_status.try_lock() else {
+            self.shared
+                .output_status_valid
+                .store(false, Ordering::SeqCst);
+            return false;
+        };
+        *slot = Some((generation, value));
+        let valid = self.shared.valid(generation);
+        self.shared
+            .output_status_valid
+            .store(valid, Ordering::SeqCst);
+        valid
+    }
+
     fn busy(&self) -> Result<PublishOutcome, InspectionError> {
         Ok(PublishOutcome::Busy {
             loss_generation: self.shared.loss()?,

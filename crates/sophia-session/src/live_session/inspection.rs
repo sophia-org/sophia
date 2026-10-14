@@ -30,6 +30,12 @@ struct InspectionSignature {
 }
 
 impl LiveWmSession {
+    fn publish_output_status(&self, value: sophia_protocol::inspection::OutputStatus) {
+        if let Some(inspection) = self.public.as_ref().and_then(|p| p.inspection.as_ref()) {
+            inspection.publisher.publish_output_status(value);
+        }
+    }
+
     fn start_inspection(
         &mut self,
         config: &mut PersistentXtermSessionConfig,
