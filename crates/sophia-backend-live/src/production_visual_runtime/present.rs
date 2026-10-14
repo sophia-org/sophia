@@ -140,7 +140,14 @@ impl LiveProductionVisualRuntime {
                 .output_native_cleanup_pending(index)
                 .ok_or("Present output cleanup state was not registered")?;
             let pending_frame = native_scanout.pending_frame(*output);
-            if in_flight || cleanup_pending || !native_scanout.frame_queue_ready(*output) {
+            // Mirrors can queue ordinary repaints while a sibling is still
+            // presenting. A new Present must instead wait for every head's
+            // existing retirement owner before claiming its own frame.
+            if in_flight
+                || cleanup_pending
+                || !native_scanout.frame_queue_ready(*output)
+                || native_scanout.output_retirement_protected(*output)
+            {
                 // The primary can no longer reach this: the reducer withholds
                 // the presentation effect while it owes a native frame. A
                 // cohort spanning outputs can still find a secondary busy, and

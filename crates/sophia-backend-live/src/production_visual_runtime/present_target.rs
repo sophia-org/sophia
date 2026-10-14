@@ -6,6 +6,7 @@ use super::*;
 pub(crate) trait NativePresentTarget: NativeCycleTarget + NativeSubmissionTarget {
     fn pending_frame(&self, output: OutputId) -> bool;
     fn frame_queue_ready(&self, output: OutputId) -> bool;
+    fn output_retirement_protected(&self, output: OutputId) -> bool;
     fn has_preview_frame_failure(&self, output: OutputId) -> bool;
     fn submitted_content(&self, output: OutputId) -> Option<LiveProductionScanoutContent>;
     fn queue_present_output_head_composition_frames(
@@ -34,6 +35,10 @@ impl NativePresentTarget for LiveProductionNativeScanout {
 
     fn frame_queue_ready(&self, output: OutputId) -> bool {
         LiveProductionNativeScanout::frame_queue_ready(self, output)
+    }
+
+    fn output_retirement_protected(&self, output: OutputId) -> bool {
+        LiveProductionNativeScanout::output_retirement_protected(self, output)
     }
 
     fn has_preview_frame_failure(&self, output: OutputId) -> bool {

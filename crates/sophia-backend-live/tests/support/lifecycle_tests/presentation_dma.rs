@@ -4,15 +4,20 @@ use super::*;
 
 #[test]
 fn native_dma_driver_retires_the_exact_candidate_after_image_promotion() {
-    retire_candidate(false);
+    retire_candidate(false, false);
 }
 
 #[test]
 fn native_dma_authority_cycle_retires_its_admitted_candidate() {
-    retire_candidate(true);
+    retire_candidate(true, false);
 }
 
-fn retire_candidate(authority_cycle: bool) {
+#[test]
+fn native_dma_present_waits_for_both_heads_of_an_existing_retirement() {
+    retire_candidate(false, true);
+}
+
+fn retire_candidate(authority_cycle: bool, protected: bool) {
     let outputs = [outputs()[0]];
     let output = outputs[0].id;
     let application = SurfaceId::new(7, 1);
@@ -32,6 +37,16 @@ fn retire_candidate(authority_cycle: bool) {
         .unwrap();
     scene.runtime.presentation_order = vec![application];
     scene.runtime.surface_outputs.insert(application, output);
+    if protected {
+        let frames = scene
+            .runtime
+            .retained_output_head_composition_frames(&scene.scene, &scene.target)
+            .unwrap();
+        scene
+            .target
+            .queue_retained_batch(frames, &BTreeSet::from([output]))
+            .unwrap();
+    }
     let (transaction, candidate) = if authority_cycle {
         let transaction = TransactionId::from_raw(900);
         let handle = BufferHandle::from_raw(900);
@@ -99,6 +114,25 @@ fn retire_candidate(authority_cycle: bool) {
             .surface_content_stream
             .begin(candidate)
             .unwrap();
+        if protected {
+            let queued = scene.target.queued_batches;
+            scene
+                .runtime
+                .drive_gpu_presentation_on_target(&scene.scene, Some(&mut scene.target))
+                .unwrap();
+            assert_eq!(scene.target.queued_batches, queued);
+            assert!(!scene.runtime.present_scheduler.has_submitted());
+            scene.target.install(output).unwrap();
+            scene.target.prepare(output);
+            scene.target.flip(output, 0);
+            // Primary completion alone cannot release the sibling's debt.
+            scene
+                .runtime
+                .drive_gpu_presentation_on_target(&scene.scene, Some(&mut scene.target))
+                .unwrap();
+            assert_eq!(scene.target.queued_batches, queued);
+            scene.target.flip(output, 1);
+        }
         scene
             .runtime
             .drive_gpu_presentation_on_target(&scene.scene, Some(&mut scene.target))

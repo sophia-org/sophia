@@ -27,7 +27,13 @@ impl NativePresentTarget for MirroredTarget {
     }
 
     fn frame_queue_ready(&self, output: OutputId) -> bool {
-        self.ready(output)
+        // Production mirrors admit ordinary queued repaints independently of
+        // retirement protection; Present must check that protection itself.
+        !self.preview_failures.contains_key(&output)
+    }
+
+    fn output_retirement_protected(&self, output: OutputId) -> bool {
+        self.protected(output)
     }
 
     fn has_preview_frame_failure(&self, output: OutputId) -> bool {

@@ -9,6 +9,29 @@ tags: [investigation, protocol, capture]
 
 ## Current resumption
 
+Mirror qualification found a production failure before any capture: the
+temporary mirrored session displayed both heads, then exited when the operator
+launched Kitty. Session
+`00000001792007698926-638e0a8e-6170-41fc-8c7c-8ea9236b9b14`
+records `composition output already owns a distinct retirement` in
+`failure-cause`; events 210–218 show bounded native cleanup. No mirror acceptance
+is claimed. The DMA Present driver checked general mirror queue availability
+without checking an existing protected retirement. A repair adds that check
+before consuming the queued Present; its regression exercises a queued debt,
+primary-only completion, and successful Present after both heads finish.
+The regression passes with the repair and fails without it with the exact live
+error (`mirror-present-regression-red.log`). The full deterministic gate passed
+in `mirror-present-check.log`, including workspace tests, strict Clippy, layout,
+tooling and GLX/EGL graphics checks. Installation and attended retry remain pending.
+
+The temporary login entry is `/usr/share/wayland-sessions/sophia-mirror.desktop`
+(Sophia Mirror Test). Its launcher and profile are under the evidence directory's
+`mirror-preparation/`. The profile derives from the installed packaged desktop,
+not the personal desktop file: the normal login selects the packaged profile
+explicitly. Session-profile validation passed with the installed Hagia checker.
+The normal login and installed release are unchanged. Do not retry the mirror
+session until the repair is installed. Remove the temporary entry after testing.
+
 The daily session runs `niltempus-1ce83e7579cba2b564c9` (Sophia `629cb8a80`,
 integration `243605d`). The repaired capture path works on both physical
 outputs. Exact CPU, GLX and EGL pixels match on output 1; capture replacement
@@ -79,13 +102,11 @@ full gate and the combined attended-probe gate passed; the latter is recorded
 in `attended-probes-check.log`. The authentication refactor retained the passing
 physical replacement result in launch 21 (81451 → 81454).
 
-The operator completed lock/unlock and KVM loss/return. Next qualify mirror
-capture and its costs. A validated temporary desktop profile is prepared at
-`mirror-preparation/mirror-desktop.kdl` under the evidence directory, with an
-unchanged backup at `mirror-preparation/original-desktop.kdl`. It mirrors HDMI
-onto the DisplayPort primary with `fit`; it has not been installed. Arrange a
-new attended session before activating it, then restore the daily profile after
-qualification. No build, capture probe or quiet-window hold remains active.
+The operator completed lock/unlock and KVM loss/return. Repair the mirror Present
+failure above before measuring mirror capture and its costs. The temporary
+profile mirrors HDMI onto the DisplayPort primary with `fit`; the original
+packaged profile is saved as `mirror-preparation/packaged-desktop.kdl`.
+No capture probe or quiet-window hold remains active.
 
 ## Acceptance evidence audit, 2026-10-14
 
