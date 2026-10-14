@@ -20,7 +20,8 @@ of two heads, authentication checking and unlock. These observations do not
 claim every workflow on both heads.
 
 The non-disruptive release audit and attended seven-phase rehearsal pass.
-Whole-release rollback remains unobserved. The operator-triggered WM restart
+Whole-release fallback login has passed by operator observation and session
+identity; return to the candidate remains pending. The operator-triggered WM restart
 has also passed: the session logged
 `restart_requested` at boot millisecond 436341656, then `restarted epoch=2
 restarts=1 preserved_layout=true` at 436341898. The operator confirmed the
@@ -29,12 +30,13 @@ those records is an event interval, not a measured visual interruption.
 After explicit agreement to log out, the operator ran the existing rehearsal
 on tty4 through `~/t250-check`. All seven phases passed and the session exited
 0. The rehearsal used a private profile copy and the exact sealed release.
-No release switch has been performed by this audit.
+The operator subsequently selected the verified fallback with `~/t250-back`
+and logged in again; no running process was replaced in place.
 
-Do not use `tools/desktop rollback` now: `previous` names the faulty
-`niltempus-a986fef4f64b032edc11`. The explicitly verified fallback is
+At initial audit, `previous` named the faulty
+`niltempus-a986fef4f64b032edc11`, so plain rollback was unsuitable. The explicitly verified fallback is
 `niltempus-7b8051ace95f8581d57e`. Its store root and sealed files remain intact.
-Actual fallback login and return to the candidate remain unobserved. Task state
+Fallback login now passes; return to the candidate remains unobserved. Task state
 stays in `todo.md`; this is not a t250 completion record.
 
 ## Candidate and packaging incident
@@ -79,6 +81,13 @@ failed campaign is relabeled and no benchmark is rerun merely for this audit.
 
 ## Remaining acceptance and prepared commands
 
+The whole-release rollback trial selected `niltempus-7b8051ace95f8581d57e`.
+The new session `00000001791983420468-4ed544a0-3965-4dad-b086-5320613babd6`
+records Sophia `99860d58f911af381233edf336b953c8b81364b4`, binary SHA-256
+`1d61d6ad48d76f46519ce93cff09c8f4d2e98c0765864fa26674bd650de30041`,
+and WM ready at epoch 1. The operator reports that the desktop appears normal.
+This proves the fallback login; it does not repeat every earlier UI check.
+
 The attended rehearsal at `20261014T130523Z` passed startup readiness, WM
 restart, unchanged-profile reload, rejected-profile reload, restored-profile
 reload, restart after rollback and logout. `candidate.txt` records session
@@ -95,7 +104,8 @@ preserved the layout in the session log and appeared normal to the operator.
 The new exact-release rehearsal supplies profile recovery and shutdown
 evidence independently of September 26's historical result.
 Physical pointer-drag/presentation evidence remains distinct from t249's
-control-path budgets. Whole-release rollback needs an actual compatible relaunch.
+control-path budgets. Return from the verified fallback to the candidate remains
+to be observed.
 
 After logging out and logging in on tty4, run from `~/dev/niltempus`:
 
