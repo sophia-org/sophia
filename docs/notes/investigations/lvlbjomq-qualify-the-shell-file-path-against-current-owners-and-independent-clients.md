@@ -127,9 +127,16 @@ costs remain high. See [the first t331 reduction](#t331-single-connection-readin
 SDK `894dbca` removes temporary reply copies and reuses bounded drain storage;
 production `64524a300` and comparator `651e4a969` pin it. Small-bar file
 allocations fall further to 538–553/frame, bulk to 8,542–8,552. See
-[SDK reply storage](#t331-sdk-reply-storage). Next measure the actual 1920×24
-bar in the supplied-owner diagnostic before further attribution; its current
-64×24 fixture is not the B9 panel workload. Settle accounting scope and freeze the full B9 method,
+[SDK reply storage](#t331-sdk-reply-storage). Comparator `05cbdd476` now measures
+the actual 1920×24 bar: files 839–850 allocations/frame versus IPC 623–634.
+SDK `af21f0a` uses stack request headers and copies writes directly into the
+bounded output buffer. Production `368e07c3f` and comparator `95dc246d2` pin it.
+Workspace tests, strict Clippy, signed snapshot validation and 13 production
+file-path tests pass. The panel diagnostic now measures 709–721 file allocations
+per frame versus IPC's 622–633, still above the +10% target. The next attribution
+candidate is repeated allocation while encoding walk requests; it is unchanged.
+See [panel baseline](#t331-panel-baseline-and-pending-request-encoding).
+Settle accounting scope and freeze the full B9 method,
 then collect the declared campaign and native lifetime/input evidence for both
 desktop selections. See [calibration 04](#native-calibration-04-both-wires-joined).
 See [comparator preparation](#comparator-preparation-october-15).
@@ -1284,6 +1291,51 @@ both client and server work. Next use the intended 1920×24 bar geometry in
 the supplied-owner diagnostic, keeping old results and not confusing their
 6 KiB fixture with the 180 KiB contract example. None of these debug runs is
 a native B9 verdict. t331, the accounting decision and t252 remain open.
+
+## t331: panel baseline and pending request encoding
+
+Comparator `05cbdd476` changes the supplied output to 1920×1080 and its bar to
+1920×24. The four instrumented wire/probe arms complete 64 frames each and
+pass independent normalized-cost replay. Evidence is under
+`~/.local/state/sophia/development-evidence/t252-authenticated-20261015/t331-panel-180k-01/`.
+Each bar uploads exactly 184,320 bytes; each bar-only arm uploads 11,796,480
+bytes. Probe-enabled arms upload 280,231,936 bytes, including 268,435,456 probe
+bytes. These remain debug supplied-owner measurements, not native evidence.
+
+| Workload | Files allocations/frame | IPC allocations/frame |
+| --- | --- | --- |
+| 1920×24 bar | 839–850 | 623–634 |
+| Same bar plus 4 MiB probe | 8,892–8,907 | 8,797–8,805 |
+
+SDK `af21f0a` replaces heap-built fixed request headers with stack arrays
+and writes header/payload slices directly into the existing bounded output
+buffer. Secret writes still reserve the full output bound before copying the
+secret and scrub vacated storage; the temporary body no longer exists.
+Full SDK workspace tests and strict all-target Clippy pass. The test log is
+`t331-sdk-request-tests.log` beside the evidence directory.
+
+Signing initially timed out; after the owner's unlock, the signed SDK commit
+was pushed. Production `368e07c3f` and comparator `95dc246d2` pin that revision.
+The signed snapshot and SDK contract gate passes (`t331-sdk-request-snapshot.log`),
+as do 13 production file transport, reduced-limit and owner tests.
+
+All four instrumented diagnostic arms and normalized-cost replays pass under
+`~/.local/state/sophia/development-evidence/t252-authenticated-20261015/t331-sdk-requests-01/`.
+Geometry, frame counts and uploaded bytes match the panel baseline above.
+
+| Workload | Files before | Files after | IPC after |
+| --- | --- | --- | --- |
+| 1920×24 bar, allocations/frame | 839–850 | 709–721 | 622–633 |
+| Same bar plus 4 MiB probe | 8,892–8,907 | 8,126–8,138 | 8,580–8,595 |
+
+CPU nanoseconds per uploaded MiB are 30,697,002–31,079,608 for the bar on
+files versus 27,936,329–28,201,071 on IPC; with the probe, they are
+21,198,846–21,214,794 versus 24,768,934–24,787,613. These are conservative
+Session-plus-peer bounds in the debug supplied-owner harness. They neither
+approve the proposed accounting scope nor establish native B9 acceptance.
+The panel allocation excess remains above +10%. Source review also found heap
+growth in `walk_body`; that path remains unchanged and is the next attribution
+candidate. t331 and t252 remain open.
 
 ## Connections
 
