@@ -48,8 +48,11 @@ pass; the packaged dock also authenticates from its private installed path.
 Integration `c3e49db` records those checks and supports store artifacts in the
 supplied-export gate. Integration `62b9829` now proves actual dock GPU uploads
 and retained resource custody across replacement on the explicit development
-GPU. Next prove three-client isolation and native lifetime/input, then B9 and
-attended acceptance. The live desktop is
+GPU. Integration `86de1ed` also proves real bar/menu progress while a stopped
+dock reaches catalog backpressure, then through replacement with retained dock
+pixels. Those completion receipts are supplied, not physical presentation.
+Next prove native lifetime/input and the separate baseline, freeze and run B9,
+then complete attended acceptance. The live desktop is
 unchanged. See [the packaged pair](#packaged-pair-october-15) for exact identities.
 
 ## Packaged pair, October 15
@@ -114,6 +117,35 @@ Geometry and catalog decisions are supplied. Admission uses real supervisor
 evidence, while authenticated launch remains separately proven above. This test
 issues no Presented event and proves neither native frame retirement nor
 physical input. Three-client coexistence, B9 and attended acceptance remain open.
+
+## Three-client isolation, October 15
+
+External integration `86de1ed` runs the actual packaged Lom, Bemenu and Provlita
+against three production exports sharing the same 64 MiB content registry.
+It uses Session's nominal three-role envelopes and public reconnect-limit
+selector. All three upload content. The dock is then stopped with SIGSTOP,
+verified through `/proc`, and its catalog publications reach bounded
+backpressure after 192 accepted updates. Lom and Bemenu continue producing
+candidates. The dock is revoked and replaced while its old pixels remain held;
+both neighbors keep their original grants and continue, and the new dock
+uploads. Releasing the old pixels reclaims that epoch; final accounting is
+quiescent.
+
+The first fixture used the registry's default capacity of two and correctly
+refused a third admission. The fix explicitly selects Session's capacity of
+three without increasing its byte budget. The final check passes on development
+GPU PCI `0000:16:00.0`, with only render node 226:129 exposed. Unarmed and
+wrong-device invocations fail before launch; ordinary tests leave this gate
+ignored. Formatting and strict Clippy pass. Logs are `trio-backpressure.log`,
+`trio-wrong-device.log`, `trio-unarmed.log`, `trio-ordinary.log` and
+`trio-clippy.log` in the existing October 15 evidence directory. Exact artifacts
+and invocation are in external `docs/provlita-files.md#three-client-progress-under-dock-backpressure`.
+
+This proves actual-client content progress, bounded slow-reader isolation and
+retained-byte reclamation across replacement. Admission, geometry, launcher
+typing and completion receipts are supplied. Client `presented` log lines in
+this gate do not prove physical presentation. Native lifetime/input, the
+separate baseline, B9 and attended acceptance remain required.
 
 ## Selected clients and immediate blockers (October 15)
 
@@ -222,7 +254,7 @@ requirements remain in the linked plan and shell-file budgets.
 | Independent clients, role grants and metadata boundaries | Generic C/Go and actual-client negotiation evidence above; retain exact client pins in the selected release. |
 | Real content round trip for bar, launcher and dock | Earlier generic owners and Lom/Bemenu evidence exist; actual Provlita GPU raster/upload and candidate submission now pass. Native presentation remains separate. |
 | Exact presented actions, focus and reservations | Existing owner tests are insufficient for the selected three-client native release. Exercise each output and reject stale actions. |
-| Replacement, revocation, slow-reader isolation and reclamation | Authentication replacement and actual dock resource custody pass; bar/menu progress, slow-reader isolation and final native retirement still need joined evidence. |
+| Replacement, revocation, slow-reader isolation and reclamation | Authentication, actual dock custody and actual bar/menu progress through stalled-dock backpressure and replacement pass. Final native retirement still needs physical evidence. |
 | Two-component baseline and three-component target | Both exact packages build and pass isolated installation; their paired native behavior still needs acceptance. |
 | Narthex compatibility and rollback | Packaged descriptor client authenticates; whole-release isolated rollback passes. Native descriptor fallback and attended rollback remain. |
 | B9 measured bounds | Freeze a semantically matched IPC comparator and workload method before measurements. All shell-file budgets still apply. |
@@ -360,7 +392,7 @@ does not supply those identities.
 
 ## B9 method preparation
 
-Read-only product reconciliation found the external desktop's current
+The initial read-only reconciliation, before the packaging work above, found the external desktop's
 `flake.lock` pins Sophia `a29663a06`, Lom `dc65f561`, Bemenu `6e2efd96` and
 Narthex `56d513fa`; it contains no Provlita input. Local Provlita HEAD is
 `da4a15ad`. These are source selections, not verified installed artifacts.
@@ -405,9 +437,10 @@ fixture repair and the separate t254 codec foundation; no installed artifact
 was selected. `git diff --check` also passed.
 
 The t330 route-lease concern is resolved by the candidate and checks above.
-Authenticated startup now passes on the updated pair. Next prove actual dock
-content/lifecycle behavior, prepare the exact paired-client native gate and
-freeze the runnable B9 method.
+Authenticated startup, actual dock GPU upload and three-client progress through
+backpressure/replacement now pass on the updated pair. Next prepare the exact
+paired-client native gate, cover the separate baseline and freeze the runnable
+B9 method.
 Do not mark t252 complete or advance its default/rollback acceptance on the
 strength of the generic checks alone.
 
