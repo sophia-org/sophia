@@ -46,8 +46,10 @@ packages that Narthex with both the two-component baseline and three-component
 candidate. Their configuration checks, checksums and isolated install/rollback
 pass; the packaged dock also authenticates from its private installed path.
 Integration `c3e49db` records those checks and supports store artifacts in the
-supplied-export gate. Next deliver the external dock GPU/content/lifecycle gate,
-then three-client isolation, B9 and attended acceptance. The live desktop is
+supplied-export gate. Integration `62b9829` now proves actual dock GPU uploads
+and retained resource custody across replacement on the explicit development
+GPU. Next prove three-client isolation and native lifetime/input, then B9 and
+attended acceptance. The live desktop is
 unchanged. See [the packaged pair](#packaged-pair-october-15) for exact identities.
 
 ## Packaged pair, October 15
@@ -80,6 +82,38 @@ Failed packaging and launch attempts remain alongside them. No live installation
 or GPU test ran. Isolated release switching is not attended rollback; actual
 content, native lifetime/input, three-client isolation, B9 and physical
 acceptance remain open.
+
+## Dock GPU content, October 15
+
+External integration `62b9829` adds the ignored `provlita_gpu` gate using
+Sophia's public protected GPU launch owner at the existing `58a481ebc` pin.
+The packaged Provlita from the candidate above passes on the explicitly selected
+development node `/dev/dri/renderD129`, PCI `0000:16:00.0`. Its renderer confirms
+Vulkan/RADV on device 226:129, with that node alone visible. No KMS node or
+display socket is exposed, and the live desktop excludes this GPU.
+
+At epochs 71 and 72 the actual dock allocates, rasterizes, uploads and submits
+catalog-bound pixels with an authorized terminal target. The replacement
+uploads while the revoked dock's pixels remain leased and readable. The old
+completion owner rejects the replacement's live grant. Each unpresented
+submission receives explicit failed-render completion; its bytes stay until
+the consumer releases the lease. All epoch and byte accounting then settles.
+The first run omitted that completion and correctly failed the reclamation
+assertion. The test now proves both completion and lease-release obligations.
+
+Wrong PCI identity and an unarmed invocation fail before client GPU admission.
+Device-hidden workspace tests, strict Clippy, provisioning and pin checks pass.
+The pin fixture was updated for the newly used public Session crate; no Sophia
+production source changed. Exact commands, binary/configuration hashes and
+limits are in external `docs/provlita-files.md#render-node-content-and-revocation`.
+Logs in the existing October 15 directory include `dock-gpu-final.log`,
+`dock-gpu-wrong-device.log`, `dock-gpu-unarmed-negative.log`,
+`dock-gpu-workspace-final.log` and `dock-gpu-clippy-final.log`.
+
+Geometry and catalog decisions are supplied. Admission uses real supervisor
+evidence, while authenticated launch remains separately proven above. This test
+issues no Presented event and proves neither native frame retirement nor
+physical input. Three-client coexistence, B9 and attended acceptance remain open.
 
 ## Selected clients and immediate blockers (October 15)
 
@@ -186,11 +220,11 @@ requirements remain in the linked plan and shell-file budgets.
 | Required evidence | Current coverage and next proof |
 | --- | --- |
 | Independent clients, role grants and metadata boundaries | Generic C/Go and actual-client negotiation evidence above; retain exact client pins in the selected release. |
-| Real content round trip for bar, launcher and dock | Earlier generic owners and Lom/Bemenu evidence exist; actual Provlita GPU/content join still needed. |
+| Real content round trip for bar, launcher and dock | Earlier generic owners and Lom/Bemenu evidence exist; actual Provlita GPU raster/upload and candidate submission now pass. Native presentation remains separate. |
 | Exact presented actions, focus and reservations | Existing owner tests are insufficient for the selected three-client native release. Exercise each output and reject stale actions. |
-| Replacement, revocation, slow-reader isolation and reclamation | Authentication replacement passes; dock content held across revocation, bar/menu progress and final native retirement still need joined evidence. |
-| Two-component baseline and three-component target | Installed baseline exists; prepare and test the exact dock package without overwriting that baseline. |
-| Narthex compatibility and rollback | Updated descriptor client authenticates; verify its packaged behavior and the whole-release rollback. |
+| Replacement, revocation, slow-reader isolation and reclamation | Authentication replacement and actual dock resource custody pass; bar/menu progress, slow-reader isolation and final native retirement still need joined evidence. |
+| Two-component baseline and three-component target | Both exact packages build and pass isolated installation; their paired native behavior still needs acceptance. |
+| Narthex compatibility and rollback | Packaged descriptor client authenticates; whole-release isolated rollback passes. Native descriptor fallback and attended rollback remain. |
 | B9 measured bounds | Freeze a semantically matched IPC comparator and workload method before measurements. All shell-file budgets still apply. |
 | Attended acceptance and default selection | Requires the exact installed candidate after prerequisite gates; no new rollout or acceptance is claimed here. |
 
