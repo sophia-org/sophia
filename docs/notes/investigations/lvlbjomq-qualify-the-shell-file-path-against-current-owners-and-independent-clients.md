@@ -65,8 +65,14 @@ launches retain authentication. Native scanout has not run for this peer.
 External integration `0c8c1a0` adds the bounded attended runner, with artifact
 hashes, signed source checks, console guards, complete capture and native joins.
 Its device-hidden checks pass; no physical run plan has been executed.
-Next finish frame-allocation instrumentation, prepare the campaign artifacts
-and exact hardware/output selection, and freeze the paired campaign method.
+Comparator `e66d612d1` adds bounded Session/peer process counters and reuses two
+resource IDs with fresh generations. External integration `60dd30f` verifies
+conservative CPU/allocation bounds and separates instrumented runs from latency
+runs. The focused checks pass. A supplied-owner debug diagnostic shows a marked
+9P allocation excess; this is not native B9 evidence. See
+[frame counters](#frame-counters-october-15) for scope and exact results.
+Next prepare the campaign artifacts and exact hardware/output selection, and
+freeze the paired method, including accounting scope and aggregation rules.
 See [comparator preparation](#comparator-preparation-october-15).
 Next prove native lifetime/input for both selections, freeze and run B9,
 then complete attended acceptance. The live desktop is
@@ -753,6 +759,55 @@ The next run exposed an isolation setup error in an older verifier: `/run/user`
 was hidden while `XDG_RUNTIME_DIR` still pointed into it. That verifier passes
 with the variable unset, and the remaining test binaries pass separately.
 No physical run plan or B9 campaign ran at this checkpoint.
+
+### Frame counters, October 15
+
+Signed comparator `e66d612d1` instruments the Session and peer processes behind
+`comparator-allocation-counting`. Sophia also requires `native-session`. The
+instrumented executable refuses session runs without an explicit lifetime of
+at most 60 seconds, before diagnostic capture or desktop startup. The peer now
+alternates two resource IDs with fresh generations after retirement; 64 offers
+on each wire pass with counters enabled and disabled.
+
+The peer records counters before pixel preparation/upload and after Presented
+plus retirement. Session samples every two milliseconds, subject to scheduling.
+Clock bounds surround each snapshot. External integration `60dd30f` brackets
+each frame with enclosing and enclosed Session snapshots, then adds the peer's
+counter delta. It also brackets the whole workload once, including work between
+frames. It rejects incomplete lifecycles, counter resets, process changes,
+missing coverage and instrumentation inconsistent with the declared run mode.
+The native runner requires both cost verification and the native completion
+join; the standalone cost checker cannot attest presentation.
+
+Allocation operations count Rust global allocations and reallocations in those
+two processes. Foreign allocators and other processes are excluded; process CPU
+includes all their threads. Instrumentation overhead is included. These scope
+limits, warmup handling and aggregation still need to be fixed in the campaign
+method. Neither the feature nor its verifier changes the B9 budgets.
+
+The debug supplied-owner recording contains all 64 offers on each wire. Its
+whole-workload bounds are:
+
+| Wire | Allocation operations | Process CPU |
+| --- | --- | --- |
+| 9P | 50,325–52,339 | 78,248,934–82,264,303 ns |
+| IPC | 13,943–15,667 | 23,042,918–26,435,216 ns |
+
+This is a substantial diagnostic gap. The workload is a small 64×24 surface,
+with supplied admission and completion, debug builds and no native rendering.
+It establishes neither B9 success nor failure. Preserve it when planning the
+native cost comparison; do not describe the instrumentation checks as a
+performance pass.
+
+Evidence under `t252-authenticated-20261015` includes
+`frame-counter-recording.log`, `frame-counter-journals/`,
+`frame-counter-unit.log`, `frame-peer-uninstrumented-tests.log`,
+`frame-counter-cli-guard-final.log`, `frame-counter-cli-clippy-final.log`,
+`frame-cost-tests-final.log` and `frame-cost-clippy-final.log`.
+The CLI guard's two tests pass, as do the counter tests, both peer modes,
+18 timing verifier tests and focused strict Clippy. The earlier CLI test attempt
+without `native-session` failed on the existing renderer feature dependency;
+the supported native feature combination passes. No physical session changed.
 
 ## Validation and remaining work
 
