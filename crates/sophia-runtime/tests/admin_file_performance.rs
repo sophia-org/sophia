@@ -163,6 +163,11 @@ fn admin_file_performance() {
         panic!("requires release profile");
     }
     let path = std::env::var_os("SOPHIA_ADMIN_PERF_EVIDENCE").expect("evidence path");
+    let qualification = std::env::var("SOPHIA_ADMIN_PERF_QUALIFY").as_deref() == Ok("1");
+    let count = if qualification { 1000 } else { 200 };
+    let idle_seconds = if qualification { 10 } else { 2 };
+    let idle_intervals = if qualification { 3 } else { 1 };
+    let mut budgets_pass = true;
     let mut evidence = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -174,10 +179,11 @@ fn admin_file_performance() {
         evidence.flush().unwrap();
     };
     record(
-        json!({"kind":"header","schema":1,"qualification":false,"rounds":2,"discovery_samples":100,
-        "warmups_per_delay":20,"invocation_samples_per_delay":200,"owner_delay_ms":[0,2],"idle_seconds":2,
+        json!({"kind":"header","schema":1,"qualification":qualification,"rounds":2,"discovery_samples":100,
+        "warmups_per_delay":20,"invocation_samples_per_delay":count,"owner_delay_ms":[0,2],"idle_seconds":idle_seconds,"idle_intervals":idle_intervals,
         "order":"legacy,files; files,legacy per catalog", "percentiles":"nearest rank", "catalogs":[1,259],
-        "limits":"diagnostic, no approved administrative numeric budget; synthetic owner, no desktop"}),
+        "discovery_p99_ms":20,"discovery_max_ms":100,"invoke_p99_ms":8,"invoke_max_ms":50,"idle_percent_one_core":1,
+        "limits":"prospective t254 transport limits; enforced only in qualification; synthetic owner, no desktop"}),
     );
     for maximum in [false, true] {
         let catalog = catalog(maximum);
@@ -233,7 +239,7 @@ fn admin_file_performance() {
                         client.invoke(catalog.commands[0].clone());
                     }
                     let mut samples = Vec::new();
-                    for sample in 0..200 {
+                    for sample in 0..count {
                         let start = Instant::now();
                         client.invoke(catalog.commands[0].clone());
                         samples.push(start.elapsed().as_nanos() as u64);
@@ -244,16 +250,25 @@ fn admin_file_performance() {
                     }
                     commands.push(json!({"owner_delay_ms":ms,"timing":summary(&samples)}));
                 }
-                let before = cpu::snapshot(&[std::process::id()]).unwrap();
-                let start = Instant::now();
-                std::thread::sleep(Duration::from_secs(2));
-                let elapsed = start.elapsed();
-                let after = cpu::snapshot(&[std::process::id()]).unwrap();
-                let mut idle = cpu::interval(&before, &after, elapsed).unwrap();
-                // The shared accounting helper's output-role threshold is not an admin budget.
-                idle.as_object_mut().unwrap().remove("passed");
+                let mut idle = Vec::new();
+                let mut idle_pass = true;
+                for _ in 0..idle_intervals {
+                    let before = cpu::snapshot(&[std::process::id()]).unwrap();
+                    let start = Instant::now();
+                    std::thread::sleep(Duration::from_secs(idle_seconds));
+                    let elapsed = start.elapsed();
+                    let after = cpu::snapshot(&[std::process::id()]).unwrap();
+                    let mut interval = cpu::interval(&before, &after, elapsed).unwrap();
+                    interval.as_object_mut().unwrap().remove("passed");
+                    idle_pass &= u128::from(interval["combined_cpu_ns"].as_u64().unwrap()) * 100
+                        <= elapsed.as_nanos();
+                    idle.push(interval);
+                }
+                let timing_pass = within(&summary(&discovery), 20, 100)
+                    && commands.iter().all(|c| within(&c["timing"], 8, 50));
+                budgets_pass &= timing_pass && idle_pass;
                 drop(client);
-                assert_eq!(owner.join(), 440);
+                assert_eq!(owner.join(), 2 * (count + 20));
                 assert_eq!(
                     cpu::snapshot(&[std::process::id()]).unwrap().len(),
                     before_threads
@@ -261,11 +276,47 @@ fn admin_file_performance() {
                 std::fs::remove_dir_all(root).unwrap();
                 record(
                     json!({"kind":"block","files":files,"round":round,"commands":catalog.commands.len(),
-                    "discovery":summary(&discovery),"invocations":commands,"idle":idle,"owner_deliveries":440,
+                    "discovery":summary(&discovery),"invocations":commands,"idle":idle,"owner_deliveries":2*(count+20),
+                    "budgets_pass":timing_pass && idle_pass,
                     "threads_before_and_after":before_threads}),
                 );
             }
         }
     }
-    record(json!({"kind":"result","completed":true,"qualification":false}));
+    record(
+        json!({"kind":"result","completed":true,"qualification":qualification,"budgets_pass":budgets_pass}),
+    );
+    assert!(
+        !qualification || budgets_pass,
+        "administrative performance budgets failed"
+    );
+}
+
+fn within(timing: &serde_json::Value, p99_ms: u64, max_ms: u64) -> bool {
+    timing["p99_ns"]
+        .as_u64()
+        .is_some_and(|v| v <= p99_ms * 1_000_000)
+        && timing["max_ns"]
+            .as_u64()
+            .is_some_and(|v| v <= max_ms * 1_000_000)
+}
+
+#[test]
+fn timing_budgets_reject_tail_and_missing_evidence() {
+    assert!(within(
+        &json!({"p99_ns":8_000_000,"max_ns":50_000_000}),
+        8,
+        50
+    ));
+    assert!(!within(
+        &json!({"p99_ns":8_000_001,"max_ns":50_000_000}),
+        8,
+        50
+    ));
+    assert!(!within(
+        &json!({"p99_ns":8_000_000,"max_ns":50_000_001}),
+        8,
+        50
+    ));
+    assert!(!within(&json!({"p99_ns":0}), 8, 50));
 }

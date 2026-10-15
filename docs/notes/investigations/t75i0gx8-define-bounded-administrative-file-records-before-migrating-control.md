@@ -47,12 +47,21 @@ thread leaks. With two milliseconds of requested owner delay, legacy p99 was
 2.24–2.31 ms and files p99 was 11.45–11.52 ms. The gap is consistent with the
 file client's ten-millisecond status polling. Both paths used less than 0.3% of
 one core while idle. The first run's invalid catalog and partial results remain
-recorded below. No administrative numeric budget has been declared; these are
-diagnostics, not performance acceptance.
+recorded below. Those runs were diagnostics, not performance acceptance.
 
-Next declare administrative latency and idle limits before a qualification run,
-decide whether status polling needs adjustment to meet them, then prove live
-recovery/rollback and select the default through t254's
+The plan now declares prospective transport limits: discovery p99/max 20/100 ms,
+command p99/max 8/50 ms including a two-millisecond synthetic owner delay, and
+idle CPU at most 1% of one core. Pending-status polling is now one millisecond;
+it still stops at the original deadline and never polls an idle client. The
+qualification profile increases each command series to 1,000 samples and each
+idle block to three ten-second intervals. Qualification remains pending.
+
+Abrupt service-process loss is now tested before dispatch and after a simulated
+effect but before an outcome. Both cases leave the original client uncertain;
+it cannot reconnect or replay. A fresh endpoint has a new identity and accepts
+only a new explicit command. This does not prove installed Session recovery.
+
+Next run the declared qualification, then prove live recovery/rollback and select the default through t254's
 rollout gate. Include whole-process loss and the existing safe command/restart
 smoke. Service hot replacement is not supported, and uncertain commands must
 never be automatically repeated. The deferred output invocation remains excluded.
@@ -126,6 +135,33 @@ limits are in the file contract. The core tests cover partial input and blocked
 output through its public Unix driver.
 
 ## Validation and remaining work
+
+### Qualification candidate and abrupt process loss (October 14)
+
+The paired diagnostic exposed avoidable delay in pending-result polling. The
+client now sleeps one millisecond between pending snapshots instead of ten.
+Admission, snapshots, outcome attribution, absolute deadlines and no-replay
+rules are unchanged. This does not introduce a timer while the client is idle.
+The [prospective performance gate](../plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md#administrative-transport-performance-gate-declared-2026-10-14)
+fixes numeric bounds and sample counts before the next measurements.
+Use the runner's `qualify` phase after preparation; `measure` remains diagnostic.
+Every block must pass and the runner preserves failing evidence before returning
+failure. Threshold tests reject missing data and just-over-limit tails.
+
+`admin_process_recovery.rs` kills a separate production service process with
+SIGKILL at two explicit points: queued before claim, and after claim plus a
+durable fixture effect marker but before settlement. The parent observes a lost
+reply and an uncertain client, verifies that the old endpoint cannot connect,
+and binds a fresh service under the same private runtime directory. The old
+client cannot rediscover or invoke; the successor has no replayed ticket. A new
+explicit client then commits exactly one request under a fresh session identity.
+The old socket pathname may remain after SIGKILL; random per-service directories
+prevent it from becoming the new endpoint. The fixture removes those leftovers
+only after the check. No claim of durable exactly-once recovery is made.
+
+Focused client, malformed-server, recovery and qualification-accounting tests
+pass, as does strict Clippy. The complete repository gate and qualification are
+pending on this candidate. No installed session or default has changed.
 
 ### Paired diagnostic workload (declared October 14)
 

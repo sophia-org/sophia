@@ -97,7 +97,8 @@ pub fn run(repo: &Path, args: &[String]) -> Result<Vec<String>, String> {
                 "cargo_encoded_rustflags":std::env::var("CARGO_ENCODED_RUSTFLAGS").ok()}),
             )?;
         }
-        "measure" => {
+        "measure" | "qualify" => {
+            let qualification = phase == "qualify";
             let prepared: Value = serde_json::from_slice(
                 &fs::read(output.join("prepared.json")).map_err(|e| e.to_string())?,
             )
@@ -120,7 +121,7 @@ pub fn run(repo: &Path, args: &[String]) -> Result<Vec<String>, String> {
                 &json!({"kernel":capture(repo,"uname", &["-a"])?,
                 "cpuinfo":fs::read_to_string("/proc/cpuinfo").map_err(|e|e.to_string())?,
                 "loadavg":fs::read_to_string("/proc/loadavg").map_err(|e|e.to_string())?,
-                "nice":process::niceness()?,"qualification":false,"quiet_window":"not externally certified"}),
+                "nice":process::niceness()?,"qualification":qualification,"quiet_window":"not externally certified"}),
             )?;
             let mut command = Command::new("bwrap");
             command
@@ -157,6 +158,8 @@ pub fn run(repo: &Path, args: &[String]) -> Result<Vec<String>, String> {
                 .arg(&output)
                 .args(["--setenv", "SOPHIA_ADMIN_PERF_EVIDENCE"])
                 .arg(output.join("samples.jsonl"))
+                .args(["--setenv", "SOPHIA_ADMIN_PERF_QUALIFY"])
+                .arg(if qualification { "1" } else { "0" })
                 .arg(&binary)
                 .args([
                     "--ignored",
@@ -169,7 +172,7 @@ pub fn run(repo: &Path, args: &[String]) -> Result<Vec<String>, String> {
                 &mut command,
                 &output,
                 "measurement",
-                Duration::from_secs(300),
+                Duration::from_secs(600),
             )
             .and_then(|()| {
                 if source(repo)? != revision || prepared["sha256"] != digest(&binary)? {
@@ -183,19 +186,24 @@ pub fn run(repo: &Path, args: &[String]) -> Result<Vec<String>, String> {
                 if last["kind"] != "result" || last["completed"] != true {
                     return Err("incomplete diagnostic".into());
                 }
+                if last["qualification"] != qualification
+                    || (qualification && last["budgets_pass"] != true)
+                {
+                    return Err("administrative qualification did not pass".into());
+                }
                 Ok(())
             });
             write(
                 &output,
                 "result.json",
-                &json!({"completed":result.is_ok(),"error":result.as_ref().err(),"qualification":false,"revision":revision}),
+                &json!({"completed":result.is_ok(),"error":result.as_ref().err(),"qualification":qualification,"revision":revision}),
             )?;
             result?;
         }
-        _ => return Err("expected prepare or measure".into()),
+        _ => return Err("expected prepare, measure or qualify".into()),
     }
     Ok(vec![format!(
-        "administrative diagnostic {phase} complete: {} (not qualification)",
+        "administrative transport {phase} complete: {}",
         output.display()
     )])
 }

@@ -210,7 +210,7 @@ impl AdminClient {
             // Status is an immutable snapshot, not a long-poll stream. Reopen
             // at a bounded cadence without extending the command's deadline.
             std::thread::sleep(
-                Duration::from_millis(10).min(deadline.saturating_duration_since(Instant::now())),
+                Duration::from_millis(1).min(deadline.saturating_duration_since(Instant::now())),
             );
         }
     }

@@ -17,7 +17,7 @@ downgrade or retry, and a running service does not switch transports.
 
 `sophia-runtime::AdminClient` uses the independent Rust SDK's 9P pipeline. It
 reads bounded snapshots under absolute deadlines, sends one complete invocation,
-and reopens status at ten-millisecond intervals until the attributed outcome
+and reopens pending status at one-millisecond intervals until the attributed outcome
 arrives or the original deadline expires. It checks connection, request and
 catalog identity and the command owner's legal success outcome. Short writes,
 malformed or mismatched records and lost replies leave the result uncertain.

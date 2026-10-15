@@ -659,6 +659,34 @@ the ordinary command CLI and use an independent protocol control without
 granting arbitrary command execution. The supervised output invocation extension
 below is deferred; it is not a prerequisite for t253 or t272.
 
+#### Administrative transport performance gate (declared 2026-10-14)
+
+Qualify the existing public clients and actual services with the controlled
+policy owner from the paired diagnostic. These limits cover transport, not
+native command effects or WM restart time. Discovery may use at most 20 ms at
+p99 and 100 ms for any sample. Command completion, including a requested
+two-millisecond owner delay, may use at most 8 ms at p99 and 50 ms for any sample.
+The command target fits within one 120 Hz frame; discovery has a larger allowance
+for connecting and reading the maximum catalog. Combined idle CPU for client,
+service, harness and owner may use at most 1% of one core in each interval.
+These limits apply to both transports, with no relative slowdown allowance.
+
+Keep both catalog sizes and alternating transport order from the diagnostic.
+For each of eight blocks, measure 100 fresh discoveries, twenty warmups followed
+by 1,000 commands at each of zero and two milliseconds of owner delay, and three
+ten-second idle intervals. Require every outcome and exactly 2,040 owner
+deliveries per block, with no duplicated identities or worker threads left after
+join. Retain every raw sample, all failures and nearest-rank percentiles. All
+blocks and idle intervals must pass; do not select a best run or drop outliers.
+
+Use `cargo-slot sophia cargo xtask check admin-file-performance prepare
+--output=/absolute/new/private-directory`, then the same command with `qualify`
+after all builds and tests finish. The runner verifies signed clean source and
+the release binary hash, hides devices/network/session sockets and records host
+identity, niceness and load. A noisy host can invalidate a run but cannot turn a
+failure into a pass. Declare any changed limits and rationale before measuring
+again. Live recovery and rollout remain separate gates.
+
 #### Approved output invocation extension (2026-09-30)
 
 **Deferred on 2026-09-30 by niltempus.** The earlier approval is retained here as
