@@ -133,8 +133,13 @@ SDK `af21f0a` uses stack request headers and copies writes directly into the
 bounded output buffer. Production `368e07c3f` and comparator `95dc246d2` pin it.
 Workspace tests, strict Clippy, signed snapshot validation and 13 production
 file-path tests pass. The panel diagnostic now measures 709–721 file allocations
-per frame versus IPC's 622–633, still above the +10% target. The next attribution
-candidate is repeated allocation while encoding walk requests; it is unchanged.
+per frame versus IPC's 622–633, still above the +10% target. SDK `f638e2f`
+then reserves walk-request storage once; production `30f8f784f` and comparator
+`f055afef7` pin it. Panel allocations are now 678–689 versus IPC's 613–625;
+the conservative bounds do not prove +10% parity, and panel CPU remains above
+the budget. See [walk encoding](#t331-walk-encoding). Settle the accounting
+proposal before preparing acceptance measurements; debug optimization results
+alone cannot close t331 or t252.
 See [panel baseline](#t331-panel-baseline-and-pending-request-encoding).
 Settle accounting scope and freeze the full B9 method,
 then collect the declared campaign and native lifetime/input evidence for both
@@ -1336,6 +1341,34 @@ approve the proposed accounting scope nor establish native B9 acceptance.
 The panel allocation excess remains above +10%. Source review also found heap
 growth in `walk_body`; that path remains unchanged and is the next attribution
 candidate. t331 and t252 remain open.
+
+## t331: walk encoding
+
+SDK `f638e2f` validates all walk-name lengths, computes the bounded body size
+and reserves its buffer once. Both callers already limit walks to 16 names;
+wire bytes, request limits and reply handling are unchanged. SDK workspace
+tests, formatting and strict all-target Clippy pass. Production `30f8f784f`
+pins the signed snapshot; its SDK contract gate passes. Comparator `f055afef7`
+carries the same production change.
+
+The four matched 64-frame supplied-owner arms and normalized-cost replays pass
+under `~/.local/state/sophia/development-evidence/t252-authenticated-20261015/t331-sdk-walk-01/`.
+SDK checks are recorded alongside it in `t331-sdk-walk-tests.log` and
+`t331-sdk-walk-snapshot.log`. Geometry and byte totals match the panel baseline.
+
+| Workload | Files allocations/frame | IPC allocations/frame | Files CPU ns/MiB | IPC CPU ns/MiB |
+| --- | --- | --- | --- | --- |
+| 1920×24 bar | 678–689 | 613–625 | 31,219,538–31,582,479 | 27,298,406–27,687,930 |
+| Same bar plus 4 MiB probe | 8,349–8,358 | 8,702–8,710 | 21,424,906–21,437,335 | 24,938,161–24,948,422 |
+
+Panel allocations fall from the previous 709–721 range, but conservative
+bounds do not establish +10% parity. Panel CPU exceeds that budget in this
+diagnostic. Bulk bounds remain below IPC; their variation between runs is a
+reason to retain paired measurements, not claim a fixed percentage gain.
+These debug results do not settle native performance. The accounting proposal
+still needs an explicit decision before acceptance collection; it excludes
+other processes, startup and foreign allocation calls. No acceptance budget,
+installed desktop or native evidence changed.
 
 ## Connections
 
