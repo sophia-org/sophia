@@ -279,7 +279,7 @@ fn run() -> Result<()> {
         return Err("allocation refused or misattributed".into());
     }
     emit(
-        serde_json::json!({"schema":1,"event":"start","frames":frames,"wire":if files {"files"} else {"ipc"}}),
+        serde_json::json!({"schema":2,"event":"start","frames":frames,"wire":if files {"files"} else {"ipc"}}),
     )?;
     for generation in 1..=frames {
         #[cfg(feature = "comparator-allocation-counting")]
@@ -306,6 +306,17 @@ fn run() -> Result<()> {
             })
             .collect();
         let chunks = bytes.len().div_ceil(chunk_bytes) as u32;
+        // Preserve the attempt before sending. This conservative interval includes
+        // flushing the offer journal, but excludes pixel preparation above.
+        let begin_usec = clock_usec();
+        emit(
+            serde_json::json!({"schema":2,"event":"upload_offer","upload":{
+                "connection_epoch":grant.connection_epoch,"content_grant_epoch":grant.content_grant_epoch,
+                "output":output.output.id,"candidate_generation":generation,
+                "resource_id":resource.id,"resource_generation":resource.generation,
+                "width":width,"height":height,"total_bytes":length,"begin_usec":begin_usec
+            }}),
+        )?;
         wire.send(
             2,
             &[ShellContentRecord::ResourceBegin(ContentResourceBegin {
@@ -343,6 +354,10 @@ fn run() -> Result<()> {
             })],
         )?;
         expect_status(&mut wire, grant, resource, 2)?;
+        let accepted_usec = clock_usec();
+        emit(serde_json::json!({"schema":2,"event":"upload_accepted",
+            "resource_id":resource.id,"resource_generation":resource.generation,
+            "accepted_usec":accepted_usec}))?;
         let demand_time = clock_usec();
         wire.send(
             5,
@@ -366,7 +381,7 @@ fn run() -> Result<()> {
             return Err("permit refused or misattributed".into());
         }
         emit(
-            serde_json::json!({"schema":1,"event":"permit","generation":generation,"demand_usec":demand_time,"received_usec":clock_usec()}),
+            serde_json::json!({"schema":2,"event":"permit","generation":generation,"demand_usec":demand_time,"received_usec":clock_usec()}),
         )?;
         let records = [
             ShellContentRecord::CandidateBegin(ContentCandidateBegin {
@@ -411,7 +426,7 @@ fn run() -> Result<()> {
             }),
         ];
         emit(
-            serde_json::json!({"schema":1,"event":"offer","connection_epoch":grant.connection_epoch,
+            serde_json::json!({"schema":2,"event":"offer","connection_epoch":grant.connection_epoch,
             "content_grant_epoch":grant.content_grant_epoch,"output":output.output.id,"candidate_generation":generation,
             "submitted_monotonic_usec":clock_usec()}),
         )?;
@@ -440,7 +455,7 @@ fn run() -> Result<()> {
                 "rejected"
             };
             emit(
-                serde_json::json!({"schema":1,"event":"terminal","connection_epoch":grant.connection_epoch,
+                serde_json::json!({"schema":2,"event":"terminal","connection_epoch":grant.connection_epoch,
                 "content_grant_epoch":grant.content_grant_epoch,"output":output.output.id,"candidate_generation":generation,
                 "outcome":status,"kind":outcome.kind,"reason":outcome.reason,"observed_monotonic_usec":clock_usec()}),
             )?;
@@ -472,7 +487,7 @@ fn run() -> Result<()> {
         #[cfg(feature = "comparator-allocation-counting")]
         sophia_runtime::comparator_counters::record("peer", "frame_end", generation)?;
     }
-    emit(serde_json::json!({"schema":1,"event":"end","offered":frames,"completed":frames}))?;
+    emit(serde_json::json!({"schema":2,"event":"end","offered":frames,"completed":frames}))?;
     std::thread::sleep(Duration::from_millis(hold));
     Ok(())
 }
@@ -502,7 +517,7 @@ fn resource_for_frame(frame: u64) -> ContentResourceId {
 
 fn main() {
     if let Err(error) = run() {
-        let _ = emit(serde_json::json!({"schema":1,"event":"failed","error":error.to_string()}));
+        let _ = emit(serde_json::json!({"schema":2,"event":"failed","error":error.to_string()}));
         std::process::exit(1);
     }
 }
