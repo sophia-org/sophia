@@ -14,33 +14,15 @@ repairs? Reconcile the existing evidence before repeating a desktop campaign.
 
 ## Current resumption
 
-The October 14 generic C/Go export, descriptor, content and Session checks pass.
-The protected joined-launcher fixture now advances the Session owner while
-waiting for resources; its five-second deadline and identity checks are
-unchanged. The dated evidence below records that repair separately from t330.
+t252 remains open for native lifetime/input acceptance on both desktop
+selections, the declared B9 performance campaign and attended release rollback.
+The generic C/Go export, descriptor, content and Session checks pass; E1's old
+independent descriptor gap is resolved. The t330 notification repair is included
+in Sophia `58a481ebc`; the broader t032 backlog remains outside this task.
 
-t252 remains open for exact paired product evidence, native lifetime/input
-acceptance, the declared B9 performance campaign and verified release rollback.
-The old E1 independent descriptor gap is resolved by the existing C file peer;
-the September plan's open wording is historical. Do not infer a new installed
-desktop qualification from these headless checks.
-
-The October 15 reconciliation below identifies the installed two-component
-release and the prepared Provlita binary. External integration `eb6c717`
-explicitly selects 9P for the dock, with a parser regression check. This is
-test preparation, not native dock acceptance. External integration `78e00bf`
-now proves Provlita's protected executable negotiation against the production
-file export, followed by the required missing-GPU refusal and complete
-reservation cleanup at two fresh epochs. It uses supplied admission and the
-integration's older Sophia `316d9695` pin; authenticated Session launch and
-native content remain unproved. The approved
-t330 repair, signed Sophia `5e717c73d`, retains notifications in a bounded outbox and wakes
-the frontend when Session returns capacity. Its model, focused controls and full
-repository check pass, including the test-helper layout correction.
-The broader t032 backlog remains outside this task. External integration
-`d51c966` now pins Sophia `58a481ebc` and passes workspace checks. Actual
-Provlita, Lom and Bemenu authenticated launches pass twice each. The packaged
-Narthex is too old for authentication; signed Narthex `11eb0332` passes the
+External integration `d51c966` pins that Sophia revision and passes workspace checks. Actual
+Provlita, Lom and Bemenu authenticated launches pass twice each. The installed
+Narthex predates authentication; signed Narthex `11eb0332` passes the
 fallback authentication/recovery check. External integration `77c8e96` now
 packages that Narthex with both the two-component baseline and three-component
 candidate. Their configuration checks, checksums and isolated install/rollback
@@ -69,6 +51,12 @@ presentation, before collecting B9 acceptance samples.
 Signed comparator `2aebdcdfd` adds an ignored diagnostic upload probe for wall time, process CPU
 and optional allocation counts. Its short instrumentation checks pass in both
 counter modes; this has not frozen the full method or produced a B9 verdict.
+The native binding and kernel-completion records already exist in that Sophia
+candidate. External integration `91d5370` adds `xtask shell-timing join`, with
+five positive/negative tests and strict Clippy. It joins every offered candidate
+to its first exact native completion and rejects incomplete head coverage or
+fallback clocks. Next supply the native client's complete submission record,
+finish frame-allocation instrumentation and freeze the paired campaign method.
 See [comparator preparation](#comparator-preparation-october-15).
 Next prove native lifetime/input for both selections, freeze and run B9,
 then complete attended acceptance. The live desktop is
@@ -602,6 +590,35 @@ copies prepared binaries into evidence, which conflicts with the current build
 storage rule. Prepare a package-bound native run that records immutable paths
 and hashes before using it for the remaining attended checks; do not run that
 old copy-based path unchanged.
+
+### Native completion join, October 15
+
+Sophia `58a481ebc` already emits `sophia_shell_native_binding` from the actual
+queued frame and `sophia_shell_native_completion` from displayed custody. The
+latter uses the maximum completion time across the exact converged mirror heads
+and identifies kernel versus observation-fallback clocks. The source is
+`production_visual_runtime/projection/retirement.rs` and
+`production_session/native_scanout/persistent_native_scanout/presentation_timing.rs`
+in `sophia-backend-live`. No Engine instrumentation change was needed.
+
+External integration `91d5370` adds the read-only Rust command
+`xtask shell-timing join HOST_LOG CLIENT_JSON MODE_MILLIHZ EXPECTED_OFFERS`.
+Its README specifies the complete client-offer record. It requires the exact
+declared 60000 or 120000 mHz mode, unchanged native owner/topology, every head,
+kernel timestamps, and a matching offer count. It refuses duplicate offers,
+non-presented outcomes, conflicting identities, incomplete or missing completion,
+and timestamps before submission. Repeated redraws may bind one candidate to
+several frames; the earliest exact completion supplies the latency. Two different
+roles may share a native frame, but one role cannot claim two generations in it.
+
+The five tests include the real command from a directory outside the checkout,
+mirror coverage, later redraws and refusals for missing samples, stale owners,
+changed topology and fallback timestamps. `shell-timing-join-final.log` and
+`shell-timing-join-clippy-final.log` pass under the device-hidden sandbox.
+The result is explicitly `joined_only`: this is tested evidence plumbing, not
+a physical run, an attestation of client-recorder completeness, a bound artifact
+pair or a B9 verdict. Next record every native client submission and terminal
+outcome, bind the inputs to the selected artifacts, and complete the campaign.
 
 ## Validation and remaining work
 
