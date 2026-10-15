@@ -8,9 +8,10 @@ rust-version.workspace = true
 
 [features]
 # Isolated qualification branch only; do not merge the retired IPC comparator.
-comparator-allocation-counting = []
+comparator-allocation-counting = ["dep:stats_alloc", "rustix/time"]
 
 [dependencies]
+stats_alloc = { version = "=0.1.10", optional = true }
 sophia-wake = { path = "../sophia-wake" }
 rustix = { version = "1.1", default-features = false, features = ["net", "process", "std", "event", "rand"] }
 sophia-linux-peer = { path = "../sophia-linux-peer" }

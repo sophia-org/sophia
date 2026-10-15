@@ -98,3 +98,6 @@ pub use tracing::*;
 
 mod shell_content;
 pub use shell_content::*;
+
+#[cfg(feature = "comparator-allocation-counting")]
+pub mod comparator_counters;

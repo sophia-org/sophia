@@ -11,6 +11,11 @@ use std::{
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 const WAIT: Duration = Duration::from_secs(5);
 
+#[cfg(feature = "comparator-allocation-counting")]
+#[global_allocator]
+static ALLOCATOR: sophia_runtime::comparator_counters::Allocator =
+    sophia_runtime::comparator_counters::ALLOCATOR;
+
 enum Wire {
     Files {
         client: Box<ShellConnection>,
@@ -240,8 +245,8 @@ fn run() -> Result<()> {
     if facts.grant != grant || facts.facts_generation == 0 || output.output.generation == 0 {
         return Err("stale or misattributed output facts".into());
     }
-    if frames > u64::from(limits.max_resource_ids) {
-        return Err("frame count exceeds resource identity budget".into());
+    if limits.max_resource_ids < 2 {
+        return Err("paced workload needs two resource identities".into());
     }
     wire.send(
         1,
@@ -277,10 +282,9 @@ fn run() -> Result<()> {
         serde_json::json!({"schema":1,"event":"start","frames":frames,"wire":if files {"files"} else {"ipc"}}),
     )?;
     for generation in 1..=frames {
-        let resource = ContentResourceId {
-            id: generation,
-            generation: 1,
-        };
+        #[cfg(feature = "comparator-allocation-counting")]
+        sophia_runtime::comparator_counters::record("peer", "frame_start", generation)?;
+        let resource = resource_for_frame(generation);
         let width = allocation.pixel.width;
         let height = allocation.pixel.height;
         let length = u64::from(width) * u64::from(height) * 4;
@@ -450,10 +454,7 @@ fn run() -> Result<()> {
         }
         // Keep the currently displayed resource until a successor is shown.
         if generation > 1 {
-            let old = ContentResourceId {
-                id: generation - 1,
-                generation: 1,
-            };
+            let old = resource_for_frame(generation - 1);
             wire.send(
                 7,
                 &[ShellContentRecord::ResourceRetire(ContentResourceRetire {
@@ -468,6 +469,8 @@ fn run() -> Result<()> {
                 return Err("wrong retired resource release".into());
             }
         }
+        #[cfg(feature = "comparator-allocation-counting")]
+        sophia_runtime::comparator_counters::record("peer", "frame_end", generation)?;
     }
     emit(serde_json::json!({"schema":1,"event":"end","offered":frames,"completed":frames}))?;
     std::thread::sleep(Duration::from_millis(hold));
@@ -487,6 +490,13 @@ fn expect_status(
             Ok(())
         }
         other => Err(format!("unexpected resource response: {other:?}").into()),
+    }
+}
+
+fn resource_for_frame(frame: u64) -> ContentResourceId {
+    ContentResourceId {
+        id: (frame - 1) % 2 + 1,
+        generation: (frame - 1) / 2 + 1,
     }
 }
 

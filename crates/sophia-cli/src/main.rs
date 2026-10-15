@@ -1,7 +1,14 @@
 mod commands;
+#[cfg(feature = "comparator-allocation-counting")]
+mod comparator_counters;
 mod scanout_diagnostics;
 
 use sophia_runtime::{TraceLevel, init_tracing_with_layer};
+
+#[cfg(feature = "comparator-allocation-counting")]
+#[global_allocator]
+static ALLOCATOR: sophia_runtime::comparator_counters::Allocator =
+    sophia_runtime::comparator_counters::ALLOCATOR;
 
 fn session_stdout(line: &str) {
     if !sophia_session::diagnostics::capture_line(line) {
@@ -33,6 +40,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let is_run = args.first().map(String::as_str) == Some("session")
         && args.get(1).map(String::as_str) == Some("run")
         && !args.iter().any(|arg| arg == "--validate-session-args");
+    #[cfg(feature = "comparator-allocation-counting")]
+    if is_run {
+        comparator_counters::require_bounded_run(&args)?;
+    }
     let ordinary = is_run
         && args.iter().any(|arg| arg == "--session-mode=normal")
         && !args.iter().any(|arg| {
@@ -110,7 +121,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             previous_hook(information);
         }));
     }
+    #[cfg(feature = "comparator-allocation-counting")]
+    let counters = is_run
+        .then(sophia_runtime::comparator_counters::Sampler::start)
+        .transpose()?;
     let result = commands::run(&args, verbose);
+    #[cfg(feature = "comparator-allocation-counting")]
+    let result = match counters.map(|counters| counters.finish()).transpose() {
+        Ok(_) => result,
+        Err(error) => Err(Box::new(error) as Box<dyn std::error::Error>),
+    };
     if is_run && result.is_err() {
         session_stderr("sophia_session_result schema=1 status=failed");
     }

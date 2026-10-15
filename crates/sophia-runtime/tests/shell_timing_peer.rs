@@ -2,9 +2,14 @@
 use sophia_protocol::*;
 use sophia_runtime::*;
 use std::{
-    process::{Command, Stdio},
+    process::Command,
     time::{Duration, Instant},
 };
+
+#[cfg(feature = "comparator-allocation-counting")]
+#[global_allocator]
+static ALLOCATOR: sophia_runtime::comparator_counters::Allocator =
+    sophia_runtime::comparator_counters::ALLOCATOR;
 
 #[test]
 #[ignore = "requires explicit prebuilt SOPHIA_TIMING_PEER_BINARY; device-hidden"]
@@ -60,6 +65,9 @@ fn refuses_unarmed_ambiguous_and_authentication_bypass_launches() {
 #[test]
 #[ignore = "requires explicit prebuilt SOPHIA_TIMING_PEER_BINARY; device-hidden"]
 fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
+    const FRAMES: u64 = 64;
+    #[cfg(feature = "comparator-allocation-counting")]
+    let sampler = sophia_runtime::comparator_counters::Sampler::start().unwrap();
     let binary = std::env::var_os("SOPHIA_TIMING_PEER_BINARY").expect("explicit peer binary");
     assert!(std::path::Path::new(&binary).is_absolute());
     for files in [true, false] {
@@ -69,7 +77,7 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
         std::fs::write(
             &config,
             serde_json::json!({"wire":if files {"files"} else {"ipc"},
-            "output":1,"frames":3,"height":24,"hold_msec":100})
+            "output":1,"frames":FRAMES,"height":24,"hold_msec":100})
             .to_string(),
         )
         .unwrap();
@@ -93,8 +101,8 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
                 },
                 host.socket_path(),
             )
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+            .stdout(std::fs::File::create(root.join("stdout")).unwrap())
+            .stderr(std::fs::File::create(root.join("stderr")).unwrap());
         let mut child = command.spawn().unwrap();
         host.authorize_protected_peer(&ProtectionDomainEvidence {
             backend: ProtectionBackendKind::Bubblewrap,
@@ -203,7 +211,7 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
             })();
             match result {
                 Ok(()) => {}
-                Err(ShellTransportError::NotConnected) if completed == 3 => {}
+                Err(ShellTransportError::NotConnected) if completed == FRAMES => {}
                 Err(error) => {
                     let _ = child.kill();
                     panic!("owner: {error:?}");
@@ -212,11 +220,13 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
             std::thread::yield_now();
         }
         let result = child.wait_with_output().unwrap();
+        let stdout = std::fs::read(root.join("stdout")).unwrap();
+        let stderr = std::fs::read(root.join("stderr")).unwrap();
         assert!(
             result.status.success(),
             "stdout={} stderr={}",
-            String::from_utf8_lossy(&result.stdout),
-            String::from_utf8_lossy(&result.stderr)
+            String::from_utf8_lossy(&stdout),
+            String::from_utf8_lossy(&stderr)
         );
         if let Some(directory) = std::env::var_os("SOPHIA_TIMING_PEER_JOURNALS") {
             use std::io::Write;
@@ -228,22 +238,47 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
                 .create_new(true)
                 .open(directory.join(name))
                 .unwrap()
-                .write_all(&result.stdout)
+                .write_all(&stdout)
+                .unwrap();
+            let name = if files {
+                "files.counters"
+            } else {
+                "ipc.counters"
+            };
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(directory.join(name))
+                .unwrap()
+                .write_all(&stderr)
                 .unwrap();
         }
-        let records: Vec<serde_json::Value> = String::from_utf8(result.stdout)
+        let records: Vec<serde_json::Value> = String::from_utf8(stdout)
             .unwrap()
             .lines()
             .map(|line| serde_json::from_str(line).unwrap())
             .collect();
-        assert_eq!(completed, 3);
+        assert_eq!(completed, FRAMES);
         let offers: Vec<_> = records.iter().filter(|r| r["event"] == "offer").collect();
         let terminals: Vec<_> = records
             .iter()
             .filter(|r| r["event"] == "terminal")
             .collect();
-        assert_eq!(offers.len(), 3);
-        assert_eq!(terminals.len(), 3);
+        assert_eq!(offers.len(), FRAMES as usize);
+        assert_eq!(terminals.len(), FRAMES as usize);
+        if cfg!(feature = "comparator-allocation-counting") {
+            let counters = String::from_utf8(stderr).unwrap();
+            assert_eq!(counters.lines().count(), 2 * FRAMES as usize);
+            for (index, line) in counters.lines().enumerate() {
+                assert!(line.starts_with("sophia_comparator_counters schema=1 process=peer "));
+                assert!(line.contains(if index % 2 == 0 {
+                    "stage=frame_start "
+                } else {
+                    "stage=frame_end "
+                }));
+                assert!(line.contains(&format!("sequence={} ", index / 2 + 1)));
+            }
+        }
         for (offer, terminal) in offers.iter().zip(&terminals) {
             for field in [
                 "connection_epoch",
@@ -266,4 +301,6 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
         drop(host);
         std::fs::remove_dir_all(root).unwrap();
     }
+    #[cfg(feature = "comparator-allocation-counting")]
+    sampler.finish().unwrap();
 }
