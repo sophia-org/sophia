@@ -53,6 +53,12 @@ dock reaches catalog backpressure, then through replacement with retained dock
 pixels. Those completion receipts are supplied, not physical presentation.
 Integration `434d302` separately proves two-component baseline content and
 menu replacement using the baseline package and two-role envelopes.
+The isolated IPC comparator now builds and passes paired resource acceptance,
+pixel identity, retirement and stale-generation checks at 8 bytes, 180 KiB and
+4 MiB. Its content owners are unchanged from `58a481ebc`; the restored adapter
+and test are signed `6df9b559f` on the comparison branch. This is partial
+equivalence evidence, not B9 timing.
+See [comparator preparation](#comparator-preparation-october-15).
 Next prove native lifetime/input for both selections, freeze and run B9,
 then complete attended acceptance. The live desktop is
 unchanged. See [the packaged pair](#packaged-pair-october-15) for exact identities.
@@ -451,13 +457,40 @@ not a frozen runnable campaign or a claim that B9 passed.
 
 The isolated worktree `~/dev/sophia-t252-comparator`, branch
 `qualification/t252-shell-comparator`, starts at the exact candidate
-`58a481ebc756b50fe97a890b968a6c9b70863496`. No comparator code or build exists yet.
+`58a481ebc756b50fe97a890b968a6c9b70863496`.
 The historical adapter was removed in `d13464500`; its wire enum selected
 socket or files at the typed owner boundary. The shell codecs were removed in
 `42fc47b42`. These are restoration sources, not accepted reference binaries.
-Next restore only the comparison transport in this isolated tree, retain current
-owners, and prove semantic equivalence before freezing workloads or collecting
-timing. The production branch must remain free of the retired transport.
+The adapter and codecs have now been restored in that tree only. Current file
+authentication, owner-turn scheduling and environment selection are retained;
+authenticated launches cannot select the restored IPC path. Every source under
+`shell_content` remains byte-identical to the base. Signed checkpoint `6df9b559f`
+is not yet an accepted comparator. The production branch remains free of
+the retired transport.
+
+The generic `shell_comparator` integration test passes both transports through
+the current resource owner with identical typed records and supplied admission.
+At 8 bytes, 180 KiB and 4 MiB it checks equal limits and response records, exact
+retained pixels, retirement, rejection of a reused generation and complete
+reservation cleanup. The payload is valid premultiplied RGBA; chunks contain
+whole rows within the negotiated limit. The file peer respects enqueue
+backpressure. Neither the supplied admission nor the thread-based peer proves
+independent authentication, native presentation or timing equivalence.
+
+Evidence is under `~/.local/state/sophia/development-evidence/t252-authenticated-20261015/`:
+`comparator-equivalence7.log` passes the paired test and
+`comparator-runtime-lib.log` passes 106 unit tests (one ignored).
+The unfiltered regression runs deliberately remain red: production guards reject
+the restored shell message numbers and socket framing. Both guards are unchanged;
+every framing finding is confined to `shell_transport/socket.rs` and its modules.
+`comparator-protocol-compatible.log` passes with only the shell-number retirement
+guard excluded. These exclusions are specific to this comparison tree, not changes
+to production acceptance. `comparator-runtime-compatible.log` passes with only
+the framing guard excluded; strict Clippy for both crates and all targets passes
+in `comparator-clippy.log`. Formatting and diff checks pass. Test and lint runs
+hide devices, display sockets and network access. Candidate, input, replacement
+and scheduling equivalence
+still need proof before freezing workloads or collecting B9 timing.
 
 The existing external tty4 dock runner is only a host-transcript smoke gate:
 its verifier explicitly leaves latency and restart acceptance unproved. It also
