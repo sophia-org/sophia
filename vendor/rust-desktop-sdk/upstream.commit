@@ -1,14 +1,14 @@
-tree 82827e08d2dccee8b848d39c5b827a5d341aa213
-parent 0e5ad3638bac48b6f9633e1bc1c0476fb2a1d481
-author Mason Green <mason@greenm01.net> 1792106778 -0400
-committer Mason Green <mason@greenm01.net> 1792106778 -0400
+tree 83101e5aaa698a9fd5f488cca2545f1887f14560
+parent 894dbcacce81b6085db9de848a32c644007825dd
+author Mason Green <mason@greenm01.net> 1792107310 -0400
+committer Mason Green <mason@greenm01.net> 1792107310 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatFhGhsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGImqwEAlg6JcZQCKm0cnMWhAYgP
- 3N45jGyNTsqAIBWEDVmYAz4A/jEJMX3YFHf6Ee1Qyrgnn5LB4n/iqg5lRUIYBjg1
- l0oK
- =1AdV
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatFjLhsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLsRQD/WgqgchZOg8Un34eXfbGS
+ j/TCpe58DqDhiWzzii3aaXIA/iDjxwKIeHI89NJH42Tiyf0DnXjs3JJDUQkiF/jh
+ dv4J
+ =3+0G
  -----END PGP SIGNATURE-----
 
-Reuse bounded receive and reply-drain storage
+Encode fixed request headers without temporary heap buffers
