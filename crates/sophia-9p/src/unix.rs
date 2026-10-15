@@ -173,7 +173,7 @@ impl<E: Export> Server<E> {
         if readiness.listener.contains(PollFlags::IN) {
             self.accept()?;
         }
-        for (slot, flags) in self.slots.iter_mut().zip(readiness.slots) {
+        for (slot, flags) in self.slots.iter_mut().zip(readiness.slots.as_slice()) {
             if flags.intersects(PollFlags::IN | PollFlags::HUP | PollFlags::ERR) {
                 Self::read(&mut self.export, slot, &mut self.read_buffer);
             }
@@ -238,16 +238,20 @@ impl<E: Export> Server<E> {
             fds.push(PollFd::new(listener, PollFlags::IN));
         }
         for slot in &self.slots {
-            let mut flags = PollFlags::empty();
-            if slot.connection.input_room() > 0 {
-                flags |= PollFlags::IN;
-            }
-            if !slot.connection.output().is_empty() {
-                flags |= PollFlags::OUT;
-            }
-            fds.push(PollFd::new(&slot.stream, flags));
+            fds.push(Self::slot_poll_fd(slot));
         }
         fds
+    }
+
+    fn slot_poll_fd(slot: &Slot<E>) -> PollFd<'_> {
+        let mut flags = PollFlags::empty();
+        if slot.connection.input_room() > 0 {
+            flags |= PollFlags::IN;
+        }
+        if !slot.connection.output().is_empty() {
+            flags |= PollFlags::OUT;
+        }
+        PollFd::new(&slot.stream, flags)
     }
 
     fn wait(&self, timeout: Option<Duration>) -> io::Result<Readiness> {
@@ -255,6 +259,22 @@ impl<E: Export> Server<E> {
             .map(Timespec::try_from)
             .transpose()
             .map_err(|_| io::Error::other("timeout out of range"))?;
+        // Admitted role exports normally own one socket and no listener. Keep
+        // their repeated empty polls off the heap, with the same interest rules.
+        if self.listener.is_none()
+            && let [slot] = self.slots.as_slice()
+        {
+            let mut fds = [
+                PollFd::new(&self.reader, PollFlags::IN),
+                Self::slot_poll_fd(slot),
+            ];
+            poll(&mut fds, timeout.as_ref())?;
+            return Ok(Readiness {
+                wake: fds[0].revents(),
+                listener: PollFlags::empty(),
+                slots: SlotReadiness::Single([fds[1].revents()]),
+            });
+        }
         let mut fds = self.poll_set();
         let offset = fds.len() - self.slots.len();
         poll(&mut fds, timeout.as_ref())?;
@@ -265,7 +285,7 @@ impl<E: Export> Server<E> {
             } else {
                 PollFlags::empty()
             },
-            slots: fds[offset..].iter().map(PollFd::revents).collect(),
+            slots: SlotReadiness::Many(fds[offset..].iter().map(PollFd::revents).collect()),
         })
     }
 
@@ -433,5 +453,19 @@ impl<E: Export> Server<E> {
 struct Readiness {
     wake: PollFlags,
     listener: PollFlags,
-    slots: Vec<PollFlags>,
+    slots: SlotReadiness,
+}
+
+enum SlotReadiness {
+    Single([PollFlags; 1]),
+    Many(Vec<PollFlags>),
+}
+
+impl SlotReadiness {
+    fn as_slice(&self) -> &[PollFlags] {
+        match self {
+            Self::Single(flags) => flags,
+            Self::Many(flags) => flags,
+        }
+    }
 }
