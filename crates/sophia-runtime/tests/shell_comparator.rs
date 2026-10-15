@@ -16,8 +16,16 @@ enum Client {
 }
 impl Client {
     fn connect(path: &Path, files: bool) -> Self {
-        let caps =
-            SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE;
+        Self::connect_with_input(path, files, false)
+    }
+    fn connect_with_input(path: &Path, files: bool, input: bool) -> Self {
+        let caps = SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
+            | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
+            | if input {
+                SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT
+            } else {
+                0
+            };
         if files {
             Self::Files(Box::new(
                 ShellConnection::connect_files(
@@ -86,6 +94,35 @@ impl Client {
                     std::thread::yield_now();
                 }
             }
+        }
+    }
+    fn candidate(&mut self, records: &[ShellContentRecord]) {
+        match self {
+            Self::Files(client) => {
+                client
+                    .enqueue_content_group(TransactionId::from_raw(20), records)
+                    .unwrap();
+            }
+            Self::Ipc(_) => {
+                for (index, record) in records.iter().enumerate() {
+                    self.send(20 + index as u64, record);
+                }
+            }
+        }
+    }
+    fn wait_for_owner(&mut self, done: mpsc::Receiver<()>) {
+        let deadline = Instant::now() + WAIT;
+        loop {
+            match done.try_recv() {
+                Ok(()) => return,
+                Err(mpsc::TryRecvError::Empty) => {}
+                Err(error) => panic!("owner ended: {error}"),
+            }
+            if let Self::Files(client) = self {
+                client.poll_io().unwrap();
+            }
+            assert!(Instant::now() < deadline, "owner completion deadline");
+            std::thread::yield_now();
         }
     }
 }
@@ -277,6 +314,445 @@ fn current_resource_owner_has_equal_results_on_both_wires() {
         assert_eq!(
             exchange(true, width, height),
             exchange(false, width, height)
+        );
+    }
+}
+
+fn resource_id(id: u64) -> ContentResourceId {
+    ContentResourceId { id, generation: 1 }
+}
+
+fn small_upload(grant: ContentGrant, resource: ContentResourceId) -> [ShellContentRecord; 3] {
+    [
+        ShellContentRecord::ResourceBegin(ContentResourceBegin {
+            grant,
+            resource,
+            width_px: 2,
+            height_px: 1,
+            rendered_scale_numerator: 1,
+            rendered_scale_denominator: 1,
+            pixel_format: 1,
+            chunk_count: 1,
+            total_bytes: 8,
+        }),
+        ShellContentRecord::ResourceChunk(ContentResourceChunk {
+            grant,
+            resource,
+            ordinal: 0,
+            offset: 0,
+            bytes: vec![0, 0, 255, 255, 0, 128, 0, 128],
+        }),
+        ShellContentRecord::ResourceEnd(ContentResourceEnd {
+            grant,
+            resource,
+            total_bytes: 8,
+            chunk_count: 1,
+        }),
+    ]
+}
+
+fn candidate(
+    grant: ContentGrant,
+    permit: &ContentFramePermit,
+    facts_generation: u64,
+    allocation: &ContentAllocationResult,
+    resource: ContentResourceId,
+) -> [ShellContentRecord; 3] {
+    let generation = 1;
+    [
+        ShellContentRecord::CandidateBegin(ContentCandidateBegin {
+            grant,
+            candidate_generation: generation,
+            output: permit.output,
+            facts_generation,
+            pacing_permit: permit.permit_id,
+            interaction_generation: 4,
+            surface_count: 1,
+            placement_count: 1,
+            target_count: 1,
+        }),
+        ShellContentRecord::CandidateChunk(ContentCandidateChunk {
+            grant,
+            candidate_generation: generation,
+            chunk_ordinal: 0,
+            surfaces: vec![ContentSurface {
+                allocation: allocation.allocation,
+                scale_generation: allocation.scale_generation,
+                role: 1,
+                edge: 1,
+                margins: ContentMargins::default(),
+                reservation_extent: 24,
+                parent_surface_index: u16::MAX,
+                anchor_parent_rect: ContentPixelRect::default(),
+            }],
+            placements: vec![ContentPlacement {
+                resource,
+                surface_index: 0,
+                destination_x_px: 3,
+                destination_y_px: 4,
+            }],
+            targets: vec![ContentTarget {
+                surface_index: 0,
+                action_kind: 1,
+                target_id: 1,
+                target_generation: 1,
+                action_id: 1,
+                bounds_px: ContentPixelRect {
+                    x: 3,
+                    y: 4,
+                    width: 2,
+                    height: 1,
+                },
+            }],
+        }),
+        ShellContentRecord::CandidateEnd(ContentCandidateEnd {
+            grant,
+            candidate_generation: generation,
+            surface_count: 1,
+            placement_count: 1,
+            target_count: 1,
+        }),
+    ]
+}
+
+fn allocation_request(grant: ContentGrant, output: ContentOutputId) -> ShellContentRecord {
+    ShellContentRecord::AllocationRequest(ContentAllocationRequest {
+        grant,
+        output,
+        allocation_request_id: 1,
+        operation: 1,
+        role: 1,
+        edge: 1,
+        prior: ContentAllocationId::default(),
+        parent: ContentAllocationId::default(),
+        parent_presentation_epoch: 0,
+        anchor_parent_rect: ContentPixelRect::default(),
+        desired_width: 64,
+        desired_height: 32,
+        margins: ContentMargins::default(),
+    })
+}
+
+fn snapshot(output: ContentOutputId, allocation: ContentAllocationId) -> ContentAllocationSnapshot {
+    ContentAllocationSnapshot {
+        native_opening: None,
+        output,
+        allocation,
+        scale_generation: 5,
+        scale_numerator: 1,
+        scale_denominator: 1,
+        role: 1,
+        edge: 1,
+        margins: ContentMargins::default(),
+        logical: ContentLogicalRect {
+            x: 0,
+            y: 0,
+            width: 64,
+            height: 32,
+        },
+        pixel: ContentPixelRect {
+            x: 0,
+            y: 0,
+            width: 64,
+            height: 32,
+        },
+        parent: ContentAllocationId::default(),
+        anchor_parent_rect: ContentPixelRect::default(),
+        allowed_reservation_extent: 32,
+    }
+}
+
+fn candidate_roundtrip(files: bool, renderer_failed: bool) -> Vec<ShellContentRecord> {
+    let root = std::env::temp_dir().join(format!(
+        "candidate-comparator-{}-{files}-{renderer_failed}",
+        std::process::id()
+    ));
+    let mut session =
+        ShellSessionTransport::bind_for_supervised_uid(&root, rustix::process::geteuid().as_raw())
+            .unwrap();
+    session
+        .authorize_protected_peer(&ProtectionDomainEvidence {
+            backend: ProtectionBackendKind::Bubblewrap,
+            supervisor_pid: std::process::id(),
+            peer_pid: std::process::id(),
+            roles: [ProtectionDomainRole::MetadataShell].into_iter().collect(),
+        })
+        .unwrap();
+    let socket = session.socket_path().to_path_buf();
+    let (uploaded_tx, uploaded_rx) = mpsc::channel();
+    let (finish_tx, finish_rx) = mpsc::channel();
+    let client = std::thread::spawn(move || {
+        let mut client = Client::connect_with_input(&socket, files, true);
+        let mut report = Vec::new();
+        let ShellContentRecord::Limits(limits) = client.receive() else {
+            panic!("expected limits");
+        };
+        let ShellContentRecord::OutputFacts(facts) = client.receive() else {
+            panic!("expected output facts");
+        };
+        let output = facts.outputs[0].output;
+        report.push(ShellContentRecord::Limits(limits.clone()));
+        report.push(ShellContentRecord::OutputFacts(facts.clone()));
+        client.send(6, &allocation_request(limits.grant, output));
+        let ShellContentRecord::AllocationResult(allocation) = client.receive() else {
+            panic!("expected allocation result");
+        };
+        assert_eq!(allocation.status, 1);
+        report.push(ShellContentRecord::AllocationResult(allocation.clone()));
+        let resource = resource_id(1);
+        for record in small_upload(limits.grant, resource) {
+            client.send(7, &record);
+        }
+        for expected in [1, 2] {
+            let status = client.receive();
+            assert!(
+                matches!(&status, ShellContentRecord::ResourceStatus(s) if s.status == expected)
+            );
+            report.push(status);
+        }
+        client.send(
+            9,
+            &ShellContentRecord::FrameDemand(ContentFrameDemand {
+                grant: limits.grant,
+                output,
+                allocation: ContentAllocationId::default(),
+                demand_id: 1,
+                reason: 1,
+            }),
+        );
+        uploaded_tx.send(()).unwrap();
+        let ShellContentRecord::FramePermit(permit) = client.receive() else {
+            panic!("expected frame permit");
+        };
+        assert_eq!(permit.state, 1);
+        report.push(ShellContentRecord::FramePermit(permit.clone()));
+        let records = candidate(
+            limits.grant,
+            &permit,
+            facts.facts_generation,
+            &allocation,
+            resource,
+        );
+        client.candidate(&records);
+        let mut outcomes = Vec::new();
+        while outcomes.len() < 2 {
+            let record = client.receive();
+            let ShellContentRecord::CandidateOutcome(outcome) = record else {
+                panic!("unexpected record while waiting for outcome: {record:?}");
+            };
+            if renderer_failed && outcome.kind == 3 {
+                assert_eq!(outcome.reason, ContentReason::RendererFailed as u16);
+            }
+            outcomes.push((outcome.kind, outcome.presentation_epoch));
+            report.push(ShellContentRecord::CandidateOutcome(outcome));
+        }
+        assert_eq!(
+            outcomes,
+            if renderer_failed {
+                vec![(1, 0), (3, 0)]
+            } else {
+                vec![(1, 0), (2, 9)]
+            }
+        );
+        if !renderer_failed {
+            let ShellContentRecord::Action(action) = client.receive() else {
+                panic!("missing action");
+            };
+            let ack = ContentActionAck {
+                grant: action.grant,
+                output: action.output,
+                candidate_generation: action.candidate_generation,
+                presentation_epoch: action.presentation_epoch,
+                interaction_generation: action.interaction_generation,
+                allocation: action.allocation,
+                target_id: action.target_id,
+                target_generation: action.target_generation,
+                action_id: action.action_id,
+                event_id: action.event_id,
+                disposition: 1,
+            };
+            report.push(ShellContentRecord::Action(action));
+            report.push(ShellContentRecord::ActionAck(ack.clone()));
+            client.send(51, &ShellContentRecord::ActionAck(ack));
+        }
+        client.wait_for_owner(finish_rx);
+        report
+    });
+
+    let policy = ShellContentAdmissionPolicy::Granted {
+        discrete_input: true,
+    };
+    let welcome = if files {
+        session.accept_files_with_content_policy(1, WAIT, policy)
+    } else {
+        session.accept_and_negotiate_with_content_policy(1, WAIT, policy)
+    }
+    .unwrap();
+    let grant = session.content_grant().unwrap();
+    let start = Instant::now();
+    let output = ContentOutputId {
+        id: 2,
+        generation: 1,
+    };
+    session
+        .publish_content_output_facts(
+            TransactionId::from_raw(5),
+            3,
+            vec![ContentOutputFactsEntry {
+                output,
+                local_width: 64,
+                local_height: 64,
+                scale_numerator: 1,
+                scale_denominator: 1,
+                scale_generation: 5,
+            }],
+        )
+        .unwrap();
+    while session.next_content_allocation_request().is_none() {
+        session
+            .service_content_allocation_requests(&[], start.elapsed().as_millis() as u64)
+            .unwrap();
+        assert!(start.elapsed() < Duration::from_secs(5));
+        std::thread::yield_now();
+    }
+    let allocation_id = ContentAllocationId {
+        id: 1,
+        generation: 1,
+    };
+    session
+        .grant_content_allocation(1, snapshot(output, allocation_id), &[])
+        .unwrap();
+    while uploaded_rx.try_recv().is_err() {
+        session
+            .service_content_resources(start.elapsed().as_millis() as u64)
+            .unwrap();
+        assert!(start.elapsed() < Duration::from_secs(5));
+        std::thread::yield_now();
+    }
+    let allocations = session.content_allocation_snapshots();
+    let context = ContentCandidateContext {
+        output,
+        facts_generation: 3,
+        interaction_generation: 4,
+        allocations: &allocations,
+    };
+    while session.next_content_demand().is_none() {
+        session
+            .service_content_demands(&[output], &allocations)
+            .unwrap();
+        assert!(start.elapsed() < Duration::from_secs(5));
+        std::thread::yield_now();
+    }
+    session
+        .grant_content_demand(TransactionId::from_raw(19), output, 1, 10)
+        .unwrap();
+    let mut processed = 0;
+    while processed < 3 {
+        processed += session
+            .service_content_candidates(&[context], 11 + u64::try_from(processed).unwrap())
+            .unwrap();
+        assert!(start.elapsed() < Duration::from_secs(5));
+        std::thread::yield_now();
+    }
+    let render = session.begin_content_submission(output, 1, 20).unwrap();
+    assert_eq!(
+        render.resource(resource_id(1)).unwrap().bytes(),
+        [0, 0, 255, 255, 0, 128, 0, 128]
+    );
+    session
+        .content_prepared(grant, output, 1, 7, 8, 21)
+        .unwrap();
+    if renderer_failed {
+        session.content_renderer_failed(grant, output, 1).unwrap();
+    } else {
+        session
+            .content_presented(grant, output, 1, 9, 7, 8)
+            .unwrap();
+        // Supply the selected target identity: physical hit testing is a
+        // separate native gate. The transport must preserve every field.
+        let action = ContentAction {
+            grant,
+            output,
+            candidate_generation: 1,
+            presentation_epoch: 9,
+            interaction_generation: 4,
+            allocation: allocation_id,
+            target_id: 1,
+            target_generation: 1,
+            action_id: 1,
+            event_id: 11,
+            kind: 1,
+            reason: ContentReason::None as u16,
+        };
+        session
+            .send_content_action(TransactionId::from_raw(50), &action)
+            .unwrap();
+        let (transaction, ack) = loop {
+            if let Some(value) = session.poll_content_action_ack().unwrap() {
+                break value;
+            }
+            assert!(start.elapsed() < WAIT);
+            std::thread::yield_now();
+        };
+        assert_eq!(transaction, TransactionId::from_raw(51));
+        assert_eq!(
+            ack,
+            ContentActionAck {
+                grant,
+                output,
+                candidate_generation: 1,
+                presentation_epoch: 9,
+                interaction_generation: 4,
+                allocation: allocation_id,
+                target_id: 1,
+                target_generation: 1,
+                action_id: 1,
+                event_id: 11,
+                disposition: 1,
+            }
+        );
+        session.retain_content_action_reservations(|_| false);
+    }
+    finish_tx.send(()).unwrap();
+    while !client.is_finished() {
+        session.poll_io().unwrap();
+        assert!(start.elapsed() < Duration::from_secs(5));
+        std::thread::yield_now();
+    }
+    session.disconnect().unwrap();
+    let report = client.join().unwrap();
+    // The GPU preflight's disconnect / held renderer / release sequence.
+    // Neither repeated disconnect nor collection can release a live consumer.
+    assert!(session.content_reserved_bytes() > 0);
+    assert!(session.content_backing_reserved_bytes() > 0);
+    session.disconnect().unwrap();
+    assert_eq!(
+        render.resource(resource_id(1)).unwrap().bytes(),
+        [0, 0, 255, 255, 0, 128, 0, 128]
+    );
+    assert!(session.content_reserved_bytes() > 0);
+    assert!(!session.content_accounting().quiescent());
+    drop(render);
+    session.disconnect().unwrap();
+    assert_eq!(session.content_reserved_bytes(), 0);
+    assert_eq!(session.content_backing_reserved_bytes(), 0);
+    assert!(session.content_accounting().quiescent());
+    session.disconnect().unwrap();
+    assert!(session.content_accounting().quiescent());
+    assert_eq!(welcome.selected_revision, 6);
+    drop(session);
+    if root.exists() {
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    report
+}
+
+#[test]
+fn current_candidate_owner_has_equal_completion_and_lease_results() {
+    for renderer_failed in [false, true] {
+        assert_eq!(
+            candidate_roundtrip(true, renderer_failed),
+            candidate_roundtrip(false, renderer_failed)
         );
     }
 }
