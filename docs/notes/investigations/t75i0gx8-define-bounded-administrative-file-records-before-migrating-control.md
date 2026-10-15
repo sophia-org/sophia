@@ -41,16 +41,18 @@ record codec. A deliberately wrong owner settlement fails its outcome check.
 The full repository gate passes for this addition with devices/display sockets
 hidden; hardware-only proofs remain unproved here.
 
-The paired diagnostic harness passed its full deterministic gate at `1fa735a04`.
-Its first measurement stopped after the small-catalog blocks because the large
-fixture wrongly supplied 259 policy commands. The corrected fixture supplies
-256 policy commands plus the three Session operations and is validated before
-timing. The failed run is retained; the corrected run remains pending.
-No administrative numeric
-performance budget has been declared, so its results cannot establish performance
-acceptance. The workload below is fixed before measurement.
+The paired diagnostic completed at `ee2aa2e9a`: 4,000 timed samples across eight
+blocks, 3,520 owner deliveries including warmups, and no duplicates or worker
+thread leaks. With two milliseconds of requested owner delay, legacy p99 was
+2.24–2.31 ms and files p99 was 11.45–11.52 ms. The gap is consistent with the
+file client's ten-millisecond status polling. Both paths used less than 0.3% of
+one core while idle. The first run's invalid catalog and partial results remain
+recorded below. No administrative numeric budget has been declared; these are
+diagnostics, not performance acceptance.
 
-Next collect paired performance evidence, then prove live recovery/rollback and select the default through t254's
+Next declare administrative latency and idle limits before a qualification run,
+decide whether status polling needs adjustment to meet them, then prove live
+recovery/rollback and select the default through t254's
 rollout gate. Include whole-process loss and the existing safe command/restart
 smoke. Service hot replacement is not supported, and uncertain commands must
 never be automatically repeated. The deferred output invocation remains excluded.
@@ -177,6 +179,42 @@ parent, completed four small-catalog blocks before the invalid large catalog
 hit the publication deadline. Its raw samples and failure are retained. The
 fixture correction has a deterministic catalog-validation check; it does not
 change production code or discard the earlier timing evidence.
+
+### Paired diagnostic result (October 14)
+
+The corrected run at signed `ee2aa2e9a3603cc8d99ab9d7c063c80b529e21df`
+completed all eight blocks. Evidence is in
+`~/.local/state/sophia/development-evidence/t254-admin-paired-20261015-b/`:
+`prepared.json` identifies the source and binary, `machine.json` records the
+host, `samples.jsonl` retains 4,000 raw timed samples and all block summaries,
+and `result.json` records completion with `qualification=false`.
+The release binary SHA-256 is
+`7cdea17ed19d215116b57c560e7ee4dcb766b17802b44b8347cd374a694f7196`.
+The corrected fixture passed its focused tests and strict Clippy; the preceding
+full gate passed at `1fa735a04`. No production code changed between candidates.
+
+The host was crunch, Ryzen 9 7950X3D, kernel `6.18.55_1`, nice 0. Builds used
+eight jobs and finished before measurement; no affinity was imposed. The runner
+hid devices, network and session sockets. Host load averages at start were
+1.08/1.53/2.36; no external quiet window was certified. Each row below gives the
+range across the four blocks for that transport, not a pooled percentile or a
+best-of selection.
+
+| Measurement | Legacy | 9P files |
+| --- | --- | --- |
+| Fresh discovery p99 | 0.227–0.421 ms | 1.771–1.885 ms |
+| Immediate owner completion p99 | 0.132–0.187 ms | 0.669–0.761 ms |
+| Two-millisecond owner delay p99 | 2.238–2.311 ms | 11.453–11.516 ms |
+| Idle CPU, percent of one core | 0.049–0.082% | 0.218–0.279% |
+
+The largest command sample was 2.338 ms for legacy and 11.665 ms for files.
+Every block delivered exactly 440 commands, including warmups; all outcomes
+matched and thread counts returned to their starting values. Maximum catalog
+size did not expose a timeout. This synthetic same-process owner is not live
+Session performance. The observed delayed-result gap is consistent with the
+file client's ten-millisecond polling interval, but does not by itself isolate
+every source of transport overhead. Choose numeric acceptance limits before
+further qualification; do not turn these observations into a retrospective pass.
 
 ### Independent administrative client (October 14)
 
