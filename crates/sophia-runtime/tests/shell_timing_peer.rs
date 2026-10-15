@@ -66,6 +66,7 @@ fn refuses_unarmed_ambiguous_and_authentication_bypass_launches() {
 #[ignore = "requires explicit prebuilt SOPHIA_TIMING_PEER_BINARY; device-hidden"]
 fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
     const FRAMES: u64 = 64;
+    const PANEL_WIDTH: u32 = 1920;
     #[cfg(feature = "comparator-allocation-counting")]
     let sampler = sophia_runtime::comparator_counters::Sampler::start().unwrap();
     let binary = std::env::var_os("SOPHIA_TIMING_PEER_BINARY").expect("explicit peer binary");
@@ -136,8 +137,8 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
             1,
             vec![ContentOutputFactsEntry {
                 output,
-                local_width: 64,
-                local_height: 64,
+                local_width: PANEL_WIDTH,
+                local_height: 1080,
                 scale_numerator: 1,
                 scale_denominator: 1,
                 scale_generation: 1,
@@ -173,13 +174,13 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
                             logical: ContentLogicalRect {
                                 x: 0,
                                 y: 0,
-                                width: 64,
+                                width: PANEL_WIDTH,
                                 height: 24,
                             },
                             pixel: ContentPixelRect {
                                 x: 0,
                                 y: 0,
-                                width: 64,
+                                width: PANEL_WIDTH,
                                 height: 24,
                             },
                             parent: ContentAllocationId::default(),
@@ -290,7 +291,7 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
             for pair in uploads.chunks_exact(2) {
                 assert_eq!(pair[0]["upload"]["total_bytes"], 4194304);
                 assert_eq!(pair[0]["upload"]["resource_id"], 1);
-                assert_eq!(pair[1]["upload"]["total_bytes"], 64 * 24 * 4);
+                assert_eq!(pair[1]["upload"]["total_bytes"], PANEL_WIDTH * 24 * 4);
             }
         }
         if cfg!(feature = "comparator-allocation-counting") {
