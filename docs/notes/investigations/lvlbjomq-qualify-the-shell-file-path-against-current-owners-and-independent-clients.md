@@ -103,7 +103,12 @@ console/keyboard restoration. Sources are comparator `136cbcb41` and external
 integration `4ec2904`. Independent replay of both collectors and joins passes.
 This is a 60 Hz, 64-frame diagnostic without warmup exclusion, not B9 acceptance.
 Do not rerun `t252-check`: its run directories now contain retained evidence.
-Next close the upload-timing/accounting scope gaps, freeze the full B9 method,
+Comparator `df3a08f8d` now records upload attempts, acceptance times and exact
+RGBA byte counts; integration `fd1e0a1` validates and exports them alongside
+demand-to-permit times. Both supplied-owner wires pass 64-frame replay, and
+calibration 04's old journals remain readable. This instrumentation has not yet
+run natively. See [upload journals](#upload-journals-october-15).
+Next provide the 4 MiB native workload, settle accounting scope, freeze the full B9 method,
 then collect the declared campaign and native lifetime/input evidence for both
 desktop selections. See [calibration 04](#native-calibration-04-both-wires-joined).
 See [comparator preparation](#comparator-preparation-october-15).
@@ -1085,6 +1090,35 @@ backpressure/replacement now pass on the updated pair. Next prepare the exact
 paired-client native gate for both selections and freeze the runnable B9 method.
 Do not mark t252 complete or advance its default/rollback acceptance on the
 strength of the generic checks alone.
+
+## Upload journals (October 15)
+
+Signed comparator `df3a08f8d` emits schema 2 journals. Every frame has a resource
+upload offer before ResourceBegin and a matching record after decoding Accepted.
+The offer binds the grant, output, frame, resource identity, dimensions and RGBA
+byte count. Timing excludes pixel preparation but includes flushing the offer
+record. This conservative boundary is explicit; it is not an uninstrumented
+transport-only measurement.
+
+Signed integration `fd1e0a1` validates the full sequence and exports upload and
+permit timestamps through `xtask shell-timing metrics`. Native reports now
+include those metrics. Missing acceptance, changed identity, invalid byte count,
+backward clocks, mixed schemas and incomplete journals fail without exporting
+surviving frames. Slow accepted uploads remain in the data for budget assessment.
+Schema 1 replay remains supported with an empty upload list, not invented data.
+
+Device-hidden checks passed: five journal tests, five native-join tests, four
+counter tests, seven runner tests and two real-child peer tests. Strict Clippy
+passed for external xtask and the generic peer. Both real-child wire journals
+exported 64 uploads, permits and offers. Both calibration 04 journals replayed
+as schema 1 with all 64 offers. Evidence is under
+`~/.local/state/sophia/development-evidence/t252-authenticated-20261015/upload-journal-01/`:
+`files.ndjson`, `ipc.ndjson` and their `*-metrics.json` exports.
+
+These are supplied-owner checks, not new native measurements. At 1920×24 the
+upload is 180 KiB; the peer does not yet provide the separate 4 MiB workload.
+CPU/MiB accounting scope, the frozen campaign method and physical acceptance
+remain open. No live installation or console state changed.
 
 ## Connections
 
