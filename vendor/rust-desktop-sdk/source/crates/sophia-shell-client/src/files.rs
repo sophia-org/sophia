@@ -21,7 +21,7 @@
 use std::collections::{HashSet, VecDeque};
 use std::time::{Duration, Instant};
 
-use sophia_9p_client::pipeline::Pipeline;
+use sophia_9p_client::pipeline::{Pipeline, Reply};
 use sophia_9p_records::{Fid, Tag};
 
 use sophia_shell_protocol::shell_files::*;
@@ -239,6 +239,8 @@ pub(crate) struct FileWire {
     read_tag: Option<Tag>,
     read_offset: u64,
     event_buf: Vec<u8>,
+    /// Reused only within one drain; capacity is bounded by pipeline credits.
+    reply_scratch: Vec<(Tag, Reply)>,
     /// Every event through this sequence has been handled.
     ack_ready: u64,
     acked: u64,

@@ -369,6 +369,7 @@ impl FileWire {
             read_tag: None,
             read_offset,
             event_buf: buffer,
+            reply_scratch: Vec::new(),
             ack_ready: last_acked,
             acked: last_acked,
             ack_tag: None,

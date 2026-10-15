@@ -833,23 +833,28 @@ impl Pipeline {
             if self.in_buf.len() < size {
                 return Ok(());
             }
-            let frame: Vec<u8> = self.in_buf.drain(..size).collect();
-            let kind = frame[4];
-            let tag = u16::from_le_bytes([frame[5], frame[6]]);
-            let body = frame[HEADER..].to_vec();
-            self.on_frame(kind, tag, body)?;
+            // Borrow the complete body without copying the frame and body into
+            // temporary vectors. Restore the bounded receive storage, including
+            // any partial next frame, even when validation poisons the socket.
+            let mut input = std::mem::take(&mut self.in_buf);
+            let kind = input[4];
+            let tag = u16::from_le_bytes([input[5], input[6]]);
+            let result = self.on_frame(kind, tag, &input[HEADER..size]);
+            input.drain(..size);
+            self.in_buf = input;
+            result?;
         }
     }
 
     /// Matches one decoded frame to its outstanding request, validates its
     /// shape and type exactly, and either delivers it or poisons the
     /// pipeline.
-    fn on_frame(&mut self, kind: u8, tag: u16, body: Vec<u8>) -> Result<(), PipelineError> {
+    fn on_frame(&mut self, kind: u8, tag: u16, body: &[u8]) -> Result<(), PipelineError> {
         let Some(outstanding) = self.in_flight.get(&tag).copied() else {
             return Err(self.poison(PipelineError::Protocol("reply to a tag not outstanding")));
         };
         if kind == client_codec::RLERROR {
-            let Some(errno) = client_codec::decode_rlerror(&body) else {
+            let Some(errno) = client_codec::decode_rlerror(body) else {
                 return Err(self.poison(PipelineError::Protocol("Rlerror shape")));
             };
             match outstanding {
@@ -885,7 +890,7 @@ impl Pipeline {
                 if kind != client_codec::RAUTH {
                     return Err(self.poison(PipelineError::Protocol("unexpected reply type")));
                 }
-                let Some(qid) = client_codec::decode_rauth(&body) else {
+                let Some(qid) = client_codec::decode_rauth(body) else {
                     return Err(self.poison(PipelineError::Protocol("Rauth shape")));
                 };
                 self.resolve(tag, outstanding, Reply::Auth(qid));
@@ -895,7 +900,7 @@ impl Pipeline {
                 if kind != client_codec::RATTACH {
                     return Err(self.poison(PipelineError::Protocol("unexpected reply type")));
                 }
-                let Some(qid) = client_codec::decode_rattach(&body) else {
+                let Some(qid) = client_codec::decode_rattach(body) else {
                     return Err(self.poison(PipelineError::Protocol("Rattach shape")));
                 };
                 self.resolve(tag, outstanding, Reply::Attach(qid));
@@ -905,7 +910,7 @@ impl Pipeline {
                 if kind != client_codec::RWALK {
                     return Err(self.poison(PipelineError::Protocol("unexpected reply type")));
                 }
-                let Some(qids) = client_codec::decode_rwalk(&body) else {
+                let Some(qids) = client_codec::decode_rwalk(body) else {
                     return Err(self.poison(PipelineError::Protocol("Rwalk shape")));
                 };
                 if qids.len() > names as usize {
@@ -931,7 +936,7 @@ impl Pipeline {
                 if kind != client_codec::RLOPEN {
                     return Err(self.poison(PipelineError::Protocol("unexpected reply type")));
                 }
-                let Some((qid, iounit)) = client_codec::decode_rlopen(&body) else {
+                let Some((qid, iounit)) = client_codec::decode_rlopen(body) else {
                     return Err(self.poison(PipelineError::Protocol("Rlopen shape")));
                 };
                 self.resolve(tag, outstanding, Reply::Lopen { qid, iounit });
@@ -941,7 +946,7 @@ impl Pipeline {
                 if kind != client_codec::RREAD {
                     return Err(self.poison(PipelineError::Protocol("unexpected reply type")));
                 }
-                let Some(data) = client_codec::decode_rread(&body) else {
+                let Some(data) = client_codec::decode_rread(body) else {
                     return Err(self.poison(PipelineError::Protocol("Rread shape")));
                 };
                 if data.len() > count as usize {
@@ -954,7 +959,7 @@ impl Pipeline {
                 if kind != client_codec::RWRITE {
                     return Err(self.poison(PipelineError::Protocol("unexpected reply type")));
                 }
-                let Some(count) = client_codec::decode_rwrite(&body) else {
+                let Some(count) = client_codec::decode_rwrite(body) else {
                     return Err(self.poison(PipelineError::Protocol("Rwrite shape")));
                 };
                 if count > sent {
@@ -967,7 +972,7 @@ impl Pipeline {
                 if kind != client_codec::RCLUNK {
                     return Err(self.poison(PipelineError::Protocol("unexpected reply type")));
                 }
-                let Some(()) = client_codec::decode_rclunk(&body) else {
+                let Some(()) = client_codec::decode_rclunk(body) else {
                     return Err(self.poison(PipelineError::Protocol("Rclunk shape")));
                 };
                 self.resolve(tag, outstanding, Reply::Clunk);
@@ -977,7 +982,7 @@ impl Pipeline {
                 if kind != client_codec::RFLUSH {
                     return Err(self.poison(PipelineError::Protocol("unexpected reply type")));
                 }
-                let Some(()) = client_codec::decode_rflush(&body) else {
+                let Some(()) = client_codec::decode_rflush(body) else {
                     return Err(self.poison(PipelineError::Protocol("Rflush shape")));
                 };
                 self.settle_flushed(old);
