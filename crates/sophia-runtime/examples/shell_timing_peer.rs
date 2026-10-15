@@ -201,12 +201,20 @@ fn run() -> Result<()> {
     let object = config
         .as_object()
         .ok_or("configuration must be an object")?;
-    if object.len() != 5
-        || object
-            .keys()
-            .any(|k| !["wire", "output", "frames", "height", "hold_msec"].contains(&k.as_str()))
+    if !(5..=6).contains(&object.len())
+        || object.keys().any(|k| {
+            ![
+                "wire",
+                "output",
+                "frames",
+                "height",
+                "hold_msec",
+                "probe_bytes",
+            ]
+            .contains(&k.as_str())
+        })
     {
-        return Err("configuration requires wire, output, frames, height, hold_msec only".into());
+        return Err("configuration requires wire, output, frames, height, hold_msec and optional probe_bytes".into());
     }
     let number = |key: &str| -> Result<u64> {
         config[key]
@@ -217,10 +225,16 @@ fn run() -> Result<()> {
     let frames = number("frames")?;
     let height = number("height")?;
     let hold = number("hold_msec")?;
+    let probe_bytes = if object.contains_key("probe_bytes") {
+        number("probe_bytes")?
+    } else {
+        0
+    };
     if output_id == 0
         || !(1..=10000).contains(&frames)
         || !(1..=128).contains(&height)
         || hold > 600000
+        || !matches!(probe_bytes, 0 | 4194304)
     {
         return Err("configuration outside bounded workload".into());
     }
@@ -245,8 +259,8 @@ fn run() -> Result<()> {
     if facts.grant != grant || facts.facts_generation == 0 || output.output.generation == 0 {
         return Err("stale or misattributed output facts".into());
     }
-    if limits.max_resource_ids < 2 {
-        return Err("paced workload needs two resource identities".into());
+    if limits.max_resource_ids < if probe_bytes == 0 { 2 } else { 3 } {
+        return Err("insufficient resource identities for paced workload".into());
     }
     wire.send(
         1,
@@ -279,85 +293,118 @@ fn run() -> Result<()> {
         return Err("allocation refused or misattributed".into());
     }
     emit(
-        serde_json::json!({"schema":2,"event":"start","frames":frames,"wire":if files {"files"} else {"ipc"}}),
+        serde_json::json!({"schema":2,"event":"start","frames":frames,"wire":if files {"files"} else {"ipc"},"probe_bytes":probe_bytes}),
     )?;
     for generation in 1..=frames {
         #[cfg(feature = "comparator-allocation-counting")]
         sophia_runtime::comparator_counters::record("peer", "frame_start", generation)?;
-        let resource = resource_for_frame(generation);
-        let width = allocation.pixel.width;
-        let height = allocation.pixel.height;
-        let length = u64::from(width) * u64::from(height) * 4;
-        if length == 0 || length > limits.max_staging_bytes {
-            return Err("invalid upload size".into());
-        }
-        let row = width.checked_mul(4).ok_or("row size overflow")?;
-        let chunk_bytes = (limits.max_chunk_bytes / row * row) as usize;
-        if chunk_bytes == 0 {
-            return Err("row exceeds chunk limit".into());
-        }
-        let bytes: Vec<_> = (0..length as usize)
-            .map(|i| {
-                if i % 4 == 3 {
-                    255
-                } else {
-                    (generation % 128) as u8
-                }
-            })
-            .collect();
-        let chunks = bytes.len().div_ceil(chunk_bytes) as u32;
-        // Preserve the attempt before sending. This conservative interval includes
-        // flushing the offer journal, but excludes pixel preparation above.
-        let begin_usec = clock_usec();
-        emit(
-            serde_json::json!({"schema":2,"event":"upload_offer","upload":{
-                "connection_epoch":grant.connection_epoch,"content_grant_epoch":grant.content_grant_epoch,
-                "output":output.output.id,"candidate_generation":generation,
-                "resource_id":resource.id,"resource_generation":resource.generation,
-                "width":width,"height":height,"total_bytes":length,"begin_usec":begin_usec
-            }}),
-        )?;
-        wire.send(
-            2,
-            &[ShellContentRecord::ResourceBegin(ContentResourceBegin {
-                grant,
-                resource,
-                width_px: width,
-                height_px: height,
-                rendered_scale_numerator: allocation.scale_numerator,
-                rendered_scale_denominator: allocation.scale_denominator,
-                pixel_format: 1,
-                chunk_count: chunks,
-                total_bytes: length,
-            })],
-        )?;
-        expect_status(&mut wire, grant, resource, 1)?;
-        for (ordinal, chunk) in bytes.chunks(chunk_bytes).enumerate() {
+        // The optional probe measures transfer acceptance, not presentation.
+        // Release it before uploading the bar so only one staging slot is needed.
+        // New IDs must increase: probe 1, then alternating bar IDs 2 and 3.
+        for probe in [true, false] {
+            if probe && probe_bytes == 0 {
+                continue;
+            }
+            let resource = if probe {
+                ContentResourceId { id: 1, generation }
+            } else {
+                resource_for_frame(generation, probe_bytes != 0)
+            };
+            let width = if probe { 1024 } else { allocation.pixel.width };
+            let height = if probe { 1024 } else { allocation.pixel.height };
+            let length = u64::from(width) * u64::from(height) * 4;
+            if length == 0 || length > limits.max_staging_bytes {
+                return Err("invalid upload size".into());
+            }
+            let row = width.checked_mul(4).ok_or("row size overflow")?;
+            let chunk_bytes = (limits.max_chunk_bytes / row * row) as usize;
+            if chunk_bytes == 0 {
+                return Err("row exceeds chunk limit".into());
+            }
+            let bytes: Vec<_> = (0..length as usize)
+                .map(|i| {
+                    if i % 4 == 3 {
+                        255
+                    } else {
+                        (generation % 128) as u8
+                    }
+                })
+                .collect();
+            let chunks = bytes.len().div_ceil(chunk_bytes) as u32;
+            // Preserve the attempt before sending. This conservative interval includes
+            // flushing the offer journal, but excludes pixel preparation above.
+            let begin_usec = clock_usec();
+            emit(
+                serde_json::json!({"schema":2,"event":"upload_offer","upload":{
+                    "connection_epoch":grant.connection_epoch,"content_grant_epoch":grant.content_grant_epoch,
+                    "output":output.output.id,"candidate_generation":generation,
+                    "resource_id":resource.id,"resource_generation":resource.generation,
+                    "width":width,"height":height,"total_bytes":length,"begin_usec":begin_usec
+                }}),
+            )?;
             wire.send(
-                3,
-                &[ShellContentRecord::ResourceChunk(ContentResourceChunk {
+                2,
+                &[ShellContentRecord::ResourceBegin(ContentResourceBegin {
                     grant,
                     resource,
-                    ordinal: ordinal as u32,
-                    offset: ordinal as u64 * chunk_bytes as u64,
-                    bytes: chunk.to_vec(),
+                    width_px: width,
+                    height_px: height,
+                    rendered_scale_numerator: allocation.scale_numerator,
+                    rendered_scale_denominator: allocation.scale_denominator,
+                    pixel_format: 1,
+                    chunk_count: chunks,
+                    total_bytes: length,
                 })],
             )?;
-        }
-        wire.send(
-            4,
-            &[ShellContentRecord::ResourceEnd(ContentResourceEnd {
-                grant,
-                resource,
-                total_bytes: length,
-                chunk_count: chunks,
-            })],
-        )?;
-        expect_status(&mut wire, grant, resource, 2)?;
-        let accepted_usec = clock_usec();
-        emit(serde_json::json!({"schema":2,"event":"upload_accepted",
+            expect_status(&mut wire, grant, resource, 1)?;
+            for (ordinal, chunk) in bytes.chunks(chunk_bytes).enumerate() {
+                wire.send(
+                    3,
+                    &[ShellContentRecord::ResourceChunk(ContentResourceChunk {
+                        grant,
+                        resource,
+                        ordinal: ordinal as u32,
+                        offset: ordinal as u64 * chunk_bytes as u64,
+                        bytes: chunk.to_vec(),
+                    })],
+                )?;
+            }
+            wire.send(
+                4,
+                &[ShellContentRecord::ResourceEnd(ContentResourceEnd {
+                    grant,
+                    resource,
+                    total_bytes: length,
+                    chunk_count: chunks,
+                })],
+            )?;
+            expect_status(&mut wire, grant, resource, 2)?;
+            let accepted_usec = clock_usec();
+            emit(serde_json::json!({"schema":2,"event":"upload_accepted",
             "resource_id":resource.id,"resource_generation":resource.generation,
             "accepted_usec":accepted_usec}))?;
+            if probe {
+                wire.send(
+                    7,
+                    &[ShellContentRecord::ResourceRetire(ContentResourceRetire {
+                        grant,
+                        resource,
+                    })],
+                )?;
+                let ShellContentRecord::ResourceReleased(released) = wire.receive()? else {
+                    return Err("missing probe release".into());
+                };
+                if released.grant != grant || released.resource != resource || released.reason != 0
+                {
+                    return Err("wrong probe release".into());
+                }
+                emit(
+                    serde_json::json!({"schema":2,"event":"probe_released","resource_id":resource.id,
+                "resource_generation":resource.generation,"released_usec":clock_usec()}),
+                )?;
+            }
+        }
+        let resource = resource_for_frame(generation, probe_bytes != 0);
         let demand_time = clock_usec();
         wire.send(
             5,
@@ -469,7 +516,7 @@ fn run() -> Result<()> {
         }
         // Keep the currently displayed resource until a successor is shown.
         if generation > 1 {
-            let old = resource_for_frame(generation - 1);
+            let old = resource_for_frame(generation - 1, probe_bytes != 0);
             wire.send(
                 7,
                 &[ShellContentRecord::ResourceRetire(ContentResourceRetire {
@@ -508,9 +555,9 @@ fn expect_status(
     }
 }
 
-fn resource_for_frame(frame: u64) -> ContentResourceId {
+fn resource_for_frame(frame: u64, probe: bool) -> ContentResourceId {
     ContentResourceId {
-        id: (frame - 1) % 2 + 1,
+        id: (frame - 1) % 2 + 1 + u64::from(probe),
         generation: (frame - 1) / 2 + 1,
     }
 }

@@ -70,14 +70,17 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
     let sampler = sophia_runtime::comparator_counters::Sampler::start().unwrap();
     let binary = std::env::var_os("SOPHIA_TIMING_PEER_BINARY").expect("explicit peer binary");
     assert!(std::path::Path::new(&binary).is_absolute());
-    for files in [true, false] {
-        let root = std::env::temp_dir().join(format!("timing-peer-{}-{files}", std::process::id()));
+    for (files, probe) in [(true, false), (false, false), (true, true), (false, true)] {
+        let root = std::env::temp_dir().join(format!(
+            "timing-peer-{}-{files}-{probe}",
+            std::process::id()
+        ));
         std::fs::create_dir(&root).unwrap();
         let config = root.join("peer.json");
         std::fs::write(
             &config,
             serde_json::json!({"wire":if files {"files"} else {"ipc"},
-            "output":1,"frames":FRAMES,"height":24,"hold_msec":100})
+            "output":1,"frames":FRAMES,"height":24,"hold_msec":100,"probe_bytes":if probe {4194304} else {0}})
             .to_string(),
         )
         .unwrap();
@@ -145,7 +148,7 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
         let mut completed = 0;
         let mut held = None;
         while child.try_wait().unwrap().is_none() {
-            if start.elapsed() > Duration::from_secs(10) {
+            if start.elapsed() > Duration::from_secs(30) {
                 child.kill().unwrap();
                 panic!("peer deadline");
             }
@@ -214,7 +217,11 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
                 Err(ShellTransportError::NotConnected) if completed == FRAMES => {}
                 Err(error) => {
                     let _ = child.kill();
-                    panic!("owner: {error:?}");
+                    panic!(
+                        "owner: {error:?}; stdout={}; stderr={}",
+                        std::fs::read_to_string(root.join("stdout")).unwrap(),
+                        std::fs::read_to_string(root.join("stderr")).unwrap()
+                    );
                 }
             }
             std::thread::yield_now();
@@ -232,7 +239,12 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
             use std::io::Write;
             let directory = std::path::Path::new(&directory);
             assert!(directory.is_absolute());
-            let name = if files { "files.ndjson" } else { "ipc.ndjson" };
+            let stem = format!(
+                "{}{}",
+                if files { "files" } else { "ipc" },
+                if probe { "-4mib" } else { "" }
+            );
+            let name = format!("{stem}.ndjson");
             std::fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
@@ -240,11 +252,7 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
                 .unwrap()
                 .write_all(&stdout)
                 .unwrap();
-            let name = if files {
-                "files.counters"
-            } else {
-                "ipc.counters"
-            };
+            let name = format!("{stem}.counters");
             std::fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
@@ -266,6 +274,25 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
             .collect();
         assert_eq!(offers.len(), FRAMES as usize);
         assert_eq!(terminals.len(), FRAMES as usize);
+        let uploads: Vec<_> = records
+            .iter()
+            .filter(|r| r["event"] == "upload_offer")
+            .collect();
+        assert_eq!(uploads.len(), FRAMES as usize * if probe { 2 } else { 1 });
+        assert_eq!(
+            records
+                .iter()
+                .filter(|r| r["event"] == "probe_released")
+                .count(),
+            if probe { FRAMES as usize } else { 0 }
+        );
+        if probe {
+            for pair in uploads.chunks_exact(2) {
+                assert_eq!(pair[0]["upload"]["total_bytes"], 4194304);
+                assert_eq!(pair[0]["upload"]["resource_id"], 1);
+                assert_eq!(pair[1]["upload"]["total_bytes"], 64 * 24 * 4);
+            }
+        }
         if cfg!(feature = "comparator-allocation-counting") {
             let counters = String::from_utf8(stderr).unwrap();
             assert_eq!(counters.lines().count(), 2 * FRAMES as usize);
