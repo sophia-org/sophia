@@ -632,13 +632,17 @@ export through `ControlService::bind_files`. A bounded file client, explicit
 Session/CLI selection and the generic command-owner fixture now cover both
 transports. Real-socket tests and a separate model cover service teardown and
 fresh-instance result isolation alongside replay, cancellation, retained
-snapshots and unsettled execution capacity. The live command transport is
-unchanged. An independent Go client now checks the administrative records and
+snapshots and unsettled execution capacity. An independent Go client now checks
+the administrative records and
 file lifecycle, including a deliberately wrong settlement. The declared transport
 performance gate passes at `639dab440`, and abrupt service-process loss preserves
 uncertainty without replay. The candidate selects 9P for Session/CLI by default
-and retains explicit legacy rollback. Installed recovery/rollback acceptance
-remains under this exit.
+and retains explicit legacy rollback. The October 15 installed smoke passed:
+discovery, a committed safe policy action, completed WM replacement and user
+confirmation of continued input/rendering. The verified preceding release
+remains available for rollback; installer rollback tests pass. See the
+[acceptance record](../milestones/eh89zpqc-administrative-commands-accepted-on-the-shared-9p-core.md)
+for the exact release and evidence limits.
 A paired diagnostic at `ee2aa2e9a` records discovery, command latency and idle
 CPU with controlled owners. It exposes the file client's delayed-result polling
 cost but is not a performance verdict. The subsequent qualification uses the

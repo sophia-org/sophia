@@ -14,11 +14,15 @@ core without introducing new command authority or execution owners?
 
 ## Current resumption
 
-Signed candidate `ed0caa4f2` defaults Session and `sophia msg` to 9P2000.L.
-Explicit `current-ipc` selectors remain for rollback; the running desktop still
-uses its existing release. The [file contract](../../sophia-admin-files.md)
-records admission, snapshot, deadline and no-replay rules. t254 remains open
-for installation and the short attended smoke.
+Signed candidate `ed0caa4f2` now runs in installed release
+`niltempus-b7f017d6e4cdb2056faa`, with Session and `sophia msg` using 9P2000.L
+by default. On October 15, discovery succeeded, `focus-next` committed and
+`restart-wm` completed. The Session survived; niltempus confirmed that the
+desktop, keyboard and mouse still worked normally. This satisfies the attended
+t036 smoke reused by t254. The [file contract](../../sophia-admin-files.md)
+records admission, snapshot, deadline and no-replay rules. Explicit
+`current-ipc` selectors and the preceding installed release remain available
+for rollback. See the installed acceptance below for identities and limits.
 
 The [bounded lifecycle model](../../../validation/specula/admin-file-lifecycle/README.md)
 and its new service-instance boundary extension pass. Their faulty variants
@@ -64,13 +68,10 @@ only a new explicit command. This does not prove installed Session recovery.
 Foreign-namespace denial passes over the real 9P endpoint, even with a reachable
 socket. The complete final repository gate and CLI default/rollback tests pass.
 Desktop integration `a6eb56d` pins Sophia `ed0caa4f2`; release
-`niltempus-b7f017d6e4cdb2056faa` is built and checksum-verified. The current
+`niltempus-b7f017d6e4cdb2056faa` is installed and checksum-verified. The previous
 `niltempus-eb8be6b503fa8bca3815` release is also checksum-verified for rollback.
-Installer rollback tests pass. Installation is waiting for local sudo
-authentication (`sudo -n true` reported that a password is required).
-From `~/dev/niltempus`, run `tools/desktop install`, then log out and back in.
-Next verify the running release, discovery, one safe action, WM restart and
-continued input/rendering; retain the preceding release for rollback.
+Installer rollback tests pass. The user installed the release and returned in
+a new live session; its executable path matches the prepared candidate.
 Service hot replacement is not supported, and uncertain commands must
 never be automatically repeated. The deferred output invocation remains excluded.
 
@@ -188,7 +189,32 @@ No administrative runtime implementation differs between the qualified
 `639dab440` and `ed0caa4f2`; the latter changes default selectors and tests/docs.
 Hardware-only proofs remain unproved by those checks.
 
-### Desktop preparation and remaining installed acceptance (October 14)
+### Installed acceptance (October 15)
+
+`tools/desktop status` identifies current release
+`niltempus-b7f017d6e4cdb2056faa` (Sophia
+`ed0caa4f254438925038872aaf08f959a3ab7551`, integration
+`a6eb56d7ff32f0dd900eb61575d91c47fb1da538`) and previous release
+`niltempus-eb8be6b503fa8bca3815`. Session PID 16232 runs the current release's
+binary. Its host terminal supplied the administrative socket
+`/run/user/1000/sophia-control-570f83d82cb21aba236de3b2ef31ad15/admin.9p`.
+
+At 10:23 UTC, the installed CLI discovered the catalog, invoked its advertised
+`focus-next` action and received `committed`, then invoked `restart-wm` and
+received `completed`. WM PID 16250 exited and PID 19286 replaced it, using
+the same release. Session PID 16232 survived. niltempus then confirmed that the
+desktop, keyboard and mouse remained normal. Raw command responses and process
+identities are in `~/.local/state/sophia/development-evidence/t254-installed-20261015/`.
+
+The previous release remains the rollback target: run `tools/desktop rollback`
+from `~/dev/niltempus`, then log out and back in. The retained checksum results
+and installer rollback tests establish availability and link handling; this
+smoke did not switch the live desktop back to the old release. The successful
+WM replacement proves the required installed recovery smoke, not Session hot
+replacement or durable command results across a crash. Uncertain commands must
+never be replayed automatically. The output invocation extension stays deferred.
+
+### Desktop preparation (October 14)
 
 The niltempus desktop's signed `a6eb56d7ff32f0dd900eb61575d91c47fb1da538`
 changes only its Sophia flake pin, to `ed0caa4f2`. All supervised client pins
