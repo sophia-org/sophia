@@ -419,8 +419,11 @@ impl XServerFrontendRouteBroker {
                     metadata_candidate_sender,
                     owner_wake.clone(),
                 ),
-                route_lease_update_sender: route_lease_update_sender
-                    .map(|sender| sophia_wake::SignalSender::new(sender, owner_wake.clone())),
+                route_lease_updates: RouteLeaseOutbox::new(
+                    route_lease_update_sender
+                        .map(|sender| sophia_wake::SignalSender::new(sender, owner_wake.clone())),
+                    capacities.control.get(),
+                ),
                 explicit_pointer_grabs: None,
                 input_control_epoch: input_control_epoch.clone(),
                 per_client_input_capacity: capacities.input,
@@ -714,6 +717,7 @@ impl XServerFrontendRouteBroker {
 
     /// Routes every value currently available at the bounded ingress.
     pub fn route_pending(&mut self) -> Result<usize, XServerFrontendRouteError> {
+        self.registry.route_lease_updates.flush()?;
         // Under a coordinator this application belongs to the ranked apply,
         // not here: running both would clear the same populations from two
         // places, through three sequentially taken locks that no transition

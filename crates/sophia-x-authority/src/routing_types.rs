@@ -437,6 +437,10 @@ pub enum XServerFrontendRouteError {
     /// overwrite the only record of it.
     OrderedItemUnresolved,
     LifecycleUnavailable,
+    /// Notification capacity was exhausted before another lease effect.
+    RouteLeaseQueueFull,
+    /// Session disappeared; notification failure does not undo input effects.
+    RouteLeaseQueueDisconnected,
     /// This instance is being drained by the ordered consumer, so the older
     /// route may not also drain it.
     ///
@@ -609,6 +613,12 @@ impl core::fmt::Display for XServerFrontendRouteError {
             ),
             Self::LifecycleUnavailable => {
                 write!(formatter, "private connection lifecycle unavailable")
+            }
+            Self::RouteLeaseQueueFull => {
+                write!(formatter, "route-lease notification capacity exhausted")
+            }
+            Self::RouteLeaseQueueDisconnected => {
+                write!(formatter, "route-lease notification consumer disconnected")
             }
             Self::FocusClaimRefused { client, refusal } => write!(
                 formatter,

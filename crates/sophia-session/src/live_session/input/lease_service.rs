@@ -14,6 +14,10 @@ fn service_application_route_leases(
             || lease_updates.released != 0
             || lease_updates.stale != 0
         {
+            // A full response channel may have left notifications in the
+            // frontend's bounded outbox. Draining returns capacity even when
+            // every identity was stale. Ring the same service after the read.
+            frontend_service_sender.notify_capacity();
             crate::session_println!(
                 "sophia_live_input_lease schema=1 confirmed={} rejected={} released={} stale={}",
                 lease_updates.confirmed,

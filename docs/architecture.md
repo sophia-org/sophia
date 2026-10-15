@@ -226,6 +226,14 @@ input and recovery require separate desktop integration evidence.
   Core and admitted XI explicit pointer grabs share Engine's application lease
   arbitration, so the compiled profile enables that path. Signed installed
   evidence remains open.
+- Frontend-to-Session route-lease notifications reserve bounded delivery space
+  before changing input state. A full Session channel retains the original
+  notification in a FIFO; Session wakes the frontend after draining, including
+  stale updates. The additional FIFO and outstanding reservations share the
+  configured control-capacity bound. Exhaustion refuses further lease effects
+  with an explicit service error rather than blocking. Disconnect or teardown
+  reports abandoned notification delivery; it does not claim that an input
+  effect was undone. Session still checks the exact lease identity and epoch.
 - Public WM policy and the metadata broker are launched through the production
   Bubblewrap protection backend. The backend rejects forbidden role composition,
   clears the ambient environment, inherits only selected standard streams, denies

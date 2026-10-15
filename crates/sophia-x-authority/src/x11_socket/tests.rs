@@ -35,6 +35,10 @@ include!(concat!(
 ));
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/route_lease_outbox.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
     "/tests/x11_wire/partial_dispatch_departure.rs"
 ));
 include!(concat!(

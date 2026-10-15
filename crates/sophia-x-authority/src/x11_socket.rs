@@ -155,6 +155,7 @@ include!("x11_socket/routing/recovery.rs");
 include!("x11_socket/routing/recovery_connection.rs");
 include!("x11_socket/routing/focus.rs");
 include!("x11_socket/routing/registry.rs");
+include!("x11_socket/routing/route_lease_outbox.rs");
 include!("x11_socket/routing/subscriptions.rs");
 include!("x11_socket/routing/input_watermark.rs");
 include!("x11_socket/routing/selection_subscriptions.rs");

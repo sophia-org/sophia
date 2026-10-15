@@ -30,13 +30,15 @@ trait RoutedBrokerAccess {
     /// Answer the producer requests waiting at the port, if this service has
     /// one. The public broker has none.
     fn answer_producers(&mut self) -> Result<usize, X11SetupSocketError>;
-    /// Send what full per-client control channels held back, as far as they
-    /// now allow. The public broker holds nothing back, so this moves
-    /// nothing there.
+    /// Retry retained lease notifications and per-client controls as far as
+    /// their consumers now allow, even without new routed input.
     fn flush_deferred_controls(&mut self) -> Result<usize, X11SetupSocketError> {
-        self.broker()?
-            .registry
+        let registry = &self.broker()?.registry;
+        let leases = registry.route_lease_updates.flush()
+            .map_err(|error| X11SetupSocketError::new(error.to_string()))?;
+        registry
             .flush_control_backlog()
+            .map(|controls| controls.saturating_add(leases))
             .map_err(|error| X11SetupSocketError::new(error.to_string()))
     }
     /// Give back what departed connections left, if no connection frame is

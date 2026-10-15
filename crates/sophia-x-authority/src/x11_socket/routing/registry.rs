@@ -79,7 +79,7 @@ struct XServerFrontendRouteRegistry {
     acknowledgement_sender: sophia_wake::SignalSender<XAuthorityClientControlAck>,
     input_delivery_sender: Option<Sender<XAuthorityClientInputDelivery>>,
     metadata_candidate_sender: sophia_wake::SignalSender<XAuthorityClientMetadataCandidate>,
-    route_lease_update_sender: Option<sophia_wake::SignalSender<XAuthorityRouteLeaseUpdate>>,
+    route_lease_updates: RouteLeaseOutbox,
     /// Configured before serving clients, only by a caller that services the
     /// per-window admission clock. Standalone frontends keep immediate Present.
     present_clock_owner: Option<sophia_wake::Notifier>,

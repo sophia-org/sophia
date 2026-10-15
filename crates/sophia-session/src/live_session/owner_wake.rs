@@ -255,6 +255,9 @@ impl OwnerWake {
 /// rather than a concrete type so a bare channel, which the worker keeps
 /// polling, still drives them in isolation.
 pub(super) trait SessionSender<T> {
+    /// Capacity returned in a separate response queue; wake without a command.
+    /// Bare-channel fixtures use polling and need no notification.
+    fn notify_capacity(&self) {}
     fn send(&self, value: T) -> Result<(), SendError<T>>;
     fn try_send(&self, value: T) -> Result<(), TrySendError<T>>;
 }
@@ -270,6 +273,9 @@ impl<T> SessionSender<T> for SyncSender<T> {
 }
 
 impl<T> SessionSender<T> for sophia_wake::SignalSender<T> {
+    fn notify_capacity(&self) {
+        self.notify();
+    }
     fn send(&self, value: T) -> Result<(), SendError<T>> {
         sophia_wake::SignalSender::send(self, value)
     }

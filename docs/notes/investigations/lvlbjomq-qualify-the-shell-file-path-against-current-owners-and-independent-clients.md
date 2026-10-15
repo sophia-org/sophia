@@ -14,26 +14,27 @@ repairs? Reconcile the existing evidence before repeating a desktop campaign.
 
 ## Current resumption
 
-Reviewed Sophia `96d945b76` on October 14. Generic C/Go export, descriptor,
-content and Session component checks pass. The protected joined-launcher test
-failed because its resource-wait loop stopped advancing the Session owner after
-negotiation. The fixture now polls that owner on every pass; the same protected
-test passes with its five-second deadline and identity checks unchanged.
-Production code is unchanged. Repository-wide validation is recorded below.
+The October 14 generic C/Go export, descriptor, content and Session checks pass.
+The protected joined-launcher fixture now advances the Session owner while
+waiting for resources; its five-second deadline and identity checks are
+unchanged. The dated evidence below records that repair separately from t330.
 
 t252 remains open for exact paired product evidence, native lifetime/input
 acceptance, the declared B9 performance campaign and verified release rollback.
 The old E1 independent descriptor gap is resolved by the existing C file peer;
 the September plan's open wording is historical. Do not infer a new installed
-desktop qualification from these headless checks. The t328 route-lease repair
-proposal remains a separate correctness concern before final acceptance.
+desktop qualification from these headless checks.
 
 The October 15 reconciliation below identifies the installed two-component
-release and the prepared Provlita binary. The external three-component profile
-now explicitly selects 9P for the dock, with a parser regression check. This is
-test preparation, not a production-export or native dock pass. Before final
-input qualification, promote only the bounded route-lease repair described
-below; the broader t032 backlog remains outside this task.
+release and the prepared Provlita binary. External integration `eb6c717`
+explicitly selects 9P for the dock, with a parser regression check. This is
+test preparation, not a production-export or native dock pass. The approved
+t330 repair now retains route-lease notifications in a bounded outbox and wakes
+the frontend when Session returns capacity. Its model, focused controls and full
+repository check pass, including the test-helper layout correction.
+The broader t032 backlog remains outside this task. After t330, the next step
+is Provlita's protected production-export join in the external integration
+repository, before native presentation or another installed release.
 
 ## Selected clients and immediate blockers (October 15)
 
@@ -65,15 +66,22 @@ Sophia dependency; no tests ran in that attempt. The integration test pin is
 `316d969507cdeb6ef061ea2d9645758113c53db6`, distinct from the installed release;
 this parser check must not be presented as current native qualification.
 
-### Bounded repair proposed before input qualification
+### t330 — Bounded route-lease delivery
 
-The two frontend-to-Session notification sites still call blocking
+Approved by niltempus on October 15 as a separate prerequisite to t252. Only
+the notification repair below is promoted; the rest of t032 remains candidate
+work. Exit: bounded custody and retry, explicit disconnect settlement, unchanged
+identity/epoch validation, checked lifecycle model, generic full-queue and
+recovery tests with a negative control, and the repository gate. No live
+installation or broader input redesign is part of this repair.
+
+The pre-repair frontend-to-Session notification sites called blocking
 `SignalSender::send` and discard its error: `release_route_lease` and
 `send_route_lease_update` in the X routing registry's `delivery.rs`.
-The wrapper uses `SyncSender`; a full queue can therefore block indefinitely.
+The wrapper uses `SyncSender`; a full queue could therefore block indefinitely.
 No live hang was induced or attributed to this defect.
 
-Promote a separate repair limited to these notifications and their custody:
+The approved repair is limited to these notifications and their custody:
 bounded nonblocking delivery, retained obligations under backpressure, explicit
 disconnect settlement, and unchanged lease identity/epoch checks. Do not replace
 blocking sends with silent drops. Model the lifecycle before implementation;
@@ -81,7 +89,56 @@ prove full-queue, disconnect, delayed drain and stale-epoch cases with generic
 device-free tests and a control that fails against the old behavior. Required
 accounting is accepted = delivered + explicitly settled + retained pending.
 Do not promote the rest of t032, alter shell budgets or change the live profile.
-Implementation still requires promotion under the project queue rules.
+The task ledger records the approved promotion as t330.
+
+### t330 implementation and validation (October 15)
+
+The registry now reserves notification space before a lease-bearing input or
+release changes state. Both producers share a bounded outbox whose queued
+notifications and outstanding reservations together use at most the configured
+control capacity. Nonblocking publication preserves FIFO under a full channel.
+Both ordinary and private service turns retry retained notifications. Session
+rings the frontend's existing wake after draining, including stale updates;
+an empty drain does not create an idle wake loop.
+
+Exhausting the additional bound refuses the next lease effect with an explicit
+service error. This is a deliberate fail-closed availability limit, not a
+promise that arbitrary overload cannot end the frontend. Receiver disconnect
+is detected on a send attempt; an effect can precede that detection. Such a
+notification is accounted as abandoned delivery, never as an undone effect.
+Terminal teardown also reports abandoned notifications. Accounting is
+accepted = channel-published + retained pending + abandoned; publication does
+not prove Session consumed the notification. Unused reservations return credit.
+Lease identities and Session's epoch checks are unchanged.
+
+The [bounded lifecycle model](../../../validation/specula/route-lease-delivery/README.md)
+passes 1,034 distinct states and an eleven-step design fixture. Deliberate
+silent-drop and stale-identity variants fail their intended invariants. This is
+design evidence, not a runtime refinement proof. Six new X-authority tests
+cover FIFO, reservations, disconnect and both real pointer-press/release paths;
+two native-feature Session tests cover capacity wakes and replacement identity.
+All pass with devices and display sockets hidden. A mutation restoring blocking
+sends fails the release test's two-second hang guard; dropping the receiver
+unblocks and joins its worker. The source was restored afterward.
+
+The first Session test invocation omitted `native-session` and ran zero matching
+tests; it is not a pass for this repair. The explicit native-feature invocation
+runs both tests successfully. Evidence logs are under
+`~/.local/state/sophia/development-evidence/t330-route-lease-20261015/`.
+The initial full-gate wrapper created a PID namespace without a matching
+private `/proc`; protected popout fixtures failed opening their namespace.
+Adding `--proc /proc` fixes all three. The next run exposed an intermittent
+existing seat-broker assertion: shutdown observed an extra wait/dispatch pair.
+Its isolated rerun passes; the assertion and seat code are unchanged. With eight
+test workers, the next run passed workspace tests and strict Clippy, then caught
+a test-only snapshot helper under `src`. Moving that helper into test support
+passed the layout check. `check-complete.log` records the final full rerun with
+private devices, runtime directory, display sockets, PID and network namespaces.
+It passes (exit 0): workspace and SDK tests, strict Clippy, layout and script
+checks. The eight new tests also pass within that run. Hardware proofs are
+skipped because devices are hidden, not counted as passes. `source.sha256`
+records the thirteen changed Rust files tested, including the relocated helper.
+No installed binary, native input timing or physical acceptance changed.
 
 ## Evidence
 

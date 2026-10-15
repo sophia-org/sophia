@@ -117,6 +117,7 @@ impl XServerFrontendRouteRegistry {
         &self,
         release: XAuthorityRouteLeaseRelease,
     ) -> Result<(), XServerFrontendRouteError> {
+        let notification = self.route_lease_updates.reserve()?;
         let client = self
             .clients
             .lock()
@@ -131,10 +132,10 @@ impl XServerFrontendRouteRegistry {
                 .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
                 .ungrab_pointer(release.admission.namespace.id, client.raw());
         }
-        let Some(sender) = self.route_lease_update_sender.as_ref() else {
+        let Some(notification) = notification else {
             return Ok(());
         };
-        let _ = sender.send(XAuthorityRouteLeaseUpdate {
+        notification.commit(XAuthorityRouteLeaseUpdate {
             identity: release.identity,
             target_surface: self
                 .surfaces
@@ -147,8 +148,7 @@ impl XServerFrontendRouteRegistry {
                 .unwrap_or(SurfaceId::INVALID),
             admission: release.admission,
             kind: XAuthorityRouteLeaseUpdateKind::Released,
-        });
-        Ok(())
+        })
     }
 
     /// Route an event whose admission has already been decided.
@@ -163,6 +163,13 @@ impl XServerFrontendRouteRegistry {
         stamp: crate::ControlStamp,
         admitted: bool,
     ) -> Result<(), XServerFrontendRouteError> {
+        // Reserve before routing or grab mutation. An unused reservation is
+        // returned on every early refusal and on routes producing no update.
+        let notification = if admitted && route.route_lease.is_some() {
+            self.route_lease_updates.reserve()?
+        } else {
+            None
+        };
         if !self.input_recovery.begin_routing(route.delivery) { return Ok(()); }
         // An event stamped with a closed epoch is one the session revoked
         // between routing and delivery, not one that failed to route.
@@ -755,12 +762,14 @@ impl XServerFrontendRouteRegistry {
                 }
                 XAuthorityRouteLeaseUpdateKind::Rejected
             };
-            self.send_route_lease_update(
-                identity,
-                route.request.target_surface,
-                admission,
-                reported_kind,
-            )?;
+            if let Some(notification) = notification {
+                notification.commit(XAuthorityRouteLeaseUpdate {
+                    identity,
+                    target_surface: route.request.target_surface,
+                    admission,
+                    kind: reported_kind,
+                })?;
+            }
         }
         result
     }
@@ -952,24 +961,6 @@ impl XServerFrontendRouteRegistry {
         self.input_recovery.finish(client, delivery, outcome)
     }
 
-    fn send_route_lease_update(
-        &self,
-        identity: sophia_protocol::ApplicationRouteLeaseIdentity,
-        target_surface: SurfaceId,
-        admission: ClientAdmissionContext,
-        kind: XAuthorityRouteLeaseUpdateKind,
-    ) -> Result<(), XServerFrontendRouteError> {
-        let Some(sender) = self.route_lease_update_sender.as_ref() else {
-            return Ok(());
-        };
-        let _ = sender.send(XAuthorityRouteLeaseUpdate {
-            identity,
-            target_surface,
-            admission,
-            kind,
-        });
-        Ok(())
-    }
 }
 
 #[cfg(unix)]

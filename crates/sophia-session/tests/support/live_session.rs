@@ -175,6 +175,8 @@ mod input_policy_tests;
 mod metadata_shell_tests;
 #[path = "live_session/output_proof_tests.rs"]
 mod output_proof_tests;
+#[path = "live_session/route_lease_capacity_tests.rs"]
+mod route_lease_capacity_tests;
 
 #[path = "live_session/bubblewrap_config_tests.rs"]
 mod bubblewrap_config_tests;
