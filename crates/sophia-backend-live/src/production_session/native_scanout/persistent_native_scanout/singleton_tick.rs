@@ -89,6 +89,9 @@ impl LiveProductionNativeScanout {
             self.observe_retire(index, retire);
         }
         self.observe_callbacks(index, report.page_flip_callbacks.clone());
+        if report.page_flip_callbacks.accepted > 0 {
+            self.trace_singleton_shell_native_completion(index, runtime);
+        }
         let worker_is_in_flight = self
             .exporter(output)
             .is_some_and(crate::NativeGbmRenderedScanoutBufferDiscoveryExporter::worker_in_flight);

@@ -1,6 +1,19 @@
 //! Diagnostic witness from exact displayed custody, never log-observation time.
 use super::*;
 
+pub(crate) fn timing_displayed_identity(
+    head_count: usize,
+    singleton: Option<&crate::PersistentScanoutCustody>,
+    mirrored: &crate::PersistentScanoutCustody,
+) -> Option<crate::LiveNativeFrameIdentity> {
+    let custody = if head_count == 1 {
+        singleton?
+    } else {
+        mirrored
+    };
+    custody.displayed()?.correlation()?.native
+}
+
 pub(crate) struct PresentedTimingHead {
     pub expected: crate::LiveNativeFrameIdentity,
     pub displayed: Option<crate::LiveNativeFrameIdentity>,
@@ -62,10 +75,25 @@ pub(crate) fn completed_timing(
 }
 
 impl LiveProductionNativeScanout {
+    pub(super) fn trace_singleton_shell_native_completion(
+        &self,
+        index: usize,
+        runtime: &crate::LiveBackendRuntimeAssembly,
+    ) {
+        if let Some(content) = self.heads[index].presented_content {
+            self.trace_shell_native_completion(
+                self.heads[index].output.id,
+                content.frame(),
+                Some(runtime),
+            );
+        }
+    }
+
     pub(super) fn trace_shell_native_completion(
         &self,
         output: OutputId,
         frame: LiveProductionNativeFrameId,
+        singleton_runtime: Option<&crate::LiveBackendRuntimeAssembly>,
     ) {
         let indices = self.head_indices(output);
         let Some((completed, all_kernel, missing_kernel)) = completed_timing(
@@ -83,11 +111,15 @@ impl LiveProductionNativeScanout {
                         head.target_generation,
                         frame.raw(),
                     ),
-                    displayed: head
-                        .scanout_custody
-                        .displayed()
-                        .and_then(|owner| owner.correlation())
-                        .and_then(|c| c.native),
+                    // Singleton scanout custody belongs to the output runtime;
+                    // only mirror heads keep custody in the head itself.
+                    displayed: timing_displayed_identity(
+                        indices.len(),
+                        singleton_runtime
+                            .and_then(|runtime| runtime.outputs.get(output))
+                            .map(|state| &state.scanout_custody),
+                        &head.scanout_custody,
+                    ),
                     completed_usec: head
                         .presented_completion_timestamp
                         .map_or(0, |t| t.ust_usec),

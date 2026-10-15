@@ -262,7 +262,7 @@ impl LiveProductionNativeScanout {
                     ));
                     continue;
                 }
-                self.trace_shell_native_completion(output, frame);
+                self.trace_shell_native_completion(output, frame, None);
                 let Some(transition) = completion.logical else {
                     continue;
                 };

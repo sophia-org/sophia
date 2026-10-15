@@ -38,7 +38,7 @@ pub(crate) use retirement_evidence::NativeOutputCohort;
 mod present_clock;
 mod presentation_timing;
 #[cfg(test)]
-pub(crate) use presentation_timing::{PresentedTimingHead, completed_timing};
+pub(crate) use presentation_timing::{PresentedTimingHead, completed_timing, timing_displayed_identity};
 mod capture;
 pub use capture::LiveOutputCaptureTarget;
 mod capture_validity;

@@ -133,8 +133,6 @@ impl LiveProductionNativeScanout {
                             completion_source.label(),
                             ust,
                         );
-                    } else if let Some(content) = self.heads[index].presented_content {
-                        self.trace_shell_native_completion(output, content.frame());
                     }
                 }
             }

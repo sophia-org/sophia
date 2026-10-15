@@ -76,7 +76,11 @@ impl LiveProductionNativeScanout {
             if let Some(retire) = retire {
                 self.observe_retire(index, retire);
             }
+            let completed = callbacks.accepted > 0;
             self.observe_callbacks_with_source(index, callbacks, completion_source);
+            if completed {
+                self.trace_singleton_shell_native_completion(index, runtime);
+            }
             Ok(())
         }
 
