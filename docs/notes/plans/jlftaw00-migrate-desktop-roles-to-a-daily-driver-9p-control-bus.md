@@ -634,12 +634,15 @@ transports. Real-socket tests and a separate model cover service teardown and
 fresh-instance result isolation alongside replay, cancellation, retained
 snapshots and unsettled execution capacity. The live command transport is
 unchanged. An independent Go client now checks the administrative records and
-file lifecycle, including a deliberately wrong settlement. Performance, whole-process/live
-recovery, rollback and default-selection gates stay under this exit.
+file lifecycle, including a deliberately wrong settlement. The declared transport
+performance gate passes at `639dab440`, and abrupt service-process loss preserves
+uncertainty without replay. The candidate selects 9P for Session/CLI by default
+and retains explicit legacy rollback. Installed recovery/rollback acceptance
+remains under this exit.
 A paired diagnostic at `ee2aa2e9a` records discovery, command latency and idle
 CPU with controlled owners. It exposes the file client's delayed-result polling
-cost but is not a performance verdict: administrative numeric limits must be
-declared before qualification. See the foundation investigation for all samples,
+cost but is not a performance verdict. The subsequent qualification uses the
+prospective limits below and one-millisecond pending polling. See the investigation for all samples,
 the retained failed fixture run and evidence limits.
 
 After the [shared-core readiness gate t323](jsschoen-converge-public-roles-on-one-9p-core.md#t323),

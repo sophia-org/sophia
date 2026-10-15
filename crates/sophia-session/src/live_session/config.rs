@@ -29,8 +29,8 @@ use firefox_stage::FirefoxM8StageProof;
 use input_profile::PreparedInputProfile;
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum ControlTransportSelection {
-    #[default]
     Legacy,
+    #[default]
     NineP2000L,
 }
 impl ControlTransportSelection {
@@ -39,8 +39,8 @@ impl ControlTransportSelection {
             return Err("use --control-transport=current-ipc or --control-transport=9p2000.L".into());
         }
         match arg_value(args, "--control-transport").as_deref() {
-            None | Some("current-ipc") => Ok(Self::Legacy),
-            Some("9p2000.L") => Ok(Self::NineP2000L),
+            Some("current-ipc") => Ok(Self::Legacy),
+            None | Some("9p2000.L") => Ok(Self::NineP2000L),
             Some(other) => Err(format!("--control-transport expects current-ipc or 9p2000.L, got {other:?}").into()),
         }
     }

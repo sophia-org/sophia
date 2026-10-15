@@ -15,10 +15,9 @@ core without introducing new command authority or execution owners?
 ## Current resumption
 
 The administrative export, bounded `AdminClient`, ordinary CLI and Session
-transport selection now connect to the existing command owners. Qualification
-uses `--control-transport=9p2000.L` for Session and
-`sophia msg --transport 9p2000.L` for the CLI. Both still default to legacy
-control; no installed session has changed. The [file contract](../../sophia-admin-files.md)
+transport selection now connect to the existing command owners. The candidate
+now defaults Session and the CLI to 9P2000.L. Explicit `current-ipc` selectors
+remain for rollback; no installed session has changed. The [file contract](../../sophia-admin-files.md)
 records admission, snapshot, deadline and no-replay rules. t254 remains open.
 
 The [bounded lifecycle model](../../../validation/specula/admin-file-lifecycle/README.md)
@@ -49,21 +48,24 @@ file client's ten-millisecond status polling. Both paths used less than 0.3% of
 one core while idle. The first run's invalid catalog and partial results remain
 recorded below. Those runs were diagnostics, not performance acceptance.
 
-The plan now declares prospective transport limits: discovery p99/max 20/100 ms,
-command p99/max 8/50 ms including a two-millisecond synthetic owner delay, and
-idle CPU at most 1% of one core. Pending-status polling is now one millisecond;
-it still stops at the original deadline and never polls an idle client. The
-qualification profile increases each command series to 1,000 samples and each
-idle block to three ten-second intervals. Qualification remains pending.
+The declared transport gate passes at `639dab440`: 16,800 timed samples,
+16,320 owner deliveries and 24 idle intervals. With one-millisecond pending
+polling, delayed 9P p99 is 3.84–4.12 ms (limit 8 ms), discovery p99 is at most
+2.04 ms (limit 20 ms), and peak idle CPU is 0.324% of one core (limit 1%).
+All maxima and all blocks pass. No sample was discarded. The full gate passed
+tests, Clippy and layout but hit the unrelated bounded-xterm orphan timeout;
+that check and the remaining verifier checks passed on recorded reruns.
 
 Abrupt service-process loss is now tested before dispatch and after a simulated
 effect but before an outcome. Both cases leave the original client uncertain;
 it cannot reconnect or replay. A fresh endpoint has a new identity and accepts
 only a new explicit command. This does not prove installed Session recovery.
 
-Next run the declared qualification, then prove live recovery/rollback and select the default through t254's
-rollout gate. Include whole-process loss and the existing safe command/restart
-smoke. Service hot replacement is not supported, and uncertain commands must
+Foreign-namespace denial now passes over the real 9P endpoint, even with a
+reachable socket. CLI tests cover the new default and explicit legacy selection.
+Next finish final default/owner checks, prepare a matching desktop release and
+perform the existing safe command/restart smoke with a verified rollback release.
+Service hot replacement is not supported, and uncertain commands must
 never be automatically repeated. The deferred output invocation remains excluded.
 
 ## Evidence
@@ -135,6 +137,45 @@ limits are in the file contract. The core tests cover partial input and blocked
 output through its public Unix driver.
 
 ## Validation and remaining work
+
+### Transport qualification result and default candidate (October 14)
+
+Signed source `639dab44005abb2d27d4470cf257f52a5279dec4` passed the prospective
+transport gate in all eight blocks. Evidence is
+`~/.local/state/sophia/development-evidence/t254-admin-qualified-20261015-a/`.
+The prepared release binary SHA-256 is
+`31a1cdfd108d2e42689b5cd6f04a743a83f44b12f0a5719aab9d889d8e1dfd91`.
+`samples.jsonl` retains 16,800 timed samples, all summaries and
+`qualification=true, budgets_pass=true`. The 16,320 deliveries include warmups;
+all outcomes match, identities are unique and workers join without leaked threads.
+
+| Four-block range | Legacy | 9P files |
+| --- | --- | --- |
+| Discovery p99 | 0.239–0.547 ms | 1.690–2.038 ms |
+| Immediate completion p99 | 0.134–0.181 ms | 0.593–0.823 ms |
+| Two-millisecond owner delay p99 | 2.236–2.308 ms | 3.838–4.117 ms |
+| Idle CPU across twelve intervals | 0.050–0.077% | 0.220–0.324% |
+
+The slowest command was 2.389 ms on legacy and 4.517 ms on files, below the
+50 ms maximum. Discovery maxima were below 2.142 ms, against 100 ms. These
+measurements qualify the controlled transport workload, not native effects or
+WM startup. No external quiet window was certified; host identity and load are
+recorded and no build or other check ran during measurement.
+
+The repository gate log is in `t254-admin-qualification-tools-20261015/check.log`
+under the same evidence parent. Workspace tests, strict Clippy and layout passed.
+The later bounded-xterm orphan regression failed its five-second threshold;
+`check-tail-retry.log` records its pass and the following verifier passes. That
+manual tail lacked cargo-slot's binary path for the last archive verifier;
+`check-archive-retry.log` records its pass with the correct environment. None of
+those retries changed source or reran qualification. Hardware proofs remain
+unproved in the device-hidden gate.
+
+The next candidate selects files by default in Session and `sophia msg`, retaining
+explicit legacy selection on both sides. Its transport implementation is unchanged
+from the qualified source. CLI tests cover default discovery and both transports;
+the separate namespace proof rejects a reachable socket from a foreign namespace.
+Final supervised-owner checks and installed acceptance remain pending.
 
 ### Qualification candidate and abrupt process loss (October 14)
 

@@ -538,9 +538,9 @@ host applications for `sophia msg commands`, `sophia msg policy 'NAME'`, and
 `sophia msg session restart-wm|reload-profile|logout` (control revision 2).
 See [scripting](scripting.md) for the precise host trust boundary.
 
-The administrative file candidate is selected at startup with
-`--control-transport=9p2000.L`; callers then use `sophia msg --transport 9p2000.L`.
-Both default to `current-ipc` during qualification. Transport selection never
+Session and `sophia msg` default to the administrative 9P file transport.
+For legacy rollback, start Session with `--control-transport=current-ipc`
+and use `sophia msg --transport current-ipc`. Transport selection never
 enables a disabled control grant. See the [administrative file contract](sophia-admin-files.md)
 for result retention, uncertainty and the remaining rollout gates.
 

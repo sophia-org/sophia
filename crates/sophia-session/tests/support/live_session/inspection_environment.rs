@@ -15,7 +15,23 @@ fn control_transport_selection_does_not_grant_admission() {
     );
     assert_eq!(config.control_socket, None);
     let config = isolated_session_config(&["--no-config".into()]).unwrap();
-    assert_eq!(config.control_transport, ControlTransportSelection::Legacy);
+    assert_eq!(
+        config.control_transport,
+        ControlTransportSelection::NineP2000L
+    );
+    let rollback = isolated_session_config(&[
+        "--no-config".into(),
+        "--control-transport=current-ipc".into(),
+    ])
+    .unwrap();
+    assert_eq!(
+        rollback.control_transport,
+        ControlTransportSelection::Legacy
+    );
+    assert_eq!(
+        rollback.control_access,
+        sophia_config::DesktopControlAccess::Disabled
+    );
     assert!(isolated_session_config(&["--control-transport=invalid".into()]).is_err());
     assert!(isolated_session_config(&["--control-transport".into()]).is_err());
 }

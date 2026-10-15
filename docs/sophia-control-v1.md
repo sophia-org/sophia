@@ -1,6 +1,10 @@
 # Sophia Control v1
 
 **Role:** normative scripting wire and lifecycle specification.
+This is the retained legacy transport. Session and `sophia msg` now default to
+[administrative 9P files](sophia-admin-files.md); explicit `current-ipc` selectors
+keep this transport available for rollback. The authority and owner settlement
+rules remain shared.
 **Status:** experimental major 1, revision 2 (revision 1 remains negotiable); Linux session endpoint, Rust and
 independent Python clients, policy settlement, and confirmed WM restart are
 implemented. Control remains disabled by default. Revision 2 dispatches

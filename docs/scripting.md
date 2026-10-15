@@ -85,12 +85,17 @@ sophia msg --json commands
 ```
 
 An explicit `--socket /absolute/path` overrides `SOPHIA_CONTROL_SOCKET`.
+Session and the CLI default to the [administrative 9P files](sophia-admin-files.md).
+For an existing legacy session, use `sophia msg --transport current-ipc`;
+starting a new legacy service requires `--control-transport=current-ipc`.
+There is no protocol probing or automatic fallback after a failed command.
 The session exports that variable to its host application launches. There is
 no guessed endpoint. Human-readable output is the default; `--json` uses the
 independent reference client's catalog/outcome shape. Exit status is 0 for
 successful owner settlement, 1 for a server-reported failure, and 2 for local,
 transport, or uncertain-reply failure. The client never retries a mutation.
-`reload-profile` is reserved on the wire but is not advertised or dispatched.
+`reload-profile` is settled by the Session reload owner; discovery determines
+whether it is available to this caller.
 
 `commands` discovers the operations available to the authorized caller in the
 current session. Policy names come from the active WM's admitted catalog;

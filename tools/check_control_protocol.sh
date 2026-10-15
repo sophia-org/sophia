@@ -16,5 +16,6 @@ cargo test --offline -q -p sophia-runtime --test control_service
 cargo test --offline -q -p sophia-runtime --test admin_file_service --test admin_file_deadlines --test admin_file_recovery --test admin_process_recovery --test admin_client_refusals --test admin_files_oracle
 cargo test --offline -q -p sophia-cli --all-features --test msg
 if [ "${1-}" = --live-owner ]; then
+    cargo test --offline -q -p sophia-runtime --test admin_process_recovery foreign_namespace_cannot_use_administrative_files -- --ignored
     cargo test --offline -q -p sophia-session --features native-session --lib live_control_tests::real_owner -- --ignored
 fi

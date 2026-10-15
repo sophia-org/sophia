@@ -58,7 +58,7 @@ fn quoted(value: &str) -> String {
 pub(super) fn run(args: &[String]) -> i32 {
     let mut path = std::env::var_os(SOPHIA_CONTROL_SOCKET_ENV).map(std::path::PathBuf::from);
     let mut json = false;
-    let mut files = false;
+    let mut files = true;
     let mut positionals = Vec::new();
     let mut options = true;
     let mut index = 0;

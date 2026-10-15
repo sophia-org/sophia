@@ -9,6 +9,60 @@ use std::process::{Command, Stdio};
 use support::*;
 
 #[test]
+#[ignore = "child process for the foreign namespace admission proof"]
+fn foreign_namespace_child() {
+    let path = std::path::PathBuf::from(std::env::var_os("SOPHIA_ADMIN_DENIED_SOCKET").unwrap());
+    // Prove path reachability separately from authenticated protocol admission.
+    drop(UnixStream::connect(&path).unwrap());
+    match AdminClient::connect(&path) {
+        Ok(_) => panic!("foreign namespace admitted"),
+        Err(error) => assert_ne!(error.kind(), std::io::ErrorKind::TimedOut),
+    }
+}
+
+#[test]
+#[ignore = "explicit nested namespace admission proof; requires bubblewrap"]
+fn foreign_namespace_cannot_use_administrative_files() {
+    let f = Fixture::new();
+    assert_eq!(
+        AdminClient::connect(f.service.socket_path())
+            .unwrap()
+            .commands()
+            .unwrap(),
+        catalog(7)
+    );
+    let status = Command::new("bwrap")
+        .args([
+            "--die-with-parent",
+            "--unshare-user",
+            "--unshare-pid",
+            "--unshare-net",
+            "--ro-bind",
+            "/",
+            "/",
+            "--proc",
+            "/proc",
+            "--dev",
+            "/dev",
+        ])
+        .arg(std::env::current_exe().unwrap())
+        .args([
+            "--ignored",
+            "--exact",
+            "foreign_namespace_child",
+            "--nocapture",
+        ])
+        .env("SOPHIA_ADMIN_DENIED_SOCKET", f.service.socket_path())
+        .status()
+        .unwrap();
+    assert!(
+        status.success(),
+        "namespace proof prerequisites or denial failed"
+    );
+    assert!(f.service.try_request().is_none());
+}
+
+#[test]
 #[ignore = "child process owned by abrupt_process_loss_never_replays"]
 fn crash_service_child() {
     let root = std::path::PathBuf::from(std::env::var_os("SOPHIA_ADMIN_CRASH_ROOT").unwrap());

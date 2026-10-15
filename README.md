@@ -69,7 +69,7 @@ The drawing below shows the target, including the planned 9P application fronten
         Portals authorize specific transfers without joining the namespaces.
 ```
 
-Administration and the metadata broker still use the old socket protocol and will move to the core later. The 9P application frontend and the shared contract between frontends and Engine are planned; the drawing doesn't show them as finished.
+Administration now uses the shared core by default, with the old transport retained for explicit rollback. The metadata broker still uses the old socket protocol. The 9P application frontend and the shared contract between frontends and Engine are planned; the drawing doesn't show them as finished.
 
 ## Design
 

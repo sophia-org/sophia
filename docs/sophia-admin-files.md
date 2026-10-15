@@ -1,19 +1,27 @@
 # Administrative file records
 
-Status: t254 export, bounded file client and explicit Session/CLI selection.
-The default remains the legacy transport. The export uses the existing
+Status: t254 export, bounded file client and default Session/CLI transport.
+Session and `sophia msg` default to 9P2000.L. The export uses the existing
 HostDomain admission and ControlTicket queue; command validation and execution
-remain with their owners. Independent-client protocol checks pass; performance,
-live-session recovery/rollback and default selection remain open.
+remain with their owners. Independent-client protocol checks and transport
+performance qualification pass. Installed-session acceptance remains pending.
 
 ## Selecting the transport
 
-For qualification, start Session with `--control-transport=9p2000.L` and use
-`sophia msg --transport 9p2000.L` for commands. `--socket PATH` overrides
+Session and the CLI select `9p2000.L` unless explicitly overridden. Start Session
+with `--control-transport=current-ipc` and use `sophia msg --transport current-ipc`
+for legacy rollback. Both sides must select the same transport. `--socket PATH` overrides
 `SOPHIA_CONTROL_SOCKET` as before. The desktop profile must still grant
 `session { control "host-admin"; }`; selecting a transport does not grant access.
-Both selectors default to `current-ipc`. There is no automatic protocol probing,
+There is no automatic protocol probing,
 downgrade or retry, and a running service does not switch transports.
+
+An already running legacy session keeps its legacy endpoint. Use the explicit
+legacy CLI selector until the next login; a newly installed CLI cannot change
+the running service. Keep the previous whole desktop release for rollback,
+including its matching CLI and Session binaries. Never retry an uncertain
+mutation while switching releases or transports. The admission grant remains
+startup-only and disabled by default.
 
 `sophia-runtime::AdminClient` uses the independent Rust SDK's 9P pipeline. It
 reads bounded snapshots under absolute deadlines, sends one complete invocation,

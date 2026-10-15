@@ -46,6 +46,20 @@ fn check_cli(files: bool) {
         String::from_utf8_lossy(&listed.stderr)
     );
     assert!(String::from_utf8_lossy(&listed.stdout).contains("\"catalog_generation\":4"));
+    if files {
+        let default = Command::new(cli)
+            .args(["msg", "--json", "--socket"])
+            .arg(service.socket_path())
+            .arg("commands")
+            .output()
+            .unwrap();
+        assert!(
+            default.status.success(),
+            "{}",
+            String::from_utf8_lossy(&default.stderr)
+        );
+        assert_eq!(default.stdout, listed.stdout);
+    }
     for (outcome, exit) in [
         (ControlOutcome::Committed, 0),
         (ControlOutcome::Rejected, 1),
