@@ -120,7 +120,11 @@ is pending owner decision and does not relax the +10% limit.
 At niltempus's request, [t331](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#t331--reduce-shell-allocation-overhead)
 now owns attribution and reduction of the measured allocation excess before
 t252. This does not promote broader t289 work or approve the accounting scope.
-Next attribute the excess, settle accounting scope, freeze the full B9 method,
+Production `34edcd707` and comparator `fd9423597` remove two per-turn readiness
+allocations for a single adopted 9P socket. The paired diagnostic's bulk file
+allocation bound falls from 21,498–21,538 to 8,953–8,964 per frame; small-bar
+costs remain high. See [the first t331 reduction](#t331-single-connection-readiness).
+Next profile the remaining client-side excess, settle accounting scope, freeze the full B9 method,
 then collect the declared campaign and native lifetime/input evidence for both
 desktop selections. See [calibration 04](#native-calibration-04-both-wires-joined).
 See [comparator preparation](#comparator-preparation-october-15).
@@ -1201,6 +1205,41 @@ bytes. Whole-workload allocation bounds per frame are 821–851 versus 250–271
 for files/IPC without the probe, and 21,498–21,538 versus 8,288–8,300 with it.
 These are diagnostic excesses within the stated scope, not native B9 verdicts.
 No hardware, installation or acceptance criteria changed.
+
+## t331: single-connection readiness
+
+The first attribution split used peer counter deltas from `normalized-cost-01`.
+For the small bar, the peer alone allocated about 442 operations/frame on files
+versus 111 on IPC. For the bulk probe these were 1,608 versus 645, leaving most
+of the 21,500 total file operations in the supplied owner process.
+
+`sophia-9p::unix::Server::wait` allocated both a descriptor vector and a result
+vector on every turn, including empty polls. Production `34edcd707` keeps both
+on the stack when there is one adopted socket and no listener. The descriptor
+interest calculation remains shared with the general path. Listener and
+multiple-connection handling retain their existing behavior; no cache or new
+retained storage is introduced. Comparator `fd9423597` carries the same fix.
+
+The complete sophia-9p test suite and strict all-target Clippy pass, including
+adopted sockets, buffered partial requests, backpressure, wake/stop, listener
+capacity, authentication and revocation. The instrumented comparator peer
+checks pass all four wire/probe combinations, with 64 frames per arm, and all
+four independent normalized-cost replays pass. Evidence is under
+`~/.local/state/sophia/development-evidence/t252-authenticated-20261015/t331-single-poll-01/`.
+
+| Workload | File allocations/frame before | File after | IPC after |
+| --- | --- | --- | --- |
+| Supplied 64×24 bar | 821–851 | 668–683 | 252–272 |
+| Same bar plus 4 MiB transfer probe | 21,498–21,538 | 8,953–8,964 | 8,366–8,376 |
+
+These are debug supplied-owner diagnostics, not a balanced native campaign or
+a B9 pass. Their busy owner loop magnifies per-turn allocation; do not project
+the percentage reduction onto the live desktop. The small-bar gap remains,
+with most of its excess in the peer. Next inspect the SDK's reply decode and
+reply-drain allocation paths. Change SDK source in
+`~/dev/sophia-desktop-sdk-rs`, then use the signed snapshot workflow; Sophia's
+vendored SDK is immutable. t331 and t252 remain open; accounting scope is still
+proposed, and no live installation changed.
 
 ## Connections
 
