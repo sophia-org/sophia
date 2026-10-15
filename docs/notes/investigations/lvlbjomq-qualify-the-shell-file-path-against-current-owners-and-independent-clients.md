@@ -97,8 +97,15 @@ with clean wrapper recovery, but recorded zero native completion witnesses.
 The strict join refused the run and IPC stayed stopped. Production `08be65293`
 and comparator `136cbcb41` correct the logger's singleton custody lookup;
 the verifier's exact kernel-completion requirement remains unchanged.
-Calibration 04 now binds the rebuilt comparator. Both argument checks pass;
-`t252-check` selects these fresh, unexecuted plans.
+Calibration 04 passed both native diagnostic arms: 64 offers per wire, all
+joined to exact kernel completion, no failed journal events and verified
+console/keyboard restoration. Sources are comparator `136cbcb41` and external
+integration `4ec2904`. Independent replay of both collectors and joins passes.
+This is a 60 Hz, 64-frame diagnostic without warmup exclusion, not B9 acceptance.
+Do not rerun `t252-check`: its run directories now contain retained evidence.
+Next close the upload-timing/accounting scope gaps, freeze the full B9 method,
+then collect the declared campaign and native lifetime/input evidence for both
+desktop selections. See [calibration 04](#native-calibration-04-both-wires-joined).
 See [comparator preparation](#comparator-preparation-october-15).
 Next prove native lifetime/input for both selections, freeze and run B9,
 then complete attended acceptance. The live desktop is
@@ -1032,6 +1039,37 @@ The native-event target reports 316 passed and one ignored. Calibration 04
 binds the rebuilt comparator in fresh plans; both device-hidden argument
 checks pass. The short launcher now selects `native-calibration-04`. No run
 has started and no installed desktop artifact has changed.
+
+### Native calibration 04: both wires joined
+
+Both attended diagnostic arms completed successfully on October 15 using
+comparator `136cbcb413ab60a3103fe88814601bd4a958c095` and integration
+`4ec2904efecad93904bb21ad75dd4fee3c626f5c`. Each journal contains 64 permits,
+64 offers, 64 successful terminal receipts and an end record, with no failed
+event. Every offered candidate joins to an exact native completion on DP-1 at
+1920×1080/60 Hz. Neither capture contains a service failure or fallback-clock
+marker. Both wrapper recovery records verify termios, keyboard and KD-mode
+restoration. The installed desktop is unchanged.
+
+Independent replay of `collect` and `join` from each retained capture passes;
+the run's stored plan is byte-identical to its prepared plan. Derived
+`client-offers.json` and `rechecked-join.json` are retained beside the original
+`native-samples.json` under `native-calibration-04/{files,ipc}-run`.
+
+For diagnosis only, nearest-rank submit-to-native-completion latencies over
+all 64 frames, with no excluded warmup, are:
+
+| Wire | p50 | p95 | p99 / maximum |
+| --- | --- | --- | --- |
+| 9P | 16.310 ms | 16.490 ms | 25.581 ms |
+| IPC | 16.746 ms | 16.913 ms | 45.547 ms |
+
+This verifies the recording path and recovery, not performance qualification.
+There is one short pair at 60 Hz, no declared load or accounting pass, and no
+120 Hz run. Do not infer a transport advantage from these diagnostic samples.
+The complete B9 method and both desktop packages' native lifetime/input and
+attended release/rollback gates remain open. The existing `t252-check` points
+to completed runs and correctly refuses to overwrite them.
 
 ## Validation and remaining work
 
