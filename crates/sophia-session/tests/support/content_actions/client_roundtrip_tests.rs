@@ -23,6 +23,10 @@ impl Harness {
     }
 
     fn on_output(output: u64) -> Self {
+        Self::with_indicators(output, true)
+    }
+
+    fn with_indicators(output: u64, indicators: bool) -> Self {
         let directory = std::env::temp_dir().join(format!(
             "sophia-client-action-{}-{}",
             std::process::id(),
@@ -56,8 +60,12 @@ impl Harness {
                     required_capabilities: SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
                         | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
                         | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT
-                        | SOPHIA_SHELL_CAPABILITY_VIEW_INDICATORS
-                        | SOPHIA_SHELL_CAPABILITY_INDICATOR_ACTIVATION,
+                        | if indicators {
+                            SOPHIA_SHELL_CAPABILITY_VIEW_INDICATORS
+                                | SOPHIA_SHELL_CAPABILITY_INDICATOR_ACTIVATION
+                        } else {
+                            0
+                        },
                     handshake_timeout: Duration::from_secs(2),
                 },
             )
@@ -232,6 +240,22 @@ impl Harness {
             .unwrap()
             .unwrap()
     }
+}
+
+#[test]
+fn content_peer_without_optional_indicators_survives_indicator_service() {
+    let mut h = Harness::with_indicators(5, false);
+    let mut indicators =
+        crate::live_session::metadata_shell::indicators::LiveIndicatorState::default();
+    let mut connection = h.transport.connection();
+    assert!(!connection.supports_indicator_activation());
+    assert!(
+        indicators
+            .poll_request(&mut connection, true)
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(connection.content_grant(), Some(h.limits.grant));
 }
 
 fn ack(action: &ContentAction) -> ContentActionAck {

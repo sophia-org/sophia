@@ -115,6 +115,11 @@ impl LiveIndicatorState {
         transport: &mut sophia_runtime::ShellTransportConnection<'_>,
         input_enabled: bool,
     ) -> Result<Option<LiveIndicatorActivationRequest>, Box<dyn std::error::Error>> {
+        // Indicator activation is optional for content peers. The transport
+        // correctly rejects polling an unnegotiated feature; skip that service.
+        if !transport.supports_indicator_activation() {
+            return Ok(None);
+        }
         let Some((transaction, activation)) = transport.poll_indicator_activation()? else {
             return Ok(None);
         };
