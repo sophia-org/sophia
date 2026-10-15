@@ -119,6 +119,43 @@ fn nearest_rank_keeps_outliers() {
     assert_eq!(value["samples_ns"], json!([9, 1, 2, 3, 100]));
 }
 
+fn catalog(maximum: bool) -> ControlCatalog {
+    let mut commands = (0..if maximum { 256 } else { 1 })
+        .map(|i| ControlCommand {
+            owner: ControlOwner::Policy,
+            name: if maximum {
+                format!("{i:0128}")
+            } else {
+                "focus next".into()
+            },
+        })
+        .collect::<Vec<_>>();
+    if maximum {
+        commands.extend(
+            sophia_protocol::CONTROL_SESSION_OPERATIONS
+                .iter()
+                .map(|name| ControlCommand {
+                    owner: ControlOwner::Session,
+                    name: (*name).into(),
+                }),
+        );
+    }
+    ControlCatalog {
+        generation: 7,
+        commands,
+    }
+}
+
+#[test]
+fn timing_catalogs_are_valid_before_any_measurement() {
+    for maximum in [false, true] {
+        let catalog = catalog(maximum);
+        sophia_protocol::validate_control_catalog(&catalog).unwrap();
+        assert_eq!(catalog.commands.len(), if maximum { 259 } else { 1 });
+        sophia_protocol::admin_files::encode_admin_catalog(&catalog).unwrap();
+    }
+}
+
 #[test]
 #[ignore = "explicit release administrative transport diagnostic"]
 fn admin_file_performance() {
@@ -143,19 +180,8 @@ fn admin_file_performance() {
         "limits":"diagnostic, no approved administrative numeric budget; synthetic owner, no desktop"}),
     );
     for maximum in [false, true] {
-        let catalog = ControlCatalog {
-            generation: 7,
-            commands: (0..if maximum { 259 } else { 1 })
-                .map(|i| ControlCommand {
-                    owner: ControlOwner::Policy,
-                    name: if maximum {
-                        format!("{i:0128}")
-                    } else {
-                        "focus next".into()
-                    },
-                })
-                .collect(),
-        };
+        let catalog = catalog(maximum);
+        sophia_protocol::validate_control_catalog(&catalog).unwrap();
         for round in 0..2 {
             for files in if round == 0 {
                 [false, true]

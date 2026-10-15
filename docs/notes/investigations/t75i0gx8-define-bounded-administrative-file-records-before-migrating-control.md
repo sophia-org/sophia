@@ -41,7 +41,12 @@ record codec. A deliberately wrong owner settlement fails its outcome check.
 The full repository gate passes for this addition with devices/display sockets
 hidden; hardware-only proofs remain unproved here.
 
-The paired diagnostic harness is being validated. No administrative numeric
+The paired diagnostic harness passed its full deterministic gate at `1fa735a04`.
+Its first measurement stopped after the small-catalog blocks because the large
+fixture wrongly supplied 259 policy commands. The corrected fixture supplies
+256 policy commands plus the three Session operations and is validated before
+timing. The failed run is retained; the corrected run remains pending.
+No administrative numeric
 performance budget has been declared, so its results cannot establish performance
 acceptance. The workload below is fixed before measurement.
 
@@ -124,7 +129,8 @@ output through its public Unix driver.
 
 Use the public legacy and file clients against their real services and one
 synthetic policy owner. Both receive the same catalogs and commands. Test a
-one-command catalog and a maximum-size 259-command catalog with 128-byte names.
+one-command catalog and a maximum-size catalog with 256 policy commands whose
+names are 128 bytes and the three existing Session operations.
 For each catalog run legacy then files, followed by files then legacy. Each block
 contains 100 fresh connection/discovery samples, twenty unmeasured warmups and
 200 measured invocations at each of zero and two milliseconds of requested
@@ -161,7 +167,16 @@ directory, hides devices/network/session sockets and records machine identity.
 Finish all builds and other checks before measurement. No affinity or priority
 change is made. Workspace tests passed. Clippy rejected a constant assertion in
 the release-only guard; the established conditional-panic form fixes it and
-focused strict Clippy passes. The final full gate and measurement remain pending.
+focused strict Clippy passes. The final full gate passed at `1fa735a04`, including
+workspace tests, strict Clippy, layout and repository checks. Hardware-only
+proofs remained unproved. Evidence is in
+`~/.local/state/sophia/development-evidence/t254-admin-perf-tools-20261015/check-final.log`.
+
+The first measurement, `t254-admin-paired-20261015-a` under the same evidence
+parent, completed four small-catalog blocks before the invalid large catalog
+hit the publication deadline. Its raw samples and failure are retained. The
+fixture correction has a deterministic catalog-validation check; it does not
+change production code or discard the earlier timing evidence.
 
 ### Independent administrative client (October 14)
 
