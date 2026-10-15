@@ -60,6 +60,12 @@ and test are signed `6df9b559f` on the comparison branch. Its successor
 `c466ff065` also passes equal candidate completion, renderer-failure and
 held-render-lease checks, plus an exact supplied action/acknowledgement exchange.
 This is partial equivalence evidence, not B9 timing or physical input.
+Successor `5a880fb78` proves two neighbors continue while a third reader reaches
+backpressure, and through its revocation and replacement. Full reservation
+reclamation waits for the retained pixels. Queue depths differ between wires;
+the dated evidence below retains both counts. Next build the measured harness
+and freeze its complete method, including CPU/allocation accounting and actual
+presentation, before collecting B9 acceptance samples.
 See [comparator preparation](#comparator-preparation-october-15).
 Next prove native lifetime/input for both selections, freeze and run B9,
 then complete attended acceptance. The live desktop is
@@ -516,6 +522,26 @@ sockets and network hidden. The comparison branch remains separate from the
 production candidate. Next cover replacement and bounded multi-role progress,
 then freeze the B9 method with actual presentation instrumentation. The package-
 bound native runner also remains to be prepared for the paired desktop gate.
+
+Signed successor `5a880fb78` adds a three-owner fixture on the same 64 MiB
+registry and declared bar/menu/dock envelopes. All three upload. The third
+client then performs no reads or SDK polling while output-facts publications
+continue until the owner reports bounded backpressure. In this run, refusal
+occurred at publication 256 over files and 342 over IPC. These counts include
+the refused publication and are not asserted to be equal. They reflect different
+wire buffering and must not be hidden by selecting matching survivors in B9.
+
+The two other clients upload while the stopped reader is still connected and
+visited on every owner cycle, after its revocation, and after its replacement.
+Their grants remain unchanged. The held four-byte resource blocks replacement
+within the unchanged shared budget until it is released. The replacement then
+uploads; neither the old owner nor the new one can lease the other's grant.
+Every successful resource response is compared across wires, every retained
+pixel is checked, per-owner response bounds hold, and final accounting is
+quiescent. `comparator-components1.log` passes all three comparator tests;
+`comparator-components-clippy.log` passes strict Clippy. Formatting and diff
+checks pass. This supplies admission and pauses a thread's I/O deliberately;
+it does not establish native process scheduling, kernel latency or presentation.
 
 The existing external tty4 dock runner is only a host-transcript smoke gate:
 its verifier explicitly leaves latency and restart acceptance unproved. It also
