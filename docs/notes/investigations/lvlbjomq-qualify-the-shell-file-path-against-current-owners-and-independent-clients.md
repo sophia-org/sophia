@@ -473,6 +473,57 @@ comparator or proposed budget/outcome-rule change needs review before the
 campaign, not reinterpretation after a failure. This is method preparation,
 not a frozen runnable campaign or a claim that B9 passed.
 
+### Proposed sampling rules, pending native calibration
+
+These rules make the next campaign review concrete. They are not a frozen
+acceptance method or permission to treat the prepared 64-frame diagnostic as
+qualification. Keep the contract's numerical budgets unchanged.
+
+Use the same DP-1 monitor at 1920×1080, scale 1 and VRR off for both wires.
+Run separate 60 Hz and 120 Hz conditions, first idle and then with 16 bounded
+CPU workers on this 32-logical-CPU host. Leave the workload and workers eligible
+for all CPUs at normal priority; record the actual affinity, scheduler,
+governor, kernel and GPU driver. Record the load executable, command, start/end
+times and worker completion. A missing or failed load process invalidates its
+condition. Coordinate a quiet window for unrelated heavy work, and retain any
+reported interference alongside the measurements.
+
+For each condition, propose three independently restarted pairs, with files
+first in pairs 1 and 3 and IPC first in pair 2. Each latency arm offers 1,100
+frames: the first 100 are a declared warmup, followed by 1,000 measured frames.
+Keep and report every warmup outcome; a warmup failure invalidates the arm.
+Publish each pair and the combined condition, using nearest-rank p50, p95 and
+p99 plus the maximum. Every pair must satisfy the budget; pooling cannot hide
+a failing pair. Preserve failed arms and stop for diagnosis rather than
+replacing them with successful retries under the same campaign identity.
+
+Use separate instrumented cost arms, with 1,000 frames and no excluded warmup,
+so the whole-workload counter interval includes all work between those frames.
+Report per-frame bounds as well as whole-workload counts divided by the exact
+offered frame count. A conservative +10% pass requires the file upper bound
+to be at most 1.10 times the IPC lower bound. A file lower bound above 1.10
+times the IPC upper bound proves failure within the declared scope; overlapping
+bounds are inconclusive. Neither result proves costs outside that scope.
+
+Before freezing this method, resolve these measurement gaps:
+
+- The native peer journal records permit and presentation timing but not
+  ResourceBegin-to-Accepted timestamps. The separate upload probe covers
+  180 KiB and 4 MiB with supplied owners; it cannot be relabelled a native
+  authenticated measurement. Choose and document the accepted path and scope
+  for upload latency and CPU/MiB, retaining exact byte totals and all outcomes.
+- The allocation counter covers the Session and peer Rust global allocators.
+  It excludes foreign allocators and authentication/WM/helper processes.
+  Either add evidence covering the required scope or obtain an explicit
+  accounting-method decision before judging the contract. A +10% result in
+  a convenient subset is insufficient on its own.
+- Preserve and review the IPC protected-PID versus 9P Factotum admission
+  difference. Do not label their entire cost difference framing overhead.
+- Verify native timestamps, exact output mode and wrapper recovery in the
+  prepared calibration before preparing qualification artifacts. Record all
+  three-role backpressure/replacement evidence separately; a single bar peer
+  does not satisfy native lifetime/input acceptance for both desktop packages.
+
 ### Comparator preparation, October 15
 
 The isolated worktree `~/dev/sophia-t252-comparator`, branch
