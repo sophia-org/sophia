@@ -683,6 +683,41 @@ fn singleton_timing_refuses_missing_wrong_and_duplicate_completion_identity() {
 }
 
 #[test]
+fn singleton_timing_reads_runtime_custody_not_empty_mirror_head_custody() {
+    let mut mirror = Mirror::new();
+    mirror.begin(1);
+    mirror.submit(0, 1);
+    mirror.submit(1, 1);
+    mirror.flip(0, 1, 1);
+    mirror.flip(1, 1, 1);
+    let runtime_custody = std::mem::take(&mut mirror.custody[0]);
+    let empty_head = &mirror.custody[0];
+    let expected = runtime_custody
+        .displayed()
+        .unwrap()
+        .correlation()
+        .unwrap()
+        .native;
+    assert!(expected.is_some());
+    assert_eq!(
+        crate::timing_displayed_identity(1, Some(&runtime_custody), empty_head),
+        expected
+    );
+    assert_eq!(
+        crate::timing_displayed_identity(1, None, &runtime_custody),
+        None
+    );
+    assert_eq!(
+        crate::timing_displayed_identity(2, Some(&runtime_custody), empty_head),
+        None
+    );
+    assert_eq!(
+        crate::timing_displayed_identity(2, None, &runtime_custody),
+        expected
+    );
+}
+
+#[test]
 fn slow_primary_retirement_keeps_each_members_own_event_clock() {
     let mut mirror = Mirror::new();
     mirror.begin(1);
