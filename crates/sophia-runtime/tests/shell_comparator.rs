@@ -12,6 +12,8 @@ use std::time::{Duration, Instant};
 const WAIT: Duration = Duration::from_secs(10);
 #[path = "support/comparator_components.rs"]
 mod components;
+#[path = "support/comparator_measurement.rs"]
+mod measurement;
 enum Client {
     Files(Box<ShellConnection>),
     Ipc(UnixStream),
@@ -69,9 +71,10 @@ impl Client {
                     match client.enqueue_content(tx, record) {
                         Ok(()) => break,
                         Err(ShellClientError::QueueSaturated) => {
-                            client.poll_io().unwrap();
                             assert!(Instant::now() < deadline, "file send deadline");
-                            std::thread::yield_now();
+                            client
+                                .wait_for_io(deadline.saturating_duration_since(Instant::now()))
+                                .unwrap();
                         }
                         Err(error) => panic!("file enqueue: {error:?}"),
                     }
@@ -93,7 +96,9 @@ impl Client {
                         return record;
                     }
                     assert!(Instant::now() < deadline, "file response deadline");
-                    std::thread::yield_now();
+                    client
+                        .wait_for_io(deadline.saturating_duration_since(Instant::now()))
+                        .unwrap();
                 }
             }
         }
@@ -142,6 +147,14 @@ fn frame(stream: &mut UnixStream) -> Vec<u8> {
 }
 
 fn exchange(files: bool, width: u32, height: u32) -> Vec<ShellContentRecord> {
+    measured_exchange(files, width, height).0
+}
+
+fn measured_exchange(
+    files: bool,
+    width: u32,
+    height: u32,
+) -> (Vec<ShellContentRecord>, measurement::Sample) {
     let root = std::env::temp_dir().join(format!(
         "shell-comparator-{}-{files}-{width}-{height}",
         std::process::id()
@@ -186,6 +199,7 @@ fn exchange(files: bool, width: u32, height: u32) -> Vec<ShellContentRecord> {
         let chunk_bytes = (limits.max_chunk_bytes / (width * 4) * (width * 4)) as usize;
         let chunks = bytes.len().div_ceil(chunk_bytes) as u32;
         let mut report = vec![first];
+        let measurement = measurement::Window::begin();
         client.send(
             1,
             &ShellContentRecord::ResourceBegin(ContentResourceBegin {
@@ -228,6 +242,7 @@ fn exchange(files: bool, width: u32, height: u32) -> Vec<ShellContentRecord> {
             }),
         );
         let accepted = client.receive();
+        let sample = measurement.end();
         assert!(
             matches!(&accepted, ShellContentRecord::ResourceStatus(s) if s.status == 2),
             "files={files} size={width}x{height} response={accepted:?}"
@@ -263,7 +278,7 @@ fn exchange(files: bool, width: u32, height: u32) -> Vec<ShellContentRecord> {
         report.push(stale);
         done_tx.send(()).unwrap();
         release_rx.recv_timeout(WAIT).unwrap();
-        report
+        (report, sample)
     });
     let policy = ShellContentAdmissionPolicy::Granted {
         discrete_input: false,

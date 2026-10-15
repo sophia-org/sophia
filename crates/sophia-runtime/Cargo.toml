@@ -6,6 +6,10 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[features]
+# Isolated qualification branch only; do not merge the retired IPC comparator.
+comparator-allocation-counting = []
+
 [dependencies]
 sophia-wake = { path = "../sophia-wake" }
 rustix = { version = "1.1", default-features = false, features = ["net", "process", "std", "event", "rand"] }
@@ -18,7 +22,8 @@ tracing-subscriber.workspace = true
 
 [dev-dependencies]
 sophia-namespace-client = { workspace = true }
-rustix = { workspace = true, features = ["fs"] }
+rustix = { workspace = true, features = ["fs", "time"] }
+stats_alloc = "=0.1.10"
 serde_json = "1"
 sha2.workspace = true
 sophia-engine = { path = "../sophia-engine" }
