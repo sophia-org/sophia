@@ -42,19 +42,22 @@ pub struct ShellComponentReservation {
     pub max_thickness: u16,
 }
 
-/// The wire one component's connection uses, fixed at startup. The retired
-/// IPC selector is refused; transport never changes the role's grants.
+/// Fixed at startup. The comparison-only IPC selector belongs solely to the
+/// isolated qualification branch and must never be merged into production.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum ShellTransportSelection {
     /// `sophia_shell_fs_v1` over 9P2000.L.
     #[default]
     NineP2000L,
+    /// Retired protected-process admission, for the isolated baseline only.
+    ComparisonIpc,
 }
 
 impl ShellTransportSelection {
     pub fn parse(value: &str) -> Result<Self, &'static str> {
         match value {
             "9p2000.L" => Ok(Self::NineP2000L),
+            "comparison-ipc" => Ok(Self::ComparisonIpc),
             _ => Err("shell transport must be 9p2000.L"),
         }
     }
@@ -63,6 +66,7 @@ impl ShellTransportSelection {
     pub const fn wire_name(self) -> &'static str {
         match self {
             Self::NineP2000L => "9p2000.L",
+            Self::ComparisonIpc => "comparison-ipc",
         }
     }
 
@@ -70,6 +74,7 @@ impl ShellTransportSelection {
     pub const fn socket_env(self) -> &'static str {
         match self {
             Self::NineP2000L => "SOPHIA_SHELL_9P_SOCKET",
+            Self::ComparisonIpc => "SOPHIA_SHELL_SOCKET",
         }
     }
 }

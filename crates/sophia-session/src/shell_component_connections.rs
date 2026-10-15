@@ -287,13 +287,19 @@ impl ShellComponentConnections {
                 .authorize_authenticated_peer(evidence, factory),
             None => connection.transport.authorize_protected_peer(evidence),
         };
-        let result = admission.and_then(|()| {
-            connection.transport.begin_file_negotiation(
+        let result = admission.and_then(|()| match connection.wire {
+            ShellTransportSelection::NineP2000L => connection.transport.begin_file_negotiation(
                 &self.epochs,
                 key.grant.connection_epoch,
                 timeout,
                 policy,
-            )
+            ),
+            ShellTransportSelection::ComparisonIpc => connection.transport.begin_negotiation(
+                &self.epochs,
+                key.grant.connection_epoch,
+                timeout,
+                policy,
+            ),
         });
         if let Err(error) = result {
             let _ = self.close(key);

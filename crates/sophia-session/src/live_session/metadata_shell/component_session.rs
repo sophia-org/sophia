@@ -83,6 +83,19 @@ impl ShellComponentSession {
         namespaces: &mut sophia_runtime::NamespaceRegistry,
     ) -> Result<()> {
         for (slot, plan) in self.plans.iter().enumerate() {
+            if plan.selection().transport == sophia_config::ShellTransportSelection::ComparisonIpc {
+                if std::env::var("SOPHIA_COMPARATOR_ADMISSION").as_deref()
+                    != Ok("protected-legacy-baseline")
+                {
+                    return Err(
+                        "comparison IPC requires explicit protected-legacy-baseline admission"
+                            .into(),
+                    );
+                }
+                // Only this isolated baseline retains the old supervisor/PID
+                // admission. Current file launches still use Factotum below.
+                continue;
+            }
             let (principal, role) = match plan.selection().role {
                 ShellComponentRole::Bar => (4, "bar"),
                 ShellComponentRole::Dock => (5, "dock"),
