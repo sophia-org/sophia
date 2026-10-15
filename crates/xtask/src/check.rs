@@ -11,6 +11,9 @@ use std::process::{Command, Stdio};
 /// for every caller how its result is presented.
 pub fn run(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> {
     match arguments {
+        [subject, rest @ ..] if subject == "admin-file-performance" => {
+            crate::admin_file_performance::run(repo, rest)
+        }
         [] => all(repo),
         [subject, rest @ ..] if subject == "output-file-native-proof" => {
             crate::output_file_native_proof::run(repo, rest)

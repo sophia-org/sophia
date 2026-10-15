@@ -41,6 +41,10 @@ record codec. A deliberately wrong owner settlement fails its outcome check.
 The full repository gate passes for this addition with devices/display sockets
 hidden; hardware-only proofs remain unproved here.
 
+The paired diagnostic harness is being validated. No administrative numeric
+performance budget has been declared, so its results cannot establish performance
+acceptance. The workload below is fixed before measurement.
+
 Next collect paired performance evidence, then prove live recovery/rollback and select the default through t254's
 rollout gate. Include whole-process loss and the existing safe command/restart
 smoke. Service hot replacement is not supported, and uncertain commands must
@@ -115,6 +119,49 @@ limits are in the file contract. The core tests cover partial input and blocked
 output through its public Unix driver.
 
 ## Validation and remaining work
+
+### Paired diagnostic workload (declared October 14)
+
+Use the public legacy and file clients against their real services and one
+synthetic policy owner. Both receive the same catalogs and commands. Test a
+one-command catalog and a maximum-size 259-command catalog with 128-byte names.
+For each catalog run legacy then files, followed by files then legacy. Each block
+contains 100 fresh connection/discovery samples, twenty unmeasured warmups and
+200 measured invocations at each of zero and two milliseconds of requested
+owner delay, then a two-second idle interval. The owner sleeps on notifications
+with a one-second safety wake; its injected two-millisecond sleep is subject to
+scheduler delay and is not subtracted from latency.
+
+Record nearest-rank p50/p95/p99/max and every completed raw sample, flushing
+outside the timed region. Discovery includes connect and a complete catalog;
+it excludes disconnect and a two-millisecond pause before the next connection.
+Commands reuse a connection and cached catalog. Both clients must observe
+Committed with the correct generation. Exactly 440 owner deliveries per block
+and unchanged thread count after shutdown are required. Idle accounting includes
+all harness threads, the client, service worker and synthetic owner. Report CPU
+and context switches without borrowing the output role's acceptance threshold.
+
+These are diagnostic workloads, not administrative acceptance budgets. They do
+not measure native effects, a loaded desktop, whole-process recovery, aggregate
+throughput or independent-client latency. The host quiet window is not externally
+certified. Preserve failed runs and outliers; a timeout or missing final record
+cannot complete the diagnostic. Ordinary workspace tests skip timing.
+
+The Rust runner separates preparation from measurement:
+
+```sh
+cargo-slot sophia cargo xtask check admin-file-performance prepare --output=/absolute/new/private-directory
+cargo-slot sophia cargo xtask check admin-file-performance measure --output=/absolute/new/private-directory
+```
+
+Preparation requires signed, clean source and uses the existing cargo-slot pool.
+It records the release test binary's path and hash without copying it into
+evidence. Measurement checks source/hash before and after, runs once per prepared
+directory, hides devices/network/session sockets and records machine identity.
+Finish all builds and other checks before measurement. No affinity or priority
+change is made. Workspace tests passed. Clippy rejected a constant assertion in
+the release-only guard; the established conditional-panic form fixes it and
+focused strict Clippy passes. The final full gate and measurement remain pending.
 
 ### Independent administrative client (October 14)
 

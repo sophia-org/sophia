@@ -11,6 +11,7 @@
 
 use std::path::{Path, PathBuf};
 
+mod admin_file_performance;
 mod c_desktop_sdk;
 mod capture_grant_probe;
 mod check;
