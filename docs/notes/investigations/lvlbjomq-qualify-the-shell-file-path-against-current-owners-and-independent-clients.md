@@ -92,6 +92,13 @@ Six real-client action/indicator tests and strict Session Clippy pass. No peer
 frame was presented in calibration 02; console and keyboard recovery verified.
 Calibration 03 is now prepared with the rebuilt comparator; both exact argument
 vectors pass device-hidden validation. `t252-check` selects these fresh plans.
+Calibration 03 then completed all 64 file-wire offers and Presented receipts,
+with clean wrapper recovery, but recorded zero native completion witnesses.
+The strict join refused the run and IPC stayed stopped. Production `08be65293`
+and comparator `136cbcb41` correct the logger's singleton custody lookup;
+the verifier's exact kernel-completion requirement remains unchanged.
+Calibration 04 now binds the rebuilt comparator. Both argument checks pass;
+`t252-check` selects these fresh, unexecuted plans.
 See [comparator preparation](#comparator-preparation-october-15).
 Next prove native lifetime/input for both selections, freeze and run B9,
 then complete attended acceptance. The live desktop is
@@ -988,6 +995,43 @@ argument-validation checks passing. Its files plan hash is
 `cc0bc8e7ec529664277816300104325c42d5536103ab7a2ffada6a4d2de3543c`;
 IPC is `923dcb4fb8285d319cc6ca2b0e71112a8ade6f9ef9a4d3e08e30fa850ee03c2e`.
 The short launcher selects calibration 03; neither run has started.
+
+### Native calibration 03: singleton timing witness
+
+Calibration 03 passed the file peer's complete journal: 64 permits, 64 offers,
+64 successful terminal receipts and an end record, with no peer failure. The
+host recorded 64 candidate/native-frame bindings at exactly 60 Hz. Session and
+wrapper recovery completed successfully. There were, however, zero
+`sophia_shell_native_completion` records. The join correctly refused
+`offered candidate has no exact native completion`, so no native timing report
+was produced and the launcher did not start IPC. `captured_only` in the wrapper
+result is not a successful timing verdict. The retained `client-offers.json`
+and `join-diagnostic.log` reproduce these findings from the raw capture.
+
+Singleton scanout keeps its displayed buffer in the output runtime's custody;
+mirrored heads keep theirs in each head's custody. The timing logger always
+looked at the latter, which is empty for singleton output. Production
+`08be65293` selects the actual custody owner and emits the singleton witness
+after accepted callbacks, before any successor submission. Comparator
+`136cbcb41` carries the same change. Exact frame identity, head coverage and
+kernel timestamp checks are unchanged; no timestamp is reconstructed from the
+client receipt or log arrival time.
+
+The new custody regression uses real boxed displayed owners and checks that
+singleton timing reads runtime custody, never falls back to mirror storage,
+and mirror timing uses only mirror custody. Five focused timing tests, the
+device-hidden native-event integration tests and strict backend Clippy pass.
+The first integration invocation selected zero tests with an incorrect filter;
+the subsequent unfiltered target is the evidence. Logs are
+`singleton-timing-owner-tests-final.log`,
+`singleton-timing-callback-order-tests-final.log` and
+`singleton-timing-owner-clippy.log`. The initial backend build omitted
+`gbm-probe` and failed on the existing renderer feature dependency; the
+supported `test-support` combination passes.
+The native-event target reports 316 passed and one ignored. Calibration 04
+binds the rebuilt comparator in fresh plans; both device-hidden argument
+checks pass. The short launcher now selects `native-calibration-04`. No run
+has started and no installed desktop artifact has changed.
 
 ## Validation and remaining work
 
