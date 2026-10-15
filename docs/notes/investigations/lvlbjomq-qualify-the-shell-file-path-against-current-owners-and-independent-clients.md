@@ -28,13 +28,18 @@ desktop qualification from these headless checks.
 The October 15 reconciliation below identifies the installed two-component
 release and the prepared Provlita binary. External integration `eb6c717`
 explicitly selects 9P for the dock, with a parser regression check. This is
-test preparation, not a production-export or native dock pass. The approved
+test preparation, not native dock acceptance. External integration `78e00bf`
+now proves Provlita's protected executable negotiation against the production
+file export, followed by the required missing-GPU refusal and complete
+reservation cleanup at two fresh epochs. It uses supplied admission and the
+integration's older Sophia `316d9695` pin; authenticated Session launch and
+native content remain unproved. The approved
 t330 repair, signed Sophia `5e717c73d`, retains notifications in a bounded outbox and wakes
 the frontend when Session returns capacity. Its model, focused controls and full
 repository check pass, including the test-helper layout correction.
-The broader t032 backlog remains outside this task. The next step
-is Provlita's protected production-export join in the external integration
-repository, before native presentation or another installed release.
+The broader t032 backlog remains outside this task. Next update the external
+pair and prove Provlita's authenticated Session launch, before GPU-backed
+content, native presentation or another installed release.
 
 ## Selected clients and immediate blockers (October 15)
 
@@ -47,7 +52,7 @@ and desktop integration `a6eb56d`. Its lockfile selects:
 | Lom | `dc65f561f8c9522f6a09d3e5f386d32226228bfd` | Exact native lifecycle/input and B9 coverage, including coexistence with the dock. |
 | Bemenu | `6e2efd96e2256a138ed9928387e83d3c30585937` | Exact presented focus, activation and retirement on the selected three-component release. |
 | Narthex | `56d513faede5c5127c7d3cd1241f44661568d806` | Verified compatible fallback selection or release for shell acceptance. |
-| Provlita | Not in the installed lockfile; prepared source `da4a15adb9a6555441653a9dd9ec0e4d69f3d6af` | Protected production-export join, native presentation/activation/retirement, then packaging and attended acceptance. |
+| Provlita | Not in the installed lockfile; prepared source `da4a15adb9a6555441653a9dd9ec0e4d69f3d6af` | Authenticated Session join on an updated pair, GPU content, native presentation/activation/retirement, then packaging and attended acceptance. Supplied-admission export negotiation passes below. |
 
 Provlita's signed clean source builds offline with its locked dependencies.
 Its version and example configuration checks pass. The release binary is
@@ -65,6 +70,39 @@ first offline attempt used the default cache and could not find the pinned
 Sophia dependency; no tests ran in that attempt. The integration test pin is
 `316d969507cdeb6ef061ea2d9645758113c53db6`, distinct from the installed release;
 this parser check must not be presented as current native qualification.
+
+### Provlita protected export join (October 15)
+
+Signed external integration `78e00bf` adds the device-free executable gate and
+its reproduction guide, `docs/provlita-files.md`. It uses the production
+supervisor, Bubblewrap protection and shell file export from pinned Sophia
+`316d969507cdeb6ef061ea2d9645758113c53db6`, with Provlita `da4a15ad` and the
+binary recorded above. Its configuration SHA-256 is
+`c46db4786c9021a9a65d3537b53c8761c65226ab089aacab47d6e46170e192ef`.
+The host supplies admission using the actual protected peer PID; it does not
+provision a Session factotum relay.
+
+Both fresh connection/content-grant generations, 61 and 62, negotiate revision
+8 over 9P2000.L. Each executable then refuses the missing GPU grant, as required,
+and the owner reclaims every content reservation. Changing the host profile
+from persistent catalog to native launcher fails negotiation; restoring it
+passes. The first fixture attempt reused content-grant generation 1 and was
+correctly rejected as stale on the second launch. The final fixture advances
+both generations. Strict Clippy, formatting, pin audit and provisioning checks
+pass. No Sophia product code changed for this gate.
+
+Logs are under
+`~/.local/state/sophia/development-evidence/t252-provlita-20261015/`:
+`join.log` preserves the fixture failure; `join-final.log` and `restored.log`
+record passes; `wrong-profile-negative.log` records the negotiation refusal.
+The test wrapper hides display devices and sockets, creates matching PID/proc
+namespaces and denies networking. No binary was copied into evidence.
+
+This closes the supplied-admission executable negotiation check only. It does
+not prove authenticated Session launch, GPU rendering, content upload,
+Presented/input/retirement, coexistence or B9. The tested Sophia pin predates
+t330 and differs from the installed release. Update the external pair and prove
+authenticated startup before claiming those later stages.
 
 ### t330 — Bounded route-lease delivery
 
@@ -243,8 +281,9 @@ fixture repair and the separate t254 codec foundation; no installed artifact
 was selected. `git diff --check` also passed.
 
 The t330 route-lease concern is resolved by the candidate and checks above.
-Next prove Provlita's protected production-export join, then prepare the exact
-paired-client native gate and runnable B9 method.
+The supplied-admission Provlita export join now passes. Next prove authenticated
+Session startup on an updated external pair, then prepare the exact paired-client
+native gate and runnable B9 method.
 Do not mark t252 complete or advance its default/rollback acceptance on the
 strength of the generic checks alone.
 
