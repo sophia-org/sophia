@@ -154,11 +154,24 @@ impl FileWire {
     }
 
     fn drain_replies(&mut self, inbox: &mut VecDeque<Inbound>) -> Result<bool, ShellClientError> {
+        let mut replies = std::mem::take(&mut self.reply_scratch);
+        let result = self.drain_replies_into(inbox, &mut replies);
+        // Errors must not retain replies or change their custody. Keep only
+        // the bounded outer storage for the next successful drain.
+        replies.clear();
+        self.reply_scratch = replies;
+        result
+    }
+
+    fn drain_replies_into(
+        &mut self,
+        inbox: &mut VecDeque<Inbound>,
+        replies: &mut Vec<(Tag, Reply)>,
+    ) -> Result<bool, ShellClientError> {
         // Buffer the events this drain carries before judging any other
         // reply: a submit error must see a Submitted that arrived in the same
         // drain, whichever order the two replies came in. Buffering events
         // only appends; handling them stays strictly in order.
-        let mut replies = Vec::new();
         let mut read = false;
         while let Some((tag, reply)) = self.pipeline.take_reply() {
             if Some(tag) == self.read_tag {
@@ -169,7 +182,7 @@ impl FileWire {
             }
         }
         let progressed = read || !replies.is_empty();
-        for (tag, reply) in replies {
+        for (tag, reply) in replies.drain(..) {
             if self.forgettable.remove(&tag) {
                 continue;
             }

@@ -473,6 +473,43 @@ fn replies_answered_out_of_order_reach_their_own_tags() {
     thread.join().unwrap();
 }
 
+#[test]
+fn decoding_a_complete_reply_preserves_the_partial_next_frame() {
+    let (resume, ready) = std::sync::mpsc::channel();
+    let (client, thread) = scripted(
+        move |stream| {
+            versioned(stream);
+            let first = request(stream);
+            let second = request(stream);
+            let second_reply = reply(105, second.1, &QID_DIR);
+            let mut batch = reply(105, first.1, &QID_DIR);
+            batch.extend_from_slice(&second_reply[..5]);
+            stream.write_all(&batch).unwrap();
+            ready.recv_timeout(Duration::from_secs(2)).unwrap();
+            stream.write_all(&second_reply[5..]).unwrap();
+            hold(stream);
+        },
+        PipelineLimits::default(),
+    );
+    let mut pipeline = client.unwrap();
+    let (first, _) = pipeline.attach(b"", b"first").unwrap();
+    let (second, _) = pipeline.attach(b"", b"second").unwrap();
+    assert_eq!(
+        pipeline.wait(first, deadline()).unwrap(),
+        Reply::Attach(DIR)
+    );
+    assert_eq!(pipeline.outstanding(), 1);
+    resume.send(()).unwrap();
+    assert_eq!(
+        pipeline.wait(second, deadline()).unwrap(),
+        Reply::Attach(DIR)
+    );
+    assert_eq!(pipeline.outstanding(), 0);
+    assert!(!pipeline.is_poisoned());
+    drop(pipeline);
+    thread.join().unwrap();
+}
+
 /// A walk that stops short answers with the qids it managed; its new fid
 /// never took hold and is released. One that walks every name keeps it.
 #[test]

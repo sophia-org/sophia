@@ -1,14 +1,14 @@
-tree 0220ca80578a3ea4c2c2b2599d41411d8fc251eb
-parent 97149476279d239569bd4c834f1c885110d0af9f
-author Mason Green <mason@greenm01.net> 1791806792 -0400
-committer Mason Green <mason@greenm01.net> 1791806792 -0400
+tree 82827e08d2dccee8b848d39c5b827a5d341aa213
+parent 0e5ad3638bac48b6f9633e1bc1c0476fb2a1d481
+author Mason Green <mason@greenm01.net> 1792106778 -0400
+committer Mason Green <mason@greenm01.net> 1792106778 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCaszNSBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIXQQD7BdXcwh4lo5+g/YoMFzio
- jB3s6Y4tE7TtldT+7LQtN3ABAO6fI5LlltDHyL8nvR0ERzSku7m6dv6eioHrmnVM
- kH0K
- =U1Wd
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatFhGhsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGImqwEAlg6JcZQCKm0cnMWhAYgP
+ 3N45jGyNTsqAIBWEDVmYAz4A/jEJMX3YFHf6Ee1Qyrgnn5LB4n/iqg5lRUIYBjg1
+ l0oK
+ =1AdV
  -----END PGP SIGNATURE-----
 
-feat(auth): reuse quiescent launch relay for another endpoint
+Reuse bounded receive and reply-drain storage
