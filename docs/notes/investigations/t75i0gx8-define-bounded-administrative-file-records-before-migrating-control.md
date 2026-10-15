@@ -14,11 +14,11 @@ core without introducing new command authority or execution owners?
 
 ## Current resumption
 
-The administrative export, bounded `AdminClient`, ordinary CLI and Session
-transport selection now connect to the existing command owners. The candidate
-now defaults Session and the CLI to 9P2000.L. Explicit `current-ipc` selectors
-remain for rollback; no installed session has changed. The [file contract](../../sophia-admin-files.md)
-records admission, snapshot, deadline and no-replay rules. t254 remains open.
+Signed candidate `ed0caa4f2` defaults Session and `sophia msg` to 9P2000.L.
+Explicit `current-ipc` selectors remain for rollback; the running desktop still
+uses its existing release. The [file contract](../../sophia-admin-files.md)
+records admission, snapshot, deadline and no-replay rules. t254 remains open
+for installation and the short attended smoke.
 
 The [bounded lifecycle model](../../../validation/specula/admin-file-lifecycle/README.md)
 and its new service-instance boundary extension pass. Their faulty variants
@@ -27,7 +27,7 @@ teardown, queued cancellation, fresh identity and late-result isolation; the
 client preserves uncertainty after a lost invocation and never reconnects or
 replays it. These are not durable exactly-once or whole-process crash proofs.
 
-The generic supervised owner test passes over both transports, including policy
+The final generic supervised owner test passes over both transports, including policy
 commit, WM replacement, stale-action refusal, reload settlement and logout.
 Focused client/CLI and malformed-server controls pass. The full repository gate
 passes with devices and display sockets hidden; hardware-only proofs remain
@@ -61,10 +61,16 @@ effect but before an outcome. Both cases leave the original client uncertain;
 it cannot reconnect or replay. A fresh endpoint has a new identity and accepts
 only a new explicit command. This does not prove installed Session recovery.
 
-Foreign-namespace denial now passes over the real 9P endpoint, even with a
-reachable socket. CLI tests cover the new default and explicit legacy selection.
-Next finish final default/owner checks, prepare a matching desktop release and
-perform the existing safe command/restart smoke with a verified rollback release.
+Foreign-namespace denial passes over the real 9P endpoint, even with a reachable
+socket. The complete final repository gate and CLI default/rollback tests pass.
+Desktop integration `a6eb56d` pins Sophia `ed0caa4f2`; release
+`niltempus-b7f017d6e4cdb2056faa` is built and checksum-verified. The current
+`niltempus-eb8be6b503fa8bca3815` release is also checksum-verified for rollback.
+Installer rollback tests pass. Installation is waiting for local sudo
+authentication (`sudo -n true` reported that a password is required).
+From `~/dev/niltempus`, run `tools/desktop install`, then log out and back in.
+Next verify the running release, discovery, one safe action, WM restart and
+continued input/rendering; retain the preceding release for rollback.
 Service hot replacement is not supported, and uncertain commands must
 never be automatically repeated. The deferred output invocation remains excluded.
 
@@ -175,7 +181,40 @@ The next candidate selects files by default in Session and `sophia msg`, retaini
 explicit legacy selection on both sides. Its transport implementation is unchanged
 from the qualified source. CLI tests cover default discovery and both transports;
 the separate namespace proof rejects a reachable socket from a foreign namespace.
-Final supervised-owner checks and installed acceptance remain pending.
+The final device-hidden `cargo xtask check` passes on `ed0caa4f2`, followed by
+the supervised-owner test over both transports and the foreign-namespace proof.
+All three results are in `t254-admin-qualification-tools-20261015/check-default.log`.
+No administrative runtime implementation differs between the qualified
+`639dab440` and `ed0caa4f2`; the latter changes default selectors and tests/docs.
+Hardware-only proofs remain unproved by those checks.
+
+### Desktop preparation and remaining installed acceptance (October 14)
+
+The niltempus desktop's signed `a6eb56d7ff32f0dd900eb61575d91c47fb1da538`
+changes only its Sophia flake pin, to `ed0caa4f2`. All supervised client pins
+remain those of the running release. The initial temporary local-input override
+failed clean-source metadata validation before building; the committed public
+pin built successfully. The immutable output is
+`/nix/store/k8bmx6y3cllivx2qbmzmvn4iyaspl7dk-niltempus-desktop-niltempus-b7f017d6e4cdb2056faa`.
+Its manifest records the exact Sophia and integration commits, and every
+`SHA256SUMS` entry passes. The Nix build also performs the desktop profile and
+Hagia policy preflight.
+
+The current installed release `niltempus-eb8be6b503fa8bca3815` (Sophia
+`a29663a06`) passes all its checksums and remains the intended rollback target.
+`tools/check_desktop_tool.sh` passes its private-prefix install/rollback tests.
+Logs are `desktop-build-pinned.log`, `desktop-checksums.log`,
+`rollback-current-checksums.log` and `desktop-rollback-tests.log` in
+`t254-admin-qualification-tools-20261015` under the development evidence root.
+
+`sudo -n true` refuses because a password is required. No install or live
+session restart has been performed. The user can run `tools/desktop install`
+from `~/dev/niltempus` in the existing terminal; the release is already built.
+Installation should make the verified current release `previous`. After a new
+login, bind the t036 smoke to the exact running candidate and verify discovery,
+a safe advertised action, WM replacement and continued input/rendering. If it
+fails, use `tools/desktop rollback` before the next login. Do not repeat an
+uncertain command. Only then audit the task's exit and close t254.
 
 ### Qualification candidate and abrupt process loss (October 14)
 
