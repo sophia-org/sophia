@@ -117,6 +117,21 @@ fn a_request_is_ready_until_one_turn_serves_it() {
 }
 
 #[test]
+fn buffered_partial_input_is_visible_until_the_frame_is_served() {
+    let (mut server, mut ours) = adopted(Limits::default());
+    let request = tversion(NOTAG, 8192, b"9P2000.L");
+    assert!(!server.has_pending_wire_io());
+    ours.write_all(&request[..2]).unwrap();
+    turn(&mut server);
+    assert!(server.has_pending_wire_io());
+    assert!(!ready(&server, BUDGET));
+    ours.write_all(&request[2..]).unwrap();
+    settle(&mut server);
+    assert_eq!(reply(&mut ours).version().0, 8192);
+    assert!(!server.has_pending_wire_io());
+}
+
+#[test]
 fn a_publication_flush_keeps_new_socket_input_ready_for_the_owner() {
     let (mut server, mut ours) = adopted(Limits::default());
     ours.write_all(&tversion(NOTAG, 8192, b"9P2000.L")).unwrap();
@@ -191,6 +206,7 @@ fn output_the_peer_cannot_take_waits_for_its_room() {
     // The peer reads nothing, so the socket fills and replies stay queued.
     settle(&mut server);
     let stalled = server.export().state().reads - before;
+    assert!(server.has_pending_wire_io());
     assert!(
         (1..64).contains(&stalled),
         "{stalled} reads performed unread"

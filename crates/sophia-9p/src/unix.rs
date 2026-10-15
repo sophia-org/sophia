@@ -112,6 +112,15 @@ impl<E: Export> Server<E> {
         self.slots.len()
     }
 
+    /// Buffered wire work, including incomplete input and unwritten replies.
+    /// Semantic waiting reads are excluded. A role owner may use this to bound
+    /// a continuously blocked wire interval without treating it as execution.
+    pub fn has_pending_wire_io(&self) -> bool {
+        self.slots.iter().any(|slot| {
+            slot.connection.has_pending_wire_input() || !slot.connection.output().is_empty()
+        })
+    }
+
     /// Accept connections from a listener, up to the connection limit. For
     /// harnesses; an owner with its own admission uses [`Self::adopt`].
     pub fn listen(&mut self, listener: UnixListener) -> io::Result<()> {

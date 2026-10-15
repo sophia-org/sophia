@@ -625,11 +625,13 @@ restoration on the exact candidate before t253 can close.
 
 ### t254 — Migrate administrative commands
 
-The [October 14 codec foundation](../investigations/t75i0gx8-define-bounded-administrative-file-records-before-migrating-control.md)
-defines bounded invocation, discovery, catalog and status records, shared
-transport-neutral command types, and independent literal controls. It does
-not supply an export or change the live command transport; the remaining
-admission, lifecycle, discovery and migration work stays under this exit.
+The [October 14 foundation](../investigations/t75i0gx8-define-bounded-administrative-file-records-before-migrating-control.md)
+supplies bounded invocation, discovery, catalog and status records, shared
+transport-neutral command types, a lifecycle model and an opt-in shared-core
+export through `ControlService::bind_files`. Real-socket tests cover replay,
+cancellation, retained snapshots and unsettled execution capacity. The live
+command transport is unchanged; owner/CLI integration, restart qualification,
+independent-client, performance and rollback gates stay under this exit.
 
 After the [shared-core readiness gate t323](jsschoen-converge-public-roles-on-one-9p-core.md#t323),
 this lane can run independently of the remaining WM, shell and output

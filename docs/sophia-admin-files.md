@@ -1,16 +1,17 @@
 # Administrative file records
 
-Status: t254 invocation, discovery and status codecs. No administrative 9P listener, client migration
-or default change is implemented by this document. The existing control service
-remains active. The shared-core export must preserve its HostDomain admission,
-command catalog and execution owners before these records can be used.
+Status: t254 codecs and an opt-in administrative 9P listener through
+`ControlService::bind_files`. Session and the ordinary command CLI still use
+the legacy transport. The export uses the existing HostDomain admission and
+ControlTicket queue; command validation and execution remain with their owners.
+Client migration, restart qualification and the default change remain open.
 
 ## Version 1 line grammar
 
 This version names the file syntax, independently of legacy control-wire
 revision 2. It does not downgrade the current command catalog or add commands.
 
-The future `ctl` file accepts one invocation record. Its corresponding `status`
+The `ctl` file accepts one invocation record. Its corresponding `status`
 record describes readiness, a pending request or an outcome; accepting bytes is
 not a successful command result.
 These are separate files with one versioned grammar each, not the old socket
@@ -95,12 +96,12 @@ owners and unsupported Session names are refused. The encoder validates the
 same catalog before formatting. A catalog supplies names, not permission to
 invoke them.
 
-## Proposed file lifecycle
+## File lifecycle
 
-These rules guide the next export slice. They are not implemented by the codecs.
+The opt-in runtime export implements these rules above the shared 9P core.
 The [bounded lifecycle model](../validation/specula/admin-file-lifecycle/README.md)
 checks cancellation, replay, status retention and unsettled execution custody.
-Runtime integration, admission and restart evidence remain required.
+Owner integration, independent client and restart qualification remain required.
 
 | File | Open mode | Read or write behavior |
 | --- | --- | --- |
@@ -140,17 +141,41 @@ The client must report uncertainty whenever it cannot establish a terminal
 outcome, and must not reconnect and replay. Service restart invalidates old
 connections and does not reconstruct their results.
 
-## Export obligations still to implement
+`Tversion` releases fids but preserves the transport's connection identity,
+request watermark, pending ticket and visible outcome. A subsequent attach on
+that transport cannot repeat an accepted request. Closing the root fid likewise
+does not create a new administrative identity.
+
+## Runtime limits and admission
+
+`bind_files` creates a private `admin.9p` socket beneath an owned, private
+runtime directory. It admits at most 32 connections. Each connection has at most
+16 fids, eight pending wire requests and 128 KiB of unsent replies. Negotiated
+message sizes range from 1,024 to 65,536 bytes. Snapshot QIDs and administrative
+connection identities never wrap or reuse values within a service session.
+
+The worker closes a connection that has not attached within two seconds, or
+has no authorized file activity for sixty seconds. It also closes a connection
+after two continuous seconds of buffered input or unwritten replies. Partial
+input cannot renew that interval by arriving a byte at a time. A complete,
+drained exchange ends the interval; semantic command execution does not count
+as blocked wire work. The ten-second command deadline produces `timed-out`
+before dispatch and `indeterminate` after dispatch may have begun.
+
+The sixteen-ticket limit includes dispatched work whose result is already
+indeterminate. Only owner settlement releases that capacity. Capacity refusal
+returns `EAGAIN`; a second invocation while this connection still has a pending
+result returns `EBUSY`. Neither advances the request watermark. Malformed lines,
+wrong connection identities and replay return `EINVAL`. These transport errors
+are distinct from an accepted request's attributed command outcome.
 
 The connection value must match the admitted attach, not select another caller.
 The owner must verify catalog generation and action identity immediately before
 dispatch, preserve monotonically scoped request identities and refuse replay.
-Current code keeps at most sixteen pending administrative tickets; migration
-must retain bounded custody rather than introducing an unbounded line queue.
-
-Model and implement the proposed lifecycle with the shared core and existing
-ticket owner, including its capacity and cancellation boundaries. A codec
-consumes exactly one complete record; it is not a stream accumulator.
+The worker rechecks HostDomain on each operation, on retained fids, at the
+ticket's claim handshake and before sending snapshot bytes. It holds the
+publication guard while admitting an invocation or delivering those bytes.
+A codec consumes exactly one complete record; it is not a stream accumulator.
 No 9P flush, clunk or disconnected reader may undo a committed effect
 or authorize a retry after an indeterminate result. Admission must be rechecked
 at the existing claim boundary. Read-only inspection grants no command access.
@@ -170,6 +195,15 @@ codec controls, not proof of admission, replay prevention or live execution.
 `admin_discovery.rs` adds literal discovery/status records, full-size catalogs,
 strict sorting and command membership, malformed counts, identities and deadlines.
 The existing legacy golden-frame controls remain unchanged.
+
+`sophia-runtime/tests/admin_file_service.rs` uses literal 9P messages over Unix
+sockets to check admission revocation, snapshot pinning, short reads, replay,
+wire resets, connection/fid limits, access modes, incomplete frames and owner
+claim/settlement. `admin_file_deadlines.rs` exercises the real ten-second
+deadline, distinguishes queued cancellation from uncertain execution, and
+checks capacity retention and late-result fencing. These tests use the public
+service/ticket API, not a private test-only executor. They do not establish
+CLI compatibility, service restart recovery, performance or live-session acceptance.
 
 The [t254 investigation](notes/investigations/t75i0gx8-define-bounded-administrative-file-records-before-migrating-control.md)
 records implementation progress and remaining gates.

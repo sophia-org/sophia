@@ -178,6 +178,10 @@ impl<E: Export> Connection<E> {
         self.waiting.len()
     }
 
+    pub(crate) fn has_pending_wire_input(&self) -> bool {
+        !self.input.is_empty() || self.in_place.is_some()
+    }
+
     /// How many more input bytes this connection will take now. Zero while
     /// a complete request waits for output room, so a driver stops reading.
     /// While a write is received in place, the rest of its data. For an

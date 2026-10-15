@@ -14,14 +14,12 @@ core without introducing new command authority or execution owners?
 
 ## Current resumption
 
-The codec foundation now includes invocation/outcome, connection discovery,
-catalog and ready/pending status records in `sophia-protocol::admin_files`, with
-literal and malformed-input controls and the
-[version 1 grammar](../../sophia-admin-files.md). Shared command, catalog and
-outcome values live in `control_records`; the legacy codec re-exports the same
-types. This is not a running administrative export, and
-the legacy service remains active. No endpoint, default or installed session
-has changed. t254 remains open.
+`ControlService::bind_files` now serves the opt-in administrative tree on the
+shared 9P core. It uses the existing HostDomain checks and ControlTicket
+claim/settlement owner, with bounded `info`, `commands`, `status` and `ctl` files.
+The [file contract](../../sophia-admin-files.md) records the limits. Session and
+the ordinary CLI still select the legacy transport; no installed session or
+default has changed. t254 remains open.
 
 The [bounded lifecycle model](../../../validation/specula/admin-file-lifecycle/README.md)
 now passes its safety hunt and design trace; three deliberately faulty variants
@@ -29,12 +27,15 @@ and one false-settlement trace fail as expected. It preserves the distinction
 between a published result and settled execution. It is not a runtime trace or
 a proof of service restart recovery.
 
-Next connect the shared-core export to the existing ControlTicket claim/settlement
-owner. Preserve HostDomain checks at attach and dispatch, per-connection request
-watermarks through wire resets, bounded snapshot pins, and transport/command
-deadlines. Implement and test runtime cancellation and late-completion fencing;
-extend the model for service restart before claiming that gate. No endpoint,
-default or installed session has changed.
+Real-socket tests cover immutable snapshots, wire-reset replay protection,
+queued cancellation, admission revocation, bounded capacity, actual deadlines
+and late-completion fencing. Indeterminate results retain execution capacity
+until owner settlement. The device-hidden full repository gate passes.
+
+Next extend the model and runtime controls for service restart, then connect a
+file client and the ordinary CLI to the existing Session command owners. Keep
+an independent protocol control, paired performance evidence and rollback
+before selecting the new default. The deferred output invocation remains excluded.
 
 ## Evidence
 
@@ -69,12 +70,40 @@ it cannot advertise an arbitrary executable or a new Session command. Inputs
 are bounded before allocation. Literal vectors, malformed records and a full
 259-command catalog exercise these rules.
 
-The [proposed lifecycle](../../sophia-admin-files.md#proposed-file-lifecycle)
+The [file lifecycle](../../sophia-admin-files.md#file-lifecycle)
 keeps status reads non-consuming and makes a newer accepted invocation
 acknowledge the previous outcome. Complete control lines avoid a second partial
 write accumulator. The bounded temporal model now passes; runtime
-tests remain, especially flush versus dispatch, capacity refusal, retained snapshots,
-indeterminate outcomes and restart. No lifecycle claim follows from codec tests.
+tests below add export evidence. Service restart and owner integration remain.
+No lifecycle claim follows from codec tests alone.
+
+## Shared-core runtime export (October 14)
+
+Built on `4e5b0c34b`. The new opt-in listener uses the same ticket queue, claim
+handshake and settlement path as legacy control. It does not add an executor.
+HostDomain admission remains separate from inspection and protected-role
+authentication. Attach text cannot choose the connection identity; retained
+fids and snapshot delivery recheck authority.
+
+Catalog opens share one immutable snapshot per connection until its last fid
+closes. Status opens retain their own snapshot; reading one does not consume a
+result. A newer accepted invocation replaces the visible result, while malformed,
+replayed and capacity-refused writes preserve it. A wire reset releases fids
+without resetting the administrative watermark or cancelling accepted work.
+
+The real ten-second deadline tests fill all sixteen execution slots. After
+each result becomes indeterminate, further writes still fail for capacity and
+the original results remain readable. Settling an owner ticket releases a slot;
+a late completion cannot replace a newer request's status. Queued expiration
+instead cancels the ticket and prevents a later claim. Connection loss and
+revocation exercise the same existing cancellation path.
+
+The core now exposes whether input or replies remain buffered so a role owner
+can enforce a wire deadline without mistaking command execution for blocked
+I/O. Administrative connections have a two-second initial-attach/wire limit,
+a sixty-second idle limit and bounded fids, requests and reply storage. The
+limits are in the file contract. The core tests cover partial input and blocked
+output through its public Unix driver.
 
 ## Validation and remaining work
 
@@ -103,9 +132,24 @@ proofs were skipped. The log is
 The adjacent `source.sha256` identifies the tested source files; all hashes
 matched after the gate. Whitespace checks passed, and the notebook's broken-link
 report named no changed note (it still reports 25 other notes).
-Runtime export,
-catalog, independent client, CLI migration, performance and rollback gates
-remain; no command service migration is claimed.
+The opt-in export adds eleven real-socket tests across `admin_file_service`
+and `admin_file_deadlines`; all pass. The fourteen legacy service tests and
+the shared-core suite also pass. One new negative test initially expected
+`Rversion unknown` for a too-small message size; the established core contract
+returns `EINVAL`, and the test now checks that refusal and the inability to
+attach afterward.
+
+The export slice's device-hidden `cargo xtask check` passed (exit 0), including
+workspace tests, strict Clippy and tooling checks. The run hid display sockets
+and devices and supplied a private runtime directory; hardware-dependent
+proofs were skipped. Its log and matching source hashes are retained at
+`~/.local/state/sophia/development-evidence/t254-admin-export-20261015/`.
+Whitespace checks passed and the notebook was refreshed. Its broken-link report
+flags these notes' model README because `validation/` is excluded from the
+index; the linked file exists. All changed documentation links resolve.
+
+Restart qualification, independent client, owner/CLI integration, performance
+and rollback gates remain; no live command service migration is claimed.
 
 ## Connections
 
