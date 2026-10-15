@@ -57,9 +57,12 @@ five positive/negative tests and strict Clippy. It joins every offered candidate
 to its first exact native completion and rejects incomplete head coverage or
 fallback clocks. Comparator `b2bfb9678` now supplies a paced child peer with
 complete offer/terminal journals; integration `fbe20dc` validates those journals
-before joining. Both supplied-owner wire runs and refusal checks pass. This
-has not exercised the peer's protected authentication path or native scanout.
-Next prepare the native comparison launcher without weakening authentication,
+before joining. Both supplied-owner wire runs and refusal checks pass. The peer
+also passes two actual authenticated launches and revocations. Comparator
+`16d1cb870` adds a guarded native Session selector for the IPC baseline; its
+protected launch/replacement and unarmed-refusal checks pass. Current file
+launches retain authentication. Native scanout has not run for this peer.
+Next prepare the bounded native runner with exact artifact and output identities,
 finish frame-allocation instrumentation and freeze the paired campaign method.
 See [comparator preparation](#comparator-preparation-october-15).
 Next prove native lifetime/input for both selections, freeze and run B9,
@@ -638,9 +641,12 @@ The final hold keeps the last frame available until a harness stops the peer.
 Files use the current SDK and, when supplied, its launch-authentication relay.
 IPC refuses an authentication descriptor or file endpoint, so it cannot turn a
 protected file launch into an unauthenticated comparison. The authentication
-branch compiles but has not yet been exercised by this peer's tests. Production
-Session still selects authenticated files; the native IPC comparison launcher
-remains to be implemented and reviewed. No production owner changed.
+branch now passes the existing generic protected-launch test twice, with
+revocation and reaping at each fresh epoch. It waits for output facts when
+revoked; this proves authentication, not content or native presentation.
+Evidence: `timing-peer-auth-native-feature.log`. The earlier
+`timing-peer-auth.log` omitted the native-session feature and ran zero matching
+tests; it supplies no authentication evidence.
 
 Signed external integration `fbe20dc` adds `shell-timing collect`. It requires
 the complete start/permit/offer/terminal/end sequence, exact counts and identities,
@@ -658,7 +664,43 @@ Evidence under `t252-authenticated-20261015`: `timing-peer-journals.log`,
 `timing-peer-journals/{files,ipc}.{ndjson,json}`, `timing-peer-clippy-final.log`,
 `timing-journal-tests.log` and `timing-journal-clippy.log`. These runs use supplied
 admission and presentation receipts. They prove recording and parsing, not
-native presentation, protected launch, input or performance acceptance.
+native presentation, input or performance acceptance. Protected authentication
+is covered separately by the test above.
+
+### Guarded native comparison selection, October 15
+
+Signed comparator `16d1cb870` wires the retired adapter into the existing
+component Session behind `transport "comparison-ipc"`. Native startup also
+requires `SOPHIA_COMPARATOR_ADMISSION=protected-legacy-baseline`. Without that
+guard, Session refuses the selection before launching a component. With it,
+the existing supervisor supplies the protected process and exact peer identity;
+normal connection epochs, grants, content owners and cleanup still apply.
+The new selector and all restored IPC remain confined to the comparison branch.
+
+Current 9P selections still take the unchanged Factotum path. The IPC baseline
+cannot authenticate a file launch, and the runtime still refuses to downgrade
+an authentication-required connection. This is deliberately asymmetric:
+current 9P includes its ongoing authentication checks; retired IPC uses its
+protected-process admission. Admission is outside the timed upload/frame window,
+but ongoing checks are inside. The complete campaign method must name and review
+that difference; do not describe the result as the cost of framing alone.
+
+Device-hidden evidence: `comparator-protected-launch-final.log` proves two
+protected IPC negotiations, immediate revocation, reaping and cleanup before
+replacement; `comparator-unarmed-refusal.log` proves the missing guard refuses
+without spawning. The peer reports a failed read when the test deliberately
+closes its connection before publishing output facts. Those records are expected
+in this launch-only test and cannot enter a timing dataset. The first launch
+test omitted Session's retained revocation cleanup before replacement and failed;
+the final test performs that cleanup and proves quiescence.
+
+The full configuration suite and 20 Session file-connection/process tests pass
+(three explicit process tests remain ignored in that ordinary run). Strict
+Clippy passes for configuration and all native Session targets. The native CLI
+also checks successfully. Logs: `comparator-config-regressions.log`,
+`comparator-session-wire-regressions.log`, `comparator-native-selection-clippy.log`
+and `comparator-native-cli-check.log`. No native session, physical input,
+presentation or timing campaign ran in this checkpoint.
 
 ## Validation and remaining work
 
