@@ -124,7 +124,12 @@ Production `34edcd707` and comparator `fd9423597` remove two per-turn readiness
 allocations for a single adopted 9P socket. The paired diagnostic's bulk file
 allocation bound falls from 21,498–21,538 to 8,953–8,964 per frame; small-bar
 costs remain high. See [the first t331 reduction](#t331-single-connection-readiness).
-Next profile the remaining client-side excess, settle accounting scope, freeze the full B9 method,
+SDK `894dbca` removes temporary reply copies and reuses bounded drain storage;
+production `64524a300` and comparator `651e4a969` pin it. Small-bar file
+allocations fall further to 538–553/frame, bulk to 8,542–8,552. See
+[SDK reply storage](#t331-sdk-reply-storage). Next measure the actual 1920×24
+bar in the supplied-owner diagnostic before further attribution; its current
+64×24 fixture is not the B9 panel workload. Settle accounting scope and freeze the full B9 method,
 then collect the declared campaign and native lifetime/input evidence for both
 desktop selections. See [calibration 04](#native-calibration-04-both-wires-joined).
 See [comparator preparation](#comparator-preparation-october-15).
@@ -1240,6 +1245,45 @@ reply-drain allocation paths. Change SDK source in
 `~/dev/sophia-desktop-sdk-rs`, then use the signed snapshot workflow; Sophia's
 vendored SDK is immutable. t331 and t252 remain open; accounting scope is still
 proposed, and no live installation changed.
+
+## t331: SDK reply storage
+
+SDK `894dbcacce81b6085db9de848a32c644007825dd`, published on
+`performance/t331-reply-storage`, starts from the exact previously pinned SDK
+`0e5ad3638`. The working tree is `~/dev/sdk-rs-t331-reply-storage`; the older
+primary SDK checkout was left untouched. Sophia `64524a300` vendors the signed
+revision through the standard snapshot tool; comparator `651e4a969` carries
+the same pin.
+
+The 9P pipeline previously copied each complete frame into a new vector, then
+copied its body into another. It now borrows the body from the receive buffer
+while decoding, restores that buffer and retains any partial next frame.
+Decoded payloads still own the data they need. The shell reply drain reuses its
+outer scratch vector, bounded by pipeline credits, and clears all replies on
+both success and error. Events are still buffered before submission responses
+are judged, preserving the existing custody ordering.
+
+The SDK workspace checks pass, including a new complete-reply/partial-next-frame
+regression; all 30 pipeline tests and the shell-client tests pass after the
+changes. Strict workspace/all-target Clippy passes. Sophia's signed snapshot
+and contract check passes (`t331-sdk-check.log`), as do 13 focused production
+file transport, reduced-limit and owner tests. Both instrumented peer tests
+pass all four wire/probe combinations; all four cost replays pass.
+
+Evidence is under
+`~/.local/state/sophia/development-evidence/t252-authenticated-20261015/t331-sdk-replies-01/`.
+
+| Workload | Files before SDK change | Files after | IPC after |
+| --- | --- | --- | --- |
+| Supplied 64×24 bar, allocations/frame | 668–683 | 538–553 | 252–271 |
+| Same bar plus 4 MiB probe | 8,953–8,964 | 8,542–8,552 | 8,358–8,374 |
+
+Peer-only allocation deltas after the change are about 316/frame for the bar
+and 1,200/frame with the probe. The remaining small-bar excess still includes
+both client and server work. Next use the intended 1920×24 bar geometry in
+the supplied-owner diagnostic, keeping old results and not confusing their
+6 KiB fixture with the 180 KiB contract example. None of these debug runs is
+a native B9 verdict. t331, the accounting decision and t252 remain open.
 
 ## Connections
 
