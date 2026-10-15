@@ -28,6 +28,61 @@ the September plan's open wording is historical. Do not infer a new installed
 desktop qualification from these headless checks. The t328 route-lease repair
 proposal remains a separate correctness concern before final acceptance.
 
+The October 15 reconciliation below identifies the installed two-component
+release and the prepared Provlita binary. The external three-component profile
+now explicitly selects 9P for the dock, with a parser regression check. This is
+test preparation, not a production-export or native dock pass. Before final
+input qualification, promote only the bounded route-lease repair described
+below; the broader t032 backlog remains outside this task.
+
+## Selected clients and immediate blockers (October 15)
+
+Sophia source `4ea088abd` was reviewed after t254 acceptance. The installed
+release remains `niltempus-b7f017d6e4cdb2056faa`, built from Sophia `ed0caa4f2`
+and desktop integration `a6eb56d`. Its lockfile selects:
+
+| Client | Selected source | Remaining t252 evidence |
+| --- | --- | --- |
+| Lom | `dc65f561f8c9522f6a09d3e5f386d32226228bfd` | Exact native lifecycle/input and B9 coverage, including coexistence with the dock. |
+| Bemenu | `6e2efd96e2256a138ed9928387e83d3c30585937` | Exact presented focus, activation and retirement on the selected three-component release. |
+| Narthex | `56d513faede5c5127c7d3cd1241f44661568d806` | Verified compatible fallback selection or release for shell acceptance. |
+| Provlita | Not in the installed lockfile; prepared source `da4a15adb9a6555441653a9dd9ec0e4d69f3d6af` | Protected production-export join, native presentation/activation/retirement, then packaging and attended acceptance. |
+
+Provlita's signed clean source builds offline with its locked dependencies.
+Its version and example configuration checks pass. The release binary is
+`~/.cache/cargo-slots/provlita/1/release/provlita`, SHA-256
+`1bfa663d7583014d049ad5695e8ea869df33d964dbc90a60672e7feb9568be6b`.
+These checks do not contact Session or prove GPU execution. Its current code
+uses 9P and authenticated protected startup; older integration prose saying it
+retains the legacy wire is stale.
+
+The external `niltempus` dock profile omitted an explicit transport for
+Provlita while selecting 9P for its two neighbours. The profile and its parser
+test now require 9P for all three. Both dock tests pass with devices, display
+sockets and network hidden, using the existing provisioned Cargo cache. The
+first offline attempt used the default cache and could not find the pinned
+Sophia dependency; no tests ran in that attempt. The integration test pin is
+`316d969507cdeb6ef061ea2d9645758113c53db6`, distinct from the installed release;
+this parser check must not be presented as current native qualification.
+
+### Bounded repair proposed before input qualification
+
+The two frontend-to-Session notification sites still call blocking
+`SignalSender::send` and discard its error: `release_route_lease` and
+`send_route_lease_update` in the X routing registry's `delivery.rs`.
+The wrapper uses `SyncSender`; a full queue can therefore block indefinitely.
+No live hang was induced or attributed to this defect.
+
+Promote a separate repair limited to these notifications and their custody:
+bounded nonblocking delivery, retained obligations under backpressure, explicit
+disconnect settlement, and unchanged lease identity/epoch checks. Do not replace
+blocking sends with silent drops. Model the lifecycle before implementation;
+prove full-queue, disconnect, delayed drain and stale-epoch cases with generic
+device-free tests and a control that fails against the old behavior. Required
+accounting is accepted = delivered + explicitly settled + retained pending.
+Do not promote the rest of t032, alter shell budgets or change the live profile.
+Implementation still requires promotion under the project queue rules.
+
 ## Evidence
 
 Commands ran through `cargo-slot sophia`, offline and locked, using the existing
