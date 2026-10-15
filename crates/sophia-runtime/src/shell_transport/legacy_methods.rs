@@ -34,6 +34,9 @@ macro_rules! transport_facade {
             pub fn service_owner_turn(&mut self) -> Result<(), ShellTransportError> {
                 self.state.service_owner_turn(&mut self.content_epochs)
             }
+            pub fn poll_io_bounded(&mut self, bytes: usize) -> Result<(), ShellTransportError> {
+                self.state.poll_io_bounded(&mut self.content_epochs, bytes)
+            }
         }
         impl $transport {
             pub fn socket_path(&self) -> &Path {

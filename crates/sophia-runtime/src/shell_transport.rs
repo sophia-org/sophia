@@ -45,10 +45,12 @@ mod outbox;
 mod publication;
 mod reference;
 pub use reference::ShellReferenceCandidateEvent;
+mod socket;
 mod tabs;
 mod wire;
 pub use accounting::{ShellContentAccounting, ShellContentShutdown};
 pub use content_admission::ShellContentAdmissionPolicy;
+pub use socket::ShellClientTransport;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ShellTransportError {
@@ -114,8 +116,8 @@ pub struct ShellComponentTransport {
     endpoint: RoleEndpoint,
     authentication: Option<Box<dyn crate::authenticated_files::FileAuthenticationFactory>>,
     authentication_required: bool,
-    /// The current epoch's protected 9P connection.
-    wire: Option<Box<files::ShellFileWire>>,
+    /// Comparison-only transport selection; the installed product remains 9P.
+    wire: Option<wire::Wire>,
     /// The component's next logical qid, continued across file epochs.
     file_qids: u64,
     negotiation: Option<negotiation_service::PendingNegotiation>,
@@ -214,6 +216,10 @@ impl ShellComponentTransport {
     pub fn authentication_wait(&self, now: std::time::Instant) -> Duration {
         self.wire
             .as_ref()
+            .and_then(|wire| match wire {
+                wire::Wire::Files(files) => Some(files),
+                wire::Wire::Socket(_) => None,
+            })
             .or_else(|| match self.negotiation.as_ref().map(|p| &p.stage) {
                 Some(negotiation_service::Stage::Files(files)) => Some(files),
                 _ => None,
@@ -237,7 +243,7 @@ impl ShellComponentTransport {
         &mut self,
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<(), ShellTransportError> {
-        if let Some(mut files) = self.wire.take() {
+        if let Some(wire::Wire::Files(mut files)) = self.wire.take() {
             files.revoke();
             // Revocation drains bounded server turns before the connection
             // closes. Carry the final allocator watermark to the next epoch.
@@ -364,7 +370,10 @@ impl ShellComponentTransport {
     /// the current connection, including negotiation.
     /// This measures transport work, independently of the number of role visits.
     pub fn wire_turn_count(&self) -> u64 {
-        self.wire.as_ref().map_or(0, |files| files.turn_count())
+        match self.wire.as_ref() {
+            Some(wire::Wire::Files(files)) => files.turn_count(),
+            _ => 0,
+        }
     }
 
     /// Bounded, nonblocking FIFO-to-journal handoff. After `service_owner_turn`
@@ -374,6 +383,16 @@ impl ShellComponentTransport {
         &mut self,
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<(), ShellTransportError> {
+        self.poll_io_bounded(epochs, 256 * 1024)
+    }
+
+    /// Bound each I/O direction, preserving partial framing and FIFO custody.
+    /// Legacy service keeps its previous 256 KiB limits; native visits use 64 KiB.
+    pub(super) fn poll_io_bounded(
+        &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
+        byte_budget: usize,
+    ) -> Result<(), ShellTransportError> {
         if self.wire.is_none() {
             return Err(ShellTransportError::NotConnected);
         }
@@ -382,14 +401,24 @@ impl ShellComponentTransport {
         self.flush_native_activation(epochs)?;
         self.flush_native_close(epochs)?;
         self.flush_native_accept(epochs)?;
+        self.flush_publication(epochs);
         let (closed, blocked) = match self.wire.as_mut() {
             None => return Err(ShellTransportError::NotConnected),
-            Some(files) => Self::turn_files(
+            Some(wire::Wire::Files(files)) => Self::turn_files(
                 files,
                 &mut self.output,
                 !self.owner_serviced,
                 std::time::Instant::now(),
             )?,
+            Some(wire::Wire::Socket(socket)) => {
+                if self.owner_serviced {
+                    socket.send(&mut self.output, byte_budget)?;
+                    (false, false)
+                } else {
+                    socket.begin_visit();
+                    (socket.turn(&mut self.output, byte_budget)?, false)
+                }
+            }
         };
         self.output_blocked = blocked;
         if closed {
@@ -407,8 +436,11 @@ impl ShellComponentTransport {
     pub fn poll_fds(&self) -> Vec<rustix::event::PollFd<'_>> {
         use negotiation_service::Stage;
         use rustix::event::{PollFd, PollFlags};
-        if let Some(files) = self.wire.as_ref() {
-            return files.poll_fds();
+        if let Some(wire) = self.wire.as_ref() {
+            return match wire {
+                wire::Wire::Files(files) => files.poll_fds(),
+                wire::Wire::Socket(socket) => socket.poll_fds(),
+            };
         }
         match self.negotiation.as_ref().map(|pending| &pending.stage) {
             None => Vec::new(),
@@ -420,6 +452,7 @@ impl ShellComponentTransport {
                 .collect(),
             Some(Stage::Accepted(stream)) => vec![PollFd::new(stream, PollFlags::IN)],
             Some(Stage::Files(files)) => files.poll_fds(),
+            Some(Stage::Socket(handshake)) => vec![PollFd::new(handshake.stream(), PollFlags::IN)],
         }
     }
 

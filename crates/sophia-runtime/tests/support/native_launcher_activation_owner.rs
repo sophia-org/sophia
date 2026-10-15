@@ -106,9 +106,9 @@ impl Fixture {
         export
             .complete_negotiation(Some((bytes, limits)), transport.capabilities)
             .unwrap();
-        transport.wire = Some(Box::new(
+        transport.wire = Some(crate::shell_transport::wire::Wire::Files(Box::new(
             ShellFileWire::adopt(local, export, None, false).unwrap(),
-        ));
+        )));
         let mut fixture = Self {
             transport,
             epochs,
@@ -156,13 +156,14 @@ impl Fixture {
         })
     }
     fn inbox(&self) -> usize {
-        let Some(files) = &self.transport.wire else {
+        let Some(crate::shell_transport::wire::Wire::Files(files)) = &self.transport.wire else {
             unreachable!()
         };
         usize::from(files.export().peek_native_activate().is_some())
     }
     fn send_all(&mut self) -> bool {
-        let Some(files) = self.transport.wire.as_mut() else {
+        let Some(crate::shell_transport::wire::Wire::Files(files)) = self.transport.wire.as_mut()
+        else {
             unreachable!()
         };
         ShellComponentTransport::drain_file_output(files, &mut self.transport.output).unwrap()

@@ -45,9 +45,9 @@ impl Peer {
             (bytes, limits)
         });
         export.complete_negotiation(limits, t.capabilities).unwrap();
-        t.wire = Some(Box::new(
+        t.wire = Some(crate::shell_transport::wire::Wire::Files(Box::new(
             ShellFileWire::adopt(local, export, None, false).unwrap(),
-        ));
+        )));
         let mut peer = Self {
             raw: raw::Peer::from_stream(remote),
             epoch: t.connection_epoch,
@@ -126,7 +126,7 @@ impl Peer {
 
     /// Every queued record stays charged until the production drain succeeds.
     pub fn drain(t: &mut ShellComponentTransport) -> bool {
-        let Some(files) = t.wire.as_mut() else {
+        let Some(crate::shell_transport::wire::Wire::Files(files)) = t.wire.as_mut() else {
             panic!("file wire required")
         };
         ShellComponentTransport::drain_file_output(files, &mut t.output).unwrap()

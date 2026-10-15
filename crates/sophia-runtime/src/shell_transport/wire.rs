@@ -1,8 +1,8 @@
 //! The one wire of a component epoch and the typed boundary owners use.
 //!
 //! Owners ask for a family of typed client records and hand over typed
-//! Session records; the file export selects each record family. Nothing here
-//! names an IPC frame kind or file offset.
+//! Session records; each wire maps a request to its own selection and
+//! encoding. Nothing here names a frame kind, header or file offset.
 use sophia_protocol::{
     CatalogActivation, CatalogCandidateBegin, ContentCandidateChunk, ContentCandidateEnd,
     NativeLauncherActivation, NativeLauncherCandidateBegin, NativeLauncherInputAck,
@@ -10,7 +10,13 @@ use sophia_protocol::{
 };
 
 use super::native_launcher::NativeContentRecord;
-use super::{ShellComponentTransport, ShellTransportError, files};
+use super::{ShellComponentTransport, ShellTransportError, files, socket};
+
+/// Boxed: one wire per component epoch, allocated at negotiation.
+pub(super) enum Wire {
+    Socket(Box<socket::SocketWire>),
+    Files(Box<files::ShellFileWire>),
+}
 
 /// A family of content records one owner services.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -79,8 +85,25 @@ impl CatalogCandidatePart {
 }
 
 impl ShellComponentTransport {
+    pub(super) fn socket(&self) -> Option<&socket::SocketWire> {
+        match self.wire.as_ref()? {
+            Wire::Socket(socket) => Some(socket.as_ref()),
+            Wire::Files(_) => None,
+        }
+    }
+
+    pub(super) fn socket_mut(&mut self) -> Option<&mut socket::SocketWire> {
+        match self.wire.as_mut()? {
+            Wire::Socket(socket) => Some(socket.as_mut()),
+            Wire::Files(_) => None,
+        }
+    }
+
     pub(super) fn files_mut(&mut self) -> Option<&mut files::ShellFileWire> {
-        self.wire.as_deref_mut()
+        match self.wire.as_mut()? {
+            Wire::Files(files) => Some(files.as_mut()),
+            Wire::Socket(_) => None,
+        }
     }
 
     /// An empty inbound answer: nothing yet, or the peer's stream has ended.
@@ -92,12 +115,21 @@ impl ShellComponentTransport {
         }
     }
 
-    /// Whether the export holds no accepted record or candidate part the
-    /// owners have not taken. This does not inspect the peer's outgoing queue.
+    /// Starts one bounded owner visit on the wire.
+    pub(super) fn begin_inbound_visit(&mut self) {
+        if let Some(socket) = self.socket_mut() {
+            socket.begin_visit();
+        }
+    }
+
+    /// Whether the wire holds no unread or untaken client input: on the
+    /// socket, no partial or complete frame; on the file wire, no accepted
+    /// record or candidate part the owners have not taken.
     pub(super) fn inbound_idle(&self) -> bool {
         match self.wire.as_ref() {
             None => true,
-            Some(files) => files.export().inbound_is_empty(),
+            Some(Wire::Socket(socket)) => socket.input_idle(),
+            Some(Wire::Files(files)) => files.export().inbound_is_empty(),
         }
     }
 
@@ -108,7 +140,8 @@ impl ShellComponentTransport {
     ) -> Result<Option<(TransactionId, ShellContentRecord)>, ShellTransportError> {
         match self.wire.as_ref() {
             None => Ok(None),
-            Some(files) => Ok(files
+            Some(Wire::Socket(socket)) => socket.peek_content(want),
+            Some(Wire::Files(files)) => Ok(files
                 .export()
                 .peek_content(|record| want.selects(record))
                 .map(|(transaction, record)| (transaction, record.clone()))),
@@ -123,18 +156,19 @@ impl ShellComponentTransport {
     ) -> Result<Option<(TransactionId, ShellContentRecord)>, ShellTransportError> {
         match self.wire.as_mut() {
             None => Ok(None),
-            Some(files) if want == ContentWant::CandidatePart => {
+            Some(Wire::Socket(socket)) => socket.take_content(want),
+            Some(Wire::Files(files)) if want == ContentWant::CandidatePart => {
                 Ok(files.export_mut().take_candidate_part())
             }
-            Some(files) => Ok(files
+            Some(Wire::Files(files)) => Ok(files
                 .export_mut()
                 .take_content(|record| want.selects(record))),
         }
     }
 
     /// Drops the rest of a candidate whose earlier part was answered with a
-    /// rejecting outcome. File submission accepts a whole candidate, so its
-    /// later parts remain retained until the owner takes or discards them.
+    /// rejecting outcome. Only a wire that delivers whole candidates retains
+    /// such a rest; a socket peer sends each part separately.
     pub(super) fn discard_candidate_rest(&mut self, family: files::CandidateFamily) {
         if let Some(files) = self.files_mut() {
             let export = files.export_mut();
@@ -151,14 +185,16 @@ impl ShellComponentTransport {
     ) -> Result<Option<(TransactionId, NativeLauncherInputAck)>, ShellTransportError> {
         match self.wire.as_ref() {
             None => Ok(None),
-            Some(files) => Ok(files.export().peek_native_input_ack()),
+            Some(Wire::Socket(socket)) => socket.peek_native_input_ack(),
+            Some(Wire::Files(files)) => Ok(files.export().peek_native_input_ack()),
         }
     }
 
     pub(super) fn take_native_input_ack(&mut self) {
         match self.wire.as_mut() {
             None => {}
-            Some(files) => {
+            Some(Wire::Socket(socket)) => socket.take_native_input_ack(),
+            Some(Wire::Files(files)) => {
                 files.export_mut().take_native_input_ack();
             }
         }
@@ -169,14 +205,16 @@ impl ShellComponentTransport {
     ) -> Result<Option<(TransactionId, NativeLauncherActivation)>, ShellTransportError> {
         match self.wire.as_ref() {
             None => Ok(None),
-            Some(files) => Ok(files.export().peek_native_activate()),
+            Some(Wire::Socket(socket)) => socket.peek_native_activate(),
+            Some(Wire::Files(files)) => Ok(files.export().peek_native_activate()),
         }
     }
 
     pub(super) fn take_native_activate(&mut self) {
         match self.wire.as_mut() {
             None => {}
-            Some(files) => {
+            Some(Wire::Socket(socket)) => socket.take_native_activate(),
+            Some(Wire::Files(files)) => {
                 files.export_mut().take_native_activate();
             }
         }
@@ -187,14 +225,16 @@ impl ShellComponentTransport {
     ) -> Result<Option<(TransactionId, CatalogActivation)>, ShellTransportError> {
         match self.wire.as_ref() {
             None => Ok(None),
-            Some(files) => Ok(files.export().peek_catalog_activate()),
+            Some(Wire::Socket(socket)) => socket.peek_catalog_activate(),
+            Some(Wire::Files(files)) => Ok(files.export().peek_catalog_activate()),
         }
     }
 
     pub(super) fn take_catalog_activate(&mut self) {
         match self.wire.as_mut() {
             None => {}
-            Some(files) => {
+            Some(Wire::Socket(socket)) => socket.take_catalog_activate(),
+            Some(Wire::Files(files)) => {
                 files.export_mut().take_catalog_activate();
             }
         }
@@ -205,14 +245,16 @@ impl ShellComponentTransport {
     ) -> Result<Option<(TransactionId, ShellIndicatorActivation)>, ShellTransportError> {
         match self.wire.as_ref() {
             None => Ok(None),
-            Some(files) => Ok(files.export().peek_indicator_activate()),
+            Some(Wire::Socket(socket)) => socket.peek_indicator_activate(),
+            Some(Wire::Files(files)) => Ok(files.export().peek_indicator_activate()),
         }
     }
 
     pub(super) fn take_indicator_activate(&mut self) {
         match self.wire.as_mut() {
             None => {}
-            Some(files) => {
+            Some(Wire::Socket(socket)) => socket.take_indicator_activate(),
+            Some(Wire::Files(files)) => {
                 files.export_mut().take_indicator_activate();
             }
         }
@@ -225,7 +267,10 @@ impl ShellComponentTransport {
     ) -> Result<Option<(TransactionId, NativeContentRecord)>, ShellTransportError> {
         match self.wire.as_mut() {
             None => Ok(None),
-            Some(files) => super::native_launcher::peek_native_file_record(files.export_mut()),
+            Some(Wire::Socket(socket)) => socket.peek_native_content(),
+            Some(Wire::Files(files)) => {
+                super::native_launcher::peek_native_file_record(files.export_mut())
+            }
         }
     }
 
@@ -233,7 +278,8 @@ impl ShellComponentTransport {
     pub(super) fn take_native_content(&mut self) {
         match self.wire.as_mut() {
             None => {}
-            Some(files) => {
+            Some(Wire::Socket(socket)) => socket.take_native_content(),
+            Some(Wire::Files(files)) => {
                 super::native_launcher::take_native_file_record(files.export_mut());
             }
         }
@@ -246,7 +292,8 @@ impl ShellComponentTransport {
     ) -> Result<Option<(TransactionId, CatalogCandidatePart)>, ShellTransportError> {
         match self.wire.as_mut() {
             None => Ok(None),
-            Some(files) => {
+            Some(Wire::Socket(socket)) => socket.peek_catalog_candidate(),
+            Some(Wire::Files(files)) => {
                 let export = files.export_mut();
                 if let Some(part) = export.peek_catalog_candidate_part() {
                     return Ok(Some(part));
@@ -265,7 +312,8 @@ impl ShellComponentTransport {
     pub(super) fn take_catalog_candidate(&mut self) {
         match self.wire.as_mut() {
             None => {}
-            Some(files) => {
+            Some(Wire::Socket(socket)) => socket.take_catalog_candidate(),
+            Some(Wire::Files(files)) => {
                 files.export_mut().take_catalog_candidate_part();
             }
         }

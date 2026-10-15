@@ -21,7 +21,7 @@ impl ShellComponentTransport {
         if current.opening.grant != self.store_grant || current.opening.output != context.output {
             return Err(ShellTransportError::WrongContentGrant);
         }
-        self.poll_io(epochs)?;
+        self.poll_io_bounded(epochs, 64 * 1024)?;
         epochs
             .active_candidates_mut(self.store_grant)
             .ok_or(ShellTransportError::MissingCapability)?
@@ -40,6 +40,7 @@ impl ShellComponentTransport {
             .max_frames_per_service_tick
             .min(32) as usize;
         let mut processed = 0;
+        self.begin_inbound_visit();
         while processed < limit {
             let Some((transaction, record)) = self.peek_native_content()? else {
                 break;
@@ -88,8 +89,8 @@ impl ShellComponentTransport {
         Ok(processed)
     }
 
-    /// Apply one decoded native content record to the actual stores and
-    /// reserve its responses before releasing input custody.
+    /// The wire-agnostic effect of one decoded native content record: the
+    /// same store transitions and responses the socket path applies inline.
     fn apply_native_content_record(
         &mut self,
         epochs: &mut crate::ContentEpochRegistry,
@@ -257,7 +258,8 @@ pub(super) fn native_content_record(
     })
 }
 
-/// Converts one retained `NativeCandidate` part into the store owner's value.
+/// Converts one exploded `NativeCandidate` part into the same shape the
+/// socket wire's old 188/189/174 decode produced.
 pub(super) fn native_part_record(
     part: super::super::files::NativeCandidatePart,
 ) -> NativeContentRecord {
@@ -271,9 +273,11 @@ pub(super) fn native_part_record(
 /// The oldest native-launcher-content-shaped record on the file wire,
 /// left in place. Tried in order: the rest of a candidate already
 /// exploding, a queued resource/demand/cancel record, a queued
-/// allocation, then the next queued whole candidate (exploding it). Family
-/// selection can reorder independent submissions; nothing admitted is lost
-/// or double-processed. A foreign candidate family is a protocol violation.
+/// allocation, then the next queued whole candidate (exploding it). This
+/// does not preserve the single socket inbox's exact cross-family
+/// submission order; nothing admitted is ever lost or double-processed,
+/// and a foreign candidate family is the same hard protocol violation the
+/// socket path's raw-kind scan already treats it as.
 pub(in crate::shell_transport) fn peek_native_file_record(
     export: &mut ShellFiles,
 ) -> Result<Option<(TransactionId, NativeContentRecord)>, ShellTransportError> {

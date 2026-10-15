@@ -54,7 +54,9 @@ fn a_role_visit_cannot_timeout_an_acknowledgement_it_did_not_service() {
     transport.state.output.push(record);
     let now = std::time::Instant::now() + std::time::Duration::from_secs(120);
     let state = &mut transport.state;
-    let files = state.wire.as_mut().unwrap();
+    let crate::shell_transport::wire::Wire::Files(files) = state.wire.as_mut().unwrap() else {
+        panic!("file wire required")
+    };
     assert_eq!(
         ShellComponentTransport::turn_files(files, &mut state.output, false, now).unwrap(),
         (false, true)
