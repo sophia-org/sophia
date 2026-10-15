@@ -16,6 +16,15 @@ MC_replay.cfg expects AtMostOnce; MC_consuming_read.cfg expects ResultRetention.
 Trace.cfg requires TraceMatched; Trace_bad_settlement.cfg must fail it.
 No property is silently disabled in every configuration.
 
+Scenario 5 (restart extension) is checked separately by `Restart_hunt.cfg`:
+Stop, Close, SettleCancelled, Expire, Join and Bind establish OldTransportClosed
+and ShutdownCancels; interleaved FinishResult, FinishSettled and Publish establish
+ResultIsolation. TypeOK bounds effect counts at one per instance. The model
+allows one replacement and keeps every reactive owner step enabled.
+`Restart_no_cancel.cfg` violates ShutdownCancels; `Restart_cross_instance.cfg`
+violates ResultIsolation. `RestartTrace.cfg` checks all fields through eighteen
+design events; its bad-settlement variant must fail TraceMatched.
+
 The merged hunt shares the base domains, rather than bounding away reactive
 owner steps. There is one catalog replacement and one successor connection;
 timeouts are bounded by the finite ticket domains and first-result rule.

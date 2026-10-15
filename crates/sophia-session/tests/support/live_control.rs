@@ -1,13 +1,34 @@
 use super::*;
 use crate::live_session::c_sdk_fixture_process as process;
 use sophia_protocol::{ControlCommand, ControlOutcome, ControlOwner};
-use sophia_runtime::{ControlClient, ControlService};
+use sophia_runtime::{AdminClient, ControlClient};
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 
 #[test]
 #[ignore = "runs a supervised policy process in bubblewrap; tools/check_control_protocol.sh --live-owner"]
 fn real_owner_commits_actions_and_confirms_replacement_commit() {
+    check_real_owner(false);
+    check_real_owner(true);
+}
+
+fn invoke(path: &std::path::Path, files: bool, command: ControlCommand) -> ControlOutcome {
+    if files {
+        AdminClient::connect(path)
+            .unwrap()
+            .invoke(command)
+            .unwrap()
+            .1
+    } else {
+        ControlClient::connect(path)
+            .unwrap()
+            .invoke(command)
+            .unwrap()
+            .1
+    }
+}
+
+fn check_real_owner(files: bool) {
     let _ = crate::install_session_output(crate::SessionOutput::new(
         |line| eprintln!("{line}"),
         |line| eprintln!("{line}"),
@@ -22,11 +43,15 @@ fn real_owner_commits_actions_and_confirms_replacement_commit() {
     let profile = root.join("desktop.kdl");
     std::fs::write(&profile, "schema 1\nsession { control \"host-admin\"; }\n").unwrap();
     std::fs::set_permissions(&profile, std::fs::Permissions::from_mode(0o600)).unwrap();
-    let mut config = PersistentXtermSessionConfig::from_args(&[
+    let mut config = super::session_config_tests::isolated_session_config(&[
         format!("--desktop-profile={}", profile.display()),
         format!("--wm-process={}", executable.display()),
         "--wm-interface=sophia_wm_v1".into(),
         "--wm-transport=9p2000.L".into(),
+        format!(
+            "--control-transport={}",
+            if files { "9p2000.L" } else { "current-ipc" }
+        ),
     ])
     .unwrap();
     config.wm_socket_path = root.join("wm.sock");
@@ -56,7 +81,7 @@ fn real_owner_commits_actions_and_confirms_replacement_commit() {
         .unwrap();
     let mut layout = PersistentLiveLayout::default();
     let mut scripting = LiveControlState {
-        service: Some(ControlService::bind(root).unwrap()),
+        service: Some(config.control_transport.bind(root).unwrap()),
         catalog: Arc::new(sophia_protocol::ControlCatalog {
             generation: 1,
             commands: Vec::new(),
@@ -107,26 +132,28 @@ fn real_owner_commits_actions_and_confirms_replacement_commit() {
         ["focus-next", "logout", "reload-profile", "restart-wm"]
     );
     // A revision-1 connection still sees only restart-wm among them.
-    let path = socket.clone();
-    let revision_one = std::thread::spawn(move || {
-        let mut client = ControlClient::connect_revisions(&path, 1, 1).unwrap();
-        (client.revision(), client.commands().unwrap())
-    });
-    while !revision_one.is_finished() {
-        assert!(Instant::now() < deadline, "revision-one catalog reply");
-        scripting.service(Some(&mut wm), &layout, output, false);
-        std::thread::sleep(Duration::from_millis(1));
+    if !files {
+        let path = socket.clone();
+        let revision_one = std::thread::spawn(move || {
+            let mut client = ControlClient::connect_revisions(&path, 1, 1).unwrap();
+            (client.revision(), client.commands().unwrap())
+        });
+        while !revision_one.is_finished() {
+            assert!(Instant::now() < deadline, "revision-one catalog reply");
+            scripting.service(Some(&mut wm), &layout, output, false);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let (revision, catalog) = revision_one.join().unwrap();
+        assert_eq!(revision, 1);
+        assert_eq!(
+            catalog
+                .commands
+                .iter()
+                .map(|c| c.name.as_str())
+                .collect::<Vec<_>>(),
+            ["focus-next", "restart-wm"]
+        );
     }
-    let (revision, catalog) = revision_one.join().unwrap();
-    assert_eq!(revision, 1);
-    assert_eq!(
-        catalog
-            .commands
-            .iter()
-            .map(|c| c.name.as_str())
-            .collect::<Vec<_>>(),
-        ["focus-next", "restart-wm"]
-    );
     for command in [
         ControlCommand {
             owner: ControlOwner::Policy,
@@ -149,13 +176,7 @@ fn real_owner_commits_actions_and_confirms_replacement_commit() {
         let committed_before = wm.committed;
         let epoch_before = wm.public.as_ref().unwrap().connection_epoch;
         let path = socket.clone();
-        let client = std::thread::spawn(move || {
-            ControlClient::connect(&path)
-                .unwrap()
-                .invoke(command)
-                .unwrap()
-                .1
-        });
+        let client = std::thread::spawn(move || invoke(&path, files, command));
         let deadline = Instant::now() + Duration::from_secs(8);
         let mut held_proposal = None;
         while held_proposal.is_none() {
@@ -200,14 +221,14 @@ fn real_owner_commits_actions_and_confirms_replacement_commit() {
     // owner turn that accepted it, before catalog republication runs.
     let path = socket.clone();
     let stale = std::thread::spawn(move || {
-        ControlClient::connect(&path)
-            .unwrap()
-            .invoke(ControlCommand {
+        invoke(
+            &path,
+            files,
+            ControlCommand {
                 owner: ControlOwner::Policy,
                 name: "focus-next".into(),
-            })
-            .unwrap()
-            .1
+            },
+        )
     });
     let before = wm.committed;
     let deadline = Instant::now() + Duration::from_secs(3);
@@ -234,14 +255,14 @@ fn real_owner_commits_actions_and_confirms_replacement_commit() {
     scripting.service(Some(&mut wm), &layout, output, false);
     let path = socket.clone();
     let reload = std::thread::spawn(move || {
-        ControlClient::connect(&path)
-            .unwrap()
-            .invoke(ControlCommand {
+        invoke(
+            &path,
+            files,
+            ControlCommand {
                 owner: ControlOwner::Session,
                 name: "reload-profile".into(),
-            })
-            .unwrap()
-            .1
+            },
+        )
     });
     let deadline = Instant::now() + Duration::from_secs(3);
     let mut requested = SessionControlRequests::default();
@@ -264,14 +285,14 @@ fn real_owner_commits_actions_and_confirms_replacement_commit() {
     // logout raises the logout request and completes once admitted.
     let path = socket.clone();
     let logout = std::thread::spawn(move || {
-        ControlClient::connect(&path)
-            .unwrap()
-            .invoke(ControlCommand {
+        invoke(
+            &path,
+            files,
+            ControlCommand {
                 owner: ControlOwner::Session,
                 name: "logout".into(),
-            })
-            .unwrap()
-            .1
+            },
+        )
     });
     let mut requested = SessionControlRequests::default();
     while !logout.is_finished() {

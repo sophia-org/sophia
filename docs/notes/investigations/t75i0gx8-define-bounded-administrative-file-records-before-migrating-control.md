@@ -14,28 +14,31 @@ core without introducing new command authority or execution owners?
 
 ## Current resumption
 
-`ControlService::bind_files` now serves the opt-in administrative tree on the
-shared 9P core. It uses the existing HostDomain checks and ControlTicket
-claim/settlement owner, with bounded `info`, `commands`, `status` and `ctl` files.
-The [file contract](../../sophia-admin-files.md) records the limits. Session and
-the ordinary CLI still select the legacy transport; no installed session or
-default has changed. t254 remains open.
+The administrative export, bounded `AdminClient`, ordinary CLI and Session
+transport selection now connect to the existing command owners. Qualification
+uses `--control-transport=9p2000.L` for Session and
+`sophia msg --transport 9p2000.L` for the CLI. Both still default to legacy
+control; no installed session has changed. The [file contract](../../sophia-admin-files.md)
+records admission, snapshot, deadline and no-replay rules. t254 remains open.
 
 The [bounded lifecycle model](../../../validation/specula/admin-file-lifecycle/README.md)
-now passes its safety hunt and design trace; three deliberately faulty variants
-and one false-settlement trace fail as expected. It preserves the distinction
-between a published result and settled execution. It is not a runtime trace or
-a proof of service restart recovery.
+and its new service-instance boundary extension pass. Their faulty variants
+and false-settlement traces fail as expected. Runtime socket tests check
+teardown, queued cancellation, fresh identity and late-result isolation; the
+client preserves uncertainty after a lost invocation and never reconnects or
+replays it. These are not durable exactly-once or whole-process crash proofs.
 
-Real-socket tests cover immutable snapshots, wire-reset replay protection,
-queued cancellation, admission revocation, bounded capacity, actual deadlines
-and late-completion fencing. Indeterminate results retain execution capacity
-until owner settlement. The device-hidden full repository gate passes.
+The generic supervised owner test passes over both transports, including policy
+commit, WM replacement, stale-action refusal, reload settlement and logout.
+Focused client/CLI and malformed-server controls pass. The full repository gate
+passes with devices and display sockets hidden; hardware-only proofs remain
+unproved in that environment.
 
-Next extend the model and runtime controls for service restart, then connect a
-file client and the ordinary CLI to the existing Session command owners. Keep
-an independent protocol control, paired performance evidence and rollback
-before selecting the new default. The deferred output invocation remains excluded.
+Next add an independent administrative protocol control and paired performance
+evidence, then prove live recovery/rollback and select the default through t254's
+rollout gate. Include whole-process loss and the existing safe command/restart
+smoke. Service hot replacement is not supported, and uncertain commands must
+never be automatically repeated. The deferred output invocation remains excluded.
 
 ## Evidence
 
@@ -107,6 +110,48 @@ output through its public Unix driver.
 
 ## Validation and remaining work
 
+### Client and owner integration (October 14)
+
+Built on `bfd65d84f`. `AdminClient` uses the pinned independent Rust SDK's
+write-capable 9P pipeline, with bounded catalog/status reads, an absolute command
+deadline and exact outcome attribution. It never probes another protocol after
+a failure. The CLI retains command names and outcome/exit semantics; its
+explicit transport selector reaches the same Session ticket owners. Session's
+new startup selector changes transport only, never its HostDomain grant.
+
+The restart extension passes its base and safety hunt with 352 distinct states,
+702 generated and depth 23. Its eighteen-event design trace passes; two broken
+variants and a false-settlement trace fail their intended checks. The runtime
+tests retain an old owner ticket across service teardown and a fresh bind, reuse
+connection/request numbers, and show that late completion cannot settle the
+successor's request. This is service-instance isolation, not hot-reload support
+or recovery of volatile results after a process crash.
+
+Five recovery/client tests and three malformed-server tests pass. They include
+wrong connection/request/generation, invalid success, oversized discovery,
+server-controlled deadline expansion, short reads and short write replies.
+The ordinary CLI tests pass over both transports. The generic owner test also
+passes over both, including two WM replacements and refusal of a stale action.
+The fixture initially inherited the operator's core configuration; it now uses
+the established isolated configuration helper. A focused CLI build also exposed
+the existing no-feature renderer dependency gap; CLI validation and the control
+check script now enable its normal full feature set.
+
+Strict CLI Clippy caught an oversized transport enum; the file-client variant
+now stores a box. The first full gate passed workspace tests and Clippy, then
+rejected the argument parser's new 1,001-line size. Transport parsing now lives
+beside its selector type. The final complete `cargo xtask check` passes, including
+workspace tests, strict Clippy, layout and repository checks. The final source
+hashes are recorded in `source.sha256`; the passing log is `check-final.log`.
+
+Evidence is retained under
+`~/.local/state/sophia/development-evidence/t254-admin-client-20261015/`.
+The owner test runs with devices/display sockets hidden and a private runtime
+directory. Its generic C policy peer exercises the production owner, but it is
+not an independent administrative client. No native desktop or monitor was used.
+
+### Earlier foundation checks
+
 The lifecycle model built on `5cea0350b` passed both final searches: 970,253
 distinct states at depth 44, with no queued states remaining. It covers two
 connections, two request identities per connection, two catalog generations
@@ -148,8 +193,8 @@ Whitespace checks passed and the notebook was refreshed. Its broken-link report
 flags these notes' model README because `validation/` is excluded from the
 index; the linked file exists. All changed documentation links resolve.
 
-Restart qualification, independent client, owner/CLI integration, performance
-and rollback gates remain; no live command service migration is claimed.
+Independent administrative-client, performance, live recovery/rollback and
+default-selection gates remain; no live command service migration is claimed.
 
 ## Connections
 

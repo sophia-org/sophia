@@ -28,6 +28,33 @@ mod x_groups;
 use firefox_stage::FirefoxM8StageProof;
 use input_profile::PreparedInputProfile;
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum ControlTransportSelection {
+    #[default]
+    Legacy,
+    NineP2000L,
+}
+impl ControlTransportSelection {
+    fn from_args(args: &[String]) -> Result<Self, Box<dyn std::error::Error>> {
+        if args.iter().any(|arg| arg == "--control-transport") {
+            return Err("use --control-transport=current-ipc or --control-transport=9p2000.L".into());
+        }
+        match arg_value(args, "--control-transport").as_deref() {
+            None | Some("current-ipc") => Ok(Self::Legacy),
+            Some("9p2000.L") => Ok(Self::NineP2000L),
+            Some(other) => Err(format!("--control-transport expects current-ipc or 9p2000.L, got {other:?}").into()),
+        }
+    }
+    fn bind(self, runtime: &std::path::Path) -> std::io::Result<sophia_runtime::ControlService> {
+        match self {
+            Self::Legacy => sophia_runtime::ControlService::bind(runtime),
+            Self::NineP2000L => sophia_runtime::ControlService::bind_files(runtime),
+        }
+    }
+    const fn name(self) -> &'static str {
+        match self { Self::Legacy => "current-ipc", Self::NineP2000L => "9p2000.L" }
+    }
+}
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum WmTransportSelection {
     #[default]
     NineP2000L,
@@ -87,6 +114,7 @@ struct PersistentXtermSessionConfig {
     session_profile: PreparedSessionProfile,
     active_launch_profile: Option<sophia_config::DesktopSessionCandidate>,
     control_access: sophia_config::DesktopControlAccess,
+    control_transport: ControlTransportSelection,
     control_socket: Option<std::path::PathBuf>,
     inspection_access: sophia_config::DesktopInspectionAccess,
     inspection_socket: Option<std::path::PathBuf>,

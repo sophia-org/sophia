@@ -538,6 +538,12 @@ host applications for `sophia msg commands`, `sophia msg policy 'NAME'`, and
 `sophia msg session restart-wm|reload-profile|logout` (control revision 2).
 See [scripting](scripting.md) for the precise host trust boundary.
 
+The administrative file candidate is selected at startup with
+`--control-transport=9p2000.L`; callers then use `sophia msg --transport 9p2000.L`.
+Both default to `current-ipc` during qualification. Transport selection never
+enables a disabled control grant. See the [administrative file contract](sophia-admin-files.md)
+for result retention, uncertainty and the remaining rollout gates.
+
 Read-only WM observation is a separate startup permission:
 `session { inspection "host-admin"; }`. It defaults to `"disabled"` and does
 not follow the control setting. It uses the same verified host-domain audience

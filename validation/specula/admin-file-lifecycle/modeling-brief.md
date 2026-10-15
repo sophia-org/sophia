@@ -52,6 +52,34 @@ A successor connection is not a service restart. The new service's identity
 and old service teardown still require separate tests and a later model extension.
 No liveness claim assumes commands always finish.
 
+## Restart extension (source `bfd65d84f`)
+
+Scenario 5 asks whether service teardown cancels old queued tickets, closes old
+sockets and isolates late results from a newly bound service, even when the new
+connection and request counters repeat. `Restart.tla` is a separate boundary
+model: two service instances, one connection and request per instance, and the
+existing claim/cancel/result/settlement steps. It does not replace the richer
+per-service lifecycle model above. Graceful stop, worker close, outcome expiry,
+join and new bind remain separate actions. Owner finish may interleave with them.
+
+`ControlService::drop` (`control.rs:269–278`) stops and joins the worker before
+removing its socket. The worker closes connections before expiring active
+tickets (`control/files.rs:166–170`). Closing cancels queued work, while a
+dispatched ticket remains an owner-held Arc. A new bind creates independent
+ticket/channel state and a random session identity (`control.rs:127–232`).
+`LiveControlState::start` creates the service once for Session's lifetime;
+hot replacement beneath surviving command owners is not a supported recovery
+path. A full process crash loses volatile outcomes. Neither recovery path
+promises durable exactly-once execution across service instances, and clients
+must not reconnect and repeat an uncertain command.
+
+The extension checks fresh service identity, closed old transports, cancellation
+of undispatched old tickets after join, and result attribution to the current
+instance. Negative controls deliberately skip cancellation or cross the instance
+boundary when projecting a result. Random identity collisions, OS cleanup after
+SIGKILL, automatic restart supervision and whole-desktop recovery remain outside
+this model; socket tests check service-instance teardown and late completion.
+
 ## 5. Safety properties
 
 TypeOK; AtMostOnce (each identity is accepted and dispatched at most once);

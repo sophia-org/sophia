@@ -11,3 +11,14 @@
   violated their named property. The valid design trace matched; the premature
   settlement trace failed its temporal completion property. No production bug
   was established by these runs.
+
+- Added the source-grounded service-instance boundary model at `bfd65d84f`.
+  Its base and hunt pass (352 distinct states, depth 23). Disabling queued
+  cancellation violates ShutdownCancels; projecting another instance's result
+  violates ResultIsolation. The corresponding implementation retains cancellation
+  CASes and separate ticket Arcs, so these are sensitivity controls, not bugs.
+  The valid design trace passes and the false settlement trace fails as intended.
+- Concurrent JVM runs failed while parsing a shared `/tmp` standard module.
+  Separate reruns passed unchanged; the final cancellation control used a private
+  Java temp directory. This was tool invocation interference, not an invariant
+  violation. Future parallel runs need private Java temp directories.

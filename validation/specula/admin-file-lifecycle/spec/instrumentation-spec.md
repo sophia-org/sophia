@@ -33,3 +33,23 @@ checked in `ValidatePostState`. Identity/generation and acceptance counts are
 also checked for its single ticket. The exhaustive hunt covers cancellation,
 catalog replacement and reconnect beyond this one example. Runtime validation
 will need additional traces and a timebox adapter; this fixture does not supply them.
+
+## Restart boundary extension (`bfd65d84f`)
+
+`Restart.tla` models service instances separately from their repeated connection
+and request counters. Submit maps to `files/export.rs::invoke`; RequestCheck,
+Claim, FinishResult and FinishSettled map to `control.rs:41–72`; Approve and
+Publish map to `files/export.rs::advance`. Stop and Join map to
+`ControlService::drop` (`control.rs:269–278`). Close and Expire follow
+`files.rs:166–170`; SettleCancelled is the release store in
+`ControlTicket::disconnect`. Bind follows `control.rs:127–232`.
+
+The design trace checks the full abstract state: current instance, worker stage,
+connection liveness, acceptance, ticket phase, result, settlement, finish progress,
+worker expiration, effect count, shown result attribution and cancellation set.
+It exercises a dispatched old ticket completing after a new instance accepts
+its own first request. Its bad trace claims settlement at expiration and must
+fail. The Rust socket tests observe teardown, cancellation and result isolation
+through public APIs; they are not instrumented TLA+ traces or proof of process
+crash recovery. A runtime trace would need the same separate CAS/store boundaries
+and per-thread intervals described above.

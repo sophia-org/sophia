@@ -1566,6 +1566,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "sophia-9p",
+ "sophia-9p-client",
  "sophia-engine",
  "sophia-linux-peer",
  "sophia-namespace-client",

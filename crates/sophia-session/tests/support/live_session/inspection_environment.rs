@@ -1,6 +1,26 @@
 use super::*;
 
 #[test]
+fn control_transport_selection_does_not_grant_admission() {
+    let config =
+        isolated_session_config(&["--no-config".into(), "--control-transport=9p2000.L".into()])
+            .unwrap();
+    assert_eq!(
+        config.control_transport,
+        ControlTransportSelection::NineP2000L
+    );
+    assert_eq!(
+        config.control_access,
+        sophia_config::DesktopControlAccess::Disabled
+    );
+    assert_eq!(config.control_socket, None);
+    let config = isolated_session_config(&["--no-config".into()]).unwrap();
+    assert_eq!(config.control_transport, ControlTransportSelection::Legacy);
+    assert!(isolated_session_config(&["--control-transport=invalid".into()]).is_err());
+    assert!(isolated_session_config(&["--control-transport".into()]).is_err());
+}
+
+#[test]
 fn host_application_endpoints_replace_inherited_values_independently() {
     use std::ffi::OsStr;
     use std::path::Path;

@@ -6,6 +6,7 @@ impl PersistentXtermSessionConfig {
             }
         }
         let no_config = args.iter().any(|argument| argument == "--no-config");
+        let control_transport = ControlTransportSelection::from_args(args)?;
         let explicit_config = arg_value(args, "--config").map(std::path::PathBuf::from);
         if no_config && explicit_config.is_some() {
             return Err("--no-config and --config are mutually exclusive".into());
@@ -900,6 +901,7 @@ impl PersistentXtermSessionConfig {
             applications,
             session_application_overrides,
             control_access: session_profile.candidate().control,
+            control_transport,
             control_socket: None,
             inspection_access: session_profile.candidate().inspection,
             inspection_socket: None,

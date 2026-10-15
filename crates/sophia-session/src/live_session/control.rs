@@ -34,12 +34,13 @@ impl LiveControlState {
                 .ok_or_else(|| {
                     std::io::Error::other("XDG_RUNTIME_DIR is required for host control")
                 })
-                .and_then(|path| sophia_runtime::ControlService::bind(std::path::Path::new(&path)));
+                .and_then(|path| config.control_transport.bind(std::path::Path::new(&path)));
             match result {
                 Ok(service) => {
                     config.control_socket = Some(service.socket_path().to_path_buf());
                     crate::session_println!(
-                        "sophia_control schema=1 status=enabled access=host-admin socket={}",
+                        "sophia_control schema=1 status=enabled access=host-admin transport={} socket={}",
+                        config.control_transport.name(),
                         service.socket_path().display()
                     );
                     Some(service)

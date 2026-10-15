@@ -1,10 +1,33 @@
 # Administrative file records
 
-Status: t254 codecs and an opt-in administrative 9P listener through
-`ControlService::bind_files`. Session and the ordinary command CLI still use
-the legacy transport. The export uses the existing HostDomain admission and
-ControlTicket queue; command validation and execution remain with their owners.
-Client migration, restart qualification and the default change remain open.
+Status: t254 export, bounded file client and explicit Session/CLI selection.
+The default remains the legacy transport. The export uses the existing
+HostDomain admission and ControlTicket queue; command validation and execution
+remain with their owners. Independent-client qualification, performance,
+live-session recovery/rollback and default selection remain open.
+
+## Selecting the transport
+
+For qualification, start Session with `--control-transport=9p2000.L` and use
+`sophia msg --transport 9p2000.L` for commands. `--socket PATH` overrides
+`SOPHIA_CONTROL_SOCKET` as before. The desktop profile must still grant
+`session { control "host-admin"; }`; selecting a transport does not grant access.
+Both selectors default to `current-ipc`. There is no automatic protocol probing,
+downgrade or retry, and a running service does not switch transports.
+
+`sophia-runtime::AdminClient` uses the independent Rust SDK's 9P pipeline. It
+reads bounded snapshots under absolute deadlines, sends one complete invocation,
+and reopens status at ten-millisecond intervals until the attributed outcome
+arrives or the original deadline expires. It checks connection, request and
+catalog identity and the command owner's legal success outcome. Short writes,
+malformed or mismatched records and lost replies leave the result uncertain.
+A complete write refusal establishes non-acceptance. Any transport or protocol
+failure closes the client; it never reconnects or repeats an invocation.
+
+The CLI preserves command spelling, JSON outcome names and exit codes. The JSON
+invocation `request_id` is the accepted file request identity, starting at one;
+legacy control starts at two after its catalog request. Catalog JSON retains
+its existing presentation fields. These JSON fields are not a 9P wire envelope.
 
 ## Version 1 line grammar
 
@@ -101,7 +124,8 @@ invoke them.
 The opt-in runtime export implements these rules above the shared 9P core.
 The [bounded lifecycle model](../validation/specula/admin-file-lifecycle/README.md)
 checks cancellation, replay, status retention and unsettled execution custody.
-Owner integration, independent client and restart qualification remain required.
+Owner integration is checked with the same generic supervised policy fixture
+over both transports. Independent-client and live-session qualification remain required.
 
 | File | Open mode | Read or write behavior |
 | --- | --- | --- |
@@ -140,6 +164,15 @@ A cancelled write reply is not evidence that the command did not execute.
 The client must report uncertainty whenever it cannot establish a terminal
 outcome, and must not reconnect and replay. Service restart invalidates old
 connections and does not reconstruct their results.
+
+Session owns the service for its entire lifetime. Dropping the service stops
+and joins its worker, closes old fids and cancels undispatched tickets before
+removing the endpoint. A fresh service has a fresh session identity and no old
+results. Retained owner tickets refer to their original state, so a late finish
+cannot settle the new service's matching connection/request numbers. Replacing
+only the service beneath surviving Session command owners is not a supported
+hot-reload path. A process crash loses volatile outcomes; this interface does
+not provide durable exactly-once execution across restarts.
 
 `Tversion` releases fids but preserves the transport's connection identity,
 request watermark, pending ticket and visible outcome. A subsequent attach on
@@ -203,7 +236,13 @@ claim/settlement. `admin_file_deadlines.rs` exercises the real ten-second
 deadline, distinguishes queued cancellation from uncertain execution, and
 checks capacity retention and late-result fencing. These tests use the public
 service/ticket API, not a private test-only executor. They do not establish
-CLI compatibility, service restart recovery, performance or live-session acceptance.
+performance or live-session acceptance. `admin_file_recovery.rs` adds service
+teardown, fresh-instance result isolation, file-client settlement and no-replay
+checks. `admin_client_refusals.rs` supplies malformed role records inside valid
+9P replies. CLI tests run the same discovery and outcome checks over both wires.
+The generic Session owner test checks policy commits, WM replacement, stale
+actions, reload settlement and logout over both transports. It does not launch
+an installed desktop or prove recovery after a whole-process crash.
 
 The [t254 investigation](notes/investigations/t75i0gx8-define-bounded-administrative-file-records-before-migrating-control.md)
 records implementation progress and remaining gates.

@@ -1,8 +1,10 @@
+mod admin_client;
 mod admission;
 mod client;
 mod files;
 mod transport;
 
+pub use admin_client::AdminClient;
 pub use client::*;
 
 use sophia_protocol::{ControlCatalog, ControlCommand, ControlOutcome};

@@ -628,10 +628,13 @@ restoration on the exact candidate before t253 can close.
 The [October 14 foundation](../investigations/t75i0gx8-define-bounded-administrative-file-records-before-migrating-control.md)
 supplies bounded invocation, discovery, catalog and status records, shared
 transport-neutral command types, a lifecycle model and an opt-in shared-core
-export through `ControlService::bind_files`. Real-socket tests cover replay,
-cancellation, retained snapshots and unsettled execution capacity. The live
-command transport is unchanged; owner/CLI integration, restart qualification,
-independent-client, performance and rollback gates stay under this exit.
+export through `ControlService::bind_files`. A bounded file client, explicit
+Session/CLI selection and the generic command-owner fixture now cover both
+transports. Real-socket tests and a separate model cover service teardown and
+fresh-instance result isolation alongside replay, cancellation, retained
+snapshots and unsettled execution capacity. The live command transport is
+unchanged; independent administrative-client, performance, whole-process/live
+recovery, rollback and default-selection gates stay under this exit.
 
 After the [shared-core readiness gate t323](jsschoen-converge-public-roles-on-one-9p-core.md#t323),
 this lane can run independently of the remaining WM, shell and output

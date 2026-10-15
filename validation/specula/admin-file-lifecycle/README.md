@@ -14,6 +14,39 @@ invariants passed. The design trace consumed all eleven events and checked
 their post-state fields. These finite searches do not prove arbitrary client
 counts, runtime scheduling, weak-memory behavior or service restart recovery.
 
+## Service-instance boundary extension
+
+`Restart.tla`, based on `bfd65d84f`, adds a separate two-instance boundary check.
+It preserves stop, queued cancellation, settlement, worker expiry, join and fresh
+bind as separate steps. An old dispatched ticket may finish after the next
+instance accepts a request with the same connection/request numbers; only its
+own instance may publish that result. Session keeps its service for its lifetime;
+hot replacement beneath surviving command owners is not an admitted product path.
+
+Both `Restart.cfg` and `Restart_hunt.cfg` pass: **352 distinct states**, 702
+generated, depth 23, no queued states remaining. The deliberate
+`Restart_no_cancel.cfg` fails ShutdownCancels in seven states, and
+`Restart_cross_instance.cfg` fails ResultIsolation in ten. The eighteen-event
+`RestartTrace.cfg` design fixture passes in nineteen states; its false-settlement
+variant exits 13 because expiry cannot claim owner settlement. It checks all
+abstract fields but is not a runtime trace.
+
+The runtime socket tests independently check service teardown, fresh identity,
+old-fid closure, queued cancellation and late-result isolation. Neither these
+tests nor this model prove whole-process crash cleanup, automatic supervision,
+random-identity collision resistance or durable cross-restart exactly-once
+execution. The client instead preserves uncertainty and never replays a failed
+invocation. Live-session recovery and rollback remain rollout evidence.
+
+Use the command below with `Restart.tla` and the corresponding configuration
+names to reproduce the extension; use `RestartTrace.tla` for its trace fixtures.
+Run these short checks sequentially, or give each JVM a private `java.io.tmpdir`:
+concurrent extraction of standard TLA+ modules into shared `/tmp` caused parser
+failures. Separate reruns passed without a model change; the final cancellation
+control used a private Java temp directory.
+
+## Original lifecycle controls
+
 | Negative configuration | Expected failure | Trace states |
 | --- | --- | --- |
 | `MC_replay.cfg` | AtMostOnce: the same stale request is accepted twice | 5 |
