@@ -140,6 +140,12 @@ the conservative bounds do not prove +10% parity, and panel CPU remains above
 the budget. See [walk encoding](#t331-walk-encoding). Settle the accounting
 proposal before preparing acceptance measurements; debug optimization results
 alone cannot close t331 or t252.
+External integration `b199ac0` now summarizes complete native latency evidence
+with nearest-rank p50/p95/p99/max, retaining all samples and over-bound uploads.
+Its tests and calibration-04 replay pass; it is not a paired campaign verdict.
+See [latency summaries](#native-latency-summaries). The accounting-scope question
+has been put to the owner and remains unanswered; do not infer approval from
+automatic goal continuation.
 See [panel baseline](#t331-panel-baseline-and-pending-request-encoding).
 Settle accounting scope and freeze the full B9 method,
 then collect the declared campaign and native lifetime/input evidence for both
@@ -1369,6 +1375,23 @@ These debug results do not settle native performance. The accounting proposal
 still needs an explicit decision before acceptance collection; it excludes
 other processes, startup and foreign allocation calls. No acceptance budget,
 installed desktop or native evidence changed.
+
+## Native latency summaries
+
+External integration `b199ac0` adds `shell-timing latency HOST_LOG CLIENT_NDJSON
+MODE_MILLIHZ EXPECTED_OFFERS`. It validates the complete journal and native
+join before reporting nearest-rank p50, p95, p99 and maximum for presentation,
+permit and recorded upload timings. All frames and raw metrics remain in the
+report. Accepted uploads reaching 2,000,000 µs are listed explicitly; failed
+or missing outcomes invalidate the whole report. Older journals' missing
+upload timings are null, not zero.
+
+Fourteen focused journal/native-join tests and strict xtask Clippy pass.
+Replay of both calibration-04 arms reproduces their previously recorded native
+presentation distributions exactly. Reports are retained under
+`~/.local/state/sophia/development-evidence/t252-authenticated-20261015/latency-replay-01/`.
+This is all-frame reporting without warmup exclusion, pair comparison or
+campaign acceptance. No new hardware evidence or accounting approval follows.
 
 ## Connections
 
