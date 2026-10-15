@@ -112,7 +112,12 @@ Comparator `ba871b742` and integration `571ba0a` add the separate 4 MiB
 transfer probe. Both wires pass 64 accepted/released probes followed by bar
 frames in the device-hidden supplied-owner test. This does not claim those
 4 MiB resources were displayed. See [bulk probes](#bulk-upload-probes-october-15).
-Next settle accounting scope, freeze the full B9 method,
+Integration `4768fbf` now exports conservative CPU/MiB and allocations/frame
+bounds from complete upload journals. The four instrumented supplied-owner
+arms pass evidence validation; Rust allocations remain substantially higher on
+9P in this diagnostic. The [accounting proposal](#accounting-method-proposal-october-15)
+is pending owner decision and does not relax the +10% limit.
+Next settle accounting scope, address measured excesses, freeze the full B9 method,
 then collect the declared campaign and native lifetime/input evidence for both
 desktop selections. See [calibration 04](#native-calibration-04-both-wires-joined).
 See [comparator preparation](#comparator-preparation-october-15).
@@ -544,11 +549,10 @@ bounds are inconclusive. Neither result proves costs outside that scope.
 
 Before freezing this method, resolve these measurement gaps:
 
-- The native peer journal records permit and presentation timing but not
-  ResourceBegin-to-Accepted timestamps. The separate upload probe covers
-  180 KiB and 4 MiB with supplied owners; it cannot be relabelled a native
-  authenticated measurement. Choose and document the accepted path and scope
-  for upload latency and CPU/MiB, retaining exact byte totals and all outcomes.
+- Upload timestamp and byte instrumentation is now implemented, including a
+  separate 4 MiB transfer probe. Its device-hidden checks pass; it has not yet
+  been exercised in the native campaign. Keep transfer probes separate from
+  bar-presentation measurements and retain all outcomes.
 - The allocation counter covers the Session and peer Rust global allocators.
   It excludes foreign allocators and authentication/WM/helper processes.
   Either add evidence covering the required scope or obtain an explicit
@@ -1156,6 +1160,44 @@ arms from the failed harness attempt; it is not a passing bulk-probe run.
 This closes workload preparation, not native qualification. Accounting scope,
 the frozen campaign, native lifetime/input and attended rollback remain open.
 No new physical session or installation ran.
+
+## Accounting method proposal (October 15)
+
+Status: proposed, awaiting owner decision. The +10% budget is unchanged.
+Use steady-state Session-plus-peer CPU across all their threads, including
+foreign-library CPU, divided by all successfully uploaded bytes in the complete
+declared workload. Count Rust global allocation and reallocation operations in
+those same processes per offered frame. Include preparation, upload, demand,
+presentation, retirement, instrumentation and intervening work. Do not subtract
+an idle baseline or discard slow frames. Keep the existing conservative bounds
+and separate instrumented runs from latency runs.
+
+This scope excludes WM, Factotum, PAM and other processes, startup before the
+first frame, foreign allocation calls, GPU allocations and kernel allocations.
+Approval would make those exclusions explicit for this B9 cost gate; it would
+not establish whole-desktop cost parity. Without approval, these reports remain
+diagnostic and broader accounting is still needed before judging that gate.
+The protected-PID IPC admission and Factotum file admission remain documented
+differences; their full startup costs are not measured by this proposal.
+
+External integration `4768fbf` implements the scoped normalization without
+declaring acceptance. `cost-metrics` requires complete schema 2 journals and
+matches every upload, permit and terminal to its counter frame. It separately
+reports presentation and probe bytes, uses 1,048,576 bytes per MiB, and rounds
+integer bounds outward. Old offer-only cost reports stay unnormalized. CPU and
+allocation scope labels distinguish foreign-code CPU from foreign allocations.
+
+Five cost tests, six journal tests, eight runner tests and strict xtask Clippy
+pass. The instrumented generic peer's two tests pass, covering both wires with
+and without probes, 64 frames per arm. Four independent `cost-metrics` replays
+pass. Evidence is in
+`~/.local/state/sophia/development-evidence/t252-authenticated-20261015/normalized-cost-01/`.
+The debug supplied-owner bar is 64×24. Total uploaded bytes are 393,216 per
+bar-only arm and 268,828,672 per probe-enabled arm, including 268,435,456 probe
+bytes. Whole-workload allocation bounds per frame are 821–851 versus 250–271
+for files/IPC without the probe, and 21,498–21,538 versus 8,288–8,300 with it.
+These are diagnostic excesses within the stated scope, not native B9 verdicts.
+No hardware, installation or acceptance criteria changed.
 
 ## Connections
 
