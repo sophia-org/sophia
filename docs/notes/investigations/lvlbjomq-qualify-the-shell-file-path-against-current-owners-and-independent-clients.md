@@ -51,7 +51,9 @@ and retained resource custody across replacement on the explicit development
 GPU. Integration `86de1ed` also proves real bar/menu progress while a stopped
 dock reaches catalog backpressure, then through replacement with retained dock
 pixels. Those completion receipts are supplied, not physical presentation.
-Next prove native lifetime/input and the separate baseline, freeze and run B9,
+Integration `434d302` separately proves two-component baseline content and
+menu replacement using the baseline package and two-role envelopes.
+Next prove native lifetime/input for both selections, freeze and run B9,
 then complete attended acceptance. The live desktop is
 unchanged. See [the packaged pair](#packaged-pair-october-15) for exact identities.
 
@@ -146,6 +148,23 @@ retained-byte reclamation across replacement. Admission, geometry, launcher
 typing and completion receipts are supplied. Client `presented` log lines in
 this gate do not prove physical presentation. Native lifetime/input, the
 separate baseline, B9 and attended acceptance remain required.
+
+## Two-component baseline, October 15
+
+External integration `434d302` adds a separate baseline test using Lom and Bemenu
+from release `niltempus-339765fe1cc1dd8166f5`. It selects Session's two-role
+capacity and byte envelopes. Both clients upload; a supplied text edit produces
+another launcher candidate. Lom retains its grant and continues while the
+launcher is revoked and replaced with its old pixels still held. The new menu
+uploads, old pixels remain readable until release, and final accounting is
+quiescent. The three-component test passes again after sharing the inventory
+selection helper. Strict Clippy and formatting pass; nested scratch-path
+expressions were simplified after rustfmt produced an unstable layout.
+
+`baseline-run.log`, `baseline-clippy.log` and `trio-after-baseline.log` in the
+existing October 15 evidence directory record the checks. The baseline log binds
+the exact package paths and hashes. Completion and input are supplied, so this
+does not close physical baseline acceptance or provide timing samples.
 
 ## Selected clients and immediate blockers (October 15)
 
@@ -255,7 +274,7 @@ requirements remain in the linked plan and shell-file budgets.
 | Real content round trip for bar, launcher and dock | Earlier generic owners and Lom/Bemenu evidence exist; actual Provlita GPU raster/upload and candidate submission now pass. Native presentation remains separate. |
 | Exact presented actions, focus and reservations | Existing owner tests are insufficient for the selected three-client native release. Exercise each output and reject stale actions. |
 | Replacement, revocation, slow-reader isolation and reclamation | Authentication, actual dock custody and actual bar/menu progress through stalled-dock backpressure and replacement pass. Final native retirement still needs physical evidence. |
-| Two-component baseline and three-component target | Both exact packages build and pass isolated installation; their paired native behavior still needs acceptance. |
+| Two-component baseline and three-component target | Both exact packages build and pass isolated installation and separate actual-client content/replacement tests; their native behavior still needs acceptance. |
 | Narthex compatibility and rollback | Packaged descriptor client authenticates; whole-release isolated rollback passes. Native descriptor fallback and attended rollback remain. |
 | B9 measured bounds | Freeze a semantically matched IPC comparator and workload method before measurements. All shell-file budgets still apply. |
 | Attended acceptance and default selection | Requires the exact installed candidate after prerequisite gates; no new rollout or acceptance is claimed here. |
@@ -428,6 +447,25 @@ comparator or proposed budget/outcome-rule change needs review before the
 campaign, not reinterpretation after a failure. This is method preparation,
 not a frozen runnable campaign or a claim that B9 passed.
 
+### Comparator preparation, October 15
+
+The isolated worktree `~/dev/sophia-t252-comparator`, branch
+`qualification/t252-shell-comparator`, starts at the exact candidate
+`58a481ebc756b50fe97a890b968a6c9b70863496`. No comparator code or build exists yet.
+The historical adapter was removed in `d13464500`; its wire enum selected
+socket or files at the typed owner boundary. The shell codecs were removed in
+`42fc47b42`. These are restoration sources, not accepted reference binaries.
+Next restore only the comparison transport in this isolated tree, retain current
+owners, and prove semantic equivalence before freezing workloads or collecting
+timing. The production branch must remain free of the retired transport.
+
+The existing external tty4 dock runner is only a host-transcript smoke gate:
+its verifier explicitly leaves latency and restart acceptance unproved. It also
+copies prepared binaries into evidence, which conflicts with the current build
+storage rule. Prepare a package-bound native run that records immutable paths
+and hashes before using it for the remaining attended checks; do not run that
+old copy-based path unchanged.
+
 ## Validation and remaining work
 
 The corrected device-hidden `cargo xtask check` passed (exit 0), including
@@ -439,8 +477,7 @@ was selected. `git diff --check` also passed.
 The t330 route-lease concern is resolved by the candidate and checks above.
 Authenticated startup, actual dock GPU upload and three-client progress through
 backpressure/replacement now pass on the updated pair. Next prepare the exact
-paired-client native gate, cover the separate baseline and freeze the runnable
-B9 method.
+paired-client native gate for both selections and freeze the runnable B9 method.
 Do not mark t252 complete or advance its default/rollback acceptance on the
 strength of the generic checks alone.
 
