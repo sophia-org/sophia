@@ -83,7 +83,15 @@ group-writable. Console/keyboard recovery verified; IPC did not start.
 Integration `4ec2904` checks helper custody before preparation and launch.
 Calibration 02 now selects the byte-identical root-protected installed helper;
 both new plans and device-hidden argument checks pass. The same short command
-selects calibration 02, which remains unexecuted.
+selected calibration 02. That run authenticated and reached native 1080p/60,
+but Session revoked the peer while polling an unnegotiated optional indicator
+feature. Regression `content_peer_without_optional_indicators_survives_indicator_service`
+reproduces the error without hardware. Production `f8adbcdb4` skips that service
+when the capability is absent; comparator `bef52ef0f` carries the same fix.
+Six real-client action/indicator tests and strict Session Clippy pass. No peer
+frame was presented in calibration 02; console and keyboard recovery verified.
+Calibration 03 is now prepared with the rebuilt comparator; both exact argument
+vectors pass device-hidden validation. `t252-check` selects these fresh plans.
 See [comparator preparation](#comparator-preparation-october-15).
 Next prove native lifetime/input for both selections, freeze and run B9,
 then complete attended acceptance. The live desktop is
@@ -946,6 +954,40 @@ The owner separately reported that after a day-long lock the smaller monitor
 continued the Matrix animation while the larger appeared frozen. The password
 successfully unlocked the desktop. This is an unconfirmed lock-animation issue,
 not an unlock failure or evidence about the calibration's authentication error.
+
+### Native calibration 02: optional indicator polling
+
+The second attended file run completed authentication and negotiated the peer
+at revision 6. It reached DP-1 at 1920×1080/60, then repeatedly reported
+`service_failed ... reason=MissingCapability`. The peer's later `ack write
+refused` was a consequence of revocation. The Session continued until its
+60-second deadline without presenting any peer frames. Its final native
+presentation validation failed; IPC did not start. Recovery again records
+restored termios, keyboard mode and KD mode. Keep the evidence at
+`native-calibration-02/files-run`.
+
+The Session's indicator service called `poll_indicator_activation` without
+checking whether the content peer negotiated that optional capability. The
+transport correctly refused it. Adding more capabilities to the test peer
+would hide the owner bug: a content-only peer is valid. Production commit
+`f8adbcdb4` instead skips indicator activation service for such peers. Existing
+negotiated indicator handling and transport rejection rules remain unchanged.
+The comparator carries the identical change as `bef52ef0f`; both wires use it.
+The original `58a481ebc` owner baseline is therefore superseded by this explicit
+Session correction for subsequent comparisons, not silently treated as identical.
+
+The real private 9P client regression fails with `MissingCapability` before
+the fix. It passes afterward, together with the five existing client
+action/indicator tests. Strict Session Clippy also passes. Evidence:
+`optional-indicators-before.log`, `optional-indicators-after.log` and
+`optional-indicators-clippy.log`. These prove the optional-service correction,
+not native presentation. Rebuild and bind a fresh comparator plan before retry;
+the installed desktop and its packaged candidates have not been replaced.
+The rebuilt comparator is now bound in `native-calibration-03` with both
+argument-validation checks passing. Its files plan hash is
+`cc0bc8e7ec529664277816300104325c42d5536103ab7a2ffada6a4d2de3543c`;
+IPC is `923dcb4fb8285d319cc6ca2b0e71112a8ade6f9ef9a4d3e08e30fa850ee03c2e`.
+The short launcher selects calibration 03; neither run has started.
 
 ## Validation and remaining work
 
