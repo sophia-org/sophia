@@ -66,6 +66,9 @@ reclamation waits for the retained pixels. Queue depths differ between wires;
 the dated evidence below retains both counts. Next build the measured harness
 and freeze its complete method, including CPU/allocation accounting and actual
 presentation, before collecting B9 acceptance samples.
+Signed comparator `2aebdcdfd` adds an ignored diagnostic upload probe for wall time, process CPU
+and optional allocation counts. Its short instrumentation checks pass in both
+counter modes; this has not frozen the full method or produced a B9 verdict.
 See [comparator preparation](#comparator-preparation-october-15).
 Next prove native lifetime/input for both selections, freeze and run B9,
 then complete attended acceptance. The live desktop is
@@ -542,6 +545,56 @@ quiescent. `comparator-components1.log` passes all three comparator tests;
 `comparator-components-clippy.log` passes strict Clippy. Formatting and diff
 checks pass. This supplies admission and pauses a thread's I/O deliberately;
 it does not establish native process scheduling, kernel latency or presentation.
+
+### Measurement instrumentation, October 15
+
+Signed comparator `2aebdcdfd` has an explicitly ignored `measurement::resource_probe`.
+It records an offer before each upload and its result after acceptance, using
+the same validated exchange as the equivalence test. It alternates transport
+order for 180 KiB and 4 MiB payloads, records warmups as well as samples, and
+never replaces a failed operation. A panic leaves an unmatched offer and no
+completed-run record. Counts must be supplied explicitly and are bounded.
+The probe requires its exact test filter, `--ignored` and `--test-threads=1`:
+process-wide counters would otherwise include unrelated tests.
+
+The wall interval starts immediately before ResourceBegin and ends when the
+client decodes Accepted. Preparation, negotiation, pixel verification, retirement
+and teardown are outside it. Process CPU and allocator snapshots bracket that
+wall interval and cover both the client and the owner, including counter-call
+overhead. Each upload currently uses a fresh connection, and the owner
+is driven by a bounded service loop; this is not the native Session scheduler.
+The fixed payload contains valid premultiplied pixels and uses whole-row chunks
+within the same negotiated bound on both wires.
+
+Allocation counting is a separate build feature,
+`comparator-allocation-counting`, using pinned
+[`stats_alloc` 0.1.10](https://docs.rs/stats_alloc/0.1.10/stats_alloc/).
+It counts Rust system-allocator calls in both threads, not foreign-library
+allocations. The default build keeps the ordinary allocator for latency and
+CPU runs; absent counts are recorded as `unmeasured`, never zero. No new unsafe
+code or allocator change enters the production branch. The lockfile adds only
+this one package.
+
+The first diagnostic found repeated full encodings in the harness's file-client
+queue retry. The harness now waits through the SDK's readiness API, as its IPC
+peer waits on the socket. This changes the comparison client, not the production
+SDK. The earlier log remains `comparator-instrumentation-smoke.log`.
+`comparator-instrumentation-ready.log` and `comparator-uninstrumented-smoke.log`
+each contain twelve matched offers/results: one warmup and two samples per wire
+and size. They are debug-build instrumentation checks, not accepted timing
+distributions. `comparator-probe-serial-refusal.log` confirms an ambiguous
+invocation fails before offering work. The instrumented equivalence regressions
+and strict Clippy pass in `comparator-instrumented-regressions.log` and
+`comparator-instrumentation-clippy.log`; formatting and diff checks pass.
+The optimized uninstrumented comparator builds and passes its three semantic
+tests, with the diagnostic probe ignored, in `comparator-release-build.log` and
+`comparator-release-regressions.log`. No optimized timing campaign was run.
+
+Still needed before B9 acceptance: native submission-to-presentation and
+demand-to-permit instrumentation at both refresh rates; allocations per
+presented frame; a complete frozen method with hardware, sample counts, load,
+timing boundaries and every terminal outcome; then the paired campaign and its
+numeric verdict. Upload allocations alone do not prove the per-frame budget.
 
 The existing external tty4 dock runner is only a host-transcript smoke gate:
 its verifier explicitly leaves latency and restart acceptance unproved. It also
