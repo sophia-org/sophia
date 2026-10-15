@@ -185,39 +185,30 @@ pub(crate) fn walk_body(fid: u32, newfid: u32, names: &[&[u8]]) -> Result<Vec<u8
 }
 
 /// `Tlopen fid[4] flags[4]`.
-pub(crate) fn lopen_body(fid: u32, flags: u32) -> Vec<u8> {
-    let mut body = fid.to_le_bytes().to_vec();
-    body.extend_from_slice(&flags.to_le_bytes());
+pub(crate) fn lopen_body(fid: u32, flags: u32) -> [u8; 8] {
+    let mut body = [0; 8];
+    body[..4].copy_from_slice(&fid.to_le_bytes());
+    body[4..].copy_from_slice(&flags.to_le_bytes());
     body
 }
 
 /// `Tread`/`Treaddir fid[4] offset[8] count[4]`: the same shape either way.
-pub(crate) fn io_body(fid: u32, offset: u64, count: u32) -> Vec<u8> {
-    let mut body = fid.to_le_bytes().to_vec();
-    body.extend_from_slice(&offset.to_le_bytes());
-    body.extend_from_slice(&count.to_le_bytes());
-    body
-}
-
-/// `Twrite fid[4] offset[8] count[4] data[count]`. `count` is taken from the
-/// caller, already checked against `data.len()`, so a `data` too long for a
-/// `u32` cannot silently produce a short count.
-pub(crate) fn write_body(fid: u32, offset: u64, count: u32, data: &[u8]) -> Vec<u8> {
-    let mut body = fid.to_le_bytes().to_vec();
-    body.extend_from_slice(&offset.to_le_bytes());
-    body.extend_from_slice(&count.to_le_bytes());
-    body.extend_from_slice(data);
+pub(crate) fn io_body(fid: u32, offset: u64, count: u32) -> [u8; 16] {
+    let mut body = [0; 16];
+    body[..4].copy_from_slice(&fid.to_le_bytes());
+    body[4..12].copy_from_slice(&offset.to_le_bytes());
+    body[12..].copy_from_slice(&count.to_le_bytes());
     body
 }
 
 /// `Tclunk fid[4]`.
-pub(crate) fn clunk_body(fid: u32) -> Vec<u8> {
-    fid.to_le_bytes().to_vec()
+pub(crate) fn clunk_body(fid: u32) -> [u8; 4] {
+    fid.to_le_bytes()
 }
 
 /// `Tflush oldtag[2]`.
-pub(crate) fn flush_body(old: u16) -> Vec<u8> {
-    old.to_le_bytes().to_vec()
+pub(crate) fn flush_body(old: u16) -> [u8; 2] {
+    old.to_le_bytes()
 }
 
 /// `Rversion msize[4] version[s]`, parsed but not judged: see

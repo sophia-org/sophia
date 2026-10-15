@@ -375,7 +375,14 @@ impl Pipeline {
         self.check_capacity(true, bound, false)?;
         let tag = self.candidate_tag();
         let body = client_codec::auth_body(fid, uname, aname).map_err(PipelineError::Limit)?;
-        self.submit(client_codec::TAUTH, tag, &body, outstanding, bound, 0)?;
+        self.submit(
+            client_codec::TAUTH,
+            tag,
+            (&body, &[]),
+            outstanding,
+            bound,
+            0,
+        )?;
         self.fids.insert(fid);
         self.commit_fid(fid);
         self.commit_tag(tag);
@@ -397,7 +404,14 @@ impl Pipeline {
         let tag = self.candidate_tag();
         let body =
             client_codec::attach_body(fid, afid.0, uname, aname).map_err(PipelineError::Limit)?;
-        self.submit(client_codec::TATTACH, tag, &body, outstanding, bound, 0)?;
+        self.submit(
+            client_codec::TATTACH,
+            tag,
+            (&body, &[]),
+            outstanding,
+            bound,
+            0,
+        )?;
         self.fids.insert(fid);
         self.commit_fid(fid);
         self.commit_tag(tag);
@@ -417,7 +431,14 @@ impl Pipeline {
         self.check_capacity(true, bound, false)?;
         let tag = self.candidate_tag();
         let body = client_codec::walk_body(from.0, newfid, names).map_err(PipelineError::Limit)?;
-        self.submit(client_codec::TWALK, tag, &body, outstanding, bound, 0)?;
+        self.submit(
+            client_codec::TWALK,
+            tag,
+            (&body, &[]),
+            outstanding,
+            bound,
+            0,
+        )?;
         self.fids.insert(newfid);
         self.commit_fid(newfid);
         self.commit_tag(tag);
@@ -431,7 +452,14 @@ impl Pipeline {
         self.check_capacity(false, bound, false)?;
         let tag = self.candidate_tag();
         let body = client_codec::lopen_body(fid.0, flags);
-        self.submit(client_codec::TLOPEN, tag, &body, outstanding, bound, 0)?;
+        self.submit(
+            client_codec::TLOPEN,
+            tag,
+            (&body, &[]),
+            outstanding,
+            bound,
+            0,
+        )?;
         self.commit_tag(tag);
         Ok(Tag(tag))
     }
@@ -445,7 +473,14 @@ impl Pipeline {
         self.check_capacity(false, bound, false)?;
         let tag = self.candidate_tag();
         let body = client_codec::io_body(fid.0, offset, count);
-        self.submit(client_codec::TREAD, tag, &body, outstanding, bound, 0)?;
+        self.submit(
+            client_codec::TREAD,
+            tag,
+            (&body, &[]),
+            outstanding,
+            bound,
+            0,
+        )?;
         self.commit_tag(tag);
         Ok(Tag(tag))
     }
@@ -458,8 +493,8 @@ impl Pipeline {
     }
 
     /// Queues a write whose bytes are secret, such as a password. The
-    /// pipeline zeroes every copy it makes: the request body once it is
-    /// queued, the output buffer's spare capacity after each send until the
+    /// pipeline copies it directly into its output buffer and zeroes the
+    /// output buffer's spare capacity after each send until the
     /// buffer has emptied, and the whole buffer if the pipeline is dropped
     /// first. Before the secret enters, the output buffer is given the whole
     /// capacity its bound allows, so no later request can reallocate it and
@@ -518,15 +553,18 @@ impl Pipeline {
             self.out_buf
                 .reserve_exact(bound.saturating_sub(self.out_buf.len()));
         }
-        let mut body = client_codec::write_body(fid.0, offset, sent, data);
+        let header = client_codec::io_body(fid.0, offset, sent);
         if secret {
             self.scrub_output = true;
         }
-        let submitted = self.submit(client_codec::TWRITE, tag, &body, outstanding, bound, 0);
-        if secret {
-            scrub(&mut body);
-        }
-        submitted?;
+        self.submit(
+            client_codec::TWRITE,
+            tag,
+            (&header, data),
+            outstanding,
+            bound,
+            0,
+        )?;
         self.commit_tag(tag);
         Ok(Tag(tag))
     }
@@ -540,7 +578,14 @@ impl Pipeline {
         self.check_capacity(false, bound, false)?;
         let tag = self.candidate_tag();
         let body = client_codec::clunk_body(fid.0);
-        self.submit(client_codec::TCLUNK, tag, &body, outstanding, bound, 0)?;
+        self.submit(
+            client_codec::TCLUNK,
+            tag,
+            (&body, &[]),
+            outstanding,
+            bound,
+            0,
+        )?;
         self.fids.remove(&fid.0);
         self.commit_tag(tag);
         Ok(Tag(tag))
@@ -571,7 +616,7 @@ impl Pipeline {
         self.submit(
             client_codec::TFLUSH,
             tag,
-            &body,
+            (&body, &[]),
             outstanding,
             bound,
             headroom,
@@ -745,12 +790,17 @@ impl Pipeline {
         &mut self,
         kind: u8,
         tag: u16,
-        body: &[u8],
+        body: (&[u8], &[u8]),
         outstanding: Outstanding,
         reply_bound: usize,
         output_headroom: usize,
     ) -> Result<(), PipelineError> {
-        let frame_len = HEADER + body.len();
+        // Header and payload share one bounded output allocation. No temporary
+        // body is needed, including for secret writes.
+        let frame_len = HEADER
+            .checked_add(body.0.len())
+            .and_then(|n| n.checked_add(body.1.len()))
+            .ok_or(PipelineError::Limit("request larger than msize"))?;
         if frame_len > self.msize as usize {
             return Err(PipelineError::Limit("request larger than msize"));
         }
@@ -762,7 +812,8 @@ impl Pipeline {
             .extend_from_slice(&(frame_len as u32).to_le_bytes());
         self.out_buf.push(kind);
         self.out_buf.extend_from_slice(&tag.to_le_bytes());
-        self.out_buf.extend_from_slice(body);
+        self.out_buf.extend_from_slice(body.0);
+        self.out_buf.extend_from_slice(body.1);
         self.in_flight.insert(tag, outstanding);
         self.reserved_tags += 1;
         self.reserved_reply_bytes += reply_bound;
@@ -1148,12 +1199,6 @@ impl Drop for Pipeline {
             scrub_spare(&mut self.out_buf);
         }
     }
-}
-
-/// Zeroes `bytes`; the barrier keeps the stores from being elided.
-fn scrub(bytes: &mut [u8]) {
-    bytes.fill(0);
-    std::hint::black_box(bytes);
 }
 
 /// Zeroes the bytes past `buffer`'s length that its allocation still holds.
