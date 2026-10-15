@@ -55,7 +55,11 @@ The native binding and kernel-completion records already exist in that Sophia
 candidate. External integration `91d5370` adds `xtask shell-timing join`, with
 five positive/negative tests and strict Clippy. It joins every offered candidate
 to its first exact native completion and rejects incomplete head coverage or
-fallback clocks. Next supply the native client's complete submission record,
+fallback clocks. Comparator `b2bfb9678` now supplies a paced child peer with
+complete offer/terminal journals; integration `fbe20dc` validates those journals
+before joining. Both supplied-owner wire runs and refusal checks pass. This
+has not exercised the peer's protected authentication path or native scanout.
+Next prepare the native comparison launcher without weakening authentication,
 finish frame-allocation instrumentation and freeze the paired campaign method.
 See [comparator preparation](#comparator-preparation-october-15).
 Next prove native lifetime/input for both selections, freeze and run B9,
@@ -619,6 +623,42 @@ The result is explicitly `joined_only`: this is tested evidence plumbing, not
 a physical run, an attestation of client-recorder completeness, a bound artifact
 pair or a B9 verdict. Next record every native client submission and terminal
 outcome, bind the inputs to the selected artifacts, and complete the campaign.
+
+### Paced timing peer and journal, October 15
+
+Signed comparator `b2bfb9678` adds the generic `shell_timing_peer` example.
+It uploads changing pixels, waits for a permit, records each offer before
+submission, waits for its terminal outcome, and retires the previous resource
+only after its successor is presented. Allocation, permit and outcome identities
+must match. The bounded JSON configuration names `wire`, `output`, `frames`,
+`height` and `hold_msec`; launching requires `--serve` and
+`SOPHIA_SHELL_CONFIG`. The frame count cannot exceed the resource identity budget.
+The final hold keeps the last frame available until a harness stops the peer.
+
+Files use the current SDK and, when supplied, its launch-authentication relay.
+IPC refuses an authentication descriptor or file endpoint, so it cannot turn a
+protected file launch into an unauthenticated comparison. The authentication
+branch compiles but has not yet been exercised by this peer's tests. Production
+Session still selects authenticated files; the native IPC comparison launcher
+remains to be implemented and reviewed. No production owner changed.
+
+Signed external integration `fbe20dc` adds `shell-timing collect`. It requires
+the complete start/permit/offer/terminal/end sequence, exact counts and identities,
+forward clocks and successful outcomes. Missing or duplicate rows, truncation,
+rejection, unknown fields and trailing failure records prevent sample export.
+The original journal retains demand-to-permit timestamps. Offer timestamps
+precede the flushed journal write, so that write's cost is included on both
+wires. This is a declared measurement boundary, not a completed B9 method.
+
+Device-hidden checks pass: two peer tests cover both wire round trips and
+launch refusals; eight external tests cover journal validation and the existing
+native join. Strict Clippy passes for the peer example/tests and all xtask targets.
+The collector also accepts the actual three-frame child journals from each wire.
+Evidence under `t252-authenticated-20261015`: `timing-peer-journals.log`,
+`timing-peer-journals/{files,ipc}.{ndjson,json}`, `timing-peer-clippy-final.log`,
+`timing-journal-tests.log` and `timing-journal-clippy.log`. These runs use supplied
+admission and presentation receipts. They prove recording and parsing, not
+native presentation, protected launch, input or performance acceptance.
 
 ## Validation and remaining work
 
