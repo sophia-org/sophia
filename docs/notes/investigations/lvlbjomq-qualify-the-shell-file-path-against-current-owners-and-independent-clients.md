@@ -37,9 +37,13 @@ native content remain unproved. The approved
 t330 repair, signed Sophia `5e717c73d`, retains notifications in a bounded outbox and wakes
 the frontend when Session returns capacity. Its model, focused controls and full
 repository check pass, including the test-helper layout correction.
-The broader t032 backlog remains outside this task. Next update the external
-pair and prove Provlita's authenticated Session launch, before GPU-backed
-content, native presentation or another installed release.
+The broader t032 backlog remains outside this task. External integration
+`d51c966` now pins Sophia `58a481ebc` and passes workspace checks. Actual
+Provlita, Lom and Bemenu authenticated launches pass twice each. The packaged
+Narthex is too old for authentication; signed Narthex `11eb0332` passes the
+fallback authentication/recovery check and must replace that selection in the
+next package. Next deliver the external dock content/lifecycle gate and package
+the selected three-component release. B9 and attended acceptance remain required.
 
 ## Selected clients and immediate blockers (October 15)
 
@@ -51,8 +55,8 @@ and desktop integration `a6eb56d`. Its lockfile selects:
 | --- | --- | --- |
 | Lom | `dc65f561f8c9522f6a09d3e5f386d32226228bfd` | Exact native lifecycle/input and B9 coverage, including coexistence with the dock. |
 | Bemenu | `6e2efd96e2256a138ed9928387e83d3c30585937` | Exact presented focus, activation and retirement on the selected three-component release. |
-| Narthex | `56d513faede5c5127c7d3cd1241f44661568d806` | Verified compatible fallback selection or release for shell acceptance. |
-| Provlita | Not in the installed lockfile; prepared source `da4a15adb9a6555441653a9dd9ec0e4d69f3d6af` | Authenticated Session join on an updated pair, GPU content, native presentation/activation/retirement, then packaging and attended acceptance. Supplied-admission export negotiation passes below. |
+| Narthex | Installed `56d513fa` fails authentication; candidate `11eb0332859ed0e0b9244dd3ddafcea70c2b1b6e` passes it. | Package the compatible fallback and verify selected-release behavior. |
+| Provlita | Not in the installed lockfile; prepared source `da4a15adb9a6555441653a9dd9ec0e4d69f3d6af` | Authenticated launch passes. GPU content, native presentation/activation/retirement, packaging and attended acceptance remain. |
 
 Provlita's signed clean source builds offline with its locked dependencies.
 Its version and example configuration checks pass. The release binary is
@@ -103,6 +107,56 @@ not prove authenticated Session launch, GPU rendering, content upload,
 Presented/input/retirement, coexistence or B9. The tested Sophia pin predates
 t330 and differs from the installed release. Update the external pair and prove
 authenticated startup before claiming those later stages.
+
+### Authenticated clients and current pair (October 15)
+
+Signed external integration `d51c966` pins Sophia `58a481ebc756b50fe97a890b968a6c9b70863496`,
+refreshes the C SDK manifest and sixteen contract digests, and passes the pin
+audit, provisioning, device-hidden workspace tests and strict workspace Clippy.
+The first workspace run caught a stale expected count in the binding-removal
+negative control; that test now expects fifteen remaining bindings when one of
+sixteen is removed. The refusal assertion remains intact. Provlita's protected
+supplied-admission gate passes again on the updated pin.
+
+Sophia's existing generic external-client fixtures exercised the production
+Factotum owner and protected launch coordinator on that same server revision:
+
+| Client and exact selection | Result at two fresh epochs | Limit |
+| --- | --- | --- |
+| Provlita `da4a15ad`, binary recorded above | Authenticated dock negotiation, missing-GPU refusal, process and launch-custody retirement | No GPU/content execution |
+| Installed Lom, binary SHA-256 `6d0af594cf3170ca4d2a35afdef09e0ff9d768608c561157f5b2dc703bb21e45` | Authenticated bar negotiation, missing-GPU refusal, retirement | No GPU/content execution |
+| Installed Bemenu, binary SHA-256 `84a6bfc1dc0c81d2c5a3b2ebe3dc98d91e1050b77a138d7ea3cbcd95dedf1505` | Authenticated launcher negotiation, liveness until explicit revocation, retirement and replacement | No opened launcher or activation |
+| Narthex `11eb0332859ed0e0b9244dd3ddafcea70c2b1b6e`, binary SHA-256 `699505779b729084de04f25fc8752b417cd40671048258cd9b35a5d89d43e536` | Descriptor revision-8 negotiation, liveness, revocation and fresh-epoch recovery | No descriptor presentation or physical fallback |
+
+Provisioning Provlita with the bar role fails with authentication refusal 13
+before shell negotiation. The packaged Narthex `56d513fa` repeatedly fails
+authentication because it predates that implementation. Its signed successor
+was built from a clean tree with `nim c -d:release`. An initial outer sandbox
+hid its temporary build directory; explicitly binding that directory read-only
+allowed the real check to run. No product source repair was needed.
+
+Evidence is under
+`~/.local/state/sophia/development-evidence/t252-authenticated-20261015/`:
+`provlita.log`, `lom.log`, `bemenu.log`, `narthex-current.log`,
+`wrong-role-negative.log`, `external-tests-final.log`, `external-clippy.log`
+and `inputs.sha256`. Earlier failures remain alongside the passes. All these
+checks hide display devices and sockets; none changes the installed session.
+
+### Full t252 exit: evidence still needed
+
+The goal is the original t252 exit, not authentication alone. The authoritative
+requirements remain in the linked plan and shell-file budgets.
+
+| Required evidence | Current coverage and next proof |
+| --- | --- |
+| Independent clients, role grants and metadata boundaries | Generic C/Go and actual-client negotiation evidence above; retain exact client pins in the selected release. |
+| Real content round trip for bar, launcher and dock | Earlier generic owners and Lom/Bemenu evidence exist; actual Provlita GPU/content join still needed. |
+| Exact presented actions, focus and reservations | Existing owner tests are insufficient for the selected three-client native release. Exercise each output and reject stale actions. |
+| Replacement, revocation, slow-reader isolation and reclamation | Authentication replacement passes; dock content held across revocation, bar/menu progress and final native retirement still need joined evidence. |
+| Two-component baseline and three-component target | Installed baseline exists; prepare and test the exact dock package without overwriting that baseline. |
+| Narthex compatibility and rollback | Updated descriptor client authenticates; verify its packaged behavior and the whole-release rollback. |
+| B9 measured bounds | Freeze a semantically matched IPC comparator and workload method before measurements. All shell-file budgets still apply. |
+| Attended acceptance and default selection | Requires the exact installed candidate after prerequisite gates; no new rollout or acceptance is claimed here. |
 
 ### t330 — Bounded route-lease delivery
 
@@ -281,9 +335,9 @@ fixture repair and the separate t254 codec foundation; no installed artifact
 was selected. `git diff --check` also passed.
 
 The t330 route-lease concern is resolved by the candidate and checks above.
-The supplied-admission Provlita export join now passes. Next prove authenticated
-Session startup on an updated external pair, then prepare the exact paired-client
-native gate and runnable B9 method.
+Authenticated startup now passes on the updated pair. Next prove actual dock
+content/lifecycle behavior, prepare the exact paired-client native gate and
+freeze the runnable B9 method.
 Do not mark t252 complete or advance its default/rollback acceptance on the
 strength of the generic checks alone.
 
