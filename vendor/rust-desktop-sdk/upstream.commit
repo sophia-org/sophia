@@ -1,14 +1,14 @@
-tree 83101e5aaa698a9fd5f488cca2545f1887f14560
-parent 894dbcacce81b6085db9de848a32c644007825dd
-author Mason Green <mason@greenm01.net> 1792107310 -0400
-committer Mason Green <mason@greenm01.net> 1792107310 -0400
+tree 07284721aa2425198b81392f1e80a1e55e36049d
+parent af21f0af6e53656bad0654ab9fc6ef15d3d628f1
+author Mason Green <mason@greenm01.net> 1792107893 -0400
+committer Mason Green <mason@greenm01.net> 1792107893 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatFjLhsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLsRQD/WgqgchZOg8Un34eXfbGS
- j/TCpe58DqDhiWzzii3aaXIA/iDjxwKIeHI89NJH42Tiyf0DnXjs3JJDUQkiF/jh
- dv4J
- =3+0G
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatFldRsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGK2DQD/ShpVSStkSMahjk4NSwNf
+ BsotMR0Wpd3iUUFzgCShd6gBAPCd8qocP/vBGf5WTHVX2MHKNmr8ersNLqefJ3ug
+ I5AE
+ =4Jdw
  -----END PGP SIGNATURE-----
 
-Encode fixed request headers without temporary heap buffers
+Reserve walk request storage once after validating names
