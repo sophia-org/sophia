@@ -41,9 +41,45 @@ The broader t032 backlog remains outside this task. External integration
 `d51c966` now pins Sophia `58a481ebc` and passes workspace checks. Actual
 Provlita, Lom and Bemenu authenticated launches pass twice each. The packaged
 Narthex is too old for authentication; signed Narthex `11eb0332` passes the
-fallback authentication/recovery check and must replace that selection in the
-next package. Next deliver the external dock content/lifecycle gate and package
-the selected three-component release. B9 and attended acceptance remain required.
+fallback authentication/recovery check. External integration `77c8e96` now
+packages that Narthex with both the two-component baseline and three-component
+candidate. Their configuration checks, checksums and isolated install/rollback
+pass; the packaged dock also authenticates from its private installed path.
+Integration `c3e49db` records those checks and supports store artifacts in the
+supplied-export gate. Next deliver the external dock GPU/content/lifecycle gate,
+then three-client isolation, B9 and attended acceptance. The live desktop is
+unchanged. See [the packaged pair](#packaged-pair-october-15) for exact identities.
+
+## Packaged pair, October 15
+
+External integration `77c8e96` builds the three-component candidate
+`niltempus-ad35e88b86b247648c71` and two-component baseline
+`niltempus-339765fe1cc1dd8166f5`. Both select Sophia `58a481ebc` and Narthex
+`11eb0332`; the dock selects Provlita `da4a15ad`. The integration's
+`docs/provlita-files.md#packaged-pair-october-15` records their exact store paths.
+
+Packaging found two errors before rollout: the Rust source filter omitted the
+embedded font, and the dock configuration path requested an extra mount inside
+the read-only Nix store. The filter now includes the font, and the profile names
+the configuration included in the installed release. No protection rule changed.
+
+Both builds pass profile validation. Complete checksums pass after installation
+into a private Bubblewrap `/opt`. Baseline installation, dock installation,
+rollback and return to the dock all pass. The installer's existing corruption,
+locking and pruning tests pass separately. Packaged Provlita authenticates at two
+fresh epochs from its private installed path and configuration, then refuses
+the absent GPU grant as required. Its supplied-export test also passes twice;
+packaged Narthex passes authenticated revocation/recovery. The store-aware
+external fixture and evidence are signed in integration `c3e49db`.
+
+Logs are in `~/.local/state/sophia/development-evidence/t252-authenticated-20261015/`:
+`desktop-pair-final-build.log`, `release-pair-rollback.log`,
+`desktop-tool-check.log`, `provlita-packaged-export-final.log`,
+`provlita-isolated-installed-auth.log` and `narthex-packaged-auth.log`.
+Failed packaging and launch attempts remain alongside them. No live installation
+or GPU test ran. Isolated release switching is not attended rollback; actual
+content, native lifetime/input, three-client isolation, B9 and physical
+acceptance remain open.
 
 ## Selected clients and immediate blockers (October 15)
 
