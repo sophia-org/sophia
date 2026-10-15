@@ -146,6 +146,11 @@ Its tests and calibration-04 replay pass; it is not a paired campaign verdict.
 See [latency summaries](#native-latency-summaries). The accounting-scope question
 has been put to the owner and remains unanswered; do not infer approval from
 automatic goal continuation.
+An optimized supplied-owner diagnostic now establishes a more relevant baseline:
+panel file allocations are 420–456/frame versus IPC's 348–380, and bulk file
+CPU exceeds IPC +10%. Debug bulk CPU had shown the opposite ordering. Do not
+use debug timings to choose a performance verdict. See
+[optimized diagnostic](#t331-optimized-diagnostic). Native B9 remains unrun.
 See [panel baseline](#t331-panel-baseline-and-pending-request-encoding).
 Settle accounting scope and freeze the full B9 method,
 then collect the declared campaign and native lifetime/input evidence for both
@@ -1392,6 +1397,37 @@ presentation distributions exactly. Reports are retained under
 `~/.local/state/sophia/development-evidence/t252-authenticated-20261015/latency-replay-01/`.
 This is all-frame reporting without warmup exclusion, pair comparison or
 campaign acceptance. No new hardware evidence or accounting approval follows.
+
+## t331: optimized diagnostic
+
+Comparator `f055afef7`, SDK `f638e2f`, was profiled in the device-hidden
+supplied-owner harness with `perf record --clockid mono -e cpu-clock:u -F 199
+--call-graph dwarf,8192`. All four arms and cost replays pass. The retained
+profile is under `t331-profile-01/` in the October 15 evidence root. Reports
+restrict monotonic sample times to each arm's first frame start through last
+frame end. No samples were reported lost. The panel arms have only 60 and 58
+samples; iteration and the harness polling loop are prominent. This is too
+little evidence for another production optimization, especially in a debug build.
+
+The same source, feature, geometry, 64-frame workload and isolated environment
+were then built with `--release` and run without perf. Both harness tests and
+all four cost replays pass. Evidence and binary paths/hashes are retained in
+`~/.local/state/sophia/development-evidence/t252-authenticated-20261015/t331-optimized-01/`.
+
+| Workload | Files allocations/frame | IPC allocations/frame | Files CPU ns/MiB | IPC CPU ns/MiB |
+| --- | --- | --- | --- | --- |
+| 1920×24 bar | 420–456 | 348–380 | 4,169,325–4,541,232 | 3,509,037–3,832,759 |
+| Same bar plus 4 MiB probe | 2,022–2,046 | 1,928–1,945 | 1,567,640–1,579,243 | 1,268,293–1,276,909 |
+
+The conservative bounds do not establish panel cost parity. Bulk allocations
+are within +10% in this diagnostic, but bulk CPU is above it. Debug bulk CPU
+had shown files below IPC: build mode materially changes the result. Use this
+optimized baseline for further attribution, not the debug timing ordering.
+The supplied owner still polls repeatedly and supplies presentation receipts;
+this is not the native Session event loop or a B9 acceptance run. The proposed
+accounting scope remains unanswered. No installed desktop or hardware state
+changed. The comparator release peer was rebuilt with allocation counting;
+old native plans must not be reused with this changed artifact.
 
 ## Connections
 
