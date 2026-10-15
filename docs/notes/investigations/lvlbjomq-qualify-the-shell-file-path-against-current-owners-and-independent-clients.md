@@ -117,7 +117,10 @@ bounds from complete upload journals. The four instrumented supplied-owner
 arms pass evidence validation; Rust allocations remain substantially higher on
 9P in this diagnostic. The [accounting proposal](#accounting-method-proposal-october-15)
 is pending owner decision and does not relax the +10% limit.
-Next settle accounting scope, address measured excesses, freeze the full B9 method,
+At niltempus's request, [t331](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#t331--reduce-shell-allocation-overhead)
+now owns attribution and reduction of the measured allocation excess before
+t252. This does not promote broader t289 work or approve the accounting scope.
+Next attribute the excess, settle accounting scope, freeze the full B9 method,
 then collect the declared campaign and native lifetime/input evidence for both
 desktop selections. See [calibration 04](#native-calibration-04-both-wires-joined).
 See [comparator preparation](#comparator-preparation-october-15).

@@ -287,6 +287,11 @@ them here.
 
 ### t252 — Join and accept the shell path
 
+The measured allocation excess is now tracked as
+[t331](mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#t331--reduce-shell-allocation-overhead),
+a targeted prerequisite for the unchanged B9 cost gate. Broader engine CPU
+optimization remains with t289 after architecture acceptance.
+
 The [October 14 qualification review](../investigations/lvlbjomq-qualify-the-shell-file-path-against-current-owners-and-independent-clients.md)
 reconciles the historical progress below with current generic owner/peer tests,
 repairs the protected launcher fixture's missing owner turn, and records the
