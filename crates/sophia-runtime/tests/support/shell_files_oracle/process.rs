@@ -16,6 +16,9 @@ impl Drop for Scratch {
     }
 }
 pub fn build(repo: &Path, dir: &Path) -> PathBuf {
+    build_named(repo, dir, "shell-oracle")
+}
+pub fn build_named(repo: &Path, dir: &Path, name: &str) -> PathBuf {
     let module = repo.join("tools/9p-oracle");
     let manifest = std::fs::read_to_string(module.join("go.mod")).unwrap();
     let mut required = Vec::new();
@@ -51,13 +54,13 @@ pub fn build(repo: &Path, dir: &Path) -> PathBuf {
             .any(|line| line.trim_start().starts_with("replace"))
     );
     assert!(std::fs::read_to_string(module.join("go.sum")).unwrap().lines().any(|line|line=="github.com/hugelgupf/p9 v0.4.1 h1:04RUBWSYlvP38QX8At5VXnMTg9qNEnbP/548aMLtfsk="));
-    let binary = dir.join("shell-oracle");
+    let binary = dir.join(name);
     let log = dir.join("go-build.log");
     let mut child = ChildGuard(
         Command::new("go")
             .args(["build", "-o"])
             .arg(&binary)
-            .arg("./cmd/shell-oracle")
+            .arg(format!("./cmd/{name}"))
             .current_dir(module)
             .env("GOFLAGS", "-mod=readonly")
             .env("GOPROXY", "off")

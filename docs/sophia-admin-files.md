@@ -3,7 +3,7 @@
 Status: t254 export, bounded file client and explicit Session/CLI selection.
 The default remains the legacy transport. The export uses the existing
 HostDomain admission and ControlTicket queue; command validation and execution
-remain with their owners. Independent-client qualification, performance,
+remain with their owners. Independent-client protocol checks pass; performance,
 live-session recovery/rollback and default selection remain open.
 
 ## Selecting the transport
@@ -125,7 +125,8 @@ The opt-in runtime export implements these rules above the shared 9P core.
 The [bounded lifecycle model](../validation/specula/admin-file-lifecycle/README.md)
 checks cancellation, replay, status retention and unsettled execution custody.
 Owner integration is checked with the same generic supervised policy fixture
-over both transports. Independent-client and live-session qualification remain required.
+over both transports. An independent Go client checks the administrative records
+and file lifecycle. Performance and live-session qualification remain required.
 
 | File | Open mode | Read or write behavior |
 | --- | --- | --- |
@@ -243,6 +244,13 @@ checks. `admin_client_refusals.rs` supplies malformed role records inside valid
 The generic Session owner test checks policy commits, WM replacement, stale
 actions, reload settlement and logout over both transports. It does not launch
 an installed desktop or prove recovery after a whole-process crash.
+
+`admin_files_oracle.rs` runs the pinned third-party Go 9P client against the
+production export. It checks discovery, modes, malformed records, settlement,
+snapshot retention, replay, stale/unadvertised commands and revocation, including
+denied reattach. Its deliberately wrong owner settlement must fail. Rust supplies
+controlled owner timing; the Go peer imports no Sophia record codec. This is
+interoperability evidence, not live command or recovery acceptance.
 
 The [t254 investigation](notes/investigations/t75i0gx8-define-bounded-administrative-file-records-before-migrating-control.md)
 records implementation progress and remaining gates.

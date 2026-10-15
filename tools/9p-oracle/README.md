@@ -4,6 +4,26 @@ The existing command at this module's root tests Sophia's 9P core through the
 pinned `github.com/hugelgupf/p9 v0.4.1` client and raw protocol scenarios.
 Its scenarios and `sophia_9p_oracle schema=1` verdict remain unchanged.
 
+## Administrative file oracle (t254)
+
+`cmd/admin-oracle` uses the same pinned third-party client and independently
+written expectations from [the administrative contract](../../docs/sophia-admin-files.md).
+Its eight named checks cover discovery, modes, malformed invocations, settlement
+and snapshot retention, replay, stale/unadvertised commands, revocation and denied
+reattach. It reads snapshots seven bytes at a time and uses bounded socket waits.
+
+Run `cargo-slot sophia cargo test --offline -p sophia-runtime --test admin_files_oracle`.
+The Rust fixture builds Go offline, starts the production export, and controls
+catalog updates, owner settlement and PID exclusion. A second run deliberately
+settles the first command incorrectly and must fail the outcome check. The
+positive run requires a successful process and the exact eight-check transcript,
+ending in `sophia_admin_oracle schema=1 status=pass checks=8`.
+
+No Sophia codec supplies the Go peer's records. The private fixture channel
+carries phase names only. This check does not launch a desktop, exercise real
+command effects, prove crash recovery or measure performance. Run it with devices
+and display sockets hidden as part of the ordinary repository gate.
+
 ## Shell file oracle (t252 B8)
 
 `cmd/shell-oracle` judges the production shell file export with 96 named checks.

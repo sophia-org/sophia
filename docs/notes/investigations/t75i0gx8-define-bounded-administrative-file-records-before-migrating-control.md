@@ -34,8 +34,14 @@ Focused client/CLI and malformed-server controls pass. The full repository gate
 passes with devices and display sockets hidden; hardware-only proofs remain
 unproved in that environment.
 
-Next add an independent administrative protocol control and paired performance
-evidence, then prove live recovery/rollback and select the default through t254's
+The independent Go client now checks discovery, modes, malformed invocation,
+commit and retained snapshots, replay, stale/unadvertised commands, revocation
+and denied reattach. It uses the pinned third-party 9P client and no Sophia
+record codec. A deliberately wrong owner settlement fails its outcome check.
+The full repository gate passes for this addition with devices/display sockets
+hidden; hardware-only proofs remain unproved here.
+
+Next collect paired performance evidence, then prove live recovery/rollback and select the default through t254's
 rollout gate. Include whole-process loss and the existing safe command/restart
 smoke. Service hot replacement is not supported, and uncertain commands must
 never be automatically repeated. The deferred output invocation remains excluded.
@@ -109,6 +115,38 @@ limits are in the file contract. The core tests cover partial input and blocked
 output through its public Unix driver.
 
 ## Validation and remaining work
+
+### Independent administrative client (October 14)
+
+Built on `e533fcddd`. `tools/9p-oracle/cmd/admin-oracle` uses the pinned
+`github.com/hugelgupf/p9 v0.4.1` client and literal records from the published
+contract. Rust starts the production file service and supplies catalog changes,
+ticket completion and PID exclusion through a bounded side channel. That channel
+carries phase names, not file records or expected wire values.
+
+All eight named checks pass. Seven-byte reads split fields and counted names;
+the client checks complete discovery and status records, forbidden file modes,
+malformed and noncanonical invocations, one-pending-request capacity, immutable
+pending snapshots, retained outcomes, replay refusal, stale generation and
+unadvertised command outcomes. Revocation cancels an undispatched ticket,
+invalidates an open catalog fid and prevents another attach from the excluded
+peer. Rust verifies that refused commands never reach the owner.
+
+A second run supplies Rejected where the fixture promised Committed. The client
+fails specifically at its settlement check; a successful subprocess alone cannot
+pass, because the harness also requires the exact complete named transcript.
+The initial Go build needed two offset types corrected to the third-party API's
+signed 64-bit arguments. The focused test then passed both positive and negative
+runs. Go vet and formatting pass. The complete device-hidden `cargo xtask check`
+passes, including this oracle, workspace tests, strict Clippy, layout and the
+existing shell oracle that shares its offline build helper. Evidence and source
+hashes for the final repository gate are under
+`~/.local/state/sophia/development-evidence/t254-admin-oracle-20261015/`.
+
+This is independent protocol interoperability against controlled owners. It does
+not establish live Session recovery, real command effects, performance, foreign
+namespace admission or durable results after a process crash. Existing owner and
+admission tests remain separate evidence. No production code or default changed.
 
 ### Client and owner integration (October 14)
 

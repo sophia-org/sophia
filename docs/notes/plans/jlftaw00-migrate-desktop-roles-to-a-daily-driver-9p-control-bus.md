@@ -633,7 +633,8 @@ Session/CLI selection and the generic command-owner fixture now cover both
 transports. Real-socket tests and a separate model cover service teardown and
 fresh-instance result isolation alongside replay, cancellation, retained
 snapshots and unsettled execution capacity. The live command transport is
-unchanged; independent administrative-client, performance, whole-process/live
+unchanged. An independent Go client now checks the administrative records and
+file lifecycle, including a deliberately wrong settlement. Performance, whole-process/live
 recovery, rollback and default-selection gates stay under this exit.
 
 After the [shared-core readiness gate t323](jsschoen-converge-public-roles-on-one-9p-core.md#t323),
