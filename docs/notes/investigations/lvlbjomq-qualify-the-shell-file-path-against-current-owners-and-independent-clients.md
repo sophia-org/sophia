@@ -108,7 +108,11 @@ RGBA byte counts; integration `fd1e0a1` validates and exports them alongside
 demand-to-permit times. Both supplied-owner wires pass 64-frame replay, and
 calibration 04's old journals remain readable. This instrumentation has not yet
 run natively. See [upload journals](#upload-journals-october-15).
-Next provide the 4 MiB native workload, settle accounting scope, freeze the full B9 method,
+Comparator `ba871b742` and integration `571ba0a` add the separate 4 MiB
+transfer probe. Both wires pass 64 accepted/released probes followed by bar
+frames in the device-hidden supplied-owner test. This does not claim those
+4 MiB resources were displayed. See [bulk probes](#bulk-upload-probes-october-15).
+Next settle accounting scope, freeze the full B9 method,
 then collect the declared campaign and native lifetime/input evidence for both
 desktop selections. See [calibration 04](#native-calibration-04-both-wires-joined).
 See [comparator preparation](#comparator-preparation-october-15).
@@ -1119,6 +1123,39 @@ These are supplied-owner checks, not new native measurements. At 1920×24 the
 upload is 180 KiB; the peer does not yet provide the separate 4 MiB workload.
 CPU/MiB accounting scope, the frozen campaign method and physical acceptance
 remain open. No live installation or console state changed.
+
+## Bulk upload probes (October 15)
+
+Comparator `ba871b742` accepts optional `probe_bytes: 4194304`. Before each bar
+upload, it uploads a separate 1024×1024 RGBA resource, waits for Accepted,
+retires it and waits for Released. The probe uses resource ID 1; the displayed
+bar alternates IDs 2 and 3. Fresh IDs increase and reused IDs advance generation.
+The initial harness attempt incorrectly introduced ID 3 first, then ID 1;
+Sophia rejected it. Correcting the peer's ordering resolved that failure without
+changing production admission rules.
+
+Integration `571ba0a` binds the option through the prepared configuration hash,
+checks the captured declaration and requires exact probe dimensions, bytes,
+identity and release ordering. Metrics distinguish `transfer_probe` from
+`presentation`. The probe's bytes are never described as Presented. The bar's
+geometry remains unchanged, and probe-disabled runs preserve the original path.
+Use the disabled mode for presentation-latency comparisons; process counters
+in enabled mode include both uploads, preparation and retirement.
+
+Device-hidden real-child checks passed all four combinations of wire and probe
+mode: 64 bar offers/receipts each, plus 64 exact 4 MiB acceptance/release cycles
+per enabled arm. The supplied bar is 64×24, not the native 1920×24 workload.
+Four captured journals independently passed the external metric exporter.
+Old schema 1 calibration and schema 2 upload journals also replayed. Six journal,
+eight runner, five join and four counter tests passed; strict Clippy passed for
+external xtask and the peer/test targets. Evidence is under
+`~/.local/state/sophia/development-evidence/t252-authenticated-20261015/upload-probe-02/`.
+The earlier `upload-probe-01` directory contains only completed probe-disabled
+arms from the failed harness attempt; it is not a passing bulk-probe run.
+
+This closes workload preparation, not native qualification. Accounting scope,
+the frozen campaign, native lifetime/input and attended rollback remain open.
+No new physical session or installation ran.
 
 ## Connections
 
