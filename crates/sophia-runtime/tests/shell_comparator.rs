@@ -10,6 +10,8 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 const WAIT: Duration = Duration::from_secs(10);
+#[path = "support/comparator_components.rs"]
+mod components;
 enum Client {
     Files(Box<ShellConnection>),
     Ipc(UnixStream),
