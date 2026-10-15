@@ -73,6 +73,11 @@ runs. The focused checks pass. A supplied-owner debug diagnostic shows a marked
 [frame counters](#frame-counters-october-15) for scope and exact results.
 Next prepare the campaign artifacts and exact hardware/output selection, and
 freeze the paired method, including accounting scope and aggregation rules.
+The first optimized native diagnostic is now prepared under
+`native-calibration-01`: two 60-second runs, 64 offers per wire, at 1080p/60 Hz
+on DP-1. Both exact argument vectors pass device-hidden validation. Integration
+`643dec3` binds the required Factotum executables. The attended command is
+`t252-check` from tty4 after leaving the live desktop; it has not run.
 See [comparator preparation](#comparator-preparation-october-15).
 Next prove native lifetime/input for both selections, freeze and run B9,
 then complete attended acceptance. The live desktop is
@@ -808,6 +813,47 @@ The CLI guard's two tests pass, as do the counter tests, both peer modes,
 18 timing verifier tests and focused strict Clippy. The earlier CLI test attempt
 without `native-session` failed on the existing renderer feature dependency;
 the supported native feature combination passes. No physical session changed.
+
+### Prepared native diagnostic, October 15
+
+Comparator `e66d612d1` now has optimized, uninstrumented Sophia and peer builds.
+Preparing the actual arguments exposed a missing runner dependency: current
+shell and public WM startup require the Session authenticator. External
+integration `643dec3` binds the Factotum agent and PAM helper as executable
+artifacts and supplies both arguments on both wires. Its six native-runner tests
+and strict all-target Clippy pass. Both complete argument vectors also pass
+Sophia's `--validate-session-args` in device-hidden isolation.
+
+The prepared calibration selects the larger Dell S3222DGM on DP-1 at
+PCI `0000:03:00.0`, 1920×1080 at exactly 60 Hz, scale 1, VRR off. The second
+monitor is disabled only in these temporary profiles; the development GPU is
+excluded. Read-only EDID inspection confirms this monitor also advertises exact
+1080p/120 Hz for the later paired campaign. The profiles do not alter the
+installed configuration. Each wire offers 64 successive 1920×24 frames and
+holds the final frame until the 60-second Session limit. There is no startup
+application or deliberate load. This is a recording/recovery diagnostic, not
+B9 acceptance; no warmup samples are discarded or thresholds judged.
+
+The plans use the packaged dock candidate's unchanged Hagia, Factotum and PAM
+helper, the new optimized generic comparator/peer and integration runner.
+Sources, artifact paths, SHA-256 hashes and exact arguments are recorded under
+`t252-authenticated-20261015/native-calibration-01/`. Build JSON and logs sit
+beside that directory; no binaries were copied into evidence. The first config
+validation refused non-private file modes; after making inputs private, the
+device-hidden validation needed the native feature's explicit smoke opt-in.
+Both final logs report accepted arguments without opening devices.
+
+Prepared plan hashes:
+
+- Files: `b51b75d08df79f8053d38099a4dfa571f9ff1f564461669f76eb26d11c161654`.
+- IPC: `119acdb9506dccfc4c646ea49afc05a9409c6730d40f24822a8ef54d589348a9`.
+
+The short launcher `~/.local/bin/t252-check` runs them in that order from tty4,
+stopping on any failure. The runner refuses changed artifacts, changed sources,
+an occupied run directory or the wrong foreground console. The operator must
+leave the live desktop before this attended check. Both runs remain unexecuted.
+The complete qualification method still needs its load, sample, warmup and
+accounting rules frozen; this calibration cannot fill that gate.
 
 ## Validation and remaining work
 
