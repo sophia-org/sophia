@@ -29,10 +29,10 @@ The October 15 reconciliation below identifies the installed two-component
 release and the prepared Provlita binary. External integration `eb6c717`
 explicitly selects 9P for the dock, with a parser regression check. This is
 test preparation, not a production-export or native dock pass. The approved
-t330 repair now retains route-lease notifications in a bounded outbox and wakes
+t330 repair, signed Sophia `5e717c73d`, retains notifications in a bounded outbox and wakes
 the frontend when Session returns capacity. Its model, focused controls and full
 repository check pass, including the test-helper layout correction.
-The broader t032 backlog remains outside this task. After t330, the next step
+The broader t032 backlog remains outside this task. The next step
 is Provlita's protected production-export join in the external integration
 repository, before native presentation or another installed release.
 
@@ -92,6 +92,10 @@ Do not promote the rest of t032, alter shell budgets or change the live profile.
 The task ledger records the approved promotion as t330.
 
 ### t330 implementation and validation (October 15)
+
+Signed Sophia `5e717c73d` contains the repair, tests and model, based on
+`ad624948e`. The source hashes and complete gate below identify this candidate;
+the later task-closure commit changes only the evidence note and ledger.
 
 The registry now reserves notification space before a lease-bearing input or
 release changes state. Both producers share a bounded outbox whose queued
@@ -238,8 +242,9 @@ proofs were skipped, not passed. The source was based on `d160fd03e` with this
 fixture repair and the separate t254 codec foundation; no installed artifact
 was selected. `git diff --check` also passed.
 
-Next prepare the exact external paired-client matrix and runnable B9 method,
-resolve the route-lease concern and schedule the required native/attended gate.
+The t330 route-lease concern is resolved by the candidate and checks above.
+Next prove Provlita's protected production-export join, then prepare the exact
+paired-client native gate and runnable B9 method.
 Do not mark t252 complete or advance its default/rollback acceptance on the
 strength of the generic checks alone.
 
