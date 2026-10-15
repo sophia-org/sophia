@@ -77,7 +77,13 @@ The first optimized native diagnostic is now prepared under
 `native-calibration-01`: two 60-second runs, 64 offers per wire, at 1080p/60 Hz
 on DP-1. Both exact argument vectors pass device-hidden validation. Integration
 `643dec3` binds the required Factotum executables. The attended command is
-`t252-check` from tty4 after leaving the live desktop; it has not run.
+`t252-check` from tty4 after leaving the live desktop. Calibration 01 failed
+before peer admission because the PAM helper's Nix-store ancestor was
+group-writable. Console/keyboard recovery verified; IPC did not start.
+Integration `4ec2904` checks helper custody before preparation and launch.
+Calibration 02 now selects the byte-identical root-protected installed helper;
+both new plans and device-hidden argument checks pass. The same short command
+selects calibration 02, which remains unexecuted.
 See [comparator preparation](#comparator-preparation-october-15).
 Next prove native lifetime/input for both selections, freeze and run B9,
 then complete attended acceptance. The live desktop is
@@ -905,6 +911,41 @@ an occupied run directory or the wrong foreground console. The operator must
 leave the live desktop before this attended check. Both runs remain unexecuted.
 The complete qualification method still needs its load, sample, warmup and
 accounting rules frozen; this calibration cannot fill that gate.
+
+### Native calibration 01 failure and prepared retry
+
+The October 15 attended file run reached DP-1 at 1920×1080, exactly 60 Hz,
+then failed with `authenticated role launch deadline`. Factotum repeatedly
+reported `a pam helper directory is not root-owned and protected`. Its helper
+was an immutable Nix-store file, but `/nix/store` was group-writable. The
+root-owned-path check intentionally rejects that ancestry. No peer samples or
+performance result followed, and the launcher stopped before IPC.
+
+The wrapper's retained recovery records report restored termios, identical
+before/after keyboard mode 3 and KD mode 0, and `keyd_restored=true`.
+The failed run remains under `native-calibration-01/files-run`; inspect
+`untrusted-session-output.log` for the actual Session failure, rather than the
+short wrapper-owned `session.log` alone.
+
+Integration `4ec2904` now checks the canonical helper and every ancestor for
+root ownership and absence of group/other write permissions before preparation,
+and again before execution. Seven device-hidden runner tests and strict Clippy
+pass. The original store helper also fails the rebuilt preparation command on
+the real host before a plan is written. No permission check was weakened.
+
+Calibration 02 uses the existing helper at
+`/opt/sophia-niltempus-desktop/releases/niltempus-b7f017d6e4cdb2056faa/target/release/sophia-factotum-pam`.
+Its SHA-256 is identical to the packaged candidate helper:
+`deb6f5113690eb24bb4dbce2db408e7a253d1ed4e594b3c1ef6e6fef3ef09695`.
+All other workload choices remain as in calibration 01. The new runner and
+signed source revision are bound in fresh plans under `native-calibration-02`;
+both actual argument vectors pass device-hidden validation. `t252-check` now
+selects these plans. Neither has run yet.
+
+The owner separately reported that after a day-long lock the smaller monitor
+continued the Matrix animation while the larger appeared frozen. The password
+successfully unlocked the desktop. This is an unconfirmed lock-animation issue,
+not an unlock failure or evidence about the calibration's authentication error.
 
 ## Validation and remaining work
 
