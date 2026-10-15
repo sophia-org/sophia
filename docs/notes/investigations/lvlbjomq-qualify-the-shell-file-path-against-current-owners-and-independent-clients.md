@@ -56,8 +56,10 @@ menu replacement using the baseline package and two-role envelopes.
 The isolated IPC comparator now builds and passes paired resource acceptance,
 pixel identity, retirement and stale-generation checks at 8 bytes, 180 KiB and
 4 MiB. Its content owners are unchanged from `58a481ebc`; the restored adapter
-and test are signed `6df9b559f` on the comparison branch. This is partial
-equivalence evidence, not B9 timing.
+and test are signed `6df9b559f` on the comparison branch. Its successor
+`c466ff065` also passes equal candidate completion, renderer-failure and
+held-render-lease checks, plus an exact supplied action/acknowledgement exchange.
+This is partial equivalence evidence, not B9 timing or physical input.
 See [comparator preparation](#comparator-preparation-october-15).
 Next prove native lifetime/input for both selections, freeze and run B9,
 then complete attended acceptance. The live desktop is
@@ -491,6 +493,29 @@ in `comparator-clippy.log`. Formatting and diff checks pass. Test and lint runs
 hide devices, display sockets and network access. Candidate, input, replacement
 and scheduling equivalence
 still need proof before freezing workloads or collecting B9 timing.
+
+Signed successor `c466ff065` extends the paired fixture to allocation, frame
+demand/permit and candidate submission. It compares complete typed limits,
+output facts, allocation results, permits, resource responses and candidate
+outcomes. Both wires produce Prepared then Presented for a supplied successful
+completion, and Prepared then RendererFailed for the negative control. Exact
+resource bytes and their reservations survive repeated disconnect while a render
+lease is held; dropping it permits full reclamation. The successful case sends
+one supplied target action and checks every acknowledgement identity field at
+the owner. Unknown records while awaiting outcomes fail the test.
+
+The file client submits one whole candidate; IPC carries Begin, Chunk and End.
+These are their declared wire forms for the same typed candidate. The fixture
+uses the existing generic file test's geometry and owner completion inputs. It
+does not compare physical hit testing, authorization of an input effect, native
+scanout, fair multi-role scheduling or independently built client processes.
+`comparator-candidates-final.log` passes both comparator tests, and
+`comparator-candidates-clippy-final.log` passes strict Clippy for the changed
+test; formatting and diff checks pass. These tests ran with devices, display
+sockets and network hidden. The comparison branch remains separate from the
+production candidate. Next cover replacement and bounded multi-role progress,
+then freeze the B9 method with actual presentation instrumentation. The package-
+bound native runner also remains to be prepared for the paired desktop gate.
 
 The existing external tty4 dock runner is only a host-transcript smoke gate:
 its verifier explicitly leaves latency and restart acceptance unproved. It also
