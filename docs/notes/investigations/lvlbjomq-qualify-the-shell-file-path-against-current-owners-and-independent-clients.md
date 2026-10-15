@@ -62,8 +62,11 @@ also passes two actual authenticated launches and revocations. Comparator
 `16d1cb870` adds a guarded native Session selector for the IPC baseline; its
 protected launch/replacement and unarmed-refusal checks pass. Current file
 launches retain authentication. Native scanout has not run for this peer.
-Next prepare the bounded native runner with exact artifact and output identities,
-finish frame-allocation instrumentation and freeze the paired campaign method.
+External integration `0c8c1a0` adds the bounded attended runner, with artifact
+hashes, signed source checks, console guards, complete capture and native joins.
+Its device-hidden checks pass; no physical run plan has been executed.
+Next finish frame-allocation instrumentation, prepare the campaign artifacts
+and exact hardware/output selection, and freeze the paired campaign method.
 See [comparator preparation](#comparator-preparation-october-15).
 Next prove native lifetime/input for both selections, freeze and run B9,
 then complete attended acceptance. The live desktop is
@@ -701,6 +704,55 @@ also checks successfully. Logs: `comparator-config-regressions.log`,
 `comparator-session-wire-regressions.log`, `comparator-native-selection-clippy.log`
 and `comparator-native-cli-check.log`. No native session, physical input,
 presentation or timing campaign ran in this checkpoint.
+
+### Bound native runner, October 15
+
+Signed external integration `0c8c1a0` adds `shell-timing prepare-native` and
+`run-native`. Preparation binds the selected Sophia, peer, WM, preflight and
+runner executables plus core, desktop and peer configuration to explicit hashes.
+It requires clean repositories at signed source revisions. The desktop profile
+must name exactly the selected bar peer, config and wire, deny peer GPU access,
+and select empty startup; core/profile includes are refused. The peer's frame
+count, output and full-runtime hold must match the request. The README documents
+the request format and commands.
+
+Execution requires the plan hash, unchanged artifacts and sources, the prepared
+runner executable, `SOPHIA_SHELL_TIMING_ARM=1`, and the named console in the
+foreground. It shares the existing output proof's wrapper supervision rather
+than creating another shutdown path. The wrapper owns input guarding, watchdog,
+Session termination and console restoration. Capture is bounded and private;
+binary artifacts remain at their recorded paths. Normal recovery must verify
+before the runner preserves every client JSON record, extracts native witnesses
+and attempts the complete offer-to-kernel-completion join. Missing, damaged or
+failed client records cannot become successful samples.
+
+`result.json` records wrapper capture/recovery only; `native-samples.json` is
+written only after a successful join and reports `joined_only`. Neither is B9
+acceptance. Source revisions and executable hashes are separate assertions, not
+proof of the build process. Record build commands and artifact provenance before
+the campaign. The expected mode is checked against bindings after capture; the
+runner does not set monitor modes or establish physical connector identity.
+The hardware/output selection and full profile configuration still need review.
+
+Six new device-hidden tests cover both wire plans, changed artifacts/workloads,
+profile indirection and extra clients, altered plan hashes, unarmed/non-console
+launch refusal, and preservation of failed or damaged client records. The
+existing output-runner checks and the xtask regressions also pass; strict
+all-target Clippy passes. Evidence under `t252-authenticated-20261015`:
+`timing-native-xtask-regressions-final.log`,
+`timing-native-verifier-isolation-fixed.log`,
+`timing-native-regressions-remainder.log` and
+`timing-native-runner-clippy-final.log`.
+
+The first broad run found the stale provisioning marker after adding the already
+cached KDL dependency. `tools/provision.sh` refreshed it, audited the pinned
+source and reported no downloaded crates or registry/git changes; see
+`timing-native-provision.log`. Its accepted lock hash is
+`8372db786f2e6313652a7ac7e18bc86eca5cf5d170624f99423ce8fdac81256b`.
+The next run exposed an isolation setup error in an older verifier: `/run/user`
+was hidden while `XDG_RUNTIME_DIR` still pointed into it. That verifier passes
+with the variable unset, and the remaining test binaries pass separately.
+No physical run plan or B9 campaign ran at this checkpoint.
 
 ## Validation and remaining work
 
