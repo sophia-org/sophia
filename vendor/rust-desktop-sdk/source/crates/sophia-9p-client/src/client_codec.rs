@@ -175,7 +175,14 @@ pub(crate) fn decode_rauth(body: &[u8]) -> Option<Qid> {
 /// `names.len()` against [`MAX_WALK`] themselves, before this is called, so a
 /// request over the limit never reaches the wire.
 pub(crate) fn walk_body(fid: u32, newfid: u32, names: &[&[u8]]) -> Result<Vec<u8>, &'static str> {
-    let mut body = fid.to_le_bytes().to_vec();
+    // Validate before reserving; the caller bounds the number of names.
+    let mut size = 10;
+    for name in names {
+        let length = u16::try_from(name.len()).map_err(|_| "string too long")?;
+        size += 2 + usize::from(length);
+    }
+    let mut body = Vec::with_capacity(size);
+    body.extend_from_slice(&fid.to_le_bytes());
     body.extend_from_slice(&newfid.to_le_bytes());
     body.extend_from_slice(&(names.len() as u16).to_le_bytes());
     for name in names {

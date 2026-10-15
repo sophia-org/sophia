@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "repository": "https://github.com/sophia-org/sophia-desktop-sdk-rs",
-  "revision": "af21f0af6e53656bad0654ab9fc6ef15d3d628f1",
+  "revision": "f638e2f2b7f21434e7e0c44bedf96da233080b9a",
   "files": {
     ".gitignore": "44c92e3a70ad3307b7056871c2bdb096d8bfa9373f5bf06a79bb6324a20ff2fb",
     "Cargo.lock": "034e9a05087e47d386d54720cec09e059223ffb8ad68387aa3da40355b9e7bc7",
@@ -12,7 +12,7 @@
     "README.md": "144f8a1cbf96524c1cff9ab429932cce8258373c1a10bccc56521f4904e37257",
     "crates/sophia-9p-client/Cargo.toml": "a6565cbeadc863b769c808119e590a6d946f309fb02d25c4e100f38fd3a382cc",
     "crates/sophia-9p-client/src/client.rs": "8ef1a07b2014f5b8ed93bf010148876df7feab0b550a330c90c0ab5a4a141db0",
-    "crates/sophia-9p-client/src/client_codec.rs": "4a292ba26e6d1ebc7aeac0dbd71820c841a020ec81b414db7ada65b386b61944",
+    "crates/sophia-9p-client/src/client_codec.rs": "06a969d3b2c99ae508e63f5041e4746c5730333fa7ec05b0b203421336764799",
     "crates/sophia-9p-client/src/lib.rs": "72015010d1ef21dfdfaafbdc3a931cb7e59db75f3e3f509c9a8b4e65040a495b",
     "crates/sophia-9p-client/src/pipeline.rs": "cd808e45b206d58e2da0574c11e6eee2cdca83ae8de24fa2ad9c8b5282ad3f04",
     "crates/sophia-9p-client/tests/client.rs": "a490ffe2d58bd75cae361741da39d6c3d93bb23bd925304474ff2a449d55bc3b",
