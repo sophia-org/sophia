@@ -144,6 +144,15 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `228f263` starts `sophia-wm-client` with typed application candidates
+and owned immutable encoding. Five tests cover all seven kinds, literal Dirty
+bytes, caller mutation, identity/capability rejection and separate domain IDs;
+targeted tests and strict Clippy pass. Signed C `4070e29` maps the counterparts
+in matrix 18. This prepares submissions only; the transport state machine is
+still required. In C, Submitted is validated before interpreting submit replies,
+and its ACK must settle before opening the next transaction. Preserve both
+ordering rules when implementing the Rust driver.
+
 Signed Rust `b71abfb` adds `sophia-wm-protocol`: neutral WM codecs and passive
 policy records extracted from Sophia `1d071c144`. Its extraction manifest's
 39 source hashes verify against that revision. The WM schema, API/file docs
