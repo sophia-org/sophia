@@ -144,6 +144,25 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `fdc9688` and C `826eeda` add administrative startup on an exclusive,
+already-versioned 9P pipeline. Both attach once, validate info through EOF/clunk,
+enforce timeout ceilings and open ctl with a complete-command iounit. They hand
+off the same pipeline/root/ctl without reconnecting. Rust uses a shared budget
+across at most 32 rounds; C services its bounded pipeline once per dispatch and
+queues the next request. Neither sleeps or performs I/O after startup is ready.
+
+Five Rust client tests, C's independent startup test and strict Rust Clippy pass.
+Socket cases cover fragmented info, one-byte budgets, file order, retained fids,
+directory/timeout/iounit/clunk refusals, expiry before transmission and clock
+regression. C distinguishes transport errors and requires its caller to close
+the borrowed fd; Rust drops its owned pipeline on terminal failure. Admin map 6
+records the scope. Raw-socket/version facades, catalog retention/refresh,
+invocation custody, status scheduling and paired production gates remain.
+Next implement the command session on this startup handoff. t333 stays open;
+pins are unchanged, no quiet hold is active and no speedup is measured.
+
+### Earlier SDK checkpoints
+
 Signed Rust `96aba59` and C `0797146` add provisional administrative snapshot
 state machines for info, commands and status. Both emit bounded Walk/Open/Read/
 Clunk operations and expose a result only after EOF, syntax validation and
