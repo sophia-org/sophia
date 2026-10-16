@@ -144,6 +144,26 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `d660990` and C `fe67eb3` add independent protected WM peers.
+Sophia's `policy_file_protected_authentication.rs` accepts an explicit absolute
+`SOPHIA_WM_AUTH_PEER` path while retaining its raw-protocol control. Both SDK
+peers pass the production protected supervisor/Factotum admission, transfer
+their exact admitted root into WM startup, settle configuration-capability
+negotiation and observe terminal closure/staleness after registration revocation.
+Confirmed negotiation custody remains readable. The shared Factotum stays ready.
+The native Rust run and the C run both passed; the raw control also passed.
+Strict Rust SDK Clippy and C's full `make check` pass. Matrix 28 and WM map 4
+record the build/run commands. This proves idle revocation, not revocation with
+application candidates in flight or automatic recovery.
+
+Built peer hashes (no executable copies): Rust
+`~/.cache/cargo-slots/sophia-desktop-sdk-rs@sdk-rs-t331-reply-storage/1/debug/examples/wm_authenticated_peer`
+SHA-256 `9b154d801f9fbbef49fe658c45a1844323efa9038e92b4942ebbdc26bdbb84e3`;
+C `~/dev/sdk-c-t318-namespaces/build/wm_authenticated_peer`
+SHA-256 `712dcc04042a8b65d1593574935aded8a2ff955c81a48b485d73eec0ecfaa550`.
+The first Rust attempt requested the wrong capability bit and was refused by
+Limits validation; the fixture now uses the named configuration constant.
+
 Signed Rust `1594612` and C `3809590` add paired terminal checks and the shared
 `WM-CLIENT.md` ownership/error guide. Independent socket peers cover short ACK,
 ACK EINVAL/ESTALE, and event-read revocation before/after Submitted. Confirmed
@@ -172,13 +192,10 @@ The verified peer binary at
 has SHA-256 `945af0642b5ab0fe976a6ad382fa28e4642b3834599ba175a60be266476d5ed8`.
 No executable was copied into evidence.
 
-This test supplies admission and outcomes; protected launch, Engine settlement
-and actual presentation remain separate claims. Next qualify protected WM
-admission/revocation and finish profile/outcome coverage. The existing
-`policy_file_protected_authentication.rs` uses the production launch supervisor
-and Factotum, but hands its admitted root to a raw file peer. Add an explicit
-external native SDK peer path to this generic fixture and retain the raw
-control; do not claim SDK authentication from the raw peer. Publication/pin adoption and the other t333
+The exchange test supplies admission and outcomes; protected admission is now
+covered separately above. Engine settlement and actual presentation remain
+separate claims. Next finish WM profile/outcome coverage and the operation-to-export
+audit, then implement the Rust output client. Publication/pin adoption and the other t333
 roles (output, lock, administration and broker/portal audit) remain required.
 
 Signed Rust `228f263` starts `sophia-wm-client` with typed application candidates
