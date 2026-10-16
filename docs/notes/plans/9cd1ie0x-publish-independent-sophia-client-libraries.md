@@ -144,6 +144,28 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `5f6b5bb` and C `82ffda2` pass protected namespace launch and
+Factotum authentication followed by portal metadata startup. Both independently
+built peers retain the admitted root and relay, read api and exit successfully.
+Portal map 6 records the startup-only scope. The two existing portal-dispatch
+tests also pass after the fixture extension; strict Rust Clippy passes.
+
+Run with `SOPHIA_PORTAL_AUTH_PEER` set to either SDK's built
+`portal_authenticated_peer`, then `cargo-slot sophia cargo test -p sophia-session
+--features native-session --lib external_sdk_portal_startup_uses_real_namespace_authentication
+-- --ignored --nocapture`. Rust executable SHA-256:
+`1f03bb2b4beee0e889456674a8c3525fec128a5d46e847785b4aee8f14d815de`;
+C: `d7fd227d631c13e8b42f78891c2e953aef0d0dd65dfc7c184a7ce422be13e556`.
+The Rust executable is in the SDK worktree's cargo-slot 1 debug/examples;
+the C executable is in its worktree's build directory.
+
+Next implement recipient session operations, retained-object frame reads and
+capture custody, then qualify revocation and delivery. Requester/broker,
+foreign bindings and release adoption remain. t333 stays open; SDK branches
+pushed, production pins unchanged, no quiet hold or measured speedup.
+
+### Attached-root startup checkpoint
+
 Signed Rust `91d5d21` and C `61fb84d` add metadata startup on the existing
 attached recipient root. Both read api through EOF/clunk, preserve root and
 pipeline, and issue no new version/attach/reconnect. The caller must complete

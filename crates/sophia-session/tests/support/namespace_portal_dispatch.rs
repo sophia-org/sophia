@@ -29,6 +29,11 @@ fn capture_cli_reads_one_image_through_real_namespace_launch_authentication() {
     run_boundary("capture");
 }
 #[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_startup_uses_real_namespace_authentication() {
+    run_boundary("sdk-startup");
+}
+#[test]
 #[ignore = "requires SOPHIA_TEST_CAPTURE_CLI naming the built generic Sophia CLI"]
 fn capture_cli_bootstrap_uses_the_attested_launch_channel() {
     run_boundary("capture-bootstrap");
@@ -39,6 +44,7 @@ fn capture_cli_reads_a_4k_image_within_the_existing_grant_deadline() {
     run_boundary("capture-bootstrap-large");
 }
 fn run_boundary(boundary: &str) {
+    let external = boundary == "sdk-startup";
     let is_capture = boundary.starts_with("capture");
     let standalone = boundary.starts_with("capture-bootstrap");
     let (width, height) = if boundary.ends_with("-large") {
@@ -61,12 +67,22 @@ fn run_boundary(boundary: &str) {
     .unwrap();
     let objects = objects::Fixture::new();
     let capture = is_capture.then(|| capture_fixture::Fixture::new(width, height));
-    let executable = std::env::current_exe().unwrap();
+    let executable = if external {
+        let path = PathBuf::from(std::env::var_os("SOPHIA_PORTAL_AUTH_PEER").unwrap());
+        assert!(path.is_absolute() && path.is_file());
+        path
+    } else {
+        std::env::current_exe().unwrap()
+    };
     let bootstrap = Bootstrap(executable.with_file_name(format!(
         "recipe-portal-bootstrap-{}-{boundary}",
         std::process::id()
     )));
-    assert!(std::process::Command::new("/usr/bin/cc").env_clear().env("PATH", "/usr/bin:/bin")
+    let mut compiler = std::process::Command::new("/usr/bin/cc");
+    if external {
+        compiler.arg("-DSOPHIA_TEST_EXTERNAL_PEER");
+    }
+    assert!(compiler.env_clear().env("PATH", "/usr/bin:/bin")
         .args(["-std=c11", "-Wall", "-Wextra", "-Werror", "-O2"])
         .arg("-DSOPHIA_TEST_CHILD=\"namespace_launch::tests::portal_dispatch::recipe_portal_child\"")
         .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/lock_rust_bootstrap.c"))
@@ -166,7 +182,15 @@ fn run_boundary(boundary: &str) {
             f.wake.notifier(),
         )
         .unwrap();
-    if let Some(capture) = capture {
+    if external {
+        while std::fs::read_to_string(&report).ok().as_deref() != Some("started\n") {
+            assert!(
+                Instant::now() < deadline,
+                "external portal startup deadline"
+            );
+            f.auth.tick();
+        }
+    } else if let Some(capture) = capture {
         while if standalone {
             !report.with_extension("pam").exists()
         } else {
