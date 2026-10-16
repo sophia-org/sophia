@@ -124,6 +124,9 @@ pub struct Connection<E: Export> {
     waiting: VecDeque<Waiting>,
     input: Vec<u8>,
     output: Vec<u8>,
+    /// One temporary read payload, bounded by negotiated payload size. Queued
+    /// output owns a separate copy and never borrows this reusable storage.
+    read_scratch: Vec<u8>,
     /// The tag and unwritten length of each reply in `output`, in order. A
     /// tag stays in use until its whole reply is written: before that the
     /// client cannot have it, so a request reusing the tag is a violation.
@@ -151,6 +154,7 @@ impl<E: Export> Connection<E> {
             waiting: VecDeque::new(),
             input: Vec::new(),
             output: Vec::new(),
+            read_scratch: Vec::new(),
             unwritten: VecDeque::new(),
             read_delivery: None,
             stalled: false,
@@ -274,7 +278,7 @@ impl<E: Export> Connection<E> {
             match self.read_now(export, waiting.fid, waiting.offset, waiting.count) {
                 Some(reply) => {
                     self.waiting.remove(index);
-                    self.send(waiting.tag, &reply)?;
+                    self.send_owned(waiting.tag, reply)?;
                 }
                 None => index += 1,
             }
@@ -343,7 +347,7 @@ impl<E: Export> Connection<E> {
                 Err(malformed) => self.send(tag, &Reply::Lerror(malformed.errno))?,
                 Ok((_, request)) => {
                     if let Some(reply) = self.answer(export, tag, request)? {
-                        self.send(tag, &reply)?;
+                        self.send_owned(tag, reply)?;
                     }
                 }
             }
@@ -408,6 +412,19 @@ impl<E: Export> Connection<E> {
             remaining: self.output.len() - start,
             delivery: self.read_delivery.take(),
         });
+        Ok(())
+    }
+
+    fn send_owned(&mut self, tag: Tag, reply: Reply) -> Result<(), Fatal> {
+        self.send(tag, &reply)?;
+        if let Reply::Read(mut bytes) = reply
+            && E::READS_BUFFERED
+            && bytes.capacity() <= self.read_count(u32::MAX) as usize
+            && bytes.capacity() > self.read_scratch.capacity()
+        {
+            bytes.clear();
+            self.read_scratch = bytes;
+        }
         Ok(())
     }
 
@@ -478,6 +495,7 @@ impl<E: Export> Connection<E> {
     }
 
     fn reset(&mut self, export: &mut E) {
+        self.read_scratch = Vec::new();
         self.attached = false;
         self.buffered_frame = false;
         self.waiting.clear();
@@ -762,6 +780,8 @@ impl<E: Export> Connection<E> {
 
     /// `None` when the export makes the read wait.
     fn read_now(&mut self, export: &mut E, fid: Fid, offset: u64, count: u32) -> Option<Reply> {
+        let scratch_limit = self.read_count(u32::MAX) as usize;
+        self.read_scratch.clear();
         let id = self.id;
         let Some(state) = self.fids.get_mut(&fid) else {
             return Some(Reply::Lerror(Errno::EBADF));
@@ -785,8 +805,21 @@ impl<E: Export> Connection<E> {
         // consumes, whatever the node.
         let result = export.check(&access).and_then(|()| match count {
             0 => Ok(ReadOutcome::Ready(Vec::new())),
+            _ if E::READS_BUFFERED => export.read_buffered(
+                &state.node,
+                &mut opened.handle,
+                offset,
+                count,
+                &mut self.read_scratch,
+            ),
             _ => export.read(&state.node, &mut opened.handle, offset, count),
         });
+        // An export may leave scratch behind on any outcome. Never retain an
+        // oversized capacity or expose leftovers on a later pending/error read.
+        self.read_scratch.clear();
+        if self.read_scratch.capacity() > scratch_limit {
+            self.read_scratch = Vec::new();
+        }
         match result {
             Ok(ReadOutcome::Ready(data)) if data.len() > count as usize => {
                 Some(Reply::Lerror(Errno::EIO))

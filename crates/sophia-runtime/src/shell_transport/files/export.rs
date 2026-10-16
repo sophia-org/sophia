@@ -534,6 +534,7 @@ impl ShellFiles {
 mod tests;
 
 impl Export for ShellFiles {
+    const READS_BUFFERED: bool = true;
     type Node = Node;
     type Handle = Handle;
 
@@ -696,6 +697,21 @@ impl Export for ShellFiles {
                 Ok(Handle::Transaction(id))
             }
             _ => Ok(Handle::Plain),
+        }
+    }
+
+    fn read_buffered(
+        &mut self,
+        node: &Node,
+        handle: &mut Handle,
+        offset: u64,
+        count: u32,
+        scratch: &mut Vec<u8>,
+    ) -> Result<ReadOutcome, Errno> {
+        if matches!(node, Node::Events) {
+            self.journal.read_buffered(offset, count, scratch)
+        } else {
+            self.read(node, handle, offset, count)
         }
     }
 

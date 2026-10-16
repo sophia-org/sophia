@@ -80,6 +80,7 @@ pub type AttachRecord = (ConnectionId, Option<PeerCredentials>, Vec<u8>, Vec<u8>
 
 #[derive(Default)]
 pub struct Shared {
+    pub scratch_capacities: Vec<usize>,
     pub next_epoch: u64,
     pub revoked: BTreeSet<Epoch>,
     pub events: VecDeque<Vec<u8>>,
@@ -101,7 +102,10 @@ pub struct StaticExport {
     pub guarded: bool,
     /// Model a request changing data observed by an already waiting reader.
     pub publish_sink_writes: bool,
+    pub buffered_read: Option<BufferedRead>,
 }
+
+pub type BufferedRead = fn(u64, u32, &mut Vec<u8>) -> Result<ReadOutcome, Errno>;
 
 impl StaticExport {
     pub fn new() -> Self {
@@ -129,6 +133,7 @@ pub struct Handle {
 }
 
 impl Export for StaticExport {
+    const READS_BUFFERED: bool = true;
     type Node = Node;
     type Handle = Handle;
 
@@ -240,6 +245,23 @@ impl Export for StaticExport {
             _ => 0,
         };
         Ok(Handle { version })
+    }
+
+    fn read_buffered(
+        &mut self,
+        node: &Node,
+        handle: &mut Handle,
+        offset: u64,
+        count: u32,
+        scratch: &mut Vec<u8>,
+    ) -> Result<ReadOutcome, Errno> {
+        if let Some(read) = self.buffered_read {
+            assert!(scratch.is_empty());
+            self.state().scratch_capacities.push(scratch.capacity());
+            read(offset, count, scratch)
+        } else {
+            self.read(node, handle, offset, count)
+        }
     }
 
     fn read(

@@ -172,6 +172,7 @@ impl<E: ProtectedFiles> Export for AuthenticatedFiles<E> {
     type Node = AuthenticatedNode<E::Node>;
     type Handle = AuthenticatedHandle<E::Handle>;
     const WRITES_IN_PLACE: bool = E::WRITES_IN_PLACE;
+    const READS_BUFFERED: bool = E::READS_BUFFERED;
     fn requires_authentication(&self) -> bool {
         !matches!(self.admission, Admission::Legacy)
     }
@@ -311,6 +312,21 @@ impl<E: ProtectedFiles> Export for AuthenticatedFiles<E> {
                 self.files.read(node, handle, offset, count)
             }
             _ => Err(Errno::EACCES),
+        }
+    }
+    fn read_buffered(
+        &mut self,
+        node: &Self::Node,
+        handle: &mut Self::Handle,
+        offset: u64,
+        count: u32,
+        scratch: &mut Vec<u8>,
+    ) -> Result<ReadOutcome, Errno> {
+        match (node, handle) {
+            (AuthenticatedNode::File(node), AuthenticatedHandle::File(handle)) => self
+                .files
+                .read_buffered(node, handle, offset, count, scratch),
+            (node, handle) => self.read(node, handle, offset, count),
         }
     }
     fn write(

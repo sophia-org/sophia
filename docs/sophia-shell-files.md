@@ -240,6 +240,13 @@ bounds, not RSS; allocator capacity, metadata and queues are accounted
 separately. The per-object caps are: catalog 4 MiB, tabs 1 MiB, shortcuts
 128 KiB, indicators 32 KiB, descriptors 4 KiB, outputs 1 KiB.
 
+Each shell 9P connection may also retain one reusable read payload buffer with
+capacity at most the negotiated frame limit minus the 11-byte Rread overhead.
+This storage is separate from journal retention and queued output; include it
+in transport memory accounting. It is allocated on demand and released on
+version reset or disconnect. Reuse never borrows bytes from queued replies or
+changes their node/epoch delivery checks.
+
 The r8 catalog maximum is 3,014,740 bytes in old framing, and 3,145,876 bytes
 conservative with headers, which fits the 4 MiB cap. The new codec must
 enforce count, row, and header bounds independently.

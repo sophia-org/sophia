@@ -146,6 +146,9 @@ pub trait Export {
     /// the peer's stream to where the owner keeps it.
     const WRITES_IN_PLACE: bool = false;
 
+    /// Retain bounded scratch for exports that implement `read_buffered`.
+    const READS_BUFFERED: bool = false;
+
     /// Apply the bounded unauthenticated fid/request budget until a root is
     /// attached, and again after Tversion. This selects limits, not identity.
     fn requires_authentication(&self) -> bool {
@@ -224,6 +227,21 @@ pub trait Export {
         offset: u64,
         count: u32,
     ) -> Result<ReadOutcome, Errno>;
+
+    /// Optional reusable storage for reads. The core clears this buffer before
+    /// calling and retains at most one negotiated read's capacity. A ready
+    /// reply owns its bytes until encoding; pending and error results expose
+    /// none of the scratch contents. The default preserves existing exports.
+    fn read_buffered(
+        &mut self,
+        node: &Self::Node,
+        handle: &mut Self::Handle,
+        offset: u64,
+        count: u32,
+        _scratch: &mut Vec<u8>,
+    ) -> Result<ReadOutcome, Errno> {
+        self.read(node, handle, offset, count)
+    }
 
     /// The number of bytes accepted, at most `data.len()`.
     fn write(

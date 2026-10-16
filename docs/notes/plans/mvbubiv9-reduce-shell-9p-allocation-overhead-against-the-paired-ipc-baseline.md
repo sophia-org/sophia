@@ -141,6 +141,23 @@ backpressure. Carry shared changes to both comparator wires, then run eight fres
 CPU/allocation arms. Retain the optimization only if repeated matched results
 show a benefit. This slice neither closes t331 nor authorizes upload concurrency.
 
+## Approved journal scratch experiment (October 16)
+
+The owner approved proceeding with bounded reusable journal storage after the
+copy audit. Add an optional buffered-read export method with the existing read
+method as its default. Enable it for shell event reads through the authentication
+adapter. Retain at most one connection-owned payload buffer, with capacity no
+greater than the negotiated read limit; release it on version reset and close.
+Encode into the existing owned output before recycling the payload. Preserve
+all admission, acknowledgement and delivery checks, including partial writes.
+
+Verify warmed allocation counts, pending/error/oversized results, queued reply
+independence, reset and revocation. Carry the same implementation to the
+comparator. Account for retained scratch separately from journal and output
+storage. This experiment does not authorize direct output encoding, SDK vectored
+ownership, concurrency or an installed-desktop change. Native benefit still
+requires a fresh attended comparison.
+
 ## Connections
 
 - [Maintained Plan 9 comparison](../investigations/2o32e7ui-which-plan-9-implementation-techniques-can-reduce-sophia-shell-costs.md): pinned rio, Go p9 and diod audit, completed-read allocation fixture and remaining copy candidates.

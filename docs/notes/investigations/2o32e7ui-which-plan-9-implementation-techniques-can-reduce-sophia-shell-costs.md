@@ -22,11 +22,12 @@ explanation for the whole cost gap. Rio's request reuse is less novel for Sophia
 than it first appears; its event waits do not remove custody checks.
 
 Exact sizing now removes the two reallocations previously measured when gathering
-four records. One allocation per completed read remains; encoding into warmed
+four records. Unbuffered reads still allocate once; encoding into warmed
 output storage and empty pending reads allocate nothing. The follow-up below
 confirms one SDK payload copy, zero staging allocations on a second same-size
-upload, and one socket send per upload in the isolated fixture. Prioritize a
-bounded journal read-into experiment for allocations; SDK vectored output targets
+upload, and one socket send per upload in the isolated fixture. The approved
+journal scratch experiment is now implemented: warmed journal reads allocate
+nothing in all five fixture cases. Both payload copies remain. SDK vectored output targets
 copy traffic, not the warmed allocation count. The approved t331 slice excludes a new vectored
 output ownership API; implementation needs a separately reviewed scope. t332
 remains investigation only. Keep the installed desktop untouched.
@@ -190,17 +191,27 @@ counts follow the inspected slice copies and validated payload lengths, not
 hardware copy counters; they exclude kernel traffic and allocator movement.
 Results are in `journal-copy-cost.txt`.
 
-### Next bounded proposal
+### Journal scratch experiment
 
-Investigate a connection-owned, bounded scratch buffer supplied to journal reads.
-It could remove the remaining temporary allocation after warmup while preserving
-the existing copy into guarded reply storage. A default export adapter could
-preserve compatibility; journal-backed exports would opt into read-into storage.
-Keep the scratch bound tied to the admitted read limit, account for its retained
-capacity, and verify error, pending and oversized replies cannot expose stale
-bytes. Acknowledgement must not invalidate queued output, and node/epoch checks
-must still run on every partial delivery. Compare against the current fixture
-before adopting an API change. This is a proposal, not implementation approval.
+The owner approved this experiment. Connections now retain one scratch payload
+only for exports that enable buffered reads. The default export method preserves
+existing behavior; shell Events uses the journal's buffered method, forwarded
+through `AuthenticatedFiles`. Encoding still copies into independent guarded
+output before recycling the payload. Retained capacity cannot exceed the
+negotiated read limit (frame limit minus 11); reset and close release it. The
+shell contract accounts for this additional retained memory explicitly.
+
+The fixture recycles a pre-sized buffer across 1,000 reads for each of the five
+cases, measuring zero allocations and reallocations. The original fresh-buffer
+cases still measure one allocation per read. Evidence is retained as
+`journal-buffered-read-cost.txt`. Core tests verify reuse while earlier replies
+are queued, partial delivery followed by revocation, pending/error cleanup,
+oversized replies and scratch, and version reset. Existing journal tests retain
+acknowledgement coverage. The full production core suite and 106 runtime library
+tests pass (one runtime test ignored); strict core all-target and runtime library
+Clippy pass. The comparator passes the same suites and Clippy checks. Native
+savings are not yet measured. Next, prepare a fresh matched native pilot with
+separate CPU and allocation arms; do not reuse occupied capture directories.
 
 Direct encoding into queued output may remove a copy too, but needs a separate
 review of rollback, output bounds and delivery guards. SDK owned vectored output
