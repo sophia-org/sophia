@@ -1,0 +1,159 @@
+---
+id: 2o32e7ui
+date: 2026-10-16
+kind: investigation
+status: investigating
+tags: [investigation, 9p, performance]
+---
+# Which Plan 9 implementation techniques can reduce Sophia shell costs
+
+## Question
+
+Which maintained Plan 9 and 9P implementations offer techniques worth testing
+against Sophia's remaining costs? niltempus requested this comparison after the
+mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
+
+## Current resumption
+
+The audit identifies two concrete copy paths to measure: completed journal reads
+allocate a temporary payload before copying it into the server reply buffer,
+and the SDK copies upload payloads into its output buffer. Neither is a measured
+explanation for the whole cost gap. Rio's request reuse is less novel for Sophia
+than it first appears; its event waits do not remove custody checks.
+
+The completed-read fixture confirms one allocation per read and two additional
+reallocations when gathering four records; encoding into warmed output storage
+and empty pending reads allocate nothing. Measure copied bytes and socket writes
+before proposing either API change. The approved t331 slice excludes a new vectored
+output ownership API; implementation needs a separately reviewed scope. t332
+remains investigation only. Keep the installed desktop untouched.
+
+## Maintained references checked October 16, 2026
+
+| Project | Observed activity | Relevance |
+| --- | --- | --- |
+| [9front](https://github.com/9front/9front) | `a411fb63c`, October 16 | Complete system; rio, drawing, file services and kernel mechanisms. |
+| [9legacy](https://9legacy.org/patch.html) | Patch page updated October 8 | Conservative fixes and individually reviewable kernel/library patches. |
+| [plan9port](https://github.com/9fans/plan9port) | `b6564bd96`, August 26 | Unix-hosted libraries and applications, including lib9p and devdraw; not a complete OS. |
+| [Go p9](https://github.com/hugelgupf/p9) | `3fd948847`, June 25 | 9P2000.L client/server; response and encoding storage reuse, separate payload vectors. |
+| [diod](https://github.com/chaos/diod) | `de51d1ee1`, June 23 | C 9P2000.L server; request queues, cancellation and worker ownership. |
+
+These dates establish maintenance, not recent performance work. Linux and QEMU
+remain references from the [earlier comparison](lvlbjomq-qualify-the-shell-file-path-against-current-owners-and-independent-clients.md#t331-established-9p-implementation-comparison).
+
+The complete 9front source tree is at `~/src/9front`, revision
+`228167f32bf5b14fcb41e52eab527a1c8531638a` (September 29), with shallow history.
+This audit reads that checkout, not the newer upstream head. Source hashes,
+downloaded Go/diod files and maintenance records are retained in
+`~/.local/state/sophia/development-evidence/t331-plan9-comparison-20261016/`.
+
+## Rio: reuse has limits, and waits include cancellation
+
+In [xfid.c](https://github.com/9front/9front/blob/228167f32bf5b14fcb41e52eab527a1c8531638a/sys/src/cmd/rio/xfid.c),
+`xfidallocthread` recycles Xfid records with their workers and channels. It creates
+more when the free list is empty; the inspected path has no fixed pool cap.
+Sophia must preserve its explicit bounds rather than copy that growth policy.
+
+Rio still allocates a message buffer per request. In
+[fsys.c](https://github.com/9front/9front/blob/228167f32bf5b14fcb41e52eab527a1c8531638a/sys/src/cmd/rio/fsys.c),
+`filsysproc` allocates `messagesize + UTFmax`, reuses it for the response, then
+frees it in `filsysrespond` or `filsyscancel`. Reusing Xfid does not pool every
+wire buffer.
+
+`xfidread` waits on a particular window's data channel, window deletion and the
+request's flush channel. The lesson is to represent every reason a request must
+resume, including cancellation and lifetime changes. It is not permission to
+wait only for data. The [rio manual](https://9p.io/magic/man2html/4/rio) also
+explains that the draw device multiplexes itself: rio does not mediate application
+access to it. Rio is not a comparable authenticated bulk-upload benchmark.
+
+Sophia already retains connection input/output vectors and waiting/unwritten
+queues (`crates/sophia-9p/src/connection.rs`) and a driver read buffer (`unix.rs`).
+Waiting reads are small records, not new workers. An empty journal read returns
+Pending at the tail without allocating. Retrying checks authority; delivery
+checks remain live through partial writes. Rio's design does not eliminate these
+obligations. The [change-token rejection](lvlbjomq-qualify-the-shell-file-path-against-current-owners-and-independent-clients.md#t331-change-token-audit)
+still applies.
+
+## Go p9: separate payload vectors expose a remaining SDK copy
+
+At the pinned revision, [transport.go](https://github.com/hugelgupf/p9/blob/3fd948847ea46b413f8b98c8f226c6bb716807be/p9/transport.go)
+gets an encoding buffer from `dataPool`, then passes header, encoded fields and
+payload as separate vectors to `WriteTo`. Payload cleanup follows send. This
+avoids concatenating payload into the encoding buffer. Whether it uses one
+vectored syscall depends on the writer; this is not kernel zero-copy.
+
+Sophia's vendored `sophia-9p-client/src/pipeline.rs::submit` still copies both
+body slices into `out_buf`. Earlier cursor fixes avoid shifting sent prefixes,
+but not this initial copy. A nonblocking vectored API must retain payload ownership
+through partial sends; the current borrowed-slice API cannot keep the caller's
+slice. Preserve byte/tag charges, flush reserves, secret scrubbing and terminal
+settlement. Measure this path before designing a new ownership API.
+
+## Diod: useful queue discipline, not a reason to add threads
+
+[srv.c](https://github.com/chaos/diod/blob/de51d1ee1bd5ccf1d8c16b96227c8bb03ec50106/src/libnpfs/srv.c)
+keeps queued and working request lists under server synchronization and uses
+pthread workers in thread pools. `np_req_alloc` still allocates each request.
+This provides a cancellation and ownership comparison, not evidence that threads
+will improve Sophia's inline owner service. No scheduler change follows.
+
+## Concrete candidates
+
+The narrowest server-side candidate is completed-read storage. In
+`sophia-9p/src/journal.rs::read`, a nonempty read gathers retained records into a
+fresh vector. `connection.rs::read_now` returns a Read reply, then
+`wire.rs::encode` copies its payload into the retained output vector. Temporary
+storage can allocate or grow even though output storage is reusable.
+
+An isolated fixture should count allocations and both copy stages for one-record
+and multi-record reads, including partial offsets. Compare bounded scratch reuse
+with a read-into-buffer design. Preserve acknowledgement retention and the
+node/epoch delivery guard: acknowledgement must not free bytes still needed by
+an unwritten reply. This is a source-proven copy path, not a whole-frame saving.
+
+The second candidate is the SDK upload copy. Server-side
+`connection/in_place.rs` already receives uploads into admitted storage; a generic
+call for zero-copy reception would duplicate existing work. The client copy is
+a different ownership boundary. Broad request pooling is lower priority without
+allocation evidence.
+
+## Isolated completed-read measurement
+
+`crates/sophia-9p/tests/journal_read_cost.rs` measures the real Journal read and
+wire encoder separately, with output capacity prepared outside the measured
+region. One test runs all cases to avoid unrelated test threads polluting the
+process-wide allocator counter. Assertions verify payload bytes, unchanged
+retention until acknowledgement and final record release. Counts are diagnostic,
+not assertions that preserve today's overhead.
+
+| 1,000 reads | Read allocations | Read reallocations | Encoding allocation operations |
+| --- | ---: | ---: | ---: |
+| One 256-byte record | 1,000 | 0 | 0 |
+| Four records, 1,024 bytes | 1,000 | 2,000 | 0 |
+| Four records, offset 17, count 700 | 1,000 | 2,000 | 0 |
+
+All three cases also perform 1,000 empty-tail reads with zero allocation
+operations. The test passes. Output is retained as `journal-read-cost.txt` in
+the comparison evidence directory. These results isolate allocation churn; they
+do not count native per-frame frequency, copied bytes or socket writes.
+
+An exact-capacity allocation is a smaller first experiment than a new read API:
+size the temporary to the available requested range rather than grow it record
+by record. It could remove the two reallocations in the multi-record cases while
+leaving the initial allocation and payload copy. Measure before claiming benefit.
+
+## Validation and limits
+
+Inspected pinned upstream source and corresponding Sophia paths at `01fca2595`;
+source hashes are retained. Added only the isolated diagnostic test and notes.
+No production change, native benchmark win, hardware run or task completion
+follows from this audit. Plan9port and 9legacy are catalogued;
+their performance paths have not yet been audited here. Task state stays in
+todo.md; this is supporting research for t331, not another execution queue.
+
+## Connections
+
+- [t331 plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md): accounting, bounds and acceptance criteria.
+- [Cost-10 results](lvlbjomq-qualify-the-shell-file-path-against-current-owners-and-independent-clients.md#t331-readiness-handoff-pilot-results): mixed results motivating this comparison.
+- [Independent uploads](gjov8u9g-can-independent-shell-uploads-progress-concurrently-without-weakening-custody.md): separately scoped concurrency investigation.

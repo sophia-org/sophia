@@ -14,6 +14,15 @@ repairs? Reconcile the existing evidence before repeating a desktop campaign.
 
 ## Current resumption
 
+The owner requested renewed comparison with maintained Plan 9 implementations.
+The [pinned rio/Go p9/diod audit](2o32e7ui-which-plan-9-implementation-techniques-can-reduce-sophia-shell-costs.md)
+finds a concrete completed-journal-read allocation path and the remaining SDK
+upload copy. The new isolated fixture measures one allocation per completed read,
+plus two reallocations for four-record reads; warmed reply encoding and empty
+tail reads allocate nothing. Next bounded experiment: exact sizing of the
+completed-read temporary, then evaluate scratch reuse or an owned payload API
+only with a separate scope. No native benefit or production change is claimed.
+
 The approved readiness handoff is implemented in signed production `c2138f95e`
 and comparator `377b0413d`, both pushed. Cost-10 does not establish a useful win:
 panel CPU/MiB is about 0.9% below cost-07, bulk about 2% above it; allocations
@@ -28,8 +37,8 @@ All eight `t331-native-cost-10` arms completed. Independent replay matches the
 captured costs, journal metrics and 1,000 joined frames in every arm; console and
 keyboard recovery are clean. The quiet hold is released and Claude confirmed no
 activity after the initial coordination. Capture directories are occupied: do
-not rerun `t252-check`. Next, establish how often the handoff is actually used
-versus invalidated before proposing another optimization or attended run.
+not rerun `t252-check`. Actual handoff use versus fallback frequency remains
+unmeasured; do not infer poll savings from correctness tests.
 The approved retention criterion still requires repeatable benefit; this pilot
 does not satisfy it. No desktop installation or restart occurred.
 Repository-wide formatting reports pre-existing differences in two native scanout

@@ -143,6 +143,8 @@ show a benefit. This slice neither closes t331 nor authorizes upload concurrency
 
 ## Connections
 
+- [Maintained Plan 9 comparison](../investigations/2o32e7ui-which-plan-9-implementation-techniques-can-reduce-sophia-shell-costs.md): pinned rio, Go p9 and diod audit, completed-read allocation fixture and remaining copy candidates.
+
 - [Bounded upload concurrency investigation](../investigations/gjov8u9g-can-independent-shell-uploads-progress-concurrently-without-weakening-custody.md#t332--investigate-bounded-upload-concurrency): candidate research after t331 measurements; no upload scheduling change in this slice.
 - [Measured evidence and pending accounting proposal](../investigations/lvlbjomq-qualify-the-shell-file-path-against-current-owners-and-independent-clients.md#accounting-method-proposal-october-15).
 - [Unchanged shell budgets](../../sophia-shell-files.md#budgets).
