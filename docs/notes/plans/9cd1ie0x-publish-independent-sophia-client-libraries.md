@@ -144,6 +144,16 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust SDK `85b37ed` adds prepared reservations for one content operation
+or a whole candidate. The handle exclusively borrows the connection, acquires
+wire-queue, outbox and ledger capacity before returning, and commits without
+allocation or I/O. Cancellation/Drop issues no ticket and releases staged upload
+claims. Local admission still proves neither server custody nor semantic acceptance.
+Rust workspace tests, strict all-target Clippy, formatting and diff checks pass.
+Controls cover cancellation, saturation, invalid groups, upload-slot reuse,
+disconnect, storage preparation and the exclusive borrow. C `cfa6561` adds a
+successful-cancellation control; `make check` passes and its library is unchanged.
+
 Signed Rust SDK `1f33550` adds `dispatch(now, byte_budget)` after the readiness
 API in `6fda07e`. Applications can now supply monotonic time and one byte budget
 for the complete call. All internal rounds share that budget and a limit of
@@ -159,12 +169,15 @@ caller time without sleeps, one-byte dispatches reaching Submitted custody,
 zero-byte dispatch and shared budgets that cannot replenish across rounds.
 C `0e4b2fd` passes `make check`, including a new partial-request budget control
 and existing clock, poll-interest and retry controls. Its library is unchanged.
-Both SDKs have revision 2 of `API-PARITY.md`; the full operation inventory
+Both SDKs now have revision 3 of `API-PARITY.md`; the full operation inventory
 remains unfinished. Mandatory parity rules are committed in Sophia's agent instructions
 (`800f8ec`) and the C/Rust SDK instructions (`65ea947`/`a1154b3`).
 
-Next, complete the shell operation matrix, beginning with atomic admission,
-reservation and native lifecycle helpers, then close the mapped capability gaps.
+Next, close the remaining reservation capability gaps: C can reserve counts and
+bytes before choosing records, continue service and use unreserved capacity;
+Rust's prepared handle cannot. Arbitrary multi-record groups and native lifecycle
+helpers also remain to be mapped and implemented. Rust's old/unissued custody
+query returns `None` for either, unlike C's distinct UNAVAILABLE and ARGUMENT.
 Rust's convenience driver retains its internal clock and fixed limits; callers
 using simulated time must use `dispatch` and non-driving `take_*` receives.
 C saturates an overflowing deadline; Rust rejects a supplied `Instant` without
