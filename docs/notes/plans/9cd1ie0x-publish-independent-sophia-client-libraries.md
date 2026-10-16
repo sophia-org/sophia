@@ -144,6 +144,30 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `4dc6e67` and C `31911c2` add a developing shared recipient
+session: one watch alongside one metadata/transfer snapshot on the same
+pipeline. Separate tags route replies; events and snapshots remain retained
+until released. Transfer storage is borrowed and reused. Cancellation drains
+decoded replies before flushing a pending watch read, then clunks its fid
+without abandoning foreground work. Original deadlines bound cleanup.
+
+Both independent production peers pass concurrent status access, watch
+cancellation with a continuing transfer, and old-watch revocation beside a
+replacement transfer. All twenty external portal gates, nineteen Rust
+component tests and strict Clippy pass. Peer SHA-256: Rust
+`3ce54e7af95e27f76f319c42a784a7b586b4691b8eefcde0b6ed19173f738e7a`;
+C `70c27add8b2c8363b850b1ce83da59f2b8ee2eec822317be4cfbc299d80a5d7f`.
+Portal map 18 records the remaining limits.
+
+Next qualify deterministic flush/reply races and shared-session failures, then
+integrate capture requests and frame reads into this scheduler. Production
+scenarios do not prove every reply ordering. Reconnect/recovery, trusted
+requester/broker, foreign bindings and publication/pin adoption remain.
+t333 stays open; production pins are unchanged. No quiet hold or measured
+performance claim.
+
+### Watch failure audit checkpoint
+
 Signed Rust `1957ab2` and C `b483632` add independent watch protocol-failure
 and explicit-reuse tests. Empty/payload Rread, unrelated remote errors,
 directory replies, disconnect and clunk refusal never report revocation.

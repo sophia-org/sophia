@@ -115,6 +115,16 @@ fn external_sdk_portal_watch_deadline() {
 }
 #[test]
 #[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_session_flush_preserves_transfer() {
+    run_boundary("sdk-session-cancel");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_session_old_watch_and_new_transfer() {
+    run_boundary("sdk-session-revoke");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
 fn external_sdk_portal_transfer_revocation_hides_scratch() {
     run_boundary("sdk-transfer-revoke");
 }
@@ -130,6 +140,7 @@ fn capture_cli_reads_a_4k_image_within_the_existing_grant_deadline() {
 }
 fn run_boundary(boundary: &str) {
     let external = boundary.starts_with("sdk-");
+    let sdk_session = boundary.starts_with("sdk-session");
     let sdk_watch = boundary.starts_with("sdk-watch");
     let watch_absent = boundary == "sdk-watch-absent";
     let sdk_transfer = boundary.starts_with("sdk-transfer");
@@ -165,6 +176,9 @@ fn run_boundary(boundary: &str) {
     )
     .unwrap();
     let objects = objects::Fixture::new();
+    if sdk_session {
+        objects.transfer(1);
+    }
     if sdk_transfer && !transfer_absent {
         objects.transfer(1);
     }
@@ -299,7 +313,9 @@ fn run_boundary(boundary: &str) {
     if external {
         let mut cancelled = false;
         while std::fs::read_to_string(&report).ok().as_deref()
-            != Some(if sdk_watch {
+            != Some(if sdk_session {
+                "session-ready\n"
+            } else if sdk_watch {
                 if watch_absent {
                     "watch-done\n"
                 } else {
@@ -336,6 +352,16 @@ fn run_boundary(boundary: &str) {
             }
         }
         assert!(!cancelled_request || cancelled);
+        if sdk_session {
+            if boundary == "sdk-session-revoke" {
+                objects.transfer(2);
+            }
+            std::fs::write(&report, b"continue\n").unwrap();
+            while std::fs::read_to_string(&report).ok().as_deref() != Some("session-done\n") {
+                assert!(Instant::now() < deadline, "shared session deadline");
+                f.auth.tick();
+            }
+        }
         if sdk_watch && !watch_absent {
             assert!(objects.objects.current().is_ok());
             match boundary {
