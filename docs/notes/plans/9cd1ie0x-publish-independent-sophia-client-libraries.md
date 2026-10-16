@@ -144,6 +144,27 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `c18c9e4` and C `f8f6586` add capture-custody components with
+inline request storage and no allocation. They distinguish pipeline admission,
+exact write acceptance, refusal, uncertain delivery and all five terminal
+capture outcomes. Verified status snapshots must match serial and output;
+ready is historical status, not a frame grant. One caller-monotonic deadline
+covers observation. Local cancellation cannot cancel admitted server work.
+
+All twelve Rust portal-client tests and strict Clippy pass. C's independent
+capture-client test passes equivalent outcome, refusal, short-write, loss,
+identity, clock and deadline cases. Portal map 11 records this component scope.
+Next integrate capture writes and status reads with the authenticated role
+transport: enforce increasing owner serials, capability and write limits,
+then qualify request custody against the production export. The frame gates
+below remain evidence for frame delivery, not this new request path.
+
+t333 remains open. Transfer/watch, requester/broker, foreign bindings and
+release adoption remain; production pins are unchanged. No quiet hold or
+measured performance claim.
+
+### Mid-read revocation checkpoint
+
 Signed Rust `228ce0a` and C `e650904` pass production mid-read frame revocation.
 Each peer pauses after accepting part of the payload; the fixture advances the
 lock fence, then lets the peer continue. Both fail without a completed image;
