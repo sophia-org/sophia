@@ -142,12 +142,14 @@ impl LiveProductionNativeScanout {
 
         /// Every head driving a logical output, in head order.
         pub fn head_indices(&self, output: OutputId) -> Vec<usize> {
-            self.heads
-                .iter()
-                .enumerate()
-                .filter(|(_, head)| head.enabled && head.output.id == output)
-                .map(|(index, _)| index)
-                .collect()
+            self.head_indices_iter(output).collect()
+        }
+
+        /// Borrow observations; mutation paths can still request an owned index list.
+        fn head_indices_iter(&self, output: OutputId) -> impl Iterator<Item = usize> + '_ {
+            head_selection::enabled_head_indices(
+                self.heads.iter().map(|head| (head.enabled, head.output.id)), output,
+            )
         }
 
         /// How many connectors drive each logical output, in output order.

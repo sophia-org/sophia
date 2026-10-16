@@ -23,15 +23,13 @@ impl LiveProductionNativeScanout {
     /// never consumed, and Present completions never routed -- a silent
     /// freeze on the first content change rather than an error.
     pub fn output_in_flight(&self, output: OutputId) -> bool {
-        self.head_indices(output)
-            .into_iter()
+        self.head_indices_iter(output)
             .any(|index| self.heads[index].scanout_custody.submitted().is_some())
     }
 
     /// Whether any head of this output still owes resource cleanup.
     pub fn output_cleanup_pending(&self, output: OutputId) -> bool {
-        self.head_indices(output)
-            .into_iter()
+        self.head_indices_iter(output)
             .any(|index| self.heads[index].scanout_custody.cleanup_pending())
             || self.output_topology_cleanup.iter().any(|(head, _)| {
                 self.head_index_for_head(*head)
@@ -45,9 +43,9 @@ impl LiveProductionNativeScanout {
             // Keep owed work visible to the Session's wait policy meanwhile.
             return true;
         }
-        let mirror = self.head_indices(output).len() > 1;
+        let mirror = self.is_mirror_output(output);
         self.deferred_mirror_generations.pending(output)
-            || self.head_indices(output).into_iter().any(|index| {
+            || self.head_indices_iter(output).any(|index| {
                 self.exporters[index].pending_frame()
                     || self.heads[index].prepared_scanout.is_some()
                     || self.heads[index].pending_content.is_some()
@@ -57,7 +55,7 @@ impl LiveProductionNativeScanout {
     }
 
     pub fn is_mirror_output(&self, output: OutputId) -> bool {
-        self.head_indices(output).len() > 1
+        self.head_indices_iter(output).nth(1).is_some()
     }
 
     pub fn primary_scanout_in_flight(&self, output: OutputId) -> bool {
@@ -83,14 +81,12 @@ impl LiveProductionNativeScanout {
     }
 
     pub fn scanout_in_flight(&self, output: OutputId) -> bool {
-        self.head_indices(output)
-            .into_iter()
+        self.head_indices_iter(output)
             .any(|index| self.heads[index].scanout_custody.submitted().is_some())
     }
 
     pub fn scanout_cleanup_pending(&self, output: OutputId) -> bool {
-        self.head_indices(output)
-            .into_iter()
+        self.head_indices_iter(output)
             .any(|index| self.heads[index].scanout_custody.cleanup_pending())
     }
 
@@ -140,7 +136,7 @@ impl LiveProductionNativeScanout {
 
     pub fn submitted_content(&self, output: OutputId) -> Option<LiveProductionScanoutContent> {
         let frame = self.submitted_frame(output)?;
-        self.head_indices(output).into_iter().find_map(|index| {
+        self.head_indices_iter(output).find_map(|index| {
             self.heads[index]
                 .submitted_content
                 .filter(|content| content.frame() == frame)
@@ -153,7 +149,7 @@ impl LiveProductionNativeScanout {
     /// During an asymmetric mirror flip the primary may already have moved
     /// its content to `presented_content` while a sibling remains in flight.
     pub fn submitted_frame(&self, output: OutputId) -> Option<LiveProductionNativeFrameId> {
-        if self.head_indices(output).len() > 1 {
+        if self.is_mirror_output(output) {
             return self
                 .output_lifecycles
                 .get(&output)
@@ -187,8 +183,7 @@ impl LiveProductionNativeScanout {
         primary
             .into_iter()
             .chain(
-                self.head_indices(output)
-                    .into_iter()
+                self.head_indices_iter(output)
                     .filter(|index| Some(*index) != primary),
             )
             .map(|index| self.heads[index].output_frames.presented())
@@ -220,7 +215,7 @@ impl LiveProductionNativeScanout {
         {
             return true;
         }
-        self.head_indices(output).into_iter().any(|index| {
+        self.head_indices_iter(output).any(|index| {
             let head = &self.heads[index];
             [
                 head.pending_content,

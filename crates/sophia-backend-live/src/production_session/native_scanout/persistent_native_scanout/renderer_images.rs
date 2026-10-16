@@ -474,8 +474,8 @@ impl LiveProductionNativeScanout {
     }
 
     pub(super) fn installed_retirement_protected(&self, output: OutputId) -> bool {
-        self.head_indices(output).iter().any(|index| {
-            let head = &self.heads[*index];
+        self.head_indices_iter(output).any(|index| {
+            let head = &self.heads[index];
             [
                 head.pending_content,
                 head.rendering_content,
