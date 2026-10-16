@@ -144,6 +144,26 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `99b9023` and C `3f90f17` add nonblocking startup from a caller-
+connected HostDomain socket, covering version, file opening and initial catalog
+under one absolute deadline. One phase spends the caller's I/O budget per
+dispatch; the ready session transfers once. The full scripted command exchange
+now uses these facades. Paired stalled-version tests cover zero/one-byte budgets,
+clock regression and expiry without extra writes; unsupported versions terminate
+without attach or fallback. Twelve Rust client tests and C's session/connecting
+tests pass; strict Clippy passes.
+
+Admin map 9 and shared `ADMIN-CLIENT.md` document admission, storage, event-loop
+driving, custody and explicit recovery. C retains caller descriptor ownership
+and requires immovable session storage; Rust owns its stream and uses offsets
+into retained catalog bytes. Neither automatically reconnects or replays. Next
+extend integrated failure schedules and run both independent peers against the
+production administrative export, including ticket/owner and process-loss
+behavior. t333 remains open, pins unchanged, no quiet hold and no measured
+speedup.
+
+### Integrated session checkpoint
+
 Signed Rust `1ea6ffe` and C `c201c6e` integrate administrative sessions on their
 startup handoffs. Both retain one catalog, admit one command, assign increasing
 IDs, drive matched replies and expose custody/outcomes, refresh, write readiness,
