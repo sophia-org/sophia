@@ -144,6 +144,31 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `cd674b9` and C `df58325` now drive capture requests on the
+authenticated portal root. Both send one complete write, close its fid, read
+fresh bounded status snapshots through EOF/clunk, and return the same root for
+frame reads. Caller timers schedule pending status; no driver sleeps or replays
+requests. The caller owns serial sequencing across reconnects.
+
+Independent socket tests cover partial I/O, reuse, refusal, short writes, loss,
+identity mismatch, terminal-status clunk failure, limits, expiry and cancellation.
+The fifteen Rust client tests, C request test and strict Rust Clippy pass.
+Both independently built peers pass all four production portal gates, including
+the new request-to-frame path through real authentication and coordinator
+settlement. The two ordinary portal-dispatch regressions also pass. Policy
+and pixels are supplied; this is not native capture or performance acceptance.
+
+Use `SOPHIA_PORTAL_AUTH_PEER` with `external_sdk_portal_` as below.
+Peer SHA-256: Rust
+`53d89a923d4cf259f8d21f129165494849094513b6e06ff95596cc4d80e974b8`;
+C `ee3215d266fdf1cc12589ac4e70cb2ad061163a92a2d5d135fbbbf72dc34c681`.
+Portal map 12 records API ownership and limits. Next qualify production request
+refusal and lock cancellation, then finish transfer/watch and recovery coverage.
+Trusted requester/broker, foreign bindings and publication/pin adoption remain.
+t333 stays open; production pins are unchanged. No quiet hold is active.
+
+### Capture-custody component checkpoint
+
 Signed Rust `c18c9e4` and C `f8f6586` add capture-custody components with
 inline request storage and no allocation. They distinguish pipeline admission,
 exact write acceptance, refusal, uncertain delivery and all five terminal

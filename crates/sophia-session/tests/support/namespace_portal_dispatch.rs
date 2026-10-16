@@ -44,6 +44,11 @@ fn external_sdk_portal_mid_read_revocation_hides_partial_image() {
     run_boundary("sdk-frame-revoke");
 }
 #[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_requests_capture_then_reads_frame() {
+    run_boundary("sdk-request");
+}
+#[test]
 #[ignore = "requires SOPHIA_TEST_CAPTURE_CLI naming the built generic Sophia CLI"]
 fn capture_cli_bootstrap_uses_the_attested_launch_channel() {
     run_boundary("capture-bootstrap");
@@ -55,7 +60,8 @@ fn capture_cli_reads_a_4k_image_within_the_existing_grant_deadline() {
 }
 fn run_boundary(boundary: &str) {
     let external = boundary.starts_with("sdk-");
-    let sdk_frame = boundary.starts_with("sdk-frame");
+    let sdk_request = boundary == "sdk-request";
+    let sdk_frame = boundary.starts_with("sdk-frame") || sdk_request;
     let revoke_frame = boundary == "sdk-frame-revoke";
     let is_capture = boundary.starts_with("capture") || sdk_frame;
     let standalone = boundary.starts_with("capture-bootstrap");
@@ -81,7 +87,7 @@ fn run_boundary(boundary: &str) {
     .unwrap();
     let objects = objects::Fixture::new();
     let capture = is_capture.then(|| capture_fixture::Fixture::new(width, height));
-    if sdk_frame {
+    if sdk_frame && !sdk_request {
         capture.as_ref().unwrap().install_supplied_frame();
     }
     let executable = if external {
@@ -214,6 +220,9 @@ fn run_boundary(boundary: &str) {
                 "external portal startup deadline"
             );
             f.auth.tick();
+            if sdk_request {
+                capture.as_ref().unwrap().service();
+            }
         }
         if revoke_frame {
             capture.as_ref().unwrap().revoke_supplied_frame();
