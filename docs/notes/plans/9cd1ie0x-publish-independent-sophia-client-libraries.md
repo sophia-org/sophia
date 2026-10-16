@@ -144,6 +144,25 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `82b7319` adds `output_conformance_peer`; it and Sophia's existing
+C peer pass the same production output export/worker exchange. Both negotiate,
+fetch the exact topology, submit ValidateOnly, receive Validated and settle
+the final ACK. The fixture admits each peer's exact PID and supplies topology
+and the validation outcome. This proves wire/worker interoperability, not
+Engine validation, physical application or protected launch authentication.
+Signed C `936465a` records matrix 39 / output map 8. C's implementation and
+Sophia's verified SDK pins remain unchanged.
+
+The paired command passes two tests; the normal output export suite passes
+15 with the external Rust case ignored. Explicit invocation is required:
+`SOPHIA_OUTPUT_RUST_SDK_PEER=/absolute/path/to/output_conformance_peer cargo-slot sophia cargo test -p sophia-runtime --test output_file_export sdk_session_against_the_output_file_worker -- --include-ignored --nocapture`.
+Rust all-target output Clippy passes. The built Rust peer at
+`~/.cache/cargo-slots/sophia-desktop-sdk-rs@sdk-rs-t331-reply-storage/1/debug/examples/output_conformance_peer`
+has SHA-256 `2da234f7c6b93cfeb28b64e1bb9cf307aa17d53cb1bd45fab4228fc8ccd087d0`.
+No binary was copied to evidence. Next qualify protected output launch and
+revocation with independent peers, then continue experimental lock,
+administration and the remaining t333 audit/publication requirements.
+
 Signed Rust `9ac9742` and C `fc67ebd` add independent output terminal socket
 checks through direct and attached startup: short ACK, ACK EINVAL/ESTALE and
 disconnect before/after observed proposal custody. Confirmed Submitted and
@@ -152,8 +171,8 @@ explicit close. All 37 Rust output-client tests, strict Clippy and C's full
 suite pass. Both SDKs carry `OUTPUT-CLIENT.md` with ownership, event-loop,
 topology and recovery rules; matrix 38 / output map 7 record evidence limits.
 
-Next build the independent Rust output production-export peer alongside C's
-existing output fixture, then qualify protected launch and revocation. The
+The Rust output production-export peer now shares C's existing fixture above;
+protected launch and revocation remain. The
 scripted tests supply admission and do not prove Factotum grant revocation.
 No implementation change or native performance claim is made by this checkpoint.
 Production pins and the prepared t331 pilot remain unchanged.
