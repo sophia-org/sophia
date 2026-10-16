@@ -144,6 +144,24 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `834d5b9` adds the bounded lock submission lane: immutable candidate
+storage, borrowed write slices, explicit retry, latest custody, refusal and
+disconnect handling. Transaction settlement clunks and walks the file again;
+reopening waits for the Submitted ACK. Earlier references below to a persistent
+transaction fid describe startup retention, not reuse across submissions.
+Signed C `b383726` fixes a contradictory EAGAIN after confirmed custody: fail
+closed and retain custody, never offer replay. Both SDKs document this behavior
+in lock map 3 / API matrix 43. Fourteen Rust lock-client tests, strict Clippy,
+formatting and C's full independent suite pass. The submission lane adds no
+clock reads or polling and owns fixed storage; candidate body preparation still
+uses a temporary allocation. Runtime improvements have not been measured.
+
+Next implement the lock journal and exact Lock object fetch, then uploads with
+1–8 outstanding writes and integrated session/connecting facades. Keep the
+caller-owned retry policy and avoid cloning fetched objects. Independent
+production gates, remaining role coverage and publication still block t333.
+No production pins changed and no measurement hold is active.
+
 Signed Rust `4c422a9` adds provisional lock fixed-file startup. It reads the
 exact decimal API epoch, verifies the Limits envelope against it through EOF
 and clunk, and opens events, transaction, submit and ACK with their proper
