@@ -527,3 +527,41 @@ except its local-socket confirmation. The report is retained in
 `quiet-window.txt`. All captures are occupied; the hold is released. Next,
 measure CPU and allocations separately on this candidate before considering
 the unchanged full gate. t331 remains open.
+
+### Cost-15 results and fresh profiling, October 16
+
+All eight separate CPU/allocation arms completed on comparator `bf19952dd`,
+integration `fd2cb6c` and SDK `3edcd28`. Offline replay matches stored costs,
+journal metrics and all 1,000 frame joins in every arm. Console recovery is
+clean. Evidence is in `t252-authenticated-20261015/t331-native-cost-15`, with
+raw-log hashes in `offline-replay/summary.json` and bounded comparisons in
+`offline-replay/comparison.json`.
+
+| Metric | Files panel | IPC panel | Files bulk | IPC bulk |
+| --- | --- | --- | --- | --- |
+| CPU ms per uploaded MiB, CPU-only | 10.078–10.085 | 7.695–7.707 | 1.6784–1.6787 | 1.3725–1.3729 |
+| Allocations/frame, Rust-global | 2,088–2,090 | 1,140–1,142 | 6,089–6,091 | 3,386–3,388 |
+
+Compared with cost-11, files CPU falls 12.51–12.65% for panel and 6.30–6.33%
+for bulk. Allocations fall 9.95–10.15% and 5.95–6.00%. These are comparisons
+between pilots, not repeated confidence estimates or whole-desktop savings.
+Both relay readiness and SDK batching changed; their individual cost effects
+cannot be separated by this pilot. The paired IPC gaps remain 30.77–31.06%
+and 22.25–22.31% for CPU, and 82.84–83.33% and 79.72–79.89% for allocations.
+The +10% gate fails; t331 remains open and the installed desktop is unchanged.
+
+The hold is released. Claude reports light local source edits, zk/Git reads
+and small local copies, but no builds, rendering, tests, heavy jobs, packing,
+transfers or SSH during the window. Exact light-work timestamps were not
+supplied; retain that limitation rather than claiming a completely idle host.
+
+The owner requested fresh attribution before another optimization. Four
+one-minute CPU profiles are prepared in `t331-native-perf-16` with the exact
+cost-15 CPU-only artifacts. Sampling uses `cpu-clock:u`, 997 Hz, monotonic
+clock and `dwarf,8192` stacks, matching perf-08. All source/artifact checks,
+device-free validation, launcher syntax and a small permission smoke pass.
+No desktop capture has started; a fresh hold precedes the attended run.
+Analysis must select the Session/peer PIDs and the upload workload interval,
+compare exclusive leaf periods and resolved callers, and report missing
+stacks. User-space samples omit kernel execution and cannot alone explain
+all process CPU or allocation counts. Do not use sampled costs for acceptance.

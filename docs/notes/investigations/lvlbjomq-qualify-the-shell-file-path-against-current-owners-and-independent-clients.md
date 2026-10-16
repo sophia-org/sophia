@@ -45,20 +45,33 @@ bulk frame, about six and ten fewer respectively. Reply counts remain about
 53/152. This supports the intended reduction in setup waits without removing
 protocol operations; it does not establish a CPU or allocation win.
 
-All relay-13 and batching-14 captures are occupied; do not rerun them. The
-quiet hold is released. Claude reports only its local-socket confirmation
-during batching-14, with no other crunch activity. Eight separate CPU and
-allocation arms are prepared in `t331-native-cost-15` on the same comparator
-and integration revisions. Both optimized builds, all device-free argument
-checks, artifact hashes and launcher syntax pass. `campaign.json` pins the
-plans; `t252-check` selects their empty capture destinations and distinct
-instrumented executables. Request a fresh quiet window when the owner is ready
-for this eight-minute attended pilot. No cost-15 capture has started.
+Cost-15 completed all eight arms on the same comparator and integration.
+Offline replay matches costs, journal metrics and 1,000 joined frames per arm;
+console recovery is clean. Against cost-11, files CPU/MiB fell about 12.6% for
+panel and 6.3% for bulk; allocations/frame fell about 10.1% and 6.0%.
+The current paired IPC gaps remain about 31%/22% CPU and 83%/80% allocations,
+so the +10% gate still fails. This pilot measures both fixes together and
+cannot attribute their individual cost savings. See the
+[cost results](2o32e7ui-which-plan-9-implementation-techniques-can-reduce-sophia-shell-costs.md#cost-15-results-and-fresh-profiling-october-16).
+
+All relay-13, batching-14 and cost-15 captures are occupied; do not rerun them.
+The quiet hold is released. Claude reports only light local edits, zk/Git
+inspection and small local copies during cost-15; exact timestamps were not
+supplied. The report is retained with the evidence.
+
+The owner requested fresh CPU profiling. Four one-minute plans are prepared
+in `t331-native-perf-16`, reusing cost-15's exact CPU-only executables and
+source revisions. Artifact hashes, device-free argument checks, launcher
+syntax and a small perf permission smoke pass. `t252-check` now selects these
+empty destinations. Request a fresh hold when the owner is ready. Profile
+only the Session/peer PIDs and measured upload interval during analysis;
+report exclusive leaves, caller resolution and sampling limits. No profile
+capture has started. Sampling cannot supply native acceptance evidence.
 
 Progress-12 established 33/120 Session passes per files panel/bulk frame,
 versus roughly 8/45 for IPC. Source attribution identifies repeated idle
 launch-relay work and sequential SDK setup as avoidable costs, while retaining
-the authority checks and upload barriers. The latest cost-11 pilot still fails
+the authority checks and upload barriers. The latest cost-15 pilot still fails
 the +10% gate. t331 remains open until the full paired gate passes; diagnostic
 counts cannot establish CPU or allocation savings. t332 stays an investigation.
 The installed desktop is unchanged. Normative scope and acceptance remain in
