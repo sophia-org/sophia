@@ -67,6 +67,81 @@ archives remain transitional and outside the complete 9P target.
 The [C WM checkpoint](../milestones/bzitjwp8-c-wm-sdk-codec-and-session-checkpoint.md)
 records the signed codec/session slices and their test limits.
 
+## t333 — Match the C and Rust public APIs
+
+On 2026-10-16 niltempus required equivalent public APIs so applications can use
+Rust directly or bind to C from another language. This extends the unified role
+scope above; it does not reopen the completed first-release task t263.
+
+Parity means matching capabilities and observable contracts, not identical
+spelling, memory layouts or allocation strategies. Both SDKs must expose the
+same supported role revisions, operations, events, errors, custody states,
+revocation and recovery rules. Ownership, buffer lifetimes and bounded work
+must be explicit. Idiomatic Rust ownership and C caller-owned storage remain
+valid differences. Neither implementation may require a private protocol or
+application-owned transport to fill a gap.
+
+### Source audit, 2026-10-16
+
+This inventory describes Sophia's pinned snapshots: Rust
+`510a4349b4c62d6b32d21d7ae378423faa12ca10` and C
+`ba09265d1642e9fc9e7919dfd6a634855057055c`. It is a source audit, not a new test
+result or a claim about every upstream branch.
+
+| Surface | C | Rust | Remaining work |
+| --- | --- | --- | --- |
+| Generic 9P, authenticated launch and namespace access | Public clients | Public clients | Map ownership, cancellation, limits and relay handoff operation by operation. |
+| Shell | Codecs, session and native lifecycle helper | Codecs and shell client | Match revisions, admission, tickets, retained objects, uploads and native lifecycle operations. Presence in both is not proof of parity. |
+| Event-loop integration | Descriptor/interests, caller time, timeout and byte-budget dispatch | `poll_io`, internal clock, `wake_deadline` and `wait_for_io` | Provide equivalent external-loop integration and document work budgets and clock rules. The Rust shell facade currently exposes no descriptor/interests API. |
+| WM | Records and session client | No WM crate in the workspace | Add the native Rust client against the current WM file contract. |
+| Output | Records and session client | No output crate in the workspace | Add the native Rust client against the current output file contract. |
+| Lock | Experimental codec and client | Experimental codec only | Add Rust client coverage; retain experimental status until the role's separate acceptance gates pass. |
+| Administration | No role client | No role client | Implement both against the accepted administration contract; absence in both is not completion. |
+
+Evidence is in the pinned C `src/sophia_*_session.h`, `sophia_lock_client.h`,
+`COVERAGE.md` and README, and the Rust workspace manifest and
+`crates/sophia-shell-client/src/lib.rs`. C shell dispatch accepts monotonic
+`now_ms`; Rust obtains time internally. The recent conditional Rust retry-clock
+optimization therefore does not need a literal C port. Equivalent retry and
+custody behavior still needs paired tests.
+
+The Rust README's statement that WM and output modules await file contracts is
+stale: the server and C clients already provide those interfaces. Correct that
+upstream when adding coverage; never edit a vendored snapshot in place.
+
+### Implementation order and exit
+
+1. Publish a versioned operation matrix in both SDKs, tied to Sophia contract
+   revisions. Name every operation, event and terminal outcome, its C and Rust
+   entry points, ownership and test. Distinguish an absent server contract from
+   an absent SDK client. Include broker and portal contracts as they become
+   public; generic file access alone is not a typed role client.
+2. Close shell integration gaps first: external-loop readiness, deadlines,
+   bounded service, atomic admission and native lifecycle helpers. Keep
+   convenience wrappers, but make equivalent control available in both APIs.
+   Resolve differences in retry timing explicitly against the role contract.
+3. Add Rust WM, output and lock clients in that order, using the existing C
+   surface as a coverage checklist and Sophia's contracts as the authority.
+4. Complete administration coverage in both SDKs with its migration owner.
+   Audit the remaining public portal/broker operations before claiming full
+   desktop API parity; do not fold their authority into another role.
+5. Run matching scenarios through independent C and Rust clients against
+   scripted peers and Sophia's production exports. Cover partial traffic,
+   backpressure, same-ID retry, disconnect before and after custody,
+   revocation, stale epochs, cancellation, buffer limits and terminal errors.
+   Compare semantic outcomes, not language-specific call sequences. Compile
+   a thin foreign-language binding smoke test to check the C ownership API.
+6. Publish signed SDK revisions, refresh verified Sophia pins and developer
+   examples, and run the existing independent conformance gates. Every matrix
+   row needs evidence or an explicit unsupported capability in both SDKs;
+   unsupported declarations cannot waive the accepted complete role scope.
+
+The task closes when supported public desktop capabilities match, the paired
+tests pass, and release documentation states the remaining experimental and
+platform limits accurately. Physical desktop acceptance and performance gates
+remain separate. This work precedes t289's broad engine optimization; it does
+not change t331's current cost gate or the prepared CPU pilot.
+
 ## SDK platform policy
 
 Approved by niltempus on 2026-09-27: design both native SDKs for Linux and BSD,
