@@ -144,6 +144,24 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `8fe1c1a` adds `sophia-output-protocol`, extracted from signed
+Sophia `ad2fa4962ba1e7626b601e1a5b6b0ab95324bfc3`. Its 21 source hashes verify;
+the output schema and contract match C's pins byte for byte. The extraction
+retains passive values and codec validation, with no device or topology owner.
+All 30 extracted tests, the full Rust workspace suite and targeted strict
+Clippy pass. The spec hashes pass from `spec/`; the initial repository-root
+invocation used the wrong base, and the new hash rows were corrected to the
+existing relative-path convention. Signed C `a88efe7` records matrix 31.
+
+Next add `sophia-output-client`, using the C session operations below as its
+checklist. The codec foundation does not establish connection behavior. Start
+with fixed-file startup and typed immutable negotiation/proposal submission;
+then ordered control/application events and automatic exact-topology fetching.
+The output role differs from WM: explicit negotiation Refused state, Observe
+required, granted Configure, publication/Qid matching before exposing and ACKing
+ObjectPublished, bounded ACK progress, and domain replay capacity from Limits.
+Keep these semantics distinct instead of mechanically renaming the WM driver.
+
 Signed Rust `9890ed8` and C `afd9f90` check all nine profile completion
 kind/outcome combinations through independent sockets. Literal inspection
 confirms transaction/generation/digest echoes and outcome bytes, followed by
@@ -153,11 +171,11 @@ negotiated capabilities, matching C's existing socket controls. All 45 Rust
 WM tests, strict targeted Clippy and C's full suite pass. Matrix 30 / WM map 6
 cover the implemented WM operations; publication-wide qualification remains.
 
-Next implement Rust output. C's `sophia_output_session.h` owns the comparison:
+C's `sophia_output_session.h` owns the output comparison:
 direct/attached startup, observe-required negotiation with explicit Refused
 state, immutable proposals/custody, automatic topology fetch before publishing
 ObjectPublished, Qid/epoch/topology identity, ACK/clunk barriers and bounded
-caller-clock service. Start a neutral protocol crate from Sophia's
+caller-clock service. The neutral protocol crate above uses Sophia's
 `output_files.rs` and its six modules, passive `output_role.rs` and
 `packets/output_configuration.rs`, with shared typed IDs/geometry and the pinned
 output schema. Existing `output_file_{events,topology,limits,schema}.rs` and
