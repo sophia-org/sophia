@@ -18,20 +18,25 @@ The approved extra-pass fixes are implemented. Signed production `d817e6d8a`
 services launch relays from owner readiness and deadlines while retaining
 per-pass custody and retirement checks. Signed SDK `3edcd28` batches each
 fresh writer's walk and open, but waits for both successful replies before
-payload. It is pushed upstream and vendored here. The SDK workspace, strict
-Clippy, signed vendor gate and 24 production runtime interoperability tests
+payload. It is pushed upstream and vendored in production `70685cac7`.
+The SDK workspace, strict Clippy, signed vendor gate and 24 runtime interoperability tests
 pass, including independent C pipeline checks. Relay checks and the isolated
-native-feature Session suite also pass; details follow below.
+native-feature Session suite also pass. The full workspace run passes with
+`sophia-session/native-session` and an empty configuration root. The
+[implementation audit](2o32e7ui-which-plan-9-implementation-techniques-can-reduce-sophia-shell-costs.md#extra-pass-attribution-and-approved-fixes-october-16)
+records checks and the pre-existing default-feature and formatting limitations.
 
 Measure the slices separately. Comparator `f5d0f0932` contains the relay fix
 and schema-2 diagnostic counters, deliberately retaining SDK `d8558f4` for the
 first pilot. Integration `fd2cb6c` accepts the new counters and still replays
-schema 1, but rejects mixed schemas. A fresh four-arm progress pilot is being
-prepared under `t252-authenticated-20261015/t331-native-relay-13`. It must pass
-device-free validation before an attended tty4 run. No native arm has run;
-there is no quiet hold yet. After this pilot, carry the SDK pin to the comparator
+schema 1, but rejects mixed schemas. Four fresh one-minute progress arms are
+prepared under `t252-authenticated-20261015/t331-native-relay-13`; preparation,
+device-free argument validation and launcher syntax checks pass. The installed
+`t252-check` helper selects these unoccupied captures on tty4. No native arm has
+run; there is no quiet hold yet. After this pilot, carry the SDK pin to the comparator
 and prepare a separate combined pilot, followed by CPU and allocation runs.
-Do not reuse any occupied capture directory or run the old `t252-check`.
+Do not reuse any occupied capture directory. Request a fresh quiet window
+before the owner runs `t252-check` from the attended foreground console.
 
 Progress-12 established 33/120 Session passes per files panel/bulk frame,
 versus roughly 8/45 for IPC. Source attribution identifies repeated idle

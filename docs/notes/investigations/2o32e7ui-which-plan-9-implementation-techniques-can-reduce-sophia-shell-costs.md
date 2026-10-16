@@ -406,3 +406,56 @@ todo.md; this is supporting research for t331, not another execution queue.
 - [t331 plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md): accounting, bounds and acceptance criteria.
 - [Cost-10 results](lvlbjomq-qualify-the-shell-file-path-against-current-owners-and-independent-clients.md#t331-readiness-handoff-pilot-results): mixed results motivating this comparison.
 - [Independent uploads](gjov8u9g-can-independent-shell-uploads-progress-concurrently-without-weakening-custody.md): separately scoped concurrency investigation.
+
+### Extra-pass attribution and approved fixes, October 16
+
+Source inspection explains the steady reply totals without treating every
+Session pass as redundant. The panel frame uses five transactions at five
+requests each, three slot-setup/cleanup requests, three pixel writes, and
+11 event reads plus 11 acknowledgements: 53 replies. Bulk uses eight
+transactions, two slots, 72 pixel writes and 17 read/ack pairs: 152 replies.
+This is a source-derived accounting, not a per-request trace of every pass.
+
+Launch relays amplify the cost of those passes. Previously each relay did
+flush, nonblocking turn and flush on every LaunchBook poll. Files has two
+such relays and the comparator's IPC path has one. Typical progress-12
+intervals have 33 owner passes and 138 flushes for panel, or 120 and 489 for
+bulk. Subtracting four relay flushes per files pass leaves six and nine;
+IPC's typical 8/16 and 45/90 pairs fit two per pass. Aggregate core counters
+cover all servers and cannot be called shell-only traffic.
+
+The owner approved two separate fixes. Production `d817e6d8a` retains every
+custody/retirement check but uses observed readiness and explicit relay
+expiry instead of idle transport work. SDK `3edcd28` queues fresh writer walk
+and open together, then waits for both successful replies. The shell export
+executes those synchronous requests in connection order; the generic 9P API
+does not gain this guarantee. Capacity fallback, failed/partial setup,
+reordered replies and terminal-slot cleanup have deterministic coverage.
+No writes are made concurrent, and no upload fid is cached.
+
+Comparator `f5d0f0932` adds eight diagnostic counters: relay dispatch, idle
+skip and expiry, plus walk, open, read, write and clunk requests. They use the
+existing relaxed-atomic-only path. Schema 2 records remain bounded below
+Linux PIPE_BUF; integration `fd2cb6c` validates them and retains schema-1 replay.
+Progress mode still cannot supply CPU or allocation evidence. The relay-only
+pilot keeps the old SDK so its effects can be measured separately. Native
+benefit remains unproved, and the unchanged full gate still decides t331.
+
+Four one-minute plans are frozen in `t331-native-relay-13`, with exact source
+revisions and artifact hashes in `campaign.json`. All four pass preparation
+and device-free argument validation, and their capture destinations are empty.
+The initial validation omitted the native-scanout environment opt-in and was
+refused before runtime setup; that refusal is preserved alongside the passing
+checks. The installed `t252-check` selects the new plans. No native arm has run.
+Claude's small push finished at 14:55:18Z, outside any new measurement window;
+a fresh hold must precede the attended pilot.
+
+Repository-wide formatting still reports the two pre-existing native-scanout
+files; changed files are formatted. The default-feature workspace test command
+stops at the existing `output_snapshot_allocations` test importing a native-only
+module without a feature guard. The affected suites use `native-session` and an
+empty configuration root. Neither limitation changes the native acceptance gate.
+The full workspace run on production `70685cac7` passes with
+`--features sophia-session/native-session`, `XDG_CONFIG_HOME` set to an empty
+root and eight build/test workers. Its complete log, the default-feature
+refusal and the formatting report are retained in `t331-native-relay-13`.
