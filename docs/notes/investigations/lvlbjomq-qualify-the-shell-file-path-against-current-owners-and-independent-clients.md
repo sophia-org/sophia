@@ -49,10 +49,14 @@ on comparator `a2ecde0ef` and integration `4eb52fb`. Independent replay joins
 allocations fell about 38% for the panel and 43% for bulk against `cost-04`;
 CPU/MiB fell only about 1.3% and 1.9%. The shared changes also help IPC.
 See [cost-07 results](#t331-storage-pilot-results). The quiet hold is released.
-Do not rerun `t252-check`: its evidence directories are occupied. Next inspect
-remaining repeated owner work and copying with CPU attribution before proposing
-another implementation slice. These results do not justify full B9 yet or
-authorize concurrent uploads. Coordinate any new native window through Herdr.
+The owner authorized matched CPU profiling next. Four fresh one-minute plans
+under `t331-native-perf-08` reuse the exact CPU-only binaries from cost-07.
+`t252-check` now selects those plans with `perf record`, user-space CPU sampling
+at 997 Hz, monotonic timestamps and 8-KiB DWARF call stacks. Device-hidden
+argument validation and a non-native perf smoke test pass. No native profile
+has started. A fresh quiet hold has been requested through Herdr; await its
+confirmation before the attended tty4 run. See [CPU profiling preparation](#t331-cpu-profiling-preparation).
+These diagnostic runs do not authorize concurrent uploads or establish B9.
 
 [t332](gjov8u9g-can-independent-shell-uploads-progress-concurrently-without-weakening-custody.md#t332--investigate-bounded-upload-concurrency)
 is a candidate concurrency investigation, not an implementation authorization
@@ -2002,6 +2006,36 @@ The next investigation should attribute remaining CPU to repeated owner work
 and copying before choosing another patch. Large allocation reductions alone
 have not removed the CPU gap. t331 remains open; neither full B9 nor concurrent
 upload implementation is authorized by this pilot result.
+
+## t331: CPU profiling preparation
+
+The owner authorized CPU profiling after cost-07's large allocation reduction
+produced little CPU improvement. Four one-minute arms cover files/IPC and
+panel/bulk on the same binaries, source revisions and workload as cost-07.
+The fresh `t331-native-perf-08/campaign.json` binds prepared plans and exact
+commands. A short `t252-check` launcher wraps the existing attended runner in
+`perf record --clockid mono -e cpu-clock:u -F 997 --call-graph dwarf,8192`.
+All foreground-console, artifact, bounded-runtime and recovery checks remain
+in the runner. No native profile has started at preparation.
+
+The existing binaries retain symbols and unwind tables; no rebuild is needed.
+A non-native perf smoke capture succeeds without lost samples. All four
+device-hidden argument validations pass. The first validation refused a
+group-writable copied profile; its mode was corrected to 0644 and the failed
+validation retained. No device was opened by that check.
+
+Replay the journals and native joins before interpreting profiles. Select the
+Session and peer process IDs from their counter records, restrict monotonic
+sample times to each workload interval, and report sample counts, losses,
+unknown symbols and unwind limitations. Exclude launcher and companion-process
+samples from attribution. Compare self and inclusive CPU shares on both wires;
+do not treat inclusive stacks as additive. Investigate repeated owner work,
+copying and protocol processing before proposing another implementation slice.
+
+This is user-space on-CPU sampling. It cannot directly attribute kernel work,
+scheduler delay or time blocked off CPU. Capturing all inherited child processes
+adds diagnostic overhead, so the resulting CPU costs are not acceptance data.
+Use a separately scoped follow-up if these stacks cannot explain the gap.
 
 ## Connections
 
