@@ -14,14 +14,24 @@ repairs? Reconcile the existing evidence before repeating a desktop campaign.
 
 ## Current resumption
 
-The approved readiness handoff is implemented; native benefit is not yet measured.
+The approved readiness handoff is implemented in signed production `c2138f95e`
+and comparator `377b0413d`, both pushed; native benefit is not yet measured.
 Session preserves the actual owner wait for the next connected shell input turn,
 with slot/grant and server/connection/generation checks. Stale observations poll
 again. Seven core handoff tests, the full 9P suite, 24 owner-wake tests, 14 component
 connection tests and 40 focused shell tests pass; strict Clippy passes for the
 three changed libraries with native Session enabled. Pending-read tests now
 exercise cancellation, revocation and backpressure through observed turns.
-Prepare the shared comparator and fresh eight-arm pilot before judging savings.
+All eight fresh `t331-native-cost-10` CPU/allocation plans are prepared and pass
+device-hidden argument validation. Their artifact hashes match after both release
+builds. The installed `t252-check` now runs this pilot from foreground tty4 and
+refuses existing capture directories. No native arm has run. Claude confirmed a
+quiet hold from 12:05 UTC, including idle Muse, until explicit release. Next:
+attended `t252-check`, independent replay and comparison with cost-07; release
+the hold after capture. No installation or desktop restart is part of this slice.
+Repository-wide formatting reports pre-existing differences in two native scanout
+files; changed files are formatted. The full evidence packet is at
+`~/.local/state/sophia/development-evidence/t252-authenticated-20261015/t331-native-cost-10/`.
 See the [approved scope](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#approved-readiness-handoff-october-16).
 
 Resume t331 before t252. The objective is to beat IPC on CPU/MiB and allocations
@@ -87,7 +97,7 @@ only part of it. Prioritize avoiding redundant transport readiness polls, while
 preserving custody checks, before considering upload concurrency. This remains
 a source-inspection lead, not an implemented saving. Perf-09 reuses the validated
 perf-08 plans and binaries. Its output directories are now occupied; do not
-rerun `t252-check`. The owner reported a silent exit 1 after captures existed;
+ rerun those plans. The owner reported a silent exit 1 after captures existed;
 the helper's overwrite guards explain such a refusal, though the original
 terminal exit was not captured. Installed guards now print an explanation.
 The perf-08 directories remain occupied. These profiles do not establish B9 or
