@@ -5,18 +5,18 @@
 //! after a short write at the returned count. A terminal status frees the
 //! slot and clunks whatever fid it held, at whatever phase it was in.
 use sophia_9p_client::pipeline::Reply;
-use sophia_9p_records::{Errno, Fid, Tag};
+use sophia_9p_records::{Errno, Tag};
 use sophia_shell_protocol::ContentResourceId;
 
 use super::{
-    Current, FileWire, O_WRONLY, RETRY_FIRST, SlotOpen, Upload, UploadState, WRITE_OVERHEAD,
+    Current, FileWire, O_WRONLY, Opening, RETRY_FIRST, Upload, UploadState, WRITE_OVERHEAD,
     open_fid_for,
 };
 use crate::ShellClientError;
 use crate::custody::Custody;
 
 impl FileWire {
-    /// Advances a bound slot's walk-then-open sequence once admitted.
+    /// Withholds payload until both replies for an admitted slot succeed.
     pub(super) fn on_slot_open_reply(
         &mut self,
         tag: Tag,
@@ -26,23 +26,14 @@ impl FileWire {
             let Some(upload) = self.uploads[slot] else {
                 continue;
             };
-            let open = match upload.state {
+            let mut open = match upload.state {
                 UploadState::Opening(open) => open,
                 _ => continue,
             };
-            let new_state = match open {
-                SlotOpen::Walking { tag: t, fid } if t == tag => match reply {
-                    Reply::Walk(qids) if qids.len() == 2 => {
-                        let open_tag = self.pipeline.lopen(fid, O_WRONLY)?;
-                        UploadState::Opening(SlotOpen::Opening { tag: open_tag, fid })
-                    }
-                    _ => return Err(ShellClientError::Protocol("upload slot walk refused")),
-                },
-                SlotOpen::Opening { tag: t, fid } if t == tag => match reply {
-                    Reply::Lopen { .. } => UploadState::Open(fid),
-                    _ => return Err(ShellClientError::Protocol("upload slot open refused")),
-                },
-                _ => continue,
+            let new_state = match open.receive(&mut self.pipeline, tag, reply)? {
+                Some(true) => UploadState::Open(open.fid),
+                Some(false) => UploadState::Opening(open),
+                None => continue,
             };
             self.uploads[slot] = Some(Upload {
                 resource: upload.resource,
@@ -57,11 +48,14 @@ impl FileWire {
     /// after `observe_resource_status` admits it.
     fn begin_slot_open(&mut self, slot: usize) -> Result<(), ShellClientError> {
         let name = slot.to_string();
-        let (tag, fid) = self
-            .pipeline
-            .walk(self.root, &[b"upload", name.as_bytes()])?;
+        let opening = Opening::start(
+            &mut self.pipeline,
+            self.root,
+            &[b"upload", name.as_bytes()],
+            O_WRONLY,
+        )?;
         if let Some(upload) = self.uploads[slot].as_mut() {
-            upload.state = UploadState::Opening(SlotOpen::Walking { tag, fid });
+            upload.state = UploadState::Opening(opening);
         }
         Ok(())
     }
@@ -197,30 +191,16 @@ impl FileWire {
                 continue;
             }
             if status == 1 {
-                self.uploads[slot] = Some(Upload {
-                    resource,
-                    state: UploadState::Opening(SlotOpen::Walking {
-                        // Placeholder tag/fid immediately replaced by
-                        // `begin_slot_open`, which issues the real walk.
-                        tag: Tag(0),
-                        fid: Fid(0),
-                    }),
-                });
                 self.begin_slot_open(slot)?;
             } else {
                 let fid_to_clunk = match upload.state {
                     UploadState::Open(fid) => Some(fid),
-                    UploadState::Opening(SlotOpen::Opening { fid, .. }) => Some(fid),
-                    UploadState::Opening(SlotOpen::Walking { fid, .. }) => Some(fid),
+                    UploadState::Opening(opening) => Some(opening.fid),
                     UploadState::Pending => None,
                 };
-                let stale_tag = match upload.state {
-                    UploadState::Opening(SlotOpen::Opening { tag, .. })
-                    | UploadState::Opening(SlotOpen::Walking { tag, .. }) => Some(tag),
-                    _ => None,
-                };
-                if let Some(tag) = stale_tag {
-                    self.forgettable.insert(tag);
+                if let UploadState::Opening(opening) = upload.state {
+                    self.forgettable.extend(opening.walk);
+                    self.forgettable.extend(opening.open);
                 }
                 self.uploads[slot] = None;
                 if let Some(fid) = fid_to_clunk {

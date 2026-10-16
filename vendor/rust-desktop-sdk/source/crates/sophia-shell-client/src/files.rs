@@ -39,8 +39,11 @@ mod connect;
 mod descriptor;
 mod drive;
 mod events;
+mod opening;
 mod submission;
 mod uploads;
+
+use opening::Opening;
 
 const O_RDONLY: u32 = 0;
 const O_WRONLY: u32 = 1;
@@ -85,14 +88,7 @@ const RETRY_MAX: Duration = Duration::from_millis(64);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SubmissionPhase {
-    Walk {
-        tag: Tag,
-        fid: Fid,
-    },
-    Open {
-        tag: Tag,
-        fid: Fid,
-    },
+    Opening(Opening),
     WriteRecord {
         tag: Tag,
         fid: Fid,
@@ -146,18 +142,12 @@ enum Current {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum SlotOpen {
-    Walking { tag: Tag, fid: Fid },
-    Opening { tag: Tag, fid: Fid },
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum UploadState {
     /// `ResourceBegin` submitted and committed client-side; awaiting the
     /// admitted (`status == 1`) `ResourceStatus` event.
     Pending,
     /// Admitted; walking and opening `upload/N` for writing.
-    Opening(SlotOpen),
+    Opening(Opening),
     /// The writer fid is open and ready for writes.
     Open(Fid),
 }

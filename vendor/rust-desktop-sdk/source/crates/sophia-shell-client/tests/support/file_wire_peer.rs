@@ -172,6 +172,8 @@ pub struct Peer {
     pub hold_ack_replies: bool,
     /// When set, walks to `transaction` wait the same way.
     pub hold_transaction_walks: bool,
+    pub hold_writer_opens: bool,
+    pub hold_upload_walks: bool,
     /// Replies withheld by the two flags above: type, tag and body.
     pub held_replies: Vec<(u8, u16, Vec<u8>)>,
     /// The `Negotiate` record the handshake received.
@@ -290,6 +292,8 @@ impl Peer {
             log: Vec::new(),
             hold_ack_replies: false,
             hold_transaction_walks: false,
+            hold_writer_opens: false,
+            hold_upload_walks: false,
             held_replies: Vec::new(),
             negotiate: None,
             uploads: HashMap::new(),
@@ -341,6 +345,8 @@ impl Peer {
     pub fn release_replies(&mut self) {
         self.hold_ack_replies = false;
         self.hold_transaction_walks = false;
+        self.hold_writer_opens = false;
+        self.hold_upload_walks = false;
         for (kind, tag, body) in std::mem::take(&mut self.held_replies) {
             self.send(kind, tag, &body);
         }
@@ -481,7 +487,8 @@ impl Peer {
                 for _ in 0..names {
                     reply.extend_from_slice(&self.qid_of(&node));
                 }
-                let held = self.hold_transaction_walks && node == "transaction";
+                let held = (self.hold_transaction_walks && node == "transaction")
+                    || (self.hold_upload_walks && node.starts_with("upload/"));
                 self.fids.insert(newfid, node);
                 if held {
                     self.held_replies.push((RWALK, tag, reply));
@@ -497,10 +504,16 @@ impl Peer {
                     self.pins.insert(fid, object.clone());
                 }
                 self.log.push(Logged::Open(node.clone()));
+                let held = self.hold_writer_opens
+                    && (node == "transaction" || node.starts_with("upload/"));
                 self.opens.push((node, u64_at(&reported, 5)));
                 let mut reply = reported.to_vec();
                 reply.extend_from_slice(&0u32.to_le_bytes());
-                self.send(RLOPEN, tag, &reply);
+                if held {
+                    self.held_replies.push((RLOPEN, tag, reply));
+                } else {
+                    self.send(RLOPEN, tag, &reply);
+                }
             }
             TREAD => {
                 let (fid, offset, count) = (u32_at(&body, 0), u64_at(&body, 4), u32_at(&body, 12));

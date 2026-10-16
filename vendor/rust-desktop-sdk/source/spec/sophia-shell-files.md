@@ -15,6 +15,25 @@ contract in the [control bus](sophia-9p-control-bus.md).
 
 ## Current owners, versions and grants
 
+### Request ordering on a shell connection
+
+The shell export executes synchronous requests in wire order on each
+connection. A client may queue a fresh `Twalk` followed by `Tlopen` for the
+new fid without waiting between them. This is a shell-profile guarantee,
+not an assumption about arbitrary 9P servers. Pending journal reads do not
+block later requests, and clients must match replies by tag rather than
+assume reply order.
+
+A writer must receive both a complete successful walk and a successful open
+before sending payload. A partial walk or either refusal ends that setup;
+an early successful open does not authorize data. Bounded clients may retain
+the sequential walk-then-open path when they lack a second request credit.
+This changes no upload, submission or acknowledgement barrier: resource
+admission precedes upload setup, writes remain sequential, the complete record
+write precedes submit, and the covering acknowledgement precedes the next
+transaction setup. Terminal resource status discards pending setup replies
+and releases its fid without allowing a later reply to reopen the slot.
+
 ### Protocol and revisions
 
 `protocol/sophia-shell-files-v1.kdl` defines the file records and objects.
@@ -239,6 +258,13 @@ feeds of 2 x cap plus one shared 4 MiB build scratch. These are encoded-buffer
 bounds, not RSS; allocator capacity, metadata and queues are accounted
 separately. The per-object caps are: catalog 4 MiB, tabs 1 MiB, shortcuts
 128 KiB, indicators 32 KiB, descriptors 4 KiB, outputs 1 KiB.
+
+Each shell 9P connection may also retain one reusable read payload buffer with
+capacity at most the negotiated frame limit minus the 11-byte Rread overhead.
+This storage is separate from journal retention and queued output; include it
+in transport memory accounting. It is allocated on demand and released on
+version reset or disconnect. Reuse never borrows bytes from queued replies or
+changes their node/epoch delivery checks.
 
 The r8 catalog maximum is 3,014,740 bytes in old framing, and 3,145,876 bytes
 conservative with headers, which fits the 4 MiB cap. The new codec must

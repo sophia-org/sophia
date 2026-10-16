@@ -1,5 +1,20 @@
 # Provenance
 
+## t331 batched writer setup
+
+The shell-file contract snapshot comes from signed Sophia `d817e6d8a`.
+Its request-order guarantee permits a fresh writer's walk and open to be
+queued together. The SDK still waits for both successful replies before
+payload, uses sequential setup at the existing capacity limit, and discards
+both pending replies when an upload slot retires. Submission, acknowledgement,
+upload and clunk barriers are unchanged. The generic 9P API is unchanged.
+
+The SDK workspace tests and all-target Clippy pass. Independent scripted peers
+check either reply order, refusal, malformed walk, pending-slot retirement
+and the one-credit fallback. These checks establish protocol behavior, not
+native CPU or allocation improvement; Sophia's paired qualification remains
+separate.
+
 ## t317 final contract reconciliation
 
 The launch-authentication and shell-descriptor contract snapshots are copied
