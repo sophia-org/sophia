@@ -144,16 +144,15 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
-Signed Rust `edc3fe8` adds the WM submission state machine: one immutable
-candidate, 64 custody results, independent domain IDs, same-ID retries,
-deadlines and the Submitted ACK barrier. Nine tests include both reply orders,
-partial writes, bounded backoff, disconnect classification, history eviction
-and journal control integration. All 30 WM client tests and strict Clippy pass.
-Signed C `7fd10a3` records matrix 21. Journal `e4d4d6c` and startup `6fe5632`
-remain the other building blocks. Next connect them to actual pipeline tags,
-ordered reply draining and terminal handling, then add snapshot fetching and
-session peer tests. They do not yet form a ready session. Direct nonblocking
-version startup and handoff-capacity checks also remain release gates.
+Signed Rust `772cd60` connects WM startup, journal and submission to the 9P
+pipeline. The developing Session owns request tags, processes event replies
+before submit replies, services ACKs and retains custody on EOF. Unix-socket
+peers cover startup through negotiation and application submission, both reply
+orders, EAGAIN and the ACK barrier. All 32 WM client tests, the full Rust
+workspace suite and targeted strict Clippy pass. Signed C `2173ec2` records
+matrix 22. Next add Cycle-bound snapshot fetching. Direct nonblocking version
+startup, handoff-capacity validation and paired production-export qualification
+remain gates; this is not yet a complete WM client release.
 
 Signed Rust `228f263` starts `sophia-wm-client` with typed application candidates
 and owned immutable encoding. Five tests cover all seven kinds, literal Dirty
