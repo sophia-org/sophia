@@ -144,6 +144,23 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `228ce0a` and C `e650904` pass production mid-read frame revocation.
+Each peer pauses after accepting part of the payload; the fixture advances the
+lock fence, then lets the peer continue. Both fail without a completed image;
+timeout cannot pass this check. Already buffered bytes are not recalled.
+All three external portal gates pass independently in both languages, as do
+the two ordinary portal-dispatch regressions and strict Rust Clippy. Portal
+map 10 records the limits.
+
+Peer SHA-256: Rust
+`2f94decb9742518519fb5088605d233a0e60872224c1c58c44537c8245303b53`;
+C `7b405aee867ccae4c702cb1f53d04c863ca57fe2525de9df3d555fe0b4a6bb2a`.
+Next implement capture-request custody and remaining recipient operations.
+Requester/broker, foreign bindings and release adoption remain. t333 stays
+open; production pins are unchanged. No quiet hold or performance claim.
+
+### Supplied-frame delivery checkpoint
+
 Signed Rust `328db4a` and C `5d805c7` pass real authenticated delivery of a
 supplied 256×128 frame. The fixture supplies policy, pixels and the request;
 the production coordinator installs the object. Both peers check metadata,

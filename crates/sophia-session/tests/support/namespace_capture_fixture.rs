@@ -30,6 +30,7 @@ pub struct Fixture {
     pub objects: Arc<PortalObjectRecipient>,
     queue: Arc<CaptureRequestQueue>,
     coordinator: PortalTransferCoordinator,
+    fence: PortalExecutionFence,
 }
 impl Fixture {
     pub fn install_supplied_frame(&self) {
@@ -68,7 +69,7 @@ impl Fixture {
             source,
             objects.clone(),
             Arc::new(OutputCapturePayloadHandler),
-            fence,
+            fence.clone(),
             PortalFileLimits::defaults(1),
         )
         .unwrap();
@@ -76,6 +77,7 @@ impl Fixture {
             objects,
             queue,
             coordinator,
+            fence,
         }
     }
     pub fn service(&self) {
@@ -100,5 +102,10 @@ impl Fixture {
                 .unwrap();
             assert!(self.queue.finish(work, OutputCaptureState::Ready));
         }
+    }
+    pub fn revoke_supplied_frame(&self) {
+        self.fence.block();
+        self.fence.unblock();
+        assert!(self.objects.current().is_err());
     }
 }
