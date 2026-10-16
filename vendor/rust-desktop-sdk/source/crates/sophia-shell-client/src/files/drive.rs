@@ -139,7 +139,7 @@ impl FileWire {
                 output.retire_front();
             }
             progressed |= self.start_next_outbound(output)?;
-            progressed |= self.drive_submit_retry(std::time::Instant::now())?;
+            progressed |= self.drive_submit_retry()?;
             progressed |= self.drive_slot_write()?;
             progressed |= self.drive_object_fetch()?;
             progressed |= self.process_buffered_event(inbox)?;

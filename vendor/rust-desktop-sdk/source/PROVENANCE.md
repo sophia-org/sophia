@@ -1,5 +1,14 @@
 # Provenance
 
+## t331 conditional retry clock
+
+Submission retry handling reads the clock only when a pending retry has no
+new event progress and is eligible for a later-pass deadline check. Idle and
+ordinary upload rounds no longer query time for an absent retry. The refusal
+pass rule, event-driven retry and deadline comparison remain unchanged.
+Workspace tests, all-target Clippy and formatting pass. Native CPU savings
+remain unmeasured; this change does not alter socket scheduling or custody.
+
 ## t331 batched writer setup
 
 The shell-file contract snapshot comes from signed Sophia `d817e6d8a`.
