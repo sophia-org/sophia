@@ -565,3 +565,27 @@ Analysis must select the Session/peer PIDs and the upload workload interval,
 compare exclusive leaf periods and resolved callers, and report missing
 stacks. User-space samples omit kernel execution and cannot alone explain
 all process CPU or allocation counts. Do not use sampled costs for acceptance.
+
+Perf-16 follow-up: only the first files-panel arm ran. Its process capture
+completed and all 1,000 journal uploads and cost records replay, but the
+presentation join fails because native completions use out-fence retirement
+and observation-time fallback. Console recovery is clean. `result.json` says
+`captured_only`; it precedes postprocessing and does not prove a joined report.
+No `native-samples.json` was written, and the launcher stopped before IPC/bulk.
+The timestamp reducer marks out-fence completion as non-kernel without marking
+it as a missing page-flip timestamp; that explains the logged combination
+`observation_fallback missing_kernel_timestamp=0`. It does not establish why
+out-fence completion won throughout this run or implicate sampling as its cause.
+
+The retained partial profile has 1,230 user-space samples in the workload
+interval for Session 7616 and peer host PID 7701. The peer reports namespace
+PID 1 in counters; perf identifies its unique host process. Selection and raw
+hashes are in `t331-native-perf-16/analysis/partial-profile.json`. Without the
+matched IPC profile, this cannot attribute the remaining differential cost.
+The hold is released; Claude reports only light local Git/text work.
+
+A fresh four-arm attempt is prepared in `t331-native-perf-17` with unchanged
+binaries, sampling settings and strict presentation checks. Preparation,
+device-free validation, artifact hashes and permission smoke pass. No capture
+has started. If the same refusal recurs, investigate completion selection
+before another run; do not relax acceptance or overwrite perf-16.

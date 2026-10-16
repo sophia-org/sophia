@@ -59,14 +59,24 @@ The quiet hold is released. Claude reports only light local edits, zk/Git
 inspection and small local copies during cost-15; exact timestamps were not
 supplied. The report is retained with the evidence.
 
-The owner requested fresh CPU profiling. Four one-minute plans are prepared
-in `t331-native-perf-16`, reusing cost-15's exact CPU-only executables and
-source revisions. Artifact hashes, device-free argument checks, launcher
-syntax and a small perf permission smoke pass. `t252-check` now selects these
-empty destinations. Request a fresh hold when the owner is ready. Profile
-only the Session/peer PIDs and measured upload interval during analysis;
-report exclusive leaves, caller resolution and sampling limits. No profile
-capture has started. Sampling cannot supply native acceptance evidence.
+Perf-16 stopped after the first panel arm. All 1,000 uploads and cost replay
+complete, and console recovery is clean, but the presentation join refuses
+`completion lacks exact heads or kernel timestamp`. Native records show
+out-fence retirement and observation-time fallback throughout, not accepted
+kernel page-flip timestamps. The launcher stopped before the other three
+arms. Preserve this failed join and its raw profile; do not call the campaign
+complete. The partial profile selects host PIDs 7616/7701 and contains 1,230
+user-space samples within the workload interval. It has no paired IPC profile.
+The cause of choosing out-fence retirement throughout is not established.
+
+The hold is released. Four fresh plans in `t331-native-perf-17` reuse the exact
+cost-15 CPU-only executables and source revisions. Hashes, device-free checks,
+launcher syntax and perf permission smoke pass. `t252-check` selects these
+empty destinations; request a fresh hold when the owner is ready. If the same
+refusal recurs, investigate completion selection before another capture.
+Keep the exact-timestamp gate unchanged. During analysis, select Session/peer
+host PIDs and the upload interval; the peer's counter PID 1 is namespaced.
+Sampling cannot supply native acceptance evidence.
 
 Progress-12 established 33/120 Session passes per files panel/bulk frame,
 versus roughly 8/45 for IPC. Source attribution identifies repeated idle
