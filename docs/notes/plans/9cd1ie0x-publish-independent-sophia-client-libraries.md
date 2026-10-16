@@ -144,27 +144,32 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
-The first implementation slice is signed Rust SDK `6fda07e`: the shell client
-now implements `AsFd` and reports read/write interests and immediate local
-work through `io_interest()`. Together with `wake_deadline()`, this supports a
-level-triggered application event loop. Buffered events, new admission and
-unfinished bounded service prevent sleeping through local work. The existing
-convenience wait remains available. No wire contract changed.
+Signed Rust SDK `1f33550` adds `dispatch(now, byte_budget)` after the readiness
+API in `6fda07e`. Applications can now supply monotonic time and one byte budget
+for the complete call. All internal rounds share that budget and a limit of
+32 syscall attempts per direction. Zero budget performs no socket I/O.
+Backward supplied time is rejected without progress. Both SDKs now use the
+C retry schedule: 4 ms doubling to 256 ms, with progress-driven earlier retry
+and no retry in the refusal pass. The pinned contract requires bounded backoff
+without prescribing those intervals; no wire contract changed.
 
 Rust workspace tests, all-target Clippy, formatting and diff checks pass.
-Independent scripted tests cover idle interests, queued requests, buffered
-replies/events, closure and poisoned pipelines. C `65ea947` passes `make check`,
-including its existing poll-interest and retry controls. Both SDKs now have
-`API-PARITY.md` mapping this first slice; the full operation inventory remains
-unfinished. Mandatory parity rules are committed in Sophia's agent instructions
+Independent scripted tests additionally cover the full backoff schedule using
+caller time without sleeps, one-byte dispatches reaching Submitted custody,
+zero-byte dispatch and shared budgets that cannot replenish across rounds.
+C `0e4b2fd` passes `make check`, including a new partial-request budget control
+and existing clock, poll-interest and retry controls. Its library is unchanged.
+Both SDKs have revision 2 of `API-PARITY.md`; the full operation inventory
+remains unfinished. Mandatory parity rules are committed in Sophia's agent instructions
 (`800f8ec`) and the C/Rust SDK instructions (`65ea947`/`a1154b3`).
 
-Next, resolve clock and service-budget differences against the pinned contract:
-C takes caller time and a byte budget; Rust uses its own clock and fixed bounds.
-C retry backoff is 4–256 ms; Rust is 2–64 ms. Neither difference is hidden by
-the readiness API. Rust's service documentation now correctly states up to 32
-transport rounds, each bounded to 256 KiB and 64 syscalls per direction; the
-previous comment incorrectly described those per-round bounds as per-call.
+Next, complete the shell operation matrix, beginning with atomic admission,
+reservation and native lifecycle helpers, then close the mapped capability gaps.
+Rust's convenience driver retains its internal clock and fixed limits; callers
+using simulated time must use `dispatch` and non-driving `take_*` receives.
+C saturates an overflowing deadline; Rust rejects a supplied `Instant` without
+room for the maximum retry. These representation limits are documented in both
+SDKs. Neither wraps a deadline or claims complete API parity.
 
 Sophia's SDK pins and the prepared t331 CPU pilot remain unchanged. Adopting
 this candidate still requires verified source provisioning and the affected
