@@ -144,6 +144,21 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `cf22985` and C `1d0f53c` add independent passive portal frame
+metadata decoders. Both enforce exact record size, identities, format, u32
+dimensions, canonical stride and the 64 MiB image limit without allocation or
+pixel copies. Independent malformed/boundary tests and strict Rust Clippy pass.
+`PORTAL-PARITY.md` revision 1 pins the unchanged recipient contract from Sophia
+`9b57fd040` and records the remaining scope. These are codecs, not portal clients.
+
+Next add capture request/status and discovery records, then authenticated
+recipient sessions with caller-controlled frame storage and production gates.
+Keep trusted requester authority separate; requester/broker and release-wide
+qualification remain required. t333 stays open, pins unchanged, no quiet hold
+and no measured performance gain.
+
+### Administrative namespace-denial checkpoint
+
 Signed Rust `bda343d` and C `9e71ea2` now pass foreign-namespace denial
 against the production administrative export. Both connect to the reachable
 socket, then require transport closure during negotiation; a timeout or ready
