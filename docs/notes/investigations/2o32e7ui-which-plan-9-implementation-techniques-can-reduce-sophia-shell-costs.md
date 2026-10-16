@@ -286,6 +286,54 @@ these fresh diagnostic captures. A new coordinated quiet window is required.
 Analysis must align counter snapshots with the offered-frame interval and retain
 boundary uncertainty rather than divide whole-session startup totals by frames.
 
+### Service-progress results
+
+All four progress-12 arms completed on comparator `47ac3f2f7` and integration
+`59bee7f`. Offline journal and native-join replay match the stored reports,
+with 1,000 frames each and clean console/keyboard recovery. An independent
+raw-record parse matches every stored progress sample and verifies per-process
+identity, order and monotonic counts. Costs remain null.
+
+The interval spans the first peer frame-start progress snapshot through the
+last frame-end snapshot. Session lower bounds subtract snapshots wholly inside
+that interval; upper bounds use enclosing snapshots. This retains sampler
+boundary uncertainty instead of including whole-session startup. Values below
+are counts per offered frame, rounded for display; they are not CPU times or
+statistical confidence intervals.
+
+| Counter | Files panel | IPC panel | Files bulk | IPC bulk |
+| --- | ---: | ---: | ---: | ---: |
+| Session/component passes | 33.08–33.16 | 8.03–8.20 | 120.07–120.12 | 45.02–45.51 |
+| Core polling turns | 71.29–71.46 | 12.17–12.36 | 245.27–245.39 | 49.15–49.67 |
+| Core flush calls | 138.32–138.62 | 16.06–16.40 | 489.28–489.47 | 90.04–91.01 |
+| Accepted handoffs | 32.08–32.13 | 0 | 119.06–119.09 | 0 |
+| Stale handoff fallbacks | 0 | 0 | 0 | 0 |
+| Core replies encoded | 52.94–53.03 | 0–0.021 | 151.97–152.03 | 0–0.021 |
+| Pending-read attempts | 30.08–30.12 | 0–0.021 | 114.06–114.08 | 0–0.021 |
+| Peer content-poll calls | 38.567 | not instrumented | 87.046 | not instrumented |
+| Peer wait API calls | 32.568 | not instrumented | 114.637 | not instrumented |
+
+The handoff is exercised; stale observations do not explain the remaining gap
+in these intervals. Files runs roughly four times as many Session passes for
+panel and 2.7 times as many for bulk. This supports investigating service
+amplification. It does not prove those passes unnecessary: authentication,
+revocation, deadlines and protocol dependencies can require them.
+
+Core counters include other 9P services even in the IPC arm, so do not label
+their totals as shell-only traffic or infer one server's polling frequency.
+Source inspection also confirms FileWire::wait_for_io can return immediately
+when service is pending: peer wait counts are calls, not poll syscalls or sleeps.
+The next bounded investigation should account for the roughly 53 panel and
+152 bulk replies by request kind and SDK transition, then identify which
+dependent exchanges force additional owner passes. Do not infer a new cache,
+upload concurrency or skipped authority checks from these counts alone.
+
+Evidence is `t331-native-progress-12/offline-replay/summary.json`, alongside
+replayed journal/offers/samples and raw captures. It retains exact count bounds,
+boundary snapshots and source hashes. All output directories are occupied.
+Claude reports only initial 13:41–13:42Z status reads and confirmation, no later
+crunch work during the hold. The hold is released.
+
 ### CPU attribution review after cost-11
 
 Reclassified the retained perf-08 stacks by exclusive leaf, selecting exactly

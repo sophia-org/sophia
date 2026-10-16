@@ -14,14 +14,21 @@ repairs? Reconcile the existing evidence before repeating a desktop campaign.
 
 ## Current resumption
 
-Progress-12 is ready for an attended tty4 run: comparator `47ac3f2f7`, integration
-`59bee7f`, four fresh files/IPC panel/bulk arms under
-`t252-authenticated-20261015/t331-native-progress-12`. The installed `t252-check`
-selects these plans, not cost-11. All plans and device-free argument checks pass;
-no native arm has run. Arrange a new quiet window before the owner launches it.
-The ordinary-allocator diagnostic records numeric service/progress totals and
-explicitly produces no CPU/allocation acceptance verdict. Production runtime
-code is unchanged; the instrumentation stays on the comparator branch.
+Progress-12 completed all four arms on comparator `47ac3f2f7` and integration
+`59bee7f`. Offline replay matches journal metrics, all 1,000 frame joins per arm
+and every raw progress record; console/keyboard recovery is clean. Files takes
+33.08–33.16 Session passes per panel frame versus IPC's 8.03–8.20; bulk takes
+120.07–120.12 versus 45.02–45.51. Handoff is used about 32/119 times per frame
+with zero stale fallbacks in those intervals. This identifies service
+amplification, not yet redundant work or a safe authority-check removal.
+
+The Plan 9 audit records counter bounds and limits. Next, attribute the roughly
+53/152 encoded core replies per files panel/bulk frame to request kinds and
+client state transitions, distinguishing required round trips from unchanged
+service. Peer wait counters are API calls, not proven sleeps. Core totals cover
+all process servers. No CPU/allocation acceptance verdict follows. All progress-12
+capture directories are occupied: do not rerun `t252-check`. The quiet hold is
+released; Claude reports only initial status reads and confirmation.
 
 Cost-11 completed all eight arms on production-source candidate `deae479d6`,
 comparator `8bbef6e00` and integration `4eb52fb`. Independent offline replay
