@@ -144,6 +144,24 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `bf06a6f` and C `5367415` pass production administrative service
+shutdown before and after command-ticket claim. Both clients preserve uncertain
+custody and refuse further invocation. Dropping the service cancels the unclaimed
+ticket; the claimed ticket stays dispatched and may finish after the peer exits.
+This is orderly worker teardown, not abrupt process death. Both independent
+peers pass both `admin_external_sdk` tests, including the earlier completion,
+stale-refresh and admission-revocation schedules. Admin map 11 records the limit.
+
+Updated peer SHA-256: Rust
+`b1224db04ef31a021aa5904b497a68f13d90053987128b59f751ba02f0296ce2`;
+C `207e07651049b3592811426cad5976a9ee9ff8f862993ae9f8efe9adca4be7d0`.
+Use the same command and peer locations below. Next qualify explicit recovery
+on a replacement service without replaying the uncertain mutation, then remaining
+process-loss/integrated failures and the portal/broker release audit. t333 stays
+open, pins unchanged, no quiet hold and no measured speedup.
+
+### Initial administrative production checkpoint
+
 Signed Rust `c586e1b` and C `c40ce7a` pass the same production administrative
 export gate, `admin_external_sdk`. Each peer completes request 1 through a
 claimed ControlTicket, receives Stale for request 2 after catalog generation

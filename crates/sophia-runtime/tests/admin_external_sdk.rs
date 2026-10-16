@@ -15,6 +15,66 @@ impl Drop for Peer {
     }
 }
 
+struct Reports(PathBuf);
+impl Drop for Reports {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+#[test]
+#[ignore = "requires SOPHIA_ADMIN_SDK_PEER naming an absolute independently built peer"]
+fn external_sdk_service_shutdown_preserves_uncertainty_and_owner_custody() {
+    let executable = PathBuf::from(std::env::var_os("SOPHIA_ADMIN_SDK_PEER").unwrap());
+    assert!(executable.is_absolute() && executable.is_file());
+    for claimed in [false, true] {
+        let reports = Reports(
+            std::env::temp_dir().join(format!("admin-sdk-loss-{}-{claimed}", std::process::id())),
+        );
+        std::fs::create_dir(&reports.0).unwrap();
+        let report = reports.0.join("result");
+        let f = Fixture::new();
+        let path = f.service.socket_path().to_owned();
+        let mut child = Peer(
+            Command::new(&executable)
+                .arg(&path)
+                .arg(&report)
+                .arg("loss")
+                .spawn()
+                .unwrap(),
+        );
+        let ticket = f.ticket();
+        assert_eq!(ticket.request, 1);
+        assert_eq!(ticket.command, support::action());
+        if claimed {
+            support::claim(&ticket);
+        }
+        // Stop and join the real worker, closing its sockets. This is service
+        // teardown, not a claim that the worker process was killed abruptly.
+        drop(f);
+        assert!(!path.exists());
+        if claimed {
+            assert!(ticket.dispatched());
+        } else {
+            assert!(ticket.cancelled());
+            assert!(!ticket.claim());
+        }
+        let deadline = Instant::now() + Duration::from_secs(12);
+        loop {
+            assert!(Instant::now() < deadline, "SDK shutdown deadline");
+            if let Some(status) = child.0.try_wait().unwrap() {
+                assert!(status.success(), "SDK shutdown peer failed: {status}");
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(std::fs::read_to_string(&report).unwrap(), "ok\n");
+        if claimed {
+            ticket.finish(ControlOutcome::Committed);
+        }
+    }
+}
+
 #[test]
 #[ignore = "requires SOPHIA_ADMIN_SDK_PEER naming an absolute independently built peer"]
 fn external_sdk_settlement_stale_refresh_and_admission_revocation() {
