@@ -19,6 +19,7 @@ enum PeerKind {
     Raw,
     CSdk,
     RustSdk,
+    ExternalSdk,
 }
 
 pub(super) struct Peer(pub(super) PathBuf);
@@ -31,6 +32,9 @@ impl Peer {
     }
     pub(super) fn rust_child(name: &str) -> Self {
         Self::build_child(PeerKind::RustSdk, Some(name))
+    }
+    pub(super) fn external_sdk() -> Self {
+        Self::build_child(PeerKind::ExternalSdk, None)
     }
     fn build_child(kind: PeerKind, child: Option<&str>) -> Self {
         static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -47,16 +51,21 @@ impl Peer {
             .arg(
                 PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                     .join("tests/support")
-                    .join(if kind == PeerKind::RustSdk {
-                        "lock_rust_bootstrap.c"
-                    } else {
-                        "lock_authentication_peer.c"
-                    }),
+                    .join(
+                        if matches!(kind, PeerKind::RustSdk | PeerKind::ExternalSdk) {
+                            "lock_rust_bootstrap.c"
+                        } else {
+                            "lock_authentication_peer.c"
+                        },
+                    ),
             )
             .arg("-o")
             .arg(&path);
         if let Some(child) = child {
             command.arg(format!("-DSOPHIA_TEST_CHILD=\"{child}\""));
+        }
+        if kind == PeerKind::ExternalSdk {
+            command.arg("-DSOPHIA_TEST_EXTERNAL_PEER");
         }
         if kind == PeerKind::CSdk {
             let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

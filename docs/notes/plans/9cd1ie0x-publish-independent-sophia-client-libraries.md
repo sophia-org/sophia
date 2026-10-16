@@ -144,6 +144,27 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `5d66fec` and C `cce3196` add independent protected output peers.
+Both pass the real protected process/Factotum fixture, hand the exact admitted
+root to their native session, fetch and ACK topology, then observe idle grant
+revocation while retaining negotiation Submitted custody. Namespace admission
+returns to zero. The original raw reauthentication/revocation control passes
+separately. C's full suite and strict Rust output all-target Clippy pass.
+Matrix 40 / output map 9 record the scope: no SDK reauthentication or in-flight
+proposal revocation is claimed. Production pins and the desktop are unchanged.
+
+Run each prebuilt peer with
+`SOPHIA_OUTPUT_AUTH_PEER=/absolute/path/to/output_authenticated_peer cargo-slot sophia cargo test -p sophia-session --features native-session --test launch_authentication external_sdk_output_authenticates_and_observes_revocation -- --include-ignored --nocapture`.
+The invocation without `native-session` ran zero tests and is not evidence;
+the corrected explicit target ran one passing test for each SDK.
+Rust peer SHA-256: `02a798b4e609d77bb5673d2f2ebaae0e674365a815c3e4a6b669bd8f30a82551`
+at `~/.cache/cargo-slots/sophia-desktop-sdk-rs@sdk-rs-t331-reply-storage/1/debug/examples/output_authenticated_peer`.
+C peer SHA-256: `704b5dd29890dcd80e92cb1c437521b9114cc21d018d7d4f13db5280d6559d26`
+at `~/dev/sdk-c-t318-namespaces/build/output_authenticated_peer`. No binaries
+were copied into evidence. Next implement the experimental native Rust lock
+client against C's operations and pinned contract, keeping remaining output
+qualification limits in its operation map for the final release audit.
+
 Signed Rust `82b7319` adds `output_conformance_peer`; it and Sophia's existing
 C peer pass the same production output export/worker exchange. Both negotiate,
 fetch the exact topology, submit ValidateOnly, receive Validated and settle
@@ -159,8 +180,8 @@ The paired command passes two tests; the normal output export suite passes
 Rust all-target output Clippy passes. The built Rust peer at
 `~/.cache/cargo-slots/sophia-desktop-sdk-rs@sdk-rs-t331-reply-storage/1/debug/examples/output_conformance_peer`
 has SHA-256 `2da234f7c6b93cfeb28b64e1bb9cf307aa17d53cb1bd45fab4228fc8ccd087d0`.
-No binary was copied to evidence. Next qualify protected output launch and
-revocation with independent peers, then continue experimental lock,
+No binary was copied to evidence. Protected output launch and idle revocation
+are now covered above; continue experimental lock,
 administration and the remaining t333 audit/publication requirements.
 
 Signed Rust `9ac9742` and C `fc67ebd` add independent output terminal socket
