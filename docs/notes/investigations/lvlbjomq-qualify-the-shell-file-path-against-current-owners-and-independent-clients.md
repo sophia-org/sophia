@@ -20,8 +20,8 @@ per frame, retaining +10% as the acceptance ceiling. The owner accepted
 and the [allocation and copying slice](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#approved-allocation-and-copying-slice-october-16).
 Upload ordering, resource limits and the installed desktop remain unchanged.
 
-The last acceptance-comparable CPU pilot still fails the cost gate: files cost
-about 57% more than IPC for the panel and 31% more for panel-plus-4-MiB uploads.
+The latest CPU pilot, `cost-07`, still fails the cost gate: files cost
+about 47% more than IPC for the panel and 28% more for panel-plus-4-MiB uploads.
 Earlier fixes cut files allocations by about 12–14% against `cost-02`. All twelve
 `cost-04`/`profile-05` cases are accounted for. The four finer `profile-06` arms
 also join 1,000 frames each, match independent replay and restore console and
@@ -42,14 +42,17 @@ native fixes and SDK onto both wires. SDK workspace tests, focused strict
 Clippy, the signed vendor gate, 112 mirror tests, frame-service checks and
 independent C/Go export checks pass. See [implementation evidence](#t331-bounded-storage-and-copying-results).
 
-Eight fresh CPU-only/allocation arms are prepared in
+All eight CPU-only/allocation arms completed in
 `~/.local/state/sophia/development-evidence/t252-authenticated-20261015/t331-native-cost-07/`,
-on comparator `a2ecde0ef` and integration `4eb52fb`. All device-hidden argument
-checks pass. `t252-check` selects those eight one-minute runs from foreground
-tty4. No native arm has started and no quiet hold is active. Coordinate Claude's
-crunch training through Herdr (`Mac mini`, `w2:p1`) before the attended run;
-release the hold afterward, independently replay every arm, and compare the
-separate CPU and allocation results before the full B9 campaign.
+on comparator `a2ecde0ef` and integration `4eb52fb`. Independent replay joins
+1,000 frames per arm and verifies clean console/keyboard recovery. Files
+allocations fell about 38% for the panel and 43% for bulk against `cost-04`;
+CPU/MiB fell only about 1.3% and 1.9%. The shared changes also help IPC.
+See [cost-07 results](#t331-storage-pilot-results). The quiet hold is released.
+Do not rerun `t252-check`: its evidence directories are occupied. Next inspect
+remaining repeated owner work and copying with CPU attribution before proposing
+another implementation slice. These results do not justify full B9 yet or
+authorize concurrent uploads. Coordinate any new native window through Herdr.
 
 [t332](gjov8u9g-can-independent-shell-uploads-progress-concurrently-without-weakening-custody.md#t332--investigate-bounded-upload-concurrency)
 is a candidate concurrency investigation, not an implementation authorization
@@ -1965,6 +1968,40 @@ window before the attended run; this pilot is not the full B9 campaign.
 The separate [concurrency investigation](gjov8u9g-can-independent-shell-uploads-progress-concurrently-without-weakening-custody.md)
 is recorded as t332, a candidate after t331 measurements. Native CPU improvement
 and per-frame allocation savings remain unproved for these changes.
+
+## t331: storage pilot results
+
+The attended `t331-native-cost-07` pilot completed all eight arms on comparator
+`a2ecde0ef`, SDK `d8558f4` and integration `4eb52fb`. Independent collect,
+metrics, cost and native-join replay passes for each arm, with 1,000 frames and
+the expected uploaded bytes. All captures report `captured_only`; replay
+establishes sample validity, not a B9 pass. Recovery records restore termios
+and keyboard mode without emergency recovery.
+
+| Workload | Files CPU ms/MiB | IPC CPU ms/MiB | Files allocations/frame | IPC allocations/frame |
+| --- | ---: | ---: | ---: | ---: |
+| Panel | 11.419793–11.427201 | 7.762774–7.771587 | 2,327–2,330 | 1,142–1,144 |
+| Panel + 4 MiB | 1.773713–1.773943 | 1.384933–1.385123 | 6,492–6,495 | 3,384–3,385 |
+
+CPU comes from ordinary-allocator runs; allocations come from separate
+Rust-global runs. Files CPU remains about 47% above IPC for the panel and 28%
+for bulk. Allocation counts remain roughly twice IPC. The +10% ceiling fails.
+Against `cost-04`, files allocations fall about 38% and 43%, while CPU falls
+only about 1.3% and 1.9%. These are single-pilot observations, not confidence
+intervals or isolated attribution to individual patches. Both wires received
+the shared fixes; IPC allocation reductions are expected too.
+
+Raw captures, plans and `offline-replay/summary.json` remain under the cost-07
+evidence directory. The summary binds source-log hashes, normalized bounds,
+join counts and recovery records. Claude confirmed the quiet hold from 10:28Z
+until release, reporting only a brief read-only SSH log check before 10:28:17Z;
+its next crunch command was after release at 10:48Z. No system-wide silence is
+claimed. The hold is released and all run directories are occupied.
+
+The next investigation should attribute remaining CPU to repeated owner work
+and copying before choosing another patch. Large allocation reductions alone
+have not removed the CPU gap. t331 remains open; neither full B9 nor concurrent
+upload implementation is authorized by this pilot result.
 
 ## Connections
 
