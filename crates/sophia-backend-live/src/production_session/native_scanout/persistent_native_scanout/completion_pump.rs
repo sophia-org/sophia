@@ -1,4 +1,16 @@
 impl LiveProductionNativeScanout {
+        /// Close the arrival window between the ordinary card drain and fence
+        /// observation before irreversibly changing this head's serial basis.
+        fn complete_signaled_fence(
+            &mut self,
+            index: usize,
+        ) -> Result<(crate::LivePageFlipCallback, LiveProductionKmsCompletionSource), Box<dyn std::error::Error>> {
+            if self.heads[index].needs_fence_recheck() {
+                self.poll_group_callbacks(self.heads[index].group)?;
+            }
+            Ok(self.heads[index].take_signaled_fence_completion())
+        }
+
         pub fn poll_group_callbacks(
             &mut self,
             group: usize,

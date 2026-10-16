@@ -1,6 +1,27 @@
 use super::*;
 
 impl LiveProductionNativeHead {
+    pub(super) fn needs_fence_recheck(&self) -> bool {
+        self.pending_callback.is_none()
+            && self.completion_mode == LiveProductionKmsCompletionMode::PageFlipPreferred
+    }
+
+    pub(super) fn take_signaled_fence_completion(
+        &mut self,
+    ) -> (
+        crate::LivePageFlipCallback,
+        LiveProductionKmsCompletionSource,
+    ) {
+        if let Some(callback) = self.pending_callback.take() {
+            (callback, LiveProductionKmsCompletionSource::PageFlipEvent)
+        } else {
+            (
+                self.synthesize_out_fence_callback(),
+                LiveProductionKmsCompletionSource::OutFence,
+            )
+        }
+    }
+
     pub(super) fn install_topology_presentation(&mut self, frames: OutputFramePresentationState) {
         // Apply and rollback reuse the physical head and card event route.
         // Keep its completion authority: kernel event serials and synthetic
