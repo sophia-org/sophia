@@ -144,6 +144,25 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `96aba59` and C `0797146` add provisional administrative snapshot
+state machines for info, commands and status. Both emit bounded Walk/Open/Read/
+Clunk operations and expose a result only after EOF, syntax validation and
+successful clunk. Reads respect msize/iounit and probe beyond the file bound
+without storing overflow. Remote errors do not cause retries. Absolute deadlines
+and nonmutating clock-regression refusals use caller-supplied monotonic time.
+
+Rust reserves/reuses the supplied Vec; C uses caller storage. Tests verify
+storage identity, fragmented reads of all three files, EOF/clunk barriers,
+malformed EOF, oversized replies, overflow, clunk refusal, EAGAIN, deadline and
+clock regression. Three Rust component tests, C's independent snapshot test and
+strict Rust Clippy pass. Admin map 5 documents the limits: matched replies are
+supplied by the tests, and the connection driver must match tags and close on
+terminal errors. Scratch storage before completion is not a validated result.
+Next join these components to each SDK's pipeline for startup, readiness and
+bounded dispatch, then invocation custody and pending-only status wakeups.
+No complete administrative client or production gate is claimed. t333 remains
+open, pins unchanged, no quiet hold or measured speedup.
+
 Signed Rust `42d28dd` and C `e184709` add complete administrative catalog
 validation and binary-search membership lookup. Both keep at most 259 inline
 rows with names borrowed from the immutable snapshot, without heap allocation.
