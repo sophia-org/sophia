@@ -144,6 +144,28 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `506cec0` adds the provisional lock upload controller: one upload,
+1–8 write slots, five request slots reserved for controls, explicit cancellation
+and draining before cleanup. Reversed replies may free slots for refill while
+an earlier reply remains held. Pipelined short writes cancel; single-write mode
+continues at the returned count. Slot errors end or cancel only the upload;
+malformed replies terminate the session. Resource status and submission refusal
+drive cleanup, allowing later uploads after the slot is released.
+
+Chunks transfer as owned Vecs without a payload copy. Failed admission returns
+the same buffer; take_chunk returns completed storage for reuse only after all
+issued writes settle. C borrows storage instead. Transport may still copy wire
+payloads, and runtime gains remain unmeasured. Seven upload tests bring the Rust
+lock-client total to 31; all pass with strict Clippy. C's independent lock suite
+passes, including socket-backed window, cancellation and control-progress tests.
+Signed C `f7d3d45` records API matrix 45 / lock map 5 in both SDKs.
+
+Next integrate startup, submission, journal, object fetch and uploads into the
+lock session/connecting facades. Test real-socket control progress, immediate
+readiness after cancellation drains, terminal custody and recovery before paired
+production/protected gates. Remaining role coverage, publication and verified
+pin adoption still block t333. No quiet hold is active; pins remain unchanged.
+
 Signed Rust `70c9b22` adds the provisional lock journal and object fetch.
 The journal retains one application head and does not decode controls behind
 it, matching C. Both byte buffers are fixed at 1024 bytes. A cursor avoids
