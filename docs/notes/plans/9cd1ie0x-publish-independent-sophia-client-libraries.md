@@ -144,6 +144,20 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `2e84ad0` and C `7af01ca` add matched integrated failure checks
+for short write replies, malformed status detail lengths and an illegal
+owner/success outcome. All six negative schedules retain the expected custody,
+refuse further invocation and issue no replay. One-byte command dispatch also
+passes the successful three-command sequence, retaining the catalog until
+explicit refresh. Both independent tests and strict Rust Clippy pass; admin
+map 14 records the evidence. No production code or measured performance changed.
+
+Next qualify namespace denial, then finish the portal/broker and release-wide
+parity requirements. t333 remains open; pins are unchanged and no quiet hold
+is active. The four production gates and peer hashes below remain unchanged.
+
+### Abrupt process-loss checkpoint
+
 Both independently built administrative peers now pass abrupt death of a
 test-owned production service process before and after owner claim. The parent
 waits for the accepted/claimed marker, kills only that child and waits for its
