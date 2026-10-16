@@ -144,6 +144,24 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `bda343d` and C `9e71ea2` now pass foreign-namespace denial
+against the production administrative export. Both connect to the reachable
+socket, then require transport closure during negotiation; a timeout or ready
+session fails the check. No request reaches the owner. All five external SDK
+gates pass for each peer, and strict Rust Clippy passes. Admin map 15 records
+the scope: HostDomain admission, not another role's Factotum authentication.
+
+Peer SHA-256: Rust
+`e5b735c0790036ee455a582d0ba4c13f66d214d5b0bc9ea896fbb57d50f79bac`;
+C `f45a6ea4e5e841dd4fb0420308c9ad423db37f49b0f014bc4839f94aa6ef6ac2`.
+Use the executable paths and filtered production command below. Next implement
+typed portal recipient coverage against `docs/portal-client-files.md`, keeping
+requester authority separate; audit requester/broker requirements and the
+remaining release-wide gates. t333 stays open; pins are unchanged, no quiet
+hold is active and no performance gain is claimed.
+
+### Integrated failure checkpoint
+
 Signed Rust `2e84ad0` and C `7af01ca` add matched integrated failure checks
 for short write replies, malformed status detail lengths and an illegal
 owner/success outcome. All six negative schedules retain the expected custody,

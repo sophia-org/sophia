@@ -25,6 +25,48 @@ impl Drop for Reports {
 }
 
 #[test]
+#[ignore = "requires bubblewrap and SOPHIA_ADMIN_SDK_PEER naming an independently built peer"]
+fn external_sdk_foreign_namespace_denied_despite_reachable_socket() {
+    let executable = PathBuf::from(std::env::var_os("SOPHIA_ADMIN_SDK_PEER").unwrap());
+    assert!(executable.is_absolute() && executable.is_file());
+    let f = Fixture::new();
+    let mut child = Peer(
+        Command::new("bwrap")
+            .args([
+                "--die-with-parent",
+                "--unshare-user",
+                "--unshare-pid",
+                "--unshare-net",
+                "--ro-bind",
+                "/",
+                "/",
+                "--proc",
+                "/proc",
+                "--dev",
+                "/dev",
+            ])
+            .arg(executable)
+            .arg(f.service.socket_path())
+            .args(["-", "denied"])
+            .spawn()
+            .unwrap(),
+    );
+    let deadline = Instant::now() + Duration::from_secs(12);
+    loop {
+        assert!(Instant::now() < deadline, "namespace-denial peer deadline");
+        if let Some(status) = child.0.try_wait().unwrap() {
+            assert!(
+                status.success(),
+                "namespace prerequisites or SDK denial failed: {status}"
+            );
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(f.service.try_request().is_none());
+}
+
+#[test]
 #[ignore = "subprocess helper; requires SOPHIA_ADMIN_CRASH_ROOT"]
 fn service_process_child() {
     crash_service::run();
