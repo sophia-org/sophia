@@ -20,7 +20,9 @@ use sophia_shell_protocol::shell_files::{
     encode_shell_file_submit,
 };
 
-use super::{Current, FileWire, O_RDWR, QueuedKind, RETRY_FIRST, RETRY_MAX, SubmissionPhase};
+use super::{
+    Current, FileWire, O_RDWR, Opening, QueuedKind, RETRY_FIRST, RETRY_MAX, SubmissionPhase,
+};
 use crate::ShellClientError;
 use crate::custody::Custody;
 use crate::outbox::ClientOutbox;
@@ -63,14 +65,15 @@ impl FileWire {
                     .expect("pending mirrors the outbox one-for-one");
                 let header = decode_shell_file_record(bytes, ShellFileClass::Candidate)?.header;
                 let (submission_id, kind) = (header.submission_id, header.kind);
-                let (tag, fid) = self.pipeline.walk(self.root, &[b"transaction"])?;
+                let opening =
+                    Opening::start(&mut self.pipeline, self.root, &[b"transaction"], O_RDWR)?;
                 Current::Submission {
                     bytes: output.take_front_bytes(),
                     submission_id,
                     kind,
                     ticket,
                     submit: Vec::new(),
-                    phase: SubmissionPhase::Walk { tag, fid },
+                    phase: SubmissionPhase::Opening(opening),
                     submitted: false,
                 }
             }
@@ -236,26 +239,16 @@ impl FileWire {
         else {
             return Ok(false);
         };
+        if let SubmissionPhase::Opening(opening) = phase {
+            let result = opening.receive(&mut self.pipeline, tag, reply)?;
+            if result == Some(true) {
+                let fid = opening.fid;
+                let tag = self.pipeline.write(fid, 0, bytes)?;
+                *phase = SubmissionPhase::WriteRecord { tag, fid };
+            }
+            return Ok(result.is_some());
+        }
         match *phase {
-            SubmissionPhase::Walk { tag: t, fid } if t == tag => match reply {
-                Reply::Walk(qids) if qids.len() == 1 => {
-                    let open_tag = self.pipeline.lopen(fid, O_RDWR)?;
-                    *phase = SubmissionPhase::Open { tag: open_tag, fid };
-                    Ok(true)
-                }
-                _ => Err(ShellClientError::Protocol("transaction walk refused")),
-            },
-            SubmissionPhase::Open { tag: t, fid } if t == tag => match reply {
-                Reply::Lopen { .. } => {
-                    let write_tag = self.pipeline.write(fid, 0, bytes)?;
-                    *phase = SubmissionPhase::WriteRecord {
-                        tag: write_tag,
-                        fid,
-                    };
-                    Ok(true)
-                }
-                _ => Err(ShellClientError::Protocol("transaction open refused")),
-            },
             SubmissionPhase::WriteRecord { tag: t, fid } if t == tag => match reply {
                 Reply::Write(count) if *count as usize == bytes.len() => {
                     *submit = encode_shell_file_submit(ShellFileSubmit {

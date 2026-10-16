@@ -326,3 +326,52 @@ fn a_chunk_count_no_grant_could_lay_out_is_refused_before_submission() {
     peer.pump();
     assert!(peer.transactions.is_empty(), "nothing was staged");
 }
+
+#[test]
+fn a_terminal_slot_status_discards_both_pending_setup_replies() {
+    let limits = reduced();
+    let (mut connection, mut peer) = connect(limits);
+    content(&mut connection, &mut peer);
+    let transaction = TransactionId::from_raw(7);
+    let ticket = only(
+        connection
+            .enqueue_content_tracked(transaction, &begin(1, 4))
+            .unwrap(),
+    );
+    commit(&mut connection, &mut peer, ticket);
+    peer.hold_upload_walks = true;
+    peer.hold_writer_opens = true;
+    status(
+        &mut peer,
+        transaction,
+        resource(1),
+        1,
+        ContentReason::None,
+        0,
+        0,
+    );
+    next(&mut connection, &mut peer, |_, peer| {
+        (peer.held_replies.len() == 2).then_some(())
+    });
+    assert!(peer.uploads.is_empty());
+    peer.hold_clunks = true;
+    status(
+        &mut peer,
+        transaction,
+        resource(1),
+        3,
+        ContentReason::None,
+        0,
+        0,
+    );
+    next(&mut connection, &mut peer, |_, peer| {
+        (peer.held_clunks > 0).then_some(())
+    });
+    peer.held_replies.reverse();
+    peer.release_replies();
+    for _ in 0..8 {
+        connection.poll_io().unwrap();
+        peer.pump();
+    }
+    assert!(peer.uploads.is_empty());
+}

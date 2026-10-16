@@ -14,6 +14,36 @@ repairs? Reconcile the existing evidence before repeating a desktop campaign.
 
 ## Current resumption
 
+The approved extra-pass fixes are implemented. Signed production `d817e6d8a`
+services launch relays from owner readiness and deadlines while retaining
+per-pass custody and retirement checks. Signed SDK `3edcd28` batches each
+fresh writer's walk and open, but waits for both successful replies before
+payload. It is pushed upstream and vendored here. The SDK workspace, strict
+Clippy, signed vendor gate and 24 production runtime interoperability tests
+pass, including independent C pipeline checks. Relay checks and the isolated
+native-feature Session suite also pass; details follow below.
+
+Measure the slices separately. Comparator `f5d0f0932` contains the relay fix
+and schema-2 diagnostic counters, deliberately retaining SDK `d8558f4` for the
+first pilot. Integration `fd2cb6c` accepts the new counters and still replays
+schema 1, but rejects mixed schemas. A fresh four-arm progress pilot is being
+prepared under `t252-authenticated-20261015/t331-native-relay-13`. It must pass
+device-free validation before an attended tty4 run. No native arm has run;
+there is no quiet hold yet. After this pilot, carry the SDK pin to the comparator
+and prepare a separate combined pilot, followed by CPU and allocation runs.
+Do not reuse any occupied capture directory or run the old `t252-check`.
+
+Progress-12 established 33/120 Session passes per files panel/bulk frame,
+versus roughly 8/45 for IPC. Source attribution identifies repeated idle
+launch-relay work and sequential SDK setup as avoidable costs, while retaining
+the authority checks and upload barriers. The latest cost-11 pilot still fails
+the +10% gate. t331 remains open until the full paired gate passes; diagnostic
+counts cannot establish CPU or allocation savings. t332 stays an investigation.
+The installed desktop is unchanged. Normative scope and acceptance remain in
+the [t331 plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md).
+
+## Relay implementation and preceding qualification checkpoints
+
 The owner approved readiness-driven launch relays and batched SDK writer setup
 on October 16. The relay implementation now consumes the actual owner wait,
 including short frame-service waits, or one aggregate nonblocking sample.

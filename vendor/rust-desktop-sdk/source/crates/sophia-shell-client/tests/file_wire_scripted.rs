@@ -1772,3 +1772,72 @@ fn readiness_wait_flushes_queued_work_and_wakes_on_disconnect() {
             || connection.take_content() == Err(ShellClientError::PeerClosed)
     );
 }
+
+#[test]
+fn writer_walk_and_open_are_batched_but_payload_waits_for_both_replies() {
+    for open_first in [false, true] {
+        let (mut connection, mut peer) = connect(bar(0));
+        peer.hold_transaction_walks = true;
+        peer.hold_writer_opens = true;
+        let ticket = enqueue_demand(&mut connection, 1);
+        drive(&mut connection, &mut peer, |_, peer| {
+            peer.held_replies.len() == 2
+        })
+        .unwrap();
+        assert!(peer.transactions.is_empty());
+        assert_eq!(
+            peer.log,
+            [
+                Logged::Walk("transaction".into()),
+                Logged::Open("transaction".into())
+            ]
+        );
+        let later = peer.held_replies.remove(usize::from(!open_first));
+        peer.release_replies();
+        for _ in 0..4 {
+            connection.poll_io().unwrap();
+            peer.pump();
+        }
+        assert!(
+            peer.transactions.is_empty(),
+            "one reply cannot admit payload"
+        );
+        peer.held_replies.push(later);
+        peer.release_replies();
+        commit(&mut connection, &mut peer, ticket);
+    }
+}
+
+#[test]
+fn failed_or_partial_writer_setup_never_sends_payload() {
+    for failure in 0..3 {
+        let (mut connection, mut peer) = connect(bar(0));
+        peer.hold_transaction_walks = true;
+        peer.hold_writer_opens = true;
+        enqueue_demand(&mut connection, 1);
+        drive(&mut connection, &mut peer, |_, peer| {
+            peer.held_replies.len() == 2
+        })
+        .unwrap();
+        if failure == 2 {
+            peer.held_replies[0].2 = vec![0, 0]; // partial Rwalk
+        } else {
+            let (_, tag, _) = peer.held_replies.remove(failure);
+            peer.answer_error(tag, EINVAL);
+        }
+        peer.release_replies();
+        let error = fail(&mut connection, &mut peer);
+        assert!(
+            matches!(
+                error,
+                ShellClientError::Protocol(_)
+                    | ShellClientError::Pipeline(
+                        sophia_9p_client::pipeline::PipelineError::Protocol(_)
+                    )
+            ),
+            "case {failure}: {error:?}"
+        );
+        assert!(peer.transactions.is_empty());
+        assert!(peer.submits.is_empty());
+    }
+}
