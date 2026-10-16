@@ -178,6 +178,7 @@ pub struct Peer {
     pub negotiate: Option<Vec<u8>>,
     /// Bytes written to each `upload/N` slot, at the offsets written.
     pub uploads: HashMap<String, Vec<u8>>,
+    pub upload_replies: VecDeque<Result<u32, u32>>,
     limits: Vec<u8>,
     edit_bootstrap: fn(&mut Vec<u8>),
     /// Replies collected for one write, between [`Peer::begin_batch`] and
@@ -292,6 +293,7 @@ impl Peer {
             held_replies: Vec::new(),
             negotiate: None,
             uploads: HashMap::new(),
+            upload_replies: VecDeque::new(),
             limits,
             edit_bootstrap,
             batch: None,
@@ -570,10 +572,17 @@ impl Peer {
                     slot if slot.starts_with("upload/") => {
                         // Slot bytes land at the written offset, in order.
                         let offset = u64_at(&body, 4) as usize;
+                        let written = match self.upload_replies.pop_front().unwrap_or(Ok(count)) {
+                            Ok(written) => written.min(count),
+                            Err(errno) => {
+                                self.answer_error(tag, errno);
+                                return;
+                            }
+                        };
                         let upload = self.uploads.entry(node.clone()).or_default();
                         assert_eq!(upload.len(), offset, "slot writes arrive in order");
-                        upload.extend_from_slice(&data);
-                        self.answer_write(tag, count);
+                        upload.extend_from_slice(&data[..written as usize]);
+                        self.answer_write(tag, written);
                     }
                     "ack" => {
                         let ack = decode_shell_file_ack(&data).expect("an ack");

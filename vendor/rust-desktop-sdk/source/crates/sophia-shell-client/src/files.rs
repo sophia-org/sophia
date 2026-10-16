@@ -118,7 +118,7 @@ enum SubmissionPhase {
 
 enum Current {
     Submission {
-        bytes: Vec<u8>,
+        bytes: Box<[u8]>,
         submission_id: u64,
         /// The record's kind, which its `Submitted` event must name.
         kind: ShellFileKind,
@@ -133,7 +133,8 @@ enum Current {
     SlotWrite {
         resource: ContentResourceId,
         offset: u64,
-        remaining: Vec<u8>,
+        remaining: Box<[u8]>,
+        acknowledged: usize,
         tag: Option<Tag>,
         ticket: u64,
         /// Set after `EAGAIN`: no write before this instant, nor in the

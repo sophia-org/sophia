@@ -87,6 +87,7 @@ impl FileWire {
         let Some(Current::SlotWrite {
             offset,
             remaining,
+            acknowledged,
             tag: current_tag,
             not_before,
             wrote_any,
@@ -96,13 +97,15 @@ impl FileWire {
             unreachable!("checked above");
         };
         match reply {
-            Reply::Write(count) if (*count as usize) <= remaining.len() && *count > 0 => {
+            Reply::Write(count)
+                if (*count as usize) <= remaining.len() - *acknowledged && *count > 0 =>
+            {
                 let count = *count as usize;
-                remaining.drain(..count);
+                *acknowledged += count;
                 *offset += count as u64;
                 *current_tag = None;
                 *wrote_any = true;
-                if remaining.is_empty() {
+                if *acknowledged == remaining.len() {
                     self.backoff = RETRY_FIRST;
                     self.settle_current(Custody::Stored);
                 }
@@ -133,12 +136,13 @@ impl FileWire {
                 resource,
                 tag,
                 remaining,
+                acknowledged,
                 not_before,
                 ..
             }) => (
                 *resource,
                 tag.is_none()
-                    && !remaining.is_empty()
+                    && *acknowledged < remaining.len()
                     && not_before.is_none_or(|(at, pass)| {
                         self.pass != pass && std::time::Instant::now() >= at
                     }),
@@ -158,14 +162,19 @@ impl FileWire {
         let Some(Current::SlotWrite {
             offset,
             remaining,
+            acknowledged,
             tag,
             ..
         }) = &mut self.current
         else {
             unreachable!("checked above");
         };
-        let take = remaining.len().min(budget.max(1));
-        let write_tag = self.pipeline.write(fid, *offset, &remaining[..take])?;
+        let take = (remaining.len() - *acknowledged).min(budget.max(1));
+        let write_tag = self.pipeline.write(
+            fid,
+            *offset,
+            &remaining[*acknowledged..*acknowledged + take],
+        )?;
         *tag = Some(write_tag);
         if let Some(Current::SlotWrite { not_before, .. }) = &mut self.current {
             *not_before = None;

@@ -1,14 +1,14 @@
-tree 07284721aa2425198b81392f1e80a1e55e36049d
-parent af21f0af6e53656bad0654ab9fc6ef15d3d628f1
-author Mason Green <mason@greenm01.net> 1792107893 -0400
-committer Mason Green <mason@greenm01.net> 1792107893 -0400
+tree 8650dd63fb869d9aa76517516947fdcbda7511aa
+parent 25b63ff52f0d1b5182c431ed4a861718c1beb7dc
+author Mason Green <mason@greenm01.net> 1792118185 -0400
+committer Mason Green <mason@greenm01.net> 1792118185 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatFldRsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGK2DQD/ShpVSStkSMahjk4NSwNf
- BsotMR0Wpd3iUUFzgCShd6gBAPCd8qocP/vBGf5WTHVX2MHKNmr8ersNLqefJ3ug
- I5AE
- =4Jdw
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatGNqRsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKrbgD+P3L40t7AZmj8mP4Im12f
+ 7mGzOjMB9odcLLUmYjYONisBALAv4RTXrYkXVVJNhC3BitAej9OsnorFh2u+P0qO
+ wqEF
+ =olnn
  -----END PGP SIGNATURE-----
 
-Reserve walk request storage once after validating names
+Synchronize accepted Sophia cost-accounting scope
