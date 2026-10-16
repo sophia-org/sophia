@@ -20,18 +20,15 @@ per frame, retaining +10% as the acceptance ceiling. See the accepted
 [cost scope](../../sophia-shell-files.md#cost-accounting-scope-accepted-october-15-2026)
 and [implementation plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#implementation-sequence).
 Earlier references below to an unanswered scope decision are superseded.
-The first native cost arm completed its workload and recovered, but concurrent
-counter writes corrupted the shared evidence log. The strict verifier refused
-it and the other three arms did not start. Comparator `4801e2650` now formats
-each counter and peer record in bounded stack storage before one pipe write.
-Four counter tests (including 2,000 concurrent records), strict Clippy and all
-four isolated workload/cost replays pass. Fresh `t331-native-cost-02` plans
-cover four 60-second arms, 1,000 frames each, files/IPC with and without the
-4 MiB probe at 1080p/60 Hz. All exact argument checks pass. `t252-check` now
-selects these plans from tty4 after leaving the desktop; no retry has run.
-See [atomic evidence records](#t331-atomic-evidence-records).
-Collect this baseline before choosing further production changes;
-supplied-owner polling results alone cannot establish native costs.
+All four `t331-native-cost-02` arms now pass independent journal, native-join
+and cost replay: 1,000 frames each, at 1080p/60 Hz, with verified console
+recovery. Native panel costs are 4,285–4,290 allocations/frame on files versus
+1,708–1,711 on IPC, and 11.424–11.434 ms CPU/MiB versus 7.417–7.430 ms.
+About 98% of the excess allocation count is in Session. Prioritize profiling
+Session service work: files caused substantially more owner-loop turns, while
+client allocation differences were small. See [native baseline results](#t331-native-cost-baseline-results).
+The earlier corrupted `t331-native-cost-01` remains invalid and retained.
+Do not rerun `t252-check`: its retry directories now contain completed evidence.
 
 t252 remains open for native lifetime/input acceptance on both desktop
 selections, the declared B9 performance campaign and attended release rollback.
@@ -1515,6 +1512,49 @@ workload, output, mode and accounting match the first attempt. All preparation
 and exact device-hidden argument checks pass. `t252-check` selects the fresh
 directory and stops on failure. No second native run has started, no current
 quiet-window hold is active, and the installed desktop remains unchanged.
+
+## t331: native cost baseline results
+
+All four attended `t331-native-cost-02` arms completed with comparator
+`4801e2650` and integration `b199ac0`. Independent `cost-metrics` replay
+matches the stored cost report exactly. Independent `latency` replay validates
+all 1,000 offers per arm, every upload and permit, and each exact kernel-backed
+presentation. No upload reached the two-second transfer bound. All four
+console recovery records confirm restored termios, KD mode and keyboard mode;
+Session reports bounded completion and clean health. Replays are retained as
+`replayed-costs.json` and `replayed-latency.json` inside each arm directory.
+
+| Workload | Files allocations/frame | IPC allocations/frame | Files CPU ns/MiB | IPC CPU ns/MiB |
+| --- | --- | --- | --- | --- |
+| 1920×24 bar | 4,285–4,290 | 1,708–1,711 | 11,424,436–11,433,719 | 7,417,317–7,429,519 |
+| Same bar plus 4 MiB probe | 13,155–13,157 | 5,955–5,957 | 1,822,547–1,822,675 | 1,383,872–1,384,284 |
+
+Each arm uploaded 184,320,000 presentation bytes. Probe arms additionally
+uploaded 4,194,304,000 bytes. Both cost measures exceed IPC +10% in both
+workloads within the accepted scope. This is one idle pair per workload at
+60 Hz, not the full acceptance campaign.
+
+Subtracting exact peer counter deltas from whole-workload bounds attributes
+the allocation gap to Session. Peer allocations/frame are 173.990 on files
+versus 124.994 on IPC for the panel, and 681.868 versus 658.994 with probes.
+Session allocations/frame are 4,111.303–4,115.548 versus 1,583.999–1,585.861
+for the panel, and 12,473.353–12,474.261 versus 5,296.960–5,297.967 with probes.
+This attributes roughly 98% or more of the excess to Session, not a specific
+function. The measured workload intervals are all about 16.7 seconds.
+
+Session's full-run turn counts are 36,958/11,210 for files/IPC on the panel
+and 123,869/48,380 with probes. Those counts cover the full 60-second runs,
+not only the cost interval; they suggest extra service work but do not prove
+a call-stack cause. Source review found nested readiness-vector construction
+and whole-owner service around shell requests. Profile these paths before
+choosing a fix; client buffer removal alone cannot eliminate this gap.
+
+Panel submit-to-native-presentation p95/p99 are 16.507/16.525 ms on files and
+16.835/16.860 ms on IPC. Probe arms are 12.183/12.233 versus 13.124/13.181 ms.
+These instrumented all-frame distributions are diagnostic, not ordinary
+latency qualification. No production optimization or installed release changed
+as a result of this baseline. All four `t252-check` output directories are now
+occupied and must not be reused.
 
 ## Connections
 
