@@ -144,15 +144,16 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
-Signed Rust `772cd60` connects WM startup, journal and submission to the 9P
-pipeline. The developing Session owns request tags, processes event replies
-before submit replies, services ACKs and retains custody on EOF. Unix-socket
-peers cover startup through negotiation and application submission, both reply
-orders, EAGAIN and the ACK barrier. All 32 WM client tests, the full Rust
-workspace suite and targeted strict Clippy pass. Signed C `2173ec2` records
-matrix 22. Next add Cycle-bound snapshot fetching. Direct nonblocking version
-startup, handoff-capacity validation and paired production-export qualification
-remain gates; this is not yet a complete WM client release.
+Signed Rust `6d84c4f` adds Cycle-bound snapshot fetching to the integrated WM
+Session. Requests freeze identity before Cycle consumption; results wait for
+verified EOF and clunk. One fetch/result is allowed, bytes are capped, and
+pre-open retries retain the original deadline. Socket peers cover fragmented
+reads, retry, identity/length/EOF mismatch, read/clunk refusal and expiry. All
+35 WM client tests and targeted strict Clippy pass. Signed C `ff9e3e0` records
+matrix 23. Next close direct nonblocking version startup and handoff-capacity
+gaps, then broaden paired session and production-export qualification. This is
+not yet a complete WM client release. The preceding integrated-session
+checkpoint `772cd60` also passed the full Rust workspace suite.
 
 Signed Rust `228f263` starts `sophia-wm-client` with typed application candidates
 and owned immutable encoding. Five tests cover all seven kinds, literal Dirty
