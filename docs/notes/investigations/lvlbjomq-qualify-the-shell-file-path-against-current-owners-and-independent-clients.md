@@ -56,9 +56,12 @@ including native service and custody checks. Pixel generation and validation
 are large shared bulk costs, not an explanation unique to 9P. See
 [CPU profile results](#t331-cpu-profile-results) for counts and unwind limits.
 Caller inspection separates idle polling, per-operation checks and delivery
-guards; none is proved redundant. The next bounded experiment should count
-pending-read retries after unrelated replies, while preserving custody checks.
-See [repeated-service investigation](#t331-repeated-service-investigation).
+guards; none is proved redundant. The counting fixture confirms 100 unrelated
+replies cause 100 pending-read retries, but also proves that request-driven
+publication can require a retry without a wake. A generic retry skip is unsafe.
+Next design explicit export change notification with conservative defaults,
+capacity-progress retries and independent authority checks before implementing
+suppression. See [counting fixture results](#t331-pending-read-counting-fixture).
 The quiet hold is released. `t252-check` points to occupied profile directories;
 prepare fresh plans before another native run. These profiles do not establish
 B9 or authorize concurrent uploads.
@@ -2144,6 +2147,43 @@ service settles earlier work, while authority service follows new state and
 repaint decisions. A once-per-loop skip would need a state-change proof and
 could strand a new presentation. Leave both calls intact while investigating
 their unchanged-state work. No production patch follows from this inspection.
+
+## t331: pending-read counting fixture
+
+`crates/sophia-9p/tests/pending_read_retries.rs` exercises the driver over real
+Unix sockets and the core's separate reply-capacity boundary. A static export
+counts actual read calls; its optional sink-write publication models a request
+changing data visible to a waiting reader. Five tests establish:
+
+- 100 unrelated getattr replies cause 100 extra attempts at a pending event
+  read. A later publication wake delivers the event exactly once.
+- Revocation is checked before reading: a queued event remains private and the
+  pending request gets ESTALE. Disconnect releases the connection.
+- A partial output drain that does not make enough reply room must not consume
+  the event. Once sufficient room is freed, the read completes without another
+  publication.
+- A sink write can publish an event without a wake. Both its acknowledgement
+  and the pending read complete in the same server turn. Unconditionally
+  removing post-write retries would break this valid behavior.
+- Real socket backpressure preserves the published reply until the socket
+  drains. Tflush cancels a subsequent waiter; later publication cannot revive it.
+
+The retry count is printed as diagnostic evidence, not asserted as a contract
+that would forbid an improvement. The fixture asserts the observable progress,
+privacy and cancellation behavior. All five tests, the full `sophia-9p` suite
+and focused strict Clippy pass with eight build jobs/test threads. These are
+device-free correctness checks, not CPU measurements. Production code is
+unchanged; no new native run is required to establish these results.
+
+The result rules out a generic skip based only on reply type or lack of a wake.
+A possible next design is an opt-in export change token, with the existing
+unconditional behavior as the default. An opted-in export must cover all state
+that can change a pending read, including request-driven changes, publication,
+revocation and time-dependent readiness. Reply-capacity progress remains a
+separate retry trigger. Authority checks remain mandatory before actual reads
+and guarded delivery; idle custody polling remains independent. Audit the shell
+export's mutation and expiry paths before adopting such a contract. This is a
+design lead, not an implemented optimization or a measured saving.
 
 ## Connections
 
