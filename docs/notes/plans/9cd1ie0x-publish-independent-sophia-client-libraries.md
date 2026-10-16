@@ -144,6 +144,26 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `1ea6ffe` and C `c201c6e` integrate administrative sessions on their
+startup handoffs. Both retain one catalog, admit one command, assign increasing
+IDs, drive matched replies and expose custody/outcomes, refresh, write readiness,
+next wake and close. Rust retains catalog bytes plus name offsets; C's borrowed
+names point into its fixed buffer, so initialized C session state must not move.
+Neither clones a catalog per command. Status storage is reused; idle sessions
+schedule no status reads. Terminal failures preserve custody and forbid replay.
+
+Ten Rust client tests, nine protocol tests and strict Clippy pass. C's independent
+integrated socket test passes. Both peers cover three commands on one attach,
+pending before each outcome, catalog reuse and refresh after a Session result,
+unadvertised/busy refusal, explicit write refusal, loss after write and wrong
+outcome generation. Confirmed outcomes survive close. Admin map 8 records the
+limits: these are scripted peers, not production export evidence. Next add the
+raw-socket/version facades, integrated deadline/partial-I/O failure cases and
+ownership/recovery guidance, then run paired production gates. t333 stays open;
+pins unchanged, no quiet hold and no measured speedup.
+
+### Command custody checkpoint
+
 Signed Rust `d50871a` and C `2ad3a29` add administrative command custody and
 caller-driven status scheduling. An immutable command distinguishes queued,
 issued, accepted, settled, refused, dropped-unsent and uncertain states.
