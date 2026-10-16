@@ -15,20 +15,23 @@ repairs? Reconcile the existing evidence before repeating a desktop campaign.
 ## Current resumption
 
 The approved readiness handoff is implemented in signed production `c2138f95e`
-and comparator `377b0413d`, both pushed; native benefit is not yet measured.
+and comparator `377b0413d`, both pushed. Cost-10 does not establish a useful win:
+panel CPU/MiB is about 0.9% below cost-07, bulk about 2% above it; allocations
+are essentially unchanged. The candidate remains unaccepted, and t331 is open.
 Session preserves the actual owner wait for the next connected shell input turn,
 with slot/grant and server/connection/generation checks. Stale observations poll
 again. Seven core handoff tests, the full 9P suite, 24 owner-wake tests, 14 component
 connection tests and 40 focused shell tests pass; strict Clippy passes for the
 three changed libraries with native Session enabled. Pending-read tests now
 exercise cancellation, revocation and backpressure through observed turns.
-All eight fresh `t331-native-cost-10` CPU/allocation plans are prepared and pass
-device-hidden argument validation. Their artifact hashes match after both release
-builds. The installed `t252-check` now runs this pilot from foreground tty4 and
-refuses existing capture directories. No native arm has run. Claude confirmed a
-quiet hold from 12:05 UTC, including idle Muse, until explicit release. Next:
-attended `t252-check`, independent replay and comparison with cost-07; release
-the hold after capture. No installation or desktop restart is part of this slice.
+All eight `t331-native-cost-10` arms completed. Independent replay matches the
+captured costs, journal metrics and 1,000 joined frames in every arm; console and
+keyboard recovery are clean. The quiet hold is released and Claude confirmed no
+activity after the initial coordination. Capture directories are occupied: do
+not rerun `t252-check`. Next, establish how often the handoff is actually used
+versus invalidated before proposing another optimization or attended run.
+The approved retention criterion still requires repeatable benefit; this pilot
+does not satisfy it. No desktop installation or restart occurred.
 Repository-wide formatting reports pre-existing differences in two native scanout
 files; changed files are formatted. The full evidence packet is at
 `~/.local/state/sophia/development-evidence/t252-authenticated-20261015/t331-native-cost-10/`.
@@ -40,7 +43,7 @@ per frame, retaining +10% as the acceptance ceiling. The owner accepted
 and the [allocation and copying slice](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#approved-allocation-and-copying-slice-october-16).
 Upload ordering, resource limits and the installed desktop remain unchanged.
 
-The latest CPU pilot, `cost-07`, still fails the cost gate: files cost
+The preceding CPU pilot, `cost-07`, failed the cost gate: files cost
 about 47% more than IPC for the panel and 28% more for panel-plus-4-MiB uploads.
 Earlier fixes cut files allocations by about 12–14% against `cost-02`. All twelve
 `cost-04`/`profile-05` cases are accounted for. The four finer `profile-06` arms
@@ -97,7 +100,7 @@ only part of it. Prioritize avoiding redundant transport readiness polls, while
 preserving custody checks, before considering upload concurrency. This remains
 a source-inspection lead, not an implemented saving. Perf-09 reuses the validated
 perf-08 plans and binaries. Its output directories are now occupied; do not
- rerun those plans. The owner reported a silent exit 1 after captures existed;
+rerun those plans. The owner reported a silent exit 1 after captures existed;
 the helper's overwrite guards explain such a refusal, though the original
 terminal exit was not captured. Installed guards now print an explanation.
 The perf-08 directories remain occupied. These profiles do not establish B9 or
@@ -2331,6 +2334,40 @@ Evidence is in `t331-native-perf-09/analysis/`: `kernel-profile-summary.json`,
 each arm's raw and resolved stacks, `kernel-categories.json`, and
 `ppoll-callers.json`. Raw perf hashes and per-thread contributions are retained.
 This profiling step changes no production code and does not close t331.
+
+## T331 readiness handoff pilot results
+
+Cost-10 uses comparator `377b0413d` and integration `4eb52fb`, with the same
+1,000-frame panel and panel-plus-4-MiB workloads as cost-07. CPU and allocation
+instrumentation remain separate. Results include Session and the peer.
+
+| Workload | 9P CPU ms/MiB | IPC CPU ms/MiB | 9P allocations/frame | IPC allocations/frame |
+| --- | ---: | ---: | ---: | ---: |
+| Panel | 11.318320–11.330453 | 7.792920–7.804655 | 2330–2333 | 1140–1142 |
+| Panel plus 4 MiB | 1.809023–1.809336 | 1.387622–1.387732 | 6500–6503 | 3385–3387 |
+
+At interval midpoints, 9P panel CPU is 0.87% below cost-07 and bulk CPU is
+1.99% above it. The paired IPC results changed by +0.41% and +0.19% respectively.
+9P remains about 45.2% above IPC for the panel and 30.4% above it for bulk, failing
+the +10% ceiling. Allocation counts are effectively unchanged. These are single
+pilot comparisons; counter-bracketing intervals are not statistical confidence
+intervals and do not prove a small improvement or regression.
+
+All eight arms report `captured_only`, with no capture error. Independent `collect`,
+`metrics`, `join` and `cost-metrics` replay matches the captured journal, sample
+and cost reports exactly. Each joins 1,000 frames. Recovery logs confirm restored
+text mode, termios and keyboard mode, with no emergency recovery. Evidence and
+source hashes are in `t331-native-cost-10/offline-replay/summary.json`, beneath
+the evidence directory named in Current resumption.
+
+Claude confirmed the quiet window from 12:05 UTC. Its only crunch activity was
+the 12:05:05 Muse status read and confirmation message; Muse stayed idle. The
+hold was released after capture and acknowledged. The first release message was
+rejected while Claude's pane was blocked; a retry succeeded after it resumed.
+
+The handoff is correct in deterministic tests, but this pilot does not qualify
+it as an optimization. Measure its actual use and fallback frequency before
+another candidate. No upload-concurrency change is authorized by this result.
 
 ## Connections
 
