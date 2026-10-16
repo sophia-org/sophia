@@ -49,18 +49,25 @@ logging scopes are small. Production `d18775828` removes a full output-inventory
 clone from every cadence lookup, reading the primary output ID from current
 authority state instead. A two-output fixture measures 8,000 allocations for
 1,000 inventory clones versus zero for the direct reads. Native results above
-predate this change. Comparator `e45744623` adds finer owner-service scopes;
-four fresh profiling arms are prepared under `t331-owner-profile-06` with
-integration `4eb52fb`. `t252-check` now selects those four one-minute runs from
-foreground tty4. All device-hidden argument checks pass. Claude confirmed a
-new crunch quiet window from 01:49 UTC on October 16, pausing its setup work;
-release it after the run. No native `profile-06` run has started yet.
-These overlapping scopes do not identify exclusive allocation stacks. See
-[completed profiling comparison](#t331-completed-profiling-comparison).
+predate this change. Comparator `e45744623` adds finer owner-service scopes.
+All four `t331-owner-profile-06` arms completed with integration `4eb52fb`:
+each joins 1,000 frames, matches independent replay and restores the console
+and keyboard. Lifecycle and authority service contain most of the observed
+allocation gap; readiness, preparation and WM scopes contain little allocation.
+Both busy sections call `service_native`, making its unchanged-state work the
+next source-inspection target. That shared call is a lead, not measured stack
+attribution. Prove a specific repeated allocation with an isolated fixture
+before changing it, then carry a shared fix to both comparator wires.
+These overlapping scopes do not identify exclusive allocation stacks or supply
+CPU-only acceptance results. See [finer profile results](#t331-finer-profile-results).
+The quiet hold is released. Claude reports no crunch work during the window
+after its 01:49 UTC setup stop except its Herdr confirmation, and is resuming
+ROCm setup and GPU training. Coordinate a fresh hold before any native run.
 This remains a diagnostic pilot, not full B9 qualification.
 The earlier corrupted `t331-native-cost-01` remains invalid and retained.
-The `cost-02`, `cost-04` and `profile-05` directories contain completed evidence;
-future native runs require fresh plans and directories.
+The `cost-02`, `cost-04`, `profile-05` and `profile-06` directories contain
+completed evidence; future native runs require fresh plans and directories.
+The current `t252-check` helper points to occupied `profile-06` directories.
 
 The remaining t252 gates are native lifetime/input acceptance on both desktop
 selections, the full B9 campaign and attended release rollback. The following
@@ -1794,6 +1801,62 @@ The next step is the attended four-minute run, then independent replay and
 phase attribution before another production patch. Phase allocations still
 cover all process threads while each scope is open; scopes overlap and must
 not be summed as exclusive costs.
+
+## t331: finer profile results
+
+On October 16, all four `t331-owner-profile-06` diagnostic arms completed on
+comparator `e45744623` and integration `4eb52fb`. Each has 1,000 exact native
+joins, matching independent collect/metrics/cost/join replay, and clean console,
+termios and keyboard recovery. The evidence root is
+`~/.local/state/sophia/development-evidence/t252-authenticated-20261015/t331-owner-profile-06/`.
+`campaign.json` binds the plans; `offline-replay/` holds the independent reports;
+`phase-comparison.json` records source-log hashes, interval bounds and deltas.
+The `captured_only` and `joined_only` statuses are diagnostic results, not B9
+acceptance verdicts.
+
+| Workload and wire | Allocations/frame | Profiling CPU ns/MiB |
+| --- | ---: | ---: |
+| Panel, files | 3,579–3,582 | 14,411,370–14,421,089 |
+| Panel, IPC | 1,503–1,505 | 8,031,711–8,040,750 |
+| Panel plus 4 MiB, files | 10,775–10,778 | 2,328,918–2,329,151 |
+| Panel plus 4 MiB, IPC | 5,007–5,009 | 1,607,398–1,607,862 |
+
+The primary-output fix is present, but instrumentation also changed. These
+numbers cannot establish its individual native saving. Profiling CPU cannot be
+compared with the earlier ordinary-allocator CPU arms as an improvement or
+regression. The last acceptance-comparable CPU results still miss the gate.
+
+The new scopes narrow the next investigation:
+
+| Workload and wire | Owner passes | Allocations during lifecycle | Allocations during authority service |
+| --- | ---: | ---: | ---: |
+| Panel, files | 33,047 | 1,374,476 | 1,557,769 |
+| Panel, IPC | 8,044 | 505,024 | 629,292 |
+| Panel plus 4 MiB, files | 120,040 | 4,150,933 | 4,524,322 |
+| Panel plus 4 MiB, IPC | 45,712 | 1,714,041 | 1,929,337 |
+
+Preparation and readiness each observe fewer than 130 allocations per arm;
+WM observes fewer than 14,000. Post-component service observes roughly three
+allocations per pass. Files still takes about 4.1 times as many owner passes
+for the panel and 2.6 times as many for bulk uploads.
+
+These are completed-scope deltas from approximately 16 ms snapshots bracketing
+the workload. A completed scope can cross a boundary. CPU measures the calling
+thread; allocations count the whole process while a scope is open. Nested
+scopes overlap, so do not sum them or attribute their counts to exclusive stacks.
+
+Source inspection finds `runtime.service_native` in both lifecycle native
+service and authority timeout service. It performs completion, retained-image
+and frame-reducer work even when the owner has no new authority batch. Inspect
+its unchanged-state allocations next and reproduce a concrete cause in an
+isolated test. Preserve service order, deadlines, retirement and authorization;
+the profile does not justify skipping native service or changing scheduling.
+No further production patch follows these measurements yet.
+
+Claude reports no crunch activity during this window after stopping its setup
+at 01:49 UTC, except a Herdr confirmation. The hold is now released; setup and
+GPU training may resume. Another native measurement requires fresh plans,
+directories and quiet-window coordination. t331 and t252 remain open.
 
 ## Connections
 
