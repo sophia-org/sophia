@@ -69,6 +69,14 @@ The `cost-02`, `cost-04`, `profile-05` and `profile-06` directories contain
 completed evidence; future native runs require fresh plans and directories.
 The current `t252-check` helper points to occupied `profile-06` directories.
 
+The owner requested comparison with established 9P implementations. The
+[implementation comparison](#t331-established-9p-implementation-comparison)
+identifies client buffer movement, bounded storage reuse and independent-request
+concurrency as candidates. The SDK already supports multiple outstanding tags;
+serial slot writes are a higher-level choice, not a universal 9P restriction.
+These findings do not establish their share of the native gap or authorize
+changing upload ordering. No borrowed-head iteration patch has been applied yet.
+
 The remaining t252 gates are native lifetime/input acceptance on both desktop
 selections, the full B9 campaign and attended release rollback. The following
 checkpoints preserve earlier evidence; they do not supersede this resumption.
@@ -1857,6 +1865,62 @@ Claude reports no crunch activity during this window after stopping its setup
 at 01:49 UTC, except a Herdr confirmation. The hold is now released; setup and
 GPU training may resume. Another native measurement requires fresh plans,
 directories and quiet-window coordination. t331 and t252 remain open.
+
+## t331: established 9P implementation comparison
+
+On October 16, the owner requested an implementation comparison alongside the
+local profile. The following upstream source reads identify techniques, not
+portable benchmark results. Links name moving branches; recheck the code before
+implementing a recommendation.
+
+- Linux's [9P client](https://github.com/torvalds/linux/blob/master/net/9p/client.c)
+  allocates request records from a slab cache, sizes message buffers to the
+  operation, and uses a transport-specific zero-copy path for larger reads and
+  writes when available. Its ordinary write loop still waits for each reply
+  and advances by the returned count. This is evidence for selective copy
+  avoidance, not a claim that Linux pipelines every write or that virtio's
+  zero-copy mechanism transfers directly to Unix sockets.
+- QEMU's [9P server](https://github.com/qemu/qemu/blob/master/hw/9pfs/9p.c)
+  reuses PDU records through free and active lists. Its payload handling uses
+  I/O vectors, although creating a subrange vector still allocates metadata.
+  Sophia can examine bounded request-storage reuse without adopting QEMU's
+  coroutine execution model or changing Session scheduling.
+- The gVisor-derived [Go p9 client](https://github.com/hugelgupf/p9/blob/main/p9/client.go)
+  pools response records and dispatches replies through a pending-tag map.
+  Its [transport](https://github.com/hugelgupf/p9/blob/main/p9/transport.go)
+  pools encoding buffers and sends header, encoded fields and payload as
+  separate vectors. That avoids joining the payload into one application
+  buffer; it does not imply kernel zero-copy on every transport.
+
+Sophia already has bounded tagged pipelining in the vendored SDK's
+`sophia-9p-client/src/pipeline.rs`, and server-side direct upload reception in
+`crates/sophia-9p/src/connection/in_place.rs`. The latter rechecks authorization
+before returning each destination slice. Preserve that property; a reusable
+buffer or retained request must never retain stale authority.
+
+The concrete opportunities, in order of scope:
+
+1. Continue removing proven per-pass temporary collections in Session/native
+   service. This is independent of transport and benefits both comparator wires.
+2. Measure client byte movement. `files/uploads.rs` drains acknowledged prefixes
+   from `remaining`; `pipeline.rs` copies write payloads into `out_buf` and drains
+   sent prefixes. Partial progress moves unsent tails. Test an offset cursor and
+   bounded storage reuse first, then consider vectored writes with explicit
+   payload custody. Preserve byte charges, partial writes, EAGAIN, disconnect,
+   flush reserves and sensitive-output scrubbing. SDK changes belong upstream
+   and reach Sophia through the normal vendor gate.
+3. Separately evaluate concurrency across independent admitted uploads. The SDK
+   pipeline supports it, but `Current::SlotWrite` holds one outstanding write
+   tag. Walk must establish a fid before open; open must succeed before use;
+   partial writes and resource status govern safe progress. Multiple tags alone
+   do not prove that writes to one slot can be reordered. Any proposed change
+   needs ordering, revocation, cancellation and fairness tests before admission.
+
+Do not increase `msize`, queue limits or per-turn budgets, cache upload fids, or
+introduce transport threads under this comparison. Measure copied bytes, syscall
+counts and owner passes as well as accepted CPU/MiB and allocation metrics. The
+current profiles cannot assign an exact fraction of the gap to any upstream
+technique. Research does not close t331 or establish an architectural defect.
 
 ## Connections
 
