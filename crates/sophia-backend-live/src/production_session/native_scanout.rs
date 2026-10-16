@@ -63,7 +63,9 @@ pub use persistent_native_scanout::{
 pub(crate) use persistent_native_scanout::LiveProductionNativeRetirementContent;
 
 #[cfg(all(test, feature = "libdrm-events", feature = "gbm-probe"))]
-pub(crate) use persistent_native_scanout::{PresentedTimingHead, completed_timing, timing_displayed_identity};
+pub(crate) use persistent_native_scanout::{
+    PresentedTimingHead, completed_timing, timing_displayed_identity,
+};
 
 #[cfg(all(
     any(test, feature = "test-support"),
