@@ -49,14 +49,17 @@ on comparator `a2ecde0ef` and integration `4eb52fb`. Independent replay joins
 allocations fell about 38% for the panel and 43% for bulk against `cost-04`;
 CPU/MiB fell only about 1.3% and 1.9%. The shared changes also help IPC.
 See [cost-07 results](#t331-storage-pilot-results). The quiet hold is released.
-The owner authorized matched CPU profiling next. Four fresh one-minute plans
-under `t331-native-perf-08` reuse the exact CPU-only binaries from cost-07.
-`t252-check` now selects those plans with `perf record`, user-space CPU sampling
-at 997 Hz, monotonic timestamps and 8-KiB DWARF call stacks. Device-hidden
-argument validation and a non-native perf smoke test pass. No native profile
-has started. A fresh quiet hold has been requested through Herdr; await its
-confirmation before the attended tty4 run. See [CPU profiling preparation](#t331-cpu-profiling-preparation).
-These diagnostic runs do not authorize concurrent uploads or establish B9.
+All four `t331-native-perf-08` profiles completed on the exact cost-07 CPU-only
+binaries. Replay joins 1,000 frames each with clean recovery. No samples were
+reported lost. The strongest differential lead is extra owner/transport service,
+including native service and custody checks. Pixel generation and validation
+are large shared bulk costs, not an explanation unique to 9P. See
+[CPU profile results](#t331-cpu-profile-results) for counts and unwind limits.
+Next inspect the repeated service and custody-check paths, preserving immediate
+revocation and bounded service. Do not remove checks based on sampled cost alone.
+The quiet hold is released. `t252-check` points to occupied profile directories;
+prepare fresh plans before another native run. These profiles do not establish
+B9 or authorize concurrent uploads.
 
 [t332](gjov8u9g-can-independent-shell-uploads-progress-concurrently-without-weakening-custody.md#t332--investigate-bounded-upload-concurrency)
 is a candidate concurrency investigation, not an implementation authorization
@@ -2036,6 +2039,62 @@ This is user-space on-CPU sampling. It cannot directly attribute kernel work,
 scheduler delay or time blocked off CPU. Capturing all inherited child processes
 adds diagnostic overhead, so the resulting CPU costs are not acceptance data.
 Use a separately scoped follow-up if these stacks cannot explain the gap.
+
+## t331: CPU profile results
+
+All four `t331-native-perf-08` arms completed with 1,000 exact native joins,
+matching journal/cost replay and clean terminal and keyboard recovery. Analysis
+uses each workload's first-to-last counter envelope and only Session and peer
+processes, including their threads. The peer logs PID 1 inside its namespace;
+host peer PIDs were identified from stacks containing the exact peer binary.
+They are 14318 (files panel), 15309 (IPC panel), 16301 (files bulk) and 17287
+(IPC bulk). Source revisions and binaries match cost-07.
+
+| Workload | Files samples | IPC samples | Files unknown leaf | IPC unknown leaf |
+| --- | ---: | ---: | ---: | ---: |
+| Panel | 1,256 | 748 | 36 | 44 |
+| Panel + 4 MiB | 5,473 | 4,160 | 44 | 41 |
+
+All reports show zero lost samples. Sampling at 997 Hz gives roughly one
+millisecond per sample, not exact function timings. About 17–19% of selected
+samples have only one stack frame; most memcpy samples lack caller attribution.
+Unknown leaf samples include driver code. Optimized/inlined code and the 8-KiB
+stack limit further constrain attribution. The profile covers user-space CPU,
+not kernel execution or off-CPU waits. Its CPU counter results are diagnostic,
+not replacements for cost-07 acceptance-comparable values.
+
+The main differential lead is repeated Session work. Session's main thread has
+869 versus 496 samples for panel, and 3,049 versus 2,133 for bulk. The peer has
+268 versus 134 and 2,305 versus 1,919. Native `service_native` appears in 160
+versus 102 panel stacks and 344 versus 141 bulk stacks. `LaunchCustody::is_live`
+appears in 44 versus one panel stack and 86 versus zero bulk stacks. Source
+inspection shows this check polls both kernel identities with zero timeout;
+its correctness includes immediate exit observation and active-flag withdrawal.
+These counts justify inspecting repeated checks, not caching away revocation.
+9P server turns, file-wire service and client pipeline work also appear more
+often. Inclusive counts overlap and must not be added as independent costs.
+
+The largest bulk leaf is a vector construction in `shell_timing_peer::main`:
+1,619 files samples versus 1,674 IPC samples have that caller. The source builds
+the same pixel pattern per frame. Generation precedes each upload-offer timestamp
+but later frames' generation remains inside the whole-workload envelope. It is
+shared benchmark work, not a demonstrated 9P defect. Likewise, the iterator
+under `ContentResourceStore::chunk` has 666 versus 603 leaf samples; source
+inspection identifies premultiplied-alpha validation of every pixel. Preserve
+that validation. Optimizing either common cost must reach both comparator wires
+and cannot be presented as a transport-specific improvement.
+
+Prioritize a bounded investigation of repeated owner turns and custody polls.
+Trace the callers and prove any redundant work with deterministic fixtures
+before changing it. Keep copy attribution unresolved where stacks terminate
+inside libc; use a focused follow-up if that blocks a specific proposal. No
+production code or upload scheduling changed during this profiling step.
+
+Evidence is `t331-native-perf-08/analysis/`: replay reports, source stack text,
+filtered self reports, `summary.json` and `profile-summary.json`. The latter
+retains perf hashes, host peer PIDs, per-thread counts, self/inclusive leaders
+and unwind diagnostics. The quiet hold began at 10:57Z and was released after
+all four captures ended. All plan output directories are now occupied.
 
 ## Connections
 
