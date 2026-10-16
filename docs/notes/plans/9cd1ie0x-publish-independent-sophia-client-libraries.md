@@ -144,58 +144,44 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
-Signed Rust `7ad2f9f` adds retained pointer Actions and prepared exact responses.
-Invocation and dismissal remain pending until ACK admission; cancellation owes
-none. Activation can name any eligible displayed row, not only the keyboard
-selection. Activation and ACK enter the local queue together but retain separate
-custody outcomes. Dropping preparation leaves the action available. Signed C
-`edc9259` adds the independent nonselected-row control and matrix revision 11.
-The full Rust workspace suite, strict all-target Clippy, final 30-test native
-suite and C's full suite pass. Rust also checks exact wire records, stale actions,
-saturation, cancellation and both split-refusal orders. Production-export
-qualification remains pending.
+Signed Rust `47063e7` adds `NativeLauncherSession`: exclusive connection
+ownership, ordered retained events, transaction IDs, native operations, bounded
+dispatch and scheduling obligations. Repeated reads apply a head once; required
+ACKs cannot be skipped. Prepared response Drop preserves the event and ID range;
+commit consumes them without allocation or I/O. Input, action, allocation,
+candidate and permit deadlines remain hints, never server authority. Rust uses
+transport `Instant` and host-monotonic milliseconds; C uses milliseconds.
 
-Signed Rust `d65d8da` adds native allocation, resource and frame-pacing helpers.
-They retain orphaned grants until invalidation, wait for Stored upload bytes,
-place only Accepted resources, and distinguish retirement from release. Local
-permit expiry disarms use but does not end the server's demand. Scene admission
-fills current allocation and context metadata and consumes a permit only after
-successful local admission. The lower-level candidate API remains available
-without that resource/pacing policy.
+Signed C `61031c0` adds an independent check that repeated Action reads do not
+restart the receipt-based hint. Both API matrices are revision 12. Full Rust
+workspace tests, strict all-target Clippy, the final 35-test native suite and C's
+full suite pass. Five Rust facade controls cover initialization, retained input,
+response cancellation, transaction exhaustion, clocks, disconnect and Action
+hints. C borrows caller-owned session storage; Rust owns the connection. Rust
+applies fetched snapshot generations on observation, so the caller must install
+the contents before presenting. C explicitly marks installed generations.
 
-Paired checks exposed two defects. C could wait forever when authoritative
-permit expiry preceded candidate submit refusal; signed C `b1aae57` preserves
-the observed end without disturbing a newer demand. Rust leaked pending upload
-slots on definitively refused Begins, exhausting all four slots. `d65d8da`
-releases those claims and drops queued payload for vanished bindings without
-stalling subsequent records. Both regressions failed before repair.
+Earlier signed Rust `7ad2f9f` adds pointer responses. Activation can name any
+eligible displayed row; activation and ACK enter the queue together but retain
+separate custody outcomes. C `edc9259` supplies the independent nonselected-row
+control. Rust `d65d8da` supplies resource/allocation/pacing lifecycle and fixes
+refused-Begin upload slot leaks and queued-payload stalls. C `b1aae57` fixes an
+indefinite wait when permit expiry arrives before candidate refusal. C `f580a2d`
+and Rust `393a686` cover explicit-resource cancellation after refused End.
 
-Signed C `f580a2d` adds explicit-resource cancellation after a refused End,
-matching Rust's helper. Signed Rust `393a686` supplies the paired regression.
-Cancellation retains the identity until terminal status; C additionally checks
-busy admission and stale generations. Both API matrices are revision 10.
-The Rust workspace suite and strict all-target Clippy passed for `d65d8da`;
-the final native suite passes 26 tests at `393a686`. C's full `make check` passes
-at `f580a2d`. C helper tests use a session stand-in; production exports remain
-an independent qualification gate.
+The SDK provenance files retain previous transport, keyboard/focus, custody,
+atomic batch, reservation and event-loop checks. Local admission does not prove
+server effects. Prepared commit needs no allocation or I/O; delayed commit may
+fail while retaining credits. Explicitly cancel unused delayed tokens.
+Simulated-time callers must use `dispatch` and non-driving receives.
 
-Earlier signed slices provide native transport (`5cf0f90`), presentation,
-focus and keyboard lifecycle (`0d77807`), custody retention queries (`c3c7070`),
-atomic content batches (`5b72169`), serviceable capacity tokens (`a2c0e74`),
-prepared admission (`85b37ed`), caller time and bounded dispatch (`1f33550`),
-and socket/readiness access (`6fda07e`). Their SDK provenance files retain the
-checks and limits. Local atomic admission does not make server effects atomic.
-Prepared commit needs no allocation or I/O; delayed commit may fail while
-retaining credits. Explicitly cancel unused delayed tokens. Simulated-time
-callers must use `dispatch` and non-driving `take_*` receives.
-
-Next, implement the integrated native facade.
-Then complete delayed native reservations, other non-content batches and
-configurable queue parity. C's `sophia_ns` supplies the coverage checklist;
-the pinned contract defines semantics. The task also still requires Rust WM,
-output and lock clients, administration coverage in both SDKs, the remaining
-public broker/portal audit, paired production-export gates, a foreign-language
-binding smoke test and verified release adoption.
+Next, finish the native helper operation inventory: explicit presentation-state
+access and input edit-callback convenience need review. Then close delayed native
+reservations, other non-content batches and configurable queue parity. C's
+`sophia_ns` supplies the checklist; the pinned contract defines semantics.
+The remaining task includes Rust WM, output and lock clients, administration
+coverage in both SDKs, the public broker/portal audit, paired production-export
+gates, a foreign-language binding smoke test and signed release adoption.
 
 C's earlier reservation identity repair (`a90e235`) changed its public token
 layout. The candidate remains **0.10.0-dev, unreleased**; C consumers and
@@ -204,8 +190,9 @@ session storage with a live reservation. Mandatory parity rules are installed
 in Sophia's agent instructions and both SDKs.
 
 Sophia's production SDK pins and prepared t331 CPU pilot remain unchanged.
-No quiet hold is active. These SDK checks establish neither physical acceptance
-nor performance gains. t333 remains open.
+No quiet hold is active. C helper tests use a session stand-in; all current
+checks are SDK-level evidence, not production-export, physical or performance
+acceptance. t333 remains open.
 
 ## SDK platform policy
 
