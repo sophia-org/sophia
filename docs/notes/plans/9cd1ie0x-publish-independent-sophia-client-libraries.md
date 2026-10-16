@@ -144,6 +144,27 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `d50871a` and C `2ad3a29` add administrative command custody and
+caller-driven status scheduling. An immutable command distinguishes queued,
+issued, accepted, settled, refused, dropped-unsent and uncertain states.
+Explicit write errors prove refusal; short/lost replies and expiry after issue
+preserve uncertainty. Complete outcomes survive close. Status must match the
+connection/request/generation and the owner's legal success outcome.
+
+Pending results schedule another snapshot after one millisecond without
+extending the original deadline; each snapshot has its own bounded frame wait.
+The tracker allocates no heap memory and copies at most 256 detail bytes once
+for retained results. Eight Rust client tests, C's independent command test and
+strict Clippy pass. All owner/outcome combinations, identity refusal, custody
+on close, short/refused writes, expiry, clock regression and cadence are covered.
+Admin map 7 records the component boundary. Next integrate startup, snapshots
+and commands into the full session: retained catalog ownership, monotonic request
+sequencing, same-pipeline dispatch and external-loop facade, followed by paired
+production gates. t333 remains open; no speedup measured, pins unchanged and
+no quiet hold active.
+
+### Startup checkpoint
+
 Signed Rust `fdc9688` and C `826eeda` add administrative startup on an exclusive,
 already-versioned 9P pipeline. Both attach once, validate info through EOF/clunk,
 enforce timeout ceilings and open ctl with a complete-command iounit. They hand
