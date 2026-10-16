@@ -144,6 +144,28 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `1957ab2` and C `b483632` add independent watch protocol-failure
+and explicit-reuse tests. Empty/payload Rread, unrelated remote errors,
+directory replies, disconnect and clunk refusal never report revocation.
+ESTALE during open or read requires successful clunk. Two explicit watches
+reuse the same root with one version/attach exchange; one-byte dispatch and
+clock-regression checks pass. Both watch tests and strict Clippy pass.
+Production code and the preceding eighteen-gate evidence are unchanged.
+
+Portal map 17 records the result. Next replace the exclusive-operation
+composition gap with a shared recipient session: watch and foreground work
+must route replies by separate tags on one pipeline, retain independent object
+identities, share bounded dispatch and support explicit cancellation without
+discarding unrelated work. Qualify concurrent status/capture/transfer/frame
+work, flush races and connection loss independently in C and Rust, then through
+the production export. Reconnect must remain explicit, with no request replay.
+
+Trusted requester/broker, foreign bindings and publication/pin adoption remain.
+t333 stays open; production pins are unchanged. No quiet hold or measured
+performance claim.
+
+### Retained watch checkpoint
+
 Signed Rust `460c461` and C `1b6aabc` add retained watch drivers. One nonempty
 offset-zero read waits for ESTALE; successful clunk returns the original root.
 There is no automatic reopening or inference about a separately fetched
