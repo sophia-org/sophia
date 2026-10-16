@@ -144,6 +144,30 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `94ff9db` integrates the experimental lock Session and nonblocking
+Connecting facade. Direct startup and admitted-root handoff retain one connection;
+the facade transfers a ready session once and preserves terminal inspection.
+The session owns ordered events, exact object fetch, custody, explicit retry,
+ACKs and 1–8 upload writes. Control requests precede bulk writes; after draining
+cancellation, a second submission drive exposes the new request before returning.
+The default window now admits six request slots, matching C; larger windows need
+their width plus five slots. Rust still requires sixteen fids and bounded input.
+
+All 37 Rust lock-client tests, strict Clippy and formatting pass. Six integrated
+socket tests cover both startup paths, negotiation/later retry, object delivery,
+control progress with eight held writes, End/cancellation/short-write/rejection,
+short/error/stale ACKs, refusal ACK, uncertain disconnect and confirmed custody
+on close. A one-byte-budget test proves Cancel has POLLOUT after the last held
+reply drains. Signed C `86b3e89` adds independent six-request negotiation retry;
+the C lock suite passes. Both SDKs have API matrix 46, lock map 6 and LOCK-CLIENT
+ownership/recovery guidance. No measured performance gain is claimed.
+
+Next run paired C/Rust lock production-export and protected-launch gates. Then
+finish remaining role coverage, release-wide parity audits, foreign-language C
+binding smoke, publication and verified pin adoption. The lock contract remains
+draft; scripted peers do not establish production or physical acceptance.
+t333 stays open, pins are unchanged and no measurement hold is active.
+
 Signed Rust `506cec0` adds the provisional lock upload controller: one upload,
 1–8 write slots, five request slots reserved for controls, explicit cancellation
 and draining before cleanup. Reversed replies may free slots for refill while
