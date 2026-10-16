@@ -144,6 +144,20 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `9ac9742` and C `fc67ebd` add independent output terminal socket
+checks through direct and attached startup: short ACK, ACK EINVAL/ESTALE and
+disconnect before/after observed proposal custody. Confirmed Submitted and
+UnknownDisconnected remain distinct; terminal state, errno and custody survive
+explicit close. All 37 Rust output-client tests, strict Clippy and C's full
+suite pass. Both SDKs carry `OUTPUT-CLIENT.md` with ownership, event-loop,
+topology and recovery rules; matrix 38 / output map 7 record evidence limits.
+
+Next build the independent Rust output production-export peer alongside C's
+existing output fixture, then qualify protected launch and revocation. The
+scripted tests supply admission and do not prove Factotum grant revocation.
+No implementation change or native performance claim is made by this checkpoint.
+Production pins and the prepared t331 pilot remain unchanged.
+
 Signed Rust `fadc53f` adds nonblocking output `Connecting::direct` and
 `attached`, sharing the original deadline across version, fixed files and
 negotiation. Three tests cover expiry, remote errno retention and Observe
@@ -154,8 +168,8 @@ exercise Connecting through one-time Session transfer. All 35 output-client
 tests and strict Clippy pass; C's full suite passes. Signed C `034d426` records
 its independent existing counterparts in matrix 37 / output map 6.
 
-Next add output terminal socket faults and recovery/ownership documentation,
-then independent paired production-export and protected-launch peers. No extra
+Terminal socket faults and recovery/ownership documentation are covered above;
+independent paired production-export and protected-launch peers remain. No extra
 clock or readiness syscall was added by this checkpoint. Native performance
 savings remain unmeasured; production SDK pins and the t331 pilot are unchanged.
 
