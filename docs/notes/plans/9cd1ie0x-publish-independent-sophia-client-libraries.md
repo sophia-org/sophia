@@ -144,6 +144,17 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `574bb1f` and C `231e012` add allocation-free recipient api/status
+decoders. Both retain distinct request capabilities and transfer states, reject
+malformed snapshots and enforce 101/43-byte bounds. Independent tests and strict
+Rust Clippy pass; portal map 3 records coverage. Next build authenticated
+recipient sessions with retained-object reads, caller-controlled frame storage,
+capture custody and production gates. Requester/broker and release-wide parity
+remain required; t333 stays open, production pins unchanged, no quiet hold or
+measured speedup. The owner authorized pushing these signed development branches.
+
+### Capture record checkpoint
+
 Signed Rust `030128f` and C `14c687b` add allocation-free capture request
 encoding and status decoding. Both preserve all eight states and enforce
 exact record sizes, version and idle/nonidle identity rules. Independent literal
