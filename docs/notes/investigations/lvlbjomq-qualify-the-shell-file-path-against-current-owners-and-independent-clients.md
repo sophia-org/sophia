@@ -2221,6 +2221,15 @@ separate syscall-duration diagnostic with its tracing overhead stated. Retain
 the unprofiled cost-07 measurements as the performance comparison. Do not spend
 another implementation slice on pending-read tokens without stronger evidence.
 
+The kernel-permission probe confirms `perf_event_paranoid=2`: plain
+`cpu-clock` silently records `cpu-clock:u` (`exclude_kernel=1`), and explicit
+`cpu-clock:k` is denied. No setting changed. Four proposed task-scoped
+`cpu-clock:uk` commands reuse the perf-08 plans with fresh `t331-native-perf-09`
+outputs. Its helper is prepared but not installed or run. Temporarily changing
+the host setting from 2 to 1, then restoring 2 after the diagnostic, requires
+the owner's approval. This permits kernel sampling for owned processes; it is
+not system-wide sampling. A new quiet window and attended run remain necessary.
+
 ## Connections
 
 - [t252 exit](../plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md#t252--join-and-accept-the-shell-path).
