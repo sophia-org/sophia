@@ -704,3 +704,61 @@ the recheck. It cannot promise kernel timestamps if the event arrives later or
 is lost. The strict native join remains unchanged. No custody checks, limits,
 protocols or installed desktop files changed. A fresh four-arm profiling pilot
 on the repaired comparator follows; old captures remain retained.
+
+### Perf-18 complete paired profiles, October 16
+
+All four profiles completed on repaired comparator `075fdfa21` and integration
+`fd2cb6c`. Offline replay exactly matches journal metrics, costs and all 1,000
+presentation joins per arm. Each arm has 1,003 native completion records, all
+kernel-timestamped, with clean console/keyboard recovery. This is a successful
+pilot on the repaired candidate, not proof that the recheck executed or that
+all future event/fence races are eliminated. Evidence and raw hashes are under
+`t252-authenticated-20261015/t331-native-perf-18/analysis`; `profile-summary.json`
+contains selections and leaf maps, and `callers.json` contains caller grouping.
+
+| Exclusive leaf group, sampled ms across 1,000 frames | Files panel | IPC panel | Files bulk | IPC bulk |
+| --- | ---: | ---: | ---: | ---: |
+| Copy | 121.4 | 79.2 | 601.8 | 554.7 |
+| Recognizable allocator functions | 49.1 | 44.1 | 76.2 | 80.2 |
+| Fill | 8.0 | 6.0 | 33.1 | 36.1 |
+| Unknown | 41.1 | 44.1 | 38.1 | 41.1 |
+| Other | 943.8 | 542.6 | 4,329.0 | 3,432.3 |
+
+The selected files/IPC samples number 1,160/714 for panel and 5,063/4,132 for
+bulk. Single-frame stacks number 225/151 and 814/728 respectively. Selection
+uses host Session/peer PIDs and the whole upload interval. User-space sampling
+omits kernel time, lacks many callers and perturbs execution; sampled periods
+are not exact function runtimes. These profiles cannot replace cost acceptance.
+
+The strongest bulk exclusive differences are libc syscall wrappers (+232.7 ms
+for `__internal_syscall_cancel`), vDSO clock reads (+130.4 ms), custody liveness
+checks (+107.3 ms), Session loop (+54.2 ms) and copies (+47.1 ms). Grouping all
+syscall-named leaves by their nearest visible Sophia caller attributes a
++252.8 ms bulk difference to SDK `Pipeline::poll` (panel +38.1 ms). This names
+user-space call-path samples, not kernel syscall duration or counts. Custody
+callers split between file authentication polling (+55.2 ms bulk) and authority
+authorization (+52.2 ms). Both checks retain their existing security contract.
+
+Recognizable allocator leaves differ by only +5.0 ms panel and -4.0 ms bulk in
+this sample. That does not make allocation free: inlining, unresolved frames
+and cache effects remain outside this grouping. It does make raw allocation
+count a weak guide to the largest measured CPU opportunities. Copy callers
+remain mostly unresolved; do not assign their difference to a particular
+buffer from this profile alone. Inclusive stack totals overlap and are not
+additive.
+
+Next investigate the SDK's bounded `Pipeline::poll` read/write cycle. Source
+inspection shows each call writes queued output then attempts input reads;
+the shell drive may call it repeatedly while draining replies and scheduling
+follow-up requests. Count useful bytes/replies against WouldBlock reads and
+writes in isolated diagnostics, and examine whether actual readiness can be
+retained safely across the wait/drive boundary. Preserve EOF/HUP handling,
+partial frames, backpressure, fairness budgets and all upload barriers. Do not
+add a readiness syscall before every read or cache custody liveness on the
+strength of these samples. A measured redundant-call pattern should precede
+an optimization proposal.
+
+The hold is released; mini Claude reports no crunch activity beyond its
+coordination messages. All four capture destinations are occupied. No further
+attended run is needed to begin the SDK investigation. t331 remains open;
+installed desktop and acceptance thresholds are unchanged.

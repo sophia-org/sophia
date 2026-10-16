@@ -97,15 +97,27 @@ DRM-event tests pass (316, one ignored), strict library Clippy passes, and all
 eight comparator head-completion tests pass. The fixtures prove the controlled
 arrival ordering; hardware benefit is not yet established.
 
-The hold is released. Fresh `t331-native-perf-18` plans are prepared on the
-repaired comparator and integration `fd2cb6c`. Optimized CPU-only build,
-artifact hashes, device-free validation, launcher syntax and perf permission
-smoke pass. `t252-check` selects these four empty one-minute destinations.
-Request a fresh quiet window from mini Claude (machine
-`68e7a5a75f508af427c431e9001ba978`, pane `w2:p1`) when the owner is ready.
-Old perf-16/17 captures remain occupied; never reuse them. The recheck cannot
-promise kernel timestamps for an event that arrives later or is lost. No
-custody check is cached or skipped, and the desktop is unchanged.
+Perf-18 completed all four arms on repaired comparator `075fdfa21` and
+integration `fd2cb6c`. Offline replay matches costs, journal metrics and all
+1,000 exact presentation joins per arm. All 1,003 native completion records
+per arm use kernel timestamps; console recovery is clean. This demonstrates
+a passing pilot, not that every future race is eliminated or that the recheck
+was exercised. The [profile results](2o32e7ui-which-plan-9-implementation-techniques-can-reduce-sophia-shell-costs.md#perf-18-complete-paired-profiles-october-16)
+record selections, hashes and limits.
+
+Bulk exclusive differences concentrate in syscall wrappers, clock reads and
+custody checks; recognizable allocator leaves are not the dominant difference.
+Nearest visible callers place +252.8 ms of bulk syscall-wrapper sample periods
+under SDK Pipeline::poll (+38.1 ms panel). This is user-space sampling, not
+kernel duration or syscall counts. Next, investigate useful bytes/replies versus
+WouldBlock calls in the SDK's bounded poll/drive cycle before proposing a
+readiness optimization. Preserve EOF, backpressure, fairness, upload barriers
+and every custody check. Copy callers remain mostly unresolved.
+
+The quiet hold is released; mini Claude reports no crunch work. All perf-18
+captures are occupied: do not rerun `t252-check`. No new attended run is needed
+for the SDK investigation. The installed desktop is unchanged and t331 remains
+open pending the unchanged cost and native acceptance gates.
 
 Progress-12 established 33/120 Session passes per files panel/bulk frame,
 versus roughly 8/45 for IPC. Source attribution identifies repeated idle
