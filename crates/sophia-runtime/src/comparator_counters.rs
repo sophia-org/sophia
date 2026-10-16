@@ -119,9 +119,13 @@ impl Sampler {
             .name("comparison-counters".into())
             .spawn(move || {
                 write_snapshot(&mut output, "session", "start", 0, snapshot())?;
+                #[cfg(feature = "comparator-profiling")]
+                phases::record(&mut output, 0)?;
                 for sequence in 1..=60_000 {
                     match receiver.recv_timeout(Duration::from_millis(2)) {
                         Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                            #[cfg(feature = "comparator-profiling")]
+                            phases::record(&mut output, sequence)?;
                             return write_snapshot(
                                 &mut output,
                                 "session",
@@ -133,7 +137,12 @@ impl Sampler {
                         Err(mpsc::RecvTimeoutError::Timeout) => {
                             write_snapshot(&mut output, "session", "sample", sequence, snapshot())?;
                             #[cfg(feature = "comparator-profiling")]
-                            phases::record(&mut output, sequence)?;
+                            // Phase totals need less frequent publication than
+                            // frame-cost counters. Keep detailed profiles within
+                            // the same bounded capture without changing cost ticks.
+                            if sequence % 8 == 0 {
+                                phases::record(&mut output, sequence)?;
+                            }
                         }
                     }
                 }

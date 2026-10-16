@@ -102,6 +102,8 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
     'session: loop {
         #[cfg(feature = "comparator-profiling")]
         let _profile = sophia_runtime::comparator_counters::phases::enter(sophia_runtime::comparator_counters::phases::Phase::Owner);
+        #[cfg(feature = "comparator-profiling")]
+        let preparation_profile = sophia_runtime::comparator_counters::phases::enter(sophia_runtime::comparator_counters::phases::Phase::Preparation);
         // Before any producer is inspected, so a ring that lands during this
         // pass stays readable and ends the pass's wait at once. Idle waits
         // are bounded by authority_wait_timeout (at most 25 ms).
@@ -551,6 +553,8 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
             }
             shell_work_area_bands = Some(shell.work_area_bands());
         }
+        #[cfg(feature = "comparator-profiling")]
+        drop(preparation_profile);
         if let (Some(components), Some(runtime)) = (shell_components.as_mut(), runtime.as_mut()) {
             if component_bounds_outputs != outputs {
                 component_bounds = wm_output_bounds(&outputs);
@@ -562,6 +566,8 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
             components.write_work_area_bands(&mut shell_band_scratch);
             shell_work_area_bands = Some(std::mem::take(&mut shell_band_scratch));
         }
+        #[cfg(feature = "comparator-profiling")]
+        let after_components_profile = sophia_runtime::comparator_counters::phases::enter(sophia_runtime::comparator_counters::phases::Phase::AfterComponents);
         if let Some(wm) = wm_session.as_mut() {
             // The shell's committed claim reaches the reduction here. Only a
             // change reprojects: an unchanged claim every tick would relayout
@@ -623,10 +629,18 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
             include!("topology_phase.rs");
         }
         *failure_phase = crate::diagnostics::SessionFailurePhase::Lifecycle;
+        #[cfg(feature = "comparator-profiling")]
+        drop(after_components_profile);
+        #[cfg(feature = "comparator-profiling")]
+        let lifecycle_profile = sophia_runtime::comparator_counters::phases::enter(sophia_runtime::comparator_counters::phases::Phase::Lifecycle);
         include!("lifecycle.rs");
         // A pending VT switch must not park the owner which still holds the
         // final seat-device lease. This visit never performs KMS operations.
         let _ = native_retirement.poll()?;
+        #[cfg(feature = "comparator-profiling")]
+        drop(lifecycle_profile);
+        #[cfg(feature = "comparator-profiling")]
+        let wm_profile = sophia_runtime::comparator_counters::phases::enter(sophia_runtime::comparator_counters::phases::Phase::Wm);
         *failure_phase = crate::diagnostics::SessionFailurePhase::WindowManagement;
         include!("wm_phase.rs");
         // Topology/seat changes in this pass invalidate sources before we
@@ -639,7 +653,13 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
             Instant::now(),
         )?;
         *failure_phase = crate::diagnostics::SessionFailurePhase::Authority;
+        #[cfg(feature = "comparator-profiling")]
+        drop(wm_profile);
+        #[cfg(feature = "comparator-profiling")]
+        let authority_profile = sophia_runtime::comparator_counters::phases::enter(sophia_runtime::comparator_counters::phases::Phase::Authority);
         include!("authority.rs");
+        #[cfg(feature = "comparator-profiling")]
+        drop(authority_profile);
         *failure_phase = crate::diagnostics::SessionFailurePhase::InputProof;
         include!("input_proof.rs");
         *failure_phase = crate::diagnostics::SessionFailurePhase::Control;

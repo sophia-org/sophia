@@ -13,20 +13,36 @@ pub enum Phase {
     Components,
     Wire,
     Diagnostics,
+    Preparation,
+    AfterComponents,
+    Lifecycle,
+    Wm,
+    Authority,
 }
-const NAMES: [&str; 5] = ["owner", "readiness", "components", "wire", "diagnostics"];
+const NAMES: [&str; 10] = [
+    "owner",
+    "readiness",
+    "components",
+    "wire",
+    "diagnostics",
+    "preparation",
+    "after_components",
+    "lifecycle",
+    "wm",
+    "authority",
+];
 struct Totals {
     calls: AtomicU64,
     cpu: AtomicU64,
     allocations: AtomicU64,
 }
-static TOTALS: [Totals; 5] = [const {
+static TOTALS: [Totals; 10] = [const {
     Totals {
         calls: AtomicU64::new(0),
         cpu: AtomicU64::new(0),
         allocations: AtomicU64::new(0),
     }
-}; 5];
+}; 10];
 
 pub struct Guard {
     phase: Phase,
