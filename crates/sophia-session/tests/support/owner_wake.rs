@@ -14,6 +14,62 @@ const LONG: Duration = Duration::from_secs(30);
 const PROMPT: Duration = Duration::from_secs(5);
 
 #[test]
+fn observation_requires_an_actual_wait() {
+    let owner = OwnerWake::new().unwrap();
+    let (sender, queue) = sync_channel(1);
+    sender.send(7).unwrap();
+    let called = Cell::new(false);
+    assert_eq!(
+        owner
+            .receive_observed(&queue, Duration::ZERO, [], [], None, |_| called.set(true))
+            .unwrap(),
+        Ok(7)
+    );
+    assert!(!called.get());
+    drop(sender);
+    assert_eq!(
+        owner
+            .receive_observed(&queue, Duration::ZERO, [], [], None, |_| called.set(true))
+            .unwrap(),
+        Err(RecvTimeoutError::Disconnected)
+    );
+    assert!(!called.get());
+}
+
+#[test]
+fn observation_preserves_socket_flags_and_timeout() {
+    let owner = OwnerWake::new().unwrap();
+    let (_sender, queue) = sync_channel::<u8>(1);
+    let (socket, mut peer) = UnixStream::pair().unwrap();
+    let observed = Cell::new(None);
+    owner
+        .receive_observed(
+            &queue,
+            Duration::ZERO,
+            [PollFd::new(&socket, PollFlags::IN)],
+            [],
+            None,
+            |fds| observed.set(Some(fds[0].revents())),
+        )
+        .unwrap()
+        .unwrap_err();
+    assert_eq!(observed.take(), Some(PollFlags::empty()));
+    peer.write_all(&[1]).unwrap();
+    owner
+        .receive_observed(
+            &queue,
+            Duration::ZERO,
+            [PollFd::new(&socket, PollFlags::IN)],
+            [],
+            None,
+            |fds| observed.set(Some(fds[0].revents())),
+        )
+        .unwrap()
+        .unwrap_err();
+    assert!(observed.take().unwrap().contains(PollFlags::IN));
+}
+
+#[test]
 fn readiness_beyond_inline_storage_is_not_dropped() {
     let owner = OwnerWake::new().unwrap();
     let (_sender, queue) = sync_channel::<u32>(1);

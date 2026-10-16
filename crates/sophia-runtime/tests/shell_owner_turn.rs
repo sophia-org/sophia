@@ -145,10 +145,14 @@ fn roles_share_input_but_new_publications_and_late_input_still_progress() {
     arrived.recv_timeout(WAIT).unwrap();
     transport.poll_io(&mut epochs).unwrap();
     assert_eq!(transport.wire_turn_count(), before + 1);
+    let subscription = transport.readiness_subscription().unwrap();
     let mut fds = transport.poll_fds();
     assert!(rustix::event::poll(&mut fds, Some(&rustix::event::Timespec::default())).unwrap() > 0);
+    let observed = subscription.observe(&fds).unwrap();
     drop(fds);
-    transport.service_owner_turn(&mut epochs).unwrap();
+    transport
+        .service_owner_observed(&mut epochs, Some(observed))
+        .unwrap();
     arrived.recv_timeout(WAIT).unwrap();
 
     // Register an empty journal read, then publish during the same owner pass.

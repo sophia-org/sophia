@@ -72,6 +72,7 @@ pub(super) struct ShellFileWire {
     authentication: Option<Box<dyn FileAuthenticationFactory>>,
     publication_pending: bool,
     turns: u64,
+    readiness: Option<sophia_9p::unix::Observation>,
 }
 
 impl ShellFileWire {
@@ -105,6 +106,7 @@ impl ShellFileWire {
             authentication,
             publication_pending: false,
             turns: 0,
+            readiness: None,
         };
         if let Some(factory) = &mut wire.authentication {
             let owner = factory
@@ -137,6 +139,14 @@ impl ShellFileWire {
         self.server.visit_poll_fds(visit)
     }
 
+    pub(super) fn subscription(&self) -> Option<sophia_9p::unix::Subscription> {
+        self.server.subscription()
+    }
+
+    pub(super) fn set_readiness(&mut self, readiness: Option<sophia_9p::unix::Observation>) {
+        self.readiness = readiness;
+    }
+
     /// One nonblocking turn: whatever requests are ready, no waiting.
     pub(super) fn turn(&mut self) -> Result<(), ShellTransportError> {
         self.service(false)
@@ -147,6 +157,7 @@ impl ShellFileWire {
     }
 
     fn service(&mut self, flush_only: bool) -> Result<(), ShellTransportError> {
+        let readiness = self.readiness.take();
         self.server
             .export_mut()
             .poll(Instant::now())
@@ -155,6 +166,8 @@ impl ShellFileWire {
         self.publication_pending = false;
         let live = if flush_only {
             self.server.flush()
+        } else if let Some(readiness) = readiness {
+            self.server.turn_observed(readiness)
         } else {
             self.server.turn(Some(Duration::ZERO))
         }

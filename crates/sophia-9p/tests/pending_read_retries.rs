@@ -20,7 +20,17 @@ fn reply(client: &mut UnixStream) -> Frame {
 }
 
 fn turn(server: &mut Server<StaticExport>) {
-    assert!(server.turn(Some(Duration::ZERO)).unwrap());
+    // Exercise cancellation, delivery guards and real socket backpressure
+    // through the owner's readiness handoff as well as the shared core.
+    if let Some(subscription) = server.subscription() {
+        let mut fds = server.poll_fds();
+        rustix::event::poll(&mut fds, Some(&rustix::event::Timespec::default())).unwrap();
+        let observed = subscription.observe(&fds).unwrap();
+        drop(fds);
+        assert!(server.turn_observed(observed).unwrap());
+    } else {
+        assert!(server.turn(Some(Duration::ZERO)).unwrap());
+    }
 }
 
 fn opened() -> (Server<StaticExport>, UnixStream, UnixStream) {

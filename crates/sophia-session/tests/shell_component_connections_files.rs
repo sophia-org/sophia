@@ -870,3 +870,39 @@ fn content_connection_owner_cannot_admit_descriptor_authority() {
 
 #[path = "support/component_publication_files.rs"]
 mod publication_files;
+
+#[test]
+fn combined_wait_keeps_components_independent_across_replacement() {
+    let mut h = Harness::new();
+    let first = h.owner.reserve_attempt(0).unwrap();
+    let _first_peer = h.connect(first);
+    let second = h.owner.reserve_attempt(1).unwrap();
+    let _second_peer = h.connect(second);
+    {
+        let mut fds = smallvec::SmallVec::new();
+        let waits = h.owner.subscribe_wait(&mut fds);
+        assert_eq!(waits.len(), 2);
+        assert_eq!(fds.len(), 4);
+        rustix::event::poll(&mut fds, Some(&rustix::event::Timespec::default())).unwrap();
+        for wait in waits {
+            wait.observe(&fds);
+        }
+    }
+    h.owner.close(first).unwrap();
+    let replacement = h.owner.reserve_attempt(0).unwrap();
+    let _replacement_peer = h.connect(replacement);
+    assert!(h.owner.turn_connected().iter().all(Option::is_none));
+    assert_eq!(
+        h.owner.phase(second),
+        Ok(ComponentConnectionPhase::Connected)
+    );
+    assert_eq!(
+        h.owner.phase(replacement),
+        Ok(ComponentConnectionPhase::Connected)
+    );
+    h.owner.discard_readiness();
+    assert!(h.owner.turn_connected().iter().all(Option::is_none));
+    h.owner.close(second).unwrap();
+    h.owner.close(replacement).unwrap();
+    assert!(h.owner.collect().quiescent());
+}

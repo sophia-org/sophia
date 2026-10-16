@@ -560,6 +560,10 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
             components.write_work_area_bands(&mut shell_band_scratch);
             shell_work_area_bands = Some(std::mem::take(&mut shell_band_scratch));
         }
+        // A skipped component pass must not carry a wait into a later pass.
+        if let Some(components) = shell_components.as_ref() {
+            components.discard_readiness();
+        }
         if let Some(wm) = wm_session.as_mut() {
             // The shell's committed claim reaches the reduction here. Only a
             // change reprojects: an unchanged claim every tick would relayout

@@ -1,5 +1,6 @@
 //! Bounded Session connection ownership. Process launch, role-specific service,
 //! focus and native composition are separate owners, not inferred from a socket.
+use std::cell::Cell;
 use std::path::Path;
 use std::time::Duration;
 
@@ -61,6 +62,25 @@ struct Connection {
     /// Fixed at registration; a replacement epoch keeps the same wire.
     wire: ShellTransportSelection,
     attempt: Option<(ContentGrant, ComponentConnectionPhase)>,
+    readiness: Cell<Option<(ComponentConnectionKey, sophia_9p::unix::Observation)>>,
+}
+
+/// Bounded registration for one component in the owner's combined poll set.
+pub struct ComponentWait<'a> {
+    key: ComponentConnectionKey,
+    start: usize,
+    subscription: sophia_9p::unix::Subscription,
+    target: &'a Cell<Option<(ComponentConnectionKey, sophia_9p::unix::Observation)>>,
+}
+
+impl ComponentWait<'_> {
+    pub fn observe(self, fds: &[rustix::event::PollFd<'_>]) {
+        let observation = fds
+            .get(self.start..self.start + 2)
+            .and_then(|fds| self.subscription.observe(fds));
+        self.target
+            .set(observation.map(|observation| (self.key, observation)));
+    }
 }
 
 /// One bounded registry for independent connections, with attempt identities burned
@@ -139,6 +159,7 @@ impl ShellComponentConnections {
             transport,
             wire,
             attempt: None,
+            readiness: Cell::new(None),
         });
         Ok(slot)
     }
@@ -364,6 +385,44 @@ impl ShellComponentConnections {
         }
     }
 
+    pub fn subscribe_wait<'a>(
+        &'a self,
+        fds: &mut smallvec::SmallVec<[rustix::event::PollFd<'a>; 64]>,
+    ) -> smallvec::SmallVec<[ComponentWait<'a>; MAX_SHELL_COMPONENTS]> {
+        let mut registrations = smallvec::SmallVec::new();
+        for (slot, connection) in self.connections.iter().enumerate() {
+            connection.readiness.take();
+            let Some((grant, phase)) = connection.attempt else {
+                continue;
+            };
+            if !matches!(
+                phase,
+                ComponentConnectionPhase::Negotiating | ComponentConnectionPhase::Connected
+            ) {
+                continue;
+            }
+            let start = fds.len();
+            connection.transport.visit_poll_fds(|fd| fds.push(fd));
+            if phase == ComponentConnectionPhase::Connected
+                && let Some(subscription) = connection.transport.readiness_subscription()
+            {
+                registrations.push(ComponentWait {
+                    key: ComponentConnectionKey { slot, grant },
+                    start,
+                    subscription,
+                    target: &connection.readiness,
+                });
+            }
+        }
+        registrations
+    }
+
+    pub fn discard_readiness(&self) {
+        for connection in &self.connections {
+            connection.readiness.take();
+        }
+    }
+
     /// Only serviced attempts may shorten the owner wait.
     pub fn authentication_wait(&self, now: std::time::Instant) -> std::time::Duration {
         self.connections
@@ -405,10 +464,18 @@ impl ShellComponentConnections {
             .zip(failures.iter_mut())
             .enumerate()
         {
+            let readiness = connection.readiness.take();
             let Some((grant, ComponentConnectionPhase::Connected)) = connection.attempt else {
                 continue;
             };
-            if let Err(error) = connection.transport.service_owner_turn(&mut self.epochs) {
+            let key = ComponentConnectionKey { slot, grant };
+            let readiness = readiness
+                .filter(|(owner, _)| *owner == key)
+                .map(|(_, observation)| observation);
+            if let Err(error) = connection
+                .transport
+                .service_owner_observed(&mut self.epochs, readiness)
+            {
                 *failure = Some((ComponentConnectionKey { slot, grant }, error));
             }
         }

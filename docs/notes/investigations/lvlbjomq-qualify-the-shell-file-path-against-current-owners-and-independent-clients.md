@@ -14,6 +14,16 @@ repairs? Reconcile the existing evidence before repeating a desktop campaign.
 
 ## Current resumption
 
+The approved readiness handoff is implemented; native benefit is not yet measured.
+Session preserves the actual owner wait for the next connected shell input turn,
+with slot/grant and server/connection/generation checks. Stale observations poll
+again. Seven core handoff tests, the full 9P suite, 24 owner-wake tests, 14 component
+connection tests and 40 focused shell tests pass; strict Clippy passes for the
+three changed libraries with native Session enabled. Pending-read tests now
+exercise cancellation, revocation and backpressure through observed turns.
+Prepare the shared comparator and fresh eight-arm pilot before judging savings.
+See the [approved scope](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#approved-readiness-handoff-october-16).
+
 Resume t331 before t252. The objective is to beat IPC on CPU/MiB and allocations
 per frame, retaining +10% as the acceptance ceiling. The owner accepted
 [Session-plus-client accounting](../../sophia-shell-files.md#cost-accounting-scope-accepted-october-15-2026)

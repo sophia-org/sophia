@@ -21,6 +21,8 @@
 //! The older `sophia-9p-authority` scaffold is unrelated and unused.
 
 pub mod authentication;
+#[cfg(test)]
+extern crate self as sophia_9p;
 pub mod connection;
 pub mod export;
 pub mod journal;

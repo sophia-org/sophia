@@ -10,7 +10,7 @@ rust-version.workspace = true
 smallvec = "1"
 sophia-factotum = { path = "../sophia-factotum", optional = true }
 sophia-wake = { path = "../sophia-wake" }
-sophia-9p = { path = "../sophia-9p", optional = true }
+sophia-9p = { path = "../sophia-9p" }
 sophia-backend-live = { path = "../sophia-backend-live", optional = true, default-features = false }
 sophia-broker = { path = "../sophia-broker" }
 sophia-config = { path = "../sophia-config" }
@@ -48,7 +48,6 @@ sophia-renderer-native-egl = { path = "../sophia-renderer-native-egl", features 
 default = []
 native-session = [
     "dep:zbus",
-    "dep:sophia-9p",
     "dep:sophia-factotum",
     "sophia-backend-live/gbm-probe",
     "sophia-backend-live/libdrm-events",

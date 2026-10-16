@@ -119,6 +119,28 @@ changes must reach both comparator wires. Do not install or restart the desktop.
 The [concurrency investigation](../investigations/gjov8u9g-can-independent-shell-uploads-progress-concurrently-without-weakening-custody.md)
 remains candidate research after the measurements, not an implementation step.
 
+## Approved readiness handoff (October 16)
+
+Reuse Session's actual poll result for a connected shell export with one admitted
+socket and no listener. An opaque, consumable observation records the server,
+connection, service generation, subscribed interests and returned wake/socket
+flags. A changed identity, generation or interest set requires the existing
+nonblocking poll. Turns, flushes, adoption and listener changes invalidate old
+observations; exhausted generations disable the shortcut.
+
+Session retains at most one observation per component, tagged with its slot and
+grant. Immediate authority work produces none. The next input pass consumes it
+once and discards leftovers, including when component service is skipped.
+Negotiation and standalone service retain their existing polling. Authentication,
+delivery guards, deadlines, budgets, output flushing and upload order remain
+unchanged. Readiness grants no authority; later input and wakes stay level-ready.
+
+Verify real poll counts with test-only instrumentation, stale observations,
+replacement connections, multiple components, late input/wakes, cancellation and
+backpressure. Carry shared changes to both comparator wires, then run eight fresh
+CPU/allocation arms. Retain the optimization only if repeated matched results
+show a benefit. This slice neither closes t331 nor authorizes upload concurrency.
+
 ## Connections
 
 - [Bounded upload concurrency investigation](../investigations/gjov8u9g-can-independent-shell-uploads-progress-concurrently-without-weakening-custody.md#t332--investigate-bounded-upload-concurrency): candidate research after t331 measurements; no upload scheduling change in this slice.

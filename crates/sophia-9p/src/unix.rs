@@ -13,10 +13,10 @@
 //! its own wait, then calls [`Server::turn`] with a zero timeout.
 
 use std::io::{self, Read, Write};
-use std::os::fd::OwnedFd;
+use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
@@ -64,6 +64,43 @@ struct Slot<E: Export> {
     ended: bool,
 }
 
+static NEXT_SERVER: AtomicU64 = AtomicU64::new(1);
+
+/// One subscription to an admitted socket. It grants no authority and cannot
+/// be reused after a service turn, flush or connection change.
+pub struct Subscription {
+    server: u64,
+    generation: u64,
+    connection: ConnectionId,
+    descriptors: [i32; 2],
+    interests: [PollFlags; 2],
+}
+
+/// Readiness returned by an owner's actual wait, consumed by one input turn.
+pub struct Observation {
+    subscription: Subscription,
+    flags: [PollFlags; 2],
+}
+
+impl Subscription {
+    /// Reject a different descriptor set. Call only after a successful poll of
+    /// the unmodified subscription; an empty result is still an observation.
+    pub fn observe(self, fds: &[PollFd<'_>]) -> Option<Observation> {
+        if fds.len() != 2
+            || fds
+                .iter()
+                .enumerate()
+                .any(|(i, fd)| fd.as_fd().as_raw_fd() != self.descriptors[i])
+        {
+            return None;
+        }
+        Some(Observation {
+            flags: [fds[0].revents(), fds[1].revents()],
+            subscription: self,
+        })
+    }
+}
+
 pub struct Server<E: Export> {
     export: E,
     limits: Limits,
@@ -74,10 +111,17 @@ pub struct Server<E: Export> {
     next_id: u64,
     /// Shared by sequential connection reads, bounded by their input limits.
     read_buffer: Vec<u8>,
+    identity: u64,
+    generation: Option<u64>,
+    #[cfg(test)]
+    polls: std::cell::Cell<u64>,
 }
 
 impl<E: Export> Server<E> {
     pub fn new(export: E, limits: Limits) -> io::Result<Self> {
+        let identity = NEXT_SERVER
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+            .map_err(|_| io::Error::other("server identity exhausted"))?;
         let (reader, writer) = pipe_with(PipeFlags::CLOEXEC | PipeFlags::NONBLOCK)?;
         Ok(Self {
             export,
@@ -93,6 +137,10 @@ impl<E: Export> Server<E> {
             },
             next_id: 1,
             read_buffer: Vec::new(),
+            identity,
+            generation: Some(0),
+            #[cfg(test)]
+            polls: std::cell::Cell::new(0),
         })
     }
 
@@ -124,6 +172,7 @@ impl<E: Export> Server<E> {
     /// Accept connections from a listener, up to the connection limit. For
     /// harnesses; an owner with its own admission uses [`Self::adopt`].
     pub fn listen(&mut self, listener: UnixListener) -> io::Result<()> {
+        self.invalidate();
         listener.set_nonblocking(true)?;
         self.listener = Some(listener);
         Ok(())
@@ -131,6 +180,7 @@ impl<E: Export> Server<E> {
 
     /// Serve a socket a caller has already accepted and admitted.
     pub fn adopt(&mut self, stream: UnixStream) -> Result<ConnectionId, Refused> {
+        self.invalidate();
         if self.slots.len() >= self.limits.max_connections() {
             return Err(Refused {
                 stream,
@@ -166,7 +216,38 @@ impl<E: Export> Server<E> {
     /// One wait for readiness and the work it allows. `false` once stopped,
     /// with every connection closed.
     pub fn turn(&mut self, timeout: Option<Duration>) -> io::Result<bool> {
+        self.invalidate();
         let readiness = self.wait(timeout)?;
+        self.serve(readiness)
+    }
+
+    /// Use the owner's wait when it still describes this exact service state.
+    /// All other cases retain the ordinary nonblocking poll.
+    pub fn turn_observed(&mut self, observation: Observation) -> io::Result<bool> {
+        let valid = self.subscription().is_some_and(|current| {
+            let prior = &observation.subscription;
+            current.server == prior.server
+                && current.generation == prior.generation
+                && current.connection == prior.connection
+                && current.interests == prior.interests
+                && current.descriptors == prior.descriptors
+        });
+        if !valid {
+            return self.turn(Some(Duration::ZERO));
+        }
+        self.invalidate();
+        self.serve(Readiness {
+            wake: observation.flags[0],
+            listener: PollFlags::empty(),
+            slots: SlotReadiness::Single([observation.flags[1]]),
+        })
+    }
+
+    fn invalidate(&mut self) {
+        self.generation = self.generation.and_then(|n| n.checked_add(1));
+    }
+
+    fn serve(&mut self, readiness: Readiness) -> io::Result<bool> {
         if readiness.wake.contains(PollFlags::IN) && !self.service_wake()? {
             return Ok(false);
         }
@@ -185,6 +266,7 @@ impl<E: Export> Server<E> {
     /// Flush a local export change without accepting or reading new requests.
     /// Readable sockets stay level-ready for the owner's next input pass.
     pub fn flush(&mut self) -> io::Result<bool> {
+        self.invalidate();
         if !self.service_wake()? {
             return Ok(false);
         }
@@ -229,6 +311,23 @@ impl<E: Export> Server<E> {
         self.poll_set()
     }
 
+    /// Only the single admitted-socket case supports a readiness handoff.
+    pub fn subscription(&self) -> Option<Subscription> {
+        let [slot] = self.slots.as_slice() else {
+            return None;
+        };
+        if self.listener.is_some() {
+            return None;
+        }
+        Some(Subscription {
+            server: self.identity,
+            generation: self.generation?,
+            connection: slot.connection.id(),
+            descriptors: [self.reader.as_raw_fd(), slot.stream.as_raw_fd()],
+            interests: [PollFlags::IN, Self::slot_interests(slot)],
+        })
+    }
+
     /// Visit the same borrowed interests without allocating an intermediate list.
     pub fn visit_poll_fds<'a>(&'a self, mut visit: impl FnMut(PollFd<'a>)) {
         let listening = self.slots.len() < self.limits.max_connections();
@@ -249,6 +348,10 @@ impl<E: Export> Server<E> {
     }
 
     fn slot_poll_fd(slot: &Slot<E>) -> PollFd<'_> {
+        PollFd::new(&slot.stream, Self::slot_interests(slot))
+    }
+
+    fn slot_interests(slot: &Slot<E>) -> PollFlags {
         let mut flags = PollFlags::empty();
         if slot.connection.input_room() > 0 {
             flags |= PollFlags::IN;
@@ -256,10 +359,12 @@ impl<E: Export> Server<E> {
         if !slot.connection.output().is_empty() {
             flags |= PollFlags::OUT;
         }
-        PollFd::new(&slot.stream, flags)
+        flags
     }
 
     fn wait(&self, timeout: Option<Duration>) -> io::Result<Readiness> {
+        #[cfg(test)]
+        self.polls.set(self.polls.get() + 1);
         let timeout = timeout
             .map(Timespec::try_from)
             .transpose()
@@ -474,3 +579,7 @@ impl SlotReadiness {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/support/observed_readiness.rs"]
+mod observed_tests;
