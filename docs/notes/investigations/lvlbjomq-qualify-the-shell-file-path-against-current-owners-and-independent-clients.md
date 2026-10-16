@@ -41,8 +41,7 @@ offline replay recovers it without changing raw evidence. Integration `4eb52fb`
 fixes that limit with a regression test. The remaining three profiles completed
 under `t331-native-profile-05`, with the same comparator `90988ff6d`. Each joins
 1,000 frames, matches independent replay and restores the console. All twelve
-pilot cases are now accounted for; the quiet hold is released. `t252-check`
-points at occupied evidence directories and must not be rerun.
+pilot cases are now accounted for; those evidence directories are occupied.
 
 Profiles show about 4.1 times as many owner passes on files for the panel and
 2.7 times as many for bulk uploads. Readiness allocates almost nothing; measured
@@ -50,8 +49,12 @@ logging scopes are small. Production `d18775828` removes a full output-inventory
 clone from every cadence lookup, reading the primary output ID from current
 authority state instead. A two-output fixture measures 8,000 allocations for
 1,000 inventory clones versus zero for the direct reads. Native results above
-predate this change. Next, trace remaining repeated owner-pass allocations and
-explain the extra passes before selecting another bounded change.
+predate this change. Comparator `e45744623` adds finer owner-service scopes;
+four fresh profiling arms are prepared under `t331-owner-profile-06` with
+integration `4eb52fb`. `t252-check` now selects those four one-minute runs from
+foreground tty4. All device-hidden argument checks pass. Claude confirmed a
+new crunch quiet window from 01:49 UTC on October 16, pausing its setup work;
+release it after the run. No native `profile-06` run has started yet.
 These overlapping scopes do not identify exclusive allocation stacks. See
 [completed profiling comparison](#t331-completed-profiling-comparison).
 This remains a diagnostic pilot, not full B9 qualification.
@@ -1750,6 +1753,47 @@ tests pass in production. Focused strict Clippy, formatting and diff checks pass
 The first compile caught an unqualified `OutputId` in the private facade; the
 qualified protocol type fixes it. No native measurement or installed-desktop
 change follows this patch yet, so it has no measured per-frame saving or CPU win.
+
+## t331: finer owner-service profiling
+
+The first profile separated component and wire service but left most owner
+allocations in a broad scope. Source inspection found additional services on
+every pass, without enough evidence to rank their allocation costs. Comparator
+`e45744623` therefore adds five diagnostic scopes: preparation before component
+service; post-component controls and topology; lifecycle and retirement; WM work
+and the second clock visit; and authority/input service, including its wait.
+Early exits close their guards normally. Production service order and budgets
+are unchanged; these hooks exist only in the comparator profiling build.
+
+The sampler writes all ten phase rows every eighth 2 ms counter tick and at
+startup and shutdown. Cost-counter cadence stays unchanged. Phase observations
+are coarser, roughly 16 ms, but the expanded record set stays bounded without
+raising capture limits. Tests verify zero allocation for phase guards and
+record writing, zero steady-state sampler allocation, and both phase endpoints
+even when the sampler stops before its first periodic phase publication.
+Counter tests and focused strict Clippy pass. Both release artifacts are rebuilt.
+
+The pinned SDK's `files/uploads.rs` explains a structural source of extra turns:
+upload-slot walk and open depend on replies, and only one current slot write is
+awaiting a reply before the next write can advance. The driver is bounded and
+handles short writes and EAGAIN explicitly. This explains why extra turns can
+be legitimate; it does not assign an exact fraction of the measured pass gap.
+The current slice preserves that ordering, resource custody and all limits.
+
+Four matched diagnostic arms in `t331-owner-profile-06` bind comparator
+`e45744623`, including the primary-output fix, and integration `4eb52fb`. Each
+offers 1,000 frames at 1080p/60 Hz: files and IPC, panel and panel-plus-4-MiB.
+The helper now selects only these fresh directories. Device-hidden argument
+validation passes for all four. No production speedup is established by this
+preparation, and the cost gate remains failed at the last CPU-only results.
+
+Claude's crunch setup/download stopped cleanly at 01:49 UTC on October 16;
+training had not started. Its quiet-window confirmation is retained alongside
+the plans. The diagnostic build completed before the proposed native window.
+The next step is the attended four-minute run, then independent replay and
+phase attribution before another production patch. Phase allocations still
+cover all process threads while each scope is open; scopes overlap and must
+not be summed as exclusive costs.
 
 ## Connections
 
