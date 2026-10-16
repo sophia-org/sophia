@@ -22,8 +22,12 @@ reallocations per four-record read in the isolated fixture. One allocation per
 completed read remains; warmed reply encoding and empty tail reads allocate
 nothing. Huge-count requests allocate only the available requested range. The
 full 9P suite and strict Clippy pass in production and comparator. Comparator
-`840a6824f` carries the same fix and fixture. Next, measure copy costs before evaluating
-scratch reuse or an owned payload API with a separate scope. No native benefit
+`840a6824f` carries the same fix and fixture. Follow-up copy accounting confirms
+two journal payload copies and one SDK staging copy. A second same-size SDK
+upload allocates nothing; all six isolated uploads use one socket send each.
+These establish byte traffic, not CPU attribution. The linked audit proposes
+bounded journal read-into scratch as the next allocation experiment; API changes
+still need separate scope approval. No native benefit
 is claimed; the installed desktop is unchanged.
 
 The approved readiness handoff is implemented in signed production `c2138f95e`

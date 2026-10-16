@@ -23,8 +23,11 @@ than it first appears; its event waits do not remove custody checks.
 
 Exact sizing now removes the two reallocations previously measured when gathering
 four records. One allocation per completed read remains; encoding into warmed
-output storage and empty pending reads allocate nothing. Measure copied bytes and socket writes
-before proposing either API change. The approved t331 slice excludes a new vectored
+output storage and empty pending reads allocate nothing. The follow-up below
+confirms one SDK payload copy, zero staging allocations on a second same-size
+upload, and one socket send per upload in the isolated fixture. Prioritize a
+bounded journal read-into experiment for allocations; SDK vectored output targets
+copy traffic, not the warmed allocation count. The approved t331 slice excludes a new vectored
 output ownership API; implementation needs a separately reviewed scope. t332
 remains investigation only. Keep the installed desktop untouched.
 
@@ -152,12 +155,65 @@ Acknowledgement retention, read bytes and delivery guards are unchanged. The
 same change and fixture are in comparator `840a6824f` to keep shared-core costs fair.
 Native CPU/MiB and allocations/frame have not been measured for this change.
 
+## Upload staging and copy accounting
+
+`tests/upload_copy_cost.rs` exercises the vendored SDK's real `Pipeline::write`
+and `poll` with a scripted Unix peer. Version negotiation finishes and its thread
+joins before allocator snapshots. The fixture measures only queueing, then
+overwrites the caller's payload before polling. The peer receives the original
+bytes and returns a matching Rwrite. This confirms ownership of the queued copy;
+it does not benchmark a shell export or authentication.
+
+| Payload bytes | First staging allocations | First allocated bytes | Second staging allocations | Wire bytes per request |
+| ---: | ---: | ---: | ---: | ---: |
+| 256 | 2 | 407 | 0 | 279 |
+| 4,096 | 2 | 4,247 | 0 | 4,119 |
+| 65,513 | 2 | 65,664 | 0 | 65,536 |
+
+No staging reallocations occur. The second same-size request allocates no bytes.
+This is two requests per fresh connection, not a mixed-size steady-state claim.
+The source's `submit` copies the payload once into `out_buf`, in addition to
+23 bytes of framing. A 4 MiB upload therefore copies 4 MiB at this stage,
+excluding framing and any compaction or allocator movement; this is a derived
+byte count, not a measured 4 MiB workload.
+
+An own-process strace records one successful `sendto` per Twrite for all six
+requests, with the byte counts above. No partial send, EAGAIN or vectored send
+occurs in this fixture. This does not predict syscall counts under native
+backpressure. Retained evidence is `upload-copy-cost.txt` and
+`upload-copy-syscalls.txt` in the comparison directory.
+
+The journal fixture now reports logical bytes gathered and encoded separately.
+For 1,000 reads of 1,024 bytes, each stage copies 1,024,000 payload bytes:
+2,048,000 total. The partial 700-byte case copies 700,000 at each stage. These
+counts follow the inspected slice copies and validated payload lengths, not
+hardware copy counters; they exclude kernel traffic and allocator movement.
+Results are in `journal-copy-cost.txt`.
+
+### Next bounded proposal
+
+Investigate a connection-owned, bounded scratch buffer supplied to journal reads.
+It could remove the remaining temporary allocation after warmup while preserving
+the existing copy into guarded reply storage. A default export adapter could
+preserve compatibility; journal-backed exports would opt into read-into storage.
+Keep the scratch bound tied to the admitted read limit, account for its retained
+capacity, and verify error, pending and oversized replies cannot expose stale
+bytes. Acknowledgement must not invalidate queued output, and node/epoch checks
+must still run on every partial delivery. Compare against the current fixture
+before adopting an API change. This is a proposal, not implementation approval.
+
+Direct encoding into queued output may remove a copy too, but needs a separate
+review of rollback, output bounds and delivery guards. SDK owned vectored output
+likewise remains separately scoped. Neither the copy counts nor strace establish
+CPU cost, native frequency or the share of t331's remaining gap.
+
 ## Validation and limits
 
 Inspected pinned upstream source and corresponding Sophia paths at `01fca2595`;
 source hashes are retained. The follow-up changes completed-read capacity and
 adds regression assertions. The full production and comparator 9P suites and strict all-target
-Clippy pass. No native benchmark win, hardware run or task completion
+Clippy pass. Both copy fixtures pass, and strict Clippy passes for the new upload
+fixture. No native benchmark win, hardware run or task completion
 follows from this experiment. Plan9port and 9legacy are catalogued;
 their performance paths have not yet been audited here. Task state stays in
 todo.md; this is supporting research for t331, not another execution queue.

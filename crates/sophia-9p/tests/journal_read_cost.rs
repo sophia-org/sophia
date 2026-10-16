@@ -70,8 +70,11 @@ fn completed_journal_read_cost_preserves_bytes_and_retention() {
         assert_eq!(read_reallocs, 0);
         assert_eq!(encode_allocs, 0);
         assert_eq!(pending_allocs, 0);
+        // Logical payload traffic from the two source-level copy stages;
+        // this does not count allocator moves, kernel copies or CPU time.
+        let payload_bytes = (end - offset as usize) * 1000;
         eprintln!(
-            "journal_read_cost records={records} offset={offset} count={count} reads=1000 read_allocations={read_allocs} read_reallocations={read_reallocs} encode_allocation_operations={encode_allocs} pending_allocation_operations={pending_allocs}"
+            "journal_read_cost records={records} offset={offset} count={count} reads=1000 read_allocations={read_allocs} read_reallocations={read_reallocs} encode_allocation_operations={encode_allocs} pending_allocation_operations={pending_allocs} gathered_payload_bytes={payload_bytes} encoded_payload_bytes={payload_bytes}"
         );
         journal.ack(7, records as u64).unwrap();
         assert_eq!(journal.position().records, 0);
