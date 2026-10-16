@@ -14,6 +14,22 @@ repairs? Reconcile the existing evidence before repeating a desktop campaign.
 
 ## Current resumption
 
+Cost-11 is prepared for the next attended tty4 run. Production `deae479d6`,
+comparator `8bbef6e00` and integration `4eb52fb` are bound in the fresh campaign
+under `t252-authenticated-20261015/t331-native-cost-11`. All eight plans pass
+preparation and device-free argument validation; artifact hashes match. The
+short `t252-check` launcher selects these unused captures. It runs panel and
+4 MiB workloads over files and IPC, separately for CPU and Rust allocations,
+with 1,000 frames per arm at 60 Hz. No arm has run. Coordinate a fresh quiet
+window, then the owner runs the launcher from foreground tty4. This is a pilot,
+not the full B9 campaign; do not install or restart the regular desktop.
+
+Both optimized builds remain in Cargo slots. The initial CPU config validation
+refused generated file permissions (`UnsafeMode`); private modes corrected it,
+and all final checks pass. The failed validation remains in the evidence folder.
+The previous cost-10 captures are preserved. This pilot measures exact sizing
+and scratch reuse together against cost-10; it cannot separate their effects.
+
 The owner requested renewed comparison with maintained Plan 9 implementations.
 The [pinned rio/Go p9/diod audit](2o32e7ui-which-plan-9-implementation-techniques-can-reduce-sophia-shell-costs.md)
 finds a concrete completed-journal-read allocation path and the remaining SDK
