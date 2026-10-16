@@ -144,6 +144,23 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `4c422a9` adds provisional lock fixed-file startup. It reads the
+exact decimal API epoch, verifies the Limits envelope against it through EOF
+and clunk, and opens events, transaction, submit and ACK with their proper
+modes. The transaction fid and iounit remain available to the submission lane.
+Attached startup preserves the exact sole quiescent root without reattachment.
+Seven socket tests cover fragments, malformed/overflowing epochs, epoch mismatch,
+control iounits, root/bounds, clock regression and unsent expiry. All ten Rust
+lock-client tests, strict Clippy and C's full suite pass. C `c101d3d` records
+matrix 42 / lock map 2, including Rust's conservative eight-request/sixteen-fid
+bound versus C's six-request minimum and caller-owned timeout difference.
+
+Next implement lock submission on the persistent transaction fid: immutable
+bytes, explicit EAGAIN retry, latest-result custody and Submitted ACK barriers.
+Then journal/Lock object handling, upload lifecycle and 1–8 write windows,
+integrated session/connecting facade and independent production tests. Startup
+alone does not establish lock-session parity. Production pins remain unchanged.
+
 Signed Rust `2ce53f7` starts experimental `sophia-lock-client` with typed
 preparation for all seven candidate kinds. Immutable encoded candidates fit
 fixed 128-byte owned storage; the body codec still uses one temporary Vec,
