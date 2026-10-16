@@ -393,6 +393,10 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
         byte_budget: usize,
     ) -> Result<(), ShellTransportError> {
+        #[cfg(feature = "comparator-profiling")]
+        let _profile = crate::comparator_counters::phases::enter(
+            crate::comparator_counters::phases::Phase::Wire,
+        );
         if self.wire.is_none() {
             return Err(ShellTransportError::NotConnected);
         }
@@ -434,25 +438,30 @@ impl ShellComponentTransport {
     /// The owner must visit whatever it subscribes, through `poll_io` or
     /// `poll_negotiation`, on its next pass; readiness is level-triggered.
     pub fn poll_fds(&self) -> Vec<rustix::event::PollFd<'_>> {
+        let mut fds = Vec::new();
+        self.visit_poll_fds(|fd| fds.push(fd));
+        fds
+    }
+
+    pub fn visit_poll_fds<'a>(&'a self, mut visit: impl FnMut(rustix::event::PollFd<'a>)) {
         use negotiation_service::Stage;
         use rustix::event::{PollFd, PollFlags};
         if let Some(wire) = self.wire.as_ref() {
             return match wire {
-                wire::Wire::Files(files) => files.poll_fds(),
-                wire::Wire::Socket(socket) => socket.poll_fds(),
+                wire::Wire::Files(files) => files.visit_poll_fds(visit),
+                wire::Wire::Socket(socket) => socket.visit_poll_fds(visit),
             };
         }
         match self.negotiation.as_ref().map(|pending| &pending.stage) {
-            None => Vec::new(),
-            Some(Stage::Waiting) => self
-                .endpoint
-                .accept_readiness()
-                .map(|listener| PollFd::from_borrowed_fd(listener, PollFlags::IN))
-                .into_iter()
-                .collect(),
-            Some(Stage::Accepted(stream)) => vec![PollFd::new(stream, PollFlags::IN)],
-            Some(Stage::Files(files)) => files.poll_fds(),
-            Some(Stage::Socket(handshake)) => vec![PollFd::new(handshake.stream(), PollFlags::IN)],
+            None => {}
+            Some(Stage::Waiting) => {
+                if let Some(listener) = self.endpoint.accept_readiness() {
+                    visit(PollFd::from_borrowed_fd(listener, PollFlags::IN));
+                }
+            }
+            Some(Stage::Accepted(stream)) => visit(PollFd::new(stream, PollFlags::IN)),
+            Some(Stage::Files(files)) => files.visit_poll_fds(visit),
+            Some(Stage::Socket(handshake)) => visit(PollFd::new(handshake.stream(), PollFlags::IN)),
         }
     }
 

@@ -141,6 +141,14 @@ impl PanelComponentService {
         transport: &mut ShellTransportConnection<'_>,
         presented: &[PresentedContentBinding],
     ) -> ServiceResult<usize> {
+        self.service_actions_from(transport, presented.iter())
+    }
+
+    pub(in crate::live_session) fn service_actions_from<'a>(
+        &mut self,
+        transport: &mut ShellTransportConnection<'_>,
+        presented: impl Iterator<Item = &'a PresentedContentBinding> + Clone,
+    ) -> ServiceResult<usize> {
         self.validate(transport)?;
         let next = &mut self.next_transaction;
         self.content
@@ -165,6 +173,17 @@ impl PanelComponentService {
         self.content
             .has_presented_content()
             .then(|| self.content.work_area_bands())
+    }
+
+    pub(super) fn append_presented_work_area_bands(
+        &self,
+        bands: &mut Vec<OutputReservation>,
+    ) -> bool {
+        let presented = self.content.has_presented_content();
+        if presented {
+            self.content.append_work_area_bands(bands);
+        }
+        presented
     }
 
     pub fn work_area_bands(&self) -> Vec<OutputReservation> {

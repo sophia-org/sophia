@@ -219,6 +219,7 @@ impl LiveWmSession {
             stale_responses: 0,
             work_area_relayout_required: false,
             shell_reservation_bands: Vec::new(),
+            shell_indicator_publication: None,
             shortcuts: None,
             command_registry: SessionCommandRegistry::prepare(1, &config.applications)?
                 .with_policy_launch_roles(config.launch_surface_proof_requested()),

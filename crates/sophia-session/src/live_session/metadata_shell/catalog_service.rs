@@ -115,7 +115,9 @@ impl CatalogComponentService {
         self.validate(transport)?;
         let next = &mut self.next_transaction;
         self.content
-            .service_actions(transport, presented, &mut || take_shell_transaction(next))?;
+            .service_actions(transport, presented.iter(), &mut || {
+                take_shell_transaction(next)
+            })?;
         Ok(self.content.service_catalog_requests(
             transport,
             publication,
@@ -129,5 +131,16 @@ impl CatalogComponentService {
         self.content
             .has_presented_content()
             .then(|| self.content.work_area_bands())
+    }
+
+    pub(super) fn append_presented_work_area_bands(
+        &self,
+        bands: &mut Vec<OutputReservation>,
+    ) -> bool {
+        let presented = self.content.has_presented_content();
+        if presented {
+            self.content.append_work_area_bands(bands);
+        }
+        presented
     }
 }

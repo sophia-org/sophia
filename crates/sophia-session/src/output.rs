@@ -30,6 +30,10 @@ pub fn install(output: SessionOutput) -> Result<(), &'static str> {
 
 #[cfg_attr(not(feature = "native-session"), allow(dead_code))]
 pub(crate) fn stdout(arguments: Arguments<'_>) {
+    #[cfg(feature = "comparator-profiling")]
+    let _profile = sophia_runtime::comparator_counters::phases::enter(
+        sophia_runtime::comparator_counters::phases::Phase::Diagnostics,
+    );
     if let Some(output) = OUTPUT.get() {
         let line = arguments.to_string();
         (output.stdout)(&line);
@@ -37,6 +41,10 @@ pub(crate) fn stdout(arguments: Arguments<'_>) {
 }
 
 pub(crate) fn stderr(arguments: Arguments<'_>) {
+    #[cfg(feature = "comparator-profiling")]
+    let _profile = sophia_runtime::comparator_counters::phases::enter(
+        sophia_runtime::comparator_counters::phases::Phase::Diagnostics,
+    );
     if let Some(output) = OUTPUT.get() {
         let line = arguments.to_string();
         (output.stderr)(&line);

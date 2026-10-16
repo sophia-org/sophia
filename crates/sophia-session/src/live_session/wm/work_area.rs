@@ -19,12 +19,13 @@ impl LiveWmSession {
     /// made it against the same realized topology.
     pub(super) fn set_shell_reservation_bands(
         &mut self,
-        bands: Vec<sophia_protocol::OutputReservation>,
+        bands: &[sophia_protocol::OutputReservation],
     ) -> bool {
         if self.shell_reservation_bands == bands {
             return false;
         }
-        self.shell_reservation_bands = bands;
+        self.shell_reservation_bands.clear();
+        self.shell_reservation_bands.extend_from_slice(bands);
         true
     }
 

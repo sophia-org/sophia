@@ -10,6 +10,9 @@ use std::{
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 const WAIT: Duration = Duration::from_secs(5);
+#[path = "shell_timing_peer/journal.rs"]
+mod journal;
+use journal::{Event, Upload};
 
 #[cfg(feature = "comparator-allocation-counting")]
 #[global_allocator]
@@ -177,17 +180,8 @@ fn clock_usec() -> u64 {
     u64::try_from(t.tv_sec).unwrap() * 1_000_000 + u64::try_from(t.tv_nsec).unwrap() / 1000
 }
 
-fn emit(value: serde_json::Value) -> Result<()> {
-    // The native capture shares its pipe with Session's counter writer.
-    // Keep each record below PIPE_BUF and submit its newline with the payload.
-    let mut bytes = [0u8; 1024];
-    let mut buffer = std::io::Cursor::new(bytes.as_mut_slice());
-    serde_json::to_writer(&mut buffer, &value)?;
-    writeln!(buffer)?;
-    let len = buffer.position() as usize;
-    let mut out = std::io::stdout().lock();
-    out.write_all(&bytes[..len])?;
-    out.flush()?;
+fn emit(event: Event<'_>) -> Result<()> {
+    journal::write(&mut std::io::stdout().lock(), event)?;
     Ok(())
 }
 
@@ -298,11 +292,13 @@ fn run() -> Result<()> {
     {
         return Err("allocation refused or misattributed".into());
     }
-    emit(
-        serde_json::json!({"schema":2,"event":"start","frames":frames,"wire":if files {"files"} else {"ipc"},"probe_bytes":probe_bytes}),
-    )?;
+    emit(Event::Start {
+        frames,
+        wire: if files { "files" } else { "ipc" },
+        probe_bytes,
+    })?;
     for generation in 1..=frames {
-        #[cfg(feature = "comparator-allocation-counting")]
+        #[cfg(feature = "comparator-counters")]
         sophia_runtime::comparator_counters::record("peer", "frame_start", generation)?;
         // The optional probe measures transfer acceptance, not presentation.
         // Release it before uploading the bar so only one staging slot is needed.
@@ -340,14 +336,20 @@ fn run() -> Result<()> {
             // Preserve the attempt before sending. This conservative interval includes
             // flushing the offer journal, but excludes pixel preparation above.
             let begin_usec = clock_usec();
-            emit(
-                serde_json::json!({"schema":2,"event":"upload_offer","upload":{
-                    "connection_epoch":grant.connection_epoch,"content_grant_epoch":grant.content_grant_epoch,
-                    "output":output.output.id,"candidate_generation":generation,
-                    "resource_id":resource.id,"resource_generation":resource.generation,
-                    "width":width,"height":height,"total_bytes":length,"begin_usec":begin_usec
-                }}),
-            )?;
+            emit(Event::UploadOffer {
+                upload: Upload {
+                    connection_epoch: grant.connection_epoch,
+                    content_grant_epoch: grant.content_grant_epoch,
+                    output: output.output.id,
+                    candidate_generation: generation,
+                    resource_id: resource.id,
+                    resource_generation: resource.generation,
+                    width,
+                    height,
+                    total_bytes: length,
+                    begin_usec,
+                },
+            })?;
             wire.send(
                 2,
                 &[ShellContentRecord::ResourceBegin(ContentResourceBegin {
@@ -386,9 +388,11 @@ fn run() -> Result<()> {
             )?;
             expect_status(&mut wire, grant, resource, 2)?;
             let accepted_usec = clock_usec();
-            emit(serde_json::json!({"schema":2,"event":"upload_accepted",
-            "resource_id":resource.id,"resource_generation":resource.generation,
-            "accepted_usec":accepted_usec}))?;
+            emit(Event::UploadAccepted {
+                resource_id: resource.id,
+                resource_generation: resource.generation,
+                accepted_usec,
+            })?;
             if probe {
                 wire.send(
                     7,
@@ -404,10 +408,11 @@ fn run() -> Result<()> {
                 {
                     return Err("wrong probe release".into());
                 }
-                emit(
-                    serde_json::json!({"schema":2,"event":"probe_released","resource_id":resource.id,
-                "resource_generation":resource.generation,"released_usec":clock_usec()}),
-                )?;
+                emit(Event::ProbeReleased {
+                    resource_id: resource.id,
+                    resource_generation: resource.generation,
+                    released_usec: clock_usec(),
+                })?;
             }
         }
         let resource = resource_for_frame(generation, probe_bytes != 0);
@@ -433,9 +438,11 @@ fn run() -> Result<()> {
         {
             return Err("permit refused or misattributed".into());
         }
-        emit(
-            serde_json::json!({"schema":2,"event":"permit","generation":generation,"demand_usec":demand_time,"received_usec":clock_usec()}),
-        )?;
+        emit(Event::Permit {
+            generation,
+            demand_usec: demand_time,
+            received_usec: clock_usec(),
+        })?;
         let records = [
             ShellContentRecord::CandidateBegin(ContentCandidateBegin {
                 grant,
@@ -478,11 +485,13 @@ fn run() -> Result<()> {
                 target_count: 0,
             }),
         ];
-        emit(
-            serde_json::json!({"schema":2,"event":"offer","connection_epoch":grant.connection_epoch,
-            "content_grant_epoch":grant.content_grant_epoch,"output":output.output.id,"candidate_generation":generation,
-            "submitted_monotonic_usec":clock_usec()}),
-        )?;
+        emit(Event::Offer {
+            connection_epoch: grant.connection_epoch,
+            content_grant_epoch: grant.content_grant_epoch,
+            output: output.output.id,
+            candidate_generation: generation,
+            submitted_monotonic_usec: clock_usec(),
+        })?;
         wire.send(6, &records)?;
         let mut prepared = false;
         loop {
@@ -507,11 +516,16 @@ fn run() -> Result<()> {
             } else {
                 "rejected"
             };
-            emit(
-                serde_json::json!({"schema":2,"event":"terminal","connection_epoch":grant.connection_epoch,
-                "content_grant_epoch":grant.content_grant_epoch,"output":output.output.id,"candidate_generation":generation,
-                "outcome":status,"kind":outcome.kind,"reason":outcome.reason,"observed_monotonic_usec":clock_usec()}),
-            )?;
+            emit(Event::Terminal {
+                connection_epoch: grant.connection_epoch,
+                content_grant_epoch: grant.content_grant_epoch,
+                output: output.output.id,
+                candidate_generation: generation,
+                outcome: status,
+                kind: outcome.kind,
+                reason: outcome.reason,
+                observed_monotonic_usec: clock_usec(),
+            })?;
             if outcome.kind != 2 {
                 return Err("candidate was not presented".into());
             }
@@ -537,10 +551,13 @@ fn run() -> Result<()> {
                 return Err("wrong retired resource release".into());
             }
         }
-        #[cfg(feature = "comparator-allocation-counting")]
+        #[cfg(feature = "comparator-counters")]
         sophia_runtime::comparator_counters::record("peer", "frame_end", generation)?;
     }
-    emit(serde_json::json!({"schema":2,"event":"end","offered":frames,"completed":frames}))?;
+    emit(Event::End {
+        offered: frames,
+        completed: frames,
+    })?;
     std::thread::sleep(Duration::from_millis(hold));
     Ok(())
 }
@@ -570,7 +587,9 @@ fn resource_for_frame(frame: u64, probe: bool) -> ContentResourceId {
 
 fn main() {
     if let Err(error) = run() {
-        let _ = emit(serde_json::json!({"schema":2,"event":"failed","error":error.to_string()}));
+        let _ = emit(Event::Failed {
+            error: &error.to_string(),
+        });
         std::process::exit(1);
     }
 }

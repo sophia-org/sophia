@@ -119,6 +119,7 @@ struct LiveWmSession {
     /// session owns the reduction. The coordinator that admits it lives with
     /// the shell connection; this is the committed result only.
     shell_reservation_bands: Vec<sophia_protocol::OutputReservation>,
+    shell_indicator_publication: Option<std::sync::Arc<sophia_engine::PolicyIndicatorPublication>>,
     shortcuts: Option<WmShortcutRouter>,
     command_registry: SessionCommandRegistry,
     desktop_reload: Option<PendingDesktopReload>,

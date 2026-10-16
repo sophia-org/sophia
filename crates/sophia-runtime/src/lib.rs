@@ -99,5 +99,5 @@ pub use tracing::*;
 mod shell_content;
 pub use shell_content::*;
 
-#[cfg(feature = "comparator-allocation-counting")]
+#[cfg(feature = "comparator-counters")]
 pub mod comparator_counters;

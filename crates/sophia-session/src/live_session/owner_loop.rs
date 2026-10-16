@@ -669,6 +669,9 @@ fn run_session_loop_inner(
     // Carries the shell's committed work-area claim from the shell phase to
     // the WM phase within one tick.
     let mut shell_work_area_bands: Option<Vec<sophia_protocol::OutputReservation>> = None;
+    let mut shell_band_scratch = Vec::new();
+    let mut component_bounds = Vec::new();
+    let mut component_bounds_outputs = Vec::new();
     let mut shell_proof_waiting_for_inert_click = false;
     let mut chrome_captures = sophia_engine::ChromeCaptureState::default();
     let mut reference_capture = sophia_engine::ReferenceSheetCapture::default();

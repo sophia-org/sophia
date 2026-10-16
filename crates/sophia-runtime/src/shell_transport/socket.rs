@@ -230,9 +230,9 @@ impl SocketWire {
         self.visit = VISIT_PAYLOAD_BYTES;
     }
 
-    pub(super) fn poll_fds(&self) -> Vec<rustix::event::PollFd<'_>> {
+    pub(super) fn visit_poll_fds<'a>(&'a self, mut visit: impl FnMut(rustix::event::PollFd<'a>)) {
         use rustix::event::{PollFd, PollFlags};
-        vec![PollFd::new(&self.stream, PollFlags::IN)]
+        visit(PollFd::new(&self.stream, PollFlags::IN));
     }
 
     /// One bounded, nonblocking turn in each direction. Output drains the

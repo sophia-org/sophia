@@ -1,5 +1,7 @@
 // Readiness and deadline selection for a Session owner with no runnable work.
 {
+    #[cfg(feature = "comparator-profiling")]
+    let profile = sophia_runtime::comparator_counters::phases::enter(sophia_runtime::comparator_counters::phases::Phase::Readiness);
     // A worker replaced during this pass gets the wake before the
     // owner sleeps on it. Attaching rings once, ending this wait.
     if let Some(wm) = wm_session.as_ref() {
@@ -40,15 +42,15 @@
     // next pass turns it: components are visited only while a
     // runtime exists. Records queued after a wire's last turn have
     // no descriptor and keep the short budget.
-    let mut shell_wires = Vec::new();
+    let mut shell_wires = smallvec::SmallVec::<[rustix::event::PollFd<'_>; 64]>::new();
     let mut shell_output_pending = false;
     if let Some(shell) = metadata_shell.as_ref() {
-        shell_wires.extend(shell.poll_fds());
+        shell.visit_poll_fds(|fd| shell_wires.push(fd));
         shell_output_pending |= shell.output_pending();
         plan.cap(shell.authentication_wait(now), R::ShellAuthentication);
     }
     if let Some(components) = shell_components.as_ref().filter(|_| runtime.is_some()) {
-        shell_wires.extend(components.poll_fds());
+        components.visit_poll_fds(|fd| shell_wires.push(fd));
         shell_output_pending |= components.output_pending();
         plan.cap(components.authentication_wait(now), R::ShellAuthentication);
     }
@@ -62,13 +64,14 @@
     );
     owner_wake.plan_wait(plan);
     owner_wake.record_native_wait(held.frames, !native_wait.descriptors.is_empty());
+    #[cfg(feature = "comparator-profiling")]
+    drop(profile);
     owner_wake.receive_with_native(
         authority_receiver,
         plan.timeout,
         shell_wires,
         native_wait.descriptors.into_iter()
-            .map(|fd| rustix::event::PollFd::from_borrowed_fd(fd, rustix::event::PollFlags::IN))
-            .collect(),
+            .map(|fd| rustix::event::PollFd::from_borrowed_fd(fd, rustix::event::PollFlags::IN)),
         native_scanout.as_ref().map(LiveProductionNativeScanout::completion_progress),
     )?
 }

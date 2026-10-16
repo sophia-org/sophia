@@ -159,13 +159,16 @@ impl LiveMetadataShell {
     /// Readiness of the shell's wire, borrowed for the owner's wait. The next
     /// pass's `poll` turns that wire. Nothing is subscribed while paused, when
     /// `poll` does not turn it.
-    pub(in crate::live_session) fn poll_fds(&self) -> Vec<rustix::event::PollFd<'_>> {
+    pub(in crate::live_session) fn visit_poll_fds<'a>(
+        &'a self,
+        visit: impl FnMut(rustix::event::PollFd<'a>),
+    ) {
         if self.presentation_paused
             || (!self.connected && !self.authentication.as_ref().is_some_and(|a| a.negotiating))
         {
-            return Vec::new();
+            return;
         }
-        self.transport.poll_fds()
+        self.transport.visit_poll_fds(visit)
     }
 
     /// Whether the wire holds records the next pass's turn can move.

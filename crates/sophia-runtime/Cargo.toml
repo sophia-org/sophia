@@ -8,7 +8,10 @@ rust-version.workspace = true
 
 [features]
 # Isolated qualification branch only; do not merge the retired IPC comparator.
-comparator-allocation-counting = ["dep:stats_alloc", "rustix/time"]
+comparator-counters = ["rustix/time"]
+comparator-allocation-counting = ["comparator-counters", "dep:stats_alloc"]
+comparator-cpu-counting = ["comparator-counters"]
+comparator-profiling = ["comparator-allocation-counting"]
 
 [dependencies]
 stats_alloc = { version = "=0.1.10", optional = true }
@@ -22,6 +25,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
+serde = { version = "1", features = ["derive"] }
 sophia-namespace-client = { workspace = true }
 rustix = { workspace = true, features = ["fs", "time"] }
 stats_alloc = "=0.1.10"

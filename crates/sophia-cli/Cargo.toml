@@ -34,6 +34,8 @@ sophia-sysv-shm = { path = "../sophia-sysv-shm" }
 [features]
 default = []
 comparator-allocation-counting = ["sophia-runtime/comparator-allocation-counting"]
+comparator-cpu-counting = ["sophia-runtime/comparator-cpu-counting"]
+comparator-profiling = ["comparator-allocation-counting", "sophia-session/comparator-profiling"]
 native-session = ["sophia-session/native-session", "sophia-backend-live/gbm-probe", "sophia-backend-live/libdrm-events", "sophia-backend-live/drm-hotplug", "sophia-backend-live/libinput-events", "sophia-backend-live/seat-control"]
 atomic-scanout-live = ["native-session"]
 atomic-scanout-smoke-live = ["atomic-scanout-live"]

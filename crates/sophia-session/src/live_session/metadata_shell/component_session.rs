@@ -430,10 +430,16 @@ impl ShellComponentSession {
     /// Nothing is subscribed while service is paused or stopping: `poll`
     /// then closes those wires rather than turning them.
     pub fn poll_fds(&self) -> Vec<rustix::event::PollFd<'_>> {
+        let mut fds = Vec::new();
+        self.visit_poll_fds(|fd| fds.push(fd));
+        fds
+    }
+
+    pub fn visit_poll_fds<'a>(&'a self, visit: impl FnMut(rustix::event::PollFd<'a>)) {
         if !self.available || self.stopping {
-            return Vec::new();
+            return;
         }
-        self.processes.poll_fds()
+        self.processes.visit_poll_fds(visit)
     }
 
     /// Whether a connected wire holds records the next visit can move.
@@ -483,25 +489,23 @@ impl ShellComponentSession {
     /// Keep last displayed panel reservations through peer replacement. A new
     /// negotiated connection cannot change work areas before its first Present.
     pub fn work_area_bands(&self) -> Vec<sophia_protocol::OutputReservation> {
-        self.ready
-            .iter()
-            .enumerate()
-            .flat_map(|(slot, ready)| {
-                ready
-                    .as_ref()
-                    .and_then(|ready| match &ready.service {
-                        ShellComponentService::Bar(bar) => bar.presented_work_area_bands(),
-                        ShellComponentService::Dock(dock) => dock.presented_work_area_bands(),
-                        _ => None,
-                    })
-                    .or_else(|| {
-                        self.retained_panel_bands[slot]
-                            .as_ref()
-                            .map(|(_, bands)| bands.clone())
-                    })
-                    .unwrap_or_default()
-            })
-            .collect()
+        let mut bands = Vec::new();
+        self.write_work_area_bands(&mut bands);
+        bands
+    }
+
+    pub fn write_work_area_bands(&self, bands: &mut Vec<sophia_protocol::OutputReservation>) {
+        bands.clear();
+        for (slot, ready) in self.ready.iter().enumerate() {
+            let presented = ready.as_ref().is_some_and(|ready| match &ready.service {
+                ShellComponentService::Bar(bar) => bar.append_presented_work_area_bands(bands),
+                ShellComponentService::Dock(dock) => dock.append_presented_work_area_bands(bands),
+                _ => false,
+            });
+            if !presented && let Some((_, retained)) = &self.retained_panel_bands[slot] {
+                bands.extend_from_slice(retained);
+            }
+        }
     }
 
     pub fn collect(&mut self) -> ContentEpochAccounting {

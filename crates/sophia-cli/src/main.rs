@@ -1,5 +1,8 @@
 mod commands;
-#[cfg(feature = "comparator-allocation-counting")]
+#[cfg(any(
+    feature = "comparator-allocation-counting",
+    feature = "comparator-cpu-counting"
+))]
 mod comparator_counters;
 mod scanout_diagnostics;
 
@@ -40,7 +43,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let is_run = args.first().map(String::as_str) == Some("session")
         && args.get(1).map(String::as_str) == Some("run")
         && !args.iter().any(|arg| arg == "--validate-session-args");
-    #[cfg(feature = "comparator-allocation-counting")]
+    #[cfg(any(
+        feature = "comparator-allocation-counting",
+        feature = "comparator-cpu-counting"
+    ))]
     if is_run {
         comparator_counters::require_bounded_run(&args)?;
     }
@@ -121,12 +127,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             previous_hook(information);
         }));
     }
-    #[cfg(feature = "comparator-allocation-counting")]
+    #[cfg(any(
+        feature = "comparator-allocation-counting",
+        feature = "comparator-cpu-counting"
+    ))]
     let counters = is_run
         .then(sophia_runtime::comparator_counters::Sampler::start)
         .transpose()?;
     let result = commands::run(&args, verbose);
-    #[cfg(feature = "comparator-allocation-counting")]
+    #[cfg(any(
+        feature = "comparator-allocation-counting",
+        feature = "comparator-cpu-counting"
+    ))]
     let result = match counters.map(|counters| counters.finish()).transpose() {
         Ok(_) => result,
         Err(error) => Err(Box::new(error) as Box<dyn std::error::Error>),

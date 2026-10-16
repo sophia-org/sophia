@@ -28,6 +28,9 @@ impl ShellSessionTransport {
     pub fn poll_fds(&self) -> Vec<rustix::event::PollFd<'_>> {
         self.state.poll_fds()
     }
+    pub fn visit_poll_fds<'a>(&'a self, visit: impl FnMut(rustix::event::PollFd<'a>)) {
+        self.state.visit_poll_fds(visit)
+    }
 
     /// See [`ShellComponentTransport::output_pending`].
     pub fn output_pending(&self) -> bool {

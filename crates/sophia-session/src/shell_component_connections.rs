@@ -351,19 +351,23 @@ impl ShellComponentConnections {
     /// Readiness of every negotiating or connected wire, borrowed for one
     /// wait. `poll_negotiations` and `turn_connected` consume it.
     pub fn poll_fds(&self) -> Vec<rustix::event::PollFd<'_>> {
-        self.connections
-            .iter()
-            .filter(|connection| {
-                matches!(
-                    connection.attempt,
-                    Some((
-                        _,
-                        ComponentConnectionPhase::Negotiating | ComponentConnectionPhase::Connected
-                    ))
-                )
-            })
-            .flat_map(|connection| connection.transport.poll_fds())
-            .collect()
+        let mut fds = Vec::new();
+        self.visit_poll_fds(|fd| fds.push(fd));
+        fds
+    }
+
+    pub fn visit_poll_fds<'a>(&'a self, mut visit: impl FnMut(rustix::event::PollFd<'a>)) {
+        for connection in self.connections.iter().filter(|connection| {
+            matches!(
+                connection.attempt,
+                Some((
+                    _,
+                    ComponentConnectionPhase::Negotiating | ComponentConnectionPhase::Connected
+                ))
+            )
+        }) {
+            connection.transport.visit_poll_fds(&mut visit);
+        }
     }
 
     /// Only serviced attempts may shorten the owner wait.

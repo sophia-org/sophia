@@ -133,8 +133,8 @@ impl ShellFileWire {
 
     /// The server's readiness, borrowed for the owner's wait. The next
     /// [`Self::turn`] consumes it.
-    pub(super) fn poll_fds(&self) -> Vec<rustix::event::PollFd<'_>> {
-        self.server.poll_fds()
+    pub(super) fn visit_poll_fds<'a>(&'a self, visit: impl FnMut(rustix::event::PollFd<'a>)) {
+        self.server.visit_poll_fds(visit)
     }
 
     /// One nonblocking turn: whatever requests are ready, no waiting.

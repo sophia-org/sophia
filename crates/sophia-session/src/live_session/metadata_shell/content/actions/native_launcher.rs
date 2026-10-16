@@ -67,7 +67,7 @@ impl NativeLauncherActionService {
         transaction: TransactionId,
         now_msec: u64,
     ) -> Result<bool, ShellTransportError> {
-        let Some(index) = self.ledger.next_cancellation(presented, now_msec) else {
+        let Some(index) = self.ledger.next_cancellation(presented.iter(), now_msec) else {
             return Ok(false);
         };
         self.ledger

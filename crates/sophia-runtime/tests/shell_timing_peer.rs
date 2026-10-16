@@ -67,7 +67,7 @@ fn refuses_unarmed_ambiguous_and_authentication_bypass_launches() {
 fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
     const FRAMES: u64 = 64;
     const PANEL_WIDTH: u32 = 1920;
-    #[cfg(feature = "comparator-allocation-counting")]
+    #[cfg(feature = "comparator-counters")]
     let sampler = sophia_runtime::comparator_counters::Sampler::start().unwrap();
     let binary = std::env::var_os("SOPHIA_TIMING_PEER_BINARY").expect("explicit peer binary");
     assert!(std::path::Path::new(&binary).is_absolute());
@@ -294,11 +294,17 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
                 assert_eq!(pair[1]["upload"]["total_bytes"], PANEL_WIDTH * 24 * 4);
             }
         }
-        if cfg!(feature = "comparator-allocation-counting") {
+        if cfg!(feature = "comparator-counters") {
             let counters = String::from_utf8(stderr).unwrap();
             assert_eq!(counters.lines().count(), 2 * FRAMES as usize);
             for (index, line) in counters.lines().enumerate() {
-                assert!(line.starts_with("sophia_comparator_counters schema=1 process=peer "));
+                assert!(line.starts_with(if cfg!(feature = "comparator-profiling") {
+                    "sophia_comparator_counters schema=2 mode=profile process=peer "
+                } else if cfg!(feature = "comparator-allocation-counting") {
+                    "sophia_comparator_counters schema=1 process=peer "
+                } else {
+                    "sophia_comparator_counters schema=2 mode=cpu-only process=peer "
+                }));
                 assert!(line.contains(if index % 2 == 0 {
                     "stage=frame_start "
                 } else {
@@ -329,6 +335,6 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
         drop(host);
         std::fs::remove_dir_all(root).unwrap();
     }
-    #[cfg(feature = "comparator-allocation-counting")]
+    #[cfg(feature = "comparator-counters")]
     sampler.finish().unwrap();
 }

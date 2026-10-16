@@ -124,8 +124,8 @@ impl OwnerWake {
         &'a self,
         receiver: &Receiver<T>,
         timeout: Duration,
-        fds: Vec<PollFd<'a>>,
-        native: Vec<PollFd<'a>>,
+        fds: impl IntoIterator<Item = PollFd<'a>>,
+        native: impl IntoIterator<Item = PollFd<'a>>,
         progress: Option<(u64, u64)>,
     ) -> io::Result<Result<T, RecvTimeoutError>> {
         match receiver.try_recv() {
@@ -200,8 +200,8 @@ impl OwnerWake {
     fn wait<'a>(
         &'a self,
         timeout: Duration,
-        mut fds: Vec<PollFd<'a>>,
-        native: Vec<PollFd<'a>>,
+        fds: impl IntoIterator<Item = PollFd<'a>>,
+        native: impl IntoIterator<Item = PollFd<'a>>,
         progress: Option<(u64, u64)>,
     ) -> io::Result<()> {
         let now = Instant::now();
@@ -210,6 +210,9 @@ impl OwnerWake {
             .take()
             .unwrap_or_else(|| WaitPlan::new(timeout, WaitReason::Maintenance));
         debug_assert_eq!(plan.timeout, timeout);
+        // Inline storage covers ordinary role and native waits. Larger existing
+        // inventories spill without dropping a descriptor or changing admission.
+        let mut fds: smallvec::SmallVec<[PollFd<'a>; 64]> = fds.into_iter().collect();
         let native_start = fds.len();
         fds.extend(native);
         let ring_index = fds.len();

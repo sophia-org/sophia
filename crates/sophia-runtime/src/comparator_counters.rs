@@ -3,7 +3,18 @@
 //! threads may allocate. Foreign allocators and other processes are excluded.
 use std::{io::Write, sync::mpsc, thread::JoinHandle, time::Duration};
 
+#[cfg(feature = "comparator-profiling")]
+pub mod phases;
+
+#[cfg(all(
+    feature = "comparator-cpu-counting",
+    feature = "comparator-allocation-counting"
+))]
+compile_error!("CPU-only comparison must use the ordinary allocator");
+
+#[cfg(feature = "comparator-allocation-counting")]
 pub type Allocator = &'static stats_alloc::StatsAlloc<std::alloc::System>;
+#[cfg(feature = "comparator-allocation-counting")]
 pub const ALLOCATOR: Allocator = &stats_alloc::INSTRUMENTED_SYSTEM;
 
 #[derive(Clone, Copy, Debug)]
@@ -24,17 +35,28 @@ fn nanos(clock: rustix::time::ClockId) -> u64 {
 
 pub fn snapshot() -> Snapshot {
     let before_usec = nanos(rustix::time::ClockId::Monotonic) / 1000;
-    let counts = ALLOCATOR.stats();
+    #[cfg(feature = "comparator-allocation-counting")]
+    let counts = {
+        let s = ALLOCATOR.stats();
+        (
+            s.allocations,
+            s.reallocations,
+            s.deallocations,
+            s.bytes_allocated,
+        )
+    };
+    #[cfg(not(feature = "comparator-allocation-counting"))]
+    let counts = (0, 0, 0, 0);
     let cpu_ns = nanos(rustix::time::ClockId::ProcessCPUTime);
     let after_usec = nanos(rustix::time::ClockId::Monotonic) / 1000;
     Snapshot {
         before_usec,
         after_usec,
         cpu_ns,
-        allocations: counts.allocations,
-        reallocations: counts.reallocations,
-        deallocations: counts.deallocations,
-        bytes_allocated: counts.bytes_allocated,
+        allocations: counts.0,
+        reallocations: counts.1,
+        deallocations: counts.2,
+        bytes_allocated: counts.3,
     }
 }
 
@@ -54,9 +76,16 @@ pub fn write_snapshot(
 ) -> std::io::Result<()> {
     let mut bytes = [0u8; 1024];
     let mut buffer = std::io::Cursor::new(bytes.as_mut_slice());
+    let schema = if cfg!(feature = "comparator-profiling") {
+        "2 mode=profile"
+    } else if cfg!(feature = "comparator-allocation-counting") {
+        "1"
+    } else {
+        "2 mode=cpu-only"
+    };
     writeln!(
         buffer,
-        "sophia_comparator_counters schema=1 process={process} pid={} stage={stage} sequence={sequence} before_usec={} after_usec={} cpu_ns={} allocations={} reallocations={} deallocations={} bytes_allocated={}",
+        "sophia_comparator_counters schema={schema} process={process} pid={} stage={stage} sequence={sequence} before_usec={} after_usec={} cpu_ns={} allocations={} reallocations={} deallocations={} bytes_allocated={}",
         std::process::id(),
         s.before_usec,
         s.after_usec,
@@ -79,22 +108,36 @@ pub struct Sampler {
 
 impl Sampler {
     pub fn start() -> std::io::Result<Self> {
+        Self::start_with_output(std::io::stderr())
+    }
+
+    /// Keep the exact sampler available to isolated overhead checks. The sink
+    /// changes where records go, never the counters or sampling cadence.
+    pub fn start_with_output(mut output: impl Write + Send + 'static) -> std::io::Result<Self> {
         let (stop, receiver) = mpsc::channel();
         let thread = std::thread::Builder::new()
             .name("comparison-counters".into())
             .spawn(move || {
-                record("session", "start", 0)?;
+                write_snapshot(&mut output, "session", "start", 0, snapshot())?;
                 for sequence in 1..=60_000 {
                     match receiver.recv_timeout(Duration::from_millis(2)) {
                         Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => {
-                            return record("session", "end", sequence);
+                            return write_snapshot(
+                                &mut output,
+                                "session",
+                                "end",
+                                sequence,
+                                snapshot(),
+                            );
                         }
                         Err(mpsc::RecvTimeoutError::Timeout) => {
-                            record("session", "sample", sequence)?
+                            write_snapshot(&mut output, "session", "sample", sequence, snapshot())?;
+                            #[cfg(feature = "comparator-profiling")]
+                            phases::record(&mut output, sequence)?;
                         }
                     }
                 }
-                record("session", "exhausted", 60_001)?;
+                write_snapshot(&mut output, "session", "exhausted", 60_001, snapshot())?;
                 Err(std::io::Error::other(
                     "comparison counter sample bound exhausted",
                 ))

@@ -1310,6 +1310,7 @@ dependencies = [
  "rustix",
  "sophia-9p-client",
  "sophia-9p-records",
+ "stats_alloc",
 ]
 
 [[package]]
@@ -1563,6 +1564,7 @@ name = "sophia-runtime"
 version = "0.1.0"
 dependencies = [
  "rustix",
+ "serde",
  "serde_json",
  "sha2",
  "sophia-9p",
@@ -1593,6 +1595,7 @@ dependencies = [
  "rustix",
  "serde_json",
  "sha2",
+ "smallvec",
  "sophia-9p",
  "sophia-9p-client",
  "sophia-backend-live",
@@ -1615,6 +1618,7 @@ dependencies = [
  "sophia-wake",
  "sophia-x-authority",
  "sophia-xshmfence",
+ "stats_alloc",
  "tracing",
  "x11rb",
  "zbus",

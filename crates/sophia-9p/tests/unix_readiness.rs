@@ -42,7 +42,8 @@ impl Drop for Socket {
 /// Whether anything the server subscribes becomes ready within `within`,
 /// waited on the way an owner waits: one poll over the borrowed set.
 fn ready(server: &Server<StaticExport>, within: Duration) -> bool {
-    let mut fds = server.poll_fds();
+    let mut fds = Vec::new();
+    server.visit_poll_fds(|fd| fds.push(fd));
     let timeout = Timespec::try_from(within).unwrap();
     poll(&mut fds, Some(&timeout)).unwrap() != 0
 }

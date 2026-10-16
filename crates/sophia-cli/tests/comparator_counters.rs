@@ -1,4 +1,7 @@
-#![cfg(feature = "comparator-allocation-counting")]
+#![cfg(any(
+    feature = "comparator-allocation-counting",
+    feature = "comparator-cpu-counting"
+))]
 #[path = "../src/comparator_counters.rs"]
 mod guard;
 

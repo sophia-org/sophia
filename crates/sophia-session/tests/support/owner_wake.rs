@@ -14,6 +14,26 @@ const LONG: Duration = Duration::from_secs(30);
 const PROMPT: Duration = Duration::from_secs(5);
 
 #[test]
+fn readiness_beyond_inline_storage_is_not_dropped() {
+    let owner = OwnerWake::new().unwrap();
+    let (_sender, queue) = sync_channel::<u32>(1);
+    let sockets: Vec<_> = (0..80).map(|_| UnixStream::pair().unwrap()).collect();
+    (&sockets[79].0).write_all(&[1]).unwrap();
+    let started = Instant::now();
+    let fds = sockets
+        .iter()
+        .map(|(_, socket)| PollFd::new(socket, PollFlags::IN));
+    assert_eq!(
+        owner
+            .receive_with_native(&queue, LONG, fds, Vec::new(), None)
+            .unwrap(),
+        Err(RecvTimeoutError::Timeout)
+    );
+    assert!(started.elapsed() < PROMPT);
+    assert_eq!(owner.statistics().fd_ready, 1);
+}
+
+#[test]
 fn wait_attribution_separates_queued_work_readiness_and_expiry() {
     let owner = OwnerWake::new().unwrap();
     let (sender, queue) = sync_channel::<u32>(1);
