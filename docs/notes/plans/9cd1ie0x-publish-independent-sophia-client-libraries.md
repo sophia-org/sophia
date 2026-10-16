@@ -144,6 +144,23 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `c0d99d2` and C `f4b3ec1` pass all nine production portal gates.
+New gates qualify locked/busy/stale-serial refusal with exact EACCES/EAGAIN/ESTALE,
+and cancellation after queueing or owner pickup. Both SDKs preserve Refused
+versus Cancelled. The fixture rejects late completion after unlock and confirms
+that no frame was installed. Cancelled status leaves a quiescent root-only role.
+Strict Rust Clippy and the two ordinary portal-dispatch regressions pass.
+
+Portal map 13 records the limits. Peer SHA-256: Rust
+`47c05ca921892fc675f915122a453c77c5da6d9f2f2058d73a6a807f22fa949b`;
+C `c6dbc61962a9ae2348f381d5ce24fca74069e2545ad0e5faab8964815a323402`.
+Next implement retained transfer/watch APIs in both SDKs, followed by the
+remaining recovery and local-cancellation audits. Trusted requester/broker,
+foreign bindings and publication/pin adoption remain. t333 stays open;
+production pins are unchanged. No quiet hold or performance claim.
+
+### Capture transport checkpoint
+
 Signed Rust `cd674b9` and C `df58325` now drive capture requests on the
 authenticated portal root. Both send one complete write, close its fid, read
 fresh bounded status snapshots through EOF/clunk, and return the same root for

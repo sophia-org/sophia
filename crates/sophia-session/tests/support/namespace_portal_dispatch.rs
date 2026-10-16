@@ -49,6 +49,31 @@ fn external_sdk_portal_requests_capture_then_reads_frame() {
     run_boundary("sdk-request");
 }
 #[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_locked_capture_is_refused() {
+    run_boundary("sdk-request-refused");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_queued_capture_is_cancelled_by_lock() {
+    run_boundary("sdk-request-cancelled");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_active_capture_is_cancelled_by_lock() {
+    run_boundary("sdk-request-cancelled-active");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_busy_capture_is_refused() {
+    run_boundary("sdk-request-busy");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_stale_capture_serial_is_refused() {
+    run_boundary("sdk-request-stale");
+}
+#[test]
 #[ignore = "requires SOPHIA_TEST_CAPTURE_CLI naming the built generic Sophia CLI"]
 fn capture_cli_bootstrap_uses_the_attested_launch_channel() {
     run_boundary("capture-bootstrap");
@@ -60,7 +85,11 @@ fn capture_cli_reads_a_4k_image_within_the_existing_grant_deadline() {
 }
 fn run_boundary(boundary: &str) {
     let external = boundary.starts_with("sdk-");
-    let sdk_request = boundary == "sdk-request";
+    let sdk_request = boundary.starts_with("sdk-request");
+    let locked_request = boundary == "sdk-request-refused";
+    let occupied_request = matches!(boundary, "sdk-request-busy" | "sdk-request-stale");
+    let refused_request = locked_request || occupied_request;
+    let cancelled_request = boundary.starts_with("sdk-request-cancelled");
     let sdk_frame = boundary.starts_with("sdk-frame") || sdk_request;
     let revoke_frame = boundary == "sdk-frame-revoke";
     let is_capture = boundary.starts_with("capture") || sdk_frame;
@@ -89,6 +118,12 @@ fn run_boundary(boundary: &str) {
     let capture = is_capture.then(|| capture_fixture::Fixture::new(width, height));
     if sdk_frame && !sdk_request {
         capture.as_ref().unwrap().install_supplied_frame();
+    }
+    if locked_request {
+        capture.as_ref().unwrap().lock_requests();
+    }
+    if occupied_request {
+        capture.as_ref().unwrap().queue_request();
     }
     let executable = if external {
         let path = PathBuf::from(std::env::var_os("SOPHIA_PORTAL_AUTH_PEER").unwrap());
@@ -206,8 +241,13 @@ fn run_boundary(boundary: &str) {
         )
         .unwrap();
     if external {
+        let mut cancelled = false;
         while std::fs::read_to_string(&report).ok().as_deref()
-            != Some(if revoke_frame {
+            != Some(if refused_request {
+                "request-refused\n"
+            } else if cancelled_request {
+                "request-cancelled\n"
+            } else if revoke_frame {
                 "partial\n"
             } else if sdk_frame {
                 "frame\n"
@@ -220,10 +260,16 @@ fn run_boundary(boundary: &str) {
                 "external portal startup deadline"
             );
             f.auth.tick();
-            if sdk_request {
+            if cancelled_request && !cancelled {
+                cancelled = capture
+                    .as_ref()
+                    .unwrap()
+                    .cancel_request(boundary.ends_with("-active"));
+            } else if sdk_request && !cancelled_request && !refused_request {
                 capture.as_ref().unwrap().service();
             }
         }
+        assert!(!cancelled_request || cancelled);
         if revoke_frame {
             capture.as_ref().unwrap().revoke_supplied_frame();
             std::fs::write(&report, b"continue\n").unwrap();
