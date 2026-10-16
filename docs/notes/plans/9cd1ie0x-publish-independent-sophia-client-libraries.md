@@ -144,6 +144,21 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `a53824f` and C `a19fa07` add allocation-free invocation and
+status decoding and fixed-buffer invocation encoding. Names and outcome details
+borrow input storage; all ten outcomes remain distinct. Encoders validate
+before copying into caller storage, leaving it unchanged on failure. C permits
+the source name to overlap destination storage. Neither parser establishes
+catalog membership, admission, EOF or owner-specific outcome legality.
+
+Six Rust administrative tests, all three C administrative test binaries and
+strict Rust Clippy pass. Coverage includes literal wire records, maximum
+identities and lengths, all outcomes, borrowed pointers, short output buffers,
+truncated prefixes and invalid text. Admin map 3 records the boundaries.
+Next implement complete catalog validation, then the nonblocking clients and
+paired production gates. This is codec evidence, not client parity or a
+measured speedup. t333 remains active with unchanged pins and no quiet hold.
+
 Signed Rust `54d86dd` and C `d582a23` begin administration support with
 equivalent allocation-free info decoders. Rust returns a Copy value; C writes
 caller storage only after full validation. Independent literal and malformed
