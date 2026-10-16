@@ -32,6 +32,17 @@ pub struct Fixture {
     coordinator: PortalTransferCoordinator,
 }
 impl Fixture {
+    pub fn install_supplied_frame(&self) {
+        self.queue
+            .submit(
+                sophia_protocol::output_capture_request::OutputCaptureRequest {
+                    serial: 1,
+                    output: OutputId::from_raw(7),
+                },
+            )
+            .unwrap();
+        self.service();
+    }
     pub fn new(width: u32, height: u32) -> Self {
         let fence = PortalExecutionFence::default();
         let queue = Arc::new(CaptureRequestQueue::new(fence.clone()));

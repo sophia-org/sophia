@@ -34,6 +34,11 @@ fn external_sdk_portal_startup_uses_real_namespace_authentication() {
     run_boundary("sdk-startup");
 }
 #[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_reads_retained_supplied_frame() {
+    run_boundary("sdk-frame");
+}
+#[test]
 #[ignore = "requires SOPHIA_TEST_CAPTURE_CLI naming the built generic Sophia CLI"]
 fn capture_cli_bootstrap_uses_the_attested_launch_channel() {
     run_boundary("capture-bootstrap");
@@ -44,11 +49,14 @@ fn capture_cli_reads_a_4k_image_within_the_existing_grant_deadline() {
     run_boundary("capture-bootstrap-large");
 }
 fn run_boundary(boundary: &str) {
-    let external = boundary == "sdk-startup";
-    let is_capture = boundary.starts_with("capture");
+    let external = boundary.starts_with("sdk-");
+    let sdk_frame = boundary == "sdk-frame";
+    let is_capture = boundary.starts_with("capture") || sdk_frame;
     let standalone = boundary.starts_with("capture-bootstrap");
     let (width, height) = if boundary.ends_with("-large") {
         (3840, 2160)
+    } else if sdk_frame {
+        (256, 128)
     } else {
         (2, 2)
     };
@@ -67,6 +75,9 @@ fn run_boundary(boundary: &str) {
     .unwrap();
     let objects = objects::Fixture::new();
     let capture = is_capture.then(|| capture_fixture::Fixture::new(width, height));
+    if sdk_frame {
+        capture.as_ref().unwrap().install_supplied_frame();
+    }
     let executable = if external {
         let path = PathBuf::from(std::env::var_os("SOPHIA_PORTAL_AUTH_PEER").unwrap());
         assert!(path.is_absolute() && path.is_file());
@@ -183,7 +194,9 @@ fn run_boundary(boundary: &str) {
         )
         .unwrap();
     if external {
-        while std::fs::read_to_string(&report).ok().as_deref() != Some("started\n") {
+        while std::fs::read_to_string(&report).ok().as_deref()
+            != Some(if sdk_frame { "frame\n" } else { "started\n" })
+        {
             assert!(
                 Instant::now() < deadline,
                 "external portal startup deadline"
@@ -236,7 +249,7 @@ fn run_boundary(boundary: &str) {
             break;
         }
     }
-    if is_capture {
+    if is_capture && !external {
         let bytes = std::fs::read(report.with_extension("pam")).unwrap();
         assert_eq!(
             bytes,

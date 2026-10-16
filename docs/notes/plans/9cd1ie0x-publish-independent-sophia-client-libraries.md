@@ -144,6 +144,25 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `328db4a` and C `5d805c7` pass real authenticated delivery of a
+supplied 256×128 frame. The fixture supplies policy, pixels and the request;
+the production coordinator installs the object. Both peers check metadata,
+every pixel and final root-only fid ownership. The startup and delivery gates
+pass independently in both languages; existing portal-dispatch tests and strict
+Rust Clippy pass. Portal map 9 records the limits.
+
+Use the earlier `SOPHIA_PORTAL_AUTH_PEER` command with filter
+`external_sdk_portal_` to run both gates. Updated peer SHA-256: Rust
+`d5c28815ddc7905e9e189955becff7d246c6f8cc6265c8b7cb769068151fb706`;
+C `ae63e59b06b88ec2e363932e4faceeef9e11d1fa9fc42994ec931335944b681f`.
+Next qualify mid-read revocation and implement SDK capture request custody and
+remaining recipient operations. Requester/broker, foreign bindings and release
+adoption remain. t333 stays open; branches pushed, production pins unchanged,
+no quiet hold or measured performance gain. Supplied frames do not prove native
+presentation or physical capture acceptance.
+
+### Retained-frame reader checkpoint
+
 Signed Rust `afa827c` and C `44157af` now integrate retained frame reads into
 reusable image storage. Both use four requests, verify payload/EOF and the
 original metadata fid, and clunk before exposing results. Repeated captures
