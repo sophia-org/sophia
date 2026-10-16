@@ -86,6 +86,15 @@ impl Journal {
         self.custody.read(offset, count)
     }
 
+    pub(in crate::shell_transport) fn read_buffered(
+        &self,
+        offset: u64,
+        count: u32,
+        scratch: &mut Vec<u8>,
+    ) -> Result<ReadOutcome, Errno> {
+        self.custody.read_buffered(offset, count, scratch)
+    }
+
     /// Releases retention through `ack.sequence`. Acknowledgement releases
     /// transport retention only; it never confirms a semantic outcome.
     pub(in crate::shell_transport) fn ack(

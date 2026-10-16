@@ -217,6 +217,18 @@ impl Journal {
     /// Reads whole or partial records from `offset`. Released offsets are
     /// stale; the end waits for the next record.
     pub fn read(&self, offset: u64, count: u32) -> Result<ReadOutcome, Errno> {
+        self.read_buffered(offset, count, &mut Vec::new())
+    }
+
+    /// Gather into reusable storage, transferring it only for a ready reply.
+    /// Errors and pending reads leave no previous payload visible in scratch.
+    pub fn read_buffered(
+        &self,
+        offset: u64,
+        count: u32,
+        bytes: &mut Vec<u8>,
+    ) -> Result<ReadOutcome, Errno> {
+        bytes.clear();
         if offset < self.floor {
             return Err(Errno::ESTALE);
         }
@@ -232,7 +244,7 @@ impl Journal {
         // Reserve only retained bytes in the requested range, even when the
         // caller supplies a huge count. Gathering records then needs no growth.
         let capacity = u64::from(count).min(self.tail - offset) as usize;
-        let mut bytes = Vec::with_capacity(capacity);
+        bytes.reserve_exact(capacity);
         for record in &self.records {
             let end = record.start + record.bytes.len() as u64;
             if offset >= end {
@@ -245,7 +257,7 @@ impl Journal {
                 break;
             }
         }
-        Ok(ReadOutcome::Ready(bytes))
+        Ok(ReadOutcome::Ready(std::mem::take(bytes)))
     }
 
     /// Releases retention through `sequence` and reports whether it advanced;

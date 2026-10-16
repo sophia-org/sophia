@@ -70,9 +70,41 @@ fn completed_journal_read_cost_preserves_bytes_and_retention() {
         assert_eq!(read_reallocs, 0);
         assert_eq!(encode_allocs, 0);
         assert_eq!(pending_allocs, 0);
+        // Logical payload traffic from the two source-level copy stages;
+        // this does not count allocator moves, kernel copies or CPU time.
+        let payload_bytes = (end - offset as usize) * 1000;
         eprintln!(
-            "journal_read_cost records={records} offset={offset} count={count} reads=1000 read_allocations={read_allocs} read_reallocations={read_reallocs} encode_allocation_operations={encode_allocs} pending_allocation_operations={pending_allocs}"
+            "journal_read_cost records={records} offset={offset} count={count} reads=1000 read_allocations={read_allocs} read_reallocations={read_reallocs} encode_allocation_operations={encode_allocs} pending_allocation_operations={pending_allocs} gathered_payload_bytes={payload_bytes} encoded_payload_bytes={payload_bytes}"
         );
+        let mut scratch = Vec::with_capacity(end - offset as usize);
+        let before = ALLOCATOR.stats();
+        for _ in 0..1000 {
+            let ReadOutcome::Ready(bytes) =
+                journal.read_buffered(offset, count, &mut scratch).unwrap()
+            else {
+                panic!("published bytes must be readable");
+            };
+            assert_eq!(bytes, expected[offset as usize..end]);
+            scratch = bytes;
+        }
+        let after = ALLOCATOR.stats();
+        assert_eq!(after.allocations - before.allocations, 0);
+        assert_eq!(after.reallocations - before.reallocations, 0);
+        eprintln!(
+            "journal_buffered_read_cost records={records} offset={offset} count={count} reads=1000 allocation_operations=0"
+        );
+        assert_eq!(
+            journal.read_buffered(journal.size(), count, &mut scratch),
+            Ok(ReadOutcome::Pending)
+        );
+        assert!(scratch.is_empty());
+        scratch.extend_from_slice(b"stale");
+        assert!(
+            journal
+                .read_buffered(journal.size() + 1, count, &mut scratch)
+                .is_err()
+        );
+        assert!(scratch.is_empty());
         journal.ack(7, records as u64).unwrap();
         assert_eq!(journal.position().records, 0);
     }
