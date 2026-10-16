@@ -144,6 +144,21 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `fadc53f` adds nonblocking output `Connecting::direct` and
+`attached`, sharing the original deadline across version, fixed files and
+negotiation. Three tests cover expiry, remote errno retention and Observe
+validation. The integrated proposal test covers both startup paths, with and
+without EAGAIN: exact candidate/control bytes, caller mutation, domain IDs 50
+then 3, allocator 51, and transaction clunk/Submitted ACK barriers. Retry cases
+exercise Connecting through one-time Session transfer. All 35 output-client
+tests and strict Clippy pass; C's full suite passes. Signed C `034d426` records
+its independent existing counterparts in matrix 37 / output map 6.
+
+Next add output terminal socket faults and recovery/ownership documentation,
+then independent paired production-export and protected-launch peers. No extra
+clock or readiness syscall was added by this checkpoint. Native performance
+savings remain unmeasured; production SDK pins and the t331 pilot are unchanged.
+
 Signed Rust `f3a61c1` integrates the developing output session on one pipeline.
 Three independent socket tests cover startup/negotiation, topology delivery
 only after EOF/clunk, Refused only after its final ACK, and zero-budget/expired
@@ -158,9 +173,9 @@ fixed session storage. This removes a concrete copy but establishes no native
 CPU savings. Preserve custody, fairness, deadlines and EOF/error behavior;
 measure any performance claim separately under t331.
 
-Next extend output socket tests to proposals/retries, attached handoff and
-terminal errors; add the nonblocking connecting facade, then paired production
-export tests. The Rust session is not yet fully qualified. Production pins
+Proposal/retry, attached handoff and the connecting facade are now covered
+above. Terminal errors and paired production-export tests remain required.
+The Rust session is not yet fully qualified. Production pins
 and the t331 pilot remain unchanged; no quiet hold is active.
 
 Signed Rust `3f96b00` adds provisional publication-bound topology fetching.
