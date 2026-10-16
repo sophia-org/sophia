@@ -1,4 +1,6 @@
 //! Independently built SDK peers against the production administrative file service.
+#[path = "support/admin_crash_service.rs"]
+mod crash_service;
 #[path = "support/admin_files.rs"]
 mod support;
 use std::{
@@ -19,6 +21,76 @@ struct Reports(PathBuf);
 impl Drop for Reports {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+#[test]
+#[ignore = "subprocess helper; requires SOPHIA_ADMIN_CRASH_ROOT"]
+fn service_process_child() {
+    crash_service::run();
+}
+
+#[test]
+#[ignore = "requires SOPHIA_ADMIN_SDK_PEER naming an absolute independently built peer"]
+fn external_sdk_abrupt_process_loss_preserves_uncertainty_without_replay() {
+    use std::os::unix::fs::DirBuilderExt;
+    let executable = PathBuf::from(std::env::var_os("SOPHIA_ADMIN_SDK_PEER").unwrap());
+    assert!(executable.is_absolute() && executable.is_file());
+    for dispatched in [false, true] {
+        let reports = Reports(std::env::temp_dir().join(format!(
+            "admin-sdk-kill-{}-{dispatched}",
+            std::process::id()
+        )));
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&reports.0)
+            .unwrap();
+        let mut service = Peer(
+            Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--ignored",
+                    "--exact",
+                    "service_process_child",
+                    "--nocapture",
+                ])
+                .env("SOPHIA_ADMIN_CRASH_ROOT", &reports.0)
+                .env(
+                    "SOPHIA_ADMIN_CRASH_DISPATCH",
+                    if dispatched { "1" } else { "0" },
+                )
+                .spawn()
+                .unwrap(),
+        );
+        support::until(|| reports.0.join("endpoint").exists());
+        let path = PathBuf::from(std::fs::read_to_string(reports.0.join("endpoint")).unwrap());
+        let report = reports.0.join("sdk-result");
+        let mut sdk = Peer(
+            Command::new(&executable)
+                .arg(&path)
+                .arg(&report)
+                .arg("loss")
+                .spawn()
+                .unwrap(),
+        );
+        support::until(|| reports.0.join("accepted").exists());
+        service.0.kill().unwrap();
+        assert!(!service.0.wait().unwrap().success());
+        let deadline = Instant::now() + Duration::from_secs(12);
+        loop {
+            assert!(Instant::now() < deadline, "SDK crash deadline");
+            if let Some(status) = sdk.0.try_wait().unwrap() {
+                assert!(status.success(), "SDK crash peer failed: {status}");
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(std::fs::read_to_string(&report).unwrap(), "ok\n");
+        assert_eq!(reports.0.join("effect").exists(), dispatched);
+        assert!(std::os::unix::net::UnixStream::connect(&path).is_err());
+        let successor = support::ControlService::bind_files(&reports.0).unwrap();
+        support::until(|| successor.publish(std::sync::Arc::new(support::catalog(7)), &[]));
+        assert_ne!(successor.socket_path(), path);
+        assert!(successor.try_request().is_none());
     }
 }
 

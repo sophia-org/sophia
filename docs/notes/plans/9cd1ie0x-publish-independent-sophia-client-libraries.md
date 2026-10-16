@@ -144,6 +144,26 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Both independently built administrative peers now pass abrupt death of a
+test-owned production service process before and after owner claim. The parent
+waits for the accepted/claimed marker, kills only that child and waits for its
+exit. Each SDK retains uncertain custody and refuses another invocation. The
+effect marker exists only after claim; the old endpoint refuses connection,
+and a replacement service gets a new endpoint. SDK doc checkpoints are Rust
+`0af3cf4` and C `a7fe221` (admin map 13); peer code/hashes are unchanged below.
+
+All four production external-SDK gates pass for each peer. The existing
+runtime-client crash gate also passes after extracting their shared service
+fixture. Run the SDK gate with `cargo-slot sophia cargo test -p sophia-runtime
+--test admin_external_sdk external_sdk_ -- --include-ignored --nocapture` and
+the same `SOPHIA_ADMIN_SDK_PEER` paths below. The name filter excludes the child
+helper, which requires its parent-provided environment. Next audit integrated
+malformed/partial traffic and namespace denial, then finish the remaining
+portal/broker and release-wide parity requirements. t333 stays open; pins
+unchanged, no quiet hold and no measured speedup.
+
+### Replacement-service recovery checkpoint
+
 Signed Rust `51e75e1` and C `b557c34` pass explicit recovery on a replacement
 production administrative service. Each peer retains its uncertain old command,
 waits for an explicit endpoint, discovers a different service identity and
