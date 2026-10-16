@@ -144,6 +144,13 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `c3c7070` adds `custody_result`, distinguishing evicted history from
+unissued tickets without changing the existing optional query. Retained unknown
+custody remains a separate outcome. C `f8ca212` adds an independent 256-ticket
+retention-boundary regression. Rust workspace tests, the final shell-client
+tests, strict all-target Clippy and C `make check` pass. Matrix revision 6
+records these results and the native-launcher prerequisite below.
+
 Signed Rust SDK `5b72169` adds atomic batches of independent content records and
 whole candidates, directly or through either reservation form. Each item keeps
 its transaction and custody ticket. Upload starts stage distinct free slots;
@@ -173,9 +180,14 @@ candidate is **0.10.0-dev, unreleased**; consumers and foreign-language bindings
 must rebuild together. Do not move or reinitialize C session storage while a
 reservation is live. No wire contract changed.
 
-Next, map native lifecycle helpers and non-content batches, then close their
-capability gaps. Rust still conflates old and unissued tickets as `None`, and
-its fixed bulk/control partition differs from C's configurable queue. Delayed
+Next, add Rust native-launcher transport before its lifecycle helper. The
+protocol crate has native codecs, but the client's inbound/outbound types do
+not carry those records. Implement negotiated transport and observations,
+then atomic input/activation responses, then opening/focus/revocation and
+resource/presentation lifecycle handling against the pinned contract. C's
+`sophia_ns` is the coverage checklist; Rust's content reducer is not its
+equivalent. Non-content batches and the fixed bulk/control partition also
+remain gaps against C's broader submissions and configurable queue. Delayed
 commits can fail encoding/allocation while retaining credits; prepared commits
 cannot. Explicitly cancel unused delayed tokens. Simulated-time Rust callers
 must use `dispatch` and non-driving `take_*` receives. Clock representation
