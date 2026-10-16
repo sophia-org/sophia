@@ -377,7 +377,7 @@ fn provisioned_relay_uses_9p_and_owner_registration_not_child_claims() {
     let thread = std::thread::spawn(move || relay_child(child, nonce));
     let end = deadline();
     while !thread.is_finished() {
-        server.turn(Some(Duration::ZERO)).unwrap();
+        relay_observed_turn(&mut server, Duration::ZERO);
         f.step(end);
     }
     thread.join().unwrap();
@@ -552,7 +552,21 @@ fn reserved_relay_deadline_progresses_without_factotum_or_peer_activity() {
     let end = Instant::now() + Duration::from_secs(9);
     while !thread.is_finished() {
         assert!(Instant::now() < end, "Reserved relay expiry deadline");
-        server.turn(Some(Duration::from_millis(100))).unwrap();
+        relay_observed_turn(&mut server, Duration::from_millis(100));
     }
     thread.join().unwrap();
+}
+
+fn relay_observed_turn(server: &mut relay::RelayServer, maximum: Duration) {
+    use rustix::event::{Timespec, poll};
+    let subscription = server.subscription().unwrap();
+    let mut fds = Vec::new();
+    server.visit_poll_fds(|fd| fds.push(fd));
+    let wait = server.deadline().map_or(maximum, |end| {
+        maximum.min(end.saturating_duration_since(Instant::now()))
+    });
+    poll(&mut fds, Some(&Timespec::try_from(wait).unwrap())).unwrap();
+    let observation = subscription.observe(&fds).unwrap();
+    drop(fds);
+    server.turn_observed(observation, Instant::now()).unwrap();
 }

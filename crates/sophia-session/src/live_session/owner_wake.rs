@@ -172,11 +172,22 @@ impl OwnerWake {
         native: Vec<PollFd<'a>>,
         progress: Option<(u64, u64)>,
     ) -> io::Result<()> {
+        self.wait_for_service_observed(timeout, Vec::new(), native, progress, |_| {})
+    }
+
+    pub(super) fn wait_for_service_observed<'a>(
+        &'a self,
+        timeout: Duration,
+        fds: impl IntoIterator<Item = PollFd<'a>>,
+        native: Vec<PollFd<'a>>,
+        progress: Option<(u64, u64)>,
+        observed: impl FnOnce(&[PollFd<'a>]),
+    ) -> io::Result<()> {
         let mut stats = self.statistics.get();
         stats.service_waits = stats.service_waits.saturating_add(1);
         self.statistics.set(stats);
         self.plan_wait(WaitPlan::new(timeout, WaitReason::Service));
-        self.wait(timeout, Vec::new(), native, progress, |_| {})
+        self.wait(timeout, fds, native, progress, observed)
     }
 
     pub(super) fn record_native_wait(&self, short: bool, events: bool) {

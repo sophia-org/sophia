@@ -14,6 +14,23 @@ repairs? Reconcile the existing evidence before repeating a desktop campaign.
 
 ## Current resumption
 
+The owner approved readiness-driven launch relays and batched SDK writer setup
+on October 16. The relay implementation now consumes the actual owner wait,
+including short frame-service waits, or one aggregate nonblocking sample.
+Idle relays skip transport turns and flushes; custody, expiry, revocation and
+retirement still run each pass. The SDK slice and fresh native pilots follow;
+neither change has a native performance verdict yet. The approved scope is in
+the [t331 plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#approved-relay-and-writer-setup-slice--october-16).
+
+Deterministic relay validation passes the core and Factotum suites, 30 Session
+authentication tests (five child-entry helpers ignored), and 1,048 Session
+library tests (36 ignored) with an empty configuration root. The first broad
+run inherited live namespace recipes and failed 16 configuration fixtures;
+the isolated rerun passes all of them. All-target Clippy passes for the three
+affected crates. New checks cover 10,000 idle observations, late input,
+activation, revocation, foreign observations, HUP, asynchronous Factotum
+completion, silent expiry and the 64-slot retirement boundary.
+
 Progress-12 completed all four arms on comparator `47ac3f2f7` and integration
 `59bee7f`. Offline replay matches journal metrics, all 1,000 frame joins per arm
 and every raw progress record; console/keyboard recovery is clean. Files takes

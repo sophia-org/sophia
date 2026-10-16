@@ -51,6 +51,32 @@ Task state and execution order remain in todo.md.
 
 ## Implementation sequence
 
+### Approved relay and writer-setup slice — October 16
+
+The owner approved this bounded extension after progress-12 showed repeated
+Session service between dependent requests. First, serve launch relays from
+the owner's readiness observations and their deadlines. Keep custody,
+revocation and retirement checks on every pass; use one aggregate readiness
+sample when immediate work bypasses the owner's wait. Test idle relays,
+completion wakeups, expiry, peer closure, replacement and all 64 slots.
+
+Second, queue fresh writer walk and open requests together in the Rust SDK.
+Wait for both successful replies before payload and retain a sequential
+fallback at the existing capacity limit. Preserve upload admission,
+sequential writes, write-before-submit, Submitted/ACK barriers and clunk
+semantics. This explicitly permits the SDK scheduling and shell request-order
+clarification needed for this slice; it does not permit general concurrency,
+cached upload fids, new threads, raised limits or desktop installation.
+
+Keep the relay and SDK changes in separate signed commits and carry shared
+fixes onto both comparator wires. Isolated progress counters must distinguish
+relay dispatch, idle skips and expiry work. Prepare fresh progress, CPU and
+allocation pilots before the unchanged full native gate. Diagnostic counts
+alone cannot close t331 or establish a performance win; t332 remains an
+investigation.
+
+### Earlier allocation and measurement sequence
+
 The owner authorized this plan on October 15 and asked that 9P beat IPC, not
 merely stay within +10%. Aim for lower CPU/MiB and fewer allocation operations
 per frame on both workloads; claim a win only when the 9P upper bound is below

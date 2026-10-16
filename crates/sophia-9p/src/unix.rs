@@ -82,6 +82,13 @@ pub struct Observation {
     flags: [PollFlags; 2],
 }
 
+impl Observation {
+    /// Readiness is only a scheduling hint, never permission to use an export.
+    pub fn is_ready(&self) -> bool {
+        self.flags.iter().any(|flags| !flags.is_empty())
+    }
+}
+
 impl Subscription {
     /// Reject a different descriptor set. Call only after a successful poll of
     /// the unmodified subscription; an empty result is still an observation.
@@ -224,14 +231,7 @@ impl<E: Export> Server<E> {
     /// Use the owner's wait when it still describes this exact service state.
     /// All other cases retain the ordinary nonblocking poll.
     pub fn turn_observed(&mut self, observation: Observation) -> io::Result<bool> {
-        let valid = self.subscription().is_some_and(|current| {
-            let prior = &observation.subscription;
-            current.server == prior.server
-                && current.generation == prior.generation
-                && current.connection == prior.connection
-                && current.interests == prior.interests
-                && current.descriptors == prior.descriptors
-        });
+        let valid = self.observation_is_current(&observation);
         if !valid {
             return self.turn(Some(Duration::ZERO));
         }
@@ -240,6 +240,19 @@ impl<E: Export> Server<E> {
             wake: observation.flags[0],
             listener: PollFlags::empty(),
             slots: SlotReadiness::Single([observation.flags[1]]),
+        })
+    }
+
+    /// Allows an owner to skip a validated idle observation. Late arrivals
+    /// remain level-ready for the next wait; consume observations only once.
+    pub fn observation_is_current(&self, observation: &Observation) -> bool {
+        self.subscription().is_some_and(|current| {
+            let prior = &observation.subscription;
+            current.server == prior.server
+                && current.generation == prior.generation
+                && current.connection == prior.connection
+                && current.interests == prior.interests
+                && current.descriptors == prior.descriptors
         })
     }
 

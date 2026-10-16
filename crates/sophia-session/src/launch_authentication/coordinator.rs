@@ -62,6 +62,22 @@ pub struct LaunchCoordinator {
 }
 
 impl LaunchCoordinator {
+    pub fn relay_deadline(&self) -> Option<Instant> {
+        self.current.as_ref()?.book.relay_deadline()
+    }
+
+    pub fn subscribe_relays<'a>(
+        &'a self,
+        start: usize,
+        visit: impl FnMut(rustix::event::PollFd<'a>),
+    ) -> smallvec::SmallVec<[super::RelayWait<'a>; sophia_factotum::launch::MAX_DELEGATIONS]> {
+        self.current
+            .as_ref()
+            .map_or_else(smallvec::SmallVec::new, |connection| {
+                connection.book.subscribe_relays(start, visit)
+            })
+    }
+
     pub fn new(service: LaunchService, namespaces: Arc<Mutex<NamespaceRegistry>>) -> Self {
         Self {
             service,
