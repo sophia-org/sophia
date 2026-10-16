@@ -144,6 +144,22 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `34740d5` adds the provisional output journal. It checks granted
+capabilities and revision, makes Refused an internal ACK target, retains ordered
+application heads and validates custody behind a held head. ObjectPublished
+blocks delivery and ACK progress until an object driver confirms its sequence,
+Qid and topology epoch. Seven literal-wire tests cover these rules, all six
+outcomes, malformed-record stop, fragment deadlines and bounded retention.
+Signed C `67c8d95` independently checks all six outcomes and held-head ACK
+ordering through both constructors. All 23 Rust output-client tests, strict
+Clippy, formatting and C's full suite pass. Matrix 34 / output map 3 record
+the scope. A test callback does not qualify the missing object fetcher.
+
+Next implement publication-bound topology fetching through EOF and clunk,
+then integrate startup, submission, journal and ACK handling into the output
+session and nonblocking connecting facade. Refused must settle its ACK before
+terminal handoff. Production pins and the t331 pilot remain unchanged.
+
 Signed Rust `a62d3f9` adds provisional immutable output submissions: Configure
 and epoch checks, separate domain IDs and tickets, 64-ticket custody history,
 same-ID retry, Submitted/ACK/clunk ordering and caller/assembly deadlines.
@@ -153,9 +169,8 @@ socket startup; C implementation is unchanged. All 16 Rust output-client tests
 (seven startup, nine submission), strict targeted Clippy, formatting and C's
 full suite pass. Both SDKs record matrix 33 and output map 2.
 
-Next implement the ordered output journal, including grant intersection,
-explicit Refused acknowledgement and retained application heads, then automatic
-publication-bound topology fetching and the integrated session driver. Rust's
+The ordered journal above supplies grant intersection, explicit Refused ACK
+targets and retained application heads. Rust's
 submission tests supply matched replies directly; they do not qualify socket
 dispatch or production output exports. The final connecting facade still needs
 the nonblocking version handshake. Production pins remain unchanged.
