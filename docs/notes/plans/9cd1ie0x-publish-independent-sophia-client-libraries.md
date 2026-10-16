@@ -144,6 +144,17 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `e2dfdc6` adds explicit local close, retaining custody and decoded
+observations without I/O; the native facade also disarms lifecycle authority.
+Tests distinguish Submitted, uncertain submission and unsent tails, and cover
+idempotence, held-credit release and retained-input cleanup. Full workspace
+tests (43 native), strict Clippy and C's full suite pass. Signed C `997f22d`
+records the paired existing close controls. Matrix revision 16 maps shell
+operations and explicitly distinguishes Rust's automatic snapshot/journal
+management from C's manual controls. Rust also lacks a separate allocation-free
+encoded-size query; prepared admission supplies a different pre-effect check.
+These differences require production-export review, not a silent parity waiver.
+
 Signed Rust `513cb31` adds configurable queue record/byte limits and optional
 control headroom. Defaults remain 64 records/2 MiB, reserving 32 records/8 KiB
 from bulk use. Zero headroom selects a shared pool; every C queue size is
@@ -177,8 +188,8 @@ commit can fail while preserving credits. Cancel unused delayed tokens.
 Input callback panic fails Rust's lifecycle closed before resuming unwinding,
 preventing replay of potentially applied external edits.
 
-Next, audit the shell operation matrix for missed capabilities, then implement
-the Rust WM client against the pinned contract and C's coverage checklist.
+Next, implement the Rust WM client against the pinned contract and C's coverage
+checklist, retaining the shell control differences above in the final audit.
 Output and experimental lock clients follow. The full task also requires
 administration coverage in both SDKs, the public broker/portal audit, independent
 paired production-export gates, a foreign-language binding smoke test, signed
