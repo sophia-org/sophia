@@ -144,6 +144,21 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `b71abfb` adds `sophia-wm-protocol`: neutral WM codecs and passive
+policy records extracted from Sophia `1d071c144`. Its extraction manifest's
+39 source hashes verify against that revision. The WM schema, API/file docs
+and golden corpus match C's pinned bytes; generated WM rows are unchanged.
+All 71 extracted tests, the full Rust workspace suite, strict Clippy and C's
+independent suite pass. Signed C `b6a99a3` records the comparison in matrix 17.
+
+Next is the Rust WM session client: direct and authenticated startup, bounded
+caller-clock dispatch, ordered retained events, submission/ACK barriers,
+same-ID retries, custody retention and Cycle-bound snapshot fetching. Codec
+tests do not establish session parity. Output, experimental lock, administration,
+broker/portal audit, paired production-export tests, foreign-language binding
+smoke and signed publication/pin adoption remain required. Production SDK pins
+and the prepared t331 pilot are unchanged. No measurement hold is active.
+
 Signed Rust `e2dfdc6` adds explicit local close, retaining custody and decoded
 observations without I/O; the native facade also disarms lifecycle authority.
 Tests distinguish Submitted, uncertain submission and unsent tails, and cover
