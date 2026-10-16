@@ -49,6 +49,12 @@ The earlier corrupted `t331-native-cost-01` remains invalid and retained.
 The old `t331-native-cost-02` directories contain completed evidence; the helper
 now selects fresh directories and stops on any failure.
 
+The remaining t252 gates are native lifetime/input acceptance on both desktop
+selections, the full B9 campaign and attended release rollback. The following
+checkpoints preserve earlier evidence; they do not supersede this resumption.
+
+## Earlier qualification checkpoints
+
 t252 remains open for native lifetime/input acceptance on both desktop
 selections, the declared B9 performance campaign and attended release rollback.
 The generic C/Go export, descriptor, content and Session checks pass; E1's old
