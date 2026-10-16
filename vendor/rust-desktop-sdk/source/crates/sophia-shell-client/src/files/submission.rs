@@ -149,7 +149,7 @@ impl FileWire {
     /// Resends an `EAGAIN`-refused submit once an event has been consumed
     /// since, or its backoff has passed. Never in the pass that saw the
     /// refusal: that pass recorded the current progress count.
-    pub(super) fn drive_submit_retry(&mut self, now: Instant) -> Result<bool, ShellClientError> {
+    pub(super) fn drive_submit_retry(&mut self) -> Result<bool, ShellClientError> {
         let Some(Current::Submission {
             submit,
             phase:
@@ -164,7 +164,8 @@ impl FileWire {
         else {
             return Ok(false);
         };
-        if self.pass == *pass || (self.progress == *progress && now < *not_before) {
+        // Only a pending retry without new event progress needs a clock read.
+        if self.pass == *pass || (self.progress == *progress && Instant::now() < *not_before) {
             return Ok(false);
         }
         let fid = *fid;

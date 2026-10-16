@@ -1,14 +1,14 @@
-tree 30c61b157a65da443a117bfaa8eb57c859353d1e
-parent d8558f456ead1d1e9997a03be79def5577e288e8
-author Mason Green <mason@greenm01.net> 1792161769 -0400
-committer Mason Green <mason@greenm01.net> 1792161769 -0400
+tree 4f7f041a468c47aa2a3c3b69769d84876f432c71
+parent 3edcd28a4c6e3274dd162f8a92001bb10a99c307
+author Mason Green <mason@greenm01.net> 1792171770 -0400
+committer Mason Green <mason@greenm01.net> 1792171770 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatI36RsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLCRQD8DHdWgedE8qIWYvA7+Bsi
- LL56zXLkNE5HtFwLE2Xm82UA/jCAtFvprCPpK6oSPc4jXUWw6o4pArdsnJUDMRBD
- UkIN
- =2yjl
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatJe+hsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKf1QD9FwAdlJJCsn4GEkOdhWWx
+ meXXTGhQd10MwBax5zkDbOAA/iI71nuDYRAiMnooAu5SdiIUy0IrZqOPX66M4XKt
+ 7VkO
+ =gfkQ
  -----END PGP SIGNATURE-----
 
-Batch shell writer walk and open behind both reply checks
+Read retry clock only when the deadline controls eligibility
