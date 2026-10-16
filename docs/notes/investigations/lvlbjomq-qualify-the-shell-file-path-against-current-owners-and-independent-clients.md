@@ -14,72 +14,49 @@ repairs? Reconcile the existing evidence before repeating a desktop campaign.
 
 ## Current resumption
 
-The owner accepted the Session-plus-client accounting scope and authorized
-the optimization plan. The objective is to beat IPC on CPU/MiB and allocations
-per frame, retaining +10% as the acceptance ceiling. See the accepted
-[cost scope](../../sophia-shell-files.md#cost-accounting-scope-accepted-october-15-2026)
-and [implementation plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#implementation-sequence).
-Earlier references below to an unanswered scope decision are superseded.
-The earlier instrumented baseline attributed about 98% of excess allocations to
-Session, including diagnostics; it did not identify exclusive stacks. See
-[native baseline results](#t331-native-cost-baseline-results).
-The owner authorized a measurement audit and Session-first fixes. Production
-`083c33c1f` removes repeated readiness, indicator, action-view and reservation
-allocations and redundant launch-context validation. Comparator `edcee33c5`
-carries those changes onto both wires and adds allocation-free typed benchmark
-records, ordinary-allocator CPU measurement and separate phase profiling.
-Integration `14519aa` rejects mixed modes and marks unmeasured allocations null.
-Deterministic checks pass. The `t331-native-cost-04` pilot completed eight
-CPU/allocation arms and the files-panel profiling arm, all with 1,000 native
-joins and console recovery. Allocations on files fell about 12–14% against
-`cost-02`, but CPU-only results still exceed IPC by about 57% for the panel and
-31% for panel-plus-4-MiB uploads. The cost gate remains failed. See
-[optimized pilot results](#t331-optimized-pilot-results).
+Resume t331 before t252. The objective is to beat IPC on CPU/MiB and allocations
+per frame, retaining +10% as the acceptance ceiling. The owner accepted
+[Session-plus-client accounting](../../sophia-shell-files.md#cost-accounting-scope-accepted-october-15-2026)
+and the [allocation and copying slice](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#approved-allocation-and-copying-slice-october-16).
+Upload ordering, resource limits and the installed desktop remain unchanged.
 
-The profiling capture exceeded the parser's line limit after clean recovery;
-offline replay recovers it without changing raw evidence. Integration `4eb52fb`
-fixes that limit with a regression test. The remaining three profiles completed
-under `t331-native-profile-05`, with the same comparator `90988ff6d`. Each joins
-1,000 frames, matches independent replay and restores the console. All twelve
-pilot cases are now accounted for; those evidence directories are occupied.
+The last acceptance-comparable CPU pilot still fails the cost gate: files cost
+about 57% more than IPC for the panel and 31% more for panel-plus-4-MiB uploads.
+Earlier fixes cut files allocations by about 12–14% against `cost-02`. All twelve
+`cost-04`/`profile-05` cases are accounted for. The four finer `profile-06` arms
+also join 1,000 frames each, match independent replay and restore console and
+keyboard state. They point to repeated lifecycle and authority service, not
+exclusive allocation stacks. See [finer profile results](#t331-finer-profile-results).
 
-Profiles show about 4.1 times as many owner passes on files for the panel and
-2.7 times as many for bulk uploads. Readiness allocates almost nothing; measured
-logging scopes are small. Production `d18775828` removes a full output-inventory
-clone from every cadence lookup, reading the primary output ID from current
-authority state instead. A two-output fixture measures 8,000 allocations for
-1,000 inventory clones versus zero for the direct reads. Native results above
-predate this change. Comparator `e45744623` adds finer owner-service scopes.
-All four `t331-owner-profile-06` arms completed with integration `4eb52fb`:
-each joins 1,000 frames, matches independent replay and restores the console
-and keyboard. Lifecycle and authority service contain most of the observed
-allocation gap; readiness, preparation and WM scopes contain little allocation.
-Both busy sections call `service_native`, making its unchanged-state work the
-next source-inspection target. That shared call is a lead, not measured stack
-attribution. Prove a specific repeated allocation with an isolated fixture
-before changing it, then carry a shared fix to both comparator wires.
-These overlapping scopes do not identify exclusive allocation stacks or supply
-CPU-only acceptance results. See [finer profile results](#t331-finer-profile-results).
-The quiet hold is released. Claude reports no crunch work during the window
-after its 01:49 UTC setup stop except its Herdr confirmation, and is resuming
-ROCm setup and GPU training. Coordinate a fresh hold before any native run.
-This remains a diagnostic pilot, not full B9 qualification.
-The earlier corrupted `t331-native-cost-01` remains invalid and retained.
-The `cost-02`, `cost-04`, `profile-05` and `profile-06` directories contain
-completed evidence; future native runs require fresh plans and directories.
-The current `t252-check` helper points to occupied `profile-06` directories.
+Production `7c8fd76c4` borrows head observations and stores frame-service sets
+inline. The one-output reducer fixture falls from 7,000 allocations per 1,000
+turns to zero; revised fixtures also allocate nothing at two and sixteen outputs.
+Borrowed head selection measures zero versus 1,000 owned-list allocations in
+1,000 visits. These are isolated results, not native per-frame savings.
 
-The owner requested comparison with established 9P implementations. The
-[implementation comparison](#t331-established-9p-implementation-comparison)
-identifies client buffer movement, bounded storage reuse and independent-request
-concurrency as candidates. The SDK already supports multiple outstanding tags;
-serial slot writes are a higher-level choice, not a universal 9P restriction.
-These findings do not establish their share of the native gap or authorize
-changing upload ordering. No borrowed-head iteration patch has been applied yet.
+SDK `bcf840a` advances send/upload cursors without shifting ordinary tails;
+`25b63ff` moves outbox payloads without releasing ticket or budget charges.
+Signed `d8558f4` also synchronizes the already-accepted cost-accounting document.
+Production `a9a92746a` imports that SDK; comparator `a2ecde0ef` carries the same
+native fixes and SDK onto both wires. SDK workspace tests, focused strict
+Clippy, the signed vendor gate, 112 mirror tests, frame-service checks and
+independent C/Go export checks pass. See [implementation evidence](#t331-bounded-storage-and-copying-results).
 
-The remaining t252 gates are native lifetime/input acceptance on both desktop
-selections, the full B9 campaign and attended release rollback. The following
-checkpoints preserve earlier evidence; they do not supersede this resumption.
+Eight fresh CPU-only/allocation arms are prepared in
+`~/.local/state/sophia/development-evidence/t252-authenticated-20261015/t331-native-cost-07/`,
+on comparator `a2ecde0ef` and integration `4eb52fb`. All device-hidden argument
+checks pass. `t252-check` selects those eight one-minute runs from foreground
+tty4. No native arm has started and no quiet hold is active. Coordinate Claude's
+crunch training through Herdr (`Mac mini`, `w2:p1`) before the attended run;
+release the hold afterward, independently replay every arm, and compare the
+separate CPU and allocation results before the full B9 campaign.
+
+[t332](gjov8u9g-can-independent-shell-uploads-progress-concurrently-without-weakening-custody.md#t332--investigate-bounded-upload-concurrency)
+is a candidate concurrency investigation, not an implementation authorization
+or a new t252 prerequisite. The earlier corrupted `cost-01` remains invalid;
+completed evidence directories must not be reused. t252 still needs native
+lifetime/input acceptance on both desktop selections, full B9 and attended
+release rollback.
 
 ## Earlier qualification checkpoints
 
@@ -1921,6 +1898,73 @@ introduce transport threads under this comparison. Measure copied bytes, syscall
 counts and owner passes as well as accepted CPU/MiB and allocation metrics. The
 current profiles cannot assign an exact fraction of the gap to any upstream
 technique. Research does not close t331 or establish an architectural defect.
+
+## t331: bounded storage and copying results
+
+Production `7c8fd76c4` removes owned head-index lists from read-only native
+observations and replaces the frame-service reducer's temporary tree sets with
+sorted inline storage under its existing 16-output ceiling. Enabled-head
+filtering, physical order, mirrors, validation errors, effect ordering and
+attempt budgets are unchanged. Mutable paths retain their owned index facade.
+There is no topology cache and no skipped service call.
+
+An allocation fixture run against the old comparator intentionally fails its
+zero-allocation assertion: 1,000 one-output service turns allocate 7,000 times.
+The revised reducer allocates nothing at one, two or sixteen outputs, including
+reordered observations and retirement/submission attempts. A separate selection
+fixture measures 1,000 owned-list allocations against zero borrowed allocations,
+and checks disabled heads, changed output membership and 33 heads without a new
+head-count limit. These tests do not construct native devices.
+
+SDK `bcf840a` retains upload bytes and advances the acknowledged offset, and uses
+a cursor for ordinary pipeline sends. Partial sends no longer move the unsent
+tail. Appends compact only when needed; a secret write first normalizes the
+buffer and keeps the existing reserved-capacity scrubbing path. SDK `25b63ff`
+moves the outbox's existing boxed payload into the active file operation. The
+outbox retains its original byte charges, control classification and ticket
+until settlement. Refused preparation occurs before payload transfer. IPC's
+borrowing path and the pipeline's required owned payload copy remain intact.
+
+Deterministic tests verify unchanged storage through partial sends, exact unsent
+bytes across header/payload boundaries, compaction under the output bound, a
+secret following partially sent ordinary bytes, pointer identity on payload
+transfer, and held admission charges with reserved control capacity. A scripted
+upload interleaves short acknowledgements and EAGAIN, checking every resulting
+byte and offset. The SDK workspace suite and strict Clippy pass.
+
+The vendor gate first caught a pre-existing stale SDK contract copy: it lacked
+the accepted cost-accounting section. Signed SDK `d8558f4` synchronizes that text
+and its checksum; the gate then passes. Production `a9a92746a` imports it.
+Comparator `ff2a52621` carries the native change onto both wires, and `a2ecde0ef`
+imports the same SDK and cost scope. No restored IPC adapter enters production.
+
+Ten frame-service behavior tests, both native service-observation tests and 112
+mirror-related tests pass. Focused native Session compilation, strict Clippy,
+layout and diff checks pass. Seven device-hidden runtime test binaries pass,
+covering file-wire service, content/session lifetime, transport, output custody,
+reconnect budgets and independent C/Go exports. The backend allocation fixture
+initially lacked the required renderer feature; rerunning with `gbm-probe` and
+`libdrm-events` passes. No native device was needed for these checks.
+
+Evidence is in
+`~/.local/state/sophia/development-evidence/t331-storage-20261016/`: the old and
+new reducer results, SDK and integration logs, pinned upstream sources and
+release artifact identities. Build artifacts remain in Cargo slots, not copied
+into evidence. Both release builds use the exact comparator revision.
+
+Eight one-minute, 1,000-frame pilot arms are prepared under
+`t252-authenticated-20261015/t331-native-cost-07`: files/IPC and panel/bulk in
+separate CPU-only and Rust-allocation modes. Integration is `4eb52fb`. The first
+preparation used an older preflight hash and refused it; the replacement binds
+the same preflight as successful `profile-06`. Parser validation initially lacked
+the native opt-in environment variable; all final device-hidden validations
+include it and return before runtime construction. Both failed preparation
+records remain beside the plans. No native arm has started. Arrange a new quiet
+window before the attended run; this pilot is not the full B9 campaign.
+
+The separate [concurrency investigation](gjov8u9g-can-independent-shell-uploads-progress-concurrently-without-weakening-custody.md)
+is recorded as t332, a candidate after t331 measurements. Native CPU improvement
+and per-frame allocation savings remain unproved for these changes.
 
 ## Connections
 

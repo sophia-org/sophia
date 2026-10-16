@@ -44,6 +44,12 @@ results, including a no-change outcome. Named-terminal runs belong in external
 integration tooling. They supplement the accepted benchmark; they do not move
 terminal parsing or image-cache policy into Engine or reopen t319 capture.
 
+The [bounded shell-upload concurrency investigation](../investigations/gjov8u9g-can-independent-shell-uploads-progress-concurrently-without-weakening-custody.md)
+is a related optimization candidate. It starts from t331's measured allocation
+and copying fixes, and must distinguish independent uploads from ordered writes
+to one resource. It authorizes investigation only; it neither expands t289's
+implementation scope nor adds a prerequisite to t252.
+
 ## Direct-capture import experiment (2026-10-04)
 
 On installed master `1f35fb527`, the renderer imports a source for validation,

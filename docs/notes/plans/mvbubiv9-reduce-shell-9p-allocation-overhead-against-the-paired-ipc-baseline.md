@@ -98,8 +98,30 @@ costs and propose a separate architectural change. Do not relax the limits or
 expand silently into t289. Native runs require coordinated attended windows;
 the optimization plan does not authorize changing the installed desktop.
 
+## Approved allocation and copying slice (October 16)
+
+Keep upload ordering unchanged. Borrow enabled-head observations instead of
+collecting temporary index lists; retain owned lists for mutation paths. Store
+the frame-service reducer's sets inline under its existing 16-output limit,
+preserving validation and effect order. Verify allocation changes independently.
+
+In the SDK, advance cursors after ordinary sends and acknowledged upload bytes;
+compact ordinary output only when an append needs room. Preserve the secret
+write's reserved storage and scrubbing path. Move outbox payloads into the active
+file operation while retaining their tickets and full admission charges until
+settlement. Preserve all limits, retries, terminal classification and control
+reserves. Keep the pipeline's owned copy required by its borrowed-slice API;
+new payload-ownership APIs and vectored output are outside this slice.
+
+Run deterministic byte/custody tests and the signed SDK vendor gate, then a
+fresh matched native pilot with separate CPU and allocation arms. Shared native
+changes must reach both comparator wires. Do not install or restart the desktop.
+The [concurrency investigation](../investigations/gjov8u9g-can-independent-shell-uploads-progress-concurrently-without-weakening-custody.md)
+remains candidate research after the measurements, not an implementation step.
+
 ## Connections
 
+- [Bounded upload concurrency investigation](../investigations/gjov8u9g-can-independent-shell-uploads-progress-concurrently-without-weakening-custody.md#t332--investigate-bounded-upload-concurrency): candidate research after t331 measurements; no upload scheduling change in this slice.
 - [Measured evidence and pending accounting proposal](../investigations/lvlbjomq-qualify-the-shell-file-path-against-current-owners-and-independent-clients.md#accounting-method-proposal-october-15).
 - [Unchanged shell budgets](../../sophia-shell-files.md#budgets).
 - [t252 acceptance](jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md#t252--join-and-accept-the-shell-path).
