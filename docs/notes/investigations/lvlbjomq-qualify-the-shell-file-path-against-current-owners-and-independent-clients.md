@@ -33,18 +33,21 @@ allocations and redundant launch-context validation. Comparator `edcee33c5`
 carries those changes onto both wires and adds allocation-free typed benchmark
 records, ordinary-allocator CPU measurement and separate phase profiling.
 Integration `14519aa` rejects mixed modes and marks unmeasured allocations null.
-Deterministic checks pass. Twelve optimized native plans under
-`t331-native-cost-04/` pin comparator `90988ff6d` (a test-only follow-up to
-`edcee33c5`) and integration `14519aa`: four arms each for CPU-only, Rust-global
-allocation accounting and separate profiling. All exact argument checks pass
-with devices hidden. Each arm offers 1,000 frames at 1080p/60 Hz; panel-only and
-panel-plus-4-MiB workloads each pair files with IPC. This is a diagnostic pilot,
-not the full 60/120 Hz idle/load campaign. `t252-check` runs all twelve from the
-foreground tty4, about twelve minutes plus recovery; an explicit `cpu-only`,
-`rust-global` or `profile` argument selects four. No native run or quiet hold has
-started. Coordinate a quiet window before running it.
-No native improvement or cost-gate pass has been established. See
-[measurement audit and Session changes](#t331-measurement-audit-and-session-changes).
+Deterministic checks pass. The `t331-native-cost-04` pilot completed eight
+CPU/allocation arms and the files-panel profiling arm, all with 1,000 native
+joins and console recovery. Allocations on files fell about 12–14% against
+`cost-02`, but CPU-only results still exceed IPC by about 57% for the panel and
+31% for panel-plus-4-MiB uploads. The cost gate remains failed. See
+[optimized pilot results](#t331-optimized-pilot-results).
+
+The profiling capture exceeded the parser's line limit after clean recovery;
+offline replay recovers it without changing raw evidence. Integration `4eb52fb`
+fixes that limit with a regression test. Three missing profiling arms are
+prepared under `t331-native-profile-05`, using the same comparator `90988ff6d`
+and rebuilt integration runner. `t252-check` now runs only those three from
+foreground tty4, about three minutes plus recovery. Argument validation passes
+with devices hidden. Coordinate a new quiet window before launch; the previous
+hold is released. This remains a diagnostic pilot, not full B9 qualification.
 The earlier corrupted `t331-native-cost-01` remains invalid and retained.
 The old `t331-native-cost-02` directories contain completed evidence; the helper
 now selects fresh directories and stops on any failure.
@@ -1643,6 +1646,53 @@ and supplying the wrapper's native opt-in to the device-hidden validator, all
 twelve plans publish argument acceptance. No physical run occurred during these
 checks. The helper offers one command for the whole pilot and mode-specific
 four-arm subsets; it cannot resume into an already occupied run directory.
+
+## t331: optimized pilot results
+
+The October 15 pilot (`t331-native-cost-04`) pins comparator `90988ff6d` and
+integration `14519aa`. All eight CPU/allocation arms joined 1,000 frames at
+1080p/60 Hz. The first profiling arm also completed and restored the console,
+but its 191,445-line capture exceeded the splitter's 100,000-line limit.
+The helper stopped before the other three profiling arms. No native crash or
+truncated capture was found. Original captures and runner results remain intact.
+
+Independent replay in `cost-04/offline-replay/` extracts every JSON client record
+and native record, preserving their order, and runs the existing collect,
+metrics, cost-metrics and join commands. All nine captures pass. The eight
+original reports match their replayed costs exactly; the recovered profiling
+arm also joins all 1,000 frames. Recovery logs prove restored console and keyboard
+modes without emergency recovery in every captured arm.
+
+| Workload | CPU-only files / IPC (ms/MiB) | Allocations/frame files / IPC |
+| --- | --- | --- |
+| Panel | 11.572–11.586 / 7.378–7.385 | 3,756–3,762 / 1,543–1,545 |
+| Panel plus 4 MiB | 1.8074–1.8077 / 1.3771–1.3774 | 11,381–11,385 / 5,232–5,234 |
+
+Allocation counts use separate Rust-global runs. Relative to `cost-02`, files
+allocations fall about 12% for the panel and 14% for bulk uploads; IPC also benefits
+from the shared changes. Files still exceed IPC by about 143% and 118% on
+allocations, and 57% and 31% on CPU. These pairs fail the +10% ceiling; they do
+not establish a CPU improvement over the old allocation-instrumented baseline.
+The recovered profiling arm measures 13.938–13.950 ms/MiB and 3,744–3,748
+allocations/frame. Its CPU overhead is why profiling remains separate from cost
+acceptance. Phase scopes overlap and cannot be summed as exclusive costs.
+
+Integration `4eb52fb` raises the capture record ceiling to 500,000 while keeping
+the 64 MiB total and 64 KiB per-record bounds. A regression test covers profiling
+volume, excessive record counts and oversized individual records. All ten native
+runner tests, formatting and diff checks pass. The signed fix is pushed.
+
+Before the pilot, the owner authorized stopping five obsolete t064 processes;
+two DOSBox children required KILL after TERM. Specula processes were untouched.
+The Mac mini agent held crunch work and transfers; the hold is now released.
+`quiet-window-preparation.txt` records the cleanup. This is pilot evidence, not
+the full three-pair 60/120 Hz idle/load campaign.
+
+Three missing profiling arms are prepared in `t331-native-profile-05`: IPC panel,
+files bulk and IPC bulk. Plans bind the same comparator and the rebuilt runner
+at integration `4eb52fb`; all pass device-hidden argument validation. The short
+`t252-check` helper selects only these fresh directories. Complete those profiles
+before attributing the remaining costs or selecting another production change.
 
 ## Connections
 
