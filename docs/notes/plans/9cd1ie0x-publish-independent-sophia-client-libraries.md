@@ -144,6 +144,14 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `d995058` adds borrowed `presented` metadata and reserve-before-edit
+convenience on both the connection and owning session. Both ACK dispositions
+are encoded before the callback; selecting its result and committing require no
+allocation or I/O. A panic fails the lifecycle closed before resuming unwinding,
+preventing a caught panic from replaying an edit. Signed C `058207a` adds the
+independent declined-edit control. Both matrices are revision 13. Full Rust
+workspace tests (38 native), strict all-target Clippy and C's full suite pass.
+
 Signed Rust `47063e7` adds `NativeLauncherSession`: exclusive connection
 ownership, ordered retained events, transaction IDs, native operations, bounded
 dispatch and scheduling obligations. Repeated reads apply a head once; required
@@ -175,9 +183,8 @@ server effects. Prepared commit needs no allocation or I/O; delayed commit may
 fail while retaining credits. Explicitly cancel unused delayed tokens.
 Simulated-time callers must use `dispatch` and non-driving receives.
 
-Next, finish the native helper operation inventory: explicit presentation-state
-access and input edit-callback convenience need review. Then close delayed native
-reservations, other non-content batches and configurable queue parity. C's
+Next, close delayed native reservations, other non-content batches and
+configurable queue parity, auditing the operation matrix as each gap closes. C's
 `sophia_ns` supplies the checklist; the pinned contract defines semantics.
 The remaining task includes Rust WM, output and lock clients, administration
 coverage in both SDKs, the public broker/portal audit, paired production-export
