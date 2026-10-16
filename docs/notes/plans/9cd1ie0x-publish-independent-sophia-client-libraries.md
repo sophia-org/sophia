@@ -144,6 +144,25 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `42d28dd` and C `e184709` add complete administrative catalog
+validation and binary-search membership lookup. Both keep at most 259 inline
+rows with names borrowed from the immutable snapshot, without heap allocation.
+They reject the whole catalog for bad counts, ordering, duplicate names,
+unsupported Session operations, excessive policy rows or malformed text.
+C leaves caller output unchanged on failure. Nine Rust administrative tests,
+all four C administrative test binaries and strict Rust Clippy pass. The full
+259-row catalog and the 256-policy boundary have independent tests in both.
+
+Admin map 4 records this checkpoint. Next implement caller-driven clients over
+the existing 9P pipelines: bounded snapshot reads through EOF and clunk, one
+ctl invocation, exact identity/custody, pending-only status wakeups and explicit
+failure/recovery. The runtime reference clones catalogs during commands and
+invocation and sleeps between status snapshots; the SDK clients should retain
+one validated catalog and expose wake times instead. Record buffers must outlive
+borrowed views, with no self-referential Rust storage. Paired production and
+failure gates remain required. t333 stays open; no speedup is measured and pins
+remain unchanged.
+
 Signed Rust `a53824f` and C `a19fa07` add allocation-free invocation and
 status decoding and fixed-buffer invocation encoding. Names and outcome details
 borrow input storage; all ten outcomes remain distinct. Encoders validate
