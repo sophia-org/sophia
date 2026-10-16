@@ -20,12 +20,8 @@ per frame, retaining +10% as the acceptance ceiling. See the accepted
 [cost scope](../../sophia-shell-files.md#cost-accounting-scope-accepted-october-15-2026)
 and [implementation plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#implementation-sequence).
 Earlier references below to an unanswered scope decision are superseded.
-All four `t331-native-cost-02` arms now pass independent journal, native-join
-and cost replay: 1,000 frames each, at 1080p/60 Hz, with verified console
-recovery. Native panel costs are 4,285–4,290 allocations/frame on files versus
-1,708–1,711 on IPC, and 11.424–11.434 ms CPU/MiB versus 7.417–7.430 ms.
-About 98% of the excess allocation count is in the Session process, including
-diagnostics; that is not exclusive production-stack attribution. See
+The earlier instrumented baseline attributed about 98% of excess allocations to
+Session, including diagnostics; it did not identify exclusive stacks. See
 [native baseline results](#t331-native-cost-baseline-results).
 The owner authorized a measurement audit and Session-first fixes. Production
 `083c33c1f` removes repeated readiness, indicator, action-view and reservation
@@ -60,8 +56,8 @@ These overlapping scopes do not identify exclusive allocation stacks. See
 [completed profiling comparison](#t331-completed-profiling-comparison).
 This remains a diagnostic pilot, not full B9 qualification.
 The earlier corrupted `t331-native-cost-01` remains invalid and retained.
-The old `t331-native-cost-02` directories contain completed evidence; the helper
-now selects fresh directories and stops on any failure.
+The `cost-02`, `cost-04` and `profile-05` directories contain completed evidence;
+future native runs require fresh plans and directories.
 
 The remaining t252 gates are native lifetime/input acceptance on both desktop
 selections, the full B9 campaign and attended release rollback. The following
