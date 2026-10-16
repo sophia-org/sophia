@@ -144,16 +144,16 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
-Signed Rust `6d84c4f` adds Cycle-bound snapshot fetching to the integrated WM
-Session. Requests freeze identity before Cycle consumption; results wait for
-verified EOF and clunk. One fetch/result is allowed, bytes are capped, and
-pre-open retries retain the original deadline. Socket peers cover fragmented
-reads, retry, identity/length/EOF mismatch, read/clunk refusal and expiry. All
-35 WM client tests and targeted strict Clippy pass. Signed C `ff9e3e0` records
-matrix 23. Next close direct nonblocking version startup and handoff-capacity
-gaps, then broaden paired session and production-export qualification. This is
-not yet a complete WM client release. The preceding integrated-session
-checkpoint `772cd60` also passed the full Rust workspace suite.
+Signed Rust `622d9c0` adds nonblocking version/WM startup with one absolute
+deadline and exact-root, quiescence and capacity checks at handoff. Six generic
+handshake tests and four added WM controls cover malformed/fragmented replies,
+following bytes, bounds, root ownership and deadline continuity. Socket session
+tests now use Connecting through negotiation. The full workspace suite, added
+tests and strict Clippy pass. Signed C `fbfcdd8` records matrix 24. Snapshot
+fetching from `6d84c4f` remains bound to the retained Cycle and verified EOF/clunk.
+Next audit complete WM operation/error coverage and run paired production-export
+qualification before release/pin adoption. Output, lock and the remaining t333
+roles still follow; this is not a full SDK parity claim.
 
 Signed Rust `228f263` starts `sophia-wm-client` with typed application candidates
 and owned immutable encoding. Five tests cover all seven kinds, literal Dirty
