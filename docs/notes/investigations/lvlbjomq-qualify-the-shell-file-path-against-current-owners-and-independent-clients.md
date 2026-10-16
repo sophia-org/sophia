@@ -67,9 +67,14 @@ large saving from the fixture's read-call count.
 The owner has approved temporary kernel profiling (paranoid 2 to 1, then back
 to 2). `t252-check` now selects four fresh perf-09 runs, prompts for sudo on
 tty4, and restores the setting on normal exit, error or catchable interruption.
-No setting has changed or native run started yet. A fresh quiet hold is requested;
-await confirmation before the attended run. Verify restoration afterward even
-if the helper is killed. Perf-09 reuses the validated perf-08 plans and binaries.
+All four perf-09 runs now completed with 1,000 joined frames and clean recovery;
+independent cost/join replay matches. Perf attributes confirm kernel sampling,
+and the host setting is verified restored to 2. The quiet hold is released.
+Kernel/user attribution remains to be analyzed. Perf-09 reuses the validated
+perf-08 plans and binaries. Its output directories are now occupied; do not
+rerun `t252-check`. The owner reported a silent exit 1 after captures existed;
+the helper's overwrite guards explain such a refusal, though the original
+terminal exit was not captured. Installed guards now print an explanation.
 The perf-08 directories remain occupied. These profiles do not establish B9 or
 authorize concurrent uploads.
 
