@@ -144,6 +144,22 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `3f96b00` adds provisional publication-bound topology fetching.
+Walk/open must match the announced Qid; the decoded object must match both
+connection and topology epochs. Reads are bounded, and no value is exposed
+before EOF and successful clunk. Withheld opens clunk before a new walk;
+backoff never extends the original deadline. Five matched-reply tests cover
+fragmentation, identity, malformed lengths, early EOF, retry and clunk failure.
+All 28 Rust output-client tests and strict Clippy pass. C's full suite passes;
+signed C `c532820` records its existing independent fragmented-fetch, withheld
+open and wrong-Qid controls in matrix 35 / output map 4.
+
+Next integrate the output startup, submission, journal and topology components
+into a socket session with ordered reply handling, cumulative ACK barriers,
+Refused ACK settlement, caller-clock dispatch and terminal custody retention.
+Then add the nonblocking connecting facade and paired production-export tests.
+The standalone fetch tests do not qualify integrated socket dispatch.
+
 Signed Rust `34740d5` adds the provisional output journal. It checks granted
 capabilities and revision, makes Refused an internal ACK target, retains ordered
 application heads and validates custody behind a held head. ObjectPublished
@@ -155,8 +171,8 @@ ordering through both constructors. All 23 Rust output-client tests, strict
 Clippy, formatting and C's full suite pass. Matrix 34 / output map 3 record
 the scope. A test callback does not qualify the missing object fetcher.
 
-Next implement publication-bound topology fetching through EOF and clunk,
-then integrate startup, submission, journal and ACK handling into the output
+The fetcher above now supplies publication-bound reads through EOF and clunk.
+Integrate startup, submission, journal and ACK handling into the output
 session and nonblocking connecting facade. Refused must settle its ACK before
 terminal handoff. Production pins and the t331 pilot remain unchanged.
 
