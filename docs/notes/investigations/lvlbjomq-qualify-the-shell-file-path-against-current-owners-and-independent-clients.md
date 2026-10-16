@@ -64,9 +64,14 @@ authority checks preserves the custody poll, while the pending journal read is
 already an allocation-free tail comparison. See [change-token audit](#t331-change-token-audit).
 Return to CPU attribution of owner service and system calls; do not infer a
 large saving from the fixture's read-call count.
-The quiet hold is released. `t252-check` points to occupied profile directories;
-prepare fresh plans before another native run. These profiles do not establish
-B9 or authorize concurrent uploads.
+The owner has approved temporary kernel profiling (paranoid 2 to 1, then back
+to 2). `t252-check` now selects four fresh perf-09 runs, prompts for sudo on
+tty4, and restores the setting on normal exit, error or catchable interruption.
+No setting has changed or native run started yet. A fresh quiet hold is requested;
+await confirmation before the attended run. Verify restoration afterward even
+if the helper is killed. Perf-09 reuses the validated perf-08 plans and binaries.
+The perf-08 directories remain occupied. These profiles do not establish B9 or
+authorize concurrent uploads.
 
 [t332](gjov8u9g-can-independent-shell-uploads-progress-concurrently-without-weakening-custody.md#t332--investigate-bounded-upload-concurrency)
 is a candidate concurrency investigation, not an implementation authorization
@@ -2225,10 +2230,14 @@ The kernel-permission probe confirms `perf_event_paranoid=2`: plain
 `cpu-clock` silently records `cpu-clock:u` (`exclude_kernel=1`), and explicit
 `cpu-clock:k` is denied. No setting changed. Four proposed task-scoped
 `cpu-clock:uk` commands reuse the perf-08 plans with fresh `t331-native-perf-09`
-outputs. Its helper is prepared but not installed or run. Temporarily changing
-the host setting from 2 to 1, then restoring 2 after the diagnostic, requires
-the owner's approval. This permits kernel sampling for owned processes; it is
-not system-wide sampling. A new quiet window and attended run remain necessary.
+outputs. The owner subsequently approved temporarily changing the setting from
+2 to 1, then restoring 2. The installed helper prompts for sudo on tty4 and
+restores 2 with an exit trap, including catchable interruptions. SIGKILL cannot
+run a trap, so verify the setting after the run. The processes being profiled
+still run as the normal user. A private kallsyms snapshot supports offline
+kernel symbol attribution. No setting has changed or native run started yet.
+A fresh quiet window is requested. This permits kernel sampling for owned
+processes; it is not system-wide sampling.
 
 ## Connections
 
