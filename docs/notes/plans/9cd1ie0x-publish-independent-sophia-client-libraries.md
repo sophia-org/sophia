@@ -144,6 +144,25 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `70c9b22` adds the provisional lock journal and object fetch.
+The journal retains one application head and does not decode controls behind
+it, matching C. Both byte buffers are fixed at 1024 bytes. A cursor avoids
+moving unread events after every consume; compaction happens only when an
+append needs tail space. Lock fetch verifies Qid, envelope epoch, body and EOF,
+then clunks before exposing the value. A newer Qid supersedes the announcement;
+it is released unread and consumed internally. The decoded allocation list
+still allocates, but its verified value transfers without cloning. Neither
+component adds clocks, retries or polling; no runtime gain is measured.
+
+All 24 Rust lock-client tests and strict Clippy pass. Signed C `bdcd0f6` adds
+independent rejection checks for old Qids, wrong epoch, premature EOF and
+trailing bytes; the lock suite passes. Existing C checks cover supersession,
+ordered Entry/Chord events, grants and refusal ACKs. Both SDKs record API
+matrix 44 / lock map 4. Next implement upload lifecycle and 1–8 write windows,
+then integrate journal, fetch and submission into session/connecting facades.
+Production tests, remaining roles and publication still block t333. Pins and
+the measurement pilot remain unchanged; no quiet hold is active.
+
 Signed Rust `834d5b9` adds the bounded lock submission lane: immutable candidate
 storage, borrowed write slices, explicit retry, latest custody, refusal and
 disconnect handling. Transaction settlement clunks and walks the file again;
