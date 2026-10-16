@@ -248,6 +248,44 @@ CPU cost, native frequency or the share of t331's remaining gap.
 
 ## Validation and limits
 
+### Service-progress diagnostic implementation
+
+Comparator `47ac3f2f7` adds `comparator-progress`, separate from CPU, allocation
+and phase-profile features. Combining them fails compilation. Hot-path hooks
+only increment relaxed atomic counters: no allocation, timestamps, formatting
+or I/O. The existing sampler emits one bounded progress record every eighth
+tick and at lifecycle boundaries; the peer emits at frame boundaries. Snapshots
+have their own timestamp bounds and are not atomic across fields.
+
+Counters cover Session passes, component passes, core polling turns/flushes,
+accepted/stale readiness handoffs, core read/write bytes, encoded replies,
+pending-read attempts, peer content polls and admitted upload/receive waits.
+Core totals include every server in the process. Encoded replies include errors
+and are not presentation completions; use the journal for completed frames.
+The wait count excludes authentication setup. Counts can reveal amplification,
+but do not by themselves prove that authority checks or idle passes are useless.
+
+The full core suite passes with instrumentation. Focused tests prove counter
+updates/snapshots allocate nothing, pending attempts do not count as replies,
+real-socket byte totals are exact, and accepted/stale handoffs increment the
+right counters. Runtime tests verify bounded records and explicit progress mode;
+strict Clippy passes for core, runtime/peer and native CLI. The mixed-mode
+negative compilation check fails as intended.
+
+Integration `59bee7f` validates schema, process identity, monotonic counters and
+timestamps, duplicate/missing fields, mixed modes and sample bounds. Its tests
+and strict library Clippy pass. Native reports preserve progress samples with
+`costs: null`; cost/latency arms reject progress records. Artifact, foreground
+tty, duration, journal, kernel-join and recovery checks remain in force.
+
+Four optimized one-minute plans are frozen in
+`t252-authenticated-20261015/t331-native-progress-12`: files/IPC, panel/bulk,
+1,000 frames each at 60 Hz. Preparation and device-free argument validation pass.
+Build artifacts stay in Cargo slots; no native arm has run. The helper now selects
+these fresh diagnostic captures. A new coordinated quiet window is required.
+Analysis must align counter snapshots with the offered-frame interval and retain
+boundary uncertainty rather than divide whole-session startup totals by frames.
+
 ### CPU attribution review after cost-11
 
 Reclassified the retained perf-08 stacks by exclusive leaf, selecting exactly

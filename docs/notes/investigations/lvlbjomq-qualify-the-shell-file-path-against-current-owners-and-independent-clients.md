@@ -14,6 +14,15 @@ repairs? Reconcile the existing evidence before repeating a desktop campaign.
 
 ## Current resumption
 
+Progress-12 is ready for an attended tty4 run: comparator `47ac3f2f7`, integration
+`59bee7f`, four fresh files/IPC panel/bulk arms under
+`t252-authenticated-20261015/t331-native-progress-12`. The installed `t252-check`
+selects these plans, not cost-11. All plans and device-free argument checks pass;
+no native arm has run. Arrange a new quiet window before the owner launches it.
+The ordinary-allocator diagnostic records numeric service/progress totals and
+explicitly produces no CPU/allocation acceptance verdict. Production runtime
+code is unchanged; the instrumentation stays on the comparator branch.
+
 Cost-11 completed all eight arms on production-source candidate `deae479d6`,
 comparator `8bbef6e00` and integration `4eb52fb`. Independent offline replay
 matches the stored costs, journal metrics and 1,000 joined frames in every arm;
@@ -25,7 +34,7 @@ unaccepted for the full native gate; do not install it on this evidence.
 
 Evidence is under `t252-authenticated-20261015/t331-native-cost-11`, including
 `offline-replay/summary.json`. All capture directories are now occupied:
-do not rerun the installed `t252-check`. The quiet hold is released; Claude
+do not reuse cost-11 captures. Its quiet hold is released; Claude
 reported no crunch activity after the initial 13:06:38Z confirmation and Muse
 status read. Reanalysis of perf-08 finds only about 22/10 ms of panel/bulk
 sampled differences in recognizable allocator leaves. Clock reads, polling and
