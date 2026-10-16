@@ -144,6 +144,27 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `9890ed8` and C `afd9f90` check all nine profile completion
+kind/outcome combinations through independent sockets. Literal inspection
+confirms transaction/generation/digest echoes and outcome bytes, followed by
+Submitted and ACK settlement. The policy transaction allocator remains at 1.
+Rust's journal now accepts lifecycle/chord Cycle causes only with their
+negotiated capabilities, matching C's existing socket controls. All 45 Rust
+WM tests, strict targeted Clippy and C's full suite pass. Matrix 30 / WM map 6
+cover the implemented WM operations; publication-wide qualification remains.
+
+Next implement Rust output. C's `sophia_output_session.h` owns the comparison:
+direct/attached startup, observe-required negotiation with explicit Refused
+state, immutable proposals/custody, automatic topology fetch before publishing
+ObjectPublished, Qid/epoch/topology identity, ACK/clunk barriers and bounded
+caller-clock service. Start a neutral protocol crate from Sophia's
+`output_files.rs` and its six modules, passive `output_role.rs` and
+`packets/output_configuration.rs`, with shared typed IDs/geometry and the pinned
+output schema. Existing `output_file_{events,topology,limits,schema}.rs` and
+`output_files.rs` tests are the extraction controls. Preserve candidate
+structural parsing versus server-owned topology validation; no Engine authority
+belongs in the SDK. Record source hashes and exact signed source revision.
+
 Signed Rust `0681b4a` and C `016405a` independently check delivery of all three
 profile commands, all five configuration/projection/session-operation outcomes
 and all three presentation outcomes through their socket clients. Literal wire
@@ -152,9 +173,7 @@ never skip them, and semantic Disconnected outcomes leave the transport Ready.
 All 43 Rust WM tests, targeted Clippy and C's full suite pass (the final rename
 of the Rust fixture scenario enum was followed by its session suite).
 Matrix 29 / WM map 5 retain the limits: these are ordered observation tests,
-not execution of application-owned rollback policy. Next finish the Cycle-cause
-capability checks and the profile-completion exchange coverage, audit the WM
-operation map, then move to the Rust output client. Do not require SDKs to own
+not execution of application-owned rollback policy. Do not require SDKs to own
 the application's rollback decisions.
 
 Signed Rust `d660990` and C `fe67eb3` add independent protected WM peers.
