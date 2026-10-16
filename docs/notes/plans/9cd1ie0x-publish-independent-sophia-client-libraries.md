@@ -144,6 +144,16 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `cb34448` extends immediate, prepared and delayed batch admission
+to native, descriptor, indicator and catalog operations through `ShellBatchItem`.
+Validation/size failure keeps delayed credits; prepared Drop cancels. Each whole
+item retains its own ticket and remote outcome. Role negotiation checks remain
+in force. These raw operations do not register lifecycle state or establish
+action eligibility. Signed C `5936c9f` independently tests a delayed descriptor
+pair through its session peer. Both matrices are revision 14. Full Rust
+workspace tests, strict Clippy, final descriptor/scripted checks and C's full
+suite pass. Production-export qualification remains pending.
+
 Signed Rust `d995058` adds borrowed `presented` metadata and reserve-before-edit
 convenience on both the connection and owning session. Both ACK dispositions
 are encoded before the callback; selecting its result and committing require no
@@ -183,8 +193,7 @@ server effects. Prepared commit needs no allocation or I/O; delayed commit may
 fail while retaining credits. Explicitly cancel unused delayed tokens.
 Simulated-time callers must use `dispatch` and non-driving receives.
 
-Next, close delayed native reservations, other non-content batches and
-configurable queue parity, auditing the operation matrix as each gap closes. C's
+Next, close configurable queue parity and audit the operation matrix. C's
 `sophia_ns` supplies the checklist; the pinned contract defines semantics.
 The remaining task includes Rust WM, output and lock clients, administration
 coverage in both SDKs, the public broker/portal audit, paired production-export
