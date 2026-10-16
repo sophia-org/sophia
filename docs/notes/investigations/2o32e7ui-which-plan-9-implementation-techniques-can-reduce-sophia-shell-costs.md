@@ -459,3 +459,42 @@ The full workspace run on production `70685cac7` passes with
 `--features sophia-session/native-session`, `XDG_CONFIG_HOME` set to an empty
 root and eight build/test workers. Its complete log, the default-feature
 refusal and the formatting report are retained in `t331-native-relay-13`.
+
+### Relay-only native results, October 16
+
+All four relay-13 arms completed on comparator `f5d0f0932`, integration
+`fd2cb6c`, with the previous SDK `d8558f4`. Independent offline replay matches
+journal metrics, all 1,000 kernel/frame joins per arm and every raw progress
+record. Console and keyboard recovery are clean. Evidence and hashes are in
+`t252-authenticated-20261015/t331-native-relay-13/offline-replay/summary.json`.
+Bounds bracket the first upload offer through the final terminal event;
+counts below are per offered frame and include every core server in Session.
+
+| Counter | Files panel, relay-13 | Files bulk, relay-13 | Previous panel / bulk |
+| --- | --- | --- | --- |
+| Session passes | 33.366–33.440 | 120.176–120.332 | 33.082–33.155 / 120.069–120.116 |
+| Core polling turns | 5.134–5.167 | 5.141–5.170 | 71.287–71.464 / 245.272–245.389 |
+| Core flushes | 5.993–6.001 | 8.990–9.001 | 138.321–138.621 / 489.275–489.465 |
+| Encoded replies | 52.938–53.035 | 151.839–152.035 | 52.938–53.031 / 151.965–152.031 |
+
+Relay dispatch and idle-skip counts match within two boundary calls on each
+files arm: about 66.7 panel and 240.5 bulk per frame, with zero relay expiry
+work. The shared fix also removes IPC's steady core flushes: both IPC arms
+record zero. IPC Session passes are 8.028–8.814 panel and 44.991–45.071 bulk.
+The wide panel upper bound includes work across sampling boundaries; it does
+not establish a steady pass regression.
+
+Request kinds independently match the source accounting: files panel has
+about six walks, six opens, eleven reads, twenty-four writes and six clunks
+per frame. Bulk has ten, ten, seventeen, 105 and ten respectively. This
+confirms that reply traffic remains while idle relay service disappears.
+The remaining Session-pass gap is expected: this pilot deliberately omitted
+SDK batching. Progress instrumentation cannot establish CPU/MiB or allocation
+savings, and t331 remains open.
+
+The quiet hold is released. Claude reports no heavy work, packing, transfers
+or SSH during the window; it made brief local Markdown, zk and Git inspection
+calls without exact timestamps. That report is retained in `quiet-window.txt`.
+Next, comparator `bf19952dd` carries the already-tested SDK pin for a separate
+batching pilot. All relay-13 capture directories are occupied and must not be
+reused.

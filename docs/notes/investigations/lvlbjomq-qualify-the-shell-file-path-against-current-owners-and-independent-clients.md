@@ -26,17 +26,25 @@ native-feature Session suite also pass. The full workspace run passes with
 [implementation audit](2o32e7ui-which-plan-9-implementation-techniques-can-reduce-sophia-shell-costs.md#extra-pass-attribution-and-approved-fixes-october-16)
 records checks and the pre-existing default-feature and formatting limitations.
 
-Measure the slices separately. Comparator `f5d0f0932` contains the relay fix
-and schema-2 diagnostic counters, deliberately retaining SDK `d8558f4` for the
-first pilot. Integration `fd2cb6c` accepts the new counters and still replays
-schema 1, but rejects mixed schemas. Four fresh one-minute progress arms are
-prepared under `t252-authenticated-20261015/t331-native-relay-13`; preparation,
-device-free argument validation and launcher syntax checks pass. The installed
-`t252-check` helper selects these unoccupied captures on tty4. No native arm has
-run; there is no quiet hold yet. After this pilot, carry the SDK pin to the comparator
-and prepare a separate combined pilot, followed by CPU and allocation runs.
-Do not reuse any occupied capture directory. Request a fresh quiet window
-before the owner runs `t252-check` from the attended foreground console.
+Relay-13 completed all four arms on comparator `f5d0f0932` and integration
+`fd2cb6c`, deliberately retaining SDK `d8558f4`. Offline replay matches journal
+metrics, 1,000 frame joins per arm and raw progress records; console recovery
+is clean. Files core flushes fell from about 138 to six per panel frame and
+489 to nine per bulk frame. Core polling turns fell from 71/245 to about five.
+Idle relay skips account for the change; relay expiry and stale handoff counts
+are zero. Session passes remain roughly 33/120, as expected before SDK batching.
+Both IPC arms now have zero steady core flushes. These are progress counts,
+not CPU or allocation acceptance. The [relay-only results](2o32e7ui-which-plan-9-implementation-techniques-can-reduce-sophia-shell-costs.md#relay-only-native-results-october-16)
+record bounds and limits.
+
+All `t331-native-relay-13` captures are occupied; do not rerun them. The quiet
+hold is released. Claude reports only brief local text/zk/Git inspection during
+the window. Comparator `bf19952dd` now carries SDK `3edcd28`; four fresh one-minute
+batching arms are prepared in `t331-native-batching-14`. Preparation, device-free
+argument validation, launcher syntax and focused comparator checks pass.
+`t252-check` selects these empty captures. After that comparison, prepare
+separate CPU and allocation runs. Request a fresh quiet window before any
+further attended capture.
 
 Progress-12 established 33/120 Session passes per files panel/bulk frame,
 versus roughly 8/45 for IPC. Source attribution identifies repeated idle
