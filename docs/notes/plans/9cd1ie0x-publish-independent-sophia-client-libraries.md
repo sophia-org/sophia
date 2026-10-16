@@ -144,6 +144,28 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `5ca560f` and C `37c0138` extend the snapshot operation driver
+to opaque retained transfers. Both borrow caller storage of at least 64 KiB,
+leave unused bytes untouched, enforce the payload limit and expose bytes only
+after EOF and clunk. No second payload allocation or copy is introduced.
+Rust Fetch carries a storage lifetime; metadata remains inline. The driver
+does not associate a separately walked watch with the transfer.
+
+All seventeen Rust client tests, C transfer/snapshot/request tests and strict
+Clippy pass. Rebuilt peers pass all nine existing production portal gates as
+regressions; those gates do not yet exercise transfer delivery. Peer SHA-256:
+Rust `d4a9393ab6f967d598e58541bb1fd55db2af998610633ac3a5ecb82d5b96e127`;
+C `bf654a383b003e3e67da1a86339a4d788ae7a65a2ce627abbd624360db8243f4`.
+Portal map 14 records the component scope.
+
+Next compose transfer reads with authenticated transport and qualify delivery
+and revocation, then implement watch and finish recovery/local-cancellation
+audits. Trusted requester/broker, foreign bindings and publication/pin adoption
+remain. t333 stays open; production pins are unchanged. No quiet hold or
+measured performance claim.
+
+### Capture refusal and cancellation checkpoint
+
 Signed Rust `c0d99d2` and C `f4b3ec1` pass all nine production portal gates.
 New gates qualify locked/busy/stale-serial refusal with exact EACCES/EAGAIN/ESTALE,
 and cancellation after queueing or owner pickup. Both SDKs preserve Refused
