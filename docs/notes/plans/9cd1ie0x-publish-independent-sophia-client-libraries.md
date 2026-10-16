@@ -144,6 +144,22 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `91d5d21` and C `61fb84d` add metadata startup on the existing
+attached recipient root. Both read api through EOF/clunk, preserve root and
+pipeline, and issue no new version/attach/reconnect. The caller must complete
+launch authentication first and retain the relay separately. Root ownership
+checks prove no authority. Five Rust client tests, C startup tests and strict
+Clippy pass; portal map 5 records evidence and lifetimes. The scripted attach
+is not a production authentication proof.
+
+Next compose launch authentication with this handoff and implement recipient
+session operations, retained-object frame reads and capture custody. Production
+portal gates, requester/broker, foreign bindings and release adoption remain.
+t333 stays open; SDK branches pushed, production pins unchanged, no quiet hold
+or measured speedup.
+
+### Portal snapshot checkpoint
+
 Signed Rust `3a90668` and C `8da1961` add provisional metadata snapshot
 drivers for api, status and capture-status. Results wait for EOF, decoding and
 clunk; reads respect msize/iounit and file bounds. Three Rust tests, C's
