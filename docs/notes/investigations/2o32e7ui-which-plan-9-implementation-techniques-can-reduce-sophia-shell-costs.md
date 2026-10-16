@@ -27,7 +27,9 @@ output storage and empty pending reads allocate nothing. The follow-up below
 confirms one SDK payload copy, zero staging allocations on a second same-size
 upload, and one socket send per upload in the isolated fixture. The approved
 journal scratch experiment is now implemented: warmed journal reads allocate
-nothing in all five fixture cases. Both payload copies remain. SDK vectored output targets
+nothing in all five fixture cases. Cost-11 native allocations fell only about
+0.4%; CPU changed +1.8% for panel and -1.0% for bulk against cost-10. The gate
+still fails. Both payload copies remain. SDK vectored output targets
 copy traffic, not the warmed allocation count. The approved t331 slice excludes a new vectored
 output ownership API; implementation needs a separately reviewed scope. t332
 remains investigation only. Keep the installed desktop untouched.
@@ -210,8 +212,34 @@ oversized replies and scratch, and version reset. Existing journal tests retain
 acknowledgement coverage. The full production core suite and 106 runtime library
 tests pass (one runtime test ignored); strict core all-target and runtime library
 Clippy pass. The comparator passes the same suites and Clippy checks. Native
-savings are not yet measured. Next, prepare a fresh matched native pilot with
-separate CPU and allocation arms; do not reuse occupied capture directories.
+savings were then tested in cost-11, below.
+
+### Native cost-11 result
+
+All eight 60 Hz pilot arms completed on comparator `8bbef6e00` (production
+source `deae479d6`), with 1,000 frames each. Offline replay matches costs,
+journal metrics and all kernel joins; console recovery is clean. CPU results
+below come from ordinary-allocator runs; allocation counts come from separate
+instrumented runs. Ranges are accounting bounds, not confidence intervals.
+
+| Workload | 9P CPU ms/MiB | IPC CPU ms/MiB | 9P allocations/frame | IPC allocations/frame |
+| --- | ---: | ---: | ---: | ---: |
+| Panel | 11.526354–11.537126 | 7.641611–7.653430 | 2,321–2,324 | 1,140–1,143 |
+| Panel + 4 MiB | 1.791618–1.791863 | 1.398314–1.398578 | 6,476–6,478 | 3,385–3,387 |
+
+At interval midpoints, 9P allocations fell 0.39% and 0.38% versus cost-10.
+CPU rose 1.83% on panel and fell 0.96% on bulk. The current CPU gaps to IPC are
+50.8% and 28.1%; allocation gaps remain about 103.5% and 91.3%. Neither workload
+passes the +10% ceiling. This supports a small allocation reduction, not a
+repeatable CPU win or acceptance of the scratch candidate. Exact sizing and
+scratch reuse changed together, so this pilot cannot separate their effects.
+
+Raw captures and `offline-replay/summary.json` are under
+`~/.local/state/sophia/development-evidence/t252-authenticated-20261015/t331-native-cost-11/`.
+The quiet hold is released; Claude reports no work after its initial 13:06:38Z
+status read and confirmation. All run directories are occupied. Further work
+should attribute the remaining Session allocations before another transport API
+change; the observed journal reduction is too small to explain the overall gap.
 
 Direct encoding into queued output may remove a copy too, but needs a separate
 review of rollback, output bounds and delivery guards. SDK owned vectored output

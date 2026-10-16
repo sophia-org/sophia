@@ -14,15 +14,21 @@ repairs? Reconcile the existing evidence before repeating a desktop campaign.
 
 ## Current resumption
 
-Cost-11 is prepared for the next attended tty4 run. Production `deae479d6`,
-comparator `8bbef6e00` and integration `4eb52fb` are bound in the fresh campaign
-under `t252-authenticated-20261015/t331-native-cost-11`. All eight plans pass
-preparation and device-free argument validation; artifact hashes match. The
-short `t252-check` launcher selects these unused captures. It runs panel and
-4 MiB workloads over files and IPC, separately for CPU and Rust allocations,
-with 1,000 frames per arm at 60 Hz. No arm has run. Coordinate a fresh quiet
-window, then the owner runs the launcher from foreground tty4. This is a pilot,
-not the full B9 campaign; do not install or restart the regular desktop.
+Cost-11 completed all eight arms on production-source candidate `deae479d6`,
+comparator `8bbef6e00` and integration `4eb52fb`. Independent offline replay
+matches the stored costs, journal metrics and 1,000 joined frames in every arm;
+console and keyboard recovery are clean. Files allocations fell about 0.4% on
+both workloads, but CPU changed +1.8% on panel and -1.0% on bulk versus cost-10.
+This is a small allocation improvement, not an established CPU win. The +10%
+gate still fails and t331 remains open. The scratch candidate remains
+unaccepted for the full native gate; do not install it on this evidence.
+
+Evidence is under `t252-authenticated-20261015/t331-native-cost-11`, including
+`offline-replay/summary.json`. All capture directories are now occupied:
+do not rerun the installed `t252-check`. The quiet hold is released; Claude
+reported no crunch activity after the initial 13:06:38Z confirmation and Muse
+status read. Next, attribute the remaining Session allocation gap before
+another transport API change or native campaign.
 
 Both optimized builds remain in Cargo slots. The initial CPU config validation
 refused generated file permissions (`UnsafeMode`); private modes corrected it,
