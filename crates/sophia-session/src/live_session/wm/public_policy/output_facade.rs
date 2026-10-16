@@ -119,6 +119,16 @@ impl LiveWmSession {
         self.public.as_ref()?.published_output_snapshot()
     }
 
+    fn published_primary_output(&self) -> Option<sophia_protocol::OutputId> {
+        // Cadence and clock selection need one ID, not an owned copy of every
+        // connector, mode and logical output on each owner pass.
+        self.public
+            .as_ref()?
+            .output_authority
+            .as_ref()
+            .map(|authority| authority.published().primary_output)
+    }
+
     fn admit_reloaded_output_topology(
         &mut self,
         candidate: sophia_protocol::OutputTopologyCandidate,

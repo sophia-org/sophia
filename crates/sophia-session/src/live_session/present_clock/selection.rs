@@ -17,9 +17,7 @@ pub(in crate::live_session) fn select_outputs(
     let projections = wm
         .and_then(|wm| wm.public.as_ref())
         .map(|p| p.reducer.committed());
-    let primary = wm
-        .and_then(LiveWmSession::published_output_snapshot)
-        .map(|snapshot| snapshot.primary_output);
+    let primary = wm.and_then(LiveWmSession::published_primary_output);
     select_with_projections(runtime, layout, projections.as_deref(), admissions, primary)
 }
 

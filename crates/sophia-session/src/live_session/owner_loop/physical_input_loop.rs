@@ -75,8 +75,7 @@ let primary_refresh_millihz = native_scanout
         native.cadence_head(
             wm_session
                 .as_ref()
-                .and_then(LiveWmSession::published_output_snapshot)
-                .map(|snapshot| snapshot.primary_output),
+                .and_then(LiveWmSession::published_primary_output),
         )
     })
     .map_or(60_000, |head| head.refresh_millihz)
@@ -172,8 +171,7 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                 native.cadence_head(
                     wm_session
                         .as_ref()
-                        .and_then(LiveWmSession::published_output_snapshot)
-                        .map(|snapshot| snapshot.primary_output),
+                        .and_then(LiveWmSession::published_primary_output),
                 )
             })
             .map(|head| head.refresh_millihz.max(1))
