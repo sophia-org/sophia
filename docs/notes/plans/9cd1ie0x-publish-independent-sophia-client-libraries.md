@@ -144,6 +144,24 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `afa827c` and C `44157af` now integrate retained frame reads into
+reusable image storage. Both use four requests, verify payload/EOF and the
+original metadata fid, and clunk before exposing results. Repeated captures
+reuse the root and image buffer without api reads. Rust grows its Vec if needed
+but avoids re-zeroing unchanged storage; C allocates nothing and refuses
+insufficient caller capacity. Portal map 8 records ownership and failure rules.
+
+Independent peers pass short reads, one-byte dispatch, repeated reads, stale or
+changed metadata, extra pixels, early termination, clunk refusal, deadline and
+cancellation. C also tests insufficient capacity. Nine Rust client tests and
+strict Clippy pass; C's frame-client test passes. SDK branches are pushed.
+Next qualify both frame readers against the production authenticated portal
+export, then add capture custody and remaining recipient operations. Requester/
+broker, foreign bindings and release adoption remain. t333 stays open; production
+pins unchanged, no quiet hold or measured speedup.
+
+### Frame scheduler checkpoint
+
 Signed Rust `7966089` and C `58c25f6` add a fixed four-request frame range
 scheduler. It honors framing/iounit/chunk bounds, handles out-of-order and short
 reads without repeating accepted bytes, and rejects empty, oversized or
