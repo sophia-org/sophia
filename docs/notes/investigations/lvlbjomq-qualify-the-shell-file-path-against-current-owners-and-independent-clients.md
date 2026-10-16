@@ -69,14 +69,30 @@ complete. The partial profile selects host PIDs 7616/7701 and contains 1,230
 user-space samples within the workload interval. It has no paired IPC profile.
 The cause of choosing out-fence retirement throughout is not established.
 
-The hold is released. Four fresh plans in `t331-native-perf-17` reuse the exact
-cost-15 CPU-only executables and source revisions. Hashes, device-free checks,
-launcher syntax and perf permission smoke pass. `t252-check` selects these
-empty destinations; request a fresh hold when the owner is ready. If the same
-refusal recurs, investigate completion selection before another capture.
-Keep the exact-timestamp gate unchanged. During analysis, select Session/peer
-host PIDs and the upload interval; the peer's counter PID 1 is namespaced.
-Sampling cannot supply native acceptance evidence.
+Perf-17 captured both panel arms successfully: journal, cost and all 1,000
+presentation joins replay exactly, with clean recovery. The files bulk arm
+then failed the same timestamp check; IPC bulk never ran. Its first 436
+completion records use kernel timestamps, then frame 438 switches to
+observation fallback for all remaining 567 records. Source inspection explains
+the persistence: synthesizing an out-fence callback permanently sets
+`OutFenceAuthoritative`, which discards later page-flip callbacks. The initial
+trigger is not established; do not attribute it to perf without evidence.
+
+The valid panel pair has 1,184 files and 723 IPC user-space samples, filtered
+to host Session/peer PIDs and the measured upload interval. Exclusive sampled
+differences include copy leaves (+57 ms), custody checks (+47 ms), vDSO clock
+reads (+41 ms), and recognizable allocator leaves (+21 ms). These are sampled
+periods across 1,000 frames, not exact runtimes or additive inclusive stacks.
+Repeated component service remains a strong lead. The
+[profile audit](2o32e7ui-which-plan-9-implementation-techniques-can-reduce-sophia-shell-costs.md#perf-17-panel-attribution-and-bulk-refusal-october-16)
+records limits and evidence.
+
+The hold is released; mini Claude reports no crunch work. Do not rerun
+`t252-check`: perf-17 destinations are occupied. Next, investigate event-pump
+ordering and the first out-fence transition before requesting another native
+capture. Preserve physical retirement, serial identity and exact timestamp
+requirements. No performance patch follows merely from these samples;
+custody checks must not be cached or skipped. Sampling is not acceptance.
 
 Progress-12 established 33/120 Session passes per files panel/bulk frame,
 versus roughly 8/45 for IPC. Source attribution identifies repeated idle

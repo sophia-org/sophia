@@ -589,3 +589,54 @@ binaries, sampling settings and strict presentation checks. Preparation,
 device-free validation, artifact hashes and permission smoke pass. No capture
 has started. If the same refusal recurs, investigate completion selection
 before another run; do not relax acceptance or overwrite perf-16.
+
+### Perf-17 panel attribution and bulk refusal, October 16
+
+Perf-17 produced a valid files/IPC panel pair on the unchanged cost-15
+artifacts. Offline journal/cost replay and all 1,000 presentation joins match
+both reports. The bulk files arm completed its uploads and cost replay but
+failed the exact kernel timestamp join; the launcher stopped before IPC bulk.
+All three captures recovered the console cleanly. Raw evidence is under
+`t252-authenticated-20261015/t331-native-perf-17`; selected samples, host PIDs,
+intervals, source hashes and full leaf maps are in `analysis/profile-summary.json`.
+
+| Exclusive leaf group, sampled ms across 1,000 panel frames | Files | IPC |
+| --- | ---: | ---: |
+| Copy | 136.4 | 79.2 |
+| Recognizable allocator functions | 52.2 | 31.1 |
+| Fill | 6.0 | 9.0 |
+| Unknown | 41.1 | 35.1 |
+| Other | 951.9 | 570.7 |
+
+Selection uses Session/peer host PIDs 13508/13592 for files and 14421/14505 for
+IPC, bounded by the workload counters. The peer counter PID is namespaced;
+its unique perf command identifies the host PID. There are 1,184/723 samples,
+including 119/148 single-frame stacks. User-space sampling omits kernel CPU,
+misses some inlined/unresolved work and includes sampling perturbation. The
+instrumented CPU totals are not acceptance measurements.
+
+Largest named exclusive differences include memcpy (+57.2 ms),
+`LaunchCustody::is_live` (+47.1 ms), `__vdso_clock_gettime` (+41.1 ms) and
+`__internal_syscall_cancel` (+37.1 ms). Custody performs a zero-time poll of
+both kernel identities plus active-flag checks; preserve its fail-closed
+contract. Inclusive differences put component service at +189.6 ms and the
+files transport turn at +139.4 ms. Those stacks overlap and must not be added.
+They support investigating repeated service and concrete copy owners rather
+than treating allocation count as the entire CPU gap. No cache, skipped
+custody check or speculative optimization is authorized by a sample.
+
+Bulk records 436 kernel completions, ending at native frame 437; frame 438
+starts observation fallback, which persists for the remaining 567 records.
+`frame_retirement.rs` uses a signaled out-fence when no pending callback is
+available. `head_completion.rs::synthesize_out_fence_callback` permanently
+sets `OutFenceAuthoritative`; `queue_page_flip_callback` then discards later
+page-flip events. This explains persistence, but the first race/ordering cause
+is still unproved. The sticky mode protects against mixing kernel and synthetic
+serial bases, so removing it would not be a safe profiling fix.
+
+The hold is released; mini Claude reports no crunch activity beyond its
+confirmation and release message. All three captures are occupied. Before any
+new native run, inspect event-pump ordering and reproduce the first transition
+deterministically while preserving retirement safety and timestamp accuracy.
+The partial bulk profile cannot support a paired differential claim. t331
+remains open; no desktop installation or acceptance follows.
