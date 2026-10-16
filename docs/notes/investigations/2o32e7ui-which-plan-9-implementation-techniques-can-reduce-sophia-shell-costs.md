@@ -812,3 +812,25 @@ the next bounded candidate, not a measured CPU win; no SDK behavior change is
 implemented at this investigation checkpoint. Keep custody and socket error
 handling unchanged. Broader socket scheduling needs independent readiness/
 EOF/backpressure evidence before implementation.
+
+### Conditional retry clock implementation, October 16
+
+Signed SDK `510a434` is pushed on the t331 performance branch and vendored in
+production `e7cf62692` and comparator `9c527d566`. The drive loop no longer
+reads time before calling retry handling. Retry handling queries Instant only
+after finding RetryWait, rejecting the refusal pass and checking for event
+progress. The existing deadline comparison, request bytes and custody rules
+remain unchanged. No socket read is skipped and no liveness result is cached.
+
+The SDK workspace tests, all-target Clippy and formatting pass. Sophia's signed
+vendor gate passes, as do 12 runtime interoperability tests in each checkout,
+including independent C protocol and custody checks. Existing scripted cases
+exercise deadline retry, event-driven retry and refusal-pass suppression.
+Native savings are unmeasured; the change removes a concrete unnecessary clock
+query but does not establish its share of the sampled clock cost.
+
+The next four-arm CPU-only pilot, `t331-native-cpu-20`, compares the current
+files/IPC panel and bulk workloads without perf sampling or allocation
+instrumentation. It includes both the completion recheck and conditional retry
+clock since cost-15; a difference from cost-15 cannot isolate the clock change.
+This pilot cannot supply allocation evidence or replace the full paired gate.

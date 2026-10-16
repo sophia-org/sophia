@@ -116,17 +116,25 @@ this does not justify skipping socket reads. The same-thread scripted peer
 cannot establish native readiness frequency. Temporary markers are restored;
 SDK source is clean. See the audit for exact counts and limits.
 
-Next bounded candidate: move the submission-retry clock read behind RetryWait,
-same-pass and event-progress checks. Source currently reads time on every drive
-round even when no retry needs it. Preserve deadline behavior and existing
-scripted retry tests; no measured savings or SDK behavior change yet. Preserve
-EOF, backpressure, fairness, upload barriers and every custody check. Copy
-callers remain mostly unresolved.
+The conditional retry clock is implemented in signed SDK `510a434`, pushed
+and vendored in production `e7cf62692` and comparator `9c527d566`. Time is read
+only when RetryWait, later-pass eligibility and lack of event progress make
+the deadline relevant. SDK workspace tests, all-target Clippy, formatting and
+the signed vendor gate pass. Twelve runtime interoperability tests pass in
+each checkout, including independent C checks. No socket scheduling or custody
+rules changed; native savings remain unmeasured.
 
-The quiet hold is released; mini Claude reports no crunch work. All perf-18
-captures are occupied: do not rerun `t252-check`. No new attended run is needed
-for the SDK investigation. The installed desktop is unchanged and t331 remains
-open pending the unchanged cost and native acceptance gates.
+Four CPU-only arms are frozen in `t331-native-cpu-20`, on comparator `9c527d566`
+and integration `fd2cb6c`. Optimized build, artifact hashes, device-free argument
+checks and launcher syntax pass. `t252-check` selects empty destinations; no
+capture has started. Request a fresh quiet window from mini Claude when the
+owner is ready for the four-minute pilot. There is no profiler or allocation
+instrumentation. Comparison with cost-15 includes both completion repair and
+conditional retry clock, so cannot isolate their individual cost effects.
+
+The hold is currently released. Old native captures remain occupied. The
+installed desktop is unchanged and t331 remains open pending the unchanged
+cost and native acceptance gates.
 
 Progress-12 established 33/120 Session passes per files panel/bulk frame,
 versus roughly 8/45 for IPC. Source attribution identifies repeated idle
