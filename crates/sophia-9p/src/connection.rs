@@ -439,6 +439,21 @@ impl<E: Export> Connection<E> {
         tag: Tag,
         request: Request<'_>,
     ) -> Result<Option<Reply>, Fatal> {
+        #[cfg(feature = "comparator-progress")]
+        {
+            use crate::progress::{Counter, add};
+            let counter = match &request {
+                Request::Walk { .. } => Some(Counter::RequestWalk),
+                Request::Lopen { .. } => Some(Counter::RequestOpen),
+                Request::Read { .. } => Some(Counter::RequestRead),
+                Request::Write { .. } => Some(Counter::RequestWrite),
+                Request::Clunk { .. } => Some(Counter::RequestClunk),
+                _ => None,
+            };
+            if let Some(counter) = counter {
+                add(counter, 1);
+            }
+        }
         let reply = match request {
             Request::Auth {
                 afid,

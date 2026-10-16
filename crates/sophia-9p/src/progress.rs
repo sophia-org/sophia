@@ -17,9 +17,17 @@ pub enum Counter {
     PendingReadAttempt,
     PeerContentPoll,
     PeerWait,
+    RelayDispatch,
+    RelayIdle,
+    RelayExpiry,
+    RequestWalk,
+    RequestOpen,
+    RequestRead,
+    RequestWrite,
+    RequestClunk,
 }
 
-pub const NAMES: [&str; 12] = [
+pub const NAMES: [&str; 20] = [
     "owner_pass",
     "component_pass",
     "server_poll_turn",
@@ -32,8 +40,16 @@ pub const NAMES: [&str; 12] = [
     "pending_read_attempt",
     "peer_content_poll",
     "peer_wait",
+    "relay_dispatch",
+    "relay_idle",
+    "relay_expiry",
+    "request_walk",
+    "request_open",
+    "request_read",
+    "request_write",
+    "request_clunk",
 ];
-static TOTALS: [AtomicU64; 12] = [const { AtomicU64::new(0) }; 12];
+static TOTALS: [AtomicU64; 20] = [const { AtomicU64::new(0) }; 20];
 
 /// No allocation, clock, formatting or I/O on the instrumented path. Wrapping
 /// totals must be rejected by analysis rather than interpreted as progress.
@@ -42,6 +58,6 @@ pub fn add(counter: Counter, amount: u64) {
 }
 
 /// Independent monotonic observations, not a transaction across counters.
-pub fn snapshot() -> [u64; 12] {
+pub fn snapshot() -> [u64; 20] {
     std::array::from_fn(|i| TOTALS[i].load(Ordering::Relaxed))
 }

@@ -128,11 +128,11 @@ pub fn write_progress(
     let before = nanos(rustix::time::ClockId::Monotonic) / 1000;
     let counts = progress::snapshot();
     let after = nanos(rustix::time::ClockId::Monotonic) / 1000;
-    let mut bytes = [0u8; 1024];
+    let mut bytes = [0u8; 2048];
     let mut buffer = std::io::Cursor::new(bytes.as_mut_slice());
     write!(
         buffer,
-        "sophia_comparator_progress schema=1 mode=progress process={process} pid={} sequence={sequence} before_usec={before} after_usec={after}",
+        "sophia_comparator_progress schema=2 mode=progress process={process} pid={} sequence={sequence} before_usec={before} after_usec={after}",
         std::process::id()
     )?;
     for (name, count) in progress::NAMES.iter().zip(counts) {

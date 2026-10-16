@@ -90,16 +90,22 @@ impl RelayServer {
         observation: sophia_9p::unix::Observation,
         now: Instant,
     ) -> io::Result<bool> {
+        #[cfg(feature = "comparator-progress")]
+        sophia_9p::progress::add(sophia_9p::progress::Counter::RelayDispatch, 1);
         if self.0.export().revoked {
             return Ok(false);
         }
         if self.deadline().is_some_and(|end| now >= end) {
+            #[cfg(feature = "comparator-progress")]
+            sophia_9p::progress::add(sophia_9p::progress::Counter::RelayExpiry, 1);
             if !self.0.flush()? {
                 return Ok(false);
             }
             self.0.export_mut().deadline = None;
         }
         if self.observation_is_current(&observation) && !observation.is_ready() {
+            #[cfg(feature = "comparator-progress")]
+            sophia_9p::progress::add(sophia_9p::progress::Counter::RelayIdle, 1);
             return Ok(true);
         }
         Ok(self.0.turn_observed(observation)? && !self.0.export().revoked)

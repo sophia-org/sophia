@@ -7,6 +7,9 @@ license.workspace = true
 rust-version.workspace = true
 description = "Rust port of 9front's factotum authentication agent for Sophia"
 
+[features]
+comparator-progress = ["sophia-9p/comparator-progress"]
+
 [dependencies]
 rustix = { workspace = true, features = ["event", "mm", "net", "process", "rand", "std"] }
 sophia-9p = { path = "../sophia-9p" }
