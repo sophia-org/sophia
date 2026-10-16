@@ -24,11 +24,30 @@ All four `t331-native-cost-02` arms now pass independent journal, native-join
 and cost replay: 1,000 frames each, at 1080p/60 Hz, with verified console
 recovery. Native panel costs are 4,285–4,290 allocations/frame on files versus
 1,708–1,711 on IPC, and 11.424–11.434 ms CPU/MiB versus 7.417–7.430 ms.
-About 98% of the excess allocation count is in Session. Prioritize profiling
-Session service work: files caused substantially more owner-loop turns, while
-client allocation differences were small. See [native baseline results](#t331-native-cost-baseline-results).
+About 98% of the excess allocation count is in the Session process, including
+diagnostics; that is not exclusive production-stack attribution. See
+[native baseline results](#t331-native-cost-baseline-results).
+The owner authorized a measurement audit and Session-first fixes. Production
+`083c33c1f` removes repeated readiness, indicator, action-view and reservation
+allocations and redundant launch-context validation. Comparator `edcee33c5`
+carries those changes onto both wires and adds allocation-free typed benchmark
+records, ordinary-allocator CPU measurement and separate phase profiling.
+Integration `14519aa` rejects mixed modes and marks unmeasured allocations null.
+Deterministic checks pass. Twelve optimized native plans under
+`t331-native-cost-04/` pin comparator `90988ff6d` (a test-only follow-up to
+`edcee33c5`) and integration `14519aa`: four arms each for CPU-only, Rust-global
+allocation accounting and separate profiling. All exact argument checks pass
+with devices hidden. Each arm offers 1,000 frames at 1080p/60 Hz; panel-only and
+panel-plus-4-MiB workloads each pair files with IPC. This is a diagnostic pilot,
+not the full 60/120 Hz idle/load campaign. `t252-check` runs all twelve from the
+foreground tty4, about twelve minutes plus recovery; an explicit `cpu-only`,
+`rust-global` or `profile` argument selects four. No native run or quiet hold has
+started. Coordinate a quiet window before running it.
+No native improvement or cost-gate pass has been established. See
+[measurement audit and Session changes](#t331-measurement-audit-and-session-changes).
 The earlier corrupted `t331-native-cost-01` remains invalid and retained.
-Do not rerun `t252-check`: its retry directories now contain completed evidence.
+The old `t331-native-cost-02` directories contain completed evidence; the helper
+now selects fresh directories and stops on any failure.
 
 t252 remains open for native lifetime/input acceptance on both desktop
 selections, the declared B9 performance campaign and attended release rollback.
@@ -1555,6 +1574,69 @@ These instrumented all-frame distributions are diagnostic, not ordinary
 latency qualification. No production optimization or installed release changed
 as a result of this baseline. All four `t252-check` output directories are now
 occupied and must not be reused.
+
+## t331: measurement audit and Session changes
+
+The counter reads atomics and formats into a 1,024-byte stack buffer. An isolated
+test now verifies zero allocations and reallocations over repeated snapshots,
+formatting and steady-state sampling after thread/channel initialization. The
+benchmark previously constructed allocating JSON values for each event. Typed
+records now preserve the same schema and escaped strings without allocating;
+overflow writes no partial record. These checks do not establish zero CPU cost.
+
+Allocation tracking adds atomic operations to allocations and deallocations.
+Comparator `edcee33c5` therefore adds `comparator-cpu-counting`, which uses the
+ordinary allocator. CPU-only reports contain null allocation results. Separate
+`comparator-profiling` builds count owner, readiness, component, wire and logging
+scopes in fixed storage. Samples carry monotonic bounds. Their CPU counters cover
+the calling thread; allocation deltas cover the process while each scope is open.
+Scopes overlap, and observations can straddle scope completion. They are
+diagnostic, not exclusive stack attribution or acceptance measurements.
+
+Production `083c33c1f` borrows readiness through the existing owners into inline
+wait storage; larger inventories retain every descriptor through a heap fallback.
+It borrows presented action bindings, retains one indicator publication after
+comparing all current facts, compares the projected wire fields before cloning,
+and reuses output bounds and reservation storage. Exact unchanged launch contexts
+skip encoding after their first validation. Existing public facades, service
+order, input processing, authority checks and resource bounds remain intact.
+The comparator applies these shared changes to both files and restored IPC.
+
+Focused checks measure 1,000 old readiness lists at 1,000 allocations versus zero
+for borrowed visits. A one-indicator fixture measures 1,000 owned snapshots at
+4,000 allocations versus zero for unchanged comparisons. Repeated unchanged
+launch-context updates also allocate nothing. These are per-path allocation
+checks, not native frames or whole-desktop CPU results.
+
+Validation: eight server readiness tests, both isolated allocation tests, 30
+policy projection tests, 1,046 Session tests (36 ignored), four catalog publication
+and five queue tests pass. Two real-child comparator tests pass in each of the
+allocation, CPU-only and profiling modes, covering both wires and both upload
+workloads. All four retained allocation-mode 64-frame journals replay. Counter and phase checks,
+CPU-only bounded-launch guards, external cost/native/journal tests and focused
+strict Clippy pass. The first broad Session run inherited the user's core
+configuration and lacked a private runtime directory: 19 tests failed before
+their intended checks. The corrected device-hidden run sets an empty private
+`XDG_CONFIG_HOME` and a mode-0700 `XDG_RUNTIME_DIR`; all 1,046 tests pass.
+
+Evidence is under
+`~/.local/state/sophia/development-evidence/t252-authenticated-20261015/t331-session-overhead-01/`.
+The installed desktop is unchanged. Native CPU, allocation and profiling runs
+remain separate; neither these tests nor the previous instrumented baseline
+establish a production CPU win. The full B9 campaign and t252's other physical
+acceptance gates remain outstanding.
+
+The native pilot has twelve prepared, hash-bound arms in `t331-native-cost-04/`.
+It uses Cargo's existing hashed executables in the comparator slot, keeping all
+three measurement builds available without copying binaries into evidence.
+Comparator `90988ff6d` changes only counter tests after `edcee33c5`; rebuilding
+all three modes retains the recorded binary hashes. Preparation initially
+refused a stale preflight hash (`t331-native-cost-03`), then an unarmed argument
+check. Both failures are retained. After refreshing the rebuilt helper's hash
+and supplying the wrapper's native opt-in to the device-hidden validator, all
+twelve plans publish argument acceptance. No physical run occurred during these
+checks. The helper offers one command for the whole pilot and mode-specific
+four-arm subsets; it cannot resume into an already occupied run directory.
 
 ## Connections
 

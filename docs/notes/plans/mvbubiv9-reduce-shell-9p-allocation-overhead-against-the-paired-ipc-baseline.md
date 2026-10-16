@@ -56,26 +56,35 @@ merely stay within +10%. Aim for lower CPU/MiB and fewer allocation operations
 per frame on both workloads; claim a win only when the 9P upper bound is below
 the IPC lower bound. The acceptance ceiling remains +10%.
 
-1. Prepare optimized native baselines for a 1920×24 panel and that panel plus
-   a separate 4 MiB transfer probe. Pin sources, binaries, configuration and
-   output identity. Profile separately from allocation-counted and ordinary
-   latency runs. Attribute CPU, allocations, copied bytes, system calls,
-   short writes and idle service turns to client and Session owners. Use bounded
-   diagnostic instrumentation, never the supplied polling loop as native proof.
-2. In measured order, address duplicate client outbox payloads and drained
-   prefixes, server per-chunk scratch allocation, pipeline prefix movement,
-   then redundant service work. Keep the outbox's byte charge and ticket until
-   custody settles. Recycle server storage only after owner consumption and
-   within an explicit connection-local bound. Preserve secret scrubbing,
-   partial frames, flush credit, fairness, deadlines and wakeups. Do not cache
-   upload fids across bindings, raise limits or change public SDK/wire APIs.
-3. Measure each change independently. Run affected partial-I/O, EAGAIN,
+1. Audit the measurement code before attributing its costs to production.
+   Test snapshots, record formatting and steady-state sampling for allocation
+   overhead. Replace benchmark JSON value construction with typed records;
+   preserve every required event and reject oversized records before writing.
+   Keep the native panel and panel-plus-4-MiB baselines as instrumented evidence.
+2. Add a separate CPU-only comparator using the ordinary allocator, plus a
+   separate bounded profiling build. Identify every mode in prepared plans and
+   reports; reject mixed modes. CPU-only reports cannot claim allocation results,
+   and profiling cannot supply acceptance arms. Align phase observations with
+   the workload interval; never add overlapping scope totals or describe process
+   allocations observed during a scope as exclusive stack attribution. Do not
+   subtract estimated measurement overhead or change the accepted cost scope.
+3. Prioritize Session after the native results attributed about 98% of the
+   instrumented allocation gap to that process. Borrow readiness into inline wait
+   storage, compare complete indicator facts before cloning, borrow action views,
+   and reuse output bounds and reservation storage. Skip encoding identical,
+   previously validated launch contexts. Preserve service order, deadlines,
+   revocation, retained claims and all descriptor interests. Apply shared fixes
+   to both comparator wires. Address upload-buffer copies only if the remaining
+   measurements justify that next slice; do not introduce a new scheduler or
+   transport thread, raise limits, cache upload fids or change SDK/wire contracts.
+4. Measure each change independently. Run affected partial-I/O, EAGAIN,
    cancellation, disconnect, Submitted ordering, stale binding, malformed
    chunk, pixel validation, deadline, saturation, slow-reader, retained-pixel
    and final-release tests. Preserve independent C/Go checks where affected.
    Publish signed SDK changes through the normal vendor gate and carry shared
    owner fixes to both comparator paths. Revert unproven or regressive changes.
-4. Run native acceptance at 1080p, scale 1, VRR off, at 60/120 Hz, idle and
+5. Run a short matched native comparison before the full campaign. Then run
+   native acceptance at 1080p, scale 1, VRR off, at 60/120 Hz, idle and
    under 16 bounded CPU workers with all CPUs available. Use three independently
    restarted pairs per condition/workload, files first in pairs 1/3 and IPC
    first in pair 2. Cost arms use 1,000 frames without warmup exclusion;
