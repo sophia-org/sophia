@@ -144,6 +144,22 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `a62d3f9` adds provisional immutable output submissions: Configure
+and epoch checks, separate domain IDs and tickets, 64-ticket custody history,
+same-ID retry, Submitted/ACK/clunk ordering and caller/assembly deadlines.
+Output permits out-of-order domain IDs and has no WM EALREADY success exception.
+Signed C `348efeb` independently checks both rules through direct and attached
+socket startup; C implementation is unchanged. All 16 Rust output-client tests
+(seven startup, nine submission), strict targeted Clippy, formatting and C's
+full suite pass. Both SDKs record matrix 33 and output map 2.
+
+Next implement the ordered output journal, including grant intersection,
+explicit Refused acknowledgement and retained application heads, then automatic
+publication-bound topology fetching and the integrated session driver. Rust's
+submission tests supply matched replies directly; they do not qualify socket
+dispatch or production output exports. The final connecting facade still needs
+the nonblocking version handshake. Production pins remain unchanged.
+
 Signed Rust `21feb45` starts `sophia-output-client` with bounded fixed-file
 startup. `Opening::direct` accepts a versioned empty pipeline; `attached`
 preserves the exact quiescent admitted root without reset/reattach. It validates
@@ -153,9 +169,8 @@ revision requests remain for the server's explicit refusal. Seven socket tests
 and strict targeted Clippy pass. Signed C `4f64371` records matrix 32 and the
 new `OUTPUT-PARITY.md` operation map. This is not a complete output session.
 
-Next implement immutable negotiation/proposal submissions and custody, then
-the ordered journal and automatic publication-bound topology fetch. C's
-`output_session/submission.c` is the behavior checklist: Configure is required,
+The submission implementation above follows C's
+`output_session/submission.c` behavior: Configure is required,
 domain IDs are distinct from tickets, and Submitted ACK plus transaction clunk
 must settle before the next transaction. The final connecting facade still
 needs the generic nonblocking version handshake. Keep output's explicit
