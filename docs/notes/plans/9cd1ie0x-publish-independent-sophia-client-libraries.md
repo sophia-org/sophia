@@ -142,6 +142,35 @@ platform limits accurately. Physical desktop acceptance and performance gates
 remain separate. This work precedes t289's broad engine optimization; it does
 not change t331's current cost gate or the prepared CPU pilot.
 
+### Current resumption
+
+The first implementation slice is signed Rust SDK `6fda07e`: the shell client
+now implements `AsFd` and reports read/write interests and immediate local
+work through `io_interest()`. Together with `wake_deadline()`, this supports a
+level-triggered application event loop. Buffered events, new admission and
+unfinished bounded service prevent sleeping through local work. The existing
+convenience wait remains available. No wire contract changed.
+
+Rust workspace tests, all-target Clippy, formatting and diff checks pass.
+Independent scripted tests cover idle interests, queued requests, buffered
+replies/events, closure and poisoned pipelines. C `65ea947` passes `make check`,
+including its existing poll-interest and retry controls. Both SDKs now have
+`API-PARITY.md` mapping this first slice; the full operation inventory remains
+unfinished. Mandatory parity rules are committed in Sophia's agent instructions
+(`800f8ec`) and the C/Rust SDK instructions (`65ea947`/`a1154b3`).
+
+Next, resolve clock and service-budget differences against the pinned contract:
+C takes caller time and a byte budget; Rust uses its own clock and fixed bounds.
+C retry backoff is 4–256 ms; Rust is 2–64 ms. Neither difference is hidden by
+the readiness API. Rust's service documentation now correctly states up to 32
+transport rounds, each bounded to 256 KiB and 64 syscalls per direction; the
+previous comment incorrectly described those per-round bounds as per-call.
+
+Sophia's SDK pins and the prepared t331 CPU pilot remain unchanged. Adopting
+this candidate still requires verified source provisioning and the affected
+production-export gates. This checkpoint establishes SDK-level behavior only;
+it does not close t333 or claim performance or physical desktop acceptance.
+
 ## SDK platform policy
 
 Approved by niltempus on 2026-09-27: design both native SDKs for Linux and BSD,
