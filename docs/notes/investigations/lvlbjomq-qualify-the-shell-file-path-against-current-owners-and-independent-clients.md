@@ -17,11 +17,14 @@ repairs? Reconcile the existing evidence before repeating a desktop campaign.
 The owner requested renewed comparison with maintained Plan 9 implementations.
 The [pinned rio/Go p9/diod audit](2o32e7ui-which-plan-9-implementation-techniques-can-reduce-sophia-shell-costs.md)
 finds a concrete completed-journal-read allocation path and the remaining SDK
-upload copy. The new isolated fixture measures one allocation per completed read,
-plus two reallocations for four-record reads; warmed reply encoding and empty
-tail reads allocate nothing. Next bounded experiment: exact sizing of the
-completed-read temporary, then evaluate scratch reuse or an owned payload API
-only with a separate scope. No native benefit or production change is claimed.
+upload copy. Exact sizing of the completed-read temporary now removes the two
+reallocations per four-record read in the isolated fixture. One allocation per
+completed read remains; warmed reply encoding and empty tail reads allocate
+nothing. Huge-count requests allocate only the available requested range. The
+full 9P suite and strict Clippy pass in production and comparator. Comparator
+`840a6824f` carries the same fix and fixture. Next, measure copy costs before evaluating
+scratch reuse or an owned payload API with a separate scope. No native benefit
+is claimed; the installed desktop is unchanged.
 
 The approved readiness handoff is implemented in signed production `c2138f95e`
 and comparator `377b0413d`, both pushed. Cost-10 does not establish a useful win:

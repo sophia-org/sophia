@@ -21,9 +21,9 @@ and the SDK copies upload payloads into its output buffer. Neither is a measured
 explanation for the whole cost gap. Rio's request reuse is less novel for Sophia
 than it first appears; its event waits do not remove custody checks.
 
-The completed-read fixture confirms one allocation per read and two additional
-reallocations when gathering four records; encoding into warmed output storage
-and empty pending reads allocate nothing. Measure copied bytes and socket writes
+Exact sizing now removes the two reallocations previously measured when gathering
+four records. One allocation per completed read remains; encoding into warmed
+output storage and empty pending reads allocate nothing. Measure copied bytes and socket writes
 before proposing either API change. The approved t331 slice excludes a new vectored
 output ownership API; implementation needs a separately reviewed scope. t332
 remains investigation only. Keep the installed desktop untouched.
@@ -124,8 +124,8 @@ allocation evidence.
 wire encoder separately, with output capacity prepared outside the measured
 region. One test runs all cases to avoid unrelated test threads polluting the
 process-wide allocator counter. Assertions verify payload bytes, unchanged
-retention until acknowledgement and final record release. Counts are diagnostic,
-not assertions that preserve today's overhead.
+retention until acknowledgement and final record release. The baseline below
+predates exact sizing; the fixture now rejects reallocation regressions.
 
 | 1,000 reads | Read allocations | Read reallocations | Encoding allocation operations |
 | --- | ---: | ---: | ---: |
@@ -138,17 +138,27 @@ operations. The test passes. Output is retained as `journal-read-cost.txt` in
 the comparison evidence directory. These results isolate allocation churn; they
 do not count native per-frame frequency, copied bytes or socket writes.
 
-An exact-capacity allocation is a smaller first experiment than a new read API:
-size the temporary to the available requested range rather than grow it record
-by record. It could remove the two reallocations in the multi-record cases while
-leaving the initial allocation and payload copy. Measure before claiming benefit.
+### Exact sizing result
+
+`Journal::read` now reserves `min(count, tail - offset)` after validating the
+offset and handling empty reads. All three baseline cases now use one allocation
+and zero reallocations per completed read. Two additional cases request
+`u32::MAX` bytes from partial offsets; the allocation equals the readable range,
+not the requested count. Encoding and pending reads still allocate nothing.
+Output is retained as `journal-read-cost-after.txt` in the same evidence directory.
+
+This removes buffer growth, not the initial allocation or either payload copy.
+Acknowledgement retention, read bytes and delivery guards are unchanged. The
+same change and fixture are in comparator `840a6824f` to keep shared-core costs fair.
+Native CPU/MiB and allocations/frame have not been measured for this change.
 
 ## Validation and limits
 
 Inspected pinned upstream source and corresponding Sophia paths at `01fca2595`;
-source hashes are retained. Added only the isolated diagnostic test and notes.
-No production change, native benchmark win, hardware run or task completion
-follows from this audit. Plan9port and 9legacy are catalogued;
+source hashes are retained. The follow-up changes completed-read capacity and
+adds regression assertions. The full production and comparator 9P suites and strict all-target
+Clippy pass. No native benchmark win, hardware run or task completion
+follows from this experiment. Plan9port and 9legacy are catalogued;
 their performance paths have not yet been audited here. Task state stays in
 todo.md; this is supporting research for t331, not another execution queue.
 
