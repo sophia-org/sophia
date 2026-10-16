@@ -144,6 +144,27 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `0d474bb` and C `778e550` integrate retained transfer reads with
+authenticated transport. Both borrow caller storage, require EOF/clunk and
+return the same root without a payload copy. The independent production peers
+verify seven supplied bytes, the original buffer pointer and untouched tail.
+Absent transfers preserve ENOENT; revocation after payload receipt but before
+completion preserves ESTALE and hides scratch.
+
+All twelve external portal gates pass independently in C and Rust, as do the
+seventeen Rust component tests and strict Clippy. The 64 KiB limit is still
+component evidence, not this seven-byte production gate. Portal map 15 records
+ownership and limits. Peer SHA-256: Rust
+`b74008e5df9efa3ef6ef54fa204e10c810ca622be568f5cd5406754a6241d82d`;
+C `def40cbc2bac71705f6165ad3387cb31286a86eb59c4f597f2906c87457f4807`.
+
+Next implement retained watch in both SDKs, then finish recovery and local
+cancellation audits. Trusted requester/broker, foreign bindings and
+publication/pin adoption remain. t333 stays open; production pins are unchanged.
+No quiet hold or measured performance claim.
+
+### Transfer component checkpoint
+
 Signed Rust `5ca560f` and C `37c0138` extend the snapshot operation driver
 to opaque retained transfers. Both borrow caller storage of at least 64 KiB,
 leave unused bytes untouched, enforce the payload limit and expose bytes only
