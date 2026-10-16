@@ -88,10 +88,14 @@ Repeated component service remains a strong lead. The
 records limits and evidence.
 
 The hold is released; mini Claude reports no crunch work. Do not rerun
-`t252-check`: perf-17 destinations are occupied. Next, investigate event-pump
-ordering and the first out-fence transition before requesting another native
-capture. Preserve physical retirement, serial identity and exact timestamp
-requirements. No performance patch follows merely from these samples;
+`t252-check`: perf-17 destinations are occupied. A device-free production-poller/head test now reproduces the arrival
+window: an event after the first card drain loses to fence synthesis; a final
+collect before that choice retains its timestamp. All six head-completion
+tests pass. This establishes a reachable ordering, not the precise captured
+event-arrival instant. Next, implement and test a bounded card recheck before
+the first fence-authority transition, including shared-card/mirror/error cases.
+Preserve fallback, serial identity and exact timestamp requirements. No runtime
+repair or new capture is prepared yet. No performance patch follows merely from these samples;
 custody checks must not be cached or skipped. Sampling is not acceptance.
 
 Progress-12 established 33/120 Session passes per files panel/bulk frame,

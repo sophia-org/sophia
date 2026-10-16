@@ -176,3 +176,85 @@ fn completion_authority_is_local_to_the_physical_head_and_owner() {
     );
     assert_eq!(fresh.last_callback_serial, None);
 }
+
+// Reproduce the service-pass arrival window with the real poller and head
+// reducer. No DRM device is opened; the second reader models an event becoming
+// readable after the first card drain and before the fence is observed.
+#[test]
+fn event_arriving_after_card_drain_loses_to_fence_unless_collected_again() {
+    use crate::{
+        FakeLibdrmNativePageFlipReader, LibdrmBackendFdAuthority, LibdrmNativeOutputRoute,
+        LibdrmNativeOutputSlot, LibdrmNativePageFlipCallback, LibdrmNativePageFlipSource,
+        NativeLibdrmPageFlipEventPoller,
+    };
+    for collect_again in [false, true] {
+        let mut head = head(1);
+        let slot = LibdrmNativeOutputSlot::new(1).unwrap();
+        let source =
+            LibdrmNativePageFlipSource::from_authority(LibdrmBackendFdAuthority::new(1).unwrap());
+        let mut poller =
+            NativeLibdrmPageFlipEventPoller::new(source).with_routes([LibdrmNativeOutputRoute {
+                slot,
+                output: head.output.id,
+                head: head.head,
+            }]);
+        let mut callbacks = Vec::new();
+        let mut timestamps = Vec::new();
+        poller.read_and_collect_page_flip_events(
+            &mut FakeLibdrmNativePageFlipReader::new([]),
+            &mut callbacks,
+            &mut timestamps,
+            1,
+            1,
+        );
+        assert!(callbacks.is_empty());
+        let mut arriving = FakeLibdrmNativePageFlipReader::new([
+            LibdrmNativePageFlipCallback::new_with_kernel_timestamp(
+                slot,
+                81,
+                std::time::Duration::from_micros(123_456),
+            ),
+        ]);
+        if collect_again {
+            poller.read_and_collect_page_flip_events(
+                &mut arriving,
+                &mut callbacks,
+                &mut timestamps,
+                1,
+                1,
+            );
+            assert!(head.queue_page_flip_callback(callbacks[0]).unwrap());
+        }
+        // The same signaled fence is available in both orderings. Current
+        // retirement prefers a queued event, otherwise synthesizes a callback.
+        let source = if head.pending_callback.take().is_some() {
+            LiveProductionKmsCompletionSource::PageFlipEvent
+        } else {
+            head.synthesize_out_fence_callback();
+            LiveProductionKmsCompletionSource::OutFence
+        };
+        if collect_again {
+            assert_eq!(source, LiveProductionKmsCompletionSource::PageFlipEvent);
+            assert_eq!(timestamps[0].ust_usec, 123_456);
+            assert_eq!(
+                head.completion_mode,
+                LiveProductionKmsCompletionMode::PageFlipPreferred
+            );
+        } else {
+            poller.read_and_collect_page_flip_events(
+                &mut arriving,
+                &mut callbacks,
+                &mut timestamps,
+                1,
+                1,
+            );
+            assert_eq!(timestamps[0].ust_usec, 123_456);
+            assert!(!head.queue_page_flip_callback(callbacks[0]).unwrap());
+            assert_eq!(head.late_page_flip_events, 1);
+            assert_eq!(
+                head.completion_mode,
+                LiveProductionKmsCompletionMode::OutFenceAuthoritative
+            );
+        }
+    }
+}

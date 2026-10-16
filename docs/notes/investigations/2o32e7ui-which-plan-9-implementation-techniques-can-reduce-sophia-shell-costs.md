@@ -640,3 +640,40 @@ new native run, inspect event-pump ordering and reproduce the first transition
 deterministically while preserving retirement safety and timestamp accuracy.
 The partial bulk profile cannot support a paired differential claim. t331
 remains open; no desktop installation or acceptance follows.
+
+### Completion ordering reproduction, October 16
+
+Ordinary `service_native` pumps every DRM card once, then performs retained
+image, preview and frame-service work before `retire_ready` polls the fence.
+A page-flip event can become readable after that first drain. The head ledger
+still looks empty, so a signaled fence selects the irreversible fallback.
+Only the hard-stall path currently performs a final collect-and-retire pass.
+The same empty-ledger/fence choice exists in singleton and mirror retirement.
+
+A device-free test in `tests/support/native_head_completion.rs` drives the
+production native poller and physical-head reducer in both arrival orders.
+An empty first read followed by fence synthesis causes the later, timestamped
+event to be discarded; collecting that event before fence selection retains
+PageFlipPreferred and the exact timestamp. All six head-completion tests pass,
+including the existing topology-reset and late-event serial safety checks.
+The test controls readiness and models the retirement choice; it does not run
+DRM hardware or prove the precise event-arrival instant in perf-16/17.
+The first test command used the filename as a filter and selected zero tests;
+the corrected `head_completion` filter ran all six.
+
+The narrow repair to evaluate is a card-scoped nonblocking recheck immediately
+before the first transition from PageFlipPreferred to fence authority, only
+when a signaled fence has no queued event. Route a newly collected event and
+its timestamp through the existing ledger; otherwise retain fence fallback.
+Do not add another card read to ordinary successful event retirement, reset
+sticky authority, fabricate timestamps or wait indefinitely for a lost event.
+The recheck must handle shared-card siblings, read failures, draining and
+mirror retirement without duplicate intake. An event that becomes readable
+only after the recheck can still require fallback, so this is not a guarantee
+of kernel timestamps on every frame. Any grace interval or exact submission
+identity redesign is a separate decision, not hidden inside this repair.
+
+No runtime fix is implemented by this checkpoint. Existing native artifacts
+remain frozen; no further physical run is prepared. First implement and test
+the bounded recheck, then evaluate its diagnostic benefit without relaxing
+native acceptance.
