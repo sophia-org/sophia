@@ -144,16 +144,16 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
-Signed Rust `e4d4d6c` adds bounded ordered WM journal assembly on top of file
-startup `6fe5632`. Transport controls are validated behind a retained application
-head, but consumption never skips it. Malformed records stop later custody;
-earlier valid controls survive. Eleven literal-record tests cover fragments,
-deadlines, epoch/sequence checks, retention and capability dependencies. All
-21 WM client tests and strict Clippy pass. Signed C `b7564b6` records matrix 20.
-Next implement the submission driver and connect its ticket checks to journal
-controls, then integrate capability negotiation and snapshot fetching. These
-pieces do not yet form a ready session. Direct nonblocking version startup and
-handoff-capacity checks also remain release gates.
+Signed Rust `edc3fe8` adds the WM submission state machine: one immutable
+candidate, 64 custody results, independent domain IDs, same-ID retries,
+deadlines and the Submitted ACK barrier. Nine tests include both reply orders,
+partial writes, bounded backoff, disconnect classification, history eviction
+and journal control integration. All 30 WM client tests and strict Clippy pass.
+Signed C `7fd10a3` records matrix 21. Journal `e4d4d6c` and startup `6fe5632`
+remain the other building blocks. Next connect them to actual pipeline tags,
+ordered reply draining and terminal handling, then add snapshot fetching and
+session peer tests. They do not yet form a ready session. Direct nonblocking
+version startup and handoff-capacity checks also remain release gates.
 
 Signed Rust `228f263` starts `sophia-wm-client` with typed application candidates
 and owned immutable encoding. Five tests cover all seven kinds, literal Dirty
