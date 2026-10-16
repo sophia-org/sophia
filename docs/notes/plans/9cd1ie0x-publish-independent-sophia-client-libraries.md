@@ -144,6 +144,28 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `460c461` and C `1b6aabc` add retained watch drivers. One nonempty
+offset-zero read waits for ESTALE; successful clunk returns the original root.
+There is no automatic reopening or inference about a separately fetched
+transfer. Local cancellation/expiry close the owned role (C requires caller
+fd closure), without claiming revocation or flush-based connection reuse.
+
+All eighteen external production portal gates pass independently in both
+languages, including watch lock/replacement/source-generation, absence, local
+cancellation and deadline cases. Strict Rust Clippy passes. Peer SHA-256:
+Rust `0929b69098eea8951a745ac50cb112a78e7b035ccc679f6dda371e7a71ec90f3`;
+C `ebd10bdcad89f7f114b82136a7968c2dfded1053cfa663c5c663ef9f2675d0b2`.
+Portal map 16 records the limits.
+
+Next audit malformed watch replies/clunk failure and recovery, then compose
+watch with other recipient operations without surrendering shared-role
+ownership. Exclusive component drivers are not a complete concurrent recipient
+session. Trusted requester/broker, foreign bindings and publication/pin
+adoption remain. t333 stays open; production pins are unchanged. No quiet hold
+or measured performance claim.
+
+### Transfer transport checkpoint
+
 Signed Rust `0d474bb` and C `778e550` integrate retained transfer reads with
 authenticated transport. Both borrow caller storage, require EOF/clunk and
 return the same root without a payload copy. The independent production peers

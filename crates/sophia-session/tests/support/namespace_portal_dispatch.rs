@@ -85,6 +85,36 @@ fn external_sdk_portal_transfer_absence() {
 }
 #[test]
 #[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_watch_lock() {
+    run_boundary("sdk-watch-lock");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_watch_replacement() {
+    run_boundary("sdk-watch-replacement");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_watch_source_generation() {
+    run_boundary("sdk-watch-generation");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_watch_absence() {
+    run_boundary("sdk-watch-absent");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_watch_local_cancellation() {
+    run_boundary("sdk-watch-cancel");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_watch_deadline() {
+    run_boundary("sdk-watch-expire");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
 fn external_sdk_portal_transfer_revocation_hides_scratch() {
     run_boundary("sdk-transfer-revoke");
 }
@@ -100,6 +130,8 @@ fn capture_cli_reads_a_4k_image_within_the_existing_grant_deadline() {
 }
 fn run_boundary(boundary: &str) {
     let external = boundary.starts_with("sdk-");
+    let sdk_watch = boundary.starts_with("sdk-watch");
+    let watch_absent = boundary == "sdk-watch-absent";
     let sdk_transfer = boundary.starts_with("sdk-transfer");
     let transfer_absent = boundary == "sdk-transfer-absent";
     let transfer_revoke = boundary == "sdk-transfer-revoke";
@@ -134,6 +166,9 @@ fn run_boundary(boundary: &str) {
     .unwrap();
     let objects = objects::Fixture::new();
     if sdk_transfer && !transfer_absent {
+        objects.transfer(1);
+    }
+    if sdk_watch && !watch_absent {
         objects.transfer(1);
     }
     let capture = is_capture.then(|| capture_fixture::Fixture::new(width, height));
@@ -264,7 +299,13 @@ fn run_boundary(boundary: &str) {
     if external {
         let mut cancelled = false;
         while std::fs::read_to_string(&report).ok().as_deref()
-            != Some(if transfer_revoke {
+            != Some(if sdk_watch {
+                if watch_absent {
+                    "watch-done\n"
+                } else {
+                    "watch-ready\n"
+                }
+            } else if transfer_revoke {
                 "transfer-partial\n"
             } else if sdk_transfer {
                 "transfer-done\n"
@@ -295,6 +336,24 @@ fn run_boundary(boundary: &str) {
             }
         }
         assert!(!cancelled_request || cancelled);
+        if sdk_watch && !watch_absent {
+            assert!(objects.objects.current().is_ok());
+            match boundary {
+                "sdk-watch-lock" => {
+                    objects.fence.block();
+                    objects.fence.unblock();
+                }
+                "sdk-watch-replacement" => objects.transfer(2),
+                "sdk-watch-generation" => objects.source.0.store(10, Ordering::Release),
+                "sdk-watch-cancel" | "sdk-watch-expire" => (),
+                _ => unreachable!(),
+            }
+            std::fs::write(&report, b"continue\n").unwrap();
+            while std::fs::read_to_string(&report).ok().as_deref() != Some("watch-done\n") {
+                assert!(Instant::now() < deadline, "watch completion deadline");
+                f.auth.tick();
+            }
+        }
         if transfer_revoke {
             objects.fence.block();
             objects.fence.unblock();
