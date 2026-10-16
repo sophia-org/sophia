@@ -144,67 +144,47 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
-Signed Rust SDK `a2c0e74` adds `reserve_capacity(slots, bytes)` and delayed
-content commits. The token can remain live through dispatch and unreserved
-admissions. Private identities reject stale and wrong-connection use; invalid
-content/sizing retains credits, and explicit cancellation or terminal
-classification releases them. Rust workspace tests and strict all-target Clippy
-pass, including byte/slot isolation and service while reserved.
+Signed Rust SDK `5b72169` adds atomic batches of independent content records and
+whole candidates, directly or through either reservation form. Each item keeps
+its transaction and custody ticket. Upload starts stage distinct free slots;
+failure or cancellation consumes none. Mixed batches use bulk credits, while
+all-ACK batches retain control headroom. This is atomic local admission, not an
+atomic server transaction: records can have different remote outcomes.
 
-The paired C test reproduced a defect on `cfa6561`: two live sessions with equal
-reservation serials accepted each other's tokens. Signed C SDK `a90e235` binds
-tokens to owner address and connection epoch as well as serial. The regression
-and full `make check` pass. The public token layout changes, so this candidate
-is **0.10.0-dev, unreleased**; C consumers and foreign-language bindings must
-rebuild together. No wire contract changed. C session storage must remain at a
-stable address and must not be reinitialized with a live reservation.
-
-Signed Rust SDK `85b37ed` adds prepared reservations for one content operation
-or a whole candidate. The handle exclusively borrows the connection, acquires
-wire-queue, outbox and ledger capacity before returning, and commits without
-allocation or I/O. Cancellation/Drop issues no ticket and releases staged upload
-claims. Local admission still proves neither server custody nor semantic acceptance.
 Rust workspace tests, strict all-target Clippy, formatting and diff checks pass.
-Controls cover cancellation, saturation, invalid groups, upload-slot reuse,
-disconnect, storage preparation and the exclusive borrow. C `cfa6561` adds a
-successful-cancellation control; `make check` passes and its library is unchanged.
+Batch controls cover order, transactions, invalid middle items, count/byte/slot
+limits, reservation preservation, upload-claim rollback and mixed custody after
+disconnect. C's existing `admission_atomicity` controls and full `make check`
+pass at `a90e235`. Signed C `c161f1a` updates the comparison only; both SDKs now
+carry revision 5 of `API-PARITY.md`. Production-export evidence is still pending.
 
-Signed Rust SDK `1f33550` adds `dispatch(now, byte_budget)` after the readiness
-API in `6fda07e`. Applications can now supply monotonic time and one byte budget
-for the complete call. All internal rounds share that budget and a limit of
-32 syscall attempts per direction. Zero budget performs no socket I/O.
-Backward supplied time is rejected without progress. Both SDKs now use the
-C retry schedule: 4 ms doubling to 256 ms, with progress-driven earlier retry
-and no retry in the refusal pass. The pinned contract requires bounded backoff
-without prescribing those intervals; no wire contract changed.
+This builds on Rust `a2c0e74` (capacity tokens that survive dispatch and
+unreserved admissions), `85b37ed` (prepared content with allocation/I/O-free
+commit), `1f33550` (caller time and whole-call byte/syscall budgets) and
+`6fda07e` (borrowed socket and readiness interests). Both SDKs use 4–256 ms
+backoff without a retry in the refusal pass. Their provenance files retain the
+individual checks and limits. Mandatory parity rules are in Sophia's agent
+instructions (`800f8ec`) and the SDK instructions (`65ea947`/`a1154b3`).
 
-Rust workspace tests, all-target Clippy, formatting and diff checks pass.
-Independent scripted tests additionally cover the full backoff schedule using
-caller time without sleeps, one-byte dispatches reaching Submitted custody,
-zero-byte dispatch and shared budgets that cannot replenish across rounds.
-C `0e4b2fd` passes `make check`, including a new partial-request budget control
-and existing clock, poll-interest and retry controls. Its library is unchanged.
-Both SDKs now have revision 4 of `API-PARITY.md`; the full operation inventory
-remains unfinished. Mandatory parity rules are committed in Sophia's agent instructions
-(`800f8ec`) and the C/Rust SDK instructions (`65ea947`/`a1154b3`).
+C `a90e235` also fixes a reproduced token-identity defect: two live sessions
+with equal reservation serials accepted each other's token. Owner-address and
+epoch checks now reject that use. This changes the public token layout, so the
+candidate is **0.10.0-dev, unreleased**; consumers and foreign-language bindings
+must rebuild together. Do not move or reinitialize C session storage while a
+reservation is live. No wire contract changed.
 
-Next, map and implement arbitrary multi-record groups and native lifecycle
-helpers. Rust's delayed-content commit can still fail encoding/allocation while
-retaining credits; use its prepared handle for an infallible local commit.
-Rust's fixed bulk/control partition differs from C's configurable queue limits.
-Dropping a delayed-content token alone does not release credits in either API;
-cancel explicitly. Rust's old/unissued custody
-query returns `None` for either, unlike C's distinct UNAVAILABLE and ARGUMENT.
-Rust's convenience driver retains its internal clock and fixed limits; callers
-using simulated time must use `dispatch` and non-driving `take_*` receives.
-C saturates an overflowing deadline; Rust rejects a supplied `Instant` without
-room for the maximum retry. These representation limits are documented in both
-SDKs. Neither wraps a deadline or claims complete API parity.
+Next, map native lifecycle helpers and non-content batches, then close their
+capability gaps. Rust still conflates old and unissued tickets as `None`, and
+its fixed bulk/control partition differs from C's configurable queue. Delayed
+commits can fail encoding/allocation while retaining credits; prepared commits
+cannot. Explicitly cancel unused delayed tokens. Simulated-time Rust callers
+must use `dispatch` and non-driving `take_*` receives. Clock representation
+limits remain documented in both SDKs; neither wraps deadlines.
 
 Sophia's SDK pins and the prepared t331 CPU pilot remain unchanged. Adopting
-this candidate still requires verified source provisioning and the affected
-production-export gates. This checkpoint establishes SDK-level behavior only;
-it does not close t333 or claim performance or physical desktop acceptance.
+these candidates requires verified source provisioning, consumer compatibility
+review and the affected production-export gates. t333 remains open; these
+SDK-level checks establish neither physical acceptance nor performance gains.
 
 ## SDK platform policy
 
