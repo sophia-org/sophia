@@ -40,8 +40,22 @@ pub fn snapshot() -> Snapshot {
 
 pub fn record(process: &str, stage: &str, sequence: u64) -> std::io::Result<()> {
     let s = snapshot();
+    write_snapshot(&mut std::io::stderr().lock(), process, stage, sequence, s)
+}
+
+/// Format before writing so a blocking pipe receives one bounded record,
+/// rather than fragments that another process can interrupt.
+pub fn write_snapshot(
+    output: &mut impl Write,
+    process: &str,
+    stage: &str,
+    sequence: u64,
+    s: Snapshot,
+) -> std::io::Result<()> {
+    let mut bytes = [0u8; 1024];
+    let mut buffer = std::io::Cursor::new(bytes.as_mut_slice());
     writeln!(
-        std::io::stderr().lock(),
+        buffer,
         "sophia_comparator_counters schema=1 process={process} pid={} stage={stage} sequence={sequence} before_usec={} after_usec={} cpu_ns={} allocations={} reallocations={} deallocations={} bytes_allocated={}",
         std::process::id(),
         s.before_usec,
@@ -51,7 +65,9 @@ pub fn record(process: &str, stage: &str, sequence: u64) -> std::io::Result<()> 
         s.reallocations,
         s.deallocations,
         s.bytes_allocated
-    )
+    )?;
+    let len = buffer.position() as usize;
+    output.write_all(&bytes[..len])
 }
 
 /// Samples the whole Session process. The verifier must bracket each client

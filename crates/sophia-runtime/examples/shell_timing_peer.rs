@@ -178,9 +178,15 @@ fn clock_usec() -> u64 {
 }
 
 fn emit(value: serde_json::Value) -> Result<()> {
+    // The native capture shares its pipe with Session's counter writer.
+    // Keep each record below PIPE_BUF and submit its newline with the payload.
+    let mut bytes = [0u8; 1024];
+    let mut buffer = std::io::Cursor::new(bytes.as_mut_slice());
+    serde_json::to_writer(&mut buffer, &value)?;
+    writeln!(buffer)?;
+    let len = buffer.position() as usize;
     let mut out = std::io::stdout().lock();
-    serde_json::to_writer(&mut out, &value)?;
-    writeln!(out)?;
+    out.write_all(&bytes[..len])?;
     out.flush()?;
     Ok(())
 }
