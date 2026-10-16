@@ -144,6 +144,24 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+
+Signed Rust `db1dbaf` and C `122f9d4` add matching independent shared-session
+tests. Five cases force cancellation alone, watch revocation before Rflush,
+failed clunk after revocation, an error answering Tflush, and disconnect during
+flush. Successful cases preserve foreground status work and return root-only
+ownership after explicit releases. Failures expose neither event nor snapshot.
+Both check the exact old tag, one watch/flush, no second version/attach,
+one-byte dispatch and harmless clock regression. Focused native C/Rust tests,
+strict Rust Clippy and diff checks pass. Production code and pins are unchanged;
+the preceding production gates were not rerun for these test-only changes.
+
+Next force replies already decoded when cancellation is requested, malformed
+watch reads during flush and cancellation before the watch read; then integrate
+capture/frame work into the shared scheduler. Portal map 19 records the limits.
+t333 remains open. No quiet hold or measured performance claim.
+
+### Shared recipient session checkpoint
+
 Signed Rust `4dc6e67` and C `31911c2` add a developing shared recipient
 session: one watch alongside one metadata/transfer snapshot on the same
 pipeline. Separate tags route replies; events and snapshots remain retained
