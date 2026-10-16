@@ -144,6 +144,23 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `0d77807` adds the native presentation/keyboard lifecycle reducer:
+ordered openings, tracked candidates, exact focus bindings, input revisions,
+retained input responses and correlated activation outcomes. Prepared never
+enables focus. Admission registers the exact candidate metadata; queue failure
+registers nothing. A prepared input response reserves before an edit, consumes
+the input only on commit and leaves it available on cancellation. Refused ACKs
+are counted once, not replayed. Close, disconnect and correlation failure disarm
+input authority. Publication notices expose newer catalogs/facts before fetching
+completes, so stale scenes are disarmed promptly.
+
+Nine new lifecycle controls, the full Rust workspace suite, the final native
+suite and strict Clippy pass. C's full suite passes at `62b62f6`, including its
+independent focus/input/activation/close controls. Signed C `c678319` updates
+matrix revision 8. C helper tests use a session stand-in; export and physical
+qualification remain pending. This is the presentation/keyboard portion of the
+helper, not full resource/pacing or pointer-action parity.
+
 Signed Rust `5cf0f90` adds native-launcher transport: exact revision-7
 negotiation, typed native/shared observations, catalog fetching, allocation
 requests, whole candidates and a prepared keyboard activation/ACK response.
@@ -151,14 +168,9 @@ The response admits both records or neither locally, with independent custody
 tickets. Commit needs no allocation or I/O; Drop cancels. The caller still
 owns focus eligibility, input ACK deadlines and lifecycle decisions.
 
-Seven scripted-peer tests cover negotiation, all native events, catalog order,
+Seven transport controls cover negotiation, native events, catalog order,
 allocation/candidate custody, cancellation, saturation, invalid responses,
-malformed input, foreign epochs and split disconnect outcomes. Rust workspace
-tests, strict all-target Clippy, formatting and diff checks pass. C's full
-`make check` passes at `f8ca212`, including independent native codecs and helper
-input/activation controls. The C helper tests use a session stand-in; production
-export evidence remains pending. Signed C `62b62f6` updates the comparison;
-both SDKs now carry matrix revision 7.
+malformed input, foreign epochs and split disconnect outcomes.
 
 Signed Rust `c3c7070` adds `custody_result`, distinguishing evicted history from
 unissued tickets without changing the existing optional query. Retained unknown
@@ -187,11 +199,10 @@ candidate is **0.10.0-dev, unreleased**; consumers and foreign-language bindings
 must rebuild together. Do not move or reinitialize C session storage while a
 reservation is live. No wire contract changed.
 
-Next, implement opening/focus/revocation, input revision and ACK obligations,
-and resource/presentation lifecycle handling against the pinned contract. C's
-`sophia_ns` is the coverage checklist; Rust's content reducer is not its
-equivalent. Pointer activation/ACK batching, delayed native reservations,
-other non-content batches and the fixed bulk/control partition also
+Next, implement allocation/resource ownership and pacing/permit lifecycle,
+pointer-action responses and the integrated native helper facade. C's
+`sophia_ns` is the coverage checklist; the pinned contract owns semantics.
+Delayed native reservations, other non-content batches and the fixed bulk/control partition also
 remain gaps against C's broader submissions and configurable queue. Delayed
 commits can fail encoding/allocation while retaining credits; prepared commits
 cannot. Explicitly cancel unused delayed tokens. Simulated-time Rust callers
