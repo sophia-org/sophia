@@ -144,6 +144,24 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `3a90668` and C `8da1961` add provisional metadata snapshot
+drivers for api, status and capture-status. Results wait for EOF, decoding and
+clunk; reads respect msize/iounit and file bounds. Three Rust tests, C's
+independent snapshot test and strict Clippy pass. Rust uses 101 inline bytes;
+C borrows caller storage. The helpers allocate no storage themselves, but
+Rust transport replies may own allocated data. Portal map 4 records limits.
+
+Next integrate authenticated startup using the existing launch client's
+authenticated root and exclusive role/relay pipelines, then retained-object
+frame reads and capture custody. The snapshot helpers neither authenticate nor
+own transport. Requester/broker, production gates, foreign bindings and release
+adoption remain required. t333 stays open; production pins unchanged, no quiet
+hold or measured speedup. SDK branches are pushed. The two formerly dirty
+native-scanout files were formatting only, checked and pushed separately as
+`8233b7641` at the owner's request.
+
+### Portal discovery checkpoint
+
 Signed Rust `574bb1f` and C `231e012` add allocation-free recipient api/status
 decoders. Both retain distinct request capabilities and transfer states, reject
 malformed snapshots and enforce 101/43-byte bounds. Independent tests and strict
