@@ -144,16 +144,16 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
-Signed Rust `622d9c0` adds nonblocking version/WM startup with one absolute
-deadline and exact-root, quiescence and capacity checks at handoff. Six generic
-handshake tests and four added WM controls cover malformed/fragmented replies,
-following bytes, bounds, root ownership and deadline continuity. Socket session
-tests now use Connecting through negotiation. The full workspace suite, added
-tests and strict Clippy pass. Signed C `fbfcdd8` records matrix 24. Snapshot
-fetching from `6d84c4f` remains bound to the retained Cycle and verified EOF/clunk.
-Next audit complete WM operation/error coverage and run paired production-export
-qualification before release/pin adoption. Output, lock and the remaining t333
-roles still follow; this is not a full SDK parity claim.
+Signed Rust `34af9c8` adds WM obligations and fixes a startup timer gap:
+Connecting now exposes negotiation retry wakes before the bootstrap deadline.
+The socket regression uses that wake to complete EAGAIN retry; event/snapshot
+flags and terminal watermarks are checked. Session tests and strict Clippy pass.
+Signed C `dc58ad5` records matrix 25 and the new `WM-PARITY.md` operation map.
+Next finish early-startup introspection, then add an independent Rust peer to
+Sophia's `policy_file_c_sdk.rs` production adapter/worker scenario. That test
+supplies admission and outcomes; protected launch and Engine settlement remain
+separate claims. Broader terminal-error coverage and publication/pin adoption
+remain required. Output, lock and the other t333 roles still follow.
 
 Signed Rust `228f263` starts `sophia-wm-client` with typed application candidates
 and owned immutable encoding. Five tests cover all seven kinds, literal Dirty
