@@ -4,6 +4,14 @@ use sophia_runtime::comparator_counters::{self as counters, Allocator};
 #[global_allocator]
 static ALLOCATOR: Allocator = counters::ALLOCATOR;
 
+fn schema() -> &'static str {
+    if cfg!(feature = "comparator-profiling") {
+        "2 mode=profile"
+    } else {
+        "1"
+    }
+}
+
 #[test]
 fn instrumented_counts_include_real_allocations_with_ordered_clock_bounds() {
     let before = counters::snapshot();
@@ -43,7 +51,10 @@ fn counter_record_is_one_bounded_write_and_overflow_writes_nothing() {
     counters::write_snapshot(&mut sink, "session", "sample", 42, counters::snapshot()).unwrap();
     assert_eq!(sink.0.len(), 1);
     let line = std::str::from_utf8(&sink.0[0]).unwrap();
-    assert!(line.starts_with("sophia_comparator_counters schema=1 process=session "));
+    assert!(line.starts_with(&format!(
+        "sophia_comparator_counters schema={} process=session ",
+        schema()
+    )));
     assert!(line.contains("stage=sample sequence=42 "));
     assert!(line.ends_with('\n'));
     assert!(line.len() <= 1024);
@@ -100,10 +111,13 @@ fn shared_pipe_keeps_concurrent_counter_and_json_records_separate() {
             );
             journals += 1;
         } else {
-            assert!(line.starts_with("sophia_comparator_counters schema=1 "));
+            assert!(line.starts_with(&format!("sophia_comparator_counters schema={} ", schema())));
             assert!(!line.contains('{'));
             assert!(line.contains(&format!("sequence={count} ")));
-            assert_eq!(line.split_whitespace().count(), 13);
+            assert_eq!(
+                line.split_whitespace().count(),
+                13 + usize::from(cfg!(feature = "comparator-profiling"))
+            );
             count += 1;
         }
     }
