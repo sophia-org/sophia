@@ -20,8 +20,13 @@ per frame, retaining +10% as the acceptance ceiling. See the accepted
 [cost scope](../../sophia-shell-files.md#cost-accounting-scope-accepted-october-15-2026)
 and [implementation plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#implementation-sequence).
 Earlier references below to an unanswered scope decision are superseded.
-Next prepare the optimized native baseline before choosing further production
-changes; supplied-owner polling results alone cannot establish native costs.
+The optimized native cost baseline is prepared in `t331-native-cost-01`:
+four 60-second arms, 1,000 frames each, covering files/IPC with and without
+the 4 MiB probe at 1080p/60 Hz. Exact artifact and argument validation passes.
+The short `t252-check` command now selects these fresh plans from tty4 after
+leaving the desktop. No arm has run. See [baseline preparation](#t331-native-cost-baseline-preparation).
+Collect this baseline before choosing further production changes;
+supplied-owner polling results alone cannot establish native costs.
 
 t252 remains open for native lifetime/input acceptance on both desktop
 selections, the declared B9 performance campaign and attended release rollback.
@@ -1439,6 +1444,39 @@ this is not the native Session event loop or a B9 acceptance run. The proposed
 accounting scope remains unanswered. No installed desktop or hardware state
 changed. The comparator release peer was rebuilt with allocation counting;
 old native plans must not be reused with this changed artifact.
+
+## t331: native cost baseline preparation
+
+After the owner accepted the scope and implementation plan, comparator
+`f055afef78ef675ebdd020b373633374745a787a` was rebuilt in release mode with
+`native-session,comparator-allocation-counting` for Sophia. Its generic peer
+uses the matching allocation-counting build. External integration
+`b199ac08c4eff904bb4420fdf639ec318daeb545` supplies the rebuilt release runner
+and preflight. Build logs are `t331-native-cost-build.log` and
+`t331-native-cost-runner-build.log` in the October 15 evidence root.
+
+Four fresh plans under `t331-native-cost-01/` select files, IPC, files plus a
+4 MiB probe, and IPC plus that probe, in that order. Each is 60 seconds,
+1,000 offered frames, a 1920×24 bar on DP-1 at 1080p/60 Hz, scale 1 and VRR
+off. Other outputs are disabled only within the test profile. All ten artifact
+hashes and the signed source revisions are bound by each plan; no binaries
+were copied into evidence. This is baseline collection, not the full paired
+60/120 Hz acceptance campaign or a profiled run.
+
+All four `prepare-native` calls and exact `--validate-session-args` checks pass
+with devices hidden. The initial validation refused group-writable generated
+profiles, then correctly refused the missing native opt-in. The corrected
+profiles are mode 0600; the validation-only process received the required
+opt-in inside the device-hidden sandbox. Both failed logs are retained.
+No native process was launched and no display manager or installation changed.
+
+`~/.local/bin/t252-check` now invokes these four plans from the attended tty4,
+stopping at any failure. Its shell syntax check passes; launcher SHA-256 is
+`7f9a9352aaf97b23346268bf6c5959955ad5c3ce07263ddbf136622d504a9b51`.
+Previous calibration directories remain untouched. After collection, verify
+every offer, upload, native join and recovery record before using the cost
+bounds to select the next optimization. Arrange a fresh attended window; no
+quiet-window hold is currently active.
 
 ## Connections
 
