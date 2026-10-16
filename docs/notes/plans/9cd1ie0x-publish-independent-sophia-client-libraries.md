@@ -144,6 +144,25 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `f3a61c1` integrates the developing output session on one pipeline.
+Three independent socket tests cover startup/negotiation, topology delivery
+only after EOF/clunk, Refused only after its final ACK, and zero-budget/expired
+startup without sending queued negotiation. All 31 output-client tests and
+strict Clippy pass. C `ceb13ba` records the existing independent counterparts
+and remaining gaps in matrix 36 / output map 5.
+
+Keep performance in view while completing t333, as the owner requested.
+The session uses caller time and one shared dispatch budget. Verified topology
+ownership transfers without cloning vectors or labels; C already decodes into
+fixed session storage. This removes a concrete copy but establishes no native
+CPU savings. Preserve custody, fairness, deadlines and EOF/error behavior;
+measure any performance claim separately under t331.
+
+Next extend output socket tests to proposals/retries, attached handoff and
+terminal errors; add the nonblocking connecting facade, then paired production
+export tests. The Rust session is not yet fully qualified. Production pins
+and the t331 pilot remain unchanged; no quiet hold is active.
+
 Signed Rust `3f96b00` adds provisional publication-bound topology fetching.
 Walk/open must match the announced Qid; the decoded object must match both
 connection and topology epochs. Reads are bounded, and no value is exposed
@@ -154,9 +173,9 @@ All 28 Rust output-client tests and strict Clippy pass. C's full suite passes;
 signed C `c532820` records its existing independent fragmented-fetch, withheld
 open and wrong-Qid controls in matrix 35 / output map 4.
 
-Next integrate the output startup, submission, journal and topology components
-into a socket session with ordered reply handling, cumulative ACK barriers,
-Refused ACK settlement, caller-clock dispatch and terminal custody retention.
+The session above joins output startup, submission, journal and topology
+components with ordered reply handling, cumulative ACK barriers, Refused ACK
+settlement, caller-clock dispatch and terminal custody retention.
 Then add the nonblocking connecting facade and paired production-export tests.
 The standalone fetch tests do not qualify integrated socket dispatch.
 
