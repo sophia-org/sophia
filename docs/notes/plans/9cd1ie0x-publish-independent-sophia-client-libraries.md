@@ -144,16 +144,31 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
-Signed Rust `34af9c8` adds WM obligations and fixes a startup timer gap:
-Connecting now exposes negotiation retry wakes before the bootstrap deadline.
-The socket regression uses that wake to complete EAGAIN retry; event/snapshot
-flags and terminal watermarks are checked. Session tests and strict Clippy pass.
-Signed C `dc58ad5` records matrix 25 and the new `WM-PARITY.md` operation map.
-Next finish early-startup introspection, then add an independent Rust peer to
-Sophia's `policy_file_c_sdk.rs` production adapter/worker scenario. That test
-supplies admission and outcomes; protected launch and Engine settlement remain
-separate claims. Broader terminal-error coverage and publication/pin adoption
-remain required. Output, lock and the other t333 roles still follow.
+Signed Rust `3228a06` adds startup status/error/custody inspection and the
+independent `wm_conformance_peer` example. Both C and Rust now pass the same
+production WM adapter/worker exchange: profile prepare/activate, configuration,
+a 64-surface snapshot spanning multiple reads, projection, session operation
+and receipt delivery. Signed C `324b2b1` records matrix 26 and WM map revision 2.
+All 41 Rust WM tests, the full SDK workspace suite and targeted strict Clippy
+pass. Startup checks preserve remote errno and ESTALE through explicit close.
+
+The Sophia fixture uses its pinned C `ba09265`; C WM code is unchanged in the
+candidate. The Rust test explicitly requires an absolute prebuilt peer path;
+it does not change production dependencies or verified pins. Run with
+`SOPHIA_WM_RUST_SDK_PEER=/absolute/path/to/wm_conformance_peer cargo-slot sophia cargo test -p sophia-session --features native-session --lib sdk_drives_profile_configuration_snapshot_and_policy_exchange -- --include-ignored --nocapture`.
+Both tests passed. Without `native-session`, the filter runs zero tests and
+provides no evidence. The first Rust run correctly refused invalid fixture
+chrome (disabled ring with nonzero width); the peer now sets width zero.
+The verified peer binary at
+`~/.cache/cargo-slots/sophia-desktop-sdk-rs@sdk-rs-t331-reply-storage/1/debug/examples/wm_conformance_peer`
+has SHA-256 `945af0642b5ab0fe976a6ad382fa28e4642b3834599ba175a60be266476d5ed8`.
+No executable was copied into evidence.
+
+This test supplies admission and outcomes; protected launch, Engine settlement
+and actual presentation remain separate claims. Next finish WM terminal-error,
+revocation and profile/outcome coverage and the public ownership/error guide,
+then qualify protected admission. Publication/pin adoption and the other t333
+roles (output, lock, administration and broker/portal audit) remain required.
 
 Signed Rust `228f263` starts `sophia-wm-client` with typed application candidates
 and owned immutable encoding. Five tests cover all seven kinds, literal Dirty
