@@ -42,12 +42,23 @@ joins and console recovery. Allocations on files fell about 12–14% against
 
 The profiling capture exceeded the parser's line limit after clean recovery;
 offline replay recovers it without changing raw evidence. Integration `4eb52fb`
-fixes that limit with a regression test. Three missing profiling arms are
-prepared under `t331-native-profile-05`, using the same comparator `90988ff6d`
-and rebuilt integration runner. `t252-check` now runs only those three from
-foreground tty4, about three minutes plus recovery. Argument validation passes
-with devices hidden. Coordinate a new quiet window before launch; the previous
-hold is released. This remains a diagnostic pilot, not full B9 qualification.
+fixes that limit with a regression test. The remaining three profiles completed
+under `t331-native-profile-05`, with the same comparator `90988ff6d`. Each joins
+1,000 frames, matches independent replay and restores the console. All twelve
+pilot cases are now accounted for; the quiet hold is released. `t252-check`
+points at occupied evidence directories and must not be rerun.
+
+Profiles show about 4.1 times as many owner passes on files for the panel and
+2.7 times as many for bulk uploads. Readiness allocates almost nothing; measured
+logging scopes are small. Production `d18775828` removes a full output-inventory
+clone from every cadence lookup, reading the primary output ID from current
+authority state instead. A two-output fixture measures 8,000 allocations for
+1,000 inventory clones versus zero for the direct reads. Native results above
+predate this change. Next, trace remaining repeated owner-pass allocations and
+explain the extra passes before selecting another bounded change.
+These overlapping scopes do not identify exclusive allocation stacks. See
+[completed profiling comparison](#t331-completed-profiling-comparison).
+This remains a diagnostic pilot, not full B9 qualification.
 The earlier corrupted `t331-native-cost-01` remains invalid and retained.
 The old `t331-native-cost-02` directories contain completed evidence; the helper
 now selects fresh directories and stops on any failure.
@@ -1693,6 +1704,56 @@ files bulk and IPC bulk. Plans bind the same comparator and the rebuilt runner
 at integration `4eb52fb`; all pass device-hidden argument validation. The short
 `t252-check` helper selects only these fresh directories. Complete those profiles
 before attributing the remaining costs or selecting another production change.
+
+## t331: completed profiling comparison
+
+All three `t331-native-profile-05` arms completed with 1,000 native joins and
+clean console recovery. Independent collect, journal, cost and native-join
+replays match their original reports. Combined with the recovered files-panel
+profile in `cost-04`, this completes the pilot's twelve cases. The quiet hold
+is released. The Mac mini agent may run the owner's authorized GPU training on
+crunch; a later measurement window must coordinate a pause first.
+
+`profile-05/phase-comparison.json` records diagnostic phase deltas near each
+workload interval. Owner passes number 33,053 on files versus 8,049 on IPC for
+the panel, and 120,050 versus 45,049 for bulk uploads: about 4.1 and 2.7 times
+as many. Owner-scope thread CPU is about 1,618 versus 785 ms for the panel and
+5,485 versus 3,666 ms for bulk. These are profiling observations, not CPU-only
+acceptance values. Scopes nest; allocation deltas include other process threads
+while a scope is open. Never sum them or treat them as exclusive stack costs.
+
+Readiness scopes report only 2–17 allocation operations per workload. Measured
+Session logging scopes report about 2,000 operations and 8 ms of thread CPU in
+each arm. These observations direct investigation toward repeated owner-pass
+services; they do not prove that every additional pass is unnecessary or that
+all logging is covered. The wire phase has no earlier nonzero sample and its
+diagnostic delta therefore uses a zero baseline, explicitly flagged in the
+derived report. It must not be compared as an exact workload-only cost.
+
+The next bounded slice is to inspect repeated Session work, prove individual
+allocation sources with deterministic checks, and carry shared fixes to both
+comparator paths. No scheduler change, larger I/O budget or wire-contract change
+is admitted by these observations. The CPU-only and allocation gate remains
+failed at the values recorded above.
+
+### Primary-output lookup
+
+Source inspection found a complete `OutputAuthoritySnapshot` clone in the
+cadence lookup on every owner pass, solely to read its primary output ID.
+Production `d18775828` reads that ID directly from the authoritative published
+snapshot. Startup cadence and present-clock admission use the same accessor.
+There is no retained cache: a committed primary-output change is immediately
+visible. The owned snapshot facade remains available to topology operations.
+Comparator `8293249f6` carries the identical change for both wires.
+
+The isolated two-output allocation fixture measures 8,000 allocations for 1,000
+old inventory clones and none for direct reads. It also replaces the published
+topology and verifies the new primary. Nine output-authority tests pass in both
+production and the profiling comparator; all 21 device-hidden present-clock
+tests pass in production. Focused strict Clippy, formatting and diff checks pass.
+The first compile caught an unqualified `OutputId` in the private facade; the
+qualified protocol type fixes it. No native measurement or installed-desktop
+change follows this patch yet, so it has no measured per-frame saving or CPU win.
 
 ## Connections
 
