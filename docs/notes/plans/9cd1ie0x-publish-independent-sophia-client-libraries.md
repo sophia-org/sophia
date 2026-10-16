@@ -144,6 +144,23 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `7966089` and C `58c25f6` add a fixed four-request frame range
+scheduler. It honors framing/iounit/chunk bounds, handles out-of-order and short
+reads without repeating accepted bytes, and rejects empty, oversized or
+duplicate replies. Independent exact-byte-coverage and 64 MiB range tests pass,
+with strict Rust Clippy. Portal map 7 records the component's limits: it owns
+neither transport nor image storage and performs no payload copies.
+
+Next integrate retained frame-info/frame fids, the range scheduler and
+caller-controlled image storage into recipient sessions. Require exact payload,
+EOF, a reread of the retained metadata fid, and successful clunk before exposing
+a completed image; do not infer binding from private qid numbering. Capture
+custody, revocation/delivery gates, requester/broker, foreign bindings and release
+adoption remain. t333 stays open; SDK branches pushed, production pins unchanged,
+no quiet hold or measured speedup.
+
+### Authenticated portal startup checkpoint
+
 Signed Rust `5f6b5bb` and C `82ffda2` pass protected namespace launch and
 Factotum authentication followed by portal metadata startup. Both independently
 built peers retain the admitted root and relay, read api and exit successfully.
