@@ -55,9 +55,8 @@ both payload copies remain. Scratch retains at most one negotiated read payload
 per opted-in connection and is released on reset/close. New core tests cover
 queued output independence, pending/error/oversized outcomes and revocation;
 106 runtime library tests pass, with one ignored, in both checkouts. Strict
-core all-target and runtime library Clippy pass in both. Next is a fresh paired
-native pilot with separate CPU and allocation arms. No native benefit
-is claimed; the installed desktop is unchanged.
+core all-target and runtime library Clippy pass in both. Cost-11 results above
+supersede the planned pilot; the installed desktop is unchanged.
 
 The approved readiness handoff is implemented in signed production `c2138f95e`
 and comparator `377b0413d`, both pushed. Cost-10 does not establish a useful win:

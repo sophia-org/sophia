@@ -248,6 +248,16 @@ CPU cost, native frequency or the share of t331's remaining gap.
 
 ## Validation and limits
 
+The owner questioned whether the current metric is guiding the right work.
+Allocations/frame is diagnostic, not a measure of responsiveness. CPU/MiB here
+includes the complete Session-plus-peer workload; it does not isolate 9P codec
+or transport cost. Keep the existing +10% gate until explicitly revised, but
+attribute CPU stacks and allocation owners before using it to choose another
+optimization. Frame deadlines, input-to-presentation latency, idle CPU and
+bounded memory remain distinct product outcomes. No matched rio-versus-IPC
+benchmark has been run here. Rio's separate draw path makes an unadjusted
+comparison with Sophia's upload/admission/presentation workload misleading.
+
 Inspected pinned upstream source and corresponding Sophia paths at `01fca2595`;
 source hashes are retained. The follow-up changes completed-read capacity and
 adds regression assertions. The full production and comparator 9P suites and strict all-target
