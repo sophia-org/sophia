@@ -109,10 +109,19 @@ Bulk exclusive differences concentrate in syscall wrappers, clock reads and
 custody checks; recognizable allocator leaves are not the dominant difference.
 Nearest visible callers place +252.8 ms of bulk syscall-wrapper sample periods
 under SDK Pipeline::poll (+38.1 ms panel). This is user-space sampling, not
-kernel duration or syscall counts. Next, investigate useful bytes/replies versus
-WouldBlock calls in the SDK's bounded poll/drive cycle before proposing a
-readiness optimization. Preserve EOF, backpressure, fairness, upload barriers
-and every custody check. Copy callers remain mostly unresolved.
+kernel duration or syscall counts. The isolated SDK syscall investigation now records three normal and three
+short-write/retry uploads in `t331-sdk-io-19`. Normal uploads consistently make
+14 useful reads and 34 WouldBlock reads, but most repeats follow new sends;
+this does not justify skipping socket reads. The same-thread scripted peer
+cannot establish native readiness frequency. Temporary markers are restored;
+SDK source is clean. See the audit for exact counts and limits.
+
+Next bounded candidate: move the submission-retry clock read behind RetryWait,
+same-pass and event-progress checks. Source currently reads time on every drive
+round even when no retry needs it. Preserve deadline behavior and existing
+scripted retry tests; no measured savings or SDK behavior change yet. Preserve
+EOF, backpressure, fairness, upload barriers and every custody check. Copy
+callers remain mostly unresolved.
 
 The quiet hold is released; mini Claude reports no crunch work. All perf-18
 captures are occupied: do not rerun `t252-check`. No new attended run is needed

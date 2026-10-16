@@ -762,3 +762,53 @@ The hold is released; mini Claude reports no crunch activity beyond its
 coordination messages. All four capture destinations are occupied. No further
 attended run is needed to begin the SDK investigation. t331 remains open;
 installed desktop and acceptance thresholds are unchanged.
+
+### SDK socket-call investigation, October 16
+
+The isolated SDK upload fixture on `3edcd28` now has retained syscall evidence
+in `t252-authenticated-20261015/t331-sdk-io-19`. A temporary test-only marker
+surrounded each ShellConnection poll; external strace counted only calls
+inside those markers. Handshake and scripted-peer pumping were excluded.
+Three optimized runs each covered a normal 128 KiB upload and the existing
+short-write/protocol-EAGAIN fixture. All six tests passed. The marker patch,
+executable identity, raw traces, summaries and hashes are retained; SDK source
+was restored and its worktree is clean. No production counters were added.
+
+| Post-handshake client calls | Normal, all three runs | Short-write/EAGAIN, three runs |
+| --- | ---: | ---: |
+| Shell poll calls | 18 | 99–102 |
+| Successful socket sends | 16 | 23 |
+| Socket reads returning bytes | 14 | 21 |
+| Socket reads returning WouldBlock | 34 | 124–127 |
+| Socket sends returning WouldBlock | 0 | 0 |
+| Read bytes | 609 | 686 |
+| Sent bytes, including protocol/retries | 131,952 | 349,082 |
+
+Sixteen normal Shell polls contain multiple WouldBlock reads. However, all but
+one repeated empty read within a call follow a successful new send. The peer
+could have answered that send in a real concurrent deployment; these are not
+proven redundant reads. Even an empty read without an intervening send can
+observe an asynchronous event, so absence of a send is not a safe skip rule.
+The fixture alternates peer and client on one thread after handshake, making
+it useful for transition counts but unsuitable for native readiness frequency.
+The short-write fixture's EAGAIN is a 9P error reply, not socket backpressure.
+Its extra empty polls reflect deadline retries in the busy-driving fixture;
+strace perturbs their number. Do not extrapolate these counts to CPU savings.
+
+Source attribution matches the trace: Pipeline::poll flushes queued output,
+then reads to WouldBlock within fixed budgets. FileWire::drive drains replies,
+queues dependent requests and repeats while state changes. This explains two
+empty reads around useful progress without establishing that either is safe
+to suppress. A broad readiness cache is not justified by this experiment.
+
+A narrower clock opportunity is explicit in source: FileWire::drive evaluates
+Instant::now before every drive_submit_retry call; the retry method immediately
+returns when the current submission is not in RetryWait, and also need not
+read time for same-pass refusal or event-driven progress. Move the clock read
+behind those state checks, retaining the existing deadline comparison when
+it actually controls retry eligibility. Existing scripted tests cover retry
+after events, deadline expiry and no retry within the refusal pass. This is
+the next bounded candidate, not a measured CPU win; no SDK behavior change is
+implemented at this investigation checkpoint. Keep custody and socket error
+handling unchanged. Broader socket scheduling needs independent readiness/
+EOF/backpressure evidence before implementation.
