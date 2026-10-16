@@ -37,14 +37,23 @@ Both IPC arms now have zero steady core flushes. These are progress counts,
 not CPU or allocation acceptance. The [relay-only results](2o32e7ui-which-plan-9-implementation-techniques-can-reduce-sophia-shell-costs.md#relay-only-native-results-october-16)
 record bounds and limits.
 
-All `t331-native-relay-13` captures are occupied; do not rerun them. The quiet
-hold is released. Claude reports only brief local text/zk/Git inspection during
-the window. Comparator `bf19952dd` now carries SDK `3edcd28`; four fresh one-minute
-batching arms are prepared in `t331-native-batching-14`. Preparation, device-free
-argument validation, launcher syntax and focused comparator checks pass.
-`t252-check` selects these empty captures. After that comparison, prepare
-separate CPU and allocation runs. Request a fresh quiet window before any
-further attended capture.
+Batching-14 completed all four arms on comparator `bf19952dd`, integration
+`fd2cb6c` and SDK `3edcd28`. Independent replay matches all 1,000 frame joins,
+journal metrics and raw counters in each arm; console recovery is clean.
+Session passes fell to 27.426–27.469 per panel frame and 109.977–110.203 per
+bulk frame, about six and ten fewer respectively. Reply counts remain about
+53/152. This supports the intended reduction in setup waits without removing
+protocol operations; it does not establish a CPU or allocation win.
+
+All relay-13 and batching-14 captures are occupied; do not rerun them. The
+quiet hold is released. Claude reports only its local-socket confirmation
+during batching-14, with no other crunch activity. Eight separate CPU and
+allocation arms are prepared in `t331-native-cost-15` on the same comparator
+and integration revisions. Both optimized builds, all device-free argument
+checks, artifact hashes and launcher syntax pass. `campaign.json` pins the
+plans; `t252-check` selects their empty capture destinations and distinct
+instrumented executables. Request a fresh quiet window when the owner is ready
+for this eight-minute attended pilot. No cost-15 capture has started.
 
 Progress-12 established 33/120 Session passes per files panel/bulk frame,
 versus roughly 8/45 for IPC. Source attribution identifies repeated idle

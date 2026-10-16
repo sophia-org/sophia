@@ -498,3 +498,32 @@ calls without exact timestamps. That report is retained in `quiet-window.txt`.
 Next, comparator `bf19952dd` carries the already-tested SDK pin for a separate
 batching pilot. All relay-13 capture directories are occupied and must not be
 reused.
+
+### Batched writer native results, October 16
+
+All four batching-14 arms completed on comparator `bf19952dd`, integration
+`fd2cb6c` and SDK `3edcd28`. Independent replay matches journal metrics, all
+1,000 frame joins and raw progress records in each arm. Console recovery is
+clean. Evidence and hashes are in
+`t252-authenticated-20261015/t331-native-batching-14/offline-replay/summary.json`.
+The bounds use the same upload-to-terminal interval as relay-13.
+
+| Counter per frame | Files panel | Files bulk |
+| --- | --- | --- |
+| Session passes | 27.426–27.469 | 109.977–110.203 |
+| Core polling turns | 5.133–5.162 | 5.137–5.166 |
+| Core flushes | 5.996–6.001 | 8.987–9.001 |
+| Encoded replies | 52.975–53.035 | 151.740–152.035 |
+
+Against relay-13, batching removes about six panel and ten bulk Session passes
+per frame: roughly 18% and 8.5%. Reply counts remain about 53/152, consistent
+with combining setup waits rather than dropping protocol operations. Idle
+relay skips still cover almost every dispatch; expiry and stale handoff counts
+are zero. IPC records 8.018–8.040 panel and 45.020–45.078 bulk passes per frame,
+with zero steady core flushes. These are diagnostic counts, not cost results.
+
+Claude reports no crunch activity during the hold from 15:25:26Z to release,
+except its local-socket confirmation. The report is retained in
+`quiet-window.txt`. All captures are occupied; the hold is released. Next,
+measure CPU and allocations separately on this candidate before considering
+the unchanged full gate. t331 remains open.
