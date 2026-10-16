@@ -176,8 +176,18 @@ fn admit(record: &[u8], limits: &ContentLimits) -> Option<(u16, ContentResourceL
 
 #[test]
 fn a_reduced_grant_upload_completes_with_its_negotiated_chunk_count() {
+    complete_upload([]);
+}
+
+#[test]
+fn short_writes_and_eagain_resume_at_the_exact_acknowledged_byte() {
+    complete_upload([Ok(1), Ok(7), Err(11), Ok(19), Ok(4093), Err(11), Ok(3)]);
+}
+
+fn complete_upload(replies: impl IntoIterator<Item = Result<u32, u32>>) {
     let limits = reduced();
     let (mut connection, mut peer) = connect(limits.clone());
+    peer.upload_replies.extend(replies);
     // The client holds the negotiated grant, not the prototype.
     assert_eq!(
         content(&mut connection, &mut peer),

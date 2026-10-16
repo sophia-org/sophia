@@ -285,6 +285,8 @@ pub struct Pipeline {
     /// up to its real footprint once matched, released once drained.
     reserved_reply_bytes: usize,
     out_buf: Vec<u8>,
+    /// Ordinary sends advance this cursor; appending compacts only when needed.
+    out_start: usize,
     /// Set while `out_buf` may hold a secret write's bytes; see
     /// [`Pipeline::write_secret`].
     scrub_output: bool,
@@ -335,6 +337,7 @@ impl Pipeline {
             reserved_tags: 0,
             reserved_reply_bytes: 0,
             out_buf: Vec::new(),
+            out_start: 0,
             scrub_output: false,
             in_buf: Vec::new(),
             poisoned: false,
@@ -536,7 +539,7 @@ impl Pipeline {
             .checked_add(data.len())
             .filter(|len| *len <= self.msize as usize)
             .ok_or(PipelineError::Limit("request larger than msize"))?;
-        if self.out_buf.len() + frame_len > self.limits.max_buffered_output {
+        if self.output_pending() + frame_len > self.limits.max_buffered_output {
             return Err(PipelineError::Limit("output buffer full"));
         }
         let sent = u32::try_from(data.len())
@@ -546,6 +549,7 @@ impl Pipeline {
         self.check_capacity(false, bound, false)?;
         let tag = self.candidate_tag();
         if secret {
+            self.compact_output();
             // Every later frame fits this allocation, since submit refuses
             // anything past the bound; reserving now moves only bytes that
             // are not secret, or none when a secret is already queued.
@@ -804,8 +808,13 @@ impl Pipeline {
         if frame_len > self.msize as usize {
             return Err(PipelineError::Limit("request larger than msize"));
         }
-        if self.out_buf.len() + frame_len > self.limits.max_buffered_output + output_headroom {
+        if self.output_pending() + frame_len > self.limits.max_buffered_output + output_headroom {
             return Err(PipelineError::Limit("output buffer full"));
+        }
+        if self.out_buf.capacity() - self.out_buf.len() < frame_len
+            || self.out_buf.len() + frame_len > self.output_bound()
+        {
+            self.compact_output();
         }
         self.out_buf.reserve(frame_len);
         self.out_buf
@@ -826,17 +835,14 @@ impl Pipeline {
             if self.out_buf.is_empty() || budget == 0 {
                 break;
             }
-            let take = self.out_buf.len().min(budget);
-            match self.stream.write(&self.out_buf[..take]) {
+            let take = self.output_pending().min(budget);
+            match self
+                .stream
+                .write(&self.out_buf[self.out_start..self.out_start + take])
+            {
                 Ok(0) => return Err(self.poison(PipelineError::Io(io::ErrorKind::WriteZero))),
                 Ok(count) => {
-                    self.out_buf.drain(..count);
-                    if self.scrub_output {
-                        // Draining moved the unsent tail forward; the
-                        // bytes it vacated are still in the allocation.
-                        scrub_spare(&mut self.out_buf);
-                        self.scrub_output = !self.out_buf.is_empty();
-                    }
+                    self.record_output_write(count);
                     budget -= count;
                 }
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
@@ -845,6 +851,33 @@ impl Pipeline {
             }
         }
         Ok(())
+    }
+
+    fn output_pending(&self) -> usize {
+        self.out_buf.len() - self.out_start
+    }
+
+    fn record_output_write(&mut self, count: usize) {
+        if self.scrub_output {
+            self.out_buf.drain(..count);
+            // Secret sends retain the scrubbing path, including vacated bytes.
+            scrub_spare(&mut self.out_buf);
+            self.scrub_output = !self.out_buf.is_empty();
+        } else {
+            self.out_start += count;
+            if self.out_start == self.out_buf.len() {
+                self.out_buf.clear();
+                self.out_start = 0;
+            }
+        }
+    }
+
+    fn compact_output(&mut self) {
+        if self.out_start != 0 {
+            self.out_buf.copy_within(self.out_start.., 0);
+            self.out_buf.truncate(self.output_pending());
+            self.out_start = 0;
+        }
     }
 
     fn read_input(&mut self) -> Result<(), PipelineError> {
@@ -1207,3 +1240,8 @@ fn scrub_spare(buffer: &mut Vec<u8>) {
     spare.fill(std::mem::MaybeUninit::new(0));
     std::hint::black_box(spare);
 }
+
+// Deterministic partial-send boundaries without depending on socket buffering.
+#[cfg(test)]
+#[path = "../tests/support/output_progress.rs"]
+mod output_progress_tests;

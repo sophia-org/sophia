@@ -55,40 +55,39 @@ impl FileWire {
         {
             return Ok(false);
         }
-        let bytes = output
-            .front()
-            .expect("pending mirrors the outbox one-for-one")
-            .to_vec();
         let ticket = output.front_ticket().expect("the front unit has a ticket");
-        self.pending.pop_front();
-        self.custody.push((ticket, Custody::InFlight));
-        match kind {
+        let current = match kind {
             QueuedKind::Record => {
-                let header = decode_shell_file_record(&bytes, ShellFileClass::Candidate)?.header;
+                let bytes = output
+                    .front()
+                    .expect("pending mirrors the outbox one-for-one");
+                let header = decode_shell_file_record(bytes, ShellFileClass::Candidate)?.header;
                 let (submission_id, kind) = (header.submission_id, header.kind);
                 let (tag, fid) = self.pipeline.walk(self.root, &[b"transaction"])?;
-                self.current = Some(Current::Submission {
-                    bytes,
+                Current::Submission {
+                    bytes: output.take_front_bytes(),
                     submission_id,
                     kind,
                     ticket,
                     submit: Vec::new(),
                     phase: SubmissionPhase::Walk { tag, fid },
                     submitted: false,
-                });
+                }
             }
-            QueuedKind::SlotWrite { resource, offset } => {
-                self.current = Some(Current::SlotWrite {
-                    resource,
-                    offset,
-                    remaining: bytes,
-                    tag: None,
-                    ticket,
-                    not_before: None,
-                    wrote_any: false,
-                });
-            }
-        }
+            QueuedKind::SlotWrite { resource, offset } => Current::SlotWrite {
+                resource,
+                offset,
+                remaining: output.take_front_bytes(),
+                acknowledged: 0,
+                tag: None,
+                ticket,
+                not_before: None,
+                wrote_any: false,
+            },
+        };
+        self.current = Some(current);
+        self.pending.pop_front();
+        self.custody.push((ticket, Custody::InFlight));
         Ok(true)
     }
 

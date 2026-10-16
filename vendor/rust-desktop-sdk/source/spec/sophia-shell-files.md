@@ -1017,6 +1017,24 @@ before measurement and cannot be relaxed after a result.
 Each distribution reports p50, p95 and p99, the maximum, and every timeout,
 with the same client, workload and output on both transports.
 
+### Cost accounting scope (accepted October 15, 2026)
+
+For the B9 cost gate, measure steady-state Session plus client: CPU across all
+their threads, including foreign-library CPU, and Rust global allocation and
+reallocation calls. Divide CPU by exact uploaded MiB (1,048,576 bytes) and
+allocation operations by offered frames. Include preparation, encoding,
+transport, owner processing, presentation, retirement and intervening work
+within the declared workload interval. Do not subtract idle costs.
+
+Exclude startup before that interval, WM/authentication/helper processes,
+foreign allocation calls, GPU allocations and kernel allocations. This scope
+does not establish whole-desktop efficiency. Use separate instrumented cost
+and ordinary latency runs. A cost pass requires the 9P upper bound to be at
+most 1.10 times the paired IPC lower bound; overlapping uncertainty is not a
+pass. The optimization objective is to beat IPC on both measures, established
+only when the 9P upper bound is below the IPC lower bound. The +10% acceptance
+ceiling and all latency and correctness requirements remain unchanged.
+
 ## Amendment 1 (2026-09-26): native bodies, IPC-independent records
 
 The operator set the migration's end state: all IPC code is purged and every

@@ -16,7 +16,9 @@ pub(crate) struct ClientOutbox {
     bulk_bytes: usize,
 }
 struct Frame {
-    bytes: Box<[u8]>,
+    bytes: Option<Box<[u8]>>,
+    /// Charges stay here while the file wire owns the payload.
+    len: usize,
     control: bool,
     ticket: u64,
 }
@@ -58,7 +60,8 @@ impl ClientOutbox {
             .into_iter()
             .zip(first..)
             .map(|(bytes, ticket)| Frame {
-                bytes: bytes.into_boxed_slice(),
+                len: bytes.len(),
+                bytes: Some(bytes.into_boxed_slice()),
                 control,
                 ticket,
             })
@@ -77,7 +80,15 @@ impl ClientOutbox {
         Ok(ledger.issue(records))
     }
     pub(crate) fn front(&self) -> Option<&[u8]> {
-        self.frames.front().map(|frame| frame.bytes.as_ref())
+        self.frames.front().and_then(|frame| frame.bytes.as_deref())
+    }
+
+    /// Transfer bytes without releasing the unit's admission or custody ticket.
+    pub(crate) fn take_front_bytes(&mut self) -> Box<[u8]> {
+        self.frames
+            .front_mut()
+            .and_then(|frame| frame.bytes.take())
+            .expect("the current file operation takes its payload once")
     }
     /// The front unit's ticket.
     pub(crate) fn front_ticket(&self) -> Option<u64> {
@@ -90,10 +101,10 @@ impl ClientOutbox {
             .frames
             .pop_front()
             .expect("retiring requires an owned frame");
-        self.bytes -= frame.bytes.len();
+        self.bytes -= frame.len;
         if !frame.control {
             self.bulk_records -= 1;
-            self.bulk_bytes -= frame.bytes.len();
+            self.bulk_bytes -= frame.len;
         }
     }
 
