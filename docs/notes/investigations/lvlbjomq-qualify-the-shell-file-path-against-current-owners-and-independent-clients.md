@@ -27,8 +27,12 @@ Evidence is under `t252-authenticated-20261015/t331-native-cost-11`, including
 `offline-replay/summary.json`. All capture directories are now occupied:
 do not rerun the installed `t252-check`. The quiet hold is released; Claude
 reported no crunch activity after the initial 13:06:38Z confirmation and Muse
-status read. Next, attribute the remaining Session allocation gap before
-another transport API change or native campaign.
+status read. Reanalysis of perf-08 finds only about 22/10 ms of panel/bulk
+sampled differences in recognizable allocator leaves. Clock reads, polling and
+repeated owner service are stronger leads, though these profiles predate the
+latest changes. The Plan 9 audit records exclusive leaf groups and caller
+limits. Next, count current service turns versus useful progress per frame,
+including readiness handoff versus fallback, before another transport API change.
 
 Both optimized builds remain in Cargo slots. The initial CPU config validation
 refused generated file permissions (`UnsafeMode`); private modes corrected it,

@@ -248,6 +248,54 @@ CPU cost, native frequency or the share of t331's remaining gap.
 
 ## Validation and limits
 
+### CPU attribution review after cost-11
+
+Reclassified the retained perf-08 stacks by exclusive leaf, selecting exactly
+the earlier Session/peer PIDs and whole-workload counter intervals. Selected
+sample counts match all four original reports. This reuses existing evidence;
+it is not a profile of the new scratch candidate. Values below are summed sample
+periods across 1,000 frames, in milliseconds, not exact function runtimes.
+
+| Exclusive leaf group | Files panel | IPC panel | Files bulk | IPC bulk |
+| --- | ---: | ---: | ---: | ---: |
+| Recognizable allocator functions | 59.2 | 37.1 | 93.3 | 83.2 |
+| memcpy/memmove | 115.3 | 80.2 | 639.9 | 544.6 |
+| memset | 7.0 | 2.0 | 44.1 | 31.1 |
+| Unknown leaf | 36.1 | 44.1 | 44.1 | 41.1 |
+| Other leaves | 1,042.1 | 586.8 | 4,668.0 | 3,472.4 |
+
+Recognizable allocator leaves explain about 22 ms of the sampled panel
+difference and 10 ms of the bulk difference. This grouping misses inlined or
+unresolved allocation work and does not include allocator-induced cache effects;
+it cannot establish the full cost of allocating. Still, allocation counts alone
+are a poor guide to this observed CPU gap. Copy leaves differ by about 35/95 ms,
+but missing caller stacks prevent assigning most of that difference to a
+particular transport copy.
+
+The strongest named user-space differences include syscall wrappers, clock
+reads, custody checks, server wake service and the Session loop. The bulk
+`__vdso_clock_gettime` leaf difference is about 128 ms. Grouping clock leaves by
+their nearest visible application caller puts 88/41 ms in the files/IPC Session
+loop; files client poll_io accounts for another 24 ms. These are execution
+samples, not call counts. A clock optimization would be premature: more clock
+work may simply indicate more service turns. Perf-09 independently puts excess
+on-CPU polling in several owners, not only the server poll already targeted by
+the readiness handoff.
+
+The next diagnostic should count service turns and useful progress per offered
+frame on the current candidate: Session loop passes, component service passes,
+server turns/flushes, client waits, requests completed and bytes advanced. Count
+readiness-handoff use and fallback separately. Use fixed numeric counters and
+flush snapshots outside the measured hot path; do not add formatted records or
+a clock query to each call. This can distinguish extra protocol progress steps
+from repeated unchanged-state service before selecting a patch. Preserve all
+authority checks and deadlines; no liveness cache or once-per-loop skip follows
+from these stacks. A subsequent CPU profile must use the same current candidate.
+
+Evidence: `cpu-attribution-review.json` (source hashes and complete exclusive
+leaf maps) and `clock-callers-review.json` in the Plan 9 comparison directory.
+No new native run, runtime patch or acceptance change was made for this review.
+
 The owner questioned whether the current metric is guiding the right work.
 Allocations/frame is diagnostic, not a measure of responsiveness. CPU/MiB here
 includes the complete Session-plus-peer workload; it does not isolate 9P codec
