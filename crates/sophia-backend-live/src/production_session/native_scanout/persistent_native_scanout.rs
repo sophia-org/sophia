@@ -23,6 +23,7 @@ pub use discovery::{
 };
 
 mod completion_wait;
+mod head_selection;
 mod head_completion;
 #[path = "../../../tests/support/native_head_fixture.rs"]
 mod native_head_fixture;

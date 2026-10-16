@@ -22,6 +22,7 @@ udev = { version = "0.9.3", optional = true }
 tracing.workspace = true
 
 [dev-dependencies]
+stats_alloc = "=0.1.10"
 drm-ffi = "0.9.1"
 sophia-runtime = { path = "../sophia-runtime" }
 sophia-xshmfence = { path = "../sophia-xshmfence" }

@@ -75,10 +75,10 @@ pub enum OutputFrameServiceError {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OutputFrameServiceReducer {
-    outputs: BTreeSet<OutputId>,
+    outputs: OutputSet,
     primary: OutputId,
-    retirement_attempted: BTreeSet<OutputId>,
-    pending_frame_attempted: BTreeSet<OutputId>,
+    retirement_attempted: OutputSet,
+    pending_frame_attempted: OutputSet,
     presentation_attempted: bool,
     effect_budget: usize,
     effects_emitted: usize,
@@ -98,8 +98,8 @@ impl OutputFrameServiceReducer {
         Ok(Self {
             outputs,
             primary,
-            retirement_attempted: BTreeSet::new(),
-            pending_frame_attempted: BTreeSet::new(),
+            retirement_attempted: OutputSet::new(),
+            pending_frame_attempted: OutputSet::new(),
             presentation_attempted: false,
             effect_budget,
             effects_emitted: 0,
@@ -220,7 +220,7 @@ impl OutputFrameServiceReducer {
 
 fn validate_output_frame_service_request(
     request: &OutputFrameServiceRequest,
-) -> Result<(BTreeSet<OutputId>, OutputId), OutputFrameServiceError> {
+) -> Result<(OutputSet, OutputId), OutputFrameServiceError> {
     if request.outputs.is_empty() {
         return Err(OutputFrameServiceError::EmptyOutputSet);
     }
@@ -231,7 +231,7 @@ fn validate_output_frame_service_request(
         });
     }
 
-    let mut outputs = BTreeSet::new();
+    let mut outputs = OutputSet::new();
     let mut primary = None;
     for observation in &request.outputs {
         if !outputs.insert(observation.output) {
@@ -245,4 +245,39 @@ fn validate_output_frame_service_request(
     }
     let primary = primary.ok_or(OutputFrameServiceError::MissingPrimary)?;
     Ok((outputs, primary))
+}
+
+/// The request validator bounds every set, including attempted effects.
+/// Keep IDs sorted so a reordered observation compares equal without a heap set.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct OutputSet {
+    ids: [OutputId; OUTPUT_FRAME_SERVICE_CAPACITY],
+    len: usize,
+}
+
+impl OutputSet {
+    fn new() -> Self {
+        Self {
+            ids: [OutputId::from_raw(0); OUTPUT_FRAME_SERVICE_CAPACITY],
+            len: 0,
+        }
+    }
+
+    fn contains(&self, output: &OutputId) -> bool {
+        self.ids[..self.len].binary_search(output).is_ok()
+    }
+
+    fn insert(&mut self, output: OutputId) -> bool {
+        let Err(index) = self.ids[..self.len].binary_search(&output) else {
+            return false;
+        };
+        assert!(
+            self.len < OUTPUT_FRAME_SERVICE_CAPACITY,
+            "validated output set capacity"
+        );
+        self.ids.copy_within(index..self.len, index + 1);
+        self.ids[index] = output;
+        self.len += 1;
+        true
+    }
 }

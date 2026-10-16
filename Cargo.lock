@@ -1355,6 +1355,7 @@ dependencies = [
  "sophia-seat-device",
  "sophia-wake",
  "sophia-xshmfence",
+ "stats_alloc",
  "tracing",
  "udev",
 ]
@@ -1445,6 +1446,7 @@ dependencies = [
  "sophia-portal",
  "sophia-protocol",
  "sophia-runtime",
+ "stats_alloc",
  "tracing",
  "xkbcommon",
 ]

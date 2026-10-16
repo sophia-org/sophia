@@ -18,3 +18,6 @@ xkbcommon = "0.8"
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+stats_alloc = "=0.1.10"

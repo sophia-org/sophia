@@ -190,6 +190,11 @@ Rules:
 This keeps production modules readable and forces tests to exercise the same
 crate boundary that downstream Sophia components use.
 
+The head-selection allocation fixture imports the private, passive iterator
+helper by path. It supplies enabled/output facts to verify ordering, topology
+changes and allocation behavior without constructing a native device owner.
+The fixture exposes no production test API and does not prove physical scanout.
+
 The renderer's private pixmap-allocation adoption handshake is an exception to
 public-API testing. Its external `tests/support/shared_pixmap_adoption.rs` file
 is mounted inside the service module to control cancellation between reply
