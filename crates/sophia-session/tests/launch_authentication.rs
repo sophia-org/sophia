@@ -38,6 +38,8 @@ mod lock_authentication;
 
 #[path = "support/lock_authenticated_transport.rs"]
 mod lock_authenticated_transport;
+#[path = "support/lock_external_sdk.rs"]
+mod lock_external_sdk;
 
 #[path = "support/authentication_transport_budget.rs"]
 mod authentication_transport_budget;

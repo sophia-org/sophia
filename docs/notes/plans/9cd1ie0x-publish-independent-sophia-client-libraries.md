@@ -144,6 +144,49 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `3e5b679` and C `165c250` pass paired lock production-export and
+protected idle-revocation gates. The runtime gate runs pinned C, candidate C
+and external Rust through the same production worker: chord negotiation, exact
+object fetch, two-chunk 2x2 upload, demand/permit, candidate outcome, Entry/Chord
+events and Unlocking publication. All three pass. The harness supplies admission,
+lock state, permits and outcome; this is not Engine rendering or physical-lock
+acceptance. The C candidate source path is explicit and pins remain unchanged.
+
+Both SDK peers separately pass the native-session launch-authentication test
+`external_sdk_lock_authenticates_and_observes_revocation`: real Factotum and
+bubblewrap, same admitted root, object/ACK, revocation, retained negotiation
+custody, one connection/disconnection and zero remaining namespace admissions.
+The existing raw authenticate/reauthenticate/revoke control also passes, but does
+not qualify SDK session reauthentication. Lock state and the private channel
+class remain supplied. In-flight upload revocation is still a separate gate.
+
+C now has a passive `sophia_lc_obligations` query corresponding to Rust's
+consumed/acked, pending flags, write count and retry/ACK waits. Invalid arguments,
+retry, held/drained uploads, terminal flags and production ACKs are tested.
+All 37 Rust lock tests, strict Clippy and C's full suite pass. Both SDKs record
+API matrix 47 / lock map 7 and the ownership guide. No performance gain is claimed.
+
+Reproduce with `cargo-slot sophia cargo test -p sophia-runtime --test
+lock_client_c_sdk -- --include-ignored --nocapture`, setting
+`SOPHIA_LOCK_RUST_SDK_PEER` to the independently built example and
+`SOPHIA_LOCK_C_SDK_SOURCE` to the candidate checkout. Run the protected test with
+`-p sophia-session --features native-session --test launch_authentication`, the
+test name above and `--include-ignored`; set `SOPHIA_LOCK_AUTH_PEER` separately
+for each SDK. Rust peer binaries are in the SDK worktree's cargo-slot pool;
+C's protected peer is `build/lock_authenticated_peer`.
+
+SHA-256: Rust production peer
+`a268d30fe0a557eff8b01184eab74e0ebc1f387993ca29174dff582aac4e5d90`;
+Rust protected peer
+`b2d06f663134eb8165f5c5fec12f2500c494fa9b1accb456466fe2bfd401dc72`;
+C protected peer
+`d68cdfa475b8d7e55c3bb80409258e2d84ddf32eeaa6b56d6759de10e9e81db2`.
+
+Next qualify in-flight lock revocation/recovery and audit remaining role failure
+coverage, then administration and public broker/portal APIs. Release-wide parity,
+foreign-language binding smoke, signed publication and verified pin adoption
+remain required. t333 is open; no quiet hold is active.
+
 Signed Rust `94ff9db` integrates the experimental lock Session and nonblocking
 Connecting facade. Direct startup and admitted-root handoff retain one connection;
 the facade transfers a ready session once and preserves terminal inspection.
