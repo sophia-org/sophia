@@ -229,6 +229,20 @@ impl ShellComponentProcesses {
     pub fn visit_poll_fds<'a>(&'a self, visit: impl FnMut(rustix::event::PollFd<'a>)) {
         self.connections.visit_poll_fds(visit)
     }
+
+    pub fn subscribe_wait<'a>(
+        &'a self,
+        fds: &mut smallvec::SmallVec<[rustix::event::PollFd<'a>; 64]>,
+    ) -> smallvec::SmallVec<
+        [crate::shell_component_connections::ComponentWait<'a>;
+            sophia_config::MAX_SHELL_COMPONENTS],
+    > {
+        self.connections.subscribe_wait(fds)
+    }
+
+    pub fn discard_readiness(&self) {
+        self.connections.discard_readiness();
+    }
     pub fn output_pending(&self) -> bool {
         self.connections.output_pending()
     }

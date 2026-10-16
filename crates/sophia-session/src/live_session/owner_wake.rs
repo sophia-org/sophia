@@ -120,6 +120,7 @@ impl OwnerWake {
     }
 
     /// Native readiness is attributed separately; it grants no retirement.
+    #[cfg(test)]
     pub(super) fn receive_with_native<'a, T>(
         &'a self,
         receiver: &Receiver<T>,
@@ -127,6 +128,20 @@ impl OwnerWake {
         fds: impl IntoIterator<Item = PollFd<'a>>,
         native: impl IntoIterator<Item = PollFd<'a>>,
         progress: Option<(u64, u64)>,
+    ) -> io::Result<Result<T, RecvTimeoutError>> {
+        self.receive_observed(receiver, timeout, fds, native, progress, |_| {})
+    }
+
+    /// The callback runs only after an actual successful wait, never when the
+    /// authority queue supplies work immediately or is already disconnected.
+    pub(super) fn receive_observed<'a, T>(
+        &'a self,
+        receiver: &Receiver<T>,
+        timeout: Duration,
+        fds: impl IntoIterator<Item = PollFd<'a>>,
+        native: impl IntoIterator<Item = PollFd<'a>>,
+        progress: Option<(u64, u64)>,
+        observed: impl FnOnce(&[PollFd<'a>]),
     ) -> io::Result<Result<T, RecvTimeoutError>> {
         match receiver.try_recv() {
             Ok(item) => {
@@ -142,7 +157,7 @@ impl OwnerWake {
             }
             Err(TryRecvError::Empty) => {}
         }
-        self.wait(timeout, fds, native, progress)?;
+        self.wait(timeout, fds, native, progress, observed)?;
         Ok(match receiver.try_recv() {
             Ok(item) => Ok(item),
             Err(TryRecvError::Empty) => Err(RecvTimeoutError::Timeout),
@@ -161,7 +176,7 @@ impl OwnerWake {
         stats.service_waits = stats.service_waits.saturating_add(1);
         self.statistics.set(stats);
         self.plan_wait(WaitPlan::new(timeout, WaitReason::Service));
-        self.wait(timeout, Vec::new(), native, progress)
+        self.wait(timeout, Vec::new(), native, progress, |_| {})
     }
 
     pub(super) fn record_native_wait(&self, short: bool, events: bool) {
@@ -203,6 +218,7 @@ impl OwnerWake {
         fds: impl IntoIterator<Item = PollFd<'a>>,
         native: impl IntoIterator<Item = PollFd<'a>>,
         progress: Option<(u64, u64)>,
+        observed: impl FnOnce(&[PollFd<'a>]),
     ) -> io::Result<()> {
         let now = Instant::now();
         let plan = self
@@ -218,6 +234,7 @@ impl OwnerWake {
         let ring_index = fds.len();
         fds.push(PollFd::new(&self.wake, PollFlags::IN));
         let ready = sophia_wake::wait(&mut fds, Some(now.checked_add(timeout).unwrap_or(now)))?;
+        observed(&fds[..native_start]);
         let mut stats = self.statistics.get();
         stats.waits = stats.waits.saturating_add(1);
         stats.ring_ready = stats

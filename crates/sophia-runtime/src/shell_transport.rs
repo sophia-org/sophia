@@ -366,6 +366,29 @@ impl ShellComponentTransport {
         Ok(())
     }
 
+    pub fn readiness_subscription(&self) -> Option<sophia_9p::unix::Subscription> {
+        match self.wire.as_ref()? {
+            wire::Wire::Files(files) => files.subscription(),
+            wire::Wire::Socket(_) => None,
+        }
+    }
+
+    /// Consume the previous owner wait once, retaining all live authority checks.
+    pub fn service_owner_observed(
+        &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
+        readiness: Option<sophia_9p::unix::Observation>,
+    ) -> Result<(), ShellTransportError> {
+        if let Some(wire::Wire::Files(files)) = self.wire.as_mut() {
+            files.set_readiness(readiness);
+        }
+        let result = self.service_owner_turn(epochs);
+        if let Some(wire::Wire::Files(files)) = self.wire.as_mut() {
+            files.set_readiness(None);
+        }
+        result
+    }
+
     /// Number of actual 9P services (input turns and publication flushes) in
     /// the current connection, including negotiation.
     /// This measures transport work, independently of the number of role visits.

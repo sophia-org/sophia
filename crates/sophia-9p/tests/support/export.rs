@@ -99,6 +99,8 @@ pub struct Shared {
 pub struct StaticExport {
     shared: Arc<Mutex<Shared>>,
     pub guarded: bool,
+    /// Model a request changing data observed by an already waiting reader.
+    pub publish_sink_writes: bool,
 }
 
 impl StaticExport {
@@ -295,6 +297,9 @@ impl Export for StaticExport {
             return Err(Errno::ENOSPC);
         }
         state.sink.extend_from_slice(data);
+        if self.publish_sink_writes {
+            state.events.push_back(data.to_vec());
+        }
         Ok(u32::try_from(data.len()).unwrap())
     }
 

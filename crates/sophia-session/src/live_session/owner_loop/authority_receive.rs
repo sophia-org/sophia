@@ -44,13 +44,14 @@
     // no descriptor and keep the short budget.
     let mut shell_wires = smallvec::SmallVec::<[rustix::event::PollFd<'_>; 64]>::new();
     let mut shell_output_pending = false;
+    let mut component_waits = smallvec::SmallVec::<[_; sophia_config::MAX_SHELL_COMPONENTS]>::new();
     if let Some(shell) = metadata_shell.as_ref() {
         shell.visit_poll_fds(|fd| shell_wires.push(fd));
         shell_output_pending |= shell.output_pending();
         plan.cap(shell.authentication_wait(now), R::ShellAuthentication);
     }
     if let Some(components) = shell_components.as_ref().filter(|_| runtime.is_some()) {
-        components.visit_poll_fds(|fd| shell_wires.push(fd));
+        component_waits = components.subscribe_wait(&mut shell_wires);
         shell_output_pending |= components.output_pending();
         plan.cap(components.authentication_wait(now), R::ShellAuthentication);
     }
@@ -66,12 +67,13 @@
     owner_wake.record_native_wait(held.frames, !native_wait.descriptors.is_empty());
     #[cfg(feature = "comparator-profiling")]
     drop(profile);
-    owner_wake.receive_with_native(
+    owner_wake.receive_observed(
         authority_receiver,
         plan.timeout,
         shell_wires,
         native_wait.descriptors.into_iter()
             .map(|fd| rustix::event::PollFd::from_borrowed_fd(fd, rustix::event::PollFlags::IN)),
         native_scanout.as_ref().map(LiveProductionNativeScanout::completion_progress),
+        |fds| { for registration in component_waits { registration.observe(fds); } },
     )?
 }

@@ -442,6 +442,23 @@ impl ShellComponentSession {
         self.processes.visit_poll_fds(visit)
     }
 
+    pub fn subscribe_wait<'a>(
+        &'a self,
+        fds: &mut smallvec::SmallVec<[rustix::event::PollFd<'a>; 64]>,
+    ) -> smallvec::SmallVec<
+        [crate::shell_component_connections::ComponentWait<'a>;
+            sophia_config::MAX_SHELL_COMPONENTS],
+    > {
+        if !self.available || self.stopping {
+            return smallvec::SmallVec::new();
+        }
+        self.processes.subscribe_wait(fds)
+    }
+
+    pub fn discard_readiness(&self) {
+        self.processes.discard_readiness();
+    }
+
     /// Whether a connected wire holds records the next visit can move.
     pub fn output_pending(&self) -> bool {
         self.available && !self.stopping && self.processes.output_pending()
