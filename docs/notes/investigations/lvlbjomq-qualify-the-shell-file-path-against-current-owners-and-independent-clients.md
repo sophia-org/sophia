@@ -70,7 +70,12 @@ tty4, and restores the setting on normal exit, error or catchable interruption.
 All four perf-09 runs now completed with 1,000 joined frames and clean recovery;
 independent cost/join replay matches. Perf attributes confirm kernel sampling,
 and the host setting is verified restored to 2. The quiet hold is released.
-Kernel/user attribution remains to be analyzed. Perf-09 reuses the validated
+Kernel/user attribution is recorded in [perf-09 results](#t331-kernel-profile-results):
+roughly two-thirds of excess sampled CPU is user-space work and one-third is
+kernel work. Polling is the largest identified kernel difference; custody is
+only part of it. Prioritize avoiding redundant transport readiness polls, while
+preserving custody checks, before considering upload concurrency. This remains
+a source-inspection lead, not an implemented saving. Perf-09 reuses the validated
 perf-08 plans and binaries. Its output directories are now occupied; do not
 rerun `t252-check`. The owner reported a silent exit 1 after captures existed;
 the helper's overwrite guards explain such a refusal, though the original
@@ -2243,6 +2248,69 @@ still run as the normal user. A private kallsyms snapshot supports offline
 kernel symbol attribution. No setting has changed or native run started yet.
 A fresh quiet window is requested. This permits kernel sampling for owned
 processes; it is not system-wide sampling.
+
+## t331: kernel profile results
+
+Perf-09's four captures include both kernel and user execution (`cpu-clock:uk`,
+997 Hz); all have zero reported lost samples. Journal and cost replay and the
+1,000 native joins per arm match the runner's reports. The host profiling
+setting is restored to 2 and the quiet hold is released. Claude reports only
+11:25Z process/Herdr coordination and Muse's finishing handoff relay, with no
+later crunch work through release; the review itself finished before the hold.
+
+Analysis selects Session and the peer's host PID during each whole-workload
+counter envelope. Host peer identities come from stacks containing the exact
+peer binary; namespace PID 1 is not used as the host selector. The retained
+private kallsyms snapshot has nonzero addresses, but this perf version still
+prints kernel frames as unknown. Offline analysis resolves those addresses
+against the preceding text symbol in that snapshot, rejecting distances of
+64 KiB or more. All selected kernel leaves resolve under that rule. Aliases,
+optimized functions and absent function-size information limit exact attribution.
+No live host setting was changed for offline analysis.
+
+| Workload | Files user ms | IPC user ms | Files kernel ms | IPC kernel ms |
+| --- | ---: | ---: | ---: | ---: |
+| Panel | 1,214.6 | 726.2 | 775.3 | 574.7 |
+| Panel + 4 MiB | 5,345.0 | 4,186.6 | 2,166.5 | 1,548.6 |
+
+These are summed sample periods across each 1,000-frame workload, not exact
+function runtimes or acceptance measurements. Selected sample counts are
+1,984/1,297 for files/IPC panel and 7,489/5,718 for bulk. Approximately 71% of
+the panel difference and 65% of the bulk difference lies in user space. Kernel
+work matters, but does not explain the whole CPU gap. Cost-07 remains the last
+unprofiled comparison.
+
+The strongest identified kernel difference is polling. Kernel samples with
+`__x64_sys_ppoll` on the stack total 173.5 versus 20.1 ms for panel and 660.0
+versus 73.2 ms for bulk. This measures on-CPU polling work, not sleeping time
+or syscall counts. The files bulk poll samples split by nearest application
+caller into client `Pipeline::wait_for_io` (235.7 ms), custody `is_live`
+(181.5 ms), server `turn` (126.4 ms), and owner `sophia_wake::wait` (115.3 ms).
+For files panel those values are 29.1, 54.2, 46.1 and 42.1 ms respectively.
+This supports inspecting readiness handling independently of authority checks.
+
+Socket receive/send kernel stacks are not uniformly worse for 9P: bulk
+recvfrom samples are 450.4 versus 620.9 ms and sendto 320.0 versus 415.2 ms.
+Do not replace this evidence with a blanket claim that 9P copies more in the
+kernel. Kernel stacks without an identified syscall frame total 587.8/305.9 ms
+for bulk and 278.8/306.9 ms for panel; these remain a separate category.
+Counter-writer work also appears in all profiles and is not attributed to the
+transport. Inclusive stack categories must not be summed as independent costs.
+
+Source inspection confirms `Pipeline::poll` directly performs bounded
+nonblocking I/O; despite its name, it does not call poll(2). Its `wait_for_io`
+does. The server's `turn`, however, always calls its own readiness wait, even
+when the embedding owner has already waited over the borrowed descriptors.
+That is the next concrete inspection target: determine whether validated
+readiness can be passed through without a second zero-time poll, preserving
+socket identity, interest changes, wake/stop handling and the per-turn budget.
+Do not assume every server poll is redundant: there are standalone and
+owner-internal callers too. Preserve the existing path for those callers.
+
+Evidence is in `t331-native-perf-09/analysis/`: `kernel-profile-summary.json`,
+each arm's raw and resolved stacks, `kernel-categories.json`, and
+`ppoll-callers.json`. Raw perf hashes and per-thread contributions are retained.
+This profiling step changes no production code and does not close t331.
 
 ## Connections
 
