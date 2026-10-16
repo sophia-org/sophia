@@ -144,6 +144,17 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `7ad2f9f` adds retained pointer Actions and prepared exact responses.
+Invocation and dismissal remain pending until ACK admission; cancellation owes
+none. Activation can name any eligible displayed row, not only the keyboard
+selection. Activation and ACK enter the local queue together but retain separate
+custody outcomes. Dropping preparation leaves the action available. Signed C
+`edc9259` adds the independent nonselected-row control and matrix revision 11.
+The full Rust workspace suite, strict all-target Clippy, final 30-test native
+suite and C's full suite pass. Rust also checks exact wire records, stale actions,
+saturation, cancellation and both split-refusal orders. Production-export
+qualification remains pending.
+
 Signed Rust `d65d8da` adds native allocation, resource and frame-pacing helpers.
 They retain orphaned grants until invalidation, wait for Stored upload bytes,
 place only Accepted resources, and distinguish retirement from release. Local
@@ -178,7 +189,7 @@ Prepared commit needs no allocation or I/O; delayed commit may fail while
 retaining credits. Explicitly cancel unused delayed tokens. Simulated-time
 callers must use `dispatch` and non-driving `take_*` receives.
 
-Next, implement pointer-action responses and the integrated native facade.
+Next, implement the integrated native facade.
 Then complete delayed native reservations, other non-content batches and
 configurable queue parity. C's `sophia_ns` supplies the coverage checklist;
 the pinned contract defines semantics. The task also still requires Rust WM,
