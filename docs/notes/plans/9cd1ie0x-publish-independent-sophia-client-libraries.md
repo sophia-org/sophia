@@ -144,12 +144,26 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `5cf0f90` adds native-launcher transport: exact revision-7
+negotiation, typed native/shared observations, catalog fetching, allocation
+requests, whole candidates and a prepared keyboard activation/ACK response.
+The response admits both records or neither locally, with independent custody
+tickets. Commit needs no allocation or I/O; Drop cancels. The caller still
+owns focus eligibility, input ACK deadlines and lifecycle decisions.
+
+Seven scripted-peer tests cover negotiation, all native events, catalog order,
+allocation/candidate custody, cancellation, saturation, invalid responses,
+malformed input, foreign epochs and split disconnect outcomes. Rust workspace
+tests, strict all-target Clippy, formatting and diff checks pass. C's full
+`make check` passes at `f8ca212`, including independent native codecs and helper
+input/activation controls. The C helper tests use a session stand-in; production
+export evidence remains pending. Signed C `62b62f6` updates the comparison;
+both SDKs now carry matrix revision 7.
+
 Signed Rust `c3c7070` adds `custody_result`, distinguishing evicted history from
 unissued tickets without changing the existing optional query. Retained unknown
 custody remains a separate outcome. C `f8ca212` adds an independent 256-ticket
-retention-boundary regression. Rust workspace tests, the final shell-client
-tests, strict all-target Clippy and C `make check` pass. Matrix revision 6
-records these results and the native-launcher prerequisite below.
+retention-boundary regression.
 
 Signed Rust SDK `5b72169` adds atomic batches of independent content records and
 whole candidates, directly or through either reservation form. Each item keeps
@@ -157,13 +171,6 @@ its transaction and custody ticket. Upload starts stage distinct free slots;
 failure or cancellation consumes none. Mixed batches use bulk credits, while
 all-ACK batches retain control headroom. This is atomic local admission, not an
 atomic server transaction: records can have different remote outcomes.
-
-Rust workspace tests, strict all-target Clippy, formatting and diff checks pass.
-Batch controls cover order, transactions, invalid middle items, count/byte/slot
-limits, reservation preservation, upload-claim rollback and mixed custody after
-disconnect. C's existing `admission_atomicity` controls and full `make check`
-pass at `a90e235`. Signed C `c161f1a` updates the comparison only; both SDKs now
-carry revision 5 of `API-PARITY.md`. Production-export evidence is still pending.
 
 This builds on Rust `a2c0e74` (capacity tokens that survive dispatch and
 unreserved admissions), `85b37ed` (prepared content with allocation/I/O-free
@@ -180,13 +187,11 @@ candidate is **0.10.0-dev, unreleased**; consumers and foreign-language bindings
 must rebuild together. Do not move or reinitialize C session storage while a
 reservation is live. No wire contract changed.
 
-Next, add Rust native-launcher transport before its lifecycle helper. The
-protocol crate has native codecs, but the client's inbound/outbound types do
-not carry those records. Implement negotiated transport and observations,
-then atomic input/activation responses, then opening/focus/revocation and
-resource/presentation lifecycle handling against the pinned contract. C's
+Next, implement opening/focus/revocation, input revision and ACK obligations,
+and resource/presentation lifecycle handling against the pinned contract. C's
 `sophia_ns` is the coverage checklist; Rust's content reducer is not its
-equivalent. Non-content batches and the fixed bulk/control partition also
+equivalent. Pointer activation/ACK batching, delayed native reservations,
+other non-content batches and the fixed bulk/control partition also
 remain gaps against C's broader submissions and configurable queue. Delayed
 commits can fail encoding/allocation while retaining credits; prepared commits
 cannot. Explicitly cancel unused delayed tokens. Simulated-time Rust callers
