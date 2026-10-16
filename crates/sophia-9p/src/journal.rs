@@ -229,7 +229,10 @@ impl Journal {
         if offset == self.tail {
             return Ok(ReadOutcome::Pending);
         }
-        let mut bytes = Vec::new();
+        // Reserve only retained bytes in the requested range, even when the
+        // caller supplies a huge count. Gathering records then needs no growth.
+        let capacity = u64::from(count).min(self.tail - offset) as usize;
+        let mut bytes = Vec::with_capacity(capacity);
         for record in &self.records {
             let end = record.start + record.bytes.len() as u64;
             if offset >= end {
