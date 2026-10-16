@@ -15,6 +15,25 @@ contract in the [control bus](sophia-9p-control-bus.md).
 
 ## Current owners, versions and grants
 
+### Request ordering on a shell connection
+
+The shell export executes synchronous requests in wire order on each
+connection. A client may queue a fresh `Twalk` followed by `Tlopen` for the
+new fid without waiting between them. This is a shell-profile guarantee,
+not an assumption about arbitrary 9P servers. Pending journal reads do not
+block later requests, and clients must match replies by tag rather than
+assume reply order.
+
+A writer must receive both a complete successful walk and a successful open
+before sending payload. A partial walk or either refusal ends that setup;
+an early successful open does not authorize data. Bounded clients may retain
+the sequential walk-then-open path when they lack a second request credit.
+This changes no upload, submission or acknowledgement barrier: resource
+admission precedes upload setup, writes remain sequential, the complete record
+write precedes submit, and the covering acknowledgement precedes the next
+transaction setup. Terminal resource status discards pending setup replies
+and releases its fid without allowing a later reply to reopen the slot.
+
 ### Protocol and revisions
 
 `protocol/sophia-shell-files-v1.kdl` defines the file records and objects.

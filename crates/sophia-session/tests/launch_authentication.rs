@@ -455,3 +455,31 @@ fn reserved_launch_capacity_is_reclaimed_only_after_retirement() {
         "dropping the launch book invalidates its shared connection"
     );
 }
+
+#[test]
+fn all_relay_slots_share_a_wait_and_idle_observations_do_not_hide_retirement() {
+    use rustix::event::{Timespec, poll};
+    let mut f = Fixture::new();
+    let ids: Vec<_> = (0..sophia_factotum::launch::MAX_DELEGATIONS)
+        .map(|_| f.reserve())
+        .collect();
+    let mut fds = Vec::new();
+    let waits = f.book.subscribe_relays(0, |fd| fds.push(fd));
+    assert_eq!(waits.len(), ids.len());
+    assert_eq!(fds.len(), 2 * ids.len());
+    poll(&mut fds, Some(&Timespec::default())).unwrap();
+    for wait in waits {
+        wait.observe(&fds);
+    }
+    drop(fds);
+    // Custody and deadlines are checked even when every transport was idle.
+    let expired = Instant::now() + Duration::from_secs(6);
+    f.book.poll(expired).unwrap();
+    for id in ids {
+        assert_eq!(f.book.phase(id), Some(Phase::Retiring));
+    }
+    let waits = f
+        .book
+        .subscribe_relays(0, |_| panic!("retired relay retained a descriptor"));
+    assert!(waits.is_empty());
+}

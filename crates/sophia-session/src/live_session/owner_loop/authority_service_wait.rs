@@ -42,16 +42,23 @@
                         wait = Duration::ZERO;
                     }
                     if !wait.is_zero() {
-                        let wait = native_wait.deadline.map_or(wait, |deadline| {
+                        let mut wait = native_wait.deadline.map_or(wait, |deadline| {
                             wait.min(deadline.saturating_duration_since(now))
                         });
+                        let mut relay_fds = smallvec::SmallVec::<[rustix::event::PollFd<'_>; 128]>::new();
+                        let relay_waits = authenticated_launches.subscribe_relays(0, |fd| relay_fds.push(fd));
+                        if let Some(deadline) = authenticated_launches.relay_deadline() {
+                            wait = wait.min(deadline.saturating_duration_since(now));
+                        }
                         owner_wake.record_native_wait(true, !native_wait.descriptors.is_empty());
-                        owner_wake.wait_for_service(
+                        owner_wake.wait_for_service_observed(
                             wait,
+                            relay_fds,
                             native_wait.descriptors.into_iter()
                                 .map(|fd| rustix::event::PollFd::from_borrowed_fd(fd, rustix::event::PollFlags::IN))
                                 .collect(),
                             native_scanout.as_ref().map(LiveProductionNativeScanout::completion_progress),
+                            |fds| { for registration in relay_waits { registration.observe(fds); } },
                         )?;
                     }
                 }

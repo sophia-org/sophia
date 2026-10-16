@@ -71,6 +71,39 @@ impl RelayServer {
     pub fn export_mut(&mut self) -> &mut Relay {
         self.0.export_mut()
     }
+    pub fn subscription(&self) -> Option<sophia_9p::unix::Subscription> {
+        self.0.subscription()
+    }
+    pub fn visit_poll_fds<'a>(&'a self, visit: impl FnMut(rustix::event::PollFd<'a>)) {
+        self.0.visit_poll_fds(visit);
+    }
+    pub fn observation_is_current(&self, observation: &sophia_9p::unix::Observation) -> bool {
+        self.0.observation_is_current(observation)
+    }
+    pub fn deadline(&self) -> Option<Instant> {
+        self.0.export().deadline
+    }
+    /// The owner has sampled this relay beside its other descriptors. An idle
+    /// observation avoids transport work, but never delays expiry or revocation.
+    pub fn turn_observed(
+        &mut self,
+        observation: sophia_9p::unix::Observation,
+        now: Instant,
+    ) -> io::Result<bool> {
+        if self.0.export().revoked {
+            return Ok(false);
+        }
+        if self.deadline().is_some_and(|end| now >= end) {
+            if !self.0.flush()? {
+                return Ok(false);
+            }
+            self.0.export_mut().deadline = None;
+        }
+        if self.observation_is_current(&observation) && !observation.is_ready() {
+            return Ok(true);
+        }
+        Ok(self.0.turn_observed(observation)? && !self.0.export().revoked)
+    }
     pub fn turn(&mut self, maximum: Option<Duration>) -> io::Result<bool> {
         // Retry local expiry even if the child and Factotum are both silent.
         if !self.0.flush()? {

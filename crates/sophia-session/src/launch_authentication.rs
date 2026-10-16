@@ -19,8 +19,10 @@ use std::time::{Duration, Instant};
 mod custody;
 pub use custody::{Authority, WorkerAuthority};
 mod coordinator;
+mod readiness;
 pub(crate) use coordinator::RegistrationOwner;
 pub use coordinator::{LaunchCoordinator, Registration};
+pub use readiness::RelayWait;
 pub mod files;
 pub mod role;
 pub(crate) mod spawn;
@@ -84,6 +86,7 @@ struct Record {
     ticket: Option<Ticket>,
     channel: Option<LaunchChannel>,
     relay: Option<RelayServer>,
+    readiness: std::cell::Cell<Option<sophia_9p::unix::Observation>>,
 }
 
 /// One book per shared Factotum connection. A replaced connection needs a new
@@ -205,6 +208,7 @@ impl LaunchBook {
             ticket: Some(ticket),
             channel: Some(channel),
             relay: Some(relay),
+            readiness: std::cell::Cell::new(None),
         });
         Ok(LaunchId(generation))
     }
@@ -339,6 +343,7 @@ impl LaunchBook {
                 }
             }
         }
+        self.sample_missing_readiness()?;
         let mut index = 0;
         while index < self.records.len() {
             let id = LaunchId(self.records[index].delegation.identity.launch);
@@ -349,7 +354,11 @@ impl LaunchBook {
             }
             let record = &mut self.records[index];
             if let Some(relay) = record.relay.as_mut()
-                && !relay.turn(Some(Duration::ZERO)).unwrap_or(false)
+                && !match record.readiness.take() {
+                    Some(observation) => relay.turn_observed(observation, now),
+                    None => relay.turn(Some(Duration::ZERO)),
+                }
+                .unwrap_or(false)
             {
                 self.revoke(id, now)?;
                 continue;

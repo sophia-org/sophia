@@ -59,6 +59,10 @@
         plan.pending(R::ShellOutput);
         plan.cap(Duration::from_millis(1), R::ShellOutput);
     }
+    let relay_waits = authenticated_launches.subscribe_relays(shell_wires.len(), |fd| shell_wires.push(fd));
+    if let Some(deadline) = authenticated_launches.relay_deadline() {
+        plan.cap(deadline.saturating_duration_since(now), R::ShellAuthentication);
+    }
     plan.cap(
         paced_repaint_wait_cap(primary_frame_pacer, paced_repaint_runnable, now, plan.timeout),
         R::Pacer,
@@ -74,6 +78,9 @@
         native_wait.descriptors.into_iter()
             .map(|fd| rustix::event::PollFd::from_borrowed_fd(fd, rustix::event::PollFlags::IN)),
         native_scanout.as_ref().map(LiveProductionNativeScanout::completion_progress),
-        |fds| { for registration in component_waits { registration.observe(fds); } },
+        |fds| {
+            for registration in component_waits { registration.observe(fds); }
+            for registration in relay_waits { registration.observe(fds); }
+        },
     )?
 }
