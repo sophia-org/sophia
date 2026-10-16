@@ -20,11 +20,16 @@ per frame, retaining +10% as the acceptance ceiling. See the accepted
 [cost scope](../../sophia-shell-files.md#cost-accounting-scope-accepted-october-15-2026)
 and [implementation plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#implementation-sequence).
 Earlier references below to an unanswered scope decision are superseded.
-The optimized native cost baseline is prepared in `t331-native-cost-01`:
-four 60-second arms, 1,000 frames each, covering files/IPC with and without
-the 4 MiB probe at 1080p/60 Hz. Exact artifact and argument validation passes.
-The short `t252-check` command now selects these fresh plans from tty4 after
-leaving the desktop. No arm has run. See [baseline preparation](#t331-native-cost-baseline-preparation).
+The first native cost arm completed its workload and recovered, but concurrent
+counter writes corrupted the shared evidence log. The strict verifier refused
+it and the other three arms did not start. Comparator `4801e2650` now formats
+each counter and peer record in bounded stack storage before one pipe write.
+Four counter tests (including 2,000 concurrent records), strict Clippy and all
+four isolated workload/cost replays pass. Fresh `t331-native-cost-02` plans
+cover four 60-second arms, 1,000 frames each, files/IPC with and without the
+4 MiB probe at 1080p/60 Hz. All exact argument checks pass. `t252-check` now
+selects these plans from tty4 after leaving the desktop; no retry has run.
+See [atomic evidence records](#t331-atomic-evidence-records).
 Collect this baseline before choosing further production changes;
 supplied-owner polling results alone cannot establish native costs.
 
@@ -1477,6 +1482,39 @@ Previous calibration directories remain untouched. After collection, verify
 every offer, upload, native join and recovery record before using the cost
 bounds to select the next optimization. Arrange a fresh attended window; no
 quiet-window hold is currently active.
+
+## t331: atomic evidence records
+
+The first files arm of `t331-native-cost-01` reached its end record declaring
+1,000 offers and completions. Session reported bounded completion and clean
+health; console recovery verified termios, KD mode and keyboard restoration.
+However, the collected journal contains only 990 upload offers, 988 acceptance
+records, 989 permits, 988 candidate offers and 994 terminals. The strict reader
+fails with `missing or misattributed upload acceptance`; the launcher stopped
+before IPC or either bulk arm. `captured_only` is not measurement acceptance.
+
+The raw shared capture demonstrates the cause: at line 1310, the frame-12
+upload acceptance appears between `stage=` and the remainder of a Session
+counter record. `writeln!` streamed formatting fragments directly to stderr;
+the other process could write between them. No missing timestamps or outcomes
+have been reconstructed. The original capture remains retained and invalid
+for cost or latency qualification.
+
+Comparator `4801e2650` formats counter lines into a 1,024-byte stack buffer,
+then writes the entire newline-terminated record at once. The peer similarly
+serializes each JSON record into bounded stack storage first. Oversized records
+fail before emitting a prefix; no new heap allocation is needed for formatting.
+These records fit below Linux PIPE_BUF. The four counter tests include a
+single-write/overflow regression and 1,000 counters concurrent with 1,000 JSON
+records on one pipe. All pass. Strict focused Clippy passes, as do the two
+optimized peer tests and all four cost replays in `t331-atomic-record-01/`.
+
+Both release executables were rebuilt. Four new hashed plans under
+`t331-native-cost-02/` use comparator `4801e2650` and integration `b199ac0`;
+workload, output, mode and accounting match the first attempt. All preparation
+and exact device-hidden argument checks pass. `t252-check` selects the fresh
+directory and stops on failure. No second native run has started, no current
+quiet-window hold is active, and the installed desktop remains unchanged.
 
 ## Connections
 
