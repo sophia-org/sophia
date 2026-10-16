@@ -59,9 +59,11 @@ Caller inspection separates idle polling, per-operation checks and delivery
 guards; none is proved redundant. The counting fixture confirms 100 unrelated
 replies cause 100 pending-read retries, but also proves that request-driven
 publication can require a retry without a wake. A generic retry skip is unsafe.
-Next design explicit export change notification with conservative defaults,
-capacity-progress retries and independent authority checks before implementing
-suppression. See [counting fixture results](#t331-pending-read-counting-fixture).
+The subsequent shell audit rejects implementing a change token for now: keeping
+authority checks preserves the custody poll, while the pending journal read is
+already an allocation-free tail comparison. See [change-token audit](#t331-change-token-audit).
+Return to CPU attribution of owner service and system calls; do not infer a
+large saving from the fixture's read-call count.
 The quiet hold is released. `t252-check` points to occupied profile directories;
 prepare fresh plans before another native run. These profiles do not establish
 B9 or authorize concurrent uploads.
@@ -2184,6 +2186,40 @@ separate retry trigger. Authority checks remain mandatory before actual reads
 and guarded delivery; idle custody polling remains independent. Audit the shell
 export's mutation and expiry paths before adopting such a contract. This is a
 design lead, not an implemented optimization or a measured saving.
+
+## t331: change-token audit
+
+The owner authorized continuing from the counting fixture. Auditing the actual
+shell export does not justify implementing the proposed token yet.
+
+`Journal::read` checks the retention floor, tail and count, then returns Pending
+immediately when the requested offset equals the tail. It allocates no buffer
+and scans no retained records on that path. A content token could avoid this
+small amount of work, but would add its own state, dispatch and invalidation.
+No measured saving supports that tradeoff.
+
+More importantly, journal state is not authority state. Namespace or endpoint
+revocation, Factotum ingress closure and wrapper/peer exit can happen without
+changing journal offsets. `RoleFileAuthentication::check` checks admission and
+the admitted verdict; `WorkerAuthority::live` checks ingress and kernel custody.
+Checking that authority before comparing a token leaves the observed poll cost
+intact. Comparing the token first and skipping the check changes revocation
+observation. A content-only token therefore cannot provide both the proposed
+custody-poll reduction and the preserved check boundary.
+
+This narrows the fixture's conclusion: 100 unrelated replies cause 100 read
+attempts, but it does not establish 100 safely removable custody checks or a
+material CPU saving. Keep the behavioral tests and current production behavior.
+The earlier token paragraph records a design lead, superseded by this audit's
+no-change decision. No new protocol, cache, retry state or native run was added.
+
+The next useful attribution should distinguish user-space owner service from
+kernel poll/read/write cost. Perf-08 cannot do the latter because it sampled
+`cpu-clock:u`; syscall call counts alone would still not establish time spent.
+Use task-scoped kernel-inclusive sampling if host permissions allow it, or a
+separate syscall-duration diagnostic with its tracing overhead stated. Retain
+the unprofiled cost-07 measurements as the performance comparison. Do not spend
+another implementation slice on pending-read tokens without stronger evidence.
 
 ## Connections
 
