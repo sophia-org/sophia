@@ -144,6 +144,26 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `2ce53f7` starts experimental `sophia-lock-client` with typed
+preparation for all seven candidate kinds. Immutable encoded candidates fit
+fixed 128-byte owned storage; the body codec still uses one temporary Vec,
+so preparation is not allocation-free. Direct envelope writing avoids a second
+temporary allocation. Three tests cover all typed bodies, literal FrameDemand
+bytes, caller mutation, full-size presentation and invalid shapes/offers.
+Strict Clippy and C's independent full suite pass. C `fd99803` records the
+complete operation checklist in `LOCK-PARITY.md` revision 1 / matrix 41.
+
+Next implement lock startup and the persistent transaction submission lane,
+then journal/object handling and uploads. Lock differs from output: the API
+line contains the epoch, four fixed streams include a retained transaction
+fid, retries are explicit, superseded Lock publications are consumed internally,
+and uploads support 1–8 writes with five control slots reserved. Drain issued
+writes before cancellation; pipelined short writes cancel, single-write mode
+may continue. Keep startup/upload-owned candidate kinds out of unrestricted
+public submission. The pinned contract remains draft and providers only render;
+there is no credential or unlock authority. No session or performance claim
+is made by this foundation. All other t333 scope remains required.
+
 Signed Rust `5d66fec` and C `cce3196` add independent protected output peers.
 Both pass the real protected process/Factotum fixture, hand the exact admitted
 root to their native session, fetch and ACK topology, then observe idle grant
