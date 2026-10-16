@@ -87,16 +87,25 @@ Repeated component service remains a strong lead. The
 [profile audit](2o32e7ui-which-plan-9-implementation-techniques-can-reduce-sophia-shell-costs.md#perf-17-panel-attribution-and-bulk-refusal-october-16)
 records limits and evidence.
 
-The hold is released; mini Claude reports no crunch work. Do not rerun
-`t252-check`: perf-17 destinations are occupied. A device-free production-poller/head test now reproduces the arrival
-window: an event after the first card drain loses to fence synthesis; a final
-collect before that choice retains its timestamp. All six head-completion
-tests pass. This establishes a reachable ordering, not the precise captured
-event-arrival instant. Next, implement and test a bounded card recheck before
-the first fence-authority transition, including shared-card/mirror/error cases.
-Preserve fallback, serial identity and exact timestamp requirements. No runtime
-repair or new capture is prepared yet. No performance patch follows merely from these samples;
-custody checks must not be cached or skipped. Sampling is not acceptance.
+The bounded repair is implemented in signed production `93c542e17` and
+comparator `075fdfa21`. Before the first signaled-fence fallback, singleton and
+mirror retirement recheck the affected card and prefer a newly queued event.
+Ordinary event retirement and heads already using fence authority add no read.
+Read/routing failures propagate; fallback, serial safety and exact timestamp
+requirements remain. Production backend library tests pass (353, one ignored),
+DRM-event tests pass (316, one ignored), strict library Clippy passes, and all
+eight comparator head-completion tests pass. The fixtures prove the controlled
+arrival ordering; hardware benefit is not yet established.
+
+The hold is released. Fresh `t331-native-perf-18` plans are prepared on the
+repaired comparator and integration `fd2cb6c`. Optimized CPU-only build,
+artifact hashes, device-free validation, launcher syntax and perf permission
+smoke pass. `t252-check` selects these four empty one-minute destinations.
+Request a fresh quiet window from mini Claude (machine
+`68e7a5a75f508af427c431e9001ba978`, pane `w2:p1`) when the owner is ready.
+Old perf-16/17 captures remain occupied; never reuse them. The recheck cannot
+promise kernel timestamps for an event that arrives later or is lost. No
+custody check is cached or skipped, and the desktop is unchanged.
 
 Progress-12 established 33/120 Session passes per files panel/bulk frame,
 versus roughly 8/45 for IPC. Source attribution identifies repeated idle

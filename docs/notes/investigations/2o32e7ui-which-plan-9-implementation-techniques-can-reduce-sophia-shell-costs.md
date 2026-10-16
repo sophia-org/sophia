@@ -677,3 +677,30 @@ No runtime fix is implemented by this checkpoint. Existing native artifacts
 remain frozen; no further physical run is prepared. First implement and test
 the bounded recheck, then evaluate its diagnostic benefit without relaxing
 native acceptance.
+
+### Bounded completion recheck implementation, October 16
+
+Signed production `93c542e17` and comparator `075fdfa21` now recheck the affected
+card immediately before first fence fallback in singleton and mirror retirement.
+The recheck runs only for PageFlipPreferred with no queued callback after a
+signaled fence. Events and timestamps use the existing card router; a collected
+event wins, otherwise the existing irreversible fallback remains. Heads already
+using fence authority and ordinary queued-event retirement add no card reads.
+A read/routing failure propagates instead of synthesizing a completion; mirror
+service records the error while preserving its existing cleanup path. Drain
+retirement uses the same singleton/mirror paths.
+
+The two new checks cover recheck eligibility across event/fence/topology states
+and routing both heads of a shared card with their distinct serials/timestamps.
+The earlier arrival-window reproduction now calls the production completion
+selection method. Existing late-event and topology-reset safety checks remain.
+Production backend library tests pass (353, one ignored), DRM-event integration
+tests pass (316, one ignored), and strict library Clippy passes. Comparator's
+eight head-completion tests pass. These device-free fixtures exercise poller,
+head state and selection, not a live DRM card or an end-to-end hardware fault.
+
+This closes the stale first-drain window when the event is already readable at
+the recheck. It cannot promise kernel timestamps if the event arrives later or
+is lost. The strict native join remains unchanged. No custody checks, limits,
+protocols or installed desktop files changed. A fresh four-arm profiling pilot
+on the repaired comparator follows; old captures remain retained.
