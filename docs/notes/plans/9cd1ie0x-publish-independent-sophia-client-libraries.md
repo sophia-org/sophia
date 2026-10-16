@@ -144,6 +144,21 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust SDK `a2c0e74` adds `reserve_capacity(slots, bytes)` and delayed
+content commits. The token can remain live through dispatch and unreserved
+admissions. Private identities reject stale and wrong-connection use; invalid
+content/sizing retains credits, and explicit cancellation or terminal
+classification releases them. Rust workspace tests and strict all-target Clippy
+pass, including byte/slot isolation and service while reserved.
+
+The paired C test reproduced a defect on `cfa6561`: two live sessions with equal
+reservation serials accepted each other's tokens. Signed C SDK `a90e235` binds
+tokens to owner address and connection epoch as well as serial. The regression
+and full `make check` pass. The public token layout changes, so this candidate
+is **0.10.0-dev, unreleased**; C consumers and foreign-language bindings must
+rebuild together. No wire contract changed. C session storage must remain at a
+stable address and must not be reinitialized with a live reservation.
+
 Signed Rust SDK `85b37ed` adds prepared reservations for one content operation
 or a whole candidate. The handle exclusively borrows the connection, acquires
 wire-queue, outbox and ledger capacity before returning, and commits without
@@ -169,14 +184,16 @@ caller time without sleeps, one-byte dispatches reaching Submitted custody,
 zero-byte dispatch and shared budgets that cannot replenish across rounds.
 C `0e4b2fd` passes `make check`, including a new partial-request budget control
 and existing clock, poll-interest and retry controls. Its library is unchanged.
-Both SDKs now have revision 3 of `API-PARITY.md`; the full operation inventory
+Both SDKs now have revision 4 of `API-PARITY.md`; the full operation inventory
 remains unfinished. Mandatory parity rules are committed in Sophia's agent instructions
 (`800f8ec`) and the C/Rust SDK instructions (`65ea947`/`a1154b3`).
 
-Next, close the remaining reservation capability gaps: C can reserve counts and
-bytes before choosing records, continue service and use unreserved capacity;
-Rust's prepared handle cannot. Arbitrary multi-record groups and native lifecycle
-helpers also remain to be mapped and implemented. Rust's old/unissued custody
+Next, map and implement arbitrary multi-record groups and native lifecycle
+helpers. Rust's delayed-content commit can still fail encoding/allocation while
+retaining credits; use its prepared handle for an infallible local commit.
+Rust's fixed bulk/control partition differs from C's configurable queue limits.
+Dropping a delayed-content token alone does not release credits in either API;
+cancel explicitly. Rust's old/unissued custody
 query returns `None` for either, unlike C's distinct UNAVAILABLE and ARGUMENT.
 Rust's convenience driver retains its internal clock and fixed limits; callers
 using simulated time must use `dispatch` and non-driving `take_*` receives.
