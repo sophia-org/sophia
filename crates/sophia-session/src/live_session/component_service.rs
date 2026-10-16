@@ -25,6 +25,11 @@ pub(super) fn service_components(
     owner_wake: &OwnerWake,
     application_launches: &mut LiveApplicationLaunches,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(feature = "comparator-progress")]
+    sophia_runtime::comparator_counters::progress::add(
+        sophia_runtime::comparator_counters::progress::Counter::ComponentPass,
+        1,
+    );
     #[cfg(feature = "comparator-profiling")]
     let _profile = sophia_runtime::comparator_counters::phases::enter(
         sophia_runtime::comparator_counters::phases::Phase::Components,

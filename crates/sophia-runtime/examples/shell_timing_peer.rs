@@ -142,6 +142,11 @@ impl Wire {
                     match result {
                         Ok(()) => break,
                         Err(ShellClientError::QueueSaturated) if Instant::now() < deadline => {
+                            #[cfg(feature = "comparator-progress")]
+                            sophia_runtime::comparator_counters::progress::add(
+                                sophia_runtime::comparator_counters::progress::Counter::PeerWait,
+                                1,
+                            );
                             client
                                 .wait_for_io(deadline.saturating_duration_since(Instant::now()))?;
                         }
@@ -162,12 +167,22 @@ impl Wire {
             Self::Files { client, .. } => {
                 let deadline = Instant::now() + WAIT;
                 loop {
+                    #[cfg(feature = "comparator-progress")]
+                    sophia_runtime::comparator_counters::progress::add(
+                        sophia_runtime::comparator_counters::progress::Counter::PeerContentPoll,
+                        1,
+                    );
                     if let Some((_, record)) = client.poll_content()? {
                         return Ok(record);
                     }
                     if Instant::now() >= deadline {
                         return Err("response timeout".into());
                     }
+                    #[cfg(feature = "comparator-progress")]
+                    sophia_runtime::comparator_counters::progress::add(
+                        sophia_runtime::comparator_counters::progress::Counter::PeerWait,
+                        1,
+                    );
                     client.wait_for_io(deadline.saturating_duration_since(Instant::now()))?;
                 }
             }

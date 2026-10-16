@@ -25,6 +25,9 @@ pub mod authentication;
 extern crate self as sophia_9p;
 pub mod connection;
 pub mod export;
+#[cfg(feature = "comparator-progress")]
+pub mod progress;
+
 pub mod journal;
 pub mod unix;
 pub mod wire;

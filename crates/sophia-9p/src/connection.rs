@@ -275,6 +275,8 @@ impl<E: Export> Connection<E> {
             if !self.has_room(READ_OVERHEAD as usize + waiting.count as usize) {
                 break;
             }
+            #[cfg(feature = "comparator-progress")]
+            crate::progress::add(crate::progress::Counter::PendingReadAttempt, 1);
             match self.read_now(export, waiting.fid, waiting.offset, waiting.count) {
                 Some(reply) => {
                     self.waiting.remove(index);
@@ -407,6 +409,8 @@ impl<E: Export> Connection<E> {
     fn send(&mut self, tag: Tag, reply: &Reply) -> Result<(), Fatal> {
         let start = self.output.len();
         wire::encode(tag, reply, &mut self.output).map_err(|_| Fatal::Unframeable)?;
+        #[cfg(feature = "comparator-progress")]
+        crate::progress::add(crate::progress::Counter::RepliesEncoded, 1);
         self.unwritten.push_back(QueuedReply {
             tag,
             remaining: self.output.len() - start,

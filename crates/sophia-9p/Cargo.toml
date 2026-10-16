@@ -6,6 +6,9 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[features]
+comparator-progress = []
+
 [dependencies]
 rustix = { workspace = true, features = ["event", "net", "pipe", "std"] }
 sophia-9p-records = { workspace = true }

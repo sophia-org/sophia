@@ -47,6 +47,7 @@ sophia-renderer-native-egl = { path = "../sophia-renderer-native-egl", features 
 [features]
 default = []
 comparator-profiling = ["sophia-runtime/comparator-profiling"]
+comparator-progress = ["sophia-runtime/comparator-progress"]
 native-session = [
     "dep:zbus",
     "dep:sophia-factotum",

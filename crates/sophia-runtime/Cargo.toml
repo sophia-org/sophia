@@ -12,6 +12,7 @@ comparator-counters = ["rustix/time"]
 comparator-allocation-counting = ["comparator-counters", "dep:stats_alloc"]
 comparator-cpu-counting = ["comparator-counters"]
 comparator-profiling = ["comparator-allocation-counting"]
+comparator-progress = ["comparator-counters", "sophia-9p/comparator-progress"]
 
 [dependencies]
 stats_alloc = { version = "=0.1.10", optional = true }

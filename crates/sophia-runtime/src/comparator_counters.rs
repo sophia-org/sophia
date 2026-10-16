@@ -6,6 +6,18 @@ use std::{io::Write, sync::mpsc, thread::JoinHandle, time::Duration};
 #[cfg(feature = "comparator-profiling")]
 pub mod phases;
 
+#[cfg(feature = "comparator-progress")]
+pub use sophia_9p::progress;
+
+#[cfg(all(
+    feature = "comparator-progress",
+    any(
+        feature = "comparator-cpu-counting",
+        feature = "comparator-allocation-counting"
+    )
+))]
+compile_error!("progress diagnostics cannot be mixed with cost or phase instrumentation");
+
 #[cfg(all(
     feature = "comparator-cpu-counting",
     feature = "comparator-allocation-counting"
@@ -76,7 +88,9 @@ pub fn write_snapshot(
 ) -> std::io::Result<()> {
     let mut bytes = [0u8; 1024];
     let mut buffer = std::io::Cursor::new(bytes.as_mut_slice());
-    let schema = if cfg!(feature = "comparator-profiling") {
+    let schema = if cfg!(feature = "comparator-progress") {
+        "2 mode=progress"
+    } else if cfg!(feature = "comparator-profiling") {
         "2 mode=profile"
     } else if cfg!(feature = "comparator-allocation-counting") {
         "1"
@@ -95,6 +109,36 @@ pub fn write_snapshot(
         s.deallocations,
         s.bytes_allocated
     )?;
+    let len = buffer.position() as usize;
+    output.write_all(&bytes[..len])?;
+    #[cfg(feature = "comparator-progress")]
+    if stage != "sample" || sequence.is_multiple_of(8) {
+        write_progress(output, process, sequence)?;
+    }
+    Ok(())
+}
+
+#[cfg(feature = "comparator-progress")]
+pub fn write_progress(
+    output: &mut impl Write,
+    process: &str,
+    sequence: u64,
+) -> std::io::Result<()> {
+    // Timestamp the snapshot here, never at an instrumented service call.
+    let before = nanos(rustix::time::ClockId::Monotonic) / 1000;
+    let counts = progress::snapshot();
+    let after = nanos(rustix::time::ClockId::Monotonic) / 1000;
+    let mut bytes = [0u8; 1024];
+    let mut buffer = std::io::Cursor::new(bytes.as_mut_slice());
+    write!(
+        buffer,
+        "sophia_comparator_progress schema=1 mode=progress process={process} pid={} sequence={sequence} before_usec={before} after_usec={after}",
+        std::process::id()
+    )?;
+    for (name, count) in progress::NAMES.iter().zip(counts) {
+        write!(buffer, " {name}={count}")?;
+    }
+    writeln!(buffer)?;
     let len = buffer.position() as usize;
     output.write_all(&bytes[..len])
 }

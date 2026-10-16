@@ -216,6 +216,9 @@ impl<E: Export> Server<E> {
     /// One wait for readiness and the work it allows. `false` once stopped,
     /// with every connection closed.
     pub fn turn(&mut self, timeout: Option<Duration>) -> io::Result<bool> {
+        #[cfg(feature = "comparator-progress")]
+        crate::progress::add(crate::progress::Counter::ServerPollTurn, 1);
+
         self.invalidate();
         let readiness = self.wait(timeout)?;
         self.serve(readiness)
@@ -233,9 +236,14 @@ impl<E: Export> Server<E> {
                 && current.descriptors == prior.descriptors
         });
         if !valid {
+            #[cfg(feature = "comparator-progress")]
+            crate::progress::add(crate::progress::Counter::HandoffFallback, 1);
+
             return self.turn(Some(Duration::ZERO));
         }
         self.invalidate();
+        #[cfg(feature = "comparator-progress")]
+        crate::progress::add(crate::progress::Counter::HandoffAccepted, 1);
         self.serve(Readiness {
             wake: observation.flags[0],
             listener: PollFlags::empty(),
@@ -266,6 +274,9 @@ impl<E: Export> Server<E> {
     /// Flush a local export change without accepting or reading new requests.
     /// Readable sockets stay level-ready for the owner's next input pass.
     pub fn flush(&mut self) -> io::Result<bool> {
+        #[cfg(feature = "comparator-progress")]
+        crate::progress::add(crate::progress::Counter::ServerFlush, 1);
+
         self.invalidate();
         if !self.service_wake()? {
             return Ok(false);
@@ -435,6 +446,8 @@ impl<E: Export> Server<E> {
         while !slot.ended && taken < budget {
             match Self::read_once(export, slot, buffer, budget - taken) {
                 Some((count, asked)) => {
+                    #[cfg(feature = "comparator-progress")]
+                    crate::progress::add(crate::progress::Counter::ReadBytes, count as u64);
                     taken += count;
                     if count < asked {
                         break;
@@ -543,6 +556,8 @@ impl<E: Export> Server<E> {
             match result {
                 Ok(0) => slot.ended = true,
                 Ok(count) => {
+                    #[cfg(feature = "comparator-progress")]
+                    crate::progress::add(crate::progress::Counter::WrittenBytes, count as u64);
                     slot.connection.sent(count);
                     let resumed = slot
                         .connection
