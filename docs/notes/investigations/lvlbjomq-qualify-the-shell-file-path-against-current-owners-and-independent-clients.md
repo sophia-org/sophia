@@ -14,6 +14,15 @@ repairs? Reconcile the existing evidence before repeating a desktop campaign.
 
 ## Current resumption
 
+The owner accepted the Session-plus-client accounting scope and authorized
+the optimization plan. The objective is to beat IPC on CPU/MiB and allocations
+per frame, retaining +10% as the acceptance ceiling. See the accepted
+[cost scope](../../sophia-shell-files.md#cost-accounting-scope-accepted-october-15-2026)
+and [implementation plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#implementation-sequence).
+Earlier references below to an unanswered scope decision are superseded.
+Next prepare the optimized native baseline before choosing further production
+changes; supplied-owner polling results alone cannot establish native costs.
+
 t252 remains open for native lifetime/input acceptance on both desktop
 selections, the declared B9 performance campaign and attended release rollback.
 The generic C/Go export, descriptor, content and Session checks pass; E1's old
@@ -1198,7 +1207,9 @@ No new physical session or installation ran.
 
 ## Accounting method proposal (October 15)
 
-Status: proposed, awaiting owner decision. The +10% budget is unchanged.
+Status: accepted by the owner on October 15 through plan selection and the
+instruction to implement it. The +10% budget is unchanged; beating IPC on both
+cost measures is the optimization objective.
 Use steady-state Session-plus-peer CPU across all their threads, including
 foreign-library CPU, divided by all successfully uploaded bytes in the complete
 declared workload. Count Rust global allocation and reallocation operations in
@@ -1209,9 +1220,9 @@ and separate instrumented runs from latency runs.
 
 This scope excludes WM, Factotum, PAM and other processes, startup before the
 first frame, foreign allocation calls, GPU allocations and kernel allocations.
-Approval would make those exclusions explicit for this B9 cost gate; it would
-not establish whole-desktop cost parity. Without approval, these reports remain
-diagnostic and broader accounting is still needed before judging that gate.
+These exclusions now apply explicitly to the B9 cost gate; they do not
+establish whole-desktop cost parity. Existing supplied-owner reports remain
+diagnostic because they do not exercise native Session presentation.
 The protected-PID IPC admission and Factotum file admission remain documented
 differences; their full startup costs are not measured by this proposal.
 

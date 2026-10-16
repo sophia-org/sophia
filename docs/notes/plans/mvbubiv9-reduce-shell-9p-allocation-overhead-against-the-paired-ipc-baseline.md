@@ -36,9 +36,8 @@ a profiling target, not a native B9 verdict or whole-desktop cost measurement.
    isolated comparison branch. Never merge the restored IPC adapters into
    production. Preserve independent protocol checks, malformed-input refusal,
    authentication, revocation, backpressure, retained pixels and final release.
-4. Freeze an explicit accounting method before the acceptance run. The current
-   proposal excludes foreign allocation calls and helper processes; adding this
-   task does not approve that scope. Measure exact bytes, all offered frames and
+4. Use the owner-accepted [Session-plus-client accounting scope](../../sophia-shell-files.md#cost-accounting-scope-accepted-october-15-2026)
+   and freeze the runnable campaign before acceptance. Measure exact bytes, all offered frames and
    complete outcomes, with separate instrumented and latency runs.
 5. Demonstrate allocations/frame and CPU/MiB within IPC +10% under that accepted
    method on matched optimized native runs. Preserve conservative bounds;
@@ -49,6 +48,46 @@ a profiling target, not a native B9 verdict or whole-desktop cost measurement.
 The performance evidence may also satisfy t252's B9 gate. Closing t331 does not
 close t252's separate lifetime/input, desktop-selection and rollback gates.
 Task state and execution order remain in todo.md.
+
+## Implementation sequence
+
+The owner authorized this plan on October 15 and asked that 9P beat IPC, not
+merely stay within +10%. Aim for lower CPU/MiB and fewer allocation operations
+per frame on both workloads; claim a win only when the 9P upper bound is below
+the IPC lower bound. The acceptance ceiling remains +10%.
+
+1. Prepare optimized native baselines for a 1920×24 panel and that panel plus
+   a separate 4 MiB transfer probe. Pin sources, binaries, configuration and
+   output identity. Profile separately from allocation-counted and ordinary
+   latency runs. Attribute CPU, allocations, copied bytes, system calls,
+   short writes and idle service turns to client and Session owners. Use bounded
+   diagnostic instrumentation, never the supplied polling loop as native proof.
+2. In measured order, address duplicate client outbox payloads and drained
+   prefixes, server per-chunk scratch allocation, pipeline prefix movement,
+   then redundant service work. Keep the outbox's byte charge and ticket until
+   custody settles. Recycle server storage only after owner consumption and
+   within an explicit connection-local bound. Preserve secret scrubbing,
+   partial frames, flush credit, fairness, deadlines and wakeups. Do not cache
+   upload fids across bindings, raise limits or change public SDK/wire APIs.
+3. Measure each change independently. Run affected partial-I/O, EAGAIN,
+   cancellation, disconnect, Submitted ordering, stale binding, malformed
+   chunk, pixel validation, deadline, saturation, slow-reader, retained-pixel
+   and final-release tests. Preserve independent C/Go checks where affected.
+   Publish signed SDK changes through the normal vendor gate and carry shared
+   owner fixes to both comparator paths. Revert unproven or regressive changes.
+4. Run native acceptance at 1080p, scale 1, VRR off, at 60/120 Hz, idle and
+   under 16 bounded CPU workers with all CPUs available. Use three independently
+   restarted pairs per condition/workload, files first in pairs 1/3 and IPC
+   first in pair 2. Cost arms use 1,000 frames without warmup exclusion;
+   latency arms retain 100 warmup plus 1,000 measured frames. Every pair must
+   pass; pooling cannot hide failures. Retain failed arms, exact kernel joins,
+   all timeouts and wrapper recovery. Do not replace failed runs under the same
+   campaign identity. Keep all existing upload, permit and presentation budgets.
+
+If these slices still miss the native target, report the remaining measured
+costs and propose a separate architectural change. Do not relax the limits or
+expand silently into t289. Native runs require coordinated attended windows;
+the optimization plan does not authorize changing the installed desktop.
 
 ## Connections
 
