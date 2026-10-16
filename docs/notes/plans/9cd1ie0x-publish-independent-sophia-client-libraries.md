@@ -144,6 +144,14 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `1594612` and C `3809590` add paired terminal checks and the shared
+`WM-CLIENT.md` ownership/error guide. Independent socket peers cover short ACK,
+ACK EINVAL/ESTALE, and event-read revocation before/after Submitted. Confirmed
+custody survives; unconfirmed issued work becomes UnknownDisconnected. Remote
+errno, terminal state and custody survive explicit close. All 42 Rust WM tests,
+targeted strict Clippy and C's full `make check` pass. Matrix 27 and WM map 3
+distinguish these scripted checks from production grant revocation.
+
 Signed Rust `3228a06` adds startup status/error/custody inspection and the
 independent `wm_conformance_peer` example. Both C and Rust now pass the same
 production WM adapter/worker exchange: profile prepare/activate, configuration,
@@ -165,9 +173,12 @@ has SHA-256 `945af0642b5ab0fe976a6ad382fa28e4642b3834599ba175a60be266476d5ed8`.
 No executable was copied into evidence.
 
 This test supplies admission and outcomes; protected launch, Engine settlement
-and actual presentation remain separate claims. Next finish WM terminal-error,
-revocation and profile/outcome coverage and the public ownership/error guide,
-then qualify protected admission. Publication/pin adoption and the other t333
+and actual presentation remain separate claims. Next qualify protected WM
+admission/revocation and finish profile/outcome coverage. The existing
+`policy_file_protected_authentication.rs` uses the production launch supervisor
+and Factotum, but hands its admitted root to a raw file peer. Add an explicit
+external native SDK peer path to this generic fixture and retain the raw
+control; do not claim SDK authentication from the raw peer. Publication/pin adoption and the other t333
 roles (output, lock, administration and broker/portal audit) remain required.
 
 Signed Rust `228f263` starts `sophia-wm-client` with typed application candidates
