@@ -144,6 +144,20 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `030128f` and C `14c687b` add allocation-free capture request
+encoding and status decoding. Both preserve all eight states and enforce
+exact record sizes, version and idle/nonidle identity rules. Independent literal
+and malformed-boundary tests pass, including unchanged C output on failure.
+Both portal test suites and strict Rust Clippy pass; portal map 2 records the
+scope. These passive codecs do not enforce serial ordering or authorize pixels.
+
+Next add recipient discovery/status records, then authenticated sessions with
+caller-controlled frame storage and production gates. Requester/broker and
+release-wide qualification remain required. t333 stays open; pins unchanged,
+no quiet hold and no measured performance gain.
+
+### Portal frame codec checkpoint
+
 Signed Rust `cf22985` and C `1d0f53c` add independent passive portal frame
 metadata decoders. Both enforce exact record size, identities, format, u32
 dimensions, canonical stride and the 64 MiB image limit without allocation or
