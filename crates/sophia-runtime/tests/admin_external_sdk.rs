@@ -24,6 +24,71 @@ impl Drop for Reports {
 
 #[test]
 #[ignore = "requires SOPHIA_ADMIN_SDK_PEER naming an absolute independently built peer"]
+fn external_sdk_explicit_recovery_does_not_replay_or_inherit_old_completion() {
+    let executable = PathBuf::from(std::env::var_os("SOPHIA_ADMIN_SDK_PEER").unwrap());
+    assert!(executable.is_absolute() && executable.is_file());
+    let reports =
+        Reports(std::env::temp_dir().join(format!("admin-sdk-recovery-{}", std::process::id())));
+    std::fs::create_dir(&reports.0).unwrap();
+    let report = reports.0.join("result");
+    let old = Fixture::new();
+    let mut child = Peer(
+        Command::new(executable)
+            .arg(old.service.socket_path())
+            .arg(&report)
+            .arg("recover")
+            .spawn()
+            .unwrap(),
+    );
+    let prior = old.ticket();
+    assert_eq!(prior.command, support::action());
+    support::claim(&prior);
+    drop(old);
+    support::until(|| std::fs::read_to_string(&report).ok().as_deref() == Some("lost\n"));
+    let fresh = Fixture::new();
+    let probe = support::ControlCommand {
+        owner: support::ControlOwner::Policy,
+        name: "probe".into(),
+    };
+    let catalog = std::sync::Arc::new(support::ControlCatalog {
+        generation: 9,
+        commands: vec![probe.clone()],
+    });
+    support::until(|| fresh.service.publish(catalog.clone(), &[]));
+    std::fs::write(
+        &report,
+        format!("recover {}\n", fresh.service.socket_path().display()),
+    )
+    .unwrap();
+    let successor = fresh.ticket();
+    assert_eq!(successor.command, probe);
+    assert_eq!(
+        (prior.connection, prior.request),
+        (successor.connection, successor.request)
+    );
+    support::claim(&successor);
+    prior.finish(ControlOutcome::Committed);
+    // The new request deliberately has matching numeric identities. The old
+    // owner's late result must neither settle it nor cause a replay.
+    std::thread::sleep(Duration::from_millis(20));
+    assert!(child.0.try_wait().unwrap().is_none());
+    assert!(successor.dispatched());
+    successor.finish(ControlOutcome::Rejected);
+    let deadline = Instant::now() + Duration::from_secs(12);
+    loop {
+        assert!(Instant::now() < deadline, "SDK recovery deadline");
+        if let Some(status) = child.0.try_wait().unwrap() {
+            assert!(status.success(), "SDK recovery peer failed: {status}");
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(std::fs::read_to_string(&report).unwrap(), "ok\n");
+    assert!(fresh.service.try_request().is_none());
+}
+
+#[test]
+#[ignore = "requires SOPHIA_ADMIN_SDK_PEER naming an absolute independently built peer"]
 fn external_sdk_service_shutdown_preserves_uncertainty_and_owner_custody() {
     let executable = PathBuf::from(std::env::var_os("SOPHIA_ADMIN_SDK_PEER").unwrap());
     assert!(executable.is_absolute() && executable.is_file());

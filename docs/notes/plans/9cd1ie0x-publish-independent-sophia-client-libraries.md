@@ -144,6 +144,25 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `51e75e1` and C `b557c34` pass explicit recovery on a replacement
+production administrative service. Each peer retains its uncertain old command,
+waits for an explicit endpoint, discovers a different service identity and
+invokes a newly advertised probe. The new service deliberately reuses the old
+connection/request numbers. Finishing the old ticket as Committed does not
+settle the probe; the new owner's Rejected result does. No uncertain mutation
+is replayed, and the old command remains uncertain. Admin map 12 records this.
+
+All three `admin_external_sdk` tests pass independently for each SDK; strict
+Rust Clippy and the C peer build pass. Updated peer SHA-256: Rust
+`19a1566dd2204838a2245da541859426111c371a21347fd1c976d831fb98f1f7`;
+C `7d68379daeab5d72b0d3a32424f7877b5fb095f7f14dd9d14652617b805f2d43`.
+Use the same command and executable locations below. Next qualify abrupt
+service-process death and remaining integrated negative schedules, then the
+portal/broker and release-wide audit. t333 remains open; pins unchanged,
+no quiet hold and no measured speedup.
+
+### Service shutdown checkpoint
+
 Signed Rust `bf06a6f` and C `5367415` pass production administrative service
 shutdown before and after command-ticket claim. Both clients preserve uncertain
 custody and refuse further invocation. Dropping the service cancels the unclaimed
