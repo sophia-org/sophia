@@ -144,6 +144,23 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `21feb45` starts `sophia-output-client` with bounded fixed-file
+startup. `Opening::direct` accepts a versioned empty pipeline; `attached`
+preserves the exact quiescent admitted root without reset/reattach. It validates
+the exact output API and 72-byte Limits through EOF/clunk, then opens the three
+role files with control-iounit checks. Observe is required locally; unsupported
+revision requests remain for the server's explicit refusal. Seven socket tests
+and strict targeted Clippy pass. Signed C `4f64371` records matrix 32 and the
+new `OUTPUT-PARITY.md` operation map. This is not a complete output session.
+
+Next implement immutable negotiation/proposal submissions and custody, then
+the ordered journal and automatic publication-bound topology fetch. C's
+`output_session/submission.c` is the behavior checklist: Configure is required,
+domain IDs are distinct from tickets, and Submitted ACK plus transaction clunk
+must settle before the next transaction. The final connecting facade still
+needs the generic nonblocking version handshake. Keep output's explicit
+Refused state and grant/ACK/replay rules, rather than copying WM semantics.
+
 Signed Rust `8fe1c1a` adds `sophia-output-protocol`, extracted from signed
 Sophia `ad2fa4962ba1e7626b601e1a5b6b0ab95324bfc3`. Its 21 source hashes verify;
 the output schema and contract match C's pins byte for byte. The extraction
@@ -153,10 +170,8 @@ Clippy pass. The spec hashes pass from `spec/`; the initial repository-root
 invocation used the wrong base, and the new hash rows were corrected to the
 existing relative-path convention. Signed C `a88efe7` records matrix 31.
 
-Next add `sophia-output-client`, using the C session operations below as its
-checklist. The codec foundation does not establish connection behavior. Start
-with fixed-file startup and typed immutable negotiation/proposal submission;
-then ordered control/application events and automatic exact-topology fetching.
+The codec foundation does not establish connection behavior. The developing
+client follows the C session operations below as its checklist.
 The output role differs from WM: explicit negotiation Refused state, Observe
 required, granted Configure, publication/Qid matching before exposing and ACKing
 ObjectPublished, bounded ACK progress, and domain replay capacity from Limits.
