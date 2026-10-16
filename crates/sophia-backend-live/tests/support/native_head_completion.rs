@@ -227,12 +227,7 @@ fn event_arriving_after_card_drain_loses_to_fence_unless_collected_again() {
         }
         // The same signaled fence is available in both orderings. Current
         // retirement prefers a queued event, otherwise synthesizes a callback.
-        let source = if head.pending_callback.take().is_some() {
-            LiveProductionKmsCompletionSource::PageFlipEvent
-        } else {
-            head.synthesize_out_fence_callback();
-            LiveProductionKmsCompletionSource::OutFence
-        };
+        let (_, source) = head.take_signaled_fence_completion();
         if collect_again {
             assert_eq!(source, LiveProductionKmsCompletionSource::PageFlipEvent);
             assert_eq!(timestamps[0].ust_usec, 123_456);
@@ -256,5 +251,78 @@ fn event_arriving_after_card_drain_loses_to_fence_unless_collected_again() {
                 LiveProductionKmsCompletionMode::OutFenceAuthoritative
             );
         }
+    }
+}
+
+#[test]
+fn fence_recheck_is_only_for_first_fallback_without_a_queued_event() {
+    let mut head = head(1);
+    assert!(head.needs_fence_recheck());
+    let callback = event(&head, 80);
+    head.queue_page_flip_callback(callback).unwrap();
+    assert!(!head.needs_fence_recheck());
+    assert_eq!(
+        head.take_signaled_fence_completion(),
+        (callback, LiveProductionKmsCompletionSource::PageFlipEvent)
+    );
+    assert!(head.needs_fence_recheck());
+    let (_, source) = head.take_signaled_fence_completion();
+    assert_eq!(source, LiveProductionKmsCompletionSource::OutFence);
+    assert!(!head.needs_fence_recheck());
+    let _ = installed(&mut head);
+    assert!(!head.needs_fence_recheck());
+}
+
+#[test]
+fn shared_card_recheck_keeps_each_heads_event_and_timestamp() {
+    use crate::{
+        FakeLibdrmNativePageFlipReader, LibdrmBackendFdAuthority, LibdrmNativeOutputRoute,
+        LibdrmNativeOutputSlot, LibdrmNativePageFlipCallback, LibdrmNativePageFlipSource,
+        NativeLibdrmPageFlipEventPoller,
+    };
+    let mut heads = [head(1), head(2)];
+    let slots = [
+        LibdrmNativeOutputSlot::new(1).unwrap(),
+        LibdrmNativeOutputSlot::new(2).unwrap(),
+    ];
+    let mut poller =
+        NativeLibdrmPageFlipEventPoller::new(LibdrmNativePageFlipSource::from_authority(
+            LibdrmBackendFdAuthority::new(1).unwrap(),
+        ))
+        .with_routes(heads.iter().zip(slots).map(|(head, slot)| {
+            LibdrmNativeOutputRoute {
+                slot,
+                output: head.output.id,
+                head: head.head,
+            }
+        }));
+    let mut reader =
+        FakeLibdrmNativePageFlipReader::new(slots.into_iter().enumerate().map(|(i, slot)| {
+            LibdrmNativePageFlipCallback::new_with_kernel_timestamp(
+                slot,
+                80 + i as u64,
+                std::time::Duration::from_micros(123_456 + i as u64),
+            )
+        }));
+    let mut callbacks = Vec::new();
+    let mut timestamps = Vec::new();
+    poller.read_and_collect_page_flip_events(&mut reader, &mut callbacks, &mut timestamps, 2, 2);
+    assert_eq!(callbacks.len(), 2);
+    assert_eq!(timestamps.len(), 2);
+    for callback in callbacks {
+        let head = heads.iter_mut().find(|h| h.head == callback.head).unwrap();
+        head.queue_page_flip_callback(callback).unwrap();
+    }
+    for (i, head) in heads.iter_mut().enumerate() {
+        assert!(!head.needs_fence_recheck());
+        let (callback, source) = head.take_signaled_fence_completion();
+        assert_eq!(source, LiveProductionKmsCompletionSource::PageFlipEvent);
+        let timestamp = timestamps
+            .iter()
+            .find(|t| t.head == callback.head && t.frame_serial == callback.frame_serial)
+            .unwrap();
+        assert_eq!(timestamp.ust_usec, 123_456 + i as u64);
+        assert_eq!(head.out_fence_retirements, 0);
+        assert!(head.pending_callback.is_none());
     }
 }

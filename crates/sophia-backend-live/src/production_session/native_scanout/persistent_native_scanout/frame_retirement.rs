@@ -46,10 +46,7 @@ impl LiveProductionNativeScanout {
                     Ok(status) => {
                         self.heads[index].completion_fence_status = status;
                         if status == crate::LibdrmNativeCompletionFenceStatus::Signaled {
-                            Some((
-                                self.synthesize_out_fence_callback(index),
-                                LiveProductionKmsCompletionSource::OutFence,
-                            ))
+                            Some(self.complete_signaled_fence(index)?)
                         } else {
                             None
                         }

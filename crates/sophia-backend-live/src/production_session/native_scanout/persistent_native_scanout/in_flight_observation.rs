@@ -58,7 +58,4 @@ impl LiveProductionNativeScanout {
             }
         }
 
-        fn synthesize_out_fence_callback(&mut self, index: usize) -> crate::LivePageFlipCallback {
-            self.heads[index].synthesize_out_fence_callback()
-        }
 }

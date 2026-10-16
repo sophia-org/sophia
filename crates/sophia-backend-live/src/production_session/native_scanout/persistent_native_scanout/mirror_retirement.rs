@@ -33,10 +33,16 @@ impl LiveProductionNativeScanout {
                                 .unwrap_or(crate::LibdrmNativeCompletionFenceStatus::Unsupported);
                             self.heads[head_index].completion_fence_status = status;
                             if status == crate::LibdrmNativeCompletionFenceStatus::Signaled {
-                                Some((
-                                    self.synthesize_out_fence_callback(head_index),
-                                    LiveProductionKmsCompletionSource::OutFence,
-                                ))
+                                match self.complete_signaled_fence(head_index) {
+                                    Ok(completion) => Some(completion),
+                                    Err(error) => {
+                                        errors.push(format!(
+                                            "mirror head {} completion recheck failed: {error}",
+                                            self.heads[head_index].head.raw(),
+                                        ));
+                                        None
+                                    }
+                                }
                             } else {
                                 None
                             }
