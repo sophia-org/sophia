@@ -558,6 +558,22 @@ impl PolicyProjectionReducer {
         }
     }
 
+    /// Compare a retained publication with current committed facts before
+    /// cloning its tables. The complete comparison also fences epoch changes.
+    pub fn indicator_publication_matches(&self, publication: &PolicyIndicatorPublication) -> bool {
+        publication.generation == self.indicator_publication_generation
+            && publication.connection_epoch == self.active_epoch
+            && publication.tab_groups == self.tab_groups
+            && publication
+                .indicators
+                .iter()
+                .eq(self.indicators.values().flatten())
+            && publication
+                .output_statuses
+                .iter()
+                .eq(self.output_statuses.values())
+    }
+
     fn clear_indicator_publication(&mut self) {
         self.tab_groups.clear();
         self.indicators.clear();

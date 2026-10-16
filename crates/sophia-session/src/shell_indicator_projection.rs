@@ -8,6 +8,40 @@
 
 use sophia_protocol::{OutputId, ShellIndicator, ShellIndicatorSnapshot, ShellOutputStatus};
 
+/// Compare the wire projection without cloning labels or building a snapshot.
+/// Focus may change without an indicator generation change.
+pub fn indicator_snapshot_matches(
+    snapshot: &ShellIndicatorSnapshot,
+    publication: &sophia_engine::PolicyIndicatorPublication,
+    active_output: Option<OutputId>,
+    connection_epoch: u64,
+) -> bool {
+    snapshot.connection_epoch == connection_epoch
+        && snapshot.generation == publication.generation
+        && snapshot.active_output == active_output
+        && snapshot.statuses.len() == publication.output_statuses.len()
+        && snapshot
+            .statuses
+            .iter()
+            .zip(&publication.output_statuses)
+            .all(|(s, p)| {
+                s.output == p.output && s.focus_bits == p.focus_bits && s.layout == p.layout
+            })
+        && snapshot.indicators.len() == publication.indicators.len()
+        && snapshot
+            .indicators
+            .iter()
+            .zip(&publication.indicators)
+            .all(|(s, p)| {
+                s.output == p.output
+                    && s.indicator == p.indicator
+                    && s.action == p.action.map_or(0, sophia_protocol::WmActionId::raw)
+                    && s.slot == p.slot
+                    && s.state_bits == p.state_bits
+                    && s.label == p.label
+            })
+}
+
 pub fn indicator_snapshot(
     publication: &sophia_engine::PolicyIndicatorPublication,
     active_output: Option<OutputId>,

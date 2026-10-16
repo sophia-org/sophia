@@ -139,10 +139,20 @@ impl LiveContentSession {
     }
 
     pub(super) fn work_area_bands(&self) -> Vec<sophia_protocol::OutputReservation> {
-        self.presented
-            .values()
-            .flat_map(|presented| presented.bands.iter().cloned())
-            .collect()
+        let mut bands = Vec::new();
+        self.append_work_area_bands(&mut bands);
+        bands
+    }
+
+    pub(super) fn append_work_area_bands(
+        &self,
+        bands: &mut Vec<sophia_protocol::OutputReservation>,
+    ) {
+        bands.extend(
+            self.presented
+                .values()
+                .flat_map(|presented| presented.bands.iter().cloned()),
+        );
     }
 
     pub(super) const fn owns_work_area(&self) -> bool {

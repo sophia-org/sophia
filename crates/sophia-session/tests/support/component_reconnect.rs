@@ -310,6 +310,7 @@ impl Harness {
             &LiveProductionCpuScene::new(output().size),
             None,
             &[output()],
+            &crate::live_session::wm_output_bounds(&[output()]),
             &mut None,
             true,
             &mut self.launches,

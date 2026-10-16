@@ -1,4 +1,14 @@
 impl LiveWmSession {
+    fn shell_indicator_publication(&mut self) -> Option<std::sync::Arc<sophia_engine::PolicyIndicatorPublication>> {
+        let Some(public) = self.public.as_ref() else {
+            self.shell_indicator_publication = None;
+            return None;
+        };
+        if !self.shell_indicator_publication.as_ref().is_some_and(|p| public.reducer.indicator_publication_matches(p)) {
+            self.shell_indicator_publication = Some(std::sync::Arc::new(public.reducer.indicator_publication()));
+        }
+        self.shell_indicator_publication.clone()
+    }
     fn surface_chrome_style(&self) -> Option<sophia_engine::SurfaceChromeStyle> {
         Some(self.visual_chrome)
     }

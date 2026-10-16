@@ -226,6 +226,9 @@ impl ShellComponentProcesses {
     pub fn poll_fds(&self) -> Vec<rustix::event::PollFd<'_>> {
         self.connections.poll_fds()
     }
+    pub fn visit_poll_fds<'a>(&'a self, visit: impl FnMut(rustix::event::PollFd<'a>)) {
+        self.connections.visit_poll_fds(visit)
+    }
     pub fn output_pending(&self) -> bool {
         self.connections.output_pending()
     }

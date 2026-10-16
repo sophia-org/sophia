@@ -405,21 +405,27 @@ impl ShellComponentTransport {
     /// The owner must visit whatever it subscribes, through `poll_io` or
     /// `poll_negotiation`, on its next pass; readiness is level-triggered.
     pub fn poll_fds(&self) -> Vec<rustix::event::PollFd<'_>> {
+        let mut fds = Vec::new();
+        self.visit_poll_fds(|fd| fds.push(fd));
+        fds
+    }
+
+    /// Borrow readiness directly into the owner's wait storage.
+    pub fn visit_poll_fds<'a>(&'a self, mut visit: impl FnMut(rustix::event::PollFd<'a>)) {
         use negotiation_service::Stage;
         use rustix::event::{PollFd, PollFlags};
         if let Some(files) = self.wire.as_ref() {
-            return files.poll_fds();
+            return files.visit_poll_fds(visit);
         }
         match self.negotiation.as_ref().map(|pending| &pending.stage) {
-            None => Vec::new(),
-            Some(Stage::Waiting) => self
-                .endpoint
-                .accept_readiness()
-                .map(|listener| PollFd::from_borrowed_fd(listener, PollFlags::IN))
-                .into_iter()
-                .collect(),
-            Some(Stage::Accepted(stream)) => vec![PollFd::new(stream, PollFlags::IN)],
-            Some(Stage::Files(files)) => files.poll_fds(),
+            None => {}
+            Some(Stage::Waiting) => {
+                if let Some(listener) = self.endpoint.accept_readiness() {
+                    visit(PollFd::from_borrowed_fd(listener, PollFlags::IN));
+                }
+            }
+            Some(Stage::Accepted(stream)) => visit(PollFd::new(stream, PollFlags::IN)),
+            Some(Stage::Files(files)) => files.visit_poll_fds(visit),
         }
     }
 

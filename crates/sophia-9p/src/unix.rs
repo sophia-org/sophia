@@ -229,17 +229,22 @@ impl<E: Export> Server<E> {
         self.poll_set()
     }
 
-    /// The same input-room, output and listener-capacity policy as a turn.
-    fn poll_set(&self) -> Vec<PollFd<'_>> {
+    /// Visit the same borrowed interests without allocating an intermediate list.
+    pub fn visit_poll_fds<'a>(&'a self, mut visit: impl FnMut(PollFd<'a>)) {
         let listening = self.slots.len() < self.limits.max_connections();
-        let mut fds = Vec::with_capacity(self.slots.len() + 2);
-        fds.push(PollFd::new(&self.reader, PollFlags::IN));
+        visit(PollFd::new(&self.reader, PollFlags::IN));
         if let Some(listener) = self.listener.as_ref().filter(|_| listening) {
-            fds.push(PollFd::new(listener, PollFlags::IN));
+            visit(PollFd::new(listener, PollFlags::IN));
         }
         for slot in &self.slots {
-            fds.push(Self::slot_poll_fd(slot));
+            visit(Self::slot_poll_fd(slot));
         }
+    }
+
+    /// The same input-room, output and listener-capacity policy as a turn.
+    fn poll_set(&self) -> Vec<PollFd<'_>> {
+        let mut fds = Vec::with_capacity(self.slots.len() + 2);
+        self.visit_poll_fds(|fd| fds.push(fd));
         fds
     }
 

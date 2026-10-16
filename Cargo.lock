@@ -1310,6 +1310,7 @@ dependencies = [
  "rustix",
  "sophia-9p-client",
  "sophia-9p-records",
+ "stats_alloc",
 ]
 
 [[package]]
@@ -1591,6 +1592,7 @@ dependencies = [
  "rustix",
  "serde_json",
  "sha2",
+ "smallvec",
  "sophia-9p",
  "sophia-9p-client",
  "sophia-backend-live",
@@ -1613,6 +1615,7 @@ dependencies = [
  "sophia-wake",
  "sophia-x-authority",
  "sophia-xshmfence",
+ "stats_alloc",
  "tracing",
  "x11rb",
  "zbus",
@@ -1680,6 +1683,12 @@ name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
+
+[[package]]
+name = "stats_alloc"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c0e04424e733e69714ca1bbb9204c1a57f09f5493439520f9f68c132ad25eec"
 
 [[package]]
 name = "syn"

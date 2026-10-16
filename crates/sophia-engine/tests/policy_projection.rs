@@ -553,12 +553,15 @@ fn descriptors_commit_atomically_and_clear_at_the_connection_boundary() {
         PolicyProjectionOutcome::Committed
     );
     let committed = reducer.indicator_publication();
+    assert!(reducer.indicator_publication_matches(&committed));
     assert_eq!(committed.connection_epoch, Some(5));
     assert_eq!(reducer.commit_serial(), 1);
     assert_eq!(committed.indicators[0].label, "1");
 
     assert_eq!(reducer.disconnect(5), PolicyProjectionOutcome::Disconnected);
     let cleared = reducer.indicator_publication();
+    assert!(!reducer.indicator_publication_matches(&committed));
+    assert!(reducer.indicator_publication_matches(&cleared));
     assert_eq!(cleared.connection_epoch, None);
     assert!(cleared.indicators.is_empty());
     assert!(cleared.output_statuses.is_empty());

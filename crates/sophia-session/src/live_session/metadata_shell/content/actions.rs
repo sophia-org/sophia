@@ -386,15 +386,15 @@ impl ContentActionLedger {
 
     /// Select one cancellation without transferring its obligation out of the
     /// ledger. A refused enqueue can retry the same identity and reserved credit.
-    fn next_cancellation(
+    fn next_cancellation<'a>(
         &mut self,
-        presented: &[sophia_engine::PresentedContentBinding],
+        presented: impl IntoIterator<Item = &'a sophia_engine::PresentedContentBinding> + Clone,
         now_msec: u64,
     ) -> Option<usize> {
         self.collect_terminal(now_msec);
         for (index, pending) in self.live.iter_mut().enumerate() {
             let expired = now_msec >= pending.deadline_msec;
-            let current = presented.iter().any(|binding| {
+            let current = presented.clone().into_iter().any(|binding| {
                 binding.targets.iter().any(|target| {
                     binding.authority_current
                         && sophia_engine::content_target_continues(target, &pending.target)
@@ -564,10 +564,10 @@ impl super::LiveContentSession {
         })
     }
 
-    pub(in crate::live_session::metadata_shell) fn service_actions(
+    pub(in crate::live_session::metadata_shell) fn service_actions<'a>(
         &mut self,
         transport: &mut ShellTransportConnection<'_>,
-        presented: &[sophia_engine::PresentedContentBinding],
+        presented: impl IntoIterator<Item = &'a sophia_engine::PresentedContentBinding> + Clone,
         transaction: &mut dyn FnMut() -> Result<TransactionId, Box<dyn std::error::Error>>,
     ) -> Result<usize, Box<dyn std::error::Error>> {
         if !self.input_requested || transport.content_grant().is_none() {
@@ -578,7 +578,7 @@ impl super::LiveContentSession {
             .content_limits()
             .map_or(0, |limits| limits.max_frames_per_service_tick as usize);
         let mut processed = self.actions.service_acks(transport, now, maximum)?;
-        while let Some(index) = self.actions.next_cancellation(presented, now) {
+        while let Some(index) = self.actions.next_cancellation(presented.clone(), now) {
             self.actions
                 .queue_cancellation(index, transaction()?, transport)?;
             processed = processed.saturating_add(1);

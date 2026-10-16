@@ -57,6 +57,11 @@ impl SessionLaunchQueue {
         &mut self,
         contexts: &[sophia_protocol::PolicyOutputLaunchContext],
     ) {
+        // These exact records have already passed validation. Do not encode
+        // the same committed view again on every socket wake.
+        if self.output_contexts == contexts {
+            return;
+        }
         self.output_contexts.clear();
         if sophia_protocol::encode_policy_output_launch_contexts_records(
             contexts,

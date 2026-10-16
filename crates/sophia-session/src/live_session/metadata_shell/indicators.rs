@@ -1,5 +1,5 @@
 use super::LiveMetadataShell;
-use crate::shell_indicator_projection::indicator_snapshot;
+use crate::shell_indicator_projection::{indicator_snapshot, indicator_snapshot_matches};
 use sophia_protocol::{OutputId, ShellIndicatorSnapshot};
 
 impl LiveMetadataShell {
@@ -49,13 +49,20 @@ impl LiveIndicatorState {
         };
         transport.poll_io()?;
 
-        let snapshot = indicator_snapshot(publication, active_output, transport.connection_epoch());
-
         // Republishing an unchanged set would wake a shell for nothing on every
         // committed frame.
-        if self.last_published.as_ref() == Some(&snapshot) {
+        if self.last_published.as_ref().is_some_and(|snapshot| {
+            indicator_snapshot_matches(
+                snapshot,
+                publication,
+                active_output,
+                transport.connection_epoch(),
+            )
+        }) {
             return Ok(());
         }
+
+        let snapshot = indicator_snapshot(publication, active_output, transport.connection_epoch());
 
         let tx = transaction()?;
         transport.publish_indicators(tx, &snapshot)?;

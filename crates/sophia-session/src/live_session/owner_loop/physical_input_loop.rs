@@ -347,7 +347,7 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
         let contexts = wm_session.as_ref().and_then(|w| w.public.as_ref()).and_then(|p| {
             p.launch_origins.lock().ok().map(|origins| origins.output_contexts().iter().copied()
                 .filter(|c| p.outputs.iter().any(|o| o.id == c.output)
-                    && p.output_generations.get(&c.output) == Some(&c.output_generation)).collect::<Vec<_>>())
+                    && p.output_generations.get(&c.output) == Some(&c.output_generation)).collect::<smallvec::SmallVec<[_; 32]>>())
         }).unwrap_or_default();
         session_launches.set_output_launch_contexts(&contexts);
         if shell_components.is_some() && shell_presentation_available {
@@ -552,17 +552,26 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
             shell_work_area_bands = Some(shell.work_area_bands());
         }
         if let (Some(components), Some(runtime)) = (shell_components.as_mut(), runtime.as_mut()) {
+            if component_bounds_outputs != outputs {
+                component_bounds = wm_output_bounds(&outputs);
+                component_bounds_outputs.clone_from(&outputs);
+            }
             component_service::service_components(components, component_catalog, runtime, scene, native_scanout.as_mut(),
-                &outputs, wm_session, shell_presentation_available, session_launches, secondary_children, config, xauthority, &mut launch_admission_started_at,
+                &outputs, &component_bounds, wm_session, shell_presentation_available, session_launches, secondary_children, config, xauthority, &mut launch_admission_started_at,
                 authenticated_launches, owner_wake, application_launches)?;
-            shell_work_area_bands = Some(components.work_area_bands());
+            components.write_work_area_bands(&mut shell_band_scratch);
+            shell_work_area_bands = Some(std::mem::take(&mut shell_band_scratch));
         }
         if let Some(wm) = wm_session.as_mut() {
             // The shell's committed claim reaches the reduction here. Only a
             // change reprojects: an unchanged claim every tick would relayout
             // the desktop forever.
-            if let Some(bands) = shell_work_area_bands.take()
-                && wm.set_shell_reservation_bands(bands)
+            let changed = if let Some(bands) = shell_work_area_bands.take() {
+                let changed = wm.set_shell_reservation_bands(&bands);
+                shell_band_scratch = bands;
+                changed
+            } else { false };
+            if changed
             {
                 let primary = outputs
                     .first()

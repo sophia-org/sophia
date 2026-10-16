@@ -11,6 +11,7 @@ rustix = { workspace = true, features = ["event", "net", "pipe", "std"] }
 sophia-9p-records = { workspace = true }
 
 [dev-dependencies]
+stats_alloc = "=0.1.10"
 # Sophia's own clients, tested here against this server core.
 sophia-9p-client = { workspace = true }
 

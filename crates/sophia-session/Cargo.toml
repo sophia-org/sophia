@@ -7,6 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+smallvec = "1"
 sophia-factotum = { path = "../sophia-factotum", optional = true }
 sophia-wake = { path = "../sophia-wake" }
 sophia-9p = { path = "../sophia-9p", optional = true }
@@ -29,6 +30,7 @@ x11rb = { version = "0.13.1", features = ["xtest"] }
 zbus = { version = "5.19", optional = true, default-features = false, features = ["async-io", "blocking-api"] }
 
 [dev-dependencies]
+stats_alloc = "=0.1.10"
 # Present in x11rb imports dri3 even for this core-pixmap test client.
 x11rb = { version = "0.13.1", features = ["present", "randr", "dri3", "xfixes"] }
 rustix = { version = "1.1", default-features = false, features = ["param"] }

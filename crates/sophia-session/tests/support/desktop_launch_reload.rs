@@ -226,6 +226,7 @@ impl ReloadFixture {
             stale_responses: 0,
             work_area_relayout_required: false,
             shell_reservation_bands: Vec::new(),
+            shell_indicator_publication: None,
             shortcuts: Some(WmShortcutRouter::new(registry)),
             command_registry: commands,
             desktop_reload: None,

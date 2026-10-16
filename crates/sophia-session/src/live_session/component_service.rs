@@ -13,6 +13,7 @@ pub(super) fn service_components(
     scene: &LiveProductionCpuScene,
     mut native: Option<&mut LiveProductionNativeScanout>,
     outputs: &[sophia_engine::HeadlessOutput],
+    bounds: &[(sophia_protocol::OutputId, sophia_protocol::Rect)],
     wm: &mut Option<LiveWmSession>,
     available: bool,
     launches: &mut SessionLaunchQueue,
@@ -151,9 +152,10 @@ pub(super) fn service_components(
         )?;
         return Ok(());
     }
-    let bounds = wm_output_bounds(outputs);
-    let root = wm_root_bounds(&bounds).ok_or("component content has no output bounds")?;
-    let publication = wm.as_ref().and_then(LiveWmSession::indicator_publication);
+    let root = wm_root_bounds(bounds).ok_or("component content has no output bounds")?;
+    let publication = wm
+        .as_mut()
+        .and_then(LiveWmSession::shell_indicator_publication);
     let active_output = wm.as_ref().and_then(LiveWmSession::active_output);
     for (key, role) in components.connected_roles().into_iter().flatten() {
         if role == sophia_config::ShellComponentRole::Dock {
@@ -169,7 +171,7 @@ pub(super) fn service_components(
                         scene,
                         native.as_deref_mut(),
                         outputs,
-                        &bounds,
+                        bounds,
                         root,
                         launches,
                         children.len(),
@@ -210,7 +212,7 @@ pub(super) fn service_components(
                         scene,
                         native.as_deref_mut(),
                         outputs,
-                        &bounds,
+                        bounds,
                         root,
                     )?;
                 }
@@ -234,20 +236,19 @@ pub(super) fn service_components(
                 ));
             };
             let content = (|| -> Result<(), Box<dyn std::error::Error>> {
-                bar.service_indicators(transport, publication.as_ref(), active_output)?;
+                bar.service_indicators(transport, publication.as_deref(), active_output)?;
                 let presented = runtime
                     .input_projections()
                     .iter()
-                    .flat_map(|projection| projection.content.iter().cloned())
-                    .collect::<Vec<_>>();
-                bar.service_actions(transport, &presented)?;
+                    .flat_map(|projection| projection.content.iter());
+                bar.service_actions_from(transport, presented)?;
                 bar.service_content(
                     transport,
                     runtime,
                     scene,
                     native.as_deref_mut(),
                     outputs,
-                    &bounds,
+                    bounds,
                     root,
                 )?;
                 bar.observe_presentation(transport, runtime)?;
