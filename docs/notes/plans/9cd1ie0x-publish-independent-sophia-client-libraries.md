@@ -144,6 +144,29 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `c586e1b` and C `c40ce7a` pass the same production administrative
+export gate, `admin_external_sdk`. Each peer completes request 1 through a
+claimed ControlTicket, receives Stale for request 2 after catalog generation
+changes, refreshes and completes request 3 on the same connection. Only 1 and 3
+reach the owner. A separate run revokes child admission after its ticket is
+claimed: both SDKs terminate with uncertain custody and refuse another command;
+the ticket stays dispatched. The fixture supplies policy completion and does
+not execute a WM action. Admin map 10 records this qualification boundary.
+
+Run `cargo-slot sophia cargo test -p sophia-runtime --test admin_external_sdk
+-- --include-ignored --nocapture`, setting `SOPHIA_ADMIN_SDK_PEER` separately
+to each independently built executable. Rust: its worktree cargo-slot
+`debug/examples/admin_conformance_peer`, SHA-256
+`48f6f2e4cb5e45b85f73d01ab32b5af2f96d0ba3ba0c9dc131ad87b9b1d8d7bd`.
+C: `build/admin_conformance_peer`, SHA-256
+`89bcd5698f3316a96aa71f7cc062b6f6402f3d01f36b5599ce67ceb5ff88194c`.
+Both runs pass; strict Rust Clippy and the C peer build pass. No binaries were
+copied into evidence. Next qualify service loss/recovery and remaining integrated
+failure schedules, then continue the portal/broker and release-wide parity audit.
+t333 remains open, pins unchanged, no quiet hold and no measured speedup.
+
+### Socket startup checkpoint
+
 Signed Rust `99b9023` and C `3f90f17` add nonblocking startup from a caller-
 connected HostDomain socket, covering version, file opening and initial catalog
 under one absolute deadline. One phase spends the caller's I/O budget per
