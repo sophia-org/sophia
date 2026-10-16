@@ -55,8 +55,10 @@ reported lost. The strongest differential lead is extra owner/transport service,
 including native service and custody checks. Pixel generation and validation
 are large shared bulk costs, not an explanation unique to 9P. See
 [CPU profile results](#t331-cpu-profile-results) for counts and unwind limits.
-Next inspect the repeated service and custody-check paths, preserving immediate
-revocation and bounded service. Do not remove checks based on sampled cost alone.
+Caller inspection separates idle polling, per-operation checks and delivery
+guards; none is proved redundant. The next bounded experiment should count
+pending-read retries after unrelated replies, while preserving custody checks.
+See [repeated-service investigation](#t331-repeated-service-investigation).
 The quiet hold is released. `t252-check` points to occupied profile directories;
 prepare fresh plans before another native run. These profiles do not establish
 B9 or authorize concurrent uploads.
@@ -2095,6 +2097,53 @@ filtered self reports, `summary.json` and `profile-summary.json`. The latter
 retains perf hashes, host peer PIDs, per-thread counts, self/inclusive leaders
 and unwind diagnostics. The quiet hold began at 10:57Z and was released after
 all four captures ended. All plan output directories are now occupied.
+
+## t331: repeated-service investigation
+
+Inspection after perf-08 found three distinct boundaries, not a reusable
+authentication result. `ShellFileWire::service` polls authentication before and
+after a turn or publication flush. `AuthenticatedFiles::check` validates each
+operation. Guarded output uses `with_delivery`, including partial writes, so
+revocation after queuing cannot leak protected bytes. `WorkerAuthority::live`
+also checks the active flag and Factotum ingress on both sides of the kernel
+custody poll. Removing or caching these checks is not justified by the profile.
+
+Grouping the sampled custody callers makes the distinction concrete:
+
+| Custody caller | Panel samples | Bulk samples |
+| --- | ---: | ---: |
+| Authentication poll around shell service | 20 | 44 |
+| Operation checks while receiving/resuming requests | 19 | 21 |
+| Waiting-read retries after socket writes | 5 | 20 |
+| Policy-worker authentication poll | 0 | 1 |
+
+These sum to the 44 and 86 files samples reported above. They are samples of
+user-space execution in the custody check, not syscall counts or its kernel
+cost. `analysis/custody-callers.json` preserves the stack groups.
+
+One concrete retry amplification deserves a deterministic experiment:
+`Server::write` calls `resume` and then `retry_waiting` after every successful
+socket write. `retry_waiting` revisits every pending read that has reply room;
+`read_now` checks authority before asking the export for data. Thus sending an
+unrelated acknowledgement can recheck a pending event read even when the event
+source has not changed. This explains a caller, not yet a removable check:
+resumed requests can change the export, and freed reply capacity can unblock a
+read. Publication wakes and revocation must also retry pending reads.
+
+The next experiment should use a counting export and real socket backpressure
+to distinguish reads waiting for data from reads waiting for reply capacity.
+Count retries across unrelated acknowledgements, request-driven data changes,
+publication wakes, partial writes, flush, revocation and disconnect. Only then
+propose suppressing a retry for which neither data nor capacity changed. Keep
+the authority check on every actual read and delivery attempt; do not add a
+launch-liveness cache or weaken idle detection. Any retry state must remain
+bounded by the existing tag limit and preserve arrival order.
+
+The two native-service call sites are also not interchangeable: lifecycle
+service settles earlier work, while authority service follows new state and
+repaint decisions. A once-per-loop skip would need a state-change proof and
+could strand a new presentation. Leave both calls intact while investigating
+their unchanged-state work. No production patch follows from this inspection.
 
 ## Connections
 
