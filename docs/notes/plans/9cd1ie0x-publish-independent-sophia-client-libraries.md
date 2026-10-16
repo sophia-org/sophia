@@ -144,6 +144,15 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `54d86dd` and C `d582a23` begin administration support with
+equivalent allocation-free info decoders. Rust returns a Copy value; C writes
+caller storage only after full validation. Independent literal and malformed
+tests cover maximum identities/timeouts, zero/overflow, canonical spelling,
+every truncated prefix, extra fields and invalid text. Both suites and strict
+Rust Clippy pass. Admin map 2 records the scope: parsing alone establishes
+neither EOF nor admission. Next implement catalog, invocation and status
+codecs, then the bounded external-loop clients. No CPU gain is claimed.
+
 Signed Rust `f649aff` and C `88cf285` also pass protected unfinished-upload
 revocation. Each writes and settles four bytes of a 16-byte resource, then
 queues its remaining twelve bytes with zero I/O budget. The parent revokes
