@@ -10,11 +10,22 @@ use std::os::unix::fs::DirBuilderExt;
 #[test]
 #[ignore = "requires SOPHIA_LOCK_AUTH_PEER naming an absolute built SDK peer"]
 fn external_sdk_lock_authenticates_and_observes_revocation() {
+    exchange(false);
+}
+
+#[test]
+#[ignore = "requires SOPHIA_LOCK_AUTH_PEER naming an absolute built SDK peer"]
+fn external_sdk_lock_revocation_discards_unfinished_upload() {
+    exchange(true);
+}
+
+fn exchange(upload: bool) {
     let executable = PathBuf::from(std::env::var_os("SOPHIA_LOCK_AUTH_PEER").unwrap());
     assert!(executable.is_absolute() && executable.is_file());
     let peer = Peer::external_sdk();
-    let root =
-        Directory(std::env::temp_dir().join(format!("t333-lock-sdk-{}", std::process::id())));
+    let root = Directory(
+        std::env::temp_dir().join(format!("t333-lock-sdk-{}-{upload}", std::process::id())),
+    );
     std::fs::DirBuilder::new()
         .mode(0o700)
         .create(&root.0)
@@ -85,6 +96,7 @@ fn external_sdk_lock_authenticates_and_observes_revocation() {
     let mut supervisor = ProcessSupervisor::new(
         SupervisedProcessKind::LockProvider,
         ProcessLaunchSpec::new(&peer.0)
+            .env("SOPHIA_TEST_LOCK_UPLOAD", if upload { "1" } else { "0" })
             .arg(&executable)
             .arg(&socket)
             .arg(&report)
@@ -128,16 +140,27 @@ fn external_sdk_lock_authenticates_and_observes_revocation() {
                 LockFileServiceEvent::Disconnected {
                     connection_epoch: 7,
                 } => disconnected += 1,
+                LockFileServiceEvent::Inbound { inbound, .. } => {
+                    panic!("unfinished upload must not deliver resource or candidate: {inbound:?}")
+                }
                 other => panic!("unexpected authenticated lock event: {other:?}"),
             }
         }
         if !revoked
             && connected == 1
-            && std::fs::read_to_string(&report).ok().as_deref() == Some("waiting\n")
+            && std::fs::read_to_string(&report).ok().as_deref()
+                == Some(if upload {
+                    "upload-waiting\n"
+                } else {
+                    "waiting\n"
+                })
         {
             assert_eq!(f.namespaces.lock().unwrap().admission_count(), 1);
             f.book.revoke(id, Instant::now()).unwrap();
             revoked = true;
+            if upload {
+                std::fs::write(&report, b"continue\n").unwrap();
+            }
         }
         exited |= supervisor.poll().unwrap().is_some();
         if exited && disconnected == 1 {
@@ -151,6 +174,13 @@ fn external_sdk_lock_authenticates_and_observes_revocation() {
     );
     assert!(revoked);
     assert_eq!(connected, 1);
-    assert_eq!(std::fs::read_to_string(&report).unwrap(), "revoked\n");
+    assert_eq!(
+        std::fs::read_to_string(&report).unwrap(),
+        if upload {
+            "upload-revoked\n"
+        } else {
+            "revoked\n"
+        }
+    );
     assert_eq!(f.namespaces.lock().unwrap().admission_count(), 0);
 }

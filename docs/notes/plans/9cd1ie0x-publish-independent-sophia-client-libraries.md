@@ -144,6 +144,40 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `f649aff` and C `88cf285` also pass protected unfinished-upload
+revocation. Each writes and settles four bytes of a 16-byte resource, then
+queues its remaining twelve bytes with zero I/O budget. The parent revokes
+launch authority before the peer resumes. Both clients terminate, retain
+ResourceBegin custody, clear pending work and reject End/Cancel. No resource
+or candidate reaches Session; Rust returns the same owned tail buffer.
+This proves a queued-tail schedule, not interruption of a partially sent wire
+payload. Fresh authorized replacement and SDK reauthentication remain open.
+
+Both protected tests pass independently for each SDK with the
+`lock_external_sdk::` filter, `--include-ignored` and the peer paths below.
+Strict Rust Clippy, the C peer build, both contract hash manifests and diff
+checks pass. Updated protected-peer SHA-256: Rust
+`c7dedce92e7c9891552ae0d4c24e0a59a55972361aaa4f43c8ee4e86674d07a5`;
+C `6e0a2b60cd94703a61090a19bb2f926a5989503bc2f153c7645a0b28b4951a3b`.
+API matrix 48 / lock map 8 record the qualification boundary.
+
+The remaining-role audit confirms that administration has a production export
+but neither SDK has its typed client. Both now pin `sophia-admin-files.md`
+from Sophia `baedfd0c9` and carry `ADMIN-PARITY.md` revision 1. Implement its
+bounded passive codecs, then caller-driven clients in both languages. Preserve
+one pending invocation, uncertain custody after lost replies, and explicit
+recovery. Reuse connections and buffers; poll status only while a command is
+pending, with caller-driven wakeups rather than blocking sleeps. No speedup
+has been measured.
+
+Broker files remain design-only under t314; the legacy broker transport is
+not SDK file coverage. Portal requester and recipient/capture interfaces exist
+but need separate typed SDK coverage: private requester admission must not be
+confused with namespace-selected recipient authority. Administration and these
+portal gaps precede release-wide parity, foreign-language smoke, signed
+publication and verified pin adoption. t333 remains open; pins are unchanged
+and no quiet hold is active. The checkpoints below retain earlier evidence.
+
 Signed Rust `3e5b679` and C `165c250` pass paired lock production-export and
 protected idle-revocation gates. The runtime gate runs pinned C, candidate C
 and external Rust through the same production worker: chord negotiation, exact
