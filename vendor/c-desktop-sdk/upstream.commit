@@ -1,14 +1,14 @@
-tree 1e948d9ef08f3a24f5611b64d9c376c97fdb0bab
-parent ce01a9d6491c18672ffb1c7da3b5a27f3598b755
-author Mason Green <mason@greenm01.net> 1792210099 -0400
-committer Mason Green <mason@greenm01.net> 1792210099 -0400
+tree 4ad32643a895efd78a71a3db2bf448c2c0e9cbd9
+parent 60400404df4d85dd0bc60d752b72fae016a796e7
+author Mason Green <mason@greenm01.net> 1792210500 -0400
+committer Mason Green <mason@greenm01.net> 1792210500 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL0sxsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLr9QD/cadD8ieLpsQPjZAR8G7H
- 3wT3wRXfFAkyn46YFec27I4BAP7n3YakyX17ZkAgIggoAzPAD39m6B0GmJvHOixB
- n3UL
- =JCDB
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL2RBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIeiwD+IyG2KVemm8W3SX+QDcP9
+ 04IxIQdQYMXTD2DRZbjrFpUBANxFmKQf2TV6SUU7I/WBa3UUMxI/fO4weD3qSKgp
+ jFsE
+ =7CAy
  -----END PGP SIGNATURE-----
 
-Map announced snapshot scheduling and preserve remaining control gaps
+Verify shell prefetch and out-of-order snapshot holds

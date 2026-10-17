@@ -16,15 +16,35 @@ pub struct JournalProgress {
 }
 
 impl ShellConnection {
+    /// Latest unverified announcement per feed. Manual mode can retain several;
+    /// choose any one with `request_snapshot`. Only one fetch runs at a time.
+    pub fn pending_snapshots(
+        &self,
+    ) -> impl Iterator<Item = sophia_shell_protocol::shell_files::ShellFileObjectPublished> + '_
+    {
+        self.wire.pending_snapshots()
+    }
+
+    /// Fetch an explicitly supplied identity, even before its announcement.
+    /// The feed must be disclosed by this connection. The SDK still verifies
+    /// Qid, generation and epoch; only an exact later announcement discharges
+    /// its ACK hold. A different active fetch refuses without changing it.
+    pub fn prefetch_snapshot(
+        &mut self,
+        request: sophia_shell_protocol::shell_files::ShellFileObjectPublished,
+    ) -> Result<bool, ShellClientError> {
+        self.wire.prefetch_snapshot(request)
+    }
     /// Automatic snapshot fetching is enabled by default. Disabling it leaves
     /// an already started fetch running, including its bounded retries. New
-    /// announcements wait for `request_snapshot`; later events and their ACKs
-    /// remain held. These controls never change publication authority.
+    /// announcements wait for `request_snapshot`. Later events may be retained,
+    /// but ACKs cannot pass an unverified announcement. These controls never
+    /// change publication authority.
     pub fn set_automatic_snapshot_fetch(&mut self, enabled: bool) -> Result<(), ShellClientError> {
         self.wire.set_automatic_snapshot_fetch(enabled)
     }
 
-    /// The current announcement awaiting fetch or verification, if any.
+    /// The first pending feed awaiting verification, if any; not journal order.
     /// Recheck before requesting it; superseded announcements may be skipped.
     pub fn pending_snapshot(
         &self,

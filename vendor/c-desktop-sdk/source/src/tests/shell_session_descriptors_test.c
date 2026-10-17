@@ -239,7 +239,8 @@ static void selected_feeds_and_holds(void)
     rig_run(&r, 16);
     assert(rig_outcome(&r, ticket) == SOPHIA_SS_SUBMITTED &&
            rig_outcome(&r, ticket + 1) == SOPHIA_SS_ADMITTED_LOCAL && r.p.submits == 2);
-    for (unsigned kind = 5; kind <= 7; kind++) {
+    /* Fetch the last publication first; earlier unverified feeds still hold ACKs. */
+    for (unsigned kind = 7; kind >= 5; kind--) {
         assert(!r.p.object_walks[kind] && "fetch must wait for the caller");
         assert(!sophia_ss_object(&r.s, (uint16_t)kind, 7, 100 + kind));
         uint64_t prior_limit = sophia_ss_ack_limit(&r.s);
@@ -251,6 +252,8 @@ static void selected_feeds_and_holds(void)
             status = sophia_ss_object_result(&r.s, &v);
         }
         assert(!status && v && v->header.kind == kind && r.p.object_eofs[kind]);
+        if (kind != 5)
+            assert(sophia_ss_ack_limit(&r.s) == 2);
         assert(r.p.acked == 2 && r.p.submits == 2);
     }
     assert(!sophia_ss_obligations(&r.s, &o) && !o.objects && !o.blocked);
@@ -291,14 +294,14 @@ static void refused_and_superseded_fetches(void)
     assert(!fetch(&r, SOPHIA_SF_SHORTCUTS, 8, 101));
     rig_ack(&r);
     assert(r.p.acked == 4);
-    /* Fetch-before-consume also releases exactly its matching announcement. */
+    /* Prefetch before publication releases only the exact later identity. */
     snapshot(&r, SOPHIA_SF_DESCRIPTORS, 9, 102);
-    peer_published(&r.p, SOPHIA_SF_DESCRIPTORS, 9, 102);
-    rig_run(&r, 8);
     assert(!fetch(&r, SOPHIA_SF_DESCRIPTORS, 9, 102));
-    assert(!sophia_ss_consume(&r.s));
+    consume_publication(&r, SOPHIA_SF_DESCRIPTORS, 9, 102);
     rig_ack(&r);
     assert(r.p.acked == 5);
+    consume_publication(&r, SOPHIA_SF_DESCRIPTORS, 9, 103);
+    assert(sophia_ss_ack_limit(&r.s) == 5);
     rig_close(&r);
 }
 static void disclosure(void)

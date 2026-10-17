@@ -1,14 +1,14 @@
-tree 005f12123ed736cd5e4c02dfbb5831fa94588c55
-parent 36a4c89867f1b41cd6f2237fa75beba609a50e85
-author Mason Green <mason@greenm01.net> 1792210097 -0400
-committer Mason Green <mason@greenm01.net> 1792210097 -0400
+tree fcc6b3a5ed92c45b7b223966effc82a6a8f5db7e
+parent 43965b69f93a990d5fa6128253891dcc3365593f
+author Mason Green <mason@greenm01.net> 1792210500 -0400
+committer Mason Green <mason@greenm01.net> 1792210500 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL0sRsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJcywD/UnYoRXVZZVulvzGY8xo8
- lGIjlHcB8OKineJ/LauOA8MA/32cSB7dMW/gO1qMNSKEtRFiuqWYlQVjm8Cea4UH
- U5wE
- =X8b/
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL2RBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKWqgEA8PBn9evMcZNUplESOHRN
+ ApTwjs79XdcScP9i4vCivewBAPi1/qn/auvfbOFXbgD9x8EFGjGlDB2RXTXa+4+I
+ EFQH
+ =SeXP
  -----END PGP SIGNATURE-----
 
-Allow caller scheduling of announced shell snapshots
+Add shell snapshot prefetch and out-of-order selection

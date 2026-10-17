@@ -106,6 +106,17 @@ fn independent_sdk_startup_reads_negotiation_and_optional_limits() {
                         },
                     )
                     .unwrap();
+                transport
+                    .publish_tabs(
+                        &mut epochs,
+                        TransactionId::from_raw(18),
+                        &ShellTabSnapshot {
+                            connection_epoch: 41,
+                            generation: 18,
+                            groups: Vec::new(),
+                        },
+                    )
+                    .unwrap();
             }
             if let Some(status) = child.0.try_wait().unwrap() {
                 assert!(status.success(), "SDK peer failed: {status}");

@@ -144,10 +144,26 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Rust now supports prefetch and selection among pending feeds, using fixed
+per-feed identity storage. The full Rust shell suite and strict Clippy pass.
+Independent C controls fetch publications in reverse order and prefetch before
+publication; the complete C suite passes. Both check that an earlier unverified
+feed, or a different Qid, still holds the journal ACK. Both independent peers
+pass Sophia's real metadata/content export while fetching Tabs before the
+earlier Descriptors publication. Prefetch-before-publication coverage remains
+scripted. The Rust supersession regression found during development is fixed
+and its existing test passes. Both API maps record the new controls and limits.
+Retained-head delivery, allocation-free sizing and fetch-error recovery
+differences remain open; Rust currently terminates on malformed objects where
+C returns a fetch error and permits another request. Both pin checks pass,
+including the imported Rust workspace tests. The paired export passes again
+at the imported pins. Peer SHA-256: Rust
+`62e8cf183bc0c4924def04a576eaee24011669601926cffc54b7c51d6ca12353`, C
+`c3087e80de6845df1d6d0960c2814c5d27ef61308a368cba8938d14d210cd411`.
+
 The role/API release audit remains open against the full exits above. Signed
-Rust `43965b69f93a990d5fa6128253891dcc3365593f` and C
-`60400404df4d85dd0bc60d752b72fae016a796e7` are pushed and imported. Both pin checks
-pass, including the imported Rust workspace tests. Shell startup
+Rust `2f09b8f6acc42dca827bc0f83a258cad5f2cd801` and C
+`df45b95e3c5fb39b096f682dd8298eed661d2461` are pushed and imported. Shell startup
 is now caller-driven in both SDKs; WM/lock maps and C's role inventory have
 been reconciled. C lock handoff now rejects extra fids and partial input.
 
@@ -192,9 +208,8 @@ and close. The Rust shell suite and strict Clippy pass, as does C's strengthened
 descriptor test. Both independent peers pass the real metadata/content export
 with caller-requested fetching and explicit ACKs. The new Rust peer SHA-256 is
 `75c95a03804c2ef361f6c7b62c172b4872b8fa40b05aaffa46686a024b0daedf`;
-the C peer is unchanged. This does not yet provide C's unannounced prefetch or
-out-of-order object selection. Those controls, retained-head delivery and
-allocation-free sizing remain open; do not infer full parity from this slice.
+the C peer was unchanged at that checkpoint. The prefetch/selection work above
+supersedes that checkpoint's scheduling limit; do not infer full parity from it.
 No quiet hold is active and nothing was installed into the desktop. Performance
 qualification remains separate; the broker diagnostic is not acceptance.
 

@@ -2,6 +2,7 @@
 use sophia_9p_client::pipeline::PipelineLimits;
 use sophia_shell_client::{Connecting, ShellClientOptions};
 use sophia_shell_protocol::ShellContentRecord;
+use sophia_shell_protocol::shell_files::{ShellDescriptorRecord, ShellFileKind};
 use std::{
     io::Read,
     os::unix::net::UnixStream,
@@ -21,7 +22,7 @@ fn main() {
         ShellClientOptions {
             minimum_revision: 8,
             maximum_revision: 8,
-            required_capabilities: 1 | if content { 128 } else { 0 },
+            required_capabilities: 1 | 4 | if content { 128 } else { 0 },
             handshake_timeout: Duration::from_secs(3),
         },
         0,
@@ -43,7 +44,7 @@ fn main() {
     assert_eq!(client.welcome().selected_revision, 8);
     assert_eq!(
         client.welcome().capabilities,
-        3 | if content { 128 } else { 0 }
+        3 | 4 | if content { 128 } else { 0 }
     );
     assert_eq!(
         matches!(
@@ -52,25 +53,40 @@ fn main() {
         ),
         content
     );
+    let mut tabs_received = false;
     loop {
         assert!(start.elapsed() < Duration::from_secs(3));
         client.dispatch(Instant::now(), 1).unwrap();
-        if let Some(request) = client.pending_snapshot() {
-            assert_eq!(request.generation, 17);
+        let wanted = if tabs_received {
+            ShellFileKind::Descriptors
+        } else {
+            ShellFileKind::Tabs
+        };
+        let request = client.pending_snapshots().find(|p| p.object == wanted);
+        if let Some(request) = request {
+            assert_eq!(request.generation, if tabs_received { 17 } else { 18 });
             assert_eq!(client.journal_progress().ack_limit, 2);
             client.request_snapshot(request).unwrap();
         }
         if let Some(sophia_shell_client::DescriptorObservation::Record(record)) =
             client.take_descriptor_observation().unwrap()
         {
-            let sophia_shell_protocol::shell_files::ShellDescriptorRecord::Descriptors(snapshot) =
-                record.record
-            else {
-                panic!("expected descriptors")
-            };
-            assert_eq!(snapshot.snapshot_generation, 17);
-            assert!(snapshot.descriptors.is_empty());
-            break;
+            match record.record {
+                ShellDescriptorRecord::Tabs(snapshot) => {
+                    assert!(!tabs_received);
+                    assert_eq!(snapshot.generation, 18);
+                    assert!(snapshot.groups.is_empty());
+                    assert_eq!(client.journal_progress().ack_limit, 2);
+                    tabs_received = true;
+                }
+                ShellDescriptorRecord::Descriptors(snapshot) => {
+                    assert!(tabs_received);
+                    assert_eq!(snapshot.snapshot_generation, 17);
+                    assert!(snapshot.descriptors.is_empty());
+                    break;
+                }
+                _ => panic!("unexpected snapshot"),
+            }
         }
         std::thread::yield_now();
     }

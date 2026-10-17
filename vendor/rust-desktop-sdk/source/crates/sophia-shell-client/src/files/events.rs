@@ -71,27 +71,57 @@ impl FileWire {
         if self.fatal.is_some() || self.peer_closed {
             return None;
         }
-        self.object_fetch
-            .as_ref()
-            .map(|f| ShellFileObjectPublished {
-                object: f.feed,
-                generation: f.generation,
-                qid: f.qid,
-            })
+        self.pending_objects.iter().flatten().copied().next()
+    }
+    pub(crate) fn pending_snapshots(&self) -> impl Iterator<Item = ShellFileObjectPublished> + '_ {
+        self.pending_objects
+            .iter()
+            .flatten()
+            .copied()
+            .filter(|_| self.fatal.is_none() && !self.peer_closed)
     }
     pub(crate) fn request_snapshot(
         &mut self,
         request: ShellFileObjectPublished,
     ) -> Result<bool, ShellClientError> {
         self.io_interest()?;
-        if self.pending_snapshot() != Some(request) {
+        if !self.pending_objects.contains(&Some(request)) {
             return Err(ShellClientError::InvalidArgument("snapshot is not pending"));
         }
-        let fetch = self.object_fetch.as_mut().unwrap();
-        let changed = !fetch.requested;
-        fetch.requested = true;
+        self.prefetch_snapshot(request)
+    }
+    pub(crate) fn prefetch_snapshot(
+        &mut self,
+        request: ShellFileObjectPublished,
+    ) -> Result<bool, ShellClientError> {
+        self.io_interest()?;
+        if !self.feed_disclosed(request.object) || request.generation == 0 || request.qid == 0 {
+            return Err(ShellClientError::InvalidArgument(
+                "invalid snapshot identity or capability",
+            ));
+        }
+        if let Some(fetch) = &self.object_fetch {
+            if (fetch.feed, fetch.generation, fetch.qid)
+                == (request.object, request.generation, request.qid)
+            {
+                return Ok(false);
+            }
+            return Err(ShellClientError::QueueSaturated);
+        }
+        self.object_fetch = Some(ObjectFetch {
+            feed: request.object,
+            generation: request.generation,
+            qid: request.qid,
+            phase: FetchPhase::NotStarted,
+            buf: Vec::new(),
+            restarts: 0,
+        });
+        let index = feed_index(request.object).expect("disclosed feed");
+        if self.pending_objects[index] == Some(request) {
+            self.attempted_objects[index] = true;
+        }
         self.service_pending = true;
-        Ok(changed)
+        Ok(true)
     }
     /// The ack bound: every handled event, but never past a held
     /// announcement.
@@ -318,19 +348,15 @@ impl FileWire {
                 if self.native_launcher {
                     inbox.push_back(Inbound::NativePublication(published));
                 }
-                let bound = sequence - 1;
-                let hold = self.holds[index].get_or_insert(bound);
-                *hold = (*hold).min(bound);
-                if !self.superseded(published.object) {
-                    self.object_fetch = Some(ObjectFetch {
-                        feed: published.object,
-                        generation: published.generation,
-                        qid: published.qid,
-                        phase: FetchPhase::NotStarted,
-                        buf: Vec::new(),
-                        restarts: 0,
-                        requested: false,
-                    });
+                if self.verified_objects[index] == Some(published) {
+                    self.holds[index] = None;
+                    self.pending_objects[index] = None;
+                } else {
+                    let bound = sequence - 1;
+                    let hold = self.holds[index].get_or_insert(bound);
+                    *hold = (*hold).min(bound);
+                    self.pending_objects[index] = Some(published);
+                    self.attempted_objects[index] = false;
                 }
             }
             Event::ResourceStatus(resource, status, item) => {
@@ -370,16 +396,26 @@ impl FileWire {
     }
 
     pub(super) fn drive_object_fetch(&mut self) -> Result<bool, ShellClientError> {
+        if self.object_fetch.is_none()
+            && self.automatic_objects
+            && let Some(request) = self
+                .pending_objects
+                .iter()
+                .flatten()
+                .copied()
+                .find(|request| {
+                    !self.attempted_objects[feed_index(request.object).unwrap()]
+                        && !self.superseded(request.object)
+                })
+        {
+            self.prefetch_snapshot(request)?;
+        }
         let Some(fetch) = &mut self.object_fetch else {
             return Ok(false);
         };
         if fetch.phase != FetchPhase::NotStarted {
             return Ok(false);
         }
-        if !self.automatic_objects && !fetch.requested {
-            return Ok(false);
-        }
-        fetch.requested = true;
         let name: &[u8] = match fetch.feed {
             ShellFileKind::Outputs => b"outputs",
             ShellFileKind::Catalog => b"catalog",
@@ -605,7 +641,17 @@ impl FileWire {
             ));
         }
         inbox.push_back(item);
-        self.holds[feed_index(fetch.feed).expect("fetched feeds are known")] = None;
+        let index = feed_index(fetch.feed).expect("fetched feeds are known");
+        let verified = ShellFileObjectPublished {
+            object: fetch.feed,
+            generation,
+            qid: fetch.qid,
+        };
+        self.verified_objects[index] = Some(verified);
+        if self.pending_objects[index] == Some(verified) {
+            self.holds[index] = None;
+            self.pending_objects[index] = None;
+        }
         Ok(())
     }
 }
