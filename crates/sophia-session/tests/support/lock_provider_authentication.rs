@@ -29,15 +29,28 @@ impl Peer {
             PathBuf::from(std::env::var_os("CARGO_TARGET_DIR").expect("cargo-slot target"));
         let temporary = target.join("tmp");
         std::fs::create_dir_all(&temporary).unwrap();
-        let path = temporary.join(format!("t317-provider-sdk-{}", std::process::id()));
+        // One owned directory per caller: tests in this module run in
+        // parallel and must not overwrite a peer another test is
+        // executing. The directory is removed with the Peer.
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let serial = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let owned = temporary.join(format!("t317-provider-sdk-{}-{serial}", std::process::id()));
+        std::fs::create_dir_all(&owned).unwrap();
+        let path = owned.join("peer");
         let source =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../vendor/c-desktop-sdk/source/src");
-        let mut units: Vec<_> = ["nine_p", "launch_auth", "lock_files"]
-            .into_iter()
-            .flat_map(|dir| std::fs::read_dir(source.join(dir)).unwrap())
-            .map(|entry| entry.unwrap().path())
-            .filter(|p| p.extension().is_some_and(|e| e == "c"))
-            .collect();
+        let mut units: Vec<_> = [
+            "nine_p",
+            "launch_auth",
+            "lock_files",
+            "image_channel",
+            "image_producer",
+        ]
+        .into_iter()
+        .flat_map(|dir| std::fs::read_dir(source.join(dir)).unwrap())
+        .map(|entry| entry.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|e| e == "c"))
+        .collect();
         units.sort();
         assert!(
             std::process::Command::new("/usr/bin/cc")
@@ -69,7 +82,10 @@ impl Peer {
 }
 impl Drop for Peer {
     fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.0);
+        // The binary lives in its own per-build directory.
+        if let Some(owned) = self.0.parent() {
+            let _ = std::fs::remove_dir_all(owned);
+        }
     }
 }
 
@@ -358,4 +374,150 @@ fn slow_protected_spawn_does_not_block_and_cancelled_completion_cannot_authorize
         );
     }
     assert!(provider.registration.is_none());
+}
+
+#[test]
+fn sealed_image_offer_crosses_through_the_normal_provider_owner() {
+    let peer = Peer::build();
+    let directory = Directory::new("image");
+    let reports = directory.0.join("reports");
+    std::fs::DirBuilder::new()
+        .mode(0o700)
+        .create(&reports)
+        .unwrap();
+    let report = reports.join("progress");
+    let mut transport = LockFileTransport::bind_for_supervised_uid(
+        directory.0.join("endpoint"),
+        rustix::process::geteuid().as_raw(),
+        1,
+        limits(),
+    )
+    .unwrap();
+    // The supplied test transport carries exactly the policy the
+    // normal start path enables; with_service itself is unchanged.
+    transport
+        .enable_sealed_images(crate::session_lock_object::session_lock_image_policy(
+            &limits(),
+        ))
+        .unwrap();
+    let socket = transport.socket_path().to_owned();
+    let base = ProcessLaunchSpec::new(&peer.0)
+        .arg(&socket)
+        .arg(&report)
+        .arg("image")
+        .process_group()
+        .protection_domain(
+            ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::LockProvider])
+                .unwrap()
+                .path(ProtectionPath::read_only(socket.parent().unwrap()))
+                .unwrap()
+                .path(ProtectionPath::read_write(&reports))
+                .unwrap(),
+        );
+    let mut auth = factotum::Fixture::new();
+    let wake = sophia_wake::Wake::new().unwrap();
+    let mut provider = LockProvider::with_service(
+        transport,
+        base,
+        ShellGpuMode::Denied,
+        None,
+        locked(),
+        Vec::new(),
+        wake.notifier(),
+        policy(),
+        auth.coordinator.endpoint(),
+    )
+    .unwrap();
+    let expected: Vec<u8> = (0..64u32)
+        .map(|i| if i % 4 == 3 { 255 } else { (i * 31 + 7) as u8 })
+        .collect();
+    let mut held: Option<sophia_runtime::SharedPixels> = None;
+    let mut connected = Vec::new();
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        assert!(
+            Instant::now() < deadline,
+            "sealed image must be accepted through the normal provider"
+        );
+        for event in step(&mut provider, &mut auth) {
+            match event {
+                LockFileServiceEvent::Connected {
+                    connection_epoch, ..
+                } => connected.push(connection_epoch),
+                LockFileServiceEvent::Inbound {
+                    inbound:
+                        sophia_runtime::lock_files::LockInbound::ResourceReady {
+                            resource,
+                            width_px,
+                            height_px,
+                            pixels,
+                        },
+                    ..
+                } => {
+                    assert_eq!(resource.id, 7);
+                    assert_eq!((width_px, height_px), (4, 4));
+                    assert_eq!(pixels.len(), expected.len());
+                    assert_eq!(pixels.as_ref(), expected.as_slice());
+                    held = Some(pixels);
+                }
+                _ => {}
+            }
+        }
+        if connected == [1]
+            && held.is_some()
+            && std::fs::read_to_string(&report).ok().as_deref() == Some("image-accepted\n")
+        {
+            break;
+        }
+    }
+    assert!(provider.authorized);
+    let held = held.expect("ResourceReady pixels retained by the owner");
+    assert_eq!(held.as_ref(), expected.as_slice());
+
+    // Revoke Factotum as in the authority test. The connection's
+    // journal dies with no SourceReleased owed, while the retained
+    // pixels outlive the epoch that delivered them.
+    auth._authenticator
+        .as_ref()
+        .unwrap()
+        .launch_service()
+        .current()
+        .unwrap()
+        .ingress
+        .invalidate();
+    // Observe revocation without the bootstrap step: the supervisor
+    // legitimately terminates the old peer during replacement, so its
+    // exit status is not a success assertion here.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while std::fs::read_to_string(&report).ok().as_deref() != Some("revoked\n") {
+        assert!(
+            Instant::now() < deadline,
+            "image provider must settle revoked after Factotum loss"
+        );
+        // No owner poll here, as in the authority test: driving the
+        // provider would let the supervisor terminate the peer before
+        // it observes the revocation itself.
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let mut replaced = false;
+    while !replaced {
+        assert!(
+            Instant::now() < deadline,
+            "revoked image provider must be replaced"
+        );
+        auth.tick();
+        let _ = provider.poll(Instant::now(), &mut auth.coordinator);
+        replaced |= provider.take_replacement();
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(
+        !provider.authorized,
+        "replacement is observed only after the old provider's authority ended"
+    );
+    assert_eq!(
+        held.as_ref(),
+        expected.as_slice(),
+        "retained pixels stay readable across Factotum revocation"
+    );
+    drop(held);
 }
