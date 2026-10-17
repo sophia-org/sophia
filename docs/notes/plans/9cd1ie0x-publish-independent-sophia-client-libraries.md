@@ -178,6 +178,17 @@ reconcile historical claims and run final release gates. Preserve the portal
 refused-End cancellation limit. Performance work must not replace these closure
 requirements. No full t333 completion is claimed by these transport slices.
 
+The output audit now maps every public C session entry point to its Rust
+counterpart and separates current coverage from historical checkpoints. Signed
+Rust `080eefa60759c5b68a4adeaa0d5cf8f0558f793b` and C
+`bfd9ba2aab0995eae4707ff15a23f8c3d99b6f46` correct `OUTPUT-PARITY.md` and
+`OUTPUT-CLIENT.md`; both are pushed and no runtime changed.
+The supplied-admission and protected idle-revocation fixtures have passed, but
+they do not establish revocation during an active proposal or physical output
+application. These documentation commits still need adoption in the final SDK
+pins. The full `cargo xtask check` is running against Sophia `b7c442e5c`; inspect
+`/tmp/t333-release-audit-check.log` and its live process before starting another.
+
 ### Secret-write parity evidence, 2026-10-17
 
 Signed SDK revisions are Rust `902a26e574f1c55d2e31599d104a1251dd4e408f`
