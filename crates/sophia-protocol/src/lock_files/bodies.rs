@@ -493,7 +493,11 @@ pub struct LockSubmitted {
 
 impl LockSubmitted {
     pub fn encode(&self) -> Result<Vec<u8>, BinaryCodecError> {
-        if self.candidate_kind.class() != LockFileClass::Candidate {
+        // Plain Submitted retains the r1 vocabulary even though the enum also
+        // names r2 image kinds. Revision-aware image receipts are separate.
+        if self.candidate_kind.class() != LockFileClass::Candidate
+            || !(256..=263).contains(&(self.candidate_kind as u16))
+        {
             return Err(invalid("candidate_kind"));
         }
         let mut bytes = Vec::with_capacity(16);
@@ -508,7 +512,9 @@ impl LockSubmitted {
         let submission_id = nonzero(cursor.u64()?, "submission_id")?;
         let candidate_kind = LockFileKind::decode(cursor.u16()?)
             .ok()
-            .filter(|kind| kind.class() == LockFileClass::Candidate)
+            .filter(|kind| {
+                kind.class() == LockFileClass::Candidate && (256..=263).contains(&(*kind as u16))
+            })
             .ok_or_else(|| invalid("candidate_kind"))?;
         reserved(&mut cursor, 6)?;
         cursor.finish()?;

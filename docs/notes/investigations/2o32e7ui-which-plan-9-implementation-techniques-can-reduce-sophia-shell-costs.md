@@ -40,6 +40,16 @@ Independent C/Rust review and differential checks are pending; these SDK heads
 are not published or vendored yet. Next: resolve review, publish, adopt signed
 snapshots and run affected export gates.
 
+Review found a plain LockSubmitted vocabulary leak in both Rust trees. Fixed
+SDK head `5c41aeb` requires the r1 candidate range on both encode and decode;
+C `e146897` also corrects the pre-existing shell KDL receipt ceiling to 278.
+The affected tests and strict Clippy pass. Claude's 117,756-case differential
+per role on the prior heads found only the expected role-specific discovery
+split, with byte-identical accepted round trips; final fixed-head rerun is
+pending. The plan records exact comparison scope and preserved harness hashes.
+ImageBegin's revision-aware Submitted receipt is an explicit prerequisite for
+runtime wiring, not enabled by this passive codec checkpoint.
+
 The Rust discovery reader still needs C's cross-object coherence checks, and
 its packet caller must check actual received FD counts; complete admission
 parity is not claimed. Positive timeout/chunk/turn rules are now explicit in

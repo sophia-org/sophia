@@ -115,6 +115,36 @@ and per-output bounds before Hello. Rust packet shape also leaves the actual
 received FD count to its caller. These gaps remain explicit and block a claim
 of complete discovery/admission parity. Shape codecs alone do not close them.
 
+Independent review found a legacy lock receipt leak: adding ImageBegin to the
+kind enum made plain LockSubmitted accept it through the Candidate class check.
+Both Sophia and the SDK now keep that receipt's r1 range at 256–263, with
+encode and decode regressions for the image namespace. The shell Submitted KDL
+ceiling is corrected from 272 to 278 to match both existing SDK encoders;
+this does not add a new production kind.
+
+Before runtime admission opens, explicit r9/r2 Submitted codecs and their KDL
+rules must accept candidate_kind=ImageBegin (0x7000). The ordinary submit/ACK
+path must journal the actual accepted kind, never suppress or relabel that
+receipt. Plain entry points retain their legacy ranges. This is a prerequisite
+for new-revision transaction wiring, not permission to widen the legacy APIs.
+
+The receipt fix is signed in Rust `5c41aeb`; C `e146897` carries the matching
+shell KDL correction. Claude's independent differential run on the preceding
+Rust `5c83d6d` and C `380654f` archives compared 117,756 cases per role, including
+field mutations, truncation, format-row boundaries and seeded random inputs.
+Accept/refuse and accepted-byte round trips agree except for the expected
+opposite-role discovery case: C is shared, Rust's codecs are role-specific.
+A deliberately weakened Rust codec produced 365 mismatches, demonstrating
+that the comparison detects disagreement. The final lock receipt probe and
+differential rerun on `5c41aeb` remain pending.
+
+The differential supplies matching packet expectations and FD counts; it does
+not exercise the missing Rust caller-bound or cross-object checks. Harness
+sources and hashes are preserved, without binaries, under
+`~/.local/state/sophia/development-evidence/t338-codec-differential-20261017/`.
+The generator SHA-256 is
+`4f9e01122444659df7e6e55bbc40b08c8342e0466aca7a1edbf6253b5b610d31`.
+
 ## Owner direction — October 17, 2026
 
 niltempus approved this design and ADR qujwzrdz in principle, conditional on the
