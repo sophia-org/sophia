@@ -2,7 +2,7 @@
 id: s5msyyv2
 date: 2026-10-17
 kind: adr
-status: proposed
+status: accepted
 tags: [adr, shell, 9p, performance]
 ---
 # Pipeline shell writes with bounded recovery and unchanged custody
@@ -21,7 +21,7 @@ Sophia would keep ordinary tagged 9P requests and its own custody boundaries.
 
 ## Decision
 
-Propose two separately tested changes after the first slice's native capture:
+Implement two separately tested changes after the first slice's native capture:
 
 - B2: queue submit behind the final record fragment on the same connection,
   after earlier fragments have successful replies. Retain both tags until their
@@ -32,15 +32,21 @@ Propose two separately tested changes after the first slice's native capture:
   resource boundary. End and the writer's closing clunk wait for all successful
   write replies; cancellation remains a separate explicit path.
 
+Rust gathers adjacent queued upload units. C pipelines fragments of its current
+borrowed upload buffer; its caller retains that buffer until upload completion.
+Neither change requires a new caller API or releases storage before replies
+are settled.
+
 Four is an SDK sender ceiling documented by the shell profile, not a new server
 pending-request guarantee or negotiated ContentLimits field. Smaller existing
 tag, output, byte and work budgets lower the usable window, down to one. Keep
 space for events, ACKs, cancellation and recovery. Do not increase transport
 limits or add a capability bit, file node, opcode or record layout.
 
-The [draft amendment and implementation plan](../plans/nfe0blnb-queue-shell-submit-and-pixel-writes-within-existing-custody-bounds.md)
-defines recovery, deadlines, compatibility and evidence. It remains proposed;
-the existing shell contract is unchanged until acceptance is recorded.
+The [implementation plan](../plans/nfe0blnb-queue-shell-submit-and-pixel-writes-within-existing-custody-bounds.md)
+defines the checks and adoption sequence. The [shell contract](../../sophia-shell-files.md#queued-shell-writes)
+owns recovery, deadlines and compatibility. Implementation and native evidence
+remain pending.
 
 ## Alternatives
 
@@ -70,9 +76,10 @@ never recovers into a successor binding.
 ## Acceptance and connections
 
 Proposed October 17, 2026 following niltempus's request for a consultation and
-implementation plan. Design work is authorized; production implementation and
-normative amendment await acceptance and the prepared first-slice capture.
-This would extend the [reusable-writer decision](7mls2e2q-reuse-a-shell-transaction-writer-without-changing-custody.md),
-not supersede its custody rules. The [current contract](../../sophia-shell-files.md)
+implementation plan. Accepted later that day when niltempus directed
+"Implement the plan" after reviewing the capture-first sequence with B2 and B3.
+The prepared first-slice capture still precedes production implementation.
+This extends the [reusable-writer decision](7mls2e2q-reuse-a-shell-transaction-writer-without-changing-custody.md)
+without superseding its custody rules. The [current contract](../../sophia-shell-files.md)
 and [t331 plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md)
 remain authoritative. No performance result is claimed.

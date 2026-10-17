@@ -2,17 +2,18 @@
 id: nfe0blnb
 date: 2026-10-17
 kind: plan
-status: proposed
+status: accepted
 tags: [plan, shell, 9p, performance]
 ---
 # Queue shell submit and pixel writes within existing custody bounds
 
 ## Scope and exit
 
-Proposed second t331 slice: B2 queued submit and B3 a bounded pixel-write window.
-Design only until niltempus accepts the companion ADR and the prepared first-slice
-capture finishes. Comparator `9e3c741f8`, integration `4b16974`, their artifacts
-and all fourteen launch plans remain frozen. Do not change the installed desktop.
+Accepted by niltempus on October 17, 2026: B2 queued submit and B3 a bounded
+pixel-write window. The prepared first-slice capture and its cost report precede
+production implementation. Comparator `9e3c741f8`, integration `4b16974`, their
+artifacts and all fourteen launch plans remain frozen through capture. Do not
+change the installed desktop.
 
 The exit is matching C/Rust protocol behavior, demonstrated reduction in dependent
 waits, and fresh paired CPU/allocation/latency evidence under t331's unchanged
@@ -20,11 +21,12 @@ gates. Neither ZX nor a request-count model promises a performance pass. ACK
 cadence, pending-read deferral, larger chunks, new limits, independent-resource
 concurrency, implicit End and merged retirement are excluded.
 
-## Draft contract amendment
+## Contract implementation requirements
 
-This is review text for `docs/sophia-shell-files.md`, not a current normative
-rule. On acceptance, update Request ordering and Upload slots there, then pin
-the identical contract in both SDKs. Retain all existing errno precedence.
+The [accepted amendment](../../sophia-shell-files.md#queued-shell-writes) owns
+the normative rules. Pin that contract in both SDKs during implementation;
+retain existing errno precedence. The requirements below guide the changes
+and their tests; they do not claim that either SDK implements them yet.
 
 ### B2: final record fragment followed by submit
 
@@ -62,8 +64,11 @@ Existing request credits, encoded output bytes and per-dispatch work budgets
 can lower it. Reserve control capacity before admitting data; use a smaller
 window or the existing sequential path when capacity is insufficient.
 
-The ring can gather only adjacent SlotWrite units for the same resource, live
-binding, writer fid and grant. Retain every unit's ticket and byte ownership.
+In Rust, the ring can gather only adjacent SlotWrite units for the same resource,
+live binding, writer fid and grant. Retain every unit's ticket and byte ownership.
+C pipelines fragments of its current borrowed buffer, without admitting another
+caller buffer until completion. Preserve caller APIs and buffer lifetimes;
+record the C struct layout change and rebuild consumers.
 Do not pass a record, resource switch, cancellation or End. Fragment requests at
 canonical chunk boundaries, negotiated msize overhead and iounit; do not require
 a full canonical chunk to fit one transport message. Each later issued offset
@@ -97,9 +102,8 @@ bytes. Apply the existing backoff only to EAGAIN; a positive short write needs
 no delay after the tail drains. Count short writes: an aligned fragment should
 fit the current chunk, so a short reply needs investigation. Tickets settle
 Stored once all their bytes are confirmed, including any necessary resends.
-Unexpected success in a tail
-that cannot be reconciled with the accepted prefix is a protocol failure, not
-permission to guess a cursor.
+Unexpected success in a tail that cannot be reconciled with the accepted prefix
+is a protocol failure, not permission to guess a cursor.
 
 For ambiguous flush or lost-reply recovery, getattr is allowed only on the same
 live fid after the outstanding tail has drained or its tags have been settled by
@@ -134,8 +138,8 @@ window. No fairness conclusion follows from the credit count alone.
 
 ## Task details
 
-1. Finish the first-slice native capture and publish its remaining costs. Obtain
-   acceptance of this ADR/amendment before production code. Keep B2 and B3 in
+1. Finish the first-slice native capture and publish its remaining costs. The
+   ADR/amendment is accepted; capture remains the prerequisite. Keep B2 and B3 in
    separate commits and diagnostic comparisons so their effects remain separable.
 2. Add export fixtures with queued short/EAGAIN tails, expiry between queued
    writes, malformed pixels, incomplete/absent staging and inbound backpressure
@@ -145,8 +149,9 @@ window. No fairness conclusion follows from the credit count alone.
    final record reply while observing submit, reorder their replies, and cover
    early Submitted, record failure plus EAGAIN/ESTALE/EINVAL submit, unexpected
    acceptance, partial prior fragments, disconnect and immutable submit retry.
-4. Implement B3 across adjacent outbox units in both SDKs with a fixed ring,
-   bounded retained bytes and no per-frame ring allocation. Tests hold replies
+4. Implement B3 across adjacent Rust outbox units and the current C borrowed
+   buffer with a fixed ring, bounded retained bytes and no per-frame ring
+   allocation. Tests hold replies
    to observe four writes, refill one credit at a time, use smaller capacities,
    and keep tickets unresolved across a short head/EINVAL tail until successful
    resend. Cover EAGAIN mid-window, out-of-order replies, partial transport writes,
@@ -188,7 +193,7 @@ Claude reviewed the draft against the export and both SDKs on October 17 and
 found no blockers to recording it as proposed. The review does not establish
 implementation behavior or native performance.
 
-- [Proposed ADR](../decisions/s5msyyv2-pipeline-shell-writes-with-bounded-recovery-and-unchanged-custody.md).
+- [Accepted ADR](../decisions/s5msyyv2-pipeline-shell-writes-with-bounded-recovery-and-unchanged-custody.md).
 - [t331 plan and unchanged gates](mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md).
 - [Current shell contract](../../sophia-shell-files.md).
 - [Current evidence](../investigations/2o32e7ui-which-plan-9-implementation-techniques-can-reduce-sophia-shell-costs.md).
