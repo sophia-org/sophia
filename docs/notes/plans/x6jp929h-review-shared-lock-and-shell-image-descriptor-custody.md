@@ -8,6 +8,59 @@ tags: [plan, shell, lock, rendering]
 
 ## Current resumption
 
+t338 remains open. Sophia `cbee1268d` adopts published Rust
+`e4f59e36f6c7acbbe2ee47ee011c665dea1a6176` and C
+`d51b0336649757eaf7bf6970c50c14786f0a4772`. Both snapshot checks pass,
+including the Rust SDK workspace tests. Rust now has the shared sealed producer,
+BAR adapter and lock adapter. Muse's shell fixes preserve cancellation metadata
+after a refused forget and route statuses by transaction plus resource identity;
+all 14 adapter tests independently pass. The lock adapter's full suite and
+strict Clippy pass. Its real 9P/SEQPACKET controls cover successful descriptor
+handoff, cancellation before late admission, ordered status/release, clean
+absence, missing grant, discovery failures and channel contradictions that leave
+9P usable. A failed clunk, including ENOENT, cannot imply clean absence.
+These scripted peers are SDK evidence, not deployed Session qualification.
+
+Lock runtime `011f27c05` joins custody `548c66e30` to a persistent validation
+worker, authenticated Source reception and retirement leases. Review fix
+`403606cdb` removes an ended epoch's parked completion bookkeeping and revokes
+custody on an unexpected live completion error. Root independently reran all
+33 lock image transport tests and the C lock-client export suite successfully.
+The tests include held backing across successor epochs, release after the last
+reader and service drop with a caller-held clone. Dropping a service does not
+wait for consumer clones. Worker jobs remain a separate completion obligation.
+
+Session `7bab56b0d` enables sealed lock images using the existing resource/live
+place envelope, the assembly timeout and 64 KiB validation units. It grants no
+unauthenticated channel. The seven lock-object/policy tests and native-session
+strict Clippy pass. The shared-pixel Session handoff is already in `85755e5c3`;
+the placed-image retirement control passes. Muse is now extending the protected
+C SDK provider test through real afid authentication, Hello, Source, Accepted
+and SourceReleased, retaining the received pixels across authority revocation.
+That test is not yet a passing qualification result.
+
+The latest lock audit found two remaining corrections: wrong sealed backing
+length must retain reason 4 rather than becoming invalid_source (10), and a
+dead worker must revoke live custody rather than strand validating offers.
+Codex owns the shared mapping/worker size distinction; Claude owns its lock
+reason mapping, worker-death handling and controls. Pending admission wait and
+post-admission validation have separate bounded deadlines; Source arrival never
+renews the latter. No contract relaxation is authorized by these fixes.
+
+Next are those corrections, protected SDK/export qualification, remaining
+submitted-worker shutdown/cancellation controls, and matched sealed-versus-byte
+native panel/bulk evidence. Claude is surveying the frozen comparator and
+external integration seams read-only. No native capture has begun and no
+installed desktop has changed. All four unchanged t331 +10% gates, per-request
+allocation attribution and journal-read pairing remain required; the earlier
+red panel result is permission to proceed, not a performance pass. DMA remains
+outside this slice.
+
+## Earlier implementation checkpoints
+
+The following paragraphs preserve earlier results and then-outstanding work;
+the current resumption above supersedes their implementation status.
+
 t338 remains in implementation. The C pin `02ea2ad` includes offer cancellation
 (`e777235`) on top of the lock adapter; an independent full `make check` passed. Its ABI
 additions require rebuilding consumers. Rust role-adapter parity remains open.
