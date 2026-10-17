@@ -109,6 +109,150 @@ fn fast() -> ClientLimits {
     }
 }
 
+fn directory_entry(cookie: u64, kind: u8, name: &[u8]) -> Vec<u8> {
+    let mut b = vec![kind];
+    b.extend(0u32.to_le_bytes());
+    b.extend(42u64.to_le_bytes());
+    b.extend(cookie.to_le_bytes());
+    b.push(if kind == 0x80 { 4 } else { 8 });
+    string(&mut b, name);
+    b
+}
+
+#[test]
+fn attributes_and_directory_pages_match_the_public_profile() {
+    let (client, peer) = scripted(
+        |stream| {
+            versioned_and_attached(stream);
+            let (kind, tag, body) = request(stream);
+            assert_eq!(kind, 24);
+            assert_eq!(&body[4..], &0x3fffu64.to_le_bytes());
+            let mut attr = [0; 153];
+            attr[..8].copy_from_slice(&0x3fffu64.to_le_bytes());
+            attr[8] = 0x80;
+            attr[13..21].copy_from_slice(&42u64.to_le_bytes());
+            attr[21..25].copy_from_slice(&0o40755u32.to_le_bytes());
+            attr[33..41].copy_from_slice(&2u64.to_le_bytes());
+            attr[49..57].copy_from_slice(&4096u64.to_le_bytes());
+            stream.write_all(&reply(25, tag, &attr)).unwrap();
+            let (kind, tag, _) = request(stream);
+            assert_eq!(kind, 12);
+            let mut open = QID_DIR.to_vec();
+            open.extend(0u32.to_le_bytes());
+            stream.write_all(&reply(13, tag, &open)).unwrap();
+            let (kind, tag, body) = request(stream);
+            assert_eq!(kind, 40);
+            assert_eq!(&body[4..12], &7u64.to_le_bytes());
+            assert_eq!(&body[12..], &(65536u32 - 11).to_le_bytes());
+            let mut entries = directory_entry(8, 0x80, b"roles");
+            entries.extend(directory_entry(10, 0, b"api"));
+            let mut page = (entries.len() as u32).to_le_bytes().to_vec();
+            page.extend(entries);
+            for byte in reply(41, tag, &page) {
+                stream.write_all(&[byte]).unwrap();
+            }
+            let (kind, tag, body) = request(stream);
+            assert_eq!(kind, 40);
+            assert_eq!(&body[4..12], &10u64.to_le_bytes());
+            stream
+                .write_all(&reply(41, tag, &0u32.to_le_bytes()))
+                .unwrap();
+            hold(stream);
+        },
+        fast(),
+    );
+    let mut c = client.unwrap();
+    let mut root = c.attach(b"", b"").unwrap();
+    let attr = c.getattr(&root).unwrap();
+    assert_eq!(
+        (attr.valid, attr.mode, attr.nlink, attr.size),
+        (0x3fff, 0o40755, 2, 4096)
+    );
+    assert_eq!((attr.qid.kind, attr.qid.path), (QidKind::Directory, 42));
+    c.open(&mut root, true).unwrap();
+    let entries = c.readdir(&root, 7, u32::MAX).unwrap();
+    assert_eq!(entries.len(), 2);
+    assert_eq!(
+        (&entries[0].name[..], entries[0].next, entries[0].dtype),
+        (&b"roles"[..], 8, 4)
+    );
+    assert_eq!(
+        (&entries[1].name[..], entries[1].next, entries[1].dtype),
+        (&b"api"[..], 10, 8)
+    );
+    assert!(c.readdir(&root, 10, 128).unwrap().is_empty());
+    drop(c);
+    peer.join().unwrap();
+}
+
+#[test]
+fn malformed_attributes_and_directory_pages_poison() {
+    for mode in 0..10 {
+        let (client, peer) = scripted(
+            move |stream| {
+                versioned_and_attached(stream);
+                if mode < 2 {
+                    let (kind, tag, _) = request(stream);
+                    assert_eq!(kind, 24);
+                    let mut attr = vec![0; if mode == 0 { 152 } else { 153 }];
+                    attr[8] = if mode == 1 { 8 } else { 0x80 };
+                    stream.write_all(&reply(25, tag, &attr)).unwrap();
+                } else {
+                    let (kind, tag, _) = request(stream);
+                    assert_eq!(kind, 12);
+                    let mut open = QID_DIR.to_vec();
+                    open.extend(0u32.to_le_bytes());
+                    stream.write_all(&reply(13, tag, &open)).unwrap();
+                    let (kind, tag, _) = request(stream);
+                    assert_eq!(kind, 40);
+                    let mut entry = directory_entry(
+                        if mode == 2 { 7 } else { 8 },
+                        0,
+                        if mode == 4 {
+                            b"a/b"
+                        } else if mode == 5 {
+                            b".."
+                        } else {
+                            b"api"
+                        },
+                    );
+                    if mode == 3 {
+                        entry[21] = 4;
+                    }
+                    if mode == 6 {
+                        entry[0] = 8;
+                    }
+                    if mode == 7 {
+                        entry.pop();
+                    }
+                    let mut page = (entry.len() as u32 + u32::from(mode == 8))
+                        .to_le_bytes()
+                        .to_vec();
+                    page.extend(entry);
+                    stream.write_all(&reply(41, tag, &page)).unwrap();
+                }
+                hold(stream);
+            },
+            fast(),
+        );
+        let mut c = client.unwrap();
+        let mut root = c.attach(b"", b"").unwrap();
+        if mode < 2 {
+            assert!(matches!(c.getattr(&root), Err(ClientError::Protocol(_))));
+        } else {
+            c.open(&mut root, true).unwrap();
+            assert!(matches!(
+                c.readdir(&root, 7, if mode == 9 { 1 } else { 128 }),
+                Err(ClientError::Protocol(_))
+            ));
+        }
+        assert!(c.is_poisoned());
+        assert_eq!(c.getattr(&root).unwrap_err(), ClientError::Poisoned);
+        drop(c);
+        peer.join().unwrap();
+    }
+}
+
 /// A fresh directory for socket paths, unique to this process and test.
 fn scratch(name: &str) -> PathBuf {
     let directory =

@@ -433,6 +433,103 @@ static void service_byte_budget_bounds_partial_requests(void)
     finish(&f);
 }
 
+static size_t directory_entry(uint8_t *b, uint64_t cookie, uint8_t kind, const char *name)
+{
+    size_t n = strlen(name);
+    memset(b, 0, 24 + n);
+    b[0] = kind;
+    put(b + 5, 42, 8);
+    put(b + 13, cookie, 8);
+    b[21] = kind == 0x80 ? 4 : 8;
+    put(b + 22, n, 2);
+    memcpy(b + 24, name, n);
+    return 24 + n;
+}
+static void metadata_and_directory_pages(void)
+{
+    struct fixture f;
+    struct sophia_9p_handle h;
+    struct sophia_9p_reply r;
+    struct sophia_9p_dirent entry;
+    struct sophia_9p_attr fields;
+    uint8_t attr[153] = {0}, expected[16] = {0}, page[128] = {0};
+    uint32_t fid;
+    uint16_t tag;
+    size_t n, position;
+    unsigned i;
+    init(&f, 2, 2);
+    fid = attach(&f);
+    assert(!sophia_9p_getattr(&f.c, fid, &h));
+    put(expected, fid, 4); put(expected + 4, 0x3fff, 8);
+    tag = request_matches(&f, 24, expected, 12);
+    put(attr, 0x3fff, 8); attr[8] = 0x80;
+    put(attr + 13, 42, 8); put(attr + 21, 0040755, 4);
+    put(attr + 33, 2, 8); put(attr + 49, 4096, 8);
+    answer(&f, 25, tag, attr, sizeof attr);
+    assert(!sophia_9p_service(&f.c, 4096));
+    assert(!sophia_9p_peek(&f.c, &r));
+    assert(!sophia_9p_attributes(&r, &fields));
+    assert(!sophia_9p_consume(&f.c, r.handle));
+    assert(fields.valid == 0x3fff && fields.qid.type == 0x80 && fields.qid.path == 42);
+    assert(fields.mode == 0040755 && fields.nlink == 2 && fields.size == 4096);
+    assert(!sophia_9p_readdir(&f.c, fid, 7, UINT32_MAX, &h));
+    put(expected + 4, 7, 8); put(expected + 12, 4096 - 11, 4);
+    tag = request_matches(&f, 40, expected, 16);
+    n = directory_entry(page + 4, 8, 0x80, "roles");
+    n += directory_entry(page + 4 + n, 10, 0, "api");
+    put(page, n, 4);
+    answer(&f, 41, tag, page, n + 4);
+    for (i = 0; i < 256; i++) {
+        assert(!sophia_9p_service(&f.c, 1));
+        if (!sophia_9p_peek(&f.c, &r)) break;
+    }
+    assert(i < 256 && r.type == 41 && r.count == n);
+    position = 0;
+    assert(!sophia_9p_dirent_next(&r, &position, &entry));
+    assert(entry.next == 8 && entry.type == 4 && entry.name_bytes == 5 && !memcmp(entry.name, "roles", 5));
+    assert(!sophia_9p_dirent_next(&r, &position, &entry));
+    assert(entry.next == 10 && entry.type == 8 && entry.name_bytes == 3 && !memcmp(entry.name, "api", 3));
+    assert(sophia_9p_dirent_next(&r, &position, &entry) == SOPHIA_9P_AGAIN && position == n);
+    assert(!sophia_9p_consume(&f.c, r.handle));
+    assert(!sophia_9p_readdir(&f.c, fid, 10, 128, &h));
+    tag = request(&f, 40);
+    memset(page, 0, 4); answer(&f, 41, tag, page, 4);
+    r = take(&f, 41);
+    assert(!r.count);
+    finish(&f);
+}
+static void malformed_metadata_and_directories_fail_closed(void)
+{
+    unsigned mode;
+    for (mode = 0; mode < 10; mode++) {
+        struct fixture f;
+        struct sophia_9p_handle h;
+        uint8_t b[256] = {0};
+        uint16_t tag;
+        uint32_t fid;
+        size_t n;
+        init(&f, 2, 2); fid = attach(&f);
+        if (mode < 2) {
+            assert(!sophia_9p_getattr(&f.c, fid, &h));
+            tag = request(&f, 24);
+            b[8] = mode == 1 ? 8 : 0x80;
+            answer(&f, 25, tag, b, mode == 0 ? 152 : 153);
+        } else {
+            assert(!sophia_9p_readdir(&f.c, fid, 7, mode == 9 ? 1 : 128, &h));
+            tag = request(&f, 40);
+            n = directory_entry(b + 4, mode == 2 ? 7 : 8, 0, mode == 4 ? "a/b" : mode == 5 ? ".." : "api");
+            if (mode == 3) b[4 + 21] = 4;
+            if (mode == 6) b[4] = 8;
+            if (mode == 7) n--;
+            put(b, mode == 8 ? n + 1 : n, 4);
+            answer(&f, 41, tag, b, n + 4);
+        }
+        assert(sophia_9p_service(&f.c, 4096) == SOPHIA_9P_INVALID);
+        assert(sophia_9p_getattr(&f.c, fid, &h) == SOPHIA_9P_INVALID);
+        finish(&f);
+    }
+}
+
 int main(void)
 {
     puts("tag wrap");
@@ -448,6 +545,8 @@ int main(void)
     authenticated_attach_and_afid_custody();
     authentication_qid_is_not_an_ordinary_file_qid();
     service_byte_budget_bounds_partial_requests();
+    metadata_and_directory_pages();
+    malformed_metadata_and_directories_fail_closed();
     puts("Tauth/afid wire and custody controls passed");
     puts("sophia_9p_client: R4-1..R4-7 controls passed");
     return 0;

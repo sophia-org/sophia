@@ -1,14 +1,14 @@
-tree 6dccd57805891958babb40dab276921be6dd63ed
-parent 972eec7cfd85a6221da0d1de17248a973dbee7e8
-author Mason Green <mason@greenm01.net> 1792207007 -0400
-committer Mason Green <mason@greenm01.net> 1792207007 -0400
+tree fb6bc73b23f8faaecc11f9caab6eb6af89b96a0c
+parent 12e74746b4135ce1b80760b0bfb8454bbe5b704e
+author Mason Green <mason@greenm01.net> 1792207450 -0400
+committer Mason Green <mason@greenm01.net> 1792207450 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLonxsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIU8QD/U2UoNE7t76Le2wpwviRq
- 1zItdlbie3lvMIs5MZqMUPQA/RVwE5vmTu/VqV4pBKW4XxeMKpyl5ZzxsGAmo83O
- 13gP
- =bZBF
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLqWhsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLMGgD/XC4NYUsSrjPaslLonAP4
+ TT+pWy5rYrLLDot9V3LI2r8A/052Xbu5F3DICNgMOtqtWcqQJBcjyePYtLsYNLSS
+ qfQH
+ =y7op
  -----END PGP SIGNATURE-----
 
-Qualify launch loop parity and retained relay state
+Add bounded attribute and directory access to the C transport

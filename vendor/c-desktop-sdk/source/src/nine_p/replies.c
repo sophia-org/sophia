@@ -9,6 +9,51 @@ static int qid(const uint8_t *b, struct sophia_9p_qid *q)
     q->path = p9_u64(b + 5);
     return 0;
 }
+int sophia_9p_attributes(const struct sophia_9p_reply *r, struct sophia_9p_attr *out)
+{
+    struct sophia_9p_attr attr;
+    if (!r || !out || r->type != 25 || !r->data || r->count != 153)
+        return SOPHIA_9P_ARGUMENT;
+    if (qid(r->data + 8, &attr.qid))
+        return SOPHIA_9P_INVALID;
+    attr.valid = p9_u64(r->data);
+    attr.mode = p9_u32(r->data + 21);
+    attr.nlink = p9_u64(r->data + 33);
+    attr.size = p9_u64(r->data + 49);
+    *out = attr;
+    return 0;
+}
+int sophia_9p_dirent_next(const struct sophia_9p_reply *r, size_t *position,
+                         struct sophia_9p_dirent *out)
+{
+    struct sophia_9p_dirent entry;
+    const uint8_t *b;
+    size_t n, i;
+    if (!r || !position || !out || r->type != 41 || *position > r->count ||
+        (r->count && !r->data))
+        return SOPHIA_9P_ARGUMENT;
+    n = r->count - *position;
+    if (!n)
+        return SOPHIA_9P_AGAIN;
+    b = r->data + *position;
+    if (n < 24 || qid(b, &entry.qid))
+        return SOPHIA_9P_INVALID;
+    entry.next = p9_u64(b + 13);
+    entry.type = b[21];
+    entry.name_bytes = p9_u16(b + 22);
+    entry.name = b + 24;
+    if (entry.type != (entry.qid.type == 0x80 ? 4 : 8) ||
+        !entry.name_bytes || entry.name_bytes > 255 || entry.name_bytes > n - 24 ||
+        (entry.name_bytes == 1 && b[24] == '.') ||
+        (entry.name_bytes == 2 && b[24] == '.' && b[25] == '.'))
+        return SOPHIA_9P_INVALID;
+    for (i = 0; i < entry.name_bytes; i++)
+        if (!entry.name[i] || entry.name[i] == '/')
+            return SOPHIA_9P_INVALID;
+    *out = entry;
+    *position += 24 + entry.name_bytes;
+    return 0;
+}
 /* Validate before any copy or state transition. Each request owns exactly one
  * bounded reply slot; even an empty reply retains that storage and its tag. */
 static int decode(const struct sophia_9p_slot *s, const uint8_t *b, size_t n,
@@ -62,6 +107,13 @@ static int decode(const struct sophia_9p_slot *s, const uint8_t *b, size_t n,
             return SOPHIA_9P_INVALID;
         r->iounit = p9_u32(b + 13);
         return 0;
+    case 24:
+        if (n != 153 || qid(b + 8, &r->qid))
+            return SOPHIA_9P_INVALID;
+        r->count = 153;
+        r->data = b;
+        return 0;
+    case 40:
     case 116:
         if (n < 4)
             return SOPHIA_9P_INVALID;
@@ -70,6 +122,16 @@ static int decode(const struct sophia_9p_slot *s, const uint8_t *b, size_t n,
             return SOPHIA_9P_INVALID;
         r->count = count;
         r->data = b + 4;
+        if (s->type == 40) {
+            struct sophia_9p_dirent entry;
+            uint64_t previous = s->offset;
+            i = 0;
+            while (i < count) {
+                if (sophia_9p_dirent_next(r, &i, &entry) || entry.next <= previous)
+                    return SOPHIA_9P_INVALID;
+                previous = entry.next;
+            }
+        }
         return 0;
     case 118:
         if (n != 4 || p9_u32(b) > s->count)

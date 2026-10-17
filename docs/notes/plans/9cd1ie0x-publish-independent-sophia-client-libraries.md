@@ -150,44 +150,68 @@ but native remains much more expensive than legacy; no performance acceptance
 or internal-copy total is claimed. No quiet hold is active and nothing was
 installed into the desktop.
 
-The release audit found and fixed a retry bug: the CLI watched Refused custody,
-but retryable EAGAIN returns Queued. Both SDKs now expose `retry_ready`; Sophia
-uses it to schedule its explicit retry. The protected pressure test failed
-against the old CLI with one attempt and no commit, then passed with two
-identical attempts and one commit after the fix. The all-operation test also
-passes. Logs: `/tmp/t333-broker-retry-negative.log` and
-`/tmp/t333-retry-ready-process.log`. Independent SDK retry tests pass.
+Broker retry readiness, the five-operation broker map and caller-driven launch
+authentication are implemented in both SDKs. Rust's launch handoff now refuses
+live relay fids and partial input. Paired protected output checks pass; the
+integrated authentication suite passes 30 tests with 8 opt-in cases ignored.
+Detailed broker and launch evidence remains below.
 
-Both SDKs now publish `BROKER-PARITY.md`, covering session operations, component
-APIs, ownership, evidence and limits. Fourteen independent C/Rust session
-schedules include all five request kinds; new AttentionChanged tests cover
-NoChange and EmitDescriptor, and refuse a mismatched attention value before
-submission. Rust strict Clippy and the full C check suite pass. Signed verified
-pins are Rust `496c778d3589a949b9287113f45a95c7bf9332d7` and C
-`972eec7cfd85a6221da0d1de17248a973dbee7e8`. This pin change adds tests/docs and
-corrects stale broker prose; runtime behavior is unchanged from the retry fix.
+The transport audit added C attribute/directory access to match Rust's read-only
+client. Paired literal and malformed-reply tests pass, as do both real-core
+metadata checks, the full C suite, Nim binding smoke, Rust transport/namespace
+suites and affected strict Clippy. C's missing broker dependency include was
+also fixed: otherwise a changed transport layout left stale broker objects.
+Both SDKs now publish `TRANSPORT-PARITY.md`, including namespace ownership.
+C request-slot storage grew; consumers must rebuild with matching headers.
+The reply layout is unchanged; metadata operations allocate no heap storage.
 
-The launch audit fixed Rust's relay handoff: it now refuses live relay fids and
-partial input as C already did. Rust also exposes caller-driven startup,
-descriptors, interests, deadlines and bounded dispatch through version
-negotiation, authentication, reauthentication and relay reuse. Convenience
-constructors remain available. Both SDKs publish `LAUNCH-PARITY.md` and pass
-one-byte exchange/retry tests. Rust's full workspace, affected strict Clippy and
-C's full check suite pass. Independent C/Rust output peers pass the protected
-production export and revocation test; Rust now reauthenticates through the
-new API there. Signed upstream revisions are Rust
-`4000b8dd45ccee66f2b244aadaabba03c2bc9599` and C
-`12e74746b4135ce1b80760b0bfb8454bbe5b704e`, now adopted as verified Sophia pins.
-The integrated authentication suite passes 30 tests, with 8 opt-in cases ignored.
-See the launch evidence section below for commands and limits.
+Next: close the newly identified secret-write gap. Rust `Pipeline::write_secret`
+scrubs SDK-owned copies after sending and on drop; C generic writes do not.
+Audit C's lock caller, implement equivalent secret-write/cleanup support and
+prove it independently before closing the transport parity gate. Then finish
+the full role/API release audit against the criteria above, reconcile historical
+claims, and run final release gates. Preserve the portal refused-End
+cancellation limit. Performance work must not replace these closure requirements.
 
-Next: finish the full versioned role/API matrix and release audit against the
-criteria above, including generic transport, launch and namespace ownership.
-The current parity documents mix historical gaps with later passing evidence;
-reconcile each against source and exact test scope. Preserve the portal
-refused-End cancellation limit and separate
-physical acceptance from SDK capability parity. Performance work must not
-replace those closure requirements.
+### Transport and namespace audit evidence, 2026-10-17
+
+Signed revisions Rust `f6a1a9d3f5b880aa5ff9ae9de310e78ed12a32ff` and C
+`dbb8f7ac114a7caab0f7374b4b1d53581f1f150a` publish the same
+`TRANSPORT-PARITY.md` operation map. Both pinned profile and namespace documents
+match byte for byte; the map records their hashes. Namespace parser, directory
+pinning, symlink refusal, descriptor flags and long-path checks pass. No namespace
+implementation change was needed in this slice.
+
+C now queues `Tgetattr` and `Treaddir`, validates complete replies before
+publishing them, copies passive attributes on request and iterates borrowed
+directory entries. It rejects nonadvancing cookies, mismatched qid/type, unsafe
+names, malformed lengths and oversized replies. The existing reply slot stores
+the payload without an extra allocation or a larger reply structure. Retaining
+the requested directory cookie grows private slot storage, so consumers and
+bindings must rebuild. Rust already supported these operations through its
+read-only client; new independent tests supply matching literal values and ten
+malformed cases. Generic raw-fid versus typed-handle ownership remains explicit.
+
+The first full C run exposed a missing `BROKER_FILES` dependency include in
+`GNUmakefile`: broker objects retained the old client layout after a header
+change. Adding the existing generated dependency files rebuilt those objects;
+the full C suite and Nim binding smoke then passed. Rust's generic transport
+and namespace suites and affected strict Clippy pass. Logs:
+`/tmp/t333-transport-c-check.log`, `/tmp/t333-transport-rust-check.log`.
+
+Sophia's `sophia-9p --test client` real-core suite passes 10 tests with one
+opt-in case ignored. That case, `external_c_metadata_matches_the_real_driver`,
+was also run explicitly with `SOPHIA_9P_METADATA_PEER` pointing to the independent
+C `build/metadata_peer`. It passed, checking the same file attributes and root
+listing as Rust against the real driver and static test export. It uses a supplied
+stream; it does not open a live role or device. Executable SHA-256:
+`e82571701887a04ea2611bb75d676159fa0072d764196a2c247b470d158ea9be`.
+Logs: `/tmp/t333-transport-c-export.log`,
+`/tmp/t333-transport-rust-export.log`. The new Sophia harness passes strict Clippy.
+
+This closes the metadata capability gap, not the entire transport audit. C
+still needs the secret-write handling described in Current resumption. No
+performance acceptance or installed desktop change is claimed.
 
 ### Launch event-loop parity evidence, 2026-10-17
 

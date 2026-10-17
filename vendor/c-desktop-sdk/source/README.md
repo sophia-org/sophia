@@ -5,6 +5,12 @@ without a Sophia checkout and uses no Rust code. Nim clients can use its C API.
 
 ## SDK scope
 
+Generic 9P now supports attributes and directory pages, matching Rust's
+read-only client. Request-slot storage has grown to retain directory cookies;
+rebuild C consumers and foreign-language bindings with matching headers and
+libraries. See [transport parity](TRANSPORT-PARITY.md). Broker dependency files
+are now included in incremental builds so header changes rebuild those objects.
+
 The current development candidate is **0.10.0-dev, unreleased**. Reservation
 tokens now identify the issuing session address and epoch as well as their
 serial. Previously two live sessions with matching serials could accept each

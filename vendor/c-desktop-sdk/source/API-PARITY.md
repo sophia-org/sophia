@@ -1,5 +1,8 @@
 # C and Rust SDK API parity
 
+The [transport and namespace map](TRANSPORT-PARITY.md) covers generic wire
+operations, directory/attribute access, discovery and their ownership rules.
+
 The [launch operation map](LAUNCH-PARITY.md) covers caller-driven negotiation,
 timers, bounded I/O, relay reuse and the remaining ownership differences.
 
