@@ -15,6 +15,41 @@ use crate::shell::encoding::native_launcher::{
 };
 use crate::*;
 
+/// Validated complete native candidate length without cloning its rows.
+pub fn shell_file_native_candidate_bytes(
+    header: ShellFileHeader,
+    value: &ShellFileNativeCandidate,
+) -> Result<usize, ShellFilePayloadError> {
+    header_kind(header, ShellFileKind::NativeCandidate)?;
+    if !value.transaction.is_valid() {
+        return Err(ShellFilePayloadError::Identity);
+    }
+    sized_record(
+        8,
+        crate::shell::encoding::native_launcher::native_content_candidate_bytes(&value.candidate)?,
+        SHELL_FILE_MAX_CANDIDATE_BYTES,
+    )
+}
+
+/// Validated single-payload native transaction length without scratch storage.
+pub fn shell_file_native_launcher_transaction_bytes(
+    header: ShellFileHeader,
+    value: &ShellFileNativeLauncherRecord,
+) -> Result<usize, ShellFilePayloadError> {
+    header_kind(
+        header,
+        shell_file_native_launcher_kind(&value.record).ok_or(ShellFileCodecError::Kind)?,
+    )?;
+    if !value.transaction.is_valid() {
+        return Err(ShellFilePayloadError::Identity);
+    }
+    sized_record(
+        8,
+        crate::shell::encoding::native_launcher::shell_native_launcher_value_bytes(&value.record)?,
+        u32::MAX as usize,
+    )
+}
+
 /// One native-launcher record under its transaction, carried as a
 /// single-payload file record (every variant but `CandidateBegin` and
 /// `CandidateChunk`, which the whole [`NativeContentCandidate`] replaces).

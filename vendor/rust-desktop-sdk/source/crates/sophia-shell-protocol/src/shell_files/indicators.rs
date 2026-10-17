@@ -117,6 +117,22 @@ pub struct ShellFileIndicatorActivate {
     pub activation: ShellIndicatorActivation,
 }
 
+/// Encoded size with the same structural checks as the activation encoder.
+/// Semantic admission remains the server's responsibility.
+pub fn shell_file_indicator_activate_bytes(
+    header: ShellFileHeader,
+    value: &ShellFileIndicatorActivate,
+) -> Result<usize, ShellFilePayloadError> {
+    use crate::shell::encoding::{ByteCount, Wire};
+    header_kind(header, ShellFileKind::IndicatorActivate)?;
+    if !value.transaction.is_valid() {
+        return Err(ShellFilePayloadError::Identity);
+    }
+    let mut count = ByteCount::new();
+    value.activation.put(&mut count);
+    sized_record(8, count.finish()?, u32::MAX as usize)
+}
+
 pub fn encode_shell_file_indicator_activate(
     header: ShellFileHeader,
     value: &ShellFileIndicatorActivate,

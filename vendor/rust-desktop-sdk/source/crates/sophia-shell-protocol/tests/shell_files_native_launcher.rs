@@ -37,6 +37,10 @@ fn assert_round_trips(
     let h = header(kind, submission_id, sequence);
     let encoded = encode_shell_file_native_launcher_transaction(h, &tx_record).unwrap();
     assert_eq!(
+        shell_file_native_launcher_transaction_bytes(h, &tx_record).unwrap(),
+        encoded.len()
+    );
+    assert_eq!(
         decode_shell_file_native_launcher_transaction(&encoded, kind).unwrap(),
         tx_record
     );
@@ -339,6 +343,10 @@ fn native_candidate_round_trips() {
         candidate,
     };
     let encoded = encode_shell_file_native_candidate(candidate_header(), &value).unwrap();
+    assert_eq!(
+        shell_file_native_candidate_bytes(candidate_header(), &value).unwrap(),
+        encoded.len()
+    );
     assert_eq!(decode_shell_file_native_candidate(&encoded).unwrap(), value);
 }
 
@@ -350,6 +358,10 @@ fn native_candidate_refuses_zero_transaction() {
         candidate,
     };
     value.transaction = TransactionId::INVALID;
+    assert_eq!(
+        shell_file_native_candidate_bytes(candidate_header(), &value).unwrap_err(),
+        ShellFilePayloadError::Identity
+    );
     assert_eq!(
         encode_shell_file_native_candidate(candidate_header(), &value).unwrap_err(),
         ShellFilePayloadError::Identity

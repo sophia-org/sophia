@@ -27,8 +27,8 @@ SDKs cover prefetch before publication and a different-Qid refusal to release
 the hold. Both independent peers pass the real metadata/content export while
 fetching Tabs before the earlier Descriptors publication.
 
-Prefetch before publication has scripted coverage only. Allocation-free record
-sizing remains under the full t333 audit.
+Prefetch before publication has scripted coverage only.
+[Shell sizing](SHELL-SIZING.md) maps allocation-free candidate queries and their tests.
 
 ## Retained journal delivery, 2026-10-17
 
@@ -97,8 +97,8 @@ pass. Both independent `shell_startup_peer` executables pass Sophia's real
 export in metadata/content modes: fetch a descriptor snapshot, defer its ACK,
 explicitly queue it, then wait for confirmation. Admission is supplied; no
 protected launch, presentation or performance claim follows from this check.
-Manual object scheduling, retained-head delivery and an allocation-free size
-query still need review; prepared admission is not evidence for those controls.
+Manual object scheduling and retained-head delivery are covered above;
+[allocation-free sizing](SHELL-SIZING.md) has separate codec and allocation checks.
 
 [Shell startup](SHELL-STARTUP.md) maps caller-driven connection, timers,
 bounded progress and handoff in both SDKs, with independent export evidence.
@@ -721,7 +721,7 @@ pending under t333.
 | `sophia_ss_open_fd[_staging]`, `open_attached[_staging]` | `Connecting::direct/attached`; blocking `connect_files/from_attached` | C borrows fd/storage; Rust owns the pipeline. Both support caller-driven startup; see [startup controls](SHELL-STARTUP.md). |
 | `state`, `limits`, `refusal` | construction result/`welcome`, Limits observation, typed errors | Rust returns admission refusal during connection rather than retaining a half-initialized session for querying. |
 | `poll_events`, `dispatch` | `AsFd`, `io_interest`, `dispatch` | Whole-call budgets and monotonic-time rules above. |
-| `record_bytes`, `submit` | protocol encoders, `enqueue_shell_batch` | Rust has no separate allocation-free encoded-size query; prepared admission can validate and reserve before effects. |
+| `record_bytes`, `submit` | `shell_file_*_bytes`, `enqueue_shell_batch` | Both size application candidates without allocating or reserving capacity; Rust validates a supplied header. See [sizing](SHELL-SIZING.md). |
 | `reserve`, `commit`, `cancel` | capacity tokens and `commit_reserved_shell_batch` | Same all-or-none admission; Rust prepared handles additionally borrow exclusively and cancel on Drop. |
 | `outcome` | `custody_result` | Retained unknown versus evicted/unissued distinctions above. |
 | `event`, `consume` | `journal_event/consume_journal_event`, `set_automatic_event_delivery`; typed `take_*`; native `next_event/done` | Rust can retain a borrowed typed journal head until explicit consumption, or automatically deliver owned observations. Retained heads remain readable after local close. |
@@ -738,13 +738,11 @@ lifecycle authority. Three Rust controls and C's existing staged/issued/retained
 custody controls pass, alongside full workspace tests, strict Clippy and the full
 C suite (43 Rust native tests).
 
-This audit does not declare every low-level control interchangeable. C's manual
-object-fetch scheduling, retained-head delivery and allocation-free size query
-still lack literal Rust control APIs. Rust supplies automatic verified delivery and prepared
-admission instead; production-export review must assess those differences
-against supported applications. The matrix records them explicitly rather than
-claiming codec coverage proves full parity. WM, output, lock, administration,
-broker/portal scope and release/export gates remain under t333.
+Both SDKs now expose manual object scheduling, retained journal delivery and
+allocation-free candidate sizing. Rust keeps automatic delivery as its default;
+the controls and ownership differ as documented above. Codec coverage alone
+does not prove full parity. The complete role audit and release/export gates
+remain under t333.
 
 ## WM protocol foundation; session client pending
 

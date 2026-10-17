@@ -145,6 +145,10 @@ fn assert_transaction_round_trips(
 ) {
     let encoded = encode_shell_file_transaction(header, tx_record).unwrap();
     assert_eq!(
+        shell_file_transaction_bytes(header, tx_record).unwrap(),
+        encoded.len()
+    );
+    assert_eq!(
         decode_shell_file_transaction(&encoded, kind).unwrap(),
         tx_record.clone()
     );
@@ -345,6 +349,11 @@ fn single_payload_transaction_refusals() {
     let mut zero_tx = demand.clone();
     zero_tx.transaction = TransactionId::INVALID;
     assert_eq!(
+        shell_file_transaction_bytes(demand_header, &zero_tx).unwrap_err(),
+        ShellFilePayloadError::Identity
+    );
+    assert!(shell_file_transaction_bytes(mismatched_header, &demand).is_err());
+    assert_eq!(
         encode_shell_file_transaction(demand_header, &zero_tx).unwrap_err(),
         ShellFilePayloadError::Identity
     );
@@ -502,7 +511,35 @@ fn candidate_round_trips() {
     let header = candidate_header();
     let candidate = shell_file_candidate_with_counts(TransactionId::from_raw(60), 2, 3, 4);
     let encoded = encode_shell_file_candidate(header, &candidate).unwrap();
+    assert_eq!(
+        shell_file_candidate_bytes(header, &candidate).unwrap(),
+        encoded.len()
+    );
     assert_eq!(decode_shell_file_candidate(&encoded).unwrap(), candidate);
+}
+
+#[test]
+fn candidate_sizing_matches_encoding_at_row_bounds_and_rejects_invalid_values() {
+    for (s, p, t) in [
+        (0, 0, 0),
+        (1, 1, 1),
+        (8, 32, 64),
+        (9, 32, 64),
+        (8, 33, 64),
+        (8, 32, 65),
+    ] {
+        let candidate = shell_file_candidate_with_counts(TransactionId::from_raw(1), s, p, t);
+        assert_eq!(
+            shell_file_candidate_bytes(candidate_header(), &candidate),
+            encode_shell_file_candidate(candidate_header(), &candidate).map(|v| v.len())
+        );
+    }
+    let mut candidate = shell_file_candidate_with_counts(TransactionId::from_raw(1), 1, 1, 1);
+    candidate.candidate.pacing_permit = 0;
+    assert_eq!(
+        shell_file_candidate_bytes(candidate_header(), &candidate),
+        encode_shell_file_candidate(candidate_header(), &candidate).map(|v| v.len())
+    );
 }
 
 #[test]

@@ -1,9 +1,9 @@
 use super::*;
+use crate::shell::unique::unique;
 use crate::{
     InvalidRecord, SOPHIA_SHELL_MAX_APPLICATIONS, SOPHIA_SHELL_MAX_LAUNCHER_ROWS,
     shell_launcher_text_valid,
 };
-use std::collections::BTreeSet;
 
 fn require(ok: bool) -> Result<(), InvalidRecord> {
     if ok {
@@ -37,13 +37,13 @@ pub fn validate_shell_launcher_candidate(
             && (10..=32).contains(&value.font_size)
             && value.colors[1..].iter().all(|color| color >> 24 == 255),
     )?;
-    let mut slots = BTreeSet::new();
+    require(unique::<SOPHIA_SHELL_MAX_LAUNCHER_ROWS>(
+        value.entries.iter().copied().map(u64::from),
+    ))?;
     for slot in &value.entries {
-        require(
-            *slot > 0 && usize::from(*slot) <= SOPHIA_SHELL_MAX_APPLICATIONS && slots.insert(*slot),
-        )?;
+        require(*slot > 0 && usize::from(*slot) <= SOPHIA_SHELL_MAX_APPLICATIONS)?;
     }
-    require(value.selected == 0 || slots.contains(&value.selected))
+    require(value.selected == 0 || value.entries.contains(&value.selected))
 }
 
 pub fn validate_shell_launcher_outcome(value: ShellLauncherOutcome) -> Result<(), InvalidRecord> {

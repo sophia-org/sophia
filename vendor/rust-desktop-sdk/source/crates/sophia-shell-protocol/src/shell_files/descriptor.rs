@@ -10,7 +10,7 @@ use crate::*;
 // A single declaration binds each native value to its file kind and limit.
 // Limits below include the file header and the domain transaction word.
 macro_rules! descriptor_records {
-    ($($variant:ident($ty:ty), $encode:ident, $decode:ident, $cap:expr, |$v:ident| $epoch:expr;)+) => {
+    ($($variant:ident($ty:ty), $encode:ident, $decode:ident, $size:ident, $cap:expr, |$v:ident| $epoch:expr;)+) => {
         #[derive(Clone, Debug, Eq, PartialEq)]
         pub enum ShellDescriptorRecord { $($variant($ty),)+ }
 
@@ -30,6 +30,10 @@ macro_rules! descriptor_records {
             Ok(match value { $(ShellDescriptorRecord::$variant(v) => $encode(v)?,)+ })
         }
 
+        fn value_bytes(value: &ShellDescriptorRecord) -> Result<usize, ShellFilePayloadError> {
+            Ok(match value { $(ShellDescriptorRecord::$variant(v) => $size(v)?,)+ })
+        }
+
         fn decode_value(kind: ShellFileKind, bytes: &[u8]) -> Result<ShellDescriptorRecord, ShellFilePayloadError> {
             Ok(match kind {
                 $(ShellFileKind::$variant => ShellDescriptorRecord::$variant($decode(bytes)?),)+
@@ -39,24 +43,50 @@ macro_rules! descriptor_records {
     }
 }
 
+fn measured_value<T: crate::shell::encoding::ValidatedWire>(
+    value: &T,
+) -> Result<usize, crate::shell::encoding::ValueError> {
+    value.validated_bytes()
+}
+
+/// Validated complete descriptor record length, without scratch allocation.
+pub fn shell_file_descriptor_bytes(
+    header: ShellFileHeader,
+    value: &ShellFileDescriptorRecord,
+) -> Result<usize, ShellFilePayloadError> {
+    let kind = shell_file_descriptor_kind(&value.record);
+    header_kind(header, kind)?;
+    same_epoch(header, epoch(&value.record))?;
+    if !value.transaction.is_valid() {
+        return Err(ShellFilePayloadError::Identity);
+    }
+    let payload = value_bytes(&value.record)?;
+    let bytes = SHELL_FILE_HEADER_BYTES
+        .checked_add(8)
+        .and_then(|n| n.checked_add(payload))
+        .ok_or(ShellFileCodecError::Length)?;
+    check_size(kind, bytes)?;
+    Ok(bytes)
+}
+
 descriptor_records! {
-    Descriptors(ShellV1DescriptorSnapshot), encode_shell_descriptors_value, decode_shell_descriptors_value, SHELL_FILE_DESCRIPTORS_MAX_BYTES, |v| v.connection_epoch;
-    Tabs(ShellTabSnapshot), encode_shell_tabs_value, decode_shell_tabs_value, SHELL_FILE_TABS_MAX_BYTES, |v| v.connection_epoch;
-    Shortcuts(ShellShortcutCatalog), encode_shell_shortcuts_value, decode_shell_shortcuts_value, SHELL_FILE_SHORTCUTS_MAX_BYTES, |v| v.connection_epoch;
-    DescriptorOutcome(ShellV1CandidateOutcome), encode_shell_descriptor_outcome_value, decode_shell_descriptor_outcome_value, 68, |v| v.connection_epoch;
-    DescriptorActivation(ShellV1Activation), encode_shell_descriptor_activation_value, decode_shell_descriptor_activation_value, 116, |v| v.connection_epoch;
-    ReferenceRequest(ShellReferenceRequest), encode_shell_reference_request_value, decode_shell_reference_request_value, 92, |v| v.connection_epoch;
-    ReferenceOutcome(ShellReferenceOutcome), encode_shell_reference_outcome_value, decode_shell_reference_outcome_value, 88, |v| v.connection_epoch;
-    LauncherRequest(ShellLauncherRequest), encode_shell_launcher_request_value, decode_shell_launcher_request_value, 352, |v| v.connection_epoch;
-    LauncherOutcome(ShellLauncherOutcome), encode_shell_launcher_outcome_value, decode_shell_launcher_outcome_value, 76, |v| v.connection_epoch;
-    LauncherActivation(ShellLauncherActivation), encode_shell_launcher_activation_value, decode_shell_launcher_activation_value, 92, |v| v.connection_epoch;
-    LaunchOutcome(ShellLaunchOutcome), encode_shell_launch_outcome_value, decode_shell_launch_outcome_value, 92, |v| v.activation.connection_epoch;
-    DescriptorCandidate(ShellV1Candidate), encode_shell_descriptor_candidate_value, decode_shell_descriptor_candidate_value, 276, |v| v.connection_epoch;
-    DescriptorActivationAck(ShellV1ActivationAck), encode_shell_descriptor_ack_value, decode_shell_descriptor_ack_value, 60, |v| v.connection_epoch;
-    TabsCandidate(ShellTabCandidate), encode_shell_tab_candidate_value, decode_shell_tab_candidate_value, 8260, |v| v.connection_epoch;
-    ReferenceCandidate(ShellReferenceCandidate), encode_shell_reference_candidate_value, decode_shell_reference_candidate_value, 52488, |v| v.connection_epoch;
-    LauncherCandidate(ShellLauncherCandidate), encode_shell_launcher_candidate_value, decode_shell_launcher_candidate_value, 168, |v| v.connection_epoch;
-    LauncherActivationAck(ShellLauncherActivationAck), encode_shell_launcher_ack_value, decode_shell_launcher_ack_value, 92, |v| v.activation.connection_epoch;
+    Descriptors(ShellV1DescriptorSnapshot), encode_shell_descriptors_value, decode_shell_descriptors_value, descriptors_value_bytes, SHELL_FILE_DESCRIPTORS_MAX_BYTES, |v| v.connection_epoch;
+    Tabs(ShellTabSnapshot), encode_shell_tabs_value, decode_shell_tabs_value, tabs_value_bytes, SHELL_FILE_TABS_MAX_BYTES, |v| v.connection_epoch;
+    Shortcuts(ShellShortcutCatalog), encode_shell_shortcuts_value, decode_shell_shortcuts_value, shortcuts_value_bytes, SHELL_FILE_SHORTCUTS_MAX_BYTES, |v| v.connection_epoch;
+    DescriptorOutcome(ShellV1CandidateOutcome), encode_shell_descriptor_outcome_value, decode_shell_descriptor_outcome_value, measured_value, 68, |v| v.connection_epoch;
+    DescriptorActivation(ShellV1Activation), encode_shell_descriptor_activation_value, decode_shell_descriptor_activation_value, measured_value, 116, |v| v.connection_epoch;
+    ReferenceRequest(ShellReferenceRequest), encode_shell_reference_request_value, decode_shell_reference_request_value, measured_value, 92, |v| v.connection_epoch;
+    ReferenceOutcome(ShellReferenceOutcome), encode_shell_reference_outcome_value, decode_shell_reference_outcome_value, measured_value, 88, |v| v.connection_epoch;
+    LauncherRequest(ShellLauncherRequest), encode_shell_launcher_request_value, decode_shell_launcher_request_value, measured_value, 352, |v| v.connection_epoch;
+    LauncherOutcome(ShellLauncherOutcome), encode_shell_launcher_outcome_value, decode_shell_launcher_outcome_value, measured_value, 76, |v| v.connection_epoch;
+    LauncherActivation(ShellLauncherActivation), encode_shell_launcher_activation_value, decode_shell_launcher_activation_value, launcher_activation_value_bytes, 92, |v| v.connection_epoch;
+    LaunchOutcome(ShellLaunchOutcome), encode_shell_launch_outcome_value, decode_shell_launch_outcome_value, measured_value, 92, |v| v.activation.connection_epoch;
+    DescriptorCandidate(ShellV1Candidate), encode_shell_descriptor_candidate_value, decode_shell_descriptor_candidate_value, measured_value, 276, |v| v.connection_epoch;
+    DescriptorActivationAck(ShellV1ActivationAck), encode_shell_descriptor_ack_value, decode_shell_descriptor_ack_value, measured_value, 60, |v| v.connection_epoch;
+    TabsCandidate(ShellTabCandidate), encode_shell_tab_candidate_value, decode_shell_tab_candidate_value, measured_value, 8260, |v| v.connection_epoch;
+    ReferenceCandidate(ShellReferenceCandidate), encode_shell_reference_candidate_value, decode_shell_reference_candidate_value, measured_value, 52488, |v| v.connection_epoch;
+    LauncherCandidate(ShellLauncherCandidate), encode_shell_launcher_candidate_value, decode_shell_launcher_candidate_value, measured_value, 168, |v| v.connection_epoch;
+    LauncherActivationAck(ShellLauncherActivationAck), encode_shell_launcher_ack_value, decode_shell_launcher_ack_value, measured_value, 92, |v| v.activation.connection_epoch;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

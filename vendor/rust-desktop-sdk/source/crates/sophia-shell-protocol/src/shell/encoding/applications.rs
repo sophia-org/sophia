@@ -20,7 +20,7 @@ const LABEL_MAX: usize = crate::SOPHIA_SHELL_APPLICATION_LABEL_MAX_BYTES;
 const KEYWORDS_MAX: usize = crate::SOPHIA_SHELL_APPLICATION_KEYWORDS_MAX_BYTES;
 
 impl Wire for ShellApplicationDescriptor {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.slot.put(bytes);
         u16::from(self.available).put(bytes);
         put_text_padded(bytes, &self.label, LABEL_MAX);

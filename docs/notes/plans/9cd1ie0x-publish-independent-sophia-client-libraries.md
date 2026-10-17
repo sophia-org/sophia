@@ -144,6 +144,22 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Rust `10ab5bb` and C `f7873a8` supply allocation-free application-candidate
+sizing. Rust counts through shared field writers and validates whole candidates
+without cloning rows. Descriptor uniqueness uses bounded stack storage; padded
+text no longer builds a temporary vector. C's existing queries have strengthened
+literal and boundary checks. Both SDKs publish the API map in `SHELL-SIZING.md`,
+including header handling and the distinction between sizing and admission.
+
+The full independent Rust workspace, strict protocol Clippy, C check suite and
+standalone allocation probe pass. The probe covers a transaction, descriptor,
+maximum Tabs, nonempty base/native/catalog candidates and indicator activation;
+encoding provides a positive allocation control. It does not measure throughput
+or prove an allocation-free session. Run instructions are in `SHELL-SIZING.md`;
+unsafe allocator instrumentation remains outside production crates. Logs:
+`/tmp/t333-sizing-workspace.log`, `/tmp/t333-size-c-final.log`,
+`/tmp/t333-sizing-rust-pin.log` and `/tmp/t333-sizing-c-pin.log`.
+
 Rust now supports prefetch and selection among pending feeds, using fixed
 per-feed identity storage. The full Rust shell suite and strict Clippy pass.
 Independent C controls fetch publications in reverse order and prefetch before
@@ -173,14 +189,14 @@ automatic resumption and fetch-before-publication-consumption. The full shell
 suite, strict Clippy and C suite pass. Snapshot results retain their existing
 owned receive APIs; a failed decode can still discard an older undelivered
 snapshot, so manual callers should take ownership before requesting another.
-Allocation-free sizing is the next known API gap before the full release audit.
+The sizing gap is addressed above; the full release audit remains open.
 Current peer SHA-256: Rust
-`fecb32295d7c075017d33f56c32b9e136649399e3f22d3f697ec0189e77d9e41`, C
+`e532e8579e79be9f97bf418d92f6a82273e93a5fd7a841db095e07f669924003`, C
 `b1cd69bd31246304c277ffff3bd38f7112ff83e113589d535298884066b293ea`.
 
 The role/API release audit remains open against the full exits above. Signed
-Rust `2637affcd95490903ad3c368f9c7730bf029cc66` and C
-`b9033d824d968142454f7ed008c2dcc3d41bb7b1` are pushed and imported. Both pin
+Rust `10ab5bb0b84c4ea58f39a4107326a20cfb95fcaa` and C
+`f7873a8409814442bb62a82ce955f3f0a1fff066` are pushed and imported. Both pin
 checks pass, including the imported Rust workspace tests. Both independent
 real-export peers pass again at these pins. Shell startup
 is now caller-driven in both SDKs; WM/lock maps and C's role inventory have
@@ -197,9 +213,8 @@ or physical locking. Peer SHA-256: Rust
 `0e84ba5a6b458d26b255b57866538b16d8e570fdb855f170c2f6ef322da36918`, C
 `797016e6a4a6ca6cef9db112366fb61b0418dfa0e2e3d2c3faa0a219f920f5e6`.
 
-Next: resolve the remaining shell manual-control differences against supported
-applications, then finish the requirement-by-requirement release check and
-missing paired gates. Preserve the portal refused-End live-cancellation limit.
+Next: finish the requirement-by-requirement release check, using the role maps
+and actual tests to identify any missing paired gates. Preserve the portal refused-End live-cancellation limit.
 
 Rust now exposes explicit journal ACK scheduling
 and handled/safe-limit/queued/confirmed progress. Defaults remain automatic;

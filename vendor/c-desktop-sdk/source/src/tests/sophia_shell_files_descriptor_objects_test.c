@@ -111,6 +111,7 @@ static size_t roundtrip(const struct sophia_sf_record *r)
     struct sophia_sf_record out;
     size_t n, m;
     assert(!sophia_sf_encode(b, sizeof(b), r, &n));
+    assert(sophia_sf_record_bytes(r) == n);
     assert(!sophia_sf_decode(b, n, &out));
     assert(!sophia_sf_encode(again, sizeof(again), &out, &m));
     assert(n == m && !memcmp(b, again, n));

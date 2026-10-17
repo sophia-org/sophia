@@ -61,7 +61,7 @@ fields!(NativeLauncherActivationOutcome {
 macro_rules! reserved_tail {
     ($name:ident { $($field:ident : $ty:ty),* $(,)? }) => {
         impl Wire for $name {
-            fn put(&self, bytes: &mut Vec<u8>) {
+            fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
                 $(self.$field.put(bytes);)*
                 0u16.put(bytes);
             }
@@ -88,7 +88,7 @@ reserved_tail!(NativeLauncherClosed {
 });
 
 impl Wire for NativeLauncherCandidateBegin {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.content.put(bytes);
         self.opening.put(bytes);
         self.catalog_generation.put(bytes);
@@ -130,7 +130,7 @@ impl Wire for NativeLauncherCandidateBegin {
 }
 
 impl Wire for NativeLauncherInput {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.event.put(bytes);
         self.issued_mono_usec.put(bytes);
         (self.kind as u16).put(bytes);
@@ -238,20 +238,34 @@ pub fn encode_shell_native_launcher_value(
 ) -> Result<Vec<u8>, ValueError> {
     crate::shell::native_launcher::validation::validate(record)?;
     let mut bytes = Vec::new();
-    match record {
-        ShellNativeLauncherRecord::Opening(v) => v.put(&mut bytes),
-        ShellNativeLauncherRecord::AllocationRequest(v) => v.put(&mut bytes),
-        ShellNativeLauncherRecord::CandidateBegin(v) => v.put(&mut bytes),
-        ShellNativeLauncherRecord::CandidateChunk(v) => v.put(&mut bytes),
-        ShellNativeLauncherRecord::Focus(v) => v.put(&mut bytes),
-        ShellNativeLauncherRecord::FocusRevoked(v) => v.put(&mut bytes),
-        ShellNativeLauncherRecord::Input(v) => v.put(&mut bytes),
-        ShellNativeLauncherRecord::InputAck(v) => v.put(&mut bytes),
-        ShellNativeLauncherRecord::Activate(v) => v.put(&mut bytes),
-        ShellNativeLauncherRecord::ActivationOutcome(v) => v.put(&mut bytes),
-        ShellNativeLauncherRecord::Closed(v) => v.put(&mut bytes),
-    }
+    put_native_launcher_value(record, &mut bytes);
     Ok(bytes)
+}
+
+/// Validated value-body length without allocating a byte buffer.
+pub fn shell_native_launcher_value_bytes(
+    record: &ShellNativeLauncherRecord,
+) -> Result<usize, ValueError> {
+    crate::shell::native_launcher::validation::validate(record)?;
+    let mut bytes = super::ByteCount::new();
+    put_native_launcher_value(record, &mut bytes);
+    bytes.finish()
+}
+
+fn put_native_launcher_value(record: &ShellNativeLauncherRecord, bytes: &mut impl super::ByteSink) {
+    match record {
+        ShellNativeLauncherRecord::Opening(v) => v.put(bytes),
+        ShellNativeLauncherRecord::AllocationRequest(v) => v.put(bytes),
+        ShellNativeLauncherRecord::CandidateBegin(v) => v.put(bytes),
+        ShellNativeLauncherRecord::CandidateChunk(v) => v.put(bytes),
+        ShellNativeLauncherRecord::Focus(v) => v.put(bytes),
+        ShellNativeLauncherRecord::FocusRevoked(v) => v.put(bytes),
+        ShellNativeLauncherRecord::Input(v) => v.put(bytes),
+        ShellNativeLauncherRecord::InputAck(v) => v.put(bytes),
+        ShellNativeLauncherRecord::Activate(v) => v.put(bytes),
+        ShellNativeLauncherRecord::ActivationOutcome(v) => v.put(bytes),
+        ShellNativeLauncherRecord::Closed(v) => v.put(bytes),
+    }
 }
 
 /// Encodes the whole native-launcher candidate as one native file layout:
@@ -265,40 +279,49 @@ pub fn encode_shell_native_launcher_value(
 pub fn encode_native_content_candidate(
     value: &NativeContentCandidate,
 ) -> Result<Vec<u8>, ValueError> {
-    let (begin, chunk, end) = value.parts();
-    crate::shell::native_launcher::validation::validate(&begin)?;
-    crate::shell::native_launcher::validation::validate(&chunk)?;
-    crate::shell::content::validation::validate(&end)?;
-    let candidate = &value.candidate;
+    crate::shell::native_launcher::validation::validate_native_candidate(value)?;
     let mut bytes = Vec::new();
-    candidate.grant.put(&mut bytes);
-    candidate.candidate_generation.put(&mut bytes);
-    candidate.output.put(&mut bytes);
-    candidate.facts_generation.put(&mut bytes);
-    candidate.pacing_permit.put(&mut bytes);
-    candidate.interaction_generation.put(&mut bytes);
-    value.opening.put(&mut bytes);
-    value.catalog_generation.put(&mut bytes);
-    value.state_revision.put(&mut bytes);
-    value.selected.put(&mut bytes);
-    (candidate.surfaces.len() as u16).put(&mut bytes);
-    (candidate.placements.len() as u16).put(&mut bytes);
-    (candidate.targets.len() as u16).put(&mut bytes);
-    (value.rows.len() as u16).put(&mut bytes);
-    0u16.put(&mut bytes);
+    put_native_candidate(value, &mut bytes);
+    Ok(bytes)
+}
+
+/// Validated whole native candidate length without cloning its rows.
+pub fn native_content_candidate_bytes(value: &NativeContentCandidate) -> Result<usize, ValueError> {
+    crate::shell::native_launcher::validation::validate_native_candidate(value)?;
+    let mut bytes = super::ByteCount::new();
+    put_native_candidate(value, &mut bytes);
+    bytes.finish()
+}
+
+fn put_native_candidate(value: &NativeContentCandidate, bytes: &mut impl super::ByteSink) {
+    let candidate = &value.candidate;
+    candidate.grant.put(bytes);
+    candidate.candidate_generation.put(bytes);
+    candidate.output.put(bytes);
+    candidate.facts_generation.put(bytes);
+    candidate.pacing_permit.put(bytes);
+    candidate.interaction_generation.put(bytes);
+    value.opening.put(bytes);
+    value.catalog_generation.put(bytes);
+    value.state_revision.put(bytes);
+    value.selected.put(bytes);
+    (candidate.surfaces.len() as u16).put(bytes);
+    (candidate.placements.len() as u16).put(bytes);
+    (candidate.targets.len() as u16).put(bytes);
+    (value.rows.len() as u16).put(bytes);
+    0u16.put(bytes);
     for row in &candidate.surfaces {
-        row.put(&mut bytes);
+        row.put(bytes);
     }
     for row in &candidate.placements {
-        row.put(&mut bytes);
+        row.put(bytes);
     }
     for row in &candidate.targets {
-        row.put(&mut bytes);
+        row.put(bytes);
     }
     for slot in &value.rows {
-        slot.put(&mut bytes);
+        slot.put(bytes);
     }
-    Ok(bytes)
 }
 
 pub fn decode_native_content_candidate(bytes: &[u8]) -> Result<NativeContentCandidate, ValueError> {
@@ -343,10 +366,7 @@ pub fn decode_native_content_candidate(bytes: &[u8]) -> Result<NativeContentCand
         selected,
         rows: launcher_rows,
     };
-    let (begin, chunk, end) = value.parts();
-    crate::shell::native_launcher::validation::validate(&begin)?;
-    crate::shell::native_launcher::validation::validate(&chunk)?;
-    crate::shell::content::validation::validate(&end)?;
+    crate::shell::native_launcher::validation::validate_native_candidate(&value)?;
     Ok(value)
 }
 

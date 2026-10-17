@@ -2,7 +2,7 @@
 use super::*;
 
 impl Wire for ShellV1CandidateEntry {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.slot.put(bytes);
         0u16.put(bytes);
         self.generation.put(bytes);
@@ -18,7 +18,7 @@ impl Wire for ShellV1CandidateEntry {
 }
 
 impl Wire for ShellV1Candidate {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.connection_epoch.put(bytes);
         self.snapshot_generation.put(bytes);
         self.candidate_generation.put(bytes);
@@ -83,7 +83,7 @@ impl Wire for ShellV1Candidate {
 }
 
 impl Wire for ShellTabCandidate {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.connection_epoch.put(bytes);
         self.snapshot_generation.put(bytes);
         self.candidate_generation.put(bytes);
@@ -109,7 +109,7 @@ impl Wire for ShellTabCandidate {
 }
 
 impl Wire for ShellReferenceStyle {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         for field in [
             self.body_size,
             self.title_size,
@@ -161,7 +161,7 @@ impl Wire for ShellReferenceStyle {
     }
 }
 impl Wire for ShellReferenceEntry {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.slot.put(bytes);
         0u16.put(bytes);
         put_text_padded(bytes, &self.key, 64);
@@ -178,7 +178,7 @@ impl Wire for ShellReferenceEntry {
     }
 }
 impl Wire for ShellReferenceCandidate {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.connection_epoch.put(bytes);
         self.catalog_generation.put(bytes);
         self.request_generation.put(bytes);
@@ -220,7 +220,7 @@ impl Wire for ShellReferenceCandidate {
 }
 
 impl Wire for ShellLauncherCandidate {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.connection_epoch.put(bytes);
         self.catalog_generation.put(bytes);
         self.request_generation.put(bytes);

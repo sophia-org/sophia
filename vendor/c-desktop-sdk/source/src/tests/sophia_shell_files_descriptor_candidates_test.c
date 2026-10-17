@@ -106,6 +106,7 @@ static void bad_value(const struct sophia_sf_record *r)
     memset(b, 0xa5, sizeof(b));
     memcpy(before, b, sizeof(b));
     assert(sophia_sf_encode(b, sizeof(b), r, &n) == -1);
+    assert(sophia_sf_record_bytes(r) == 0);
     assert(n == 12345 && !memcmp(b, before, sizeof(b)));
 }
 static size_t roundtrip(const struct sophia_sf_record *r)
@@ -114,6 +115,7 @@ static size_t roundtrip(const struct sophia_sf_record *r)
     size_t n, m;
     struct sophia_sf_record out;
     assert(!sophia_sf_encode(b, sizeof(b), r, &n));
+    assert(sophia_sf_record_bytes(r) == n);
     assert(!sophia_sf_decode(b, n, &out));
     assert(!sophia_sf_encode(again, sizeof(again), &out, &m));
     assert(n == m && !memcmp(b, again, n));
@@ -127,6 +129,7 @@ static void literal(const struct sophia_sf_record *r, const uint8_t *expected, s
     struct sophia_sf_record out, changed;
     memset(b, 0xa5, sizeof(b));
     assert(!sophia_sf_encode(b, sizeof(b), r, &written));
+    assert(sophia_sf_record_bytes(r) == written);
     assert(written == n && !memcmp(b, expected, n) && b[n] == 0xa5);
     assert(!sophia_sf_decode(expected, n, &out));
     assert(!sophia_sf_encode(b, sizeof(b), &out, &written));

@@ -1,5 +1,7 @@
 # Sophia desktop SDK for Rust
 
+Allocation-free [shell candidate sizing](SHELL-SIZING.md) is available in both SDKs.
+
 Shell startup supports caller-driven progress from a connected socket or an
 admitted root. See [startup controls and ownership](SHELL-STARTUP.md).
 

@@ -104,6 +104,7 @@ static void vectors_and_truncations(void)
             abort();
         }
         assert(!sophia_sf_encode(encoded, sizeof(encoded), &out, &written));
+        assert(sophia_sf_record_bytes(&out) == written);
         assert(written == n && !memcmp(bytes, encoded, n));
         for (j = 32; j < n; j++) {
             struct sophia_sf_record failed = sentinel;

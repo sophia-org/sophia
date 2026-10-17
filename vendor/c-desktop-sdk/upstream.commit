@@ -1,14 +1,14 @@
-tree 100da36b56f6906cb356425e0b72e550bc076fe1
-parent 13aa7e01397e4b5c776cb1dc3a95a239b84bc7e6
-author Mason Green <mason@greenm01.net> 1792210992 -0400
-committer Mason Green <mason@greenm01.net> 1792210992 -0400
+tree 1351f59f73f5f736aefd0e45dee9a2779dd1a948
+parent b9033d824d968142454f7ed008c2dcc3d41bb7b1
+author Mason Green <mason@greenm01.net> 1792211960 -0400
+committer Mason Green <mason@greenm01.net> 1792211960 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL4MBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJBvgEAyfhFtq8h2IfpAh07xQvg
- golU8ywPHSoXr+alFAdsFE8A/idHjmqkw68owbV19hw2o6+gtGKuw3mGvWqmXVV3
- S7UG
- =w47Z
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL7+BsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLbgAEAwIqbxpPe1nsYmK+dzDkM
+ Ur3hJmR/KRMvA9MF5WKJnzkBALeWTG86YY/TzLZLFNGV9cyCrPeFXN+yoN7B7rJy
+ tvYA
+ =s/io
  -----END PGP SIGNATURE-----
 
-Verify retained shell journal delivery alongside Rust
+Verify and document paired shell candidate sizing

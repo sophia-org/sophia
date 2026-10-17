@@ -15,6 +15,41 @@ use crate::shell::encoding::catalog_actions::{
 };
 use crate::*;
 
+/// Validated complete catalog candidate length without cloning its rows.
+pub fn shell_file_catalog_candidate_bytes(
+    header: ShellFileHeader,
+    value: &ShellFileCatalogCandidate,
+) -> Result<usize, ShellFilePayloadError> {
+    header_kind(header, ShellFileKind::CatalogCandidate)?;
+    if !value.transaction.is_valid() {
+        return Err(ShellFilePayloadError::Identity);
+    }
+    sized_record(
+        8,
+        crate::shell::encoding::catalog_actions::catalog_content_candidate_bytes(&value.candidate)?,
+        SHELL_FILE_MAX_CANDIDATE_BYTES,
+    )
+}
+
+/// Validated catalog activation/outcome length without scratch storage.
+pub fn shell_file_catalog_action_bytes(
+    header: ShellFileHeader,
+    value: &ShellFileCatalogActionRecord,
+) -> Result<usize, ShellFilePayloadError> {
+    header_kind(
+        header,
+        shell_file_catalog_action_kind(&value.record).ok_or(ShellFileCodecError::Kind)?,
+    )?;
+    if !value.transaction.is_valid() {
+        return Err(ShellFilePayloadError::Identity);
+    }
+    sized_record(
+        8,
+        crate::shell::encoding::catalog_actions::shell_catalog_action_value_bytes(&value.record)?,
+        u32::MAX as usize,
+    )
+}
+
 /// The whole `Catalog` object: the plain application catalog for the
 /// launcher and legacy-descriptor profiles, or the r8 persistent catalog
 /// (each entry with its own identity) for the dock, under the object's own

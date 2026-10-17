@@ -45,14 +45,59 @@ impl From<InvalidRecord> for ValueError {
 /// how to read them back. No frame, kind or transaction knowledge lives
 /// here.
 pub(crate) trait Wire: Sized {
-    fn put(&self, bytes: &mut Vec<u8>);
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink);
     fn take(cursor: &mut Cursor<'_>) -> Result<Self, ValueError>;
+}
+
+pub(crate) trait ValidatedWire: Wire {
+    fn validate_wire(&self) -> Result<(), ValueError>;
+    fn validated_bytes(&self) -> Result<usize, ValueError> {
+        self.validate_wire()?;
+        let mut count = ByteCount::new();
+        self.put(&mut count);
+        count.finish()
+    }
+}
+
+/// The same field writer either emits bytes or counts them. Counting never
+/// allocates storage or maintains a second description of a record's layout.
+pub(crate) trait ByteSink {
+    fn extend_from_slice(&mut self, bytes: &[u8]);
+    fn zeros(&mut self, count: usize);
+}
+
+impl ByteSink for Vec<u8> {
+    fn extend_from_slice(&mut self, bytes: &[u8]) {
+        Vec::extend_from_slice(self, bytes);
+    }
+    fn zeros(&mut self, count: usize) {
+        self.resize(self.len() + count, 0);
+    }
+}
+
+pub(crate) struct ByteCount(Option<usize>);
+impl ByteCount {
+    pub(crate) fn new() -> Self {
+        Self(Some(0))
+    }
+    pub(crate) fn finish(self) -> Result<usize, ValueError> {
+        self.0
+            .ok_or(ValueError::InvalidRecord("encoded length overflow"))
+    }
+}
+impl ByteSink for ByteCount {
+    fn extend_from_slice(&mut self, bytes: &[u8]) {
+        self.zeros(bytes.len());
+    }
+    fn zeros(&mut self, count: usize) {
+        self.0 = self.0.and_then(|length| length.checked_add(count));
+    }
 }
 
 macro_rules! integer {
     ($ty:ty, $read:ident) => {
         impl Wire for $ty {
-            fn put(&self, bytes: &mut Vec<u8>) {
+            fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
                 bytes.extend_from_slice(&self.to_le_bytes());
             }
             fn take(cursor: &mut Cursor<'_>) -> Result<Self, ValueError> {
@@ -80,7 +125,7 @@ pub(crate) fn reserved<T: Wire + Default + PartialEq>(
 macro_rules! fields {
     ($name:ident { $($field:ident : $ty:ty),* $(,)? }) => {
         impl Wire for $name {
-            fn put(&self, bytes: &mut Vec<u8>) {
+            fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
                 $(self.$field.put(bytes);)*
             }
             fn take(cursor: &mut Cursor<'_>) -> Result<Self, ValueError> {
@@ -93,7 +138,7 @@ macro_rules! fields {
 pub(crate) use fields;
 
 impl Wire for crate::OutputId {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.raw().put(bytes);
     }
     fn take(cursor: &mut Cursor<'_>) -> Result<Self, ValueError> {
@@ -134,12 +179,11 @@ pub(crate) fn rows<T: Wire>(cursor: &mut Cursor<'_>, count: usize) -> Result<Vec
 /// same width and a decoder never trusts a length to find the next field.
 /// Callers validate the text against its own bound before calling this: `put`
 /// cannot fail, so the length must already be within `max`.
-pub(crate) fn put_text_padded(bytes: &mut Vec<u8>, text: &str, max: usize) {
+pub(crate) fn put_text_padded(bytes: &mut impl ByteSink, text: &str, max: usize) {
     (text.len() as u16).put(bytes);
     0u16.put(bytes);
-    let mut padded = vec![0u8; max];
-    padded[..text.len()].copy_from_slice(text.as_bytes());
-    bytes.extend_from_slice(&padded);
+    bytes.extend_from_slice(text.as_bytes());
+    bytes.zeros(max - text.len());
 }
 
 pub(crate) fn take_text_padded(cursor: &mut Cursor<'_>, max: usize) -> Result<String, ValueError> {

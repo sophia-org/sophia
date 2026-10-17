@@ -6,7 +6,7 @@ use crate::shell::encoding::fields;
 macro_rules! word_enum {
     ($name:ident { $($variant:ident = $word:literal),+ $(,)? }) => {
         impl Wire for $name {
-            fn put(&self, bytes: &mut Vec<u8>) {
+            fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
                 let word: u16 = match self { $(Self::$variant => $word),+ };
                 word.put(bytes);
             }
@@ -28,7 +28,7 @@ word_enum!(ShellLaunchStatus { Started=1, Rejected=2, Failed=3 });
 macro_rules! reserved_tail {
     ($name:ident { $($field:ident : $ty:ty),+ $(,)? }) => {
         impl Wire for $name {
-            fn put(&self, bytes: &mut Vec<u8>) {
+            fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
                 $(self.$field.put(bytes);)+
                 0u16.put(bytes);
             }
@@ -102,7 +102,7 @@ fields!(ShellLaunchOutcome {
 });
 
 impl Wire for ShellLauncherActivationAck {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.activation.put(bytes);
         u16::from(self.consumed).put(bytes);
     }
@@ -115,7 +115,7 @@ impl Wire for ShellLauncherActivationAck {
 }
 
 impl Wire for ShellLauncherRequest {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.connection_epoch.put(bytes);
         self.catalog_generation.put(bytes);
         self.request_generation.put(bytes);
@@ -209,9 +209,24 @@ pub fn encode_shell_launcher_activation_value(
 ) -> Result<Vec<u8>, ValueError> {
     validate_shell_launcher_activation(*value)?;
     let mut bytes = Vec::with_capacity(52);
-    value.put(&mut bytes);
-    0u16.put(&mut bytes);
+    put_launcher_activation(value, &mut bytes);
     Ok(bytes)
+}
+
+pub(crate) fn launcher_activation_value_bytes(
+    value: &ShellLauncherActivation,
+) -> Result<usize, ValueError> {
+    validate_shell_launcher_activation(*value)?;
+    let mut bytes = crate::shell::encoding::ByteCount::new();
+    put_launcher_activation(value, &mut bytes);
+    bytes.finish()
+}
+fn put_launcher_activation(
+    value: &ShellLauncherActivation,
+    bytes: &mut impl crate::shell::encoding::ByteSink,
+) {
+    value.put(bytes);
+    0u16.put(bytes);
 }
 pub fn decode_shell_launcher_activation_value(
     bytes: &[u8],

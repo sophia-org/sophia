@@ -2,6 +2,21 @@ use super::codec::validate_header;
 use super::*;
 use crate::shell::encoding::ValueError;
 
+pub(super) fn sized_record(
+    prefix: usize,
+    payload: usize,
+    cap: usize,
+) -> Result<usize, ShellFilePayloadError> {
+    let length = SHELL_FILE_HEADER_BYTES
+        .checked_add(prefix)
+        .and_then(|n| n.checked_add(payload))
+        .ok_or(ShellFileCodecError::Length)?;
+    if length > cap {
+        return Err(ShellFileCodecError::Length.into());
+    }
+    Ok(length)
+}
+
 impl From<ShellFileCodecError> for ShellFilePayloadError {
     fn from(error: ShellFileCodecError) -> Self {
         Self::Envelope(error)

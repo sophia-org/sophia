@@ -1,14 +1,14 @@
-tree 199db72a52e5e1dc1501094166def9097717bd13
-parent 01626c63202ce34fd201e9c93960cae7a04480b7
-author Mason Green <mason@greenm01.net> 1792210992 -0400
-committer Mason Green <mason@greenm01.net> 1792210992 -0400
+tree a189a31c7359641268aa72c9f466455c0611861f
+parent 2637affcd95490903ad3c368f9c7730bf029cc66
+author Mason Green <mason@greenm01.net> 1792211957 -0400
+committer Mason Green <mason@greenm01.net> 1792211957 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL4MBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIvtQEA5ZjYFjJFC4UoVPGoHj7e
- 5ZxKKQCw4bQfYQhbTn5Z0hUBAK7Ofq82BAOafXk4woOoxjQp7rONdYyqAaBqQI4P
- W78G
- =dZ+6
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL79RsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJAFwEA9jgIRJg0uWWQ50EUTiIv
+ lzxIehGEcjJptFX6V/iYFP4A+wfrGsxVQleN51ZvnY1jV9BySTe4GCAPFtMgmQkO
+ xbML
+ =8RX1
  -----END PGP SIGNATURE-----
 
-Add caller-consumed shell journal heads
+Add allocation-free shell candidate size queries

@@ -1,5 +1,18 @@
 # Provenance
 
+## Allocation-free shell candidate sizing, 2026-10-17
+
+Rust now counts validated application candidates through the same field writers
+used for encoding. Whole-candidate validation borrows rows, descriptor uniqueness
+uses bounded stack storage, and padded strings no longer need a temporary vector.
+C already supplies allocation-free sizing; its independent literal and boundary
+tests now assert the returned sizes directly. SHELL-SIZING.md maps the APIs and
+header differences. The Rust protocol and shell suites, strict protocol Clippy,
+C check suite and standalone allocation probe pass. Both independent startup
+peers pass Sophia's real metadata/content export. The probe establishes zero
+allocations only for its named queries; no throughput improvement or full t333
+release qualification is claimed.
+
 ## Lock handoff and role inventory audit, 2026-10-17
 
 C now rejects attached lock startup with extra fids or partial input, matching
