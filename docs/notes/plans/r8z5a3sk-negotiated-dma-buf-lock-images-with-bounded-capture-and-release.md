@@ -14,9 +14,11 @@ on a separately negotiated descriptor channel. Sophia would still capture an
 immutable renderer-owned snapshot. This is GPU-only pixel transport with a GPU
 copy, not a promise of direct scanout or no copies anywhere.
 
-Claude owns the proposed lock contract and consumer work. Design review remains
-pending. Recording this task does not approve the nine open decisions or admit
-implementation. Task state and priority live in [todo.md](../../../todo.md).
+Codex owns the [shared lock/shell design review](x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md)
+selected by niltempus on October 17. Claude confirmed that no consumer work is
+active; consumer implementation ownership will be assigned when admitted.
+The nine decisions remain proposed until accepted, and renderer implementation
+remains separate. Task state and priority live in [todo.md](../../../todo.md).
 
 ## t304
 

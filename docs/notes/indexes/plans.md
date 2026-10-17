@@ -7,6 +7,7 @@ order live in the todo.txt-format files above. Start with the first open task in
 `+critical` by its `order:` value unless the user selects another scope.
 Candidates and deferred tasks require explicit promotion before implementation.
 
+- [Shared lock and shell image descriptor custody](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md) — t337 design review, source release, compatibility and measurement before implementation.
 - [Mesa lifetime repair and KVM hotplug qualification](../plans/u9rtb0ml-qualify-mesa-lifetime-repair-and-kvm-hotplug-recovery.md) — t307 comparison contracts and production workload, followed by t306 lock coverage, virtual qualification and attended rollout.
 - [Application commands in the desktop profile](../plans/1agxbuuf-application-commands-in-the-desktop-profile.md)
 - [Hagia WM migration to admitted 9P2000.L files](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md) — direct-socket foundation, existing Session ownership, and paired independent Hagia acceptance.

@@ -55,6 +55,12 @@ descriptor implementation is not yet approved. The
 owns the remaining performance gate. Evidence is under
 `~/.local/state/sophia/development-evidence/t331-b3-20261017/`.
 
+niltempus subsequently directed the shared descriptor design review. Its
+[proposed lifecycle and byte layouts](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md)
+answer the nine lock questions for both roles, with sealed memory first and
+DMA-BUF capture behind the renderer ownership decision. This is design work;
+t331's measured failure and the current byte contracts remain in force.
+
 ## B2/B3 native pilot — October 17
 
 The matched candidate is comparator `6c87721fa`, integration `4b16974`, Rust
