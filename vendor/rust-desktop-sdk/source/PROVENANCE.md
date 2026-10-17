@@ -1,5 +1,15 @@
 # Provenance
 
+## Lock handoff and role inventory audit, 2026-10-17
+
+C now rejects attached lock startup with extra fids or partial input, matching
+Rust's existing guard. The new C partial-input regression failed before the
+fix; independent extra-fid and partial-input controls now pass in both SDKs.
+The full C suite, Rust lock suite and strict lock Clippy pass. Both independent
+peers pass Sophia's protected idle and queued-tail revocation tests. The WM and
+lock maps identify current APIs and distinguish historical qualification runs.
+Fresh authorized replacement and SDK reauthentication still need audit.
+
 ## Caller-driven shell startup, 2026-10-17
 
 Rust adds an owned nonblocking startup driver; C's existing borrowed session

@@ -1,14 +1,14 @@
-tree 04b7b823f64da89807036ee803c6ef3fdef94b9e
-parent 61d33d8920e5794134b1b1e6c7a9c75640ec7850
-author Mason Green <mason@greenm01.net> 1792209180 -0400
-committer Mason Green <mason@greenm01.net> 1792209180 -0400
+tree afd7f70595bc87ada7fce3aaf553956eda91291d
+parent 528b855452407d90b54b2636e05097df074c0fc8
+author Mason Green <mason@greenm01.net> 1792209410 -0400
+committer Mason Green <mason@greenm01.net> 1792209410 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLxHBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJGqwD/aY39DZna4z2NqE+6+nzZ
- xsIfERRWU8YRWN1u0JgVhhABAJgVO6KwFXDRQPkgF9zOSHHRNi5R/EJC9CjOd/bS
- 2AQF
- =+orR
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLyAhsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJd9gEAtB21BAKk6SDlbEaHWEo5
+ HMPdZgTTY/9bMUxbr5dkikABAINU12RoKTO8E2dOegMiH7ecX59R6YwJ9TtyNwuA
+ y+oG
+ =AhFl
  -----END PGP SIGNATURE-----
 
-Add caller-driven shell startup and export peer
+Audit lock and WM operations and test exclusive handoff

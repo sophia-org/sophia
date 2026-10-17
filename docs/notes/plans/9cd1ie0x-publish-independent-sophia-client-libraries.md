@@ -201,8 +201,31 @@ event/limits epochs, and acknowledge explicit admission refusal. The paired
 deadline. Signed Rust `528b855452407d90b54b2636e05097df074c0fc8` and C
 `60d4dcce16cbde858877fa22d95ffb6bc43c8f74` are pushed and imported; the source
 pins supersede the previous pair above. No live desktop installation changed.
-Next: finish WM/lock and shell-control audit, reconcile the release inventory
-and gather any missing acceptance evidence against the full criteria.
+
+The WM/lock operation audit is now recorded in both SDK maps. It found that C's
+attached lock constructor accepted extra fids and partial input, unlike Rust.
+C now requires the exact sole root and an empty input buffer before handoff.
+Independent controls pass in both SDKs; C's partial-input control failed before
+the correction. The full C suite, Rust lock suite and strict lock Clippy pass.
+Both protected lock tests pass with each independent peer: idle revocation and
+an acknowledged upload prefix with an unissued tail. This remains separate from
+mid-payload interruption, physical locking and fresh authorized replacement.
+
+Signed Rust `9a5fa8bd05824fc6e40e164191c93caa0399ec9b` and C
+`129abc7e7f2adf227169fc0ba84c145d6b14de4b` are pushed and imported, superseding
+the shell-startup pins above. Both Sophia pin checks pass, including imported
+Rust workspace tests. C's current inventory now links every role map,
+declares implemented administration support and keeps lock experimental because
+the contract is draft. The protected peer SHA-256 hashes are
+`efac85c8cbcee2a469707b1805dc05e9f99386135985c3df1a47f1c0f31359c8` (Rust) and
+`e8699dab0f6bc1e53339447dece720bd7c077ce4558a6fdf8b551a166e15f39f` (C).
+Reproduce with each absolute path in `SOPHIA_LOCK_AUTH_PEER` and
+`cargo-slot sophia cargo test --offline -p sophia-session --features
+native-session --test launch_authentication external_sdk_lock --
+--include-ignored --nocapture` (two selected tests per peer).
+Next: audit fresh authorized replacement/reauthentication and the remaining
+shell manual-control differences, then finish the requirement-by-requirement
+release check. These are the remaining audit targets, not waived capabilities.
 
 The independent startup peers have SHA-256 hashes
 `70230db89c60771091589c9137b67613d44f15fb3a9961860c8a7cbbcf7ebb3f` (Rust) and

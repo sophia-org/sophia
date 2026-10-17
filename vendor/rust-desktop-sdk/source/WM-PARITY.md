@@ -1,9 +1,11 @@
 # WM API parity
 
-Revision 6, 2026-10-16. Contract: the pinned API-1 WM files, schema and golden
-records in `spec/`. C reference: `fbfcdd8`, `src/sophia_wm_session.h`;
-Rust base: `622d9c0`, with the obligations and startup-wake changes in this
-series. This maps implemented capabilities, not production qualification.
+Revision 7, 2026-10-17. Source audit: C `60d4dcc`,
+`src/sophia_wm_session.h`, and Rust `528b855`, `sophia-wm-client`.
+The pinned API-1 file contract has SHA-256
+`0476cbf5965061dfc57aef8d26c1ee338182ea6535f4f8b53d2520b79ebc2c9a`.
+The operation map describes current APIs; qualification paragraphs below retain
+the revisions and scope of their original runs.
 
 | C entry points | Rust counterpart | Ownership and evidence |
 | --- | --- | --- |

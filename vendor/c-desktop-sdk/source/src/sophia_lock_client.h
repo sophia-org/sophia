@@ -78,7 +78,8 @@ struct sophia_lc_client {
 int sophia_lc_init(struct sophia_lc_client *, struct sophia_9p_client *,
                    const struct sophia_lf_negotiate *offer);
 /* Continue from an already admitted root (for example sophia_la_root()). The
- * wire must be quiescent and owned exclusively by this client afterward. No
+ * wire must be quiescent, retain only root and have no partial input. It is
+ * owned exclusively by this client afterward. No
  * Tversion or Tattach is sent; authentication and its identity remain intact.
  * The server still checks authority on every retained operation. */
 int sophia_lc_init_attached(struct sophia_lc_client *, struct sophia_9p_client *,

@@ -1,14 +1,14 @@
-tree 352fbf51f43ddaf388d4fb4713c9caace9fb8e14
-parent c2d9c33ef901dc66c35de7743348a43805a52e3e
-author Mason Green <mason@greenm01.net> 1792209186 -0400
-committer Mason Green <mason@greenm01.net> 1792209186 -0400
+tree 1fc8376621e75c7efeb6bf18ba02d9d7af15c770
+parent 60d4dcce16cbde858877fa22d95ffb6bc43c8f74
+author Mason Green <mason@greenm01.net> 1792209411 -0400
+committer Mason Green <mason@greenm01.net> 1792209411 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLxIhsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKyVAEAvhxgJuyZdX/jIZmLZPzC
- Isjbk7QY8M/+EVMAG9HWx0gBAJCgVqIsqcw5UahlTD1BXfgPT8k9U5SE81iTCFTy
- zCgC
- =Cn7G
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLyAxsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGI/0wD/Vtbb+ncwfHRyzHwEBIt7
+ jE8qTQz+xPc4GBiV/Mf4WUIBALPWCg60Tmm2MuAYZ1NvU8+qj0WumHQ6oWpXPTCX
+ yF0O
+ =3NQD
  -----END PGP SIGNATURE-----
 
-Document shell startup parity and add independent export peer
+Require exclusive quiescent lock handoff and reconcile coverage

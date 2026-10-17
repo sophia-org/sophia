@@ -45,10 +45,10 @@ int sophia_lc_init(struct sophia_lc_client *c, struct sophia_9p_client *wire,
 int sophia_lc_init_attached(struct sophia_lc_client *c, struct sophia_9p_client *wire,
                             uint32_t root, const struct sophia_lf_negotiate *offer) {
   size_t i;
-  int found = 0, r;
-  if (!wire || wire->phase != 2 || root == UINT32_MAX) return SOPHIA_9P_ARGUMENT;
-  for (i = 0; i < wire->fid_count; i++) if (wire->fids[i] == root) found = 1;
-  if (!found) return SOPHIA_9P_ARGUMENT;
+  int r;
+  if (!wire || wire->phase != 2 || root == UINT32_MAX || wire->rx_used ||
+      wire->fid_count != 1 || wire->fids[0] != root)
+    return SOPHIA_9P_ARGUMENT;
   for (i = 0; i < 2u * wire->capacity; i++)
     if (wire->slots[i].state) return SOPHIA_9P_ARGUMENT;
   r = initialize(c, wire, offer);

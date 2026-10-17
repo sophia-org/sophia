@@ -1,5 +1,37 @@
 # Experimental lock SDK parity
 
+## Current operation map
+
+Revision 9, 2026-10-17. Audited against C `60d4dcc` and Rust `528b855`,
+plus the attached-root correction in this series. The lock contract remains
+draft; its SHA-256 is
+`02d6e4b57d8626b6750697d63c85a21b877db98924492f9e250a39ee896c4c9f`.
+
+C names below use the `sophia_lc_` prefix; Rust names belong to `Session`
+unless noted. Public C state is caller storage, not permission to mutate it.
+
+| Operation | C | Rust | Ownership and evidence |
+| --- | --- | --- | --- |
+| Direct/attached startup | `init/init_attached` | `Connecting::direct/attached` | C borrows wire/storage; Rust owns it. Attached startup requires one admitted root, no outstanding requests or partial input. Independent extra-fid and partial-input controls cover the corrected C guard; the partial-input control failed before repair. |
+| Readiness and identity | `ready/state/epoch/limits/welcome` | `Connecting::ready/state`, session `state/epoch/limits/welcome` | Negotiation grants role capabilities, not credential access. Rust transfers a ready session once. |
+| Drive and schedule | `service`, generic wire fd/readiness | `dispatch/fd/io_interest/wake_deadline` | Bounded I/O; Rust takes caller-monotonic time and a startup deadline. C callers own timers. |
+| Progress | `obligations` | `obligations` | ACK watermarks, held events/objects/uploads and retry waits; terminal flags clear, watermarks remain. |
+| Terminal errors | `state/refusal/remote_error`, service result | `state/error/refusal/remote_error` | Retained semantic refusal and wire errno remain distinct. Scripted ACK/error/revocation controls cover custody preservation. |
+| Lock snapshot | `lock` | `lock` | Borrow latest verified generation; exact Qid/epoch, EOF and clunk precede exposure. |
+| Journal | `event/event_consume` | `event/consume` | Ordered retained head; cumulative ACK cannot skip it. Entry carries no password text. |
+| Candidate | `submit` | `submit` | Present, FrameDemand and ResourceRetire; startup/upload own their other candidate kinds. Bytes become immutable at admission. |
+| Custody/retry | `submission/submit_retry` | `latest_submission/retry_submission` | Explicit same-ID retry after EAGAIN. Confirmed custody survives disconnect; never replay it. |
+| Upload | `upload_window/begin/chunk/ready/pending/end/cancel` | same operations plus `take_upload_chunk` | C borrows bytes through settlement; Rust owns and returns the Vec. Both drain issued writes before cancellation and reserve control capacity. |
+| Dispose/recover | retire borrowed wire, close fd, create fresh client | `close`/Drop, create fresh session | No automatic reconnect or replay. C has no role-specific close method; terminal service retains its latest submission stage. |
+
+Paired production evidence below covers supplied-admission exchange, protected
+idle revocation and revocation with an acknowledged prefix and unissued tail.
+The latter is not a mid-payload interruption test. Fresh authorized replacement
+and SDK reauthentication still need release-audit evidence. No draft-contract
+acceptance, physical lock or performance qualification is implied.
+
+## Earlier implementation checkpoints
+
 Revision 8, 2026-10-16. The pinned lock file contract remains draft.
 C reference: `86b3e89` plus the progress-query/peer change in this series;
 `src/sophia_lock_client.h` and `src/lock_files/*.c`.

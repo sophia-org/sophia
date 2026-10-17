@@ -23,6 +23,7 @@ enum Fault {
     LeadingZero,
     OverflowEpoch,
     TrailingApi,
+    PartialAfterAttach,
 }
 
 fn send(s: &mut UnixStream, kind: u8, tag: u16, body: &[u8]) {
@@ -94,6 +95,9 @@ fn fixture_limits(
                     assert_eq!(attaches, 1);
                     assert!(names.is_empty());
                     send(&mut server, 105, tag, &qid(true));
+                    if fault == Fault::PartialAfterAttach {
+                        server.write_all(&[11]).unwrap();
+                    }
                 }
                 110 => {
                     assert_eq!(u16::from_le_bytes(body[8..10].try_into().unwrap()), 1);
@@ -326,4 +330,39 @@ fn attached_startup_rejects_wrong_root_and_unsettled_requests() {
         Err(Error::Protocol(_))
     ));
     assert!(peer.join().unwrap().is_empty());
+}
+
+#[test]
+fn attached_startup_rejects_extra_fids_and_partial_input() {
+    for partial in [false, true] {
+        let (mut wire, peer) = fixture(if partial {
+            Fault::PartialAfterAttach
+        } else {
+            Fault::None
+        });
+        let (tag, root) = wire.attach(b"lock", b"lock-provider").unwrap();
+        wire.wait(tag, Instant::now() + Duration::from_secs(2))
+            .unwrap();
+        if partial {
+            let end = Instant::now() + Duration::from_secs(2);
+            while wire.is_quiescent() {
+                assert!(Instant::now() < end);
+                wire.poll().unwrap();
+                thread::yield_now();
+            }
+            assert_eq!(wire.fid_count(), 1);
+            assert_eq!(wire.outstanding(), 0);
+        } else {
+            let (tag, _) = wire.walk(root, &[b"api"]).unwrap();
+            wire.wait(tag, Instant::now() + Duration::from_secs(2))
+                .unwrap();
+            assert_eq!(wire.fid_count(), 2);
+            assert!(wire.is_quiescent());
+        }
+        assert!(matches!(
+            Opening::attached(wire, root, offer(), 10, 1000),
+            Err(Error::Protocol(_))
+        ));
+        assert_eq!(peer.join().unwrap().len(), usize::from(!partial));
+    }
 }

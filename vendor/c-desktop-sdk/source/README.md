@@ -248,8 +248,9 @@ The lock API is experimental. The pinned contract (Sophia's signed master
 merge `61d545c90`, see PROVENANCE.md) still marks itself as revision 1
 (draft), and Sophia has not yet accepted it explicitly. It can change
 incompatibly before that acceptance. `compatibility.json` sets
-`lock_files=false` until the contract is accepted and Sophia's production
-lock export gate passes with this SDK vendored.
+`lock_files=false` until the contract is accepted. The permanent production
+export and protected revocation gates have passed; see LOCK-PARITY.md for their
+scope. This does not accept the draft contract or qualify physical locking.
 `sophia_lock_files.h` encodes and decodes the records in
 `spec/sophia-lock-files-v1.kdl`, checked against Sophia's golden records.
 

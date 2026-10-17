@@ -17,7 +17,7 @@
   "output_file_api": 1,
   "lock_files": false,
   "lock_file_api": 1,
-  "admin_files": false,
+  "admin_files": true,
   "tested_platforms": ["linux"],
   "next_qualification_target": "freebsd",
   "contract_digests": "spec/SHA256SUMS",

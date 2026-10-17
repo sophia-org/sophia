@@ -3,8 +3,10 @@
 The lock file contract remains draft. A provider renders the lock display; it
 does not receive secrets, check passwords or unlock the desktop. These clients
 have scripted-peer and paired production-export coverage, including protected
-idle revocation. In-flight revocation, reauthentication and release-wide
-qualification remain open before adopting new SDK pins.
+idle revocation and revocation with an acknowledged upload prefix and queued,
+unissued tail. Mid-payload interruption is a separate raw-peer control.
+Fresh authorized replacement, SDK reauthentication and release-wide
+qualification remain under audit; see LOCK-PARITY.md.
 
 Rust starts with Connecting::direct for a supplied-admission socket, or
 Connecting::attached for the launch client's exact admitted root. C uses

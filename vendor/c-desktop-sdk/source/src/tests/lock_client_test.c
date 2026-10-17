@@ -1014,13 +1014,47 @@ static void an_admitted_root_is_not_reset_or_attached_again(void) {
   assert(!sophia_9p_consume(&r->wire,reply.handle));
   assert(sophia_lc_init_attached(&r->client,&r->wire,UINT32_MAX,&o)==SOPHIA_9P_ARGUMENT);
   assert(sophia_lc_init_attached(&r->client,&r->wire,root+1,&o)==SOPHIA_9P_ARGUMENT);
+  {
+    const char *name = "api";
+    uint32_t extra;
+    assert(!sophia_9p_walk(&r->wire,root,&name,1,&h,&extra));
+    reply=wire_reply(r);assert(reply.type==111);
+    assert(!sophia_9p_consume(&r->wire,reply.handle));
+    assert(sophia_lc_init_attached(&r->client,&r->wire,root,&o)==SOPHIA_9P_ARGUMENT);
+    assert(!sophia_9p_clunk(&r->wire,extra,&h));
+    reply=wire_reply(r);assert(reply.type==121);
+    assert(!sophia_9p_consume(&r->wire,reply.handle));
+  }
   assert(!sophia_lc_init_attached(&r->client,&r->wire,root,&o));
   assert(!spin(r));
   assert(sophia_lc_ready(&r->client) && r->peer.attaches==1);
   rig_free(r);
 }
 
+static void attached_root_rejects_partial_input(void) {
+  struct sophia_lf_negotiate o=offer();
+  struct rig *r=rig_storage(&o,NULL,8,0);
+  struct sophia_9p_handle h;
+  struct sophia_9p_reply reply;
+  uint32_t root;
+  unsigned spin_count;
+  const uint8_t prefix=11;
+  assert(!sophia_9p_version(&r->wire,&h));
+  reply=wire_reply(r);assert(reply.type==101);
+  assert(!sophia_9p_consume(&r->wire,reply.handle));
+  assert(!sophia_9p_attach(&r->wire,"","",&h,&root));
+  reply=wire_reply(r);assert(reply.type==105);
+  assert(!sophia_9p_consume(&r->wire,reply.handle));
+  assert(send(r->peer.fd,&prefix,1,MSG_NOSIGNAL)==1);
+  for(spin_count=0; !r->wire.rx_used && spin_count<100; ++spin_count)
+    assert(!sophia_9p_service(&r->wire,1));
+  assert(r->wire.rx_used==1);
+  assert(sophia_lc_init_attached(&r->client,&r->wire,root,&o)==SOPHIA_9P_ARGUMENT);
+  rig_free(r);
+}
+
 int main(void) {
+  attached_root_rejects_partial_input();
   an_admitted_root_is_not_reset_or_attached_again();
   bootstrap_and_lock();
   superseded_announcement();
