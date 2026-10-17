@@ -57,7 +57,8 @@ int sophia_pcs_capture_result(const struct sophia_pcs *,
 int sophia_pcs_release_capture(struct sophia_pcs *);
 /* One foreground frame beside the watch. Needs six request slots and four fids.
  * Borrows disjoint caller storage through release or terminal close. No copy or
- * allocation; insufficient capacity fails after metadata validation. */
+ * allocation; local rejection leaves image bytes unchanged. Insufficient
+ * capacity fails after metadata validation. */
 int sophia_pcs_frame(struct sophia_pcs *, void *image, size_t capacity,
                      uint64_t deadline);
 uint64_t sophia_pcs_frame_received(const struct sophia_pcs *);

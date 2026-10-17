@@ -1,14 +1,14 @@
-tree 07c798de5154cb859f2fd5e9d39a54346e5280bd
-parent dbb8f7ac114a7caab0f7374b4b1d53581f1f150a
-author Mason Green <mason@greenm01.net> 1792207785 -0400
-committer Mason Green <mason@greenm01.net> 1792207785 -0400
+tree 7724e554168febaaff45506b2b288e0ce49bb5d6
+parent bfd9ba2aab0995eae4707ff15a23f8c3d99b6f46
+author Mason Green <mason@greenm01.net> 1792208493 -0400
+committer Mason Green <mason@greenm01.net> 1792208493 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLrqRsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJaoAEAjcpCwL2EO+oyckl0Q0or
- VtaVMJ9/aWBgE48evYs8HNUA/1TWHnG55IW5Ds/3bxZQleseUGyKSY1clamj5JI3
- +5QL
- =k3G3
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLubRsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIM9AEA82hQKEC1L4srr3IfFwYJ
+ iRXWpcnyV/tBkRIIP59D69IBANDeh+1ZiQ3ByMlX2CgbwWOlG1RJoP1eMXeZ45pC
+ 014C
+ =yZ8b
  -----END PGP SIGNATURE-----
 
-Add secret-write scrubbing and explicit transport cleanup
+Verify portal frame rejection storage and reconcile role maps

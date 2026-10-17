@@ -41,7 +41,15 @@ pub(crate) struct Exchange {
 }
 impl Exchange {
     pub(crate) fn new(
-        storage: Vec<u8>,
+        mut storage: Vec<u8>,
+        msize: u32,
+        now: u64,
+        deadline: u64,
+    ) -> Result<Self, Error> {
+        Self::take(&mut storage, msize, now, deadline)
+    }
+    pub(crate) fn take(
+        storage: &mut Vec<u8>,
         msize: u32,
         now: u64,
         deadline: u64,
@@ -61,7 +69,7 @@ impl Exchange {
             check: [0; 64],
             used: 0,
             info: None,
-            pixels: storage,
+            pixels: std::mem::take(storage),
             window: None,
             reads: [None; 4],
             now,

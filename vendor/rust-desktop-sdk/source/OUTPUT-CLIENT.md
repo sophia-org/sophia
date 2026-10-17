@@ -50,6 +50,8 @@ server. Neither client reconnects or rolls back the desktop automatically.
 
 Independent scripted C and Rust tests cover short ACK, EINVAL/ESTALE ACK refusal,
 and disconnect before/after observed proposal custody through direct and attached
-startup. These tests supply admission. Protected grant revocation and paired
-production-export qualification remain separate gates under t333. No performance
-improvement is claimed from these correctness tests.
+startup. These tests supply admission. Both peers also pass Sophia's output
+worker and protected launch/idle-revocation fixtures; see
+[output parity](OUTPUT-PARITY.md) for commands and limits. Revocation during an
+in-flight proposal and physical output application are not established by those
+fixtures. No performance improvement is claimed from these correctness tests.

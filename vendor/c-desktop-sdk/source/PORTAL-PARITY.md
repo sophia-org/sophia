@@ -1,13 +1,60 @@
 # Portal SDK parity
 
-Revision 23, 2026-10-16. Recipient components are developing; there is no complete
-portal client or parity claim.
+Revision 24, 2026-10-17. Both SDKs implement recipient sessions and the separate
+trusted requester role. Recipient sessions combine one retained watch with one
+snapshot, transfer, capture request or frame read. Requesters submit requests,
+track grants, upload, end or cancel transfers, and retain outcomes. Neither role
+acquires the other's authority.
 
-The unchanged recipient contract in `spec/portal-client-files.md` comes from
-Sophia `9b57fd040`, SHA-256
+The recipient contract in `spec/portal-client-files.md` comes from Sophia
+`9b57fd040`, SHA-256
 `d5e2bceed3ecbd56c119ecd87547f9437ee43a813b591df1f638f404681a5b97`.
-Its installation and qualification statements describe that source snapshot,
-not SDK evidence.
+Requester revision 1 uses `spec/sophia-portal-files.md`, SHA-256
+`81d8983fd05bc0efd0cf0d36cc82d2d7d89467b1fa105d758024e11008aa568b`.
+Historical installation claims in those contracts are not SDK evidence.
+
+The source audit starts from Rust `080eefa` and C `bfd9ba2`; this revision also
+adds Rust's rejection-preserving `frame_buffer` and paired tests. C retains its
+existing borrowed-storage API. Final signed pins remain a separate release step.
+
+## Recipient operation map
+
+C names use the `sophia_pcs_` prefix; Rust methods belong to `session::Session`.
+Startup comes from C `sophia_po_*` or Rust `startup::Opening`, using the exact
+root returned by launch authentication. Keep the launch relay alive separately.
+
+| Operation | C | Rust | Ownership and evidence |
+| --- | --- | --- | --- |
+| Start shared session | `init` | `new` | C exclusively borrows a stationary opening/wire; Rust owns the pipeline. Minimum four requests, three fids; frame operations need six/four. Independent shared-session tests and real namespace authentication gate. |
+| Watch retained object | `watch`, `watch_waiting`, `watch_event`, `release_watch` | Same names | One retained result: Revoked, Cancelled or Refused with errno. Paired watch and session tests cover retained identity and explicit release. |
+| Cancel watch | `cancel_watch` | `cancel_watch` | Drain prior replies, flush pending read, then clunk. Revocation before Rflush wins; foreground work continues. Paired scripted tests cover pre-read cancellation, decoded replies, flush races and terminal faults. |
+| Read metadata or transfer | `snapshot`, `snapshot_result`, `release_snapshot` | `snapshot` or `transfer`, `snapshot_result`, `release_snapshot` or `take_transfer` | Bounded EOF/clunk-verified result. C borrows caller storage; Rust metadata is inline and transfer bytes borrow caller storage. Results remain unavailable after terminal failure. Paired snapshot/transfer/session tests. |
+| Request capture | `capture`, `capture_custody`, `capture_result`, `release_capture` | Same names | Caller reserves a durable increasing serial. Custody survives failure; historical status grants no pixels. Paired capture/session tests and production request cases cover refusal, replacement and loss. |
+| Read frame | `frame`, `frame_received`, `frame_result`, `release_frame` | `frame_buffer` (or consuming `frame`), `frame_received`, `frame_result`, `take_frame` | Four bounded reads place pixels in final storage; exact EOF, retained metadata recheck and both clunks precede visibility. C borrows sufficient storage; Rust takes a reusable Vec and may grow after metadata validation. Paired reversed/short reads, watch cancellation, reuse and malformed-frame tests. |
+| Recover image storage | Caller retains image; close role fd on terminal failure before reuse | `take_frame_scratch` after failure/close | Failed bytes are scratch. Local rejection by `frame_buffer` retains bytes, pointer and capacity; consuming `frame` still consumes on rejection. Independent deadline/busy tests and protected shared-frame gate prove rejected-buffer reuse. |
+| Drive event loop | `dispatch`, `wants_write`, `immediate`, `deadline`; caller's fd | `dispatch`, `io_interest`, `deadline`, `fd` | One transport owner, caller-monotonic time and shared bounded I/O; capture polling contributes timer wakes. No internal sleeps. One-byte scripted tests cover overlapping work. |
+| Inspect failure | `error`, `wire_error` fields and function results | `error` | Original protocol/remote/transport distinctions retained; no automatic reconnect or replay. Partial results hidden; custody remains inspectable. |
+| Return idle role or close | `finish`, `close` | `finish`, `close` | Finish requires all work/results released and returns the same opening; close ends the role. C caller closes its fd; Rust drops its owned socket. Paired root-only completion and terminal-failure tests. |
+
+The recipient production suite has passed 22 cases with each independent SDK,
+including real namespace authentication, capture refusal/custody, retained frame
+and transfer reads, revocation, watch cancellation and shared foreground work.
+The requester suite has passed thirteen cases per SDK. These test-owned exports
+and executors do not establish physical capture or application execution.
+The [requester map](#requester-api-comparison) and
+[recovery audit](#foreign-binding-and-recovery-audit) below state its controls.
+
+Known requester limit: after a refused End, both sessions permit explicit retry
+or close but not live cancellation of that End. EndIssued is not proof of
+execution. Neither SDK promises connection-preserving recovery after arbitrary
+remote errors. Keep this limit in release documentation; do not infer Completed
+or Revoked from disconnection. Final pins and the full t333 release gate remain.
+
+## Earlier implementation evidence
+
+The entries below retain their original counts, pins and evidence boundaries.
+Their statements about missing work describe those checkpoints, not the current
+operation maps. Later entries record the corresponding integration results.
 
 Both SDKs decode the exact 64-byte frame record into passive fixed-size values.
 They validate version, format, nonzero identities, u32 dimensions, canonical
@@ -630,7 +677,7 @@ These entry points use the pinned requester revision 1. C names below have the
 | Readiness and bounded service | `ready`, `transaction_ready`, `dispatch`, `deadline`, `wants_write` | `ready`, `transaction_ready`, `dispatch`, `deadline`, `io_interest`, `fd` | C retains the caller's wire/fd. Both take caller-monotonic milliseconds and byte budgets. |
 | Journal retention | `event`, `consume`, `acknowledge` | Same method names | Consumption is local; acknowledgement releases server retention, not semantic custody. |
 | Requests and results | `request`, `transfer`, `release_transfer` | Same method names | Connection-scoped handles, exact grant correlation, acknowledged terminal results before release. C sessions must not move or be reinitialized with live handles. |
-| Upload lifecycle | `begin`, `upload_written`, `upload_ready`, `end`, `release_upload` | `begin`, `upload_written`, `upload_ready`, `end`, `take_upload` | C borrows immutable bytes; Rust owns the original Vec. Both retain storage through cleanup. Rust consumes the Vec on local admission error: unresolved release-audit limitation. |
+| Upload lifecycle | `begin`, `upload_written`, `upload_ready`, `end`, `release_upload` | `begin_buffer` (or consuming `begin`), `upload_written`, `upload_ready`, `end`, `take_upload` | C borrows immutable bytes; Rust takes the original Vec only after local checks in `begin_buffer`. Both retain storage through cleanup. The consuming convenience `begin` still consumes on rejection. |
 | Cancellation | `cancel` | `cancel` | Before End issuance only; neither Submitted nor local cancellation invents Revoked. Held and partial upload production cases pass. |
 | Explicit retry | `retry`; transaction custody in retained state | `retry`, `custody` | Same immutable submission after EAGAIN; no reconnect replay. Independent session tests qualify End retry with empty/64-KiB uploads. |
 | Local close | `close`, then caller closes fd | `close` closes owned pipeline | Preserve known observations, hide grants, release storage; real pre-End and post-custody disconnect cases pass. |
@@ -653,10 +700,8 @@ Begin followed by successful use of the same storage; thirteen cases each pass.
 Strict Rust Clippy passes all portal-client targets. This resolves the earlier
 failed-admission storage gap without requiring identical memory models.
 
-The table does not close the recovery audit: terminal-error ordering still
-needs explicit release decisions and
-paired evidence. Broker coverage and foreign-binding qualification remain
-separate t333 requirements.
+The recovery audit below records the terminal-error policy and paired evidence.
+Broker coverage and final publication remain separate t333 requirements.
 
 ## Foreign binding and recovery audit
 
@@ -682,3 +727,21 @@ End EAGAIN can be retried with its retained identity. Neither session currently
 offers live cancellation of that refused End; close remains available without
 inventing a remote outcome. Preserve this limit in the final role audit rather
 than treating EndIssued as proof of execution.
+
+## Recipient buffer admission, 2026-10-17
+
+Rust's `Session::frame_buffer(&mut Vec, deadline)` preserves the caller's bytes,
+pointer and capacity on local rejection. Successful admission takes that storage
+without copying or allocating; the existing `frame(Vec, deadline)` remains a
+consuming wrapper. Both use the same frame driver. After admission, recover the
+buffer through `take_frame`, or `take_frame_scratch` after terminal failure.
+C's existing `sophia_pcs_frame` already borrows storage and needs no runtime change.
+
+Independent shared-frame tests reject expired and busy calls, then reuse the
+same storage through successful frames or terminal failure. All 48 Rust portal
+client tests, strict all-target Clippy, the full C suite and Nim binding smoke
+pass. Both updated authenticated peers also pass Sophia's
+`external_sdk_portal_session_frame_survives_watch_cancellation`, checking an
+expired admission before the real frame on the same buffer. The export gate
+uses protected namespace authentication and a supplied frame; it does not prove
+physical capture or measured CPU/allocation savings.

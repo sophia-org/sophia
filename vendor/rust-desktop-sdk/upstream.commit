@@ -1,14 +1,14 @@
-tree 2e961687c000e23f9c93800174fa5309124e350e
-parent f6a1a9d3f5b880aa5ff9ae9de310e78ed12a32ff
-author Mason Green <mason@greenm01.net> 1792207784 -0400
-committer Mason Green <mason@greenm01.net> 1792207784 -0400
+tree 075905afe637994bbbea22cad51b593293f989c6
+parent 080eefa60759c5b68a4adeaa0d5cf8f0558f793b
+author Mason Green <mason@greenm01.net> 1792208493 -0400
+committer Mason Green <mason@greenm01.net> 1792208493 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLrqBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKdoAEAkz5uwmr0WFKRe0eWs6Qd
- UKj2naP//DLFAN7KfFNKG0cA/1Xy0ZHZKFuz8xO+ZmeFLNbsEPfIHu44wkMYiocq
- V8QN
- =q8C7
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLubRsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIDHwEApDF0bO/eOs1+lNs7qV8v
+ +gI0GNDVW1LunSUyi2H0x54A/2GDaPhrt9NEzZBt3ek8gN2TFiJCCsIRUE+GYyu5
+ NogK
+ =bEEk
  -----END PGP SIGNATURE-----
 
-Scrub pending secret output immediately on transport failure
+Preserve rejected portal frame buffers and reconcile role maps

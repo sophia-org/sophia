@@ -1,34 +1,57 @@
 # Administrative SDK parity
 
-Revision 15, 2026-10-16. Both SDKs now have developing administrative sessions
-and caller-connected socket facades. Qualification remains t333 work.
+Revision 16, 2026-10-17. Source audit: Rust
+`080eefa60759c5b68a4adeaa0d5cf8f0558f793b` and C
+`bfd9ba2aab0995eae4707ff15a23f8c3d99b6f46`.
+Both implement caller-connected startup, retained catalogs, command custody,
+status snapshots and explicit recovery. The five production gates in Sophia's
+`admin_external_sdk` have passed independently with both peers. The fixture
+supplies owner completion; it does not execute a physical desktop action.
 
-The pinned file contract is copied unchanged from Sophia
-`baedfd0c9`, `docs/sophia-admin-files.md`; SHA-256 is
+The pinned file contract is copied unchanged from Sophia `baedfd0c9`,
+`docs/sophia-admin-files.md`; both SDK copies have SHA-256
 `3cc2db4cce9d2154bf7765f074a7f78bd041c20bdc26903167d489f539fcba52`.
 Its historical qualification paragraphs are not evidence for these SDKs.
-The current runtime reference is `control/admin_client.rs`; passive codecs
-are `sophia-protocol/src/admin_files{,/discovery}.rs` and
-`control_records.rs`. The administrative owner and executor stay in Sophia.
 
-| Required operation or behavior | Implementation/coverage needed in both SDKs |
-| --- | --- |
-| Connect and discover | HostDomain admission, standard 9P, immutable info snapshot and EOF, service/connection identity, validated advertised deadlines. No launch-role impersonation or protocol fallback. |
-| Catalog | Complete bounded snapshot through EOF; 259 rows maximum, strict ordering, names with spaces and only the three defined Session operations. Retain exact generation. |
-| Invocation encoding | Canonical nonzero identities and counted UTF-8 text, at most 512 bytes. One complete offset-zero ctl write; no cross-write staging or partial-write replay. |
-| Admission | One request at a time, monotonic request IDs, validated catalog membership. A complete write refusal establishes non-acceptance; short or lost replies leave uncertainty. |
-| Status | Reopen immutable ready/pending/outcome snapshots. Check connection, request and catalog generation and the owner's legal success outcomes. Reads never acknowledge an outcome. |
-| Settlement | Preserve all ten outcomes, including timed-out and indeterminate. A newer accepted invocation acknowledges the prior outcome. No durable exactly-once claim. |
-| External loop | Descriptor/readiness, bounded byte/syscall work, caller-monotonic deadlines and next wake. Poll status only while a command is pending; never poll while idle. |
-| Cancellation and loss | Closing or flushing does not undo dispatched effects. Preserve uncertainty and forbid automatic reconnect/replay. Recovery requires a new explicit client and command. |
-| Limits and lifetime | Bounded catalogs/status buffers, one immutable invocation, owned/borrowed lifetimes, request exhaustion and absolute deadlines that progress cannot extend. |
-| Independent evidence | Literal malformed/boundary codecs, scripted partial/reordered traffic, same production owner/ticket scenarios, revocation, process loss and a foreign-language C binding smoke. |
+C names below use the `sophia_ad_` prefix. Rust methods belong to
+`session::Session` unless noted.
+C's public passive structures expose observations directly; Rust uses getters.
+Neither requires an application-owned protocol implementation.
 
-Use the runtime's one-millisecond pending-status interval as a compatibility
-reference, exposed through caller-driven wakeups. Do not copy its blocking
-sleep loop into either SDK's external-loop API. Catalog ownership should
-transfer or remain borrowed rather than cloning on every query. These are
-design requirements; no client implementation or speedup is claimed here.
+| Operation | C | Rust | Ownership and evidence |
+| --- | --- | --- | --- |
+| Connect supplied HostDomain socket | `connect_init`, `connect_ready`, `connect_take_session`; lower-level `init` from `sophia_ao` | `connecting::Connecting::new`, `ready`, `take_session`; lower-level `Session::from_opened` | Version, attach, info and catalog share one absolute deadline. C borrows a fresh pipeline and stationary state; Rust owns the socket. Independent `admin_connecting_test.c` / `tests/connecting.rs` cover partial version, expiry and unsupported version. No launch-role impersonation or fallback. |
+| Read service identity and limits | `info` field | `info` | Complete immutable info through EOF and clunk. Independent startup/snapshot tests cover malformed, bounded and fragmented input. |
+| Read catalog | `catalog` | `catalog_generation`, `commands` | At most 259 ordered rows; borrowed names expire on refresh. C state cannot move; Rust retains offsets into one owned buffer. Catalog codecs test all rows, malformed names/order and membership. |
+| Refresh catalog | `refresh_catalog` | `refresh_catalog` | Explicit, refused while command/snapshot active; no per-command catalog copy. Independent session tests retain a catalog across commands and refresh after invalidation. |
+| Invoke | `invoke` | `invoke` | One immutable, offset-zero ctl write of at most 512 bytes; current catalog membership and increasing request ID required. C returns ID through an out-parameter; Rust returns it by value. Session tests use one-byte dispatch budgets and reject busy/unadvertised work. |
+| Inspect custody | `latest` returns `sophia_ac` | `latest_custody` | Queued, Issued, Accepted, Settled, Refused, DroppedUnsent or Unknown. Full write refusal proves nonacceptance; short/lost replies preserve uncertainty. Independent command and session tests cover these distinctions. |
+| Inspect outcome | `latest` exposes outcome, detail and length | `outcome` | Retained until next admitted invocation. All ten outcomes remain distinct: Committed, Completed, Unchanged, Rejected, Stale, Denied, Unavailable, Overloaded, TimedOut, Indeterminate. Command tests check owner/outcome legality and identity; session tests reject malformed detail and wrong generation. |
+| Drive external loop | `dispatch`, `next_wake`, `wants_write`; caller-owned wire fd; same controls on connecting facade | `dispatch`, `next_wake`, `io_interest`, `fd` on both facades | Caller-monotonic time, byte/syscall bounds, no sleeps. Status polling occurs only while pending, at one-millisecond intervals. Zero-budget and clock-regression tests pass. |
+| Inspect terminal failure | Return code, `error`, `component_error`; command `remote_error` | Typed `error`, including `Command(Refused(errno))` | Failure latches and prevents further mutation. Socket tests cover refusal, disconnect, short write, malformed status and owner/identity contradictions, without replay. |
+| Close or recover | `close`, `connect_close`; caller closes fd | `close` on either facade; owned socket closes | Retains confirmed result/refusal and uncertainty. No close/flush undo, reconnect or automatic replay. Replacement-service gate deliberately reuses request numbers and proves late old completion cannot settle a new command. |
+
+Independent component tests are in C's `src/tests/admin_*_test.c` and Rust's
+`crates/sophia-admin-client/tests/` and protocol tests. Production gates in
+Sophia's `crates/sophia-runtime/tests/admin_external_sdk.rs` cover:
+
+- Settlement, stale catalog refresh and admission revocation.
+- Service shutdown before and after owner claim.
+- Explicit replacement-service recovery without replay or inherited completion.
+- Abrupt service-process death before and after claim.
+- HostDomain denial from a foreign namespace despite a reachable socket.
+
+All require an explicitly supplied independent peer; missing isolation
+prerequisites fail rather than count as a pass. The SDK-wide foreign-binding
+smoke exercises C requester ownership, not a complete administrative binding.
+Final pins and release-wide checks remain t333 requirements. See
+[ownership and recovery](ADMIN-CLIENT.md) for buffer and failure rules.
+
+## Earlier implementation evidence
+
+The following entries retain their original test counts and coverage boundaries.
+Statements about missing implementations or pending gates describe those
+checkpoints, not the current inventory above.
 
 Both SDKs now decode the complete info record without heap allocation. Rust
 returns a Copy value; C fills caller storage only after validating the entire

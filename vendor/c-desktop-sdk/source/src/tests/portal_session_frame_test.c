@@ -250,7 +250,15 @@ int main(void) {
       }
       assert(sophia_pcs_frame(&session, &session, sizeof session, 2000) ==
              SOPHIA_PS_INVALID);
+      assert(sophia_pcs_frame(&session, image, sizeof image, 1) ==
+             SOPHIA_PFR_DEADLINE);
+      for (i = 0; i < sizeof image; ++i)
+        assert(image[i] == (iteration ? 17 : 0xa5));
       assert(!sophia_pcs_frame(&session, image, fault == 6 ? 799 : 800, 2000));
+      assert(sophia_pcs_frame(&session, image, sizeof image, 2000) ==
+             SOPHIA_PS_BUSY);
+      for (i = 0; i < sizeof image; ++i)
+        assert(image[i] == (iteration ? 17 : 0xa5));
       assert(sophia_pcs_snapshot(&session, SOPHIA_PS_STATUS, snapshot,
                                  sizeof snapshot, 2000) == SOPHIA_PS_BUSY);
       while (!session.error &&

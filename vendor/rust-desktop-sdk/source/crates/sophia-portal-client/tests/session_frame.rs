@@ -187,7 +187,26 @@ fn shared_frame_keeps_window_cancels_watch_and_reuses_storage() {
                 session.dispatch(1, 1).unwrap();
                 thread::yield_now();
             }
-            session.frame(storage.take().unwrap(), 2000).unwrap();
+            let mut image = storage.take().unwrap();
+            let original = image.clone();
+            let capacity = image.capacity();
+            assert_eq!(
+                session.frame_buffer(&mut image, 1),
+                Err(Error::Frame(sophia_portal_client::frame::Error::Deadline))
+            );
+            assert_eq!(image, original);
+            assert_eq!(image.as_ptr(), pointer);
+            assert_eq!(image.capacity(), capacity);
+            session.frame_buffer(&mut image, 2000).unwrap();
+            assert!(image.is_empty());
+            assert_eq!(image.capacity(), 0);
+            let mut rejected = vec![0x5a; 800];
+            let rejected_pointer = rejected.as_ptr();
+            let rejected_capacity = rejected.capacity();
+            assert_eq!(session.frame_buffer(&mut rejected, 2000), Err(Error::Busy));
+            assert_eq!(rejected, vec![0x5a; 800]);
+            assert_eq!(rejected.as_ptr(), rejected_pointer);
+            assert_eq!(rejected.capacity(), rejected_capacity);
             assert_eq!(session.snapshot(File::Status, 2000), Err(Error::Busy));
             assert_eq!(session.take_frame_scratch(), Err(Error::Busy));
             let mut cancelled = false;

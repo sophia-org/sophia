@@ -222,6 +222,10 @@ int main(void) {
           nanosleep(&delay, NULL);
         }
         if (session_frame) {
+          assert(sophia_pcs_frame(&session, storage, capacity, 0) ==
+                 SOPHIA_PFR_DEADLINE);
+          for (i = 0; i < capacity; ++i)
+            assert(storage[i] == 0xa5);
           assert(!sophia_pcs_frame(&session, storage, capacity, expires));
         } else if (session_capture) {
           struct sophia_pf_capture_request request = {2, 7};

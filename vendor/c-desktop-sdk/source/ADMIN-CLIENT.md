@@ -1,10 +1,11 @@
 # Administrative client ownership and recovery
 
-The developing C and Rust clients use standard 9P2000.L on a caller-selected,
+The C and Rust clients use standard 9P2000.L on a caller-selected,
 already-connected HostDomain socket. The export decides admission. Neither SDK
 discovers an ambient endpoint, impersonates a launch role, probes legacy IPC,
-reconnects or replays commands automatically. Production qualification is still
-open; see [the parity map](ADMIN-PARITY.md).
+reconnects or replays commands automatically. Both peers have passed the five production admission, settlement and recovery
+gates listed in [the parity map](ADMIN-PARITY.md). Release qualification remains
+separate.
 
 ## Startup and event loop
 
@@ -79,5 +80,7 @@ provide durable exactly-once execution across service restarts.
 Independent socket peers cover startup, sequential commands, pending outcomes,
 catalog reuse/refresh, refusal, connection loss and bad identity. Stalled and
 unsupported version tests cover budgets and startup expiry. These checks do not
-replace production owner/ticket, revocation, process-loss, foreign-language
-binding and publication gates.
+establish physical desktop effects. The production gates additionally cover
+owner tickets, revocation, service loss, explicit recovery and foreign-namespace
+denial. The SDK-wide C binding smoke and final publication have separate scope;
+see [the parity map](ADMIN-PARITY.md).

@@ -270,7 +270,15 @@ impl<'a> Session<'a> {
     /// Retain metadata and pixels beside a watch. Six requests reserve four
     /// pixel reads plus watch/flush; four fids keep root, watch and both objects.
     /// Reuses the Vec, growing at most once after validated metadata.
-    pub fn frame(&mut self, storage: Vec<u8>, deadline: u64) -> Result<(), Error> {
+    /// Consumes storage even on rejection; use frame_buffer to retain it.
+    pub fn frame(&mut self, mut storage: Vec<u8>, deadline: u64) -> Result<(), Error> {
+        self.frame_buffer(&mut storage, deadline)
+    }
+    /// Take storage only after local admission succeeds, without copying or
+    /// allocating. Rejection preserves bytes, pointer and capacity. After
+    /// admission use take_frame, or take_frame_scratch after terminal failure;
+    /// a later transport error does not return storage through this argument.
+    pub fn frame_buffer(&mut self, storage: &mut Vec<u8>, deadline: u64) -> Result<(), Error> {
         self.live()?;
         if self.fetch.is_some() || self.capture.is_some() || self.frame.is_some() {
             return Err(Error::Busy);
@@ -286,8 +294,9 @@ impl<'a> Session<'a> {
         {
             return Err(Error::Invalid);
         }
-        self.frame =
-            Some(FrameExchange::new(storage, w.msize(), self.now, deadline).map_err(Error::Frame)?);
+        self.frame = Some(
+            FrameExchange::take(storage, w.msize(), self.now, deadline).map_err(Error::Frame)?,
+        );
         self.drive().map_err(|e| self.fail(e))
     }
     /// Received scratch bytes do not establish image validity.

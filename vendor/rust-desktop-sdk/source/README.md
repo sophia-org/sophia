@@ -15,7 +15,7 @@ Sophia checkout to build.
 | `sophia-portal-protocol` | Portal recipient and requester file records. |
 | `sophia-portal-client` | Recipient capture/frame and transfer sessions, plus bounded requester uploads and outcome tracking. |
 | `sophia-admin-protocol` | Passive administrative info, catalog, invocation and status codecs. |
-| `sophia-admin-client` | Developing administrative session with retained catalogs, command custody and caller-driven status snapshots; production qualification remains open. |
+| `sophia-admin-client` | Administrative session with retained catalogs, command custody and caller-driven status snapshots; paired production admission and recovery gates pass. |
 | `sophia-9p-records` | 9P2000.L value records (tags, fids, qids, wire errno, requests, replies), shared with Sophia's server core. |
 | `sophia-9p-client` | Bounded 9P2000.L clients: a blocking read-only `client` and the nonblocking, pipelined `pipeline` the role clients drive. |
 | `sophia-launch-client` | Sophia's local launch-channel authentication: correlated afid exchange, bounded progress and an admitted role root. |
@@ -26,15 +26,20 @@ Sophia checkout to build.
 | `sophia-wm-protocol` | The WM file codecs and passive policy records. |
 | `sophia-wm-client` | Developing WM session with negotiation, events, custody and Cycle-bound snapshots. |
 | `sophia-output-protocol` | Output file codecs and passive topology values. |
-| `sophia-output-client` | Developing session with startup, submissions, journal and topology fetching; qualification remains incomplete. |
+| `sophia-output-client` | Output session with startup, submissions, journal and topology fetching; paired export and protected idle-revocation gates pass. |
 | `sophia-lock-protocol` | The lock provider's `sophia_lock_fs_v1` file contract codec (experimental; see Contracts). |
-| `sophia-lock-client` | Experimental lock session with startup, custody, events, object fetching and bounded uploads; production qualification remains open. |
+| `sophia-lock-client` | Experimental lock session with startup, custody, events, object fetching and bounded uploads; paired export and protected idle-revocation gates pass. |
 
 Shell, WM and output have native clients; their release qualification differs.
 The lock provider now has an experimental session against its draft contract.
 Administration has a developing session on a versioned pipeline. [API parity](API-PARITY.md) records
 the comparison, evidence and remaining gaps. [Portal parity](PORTAL-PARITY.md)
 records the recipient and requester scenarios and their qualification limits.
+
+For reusable portal image buffers, `Session::frame_buffer(&mut Vec, deadline)`
+keeps storage with the caller on local rejection. Admission takes the original
+buffer without a copy; recover it with `take_frame`, or `take_frame_scratch`
+after failure. The consuming `frame` convenience method remains available.
 
 The broker client starts from an exclusively owned, quiescent 9P pipeline and
 admitted root: drive `startup::Opening`, transfer its `Opened` result, then drive

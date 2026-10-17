@@ -140,7 +140,14 @@ fn main() {
                     std::thread::sleep(Duration::from_millis(1));
                 }
                 if session_frame {
-                    session.frame(image.take().unwrap(), expires).unwrap();
+                    let mut pixels = image.take().unwrap();
+                    let capacity = pixels.capacity();
+                    assert!(session.frame_buffer(&mut pixels, 0).is_err());
+                    assert_eq!(pixels.as_ptr(), image_pointer);
+                    assert_eq!(pixels.capacity(), capacity);
+                    assert!(pixels.iter().all(|&byte| byte == 0xa5));
+                    session.frame_buffer(&mut pixels, expires).unwrap();
+                    assert!(pixels.is_empty() && pixels.capacity() == 0);
                 } else if session_capture {
                     session
                         .capture(

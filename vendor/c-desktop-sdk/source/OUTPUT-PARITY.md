@@ -1,36 +1,47 @@
 # Output API parity
 
-Revision 9, 2026-10-16. Contract: API-1 output files in `spec/`.
-C reference: `a88efe7`, `src/sophia_output_session.h`.
-Rust has codecs, provisional fixed-file startup and an immutable submission
-lane, ordered journal and topology fetcher joined by a developing session.
+Revision 10, 2026-10-17. API-1 output files, pinned in `spec/`.
+Source audit: C `8894d64cfaa2d66bb6a4f9380dbe1076e4fc5707` and Rust
+`902a26e574f1c55d2e31599d104a1251dd4e408f`.
+Both copies of `spec/sophia-output-files.md` have SHA-256
+`50b6342fcf6398c32025d8329e87d0818d661c5c11be77b36a70fe93cdeea3cf`.
 
-| C capability | Rust status | Evidence or remaining work |
-| --- | --- | --- |
-| File record codecs | `sophia-output-protocol` | Thirty extracted tests; schema and contract match C. |
-| Direct startup | `Connecting::direct` | Nonblocking version, files and negotiation share one absolute deadline and caller budget. |
-| Authenticated handoff | `Connecting::attached` | Exact sole root on a quiescent owned pipeline; no reset or attach. Full supplied socket proposal/retry tests; protected production gate remains. |
-| API / Limits | Validated through EOF and clunk | Exact API line and 72-byte Limits object; retain epoch and resource bounds. |
-| Role files | Opens events, submit and ACK | Refuses non-file Qids and control iounits smaller than 24/16 bytes. |
-| Observe prerequisite | Required before opening | Unsupported revision requests survive startup for server negotiation/refusal. |
-| Startup progress | Caller clock, deadline, interests and byte budget | Expiry sends nothing; clock regression is nonmutating. Constructors queue requests without socket I/O. |
-| Negotiation and Refused state | Provisional journal | Checks grant subset and revision; Refused supplies an internal ACK target. Driver must settle its ACK before terminal handoff. |
-| Proposal admission and custody | Provisional `Submission` | Configure/epoch checks, immutable bytes, 64-ticket history, same-ID retry, domain allocation and advertised assembly deadline. Nine driver tests plus socket proposals/retries through both startup paths. |
-| Ordered events and ACKs | Provisional journal | Internal controls, retained heads, bounded fragments and advertised fragment deadline. Integrated cumulative ACK scheduling; terminal socket coverage remains. |
-| Authoritative topology | Provisional `Fetch` | Checks published Qid on walk/open, connection and topology epochs, bounded reads, EOF and clunk. Socket test verifies delivery/ACK after EOF and clunk. |
-| Close, revocation and recovery | Startup close and submission disconnect | Submission retains confirmed custody and distinguishes uncertain from unsent work. Session revocation/recovery tests remain. |
-| Production export / protected launch | Paired supplied-admission exchange passes | Both SDKs negotiate, fetch exact topology, submit ValidateOnly and ACK the outcome against Sophia’s real output worker. Protected launch remains. |
+Both SDKs implement startup, negotiation, immutable proposals, ordered events,
+ACKs and publication-bound topology reads. Independent peers have passed the
+supplied-admission output worker and protected launch/idle-revocation fixtures.
+Those checks do not prove physical display application, revocation during an
+in-flight proposal or the complete t333 release gate.
 
-C borrows its descriptor and caller storage; Rust owns the pipeline and lends
-its descriptor for polling only. Both require exclusive control of the admitted
-root. The developing Rust driver requires msize 4096–65536, eight request slots,
-sixteen fids and input space for two negotiated frames plus scalar replies.
+In this table, C names have the `sophia_os_` prefix; Rust methods belong to
+`Session` unless `Connecting` is named. C tests are in
+`src/tests/output_session_test.c`; Rust tests are under
+`crates/sophia-output-client/tests/`.
 
-Output semantics are distinct from WM: explicit negotiation refusal, Observe
-required, Configure granted by the server, publication-bound topology reads,
-ACK progress and per-epoch domain replay capacity. Do not substitute a WM event
-or snapshot policy for those rules. Codec success is not custody, topology
-commit, presentation or API parity.
+| Operation | C entry point | Rust entry point | Contract and evidence |
+| --- | --- | --- | --- |
+| Allocate and start | `state_bytes`, `storage_bytes`, `open_fd`, `open_attached` | `Connecting::direct`, `Connecting::attached`, `ready`, `take_session`; lower-level `Session::from_opened` | C borrows stationary caller storage and fd; Rust owns its pipeline/socket. Attached startup requires the exact sole root on a quiescent wire. Paired socket proposal tests exercise both startup paths. |
+| Inspect negotiation | `state`, `epoch`, `capabilities`, `refusal`, `limits` | Same method names on `Connecting` and `Session` | Exact API line, 72-byte Limits, Observe prerequisite and granted capability subset. Refused waits for its final ACK. Rust `refused_session_waits_for_ack_and_preserves_custody` and C refusal controls. |
+| Drive external loop | `poll_fd`, `poll_events`, `timeout`, `dispatch` | `fd`, `io_interest`, `wake_deadline`, `dispatch` on both facades | Caller-monotonic milliseconds, absolute startup deadline and bounded I/O. C rejects zero budget; Rust permits local progress without socket I/O. Rust connecting/session deadline and zero-budget tests; C bootstrap/deadline controls. |
+| Inspect pending work and errors | `obligations`, `remote_error`, `state` | `obligations`, `remote_error`, `state`, `error`; `acked`, `consumed` on `Session` | ACK watermark advances only on its write reply. Rust also reports `topology_ready`; C can query `topology`. Paired short ACK, EINVAL and ESTALE socket tests. |
+| Admit proposal | `submit`, `next_transaction` | `submit`, `next_transaction` | Copies immutable candidate bytes, requires Configure, returns a local ticket; domain identity belongs to the caller. Rust socket tests mutate caller input, use domain IDs 50 then 3 and check allocator 51; C independently checks immutable retry bytes and out-of-order domains. |
+| Inspect custody | `outcome` | `custody` | Last 64 tickets: admitted, issued, submitted, refused with errno, dropped unsent or unknown after disconnect; unavailable/`None` outside retained history. Paired disconnect tests and Rust submission history tests. |
+| Retry and release assembly | Automatic in `dispatch` | Automatic in `dispatch` | EAGAIN retains identical bytes and envelope ID. Backoff or ACK progress permits retry; original and assembly deadlines still bind it. Next assembly waits for Submitted ACK and transaction clunk. Paired retry socket tests and Rust submission tests. EALREADY is refusal, not WM's success exception. |
+| Observe and consume events | `event`, `consume` | `event`, `consume` | Retained head until consumed; Negotiated, Refused and Submitted are internal controls. Public events are ObjectPublished and Outcome (Validated, Committed, Stale, Rejected, RolledBack and Failed). Paired literal outcome, held-head and fragmentation tests; Rust `journal.rs`. |
+| Read topology | `topology` | `topology` | Borrow decoded session storage. Publication is hidden until exact Qid, connection/topology epochs, bounds, EOF and clunk are verified. Rust `topology.rs` and integrated session fetch test; C bootstrap/topology and protocol-fault controls. |
+| End session | `close` | `close` (or drop owned client) | No reconnect, replay or rollback. Close preserves confirmed custody and prior terminal state. C caller closes its fd; Rust drops the owned socket. Paired disconnect and ACK-fault tests. Closing cannot cancel a proposal already held by the server. |
+| Use production export | Independent C output peer | `output_conformance_peer` | Exact topology, ValidateOnly outcome and final ACK on Sophia's real output worker. Commands and limits below. |
+| Authenticate and observe revocation | `output_authenticated_peer` | `output_authenticated_peer` | Real protected launch, exact admitted root, topology fetch/ACK and idle revocation with negotiation custody retained. This fixture does not revoke an in-flight proposal. |
+
+Output requires msize 4096–65536, eight request slots and sixteen fids. Rust
+also requires input capacity for two negotiated frames plus scalar replies.
+Both clients exclusively control their role wire. Codec success proves neither
+custody nor topology application. See [ownership and recovery](OUTPUT-CLIENT.md).
+
+## Earlier implementation evidence
+
+The entries below record the sequence in which coverage was added. Their test
+counts, pins and statements about work still pending apply to those checkpoints;
+the current API inventory is above. Full release qualification remains separate.
 
 Submission tests cover both Submitted/reply orders, the ACK/clunk barrier,
 retry progress and backoff, immutable negotiation, grant/epoch rejection and

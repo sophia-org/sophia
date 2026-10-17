@@ -178,16 +178,57 @@ reconcile historical claims and run final release gates. Preserve the portal
 refused-End cancellation limit. Performance work must not replace these closure
 requirements. No full t333 completion is claimed by these transport slices.
 
-The output audit now maps every public C session entry point to its Rust
-counterpart and separates current coverage from historical checkpoints. Signed
-Rust `080eefa60759c5b68a4adeaa0d5cf8f0558f793b` and C
-`bfd9ba2aab0995eae4707ff15a23f8c3d99b6f46` correct `OUTPUT-PARITY.md` and
-`OUTPUT-CLIENT.md`; both are pushed and no runtime changed.
-The supplied-admission and protected idle-revocation fixtures have passed, but
-they do not establish revocation during an active proposal or physical output
-application. These documentation commits still need adoption in the final SDK
-pins. The full `cargo xtask check` is running against Sophia `b7c442e5c`; inspect
-`/tmp/t333-release-audit-check.log` and its live process before starting another.
+Output, administration and portal maps now separate current APIs from historical
+checkpoints. Rust's shared portal session also preserves image buffers on local
+rejection through `frame_buffer`; C already retains its borrowed storage. Paired
+scripted and protected shared-frame gates pass. The full Sophia check passed
+before this import; see the evidence below. Signed Rust `61d33d8` and C `c2d9c33`
+are imported. Next audit WM, experimental lock and shell maps, then reconcile
+the release inventory and remaining acceptance evidence. These audits do not
+establish physical desktop acceptance or remove the refused-End limit.
+
+### Role audit and portal buffer evidence, 2026-10-17
+
+Signed, pushed source revisions are Rust
+`61d33d8920e5794134b1b1e6c7a9c75640ec7850` and C
+`c2d9c33ef901dc66c35de7743348a43805a52e3e`. Both are imported from exact archives.
+Output and administrative maps name public session operations and their paired
+evidence. Portal's recipient map covers shared watch/foreground scheduling;
+its requester map now reflects the existing rejection-preserving `begin_buffer`.
+Historical checkpoint counts and limits remain labelled as historical.
+
+Rust adds `Session::frame_buffer(&mut Vec, deadline)`. Local rejection retains
+bytes, pointer and capacity; admission takes the original storage without a
+copy or allocation. The consuming `frame` wrapper remains available. Admitted
+storage is recovered through `take_frame`, or `take_frame_scratch` after failure.
+C's existing borrowed operation needs no runtime change. Independent tests
+check expired/busy rejection, successful reuse and scratch recovery on faults.
+All 48 Rust portal tests, strict all-target Clippy, C's complete suite and the
+Nim binding smoke pass. Logs: `/tmp/t333-frame-buffer-{suite,clippy}.log` and
+`/tmp/t333-audit-c-check.log`.
+
+Both updated protected peers pass
+`external_sdk_portal_session_frame_survives_watch_cancellation`, with expired
+admission followed by a successful frame using the same storage. Logs are
+`/tmp/t333-frame-buffer-{rust,c}-export.log`. The test binary came from the full
+check at Sophia `b7c442e5c`; SHA-256
+`1bbd8f1c394ea1bde22e8b45f80e68666e09050e93fabeb5b01644d10a3a21a7`.
+Rust peer SHA-256 is
+`8c499ad3476bf1662b9b07122eb1fbc18445580a2ae49ae54abbd8857ce7b149`;
+C peer SHA-256 is
+`ed19937d4bb0aa4a81ad9967dc890c580d0efb7c5f2a6d4dcd3593e46a177f61`.
+These fixtures supply frame pixels; they do not prove physical capture or
+measured allocation/CPU savings. An initial invocation with a non-normalized
+peer path was refused before launch; the normalized absolute paths pass.
+
+The full `cargo-slot sophia cargo xtask check` completed successfully against
+the preceding pins at `b7c442e5c` (only the audit note changed during the run).
+Its log is `/tmp/t333-release-audit-check.log`: workspace tests, SDK checks,
+strict Clippy, deterministic tool checks, archive checks and the host's
+buffer-age/first-frame pixel gates pass. This is not evidence that ignored
+external-peer cases ran; the updated portal case was invoked separately above.
+Both new pin checks also pass, including the imported Rust SDK test suite:
+`/tmp/t333-audit-c-pin.log` and `/tmp/t333-audit-rust-pin.log`.
 
 ### Secret-write parity evidence, 2026-10-17
 
