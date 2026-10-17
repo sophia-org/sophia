@@ -60,7 +60,11 @@ The separate worker-shutdown control returns to its FD baseline after submitted,
 reserved and uncollected jobs, while delivered pixels remain readable until
 their last owner drops them. Both shell transport tests, the shutdown control
 and targeted strict Clippy pass. Transport-level teardown and the remaining
-lock cancellation controls are separate qualification work.
+lock cancellation controls are separate qualification work. Follow-up
+`5844f638b` advances the supplied owner clock to the original admission deadline
+after Source submission, then sends cancellation over 9P. Timeout remains the
+first cause through real completion collection, with release disposition 3.
+All three shell transport tests and targeted strict Clippy pass.
 
 Next are the remaining SDK/export and cancellation controls, and matched sealed-versus-byte
 native panel/bulk evidence. Comparator `c1b5faa71` merges the reviewed SDK/runtime
@@ -71,6 +75,10 @@ binds request, peer configuration and captured journal to the byte or sealed
 source and wire; all 30 targeted tests and strict Clippy pass. Reports preserve
 logical accepted payload bytes and CPU/frame alongside existing cost fields.
 No new performance result follows from this merge or tooling.
+External preparation `1662e44` also requires the sealed peer's explicit image
+bounds and rejects missing, zero, unknown or overflowing fields; its 12 native
+preparation tests and strict Clippy pass. The peer still must compare those
+bounds against the negotiated content limits.
 No native capture has begun and no
 installed desktop has changed. All four unchanged t331 +10% gates, per-request
 allocation attribution and journal-read pairing remain required; the earlier
