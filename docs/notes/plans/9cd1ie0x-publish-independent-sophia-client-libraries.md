@@ -142,7 +142,67 @@ platform limits accurately. Physical desktop acceptance and performance gates
 remain separate. This work precedes t289's broad engine optimization; it does
 not change t331's current cost gate or the prepared CPU pilot.
 
+### Release audit, 2026-10-17
+
+This audit uses signed Rust `10ab5bb` and C `f7873a8`, imported by Sophia
+`c3c388955`. The operation maps below are present in both exact SDK snapshots.
+Historical implementation paragraphs are not current missing-capability lists.
+
+| Exit requirement | Evidence |
+| --- | --- |
+| 1. Versioned operation maps | `API-PARITY.md`, `SHELL-STARTUP.md`, `SHELL-SIZING.md`, and the WM, output, lock, admin, portal, broker, launch and transport parity maps identify contracts, operations, ownership and tests. Role-specific maps distinguish supplied admission from protected authentication. |
+| 2. Shell integration | Caller-driven startup, bounded dispatch, readiness/deadlines, atomic batches, reservations, lifecycle helpers, retained journal heads, explicit fetch/ACK controls and allocation-free candidate sizing are implemented. Independent full Rust/C tests and both metadata/content export peers pass at these pins. |
+| 3. WM, output and lock | Current maps enumerate startup, candidates, retained events, custody, snapshots, errors and disposal. Scripted tests are included in the passing SDK suites. Fresh paired production/protected runs at these pins pass; counts and limits follow below. Lock stays experimental against its draft contract. |
+| 4. Administration, portal and broker | Typed clients and current operation maps exist for all three, with recipient/requester authority kept separate. Fresh admin, broker, requester and recipient export runs pass at these pins. Portal refused-End live cancellation remains unavailable in both SDKs; explicit retry or close preserves uncertainty. |
+| 5. Independent scenarios and foreign binding | SDK suites cover fragmentation, bounded work, retry identity, custody loss, stale epochs and terminal errors as mapped per role. C `make check-binding` passed again at `f7873a8`: the Nim requester smoke uses the public headers and native static libraries with empty, one-byte and 64-KiB payloads. It is a binding smoke, not a complete Nim desktop SDK. |
+| 6. Publication and conformance | Both revisions are signed, pushed and verified in Sophia. Snapshot checks pass. The final-pin paired export refresh passes. The full canonical Sophia check passes, including workspace tests, imported SDK checks, Clippy, conformance, archive and pixel checks. |
+
+The audit has not identified another missing application-candidate sizing
+family. Generic create/rename/remove operations are outside the accepted 9P
+profile, not omitted role clients. Physical presentation, engine performance
+and untested platforms remain separate from SDK parity. The current platform
+claim is Linux x86_64; other targets retain the limits in `PLATFORMS.md`.
+Final-pin export evidence is preserved under
+`~/.local/state/sophia/t333-sdk-release-c3c388955/`, with executable paths and
+SHA-256 hashes in `identity.json`. No binaries or build trees are copied there.
+Fresh results: five admin scenarios and two broker gates per SDK; WM exchange
+with both peers and one protected WM gate per SDK; supplied-admission output
+and lock exchanges with both peers; four protected output/lock gates per SDK
+(including lock replacement); thirteen requester lifecycle cases per SDK in
+one test; and all 22 protected recipient scenarios per SDK. The independent
+shell export was refreshed during pin adoption. The canonical workspace run
+also executes the pinned C output/lock fixtures.
+
+The first broad admin invocation mistakenly selected an internal child helper;
+all five SDK cases passed, and the corrected `external_sdk` filter passes.
+The first direct WM invocation omitted `CARGO_TARGET_DIR`; the corrected
+cargo-slot invocation passes in both languages. Both unsuccessful invocation
+logs are preserved and are not counted as successful gates. The Rust recipient
+cases passed in the first combined log. No SDK implementation was changed to
+obtain these results. The full canonical check exited successfully. The evidence
+manifest `SHA256SUMS` has SHA-256
+`3bf4a3e88dcae10e6ef43a082d86a683633acb0f27bea6804daf537e5100d9ec`.
+
 ### Current resumption
+
+The six exit requirements are satisfied by the release audit above. Final
+publication adds only qualification documentation to the tested SDK sources:
+Rust `f1cd92467f71204402f658b458388c1e51798be3` and C
+`9485fd006f65c0161094c1922c69f6838efed306`. Both are signed and pushed;
+Sophia imports their exact archives; both final snapshot checks pass, including
+the imported Rust workspace tests. The only upstream differences from the
+tested revisions are `README.md`, `API-PARITY.md` and
+`RELEASE-QUALIFICATION.md`. `RELEASE-QUALIFICATION.md` in each SDK
+records tested code revisions, paired results and remaining limits. No protocol
+contract was broadened or platform support inferred from these checks.
+
+Physical acceptance, t331's cost gate, t314's remaining migration/performance
+acceptance and t289's engine optimization retain their own exits. The lock
+contract stays experimental; portal End refusal permits retry or close but not
+live cancellation. Earlier entries below are historical implementation evidence,
+not additional current work or a second task ledger.
+
+### Sizing and manual-control checkpoint
 
 Signed Rust `10ab5bb` and C `f7873a8` supply allocation-free application-candidate
 sizing. Rust counts through shared field writers and validates whole candidates

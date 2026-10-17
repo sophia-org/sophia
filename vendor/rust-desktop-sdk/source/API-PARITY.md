@@ -1,5 +1,8 @@
 # C and Rust SDK API parity
 
+The [2026-10-17 release audit](RELEASE-QUALIFICATION.md) records verified
+C/Rust capability parity, exact tested revisions and remaining limits.
+
 ## Announced snapshot scheduling, 2026-10-17
 
 Rust `set_automatic_snapshot_fetch(false)` lets a caller defer new snapshot

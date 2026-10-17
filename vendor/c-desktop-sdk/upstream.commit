@@ -1,14 +1,14 @@
-tree 1351f59f73f5f736aefd0e45dee9a2779dd1a948
-parent b9033d824d968142454f7ed008c2dcc3d41bb7b1
-author Mason Green <mason@greenm01.net> 1792211960 -0400
-committer Mason Green <mason@greenm01.net> 1792211960 -0400
+tree 8618e94dc4da8eebe684a77b90453aa23a06214e
+parent f7873a8409814442bb62a82ce955f3f0a1fff066
+author Mason Green <mason@greenm01.net> 1792212693 -0400
+committer Mason Green <mason@greenm01.net> 1792212693 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL7+BsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLbgAEAwIqbxpPe1nsYmK+dzDkM
- Ur3hJmR/KRMvA9MF5WKJnzkBALeWTG86YY/TzLZLFNGV9cyCrPeFXN+yoN7B7rJy
- tvYA
- =s/io
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL+1RsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIOHgEAmP4e+HM+Z59HDaMiXdN7
+ nQZGGMoAfWl0fmgaEE/hZ5cBAOF4oCqrfSzKlvBGIdN4ZvmRNTWTQVdEjhQrEC6h
+ ImQI
+ =FIm9
  -----END PGP SIGNATURE-----
 
-Verify and document paired shell candidate sizing
+Record desktop SDK parity release qualification

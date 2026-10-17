@@ -1,5 +1,8 @@
 # Sophia desktop SDK for Rust
 
+The [2026-10-17 release audit](RELEASE-QUALIFICATION.md) records verified
+C/Rust capability parity, exact tested revisions and remaining limits.
+
 Allocation-free [shell candidate sizing](SHELL-SIZING.md) is available in both SDKs.
 
 Shell startup supports caller-driven progress from a connected socket or an
