@@ -81,9 +81,16 @@ impl ImageChannel {
         let sealed = discovery.source_kinds == SEALED_KIND
             && image.max_validation_jobs != 0
             && image.max_dma_source_bytes == 0;
+        // Offers are bounded by the role's transfer slots, outputs by the
+        // role's outputs; validation jobs fit within offers, and backing
+        // holds at least one whole resource.
         let bounded = image.max_resource_bytes <= limits.max_resource_bytes
             && image.max_width <= limits.max_width_px
-            && image.max_height <= limits.max_height_px;
+            && image.max_height <= limits.max_height_px
+            && image.max_offers <= u32::from(limits.upload_slots).min(4)
+            && image.max_admitted_outputs <= u32::from(limits.max_outputs)
+            && image.max_validation_jobs <= image.max_offers
+            && image.max_sealed_backing_bytes >= image.max_resource_bytes;
         if discovery.connection_epoch != epoch
             || discovery.endpoint != crate::image_channel::IMAGE_ENDPOINT_BASENAME
             || !generations
@@ -94,11 +101,10 @@ impl ImageChannel {
             return Err(Errno::EINVAL);
         }
         // ChannelClosed and two terminal events per offer stay reservable
-        // beside at least one ordinary event.
+        // beside at least one ordinary event. Bytes need no check: at most
+        // ten credits fit well inside the 2048-byte journal floor.
         let held = 1 + 2 * image.max_offers as usize;
-        if (limits.journal_records as usize) <= held
-            || (limits.journal_bytes as usize) <= (held + 1) * super::CREDIT_BYTES
-        {
+        if limits.journal_records as usize <= held {
             return Err(Errno::EINVAL);
         }
         Ok(Self {
@@ -134,9 +140,14 @@ pub(super) enum ImageBeginPlan {
 impl LockFileCustody {
     /// Configures the sealed-image channel for this epoch. Allowed only
     /// before the provider negotiates; once set it cannot change.
+    /// Formats generation equals the current lock topology generation, and
+    /// follows each later topology.
     pub fn configure_image(&mut self, settings: LockImageSettings) -> Result<(), Errno> {
         self.live()?;
-        if self.image.is_some() || !matches!(self.negotiation, super::Negotiation::Awaiting) {
+        if self.image.is_some()
+            || !matches!(self.negotiation, super::Negotiation::Awaiting)
+            || settings.formats.formats_generation != self.lock.topology_generation
+        {
             return Err(Errno::EINVAL);
         }
         self.image = Some(ImageChannel::new(settings, self.epoch, &self.limits)?);
@@ -281,6 +292,16 @@ impl LockFileCustody {
 
     /// Decides an `ImageBegin` before anything is journalled. The offer ID
     /// must exceed every one already taken into custody.
+    /// Sealed-only formats have no rows, so a new topology changes only the
+    /// generation that discovery and the formats snapshot name.
+    pub(super) fn follow_image_topology(&mut self) {
+        let generation = self.lock.topology_generation;
+        if let Some(image) = &mut self.image {
+            image.settings.discovery.formats_generation = generation;
+            image.settings.formats.formats_generation = generation;
+        }
+    }
+
     pub(super) fn plan_image_begin(&self, body: &[u8]) -> Result<ImageBeginPlan, Errno> {
         let image = self
             .image

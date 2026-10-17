@@ -625,6 +625,7 @@ impl LockFileCustody {
         self.lock = lock;
         self.lock_generation = generation;
         self.lock_qid = qid;
+        self.follow_image_topology();
         Ok(generation)
     }
 

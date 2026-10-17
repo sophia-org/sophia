@@ -14,7 +14,7 @@ use sophia_9p::records::{OpenAccess, OpenFlags};
 use sophia_9p::{Errno, ReadOutcome};
 use sophia_protocol::lock_files::*;
 
-use super::{LockFileCustody, LockFileSettings, LockInbound};
+use super::{LockFileCustody, LockFileSettings, LockImageSettings, LockInbound};
 
 const EBUSY: Errno = Errno(16);
 
@@ -51,6 +51,9 @@ pub enum LockFileNode {
     Ack,
     Uploads,
     Upload(u8),
+    ImageChannel,
+    ImageLimits,
+    ImageFormats,
 }
 
 use LockFileNode as Node;
@@ -68,11 +71,22 @@ impl Node {
             Self::Ack => 7,
             Self::Uploads => 8,
             Self::Upload(slot) => 9 + u64::from(slot),
+            // Upload slots stop at 4, so these follow upload/3.
+            Self::ImageChannel => 13,
+            Self::ImageLimits => 14,
+            Self::ImageFormats => 15,
         }
     }
 }
 
 const NODE_QIDS: u64 = 16;
+
+/// Root names present only once custody discloses the image channel.
+const IMAGE_ENTRIES: [(&[u8], Node); 3] = [
+    (b"image-channel", Node::ImageChannel),
+    (b"image-limits", Node::ImageLimits),
+    (b"image-formats", Node::ImageFormats),
+];
 
 const ENTRIES: [(&[u8], Node); 8] = [
     (b"api", Node::Api),
@@ -85,7 +99,7 @@ const ENTRIES: [(&[u8], Node); 8] = [
     (b"upload", Node::Uploads),
 ];
 
-/// One published lock object. A publication never edits it; an open fid
+/// One published object. A publication never edits it; an open fid
 /// keeps reading the generation it opened.
 struct LockFile {
     qid: u64,
@@ -96,7 +110,7 @@ pub struct LockFileHandle(Handle);
 
 enum Handle {
     Plain,
-    Lock(Arc<LockFile>),
+    Object(Arc<LockFile>),
     Transaction(u64),
     Upload(u64),
 }
@@ -108,6 +122,7 @@ pub struct LockFileExport {
     api: Vec<u8>,
     limits: Vec<u8>,
     lock: Arc<LockFile>,
+    image: Option<ImageFiles>,
     connection: Option<ConnectionId>,
     attached: bool,
     staging: Option<Staging>,
@@ -167,7 +182,11 @@ fn slice(bytes: &[u8], offset: u64, count: u32) -> Vec<u8> {
 }
 
 fn object(epoch: u64, kind: LockFileKind, body: &[u8]) -> Result<Vec<u8>, Errno> {
-    encode_lock_file_record(
+    object_at(epoch, kind, body, 1)
+}
+
+fn object_at(epoch: u64, kind: LockFileKind, body: &[u8], revision: u16) -> Result<Vec<u8>, Errno> {
+    encode_lock_file_record_at_revision(
         LockFileHeader {
             kind,
             connection_epoch: epoch,
@@ -175,8 +194,69 @@ fn object(epoch: u64, kind: LockFileKind, body: &[u8]) -> Result<Vec<u8>, Errno>
             sequence: 0,
         },
         body,
+        revision,
     )
     .map_err(|_| Errno::EINVAL)
+}
+
+/// The image discovery snapshots. They are built before custody can disclose
+/// them and replaced with each topology, so disclosure itself cannot fail.
+struct ImageFiles {
+    channel: Arc<LockFile>,
+    limits: Arc<LockFile>,
+    formats: Arc<LockFile>,
+}
+
+impl ImageFiles {
+    /// Limits are fixed for the epoch; discovery and formats name the
+    /// formats generation, so they take fresh qids when it moves.
+    fn build(
+        settings: &LockImageSettings,
+        epoch: u64,
+        qids: &LockFileQids,
+        limits: Option<&Arc<LockFile>>,
+    ) -> Result<Self, Errno> {
+        let invalid = |_| Errno::EINVAL;
+        let channel = settings.discovery.encode().map_err(invalid)?.into_bytes();
+        let formats = object_at(
+            epoch,
+            LockFileKind::ImageFormats,
+            &settings.formats.encode().map_err(invalid)?,
+            2,
+        )?;
+        let limits = match limits {
+            Some(limits) => Arc::clone(limits),
+            None => Arc::new(LockFile {
+                qid: qids.allocate(1)?,
+                bytes: object_at(
+                    epoch,
+                    LockFileKind::ImageLimits,
+                    &settings.limits.encode().map_err(invalid)?,
+                    2,
+                )?,
+            }),
+        };
+        Ok(Self {
+            channel: Arc::new(LockFile {
+                qid: qids.allocate(1)?,
+                bytes: channel,
+            }),
+            limits,
+            formats: Arc::new(LockFile {
+                qid: qids.allocate(1)?,
+                bytes: formats,
+            }),
+        })
+    }
+
+    fn file(&self, node: Node) -> Option<&Arc<LockFile>> {
+        match node {
+            Node::ImageChannel => Some(&self.channel),
+            Node::ImageLimits => Some(&self.limits),
+            Node::ImageFormats => Some(&self.formats),
+            _ => None,
+        }
+    }
 }
 
 impl LockFileExport {
@@ -207,10 +287,29 @@ impl LockFileExport {
                 qid: lock_qid,
                 bytes: lock,
             }),
+            image: None,
             connection: None,
             attached: false,
             staging: None,
         })
+    }
+
+    /// Configure the sealed image channel before negotiation; see
+    /// [`LockFileCustody::configure_image`]. Its files appear only after
+    /// negotiation discloses the channel.
+    pub fn configure_image(&mut self, settings: LockImageSettings) -> Result<(), Errno> {
+        let files = ImageFiles::build(&settings, self.custody.epoch(), &self.qids, None)?;
+        self.custody.configure_image(settings)?;
+        self.image = Some(files);
+        Ok(())
+    }
+
+    /// The image file a disclosed root serves under `node`.
+    fn image_file(&self, node: Node) -> Option<&Arc<LockFile>> {
+        self.image
+            .as_ref()
+            .filter(|_| self.custody.image_disclosed())
+            .and_then(|image| image.file(node))
     }
 
     /// Bind only the connection the endpoint admitted; never replaced.
@@ -280,9 +379,28 @@ impl LockFileExport {
             LockFileKind::Lock,
             &lock.encode().map_err(|_| Errno::EINVAL)?,
         )?;
+        let image = match (&self.image, self.custody.image_settings()) {
+            (Some(image), Some(settings))
+                if settings.formats.formats_generation != lock.topology_generation =>
+            {
+                let mut settings = settings.clone();
+                settings.discovery.formats_generation = lock.topology_generation;
+                settings.formats.formats_generation = lock.topology_generation;
+                Some(ImageFiles::build(
+                    &settings,
+                    self.custody.epoch(),
+                    &self.qids,
+                    Some(&image.limits),
+                )?)
+            }
+            _ => None,
+        };
         let qid = self.qids.allocate(1)?;
         let generation = self.custody.publish_lock(lock, qid)?;
         self.lock = Arc::new(LockFile { qid, bytes });
+        if image.is_some() {
+            self.image = image;
+        }
         Ok(generation)
     }
 
@@ -381,8 +499,10 @@ impl Export for LockFileExport {
             (Node::Root, WalkName::Parent) | (Node::Uploads, WalkName::Parent) => Ok(Node::Root),
             (Node::Root, WalkName::Child(name)) => ENTRIES
                 .iter()
+                .chain(&IMAGE_ENTRIES)
                 .find(|(entry, _)| *entry == name)
                 .map(|(_, node)| *node)
+                .filter(|node| node.index() < 13 || self.image_file(*node).is_some())
                 .ok_or(Errno::ENOENT),
             (Node::Uploads, WalkName::Child(name)) => std::str::from_utf8(name)
                 .ok()
@@ -401,13 +521,22 @@ impl Export for LockFileExport {
             (Node::Api, _) => self.api.len() as u64,
             (Node::Limits, _) => self.limits.len() as u64,
             (Node::Events, _) => self.custody.position().tail,
-            (Node::Lock, Some(Handle::Lock(object))) => {
+            (
+                Node::Lock | Node::ImageChannel | Node::ImageLimits | Node::ImageFormats,
+                Some(Handle::Object(object)),
+            ) => {
                 qid_path = object.qid;
                 object.bytes.len() as u64
             }
             (Node::Lock, _) => {
                 qid_path = self.lock.qid;
                 self.lock.bytes.len() as u64
+            }
+            (Node::ImageChannel | Node::ImageLimits | Node::ImageFormats, _) => {
+                self.image_file(*node).map_or(0, |object| {
+                    qid_path = object.qid;
+                    object.bytes.len() as u64
+                })
             }
             (Node::Transaction, Some(Handle::Transaction(id))) => {
                 qid_path = *id;
@@ -449,7 +578,10 @@ impl Export for LockFileExport {
             return Err(Errno::EACCES);
         }
         let handle = match node {
-            Node::Lock => Handle::Lock(Arc::clone(&self.lock)),
+            Node::Lock => Handle::Object(Arc::clone(&self.lock)),
+            Node::ImageChannel | Node::ImageLimits | Node::ImageFormats => {
+                Handle::Object(Arc::clone(self.image_file(*node).ok_or(Errno::ENOENT)?))
+            }
             Node::Transaction => {
                 if self.staging.is_some() {
                     return Err(EBUSY);
@@ -488,7 +620,10 @@ impl Export for LockFileExport {
             (Node::Api, _) => slice(&self.api, offset, count),
             (Node::Limits, _) => slice(&self.limits, offset, count),
             (Node::Events, _) => return self.custody.read(offset, count),
-            (Node::Lock, Handle::Lock(object)) => slice(&object.bytes, offset, count),
+            (
+                Node::Lock | Node::ImageChannel | Node::ImageLimits | Node::ImageFormats,
+                Handle::Object(object),
+            ) => slice(&object.bytes, offset, count),
             (Node::Transaction, Handle::Transaction(id)) => {
                 let staging = self
                     .staging
@@ -574,6 +709,8 @@ impl Export for LockFileExport {
         let entries: Vec<(Vec<u8>, Node)> = match directory {
             Node::Root => ENTRIES
                 .iter()
+                .chain(&IMAGE_ENTRIES)
+                .filter(|(_, node)| node.index() < 13 || self.image_file(*node).is_some())
                 .map(|(name, node)| (name.to_vec(), *node))
                 .collect(),
             Node::Uploads => (0..self.upload_slots())

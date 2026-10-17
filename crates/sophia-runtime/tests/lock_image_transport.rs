@@ -53,13 +53,13 @@ fn image_settings() -> LockImageSettings {
             channel_generation: GENERATION,
             endpoint: "image.sock".into(),
             source_kinds: 1,
-            max_offers: 4,
+            max_offers: 2,
             max_packets_per_turn: 8,
             hello_timeout_ms: 1000,
             validation_timeout_ms: 100,
             validation_chunk_bytes: 65536,
             capture_interest_timeout_ms: 200,
-            formats_generation: 2,
+            formats_generation: 3,
             limits_generation: 3,
         },
         limits: LockImageLimits {
@@ -70,7 +70,7 @@ fn image_settings() -> LockImageSettings {
             max_dma_source_bytes: 0,
             max_renderer_allocation_bytes: 0,
             max_renderer_entries: 0,
-            max_offers: 4,
+            max_offers: 2,
             max_validation_jobs: 2,
             max_capture_jobs: 0,
             max_admitted_outputs: 1,
@@ -84,7 +84,7 @@ fn image_settings() -> LockImageSettings {
         },
         formats: LockImageFormats {
             channel_generation: GENERATION,
-            formats_generation: 2,
+            formats_generation: 3,
             limits_generation: 3,
             rows: Vec::new(),
         },
@@ -498,24 +498,46 @@ fn configuration_is_coherent_sealed_only_and_before_negotiation() {
     let mut settings = image_settings();
     settings.limits.max_width = 65;
     bad.push(settings);
+    // Coherent, but past the lock role's own bounds.
+    let mut settings = image_settings();
+    settings.discovery.max_offers = 3;
+    settings.limits.max_offers = 3;
+    bad.push(settings);
+    let mut settings = image_settings();
+    settings.limits.max_admitted_outputs = 5;
+    bad.push(settings);
+    let mut settings = image_settings();
+    settings.limits.max_validation_jobs = 3;
+    bad.push(settings);
+    let mut settings = image_settings();
+    settings.limits.max_sealed_backing_bytes = 64 * 64 * 4 - 1;
+    bad.push(settings);
+    // Formats generation must equal the lock topology generation.
+    let mut settings = image_settings();
+    settings.discovery.formats_generation = 4;
+    settings.formats.formats_generation = 4;
+    bad.push(settings);
     for settings in bad {
         assert_eq!(custody().configure_image(settings), Err(Errno::EINVAL));
     }
-    // Too small a journal for the terminal credits.
-    let mut small = limits();
-    small.journal_records = 9;
-    let mut custody = LockFileCustody::new(LockFileSettings {
-        epoch: EPOCH,
-        limits: small,
-        reserved_chords: Vec::new(),
-        lock: lock(),
-        lock_qid: 90,
-    })
-    .unwrap();
-    assert_eq!(
-        custody.configure_image(image_settings()),
-        Err(Errno::EINVAL)
-    );
+    // Four offers hold nine journal records; one more must stay free.
+    let mut four = image_settings();
+    four.discovery.max_offers = 4;
+    four.limits.max_offers = 4;
+    for (records, result) in [(9, Err(Errno::EINVAL)), (10, Ok(()))] {
+        let mut small = limits();
+        small.upload_slots = 4;
+        small.journal_records = records;
+        let mut custody = LockFileCustody::new(LockFileSettings {
+            epoch: EPOCH,
+            limits: small,
+            reserved_chords: Vec::new(),
+            lock: lock(),
+            lock_qid: 90,
+        })
+        .unwrap();
+        assert_eq!(custody.configure_image(four.clone()), result);
+    }
     // Once only, and never after negotiation.
     let mut provider = Provider::new(true);
     assert_eq!(
@@ -528,4 +550,281 @@ fn configuration_is_coherent_sealed_only_and_before_negotiation() {
         provider.custody.configure_image(image_settings()),
         Err(Errno::EINVAL)
     );
+}
+
+// Slice 2: the image discovery files of the export.
+
+mod files {
+    use super::{PRESENT, SEALED};
+    use sophia_9p::connection::ConnectionId;
+    use sophia_9p::export::*;
+    use sophia_9p::{Errno, OpenFlags, ReadOutcome};
+    use sophia_protocol::lock_files::*;
+    use sophia_runtime::lock_files::*;
+
+    use LockFileNode as Node;
+
+    const EPOCH: u64 = 5;
+    const READ: OpenFlags = OpenFlags(0);
+    const WRITE: OpenFlags = OpenFlags(1);
+    const READ_WRITE: OpenFlags = OpenFlags(2);
+    const NAMES: [&str; 3] = ["image-channel", "image-limits", "image-formats"];
+    const NODES: [Node; 3] = [Node::ImageChannel, Node::ImageLimits, Node::ImageFormats];
+
+    fn lock(topology_generation: u64) -> LockObject {
+        LockObject {
+            lock_epoch: 4,
+            topology_generation,
+            phase: LockPhase::Locked,
+            allocations: vec![LockAllocation {
+                output_id: 1,
+                output_generation: 1,
+                allocation_id: 2,
+                allocation_generation: topology_generation,
+                pixel_width: 2,
+                pixel_height: 1,
+                scale_numerator: 1,
+                scale_denominator: 1,
+            }],
+        }
+    }
+
+    fn settings() -> LockImageSettings {
+        let mut settings = super::image_settings();
+        settings.discovery.connection_epoch = EPOCH;
+        settings.discovery.formats_generation = 1;
+        settings.formats.formats_generation = 1;
+        settings.limits.max_resource_bytes = 256;
+        settings.limits.max_sealed_backing_bytes = 512;
+        settings.limits.max_width = 8;
+        settings.limits.max_height = 8;
+        settings
+    }
+
+    fn export(configured: bool) -> LockFileExport {
+        let mut export = LockFileExport::new(
+            LockFileSettings {
+                epoch: EPOCH,
+                limits: LockFileLimits {
+                    max_outputs: 1,
+                    upload_slots: 2,
+                    max_chords: 0,
+                    max_width_px: 8,
+                    max_height_px: 8,
+                    max_resource_bytes: 256,
+                    max_live_resources: 4,
+                    journal_records: 32,
+                    journal_bytes: 8192,
+                    assembly_timeout_ms: 1000,
+                    ack_progress_timeout_ms: 2000,
+                },
+                reserved_chords: Vec::new(),
+                lock: lock(1),
+                lock_qid: 0,
+            },
+            LockFileQids::default(),
+        )
+        .unwrap();
+        if configured {
+            export.configure_image(settings()).unwrap();
+        }
+        export.bind_connection(ConnectionId(1)).unwrap();
+        export
+            .attach(&AttachContext {
+                connection: ConnectionId(1),
+                peer: None,
+                uname: b"",
+                aname: b"",
+                n_uname: 0,
+            })
+            .unwrap();
+        export
+    }
+
+    fn negotiate(export: &mut LockFileExport, maximum: u16, capabilities: u64) {
+        let body = LockNegotiate {
+            minimum_revision: 1,
+            maximum_revision: maximum,
+            requested_capabilities: capabilities,
+            chords: Vec::new(),
+        }
+        .encode()
+        .unwrap();
+        let candidate = encode_lock_file_record(
+            LockFileHeader {
+                kind: LockFileKind::Negotiate,
+                connection_epoch: EPOCH,
+                submission_id: 1,
+                sequence: 0,
+            },
+            &body,
+        )
+        .unwrap();
+        let mut staging = export.open(&Node::Transaction, READ_WRITE).unwrap();
+        export
+            .write(&Node::Transaction, &mut staging, 0, &candidate)
+            .unwrap();
+        let control = encode_lock_file_submit(LockFileSubmit {
+            connection_epoch: EPOCH,
+            submission_id: 1,
+            candidate_bytes: candidate.len() as u32,
+        })
+        .unwrap();
+        let mut submit = export.open(&Node::Submit, WRITE).unwrap();
+        export
+            .write(&Node::Submit, &mut submit, 0, &control)
+            .unwrap();
+        export.release(Node::Transaction, Some(staging));
+    }
+
+    fn names(export: &mut LockFileExport) -> Vec<String> {
+        let mut root = export.open(&Node::Root, READ).unwrap();
+        export
+            .readdir(&Node::Root, &mut root, 0, 32)
+            .unwrap()
+            .into_iter()
+            .map(|entry| String::from_utf8(entry.name).unwrap())
+            .collect()
+    }
+
+    fn read(export: &mut LockFileExport, node: Node, handle: &mut LockFileHandle) -> Vec<u8> {
+        match export.read(&node, handle, 0, 1 << 16).unwrap() {
+            ReadOutcome::Ready(bytes) => bytes,
+            _ => panic!("not ready"),
+        }
+    }
+
+    fn body(bytes: &[u8], kind: LockFileKind) -> Vec<u8> {
+        let record = decode_lock_file_record_at_revision(bytes, LockFileClass::Object, 2).unwrap();
+        assert_eq!(record.header.kind, kind);
+        assert_eq!(record.header.connection_epoch, EPOCH);
+        record.body.to_vec()
+    }
+
+    fn assert_absent(export: &mut LockFileExport) {
+        assert_eq!(names(export).len(), 8);
+        for name in NAMES {
+            assert_eq!(
+                export.lookup(&Node::Root, WalkName::Child(name.as_bytes())),
+                Err(Errno::ENOENT)
+            );
+        }
+        for node in NODES {
+            assert_eq!(export.open(&node, READ).err(), Some(Errno::ENOENT));
+        }
+    }
+
+    #[test]
+    fn image_files_are_absent_until_negotiation_discloses_the_channel() {
+        // Configured but not yet negotiated.
+        let mut configured = export(true);
+        assert_absent(&mut configured);
+        // Revision 1 selected.
+        negotiate(&mut configured, 1, PRESENT | SEALED);
+        assert_absent(&mut configured);
+        // Revision 2 without the sealed request.
+        let mut unrequested = export(true);
+        negotiate(&mut unrequested, 2, PRESENT);
+        assert_absent(&mut unrequested);
+        // Never configured.
+        let mut plain = export(false);
+        negotiate(&mut plain, 2, PRESENT | SEALED);
+        assert_absent(&mut plain);
+        // Configuration is closed once negotiated.
+        assert_eq!(plain.configure_image(settings()), Err(Errno::EINVAL));
+        assert_absent(&mut plain);
+    }
+
+    #[test]
+    fn disclosed_image_files_carry_the_configured_snapshots() {
+        let mut export = export(true);
+        negotiate(&mut export, 2, PRESENT | SEALED);
+        let names = names(&mut export);
+        assert_eq!(&names[8..], NAMES);
+        for (name, node) in NAMES.iter().zip(NODES) {
+            assert_eq!(
+                export.lookup(&Node::Root, WalkName::Child(name.as_bytes())),
+                Ok(node)
+            );
+            assert_eq!(export.open(&node, WRITE).err(), Some(Errno::EACCES));
+            assert_eq!(export.open(&node, READ_WRITE).err(), Some(Errno::EACCES));
+            assert_eq!(export.describe(&node, None).permissions, 0o400);
+        }
+        let expected = settings();
+        let mut channel = export.open(&Node::ImageChannel, READ).unwrap();
+        let text = read(&mut export, Node::ImageChannel, &mut channel);
+        assert_eq!(text, expected.discovery.encode().unwrap().into_bytes());
+        assert_eq!(
+            export.describe(&Node::ImageChannel, Some(&channel)).size,
+            text.len() as u64
+        );
+        let mut limits = export.open(&Node::ImageLimits, READ).unwrap();
+        let bytes = read(&mut export, Node::ImageLimits, &mut limits);
+        assert_eq!(
+            LockImageLimits::decode(&body(&bytes, LockFileKind::ImageLimits)).unwrap(),
+            expected.limits
+        );
+        let mut formats = export.open(&Node::ImageFormats, READ).unwrap();
+        let bytes = read(&mut export, Node::ImageFormats, &mut formats);
+        assert_eq!(
+            LockImageFormats::decode(&body(&bytes, LockFileKind::ImageFormats)).unwrap(),
+            expected.formats
+        );
+    }
+
+    #[test]
+    fn a_new_topology_moves_formats_and_open_fids_keep_their_snapshot() {
+        let mut export = export(true);
+        negotiate(&mut export, 2, PRESENT | SEALED);
+        let qid = |export: &LockFileExport, node| export.describe(&node, None).qid_path;
+        let before = NODES.map(|node| qid(&export, node));
+        let mut old_channel = export.open(&Node::ImageChannel, READ).unwrap();
+        let mut old_formats = export.open(&Node::ImageFormats, READ).unwrap();
+        let old_text = read(&mut export, Node::ImageChannel, &mut old_channel);
+        let old_bytes = read(&mut export, Node::ImageFormats, &mut old_formats);
+
+        // The same topology republished changes nothing.
+        export.publish_lock(lock(1)).unwrap();
+        assert_eq!(NODES.map(|node| qid(&export, node)), before);
+
+        export.publish_lock(lock(2)).unwrap();
+        let after = NODES.map(|node| qid(&export, node));
+        assert_ne!(after[0], before[0]);
+        assert_eq!(after[1], before[1], "limits are fixed for the epoch");
+        assert_ne!(after[2], before[2]);
+        let settings = export.custody().image_settings().unwrap().clone();
+        assert_eq!(settings.discovery.formats_generation, 2);
+        assert_eq!(settings.formats.formats_generation, 2);
+
+        // Open fids keep reading the generation they opened.
+        assert_eq!(
+            read(&mut export, Node::ImageChannel, &mut old_channel),
+            old_text
+        );
+        assert_eq!(
+            read(&mut export, Node::ImageFormats, &mut old_formats),
+            old_bytes
+        );
+        assert_eq!(
+            export
+                .describe(&Node::ImageFormats, Some(&old_formats))
+                .qid_path,
+            before[2]
+        );
+        // New opens read the new generation.
+        let mut channel = export.open(&Node::ImageChannel, READ).unwrap();
+        let text = String::from_utf8(read(&mut export, Node::ImageChannel, &mut channel)).unwrap();
+        assert_eq!(
+            LockImageDiscovery::decode(&text).unwrap(),
+            settings.discovery
+        );
+        let mut formats = export.open(&Node::ImageFormats, READ).unwrap();
+        let bytes = read(&mut export, Node::ImageFormats, &mut formats);
+        assert_eq!(
+            LockImageFormats::decode(&body(&bytes, LockFileKind::ImageFormats))
+                .unwrap()
+                .formats_generation,
+            2
+        );
+    }
 }
