@@ -234,6 +234,23 @@ impl Peer {
             driver.negotiate(Duration::from_secs(5)).unwrap();
         }
     }
+    fn finish(&mut self) {
+        // Let blocked socket calls return before supervisor cleanup. Killing a
+        // peer inside recv makes a byte trace incomplete, even after owner work
+        // has settled. Teardown remains outside the measured workload interval.
+        match &mut self.transport {
+            Transport::Legacy { wire, .. } => wire.disconnect().unwrap(),
+            Transport::Files(driver) => driver.close().unwrap(),
+        }
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while self.supervisor.poll().unwrap().is_none() {
+            assert!(
+                Instant::now() < deadline,
+                "broker did not exit after transport closure"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
 }
 
 #[test]
@@ -315,7 +332,9 @@ fn paired_broker_descriptor_cost() {
                     .unwrap()
                 });
                 peer.check(candidates.last().unwrap());
+                peer.finish();
                 writeln!(output, "{}", serde_json::json!({"kind":"sample","block":block,"files":files,"label_bytes":label_bytes,"operations":samples,
+                    "peer_pid":peer.pid,"owner_pid":std::process::id(),"owner_tid":rustix::thread::gettid().as_raw_pid(),
                     "pass":if latency {"latency"} else {"cpu"},"elapsed_ns":elapsed.as_nanos().to_string(),
                     "latency_ns":if latency {Some(timings)} else {None},
                     "cpu_ns":cost.as_ref().map(|c| &c["combined_cpu_ns"]),"cpu_tasks":cost.as_ref().map(|c| &c["tasks"]),

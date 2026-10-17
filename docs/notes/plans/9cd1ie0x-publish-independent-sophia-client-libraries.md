@@ -144,6 +144,20 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+The diagnostic now closes its transport and waits for process exit before
+supervisor cleanup, outside measurement. This lets blocked reads return instead
+of leaving syscall traces indeterminate. `cargo xtask check broker-socket-bytes
+/absolute/trace.log` counts returned Unix-stream read/write lengths by task;
+it handles short transfers, errors and interleaved resumed calls and refuses
+incomplete traces. Three parser tests and strict xtask/harness Clippy pass.
+The previous interrupted trace is a negative control and is refused. A new
+one-operation smoke at `/tmp/sophia-broker-trace-complete.BwTbKc` completed and
+parsed 25 socket tasks. Read and write totals differ by 132 bytes at teardown;
+they must remain distinct, not be assumed equal or multiplied into a copy total.
+The report includes startup and teardown and explicitly excludes internal
+buffer copies. New workload records name peer PID and owner PID/TID for joins.
+No performance qualification follows from these debug smoke traces.
+
 Signed Sophia `ab5e8b7ba` is pushed. Release CLI and diagnostic artifacts are
 recorded, without binary copies, in
 `~/.local/state/sophia/broker-cost/ab5e8b7ba-20261017T024355Z/prepared.json`.

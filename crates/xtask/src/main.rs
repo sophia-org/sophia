@@ -12,6 +12,7 @@
 use std::path::{Path, PathBuf};
 
 mod admin_file_performance;
+mod broker_socket_bytes;
 mod c_desktop_sdk;
 mod capture_grant_probe;
 mod check;
