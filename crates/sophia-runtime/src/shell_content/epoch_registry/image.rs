@@ -23,6 +23,22 @@ pub struct SealedImageAdmission {
 }
 
 impl ContentEpochRegistry {
+    pub(in crate::shell_content) fn stop_sealed_image(
+        &mut self,
+        grant: ContentGrant,
+        resource: sophia_protocol::ContentResourceId,
+        reason: sophia_protocol::ContentReason,
+        now: u64,
+    ) -> Result<sophia_protocol::ContentReason, ContentStoreError> {
+        self.active
+            .iter_mut()
+            .chain(&mut self.retired)
+            .find(|epoch| epoch.resources.grant() == grant)
+            .ok_or(ContentStoreError::Stale)?
+            .resources
+            .stop_sealed(resource, reason, now)
+    }
+
     /// Reserve the live resource and a worker credit without receiving an FD.
     /// The channel owner first validates its published limits, increasing offer
     /// ID and journal reservations. This method then checks the actual grant,

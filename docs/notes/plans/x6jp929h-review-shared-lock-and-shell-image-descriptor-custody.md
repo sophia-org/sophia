@@ -18,10 +18,15 @@ The resource owner now has a bounded four-job handoff table retaining admission
 identity and completed validation results until the exact active or retired
 store consumes them. Real worker tests cover disconnect, clock-regression retry,
 exactly-once reconciliation and owner capacity remaining occupied after worker
-completion. The allocation suite passes 15 tests; targeted strict Clippy and the
-layout check pass. This table is not yet wired to live Source admission. The
-owner must still stop unsent reservations and cancel jobs on expiry or channel
-loss, then emit each admitted offer's terminal records through its held credits.
+completion. The table now owns Source submission and withdrawal as well: an
+unsent withdrawal releases its worker credit, a submitted withdrawal waits for
+the real completion, and the first store cause survives later cancellation.
+Original admission deadlines and epoch-wide channel loss are explicit owner
+operations. A worker timeout preserves Timeout rather than becoming Malformed.
+The allocation suite passes 19 tests; targeted strict Clippy and the layout
+check pass. This table is not yet wired to live Source admission. The owner must
+call those operations and emit each admitted offer's terminal records through
+its held credits; the APIs alone do not prove live cancellation or release.
 Session activation, Rust producer/adapters, lock receive/accept integration and
 the matched native gates remain outstanding; no runtime admission or performance
 acceptance is claimed by this checkpoint.

@@ -495,6 +495,25 @@ impl ContentResourceStore {
         Ok(())
     }
 
+    /// The descriptor owner withdraws interest without releasing validation
+    /// custody. This also works on a revoked store retained for worker cleanup.
+    pub(super) fn stop_sealed(
+        &mut self,
+        resource: ContentResourceId,
+        reason: ContentReason,
+        now: u64,
+    ) -> Result<ContentReason, ContentStoreError> {
+        self.expire(now)?;
+        let transfer = self
+            .transfers
+            .get_mut(&resource)
+            .ok_or(ContentStoreError::Stale)?;
+        let TransferSource::Sealed { stopped } = &mut transfer.source else {
+            return Err(ContentStoreError::Malformed);
+        };
+        Ok(stopped.get_or_insert((reason, transfer.transaction)).0)
+    }
+
     fn abort(
         &mut self,
         key: ContentResourceId,
