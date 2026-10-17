@@ -58,6 +58,41 @@ fn check_record_length(bytes: &[u8]) -> Result<(), ShellClientError> {
 }
 
 impl FileWire {
+    pub(crate) fn set_automatic_snapshot_fetch(
+        &mut self,
+        enabled: bool,
+    ) -> Result<(), ShellClientError> {
+        self.io_interest()?;
+        self.automatic_objects = enabled;
+        self.service_pending = true;
+        Ok(())
+    }
+    pub(crate) fn pending_snapshot(&self) -> Option<ShellFileObjectPublished> {
+        if self.fatal.is_some() || self.peer_closed {
+            return None;
+        }
+        self.object_fetch
+            .as_ref()
+            .map(|f| ShellFileObjectPublished {
+                object: f.feed,
+                generation: f.generation,
+                qid: f.qid,
+            })
+    }
+    pub(crate) fn request_snapshot(
+        &mut self,
+        request: ShellFileObjectPublished,
+    ) -> Result<bool, ShellClientError> {
+        self.io_interest()?;
+        if self.pending_snapshot() != Some(request) {
+            return Err(ShellClientError::InvalidArgument("snapshot is not pending"));
+        }
+        let fetch = self.object_fetch.as_mut().unwrap();
+        let changed = !fetch.requested;
+        fetch.requested = true;
+        self.service_pending = true;
+        Ok(changed)
+    }
     /// The ack bound: every handled event, but never past a held
     /// announcement.
     pub(super) fn ack_limit(&self) -> u64 {
@@ -294,6 +329,7 @@ impl FileWire {
                         phase: FetchPhase::NotStarted,
                         buf: Vec::new(),
                         restarts: 0,
+                        requested: false,
                     });
                 }
             }
@@ -340,6 +376,10 @@ impl FileWire {
         if fetch.phase != FetchPhase::NotStarted {
             return Ok(false);
         }
+        if !self.automatic_objects && !fetch.requested {
+            return Ok(false);
+        }
+        fetch.requested = true;
         let name: &[u8] = match fetch.feed {
             ShellFileKind::Outputs => b"outputs",
             ShellFileKind::Catalog => b"catalog",

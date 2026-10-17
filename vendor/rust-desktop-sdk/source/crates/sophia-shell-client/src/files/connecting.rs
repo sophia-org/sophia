@@ -642,6 +642,7 @@ impl Handshake {
             acked: self.sequence,
             ack_confirmed: self.sequence,
             automatic_ack: true,
+            automatic_objects: true,
             ack_tag: None,
             object_fetch: None,
             holds: [None; super::FEEDS.len()],

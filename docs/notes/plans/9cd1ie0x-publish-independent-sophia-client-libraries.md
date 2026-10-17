@@ -145,8 +145,8 @@ not change t331's current cost gate or the prepared CPU pilot.
 ### Current resumption
 
 The role/API release audit remains open against the full exits above. Signed
-Rust `36a4c89867f1b41cd6f2237fa75beba609a50e85` and C
-`ce01a9d6491c18672ffb1c7da3b5a27f3598b755` are pushed and imported. Both pin checks
+Rust `43965b69f93a990d5fa6128253891dcc3365593f` and C
+`60400404df4d85dd0bc60d752b72fae016a796e7` are pushed and imported. Both pin checks
 pass, including the imported Rust workspace tests. Shell startup
 is now caller-driven in both SDKs; WM/lock maps and C's role inventory have
 been reconciled. C lock handoff now rejects extra fids and partial input.
@@ -182,6 +182,19 @@ retained-head delivery or manual object scheduling. Allocation-free sizing is
 also still under review. Peer SHA-256: Rust
 `146b566493b70e4053b3eb05a7b881a4cf24ecc532afb73b03aae57b75f3c1c9`, C
 `3f3ed1ef6a4b5619b47d3145b8603880c462494d1fb91b8eaf80dca075cdb83a`.
+
+Rust now also supports deferring an announced snapshot with
+`set_automatic_snapshot_fetch`, inspecting `pending_snapshot` and admitting its
+exact identity through `request_snapshot`. Default fetching remains automatic;
+started fetches and bounded retries complete. Independent controls prove no
+walk before caller permission, stale/duplicate handling, automatic resumption
+and close. The Rust shell suite and strict Clippy pass, as does C's strengthened
+descriptor test. Both independent peers pass the real metadata/content export
+with caller-requested fetching and explicit ACKs. The new Rust peer SHA-256 is
+`75c95a03804c2ef361f6c7b62c172b4872b8fa40b05aaffa46686a024b0daedf`;
+the C peer is unchanged. This does not yet provide C's unannounced prefetch or
+out-of-order object selection. Those controls, retained-head delivery and
+allocation-free sizing remain open; do not infer full parity from this slice.
 No quiet hold is active and nothing was installed into the desktop. Performance
 qualification remains separate; the broker diagnostic is not acceptance.
 

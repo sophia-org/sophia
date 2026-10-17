@@ -16,6 +16,33 @@ pub struct JournalProgress {
 }
 
 impl ShellConnection {
+    /// Automatic snapshot fetching is enabled by default. Disabling it leaves
+    /// an already started fetch running, including its bounded retries. New
+    /// announcements wait for `request_snapshot`; later events and their ACKs
+    /// remain held. These controls never change publication authority.
+    pub fn set_automatic_snapshot_fetch(&mut self, enabled: bool) -> Result<(), ShellClientError> {
+        self.wire.set_automatic_snapshot_fetch(enabled)
+    }
+
+    /// The current announcement awaiting fetch or verification, if any.
+    /// Recheck before requesting it; superseded announcements may be skipped.
+    pub fn pending_snapshot(
+        &self,
+    ) -> Option<sophia_shell_protocol::shell_files::ShellFileObjectPublished> {
+        self.wire.pending_snapshot()
+    }
+
+    /// Permit fetching the exact pending announcement without I/O. False means
+    /// its fetch was already requested or started. Wrong/stale identities are
+    /// rejected without mutation. Dispatch fetches, validates and delivers the
+    /// typed snapshot through the ordinary receive API before releasing holds.
+    pub fn request_snapshot(
+        &mut self,
+        request: sophia_shell_protocol::shell_files::ShellFileObjectPublished,
+    ) -> Result<bool, ShellClientError> {
+        self.wire.request_snapshot(request)
+    }
+
     pub fn journal_progress(&self) -> JournalProgress {
         self.wire.journal_progress()
     }

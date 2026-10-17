@@ -1,14 +1,14 @@
-tree 8d9233b0f16b90d09220432eda2680d20ffd2d02
-parent 30805b15afc20b0b1fd1ec19f6d9034fcdbeef1e
-author Mason Green <mason@greenm01.net> 1792209921 -0400
-committer Mason Green <mason@greenm01.net> 1792209921 -0400
+tree 005f12123ed736cd5e4c02dfbb5831fa94588c55
+parent 36a4c89867f1b41cd6f2237fa75beba609a50e85
+author Mason Green <mason@greenm01.net> 1792210097 -0400
+committer Mason Green <mason@greenm01.net> 1792210097 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL0ARsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLwLQEAjVeau8Rkafht/S1Sekyi
- UA8LgrDSrkso3ogczSaH508BALvtzUE+IkgxBUvz69DADmNsCoa0qZLYh5snfmxH
- 1l4B
- =eDla
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL0sRsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJcywD/UnYoRXVZZVulvzGY8xo8
+ lGIjlHcB8OKineJ/LauOA8MA/32cSB7dMW/gO1qMNSKEtRFiuqWYlQVjm8Cea4UH
+ U5wE
+ =X8b/
  -----END PGP SIGNATURE-----
 
-Expose explicit shell journal ACK scheduling and progress
+Allow caller scheduling of announced shell snapshots

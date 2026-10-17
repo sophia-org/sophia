@@ -195,6 +195,8 @@ struct ObjectFetch {
     buf: Vec<u8>,
     /// Fetches restarted after a node-specific `ESTALE`/`EAGAIN`.
     restarts: u8,
+    /// Once admitted, retries finish even if automatic fetching is disabled.
+    requested: bool,
 }
 
 /// Snapshot feeds the file wire fetches, and each one's encoded cap
@@ -242,6 +244,7 @@ pub(crate) struct FileWire {
     acked: u64,
     ack_confirmed: u64,
     automatic_ack: bool,
+    automatic_objects: bool,
     ack_tag: Option<Tag>,
     object_fetch: Option<ObjectFetch>,
     /// Per feed (`FEEDS` order): the ack bound an announcement not yet

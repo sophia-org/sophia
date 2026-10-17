@@ -240,6 +240,7 @@ static void selected_feeds_and_holds(void)
     assert(rig_outcome(&r, ticket) == SOPHIA_SS_SUBMITTED &&
            rig_outcome(&r, ticket + 1) == SOPHIA_SS_ADMITTED_LOCAL && r.p.submits == 2);
     for (unsigned kind = 5; kind <= 7; kind++) {
+        assert(!r.p.object_walks[kind] && "fetch must wait for the caller");
         assert(!sophia_ss_object(&r.s, (uint16_t)kind, 7, 100 + kind));
         uint64_t prior_limit = sophia_ss_ack_limit(&r.s);
         const struct sophia_sf_record *v = NULL;

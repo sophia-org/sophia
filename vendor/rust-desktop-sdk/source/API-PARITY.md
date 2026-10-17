@@ -1,5 +1,28 @@
 # C and Rust SDK API parity
 
+## Announced snapshot scheduling, 2026-10-17
+
+Rust `set_automatic_snapshot_fetch(false)` lets a caller defer new snapshot
+fetches. `pending_snapshot` exposes the current kind/generation/Qid;
+`request_snapshot` admits that exact request without I/O. A stale identity
+changes nothing. Dispatch performs the bounded fetch and verification before
+delivering the ordinary typed snapshot. Re-enabling automatic mode resumes
+waiting work; already started fetches and their bounded retries continue.
+C already requires `sophia_ss_object` to start each fetch.
+
+Scripted Rust controls prove no object walk before caller permission, wrong
+identity rejection, duplicate request handling, automatic resumption and close.
+C's descriptor tests independently assert no object walks before explicit
+requests. Both peers pass Sophia's real metadata/content export scenario with
+caller-requested descriptor fetching and explicit journal ACKs. The Rust shell
+suite and strict Clippy pass. No new allocation or background task is added to
+the scheduling decision; this is not a measured performance claim.
+
+Rust still processes one announcement at a time and holds later events during
+its fetch. This control does not provide C's arbitrary prefetch or out-of-order
+object selection. Those capabilities, retained-head delivery and allocation-free
+record sizing remain under the full t333 audit.
+
 ## Journal ACK scheduling, 2026-10-17
 
 Rust's `ShellConnection::set_automatic_journal_ack(false)` defers future ACKs;
@@ -650,7 +673,7 @@ pending under t333.
 | `reserve`, `commit`, `cancel` | capacity tokens and `commit_reserved_shell_batch` | Same all-or-none admission; Rust prepared handles additionally borrow exclusively and cancel on Drop. |
 | `outcome` | `custody_result` | Retained unknown versus evicted/unissued distinctions above. |
 | `event`, `consume` | typed `take_*`; native `next_event`/`done` | Rust generic receives transfer owned values; native facade retains its head until done/response. Decoded observations remain readable after connection close. |
-| `object`, `object_result` | automatic fetch and typed snapshot observations | Rust owns fetch/retry and validates announced identity before releasing journal holds; no public manual fetch scheduling. |
+| `object`, `object_result` | `pending_snapshot/request_snapshot`, `set_automatic_snapshot_fetch`, typed observations | Rust defaults to automatic fetch/retry but can defer each announced fetch. Unannounced prefetch and out-of-order selection remain gaps. Both validate identity before releasing journal holds. |
 | `ack_limit`, `ack`, generic `obligations` | `journal_progress`, `acknowledge_journal`, `set_automatic_journal_ack`, readiness and retry wake deadline | Rust defaults to automatic ACKs and counts SDK-retained events; C counts caller-consumed events. Both preserve snapshot barriers. Delivery ACK is separate from application input/action ACK. |
 | `upload_begin/chunk/ready/pending/end/cancel` | resource records and Stored tickets; native upload helpers | C borrows chunks; Rust copies them and exposes custody. In-flight/queue accounting above. |
 | `close` | `ShellConnection::close`, `NativeLauncherSession::close` | Local terminal classification without I/O. C leaves borrowed fd open; Rust keeps its owned fd until Drop. |

@@ -38,6 +38,7 @@ fn main() {
     }
     let mut client = startup.take_connection().unwrap();
     client.set_automatic_journal_ack(false).unwrap();
+    client.set_automatic_snapshot_fetch(false).unwrap();
     assert_eq!(client.connection_epoch(), 41);
     assert_eq!(client.welcome().selected_revision, 8);
     assert_eq!(
@@ -54,6 +55,11 @@ fn main() {
     loop {
         assert!(start.elapsed() < Duration::from_secs(3));
         client.dispatch(Instant::now(), 1).unwrap();
+        if let Some(request) = client.pending_snapshot() {
+            assert_eq!(request.generation, 17);
+            assert_eq!(client.journal_progress().ack_limit, 2);
+            client.request_snapshot(request).unwrap();
+        }
         if let Some(sophia_shell_client::DescriptorObservation::Record(record)) =
             client.take_descriptor_observation().unwrap()
         {

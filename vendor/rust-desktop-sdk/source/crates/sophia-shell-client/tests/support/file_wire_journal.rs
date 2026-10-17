@@ -1,6 +1,59 @@
 use super::*;
 
 #[test]
+fn snapshot_fetch_waits_for_exact_request_or_automatic_resumption() {
+    for automatic in [false, true] {
+        let (mut connection, mut peer) = connect(bar(SOPHIA_SHELL_CAPABILITY_VIEW_INDICATORS));
+        connection.set_automatic_snapshot_fetch(false).unwrap();
+        publish(
+            &mut peer,
+            "indicators",
+            5,
+            indicators_object(EPOCH, 1),
+            usize::MAX,
+        );
+        let event = peer.published(ShellFileKind::Indicators, 1, 5);
+        peer.push(event);
+        drive(&mut connection, &mut peer, |c, _| {
+            c.pending_snapshot().is_some()
+        })
+        .unwrap();
+        let request = connection.pending_snapshot().unwrap();
+        for _ in 0..4 {
+            connection.poll_io().unwrap();
+            peer.pump();
+        }
+        assert_eq!(peer.walk_count("indicators"), 0);
+        assert!(connection.journal_progress().object_pending);
+        assert_eq!(connection.journal_progress().ack_limit, 2);
+        assert!(
+            connection
+                .request_snapshot(ShellFileObjectPublished {
+                    generation: 2,
+                    ..request
+                })
+                .is_err()
+        );
+        assert_eq!(connection.pending_snapshot(), Some(request));
+        if automatic {
+            connection.set_automatic_snapshot_fetch(true).unwrap();
+        } else {
+            assert!(connection.request_snapshot(request).unwrap());
+            assert!(!connection.request_snapshot(request).unwrap());
+        }
+        peer.pump();
+        assert_eq!(peer.walk_count("indicators"), 0, "request performed I/O");
+        let (_, snapshot) = next(&mut connection, &mut peer, ShellConnection::take_indicators);
+        assert_eq!(snapshot, indicator_snapshot(1));
+        assert!(connection.pending_snapshot().is_none());
+        assert!(connection.request_snapshot(request).is_err());
+        connection.close();
+        assert!(connection.pending_snapshot().is_none());
+        assert!(connection.set_automatic_snapshot_fetch(true).is_err());
+    }
+}
+
+#[test]
 fn manual_ack_cannot_skip_an_unverified_object() {
     let (mut connection, mut peer) = connect(bar(SOPHIA_SHELL_CAPABILITY_VIEW_INDICATORS));
     connection.set_automatic_journal_ack(false).unwrap();
