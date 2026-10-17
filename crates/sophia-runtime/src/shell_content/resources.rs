@@ -263,8 +263,11 @@ impl ContentResourceStore {
         {
             return Err(ContentStoreError::Budget);
         }
-        self.greatest_id = self.greatest_id.max(key.id);
-        self.high_water.insert(key.id, key.generation);
+        if !sealed {
+            // Byte Begins retain their existing definitive-refusal semantics.
+            self.greatest_id = self.greatest_id.max(key.id);
+            self.high_water.insert(key.id, key.generation);
+        }
         let layout = description
             .layout(&self.limits)
             .map_err(|_| ContentStoreError::Malformed)?;
@@ -292,6 +295,12 @@ impl ContentResourceStore {
             storage
                 .try_reserve_exact(bytes as usize)
                 .map_err(|_| ContentStoreError::Budget)?;
+        }
+        // A sealed reservation may be retried before ImageAdmitted. Failed
+        // capacity/layout checks must not consume its resource generation.
+        if sealed {
+            self.greatest_id = self.greatest_id.max(key.id);
+            self.high_water.insert(key.id, key.generation);
         }
         self.usage.staging += bytes;
         self.usage.reserved_resident += bytes;

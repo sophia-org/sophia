@@ -24,9 +24,34 @@ the real completion, and the first store cause survives later cancellation.
 Original admission deadlines and epoch-wide channel loss are explicit owner
 operations. A worker timeout preserves Timeout rather than becoming Malformed.
 The allocation suite passes 19 tests; targeted strict Clippy and the layout
-check pass. This table is not yet wired to live Source admission. The owner must
-call those operations and emit each admitted offer's terminal records through
-its held credits; the APIs alone do not prove live cancellation or release.
+check pass. Explicit shell owner hooks now connect ImageBegin, Source and the
+terminal records. The real 9P/SEQPACKET fixture waits for ImageAdmitted, sends a
+sealed memfd, closes the producer FD, validates on the worker, reads the retained
+resource lease, receives ResourceStatus and SourceReleased, then retires the
+resource through ResourceReleased. A missing live allocation refuses admission
+without consuming terminal holds or worker credit; the same offer succeeds once
+the supplied test owner grants it. A late valid Source drains silently, while
+an extra-FD packet for that same stale offer faults the channel. This is supplied
+afid authority, not a Factotum or deployed Session qualification.
+
+The shell export keeps four live offers, exact metadata and two independent
+terminal reservations each; the ChannelClosed hold makes nine. Journal encoding,
+capacity and sequence checks precede resource/worker reservation. ImageBegin
+shares the inbound queue with ordinary content. End/Cancel for a queued offer
+cannot overtake its admission, while Retire, allocation and acknowledgement
+progress remains available to release admission budgets. A failed sealed store
+reservation preserves the resource generation for retry; legacy byte Begin
+refusals retain their generation-consumption rule. Submitted offer IDs have a
+separate monotonic mark from the admitted mark used to classify late packets.
+The owner must reject permanent admission failures and queued offers after
+channel closure, and bound transient retries by its offer deadline.
+The resource owner still has to drive withdrawal,
+completion and release hooks on every path; the live fixture covers success and
+malformed stale packets, not the full cancellation matrix. Default callers remain
+receive/refuse. Published sealed budgets are enforced conservatively against all
+backing retained by that role and all pending work on the paired worker; separate
+per-source backing sub-pools are not claimed. Shell cancellation transaction
+identity clarification still needs the coordinated contract/SDK spec sync.
 Session activation, Rust producer/adapters, lock receive/accept integration and
 the matched native gates remain outstanding; no runtime admission or performance
 acceptance is claimed by this checkpoint.

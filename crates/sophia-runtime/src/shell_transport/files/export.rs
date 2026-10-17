@@ -25,6 +25,7 @@ use sophia_9p::journal::{Staging, StagingBounds};
 
 mod authentication;
 mod image;
+pub(super) mod image_offers;
 use image::{ImageChannelState, PendingImageRefusal, ShellImageReadiness};
 pub(in crate::shell_transport) use image::{
     ShellImageChannelConfig, ShellImageReadiness as ImageReadiness,
@@ -34,6 +35,10 @@ mod objects;
 mod snapshots;
 mod submission;
 mod transaction;
+
+#[cfg(test)]
+#[path = "../../../tests/support/shell_image_inbound.rs"]
+mod image_inbound_tests;
 
 /// Not in `sophia-9p`'s set; the WM file owner defines the same values.
 const EBUSY: Errno = Errno(16);
@@ -200,6 +205,7 @@ pub(in crate::shell_transport) use super::super::wire::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::shell_transport) enum Inbound {
     Negotiate(ShellV1ClientHello),
+    ImageBegin(ShellImageMetadata),
     Content(TransactionId, Box<ShellContentRecord>),
     /// One whole candidate; its parts reach the owner in wire order.
     Candidate(Box<ShellFileCandidate>),
@@ -460,18 +466,23 @@ impl ShellFiles {
                 body,
             )
             .map_err(|_| Errno::EINVAL)?;
-            match decode_shell_file_resource_status(&record)
-                .map_err(|_| Errno::EINVAL)?
-                .record
-            {
-                ShellContentRecord::ResourceStatus(status) => Some(status),
+            let decoded = decode_shell_file_resource_status(&record).map_err(|_| Errno::EINVAL)?;
+            match decoded.record {
+                ShellContentRecord::ResourceStatus(status) => Some((decoded.transaction, status)),
                 _ => return Err(Errno::EINVAL),
             }
         } else {
             None
         };
-        let sequence = self.journal.append(kind, body, credited)?;
-        if let Some(status) = status {
+        let sequence = if let Some((transaction, status)) = &status {
+            match self.append_image_status(*transaction, status, body)? {
+                Some(sequence) => sequence,
+                None => self.journal.append(kind, body, credited)?,
+            }
+        } else {
+            self.journal.append(kind, body, credited)?
+        };
+        if let Some((_, status)) = status {
             self.observe_resource_status(status.resource, status.status);
         }
         Ok(sequence)

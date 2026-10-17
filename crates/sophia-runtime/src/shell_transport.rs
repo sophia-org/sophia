@@ -40,6 +40,7 @@ mod descriptor_files;
 mod descriptor_state;
 mod files;
 mod image_configuration;
+mod image_offers;
 mod indicator_responses;
 pub(crate) mod outbound;
 mod outbox;

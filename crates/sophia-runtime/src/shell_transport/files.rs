@@ -19,8 +19,8 @@ mod export;
 mod image;
 mod journal;
 
-pub(super) use export::ShellImageChannelConfig;
 pub(super) use export::{CandidateFamily, Inbound, NativeCandidatePart, ShellFiles};
+pub(super) use export::{ImageReadiness, ShellImageChannelConfig};
 pub(super) use journal::JournalBounds;
 
 /// Nonblocking turns spent flushing a revocation; bounded so a peer that
@@ -200,6 +200,11 @@ impl ShellFileWire {
 
     pub(super) const fn publication_pending(&self) -> bool {
         self.publication_pending
+    }
+
+    pub(super) fn image_publication_pending(&mut self) {
+        self.publication_pending = true;
+        self.server.wake().wake();
     }
 
     pub(super) const fn turn_count(&self) -> u64 {

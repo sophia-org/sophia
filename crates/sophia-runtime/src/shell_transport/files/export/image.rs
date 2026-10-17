@@ -1,8 +1,9 @@
 //! Image-channel state for one attach: owner-configured immutable
 //! snapshots, readiness published only by the owner, and the bounded
 //! pending refusal an accepted `ImageBegin` leaves behind. This layer
-//! refuses every offer; it admits nothing, reserves no upload slot, and
-//! never touches descriptor custody. Readiness supplied through
+//! defaults to refusing offers. The explicit resource-owner hooks in
+//! `image_offers` can enable sealed admission after readiness. Neither path
+//! uses an upload slot. Readiness supplied through
 //! [`ShellFiles::image_channel_ready`] is the owner's statement (in
 //! production, after its authenticated Hello); this file does not prove
 //! that Hello happened.
@@ -55,6 +56,7 @@ pub(super) struct ImageChannelState {
     pub formats_body: Vec<u8>,
     pub readiness: ShellImageReadiness,
     close_reservation: Option<JournalReservation>,
+    pub offers: super::image_offers::ImageOffers,
 }
 
 /// Total bytes of one journalled `ChannelClosed` record (header + body).
@@ -181,6 +183,7 @@ impl ShellFiles {
             formats_body,
             readiness: ShellImageReadiness::AwaitingHello,
             close_reservation: None,
+            offers: super::image_offers::ImageOffers::default(),
         });
         Ok(())
     }
@@ -317,6 +320,7 @@ impl ShellFiles {
         let state = self.image.as_mut().expect("image state checked");
         state.close_reservation = None;
         state.readiness = ShellImageReadiness::Closed { reason };
+        state.offers.close_sources();
         Ok(sequence)
     }
 
@@ -328,8 +332,15 @@ impl ShellFiles {
         &mut self,
         refusal: PendingImageRefusal,
     ) -> Result<bool, Errno> {
-        let state = self.image.as_ref().ok_or(Errno::EACCES)?;
-        let _ = state;
+        self.publish_image_refusal_reason(refusal, 13)
+    }
+
+    pub(super) fn publish_image_refusal_reason(
+        &mut self,
+        refusal: PendingImageRefusal,
+        reason: u16,
+    ) -> Result<bool, Errno> {
+        self.image.as_ref().ok_or(Errno::EACCES)?;
         let record = ShellFileTransactionRecord {
             transaction: TransactionId::from_raw(refusal.offer_id),
             record: ShellContentRecord::ResourceStatus(sophia_protocol::ContentResourceStatus {
@@ -339,7 +350,7 @@ impl ShellFiles {
                 },
                 resource: refusal.resource,
                 status: 3,
-                reason: 13,
+                reason,
                 next_ordinal: 0,
                 admitted_bytes: 0,
             }),

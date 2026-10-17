@@ -26,7 +26,7 @@ pub(in crate::shell_transport) struct JournalReservation {
 }
 
 // ChannelClosed plus two terminal events for each of four admitted offers.
-const MAX_HELD_RECORDS: usize = 9;
+const MAX_HELD_RECORDS: usize = 1 + 2 * super::export::image_offers::MAX_IMAGE_OFFERS;
 
 pub(in crate::shell_transport) struct Journal {
     custody: Custody,
@@ -143,6 +143,18 @@ impl Journal {
         body: &[u8],
         credited: bool,
     ) -> Result<u64, Errno> {
+        Ok(self.prepare_append(kind, body, credited)?.commit())
+    }
+
+    /// Finish every fallible journal check before the owner reserves a resource
+    /// and worker credit. The exclusive guard publishes nothing when dropped;
+    /// once owner admission succeeds, commit cannot fail or lose its receipt.
+    pub(in crate::shell_transport) fn prepare_append(
+        &mut self,
+        kind: ShellFileKind,
+        body: &[u8],
+        credited: bool,
+    ) -> Result<sophia_9p::journal::PreparedRecord<'_>, Errno> {
         let bytes = encode_shell_file_record_at_revision(
             ShellFileHeader {
                 kind,
@@ -158,7 +170,7 @@ impl Journal {
         // Uncredited appends already cannot touch the terminal reserve
         // the held record will spend, so they are not subtracted twice.
         let limits = self.append_limits(credited);
-        Ok(self.custody.prepare(bytes, limits)?.commit())
+        self.custody.prepare(bytes, limits)
     }
 
     /// Appends the record a reservation was held for, spending it. The

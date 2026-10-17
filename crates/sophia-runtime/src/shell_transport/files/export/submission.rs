@@ -27,6 +27,7 @@ impl ShellFiles {
                     _ => None,
                 },
                 Inbound::Negotiate(_)
+                | Inbound::ImageBegin(_)
                 | Inbound::Candidate(_)
                 | Inbound::NativeAllocation(..)
                 | Inbound::NativeCandidate(_)
@@ -187,9 +188,9 @@ impl ShellFiles {
         ))
     }
 
-    /// An image offer in this slice: before readiness it is refused
-    /// without custody; after readiness (or closure) it decodes to a
-    /// pending refusal consequence and no inbound value at all.
+    /// Before readiness there is no custody. Explicit owner admission queues
+    /// ImageBegin in wire order; otherwise readiness or closure produces the
+    /// clean unavailable refusal without admitting a source.
     fn decode_image_begin(&self, bytes: &[u8]) -> Result<(Option<Inbound>, SlotEffect), Errno> {
         if !self.image_disclosed() {
             return Err(Errno::EINVAL);
@@ -202,12 +203,37 @@ impl ShellFiles {
         }
         let body = bytes.get(SHELL_FILE_HEADER_BYTES..).ok_or(Errno::EINVAL)?;
         let metadata = ShellImageMetadata::decode(body).map_err(|_| Errno::EINVAL)?;
+        if !self
+            .image
+            .as_ref()
+            .is_some_and(|state| state.offers.accepts_id(metadata.offer_id))
+        {
+            return Err(Errno::ESTALE);
+        }
         if self
             .content_limits
             .as_ref()
             .is_none_or(|limits| metadata.admission_epoch != limits.grant.content_grant_epoch)
         {
             return Err(Errno::ESTALE);
+        }
+        if matches!(self.image_readiness(), ShellImageReadiness::Ready { .. })
+            && self
+                .image
+                .as_ref()
+                .is_some_and(|state| state.offers.enabled)
+        {
+            let state = self.image.as_ref().expect("checked image state");
+            if self
+                .inbound
+                .iter()
+                .filter(|item| matches!(item, Inbound::ImageBegin(_)))
+                .count()
+                >= state.config.limits.max_offers as usize
+            {
+                return Err(Errno::EAGAIN);
+            }
+            return Ok((Some(Inbound::ImageBegin(metadata)), SlotEffect::None));
         }
         Ok((
             None,
@@ -252,6 +278,11 @@ impl ShellFiles {
                 });
             }
             SlotEffect::PublishImageRefusal { refusal } => {
+                self.image
+                    .as_mut()
+                    .expect("disclosed image state")
+                    .offers
+                    .note_submitted(refusal.offer_id);
                 // Custody has already moved: publication failure is never
                 // a submit error. The refusal stays export-pending and
                 // retries from journal progress until it is emitted.
@@ -348,6 +379,13 @@ impl ShellFiles {
             self.negotiate_accepted = true;
         }
         if let Some(inbound) = inbound {
+            if let Inbound::ImageBegin(metadata) = &inbound {
+                self.image
+                    .as_mut()
+                    .expect("disclosed image state")
+                    .offers
+                    .note_submitted(metadata.offer_id);
+            }
             self.inbound.push_back(inbound);
         }
         // Only an allocated qid can fail here, and nothing can observe a

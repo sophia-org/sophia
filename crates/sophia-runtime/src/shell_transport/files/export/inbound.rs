@@ -66,11 +66,31 @@ impl ShellFiles {
         &self,
         select: impl Fn(&ShellContentRecord) -> bool,
     ) -> Option<(TransactionId, &ShellContentRecord)> {
-        self.inbound.iter().find_map(|item| match item {
-            Inbound::Content(transaction, record) if select(record) => {
-                Some((*transaction, record.as_ref()))
-            }
-            _ => None,
+        let at = self.content_position(select)?;
+        match &self.inbound[at] {
+            Inbound::Content(transaction, record) => Some((*transaction, record.as_ref())),
+            _ => unreachable!("selected content input"),
+        }
+    }
+
+    fn content_position(&self, select: impl Fn(&ShellContentRecord) -> bool) -> Option<usize> {
+        self.inbound.iter().enumerate().find_map(|(at, item)| {
+            let Inbound::Content(transaction, record) = item else {
+                return None;
+            };
+            // Only controls for the pending offer depend on its admission.
+            // Retire/allocation/ack progress must remain available to free the
+            // very budgets on which that admission may be waiting.
+            let ordered = matches!(
+                record.as_ref(),
+                ShellContentRecord::ResourceCancel(_) | ShellContentRecord::ResourceEnd(_)
+            );
+            let blocked = ordered
+                && self.inbound.iter().take(at).any(|earlier| {
+                    matches!(earlier, Inbound::ImageBegin(metadata)
+                    if metadata.offer_id == transaction.raw())
+                });
+            (!blocked && select(record)).then_some(at)
         })
     }
 
@@ -84,10 +104,7 @@ impl ShellFiles {
         &mut self,
         select: impl Fn(&ShellContentRecord) -> bool,
     ) -> Option<(TransactionId, ShellContentRecord)> {
-        let at = self
-            .inbound
-            .iter()
-            .position(|item| matches!(item, Inbound::Content(_, record) if select(record)))?;
+        let at = self.content_position(select)?;
         match self.inbound.remove(at) {
             Some(Inbound::Content(transaction, record)) => Some((transaction, *record)),
             _ => None,

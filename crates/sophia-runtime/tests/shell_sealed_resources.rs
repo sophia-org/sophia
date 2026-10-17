@@ -53,6 +53,30 @@ fn validated() -> ValidatedSealedPixels {
 }
 
 #[test]
+fn transfer_capacity_retry_preserves_the_sealed_resource_generation() {
+    let mut limits = ContentLimits::prototype(grant());
+    limits.max_open_transfers = 1;
+    let mut store = ContentResourceStore::new(limits).unwrap();
+    store.begin_sealed(tx(), description(1), 0).unwrap();
+    assert_eq!(
+        store.begin_sealed(tx(), description(2), 0),
+        Err(ContentStoreError::Budget)
+    );
+    let mut result = Some(Err(ContentStoreError::Malformed));
+    assert_eq!(
+        store.complete_sealed(grant(), description(1).resource, &mut result, 0),
+        Err(ContentStoreError::Malformed)
+    );
+    while store.take_event().is_some() {}
+    store.begin_sealed(tx(), description(2), 0).unwrap();
+    assert_eq!(store.usage().backing, 8);
+    assert_eq!(
+        store.begin_sealed(tx(), description(2), 0),
+        Err(ContentStoreError::Stale)
+    );
+}
+
+#[test]
 fn early_completion_errors_return_custody_for_the_exact_owner_to_retry() {
     let mut store = owner();
     let begin = description(1);

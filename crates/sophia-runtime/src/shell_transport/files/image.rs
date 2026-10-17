@@ -122,9 +122,11 @@ impl ImageService {
                     match receive_image_datagram(peer.socket()) {
                         Ok(None) => State::Ready(peer),
                         Err(rustix::io::Errno::PIPE) => State::Closing(Reason::PeerDisconnect),
-                        // Receive/refuse admits no offers: Source is forbidden.
-                        // The received packet drops every reference here.
-                        Ok(Some(_)) | Err(_) => State::Closing(Reason::ProtocolFault),
+                        Ok(Some(packet)) => match wire.export_mut().receive_image_source(packet) {
+                            Ok(()) => State::Ready(peer),
+                            Err(_) => State::Closing(Reason::ProtocolFault),
+                        },
+                        Err(_) => State::Closing(Reason::ProtocolFault),
                     }
                 }
             }
