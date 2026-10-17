@@ -17,7 +17,8 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 Production `a3c94bb86` implements the approved reusable writer (`ee22309ba`) and
 imports signed Rust SDK `9d56625` and C SDK `30b7c1f`. Both source branches and
-Sophia master are pushed. The [decision](../decisions/7mls2e2q-reuse-a-shell-transaction-writer-without-changing-custody.md)
+Sophia's first-slice adoption were pushed. Later checkpoints remain local as
+noted below. The [decision](../decisions/7mls2e2q-reuse-a-shell-transaction-writer-without-changing-custody.md)
 and [t331 plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#approved-reusable-writer-and-cumulative-ack-slice--october-17)
 remain authoritative. No desktop installation has run.
 
@@ -52,8 +53,22 @@ matrix remains open. Request reductions alone do not explain those costs.
 niltempus has accepted the [B2/B3 plan](../plans/nfe0blnb-queue-shell-submit-and-pixel-writes-within-existing-custody-bounds.md)
 and directed implementation. The contract now permits queued final-fragment
 submit and a four-write pixel window. The capture prerequisite is complete.
-Next implement B2 in C and Rust, independently prove ordering and failed-record
-custody, then adopt signed pins through both vendor gates. B3 follows separately.
+B2 is signed locally as Rust `b8b7b55` and C `c0f0375`, pending review and adoption.
+Rust's shell-client suite and strict Clippy pass; the full C suite passes.
+Independent tests hold and reverse both replies, preserve early Submitted after
+a failed record, reject incomplete-record retry and keep earlier C fragments
+sequential. Both startup peers pass the current export with metadata and content
+negotiation, on both oldest supported export `116075541` and current `feaf3cbc7`.
+These are startup exchanges, not the entire export failure matrix. Logs are under
+`~/.local/state/sophia/development-evidence/t331-b2-20261017/`.
+The production export's incomplete/absent-staging and backpressure precedence
+fixture passes for both writer paths. Further compatibility fixtures, vendor
+adoption and B3 remain open. No B2 native performance result exists yet.
+
+Publication is blocked by the SSH agent refusing `id_crunch`; its socket matches
+`gpgconf --list-dirs agent-ssh-socket`. Commit signing works. Do not reset the
+agent or adopt an unpublished SDK pin: the Rust snapshot rules require a revision
+reachable upstream. The source SDK trees are clean at the signed candidates.
 
 ## First-slice native pilot — October 17
 
@@ -76,6 +91,12 @@ files and 1,142–1,144 IPC. Candidate allocations are lower, but neither worklo
 passes +10%. CPU and allocation figures above come from separate build modes;
 do not substitute allocation-instrumented CPU for the ordinary-allocator result.
 
+The IPC panel CPU arm also rose from 7.529965–7.541559 to 7.741651–7.752949
+ms/MiB, about 2.8%. The files arm fell from 10.405274–10.418833. The ratio
+improvement therefore includes comparator drift; it is not entirely a files-side
+saving. Projections based on allocations per historical pass remain hypotheses,
+not grounds to change the gate or assign the remaining gap to another task.
+
 Separate progress runs bracket Session passes over the peer's full workload:
 22.615–22.672 per panel frame versus IPC 8.018–8.040; 102.297–102.389 per bulk
 frame versus 45.014–45.532. Files observes about five record, five submit and
@@ -95,8 +116,8 @@ on both workloads. The disposable replay script is
 The subsequent [B2/B3 design](../plans/nfe0blnb-queue-shell-submit-and-pixel-writes-within-existing-custody-bounds.md)
 was reviewed as proposed, then accepted by niltempus on October 17. It preserves
 tail fencing, submit errno precedence, per-ticket custody and canonical-chunk
-idle renewal. The frozen first-slice capture remains unchanged; no B2/B3 code
-has been implemented.
+idle renewal. The frozen first-slice capture remains unchanged. B2 is now a local
+SDK candidate as described in Current resumption; B3 remains unimplemented.
 
 Signed Rust `9d56625` proves that the next retained-fid record is outstanding
 while the covering ACK reply is withheld. Signed C `30b7c1f` waits for Negotiated
