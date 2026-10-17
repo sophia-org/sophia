@@ -328,6 +328,12 @@ impl ShellFiles {
             .flatten()
             .find(|offer| offer.metadata == metadata)
             .ok_or(Errno::ESTALE)?;
+        // The independent status hold is consumed only once its record is in
+        // the journal. A completed worker alone does not establish that order.
+        // Keep the release credit and source custody intact until then.
+        if offer.status.is_some() {
+            return Err(Errno::EAGAIN);
+        }
         let body = ShellSourceReleased {
             offer_id: metadata.offer_id,
             resource: metadata.resource,
