@@ -175,6 +175,16 @@ check the pinned SDK. Rust candidate `f3df891` passes independent metadata and
 content startup against both exports. These do not prove a full four-credit
 window against production or neighbor fairness; those gates remain open.
 
+Rust test-only follow-up `10c9226` adds an independent upload peer. It queues
+five canonical chunks followed by End, checks every ticket becomes Stored,
+then cancels a second resource. Against both exports the host verifies all
+262,144 accepted bytes exactly; both runs pass, as does strict example Clippy.
+The generic ignored fixture accepts an absolute `SOPHIA_SHELL_UPLOAD_PEER`
+executable. This proves the multi-chunk path and End/cancellation interoperability,
+not the maximum simultaneous wire depth or neighbor latency. The ordinary C
+peer also exercises transport fragmentation with a 4,096-byte msize. Remaining
+fault audit, depth/fairness diagnostics, adoption and the native pilot are open.
+
 ## First-slice native pilot — October 17
 
 All fourteen arms captured 1,000 frames at 60 Hz, 1080p, scale 1, VRR off and
