@@ -1,14 +1,14 @@
-tree f01c18e6bfaa014d5cc3c591469c1a3508d63f84
-parent 3830d84fba86ece78e195041d71e598bd5072659
-author Mason Green <mason@greenm01.net> 1792206119 -0400
-committer Mason Green <mason@greenm01.net> 1792206119 -0400
+tree ee6c34a913e90ab077af2534a6c3a5bcb00327af
+parent 5683ae00c549a9d51d7e8127ecf4a44da9c8b6e5
+author Mason Green <mason@greenm01.net> 1792206405 -0400
+committer Mason Green <mason@greenm01.net> 1792206405 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLlJxsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGL6hAD/YunSnGqtvQzlKbXArbBZ
- F/3QjVq4e6UrEhPhtbAyqFYBAMpE3g77J3Bzj9fTE26g9Tjxe0k7SOG9U+i1I+4M
- 3lsP
- =drma
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLmRRsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJUCwEAs2gLiagrptyPCXAPO97J
+ Cl3bVXXjywhILFL2lrxzgHUBALu1WQ05o2JS9lTmNJzlKfTFVREJjPiGXd6jS87V
+ GGYF
+ =G+7F
  -----END PGP SIGNATURE-----
 
-Expose broker retry readiness separately from queued custody
+Publish broker operation map and paired attention coverage

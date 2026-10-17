@@ -175,6 +175,11 @@ static void peer(int fd, unsigned fault) {
             assert(get(staged + 40, 2) == (fault == 9 ? 5u : 1u));
             assert(get(staged + 42, 2) == 2 && get(staged + 48, 2) == 1 &&
                    get(staged + 248, 2) == 2);
+          } else if (fault == 12 || fault == 13) {
+            assert(get(staged + 40, 2) == 3);
+            assert(get(staged + 48, 2) == (fault == 12 ? 5u : 2u));
+            if (fault == 13)
+              assert(get(staged + 68, 2) == 2);
           } else if (fault == 10) {
             assert(get(staged + 40, 2) == 2 && staged[112] == 1);
             assert(!memcmp(staged + 120, "\0\n\xc3\xa9", 4));
@@ -202,6 +207,10 @@ static void peer(int fd, unsigned fault) {
             journal[used + 60] = 4;
             journal[used + 64] = 8;
             memcpy(journal + used + 72, "\0\n\xc3\xa9", 4);
+          }
+          if (fault == 12 || fault == 13) {
+            journal[used + 40] = 3;
+            journal[used + 56] = 2;
           }
           used += 200;
           ++requests;
@@ -339,7 +348,10 @@ static void scenario(unsigned fault) {
       rows[0].kind = SOPHIA_BF_RETIRE_SURFACE;
       rows[0].surface_index = 2;
       rows[0].surface_generation = 3;
-      if (fault >= 9) {
+      if (fault == 12) {
+        memset(&rows[0], 0, sizeof rows[0]);
+        rows[0].kind = SOPHIA_BF_NO_CHANGE;
+      } else if (fault >= 9) {
         struct sophia_bf_row descriptor = {0};
         descriptor.kind = SOPHIA_BF_EMIT_DESCRIPTOR;
         descriptor.surface_index = 2;
@@ -350,13 +362,14 @@ static void scenario(unsigned fault) {
         descriptor.grant_token = 12;
         descriptor.grant_revocation_epoch = 1;
         descriptor.grant_target_generation = 8;
-        if (fault == 10) {
-          assert(request.label_present && request.label_length == 4 &&
-                 !memcmp(request.label, "\0\n\xc3\xa9", 4));
+        if (fault == 10 || fault == 13) {
+          if (fault == 10)
+            assert(request.label_present && request.label_length == 4 &&
+                   !memcmp(request.label, "\0\n\xc3\xa9", 4));
           rows[0] = descriptor;
-          rows[0].label_present = 1;
+          rows[0].label_present = fault == 10;
           rows[0].label = request.label;
-          rows[0].label_length = 4;
+          rows[0].label_length = fault == 10 ? 4 : 0;
         } else {
           rows[0].kind = SOPHIA_BF_PUBLISH_RULE;
           rows[0].disclosure = 2;
@@ -370,6 +383,13 @@ static void scenario(unsigned fault) {
           assert(sophia_br_transaction_ready(&session));
           rows[1].grant_token = 12;
         }
+      }
+      if (fault == 13) {
+        rows[0].attention = 1;
+        assert(sophia_br_respond(&session, request.id, rows, count, 1) ==
+               SOPHIA_BS_INVALID);
+        assert(sophia_br_transaction_ready(&session));
+        rows[0].attention = 2;
       }
       assert(request.id == 8u + (unsigned)responded &&
              !sophia_br_respond(&session, request.id, rows, count, 1));
@@ -395,7 +415,7 @@ cleanup:
 int main(void) {
   unsigned fault;
   signal(SIGPIPE, SIG_IGN);
-  for (fault = 0; fault <= 11; ++fault)
+  for (fault = 0; fault <= 13; ++fault)
     scenario(fault);
   return 0;
 }

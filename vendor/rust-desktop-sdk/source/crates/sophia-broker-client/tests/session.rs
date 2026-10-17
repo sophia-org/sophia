@@ -163,6 +163,12 @@ fn scenario(fault: u8) {
                                     assert_eq!(n(&staged[42..44]), 2);
                                     assert_eq!(n(&staged[48..50]), 1);
                                     assert_eq!(n(&staged[248..250]), 2);
+                                } else if fault == 12 || fault == 13 {
+                                    assert_eq!(n(&staged[40..42]), 3);
+                                    assert_eq!(n(&staged[48..50]), if fault == 12 { 5 } else { 2 });
+                                    if fault == 13 {
+                                        assert_eq!(n(&staged[68..70]), 2);
+                                    }
                                 } else if fault == 10 {
                                     assert_eq!(n(&staged[40..42]), 2);
                                     assert_eq!(staged[112], 1);
@@ -196,6 +202,10 @@ fn scenario(fault: u8) {
                                     v[60] = 4;
                                     v[64] = 8;
                                     v[72..76].copy_from_slice(b"\0\n\xc3\xa9");
+                                }
+                                if fault == 12 || fault == 13 {
+                                    v[40] = 3;
+                                    v[56] = 2;
                                 }
                                 journal.extend(v);
                                 sent_requests += 1;
@@ -357,7 +367,12 @@ fn scenario(fault: u8) {
                 surface_generation: 3,
                 ..Default::default()
             }];
-            if fault >= 9 {
+            if fault == 12 {
+                rows = vec![ResponseRow {
+                    kind: RowKind::NoChange,
+                    ..Default::default()
+                }];
+            } else if fault >= 9 {
                 let descriptor = ResponseRow {
                     kind: RowKind::EmitDescriptor,
                     surface_index: 2,
@@ -370,8 +385,10 @@ fn scenario(fault: u8) {
                     grant_target_generation: 8,
                     ..Default::default()
                 };
-                if fault == 10 {
-                    assert_eq!(label.as_deref(), Some("\0\né"));
+                if fault == 10 || fault == 13 {
+                    if fault == 10 {
+                        assert_eq!(label.as_deref(), Some("\0\né"));
+                    }
                     rows = vec![ResponseRow {
                         label: label.as_deref(),
                         ..descriptor
@@ -398,6 +415,17 @@ fn scenario(fault: u8) {
             if (fault == 9 || fault == 11) && s.transaction_ready() {
                 let mut bad = rows.clone();
                 bad[1].grant_token = 0;
+                assert_eq!(
+                    s.respond(8, &bad, 1),
+                    Err(sophia_broker_client::session::Error::State(
+                        sophia_broker_client::Error::Invalid
+                    ))
+                );
+                assert!(s.transaction_ready() && s.request().is_some());
+            }
+            if fault == 13 {
+                let mut bad = rows.clone();
+                bad[0].attention = 1;
                 assert_eq!(
                     s.respond(8, &bad, 1),
                     Err(sophia_broker_client::session::Error::State(
@@ -492,4 +520,14 @@ fn control_and_utf8_label_survives_journal_consumption() {
 #[test]
 fn admission_pair_rejects_bad_second_row_before_submission() {
     scenario(11);
+}
+
+#[test]
+fn attention_response_can_leave_descriptor_unchanged() {
+    scenario(12);
+}
+
+#[test]
+fn attention_response_can_publish_a_descriptor() {
+    scenario(13);
 }

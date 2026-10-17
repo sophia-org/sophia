@@ -152,19 +152,26 @@ installed into the desktop.
 
 The release audit found and fixed a retry bug: the CLI watched Refused custody,
 but retryable EAGAIN returns Queued. Both SDKs now expose `retry_ready`; Sophia
-uses it to schedule its explicit retry. Signed pins are Rust
-`5683ae00c549a9d51d7e8127ecf4a44da9c8b6e5` and C
-`6e75154c82994d52a54050c4eb787dd76b5d8dc0`. The protected pressure test failed
+uses it to schedule its explicit retry. The protected pressure test failed
 against the old CLI with one attempt and no commit, then passed with two
 identical attempts and one commit after the fix. The all-operation test also
 passes. Logs: `/tmp/t333-broker-retry-negative.log` and
 `/tmp/t333-retry-ready-process.log`. Independent SDK retry tests pass.
 
+Both SDKs now publish `BROKER-PARITY.md`, covering session operations, component
+APIs, ownership, evidence and limits. Fourteen independent C/Rust session
+schedules include all five request kinds; new AttentionChanged tests cover
+NoChange and EmitDescriptor, and refuse a mismatched attention value before
+submission. Rust strict Clippy and the full C check suite pass. Signed verified
+pins are Rust `496c778d3589a949b9287113f45a95c7bf9332d7` and C
+`972eec7cfd85a6221da0d1de17248a973dbee7e8`. This pin change adds tests/docs and
+corrects stale broker prose; runtime behavior is unchanged from the retry fix.
+
 Next: finish the full versioned role/API matrix and release audit against the
 criteria above, including generic transport, launch and namespace ownership.
 The current parity documents mix historical gaps with later passing evidence;
-reconcile each against source and exact test scope. Broker still lacks a concise
-operation map. Preserve the portal refused-End cancellation limit and separate
+reconcile each against source and exact test scope. Preserve the portal
+refused-End cancellation limit and separate
 physical acceptance from SDK capability parity. Performance work must not
 replace those closure requirements.
 

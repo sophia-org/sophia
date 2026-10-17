@@ -1,5 +1,10 @@
 # C and Rust SDK API parity
 
+The [broker operation map](BROKER-PARITY.md) records the current broker API,
+paired coverage, ownership and release limits. Checkpoints below retain their
+original source dates; an older missing-implementation statement is not a
+current inventory.
+
 ## Broker retry readiness, 2026-10-17
 
 Rust `Transaction::retry_ready` / `Session::retry_ready` match C

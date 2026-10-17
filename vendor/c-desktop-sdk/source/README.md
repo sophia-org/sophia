@@ -36,9 +36,9 @@ submits its one- or two-row response atomically. Startup borrows a quiescent 9P
 client and an admitted root; it does not authenticate the caller. The caller
 drives progress and acknowledgements, chooses explicit retries and closes the
 borrowed descriptor on failure. The session never reconnects or replays work.
-Independent C/Rust peers pass Sophia's generic export and protected-launch gates;
-production broker migration and the legacy transport comparison remain open.
-See [API parity](API-PARITY.md).
+Independent C/Rust peers pass Sophia's generic export and protected-launch gates.
+Sophia's live broker now uses the Rust counterpart. Performance acceptance and
+the full desktop SDK release audit remain open. See [broker parity](BROKER-PARITY.md).
 
 Portal recipient sessions cover capture, frames and transfer reads. The requester
 session (`sophia_portal_requester_session.h`) adds bounded uploads, cancellation

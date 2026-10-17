@@ -5,7 +5,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-/* Designed API-1 records only; no implemented broker transport claim.
+/* Passive API-1 records; encoding and decoding confer no broker authority.
  * Decoders return zero on success, -1 on invalid input, preserving outputs. */
 struct sophia_bf_limits {
   uint32_t max_surfaces;

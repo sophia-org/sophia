@@ -7,7 +7,7 @@ Sophia checkout to build.
 | Crate | What it is |
 | --- | --- |
 | `sophia-broker-protocol` | Native metadata broker request, response and custody records. |
-| `sophia-broker-client` | Developing caller-driven broker session with retained requests and atomic two-row responses; live broker migration remains open. |
+| `sophia-broker-client` | Caller-driven broker session with retained requests, atomic two-row responses and explicit retry; see [broker parity](BROKER-PARITY.md). |
 | `sophia-portal-protocol` | Portal recipient and requester file records. |
 | `sophia-portal-client` | Recipient capture/frame and transfer sessions, plus bounded requester uploads and outcome tracking. |
 | `sophia-admin-protocol` | Passive administrative info, catalog, invocation and status codecs. |
@@ -38,8 +38,9 @@ admitted root: drive `startup::Opening`, transfer its `Opened` result, then driv
 Respond once, acknowledge events explicitly and retry only when requested by the
 application; disconnect never reconnects or replays. The supplied-root constructor
 does not authenticate the caller. The `broker_peer` example demonstrates the
-lifecycle against Sophia's generic export and protected-launch gates. Production
-broker migration and the legacy transport comparison remain separate gates.
+lifecycle against Sophia's generic export and protected-launch gates. Sophia's
+live broker now uses this SDK. Performance acceptance and the full desktop SDK
+release audit remain open; [broker parity](BROKER-PARITY.md) records their limits.
 
 The WM protocol crate includes negotiation, profile handoff, snapshots,
 configuration, projection, Cycle events and outcome records. Its schema and

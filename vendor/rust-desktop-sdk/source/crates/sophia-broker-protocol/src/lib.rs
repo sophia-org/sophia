@@ -1,4 +1,4 @@
-//! Passive records for the designed broker file API. No transport or authority.
+//! Passive records for the broker file API. No transport or authority.
 mod controls;
 mod events;
 pub use controls::{encode_ack, encode_negotiate, encode_submit};
