@@ -592,6 +592,23 @@ vocabulary in this draft. A stale ImageBegin topology is refused as shell Stale
 (reason 1) or lock topology (reason 7), never as malformed. A client re-reads
 after that refusal too, since its offer may race the topology notification.
 
+This coupling has a cost. A format-only topology change makes shell components
+fetch current output facts and rebuild/resubmit candidates. While locked, it
+stales the provider's earlier allocations and requires new whole-output images
+and presentation. The proposal accepts that disruption for renderer/device
+reinitialization: format rows belong to outputs on the granted composing device,
+so a changed import set must be handled as a topology-level event. This is a
+design requirement, not evidence that every driver format change currently
+produces such an event. Do not bump topology for an unchanged format set.
+
+On acceptance, amend both contracts as well as the KDL resource-reason bound:
+the shell contract's output-facts publication and candidate-validation rules
+must include import-format changes; the lock contract's Lock-object publication,
+allocation staleness and forwarded-candidate revocation rules must cover them
+too. The current normative text does not yet grant this broader trigger. Test a
+format-only change while shell candidates and lock images are live, including
+retention of the lock cover throughout replacement.
+
 #### Admission refusal
 
 Propose `image_channel_unavailable` as ResourceStatus Rejected reason 13 for
