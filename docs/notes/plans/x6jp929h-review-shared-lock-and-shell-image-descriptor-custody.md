@@ -15,14 +15,24 @@ export wait until the status hold has been consumed into the journal; the owner
 keeps the completed settlement while that handoff is pending. An exact-order
 wire assertion fails on the old implementation and all three shell transport
 tests pass with the fix. Runtime all-targets strict Clippy passes. The full
-runtime run found only the unfinished lock cancellation test failing in its
-two including binaries; all other targets passed. Comparator fix `26d61cb58`
+runtime run at `d21d6b013` now passes after the lock cancellation controls were
+completed. Comparator fix `26d61cb58`
 also passes the sealed panel and 4 MiB peer workloads, 64 frames each, plus the
 byte/IPC baseline and launch-refusal controls. Four ignored tests pass on three
 repeated explicit, device-hidden runs. Their authority and relay verdicts are
 supplied; they prove neither Factotum nor a protected launch domain. Earlier
 successful raw-peer tests accepted either terminal order and did not prove
 usable SDK settlement. No sealed performance result is claimed.
+
+Lock cancellation checkpoint `d21d6b013` adds three distinct controls: real-wire
+unsent cancellation (including duplicate EINVAL), PeerDisconnect before the
+unsent offer's rejection, and submitted-worker cancellation with completion
+collection held by a supplied owner schedule. The last control asserts Submitted
+before collection, then Cancelled and exactly one release with disposition 4.
+It proves completion custody, not production turn timing or an in-flight CPU
+scan. Root independently reran that named control and the complete runtime
+suite successfully (`/tmp/t338-runtime-cancellation-final.log`). Included helper
+tests run in multiple binaries; they are not additional distinct controls.
 
 t338 remains open. Sophia `cbee1268d` adopts published Rust
 `e4f59e36f6c7acbbe2ee47ee011c665dea1a6176` and C
@@ -75,8 +85,7 @@ This proves completion custody, not that the CPU scan was still running.
 The separate worker-shutdown control returns to its FD baseline after submitted,
 reserved and uncollected jobs, while delivered pixels remain readable until
 their last owner drops them. Both shell transport tests, the shutdown control
-and targeted strict Clippy pass. Transport-level teardown and the remaining
-lock cancellation controls are separate qualification work. Follow-up
+and targeted strict Clippy pass. Follow-up
 `5844f638b` advances the supplied owner clock to the original admission deadline
 after Source submission, then sends cancellation over 9P. Timeout remains the
 first cause through real completion collection, with release disposition 3.
