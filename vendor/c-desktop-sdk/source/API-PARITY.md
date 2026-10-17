@@ -1,5 +1,102 @@
 # C and Rust SDK API parity
 
+## Explicit lock Negotiated selection at r2, C, 2026-10-17
+
+Lock revision 2 carries its selection on the wire. Negotiated's u16 at body
+offset 0 is selected_revision, 1 or 2, and is never inferred from the granted
+capabilities. Granted capabilities must include PRESENT (bit 0) and stay
+within mask 15. Bits 2 (sealed images) and 3 (DMA-BUF images), now named
+SOPHIA_LF_CAP_IMAGE_SEALED and SOPHIA_LF_CAP_IMAGE_DMABUF, are valid only
+when the selection is 2. An explicit selection of 2 with mask 1 or 3 is valid.
+The body stays 16 bytes and every other rule is unchanged.
+
+sophia_lf_decode_revision and sophia_lf_encode_revision accept a selection
+from 1 up to the given bound and preserve it in the record. Checking it
+against the offered range is the caller's. sophia_lf_decode and
+sophia_lf_encode stay revision 1: they read and write selection 1 with grants
+within PRESENT|CHORDS, and refuse selection 2.
+
+ABI: struct sophia_lf_negotiated gains a trailing uint16_t selected_revision,
+so callers that embed it must rebuild. The plain decoder sets it to 1, and on
+encode 0 means 1, so zero-initialized callers keep their bytes. The matching
+Rust change is 8618793. Nothing advertises lock r2. image_receipt_test covers
+plain selection 1 and its refusal of 2, byte identity under bound 1, every
+mask with PRESENT at selection 2 and its refusal below bound 2, image bits at
+selection 1, selections 0 and 3, missing PRESENT, unknown bits, reserved
+bytes, the chord bound, length and capacity.
+
+## Shell sealed-image adapter, BAR at revision 9, C, 2026-10-17
+
+sophia_shell_image.h adds an optional adapter that joins a BAR shell session
+to the image producer. The caller attaches it after sophia_ss_open_* and
+before negotiation completes. The session offer must span revision 9,
+require capability bit 13 and not request bit 14; DMA-BUF is never
+requested. After an r9 welcome with sealed images, the adapter reads
+image-channel, image-limits and image-formats through the session's own 9P
+wire, one complete set per pass, hands the set to the producer, connects the
+discovered endpoint beneath the caller's endpoint directory and attaches it.
+Discovery and connect retries use the session's EAGAIN policy (4 ms doubling
+to 256 ms) inside the producer's startup deadline.
+
+At r9 the session decodes journal records with the revision 9 codec. Image
+events (ImageAdmitted, SourceReleased, ChannelReady, ChannelClosed) are
+consumed by the session and routed to the producer; sophia_ss_event never
+returns them, including after the session ends. A ResourceStatus whose
+transaction names a live image offer for the same resource is routed once
+and still delivered to the application; status 1 is not routed. ImageBegin
+is queued as an ordinary candidate with its own ticket, after queue room is
+checked so the caller keeps its descriptor on BUSY. A refused or unsent
+ImageBegin is a definitive pre-admission refusal; a session end with offers
+in custody is journal loss. With the adapter attached, a welcome granting
+image bits below r9 fails the session; an unattached session still fails on
+any image event.
+
+ABI: struct sophia_ss gains a trailing `struct sophia_ss_image *image`
+pointer, and struct sophia_sf_client gains image-mode and whole-file-read
+fields at its end. Both are caller-allocated public layouts, so callers must
+rebuild against this header. With no adapter attached every path is
+byte-identical to before. Launcher, dock and descriptor profiles are not yet
+covered; the lock adapter follows separately. shell_image_test drives the
+adapter against the scripted 9P shell peer and a real SEQPACKET endpoint.
+
+## Clockless image-channel producer, C, 2026-10-17
+
+sophia_image_producer.h adds the producer side of the image side channel
+for the shell at revision 9 and the lock role at revision 2. It owns no 9P
+and no clock. The role client reads one discovery set per pass and passes it
+in, attaches a connected SEQPACKET socket, routes journal records and
+resource statuses, and wraps the 96-byte ImageBegin body that begin returns
+in its own record header and submission. The struct is a public fixed
+layout, like sophia_ss and sophia_lc_client.
+
+After a successful attach the producer owns the socket. After a successful
+begin it owns the sealed source descriptor; on any other result the caller
+still owns it. Begin takes sealed sources only, with all four seals and the
+exact logical size. Discovery naming a source kind that negotiation did not
+grant is a fatal discovery error, never narrowed; a set without the sealed
+kind is clean unavailability. Offer IDs start at 1 and never repeat, at most the
+discovered offer bound are live, and a source is sent only after
+ImageAdmitted with byte-equal metadata. A failed or uncertain send closes
+the producer's descriptor and leaves the offer ambiguous; it is never sent
+again. A deadline begins at begin and expires locally only: the offer keeps
+custody until a definitive refusal, SourceReleased or journal loss.
+Contradictory records close the channel with a fault while every offer keeps
+custody. Records of another epoch are ignored, and so are events for offers
+already forgotten after their definitive end.
+
+path() returns BYTES only for a clean closure (discovery absent, sealed
+sources unavailable, peer or revoked closure, offer IDs exhausted) when the
+caller allows byte fallback. Denied or malformed discovery, Hello and
+startup timeouts, protocol faults, journal loss and caller closure are
+errors even with fallback allowed. The connect helper is nonblocking and
+reports a full listener backlog as AGAIN. sealed_create and sealed_finish
+build a memfd source and seal it after unmapping.
+
+This is C only and wires no session: no role client advertises r9 or r2
+from this change. image_producer_test drives the producer against a
+scripted owner over a real SEQPACKET socketpair for both roles and checks
+the FD table after every case.
+
 ## Coordinated receipt and coherence checkpoint, 2026-10-17
 
 Rust 93fe07b provides the shell r9 and lock r2 Submitted receipt entry points
@@ -26,8 +123,8 @@ other Submitted rule is unchanged: nonzero submission, zero reserved bytes,
 event identity and the exact 48-byte length. sophia_sf_decode/encode and
 sophia_lf_decode/encode, and every earlier revision, still refuse 0x7000.
 The other image kinds and values outside the legacy range stay refused at
-every revision. Lock r2 changes nothing else here: Negotiated still carries
-revision 1, and the lock _revision entry points accept revisions 1 and 2.
+every revision. The lock _revision entry points accept revisions 1 and 2.
+Negotiated's explicit selection is recorded in its own section above.
 
 This is C only. The matching Rust entry points are recorded with their own
 change. Selecting a revision in these calls advertises nothing; no session

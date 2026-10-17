@@ -225,7 +225,13 @@ longer grants, including replacements caused by a changed import-format set.
 
 The [shared image-channel contract](sophia-image-channel.md) is accepted for lock
 r2 with capability bits 2 (sealed memory) and 3 (DMA-BUF). Existing byte records
-and rendering-only authority remain unchanged. `image_channel_unavailable` is
+and rendering-only authority remain unchanged. `Negotiated.selected_revision`
+explicitly selects 1 or 2; image bits 2/3 may be granted only at revision 2.
+The client checks that selection against its offered revision range and grants
+against its request before changing event decoding. A capability alone never
+selects r2. The legacy codec entry points remain r1-only; revision-aware entry
+points carry the new selection without changing the 16-byte body layout.
+`image_channel_unavailable` is
 ResourceStatus Rejected reason 9 for r2; unknown reasons retain the existing
 open-vocabulary rule and never imply success. Current runtime and SDK support
 remains lock r1 until the new codecs and authenticated channel land.

@@ -132,9 +132,8 @@ static int received_custody(const struct sophia_ss *s)
     while (at <= c->event_used && c->event_used - at >= 4) {
         n = (size_t)ss_get(c->event_bytes + at, 4);
         if (n < SOPHIA_SF_HEADER_BYTES || n > c->event_used - at ||
-            sophia_sf_decode(c->event_bytes + at, n, &r) || r.header.epoch != c->epoch ||
-            !sf_session_event_allowed(c, &r) ||
-            r.header.kind < 16 || r.header.kind >= 256 || r.header.sequence <= sequence ||
+            sf_session_event_decode(c, c->event_bytes + at, n, &r) ||
+            r.header.sequence <= sequence ||
             r.header.kind == SOPHIA_SF_NEGOTIATED || r.header.kind == SOPHIA_SF_RESOURCE_STATUS)
             return 0;
         if (r.header.kind == SOPHIA_SF_SUBMITTED)
@@ -177,6 +176,7 @@ static void finish(struct sophia_ss *s, enum sophia_ss_state state)
     s->waiting = 0;
     s->upload_waiting = 0;
     s->state = state;
+    ss_image_drive(s, s->now_ms);
 }
 static void track(struct sophia_ss *s)
 {
@@ -235,7 +235,7 @@ static int drain(struct sophia_ss *s)
         r = SOPHIA_9P_INVALID;
     while (!r && !sophia_sf_client_event(&s->files, &e) &&
            (e->header.kind == SOPHIA_SF_NEGOTIATED || e->header.kind == SOPHIA_SF_REFUSED ||
-            e->header.kind == SOPHIA_SF_SUBMITTED)) {
+            e->header.kind == SOPHIA_SF_SUBMITTED || ss_image_event(s, e))) {
         if (e->header.kind == SOPHIA_SF_REFUSED) {
             s->refused = 1;
             s->refused_reason = e->value.refused.reason;
@@ -244,6 +244,7 @@ static int drain(struct sophia_ss *s)
         ss_consumed(s, e->header.sequence);
         r = sophia_sf_client_event_consume(&s->files);
     }
+    ss_image_status(s);
     track(s);
     return r;
 }
@@ -279,6 +280,7 @@ int ss_pump(struct sophia_ss *s, size_t budget)
             return settle(s, r);
         if (s->state == SOPHIA_SS_NEGOTIATING && sophia_sf_client_ready(&s->files))
             s->state = SOPHIA_SS_READY;
+        ss_image_drive(s, s->now_ms);
         /* A slot freed or an event consumed in this pass needs its next
          * request queued now, so poll reports POLLOUT for it. */
         if (s->last_consumed == consumed &&

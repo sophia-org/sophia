@@ -1,5 +1,19 @@
 # C and Rust SDK API parity
 
+## Explicit lock revision selection, 2026-10-17
+
+LockNegotiated now has explicit revision-aware encode/decode and a
+decode_selected entry point returning the wire selection. Plain APIs remain
+r1-only. At r2 the grant mask may contain image bits 2/3; PRESENT remains
+required. The client must validate its offered range and requested grants
+before installing the returned selection. No capability implies a revision.
+The body remains 16 bytes and existing r1 encodings are unchanged.
+
+The matching C Negotiated revision path is assigned to the C adapter lane;
+until that lands, negotiation parity is incomplete and no lock r2 runtime
+activation is claimed. This change does not implement the Rust producer or
+role adapters; C producer 69a5d80 is ahead on that capability.
+
 ## Image receipts and context checks, 2026-10-17
 
 Explicit Rust shell r9 and lock r2 receipt entry points now carry ImageBegin

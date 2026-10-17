@@ -21,6 +21,23 @@ int sf_session_upload_write_drive(struct sophia_sf_client *);
 int sf_session_upload_drive(struct sophia_sf_client *);
 int sf_session_upload_event(struct sophia_sf_client *, const struct sophia_sf_record *);
 int sf_session_object_drive(struct sophia_sf_client *);
+/* Shell r9 with the image adapter attached and sealed images granted. */
+int sf_session_image_r9(const struct sophia_sf_client *);
+int sf_session_image_kind(uint16_t kind);
+/* An encoded ImageBegin candidate for this epoch, whole and canonical. */
+int sf_session_image_begin_valid(const struct sophia_sf_client *, const uint8_t *, size_t);
+/* Decodes one journal record with the negotiated codec and checks epoch,
+ * event kind and profile; image events fill only the header. 0 or -1. */
+int sf_session_event_decode(const struct sophia_sf_client *, const uint8_t *, size_t,
+                            struct sophia_sf_record *);
+/* One whole small file from the root: walk, open, read to EOF, clunk.
+ * BUSY while another read is active. The result is 0 with *bytes, or
+ * AGAIN/INVALID with the Rlerror in *error (0 when the file overflowed or
+ * the reply was malformed). */
+int sf_session_file_read(struct sophia_sf_client *, const char *name, void *buf, size_t cap);
+int sf_session_file_result(struct sophia_sf_client *, size_t *bytes, uint32_t *error);
+int sf_session_file_drive(struct sophia_sf_client *);
+int sf_session_file_reply(struct sophia_sf_client *, const struct sophia_9p_reply *);
 static inline int sf_same(struct sophia_sf_operation *op, struct sophia_9p_handle h)
 {
     return op->active && op->handle.slot == h.slot && op->handle.serial == h.serial;

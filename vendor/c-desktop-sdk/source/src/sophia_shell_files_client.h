@@ -86,6 +86,16 @@ struct sophia_sf_client {
     uint8_t tx[8192], event_bytes[1024], object_bytes[1024];
     /* Borrowed until all queued writes and any recovery have drained. */
     const uint8_t *upload_data;
+    /* Set only by an attached shell image adapter (sophia_shell_image.h):
+     * shell r9 events and the ImageBegin candidate, and one whole-file read
+     * of an image discovery file at a time into adapter storage. */
+    uint8_t image_mode, file_stage, file_ready, file_probe;
+    int file_status;
+    uint32_t file_fid, file_iounit, file_error;
+    const char *file_name;
+    uint8_t *file_buf;
+    size_t file_cap, file_used;
+    struct sophia_sf_operation file_op;
 };
 /* wire must be fresh and exclusively owned by this client until disposal.
  * The epoch is learned from api after attach. The caller supplies its offer.

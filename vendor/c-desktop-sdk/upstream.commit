@@ -1,14 +1,14 @@
-tree 17f878b04e5418074d33916e89d99ab542edbcce
-parent 21d03b86117c299a391a1b5e676b8099006d3629
-author Mason Green <mason@greenm01.net> 1792269032 -0400
-committer Mason Green <mason@greenm01.net> 1792269032 -0400
+tree 54bbf08e668b0241f2cc8c63b357b8e4bf2a4484
+parent af75ab34ca36df0910522c94a3f6b6c9cb231048
+author Mason Green <mason@greenm01.net> 1792272309 -0400
+committer Mason Green <mason@greenm01.net> 1792272309 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatPa6BsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGK02QD/YWqcT9C2O+0ZHHbSBNSy
- Cxmsr+pooSL1iaSuPm1QsSoA/jv4pZj8HqmgFFHtj+JXtOl3I9YSTOzqDy5EnB2p
- 7EoL
- =YDkQ
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatPntRsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJm9gD/d+lMstT/gNdrao8QcoaH
+ F8nxRyey7gqWluhAGJ6z8YAA/0pki8uWUxdGXoNNBsoLJKm+JD4Gpfg1OhkyC/5N
+ +VoD
+ =go7z
  -----END PGP SIGNATURE-----
 
-Sync revision-gated image receipt contract and parity
+Sync the explicit lock revision selection contract

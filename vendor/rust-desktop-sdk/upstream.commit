@@ -1,14 +1,14 @@
-tree d08673aca32f35640b6eb7bbdb25642723d665c3
-parent a8150e755287500c2e3a0f038bec5b0fc9e0d785
-author Mason Green <mason@greenm01.net> 1792269021 -0400
-committer Mason Green <mason@greenm01.net> 1792269021 -0400
+tree bab9e006ca5e9a8049768219de91bf971cda10c0
+parent 93fe07b9687add7628e7073221cd82af55ff7b28
+author Mason Green <mason@greenm01.net> 1792271212 -0400
+committer Mason Green <mason@greenm01.net> 1792271212 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatPa3RsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJ8lAEA6ZYRCm5SQ4a19Irtcd1r
- 32UnoSbpT3zvBXkK0C7EL3UBAOPms09ScD9yTXQGqdoB3gpzKOW42HI3lwtZc5Ad
- MIUL
- =s6od
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatPjbBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJOyAD+JPVFebj2a3fOdIlAM27c
+ uK9KVJWE9vp29dleAYAyT0YA/AtiDdUPxWESnw+1XU9FAcdWM7jyaP2xZeriT5tg
+ fxIM
+ =shC5
  -----END PGP SIGNATURE-----
 
-Carry ImageBegin receipts at explicit shell and lock revisions
+Carry explicit lock r2 selection through Negotiated codecs

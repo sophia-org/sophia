@@ -1,0 +1,81 @@
+#ifndef SOPHIA_SHELL_IMAGE_H
+#define SOPHIA_SHELL_IMAGE_H
+#include "sophia_image_producer.h"
+#include "sophia_shell_session.h"
+
+/* Optional sealed-image adapter for a BAR shell session at revision 9.
+ * The caller owns this struct, attaches it to one live session before its
+ * negotiation completes, and keeps both alive and unmoved until the session
+ * is final and the adapter is closed. Nothing here reads a clock: every call
+ * takes CLOCK_MONOTONIC milliseconds, as the session does.
+ *
+ * Once r9 is negotiated with sealed images (bit 13), the adapter reads the
+ * image-channel, image-limits and image-formats files through the session's
+ * own 9P wire, one complete set per pass, and hands the set to the producer.
+ * After discovery it connects the endpoint beneath endpoint_dir and attaches
+ * the socket. Image journal events are consumed by the session and routed to
+ * the producer; they never reach sophia_ss_event. ResourceStatus for a live
+ * image offer is routed too and still delivered. ImageBegin is queued as an
+ * ordinary session candidate with its own ticket.
+ *
+ * DMA-BUF is never requested. Default sessions never touch this file. */
+#define SOPHIA_SS_IMAGE_TEXT_BYTES 2048u
+#define SOPHIA_SS_IMAGE_LIMITS_BYTES 136u
+/* Header plus one row: the smallest useful formats buffer. */
+#define SOPHIA_SS_IMAGE_FORMATS_MIN 64u
+/* ImageBegin: 32-byte header and the producer's 96-byte body. */
+#define SOPHIA_SS_IMAGE_BEGIN_BYTES 128u
+
+struct sophia_ss_image_config {
+    /* role, revision and connection_epoch are set from the session;
+     * granted_kinds from the negotiated capabilities. The rest is the
+     * caller's: bounds, transfer timeout, startup deadline, fallback. */
+    struct sophia_ip_config producer;
+    /* Borrowed directory fd holding the role's 9P socket. */
+    int endpoint_dir;
+    /* Caller storage for the formats object, at least FORMATS_MIN bytes. */
+    void *formats;
+    size_t formats_capacity;
+};
+
+/* Private state exposed for caller-owned allocation. Do not modify it. */
+struct sophia_ss_image_ticket {
+    uint64_t ticket, offer;
+};
+struct sophia_ss_image {
+    struct sophia_ss_image_config config;
+    struct sophia_ip producer;
+    struct sophia_ss *session;
+    struct sophia_ss_image_ticket tickets[SOPHIA_IP_MAX_OFFERS];
+    uint64_t pass, retry_at, status_seen;
+    uint32_t retry_delay, read_error;
+    size_t text_used, limits_used, formats_used;
+    uint8_t stage, file, started, lost;
+    uint8_t text[SOPHIA_SS_IMAGE_TEXT_BYTES];
+    uint8_t limits[SOPHIA_SS_IMAGE_LIMITS_BYTES];
+};
+
+/* Validates and copies config; touches no session. */
+int sophia_ss_image_init(struct sophia_ss_image *, const struct sophia_ss_image_config *);
+/* After sophia_ss_open_*, before negotiation completes. The session's offer
+ * must be BAR, span revision 9, require bit 13 and not bit 14. One adapter
+ * per session. ARGUMENT or BUSY changes nothing. */
+int sophia_ss_image_attach(struct sophia_ss *, struct sophia_ss_image *);
+/* The producer's socket, or -1. Poll it beside the session's fd. */
+int sophia_ss_image_poll_fd(const struct sophia_ss_image *);
+short sophia_ss_image_poll_events(const struct sophia_ss_image *);
+/* -1, or milliseconds until the producer or a discovery/connect retry is
+ * due. On expiry call sophia_ss_image_dispatch, then sophia_ss_dispatch. */
+int64_t sophia_ss_image_timeout(const struct sophia_ss_image *, uint64_t now_ms);
+/* Producer socket service plus discovery and connect progress. Returns the
+ * producer's changed mask (SOPHIA_IP_CHANGED_*), or -ARGUMENT. */
+int sophia_ss_image_dispatch(struct sophia_ss_image *, short revents, uint64_t now_ms);
+/* Queues one sealed source as an ImageBegin candidate. READY sessions only.
+ * On OK the producer owns source_fd, *offer names it and *ticket is the
+ * session ticket for its ImageBegin. BUSY (no queue room), AGAIN (channel
+ * not ready) and every refusal leave source_fd with the caller. */
+int sophia_ss_image_begin(struct sophia_ss_image *, struct sophia_ic_metadata *, int source_fd,
+                          uint64_t now_ms, uint64_t *offer, uint64_t *ticket);
+/* The producer, for offer, path, cause and forget queries. */
+struct sophia_ip *sophia_ss_image_producer(struct sophia_ss_image *);
+#endif

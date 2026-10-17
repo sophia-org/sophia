@@ -165,6 +165,25 @@ int sophia_ss_cancel(struct sophia_ss *s, struct sophia_ss_reservation *v)
 {
     return release(s, v);
 }
+int ss_room(const struct sophia_ss *s, size_t bytes)
+{
+    return s->queued + s->reserved_slots < s->slots &&
+           bytes <= s->queue_capacity - s->queue_used - s->reserved_bytes &&
+           bytes <= s->files.tx_capacity && s->next_ticket < UINT64_MAX - s->reserved_slots;
+}
+int ss_admit_encoded(struct sophia_ss *s, const uint8_t *b, size_t n, uint64_t *ticket)
+{
+    if (s->state != SOPHIA_SS_READY || !ss_room(s, n))
+        return SOPHIA_9P_BUSY;
+    memcpy(s->queue + s->queue_used, b, n);
+    memset(s->queue + s->queue_used + 16, 0, 8);
+    s->queue_used += n;
+    *ticket = s->next_ticket;
+    s->entries[s->queued].ticket = s->next_ticket;
+    s->entries[s->queued++].bytes = n;
+    ss_set(s, s->next_ticket++, SOPHIA_SS_ADMITTED_LOCAL, 0);
+    return 0;
+}
 /* Hand the queue head to the file client, which copies it and assigns its id. */
 int ss_handoff(struct sophia_ss *s)
 {

@@ -13,7 +13,8 @@
 #include <unistd.h>
 
 enum { F_NONE, F_ROOT, F_API, F_EVENTS, F_TX, F_SUBMIT, F_ACK, F_LIMITS, F_OUTPUTS, F_UPLOAD,
-       F_CATALOG, F_INDICATORS, F_DESCRIPTORS, F_TABS, F_SHORTCUTS };
+       F_CATALOG, F_INDICATORS, F_DESCRIPTORS, F_TABS, F_SHORTCUTS, F_IMAGE_CHANNEL,
+       F_IMAGE_LIMITS, F_IMAGE_FORMATS };
 /* ACCEPT: Rwrite then Submitted. SILENT: Rwrite only. HOLD: no reply.
  * ERROR: Rlerror. CUSTODY: Submitted journaled while the Rwrite is held. */
 enum { P_ACCEPT, P_SILENT, P_HOLD, P_ERROR, P_CUSTODY };
@@ -64,6 +65,14 @@ struct peer {
     uint64_t object_qids[8];
     unsigned object_walks[8];
     unsigned object_eofs[8];
+    /* Image adapter tests: the negotiated codec revision for journalled
+     * records (0: plain), and the three image discovery files with an
+     * optional walk Rlerror each. */
+    uint16_t revision;
+    const uint8_t *image_data[3];
+    size_t image_bytes[3];
+    uint32_t image_error[3];
+    unsigned image_walks[3];
 };
 static inline unsigned peer_object_kind(uint8_t file)
 {
@@ -129,8 +138,12 @@ static inline void peer_record(struct peer *p, struct sophia_sf_record *r)
     r->header.epoch = PEER_EPOCH;
     r->header.submission = 0;
     r->header.sequence = ++p->sequence;
-    assert(!sophia_sf_encode(p->journal + p->journal_used, sizeof(p->journal) - p->journal_used,
-                             r, &n));
+    if (p->revision)
+        assert(!sophia_sf_encode_revision(p->journal + p->journal_used,
+                                          sizeof(p->journal) - p->journal_used, p->revision, r, &n));
+    else
+        assert(!sophia_sf_encode(p->journal + p->journal_used,
+                                 sizeof(p->journal) - p->journal_used, r, &n));
     p->journal_used += n;
 }
 static inline void peer_raw(struct peer *p, const void *bytes, size_t n)
@@ -320,7 +333,8 @@ static inline void peer_request(struct peer *p, const uint8_t *m, size_t size)
                         "sophia-shell-files version=1 role=bar epoch=17 fd_transfer=none\n";
     static const char *const names[] = {"",       "",       "api",  "events", "transaction",
                                         "submit", "ack",    "limits", "outputs", "upload",
-                                        "catalog", "indicators", "descriptors", "tabs", "shortcuts"};
+                                        "catalog", "indicators", "descriptors", "tabs", "shortcuts",
+                                        "image-channel", "image-limits", "image-formats"};
     uint8_t type = m[4], b[16384], file;
     uint16_t tag = (uint16_t)peer_get(m + 5, 2);
     const uint8_t *body = m + 7;
@@ -369,6 +383,13 @@ static inline void peer_request(struct peer *p, const uint8_t *m, size_t size)
             peer_error(p, tag, p->object_error);
             return;
         }
+        if (file >= F_IMAGE_CHANNEL) {
+            p->image_walks[file - F_IMAGE_CHANNEL]++;
+            if (p->image_error[file - F_IMAGE_CHANNEL]) {
+                peer_error(p, tag, p->image_error[file - F_IMAGE_CHANNEL]);
+                return;
+            }
+        }
         if (file == F_UPLOAD && p->upload_error) {
             peer_error(p, tag, p->upload_error);
             return;
@@ -416,6 +437,16 @@ static inline void peer_request(struct peer *p, const uint8_t *m, size_t size)
             p->event_offset = offset;
             p->event_count = count;
             peer_answer_events(p);
+            return;
+        }
+        if (file >= F_IMAGE_CHANNEL) {
+            unsigned i = file - F_IMAGE_CHANNEL;
+            n = offset >= p->image_bytes[i] ? 0 : p->image_bytes[i] - (size_t)offset;
+            if (n > count) n = count;
+            assert(n <= sizeof(b) - 4);
+            memcpy(b + 4, p->image_data[i] + offset, n);
+            peer_put(b, n, 4);
+            peer_send(p, 117, tag, b, 4 + n);
             return;
         }
         if (file == F_API) {

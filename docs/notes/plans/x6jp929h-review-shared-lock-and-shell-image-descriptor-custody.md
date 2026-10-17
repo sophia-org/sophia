@@ -455,6 +455,15 @@ between deadline/cancellation checks. Budgets that split pixels have independent
 component-coverage tests; the six store and four worker cases and strict Clippy
 pass. This is worker/store evidence, not end-to-end Source acceptance.
 
+The next coordinated pins are Rust `8618793` and C `c3daefb`. Lock
+Negotiated carries an explicit selected revision, with image capabilities valid
+only at r2; plain entry points remain r1. Native lock schema/selection tests,
+the complete Rust SDK gate, the C snapshot gate and full upstream C checks pass.
+Runtime lock export/service, C lock-client interoperability and shell image
+transport checks also pass. The C pin includes the sealed producer and opt-in
+BAR adapter; Rust producer/adapter parity remains incomplete. Neither the pins
+nor the native codec change enables lock r2 or Session image admission.
+
 First add all seven image kinds and exact body/row codecs independently in C
 and Rust, with role-specific schema tests, literal vectors and negative cases.
 The Go oracle must gain the same revision-aware ResourceStatus rule. Rust's

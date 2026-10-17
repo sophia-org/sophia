@@ -259,7 +259,7 @@ fn samples(schema: &Schema) -> Vec<Sample> {
             }
             .encode()
             .unwrap(),
-            |bytes| body(bytes).is_some_and(|b| LockNegotiated::decode(b).is_ok()),
+            |bytes| body(bytes).is_some_and(|b| LockNegotiated::decode_selected(b).is_ok()),
             false,
         ),
         fixed(
@@ -753,16 +753,19 @@ fn kinds_vocabulary_and_namespace_match_the_contract() {
         LOCK_FILE_CAPABILITY_DMA_BUF
     );
     assert_eq!(capabilities.len(), 4);
-    // The r2 bits are named, but Negotiated still grants only the r1 pair.
+    // The wire selects r2 explicitly; image grants at r1 remain invalid.
     let granted = schema.field("Negotiated", "granted_capabilities");
     assert_eq!(
         granted.mask,
-        Some((LOCK_FILE_CAPABILITY_PRESENT | LOCK_FILE_CAPABILITY_CHORDS) as i128)
+        Some(
+            (LOCK_FILE_CAPABILITY_PRESENT
+                | LOCK_FILE_CAPABILITY_CHORDS
+                | LOCK_FILE_CAPABILITY_SEALED_MEMORY
+                | LOCK_FILE_CAPABILITY_DMA_BUF) as i128
+        )
     );
-    assert_eq!(
-        schema.field("Negotiated", "selected_revision").value,
-        Some(1)
-    );
+    assert_eq!(schema.field("Negotiated", "selected_revision").min, Some(1));
+    assert_eq!(schema.field("Negotiated", "selected_revision").max, Some(2));
     assert_eq!(
         schema.values("disposition", "value"),
         BTreeMap::from([

@@ -1,10 +1,21 @@
 #include "internal.h"
+#include "../shell_files/session_internal.h"
 
 int sophia_ss_event(struct sophia_ss *s, const struct sophia_sf_record **out)
 {
+    int r;
     if (!s || !out)
         return SOPHIA_9P_ARGUMENT;
-    return sophia_sf_client_event(&s->files, out);
+    /* After an end the journal is lost to the image producer; its events
+     * left in the buffer are dropped, never shown as records. */
+    while (!(r = sophia_sf_client_event(&s->files, out)) && s->image &&
+           sf_session_image_kind((*out)->header.kind)) {
+        ss_consumed(s, (*out)->header.sequence);
+        r = sophia_sf_client_event_consume(&s->files);
+        if (r && r != s->files.terminal)
+            return r;
+    }
+    return r;
 }
 /* ObjectPublished becomes an ack obligation for its kind when consumed. A
  * newer announcement of that kind replaces the object owed but keeps the

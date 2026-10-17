@@ -278,12 +278,134 @@ static void lock_image_begin(void)
     over_length_lock(b, n);
 }
 
+/* Lock Negotiated: the plain codec stays revision 1 with PRESENT|CHORDS;
+ * the _revision codec carries an explicit selection 1 or 2, preserves it,
+ * and allows image bits 2 and 3 only at selection 2. */
+static struct sophia_lf_record lock_welcome(uint16_t selected, uint64_t granted)
+{
+    struct sophia_lf_record r;
+    memset(&r, 0, sizeof r);
+    r.header.kind = SOPHIA_LF_NEGOTIATED;
+    r.header.epoch = 5, r.header.sequence = 2;
+    r.value.negotiated.granted_chords = 1;
+    r.value.negotiated.granted_capabilities = granted;
+    r.value.negotiated.selected_revision = selected;
+    return r;
+}
+
+static void lock_negotiated(void)
+{
+    static const uint64_t r2_masks[] = {1, 3, 5, 7, 9, 11, 13, 15};
+    uint8_t b[64], wire[64];
+    size_t n, m;
+    unsigned i;
+    struct sophia_lf_record r, back;
+    /* Plain: selection 1 (0 encodes as 1), r1 grants only. */
+    r = lock_welcome(0, 3);
+    assert(sophia_lf_encode(b, sizeof b, &r, &n) == 0 && n == 48);
+    assert(b[32] == 1 && b[33] == 0);
+    assert(sophia_lf_decode(b, n, &back) == 0 && back.value.negotiated.selected_revision == 1 &&
+           back.value.negotiated.granted_capabilities == 3);
+    r = lock_welcome(1, 3);
+    assert(sophia_lf_encode(wire, sizeof wire, &r, &m) == 0 && m == n && !memcmp(b, wire, n));
+    r = lock_welcome(2, 1);
+    assert(sophia_lf_encode(b, sizeof b, &r, &n) == -1);
+    r = lock_welcome(1, 5);
+    assert(sophia_lf_encode(b, sizeof b, &r, &n) == -1);
+    /* Revision 1 bound: byte-identical to plain, never selection 2. */
+    r = lock_welcome(1, 3);
+    assert(sophia_lf_encode(b, sizeof b, &r, &n) == 0);
+    assert(sophia_lf_encode_revision(wire, sizeof wire, 1, &r, &m) == 0 && m == n &&
+           !memcmp(b, wire, n));
+    assert(sophia_lf_encode_revision(wire, sizeof wire, 2, &r, &m) == 0 && m == n &&
+           !memcmp(b, wire, n));
+    assert(sophia_lf_decode_revision(b, n, 2, &back) == 0 &&
+           back.value.negotiated.selected_revision == 1);
+    r = lock_welcome(2, 1);
+    assert(sophia_lf_encode_revision(wire, sizeof wire, 1, &r, &m) == -1);
+    /* Selection 2: every mask with PRESENT, carried and preserved. */
+    for (i = 0; i < sizeof r2_masks / sizeof r2_masks[0]; i++) {
+        r = lock_welcome(2, r2_masks[i]);
+        assert(sophia_lf_encode_revision(b, sizeof b, 2, &r, &n) == 0 && n == 48);
+        assert(b[32] == 2 && b[33] == 0 && b[40] == r2_masks[i]);
+        assert(sophia_lf_decode_revision(b, n, 2, &back) == 0);
+        assert(back.value.negotiated.selected_revision == 2 &&
+               back.value.negotiated.granted_capabilities == r2_masks[i] &&
+               back.value.negotiated.granted_chords == 1);
+        /* Neither the plain codec nor the revision 1 bound reads it. */
+        assert(sophia_lf_decode(b, n, &back) == -1);
+        assert(sophia_lf_decode_revision(b, n, 1, &back) == -1);
+    }
+    /* Image bits at selection 1 are refused, never read as selection 2. */
+    for (i = 0; i < 2; i++) {
+        r = lock_welcome(1, i ? 9 : 5);
+        assert(sophia_lf_encode_revision(b, sizeof b, 2, &r, &n) == -1);
+        r = lock_welcome(1, 1);
+        assert(sophia_lf_encode_revision(b, sizeof b, 2, &r, &n) == 0);
+        b[40] = (uint8_t)(i ? 9 : 5);
+        assert(sophia_lf_decode_revision(b, n, 2, &back) == -1);
+    }
+    /* Missing PRESENT, unknown bits, selection 0 or 3, and r1 reserved
+     * bytes and chord bounds still apply at selection 2. */
+    r = lock_welcome(2, 4);
+    assert(sophia_lf_encode_revision(b, sizeof b, 2, &r, &n) == -1);
+    r = lock_welcome(2, 0x11);
+    assert(sophia_lf_encode_revision(b, sizeof b, 2, &r, &n) == -1);
+    r = lock_welcome(3, 1);
+    assert(sophia_lf_encode_revision(b, sizeof b, 2, &r, &n) == -1);
+    r = lock_welcome(2, 5);
+    assert(sophia_lf_encode_revision(b, sizeof b, 2, &r, &n) == 0);
+    memcpy(wire, b, n);
+    wire[40] = 4;
+    assert(sophia_lf_decode_revision(wire, n, 2, &back) == -1);
+    memcpy(wire, b, n);
+    wire[40] = 0x15;
+    assert(sophia_lf_decode_revision(wire, n, 2, &back) == -1);
+    memcpy(wire, b, n);
+    wire[47] = 0x80;
+    assert(sophia_lf_decode_revision(wire, n, 2, &back) == -1);
+    for (i = 0; i < 4; i++) {
+        memcpy(wire, b, n);
+        put16(wire + 32, i & 1 ? 3 : 0);
+        wire[40] = (uint8_t)(i & 2 ? 5 : 1);
+        assert(sophia_lf_decode_revision(wire, n, 2, &back) == -1);
+    }
+    /* A zero selection encodes as 1 under either bound. */
+    r = lock_welcome(0, 3);
+    assert(sophia_lf_encode_revision(wire, sizeof wire, 2, &r, &m) == 0 && m == 48 &&
+           wire[32] == 1 && wire[40] == 3);
+    r = lock_welcome(0, 5);
+    assert(sophia_lf_encode_revision(wire, sizeof wire, 2, &r, &m) == -1);
+    memcpy(wire, b, n);
+    wire[36] = 1;
+    assert(sophia_lf_decode_revision(wire, n, 2, &back) == -1);
+    memcpy(wire, b, n);
+    put16(wire + 34, SOPHIA_LF_MAX_CHORDS + 1);
+    assert(sophia_lf_decode_revision(wire, n, 2, &back) == -1);
+    r = lock_welcome(2, 5);
+    r.value.negotiated.granted_chords = SOPHIA_LF_MAX_CHORDS + 1;
+    assert(sophia_lf_encode_revision(b, sizeof b, 2, &r, &n) == -1);
+    /* Truncated and over-long Negotiated records. */
+    r = lock_welcome(2, 5);
+    assert(sophia_lf_encode_revision(b, sizeof b, 2, &r, &n) == 0);
+    assert(sophia_lf_decode_revision(b, n - 1, 2, &back) == -1);
+    memcpy(wire, b, n);
+    wire[n] = 0;
+    put16(wire, (unsigned)n + 1);
+    assert(sophia_lf_decode_revision(wire, n + 1, 2, &back) == -1);
+    /* Capacity and bounds keep their return codes. */
+    assert(sophia_lf_encode_revision(b, 47, 2, &r, &n) != 0);
+    assert(sophia_lf_encode_revision(b, sizeof b, 3, &r, &n) == -4);
+    assert(sophia_lf_decode_revision(b, 48, 0, &back) == -4);
+}
+
 int main(void)
 {
     shell_legacy();
     shell_image_begin();
     lock_legacy();
     lock_image_begin();
+    lock_negotiated();
     other_kinds();
     puts("image_receipt_test: ok");
     return 0;
