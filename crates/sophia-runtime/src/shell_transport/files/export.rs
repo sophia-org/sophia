@@ -775,6 +775,16 @@ impl Export for ShellFiles {
         data: &[u8],
     ) -> Result<u32, Errno> {
         self.expire();
+        #[cfg(feature = "comparator-progress")]
+        {
+            use crate::comparator_counters::progress::{Activity, observe};
+            observe(match node {
+                Node::Transaction | Node::TransactionReuse => Activity::Record,
+                Node::Submit => Activity::Submit,
+                Node::Upload(_) => Activity::Pixel,
+                _ => Activity::Other,
+            });
+        }
         match (node, handle) {
             (Node::TransactionReuse, Handle::ReusableTransaction(id)) => {
                 self.write_reusable_transaction(*id, offset, data)

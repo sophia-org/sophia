@@ -69,6 +69,12 @@
                     native_wait_only,
                 )
             });
+        #[cfg(feature = "comparator-progress")]
+        if paced_repaint_preemption || native_service_due {
+            sophia_runtime::comparator_counters::progress::observe(
+                sophia_runtime::comparator_counters::progress::Activity::Cadence,
+            );
+        }
         let wm_only_cycle = initial_authority_batch.is_none()
             && pending_authority_batches.is_empty()
             && pending_wm_update.is_some();

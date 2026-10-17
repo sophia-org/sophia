@@ -21,7 +21,7 @@ fn progress_records_are_bounded_and_cannot_masquerade_as_cost_samples() {
     let lines: Vec<_> = text.lines().collect();
     assert_eq!(lines.len(), 2);
     assert!(lines[0].contains("mode=progress"));
-    assert!(lines[1].contains("sophia_comparator_progress schema=2 mode=progress"));
+    assert!(lines[1].contains("sophia_comparator_progress schema=3 mode=progress"));
     assert!(lines[1].contains("peer_wait=3"));
     assert!(lines[1].contains("relay_idle=5"));
     assert!(lines[1].contains("request_walk=7"));

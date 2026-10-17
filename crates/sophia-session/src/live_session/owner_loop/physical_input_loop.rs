@@ -101,7 +101,7 @@ let owner_notifier = owner_wake.notifier();
 let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
     'session: loop {
         #[cfg(feature = "comparator-progress")]
-        sophia_runtime::comparator_counters::progress::add(sophia_runtime::comparator_counters::progress::Counter::OwnerPass, 1);
+        let _pass_observation = sophia_runtime::comparator_counters::progress::owner_pass();
         #[cfg(feature = "comparator-profiling")]
         let _profile = sophia_runtime::comparator_counters::phases::enter(sophia_runtime::comparator_counters::phases::Phase::Owner);
         #[cfg(feature = "comparator-profiling")]

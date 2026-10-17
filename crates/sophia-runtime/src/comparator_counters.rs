@@ -132,7 +132,7 @@ pub fn write_progress(
     let mut buffer = std::io::Cursor::new(bytes.as_mut_slice());
     write!(
         buffer,
-        "sophia_comparator_progress schema=2 mode=progress process={process} pid={} sequence={sequence} before_usec={before} after_usec={after}",
+        "sophia_comparator_progress schema=3 mode=progress process={process} pid={} sequence={sequence} before_usec={before} after_usec={after}",
         std::process::id()
     )?;
     for (name, count) in progress::NAMES.iter().zip(counts) {

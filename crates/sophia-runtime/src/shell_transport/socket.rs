@@ -288,6 +288,12 @@ impl SocketWire {
                 Ok(0) => return Err(ShellTransportError::NotConnected),
                 Ok(count) => {
                     remaining -= count;
+                    #[cfg(feature = "comparator-progress")]
+                    if count != 0 {
+                        crate::comparator_counters::progress::observe(
+                            crate::comparator_counters::progress::Activity::Flush,
+                        );
+                    }
                     let complete = written + count == bytes.len();
                     match self.writing.as_mut().expect("selected above") {
                         Writing::Outbox { written, .. } | Writing::Lane { written } => {
@@ -333,6 +339,10 @@ impl SocketWire {
                 }
                 Ok(count) => {
                     self.input.extend_from_slice(&bytes[..count]);
+                    #[cfg(feature = "comparator-progress")]
+                    crate::comparator_counters::progress::observe(
+                        crate::comparator_counters::progress::Activity::Other,
+                    );
                     incoming -= count;
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
@@ -357,6 +367,19 @@ impl SocketWire {
             }
             let frame = self.input.drain(..length).collect::<Vec<_>>();
             sophia_protocol::decode_frame(&frame)?;
+            #[cfg(feature = "comparator-progress")]
+            {
+                use crate::comparator_counters::progress::{Activity, observe};
+                observe(
+                    if kind(&frame)
+                        == sophia_protocol::IpcMessageKind::ShellContentResourceChunk as u16
+                    {
+                        Activity::Pixel
+                    } else {
+                        Activity::Record
+                    },
+                );
+            }
             self.inbox.push_back(frame);
         }
         Ok(())

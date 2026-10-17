@@ -22,6 +22,48 @@ fn counters_do_not_allocate_and_count_actual_reply_and_retry_work() {
     assert_eq!(after.allocations, before.allocations);
     assert_eq!(after.reallocations, before.reallocations);
 
+    let start = progress::snapshot();
+    let allocation_start = ALLOCATOR.stats();
+    for activities in [
+        &[][..],
+        &[progress::Activity::Flush][..],
+        &[
+            progress::Activity::Setup,
+            progress::Activity::Record,
+            progress::Activity::Record,
+        ][..],
+        &[
+            progress::Activity::Pixel,
+            progress::Activity::Submit,
+            progress::Activity::Cadence,
+        ][..],
+        &[progress::Activity::Other][..],
+    ] {
+        let _pass = progress::owner_pass();
+        for activity in activities {
+            progress::observe(*activity);
+        }
+    }
+    let allocation_end = ALLOCATOR.stats();
+    assert_eq!(allocation_start.allocations, allocation_end.allocations);
+    assert_eq!(allocation_start.reallocations, allocation_end.reallocations);
+    let end = progress::snapshot();
+    for (counter, expected) in [
+        (Counter::OwnerPass, 5),
+        (Counter::OwnerCompleted, 5),
+        (Counter::OwnerSetup, 1),
+        (Counter::OwnerRecord, 1),
+        (Counter::OwnerPixel, 1),
+        (Counter::OwnerSubmit, 1),
+        (Counter::OwnerCadence, 1),
+        (Counter::OwnerOther, 1),
+        (Counter::OwnerUnattributed, 1),
+        (Counter::OwnerFlushOnly, 1),
+        (Counter::OwnerMixed, 2),
+    ] {
+        assert_eq!(end[counter as usize] - start[counter as usize], expected);
+    }
+
     let mut h = Harness::attached();
     h.open(1, &[b"events"], 0);
     let start = progress::snapshot();
