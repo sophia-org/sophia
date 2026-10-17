@@ -326,8 +326,12 @@ impl LockFileExport {
         if staging.bytes.len() != submit.candidate_bytes as usize {
             return Err(Errno::EINVAL);
         }
-        let record = decode_lock_file_record(&staging.bytes, LockFileClass::Candidate)
-            .map_err(|_| Errno::EINVAL)?;
+        let record = decode_lock_file_record_at_revision(
+            &staging.bytes,
+            LockFileClass::Candidate,
+            self.custody.revision(),
+        )
+        .map_err(|_| Errno::EINVAL)?;
         if record.header.submission_id != submit.submission_id {
             return Err(Errno::EINVAL);
         }

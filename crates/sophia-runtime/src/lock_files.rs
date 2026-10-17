@@ -16,6 +16,7 @@ use sophia_9p::{Errno, ReadOutcome};
 use sophia_protocol::lock_files::*;
 
 mod export;
+mod image;
 mod presentation;
 mod resources;
 #[cfg(target_os = "linux")]
@@ -24,6 +25,7 @@ mod service;
 mod transport;
 
 pub use export::{LockFileAttachment, LockFileExport, LockFileHandle, LockFileNode, LockFileQids};
+pub use image::{LockImageReadiness, LockImageSettings};
 #[cfg(target_os = "linux")]
 pub use service::{
     LockFileService, LockFileServiceCommand, LockFileServiceEvent, LockFileServiceStats,
@@ -121,6 +123,9 @@ pub struct LockFileCustody {
     lock_generation: u64,
     lock_qid: u64,
     negotiation: Negotiation,
+    /// 1 until negotiation selects; events and submissions use it.
+    revision: u16,
+    image: Option<image::ImageChannel>,
     accepted: Option<Accepted>,
     resources: Resources,
     presentation: Presentation,
@@ -145,6 +150,8 @@ impl LockFileCustody {
             lock_generation: 1,
             lock_qid: settings.lock_qid,
             negotiation: Negotiation::Awaiting,
+            revision: 1,
+            image: None,
             accepted: None,
             resources: Resources::new(settings.limits),
             presentation: Presentation::default(),
@@ -224,13 +231,19 @@ impl LockFileCustody {
         }
     }
 
+    /// Journal credits held for events owed later: presentation answers and
+    /// the image channel's terminal events.
+    fn credits(&self) -> usize {
+        self.presentation.credits() + self.image.as_ref().map_or(0, image::ImageChannel::credits)
+    }
+
     fn event(&self, kind: LockFileKind, body: &[u8], index: u64) -> Result<Vec<u8>, Errno> {
         let sequence = self
             .journal
             .next_sequence()
             .checked_add(index)
             .ok_or(Errno::ENOSPC)?;
-        encode_lock_file_record(
+        encode_lock_file_record_at_revision(
             LockFileHeader {
                 kind,
                 connection_epoch: self.epoch,
@@ -238,6 +251,7 @@ impl LockFileCustody {
                 sequence,
             },
             body,
+            self.revision,
         )
         .map_err(|_| Errno::EINVAL)
     }
@@ -281,7 +295,7 @@ impl LockFileCustody {
             submission_id,
             candidate_kind: kind,
         }
-        .encode()
+        .encode_at_revision(self.revision)
         .map_err(|_| Errno::EINVAL)?;
         Ok((LockFileKind::Submitted, body))
     }
@@ -303,6 +317,8 @@ impl LockFileCustody {
             {
                 self.revoke();
             }
+            // Acknowledged room may let a pending image event through.
+            let _ = self.retry_image_publications();
         }
         Ok(())
     }
@@ -313,7 +329,8 @@ impl LockFileCustody {
         self.live()?;
         self.expire(now);
         let record =
-            decode_lock_file_record(bytes, LockFileClass::Candidate).map_err(|_| Errno::EINVAL)?;
+            decode_lock_file_record_at_revision(bytes, LockFileClass::Candidate, self.revision)
+                .map_err(|_| Errno::EINVAL)?;
         if record.header.connection_epoch != self.epoch {
             return Err(Errno::ESTALE);
         }
@@ -353,6 +370,10 @@ impl LockFileCustody {
                 self.negotiated()?;
                 self.demand(receipt, body)?;
             }
+            LockFileKind::ImageBegin => {
+                self.negotiated()?;
+                self.image_begin(receipt, body)?;
+            }
             _ => return Err(Errno::EINVAL),
         }
         self.accepted = Some(Accepted {
@@ -367,7 +388,16 @@ impl LockFileCustody {
             return Err(Errno::EINVAL);
         }
         let request = LockNegotiate::decode(body).map_err(|_| Errno::EINVAL)?;
-        let refusal = if !(request.minimum_revision..=request.maximum_revision).contains(&1) {
+        // Revision 2 only for a configured image channel; never inferred.
+        let offered = request.minimum_revision..=request.maximum_revision;
+        let selected = if self.image.is_some() && offered.contains(&image::IMAGE_REVISION) {
+            Some(image::IMAGE_REVISION)
+        } else if offered.contains(&1) {
+            Some(1)
+        } else {
+            None
+        };
+        let refusal = if selected.is_none() {
             Some(LockRefusal::UnsupportedRevision)
         } else if request.requested_capabilities & LOCK_FILE_CAPABILITY_PRESENT == 0 {
             Some(LockRefusal::PresentationRequired)
@@ -383,12 +413,21 @@ impl LockFileCustody {
             None
         };
         let Some(refusal) = refusal else {
+            let selected = selected.expect("selected without refusal");
+            // Sealed images only when configured and requested; DMA never.
+            let sealed = if selected == image::IMAGE_REVISION {
+                LOCK_FILE_CAPABILITY_SEALED_MEMORY
+            } else {
+                0
+            };
             let negotiated = LockNegotiated {
                 granted_chords: request.chords.len() as u16,
                 granted_capabilities: request.requested_capabilities
-                    & (LOCK_FILE_CAPABILITY_PRESENT | LOCK_FILE_CAPABILITY_CHORDS),
+                    & (LOCK_FILE_CAPABILITY_PRESENT | LOCK_FILE_CAPABILITY_CHORDS | sealed),
             };
-            let body = negotiated.encode().map_err(|_| Errno::EINVAL)?;
+            let body = negotiated
+                .encode_at_revision(selected)
+                .map_err(|_| Errno::EINVAL)?;
             let publication = self.publication_body(self.lock_generation, self.lock_qid)?;
             self.journal_events(
                 &[
@@ -396,9 +435,13 @@ impl LockFileCustody {
                     (LockFileKind::Negotiated, body),
                     (LockFileKind::ObjectPublished, publication),
                 ],
-                self.presentation.credits(),
+                self.credits(),
             )?;
             self.negotiation = Negotiation::Negotiated(negotiated);
+            self.revision = selected;
+            if self.image_disclosed() {
+                self.image.as_mut().expect("disclosed image").disclose();
+            }
             self.inbound.push_back(LockInbound::Negotiated {
                 chords: request.chords,
             });
@@ -406,7 +449,7 @@ impl LockFileCustody {
         };
         self.journal_events(
             &[receipt, (LockFileKind::Refused, refusal.encode())],
-            self.presentation.credits(),
+            self.credits(),
         )?;
         self.negotiation = Negotiation::Refused;
         Ok(())
@@ -437,7 +480,7 @@ impl LockFileCustody {
             ResourcePlan::Retire { resource, .. } => Some(resource),
             _ => None,
         };
-        self.journal_events(&[receipt, plan.event()?], self.presentation.credits())?;
+        self.journal_events(&[receipt, plan.event()?], self.credits())?;
         if let Some((resource, image)) = self.resources.apply(plan) {
             self.inbound.push_back(LockInbound::ResourceReady {
                 resource,
@@ -472,7 +515,7 @@ impl LockFileCustody {
             ),
             CandidatePlan::Reject(_) => None,
         };
-        let credits = self.presentation.credits();
+        let credits = self.credits();
         match &plan {
             CandidatePlan::Forward(_) => {
                 self.journal_events(&[receipt], credits + 1)?;
@@ -493,7 +536,7 @@ impl LockFileCustody {
     fn demand(&mut self, receipt: (LockFileKind, Vec<u8>), body: &[u8]) -> Result<(), Errno> {
         let demand = LockFrameDemand::decode(body).map_err(|_| Errno::EINVAL)?;
         let added = self.presentation.plan_demand(demand, &self.lock)?;
-        self.journal_events(&[receipt], self.presentation.credits() + usize::from(added))?;
+        self.journal_events(&[receipt], self.credits() + usize::from(added))?;
         self.presentation.apply_demand(demand);
         self.inbound.push_back(LockInbound::Demand(demand));
         Ok(())
@@ -576,7 +619,7 @@ impl LockFileCustody {
                 LockFileKind::ObjectPublished,
                 self.publication_body(generation, qid)?,
             ));
-            self.journal_events(&events, self.presentation.credits() - revoked.len())?;
+            self.journal_events(&events, self.credits() - revoked.len())?;
         }
         self.presentation.apply_publication(&lock, &revoked);
         self.lock = lock;
@@ -591,7 +634,7 @@ impl LockFileCustody {
         self.live()?;
         self.negotiated()?;
         let body = entry.encode().map_err(|_| Errno::EINVAL)?;
-        self.journal_events(&[(LockFileKind::Entry, body)], self.presentation.credits())
+        self.journal_events(&[(LockFileKind::Entry, body)], self.credits())
     }
 
     /// A granted chord, by its ID.
@@ -604,7 +647,7 @@ impl LockFileCustody {
             return Err(Errno::EINVAL);
         }
         let body = chord.encode().map_err(|_| Errno::EINVAL)?;
-        self.journal_events(&[(LockFileKind::Chord, body)], self.presentation.credits())
+        self.journal_events(&[(LockFileKind::Chord, body)], self.credits())
     }
 
     /// Session's answer to a standing demand. Spends the demand's credit.
@@ -620,10 +663,7 @@ impl LockFileCustody {
             .presentation
             .plan_permit(allocation_id, demand_id, expires_after)?;
         let body = permit.encode().map_err(|_| Errno::EINVAL)?;
-        self.journal_events(
-            &[(LockFileKind::FramePermit, body)],
-            self.presentation.credits() - 1,
-        )?;
+        self.journal_events(&[(LockFileKind::FramePermit, body)], self.credits() - 1)?;
         self.presentation.apply_permit(permit, now);
         Ok(permit)
     }
@@ -635,7 +675,7 @@ impl LockFileCustody {
         let body = outcome.encode().map_err(|_| Errno::EINVAL)?;
         let sequence = self.journal_events(
             &[(LockFileKind::CandidateOutcome, body)],
-            self.presentation.credits() - usize::from(terminal),
+            self.credits() - usize::from(terminal),
         )?;
         self.presentation.apply_outcome(&outcome);
         Ok(sequence)
