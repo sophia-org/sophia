@@ -10,8 +10,26 @@ tags: [plan, shell, lock, rendering]
 
 t338 remains in implementation. The C pin `02ea2ad` includes offer cancellation
 (`e777235`) on top of the lock adapter; an independent full `make check` passed. Its ABI
-additions require rebuilding consumers. Rust producer/adapters and cancellation
-parity remain open. Claude's review found no blockers
+additions require rebuilding consumers. Rust role-adapter parity remains open.
+The role-neutral Rust producer is published at `a366a0e`, with 19 independent
+tests using real SEQPACKET and SCM_RIGHTS, kernel POLLOUT after backpressure,
+both roles, cancellation and authoritative release. Its C counterpart `d51b033`
+also requires an exact supported revision and a SEQPACKET socket before custody;
+the full C check passes. Those newer SDK commits are not yet the Sophia pins.
+Muse's BAR adapter is signed locally at `9cc9678`; final integration review is
+pending. The Rust lock adapter is under cross-review, with a real descriptor
+success exchange, clean absence and cancellation before late admission passing.
+These scripted peers do not establish authenticated production interoperability.
+
+Lock custody checkpoint `548c66e30` reserves terminal credits at receipt and
+retains sealed backing charges through retirement and successor epochs using
+the weak watches from `b55322dc6`. Its transport still does not admit Sources;
+Claude is wiring the persistent worker and real-wire loss controls next.
+Root integration `85755e5c3` joins Session's shared-pixel handoff and fixes the
+remaining C role-peer link lists. Both affected C export tests and Session's
+placed-image retirement control pass. Native measurements remain outstanding.
+
+Claude's review found no blockers
 in the retired-epoch completion fix (`d33e546d8`) or the independent journal
 reservations (`310cb886f`).
 
@@ -41,8 +59,8 @@ ResourceCancel propagation to both unsent and submitted worker custody. The
 owner bridge observes store stops before accepting new Sources; repeated
 observations neither release submitted work early nor create another settlement.
 Claude owns the lock runtime implementation lane (`lock_files` only), while
-Codex owns shell/Session integration. Muse owns the new role-neutral Rust
-producer crate; role adapters remain a separate, unfinished step. The existing runtime worker fixes are reviewed;
+Codex owns shell/Session integration and the Rust lock adapter. Muse owns the
+Rust BAR adapter and cross-reviews the lock adapter. The existing runtime worker fixes are reviewed;
 targeted strict Clippy and the layout
 check pass. Explicit shell owner hooks now connect ImageBegin, Source and the
 terminal records. The real 9P/SEQPACKET fixture waits for ImageAdmitted, sends a
