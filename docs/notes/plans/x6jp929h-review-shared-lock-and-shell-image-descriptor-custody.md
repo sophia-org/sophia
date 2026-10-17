@@ -8,6 +8,17 @@ tags: [plan, shell, lock, rendering]
 
 ## Current resumption
 
+t338's sealed measurement peer found a production ordering defect: the shell
+owner could journal SourceReleased before the queued Accepted status. The SDK
+then settled the offer without retaining its status. Fix `06f8b5179` makes the
+export wait until the status hold has been consumed into the journal; the owner
+keeps the completed settlement while that handoff is pending. An exact-order
+wire assertion fails on the old implementation and all three shell transport
+tests pass with the fix. Runtime all-targets strict Clippy passes; the full
+runtime suite and the comparator sealed peer rerun are in progress. Earlier
+successful raw-peer tests accepted either terminal order and did not prove
+usable SDK settlement. No sealed performance result is claimed.
+
 t338 remains open. Sophia `cbee1268d` adopts published Rust
 `e4f59e36f6c7acbbe2ee47ee011c665dea1a6176` and C
 `d51b0336649757eaf7bf6970c50c14786f0a4772`. Both snapshot checks pass,
