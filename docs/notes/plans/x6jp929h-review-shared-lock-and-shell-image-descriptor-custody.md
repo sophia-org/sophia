@@ -695,6 +695,36 @@ GPU completion, safe rollback and quarantine cannot be proved by these local
 fixtures. A fake completion signal tests state transitions only. Real DMA-BUF
 acceptance stays behind t289's safe-completion seam and attended GPU evidence.
 
+#### Sealed lifecycle peer checkpoint — October 17
+
+Rust SDK `2ed263d` is a signed, published test-only candidate. Its
+`descriptor_custody` target and targeted strict Clippy pass. The producer and
+owner exchange real 200-byte Source packets and SCM_RIGHTS for both role codes.
+They exercise nonblocking send pressure and writable wake, cancellation and
+expiry around receive/validation, malformed and late packets, unknown-send
+no-replay, journal loss, separate terminal events and retained backing leases.
+Wrong sizes, missing seals, unsupported seal queries and invalid premultiplied
+pixels refuse through the owner model. Independent budget controls isolate offer,
+byte and terminal-journal limits.
+
+Muse's read-only review of `49d5ddf` found three fixture errors: cancellation used
+the expiry disposition, admitted metadata was reconstructed rather than stored,
+and status/release were collapsed into one model event. The follow-ups separate
+those cases and events. A source offer also ends independently of its retained
+resource backing; late packets are discarded after source release even while a
+consumer lease holds the backing. Follow-up cross-review remains pending.
+
+These are explicit producer/owner state models. Control admission, journal
+delivery and worker completion are fixture calls; discovery retry uses immutable
+owned bytes rather than real open fids, and authentication is a supplied predicate.
+SourceReleased has a test-side record decoder. Neither an authenticated runtime
+endpoint, cross-process owner, real worker nor GPU completion is established.
+The evidence does not complete the sixteen-case matrix or satisfy conditional
+acceptance by itself. Claude owns the independent C peer in
+`sdk-c-t337-lifecycle` from `1516463`; Codex retains integration and cross-review.
+Muse's Sophia survey remains read-only. No public API, normative layout, vendor
+pin or installed desktop changed, and t338 implementation remains unopened.
+
 #### Kernel prerequisite results — October 17
 
 Signed Rust SDK `05bf018` and C SDK `9bca0db` add independent Linux tests using
