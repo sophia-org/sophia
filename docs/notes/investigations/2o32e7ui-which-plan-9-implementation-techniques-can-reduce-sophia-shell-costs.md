@@ -185,6 +185,37 @@ not the maximum simultaneous wire depth or neighbor latency. The ordinary C
 peer also exercises transport fragmentation with a 4,096-byte msize. Remaining
 fault audit, depth/fairness diagnostics, adoption and the native pilot are open.
 
+The fault audit found a Rust custody error before adoption: a zero or oversized
+Rwrite removed the outstanding tag before validation, so teardown could label
+issued bytes DroppedUnsent. Signed Rust `c1d3515` preserves Unknown and permits
+Stored only for a valid positive reply within the issued length. The regression
+failed before the fix and passes after it. The full shell suite and strict Clippy
+pass. C already failed closed; signed `17f4b0f` adds matching invalid-count tests
+and parity wording, with its full suite passing.
+
+Comparator `e9dafb67a` stages those exact archives for qualification; production
+has not adopted B3. Both snapshot checks pass. Two four-arm 64-frame traces
+have identical pixel totals: panel 192 writes / 11,796,480 bytes; bulk 4,608 /
+280,231,936. Short replies, EAGAIN, invalidated tails and other pixel errors are
+all zero. B2 overlap remains 320/320 panel and 512/512 bulk. The first run used
+Rust `10c9226`; the second includes the custody fix. Evidence is under
+`t331-b3-20261017/ordered-candidate-01` and `ordered-candidate-02`.
+
+The server dispatch trace sees at most one panel or two bulk pixel writes before
+their replies finish sending. This does not measure the client's four-credit
+window: the server reads at most 65,536 bytes per connection turn. A 4 MiB
+payload plus request headers needs at least 65 input turns, so 69/4 was never a
+valid server-pass prediction. The accepted plan now records this bound; B3 does
+not change it. Native benefit remains unmeasured.
+
+A separate two-export driver fixture keeps four writes queued for 128 turns,
+completes 448 writes within the cumulative read budget, and answers a neighbor's
+event read and control request on every supplied-owner iteration. One run reports
+42.2 microseconds median, 74.4 microseconds p99 and 76.7 microseconds maximum
+for that iteration. These are unqualified fixture timings, not native Session
+latency or real-role performance. All ten Unix-driver tests pass. The remaining
+fault review and native pilot still control adoption and qualification.
+
 ## First-slice native pilot — October 17
 
 All fourteen arms captured 1,000 frames at 60 Hz, 1080p, scale 1, VRR off and

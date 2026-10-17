@@ -156,6 +156,8 @@ fn a_refilled_write_window_keeps_the_read_budget_and_neighbor_service() {
             tattach(1, 0, NOFID, b"", b""),
             twalk(2, 0, 1, &[b"sink"]),
             tlopen(3, 1, 1),
+            twalk(4, 0, 2, &[b"events"]),
+            tlopen(5, 2, 0),
         ] {
             client.write_all(&request).unwrap();
             server.turn(Some(Duration::ZERO)).unwrap();
@@ -176,12 +178,19 @@ fn a_refilled_write_window_keeps_the_read_budget_and_neighbor_service() {
     let mut completed = 0;
     let mut delays = Vec::new();
     for round in 0..ROUNDS {
+        neighbor.export().push_event(&[round as u8]);
+        control
+            .write_all(&tread(2000 + round as u16, 2, 0, 1))
+            .unwrap();
         control
             .write_all(&tgetattr(1000 + round as u16, 0))
             .unwrap();
         let start = Instant::now();
         upload.turn(Some(Duration::ZERO)).unwrap();
         neighbor.turn(Some(Duration::ZERO)).unwrap();
+        let event = reply(&mut control);
+        assert_eq!(event.tag, 2000 + round as u16);
+        assert_eq!(event.data(), [round as u8]);
         assert_eq!(reply(&mut control).tag, 1000 + round as u16);
         delays.push(start.elapsed().as_nanos());
         let writes = upload.export().state().writes;
