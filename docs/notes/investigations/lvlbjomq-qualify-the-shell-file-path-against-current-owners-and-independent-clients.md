@@ -15,11 +15,13 @@ repairs? Reconcile the existing evidence before repeating a desktop campaign.
 ## Current resumption
 
 The October 17 [replacement plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#approved-reusable-writer-and-cumulative-ack-slice--october-17)
-is approved for implementation. The [active attribution investigation](2o32e7ui-which-plan-9-implementation-techniques-can-reduce-sophia-shell-costs.md#current-resumption)
-records comparator reconciliation, the request ledger and the accepted
-`transaction-reuse` amendment. Production begins at `116075541`, with all prior
-t331 SDK changes present in its `f1cd924` pin. The comparator must carry current
-production before any new performance claim.
+is implemented through production `29b64531c`, with Rust SDK `cab32bf` and C SDK
+`71582a5`. The [active attribution investigation](2o32e7ui-which-plan-9-implementation-techniques-can-reduce-sophia-shell-costs.md#current-resumption)
+records passing protocol gates and the remaining measurements. Comparator
+`363e06998` preserves the reconciled pre-change baseline (`116075541`, SDK
+`f1cd924`) for its prepared eight-arm capture. Capture that baseline before
+carrying the implementation onto the comparator. No native performance result
+or desktop installation is claimed.
 
 CPU-20 is superseded preparation: its frozen artifacts remain, but no capture
 ran and it must not supply the new baseline. Cost-15 and perf-18 remain historical

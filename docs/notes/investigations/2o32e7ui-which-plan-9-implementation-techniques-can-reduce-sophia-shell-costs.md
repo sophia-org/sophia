@@ -15,24 +15,55 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
-niltempus approved the reusable transaction writer and bounded cumulative ACK
-plan on October 17. The [decision](../decisions/7mls2e2q-reuse-a-shell-transaction-writer-without-changing-custody.md)
-records compatibility and fencing; the [t331 plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#approved-reusable-writer-and-cumulative-ack-slice--october-17)
-owns implementation order and the unchanged acceptance gate. Production remains
-`116075541` before implementation; Rust SDK `f1cd924` contains all seven prior
-t331 SDK optimizations. No SDK restoration or merge from its old master is needed.
+Production `29b64531c` implements the approved reusable writer (`ee22309ba`) and
+imports signed Rust SDK `cab32bf` and C SDK `71582a5`. Both source branches and
+Sophia master are pushed. The [decision](../decisions/7mls2e2q-reuse-a-shell-transaction-writer-without-changing-custody.md)
+and [t331 plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#approved-reusable-writer-and-cumulative-ack-slice--october-17)
+remain authoritative. No desktop installation or native measurement has run.
 
-The isolated comparator is being reconciled with this production revision before
-new measurements. CPU-20 has no capture and is superseded preparation, not a failed
-run. Cost-15 remains the latest completed cost pilot; perf-18 the latest valid
-paired profile. Neither qualifies the current t333 release. No quiet hold or
-native campaign is active, and the installed desktop is unchanged.
+Next capture the reconciled baseline at comparator `363e06998`: merge `10d25e680`
+carries production `116075541` and its existing SDK optimizations; the later
+commit adds per-arm diagnostic output only. Keep this checkout on that revision
+until its baseline capture finishes. Then carry the implementation onto the
+comparator, compare request ledgers, and run fresh matched CPU/allocation pilots.
+The prepared campaign lives under
+`~/.local/state/sophia/development-evidence/t331-reuse-20261017/native-baseline`.
+Attended readiness and a fresh quiet window are still required.
 
-The source ledger below reconciles historical counts; it is not fresh cost
-evidence. Reusable writers remove transaction-fid lifecycle requests, but their
-CPU, allocation and owner-pass effects need independent measurements. This first
-slice is not assumed to pass the gate. Record the new deterministic baseline,
-then implementation checks and exact candidates here before native capture.
+CPU-20 remains superseded preparation, with no capture. Cost-15 and perf-18 are
+historical evidence, not qualification of this candidate. No quiet hold is active.
+Neither the request reduction nor buffer reuse establishes CPU or allocation
+savings; the unchanged +10% gate and full matrix remain open.
+
+## Implemented writer and ACK slice — October 17
+
+The export reserves one bounded buffer at open, moves it through assembly and
+accepted custody, and recycles it only after a covering ACK. Refused assemblies
+retain their errno and readable bytes; malformed or foreign-epoch submit
+envelopes do not poison valid staging. Expiry and revocation permanently fence
+the token. Both SDKs probe after negotiation and its ACK, use legacy transactions
+only after lookup ENOENT, retain successful writers and replace refused ones.
+
+Rust batches automatic ACKs at existing drive boundaries. C preserves its
+explicit cumulative ACK call and confirmed-ACK barrier; no automatic policy was
+inserted into a manual API. Independent tests consume three records and send
+one ACK in both SDKs. Manual control and snapshot holds remain covered.
+
+The full Rust shell suite, strict shell Clippy, full C suite, both immutable
+vendor gates and Sophia's runtime test suite pass. Both independent startup
+peers pass the real export. Six new export tests cover reuse, refusal, replay,
+ACK barriers, cancellation, expiry, revocation, idle failures and backpressure.
+The real-wire fixture observes reusable writes and proves that the covering ACK
+precedes the next record. These are protocol checks, not physical acceptance.
+
+Evidence is under `~/.local/state/sophia/development-evidence/t331-reuse-20261017`.
+The reconciled supplied-owner diagnostic completes 64 frames on each wire and
+workload. Its per-arm totals include startup and teardown; do not present them
+as steady-frame counts. Files panel: 391 walks, 391 opens, 648 reads, 1,541 writes
+and 388 clunks (3,359 requests). Files bulk: 647 walks, 647 opens, 1,032 reads,
+6,725 writes and 644 clunks (9,695 requests). IPC issues no 9P requests. This
+fixture has no Session owner loop: it cannot attribute native owner passes or
+establish performance savings. Raw journals and counters are in `baseline-ledger/`.
 
 ## Reconciled request ledger — October 17
 
