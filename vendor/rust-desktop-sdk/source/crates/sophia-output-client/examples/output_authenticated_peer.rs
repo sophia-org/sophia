@@ -15,12 +15,25 @@ fn main() {
     rustix::io::fcntl_setfd(&stdin, rustix::io::FdFlags::CLOEXEC).unwrap();
     let relay = UnixStream::from(rustix::io::fcntl_dupfd_cloexec(&stdin, 3).unwrap());
     let stream = UnixStream::connect(std::env::var_os("SOPHIA_TEST_LOCK_SOCKET").unwrap()).unwrap();
+    let auth_clock = Instant::now();
     let mut auth =
-        sophia_launch_client::Client::over(stream, relay, b"output", b"output-authority").unwrap();
-    while !auth.ready() {
-        assert!(Instant::now() < deadline, "authentication deadline");
-        auth.poll().unwrap();
-        auth.wait_for_io(Duration::from_millis(10)).unwrap();
+        sophia_launch_client::Client::new(stream, relay, b"output", b"output-authority", 0, 5000)
+            .unwrap();
+    for round in 0..2 {
+        while !auth.ready() {
+            assert!(Instant::now() < deadline, "authentication deadline");
+            auth.dispatch(auth_clock.elapsed().as_millis() as u64, 65536)
+                .unwrap();
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        if round == 0 {
+            let now = auth_clock.elapsed().as_millis() as u64;
+            auth = auth
+                .into_authenticated()
+                .unwrap()
+                .reauthenticate_at(now, now + 5000)
+                .unwrap();
+        }
     }
     let admitted = auth.into_authenticated().unwrap();
     let _relay = admitted.relay;

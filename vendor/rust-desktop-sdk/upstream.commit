@@ -1,14 +1,14 @@
-tree ee6c34a913e90ab077af2534a6c3a5bcb00327af
-parent 5683ae00c549a9d51d7e8127ecf4a44da9c8b6e5
-author Mason Green <mason@greenm01.net> 1792206405 -0400
-committer Mason Green <mason@greenm01.net> 1792206405 -0400
+tree f3672b50062c504e073e680c02dd72a823405f30
+parent 496c778d3589a949b9287113f45a95c7bf9332d7
+author Mason Green <mason@greenm01.net> 1792207006 -0400
+committer Mason Green <mason@greenm01.net> 1792207006 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLmRRsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJUCwEAs2gLiagrptyPCXAPO97J
- Cl3bVXXjywhILFL2lrxzgHUBALu1WQ05o2JS9lTmNJzlKfTFVREJjPiGXd6jS87V
- GGYF
- =G+7F
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLonhsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLNMwEAhJRhaR2q8pUml/8lIonB
+ PJMKuMu6ZaaqWO7bKEr0QH0A/jheXv7zL9ulU9Zvp/ODxj7kbpyrjfCzbSKILzdP
+ YqwC
+ =MJyB
  -----END PGP SIGNATURE-----
 
-Publish broker operation map and paired attention coverage
+Expose caller-driven launch authentication and guard relay reuse

@@ -9,7 +9,7 @@ rust-version.workspace = true
 repository.workspace = true
 
 [dependencies]
-rustix = { workspace = true, features = ["net", "std"] }
+rustix = { workspace = true, features = ["event", "net", "std"] }
 sophia-9p-client.workspace = true
 
 [lints]

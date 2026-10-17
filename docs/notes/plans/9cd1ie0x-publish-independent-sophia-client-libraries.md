@@ -167,6 +167,20 @@ pins are Rust `496c778d3589a949b9287113f45a95c7bf9332d7` and C
 `972eec7cfd85a6221da0d1de17248a973dbee7e8`. This pin change adds tests/docs and
 corrects stale broker prose; runtime behavior is unchanged from the retry fix.
 
+The launch audit fixed Rust's relay handoff: it now refuses live relay fids and
+partial input as C already did. Rust also exposes caller-driven startup,
+descriptors, interests, deadlines and bounded dispatch through version
+negotiation, authentication, reauthentication and relay reuse. Convenience
+constructors remain available. Both SDKs publish `LAUNCH-PARITY.md` and pass
+one-byte exchange/retry tests. Rust's full workspace, affected strict Clippy and
+C's full check suite pass. Independent C/Rust output peers pass the protected
+production export and revocation test; Rust now reauthenticates through the
+new API there. Signed upstream revisions are Rust
+`4000b8dd45ccee66f2b244aadaabba03c2bc9599` and C
+`12e74746b4135ce1b80760b0bfb8454bbe5b704e`, now adopted as verified Sophia pins.
+The integrated authentication suite passes 30 tests, with 8 opt-in cases ignored.
+See the launch evidence section below for commands and limits.
+
 Next: finish the full versioned role/API matrix and release audit against the
 criteria above, including generic transport, launch and namespace ownership.
 The current parity documents mix historical gaps with later passing evidence;
@@ -174,6 +188,58 @@ reconcile each against source and exact test scope. Preserve the portal
 refused-End cancellation limit and separate
 physical acceptance from SDK capability parity. Performance work must not
 replace those closure requirements.
+
+### Launch event-loop parity evidence, 2026-10-17
+
+Rust `4000b8dd45ccee66f2b244aadaabba03c2bc9599` adds nonblocking `Client::new`,
+caller-clock `dispatch`, both descriptors/interests and `next_wake`. It covers
+negotiation as well as the authenticated exchange. `reauthenticate_at` and
+`over_relay_at` retain that control on subsequent conversations. The original
+convenience constructors and polling methods remain supported. Shared I/O
+budgets bound both wires together; C bounds each wire separately. Neither
+stage transitions nor retry renew the total deadline.
+
+C `12e74746b4135ce1b80760b0bfb8454bbe5b704e` adds paired regression coverage
+and the same `LAUNCH-PARITY.md` operation map; its runtime is unchanged. Both
+refuse relay reuse with a settled live fid or partial header. Both independently
+complete authentication with one-byte budgets and a ten-millisecond EAGAIN
+retry, and reject a backwards clock and expired total deadline. Rust's new API
+also completes reauthentication and a second endpoint without resetting the
+first endpoint. Ownership differences and application-driven early cancellation
+remain explicit in the operation map.
+
+Validation ran in the independent SDK checkouts: Rust `cargo test --offline
+--workspace`, affected launch/output strict Clippy and formatting; C `make check`.
+Logs are `/tmp/t333-launch-rust-workspace.log` and `/tmp/t333-launch-c-check.log`.
+No per-frame instrumentation or live desktop change was introduced.
+
+Both independent output peers passed Sophia's real protected-launch,
+Factotum, output-export and revocation fixture at base `025735c69`. The Rust
+peer uses caller-driven authentication and reauthenticates before role startup.
+The C peer retains its existing caller-driven authentication. Command:
+`cargo-slot sophia cargo test --offline -p sophia-session --features native-session
+--test launch_authentication external_sdk_output_authenticates_and_observes_revocation
+-- --ignored --nocapture`, with `SOPHIA_OUTPUT_AUTH_PEER` set to each absolute
+executable path. Each run executed one passing test. An initial invocation
+without `native-session` selected zero tests and supplied no evidence.
+
+| Peer | Executable | SHA-256 |
+| --- | --- | --- |
+| Rust | `/home/niltempus/.cache/cargo-slots/sdk-rs-t331-reply-storage@sdk-rs-t331-reply-storage/1/debug/examples/output_authenticated_peer` | `65303ade9051dfe3dc57adba431625ef180cbf5fa60af2bb32ae0f2295a0c4be` |
+| C | `/home/niltempus/dev/sdk-c-t318-namespaces/build/output_authenticated_peer` | `704b5dd29890dcd80e92cb1c437521b9114cc21d018d7d4f13db5280d6559d26` |
+
+Export logs: `/tmp/t333-launch-rust-export.log` and
+`/tmp/t333-launch-c-export.log`. These checks establish the launch change's
+independent and production interoperability, not full t333 completion,
+physical acceptance or performance qualification.
+
+After adopting both signed snapshots, the integrated command
+`cargo-slot sophia cargo test --offline -p sophia-session --features native-session
+--test launch_authentication` passed 30 tests with 8 opt-in cases ignored.
+This includes independent C/Rust lock authentication and reauthentication,
+protected output reauthentication, endpoint grants and revocation. Log:
+`/tmp/t333-launch-integrated.log`. The independent output-peer opt-in case was
+run separately above; ignored fixture entry points are not blanket passes.
 
 ### Broker integration and diagnostic evidence
 

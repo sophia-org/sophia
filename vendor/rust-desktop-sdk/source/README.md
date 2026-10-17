@@ -1,5 +1,9 @@
 # Sophia desktop SDK for Rust
 
+Launch authentication now supports caller-driven version negotiation, timers
+and bounded I/O from startup through root handoff. The existing blocking
+constructors remain available; see [launch parity](LAUNCH-PARITY.md).
+
 Clients for the Sophia desktop's role contracts over 9P2000.L. A shell, window
 manager, output or admin client links these crates; none of them needs a
 Sophia checkout to build.

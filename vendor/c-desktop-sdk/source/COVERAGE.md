@@ -1,5 +1,8 @@
 # Desktop SDK coverage
 
+The [launch operation map](LAUNCH-PARITY.md) compares C's caller-driven
+authentication with Rust, including partial I/O, deadlines and relay ownership.
+
 ## Required boundary
 
 The C SDK and Rust SDK remain independent repositories, one per language.

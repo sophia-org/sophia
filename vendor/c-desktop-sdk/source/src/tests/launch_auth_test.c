@@ -13,6 +13,8 @@ struct fixture {
     struct sophia_9p_client r, p;
     struct sophia_la_client auth;
     uint8_t rb[12288], pb[12288], nonce[40];
+    uint8_t incoming[2][4096];
+    size_t received[2];
 };
 static uint32_t get(const uint8_t *p) {
     return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
@@ -45,15 +47,21 @@ static void finish(struct fixture *f) {
     close(f->relay[1]);
 }
 static void peer(struct fixture *f, int relay) {
-    uint8_t b[4096], out[512] = {0};
+    uint8_t *b = f->incoming[relay], out[512] = {0};
     int fd = relay ? f->relay[1] : f->role[1];
-    ssize_t n = recv(fd, b, sizeof b, MSG_DONTWAIT);
+    ssize_t n = recv(fd, b + f->received[relay], 4096 - f->received[relay], MSG_DONTWAIT);
     unsigned type, body = 0;
     uint32_t count;
     if (n < 0) {
         assert(errno == EAGAIN || errno == EWOULDBLOCK);
         return;
     }
+    assert(n > 0);
+    f->received[relay] += (size_t)n;
+    if (f->received[relay] < 4 || f->received[relay] < get(b))
+        return;
+    n = (ssize_t)f->received[relay];
+    f->received[relay] = 0;
     assert(n >= 7 && get(b) == (uint32_t)n);
     if (f->mode == 5)
         return; /* A silent peer cannot renew the deadline. */
@@ -174,6 +182,7 @@ static void reuse_launch_relay(void) {
         struct sophia_9p_handle pending;
         struct sophia_9p_client fresh;
         struct sophia_la_client refused;
+        struct sophia_9p_reply reply;
         uint8_t fresh_storage[12288];
         uint32_t fid;
         int pair[2];
@@ -182,9 +191,58 @@ static void reuse_launch_relay(void) {
         assert(!sophia_9p_attach(&f.p, "", "sophia-launch-relay-v1", &pending, &fid));
         assert(sophia_la_next_endpoint(&refused, &f.auth, &fresh, "role", "view", 2000) == SOPHIA_9P_BUSY);
         assert(f.p.phase == 2 && f.p.fid_count == 1 && sophia_9p_wants_write(&f.p));
+        assert(!sophia_9p_service(&f.p, 4096));
+        peer(&f, 1);
+        assert(!sophia_9p_service(&f.p, 4096));
+        assert(!sophia_9p_peek(&f.p, &reply));
+        assert(!sophia_9p_consume(&f.p, reply.handle));
+        /* Settling the request does not release its live relay fid. */
+        assert(f.p.fid_count == 1 && !sophia_9p_wants_write(&f.p));
+        assert(sophia_la_next_endpoint(&refused, &f.auth, &fresh, "role", "view", 2000) == SOPHIA_9P_BUSY);
+        assert(!sophia_9p_clunk(&f.p, fid, &pending));
+        assert(!sophia_9p_service(&f.p, 4096));
+        peer(&f, 1);
+        assert(!sophia_9p_service(&f.p, 4096));
+        assert(!sophia_9p_peek(&f.p, &reply));
+        assert(!sophia_9p_consume(&f.p, reply.handle));
+        assert(!f.p.fid_count);
+        /* Reset must not discard even an incomplete incoming header. */
+        assert(send(f.relay[1], "\007\000\000", 3, MSG_DONTWAIT) == 3);
+        assert(!sophia_9p_service(&f.p, 4096));
+        assert(f.p.rx_used == 3);
+        assert(sophia_la_next_endpoint(&refused, &f.auth, &fresh, "role", "view", 2000) == SOPHIA_9P_BUSY);
+        assert(f.p.phase == 2 && f.p.rx_used == 3 && !sophia_9p_wants_write(&fresh));
         close(pair[0]); close(pair[1]);
     }
     close(previous[0]); close(previous[1]);
+    finish(&f);
+}
+static void caller_driven_partial_io(void) {
+    struct fixture f;
+    uint64_t now = 100, wake;
+    uint8_t byte;
+    unsigned i;
+    init(&f, 6, now);
+    assert(recv(f.role[1], &byte, 1, MSG_DONTWAIT) == -1 && errno == EAGAIN);
+    assert(recv(f.relay[1], &byte, 1, MSG_DONTWAIT) == -1 && errno == EAGAIN);
+    assert(!sophia_la_service(&f.auth, now, 0));
+    assert(recv(f.role[1], &byte, 1, MSG_DONTWAIT) == -1 && errno == EAGAIN);
+    assert(recv(f.relay[1], &byte, 1, MSG_DONTWAIT) == -1 && errno == EAGAIN);
+    for (i = 0; i < 5000 && !sophia_la_ready(&f.auth); i++) {
+        assert(!sophia_la_service(&f.auth, now, 1));
+        peer(&f, 0);
+        peer(&f, 1);
+        wake = sophia_la_next_wake(&f.auth);
+        if (wake > now && wake < 5100) {
+            assert(wake == now + 10);
+            assert(!sophia_la_service(&f.auth, wake - 1, 0));
+            assert(sophia_la_next_wake(&f.auth) == wake && f.auths == 1);
+            now = wake;
+        }
+    }
+    assert(sophia_la_ready(&f.auth) && now == 110);
+    assert(f.auths == 2 && f.root_attaches == 1 && f.clunks == 3);
+    assert(f.r.fid_count == 1 && !f.p.fid_count);
     finish(&f);
 }
 int main(void) {
@@ -242,6 +300,7 @@ int main(void) {
     assert(f.auths == 1 && !f.root_attaches);
     finish(&f);
     reuse_launch_relay();
+    caller_driven_partial_io();
     puts("launch authentication: own challenge, exact status, no fallback, cleanup, retry and "
          "deadline passed");
     return 0;

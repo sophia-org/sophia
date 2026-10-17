@@ -1,5 +1,8 @@
 # C and Rust SDK API parity
 
+The [launch operation map](LAUNCH-PARITY.md) covers caller-driven negotiation,
+timers, bounded I/O, relay reuse and the remaining ownership differences.
+
 The [broker operation map](BROKER-PARITY.md) records the current broker API,
 paired coverage, ownership and release limits. Checkpoints below retain their
 original source dates; an older missing-implementation statement is not a
