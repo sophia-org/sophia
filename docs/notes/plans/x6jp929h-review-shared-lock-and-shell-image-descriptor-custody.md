@@ -667,11 +667,22 @@ acceptance stays behind t289's safe-completion seam and attended GPU evidence.
 Signed Rust SDK `05bf018` and C SDK `9bca0db` add independent Linux tests using
 real SEQPACKET, SCM_RIGHTS and sealed memfds. Both pass required-seal checks,
 FUTURE_WRITE insufficiency, producer-close survival, receiver CLOEXEC, immutable
-bytes, missing/extra rights, ancillary truncation, bounded nonblocking EAGAIN
-and queued-reference cleanup at socket teardown. Each process returns to its
-initial FD count. C also verifies EBUSY when adding F_SEAL_WRITE with a shared
+bytes, missing/extra rights, ancillary truncation and bounded nonblocking
+backpressure. Each process returns to its initial FD-table count; this does not
+observe kernel-held in-flight references. C also verifies EBUSY when adding F_SEAL_WRITE with a shared
 writable mapping; Rust retains the workspace unsafe-code prohibition and tests
 the seal requirement without creating a mapping.
+
+Review follow-up Rust `ad9120c` / C `bb402f9` asserts zero delivered FDs on
+control truncation and socket writable readiness after draining the bounded
+burst. SO_SNDBUF is bounded; ETOOMANYREFS is a valid distinct stop because the
+per-user in-flight rights cap can precede socket EAGAIN. A descriptor-free send
+then proves socket progress without assuming a global rights credit. Production's
+four-offer ceiling bounds its own contribution but cannot reserve another user's
+or process's rights allowance. C additionally proves a read-only sealed mapping
+survives closing both source FDs and that shared writable mapping is refused.
+Both revised targets pass; targeted strict Rust Clippy passes again. These checks
+do not measure the release time of kernel references invisible in the FD table.
 
 Rust's `cargo-slot sdk-rs cargo test -p sophia-shell-client --offline -q` passes,
 as does strict Clippy for the new `descriptor_kernel` target. C `make check`
