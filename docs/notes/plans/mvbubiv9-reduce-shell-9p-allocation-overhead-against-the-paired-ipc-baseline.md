@@ -59,6 +59,33 @@ Task state and execution order remain in todo.md.
 
 ## Implementation sequence
 
+### Journal-read pairing evidence — October 17
+
+For a steady submission, pairing means the events-file replies carrying its
+Submitted receipt and its outcome, and the ACK writes acknowledging those
+replies. A joined reply carries both; a split receipt arrives before a later
+outcome reply. Report reads and ACKs per frame, records per read and joined or
+split counts per submission. Match submission and journal sequence identities;
+byte lengths alone cannot establish those joins.
+
+The retained `t331-b3-20261017/ordered-candidate-01` device-free traces contain
+643 panel event-read requests and ACK writes for 321 submits, and 1027 bulk
+requests and ACK writes for 513 submits. Each final read has no sent reply:
+the completed reply counts are 642 and 1026. Equal aggregate request/ACK counts
+therefore do not prove a one-to-one read/ACK join. The 320 panel and 512 bulk
+replies of 48 bytes are consistent
+with lone Submitted receipts. That classification is inferred from sizes, not
+decoded record identities. The 65,525-byte requested reads rule out a small
+client read-size limit in those runs. This is neither native-load evidence nor
+a measured cost per pair.
+
+The trace lacks journal-append timing, so it cannot show whether an outcome
+was already available when a receipt-only reply was encoded. A diagnostic
+extension needs append sequence ranges, read-delivery ranges and completion
+triggers, with deterministic same-turn and later-turn outcome controls.
+Per-request allocation attribution remains separate. No change to read
+completion timing, ACK policy or batching is authorized by this definition.
+
 ### Approved queued submit and pixel-write window — October 17
 
 niltempus approved the [B2/B3 plan](nfe0blnb-queue-shell-submit-and-pixel-writes-within-existing-custody-bounds.md)
