@@ -72,6 +72,42 @@ static void handoff(enum sophia_sf_profile profile, int staging)
         request = rig_request(91);
         assert(!sophia_ss_submit(&r.s, &request, 1, &ticket));
         assert(rig_until(&r, ticket, 64) == SOPHIA_SS_SUBMITTED);
+        {
+            struct sophia_sf_resource_begin b = {0};
+            const struct sophia_sf_record *event;
+            uint8_t pixels[16] = {0};
+            unsigned j;
+            rig_ack(&r);
+            r.s.files.limits.max_height_px = 4;
+            r.s.files.limits.max_resource_bytes = 16;
+            b.transaction = 92;
+            b.grant_connection_epoch = PEER_EPOCH;
+            b.grant_content_epoch = r.s.files.limits.grant_content_epoch;
+            b.resource_id = b.resource_generation = 1;
+            b.width_px = 1;
+            b.height_px = b.chunk_count = 4;
+            b.total_bytes = 16;
+            b.rendered_scale_numerator = b.rendered_scale_denominator = b.pixel_format = 1;
+            assert(!sophia_ss_upload_begin(&r.s, b, &ticket));
+            assert(rig_until(&r, ticket, 64) == SOPHIA_SS_SUBMITTED);
+            peer_resource_status(&r.p, &b, 1);
+            rig_run(&r, 8);
+            assert(!sophia_ss_event(&r.s, &event));
+            assert(event->header.kind == SOPHIA_SF_RESOURCE_STATUS);
+            assert(!sophia_ss_consume(&r.s));
+            rig_ack(&r);
+            rig_run(&r, 8);
+            r.p.hold_upload = 1;
+            assert(!sophia_ss_upload_chunk(&r.s, pixels, sizeof(pixels)));
+            rig_run(&r, 8);
+            assert(r.p.upload_held == 3); /* Eight slots leave five controls. */
+            peer_count(&r.p, r.p.upload_tags[0], 4);
+            rig_run(&r, 4);
+            assert(r.p.upload_held == 4);
+            for (j = 1; j < 4; j++) peer_count(&r.p, r.p.upload_tags[j], 4);
+            rig_run(&r, 4);
+            assert(sophia_ss_upload_ready(&r.s));
+        }
     }
     rig_close(&r);
     free(ws);

@@ -785,3 +785,14 @@ production multi-endpoint launch is claimed by this SDK-only run. All ten launch
 Evidence `t318-rs-relay-01` has SHA256SUMS SHA-256
 `5f977b28ea9941fe9459fb65b8efef5850adb0648e4cf84d74b76aa69e650625`. The candidate hashes cover
 all modified/untracked files at the run; this provenance addition follows it.
+
+## B3 implementation checkpoint, 2026-10-17
+
+The upload window implements the queued-shell-writes amendment already pinned
+from signed Sophia `feaf3cbc7`. No new server feature, wire field or capability
+is inferred. Scripted tests cover four outstanding canonical units, rolling
+refill across eight units, reversed replies, short/EAGAIN recovery, iounit,
+End ordering and fences. Known successful bytes survive terminal failure.
+The independent C candidate is described in API-PARITY.md. Old/current export
+compatibility, signed snapshot adoption, fairness diagnostics and native cost
+qualification remain separate gates; no B3 performance result is claimed.

@@ -46,18 +46,22 @@ int sophia_sf_client_upload_begin(struct sophia_sf_client *c, struct sophia_sf_r
         c->upload_size = c->upload_sent = 0;
         c->upload_data = NULL;
         c->upload_closing = 0;
+        c->upload_head = c->upload_count = c->upload_draining = c->upload_wait = 0;
+        c->upload_issued = 0;
     }
     return status;
 }
 int sf_session_upload_drive(struct sophia_sf_client *c)
 {
     int r;
-    size_t n;
     char slot[2];
     const char *names[2] = {"upload", slot};
     if (!c->upload_stage || c->upload_op.active || c->event_ready)
         return 0;
     if (c->upload_closing) {
+        if (c->upload_count)
+            return 0;
+        c->upload_wait = c->upload_draining = 0;
         c->upload_data = NULL;
         c->upload_size = c->upload_sent = 0;
         if (c->upload_fid == UINT32_MAX) {
@@ -76,14 +80,7 @@ int sf_session_upload_drive(struct sophia_sf_client *c)
         r = sophia_9p_lopen(c->wire, c->upload_fid, 1, &c->upload_op.handle);
         break;
     case 5:
-        n = c->upload_size - c->upload_sent;
-        if (n > c->wire->msize - 23u)
-            n = c->wire->msize - 23u;
-        if (c->upload_iounit && n > c->upload_iounit)
-            n = c->upload_iounit;
-        r = sophia_9p_write(c->wire, c->upload_fid, c->upload_offset,
-                            c->upload_data + c->upload_sent, n, &c->upload_op.handle);
-        break;
+        return sf_session_upload_write_drive(c);
     case 7:
         r = sophia_9p_clunk(c->wire, c->upload_fid, &c->upload_op.handle);
         break;
@@ -112,16 +109,6 @@ int sf_session_upload_reply(struct sophia_sf_client *c, const struct sophia_9p_r
     case 3:
         c->upload_iounit = r->iounit;
         c->upload_stage = 4;
-        break;
-    case 5:
-        if (!r->count || r->count > c->upload_size - c->upload_sent)
-            return SOPHIA_9P_INVALID;
-        c->upload_sent += r->count;
-        c->upload_offset += r->count;
-        if (c->upload_sent == c->upload_size) {
-            c->upload_data = NULL;
-            c->upload_stage = 4;
-        }
         break;
     case 7:
         c->upload_fid = UINT32_MAX;
@@ -161,6 +148,7 @@ int sophia_sf_client_upload_chunk(struct sophia_sf_client *c, const void *bytes,
     c->upload_data = bytes;
     c->upload_size = count;
     c->upload_sent = 0;
+    c->upload_issued = 0;
     c->upload_stage = 5;
     return 0;
 }

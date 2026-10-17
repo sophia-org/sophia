@@ -98,16 +98,9 @@ impl FileWire {
                     accepted: false,
                 }
             }
-            QueuedKind::SlotWrite { resource, offset } => Current::SlotWrite {
-                resource,
-                offset,
-                remaining: output.take_front_bytes(),
-                acknowledged: 0,
-                tag: None,
-                ticket,
-                not_before: None,
-                wrote_any: false,
-            },
+            QueuedKind::SlotWrite { resource, offset } => Current::SlotWrite(
+                super::uploads::Window::new(resource, offset, output.take_front_bytes(), ticket),
+            ),
         };
         self.current = Some(current);
         self.pending.pop_front();
@@ -119,7 +112,14 @@ impl FileWire {
     /// the front of the outbox.
     pub(super) fn settle_current(&mut self, custody: Custody) {
         let ticket = match self.current.take() {
-            Some(Current::Submission { ticket, .. } | Current::SlotWrite { ticket, .. }) => ticket,
+            Some(Current::Submission { ticket, .. }) => ticket,
+            Some(Current::SlotWrite(window)) => {
+                for unit in window.units.into_iter().flatten() {
+                    self.custody.push((unit.ticket, custody));
+                    self.retire += 1;
+                }
+                return;
+            }
             None => return,
         };
         self.custody.push((ticket, custody));
@@ -235,10 +235,7 @@ impl FileWire {
                 phase: SubmissionPhase::RetryWait { not_before, .. },
                 ..
             }) => Some(*not_before),
-            Some(Current::SlotWrite {
-                not_before: Some((not_before, _)),
-                ..
-            }) => Some(*not_before),
+            Some(Current::SlotWrite(window)) => window.not_before.map(|(at, _)| at),
             _ => None,
         }
     }

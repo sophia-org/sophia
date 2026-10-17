@@ -184,6 +184,12 @@ pub struct Peer {
     /// Bytes written to each `upload/N` slot, at the offsets written.
     pub uploads: HashMap<String, Vec<u8>>,
     pub upload_replies: VecDeque<Result<u32, u32>>,
+    pub hold_upload_replies: bool,
+    pub upload_iounit: u32,
+    pub upload_offsets: Vec<u64>,
+    pub invalidated_upload_tails: usize,
+    pub short_upload_heads: usize,
+    pub eagain_upload_heads: usize,
     limits: Vec<u8>,
     edit_bootstrap: fn(&mut Vec<u8>),
     /// Replies collected for one write, between [`Peer::begin_batch`] and
@@ -346,6 +352,12 @@ impl Peer {
             negotiate: None,
             uploads: HashMap::new(),
             upload_replies: VecDeque::new(),
+            hold_upload_replies: false,
+            upload_iounit: 0,
+            upload_offsets: Vec::new(),
+            invalidated_upload_tails: 0,
+            short_upload_heads: 0,
+            eagain_upload_heads: 0,
             limits,
             edit_bootstrap,
             batch: None,
@@ -479,6 +491,14 @@ impl Peer {
     pub fn answer_error(&mut self, tag: u16, errno: u32) {
         self.send(RLERROR, tag, &errno.to_le_bytes());
     }
+    fn upload_reply(&mut self, kind: u8, tag: u16, value: u32) {
+        if self.hold_upload_replies {
+            self.held_replies
+                .push((kind, tag, value.to_le_bytes().to_vec()));
+        } else {
+            self.send(kind, tag, &value.to_le_bytes());
+        }
+    }
 
     /// Answers every held object read, and stops holding new ones.
     pub fn release_object_reads(&mut self) {
@@ -566,9 +586,14 @@ impl Peer {
                     self.handshake_done = true;
                     self.fids.insert(fid, "transaction".into());
                 }
+                let iounit = if node.starts_with("upload/") {
+                    self.upload_iounit
+                } else {
+                    0
+                };
                 self.opens.push((node, u64_at(&reported, 5)));
                 let mut reply = reported.to_vec();
-                reply.extend_from_slice(&0u32.to_le_bytes());
+                reply.extend_from_slice(&iounit.to_le_bytes());
                 if held {
                     self.held_replies.push((RLOPEN, tag, reply));
                 } else {
@@ -670,17 +695,25 @@ impl Peer {
                     slot if slot.starts_with("upload/") => {
                         // Slot bytes land at the written offset, in order.
                         let offset = u64_at(&body, 4) as usize;
+                        self.upload_offsets.push(offset as u64);
+                        if self.uploads.get(&node).map_or(0, Vec::len) != offset {
+                            self.invalidated_upload_tails += 1;
+                            self.upload_reply(RLERROR, tag, 22);
+                            return;
+                        }
                         let written = match self.upload_replies.pop_front().unwrap_or(Ok(count)) {
                             Ok(written) => written.min(count),
                             Err(errno) => {
-                                self.answer_error(tag, errno);
+                                self.eagain_upload_heads += usize::from(errno == 11);
+                                self.upload_reply(RLERROR, tag, errno);
                                 return;
                             }
                         };
                         let upload = self.uploads.entry(node.clone()).or_default();
                         assert_eq!(upload.len(), offset, "slot writes arrive in order");
                         upload.extend_from_slice(&data[..written as usize]);
-                        self.answer_write(tag, written);
+                        self.short_upload_heads += usize::from(written < count);
+                        self.upload_reply(RWRITE, tag, written);
                     }
                     "ack" => {
                         let ack = decode_shell_file_ack(&data).expect("an ack");

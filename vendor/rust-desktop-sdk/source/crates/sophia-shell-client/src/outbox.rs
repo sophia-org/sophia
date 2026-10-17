@@ -289,10 +289,16 @@ impl ClientOutbox {
 
     /// Transfer bytes without releasing the unit's admission or custody ticket.
     pub(crate) fn take_front_bytes(&mut self) -> Box<[u8]> {
+        self.take_bytes(0)
+    }
+    pub(crate) fn take_bytes(&mut self, index: usize) -> Box<[u8]> {
         self.frames
-            .front_mut()
+            .get_mut(index)
             .and_then(|frame| frame.bytes.take())
             .expect("the current file operation takes its payload once")
+    }
+    pub(crate) fn ticket_at(&self, index: usize) -> u64 {
+        self.frames[index].ticket
     }
     /// The front unit's ticket.
     pub(crate) fn front_ticket(&self) -> Option<u64> {

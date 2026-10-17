@@ -42,9 +42,14 @@ struct peer {
     uint8_t staged[65536], last_submit[24];
     size_t staged_used;
     unsigned tx_writes, submits, acks, upload_bytes;
+    unsigned hold_upload, upload_held;
+    uint16_t upload_tags[16];
+    uint32_t upload_counts[16];
+    uint64_t upload_offsets[16];
     uint64_t outputs_generation;
     /* Rlerror for walks of outputs or upload/N: node-specific failures. */
     uint32_t object_error, upload_error;
+    uint32_t upload_iounit;
     /* outputs: append one trailing byte; cap each Rread (0: no cap). */
     int object_trailing;
     uint32_t object_read_max;
@@ -387,7 +392,7 @@ static inline void peer_request(struct peer *p, const uint8_t *m, size_t size)
         peer_qid(b, file);
         if (peer_object_kind(file) && p->object_qids[peer_object_kind(file)])
             peer_put(b + 5, p->object_qids[peer_object_kind(file)], 8);
-        peer_put(b + 13, 0, 4);
+        peer_put(b + 13, file == F_UPLOAD ? p->upload_iounit : 0, 4);
         peer_send(p, 13, tag, b, 17);
         return;
     case 120:
@@ -458,6 +463,14 @@ static inline void peer_request(struct peer *p, const uint8_t *m, size_t size)
             } else
                 peer_count(p, tag, count);
         } else if (file == F_UPLOAD) {
+            if (p->hold_upload) {
+                unsigned i = p->upload_held++;
+                assert(i < 16);
+                p->upload_tags[i] = tag;
+                p->upload_counts[i] = count;
+                p->upload_offsets[i] = offset;
+                return;
+            }
             p->upload_bytes += count;
             peer_count(p, tag, count);
         } else if (file == F_SUBMIT) {

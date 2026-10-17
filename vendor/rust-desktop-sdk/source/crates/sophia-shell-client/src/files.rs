@@ -131,6 +131,9 @@ enum SubmitReply {
     Invalid,
 }
 
+// One lane per connection: keeping its four-unit window inline avoids a new
+// allocation on every upload burst. No collection stores copies of this enum.
+#[allow(clippy::large_enum_variant)]
 enum Current {
     Submission {
         bytes: Box<[u8]>,
@@ -148,19 +151,7 @@ enum Current {
         /// or the paired record reply is lost before disconnect.
         accepted: bool,
     },
-    SlotWrite {
-        resource: ContentResourceId,
-        offset: u64,
-        remaining: Box<[u8]>,
-        acknowledged: usize,
-        tag: Option<Tag>,
-        ticket: u64,
-        /// Set after `EAGAIN`: no write before this instant, nor in the
-        /// same `poll_io` pass.
-        not_before: Option<(Instant, u64)>,
-        /// Some bytes already returned `Rwrite`.
-        wrote_any: bool,
-    },
+    SlotWrite(uploads::Window),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -178,6 +169,7 @@ enum UploadState {
 struct Upload {
     resource: ContentResourceId,
     state: UploadState,
+    iounit: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -788,6 +780,7 @@ impl FileWire {
                 self.uploads[slot] = Some(Upload {
                     resource,
                     state: UploadState::Pending,
+                    iounit: 0,
                 });
             }
         }

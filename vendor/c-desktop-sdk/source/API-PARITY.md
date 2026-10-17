@@ -1033,3 +1033,41 @@ preserved old uncertainty and isolation from an old ticket's late completion.
 
 Admin map 13 adds paired abrupt service-process death before/after claim,
 with retained uncertainty and no automatic retry.
+
+## B3 upload window (working candidate)
+
+Zero and oversized pixel Rwrite counts fail the connection in both SDKs without
+resending. Rust retains Unknown custody for an issued unit whose invalid reply
+establishes no accepted prefix; an oversized count cannot establish Stored on
+terminal cleanup. Independent regression tests cover both invalid counts. C's
+borrowed-buffer API exposes terminal failure rather than per-chunk custody.
+
+The shell client queues up to four writes from one borrowed, multi-chunk buffer,
+splitting at canonical boundaries, msize and iounit. Replies match by handle and
+settle in issue order. Short writes drain the invalidated tail and resume at the
+confirmed cursor; EAGAIN drains first, then waits for retry. ESTALE stops recovery.
+End and clunk cannot pass outstanding writes. The separate lock client is unchanged.
+Both SDKs close the writer after draining a permanent head refusal, cancelling
+the resource before End. Rust previously retained the binding after refusing one
+unit; its B3 path now matches C's resource cancellation.
+
+Direct low-level users must call `sophia_sf_client_upload_retry` after progress or
+a bounded backoff when an upload waits. The client reads no clock. `sophia_ss`
+provides an independent 4–256 ms upload backoff and reports the earlier upload or
+submit deadline. Existing high-level dispatch/timeout loops need no new call.
+
+Five control request slots are reserved. The default session now provisions
+nine slots; caller-supplied eight-slot low-level clients use three upload credits.
+Both client and session structs grew: rebuild consumers and foreign-language
+bindings, recalculate storage with the matching library, and force Nim C rebuilds.
+
+The paired Rust candidate gathers up to four adjacent same-resource outbox units,
+retaining a ticket per unit. C borrows one buffer per call, so one canonical chunk
+per call usually gives depth one. Rust confirms fragmented prefixes sequentially;
+C can window fragments within a buffer. Both honor iounit and canonical boundaries.
+Rust retries uploads on time; C retries after event/ACK progress or time. C retains
+its unconsumed-event refill gate. These scheduling differences do not change custody.
+
+Independent window/recovery tests pass locally; exact signed B3 revisions, export
+adoption and performance qualification remain pending. Diagnostic counts belong
+to scripted peers and instrumented captures, not a new production metrics API.
