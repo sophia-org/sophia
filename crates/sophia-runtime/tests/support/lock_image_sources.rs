@@ -340,3 +340,50 @@ fn dropping_the_service_does_not_wait_for_a_held_image() {
     assert_eq!(&held[..], &PIXELS[..]);
     drop((held, peer));
 }
+
+#[test]
+fn an_ended_epoch_leaves_no_worker_job_behind() {
+    // The owner ends each epoch itself, as a replacement does, while the
+    // provider and its channel are still up: channel loss settles nothing
+    // first, so the epoch's end must return every worker credit.
+    let (mut transport, directory) = transport("ended-jobs");
+    transport.enable_sealed_images(policy(2000)).unwrap();
+    // A Source handed over just before the end: whether its completion
+    // arrives before or after, it is taken.
+    let (mut provider, stream) = Provider::start(&mut transport, &directory);
+    let (files, socket, provider) = pump(
+        &mut transport,
+        std::thread::spawn(move || {
+            let mut files = Files::attach(stream);
+            let socket = ready(&mut files, &mut provider);
+            files.admitted(1);
+            send_source(&socket, EPOCH, 1, &memfd(&PIXELS, true));
+            (files, socket, provider)
+        }),
+    );
+    let _ = transport.turn();
+    transport.disconnect().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while transport.image_jobs_pending() != 0 {
+        assert!(Instant::now() < deadline, "ended job never drained");
+        transport.poll_detached_images();
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    drop((files, socket, provider));
+    // An admitted offer whose Source never came: its reservation goes back
+    // with the epoch.
+    let (mut provider, stream) = Provider::start(&mut transport, &directory);
+    let (files, socket, provider) = pump(
+        &mut transport,
+        std::thread::spawn(move || {
+            let mut files = Files::attach(stream).at_epoch(EPOCH + 1);
+            let socket = ready(&mut files, &mut provider);
+            files.admitted(2);
+            (files, socket, provider)
+        }),
+    );
+    assert_eq!(transport.image_jobs_pending(), 1);
+    transport.disconnect().unwrap();
+    assert_eq!(transport.image_jobs_pending(), 0);
+    drop((files, socket, provider));
+}

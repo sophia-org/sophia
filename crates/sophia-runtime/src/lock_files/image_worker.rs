@@ -49,9 +49,15 @@ impl ImageWorker {
         self.worker.readiness()
     }
 
-    /// Worker credits held: reservations and jobs whose completion is owed.
+    /// Jobs this owner tracks: reservations, jobs whose completion is
+    /// owed, and a parked completion. Each holds a worker credit except the
+    /// parked one, whose credit came back when it was taken.
     pub(super) fn pending(&self) -> usize {
-        self.worker.pending()
+        debug_assert_eq!(
+            self.jobs.len(),
+            self.worker.pending() + usize::from(self.parked.is_some())
+        );
+        self.jobs.len()
     }
 
     fn forget(&mut self, id: u64) -> Option<Job> {
@@ -60,6 +66,14 @@ impl ImageWorker {
     }
 
     /// Reports one completion to custody. `false` parks it for room.
+    ///
+    /// The offer's two held credits leave room for its settlement, so
+    /// `EAGAIN` is not expected; a parked completion still keeps its job.
+    /// A revoked custody (`ESTALE` from its liveness check) ends the epoch,
+    /// and its result is dropped. Any other refusal means custody no
+    /// longer owes this live job a settlement it can journal: custody is
+    /// revoked, failing closed, so the connection ends and no offer waits
+    /// on a completion that was lost.
     fn complete(
         &mut self,
         custody: &mut LockFileCustody,
@@ -67,17 +81,16 @@ impl ImageWorker {
         result: Result<SharedPixels, SealedValidationFailure>,
     ) -> bool {
         match custody.image_completed(id, result.clone()) {
+            Ok(_) => {}
             Err(Errno::EAGAIN) => {
                 self.parked = Some((id, result));
-                false
+                return false;
             }
-            // Settled, or its offer is gone with a revoked epoch: either
-            // way the worker credit is already back.
-            _ => {
-                self.forget(id);
-                true
-            }
+            Err(_) if custody.is_revoked() => {}
+            Err(_) => custody.revoke(),
         }
+        self.forget(id);
+        true
     }
 
     /// One owner turn against the live epoch: completions, worker actions,
@@ -178,7 +191,11 @@ impl ImageWorker {
     /// The epoch ended: unsent reservations go back now, submitted jobs are
     /// cancelled and their completions dropped when they arrive.
     pub(super) fn end_epoch(&mut self) {
-        self.parked = None;
+        // A parked completion's credit is already back; only its job and
+        // result remain.
+        if let Some((id, _)) = self.parked.take() {
+            self.forget(id);
+        }
         let worker = &mut self.worker;
         self.jobs.retain_mut(|job| {
             if worker.release_reserved(job.id) {
