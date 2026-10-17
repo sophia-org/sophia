@@ -39,17 +39,33 @@ struct Transfer {
     ordinal: u32,
     deadline: u64,
     idle_deadline: u64,
+    source: TransferSource,
+}
+
+enum TransferSource {
+    Bytes,
+    // A stopped worker still owns its mapping until completion. Keep the
+    // resource and every byte charged until the owner returns that completion.
+    Sealed {
+        stopped: Option<(ContentReason, TransactionId)>,
+    },
+}
+
+enum PixelBacking {
+    Bytes(Arc<Vec<u8>>),
+    Sealed(sophia_linux_peer::SealedMapping),
 }
 
 struct Pixels {
     description: ContentResourceBegin,
-    bytes: Arc<Vec<u8>>,
+    bytes: PixelBacking,
 }
 
 struct Accepted {
     pixels: Arc<Pixels>,
     retiring: bool,
     transaction: TransactionId,
+    release_pending: bool,
 }
 
 /// An immutable reference to accepted pixels. Clones are real storage consumers.
@@ -59,7 +75,10 @@ pub struct ContentResourceLease(Arc<Pixels>);
 
 impl ContentResourceLease {
     pub fn bytes(&self) -> &[u8] {
-        &self.0.bytes
+        match &self.0.bytes {
+            PixelBacking::Bytes(bytes) => bytes,
+            PixelBacking::Sealed(mapping) => mapping.bytes(),
+        }
     }
     pub fn description(&self) -> &ContentResourceBegin {
         &self.0.description
@@ -203,6 +222,29 @@ impl ContentResourceStore {
         description: ContentResourceBegin,
         now: u64,
     ) -> Result<(), ContentStoreError> {
+        self.begin_source(transaction, description, now, false)
+    }
+
+    /// Reserves the same bounded resource custody without allocating a byte
+    /// upload buffer. ImageAdmitted/SourceReleased belong to the offer owner.
+    /// Every successful reservation needs complete_sealed, including when no
+    /// worker was started, so cancellation never releases a worker's charge.
+    pub fn begin_sealed(
+        &mut self,
+        transaction: TransactionId,
+        description: ContentResourceBegin,
+        now: u64,
+    ) -> Result<(), ContentStoreError> {
+        self.begin_source(transaction, description, now, true)
+    }
+
+    fn begin_source(
+        &mut self,
+        transaction: TransactionId,
+        description: ContentResourceBegin,
+        now: u64,
+        sealed: bool,
+    ) -> Result<(), ContentStoreError> {
         self.check(description.grant, transaction)?;
         self.time(now)?;
         let key = description.resource;
@@ -234,7 +276,7 @@ impl ContentResourceStore {
                 > self.limits.max_resident_bytes
             || self.usage.backing + bytes
                 > self.limits.max_resident_bytes + self.limits.max_retiring_bytes
-            || self.events.len() + self.response_credits + 3
+            || self.events.len() + self.response_credits + if sealed { 2 } else { 3 }
                 > self.limits.max_control_records as usize
         {
             return Err(ContentStoreError::Budget);
@@ -246,9 +288,11 @@ impl ContentResourceStore {
             .checked_add(u64::from(self.limits.transfer_idle_timeout_ms))
             .ok_or(ContentStoreError::Malformed)?;
         let mut storage = Vec::new();
-        storage
-            .try_reserve_exact(bytes as usize)
-            .map_err(|_| ContentStoreError::Budget)?;
+        if !sealed {
+            storage
+                .try_reserve_exact(bytes as usize)
+                .map_err(|_| ContentStoreError::Budget)?;
+        }
         self.usage.staging += bytes;
         self.usage.reserved_resident += bytes;
         self.usage.backing += bytes;
@@ -262,10 +306,19 @@ impl ContentResourceStore {
                 bytes: storage,
                 ordinal: 0,
                 deadline,
-                idle_deadline,
+                // A descriptor has no canonical chunk cadence. Its original
+                // transfer deadline bounds both arrival and validation.
+                idle_deadline: if sealed { deadline } else { idle_deadline },
+                source: if sealed {
+                    TransferSource::Sealed { stopped: None }
+                } else {
+                    TransferSource::Bytes
+                },
             },
         );
-        self.status(transaction, key, 1, ContentReason::None, bytes);
+        if !sealed {
+            self.status(transaction, key, 1, ContentReason::None, bytes);
+        }
         Ok(())
     }
 
@@ -283,6 +336,9 @@ impl ContentResourceStore {
         let Some(transfer) = self.transfers.get_mut(&chunk.resource) else {
             return Err(ContentStoreError::Stale);
         };
+        if !matches!(transfer.source, TransferSource::Bytes) {
+            return Err(ContentStoreError::Malformed);
+        }
         let remaining = transfer.layout.total_bytes - transfer.bytes.len() as u64;
         let expected = remaining
             .min(u64::from(transfer.layout.row_bytes) * u64::from(transfer.layout.rows_per_chunk));
@@ -318,6 +374,9 @@ impl ContentResourceStore {
         let Some(transfer) = self.transfers.get(&end.resource) else {
             return Err(ContentStoreError::Stale);
         };
+        if !matches!(transfer.source, TransferSource::Bytes) {
+            return Err(ContentStoreError::Malformed);
+        }
         if end.total_bytes != transfer.layout.total_bytes
             || end.chunk_count != transfer.layout.chunk_count
             || transfer.bytes.len() as u64 != end.total_bytes
@@ -340,13 +399,82 @@ impl ContentResourceStore {
             Accepted {
                 pixels: Arc::new(Pixels {
                     description: transfer.description,
-                    bytes: Arc::new(transfer.bytes),
+                    bytes: PixelBacking::Bytes(Arc::new(transfer.bytes)),
                 }),
                 retiring: false,
                 transaction,
+                release_pending: false,
             },
         );
         self.status(transaction, end.resource, 2, ContentReason::None, bytes);
+        Ok(())
+    }
+
+    /// Reconciles a finished validation job (or an offer for which no job was
+    /// launched). It must run even after cancellation or epoch revocation.
+    /// Only this handoff lets a stopped transfer release its retained charge.
+    pub fn complete_sealed(
+        &mut self,
+        grant: ContentGrant,
+        resource: ContentResourceId,
+        result: Result<super::ValidatedSealedPixels, ContentStoreError>,
+        now: u64,
+    ) -> Result<(), ContentStoreError> {
+        if grant != self.limits.grant {
+            return Err(ContentStoreError::Stale);
+        }
+        self.expire(now)?;
+        let transfer = self
+            .transfers
+            .get(&resource)
+            .ok_or(ContentStoreError::Stale)?;
+        let TransferSource::Sealed { stopped } = transfer.source else {
+            return Err(ContentStoreError::Malformed);
+        };
+        if let Some((reason, transaction)) = stopped {
+            // The result and its mapping drop only after the worker returned.
+            self.abort_finished(resource, reason, Some(transaction));
+            return Err(if reason == ContentReason::Revoked {
+                ContentStoreError::Revoked
+            } else {
+                ContentStoreError::Stale
+            });
+        }
+        let pixels = match result {
+            Ok(pixels) if pixels.bytes().len() as u64 == transfer.layout.total_bytes => pixels,
+            _ => {
+                self.abort_finished(resource, ContentReason::Malformed, None);
+                return Err(ContentStoreError::Malformed);
+            }
+        };
+        let transfer = self
+            .transfers
+            .remove(&resource)
+            .expect("checked sealed transfer");
+        let bytes = transfer.layout.total_bytes;
+        self.usage.staging -= bytes;
+        self.usage.reserved_resident -= bytes;
+        self.usage.resident += bytes;
+        self.response_credits -= 1;
+        self.accepted.insert(
+            resource,
+            Accepted {
+                pixels: Arc::new(Pixels {
+                    description: transfer.description,
+                    bytes: PixelBacking::Sealed(pixels.0),
+                }),
+                retiring: false,
+                transaction: transfer.transaction,
+                release_pending: false,
+            },
+        );
+        self.status(
+            transfer.transaction,
+            resource,
+            2,
+            ContentReason::None,
+            bytes,
+        );
         Ok(())
     }
 
@@ -364,6 +492,21 @@ impl ContentResourceStore {
     }
 
     fn abort(
+        &mut self,
+        key: ContentResourceId,
+        reason: ContentReason,
+        request: Option<TransactionId>,
+    ) {
+        if let Some(transfer) = self.transfers.get_mut(&key)
+            && let TransferSource::Sealed { stopped } = &mut transfer.source
+        {
+            stopped.get_or_insert((reason, request.unwrap_or(transfer.transaction)));
+            return;
+        }
+        self.abort_finished(key, reason, request);
+    }
+
+    fn abort_finished(
         &mut self,
         key: ContentResourceId,
         reason: ContentReason,
@@ -454,20 +597,27 @@ impl ContentResourceStore {
         let ready: Vec<_> = self
             .accepted
             .iter()
-            .filter(|(_, v)| (v.retiring || self.revoked) && Arc::strong_count(&v.pixels) == 1)
+            .filter(|(_, v)| {
+                !v.release_pending
+                    && (v.retiring || self.revoked)
+                    && Arc::strong_count(&v.pixels) == 1
+            })
             .map(|(key, _)| *key)
             .collect();
         for resource in ready {
-            let value = self.accepted.remove(&resource).expect("selected resource");
-            if value.retiring {
-                self.usage.retiring -= value.pixels.description.total_bytes;
+            let value = self.accepted.get_mut(&resource).expect("selected resource");
+            let transaction = value.transaction;
+            let defer = !self.revoked && matches!(value.pixels.bytes, PixelBacking::Sealed(_));
+            if defer {
+                // Keep the backing and its byte charge until ResourceReleased
+                // enters the journal, not merely the outbound FIFO.
+                value.release_pending = true;
             } else {
-                self.usage.resident -= value.pixels.description.total_bytes;
+                self.remove_accepted(resource);
             }
-            self.usage.backing -= value.pixels.description.total_bytes;
             self.response_credits -= 1;
             self.events.push_back(ContentResourceEvent {
-                transaction: value.transaction,
+                transaction,
                 record: ShellContentRecord::ResourceReleased(ContentResourceReleased {
                     grant: self.limits.grant,
                     resource,
@@ -479,6 +629,58 @@ impl ContentResourceStore {
                 }),
             });
         }
+        if self.revoked {
+            let pending: Vec<_> = self
+                .accepted
+                .iter()
+                .filter(|(_, v)| v.release_pending && Arc::strong_count(&v.pixels) == 1)
+                .map(|(key, _)| *key)
+                .collect();
+            for key in pending {
+                self.remove_accepted(key);
+            }
+        }
+    }
+
+    fn remove_accepted(&mut self, resource: ContentResourceId) {
+        let value = self.accepted.remove(&resource).expect("selected resource");
+        let bytes = value.pixels.description.total_bytes;
+        if value.retiring {
+            self.usage.retiring -= bytes;
+        } else {
+            self.usage.resident -= bytes;
+        }
+        self.usage.backing -= bytes;
+    }
+
+    /// Called by the image owner only after the corresponding ResourceReleased
+    /// record has entered the live journal. Queueing the event is insufficient.
+    /// Epoch revocation instead drops this obligation with the dead journal.
+    pub fn confirm_sealed_release(
+        &mut self,
+        resource: ContentResourceId,
+    ) -> Result<(), ContentStoreError> {
+        let value = self
+            .accepted
+            .get(&resource)
+            .ok_or(ContentStoreError::Stale)?;
+        if !value.release_pending
+            || Arc::strong_count(&value.pixels) != 1
+            || self.events.iter().any(|event| {
+                matches!(&event.record,
+                ShellContentRecord::ResourceReleased(released) if released.resource == resource)
+            })
+        {
+            return Err(ContentStoreError::Incomplete);
+        }
+        self.remove_accepted(resource);
+        Ok(())
+    }
+
+    pub(crate) fn sealed_release_pending(&self, resource: ContentResourceId) -> bool {
+        self.accepted
+            .get(&resource)
+            .is_some_and(|value| value.release_pending)
     }
 
     /// Revoke input/candidate admission immediately. Storage still referenced by

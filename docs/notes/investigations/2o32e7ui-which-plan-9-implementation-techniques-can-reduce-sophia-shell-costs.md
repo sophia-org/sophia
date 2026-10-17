@@ -31,10 +31,22 @@ held journal capacity, tested under byte and record exhaustion; listener accept
 errors back off without revoking an existing channel. No Session caller enables
 the image configuration yet.
 
-The immutable sealed mapping primitive passes its kernel tests and independent
-unsafe-lifetime review. It is not yet connected to resource admission, worker
-validation or leases. C producer `db8b24a` plus `69a5d80` is signed for review;
-its role adapters and the Rust producer remain incomplete. Lock r2 still needs
+The immutable sealed mapping primitive is published as `28ce4a776`; the shell
+receive/refuse wiring is `140c7dcab`. Sealed store admission now reserves the
+existing budget without an upload Vec and moves a validated mapping into normal
+leases without copying. Cancellation/expiry/revocation retain charges until
+worker completion. ResourceReleased keeps backing charged through the outbound
+queue until actual journal handoff; dead epochs release after the last lease
+without a live-journal confirmation. A bounded worker maps and scans off the
+owner thread, with four outstanding jobs at most and 64 KiB validation units.
+Store and worker controls pass; the wire test checks retirement of an
+owner-supplied validated map. Source-to-offer admission and Session wiring are
+not connected yet. The full runtime suite passed before the journal callback;
+affected publication, resource and wire tests pass after it.
+
+C producer `db8b24a` plus `69a5d80` is published after an independent full check.
+The opt-in BAR adapter `963f399` passes that check too; other profiles, lock
+adapters and the Rust producer remain incomplete. Lock r2 still needs
 explicit Negotiated selection in the revision-aware codecs before its adapter
 can run. Sealed acceptance, retirement and paired performance evidence remain.
 

@@ -296,6 +296,7 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool) {
         .unwrap();
     let path = transport.socket_path().to_owned();
     let image_path = directory.join("image.sock");
+    let (request_sealed, receive_sealed) = std::sync::mpsc::channel();
     let worker = std::thread::spawn(move || {
         let mut peer = raw::Peer::connect(&path);
         setup(&mut peer);
@@ -411,6 +412,46 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool) {
         assert_eq!((status.status, status.reason), (3, 13));
         ack(&mut peer, &refused);
         fallback(&mut peer);
+        // The owner supplies a validated mapping here. This isolates the
+        // live-journal release handoff; it does not claim Source admission.
+        request_sealed.send(()).unwrap();
+        let accepted = peer.next_event();
+        let ShellContentRecord::ResourceStatus(status) =
+            decode_shell_file_resource_status(&accepted).unwrap().record
+        else {
+            panic!("status")
+        };
+        assert_eq!((status.resource.id, status.status), (99, 2));
+        ack(&mut peer, &accepted);
+        let retire = encode_shell_file_resource_retire(
+            ShellFileHeader {
+                kind: ShellFileKind::ResourceRetire,
+                connection_epoch: 1,
+                submission_id: 5,
+                sequence: 0,
+            },
+            &ShellFileTransactionRecord {
+                transaction: TransactionId::from_raw(5),
+                record: ShellContentRecord::ResourceRetire(ContentResourceRetire {
+                    grant: ContentGrant {
+                        connection_epoch: 1,
+                        content_grant_epoch: 1,
+                    },
+                    resource: ContentResourceId {
+                        id: 99,
+                        generation: 1,
+                    },
+                }),
+            },
+        )
+        .unwrap();
+        peer.submit_acknowledged(&retire, 5);
+        let released = peer.next_event();
+        let record = decode_shell_file_resource_released(&released).unwrap();
+        assert!(
+            matches!(record.record, ShellContentRecord::ResourceReleased(value) if value.resource.id == 99)
+        );
+        ack(&mut peer, &released);
     });
     let deadline = Instant::now() + Duration::from_secs(5);
     let mut negotiated = false;
@@ -426,13 +467,75 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool) {
                 Ok(_) | Err(ShellTransportError::NotConnected) => {}
                 Err(error) => panic!("resource service: {error}"),
             }
+            if receive_sealed.try_recv().is_ok() {
+                supply_sealed(&mut epochs);
+            }
         }
         std::thread::yield_now();
     }
     worker.join().unwrap();
+    if !bad_hello && !legacy_successor {
+        let grant = ContentGrant {
+            connection_epoch: 1,
+            content_grant_epoch: 1,
+        };
+        let usage = epochs.resources(grant).unwrap().usage();
+        assert_eq!(usage.backing, 8, "only the byte fallback resource remains");
+        assert_eq!(usage.retiring, 0, "journal custody released sealed backing");
+    }
     drop(transport);
     assert!(
         !directory.exists(),
         "image listener must unlink before role directory cleanup"
     );
+}
+
+fn supply_sealed(epochs: &mut ContentEpochRegistry) {
+    use rustix::fs::{MemfdFlags, SealFlags, fcntl_add_seals, memfd_create};
+    use std::io::Write;
+    let mut file = std::fs::File::from(
+        memfd_create(
+            "wire-sealed-release",
+            MemfdFlags::CLOEXEC | MemfdFlags::ALLOW_SEALING,
+        )
+        .unwrap(),
+    );
+    file.write_all(&[0; 8]).unwrap();
+    fcntl_add_seals(
+        &file,
+        SealFlags::WRITE | SealFlags::GROW | SealFlags::SHRINK | SealFlags::SEAL,
+    )
+    .unwrap();
+    let mapping = sophia_linux_peer::SealedMapping::map(file.into(), 8).unwrap();
+    let mut validation = SealedPixelValidation::new(mapping).unwrap();
+    assert!(validation.step().unwrap());
+    let grant = ContentGrant {
+        connection_epoch: 1,
+        content_grant_epoch: 1,
+    };
+    let resource = ContentResourceId {
+        id: 99,
+        generation: 1,
+    };
+    let store = epochs.resources_mut(grant).unwrap();
+    store
+        .begin_sealed(
+            TransactionId::from_raw(99),
+            ContentResourceBegin {
+                grant,
+                resource,
+                width_px: 2,
+                height_px: 1,
+                rendered_scale_numerator: 1,
+                rendered_scale_denominator: 1,
+                pixel_format: 1,
+                chunk_count: 1,
+                total_bytes: 8,
+            },
+            0,
+        )
+        .unwrap();
+    store
+        .complete_sealed(grant, resource, Ok(validation.finish().unwrap()), 0)
+        .unwrap();
 }

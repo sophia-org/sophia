@@ -438,13 +438,22 @@ explicit shell r9 and lock r2 entry points carry ImageBegin in Submitted while
 plain APIs retain their legacy vocabulary. Both Rust protocol suites and strict
 Clippy pass, as does the full C check. Rust coherence now checks caller context
 and revalidates public typed limits/formats. C producer `db8b24a` plus `69a5d80`
-is signed for integration; Rust producer and both role adapters remain in progress.
+is published; BAR adapter `963f399` passes integration checks. Rust producer
+and the remaining role adapters are incomplete.
 The runtime shell test now uses real 9P and SEQPACKET with supplied afid authority
 to prove Hello/ChannelReady, clean ImageBegin refusal and same-connection byte
 fallback. It does not prove launch-domain or Factotum authentication. Bad Hello,
 legacy successor epochs and held terminal journal capacity have regression
 coverage. Session does not enable image configuration yet. The kernel sealed
-mapping primitive is tested but not connected to runtime acceptance or leases.
+mapping primitive is published as `28ce4a776`. The next store/worker checkpoint
+reserves existing resource credits without a byte buffer, validates off-thread
+in bounded units, and retains mappings through leases and the ResourceReleased
+journal handoff. Tests cover those seams, including a supplied validated mapping
+retired over the live wire; actual Source admission and Session enablement remain.
+Worker validation honors the published positive chunk budget, capped at 64 KiB
+between deadline/cancellation checks. Budgets that split pixels have independent
+component-coverage tests; the six store and four worker cases and strict Clippy
+pass. This is worker/store evidence, not end-to-end Source acceptance.
 
 First add all seven image kinds and exact body/row codecs independently in C
 and Rust, with role-specific schema tests, literal vectors and negative cases.

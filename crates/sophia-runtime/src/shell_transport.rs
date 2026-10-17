@@ -414,6 +414,7 @@ impl ShellComponentTransport {
                 &mut self.output,
                 !self.owner_serviced,
                 std::time::Instant::now(),
+                epochs.resources_mut(self.store_grant),
             )?,
         };
         self.output_blocked = blocked;
@@ -471,8 +472,24 @@ impl ShellComponentTransport {
     fn drain_file_output(
         files: &mut files::ShellFileWire,
         output: &mut outbox::ShellOutbox,
+        mut resources: Option<&mut crate::ContentResourceStore>,
     ) -> Result<bool, ShellTransportError> {
         while let Some(queued) = output.front() {
+            if resources.is_none()
+                && files.export().image_channel_access().is_some()
+                && matches!(
+                    &queued.record,
+                    outbound::OutboundRecord::Content(
+                        _,
+                        sophia_protocol::ShellContentRecord::ResourceReleased(_)
+                    )
+                )
+            {
+                // Read-only snapshot publication cannot reconcile sealed
+                // backing charges. The next owner turn has the mutable store
+                // and journals this FIFO head before any later announcement.
+                return Ok(false);
+            }
             let (kind, body) = queued.record.native()?;
             let taken = if sophia_protocol::shell_files::shell_file_class(kind)
                 == sophia_protocol::shell_files::ShellFileClass::Object
@@ -484,7 +501,18 @@ impl ShellComponentTransport {
             if !taken {
                 return Ok(false);
             }
-            output.pop_front();
+            let published = output.pop_front();
+            if let outbound::OutboundRecord::Content(
+                _,
+                sophia_protocol::ShellContentRecord::ResourceReleased(released),
+            ) = published.record
+                && let Some(store) = resources.as_deref_mut()
+                && store.sealed_release_pending(released.resource)
+            {
+                // The journal now owns this exact terminal record. Merely
+                // queueing it could not release a sealed backing's charge.
+                store.confirm_sealed_release(released.resource)?;
+            }
         }
         Ok(true)
     }
@@ -498,6 +526,7 @@ impl ShellComponentTransport {
         output: &mut outbox::ShellOutbox,
         serve_input: bool,
         now: std::time::Instant,
+        resources: Option<&mut crate::ContentResourceStore>,
     ) -> Result<(bool, bool), ShellTransportError> {
         if serve_input {
             match files.turn() {
@@ -506,7 +535,7 @@ impl ShellComponentTransport {
                 Ok(()) => {}
             }
         }
-        let blocked = !Self::drain_file_output(files, output)?;
+        let blocked = !Self::drain_file_output(files, output, resources)?;
         // A role-only visit cannot decide that a peer stopped acknowledging:
         // its next acknowledgement may still be waiting in the socket. Judge
         // the deadline only after the owner has serviced input.
