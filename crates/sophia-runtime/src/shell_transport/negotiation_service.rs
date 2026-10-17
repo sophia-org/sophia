@@ -197,7 +197,7 @@ impl ShellComponentTransport {
                 Some(crate::ContentStoreProfile::NativeLauncher)
                     | Some(crate::ContentStoreProfile::PersistentCatalog)
             );
-            let export = super::files::ShellFiles::awaiting_negotiation(
+            let mut export = super::files::ShellFiles::awaiting_negotiation(
                 pending.epoch,
                 role,
                 catalog_allowed,
@@ -205,6 +205,20 @@ impl ShellComponentTransport {
                 file_qids,
                 Instant::now(),
             );
+            if let Some(config) = &self.image_config
+                && config.discovery.connection_epoch == pending.epoch
+            {
+                export
+                    .configure_image_channel(Some(super::files::ShellImageChannelConfig {
+                        discovery: config.discovery.clone(),
+                        limits: config.limits,
+                        formats: config.formats.clone(),
+                        role_bounds: config.role_bounds,
+                    }))
+                    .map_err(|error| {
+                        ShellTransportError::Io(format!("image configuration: {error:?}"))
+                    })?;
+            }
             pending.stage = Stage::Files(Box::new(super::files::ShellFileWire::adopt(
                 stream,
                 export,
@@ -240,6 +254,19 @@ impl ShellComponentTransport {
         };
         match selected {
             Ok((welcome, limits)) => {
+                let image_listener = if welcome.selected_revision == 9 {
+                    let directory = self
+                        .endpoint
+                        .socket_path()
+                        .parent()
+                        .ok_or(ShellTransportError::WrongContentGrant)?;
+                    Some(
+                        crate::image_channel::ImageChannelListener::bind(directory)
+                            .map_err(|error| ShellTransportError::Io(error.to_string()))?,
+                    )
+                } else {
+                    None
+                };
                 let limits_object = limits
                     .as_ref()
                     .map(|limits| {
@@ -248,9 +275,27 @@ impl ShellComponentTransport {
                     })
                     .transpose()?;
                 let body = super::files::encode_negotiated(welcome, limits.is_some())?;
-                wire.export_mut()
-                    .complete_negotiation(limits_object, welcome.capabilities)
-                    .map_err(|error| ShellTransportError::Io(format!("{error:?}")))?;
+                let completed = if welcome.selected_revision == 9 {
+                    wire.export_mut().complete_negotiation_with_image_revision(
+                        limits_object,
+                        welcome.capabilities,
+                        welcome.selected_revision,
+                    )
+                } else {
+                    wire.export_mut()
+                        .complete_negotiation(limits_object, welcome.capabilities)
+                };
+                completed.map_err(|error| ShellTransportError::Io(format!("{error:?}")))?;
+                if let Some(listener) = image_listener {
+                    let expected = self
+                        .endpoint
+                        .active_peer()
+                        .ok_or(ShellTransportError::WrongContentGrant)?;
+                    wire.install_image_transport(listener, expected)
+                        .map_err(|error| {
+                            ShellTransportError::Io(format!("image transport: {error:?}"))
+                        })?;
+                }
                 if !wire.append(
                     sophia_protocol::shell_files::ShellFileKind::Negotiated,
                     &body,

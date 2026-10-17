@@ -39,6 +39,7 @@ mod descriptor;
 mod descriptor_files;
 mod descriptor_state;
 mod files;
+mod image_configuration;
 mod indicator_responses;
 pub(crate) mod outbound;
 mod outbox;
@@ -111,9 +112,9 @@ impl From<ContentAllocationError> for ShellTransportError {
 }
 
 pub struct ShellComponentTransport {
-    endpoint: RoleEndpoint,
     authentication: Option<Box<dyn crate::authenticated_files::FileAuthenticationFactory>>,
     authentication_required: bool,
+    image_config: Option<files::ShellImageChannelConfig>,
     /// The current epoch's protected 9P connection.
     wire: Option<Box<files::ShellFileWire>>,
     /// The component's next logical qid, continued across file epochs.
@@ -142,6 +143,9 @@ pub struct ShellComponentTransport {
     content_grant: Option<ContentGrant>,
     content_limits: Option<ContentLimits>,
     store_grant: ContentGrant,
+    // The pending/active wires own image.sock and must drop before the role
+    // endpoint removes its private directory.
+    endpoint: RoleEndpoint,
 }
 
 impl ShellComponentTransport {
@@ -157,6 +161,7 @@ impl ShellComponentTransport {
             )?,
             authentication: None,
             authentication_required: false,
+            image_config: None,
             wire: None,
             file_qids: 1,
             negotiation: None,

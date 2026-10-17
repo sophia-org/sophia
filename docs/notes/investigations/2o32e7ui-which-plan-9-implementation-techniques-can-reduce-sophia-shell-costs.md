@@ -15,17 +15,28 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
-t338 runtime implementation is now split by owner: Codex handles authenticated
-socket admission and Session wiring; Muse handles shell export discovery,
-refusal and journal reservations; Claude implements the C producer channel.
+t338 remains in implementation. Codex owns the runtime, export and journal work
+after Muse reached the usage limit; Claude owns the C producer and role adapters.
 The receipt/coherence prerequisite is published and vendored at Rust `93fe07b`
 and C `a208c95`. Explicit revision-aware Submitted receipts name ImageBegin;
 legacy APIs keep their candidate sets. Both SDK checks pass, including the full
 vendored Rust suite. Root's bounded SEQPACKET/SCM_RIGHTS and live-authentication
 join checks pass, alongside lock export/service and shell oracle regressions.
-These primitives are not yet wired into a complete authenticated Hello path.
-The runtime export and producer work remains in progress; sealed mapping,
-retirement and paired performance evidence still follow the receive/refuse gate.
+The shell receive/refuse test now joins real 9P and SEQPACKET with a supplied
+afid authority: Hello publishes ChannelReady, ImageBegin receives reason 13,
+and a byte upload of the same resource succeeds on that connection. Bad Hello
+faults; an earlier image configuration does not poison a later legacy epoch.
+This is not a launch-domain or Factotum authentication proof. ChannelClosed has
+held journal capacity, tested under byte and record exhaustion; listener accept
+errors back off without revoking an existing channel. No Session caller enables
+the image configuration yet.
+
+The immutable sealed mapping primitive passes its kernel tests and independent
+unsafe-lifetime review. It is not yet connected to resource admission, worker
+validation or leases. C producer `db8b24a` plus `69a5d80` is signed for review;
+its role adapters and the Rust producer remain incomplete. Lock r2 still needs
+explicit Negotiated selection in the revision-aware codecs before its adapter
+can run. Sealed acceptance, retirement and paired performance evidence remain.
 
 t337 design acceptance is recorded October 17 under niltempus's conditional
 approval. Independent lifecycle peers Rust `8f7dc5d` and C `b2ca17d` passed
@@ -53,18 +64,13 @@ SDK heads has only the expected opposite-role discovery split and byte-identical
 accepted round trips. The plan records scope, negative controls and harness
 hashes. No independent review blockers remain for this codec checkpoint.
 
-Next: discovery/admission integration and its remaining parity prerequisites.
-ImageBegin's revision-aware Submitted receipt is an explicit prerequisite for
-runtime wiring, not enabled by this passive codec checkpoint.
-
-The Rust discovery reader still needs C's cross-object coherence checks, and
-its packet caller must check actual received FD counts; complete admission
-parity is not claimed. Positive timeout/chunk/turn rules are now explicit in
-the coordinated specs. Runtime discovery and receive-and-refuse wait for
-these prerequisites and named ownership. The
+Next: finish the producer/adapter and lock negotiation paths, then connect
+sealed admission to bounded validation and retained backing custody. Rust's
+contextual codecs now check coherence and received FD counts; production
+readers must use those entry points. Complete admission parity is not claimed. The
 [first slice](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md#t338-first-slice-and-ownership)
-keeps r9/r2 unadvertised. Explicit C and oracle revision-aware paths admit shell
-reason 13 only for r9 Rejected; legacy decoders and Sophia emission remain <=12.
+keeps default callers byte-only. Explicit revision-aware paths admit shell
+reason 13 only for r9 Rejected; legacy decoders and emission remain <=12.
 Other reason fields must not widen.
 
 CPU content uses sealed memfd per image. A shared launch window is not pursued

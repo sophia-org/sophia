@@ -428,19 +428,23 @@ the first t338 implementation step, not a result attributed to these fixtures.
 Codex owns the shared contract, shell/lock schema and protocol codecs, SDK spec
 copies, vendor pins, Session endpoint wiring, integration and pushes. Under the
 owner's parallel implementation direction, Claude owns the independent C SDK
-producer channel and reviews Rust; Muse owns the named shell export
-discovery/refusal files and their journal reservation mechanism. Codex keeps
-authenticated socket admission and Session wiring. Lock runtime work has not
+producer channel and role adapters and reviews Rust. Muse reached the usage
+limit; Codex has taken over the shell export discovery/refusal files and journal
+reservations. Codex keeps authenticated socket admission and Session wiring. Lock runtime work has not
 been assigned. Shared checkout edits remain separated by file ownership.
 
 The receipt prerequisite is published in Rust `93fe07b` and C `a208c95`:
 explicit shell r9 and lock r2 entry points carry ImageBegin in Submitted while
 plain APIs retain their legacy vocabulary. Both Rust protocol suites and strict
 Clippy pass, as does the full C check. Rust coherence now checks caller context
-and revalidates public typed limits/formats. These are codec results; neither
-SDK yet implements a producer channel. The in-progress runtime transport test
-uses real SEQPACKET and SCM_RIGHTS to check bounded reception, truncation cleanup,
-CLOEXEC and listener isolation, without claiming authenticated Hello.
+and revalidates public typed limits/formats. C producer `db8b24a` plus `69a5d80`
+is signed for integration; Rust producer and both role adapters remain in progress.
+The runtime shell test now uses real 9P and SEQPACKET with supplied afid authority
+to prove Hello/ChannelReady, clean ImageBegin refusal and same-connection byte
+fallback. It does not prove launch-domain or Factotum authentication. Bad Hello,
+legacy successor epochs and held terminal journal capacity have regression
+coverage. Session does not enable image configuration yet. The kernel sealed
+mapping primitive is tested but not connected to runtime acceptance or leases.
 
 First add all seven image kinds and exact body/row codecs independently in C
 and Rust, with role-specific schema tests, literal vectors and negative cases.

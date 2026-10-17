@@ -24,6 +24,11 @@ use super::journal::{Journal, JournalBounds};
 use sophia_9p::journal::{Staging, StagingBounds};
 
 mod authentication;
+mod image;
+use image::{ImageChannelState, PendingImageRefusal, ShellImageReadiness};
+pub(in crate::shell_transport) use image::{
+    ShellImageChannelConfig, ShellImageReadiness as ImageReadiness,
+};
 mod inbound;
 mod objects;
 mod snapshots;
@@ -67,6 +72,9 @@ pub(in crate::shell_transport) enum Node {
     Descriptors,
     Tabs,
     Shortcuts,
+    ImageChannel,
+    ImageLimits,
+    ImageFormats,
 }
 
 impl Node {
@@ -89,6 +97,9 @@ impl Node {
             Self::Tabs => 16,
             Self::Shortcuts => 17,
             Self::TransactionReuse => 18,
+            Self::ImageChannel => 19,
+            Self::ImageLimits => 20,
+            Self::ImageFormats => 21,
         }
     }
 
@@ -101,6 +112,8 @@ impl Node {
             Self::Descriptors => Some(ShellFileKind::Descriptors),
             Self::Tabs => Some(ShellFileKind::Tabs),
             Self::Shortcuts => Some(ShellFileKind::Shortcuts),
+            Self::ImageLimits => Some(ShellFileKind::ImageLimits),
+            Self::ImageFormats => Some(ShellFileKind::ImageFormats),
             _ => None,
         }
     }
@@ -235,6 +248,8 @@ pub(in crate::shell_transport) struct ShellFiles {
     content_limits: Option<ContentLimits>,
     upload_slots: u8,
     uploads: [Option<Binding>; SHELL_FILE_MAX_UPLOAD_SLOTS as usize],
+    image_limits: ObjectSlot,
+    image_formats: ObjectSlot,
     outputs: ObjectSlot,
     catalog: ObjectSlot,
     indicators: ObjectSlot,
@@ -247,6 +262,10 @@ pub(in crate::shell_transport) struct ShellFiles {
     staging: Option<Staging>,
     reuse_writer: Option<transaction::ReusableWriter>,
     accepted: Option<Accepted>,
+    image: Option<ImageChannelState>,
+    image_revision: u16,
+    pending_image_refusal: Option<PendingImageRefusal>,
+    pending_image_closed: Option<ShellChannelClosed>,
     submission_watermark: u64,
     journal: Journal,
     inbound: VecDeque<Inbound>,
@@ -305,6 +324,8 @@ impl ShellFiles {
             content_limits: None,
             upload_slots: 0,
             uploads: Default::default(),
+            image_limits: ObjectSlot::default(),
+            image_formats: ObjectSlot::default(),
             outputs: ObjectSlot::default(),
             catalog: ObjectSlot::default(),
             indicators: ObjectSlot::default(),
@@ -315,6 +336,10 @@ impl ShellFiles {
             staging: None,
             reuse_writer: None,
             accepted: None,
+            image: None,
+            image_revision: 0,
+            pending_image_refusal: None,
+            pending_image_closed: None,
             submission_watermark: 0,
             journal: Journal::new(epoch, bounds, now),
             inbound: VecDeque::with_capacity(INBOUND_RECORDS),
@@ -350,12 +375,34 @@ impl ShellFiles {
         limits: Option<(Vec<u8>, ContentLimits)>,
         capabilities: u64,
     ) -> Result<(), Errno> {
+        self.complete_negotiation_with_image_revision(limits, capabilities, 0)
+    }
+
+    /// Negotiation completion with the selected image revision hooked in
+    /// atomically: disclosure, readiness and candidate gating all read
+    /// this one recorded value, never a later unchecked setter.
+    pub(in crate::shell_transport) fn complete_negotiation_with_image_revision(
+        &mut self,
+        limits: Option<(Vec<u8>, ContentLimits)>,
+        capabilities: u64,
+        image_revision: u16,
+    ) -> Result<(), Errno> {
         if self.revoked {
             return Err(Errno::ESTALE);
         }
         if self.negotiated {
             return Err(EALREADY);
         }
+        let image_objects = if self.image.is_some()
+            && image_revision == 9
+            && capabilities & ((1 << 13) | (1 << 14)) != 0
+        {
+            let (_, content_limits) = limits.as_ref().ok_or(Errno::EACCES)?;
+            self.validate_image_content_limits(content_limits)?;
+            self.prepare_image_objects()?
+        } else {
+            Vec::new()
+        };
         self.content = limits.is_some();
         if let Some((bytes, limits)) = limits {
             self.upload_slots = limits
@@ -365,7 +412,12 @@ impl ShellFiles {
             self.content_limits = Some(limits);
         }
         self.capabilities = capabilities;
+        self.image_revision = image_revision;
+        if image_revision == 9 {
+            self.journal.enable_image_revision();
+        }
         self.negotiated = true;
+        self.install_image_objects(image_objects);
         self.snapshot_reserved_bytes = self.selected_snapshot_bound();
         Ok(())
     }
@@ -608,6 +660,10 @@ impl Export for ShellFiles {
         }
         let size = match (node, handle) {
             (Node::Api, _) => self.api.len() as u64,
+            (Node::ImageChannel, _) => self
+                .image
+                .as_ref()
+                .map_or(0, |state| state.discovery_text.len() as u64),
             (Node::Limits, _) => self.limits.as_ref().map_or(0, |l| l.len() as u64),
             (node, Some(Handle::Object(object))) if node.object_kind().is_some() => {
                 object.bytes.len() as u64
@@ -735,6 +791,11 @@ impl Export for ShellFiles {
     ) -> Result<ReadOutcome, Errno> {
         match (node, handle) {
             (Node::Api, _) => Ok(slice(&self.api, offset, count)),
+            (Node::ImageChannel, _) => self
+                .image
+                .as_ref()
+                .map(|state| slice(state.discovery_text.as_bytes(), offset, count))
+                .ok_or(Errno::EAGAIN),
             (Node::Limits, _) => self
                 .limits
                 .as_ref()
@@ -796,6 +857,9 @@ impl Export for ShellFiles {
             (Node::Ack, _) if offset == 0 => {
                 let ack = decode_shell_file_ack(data).map_err(|_| Errno::EINVAL)?;
                 self.journal.ack(ack, Instant::now())?;
+                // A pending image refusal retries from ACK progress; its
+                // outcome never fails the acknowledgement itself.
+                let _ = self.retry_pending_image_refusal();
                 if self
                     .accepted
                     .as_ref()

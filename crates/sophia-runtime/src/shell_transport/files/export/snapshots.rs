@@ -11,6 +11,8 @@ pub(super) fn object_cap(kind: ShellFileKind) -> Option<usize> {
         ShellFileKind::Catalog => SHELL_FILE_MAX_OBJECT_BYTES,
         ShellFileKind::Indicators => SHELL_FILE_INDICATORS_MAX_BYTES,
         ShellFileKind::Outputs => SHELL_FILE_OUTPUTS_MAX_BYTES,
+        ShellFileKind::ImageLimits => 136,
+        ShellFileKind::ImageFormats => SHELL_FILE_MAX_IMAGE_FORMATS_BYTES,
         _ => return None,
     })
 }
@@ -36,6 +38,8 @@ impl ShellFiles {
             &self.descriptors,
             &self.tabs,
             &self.shortcuts,
+            &self.image_limits,
+            &self.image_formats,
         ]
         .into_iter()
         .map(ObjectSlot::retained_bytes)

@@ -21,6 +21,54 @@ fn ack(sequence: u64) -> ShellFileAck {
 }
 
 #[test]
+fn held_close_survives_credited_record_and_byte_exhaustion() {
+    use sophia_protocol::shell_files::{ShellChannelClosed, ShellChannelClosedReason};
+    let closed = ShellChannelClosed {
+        channel_generation: 2,
+        reason: ShellChannelClosedReason::PeerDisconnect,
+    }
+    .encode()
+    .unwrap();
+    for bounds in [
+        BOUNDS,
+        JournalBounds {
+            bytes: 192,
+            reserve_bytes: 48,
+        },
+    ] {
+        let mut journal = Journal::new(1, bounds, Instant::now());
+        journal.enable_image_revision();
+        assert!(journal.hold_reservation(48));
+        assert!(!journal.hold_reservation(48));
+        while journal
+            .append(ShellFileKind::Submitted, &body(16), true)
+            .is_ok()
+        {}
+        assert!(!journal.fits(48, true));
+        let size = journal.size();
+        let records = journal.records();
+        assert_eq!(
+            journal.append_consuming_reservation(ShellFileKind::ImageLimits, &closed),
+            Err(Errno::EINVAL)
+        );
+        assert_eq!(
+            journal.append_consuming_reservation(ShellFileKind::ChannelClosed, &closed[..8]),
+            Err(Errno::EINVAL)
+        );
+        assert_eq!((journal.size(), journal.records()), (size, records));
+        assert_eq!(
+            journal.append_consuming_reservation(ShellFileKind::ChannelClosed, &closed),
+            Ok(records as u64 + 1)
+        );
+        assert_eq!(
+            journal.append_consuming_reservation(ShellFileKind::ChannelClosed, &closed),
+            Err(Errno::EINVAL)
+        );
+        assert_eq!(journal.size(), size + 48);
+    }
+}
+
+#[test]
 fn unsolicited_records_leave_the_terminal_reserve_to_credited_responses() {
     let now = Instant::now();
     let mut journal = Journal::new(1, BOUNDS, now);
