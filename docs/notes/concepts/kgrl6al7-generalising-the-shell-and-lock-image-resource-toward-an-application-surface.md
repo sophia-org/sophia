@@ -62,30 +62,40 @@ once; points cross per frame. This step waits on the renderer's
 safe-completion seam, because a release point is only honest when the
 capture it names has provably finished.
 
-Third, presentation feedback. A surface client paces itself from facts, not
-timers: when the image was presented, the refresh interval it landed in,
-whether it was composed or reached scanout directly, and when its buffer
-may be reused. Today the journal reports resource custody. A surface needs
-it to report presentation as well, as a record distinct from acceptance and
-from source release, because the three events happen at different times
-and a client that confuses them either stalls or tears.
+Third, per-surface presentation feedback. Shell clients already learn
+presentation outcomes: a `CandidateOutcome` reports a candidate prepared,
+presented, rejected or superseded, and that record is about the candidate
+as a whole. A surface client needs finer facts for each present of a
+registered buffer: when it was presented, the refresh interval it landed
+in, whether it was composed or reached scanout directly, and the point at
+which its buffer may be reused. That is a new record, distinct from both
+candidate outcome and source release, because the three events happen at
+different times and a client that confuses them either stalls or tears.
 
-Fourth, and last, direct scanout. Composing from the client's buffer
-instead of a renderer-owned capture removes one GPU copy, and reopens
-everything the
+Fourth, and last, presenting from the client's buffer. Two different steps
+hide under this heading, and each needs its own custody review. Direct
+sampling lets the compositor read the client's buffer while composing,
+which removes the capture copy but leaves the producer able to write
+memory the compositor is sampling; sealing solved that for CPU images,
+and nothing yet solves it for a mutable GPU buffer. Direct scanout goes
+further and hands the client's buffer to the display controller, which
+adds revocation of a buffer already on screen, cross-device import and
+per-head residency to the same problem. Either step reopens what the
 [renderer import boundary](../../renderer-import-boundary.md) closed on
-purpose: a producer writing while the display reads, revocation of a buffer
-already on screen, cross-device import, and per-head residency. The
-protocol could describe it long before the renderer should attempt it. It
-is justified only by a measurement showing the capture copy costs real time
-at the sizes and rates Sophia actually presents.
+purpose. The protocol could describe both long before the renderer should
+attempt either. Each is justified only by a measurement showing the
+capture copy costs real time at the sizes and rates Sophia actually
+presents, and neither follows from the other being accepted.
 
 Under all four steps the wire dialect stays plain 9P2000.L. The speed of
 the fast systems comes from pre-registered buffers named by small integers
 and from explicit release, not from their opcode encodings, so nothing here
 needs a Sophia message type. Per frame, the steady state is one bounded
 record naming what to present; tags already let a client pipeline without
-waiting for each reply, and admission remains the backpressure.
+waiting for each reply. That cuts the client's dependent waits, not the
+server's passes: the server still reads at most one `msize` frame per
+connection per turn, so the server cost stays one pass per record and
+admission remains the backpressure.
 
 ## What t338 must not preclude
 
@@ -112,10 +122,12 @@ retrofit that reinterprets shipped bytes.
   that treats descriptors as one way a named buffer becomes known will
   not.
 - **Leave the events stream able to carry a presentation record.** The
-  journal's records have kinds, sequence and a terminal-status discipline.
-  A later revision needs a presentation feedback record that can follow
-  acceptance without displacing it: acceptance, presentation and source
-  release are three facts with three times. t338 must not document
+  journal's records have kinds, sequence and a terminal-status discipline,
+  and shell clients already receive a candidate-level `CandidateOutcome`.
+  A later revision needs a finer per-present feedback record that can
+  follow acceptance without displacing either existing record:
+  acceptance, presentation and source release are three facts with three
+  times. t338 must not document
   `ResourceStatus` as the last word about an image, must not let SDK
   clients treat status receipt as permission to reuse a source, and must
   keep `SourceReleased` meaning only that the producer's cooperation is no
@@ -146,12 +158,16 @@ retrofit that reinterprets shipped bytes.
 
 Two measurements, both already implied by the t339 comparison, decide
 whether steps two to four are engineering or speculation: whether
-per-offer descriptor passing costs anything measurable at four outstanding
-offers, and whether the renderer-owned capture copy costs anything
-measurable at the sizes and rates of the bulk workload. If both come back
-negligible, the byte and capture paths were already competitive and the
-surface work reduces to feedback records for pacing, which clients can
-want without any transport change. If either comes back large, the phases
+per-offer descriptor passing costs anything measurable at the draft's
+offer ceiling — at most the role's existing transfer count, and never
+more than four outstanding offers — and whether the renderer-owned
+capture copy costs anything measurable at the sizes and rates of the bulk
+workload. If both come back negligible, neither the pool nor
+presenting from the client's buffer is justified on cost, and the surface
+work reduces to feedback records for pacing, which clients can want
+without any transport change. That outcome says nothing about the byte
+path, whose cost these two measurements do not measure; the t338 paired
+evidence judges it separately. If either comes back large, the phases
 above are the order to spend effort in, because each removes exactly the
 measured cost and no other.
 
@@ -178,4 +194,4 @@ pool and registration discussion relies on. The
 [9P application frontend design](../../sophia-9p-authority.md) owns the
 surface questions this note defers, and the
 [renderer import boundary](../../renderer-import-boundary.md) owns the
-custody that direct scanout would have to renegotiate.
+custody that presenting from client buffers would have to renegotiate.
