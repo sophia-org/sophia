@@ -508,6 +508,7 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
     let mut jobs = SealedImageJobs::default();
     let mut validation = SealedValidationWorker::new(4, 4 << 20).unwrap();
     let mut stored = false;
+    let mut pending_release = None;
     let mut source_submitted = Some(source_submitted);
     let mut collect = !matches!(coordinated, 4 | 5);
     let mut image_owner = ShellSealedImageOwner::new(4 << 20, 65536).unwrap();
@@ -522,6 +523,13 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
             match transport.service_content_resources(&mut epochs, 0) {
                 Ok(_) | Err(ShellTransportError::NotConnected) => {}
                 Err(error) => panic!("resource service: {error}"),
+            }
+            if let Some(settlement) = pending_release.as_ref() {
+                match transport.release_sealed_image_source(settlement) {
+                    Ok(_) => pending_release = None,
+                    Err(ShellTransportError::ContentQueueSaturated) => {}
+                    Err(error) => panic!("release: {error}"),
+                }
             }
             if receive_sealed.try_recv().is_ok() {
                 supply_sealed(&mut epochs);
@@ -631,7 +639,7 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
                         })
                     );
                     assert_eq!(validation.pending(), 0);
-                    transport.release_sealed_image_source(&settlement).unwrap();
+                    assert!(pending_release.replace(settlement).is_none());
                     continue;
                 }
                 assert_eq!(settlement.outcome, Ok(()));
@@ -648,7 +656,14 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
                     .unwrap();
                 assert_eq!(lease.bytes(), &[0; 8]);
                 stored = true;
-                transport.release_sealed_image_source(&settlement).unwrap();
+                assert!(
+                    matches!(
+                        transport.release_sealed_image_source(&settlement),
+                        Err(ShellTransportError::ContentQueueSaturated)
+                    ),
+                    "release must wait for the queued status to reach the journal"
+                );
+                assert!(pending_release.replace(settlement).is_none());
             }
         }
         std::thread::yield_now();
@@ -665,6 +680,7 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
     }
     assert_eq!(stored, admit_source && !matches!(coordinated, 2 | 4 | 5));
     assert_eq!(jobs.pending(), 0);
+    assert!(pending_release.is_none());
     assert_eq!(image_owner.pending(), 0);
     if !bad_hello && !legacy_successor {
         let grant = ContentGrant {
@@ -893,6 +909,7 @@ fn accepted_source(peer: &mut raw::Peer, socket: &std::os::fd::OwnedFd) {
             }
             ShellFileKind::SourceReleased => {
                 assert!(!released);
+                assert!(status, "terminal status must precede SourceReleased");
                 assert_eq!(
                     ShellSourceReleased::decode(record.body)
                         .unwrap()

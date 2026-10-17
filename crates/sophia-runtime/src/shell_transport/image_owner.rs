@@ -108,8 +108,13 @@ impl ShellSealedImageOwner {
                 *slot = None;
                 continue;
             }
-            transport.release_sealed_image_source(settlement)?;
-            *slot = None;
+            match transport.release_sealed_image_source(settlement) {
+                Ok(_) => *slot = None,
+                // The resource drain must journal the terminal status first.
+                // Keep the completed settlement for the next owner turn.
+                Err(ShellTransportError::ContentQueueSaturated) => {}
+                Err(error) => return Err(error),
+            }
         }
         if ready {
             transport.enable_sealed_image_admission()?;

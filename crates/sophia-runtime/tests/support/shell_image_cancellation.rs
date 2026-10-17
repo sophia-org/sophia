@@ -59,6 +59,7 @@ fn settled(peer: &mut raw::Peer, expired: bool) {
             }
             ShellFileKind::SourceReleased => {
                 assert!(!release);
+                assert!(status, "terminal status must precede SourceReleased");
                 assert_eq!(
                     ShellSourceReleased::decode(record.body)
                         .unwrap()

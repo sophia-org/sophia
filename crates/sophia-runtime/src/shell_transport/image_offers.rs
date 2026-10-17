@@ -102,6 +102,8 @@ impl ShellComponentTransport {
     /// Publish only after the resource owner consumed the worker result. A
     /// failed publication leaves the caller owning this settlement for retry.
     /// The ordinary resource-event drain spends the independent status credit.
+    /// ContentQueueSaturated also means that status has not reached the journal
+    /// yet; retain the settlement and retry after resource/output progress.
     pub fn release_sealed_image_source(
         &mut self,
         settlement: &SealedImageSettlement,
