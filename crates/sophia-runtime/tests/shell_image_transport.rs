@@ -5,6 +5,8 @@ use sophia_runtime::*;
 use std::time::{Duration, Instant};
 #[path = "support/image_test_authority.rs"]
 mod authority;
+#[path = "support/shell_image_cancellation.rs"]
+mod cancellation;
 #[path = "support/shell_file_peer.rs"]
 mod raw;
 
@@ -251,9 +253,17 @@ fn configured_authenticated_epoch_publishes_discovery_and_ready_after_hello() {
     run_image_epoch(false, false, true, 3);
 }
 
+#[test]
+fn submitted_source_cancel_waits_for_real_completion_and_fences_late_source() {
+    run_image_epoch(false, false, true, 4);
+}
+
 fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, coordinated: u8) {
     let epoch = if legacy_successor { 2 } else { 1 };
-    let directory = std::env::temp_dir().join(format!("shell-image-wire-{}", std::process::id()));
+    let directory = std::env::temp_dir().join(format!(
+        "shell-image-wire-{}-{coordinated}",
+        std::process::id()
+    ));
     let mut transport = ShellComponentTransport::bind_for_supervised_uid(
         &directory,
         rustix::process::geteuid().as_raw(),
@@ -303,6 +313,8 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
     let (request_sealed, receive_sealed) = std::sync::mpsc::channel();
     let (request_admission, receive_admission) = std::sync::mpsc::channel();
     let (enabled_admission, wait_admission) = std::sync::mpsc::channel();
+    let (source_submitted, await_submission) = std::sync::mpsc::channel();
+    let (allow_completion, collect_completion) = std::sync::mpsc::channel();
     let worker = std::thread::spawn(move || {
         let mut peer = raw::Peer::connect(&path);
         setup(&mut peer);
@@ -412,7 +424,14 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
         ack(&mut peer, &submitted);
         peer.clear();
         if admit_source {
-            if coordinated == 3 {
+            if coordinated == 4 {
+                cancellation::submitted_source(
+                    &mut peer,
+                    &socket,
+                    await_submission,
+                    allow_completion,
+                );
+            } else if coordinated == 3 {
                 let admitted = peer.next_event();
                 let record =
                     decode_shell_file_record_at_revision(&admitted, ShellFileClass::Event, 9)
@@ -420,7 +439,7 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
                 assert_eq!(record.header.kind, ShellFileKind::ImageAdmitted);
                 ack(&mut peer, &admitted);
             } else if coordinated == 2 {
-                cancelled_source(&mut peer);
+                cancellation::cancelled_source(&mut peer);
             } else {
                 accepted_source(&mut peer, &socket);
             }
@@ -483,6 +502,8 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
     let mut jobs = SealedImageJobs::default();
     let mut validation = SealedValidationWorker::new(4, 4 << 20).unwrap();
     let mut stored = false;
+    let mut source_submitted = Some(source_submitted);
+    let mut collect = coordinated != 4;
     let mut image_owner = ShellSealedImageOwner::new(4 << 20, 65536).unwrap();
     while !worker.is_finished() {
         assert!(Instant::now() < deadline, "image wire stalled");
@@ -500,7 +521,7 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
                 supply_sealed(&mut epochs);
             }
             if receive_admission.try_recv().is_ok() {
-                if coordinated != 0 {
+                if (1..=3).contains(&coordinated) {
                     supply_allocation(&mut epochs);
                     image_owner
                         .service(&mut transport, &mut epochs, 0, Instant::now())
@@ -510,7 +531,7 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
                 }
                 enabled_admission.send(()).unwrap();
             }
-            if coordinated != 0 {
+            if (1..=3).contains(&coordinated) {
                 image_owner
                     .service(&mut transport, &mut epochs, 0, Instant::now())
                     .unwrap();
@@ -569,11 +590,29 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
                     "Source is take-once"
                 );
                 jobs.submit(&mut validation, job, source).unwrap();
+                if coordinated == 4 {
+                    source_submitted.take().unwrap().send(()).unwrap();
+                }
+            }
+            if !collect {
+                collect = collect_completion.try_recv().is_ok();
+                if !collect {
+                    assert!(jobs.reconcile(&mut epochs, 0).is_none());
+                    std::thread::yield_now();
+                    continue;
+                }
             }
             while let Some(completion) = validation.take_completed().unwrap() {
                 assert!(jobs.receive(completion).is_ok());
             }
             while let Some(settlement) = jobs.reconcile(&mut epochs, 0) {
+                if coordinated == 4 {
+                    assert!(settlement.outcome.is_err());
+                    assert_eq!(settlement.stopped, Some(ContentReason::Cancelled));
+                    assert_eq!(validation.pending(), 0);
+                    transport.release_sealed_image_source(&settlement).unwrap();
+                    continue;
+                }
                 assert_eq!(settlement.outcome, Ok(()));
                 let lease = epochs
                     .resources(settlement.admission.grant)
@@ -603,7 +642,7 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
         assert_eq!(epochs.accounting().retired_epochs, 0);
         return;
     }
-    assert_eq!(stored, admit_source && coordinated != 2);
+    assert_eq!(stored, admit_source && !matches!(coordinated, 2 | 4));
     assert_eq!(jobs.pending(), 0);
     assert_eq!(image_owner.pending(), 0);
     if !bad_hello && !legacy_successor {
@@ -763,66 +802,6 @@ fn supply_allocation(epochs: &mut ContentEpochRegistry) {
         )
         .unwrap();
     while store.take_event().is_some() {}
-}
-
-fn cancelled_source(peer: &mut raw::Peer) {
-    let admitted = peer.next_event();
-    let record = decode_shell_file_record_at_revision(&admitted, ShellFileClass::Event, 9).unwrap();
-    assert_eq!(record.header.kind, ShellFileKind::ImageAdmitted);
-    let metadata = ShellImageMetadata::decode(record.body).unwrap();
-    ack(peer, &admitted);
-    let cancel = encode_shell_file_resource_cancel(
-        ShellFileHeader {
-            kind: ShellFileKind::ResourceCancel,
-            connection_epoch: 1,
-            submission_id: 3,
-            sequence: 0,
-        },
-        &ShellFileTransactionRecord {
-            transaction: TransactionId::from_raw(metadata.offer_id),
-            record: ShellContentRecord::ResourceCancel(ContentResourceCancel {
-                grant: ContentGrant {
-                    connection_epoch: 1,
-                    content_grant_epoch: 1,
-                },
-                resource: ContentResourceId {
-                    id: metadata.resource,
-                    generation: metadata.resource_generation,
-                },
-            }),
-        },
-    )
-    .unwrap();
-    peer.submit_acknowledged(&cancel, 3);
-    let (mut status, mut release) = (false, false);
-    for _ in 0..2 {
-        let bytes = peer.next_event();
-        let record =
-            decode_shell_file_record_at_revision(&bytes, ShellFileClass::Event, 9).unwrap();
-        match record.header.kind {
-            ShellFileKind::ResourceStatus => {
-                assert!(!status);
-                assert!(
-                    matches!(decode_shell_file_resource_status(&bytes).unwrap().record,
-                    ShellContentRecord::ResourceStatus(value) if value.status == 4)
-                );
-                status = true;
-            }
-            ShellFileKind::SourceReleased => {
-                assert!(!release);
-                assert_eq!(
-                    ShellSourceReleased::decode(record.body)
-                        .unwrap()
-                        .disposition,
-                    ShellSourceDisposition::CancelledBeforeImport
-                );
-                release = true;
-            }
-            _ => panic!("unexpected cancellation event"),
-        }
-        ack(peer, &bytes);
-    }
-    assert!(status && release);
 }
 
 fn accepted_source(peer: &mut raw::Peer, socket: &std::os::fd::OwnedFd) {
