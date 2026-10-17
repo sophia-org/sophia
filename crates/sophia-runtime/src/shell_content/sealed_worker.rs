@@ -16,6 +16,7 @@ pub enum SealedValidationFailure {
     Cancelled,
     Timeout,
     Malformed,
+    SizeMismatch,
 }
 
 pub struct SealedValidationCompletion {
@@ -37,6 +38,15 @@ struct Pending {
     deadline: Instant,
     cancelled: Arc<AtomicBool>,
     submitted: bool,
+}
+
+/// Result-channel disconnection alone cannot wake an eventfd waiter. Signal
+/// on every thread exit, including unwinding, after the result sender drops.
+struct NotifyOnExit(sophia_wake::Notifier);
+impl Drop for NotifyOnExit {
+    fn drop(&mut self) {
+        self.0.notify();
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -90,10 +100,13 @@ impl SealedValidationWorker {
         std::thread::Builder::new()
             .name("sealed-validation".into())
             .spawn(move || {
+                let _exit = NotifyOnExit(notify.clone());
+                // Declared after the guard so the sender drops first on unwind.
+                let completion_sender = results;
                 while let Ok(job) = jobs.recv() {
                     let id = job.id;
                     let result = validate(job, validation_bytes);
-                    if results
+                    if completion_sender
                         .send(SealedValidationCompletion { job: id, result })
                         .is_err()
                     {
@@ -282,8 +295,13 @@ fn validate(
         }
     };
     check()?;
-    let mapping = SealedMapping::map(job.source, job.bytes)
-        .map_err(|_| SealedValidationFailure::Malformed)?;
+    let mapping = SealedMapping::map(job.source, job.bytes).map_err(|error| {
+        if error.raw_os_error() == Some(rustix::io::Errno::MSGSIZE.raw_os_error()) {
+            SealedValidationFailure::SizeMismatch
+        } else {
+            SealedValidationFailure::Malformed
+        }
+    })?;
     let mut validation =
         SealedPixelValidation::new(mapping).map_err(|_| SealedValidationFailure::Malformed)?;
     loop {

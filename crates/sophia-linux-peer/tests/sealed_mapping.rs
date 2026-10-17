@@ -47,7 +47,15 @@ fn sealed_mapping_survives_producer_close_and_refuses_mutability_and_wrong_sizes
         assert_eq!(count(), baseline);
     }
     for length in [0, 7, 9, usize::MAX] {
-        assert!(SealedMapping::map(source(required), length).is_err());
+        let error = SealedMapping::map(source(required), length).err().unwrap();
+        assert_eq!(
+            error.raw_os_error(),
+            Some(if matches!(length, 7 | 9) {
+                libc::EMSGSIZE
+            } else {
+                libc::EINVAL
+            })
+        );
         assert_eq!(count(), baseline);
     }
     assert!(SealedMapping::map(std::fs::File::open("/dev/null").unwrap().into(), 8).is_err());
