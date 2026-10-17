@@ -71,6 +71,36 @@ allocation savings remain unmeasured for this candidate. Evidence is under
 `~/.local/state/sophia/development-evidence/t331-reuse-20261017/sdk-followups`
 and `candidate-ledger`, with the comparison in `candidate-ledger/comparison.json`.
 
+### ACK cadence finding and remaining attribution
+
+Claude's independent review reproduces the lifecycle arithmetic: panel loses
+319 walks, 319 opens and 320 clunks across 64 frames; bulk loses 511, 511 and
+512. The one-time reusable-node probe accounts for the extra walk and open.
+The measured write reduction is only one per frame in each workload. Do not
+carry the earlier hypothetical panel ACK reduction from 11 to 5 into the pilot.
+The unchanged pixel writes and nearly unchanged reads are expected for this slice.
+
+The source offers an explanation for the limited ACK batching: the server retries
+waiting reads after requests, and Rust sends eligible ACKs when its bounded drive
+finds no further progress. Journal entries delivered separately can therefore
+each trigger an ACK before the next entry arrives. The diagnostic's aggregate
+counts do not identify which event pair shared a drive call or prove this cadence
+in the native owner loop. In particular, the old 53/152 steady-frame ledger must
+not replace the reconciled 64-frame totals, which include startup and teardown.
+
+Removing requests does not establish an equal reduction in Session passes.
+Clunks are not awaited, and several requests can share a pass. Predictions of
+about 17 panel passes or a particular allocation gap remain hypotheses. The next
+diagnostic must report owner passes on both wires, attribute setup, record,
+submit, pixel, flush-only and cadence work where directly observable, and retain
+unattributed or overlapping work explicitly. Do not infer those causes from
+request totals or add diagnostic logging to CPU/allocation acceptance arms.
+
+End-of-pass pending-read service, a different ACK cadence, queued submit and
+pipelined pixel writes remain possible follow-up investigations. They are not
+authorized implementation extensions of this slice; the matched native pilot
+must establish the remaining costs before selecting another change.
+
 ## Reconciled native baseline — October 17
 
 The eight-arm baseline uses comparator `363e06998`, Rust SDK `f1cd924`, and
