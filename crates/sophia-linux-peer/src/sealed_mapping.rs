@@ -19,6 +19,8 @@ unsafe impl Sync for SealedMapping {}
 impl SealedMapping {
     /// Takes ownership on both success and failure. Checks seals before size
     /// so no producer can race truncation against the subsequent mapping.
+    /// A sealed regular file with the wrong length returns EMSGSIZE, separately
+    /// from type/seal/mapping failures so role owners preserve refusal reasons.
     pub fn map(file: OwnedFd, expected_bytes: usize) -> io::Result<Self> {
         if expected_bytes == 0 || expected_bytes > isize::MAX as usize {
             return Err(io::Error::from_raw_os_error(libc::EINVAL));
@@ -40,10 +42,11 @@ impl SealedMapping {
         }
         // SAFETY: fstat succeeded.
         let status = unsafe { status.assume_init() };
-        if status.st_mode & libc::S_IFMT != libc::S_IFREG
-            || u64::try_from(status.st_size).ok() != Some(expected_bytes as u64)
-        {
+        if status.st_mode & libc::S_IFMT != libc::S_IFREG {
             return Err(io::Error::from_raw_os_error(libc::EINVAL));
+        }
+        if u64::try_from(status.st_size).ok() != Some(expected_bytes as u64) {
+            return Err(io::Error::from_raw_os_error(libc::EMSGSIZE));
         }
         // SAFETY: a sealed regular file of exactly this length cannot shrink.
         // The returned mapping is read-only and remains owned until Drop.

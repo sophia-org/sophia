@@ -5,11 +5,17 @@
 //! before custody expires anything. Jobs of an ended epoch are released if
 //! unsent or cancelled if submitted; their completions are taken and
 //! dropped, so no slot is lost and nothing journals after the epoch.
+//!
+//! If the worker itself ends, its owed completions can never arrive. The
+//! live epoch fails closed (custody is revoked, so the connection ends) and
+//! every later offer is refused with reason 9 instead of being admitted.
 use std::os::fd::BorrowedFd;
 use std::time::Instant;
 
 use sophia_9p::Errno;
 use sophia_protocol::lock_files::LockImagePacket;
+
+use sophia_protocol::lock_files::LOCK_RESOURCE_REASON_IMAGE_CHANNEL_UNAVAILABLE;
 
 use super::{LockFileCustody, LockImageSource, LockImageWorkerAction, reason};
 use crate::image_channel::ImageDatagram;
@@ -26,6 +32,8 @@ pub(super) struct ImageWorker {
     jobs: Vec<Job>,
     /// A completion custody could not journal yet; retried before others.
     parked: Option<(u64, Result<SharedPixels, SealedValidationFailure>)>,
+    /// The worker ended; its jobs will never complete.
+    dead: bool,
 }
 
 impl ImageWorker {
@@ -42,11 +50,23 @@ impl ImageWorker {
             )?,
             jobs: Vec::new(),
             parked: None,
+            dead: false,
         })
     }
 
-    pub(super) fn readiness(&self) -> BorrowedFd<'_> {
-        self.worker.readiness()
+    /// The worker's completion readiness while it can still complete
+    /// anything; a dead worker is never polled.
+    pub(super) fn readiness(&self) -> Option<BorrowedFd<'_>> {
+        (!self.dead && self.pending() != 0).then(|| self.worker.readiness())
+    }
+
+    /// The worker ended. The live epoch, if any, fails closed: its owed
+    /// completions are lost, so custody is revoked and the connection ends.
+    pub(super) fn fail(&mut self, custody: Option<&mut LockFileCustody>) {
+        self.dead = true;
+        if let Some(custody) = custody {
+            custody.revoke();
+        }
     }
 
     /// Jobs this owner tracks: reservations, jobs whose completion is
@@ -103,7 +123,22 @@ impl ImageWorker {
         {
             return false;
         }
-        while let Ok(Some(completion)) = self.worker.take_completed() {
+        if self.dead {
+            self.actions(custody);
+            let _ = custody.expire_images(now);
+            self.actions(custody);
+            self.refuse_all(custody, now);
+            return custody.position().next_sequence != before;
+        }
+        loop {
+            let completion = match self.worker.take_completed() {
+                Ok(Some(completion)) => completion,
+                Ok(None) => break,
+                Err(_) => {
+                    self.fail(Some(custody));
+                    return custody.position().next_sequence != before;
+                }
+            };
             let id = completion.job;
             let ended = self
                 .jobs
@@ -136,6 +171,21 @@ impl ImageWorker {
                 LockImageWorkerAction::Cancel(id) => {
                     self.worker.cancel(id);
                 }
+            }
+        }
+    }
+
+    /// With no worker, every offer custody would admit is refused instead.
+    fn refuse_all(&mut self, custody: &mut LockFileCustody, now: Instant) {
+        while let Ok(Some(admission)) = custody.image_admission(now) {
+            if custody
+                .refuse_image(
+                    admission.offer_id,
+                    LOCK_RESOURCE_REASON_IMAGE_CHANNEL_UNAVAILABLE,
+                )
+                .is_err()
+            {
+                return;
             }
         }
     }
@@ -180,8 +230,11 @@ impl ImageWorker {
             LockImageSource::Stale => Ok(()),
             LockImageSource::Submit { job } => {
                 let source = datagram.take_descriptor(0).ok_or(Errno::EPROTO)?;
-                if self.worker.submit_reserved(job, source).is_ok() {
-                    custody.image_source_submitted(job)?;
+                match self.worker.submit_reserved(job, source) {
+                    Ok(()) => custody.image_source_submitted(job)?,
+                    Err((SealedSubmitFailure::Closed, _)) => self.fail(Some(custody)),
+                    // Kept admitted with its reservation until its deadline.
+                    Err(_) => {}
                 }
                 Ok(())
             }
@@ -209,8 +262,17 @@ impl ImageWorker {
 
     /// A turn with no live epoch: take and drop ended jobs' completions.
     pub(super) fn drain_ended(&mut self) {
-        while let Ok(Some(completion)) = self.worker.take_completed() {
-            self.forget(completion.job);
+        while !self.dead {
+            match self.worker.take_completed() {
+                Ok(Some(completion)) => {
+                    self.forget(completion.job);
+                }
+                Ok(None) => break,
+                Err(_) => self.fail(None),
+            }
         }
     }
 }
+
+#[path = "../../tests/support/lock_image_worker.rs"]
+mod tests;

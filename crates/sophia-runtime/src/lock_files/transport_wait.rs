@@ -36,8 +36,8 @@ impl LockFileTransport {
             .min();
         let mut fds = vec![PollFd::new(wake, PollFlags::IN)];
         // Completions owed to live or ended epochs wake the owner.
-        if let Some(worker) = self.worker.as_ref().filter(|worker| worker.pending() != 0) {
-            fds.push(PollFd::from_borrowed_fd(worker.readiness(), PollFlags::IN));
+        if let Some(readiness) = self.worker.as_ref().and_then(|worker| worker.readiness()) {
+            fds.push(PollFd::from_borrowed_fd(readiness, PollFlags::IN));
         }
         // A full owner handoff cannot consume more inbound events. Waiting on
         // a permanently readable peer there would spin; owner drains wake us.

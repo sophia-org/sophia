@@ -458,7 +458,9 @@ impl LockFileCustody {
 
     /// Settles the offer of a completed `job`. The first stop wins over the
     /// result; otherwise validated pixels become the resource, and a
-    /// refused source or timeout rejects it. `ESTALE` names no live job.
+    /// refused source or timeout rejects it: a wrong backing length as
+    /// size mismatch, any other invalid backing as an invalid source.
+    /// `ESTALE` names no live job.
     pub fn image_completed(
         &mut self,
         job: u64,
@@ -486,6 +488,9 @@ impl LockFileCustody {
                 LOCK_RESOURCE_REASON_INVALID_SOURCE,
                 RefusedBeforeUse,
             ),
+            (None, Err(SealedValidationFailure::SizeMismatch)) => {
+                (Rejected, reason::SIZE_MISMATCH, RefusedBeforeUse)
+            }
             (None, Err(SealedValidationFailure::Timeout | SealedValidationFailure::Cancelled)) => (
                 Rejected,
                 LOCK_RESOURCE_REASON_VALIDATION_TIMEOUT,

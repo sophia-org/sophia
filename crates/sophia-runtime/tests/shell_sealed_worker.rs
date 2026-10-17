@@ -92,6 +92,8 @@ fn invalid_sources_and_expired_deadlines_return_one_terminal_completion() {
             result.result.err(),
             Some(if id == expired {
                 SealedValidationFailure::Timeout
+            } else if id == wrong_size {
+                SealedValidationFailure::SizeMismatch
             } else {
                 SealedValidationFailure::Malformed
             })
