@@ -19,6 +19,8 @@ use super::{authority, raw};
 
 #[path = "lock_image_sources.rs"]
 mod sources;
+#[path = "lock_image_cancel.rs"]
+mod cancel;
 
 const EPOCH: u64 = 7;
 const RELAY: &str = "SOPHIA_TEST_LOCK_IMAGE_RELAY";

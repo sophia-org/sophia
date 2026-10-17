@@ -228,6 +228,42 @@ impl Peer {
             .collect()
     }
 
+    /// One Twrite whose reply is deliberately left unread, for tests
+    /// that must stage request bytes in the socket while the owner
+    /// holds its turns. The tag sequence advances exactly as for an
+    /// answered write; the caller must consume the reply with
+    /// [`Self::read_reply`] before any other request is answered, so
+    /// a write reply is never mistaken for an event.
+    pub fn write_unanswered(&mut self, fid: u32, bytes: &[u8]) -> u16 {
+        self.tag += 1;
+        let mut request = ((23 + bytes.len()) as u32).to_le_bytes().to_vec();
+        request.push(118);
+        request.extend(self.tag.to_le_bytes());
+        request.extend(fid.to_le_bytes());
+        request.extend(0u64.to_le_bytes());
+        request.extend((bytes.len() as u32).to_le_bytes());
+        request.extend_from_slice(bytes);
+        self.stream.write_all(&request).unwrap();
+        self.tag
+    }
+
+    /// Consumes one outstanding reply, asserting it answers
+    /// `expected_tag`. Replies arrive in request order.
+    pub fn read_reply(&mut self, expected_tag: u16) -> (u8, Vec<u8>) {
+        let mut header = [0; 7];
+        self.stream.read_exact(&mut header).unwrap();
+        assert_eq!(
+            u16::from_le_bytes(header[5..].try_into().unwrap()),
+            expected_tag,
+            "reply answers an unexpected tag"
+        );
+        let size = u32::from_le_bytes(header[..4].try_into().unwrap()) as usize;
+        assert!((7..=65536).contains(&size));
+        let mut body = vec![0; size - 7];
+        self.stream.read_exact(&mut body).unwrap();
+        (header[4], body)
+    }
+
     pub fn read(&mut self, fid: u32, offset: u64) -> Vec<u8> {
         self.try_read(fid, offset).unwrap()
     }

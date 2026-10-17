@@ -570,3 +570,7 @@ fn service_image(
 
 #[path = "transport_wait.rs"]
 mod wait;
+
+#[cfg(test)]
+#[path = "../../tests/support/lock_image_cancel_worker.rs"]
+mod cancel_tests;
