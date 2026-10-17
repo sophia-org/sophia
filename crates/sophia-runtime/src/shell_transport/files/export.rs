@@ -28,6 +28,7 @@ mod inbound;
 mod objects;
 mod snapshots;
 mod submission;
+mod transaction;
 
 /// Not in `sophia-9p`'s set; the WM file owner defines the same values.
 const EBUSY: Errno = Errno(16);
@@ -53,6 +54,7 @@ pub(in crate::shell_transport) enum Node {
     Outputs,
     Events,
     Transaction,
+    TransactionReuse,
     Submit,
     Ack,
     /// The fixed `upload` directory of transfer slots.
@@ -86,6 +88,7 @@ impl Node {
             Self::Descriptors => 15,
             Self::Tabs => 16,
             Self::Shortcuts => 17,
+            Self::TransactionReuse => 18,
         }
     }
 
@@ -109,6 +112,7 @@ const NODE_QIDS: u64 = 32;
 pub(in crate::shell_transport) enum Handle {
     Plain,
     Transaction(u64),
+    ReusableTransaction(u64),
     /// A pinned snapshot object: immutable, whatever is published later.
     Object(Arc<Object>),
     /// A writer fid on one binding of an upload slot. Its `binding` qid fences
@@ -241,6 +245,7 @@ pub(in crate::shell_transport) struct ShellFiles {
     /// Fixed at negotiation, independently of the content resource grant.
     snapshot_reserved_bytes: usize,
     staging: Option<Staging>,
+    reuse_writer: Option<transaction::ReusableWriter>,
     accepted: Option<Accepted>,
     submission_watermark: u64,
     journal: Journal,
@@ -308,6 +313,7 @@ impl ShellFiles {
             shortcuts: ObjectSlot::default(),
             snapshot_reserved_bytes: 0,
             staging: None,
+            reuse_writer: None,
             accepted: None,
             submission_watermark: 0,
             journal: Journal::new(epoch, bounds, now),
@@ -330,6 +336,7 @@ impl ShellFiles {
     pub(in crate::shell_transport) fn revoke(&mut self) {
         self.revoked = true;
         self.staging = None;
+        self.reuse_writer = None;
         self.accepted = None;
         self.inbound.clear();
     }
@@ -493,6 +500,7 @@ impl ShellFiles {
             .is_some_and(|s| s.expired(Instant::now()))
         {
             self.staging = None;
+            self.reuse_writer = None;
         }
     }
 
@@ -585,7 +593,7 @@ impl Export for ShellFiles {
     fn describe(&self, node: &Node, handle: Option<&Handle>) -> Entry {
         let mut qid_path = self.qid_base + node.index();
         match handle {
-            Some(Handle::Transaction(id)) => qid_path = *id,
+            Some(Handle::Transaction(id) | Handle::ReusableTransaction(id)) => qid_path = *id,
             Some(Handle::Object(object)) => qid_path = object.qid,
             Some(Handle::Upload { binding, .. }) => qid_path = *binding,
             _ => {
@@ -614,7 +622,8 @@ impl Export for ShellFiles {
                 self.binding_of(*slot, *binding).map_or(0, Binding::cursor)
             }
             (Node::Events, _) => self.journal.size(),
-            (Node::Transaction, Some(Handle::Transaction(id))) => self
+            (Node::Transaction, Some(Handle::Transaction(id)))
+            | (Node::TransactionReuse, Some(Handle::ReusableTransaction(id))) => self
                 .staging
                 .as_ref()
                 .filter(|s| s.handle == *id)
@@ -638,7 +647,7 @@ impl Export for ShellFiles {
             qid_version: 0,
             permissions: match node {
                 Node::Root | Node::Uploads => 0o500,
-                Node::Transaction => 0o600,
+                Node::Transaction | Node::TransactionReuse => 0o600,
                 Node::Submit | Node::Ack | Node::Upload(_) => 0o200,
                 _ => 0o400,
             },
@@ -649,7 +658,7 @@ impl Export for ShellFiles {
     fn open(&mut self, node: &Node, flags: OpenFlags) -> Result<Handle, Errno> {
         let access = flags.access().ok_or(Errno::EINVAL)?;
         let valid = match node {
-            Node::Transaction => access == OpenAccess::ReadWrite,
+            Node::Transaction | Node::TransactionReuse => access == OpenAccess::ReadWrite,
             Node::Submit | Node::Ack | Node::Upload(_) => access == OpenAccess::Write,
             _ => access == OpenAccess::Read,
         };
@@ -689,13 +698,15 @@ impl Export for ShellFiles {
             }
             Node::Transaction => {
                 self.expire();
-                if self.staging.is_some() || self.accepted.is_some() {
+                if self.staging.is_some() || self.accepted.is_some() || self.reuse_writer.is_some()
+                {
                     return Err(EBUSY);
                 }
                 let id = self.allocate_qid()?;
                 self.staging = Some(Staging::new(id, STAGING));
                 Ok(Handle::Transaction(id))
             }
+            Node::TransactionReuse => self.open_reusable_transaction(),
             _ => Ok(Handle::Plain),
         }
     }
@@ -733,6 +744,9 @@ impl Export for ShellFiles {
                 Ok(slice(&object.bytes, offset, count))
             }
             (Node::Events, _) => self.journal.read(offset, count),
+            (Node::TransactionReuse, Handle::ReusableTransaction(id)) => {
+                self.read_reusable_transaction(*id, offset, count)
+            }
             (Node::Transaction, Handle::Transaction(id)) => {
                 self.expire();
                 let bytes = self
@@ -762,6 +776,9 @@ impl Export for ShellFiles {
     ) -> Result<u32, Errno> {
         self.expire();
         match (node, handle) {
+            (Node::TransactionReuse, Handle::ReusableTransaction(id)) => {
+                self.write_reusable_transaction(*id, offset, data)
+            }
             (Node::Transaction, Handle::Transaction(id)) => self
                 .staging
                 .as_mut()
@@ -784,7 +801,7 @@ impl Export for ShellFiles {
                     .as_ref()
                     .is_some_and(|a| a.sequence <= ack.sequence)
                 {
-                    self.accepted = None;
+                    self.recycle_transaction();
                 }
                 Ok(data.len() as u32)
             }
@@ -833,6 +850,7 @@ impl Export for ShellFiles {
 
     fn release(&mut self, _node: Node, handle: Option<Handle>) {
         match handle {
+            Some(Handle::ReusableTransaction(id)) => self.release_reusable_transaction(id),
             Some(Handle::Transaction(id))
                 if self.staging.as_ref().is_some_and(|s| s.handle == id) =>
             {

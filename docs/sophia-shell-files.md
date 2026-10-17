@@ -357,6 +357,7 @@ The writer has five states:
   meanings. The covering ACK returns only the matching live writer to Idle.
 - **Refused:** a definitive submit refusal retains the assembly for reads.
   Writes return `EBUSY`; the assembly deadline continues until clunk or expiry.
+  A decoded, current-epoch submit returns the retained refusal errno.
 - **Fenced:** assembly expiry, revocation, disconnect or epoch replacement
   permanently invalidates the token. Reads and writes return `ESTALE`. A new
   attach inherits neither assembly nor accepted state from the old connection.
@@ -368,12 +369,15 @@ the following write refused with `EBUSY`. A rejected ACK never authorizes work.
 
 One record buffer moves between these states, bounded by the same `STAGING`
 limits as legacy transactions (`SHELL_FILE_MAX_TRANSACTION_BYTES`, currently
-64 KiB). Retained capacity is charged once to the existing transaction allowance,
+64 KiB). Capacity is reserved at open under the existing transaction allowance,
 not to an unbounded cache. ACK may recycle that capacity; clunk, expiry and
 teardown release it. Idle time does not expire a writer; the existing assembly
 deadline begins with the first nonempty byte and never renews on retries.
 
-`EAGAIN` preserves assembly for retry. A definitive submit refusal retains the
+Malformed submit bytes and foreign-epoch submit records leave assembly unchanged
+and submittable; they return `EINVAL` and `ESTALE`, respectively. `EAGAIN`
+preserves assembly for retry. Journal sequence or offset exhaustion returns
+`ENOSPC` without custody and is definitive. A definitive submit refusal retains the
 bytes for diagnosis until clunk or expiry, as the legacy path does. SDKs clunk
 that refused assembly before opening a fresh writer for later work. Clunk
 before submit cancels assembly; after submit it cannot undo custody or release

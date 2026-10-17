@@ -6,6 +6,9 @@ use sophia_protocol::*;
 #[path = "shell_file_authentication.rs"]
 mod authentication;
 
+#[path = "shell_file_transaction_reuse.rs"]
+mod transaction_reuse;
+
 const EPOCH: u64 = 41;
 const BASE: u64 = 3;
 

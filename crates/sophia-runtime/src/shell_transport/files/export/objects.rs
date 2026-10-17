@@ -58,6 +58,7 @@ impl ShellFiles {
             (b"outputs", Node::Outputs),
             (b"events", Node::Events),
             (b"transaction", Node::Transaction),
+            (b"transaction-reuse", Node::TransactionReuse),
             (b"submit", Node::Submit),
             (b"ack", Node::Ack),
             (b"upload", Node::Uploads),
