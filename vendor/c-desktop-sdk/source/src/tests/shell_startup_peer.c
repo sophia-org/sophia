@@ -47,6 +47,36 @@ int main(int argc, char **argv) {
   assert(sophia_ss_welcome(session)->selected_revision == 8);
   assert(sophia_ss_welcome(session)->capabilities == (3u | (content ? 128u : 0u)));
   assert(!!sophia_ss_limits(session) == content);
+  {
+    const struct sophia_sf_record *event = NULL, *object = NULL;
+    struct sophia_sf_object_published publication;
+    int status;
+    do {
+      assert(now() < deadline);
+      assert(!sophia_ss_dispatch(session, POLLIN | POLLOUT, 1, now()));
+      status = sophia_ss_event(session, &event);
+    } while (status == SOPHIA_9P_AGAIN);
+    assert(!status && event->header.kind == SOPHIA_SF_OBJECT_PUBLISHED);
+    publication = event->value.object_published;
+    assert(publication.object_kind == SOPHIA_SF_DESCRIPTORS && publication.generation == 17);
+    assert(!sophia_ss_consume(session));
+    assert(!sophia_ss_object(session, publication.object_kind, publication.generation, publication.qid));
+    do {
+      assert(now() < deadline);
+      assert(!sophia_ss_dispatch(session, POLLIN | POLLOUT, 1, now()));
+      status = sophia_ss_object_result(session, &object);
+    } while (status == SOPHIA_9P_BUSY);
+    assert(!status && object->header.kind == SOPHIA_SF_DESCRIPTORS);
+    assert(!sophia_ss_obligations(session, &obligations));
+    assert(obligations.acked == 2 && obligations.ack_limit > 2 && !obligations.objects);
+    assert(!sophia_ss_ack(session));
+    assert(!sophia_ss_obligations(session, &obligations) && obligations.acked == 2);
+    while (obligations.acked < obligations.ack_limit) {
+      assert(now() < deadline);
+      assert(!sophia_ss_dispatch(session, POLLIN | POLLOUT, 1, now()));
+      assert(!sophia_ss_obligations(session, &obligations));
+    }
+  }
   sophia_ss_close(session);
   close(fd);
   free(storage);

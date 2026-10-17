@@ -26,6 +26,8 @@ const EAGAIN: u32 = 11;
 mod admission;
 #[path = "support/file_wire_batch.rs"]
 mod batch;
+#[path = "support/file_wire_journal.rs"]
+mod journal;
 const EINVAL: u32 = 22;
 const EALREADY: u32 = 114;
 /// The first `EAGAIN` backoff the client documents (`RETRY_FIRST`): a pass

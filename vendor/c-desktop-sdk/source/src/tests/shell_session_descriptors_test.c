@@ -253,6 +253,14 @@ static void selected_feeds_and_holds(void)
         assert(r.p.acked == 2 && r.p.submits == 2);
     }
     assert(!sophia_ss_obligations(&r.s, &o) && !o.objects && !o.blocked);
+    /* Matching manual-ACK control: decoding/fetching alone must not send an
+     * ACK; queueing it is not evidence of a successful Rwrite. */
+    assert(o.acked == 2 && o.ack_limit > 2);
+    assert(!sophia_ss_ack(&r.s));
+    assert(!sophia_ss_obligations(&r.s, &o) && o.acked == 2);
+    peer_pump(&r.p);
+    assert(r.p.acked == 2);
+    rig_run(&r, 6);
     rig_ack(&r);
     assert(rig_until(&r, ticket + 1, 32) == SOPHIA_SS_SUBMITTED && !r.p.transaction_busy);
     rig_close(&r);

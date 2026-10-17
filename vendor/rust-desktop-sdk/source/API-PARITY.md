@@ -1,5 +1,30 @@
 # C and Rust SDK API parity
 
+## Journal ACK scheduling, 2026-10-17
+
+Rust's `ShellConnection::set_automatic_journal_ack(false)` defers future ACKs;
+`acknowledge_journal` queues one through the current safe limit without I/O.
+Automatic ACKs remain the default. C already provides explicit `sophia_ss_ack`.
+Neither call bypasses unverified snapshot holds or retracts an already queued
+ACK. Delaying progress can stall submissions or trigger server revocation.
+
+Rust `journal_progress` separates handled, safe-limit, queued and confirmed
+watermarks, with pending ACK/object flags. Handled means retained by the SDK,
+not processed by the application. C's `obligations.consumed` follows explicit
+event consumption instead; this new Rust control does not claim that the two
+delivery models are interchangeable. Input/action ACKs remain separate.
+
+Rust's manual-ACK tests cover caller deferral, no I/O on queueing, held replies,
+return to automatic mode, close and the unverified-object barrier. C's
+`selected_feeds_and_holds` independently checks no ACK before caller request
+and no confirmation before dispatch. Rust's full shell suite and strict Clippy
+pass. Both independent `shell_startup_peer` executables pass Sophia's real
+export in metadata/content modes: fetch a descriptor snapshot, defer its ACK,
+explicitly queue it, then wait for confirmation. Admission is supplied; no
+protected launch, presentation or performance claim follows from this check.
+Manual object scheduling, retained-head delivery and an allocation-free size
+query still need review; prepared admission is not evidence for those controls.
+
 [Shell startup](SHELL-STARTUP.md) maps caller-driven connection, timers,
 bounded progress and handoff in both SDKs, with independent export evidence.
 
@@ -626,7 +651,7 @@ pending under t333.
 | `outcome` | `custody_result` | Retained unknown versus evicted/unissued distinctions above. |
 | `event`, `consume` | typed `take_*`; native `next_event`/`done` | Rust generic receives transfer owned values; native facade retains its head until done/response. Decoded observations remain readable after connection close. |
 | `object`, `object_result` | automatic fetch and typed snapshot observations | Rust owns fetch/retry and validates announced identity before releasing journal holds; no public manual fetch scheduling. |
-| `ack_limit`, `ack`, generic `obligations` | automatic ordered journal acknowledgement, readiness and retry wake deadline | Rust does not expose a manual acknowledgement watermark. Journal delivery ACK is separate from explicit application input/action ACK. |
+| `ack_limit`, `ack`, generic `obligations` | `journal_progress`, `acknowledge_journal`, `set_automatic_journal_ack`, readiness and retry wake deadline | Rust defaults to automatic ACKs and counts SDK-retained events; C counts caller-consumed events. Both preserve snapshot barriers. Delivery ACK is separate from application input/action ACK. |
 | `upload_begin/chunk/ready/pending/end/cancel` | resource records and Stored tickets; native upload helpers | C borrows chunks; Rust copies them and exposes custody. In-flight/queue accounting above. |
 | `close` | `ShellConnection::close`, `NativeLauncherSession::close` | Local terminal classification without I/O. C leaves borrowed fd open; Rust keeps its owned fd until Drop. |
 
@@ -639,8 +664,8 @@ custody controls pass, alongside full workspace tests, strict Clippy and the ful
 C suite (43 Rust native tests).
 
 This audit does not declare every low-level control interchangeable. C's manual
-object-fetch and journal-ACK scheduling and allocation-free size query have no
-literal Rust control API. Rust supplies automatic verified delivery and prepared
+object-fetch scheduling, retained-head delivery and allocation-free size query
+still lack literal Rust control APIs. Rust supplies automatic verified delivery and prepared
 admission instead; production-export review must assess those differences
 against supported applications. The matrix records them explicitly rather than
 claiming codec coverage proves full parity. WM, output, lock, administration,

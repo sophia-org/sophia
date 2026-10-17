@@ -1,14 +1,14 @@
-tree 66cc8865c3a7419fd20ced4b1876a6a461c9ab1b
-parent 129abc7e7f2adf227169fc0ba84c145d6b14de4b
-author Mason Green <mason@greenm01.net> 1792209558 -0400
-committer Mason Green <mason@greenm01.net> 1792209558 -0400
+tree a48dc01523194e21349be8b88c1ff698e63bd3f0
+parent 8b323695a54fc06820787a181c7e8559d55abc87
+author Mason Green <mason@greenm01.net> 1792209922 -0400
+committer Mason Green <mason@greenm01.net> 1792209922 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLylhsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGK7HgEAur6QRuggNI6KmLfnq9H0
- m+oMdCsPdqnWdC2Wgzgn8e8A+QFChgzSEBDXNxNIE1HpxdzYV7cZvgFWcF2wcWo6
- xsoM
- =JjQD
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL0AhsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJvlwD/SUYfMkSS8E3FnXz3b+Ic
+ XCkNQIQr+cRYbFUI8GNUkKsA/1Gq+ZI5lOTZrmzOcU5/34fc9uJp95bwyWNcewR3
+ 414E
+ =nte8
  -----END PGP SIGNATURE-----
 
-Exercise protected lock reauthentication and fresh provider epochs
+Verify explicit journal ACK progress against scripted and real exports

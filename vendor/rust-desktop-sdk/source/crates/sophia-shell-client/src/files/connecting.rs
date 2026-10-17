@@ -640,6 +640,8 @@ impl Handshake {
             reply_scratch: Vec::new(),
             ack_ready: self.sequence,
             acked: self.sequence,
+            ack_confirmed: self.sequence,
+            automatic_ack: true,
             ack_tag: None,
             object_fetch: None,
             holds: [None; super::FEEDS.len()],

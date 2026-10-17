@@ -1,14 +1,14 @@
-tree 600005bbd8018cfe92995cd6c1e5783ee81ce00a
-parent 9a5fa8bd05824fc6e40e164191c93caa0399ec9b
-author Mason Green <mason@greenm01.net> 1792209557 -0400
-committer Mason Green <mason@greenm01.net> 1792209557 -0400
+tree 8d9233b0f16b90d09220432eda2680d20ffd2d02
+parent 30805b15afc20b0b1fd1ec19f6d9034fcdbeef1e
+author Mason Green <mason@greenm01.net> 1792209921 -0400
+committer Mason Green <mason@greenm01.net> 1792209921 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLylRsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKHgQD/ZtsGzXf469LrQvvC+C8f
- UdZHRFJhul15kqapfBELUlcBANBzalWsrixVXJEPAyYERp82OCGzCqsZnpqxQCDK
- LvIE
- =8gqA
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL0ARsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLwLQEAjVeau8Rkafht/S1Sekyi
+ UA8LgrDSrkso3ogczSaH508BALvtzUE+IkgxBUvz69DADmNsCoa0qZLYh5snfmxH
+ 1l4B
+ =eDla
  -----END PGP SIGNATURE-----
 
-Exercise protected lock reauthentication and fresh provider epochs
+Expose explicit shell journal ACK scheduling and progress

@@ -145,9 +145,9 @@ not change t331's current cost gate or the prepared CPU pilot.
 ### Current resumption
 
 The role/API release audit remains open against the full exits above. Signed
-Rust `30805b15afc20b0b1fd1ec19f6d9034fcdbeef1e` and C
-`8b323695a54fc06820787a181c7e8559d55abc87` are pushed and imported. Both pin
-checks pass, including the imported Rust workspace tests. Shell startup
+Rust `36a4c89867f1b41cd6f2237fa75beba609a50e85` and C
+`ce01a9d6491c18672ffb1c7da3b5a27f3598b755` are pushed and imported. Both pin checks
+pass, including the imported Rust workspace tests. Shell startup
 is now caller-driven in both SDKs; WM/lock maps and C's role inventory have
 been reconciled. C lock handoff now rejects extra fids and partial input.
 
@@ -165,6 +165,23 @@ or physical locking. Peer SHA-256: Rust
 Next: resolve the remaining shell manual-control differences against supported
 applications, then finish the requirement-by-requirement release check and
 missing paired gates. Preserve the portal refused-End live-cancellation limit.
+
+Rust now exposes explicit journal ACK scheduling
+and handled/safe-limit/queued/confirmed progress. Defaults remain automatic;
+explicit ACKs cannot bypass snapshot holds. Independent Rust tests cover
+deferral, queueing without I/O, held replies, automatic resumption, close and
+unverified snapshots. C's existing manual API has a matching strengthened
+descriptor test. The Rust shell suite and strict Clippy pass; the C descriptor
+test passes. Both independent `shell_startup_peer` executables also pass the
+real `shell_sdk_startup` export test in metadata and content modes: fetch a
+descriptor snapshot, defer ACK, queue it explicitly and wait for confirmation.
+The complete C suite and strict peer/fixture Clippy pass. C already had the
+manual ACK API, so its runtime is unchanged. Both maps distinguish Rust's
+SDK-retained watermark from C's caller-consumed watermark; this does not close
+retained-head delivery or manual object scheduling. Allocation-free sizing is
+also still under review. Peer SHA-256: Rust
+`146b566493b70e4053b3eb05a7b881a4cf24ecc532afb73b03aae57b75f3c1c9`, C
+`3f3ed1ef6a4b5619b47d3145b8603880c462494d1fb91b8eaf80dca075cdb83a`.
 No quiet hold is active and nothing was installed into the desktop. Performance
 qualification remains separate; the broker diagnostic is not acceptance.
 

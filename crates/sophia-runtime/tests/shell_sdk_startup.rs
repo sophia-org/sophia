@@ -91,6 +91,21 @@ fn independent_sdk_startup_reads_negotiation_and_optional_limits() {
                 assert_eq!(welcome.connection_epoch, 41);
                 assert_eq!(welcome.selected_revision, 8);
                 negotiated = true;
+                transport
+                    .begin_candidate_request(
+                        &mut epochs,
+                        TransactionId::from_raw(17),
+                        &ShellV1DescriptorSnapshot {
+                            connection_epoch: 41,
+                            snapshot_generation: 17,
+                            output: OutputId::from_raw(8),
+                            output_generation: 9,
+                            broker_epoch: 4,
+                            broker_revocation_epoch: 5,
+                            descriptors: Vec::new(),
+                        },
+                    )
+                    .unwrap();
             }
             if let Some(status) = child.0.try_wait().unwrap() {
                 assert!(status.success(), "SDK peer failed: {status}");
@@ -101,8 +116,10 @@ fn independent_sdk_startup_reads_negotiation_and_optional_limits() {
         }
         assert!(negotiated);
         transport.disconnect(&mut epochs).unwrap();
-        assert!(transport
-            .collect_content_accounting(&mut epochs)
-            .quiescent());
+        assert!(
+            transport
+                .collect_content_accounting(&mut epochs)
+                .quiescent()
+        );
     }
 }

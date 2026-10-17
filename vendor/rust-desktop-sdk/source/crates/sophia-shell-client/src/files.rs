@@ -240,6 +240,8 @@ pub(crate) struct FileWire {
     /// Every event through this sequence has been handled.
     ack_ready: u64,
     acked: u64,
+    ack_confirmed: u64,
+    automatic_ack: bool,
     ack_tag: Option<Tag>,
     object_fetch: Option<ObjectFetch>,
     /// Per feed (`FEEDS` order): the ack bound an announcement not yet

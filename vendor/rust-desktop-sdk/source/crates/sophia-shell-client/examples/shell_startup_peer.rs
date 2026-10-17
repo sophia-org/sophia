@@ -37,6 +37,7 @@ fn main() {
         std::thread::yield_now();
     }
     let mut client = startup.take_connection().unwrap();
+    client.set_automatic_journal_ack(false).unwrap();
     assert_eq!(client.connection_epoch(), 41);
     assert_eq!(client.welcome().selected_revision, 8);
     assert_eq!(
@@ -50,5 +51,33 @@ fn main() {
         ),
         content
     );
+    loop {
+        assert!(start.elapsed() < Duration::from_secs(3));
+        client.dispatch(Instant::now(), 1).unwrap();
+        if let Some(sophia_shell_client::DescriptorObservation::Record(record)) =
+            client.take_descriptor_observation().unwrap()
+        {
+            let sophia_shell_protocol::shell_files::ShellDescriptorRecord::Descriptors(snapshot) =
+                record.record
+            else {
+                panic!("expected descriptors")
+            };
+            assert_eq!(snapshot.snapshot_generation, 17);
+            assert!(snapshot.descriptors.is_empty());
+            break;
+        }
+        std::thread::yield_now();
+    }
+    let progress = client.journal_progress();
+    assert!(progress.handled > 2 && progress.ack_limit == progress.handled);
+    assert_eq!(progress.acknowledged, 2);
+    assert!(!progress.object_pending);
+    assert!(client.acknowledge_journal().unwrap());
+    assert_eq!(client.journal_progress().acknowledged, 2);
+    while client.journal_progress().acknowledged < progress.ack_limit {
+        assert!(start.elapsed() < Duration::from_secs(3));
+        client.dispatch(Instant::now(), 1).unwrap();
+        std::thread::yield_now();
+    }
     client.close();
 }

@@ -18,6 +18,30 @@ use crate::wire::Inbound;
 use crate::{ShellClientError, outbox::ClientOutbox};
 
 impl FileWire {
+    pub(crate) fn journal_progress(&self) -> crate::JournalProgress {
+        let live = self.fatal.is_none() && !self.peer_closed;
+        crate::JournalProgress {
+            handled: self.ack_ready,
+            ack_limit: self.ack_limit(),
+            queued: self.acked,
+            acknowledged: self.ack_confirmed,
+            ack_pending: live && self.ack_tag.is_some(),
+            object_pending: live && self.holds.iter().any(Option::is_some),
+        }
+    }
+    pub(crate) fn set_automatic_journal_ack(
+        &mut self,
+        enabled: bool,
+    ) -> Result<(), ShellClientError> {
+        self.io_interest()?;
+        self.automatic_ack = enabled;
+        self.service_pending = true;
+        Ok(())
+    }
+    pub(crate) fn acknowledge_journal(&mut self) -> Result<bool, ShellClientError> {
+        self.io_interest()?;
+        self.queue_ack()
+    }
     pub(crate) fn close(&mut self, output: &mut ClientOutbox, ledger: &mut Ledger) {
         if self.fatal.is_some() {
             return;
@@ -285,7 +309,10 @@ impl FileWire {
     fn on_ack_reply(&mut self, reply: &Reply) -> Result<(), ShellClientError> {
         self.ack_tag = None;
         match reply {
-            Reply::Write(count) if *count as usize == SHELL_FILE_ACK_BYTES => Ok(()),
+            Reply::Write(count) if *count as usize == SHELL_FILE_ACK_BYTES => {
+                self.ack_confirmed = self.acked;
+                Ok(())
+            }
             _ => Err(ShellClientError::Protocol("unexpected ack reply")),
         }
     }
@@ -313,6 +340,12 @@ impl FileWire {
     /// unit is retained; never past what `handle_event` has committed, nor
     /// past an announcement whose object is not yet fetched.
     fn maybe_send_ack(&mut self) -> Result<bool, ShellClientError> {
+        if !self.automatic_ack {
+            return Ok(false);
+        }
+        self.queue_ack()
+    }
+    fn queue_ack(&mut self) -> Result<bool, ShellClientError> {
         let sequence = self.ack_limit();
         if self.ack_tag.is_some() || sequence <= self.acked {
             return Ok(false);

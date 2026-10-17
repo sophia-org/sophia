@@ -217,6 +217,7 @@ impl FileWire {
         let mut buffer: Vec<u8> = Vec::new();
         let mut handshake_sequence = 0;
         let mut submitted_seen = false;
+        let mut ack_confirmed = 0;
         let (outcome, last_acked) = 'outer: loop {
             let tag = pipeline.read(events_fid, read_offset, u32::MAX)?;
             let data = match wait_ok(&mut pipeline, tag, deadline)? {
@@ -258,6 +259,7 @@ impl FileWire {
                         }
                         submitted_seen = true;
                         ack_now(&mut pipeline, ack_fid, connection_epoch, sequence, deadline)?;
+                        ack_confirmed = sequence;
                     }
                     ShellFileKind::Negotiated => {
                         if !submitted_seen {
@@ -266,11 +268,11 @@ impl FileWire {
                             ));
                         }
                         let negotiated = decode_shell_file_negotiated(&record)?;
-                        if let Err(error) =
-                            ack_now(&mut pipeline, ack_fid, connection_epoch, sequence, deadline)
-                            && !is_peer_closed(&error)
+                        match ack_now(&mut pipeline, ack_fid, connection_epoch, sequence, deadline)
                         {
-                            return Err(error);
+                            Ok(()) => ack_confirmed = sequence,
+                            Err(error) if is_peer_closed(&error) => (),
+                            Err(error) => return Err(error),
                         }
                         break 'outer (Ok(negotiated), sequence);
                     }
@@ -375,6 +377,8 @@ impl FileWire {
             reply_scratch: Vec::new(),
             ack_ready: last_acked,
             acked: last_acked,
+            ack_confirmed,
+            automatic_ack: true,
             ack_tag: None,
             object_fetch: None,
             holds: [None; super::FEEDS.len()],

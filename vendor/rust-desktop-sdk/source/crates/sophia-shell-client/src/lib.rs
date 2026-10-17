@@ -28,7 +28,9 @@ mod outbox;
 pub use outbox::{QueueLimits, QueueReservation};
 mod reservation;
 pub use lifecycle::*;
+mod journal_progress;
 mod wire;
+pub use journal_progress::JournalProgress;
 
 use std::collections::VecDeque;
 use std::os::fd::{AsFd, BorrowedFd};
