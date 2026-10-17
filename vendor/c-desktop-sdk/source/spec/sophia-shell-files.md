@@ -31,7 +31,8 @@ the sequential walk-then-open path when they lack a second request credit.
 This changes no upload, submission or acknowledgement barrier: resource
 admission precedes upload setup, writes remain sequential, the complete record
 write precedes submit, and the covering acknowledgement precedes the next
-transaction setup. Terminal resource status discards pending setup replies
+transaction setup or reusable writer's next record. Terminal resource status
+discards pending setup replies
 and releases its fid without allowing a later reply to reopen the slot.
 
 ### Protocol and revisions
@@ -220,6 +221,7 @@ component's metadata audience.
 | `limits` | read | content profiles | The granted `ContentLimits` as a binary record, immutable for the grant |
 | `events` | read | all | Ordered records by byte offset, retained until acknowledged |
 | `transaction` | read/write | all | The attach's single candidate buffer; at most one open `transaction` fid per attach, as in the WM contract |
+| `transaction-reuse` | read/write | all, when supported | Optional reusable writer for the same single candidate buffer; shares exclusion with `transaction` |
 | `submit` | write | all | Submits the attach's staged candidate by epoch, submission ID and exact length; it names no fid |
 | `ack` | write | all | Acknowledges events through a sequence number |
 | `outputs` | read | content profiles | Pinned output facts object |
@@ -318,6 +320,75 @@ candidate buffer, and `submit` refers to that attach's staged candidate. The
 buffer therefore needs no more than the largest control record, not the WM's
 1 MiB. The shell transaction cap is independently fixed at 64 KiB per attach
 transaction buffer; it is not derived from the socket's frame limit.
+
+### Reusable transaction writer
+
+Accepted by niltempus on October 17, 2026 under
+[the reusable-writer decision](notes/decisions/7mls2e2q-reuse-a-shell-transaction-writer-without-changing-custody.md).
+Implementation and performance qualification are separate from this acceptance.
+
+`transaction-reuse` is an optional transport extension. It uses the existing
+record, `submit` and `ack` formats and grants no new role capability. The API
+line, record version and role revisions are unchanged. Clients finish the
+ordinary negotiation and its covering ACK before probing this node. Only
+`ENOENT` from that lookup selects the legacy `transaction` lifecycle; this is
+equivalent transport semantics, not a capability downgrade. Once the node is
+found, an open, authority or protocol error must not select another path.
+
+Opening claims one unique writer token in the attach's epoch. A live reusable
+writer excludes legacy and reusable opens even while idle. A reusable open
+also returns `EBUSY` while legacy staging or accepted custody exists. Expired
+or released tokens hold no reservation and cannot affect a successor.
+As with `transaction`, open requires read/write access and refuses append and
+truncate. A `submit` write targets the single live assembly on either path.
+
+The writer has five states:
+
+- **Idle:** reads return EOF and size is zero. A valid nonempty write at offset
+  zero begins assembly. Invalid initial writes change nothing. An empty write
+  at offset zero succeeds without beginning assembly or starting a deadline;
+  other initial offsets return `EINVAL`.
+- **Assembling:** the legacy append, identical-range retry, declared-length and
+  assembly-deadline rules apply. A complete record write still precedes submit.
+- **AwaitAck:** successful submit moves the bytes into immutable accepted
+  custody. They remain readable until the covering ACK. Every write, including
+  an empty write, returns `EBUSY` without changing bytes. Identical submit retry,
+  `EALREADY`, `EAGAIN`, journal capacity and semantic outcomes keep their existing
+  meanings. The covering ACK returns only the matching live writer to Idle.
+- **Refused:** a definitive submit refusal retains the assembly for reads.
+  Writes return `EBUSY`; the assembly deadline continues until clunk or expiry.
+  A decoded, current-epoch submit returns the retained refusal errno.
+- **Fenced:** assembly expiry, revocation, disconnect or epoch replacement
+  permanently invalidates the token. Reads and writes return `ESTALE`. A new
+  attach inherits neither assembly nor accepted state from the old connection.
+
+No rearm request is needed. A client may queue the covering ACK followed by
+the next offset-zero record write on the same connection. The server processes
+them in wire order; an ACK that does not release the live submission leaves
+the following write refused with `EBUSY`. A rejected ACK never authorizes work.
+
+One record buffer moves between these states, bounded by the same `STAGING`
+limits as legacy transactions (`SHELL_FILE_MAX_TRANSACTION_BYTES`, currently
+64 KiB). Capacity is reserved at open under the existing transaction allowance,
+not to an unbounded cache. ACK may recycle that capacity; clunk, expiry and
+teardown release it. Idle time does not expire a writer; the existing assembly
+deadline begins with the first nonempty byte and never renews on retries.
+
+Malformed submit bytes and foreign-epoch submit records leave assembly unchanged
+and submittable; they return `EINVAL` and `ESTALE`, respectively. `EAGAIN`
+preserves assembly for retry. Journal sequence or offset exhaustion returns
+`ENOSPC` without custody and is definitive. A definitive submit refusal retains the
+bytes for diagnosis until clunk or expiry, as the legacy path does. SDKs clunk
+that refused assembly before opening a fresh writer for later work. Clunk
+before submit cancels assembly; after submit it cannot undo custody or release
+accepted replay bytes before the covering ACK or connection teardown. A late
+clunk cannot cancel a successor token. Metadata identifies only the held token:
+a fenced token cannot reveal a successor's size or contents.
+
+Resource completion fences its upload binding, not this transaction writer.
+Upload admission, sequential writes, explicit End, presentation and retirement
+rules are unchanged. The C and Rust SDKs discover and use this extension with
+equivalent custody, error and recovery behavior.
 
 ### Resource staging without client-created files
 
@@ -456,6 +527,7 @@ invented outcome or dropped owed record.
 The root names come from the vocabulary above. Snapshot bound is twice the sum of
 the disclosed feeds' caps (current plus one pinned older object) plus one
 shared 4 MiB build scratch.
+Every role below also discloses `transaction-reuse` when the extension is supported.
 
 | Role profile | Root names | Snapshot feeds and caps | Largest S-to-C record (file framing) | Journal bytes | Terminal reserve | Snapshot bound |
 | --- | --- | --- | --- | --- | --- | --- |

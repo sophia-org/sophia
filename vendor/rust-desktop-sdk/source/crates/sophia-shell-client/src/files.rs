@@ -230,6 +230,8 @@ pub(crate) struct FileWire {
     events_fid: Fid,
     submit_fid: Fid,
     ack_fid: Fid,
+    reusable_transactions: bool,
+    transaction_fid: Option<Fid>,
     upload_slots: u8,
     next_submission_id: u64,
 

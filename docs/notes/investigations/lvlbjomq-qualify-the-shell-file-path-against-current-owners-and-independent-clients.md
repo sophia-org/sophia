@@ -14,6 +14,25 @@ repairs? Reconcile the existing evidence before repeating a desktop campaign.
 
 ## Current resumption
 
+The October 17 [replacement plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#approved-reusable-writer-and-cumulative-ack-slice--october-17)
+is implemented through production `29b64531c`, with Rust SDK `cab32bf` and C SDK
+`71582a5`. The [active attribution investigation](2o32e7ui-which-plan-9-implementation-techniques-can-reduce-sophia-shell-costs.md#current-resumption)
+records passing protocol gates and the remaining measurements. Comparator
+`363e06998` preserves the reconciled pre-change baseline (`116075541`, SDK
+`f1cd924`). Its eight-arm baseline now has 8,000 replayed frame joins and matching
+cost reports; the two bulk-allocation arms overlap reviewer activity and remain
+provisional. The active investigation records the bounds and limits. Next finish
+the SDK review follow-ups, carry the implementation onto the comparator and
+measure the candidate. No candidate performance result or desktop installation
+is claimed.
+
+CPU-20 is superseded preparation: its frozen artifacts remain, but no capture
+ran and it must not supply the new baseline. Cost-15 and perf-18 remain historical
+cost and profiling evidence. t331 stays open until the unchanged paired cost and
+latency gates pass. No quiet hold, native run or installed-desktop change is active.
+
+## Historical resumption before comparator reconciliation
+
 The approved extra-pass fixes are implemented. Signed production `d817e6d8a`
 services launch relays from owner readiness and deadlines while retaining
 per-pass custody and retirement checks. Signed SDK `3edcd28` batches each

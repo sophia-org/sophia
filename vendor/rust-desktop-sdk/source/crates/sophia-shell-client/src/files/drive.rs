@@ -183,7 +183,7 @@ impl FileWire {
         mut budget: Option<IoBudget>,
     ) -> Result<(), ShellClientError> {
         self.service_pending = true;
-        for _ in 0..MAX_ROUNDS {
+        for round in 0..MAX_ROUNDS {
             let mut eof = false;
             let result = match &mut budget {
                 Some(budget) => self.pipeline.poll_with_budget(budget),
@@ -218,13 +218,25 @@ impl FileWire {
             for _ in 0..std::mem::take(&mut self.retire) {
                 output.retire_front();
             }
+            // Queue the covering ACK before the next writer use. Otherwise
+            // gather consumed events until this bounded drive is about to yield.
+            if self.current.is_none()
+                && matches!(self.pending.front(), Some(super::QueuedKind::Record))
+            {
+                progressed |= self.maybe_send_ack()?;
+            }
             progressed |= self.start_next_outbound(output)?;
             progressed |= self.drive_submit_retry()?;
             progressed |= self.drive_slot_write()?;
             progressed |= self.drive_object_fetch()?;
             progressed |= self.process_buffered_event(inbox)?;
             progressed |= self.maybe_read_events(inbox)?;
-            progressed |= self.maybe_send_ack()?;
+            if !progressed
+                || budget.as_ref().is_some_and(IoBudget::exhausted)
+                || round + 1 == MAX_ROUNDS
+            {
+                progressed |= self.maybe_send_ack()?;
+            }
             if !progressed {
                 self.service_pending = budget.as_ref().is_some_and(IoBudget::exhausted);
                 break;

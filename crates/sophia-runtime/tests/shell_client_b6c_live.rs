@@ -987,16 +987,16 @@ fn indicator_intake(live: &mut Live) -> (TransactionId, ShellIndicatorActivation
     }
 }
 
-/// The export keeps `transaction` busy (`EBUSY` on open) until the previous
+/// The export keeps the reusable writer busy until the previous
 /// submission's `Submitted` is acknowledged, and serves a connection's
 /// requests in order. Delivery is delayed, never reordered, so that unit
 /// A's `Submitted` is handled while an earlier ack (for event X) is still
 /// unanswered, and X's ack reply then reaches the client in one drain with
-/// whatever followed it (unit B's walk reply, were B's walk already sent).
-/// The ack covering A must reach the transport before B's walk and open:
+/// whatever followed it (unit B's write reply, were B's write already sent).
+/// The ack covering A must reach the transport before B's offset-zero write:
 /// no `EBUSY`, and B reaches `Submitted`.
 #[test]
-fn the_next_record_opens_transaction_only_after_the_ack_releasing_it() {
+fn the_next_record_reuses_transaction_only_after_the_ack_releasing_it() {
     let mut live = Live::connect(Role::Bar(INDICATORS | INDICATOR_ACTIVATION));
     live.transport
         .publish_indicators(&live.registry, tx(5), &snapshot(4))
@@ -1039,7 +1039,12 @@ fn the_next_record_opens_transaction_only_after_the_ack_releasing_it() {
     live.tap.hold_down_from_ack_reply = true;
     live.tap.release_up();
     live.until(|live| live.custody(a) == Some(Custody::Submitted));
-    let walks = live.tap.walks("transaction");
+    let staged_before = live
+        .tap
+        .seen
+        .iter()
+        .filter(|seen| matches!(seen, Seen::Staged(_)))
+        .count();
     for _ in 0..6 {
         live.turn().unwrap();
     }
@@ -1049,20 +1054,26 @@ fn the_next_record_opens_transaction_only_after_the_ack_releasing_it() {
             .any(|(kind, node)| *kind == TWRITE && node == "ack"),
         "the scenario formed: X's ack reply is delayed ({held:?})"
     );
-    let walked_early = live.tap.walks("transaction") > walks;
+    let wrote_early = live
+        .tap
+        .seen
+        .iter()
+        .filter(|seen| matches!(seen, Seen::Staged(_)))
+        .count()
+        > staged_before;
 
     // One drain: X's ack reply and everything delayed behind it.
     live.tap.release_down();
     let outcome = live.settle(b);
-    let opens = live.tap.open_replies("transaction");
+    let opens = live.tap.open_replies("transaction-reuse");
     assert!(
         !opens.contains(&Err(EBUSY)),
-        "B's open of transaction was refused EBUSY (walked before the covering ack: \
-         {walked_early}; delayed replies {held:?}; opens {opens:?}; custody {outcome:?})"
+        "reusable open refused EBUSY (wrote before covering ack: \
+         {wrote_early}; delayed replies {held:?}; opens {opens:?}; custody {outcome:?})"
     );
     assert!(
-        !walked_early,
-        "B walked transaction before the ack covering A"
+        !wrote_early,
+        "B wrote transaction before the ack covering A"
     );
     assert_eq!(outcome, Custody::Submitted);
 
@@ -1088,11 +1099,11 @@ fn the_next_record_opens_transaction_only_after_the_ack_releasing_it() {
         .iter()
         .position(|seen| matches!(seen, Seen::Ack(sequence) if *sequence >= covering))
         .expect("an ack covering A's Submitted");
-    let walked = live
+    let written = live
         .tap
         .seen
         .iter()
-        .rposition(|seen| *seen == Seen::Walk("transaction".to_owned()))
+        .rposition(|seen| matches!(seen, Seen::Staged(_)))
         .unwrap();
-    assert!(acked < walked, "the covering ack preceded B's walk");
+    assert!(acked < written, "the covering ack preceded B's write");
 }

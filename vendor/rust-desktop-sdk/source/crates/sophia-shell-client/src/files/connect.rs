@@ -359,6 +359,28 @@ impl FileWire {
             ));
         }
 
+        // Only absence at lookup permits the legacy lifecycle. An open or
+        // authority error on an advertised extension must fail closed.
+        let (tag, fid) = pipeline.walk(root, &[b"transaction-reuse"])?;
+        let transaction_fid = match wait_ok(&mut pipeline, tag, deadline)? {
+            Reply::Error(errno) if errno.0 == 2 => None,
+            Reply::Walk(qids) if qids.len() == 1 => {
+                let tag = pipeline.lopen(fid, O_RDWR)?;
+                match wait_ok(&mut pipeline, tag, deadline)? {
+                    Reply::Lopen { .. } => Some(fid),
+                    _ => {
+                        return Err(ShellClientError::Protocol(
+                            "reusable transaction open refused",
+                        ));
+                    }
+                }
+            }
+            _ => {
+                return Err(ShellClientError::Protocol(
+                    "reusable transaction lookup refused",
+                ));
+            }
+        };
         let wire = FileWire {
             pipeline,
             epoch: connection_epoch,
@@ -369,6 +391,8 @@ impl FileWire {
             events_fid,
             submit_fid,
             ack_fid,
+            reusable_transactions: transaction_fid.is_some(),
+            transaction_fid,
             upload_slots,
             next_submission_id: 2,
             read_tag: None,

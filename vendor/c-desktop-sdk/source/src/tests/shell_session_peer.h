@@ -32,6 +32,8 @@ struct peer {
     uint64_t sequence, acked;
     uint64_t accepted_sequence;
     unsigned transaction_busy;
+    unsigned reusable, reuse_probes, tx_opens, tx_clunks;
+    uint32_t reuse_lookup_error;
     int require_custody_ack;
     int event_held, tx_held, submit_held, hold_tx, refuse_negotiation, policy, once;
     uint16_t event_tag, tx_tag, submit_tag;
@@ -48,6 +50,8 @@ struct peer {
     uint32_t object_read_max;
     /* Descriptor tests select this role explicitly; ordinary rigs remain bars. */
     int descriptor, hold_bootstrap_submitted, wrong_welcome_epoch;
+    int hold_negotiated;
+    struct sophia_sf_record held_negotiated;
     const char *api_override;
     const struct sophia_sf_negotiated *welcome_override;
     const uint8_t *object_data[8];
@@ -281,6 +285,10 @@ static inline void peer_submit(struct peer *p, uint16_t tag, const uint8_t *b)
             if (p->welcome_override)
                 r.value.negotiated = *p->welcome_override;
         }
+        if (p->hold_negotiated && r.header.kind == SOPHIA_SF_NEGOTIATED) {
+            p->held_negotiated = r;
+            return;
+        }
         peer_record(p, &r);
         if (p->wrong_welcome_epoch && r.header.kind == SOPHIA_SF_NEGOTIATED)
             peer_put(p->journal + p->journal_used - 64 + 36, PEER_EPOCH + 1, 8);
@@ -334,7 +342,16 @@ static inline void peer_request(struct peer *p, const uint8_t *m, size_t size)
     case 110:
         count = (uint32_t)peer_get(body + 8, 2);
         n = (size_t)peer_get(body + 10, 2);
+        if (count == 1 && n == 17 && !memcmp(body + 12, "transaction-reuse", 17)) {
+            p->reuse_probes++;
+            if (!p->reusable || p->reuse_lookup_error) {
+                peer_error(p, tag, p->reuse_lookup_error ? p->reuse_lookup_error : 2);
+                return;
+            }
+        }
         file = F_NONE;
+        if (count == 1 && n == 17 && !memcmp(body + 12, "transaction-reuse", 17))
+            file = F_TX;
         if (count == 2 && n == 6 && !memcmp(body + 12, "upload", 6))
             file = F_UPLOAD;
         for (i = 2; count == 1 && i < sizeof(names) / sizeof(names[0]); i++)
@@ -365,6 +382,8 @@ static inline void peer_request(struct peer *p, const uint8_t *m, size_t size)
             return;
         }
         file = peer_file(p, (uint32_t)peer_get(body, 4));
+        if (file == F_TX)
+            p->tx_opens++;
         peer_qid(b, file);
         if (peer_object_kind(file) && p->object_qids[peer_object_kind(file)])
             peer_put(b + 5, p->object_qids[peer_object_kind(file)], 8);
@@ -372,8 +391,10 @@ static inline void peer_request(struct peer *p, const uint8_t *m, size_t size)
         peer_send(p, 13, tag, b, 17);
         return;
     case 120:
-        if (peer_file(p, (uint32_t)peer_get(body, 4)) == F_TX)
+        if (peer_file(p, (uint32_t)peer_get(body, 4)) == F_TX) {
             p->staged_used = 0;
+            p->tx_clunks++;
+        }
         peer_unbind(p, (uint32_t)peer_get(body, 4));
         peer_send(p, 121, tag, NULL, 0);
         return;
@@ -446,6 +467,8 @@ static inline void peer_request(struct peer *p, const uint8_t *m, size_t size)
             assert(file == F_ACK && count == 16);
             p->acks++;
             p->acked = peer_get(body + 24, 8);
+            if (p->reusable && p->accepted_sequence <= p->acked)
+                p->staged_used = 0;
             peer_count(p, tag, 16);
         }
         return;
@@ -535,8 +558,14 @@ static inline void rig_ready_unacked(struct rig *r, const struct sophia_ss_confi
 }
 static inline void rig_ack(struct rig *r)
 {
+    unsigned i;
     assert(!sophia_ss_ack(&r->s));
-    rig_run(r, 6);
+    if (r->s.files.next_submission == 2) {
+        for (i = 0; i < 64 && (r->s.files.ack_op.active || r->s.files.submit_stage); i++)
+            rig_step(r);
+        assert(!r->s.files.ack_op.active && !r->s.files.submit_stage);
+    } else
+        rig_run(r, 6);
 }
 static inline void rig_ready(struct rig *r, const struct sophia_ss_config *config)
 {

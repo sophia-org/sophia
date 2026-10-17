@@ -28,6 +28,8 @@ mod admission;
 mod batch;
 #[path = "support/file_wire_journal.rs"]
 mod journal;
+#[path = "support/transaction_reuse.rs"]
+mod transaction_reuse;
 const EINVAL: u32 = 22;
 const EALREADY: u32 = 114;
 /// The first `EAGAIN` backoff the client documents (`RETRY_FIRST`): a pass

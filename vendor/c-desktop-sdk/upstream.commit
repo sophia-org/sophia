@@ -1,14 +1,14 @@
-tree 8618e94dc4da8eebe684a77b90453aa23a06214e
-parent f7873a8409814442bb62a82ce955f3f0a1fff066
-author Mason Green <mason@greenm01.net> 1792212693 -0400
-committer Mason Green <mason@greenm01.net> 1792212693 -0400
+tree c5708df15bcb2e6984d825b18207bc604b1229ea
+parent 71582a5cc7f42c5bbc5b1f9b1139d91504bc6c27
+author Mason Green <mason@greenm01.net> 1792238684 -0400
+committer Mason Green <mason@greenm01.net> 1792238684 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL+1RsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIOHgEAmP4e+HM+Z59HDaMiXdN7
- nQZGGMoAfWl0fmgaEE/hZ5cBAOF4oCqrfSzKlvBGIdN4ZvmRNTWTQVdEjhQrEC6h
- ImQI
- =FIm9
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatNkXBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLr1gEA3oWzcRngQGL1RwhG2qZj
+ AO9kj7y8FDipuW9uIGuiBqYBAKtPXb94fMMsgOXwLd8cee62mhm6Kn3SnNlg7gX/
+ oxkN
+ =fScy
  -----END PGP SIGNATURE-----
 
-Record desktop SDK parity release qualification
+fix: await negotiation before reusable writer discovery

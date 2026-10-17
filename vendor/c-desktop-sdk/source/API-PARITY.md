@@ -1,5 +1,37 @@
 # C and Rust SDK API parity
 
+## Cumulative shell ACK scheduling, 2026-10-17
+
+Rust's automatic mode now gathers consumed records until the bounded drive
+would yield, or until the next transaction needs its covering ACK. Manual mode,
+object holds and I/O budgets are unchanged; there is no delay timer. C already
+coalesces consumed records in its explicit `sophia_ss_ack` call. Its caller keeps
+choosing that boundary; no automatic ACK is introduced into a manual API.
+Independent tests in both SDKs consume three records and send one cumulative
+ACK. Existing snapshot-hold and custody-barrier controls pass. This is an
+internal automatic-policy optimization in Rust, with the equivalent explicit
+operation tested in C; it does not establish a native request-count reduction.
+
+## Reusable shell transaction writer, 2026-10-17
+
+Review follow-ups explicitly test that C delays discovery until Negotiated has
+arrived even when Submitted was acknowledged earlier. Rust's scripted peer
+withholds the covering ACK reply and observes the next record write outstanding
+at the same time. C still waits for the confirmed ACK before the next record;
+this scheduling difference preserves custody but may cost an extra service pass.
+These tests establish ordering, not measured native performance.
+
+The optional `transaction-reuse` node follows signed Sophia `ee22309ba`.
+Both SDKs probe after negotiation and its covering ACK; only lookup ENOENT
+selects legacy transactions. Successful writers survive submissions; covering
+ACKs permit reuse, and definitive refusals close the writer before replacement.
+C retains explicit caller-driven ACK scheduling and startup readiness; admission
+waits for discovery and the writer barrier. Rust retains its automatic and manual
+ACK modes. C consumers must rebuild against the changed client storage layout.
+Independent scripted tests cover repeated reuse, refusal replacement and lookup
+errors. Both independent startup peers pass the real export. Snapshot adoption and
+native performance qualification remain pending; request reductions are not measured allocation savings.
+
 The [2026-10-17 release audit](RELEASE-QUALIFICATION.md) records verified
 C/Rust capability parity, exact tested revisions and remaining limits.
 

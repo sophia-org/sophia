@@ -221,10 +221,10 @@ impl ShellFiles {
     }
 
     pub(super) fn submit(&mut self, bytes: &[u8]) -> Result<(), Errno> {
-        let submit = decode_shell_file_submit(bytes).map_err(|_| Errno::EINVAL)?;
-        if submit.connection_epoch != self.epoch {
-            return Err(Errno::ESTALE);
-        }
+        self.submit_transaction(bytes)
+    }
+
+    pub(super) fn submit_decoded(&mut self, submit: ShellFileSubmit) -> Result<(), Errno> {
         // Accepted bytes cannot be edited. An identical retry names the same
         // retained object and never enqueues it again.
         if let Some(accepted) = &self.accepted {

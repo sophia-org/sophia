@@ -1,14 +1,14 @@
-tree c1179ffd9442643ae42f1d3090879081f7e7873f
-parent 10ab5bb0b84c4ea58f39a4107326a20cfb95fcaa
-author Mason Green <mason@greenm01.net> 1792212688 -0400
-committer Mason Green <mason@greenm01.net> 1792212688 -0400
+tree bdb756b7c458710ad834782df0e6582e8e476719
+parent cab32bf454c46ffc9baacdb7ad1d2d05263afcad
+author Mason Green <mason@greenm01.net> 1792238683 -0400
+committer Mason Green <mason@greenm01.net> 1792238683 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL+0BsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGL4zAD9HMIYiKek6qD19FoCH3dj
- l/n72JHAImCEt5d/QsnPTDcBAM9WNeTMNhsi7ESbqMKsS9iSUGZv1qBOrsQO3YTV
- oU0O
- =06Ho
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatNkWxsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJPywD/cxnBYv1w5sh0nPpskGWE
+ MYmWxbfOA2aneNq8Rd2tuAYBANzbK/Op4XfAaHPqrWtTIyohsFnB92QIFwjNSAbU
+ A28N
+ =vzfe
  -----END PGP SIGNATURE-----
 
-Record desktop SDK parity release qualification
+test: prove retained record precedes covering ACK reply

@@ -19,6 +19,7 @@ enum Node {
     Submit,
     Ack,
     Transaction,
+    TransactionReuse,
     Limits,
 }
 impl Node {
@@ -29,13 +30,14 @@ impl Node {
             Self::Submit => b"submit",
             Self::Ack => b"ack",
             Self::Transaction => b"transaction",
+            Self::TransactionReuse => b"transaction-reuse",
             Self::Limits => b"limits",
         }
     }
     fn flags(self) -> u32 {
         match self {
             Self::Submit | Self::Ack => O_WRONLY,
-            Self::Transaction => O_RDWR,
+            Self::Transaction | Self::TransactionReuse => O_RDWR,
             _ => O_RDONLY,
         }
     }
@@ -274,6 +276,7 @@ struct Handshake {
     retry_delay: u64,
     inbox: VecDeque<Inbound>,
     upload_slots: u8,
+    transaction_fid: Option<Fid>,
 }
 impl Handshake {
     fn new(
@@ -321,6 +324,7 @@ impl Handshake {
             retry_delay: 4,
             inbox: VecDeque::new(),
             upload_slots: 0,
+            transaction_fid: None,
         })
     }
     fn queue(&mut self, now: u64) -> Result<(), ShellClientError> {
@@ -404,6 +408,10 @@ impl Handshake {
     }
     fn accept(&mut self, reply: Reply, now: u64) -> Result<(), ShellClientError> {
         if let Reply::Error(errno) = reply {
+            if matches!(self.stage, Stage::Walk(Node::TransactionReuse)) && errno.0 == 2 {
+                self.stage = Stage::Ready;
+                return Ok(());
+            }
             if matches!(self.stage, Stage::Submit) && errno.0 == 11 {
                 self.retry_at = Some(now.saturating_add(self.retry_delay));
                 self.retry_delay = (self.retry_delay * 2).min(256);
@@ -441,6 +449,10 @@ impl Handshake {
                         Stage::Walk(Node::Transaction)
                     }
                     Node::Transaction => Stage::Candidate,
+                    Node::TransactionReuse => {
+                        self.transaction_fid = Some(self.current);
+                        Stage::Ready
+                    }
                     Node::Limits => {
                         self.bytes.clear();
                         Stage::Limits
@@ -513,7 +525,7 @@ impl Handshake {
                     if n.limits_published {
                         Stage::Walk(Node::Limits)
                     } else {
-                        Stage::Ready
+                        Stage::Walk(Node::TransactionReuse)
                     }
                 } else {
                     Stage::Events
@@ -553,7 +565,7 @@ impl Handshake {
                     Stage::Limits
                 }
             }
-            (Stage::ClunkLimits, Reply::Clunk) => Stage::Ready,
+            (Stage::ClunkLimits, Reply::Clunk) => Stage::Walk(Node::TransactionReuse),
             _ => return Err(ShellClientError::Protocol("unexpected shell startup reply")),
         };
         Ok(())
@@ -632,6 +644,8 @@ impl Handshake {
             events_fid: self.events,
             submit_fid: self.submit,
             ack_fid: self.ack,
+            reusable_transactions: self.transaction_fid.is_some(),
+            transaction_fid: self.transaction_fid,
             upload_slots: self.upload_slots,
             next_submission_id: 2,
             read_tag: None,

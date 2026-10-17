@@ -15,6 +15,123 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+Production `29b64531c` implements the approved reusable writer (`ee22309ba`) and
+imports signed Rust SDK `cab32bf` and C SDK `71582a5`. Both source branches and
+Sophia master are pushed. The [decision](../decisions/7mls2e2q-reuse-a-shell-transaction-writer-without-changing-custody.md)
+and [t331 plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#approved-reusable-writer-and-cumulative-ack-slice--october-17)
+remain authoritative. No desktop installation has run.
+
+The reconciled baseline captured all eight arms at comparator `363e06998`: merge `10d25e680`
+carries production `116075541` and its existing SDK optimizations; the later
+commit adds per-arm diagnostic output only. Offline replay reproduces all 8,000
+frame joins and the cost reports. The two bulk-allocation arms overlap reported
+reviewer activity and remain provisional. Next add the held-ACK Rust regression
+and C negotiation-probe guard from review, carry the implementation onto the
+comparator, compare request ledgers, and run fresh matched CPU/allocation pilots.
+The prepared campaign lives under
+`~/.local/state/sophia/development-evidence/t331-reuse-20261017/native-baseline`.
+Any further native capture requires attended readiness and a fresh quiet window.
+
+CPU-20 remains superseded preparation, with no capture. Cost-15 and perf-18 are
+historical evidence, not qualification of this candidate. No quiet hold is active.
+Neither the request reduction nor buffer reuse establishes CPU or allocation
+savings; the unchanged +10% gate and full matrix remain open.
+
+## Reconciled native baseline — October 17
+
+The eight-arm baseline uses comparator `363e06998`, Rust SDK `f1cd924`, and
+integration `fd2cb6c`. Each arm presented all 1,000 offered frames at 60 Hz.
+Independent `collect`, `join` and `cost-metrics` replay reproduces the saved
+frame joins and cost reports. Evidence and replay are under
+`~/.local/state/sophia/development-evidence/t331-reuse-20261017/native-baseline`.
+
+| Workload | 9P CPU ms/MiB | IPC CPU ms/MiB | 9P Rust alloc/realloc per frame | IPC Rust alloc/realloc per frame |
+| --- | --- | --- | --- | --- |
+| Panel | 10.405274–10.418833 | 7.529965–7.541559 | 2,082–2,086 | 1,142–1,144 |
+| Panel + 4 MiB | 1.697965–1.698256 | 1.375569–1.375945 | 6,079–6,081 (provisional) | 3,386–3,388 (provisional) |
+
+CPU comes from the CPU-only arms; allocations come from separate Rust-global
+arms. CPU covers all threads in Session and the peer, including foreign code;
+allocations cover their Rust global allocators only. Other processes are excluded.
+These are conservative measurement bounds, not confidence intervals across runs.
+The baseline predates reusable writers and ACK batching; it cannot establish
+their effect or qualify the candidate.
+
+Claude's review pane reported read-only searches and git reads at
+11:56:53–11:58:58 UTC during the requested hold. Approximate realtime mapping
+places the bulk-allocation intervals at 11:57:37–11:57:54 and
+11:58:42–11:58:59, so both remain provisional, with all samples retained.
+The CPU arms and panel-allocation pair ended before that activity. Muse reports
+no activity. The quiet hold is released. See `quiet-window.txt` and
+`offline-replay/summary.json` for provenance and timing limits.
+
+## Implemented writer and ACK slice — October 17
+
+The export reserves one bounded buffer at open, moves it through assembly and
+accepted custody, and recycles it only after a covering ACK. Refused assemblies
+retain their errno and readable bytes; malformed or foreign-epoch submit
+envelopes do not poison valid staging. Expiry and revocation permanently fence
+the token. Both SDKs probe after negotiation and its ACK, use legacy transactions
+only after lookup ENOENT, retain successful writers and replace refused ones.
+
+Rust batches automatic ACKs at existing drive boundaries. C preserves its
+explicit cumulative ACK call and confirmed-ACK barrier; no automatic policy was
+inserted into a manual API. Independent tests consume three records and send
+one ACK in both SDKs. Manual control and snapshot holds remain covered.
+
+The full Rust shell suite, strict shell Clippy, full C suite, both immutable
+vendor gates and Sophia's runtime test suite pass. Both independent startup
+peers pass the real export. Six new export tests cover reuse, refusal, replay,
+ACK barriers, cancellation, expiry, revocation, idle failures and backpressure.
+The real-wire fixture observes reusable writes and proves that the covering ACK
+precedes the next record. These are protocol checks, not physical acceptance.
+
+Evidence is under `~/.local/state/sophia/development-evidence/t331-reuse-20261017`.
+The reconciled supplied-owner diagnostic completes 64 frames on each wire and
+workload. Its per-arm totals include startup and teardown; do not present them
+as steady-frame counts. Files panel: 391 walks, 391 opens, 648 reads, 1,541 writes
+and 388 clunks (3,359 requests). Files bulk: 647 walks, 647 opens, 1,032 reads,
+6,725 writes and 644 clunks (9,695 requests). IPC issues no 9P requests. This
+fixture has no Session owner loop: it cannot attribute native owner passes or
+establish performance savings. Raw journals and counters are in `baseline-ledger/`.
+
+## Reconciled request ledger — October 17
+
+Comparator peer `9c527d566` has the same workload as batching-14 `bf19952dd`.
+It sends panel Begin, three canonical pixel chunks, End, FrameDemand, a grouped
+Candidate, then Retire of the previous resource after Presented. The first
+frame omits Retire; allocation setup precedes the measured loop. The grouped
+Candidate is one file transaction and three IPC records.
+
+The bulk case first sends a separate probe Begin, 69 pixel chunks, End and Retire,
+waits for release, then runs the complete panel sequence. Negotiated msize is
+65,536, its write payload bound 65,513, and canonical chunks are 61,440 bytes.
+Neither larger msize nor short-write avoidance reduces these pixel-write counts.
+
+| Steady-frame requests | Panel | Panel plus bulk |
+| --- | ---: | ---: |
+| Transaction walk/open/clunk | 15 | 24 |
+| Upload walk/open/clunk | 3 | 6 |
+| Record and submit writes | 10 | 16 |
+| Pixel writes | 3 | 72 |
+| Journal reads | 11 | 17 |
+| ACK writes | 11 | 17 |
+| Total | 53 | 152 |
+
+ACK and read counts match batching-14 but can vary with scheduling. Clunk is
+fire-and-forget, walk/open already share a setup batch, and idle relay counts
+record skipped core turns. Requests do not each cause a flush. IPC sends ten
+panel records and receives six; the probe adds 72 sent and three received.
+Those record counts are not owner passes or transport syscall counts.
+
+`Staging::new` uses `Vec::new`; it constructs an empty object without allocating.
+First record bytes, fid tables, request decoding and owner passes need separate
+allocation attribution. Ratios of allocations to passes do not establish an
+exclusive causal cost per pass. The reusable writer predicts 15/24 fewer requests,
+not a native gate verdict or a fixed number of eliminated passes.
+
+## Earlier resumption — October 16
+
 The audit identifies two concrete copy paths to measure: completed journal reads
 allocate a temporary payload before copying it into the server reply buffer,
 and the SDK copies upload payloads into its output buffer. Neither is a measured

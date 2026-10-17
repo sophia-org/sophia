@@ -51,6 +51,47 @@ Task state and execution order remain in todo.md.
 
 ## Implementation sequence
 
+### Approved reusable writer and cumulative ACK slice — October 17
+
+niltempus approved the replacement plan and directed implementation. The
+[accepted decision](../decisions/7mls2e2q-reuse-a-shell-transaction-writer-without-changing-custody.md)
+and [normative amendment](../../sophia-shell-files.md#reusable-transaction-writer)
+authorize an optional `transaction-reuse` node and independent C/Rust support.
+They supersede the earlier prohibition on retaining a transaction writer only;
+upload-fid reuse, concurrency, higher limits and desktop installation remain
+outside this slice.
+
+1. Carry production `116075541` and its SDK pins onto the isolated comparator.
+   Keep restored IPC there. Preserve unrun CPU-20 as superseded preparation.
+   Validate both wires, record a fresh deterministic request ledger, and freeze
+   four CPU plus four allocation baseline arms before attended capture.
+2. Attribute allocations by request kind and owner pass. Separate constructed
+   objects from allocation calls, request count from dependency waits, and both
+   from measured CPU. Current sources, not batching-14 alone, select the targets.
+   Record owner passes per frame on both wires and attribute them where observable
+   to setup, record write, submit, pixel write, flush-only work or frame cadence;
+   retain unattributed passes rather than inferring causes from totals.
+3. Implement the reusable writer under the existing transaction allowance.
+   Keep legacy behavior, exact custody and replay, permanent expiry fencing,
+   bounded buffer reuse, and equivalent SDK discovery/error behavior. Test old
+   clients against the new export and new SDKs against an export without it.
+4. Separately coalesce automatic ACKs in both C and Rust at existing drive boundaries: before the
+   next transaction and before sleeping or yielding with eligible progress.
+   Preserve manual control, snapshot holds, budgets and the covering ACK barrier;
+   add no delay timer or benchmark-only policy. Measure any reduction.
+5. Publish signed SDK commits and import exact snapshots through their gates.
+   Prove each slice deterministically, then use fresh matched native pilots.
+   Run the unchanged full matrix only after passing pilots. Preserve failed
+   arms, exact presentation joins, independent accounting modes and all budgets.
+
+The historical ledger predicts 15 fewer panel requests and 24 fewer bulk requests
+from writer reuse alone, not a guaranteed CPU or allocation pass. If the pilot
+still misses +10%, publish the remaining attributed costs before another slice.
+Aim to beat IPC without changing the ceiling. Pending-read deferral, speculative
+submit, larger canonical chunks and per-pass polling changes remain investigations,
+not implementation permissions in this amendment. t252's other gates and t289
+remain separate. Native capture still needs an attended, coordinated window.
+
 ### Approved relay and writer-setup slice — October 16
 
 The owner approved this bounded extension after progress-12 showed repeated

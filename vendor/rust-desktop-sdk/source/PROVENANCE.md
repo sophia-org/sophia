@@ -1,5 +1,18 @@
 # Provenance
 
+## Reusable shell transaction writer, 2026-10-17
+
+The optional `transaction-reuse` node follows signed Sophia `ee22309ba`.
+Both SDKs probe after negotiation and its covering ACK; only lookup ENOENT
+selects legacy transactions. Successful writers survive submissions; covering
+ACKs permit reuse, and definitive refusals close the writer before replacement.
+C retains explicit caller-driven ACK scheduling and startup readiness; admission
+waits for discovery and the writer barrier. Rust retains its automatic and manual
+ACK modes. C consumers must rebuild against the changed client storage layout.
+Independent scripted tests cover repeated reuse, refusal replacement and lookup
+errors. Both independent startup peers pass the real export. Snapshot adoption and
+native performance qualification remain pending; request reductions are not measured allocation savings.
+
 ## Allocation-free shell candidate sizing, 2026-10-17
 
 Rust now counts validated application candidates through the same field writers
