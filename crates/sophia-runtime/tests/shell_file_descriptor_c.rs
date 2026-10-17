@@ -563,7 +563,13 @@ fn compile(repo: &Path, root: &Path) -> PathBuf {
             "-I",
         ])
         .arg(&source);
-    for directory in ["nine_p", "shell_files", "shell_session"] {
+    for directory in [
+        "nine_p",
+        "shell_files",
+        "shell_session",
+        "image_channel",
+        "image_producer",
+    ] {
         let mut files = std::fs::read_dir(source.join(directory))
             .unwrap()
             .map(|entry| entry.unwrap().path())
