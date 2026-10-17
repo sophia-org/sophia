@@ -14,8 +14,13 @@ then settled the offer without retaining its status. Fix `06f8b5179` makes the
 export wait until the status hold has been consumed into the journal; the owner
 keeps the completed settlement while that handoff is pending. An exact-order
 wire assertion fails on the old implementation and all three shell transport
-tests pass with the fix. Runtime all-targets strict Clippy passes; the full
-runtime suite and the comparator sealed peer rerun are in progress. Earlier
+tests pass with the fix. Runtime all-targets strict Clippy passes. The full
+runtime run found only the unfinished lock cancellation test failing in its
+two including binaries; all other targets passed. Comparator fix `26d61cb58`
+also passes the sealed panel and 4 MiB peer workloads, 64 frames each, plus the
+byte/IPC baseline and launch-refusal controls. Four ignored tests pass on three
+repeated explicit, device-hidden runs. Their authority and relay verdicts are
+supplied; they prove neither Factotum nor a protected launch domain. Earlier
 successful raw-peer tests accepted either terminal order and did not prove
 usable SDK settlement. No sealed performance result is claimed.
 
@@ -81,7 +86,9 @@ Next are the remaining SDK/export and cancellation controls, and matched sealed-
 native panel/bulk evidence. Comparator `c1b5faa71` merges the reviewed SDK/runtime
 while retaining both byte and IPC controls: its native-session check and both
 device-hidden peer tests pass. `93fb5991e` also carries the worker corrections.
-The generic sealed peer is being prepared. External integration `a1a3c38`
+The generic sealed peer is published in `ae6dbdc2d`; comparator head `721ceea33`
+also restores its formatting/layout gates with an unchanged metadata-helper
+move. External integration `a1a3c38`
 binds request, peer configuration and captured journal to the byte or sealed
 source and wire; all 30 targeted tests and strict Clippy pass. Reports preserve
 logical accepted payload bytes and CPU/frame alongside existing cost fields.
