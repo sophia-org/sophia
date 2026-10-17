@@ -444,6 +444,38 @@ impl ContentResourceBegin {
     }
 }
 
+/// Validate the same Begin/Chunk/End values without constructing owned parts.
+pub(crate) fn validate_content_candidate(value: &ContentCandidate) -> Result<(), InvalidRecord> {
+    validate(&ShellContentRecord::CandidateBegin(candidate_begin(value)?))?;
+    // End repeats the already checked grant, generation and row counts.
+    validate_candidate_rows(
+        value.grant,
+        value.candidate_generation,
+        &value.surfaces,
+        &value.placements,
+        &value.targets,
+        false,
+        1,
+    )
+}
+
+pub(crate) fn candidate_begin(
+    value: &ContentCandidate,
+) -> Result<ContentCandidateBegin, InvalidRecord> {
+    let length = |n: usize| u32::try_from(n).map_err(|_| InvalidRecord("content candidate counts"));
+    Ok(ContentCandidateBegin {
+        grant: value.grant,
+        candidate_generation: value.candidate_generation,
+        output: value.output,
+        facts_generation: value.facts_generation,
+        pacing_permit: value.pacing_permit,
+        interaction_generation: value.interaction_generation,
+        surface_count: length(value.surfaces.len())?,
+        placement_count: length(value.placements.len())?,
+        target_count: length(value.targets.len())?,
+    })
+}
+
 /// The native family opts in explicitly; legacy kind 173 keeps r5 roles/kinds.
 pub(crate) fn validate_candidate_chunk(
     v: &ContentCandidateChunk,
@@ -456,8 +488,15 @@ pub(crate) fn validate_catalog_candidate_chunk(
     v: &ContentCandidateChunk,
 ) -> Result<(), InvalidRecord> {
     validate_candidate_chunk_profile(v, false, 3)?;
+    validate_catalog_rows(&v.surfaces, &v.targets)
+}
+
+pub(crate) fn validate_catalog_rows(
+    surfaces: &[ContentSurface],
+    targets: &[ContentTarget],
+) -> Result<(), InvalidRecord> {
     require(
-        v.surfaces.iter().all(|s| s.role == 1) && v.targets.iter().all(|t| t.action_id <= 4096),
+        surfaces.iter().all(|s| s.role == 1) && targets.iter().all(|t| t.action_id <= 4096),
         "persistent catalog rows",
     )
 }
@@ -467,12 +506,32 @@ fn validate_candidate_chunk_profile(
     native_launcher: bool,
     action_kind: u16,
 ) -> Result<(), InvalidRecord> {
-    require(v.candidate_generation > 0, "content candidate generation")?;
+    validate_candidate_rows(
+        v.grant,
+        v.candidate_generation,
+        &v.surfaces,
+        &v.placements,
+        &v.targets,
+        native_launcher,
+        action_kind,
+    )
+}
+
+pub(crate) fn validate_candidate_rows(
+    grant: ContentGrant,
+    candidate_generation: u64,
+    surfaces: &[ContentSurface],
+    placements: &[ContentPlacement],
+    targets: &[ContentTarget],
+    native_launcher: bool,
+    action_kind: u16,
+) -> Result<(), InvalidRecord> {
+    require(candidate_generation > 0, "content candidate generation")?;
     require(
-        v.surfaces.len() <= 8 && v.placements.len() <= 32 && v.targets.len() <= 64,
+        surfaces.len() <= 8 && placements.len() <= 32 && targets.len() <= 64,
         "content chunk counts",
     )?;
-    for row in &v.surfaces {
+    for row in surfaces {
         allocation(row.allocation, false)?;
         margins(row.margins)?;
         require(
@@ -501,14 +560,14 @@ fn validate_candidate_chunk_profile(
             pixel_rect(row.anchor_parent_rect)?;
         }
     }
-    for row in &v.placements {
+    for row in placements {
         resource(row.resource)?;
         require(
             row.surface_index < 8 && row.destination_x_px >= 0 && row.destination_y_px >= 0,
             "content placement",
         )?;
     }
-    for row in &v.targets {
+    for row in targets {
         require(
             row.surface_index < 8
                 && row.action_kind == action_kind
@@ -521,19 +580,19 @@ fn validate_candidate_chunk_profile(
     }
     if native_launcher {
         require(
-            v.surfaces.len() <= 1 && v.targets.len() <= 32,
+            surfaces.len() <= 1 && targets.len() <= 32,
             "native launcher chunk counts",
         )?;
         require(
-            v.placements.iter().all(|p| p.surface_index == 0)
-                && v.targets
+            placements.iter().all(|p| p.surface_index == 0)
+                && targets
                     .iter()
                     .all(|t| t.surface_index == 0 && t.action_id <= 4096),
             "native launcher chunk rows",
         )?;
     }
     require(
-        v.grant.connection_epoch > 0 && v.grant.content_grant_epoch > 0,
+        grant.connection_epoch > 0 && grant.content_grant_epoch > 0,
         "content grant",
     )
 }

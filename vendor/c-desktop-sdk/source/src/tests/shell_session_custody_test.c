@@ -83,6 +83,11 @@ static void reservation(void)
     r.p.policy = P_HOLD;
     group[0] = group[1] = group[2] = rig_request(9);
     bytes = sophia_ss_record_bytes(&group[0]);
+    /* Cancellation restores capacity without consuming a ticket or sending. */
+    assert(!sophia_ss_reserve(&r.s, 2, 2 * bytes, &v));
+    assert(!sophia_ss_cancel(&r.s, &v));
+    assert(!r.s.reserved && !r.s.queued && r.s.next_ticket == 1);
+    assert(sophia_ss_cancel(&r.s, &v) == SOPHIA_9P_ARGUMENT);
     assert(!sophia_ss_submit(&r.s, group, 1, &first) && first == 1);
     rig_run(&r, 4);
     assert(!sophia_ss_reserve(&r.s, 2, 2 * bytes, &v));
@@ -384,10 +389,60 @@ static void stale_events(void)
     assert(rig_outcome(&r, first) == SOPHIA_SS_UNKNOWN_DISCONNECTED);
     rig_close(&r);
 }
+static void reservation_is_bound_to_its_session(void)
+{
+    struct rig a, b;
+    struct sophia_ss_reservation va, vb;
+    struct sophia_sf_record record = rig_request(1);
+    uint64_t first = 99;
+    size_t bytes = sophia_ss_record_bytes(&record);
+    rig_ready(&a, &rig_config);
+    rig_ready(&b, &rig_config);
+    assert(!sophia_ss_reserve(&a.s, 1, bytes, &va));
+    assert(!sophia_ss_reserve(&b.s, 1, bytes, &vb));
+    assert(va.serial == vb.serial);
+    assert(sophia_ss_cancel(&b.s, &va) == SOPHIA_9P_ARGUMENT);
+    assert(sophia_ss_commit(&b.s, &va, &record, 1, &first) == SOPHIA_9P_ARGUMENT);
+    assert(first == 99 && a.s.reserved && b.s.reserved);
+    assert(!sophia_ss_commit(&a.s, &va, &record, 1, &first) && first == 1);
+    assert(!sophia_ss_cancel(&b.s, &vb));
+    rig_close(&a);
+    rig_close(&b);
+}
+
+static void old_and_unissued_tickets(void)
+{
+    struct rig r;
+    struct sophia_sf_record request;
+    enum sophia_ss_outcome o;
+    uint64_t ticket;
+    unsigned i;
+    rig_ready(&r, &rig_config);
+    assert(sophia_ss_outcome(&r.s, 0, &o, NULL) == SOPHIA_9P_ARGUMENT);
+    assert(sophia_ss_outcome(&r.s, 1, &o, NULL) == SOPHIA_9P_ARGUMENT);
+    for (i = 1; i <= SOPHIA_SS_OUTCOMES + 1; i++) {
+        request = rig_request(i);
+        assert(!sophia_ss_submit(&r.s, &request, 1, &ticket) && ticket == i);
+        assert(rig_until(&r, ticket, 32) == SOPHIA_SS_SUBMITTED);
+        rig_ack(&r);
+    }
+    assert(rig_outcome(&r, 1) == SOPHIA_SS_UNAVAILABLE);
+    assert(rig_outcome(&r, 2) == SOPHIA_SS_SUBMITTED);
+    assert(rig_outcome(&r, ticket) == SOPHIA_SS_SUBMITTED);
+    assert(sophia_ss_outcome(&r.s, ticket + 1, &o, NULL) == SOPHIA_9P_ARGUMENT);
+    assert(sophia_ss_outcome(&r.s, UINT64_MAX, &o, NULL) == SOPHIA_9P_ARGUMENT);
+    sophia_ss_close(&r.s);
+    assert(rig_outcome(&r, 1) == SOPHIA_SS_UNAVAILABLE);
+    assert(rig_outcome(&r, 2) == SOPHIA_SS_SUBMITTED);
+    rig_close(&r);
+}
+
 int main(void)
 {
+    old_and_unissued_tickets();
     admission_atomicity();
     reservation();
+    reservation_is_bound_to_its_session();
     unknown_after_issued_submit();
     dropped_when_only_staged();
     definitive_refusal();

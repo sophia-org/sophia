@@ -2,6 +2,36 @@
 #include <errno.h>
 #include <sys/socket.h>
 
+static int fail(struct sophia_9p_client *c, int result)
+{
+    size_t i;
+    for (i = 0; i < 2u * c->capacity; i++) {
+        struct sophia_9p_slot *s = &c->slots[i];
+        if (s->secret) {
+            p9_scrub(p9_data(c, i) + s->sent, s->bytes - s->sent);
+            s->secret = 0;
+        }
+    }
+    if (!c->terminal)
+        c->terminal = result;
+    return c->terminal;
+}
+void sophia_9p_close(struct sophia_9p_client *c)
+{
+    if (c)
+        (void)fail(c, SOPHIA_9P_CLOSED);
+}
+int sophia_9p_scrubbing_output(const struct sophia_9p_client *c)
+{
+    size_t i;
+    if (!c)
+        return 0;
+    for (i = 0; i < 2u * c->capacity; i++)
+        if (c->slots[i].secret)
+            return 1;
+    return 0;
+}
+
 size_t sophia_9p_storage_bytes(uint32_t msize, uint16_t requests)
 {
     size_t slots = (size_t)requests * 2 + 1;
@@ -146,14 +176,18 @@ static int output(struct sophia_9p_client *c, size_t budget)
                 continue;
             if (errno == EAGAIN || errno == EWOULDBLOCK)
                 break;
-            return c->terminal = SOPHIA_9P_IO;
+            return fail(c, SOPHIA_9P_IO);
         }
         if (!n)
-            return c->terminal = SOPHIA_9P_IO;
+            return fail(c, SOPHIA_9P_IO);
+        if (s->secret)
+            p9_scrub(p9_data(c, best) + s->sent, (size_t)n);
         s->sent += (size_t)n;
         budget -= (size_t)n;
-        if (s->sent == s->bytes)
+        if (s->sent == s->bytes) {
             s->state = P9_SENT;
+            s->secret = 0;
+        }
     }
     return 0;
 }
@@ -192,10 +226,10 @@ int sophia_9p_service(struct sophia_9p_client *c, size_t budget)
                 continue;
             if (errno == EAGAIN || errno == EWOULDBLOCK)
                 break;
-            return c->terminal = SOPHIA_9P_IO;
+            return fail(c, SOPHIA_9P_IO);
         }
         if (!n) {
-            c->terminal = c->rx_used ? SOPHIA_9P_INVALID : SOPHIA_9P_CLOSED;
+            (void)fail(c, c->rx_used ? SOPHIA_9P_INVALID : SOPHIA_9P_CLOSED);
             return closed_status(c);
         }
         c->rx_used += (size_t)n;
@@ -203,12 +237,12 @@ int sophia_9p_service(struct sophia_9p_client *c, size_t budget)
         if (c->rx_used == 4) {
             c->rx_needed = p9_u32(c->rx);
             if (c->rx_needed < 7 || c->rx_needed > c->msize)
-                return c->terminal = SOPHIA_9P_INVALID;
+                return fail(c, SOPHIA_9P_INVALID);
         }
         if (c->rx_used == c->rx_needed && c->rx_used >= 7) {
             r = p9_receive(c);
             if (r)
-                return c->terminal = r;
+                return fail(c, r);
             c->rx_used = 0;
             c->rx_needed = 4;
         }

@@ -87,3 +87,24 @@ fn a_secret_after_partial_plain_output_normalizes_before_reserving() {
     assert!(!p.scrubbing_output());
     assert_eq!(p.out_start, 0);
 }
+
+#[test]
+fn terminal_failure_scrubs_pending_secret_storage_before_drop() {
+    let mut p = pipeline();
+    p.write_secret(Fid(2), 0, b"secret").unwrap();
+    let initialized = p.out_buf.len();
+    let address = p.out_buf.as_ptr();
+    assert_eq!(
+        p.poison(PipelineError::Protocol("bad reply")),
+        PipelineError::Protocol("bad reply")
+    );
+    assert!(!p.scrubbing_output());
+    assert_eq!(p.output_pending(), 0);
+    assert_eq!(p.out_buf.as_ptr(), address);
+    assert_eq!(p.out_buf.len(), initialized);
+    assert!(p.out_buf.iter().all(|b| *b == 0));
+    assert!(matches!(
+        p.write_secret(Fid(2), 0, b"again"),
+        Err(PipelineError::Poisoned)
+    ));
+}

@@ -45,6 +45,7 @@ static void vectors_and_truncations(void)
             fprintf(stderr, "invalid vector %s\n", vectors[i].name);
         assert(!result);
         assert(!sophia_sf_encode(b, sizeof(b), &r, &n));
+        assert(sophia_sf_record_bytes(&r) == n);
         assert(n == vectors[i].size && !memcmp(b, vectors[i].bytes, n));
         memset(&sentinel, 0xa5, sizeof(sentinel));
         for (j = 0; j < n; j++) {
@@ -63,6 +64,7 @@ static void conditional_rules(void)
     size_t n;
     assert(!sophia_sf_decode(vector_FramePermit, sizeof(vector_FramePermit), &r));
     r.value.frame_permit.state = 1;
+    assert(sophia_sf_record_bytes(&r) == 0);
     assert(sophia_sf_encode(b, sizeof(b), &r, &n));
     r.value.frame_permit.reason = 0;
     assert(!sophia_sf_encode(b, sizeof(b), &r, &n));

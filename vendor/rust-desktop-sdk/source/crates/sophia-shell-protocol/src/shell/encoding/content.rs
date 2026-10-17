@@ -75,30 +75,42 @@ pub fn shell_content_value_kind(record: &ShellContentRecord) -> ShellContentValu
 pub fn encode_shell_content_value(record: &ShellContentRecord) -> Result<Vec<u8>, ValueError> {
     crate::shell::content::validation::validate(record)?;
     let mut bytes = Vec::new();
-    match record {
-        ShellContentRecord::AdmissionRefused(value) => value.put(&mut bytes),
-        ShellContentRecord::Limits(value) => value.put(&mut bytes),
-        ShellContentRecord::OutputFacts(value) => value.put(&mut bytes),
-        ShellContentRecord::AllocationRequest(value) => value.put(&mut bytes),
-        ShellContentRecord::AllocationResult(value) => value.put(&mut bytes),
-        ShellContentRecord::ResourceBegin(value) => value.put(&mut bytes),
-        ShellContentRecord::ResourceStatus(value) => value.put(&mut bytes),
-        ShellContentRecord::ResourceChunk(value) => value.put(&mut bytes),
-        ShellContentRecord::ResourceEnd(value) => value.put(&mut bytes),
-        ShellContentRecord::ResourceCancel(value) => value.put(&mut bytes),
-        ShellContentRecord::ResourceRetire(value) => value.put(&mut bytes),
-        ShellContentRecord::ResourceReleased(value) => value.put(&mut bytes),
-        ShellContentRecord::CandidateBegin(value) => value.put(&mut bytes),
-        ShellContentRecord::CandidateChunk(value) => value.put(&mut bytes),
-        ShellContentRecord::CandidateEnd(value) => value.put(&mut bytes),
-        ShellContentRecord::CandidateOutcome(value) => value.put(&mut bytes),
-        ShellContentRecord::FrameDemand(value) => value.put(&mut bytes),
-        ShellContentRecord::FramePermit(value) => value.put(&mut bytes),
-        ShellContentRecord::FrameDemandCancel(value) => value.put(&mut bytes),
-        ShellContentRecord::Action(value) => value.put(&mut bytes),
-        ShellContentRecord::ActionAck(value) => value.put(&mut bytes),
-    }
+    put_content_value(record, &mut bytes);
     Ok(bytes)
+}
+
+/// Validated value-body length, without allocating or encoding a byte buffer.
+pub fn shell_content_value_bytes(record: &ShellContentRecord) -> Result<usize, ValueError> {
+    crate::shell::content::validation::validate(record)?;
+    let mut bytes = super::ByteCount::new();
+    put_content_value(record, &mut bytes);
+    bytes.finish()
+}
+
+fn put_content_value(record: &ShellContentRecord, bytes: &mut impl super::ByteSink) {
+    match record {
+        ShellContentRecord::AdmissionRefused(value) => value.put(bytes),
+        ShellContentRecord::Limits(value) => value.put(bytes),
+        ShellContentRecord::OutputFacts(value) => value.put(bytes),
+        ShellContentRecord::AllocationRequest(value) => value.put(bytes),
+        ShellContentRecord::AllocationResult(value) => value.put(bytes),
+        ShellContentRecord::ResourceBegin(value) => value.put(bytes),
+        ShellContentRecord::ResourceStatus(value) => value.put(bytes),
+        ShellContentRecord::ResourceChunk(value) => value.put(bytes),
+        ShellContentRecord::ResourceEnd(value) => value.put(bytes),
+        ShellContentRecord::ResourceCancel(value) => value.put(bytes),
+        ShellContentRecord::ResourceRetire(value) => value.put(bytes),
+        ShellContentRecord::ResourceReleased(value) => value.put(bytes),
+        ShellContentRecord::CandidateBegin(value) => value.put(bytes),
+        ShellContentRecord::CandidateChunk(value) => value.put(bytes),
+        ShellContentRecord::CandidateEnd(value) => value.put(bytes),
+        ShellContentRecord::CandidateOutcome(value) => value.put(bytes),
+        ShellContentRecord::FrameDemand(value) => value.put(bytes),
+        ShellContentRecord::FramePermit(value) => value.put(bytes),
+        ShellContentRecord::FrameDemandCancel(value) => value.put(bytes),
+        ShellContentRecord::Action(value) => value.put(bytes),
+        ShellContentRecord::ActionAck(value) => value.put(bytes),
+    }
 }
 
 /// Decodes and validates one record's value body for the given kind.
@@ -179,30 +191,40 @@ pub fn parse_shell_content_value(
 /// and one reserved `u16`, then the surface, placement and target rows. Each
 /// part the owner will receive is validated first.
 pub fn encode_content_candidate(candidate: &ContentCandidate) -> Result<Vec<u8>, ValueError> {
-    for part in candidate.parts() {
-        crate::shell::content::validation::validate(&part)?;
-    }
+    crate::shell::content::validation::validate_content_candidate(candidate)?;
     let mut bytes = Vec::new();
-    candidate.grant.put(&mut bytes);
-    candidate.candidate_generation.put(&mut bytes);
-    candidate.output.put(&mut bytes);
-    candidate.facts_generation.put(&mut bytes);
-    candidate.pacing_permit.put(&mut bytes);
-    candidate.interaction_generation.put(&mut bytes);
-    (candidate.surfaces.len() as u16).put(&mut bytes);
-    (candidate.placements.len() as u16).put(&mut bytes);
-    (candidate.targets.len() as u16).put(&mut bytes);
-    0u16.put(&mut bytes);
+    put_candidate(candidate, &mut bytes);
+    Ok(bytes)
+}
+
+/// Validated whole candidate value length, without cloning its rows.
+pub fn content_candidate_bytes(candidate: &ContentCandidate) -> Result<usize, ValueError> {
+    crate::shell::content::validation::validate_content_candidate(candidate)?;
+    let mut bytes = super::ByteCount::new();
+    put_candidate(candidate, &mut bytes);
+    bytes.finish()
+}
+
+fn put_candidate(candidate: &ContentCandidate, bytes: &mut impl super::ByteSink) {
+    candidate.grant.put(bytes);
+    candidate.candidate_generation.put(bytes);
+    candidate.output.put(bytes);
+    candidate.facts_generation.put(bytes);
+    candidate.pacing_permit.put(bytes);
+    candidate.interaction_generation.put(bytes);
+    (candidate.surfaces.len() as u16).put(bytes);
+    (candidate.placements.len() as u16).put(bytes);
+    (candidate.targets.len() as u16).put(bytes);
+    0u16.put(bytes);
     for row in &candidate.surfaces {
-        row.put(&mut bytes);
+        row.put(bytes);
     }
     for row in &candidate.placements {
-        row.put(&mut bytes);
+        row.put(bytes);
     }
     for row in &candidate.targets {
-        row.put(&mut bytes);
+        row.put(bytes);
     }
-    Ok(bytes)
 }
 
 pub fn decode_content_candidate(bytes: &[u8]) -> Result<ContentCandidate, ValueError> {

@@ -633,6 +633,84 @@ fn a_server_errno_is_delivered_exactly_and_leaves_the_pipeline_usable() {
 // ---- replies that break the protocol ----
 
 #[test]
+fn shared_budget_bounds_wire_bytes_across_repeated_polls() {
+    use sophia_9p_client::pipeline::IoBudget;
+    let (send, receive) = std::sync::mpsc::channel();
+    let (client, peer) = scripted(
+        move |stream| {
+            versioned(stream);
+            send.send(stream.try_clone().unwrap()).unwrap();
+        },
+        PipelineLimits::default(),
+    );
+    let mut client = client.unwrap();
+    let mut server = receive.recv().unwrap();
+    peer.join().unwrap();
+    server.set_nonblocking(true).unwrap();
+    let (tag, _) = client.attach(b"", b"").unwrap();
+    let mut bytes = [0; 1024];
+    let mut zero = IoBudget::new(0);
+    client.poll_with_budget(&mut zero).unwrap();
+    assert_eq!(
+        server.read(&mut bytes).unwrap_err().kind(),
+        ErrorKind::WouldBlock
+    );
+    let mut budget = IoBudget::new(3);
+    client.poll_with_budget(&mut budget).unwrap();
+    assert_eq!(server.read(&mut bytes).unwrap(), 3);
+    assert!(budget.exhausted());
+    for _ in 0..4 {
+        client.poll_with_budget(&mut budget).unwrap();
+    }
+    assert_eq!(
+        server.read(&mut bytes).unwrap_err().kind(),
+        ErrorKind::WouldBlock
+    );
+    client.poll_with_budget(&mut IoBudget::new(1024)).unwrap();
+    assert!(server.read(&mut bytes).unwrap() > 0);
+    server.write_all(&reply(105, tag.0, &QID_DIR)).unwrap();
+    let response_bytes = 7 + QID_DIR.len();
+    for n in 0..response_bytes {
+        client.poll_with_budget(&mut IoBudget::new(1)).unwrap();
+        assert_eq!(
+            client.io_interest().unwrap().immediate,
+            n + 1 == response_bytes
+        );
+    }
+    assert_eq!(client.take_reply().unwrap().0, tag);
+}
+
+#[test]
+fn external_loop_interest_tracks_queued_bytes_and_buffered_replies() {
+    let (client, peer) = scripted(
+        |stream| {
+            versioned(stream);
+            let (_, tag, _) = request(stream);
+            stream.write_all(&reply(105, tag, &QID_DIR)).unwrap();
+            let mut rest = Vec::new();
+            stream.read_to_end(&mut rest).unwrap();
+        },
+        PipelineLimits::default(),
+    );
+    let mut client = client.unwrap();
+    let idle = client.io_interest().unwrap();
+    assert!(idle.readable && !idle.writable && !idle.immediate);
+    let (tag, _) = client.attach(b"", b"").unwrap();
+    assert!(client.io_interest().unwrap().writable);
+    let end = deadline();
+    while !client.io_interest().unwrap().immediate {
+        client.poll().unwrap();
+        assert!(Instant::now() < end);
+        std::thread::yield_now();
+    }
+    assert!(!client.io_interest().unwrap().writable);
+    assert_eq!(client.take_reply().unwrap().0, tag);
+    assert_eq!(client.io_interest().unwrap(), idle);
+    drop(client);
+    peer.join().unwrap();
+}
+
+#[test]
 fn a_malformed_reply_poisons_the_pipeline() {
     type Queue = fn(&mut Pipeline) -> Tag;
     type Answer = fn(u16) -> Vec<u8>;
@@ -730,6 +808,7 @@ fn a_malformed_reply_poisons_the_pipeline() {
         let tag = queue(&mut pipeline);
         assert_eq!(pipeline.wait(tag, deadline()), Err(error), "{case}");
         assert!(pipeline.is_poisoned(), "{case}");
+        assert_eq!(pipeline.io_interest(), Err(PipelineError::Poisoned));
         assert_eq!(
             pipeline.attach(b"", b""),
             Err(PipelineError::Poisoned),
@@ -1347,6 +1426,37 @@ fn an_empty_rwalk_clones_a_fid_but_poisons_a_nonempty_walk() {
 }
 
 // ---- secret writes ----
+
+#[test]
+fn disconnect_and_bad_frame_scrub_pending_secret_before_drop() {
+    for malformed in [false, true] {
+        let (client, thread) = scripted(
+            move |stream| {
+                versioned(stream);
+                if malformed {
+                    stream.write_all(&6u32.to_le_bytes()).unwrap();
+                    hold(stream);
+                }
+            },
+            PipelineLimits::default(),
+        );
+        let mut pipeline = client.unwrap();
+        pipeline.write_secret(Fid(3), 0, b"secret").unwrap();
+        let end = deadline();
+        loop {
+            assert!(Instant::now() < end);
+            let mut budget = sophia_9p_client::pipeline::IoBudget::new(1);
+            if pipeline.poll_with_budget(&mut budget).is_err() {
+                break;
+            }
+            std::thread::yield_now();
+        }
+        assert!(!pipeline.scrubbing_output());
+        assert_eq!(pipeline.poll(), Err(PipelineError::Poisoned));
+        drop(pipeline);
+        thread.join().unwrap();
+    }
+}
 
 #[test]
 fn a_secret_write_sends_the_same_frame_and_scrubs_until_it_has_gone() {

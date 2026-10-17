@@ -61,6 +61,8 @@ use rustix::event::{PollFd, PollFlags, Timespec, poll};
 
 use crate::client_codec::{self, HEADER};
 use crate::records::{Errno, Fid, Qid, Tag};
+mod version;
+pub use version::VersionHandshake;
 
 /// Nonblocking progress reads and writes at most this many bytes...
 const IO_BYTE_BUDGET: usize = 256 * 1024;
@@ -189,6 +191,50 @@ impl std::fmt::Display for PipelineError {
 }
 
 impl std::error::Error for PipelineError {}
+
+/// A snapshot of external event-loop interests, not observed readiness.
+/// Use the connection's borrowed descriptor only for readiness monitoring;
+/// the SDK remains its sole reader and writer. Handle hangup/error wakes too.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IoInterest {
+    /// Monitor read readiness.
+    pub readable: bool,
+    /// Monitor write readiness only while outgoing bytes remain queued.
+    pub writable: bool,
+    /// Service or drain local work before sleeping, even on a quiet socket.
+    pub immediate: bool,
+}
+
+/// Remaining transport work for one external-loop dispatch. Reuse the same
+/// value across internal rounds so a round cannot replenish its caller's budget.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IoBudget {
+    read_bytes: usize,
+    write_bytes: usize,
+    read_calls: usize,
+    write_calls: usize,
+}
+
+impl IoBudget {
+    /// At most `bytes` and 32 syscall attempts per direction. Zero bytes
+    /// allows buffered reply decoding but no socket reads or writes.
+    pub fn new(bytes: usize) -> Self {
+        Self {
+            read_bytes: bytes,
+            write_bytes: bytes,
+            read_calls: 32,
+            write_calls: 32,
+        }
+    }
+
+    /// Either direction has spent its byte or syscall allowance.
+    pub fn exhausted(&self) -> bool {
+        self.read_bytes == 0
+            || self.write_bytes == 0
+            || self.read_calls == 0
+            || self.write_calls == 0
+    }
+}
 
 /// One completed reply. `Error` is the server's `Rlerror`: a normal outcome,
 /// not a pipeline failure.
@@ -323,7 +369,11 @@ impl Pipeline {
         stream.set_read_timeout(None).map_err(io_err)?;
         stream.set_write_timeout(None).map_err(io_err)?;
         stream.set_nonblocking(true).map_err(io_err)?;
-        Ok(Self {
+        Ok(Self::negotiated(stream, limits, msize))
+    }
+
+    fn negotiated(stream: UnixStream, limits: PipelineLimits, msize: u32) -> Self {
+        Self {
             stream,
             limits,
             msize,
@@ -341,7 +391,22 @@ impl Pipeline {
             scrub_output: false,
             in_buf: Vec::new(),
             poisoned: false,
-        })
+        }
+    }
+
+    /// Configured bounds, before role-specific minimum checks.
+    pub const fn limits(&self) -> PipelineLimits {
+        self.limits
+    }
+    /// No pending requests, replies, buffered output or partial input.
+    pub fn is_quiescent(&self) -> bool {
+        !self.poisoned
+            && self.reserved_tags == 0
+            && self.in_buf.is_empty()
+            && self.output_pending() == 0
+    }
+    pub fn owns_fid(&self, fid: Fid) -> bool {
+        self.fids.contains(&fid.0)
     }
 
     pub const fn msize(&self) -> u32 {
@@ -498,8 +563,8 @@ impl Pipeline {
     /// Queues a write whose bytes are secret, such as a password. The
     /// pipeline copies it directly into its output buffer and zeroes the
     /// output buffer's spare capacity after each send until the
-    /// buffer has emptied, and the whole buffer if the pipeline is dropped
-    /// first. Before the secret enters, the output buffer is given the whole
+    /// buffer has emptied, and the whole buffer on terminal failure or drop.
+    /// Before the secret enters, the output buffer is given the whole
     /// capacity its bound allows, so no later request can reallocate it and
     /// leave a copy in freed memory. The caller zeroes its own `data`.
     pub fn write_secret(
@@ -634,28 +699,53 @@ impl Pipeline {
     /// replies, at most [`IO_BYTE_BUDGET`] bytes in at most
     /// [`IO_SYSCALL_BUDGET`] syscalls per direction.
     pub fn poll(&mut self) -> Result<(), PipelineError> {
+        let mut budget = IoBudget {
+            read_bytes: IO_BYTE_BUDGET,
+            write_bytes: IO_BYTE_BUDGET,
+            read_calls: IO_SYSCALL_BUDGET,
+            write_calls: IO_SYSCALL_BUDGET,
+        };
+        self.poll_with_budget(&mut budget)
+    }
+
+    /// Progress within a shared dispatch budget. Each syscall attempt spends
+    /// credit, including interruption and WouldBlock. Actual bytes spend the
+    /// byte allowance. Buffered replies may be decoded even when it is exhausted.
+    pub fn poll_with_budget(&mut self, budget: &mut IoBudget) -> Result<(), PipelineError> {
         if self.poisoned {
             return Err(PipelineError::Poisoned);
         }
-        self.write_output()?;
-        self.read_input()?;
+        self.write_output(&mut budget.write_bytes, &mut budget.write_calls)?;
+        self.read_input(&mut budget.read_bytes, &mut budget.read_calls)?;
         Ok(())
+    }
+
+    /// Interest for a level-triggered external event loop. Recompute after
+    /// queueing requests, polling or draining replies. A buffered reply needs
+    /// service without waiting for another socket edge.
+    pub fn io_interest(&self) -> Result<IoInterest, PipelineError> {
+        if self.poisoned {
+            return Err(PipelineError::Poisoned);
+        }
+        Ok(IoInterest {
+            readable: true,
+            writable: !self.out_buf.is_empty(),
+            immediate: !self.completed.is_empty(),
+        })
     }
 
     /// Waits at most `maximum` for socket readiness, without consuming replies.
     /// Buffered replies return immediately. Write readiness is requested only
     /// while request bytes remain queued. Signals may end the wait early.
     pub fn wait_for_io(&self, maximum: Duration) -> Result<(), PipelineError> {
-        if self.poisoned {
-            return Err(PipelineError::Poisoned);
-        }
-        if !self.completed.is_empty() {
+        let interest = self.io_interest()?;
+        if interest.immediate {
             return Ok(());
         }
         let timeout =
             Timespec::try_from(maximum).map_err(|_| PipelineError::Limit("deadline overflow"))?;
         let mut flags = PollFlags::IN;
-        if !self.out_buf.is_empty() {
+        if interest.writable {
             flags |= PollFlags::OUT;
         }
         match poll(&mut [PollFd::new(&self.stream, flags)], Some(&timeout)) {
@@ -829,13 +919,13 @@ impl Pipeline {
         Ok(())
     }
 
-    fn write_output(&mut self) -> Result<(), PipelineError> {
-        let mut budget = IO_BYTE_BUDGET;
-        for _ in 0..IO_SYSCALL_BUDGET {
-            if self.out_buf.is_empty() || budget == 0 {
+    fn write_output(&mut self, budget: &mut usize, calls: &mut usize) -> Result<(), PipelineError> {
+        while *calls > 0 {
+            if self.out_buf.is_empty() || *budget == 0 {
                 break;
             }
-            let take = self.output_pending().min(budget);
+            let take = self.output_pending().min(*budget);
+            *calls -= 1;
             match self
                 .stream
                 .write(&self.out_buf[self.out_start..self.out_start + take])
@@ -843,7 +933,7 @@ impl Pipeline {
                 Ok(0) => return Err(self.poison(PipelineError::Io(io::ErrorKind::WriteZero))),
                 Ok(count) => {
                     self.record_output_write(count);
-                    budget -= count;
+                    *budget -= count;
                 }
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
@@ -880,20 +970,20 @@ impl Pipeline {
         }
     }
 
-    fn read_input(&mut self) -> Result<(), PipelineError> {
-        let mut budget = IO_BYTE_BUDGET;
-        for _ in 0..IO_SYSCALL_BUDGET {
+    fn read_input(&mut self, budget: &mut usize, calls: &mut usize) -> Result<(), PipelineError> {
+        while *calls > 0 {
             self.drain_frames()?;
-            if budget == 0 || self.reserved_reply_bytes >= self.limits.max_buffered_input {
+            if *budget == 0 || self.reserved_reply_bytes >= self.limits.max_buffered_input {
                 break;
             }
             let mut chunk = [0u8; READ_CHUNK];
-            let want = chunk.len().min(budget);
+            let want = chunk.len().min(*budget);
+            *calls -= 1;
             match self.stream.read(&mut chunk[..want]) {
                 Ok(0) => return Err(self.poison(PipelineError::Io(io::ErrorKind::UnexpectedEof))),
                 Ok(count) => {
                     self.in_buf.extend_from_slice(&chunk[..count]);
-                    budget -= count;
+                    *budget -= count;
                 }
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
@@ -1146,11 +1236,22 @@ impl Pipeline {
 
     /// Marks the pipeline unusable and closes its socket.
     fn poison(&mut self, error: PipelineError) -> PipelineError {
+        self.scrub_pending_output();
         if !self.poisoned {
             self.poisoned = true;
             let _ = self.stream.shutdown(std::net::Shutdown::Both);
         }
         error
+    }
+
+    fn scrub_pending_output(&mut self) {
+        if self.scrub_output {
+            self.out_buf.fill(0);
+            std::hint::black_box(&mut self.out_buf);
+            scrub_spare(&mut self.out_buf);
+            self.out_start = self.out_buf.len();
+            self.scrub_output = false;
+        }
     }
 }
 
@@ -1227,10 +1328,7 @@ fn negotiate(
 
 impl Drop for Pipeline {
     fn drop(&mut self) {
-        if self.scrub_output {
-            self.out_buf.clear();
-            scrub_spare(&mut self.out_buf);
-        }
+        self.scrub_pending_output();
     }
 }
 

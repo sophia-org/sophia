@@ -4,10 +4,24 @@
 use super::*;
 use sophia_protocol::{AttentionState, BrokerToplevelActionGrant, ChromeDescriptor, TrustLevel};
 
-pub(in crate::live_session) fn broker_fixture(
-    directory: &std::path::Path,
-    surface: SurfaceId,
-) -> LiveMetadataBroker {
+pub(in crate::live_session) struct DescriptorFixture {
+    descriptors: sophia_engine::ChromeDescriptorTable,
+    grants: BTreeMap<SurfaceId, BrokerToplevelActionGrant>,
+}
+
+impl MetadataBrokerView for DescriptorFixture {
+    fn connection_epoch(&self) -> u64 {
+        1
+    }
+    fn descriptors(&self) -> &sophia_engine::ChromeDescriptorTable {
+        &self.descriptors
+    }
+    fn grants(&self) -> &BTreeMap<SurfaceId, BrokerToplevelActionGrant> {
+        &self.grants
+    }
+}
+
+pub(in crate::live_session) fn broker_fixture(surface: SurfaceId) -> DescriptorFixture {
     let mut descriptors = sophia_engine::ChromeDescriptorTable::default();
     descriptors.upsert(ChromeDescriptor {
         surface,
@@ -17,16 +31,7 @@ pub(in crate::live_session) fn broker_fixture(
         attention: AttentionState::None,
         generation: 1,
     });
-    LiveMetadataBroker {
-        supervisor: ProcessSupervisor::new(
-            SupervisedProcessKind::MetadataBroker,
-            ProcessLaunchSpec::new("/bin/false"),
-        ),
-        transport: sophia_runtime::MetadataBrokerSessionTransport::bind_for_supervised_uid(
-            directory,
-            rustix::process::geteuid().as_raw(),
-        )
-        .unwrap(),
+    DescriptorFixture {
         descriptors,
         grants: [(
             surface,
@@ -37,9 +42,5 @@ pub(in crate::live_session) fn broker_fixture(
             },
         )]
         .into(),
-        admitted: Default::default(),
-        retired: Default::default(),
-        connection_epoch: 1,
-        next_transaction: 1,
     }
 }

@@ -39,6 +39,7 @@ static void pipeline_control_progress(struct rig *r) {
 }
 static void pipeline_reverse_and_control(void) {
   struct rig *r = pipeline_ready(8);
+  struct sophia_lc_obligations obligations;
   uint8_t pixels[128];
   unsigned i;
   for (i = 0; i < sizeof(pixels); ++i)
@@ -47,6 +48,8 @@ static void pipeline_reverse_and_control(void) {
   assert(!sophia_lc_upload_chunk(&r->client, pixels, sizeof(pixels)));
   assert(!spin(r));
   assert(r->peer.held_uploads == 8 && r->peer.upload_cursor == 32);
+  assert(!sophia_lc_obligations(&r->client, &obligations));
+  assert(obligations.upload_pending && obligations.upload_writes == 8);
   assert(sophia_lc_upload_end(&r->client) == SOPHIA_9P_BUSY);
   pipeline_control_progress(r);
   /* Free slots out of order, refilling while the earliest reply is held. */
@@ -59,6 +62,8 @@ static void pipeline_reverse_and_control(void) {
   assert(sophia_lc_upload_end(&r->client) == SOPHIA_9P_BUSY);
   release_upload_reply(&r->peer, 0);
   assert(!spin(r) && sophia_lc_upload_ready(&r->client));
+  assert(!sophia_lc_obligations(&r->client, &obligations));
+  assert(obligations.upload_pending && !obligations.upload_writes);
   assert(!memcmp(r->peer.pixels, pixels, sizeof(pixels)));
   assert(!sophia_lc_upload_end(&r->client));
   assert(next(r)->value.resource_status.status == SOPHIA_LF_ACCEPTED);
@@ -121,6 +126,7 @@ static void pipeline_terminal_status_drains(void) {
 }
 static void pipeline_disconnect_latches(void) {
   struct rig *r = pipeline_ready(8);
+  struct sophia_lc_obligations obligations;
   uint8_t pixels[128] = {0};
   r->peer.hold_upload = 1;
   assert(!sophia_lc_upload_chunk(&r->client, pixels, sizeof(pixels)));
@@ -129,6 +135,9 @@ static void pipeline_disconnect_latches(void) {
   r->peer.fd = -1;
   assert(sophia_lc_service(&r->client, 65536) != 0);
   assert(!sophia_lc_upload_pending(&r->client));
+  assert(!sophia_lc_obligations(&r->client, &obligations));
+  assert(!obligations.upload_pending && !obligations.upload_writes &&
+         !obligations.event_pending && !obligations.object_pending);
   assert(sophia_lc_upload_end(&r->client) != 0);
   assert(sophia_lc_upload_cancel(&r->client) != 0);
   /* Terminal wire never reads caller storage again; dispose before reuse. */

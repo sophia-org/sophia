@@ -116,37 +116,14 @@ pub(crate) fn validate(record: &ShellNativeLauncherRecord) -> Result<(), Invalid
                 "native launcher allocation dimensions",
             )
         }
-        CandidateBegin(v) => {
-            crate::shell::content::validation::validate(&ShellContentRecord::CandidateBegin(
-                v.content.clone(),
-            ))?;
-            require(
-                v.opening > 0
-                    && v.catalog_generation > 0
-                    && v.state_revision > 0
-                    && v.content.surface_count == 1
-                    && v.content.placement_count > 0
-                    && v.content.target_count as usize == v.rows.len()
-                    && v.rows.len() <= SOPHIA_SHELL_MAX_LAUNCHER_ROWS,
-                "native launcher candidate",
-            )?;
-            require(
-                v.rows.iter().enumerate().all(|(i, slot)| {
-                    *slot > 0
-                        && usize::from(*slot) <= SOPHIA_SHELL_MAX_APPLICATIONS
-                        && !v.rows[..i].contains(slot)
-                }),
-                "native launcher catalog rows",
-            )?;
-            require(
-                if v.rows.is_empty() {
-                    v.selected == 0
-                } else {
-                    v.rows.contains(&v.selected)
-                },
-                "native launcher selection",
-            )
-        }
+        CandidateBegin(v) => validate_candidate_begin(
+            &v.content,
+            v.opening,
+            v.catalog_generation,
+            v.state_revision,
+            v.selected,
+            &v.rows,
+        ),
         CandidateChunk(v) => crate::shell::content::validation::validate_candidate_chunk(v, true),
         Focus(v) => binding(v),
         FocusRevoked(v) => {
@@ -198,4 +175,67 @@ pub(crate) fn validate(record: &ShellNativeLauncherRecord) -> Result<(), Invalid
             reason(v.reason)
         }
     }
+}
+
+fn validate_candidate_begin(
+    content: &crate::ContentCandidateBegin,
+    opening: u64,
+    catalog_generation: u64,
+    state_revision: u64,
+    selected: u16,
+    rows: &[u16],
+) -> Result<(), InvalidRecord> {
+    crate::shell::content::validation::validate(&ShellContentRecord::CandidateBegin(
+        content.clone(),
+    ))?;
+    require(
+        opening > 0
+            && catalog_generation > 0
+            && state_revision > 0
+            && content.surface_count == 1
+            && content.placement_count > 0
+            && content.target_count as usize == rows.len()
+            && rows.len() <= SOPHIA_SHELL_MAX_LAUNCHER_ROWS,
+        "native launcher candidate",
+    )?;
+    require(
+        rows.iter().enumerate().all(|(i, slot)| {
+            *slot > 0
+                && usize::from(*slot) <= SOPHIA_SHELL_MAX_APPLICATIONS
+                && !rows[..i].contains(slot)
+        }),
+        "native launcher catalog rows",
+    )?;
+    require(
+        if rows.is_empty() {
+            selected == 0
+        } else {
+            rows.contains(&selected)
+        },
+        "native launcher selection",
+    )
+}
+
+pub(crate) fn validate_native_candidate(
+    value: &crate::NativeContentCandidate,
+) -> Result<(), InvalidRecord> {
+    let candidate = &value.candidate;
+    let begin = crate::shell::content::validation::candidate_begin(candidate)?;
+    validate_candidate_begin(
+        &begin,
+        value.opening,
+        value.catalog_generation,
+        value.state_revision,
+        value.selected,
+        &value.rows,
+    )?;
+    crate::shell::content::validation::validate_candidate_rows(
+        candidate.grant,
+        candidate.candidate_generation,
+        &candidate.surfaces,
+        &candidate.placements,
+        &candidate.targets,
+        true,
+        2,
+    )
 }

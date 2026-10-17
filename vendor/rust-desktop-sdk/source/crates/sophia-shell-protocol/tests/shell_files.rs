@@ -452,6 +452,10 @@ fn allocation_request_result_round_trips_and_bounds() {
     };
     let encoded_req = encode_shell_file_allocation_request(h_req, tx_record_req.clone()).unwrap();
     assert_eq!(
+        shell_file_content_bytes(h_req, &tx_record_req).unwrap(),
+        encoded_req.len()
+    );
+    assert_eq!(
         decode_shell_file_allocation_request(&encoded_req).unwrap(),
         tx_record_req
     );
@@ -484,6 +488,10 @@ fn allocation_request_result_round_trips_and_bounds() {
         record: allocation_result(),
     };
     let encoded_res = encode_shell_file_allocation_result(h_res, tx_record_res.clone()).unwrap();
+    assert_eq!(
+        shell_file_content_bytes(h_res, &tx_record_res).unwrap(),
+        encoded_res.len()
+    );
     assert_eq!(
         decode_shell_file_allocation_result(&encoded_res).unwrap(),
         tx_record_res
@@ -737,6 +745,10 @@ fn resource_end_round_trips_and_bounds() {
         record: resource_end_record(),
     };
     let encoded = encode_shell_file_resource_end(h, &tx_record).unwrap();
+    assert_eq!(
+        shell_file_content_bytes(h, &tx_record).unwrap(),
+        encoded.len()
+    );
     assert_eq!(decode_shell_file_resource_end(&encoded).unwrap(), tx_record);
     assert_eq!(
         encode_shell_file_resource_end_body(&tx_record).unwrap(),
@@ -785,6 +797,10 @@ fn resource_cancel_round_trips_and_bounds() {
         record: resource_cancel_record(),
     };
     let encoded = encode_shell_file_resource_cancel(h, &tx_record).unwrap();
+    assert_eq!(
+        shell_file_content_bytes(h, &tx_record).unwrap(),
+        encoded.len()
+    );
     assert_eq!(
         decode_shell_file_resource_cancel(&encoded).unwrap(),
         tx_record
@@ -837,6 +853,10 @@ fn resource_retire_round_trips_and_bounds() {
     };
     let encoded = encode_shell_file_resource_retire(h, &tx_record).unwrap();
     assert_eq!(
+        shell_file_content_bytes(h, &tx_record).unwrap(),
+        encoded.len()
+    );
+    assert_eq!(
         decode_shell_file_resource_retire(&encoded).unwrap(),
         tx_record
     );
@@ -887,6 +907,10 @@ fn resource_status_round_trips_and_bounds() {
         record: resource_status_record(),
     };
     let encoded = encode_shell_file_resource_status(h, &tx_record).unwrap();
+    assert_eq!(
+        shell_file_content_bytes(h, &tx_record).unwrap(),
+        encoded.len()
+    );
     assert_eq!(
         decode_shell_file_resource_status(&encoded).unwrap(),
         tx_record
@@ -939,6 +963,10 @@ fn resource_released_round_trips_and_bounds() {
     };
     let encoded = encode_shell_file_resource_released(h, &tx_record).unwrap();
     assert_eq!(
+        shell_file_content_bytes(h, &tx_record).unwrap(),
+        encoded.len()
+    );
+    assert_eq!(
         decode_shell_file_resource_released(&encoded).unwrap(),
         tx_record
     );
@@ -990,6 +1018,10 @@ fn resource_begin_round_trips_and_bounds() {
         record: resource_begin_record(),
     };
     let encoded = encode_shell_file_resource_begin(h, &value).unwrap();
+    assert_eq!(
+        shell_file_resource_begin_bytes(h, &value).unwrap(),
+        encoded.len()
+    );
     assert_eq!(decode_shell_file_resource_begin(&encoded).unwrap(), value);
     assert_eq!(
         encode_shell_file_resource_begin_body(&value).unwrap(),
@@ -1025,6 +1057,10 @@ fn resource_begin_round_trips_and_bounds() {
     // slot 4 (the upload-slot count) is refused on encode and decode
     let mut bad_slot = value.clone();
     bad_slot.slot = SHELL_FILE_MAX_UPLOAD_SLOTS;
+    assert_eq!(
+        shell_file_resource_begin_bytes(h, &bad_slot).unwrap_err(),
+        ShellFilePayloadError::Value
+    );
     assert_eq!(
         encode_shell_file_resource_begin(h, &bad_slot).unwrap_err(),
         ShellFilePayloadError::Value

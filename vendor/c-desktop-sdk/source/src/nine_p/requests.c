@@ -144,7 +144,7 @@ static int io_request(struct sophia_9p_client *c, uint8_t type, uint32_t fid, ui
         return r;
     if (type == 118 && (count > c->msize - 23u || (count && !data)))
         return SOPHIA_9P_ARGUMENT;
-    if (type == 116 && count > c->msize - 11u)
+    if ((type == 116 || type == 40) && count > c->msize - 11u)
         count = c->msize - 11u;
     r = p9_begin(c, type, 16 + (type == 118 ? count : 0), slot, h, &b);
     if (r)
@@ -155,6 +155,7 @@ static int io_request(struct sophia_9p_client *c, uint8_t type, uint32_t fid, ui
     if (type == 118 && count)
         memcpy(b + 16, data, count);
     c->slots[slot].count = (uint32_t)count;
+    c->slots[slot].offset = offset;
     return 0;
 }
 int sophia_9p_read(struct sophia_9p_client *c, uint32_t f, uint64_t o, uint32_t n,
@@ -166,6 +167,32 @@ int sophia_9p_write(struct sophia_9p_client *c, uint32_t f, uint64_t o, const vo
                     struct sophia_9p_handle *h)
 {
     return io_request(c, 118, f, o, b, n, h);
+}
+int sophia_9p_write_secret(struct sophia_9p_client *c, uint32_t f, uint64_t o,
+                           const void *b, size_t n, struct sophia_9p_handle *h)
+{
+    int r = io_request(c, 118, f, o, b, n, h);
+    if (!r)
+        c->slots[h->slot].secret = 1;
+    return r;
+}
+int sophia_9p_getattr(struct sophia_9p_client *c, uint32_t fid, struct sophia_9p_handle *h)
+{
+    int slot, r = p9_available(c, &slot);
+    uint8_t *b;
+    if (r)
+        return r;
+    r = p9_begin(c, 24, 12, slot, h, &b);
+    if (r)
+        return r;
+    p9_put(b, fid, 4);
+    p9_put(b + 4, 0x3fff, 8);
+    return 0;
+}
+int sophia_9p_readdir(struct sophia_9p_client *c, uint32_t fid, uint64_t cookie, uint32_t count,
+                      struct sophia_9p_handle *h)
+{
+    return io_request(c, 40, fid, cookie, NULL, count, h);
 }
 int sophia_9p_clunk(struct sophia_9p_client *c, uint32_t f, struct sophia_9p_handle *h)
 {

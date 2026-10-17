@@ -23,8 +23,8 @@ pub use discovery::{
 };
 
 mod completion_wait;
-mod head_selection;
 mod head_completion;
+mod head_selection;
 #[path = "../../../tests/support/native_head_fixture.rs"]
 mod native_head_fixture;
 mod prepared_cancellation;
@@ -39,7 +39,9 @@ pub(crate) use retirement_evidence::NativeOutputCohort;
 mod present_clock;
 mod presentation_timing;
 #[cfg(test)]
-pub(crate) use presentation_timing::{PresentedTimingHead, completed_timing, timing_displayed_identity};
+pub(crate) use presentation_timing::{
+    PresentedTimingHead, completed_timing, timing_displayed_identity,
+};
 mod capture;
 pub use capture::LiveOutputCaptureTarget;
 mod capture_validity;

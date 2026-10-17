@@ -2,6 +2,47 @@ mod support;
 use support::*;
 
 #[test]
+fn metadata_preparation_leaves_the_table_unchanged_and_moves_label_storage() {
+    let surface = SurfaceId::new(15, 1);
+    let mut table = ChromeDescriptorTable::default();
+    table.apply_metadata(metadata(surface, "Current", 9));
+    let candidate = metadata(surface, "Replacement", 10);
+    let storage = candidate.label.as_ref().unwrap().as_ptr();
+    let prepared = table.prepare_metadata(candidate).unwrap();
+    assert_eq!(prepared.label.as_ref().unwrap().text.as_ptr(), storage);
+    assert_eq!(table.get(surface).unwrap().generation, 9);
+    // Dropping a prepared effect is an abort, not a partial update.
+    drop(prepared);
+    assert_eq!(
+        table.get(surface).unwrap().label.as_ref().unwrap().text,
+        "Current"
+    );
+    for (candidate, expected) in [
+        (
+            metadata(surface, "Stale", 8),
+            MetadataChromeRejectReason::StaleGeneration,
+        ),
+        (
+            metadata(surface, "Bad\nlabel", 10),
+            MetadataChromeRejectReason::InvalidLabel,
+        ),
+        (
+            metadata(SurfaceId::new(0, 0), "Invalid", 10),
+            MetadataChromeRejectReason::InvalidSurface,
+        ),
+    ] {
+        assert_eq!(table.prepare_metadata(candidate), Err(expected));
+        assert_eq!(table.get(surface).unwrap().generation, 9);
+        assert_eq!(table.len(), 1);
+    }
+    let prepared = table
+        .prepare_metadata(metadata(surface, "Replacement", 10))
+        .unwrap();
+    table.upsert(prepared);
+    assert_eq!(table.get(surface).unwrap().generation, 10);
+}
+
+#[test]
 fn chrome_broker_keeps_metadata_separate_from_layout() {
     let mut broker = ChromeDescriptorTable::default();
     let surface = SurfaceId::new(3, 1);

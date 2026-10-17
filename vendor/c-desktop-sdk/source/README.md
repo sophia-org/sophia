@@ -1,9 +1,36 @@
 # Sophia desktop SDK for C
 
+The [2026-10-17 release audit](RELEASE-QUALIFICATION.md) records verified
+C/Rust capability parity, exact tested revisions and remaining limits.
+
+Allocation-free [shell candidate sizing](SHELL-SIZING.md) is available in both SDKs.
+
+Shell startup supports caller-driven progress from a connected socket or an
+admitted root. See [startup controls and ownership](SHELL-STARTUP.md).
+
 Native C99 libraries for Sophia desktop components. This repository builds
 without a Sophia checkout and uses no Rust code. Nim clients can use its C API.
 
 ## SDK scope
+
+Sensitive generic writes can use `sophia_9p_write_secret`. The SDK wipes its
+copies after sending and on failure or `sophia_9p_close`; callers still clear
+their input and close the borrowed descriptor. Call close before abandoning
+secret-bearing storage. Ordinary writes keep their existing behavior.
+
+Generic 9P now supports attributes and directory pages, matching Rust's
+read-only client. Request-slot storage has grown to retain directory cookies;
+rebuild C consumers and foreign-language bindings with matching headers and
+libraries. See [transport parity](TRANSPORT-PARITY.md). Broker dependency files
+are now included in incremental builds so header changes rebuild those objects.
+
+The current development candidate is **0.10.0-dev, unreleased**. Reservation
+tokens now identify the issuing session address and epoch as well as their
+serial. Previously two live sessions with matching serials could accept each
+other's tokens. The public `sophia_ss_reservation` layout has grown: recompile
+C consumers and foreign-language bindings before adoption. Do not mix old
+headers with this library or move/reinitialize a session with a live reservation.
+The wire contract is unchanged. [API parity](API-PARITY.md) maps the Rust controls.
 
 One desktop SDK per language covers Sophia's WM, shell, output and admin/control
 roles. Role modules share standard 9P2000.L transport, bounded I/O and custody
@@ -17,6 +44,25 @@ tested support. A missing server file contract is a migration gap, not permissio
 to tunnel the old socket protocol through a file.
 
 ## Current coverage
+
+Broker sessions now retain their submit handle across responses. The private
+fields in public transaction storage have changed; rebuild consumers and
+foreign-language bindings with matching headers. Receipt acknowledgement,
+assembly cleanup and retry semantics are unchanged; see [API parity](API-PARITY.md).
+
+The developing broker API (`sophia_broker_session.h`) retains one request and
+submits its one- or two-row response atomically. Startup borrows a quiescent 9P
+client and an admitted root; it does not authenticate the caller. The caller
+drives progress and acknowledgements, chooses explicit retries and closes the
+borrowed descriptor on failure. The session never reconnects or replays work.
+Independent C/Rust peers pass Sophia's generic export and protected-launch gates.
+Sophia's live broker now uses the Rust counterpart. Performance acceptance and
+the full desktop SDK release audit remain open. See [broker parity](BROKER-PARITY.md).
+
+Portal recipient sessions cover capture, frames and transfer reads. The requester
+session (`sophia_portal_requester_session.h`) adds bounded uploads, cancellation
+and terminal outcomes. [Portal parity](PORTAL-PARITY.md) records the paired SDK
+and export checks and distinguishes them from physical desktop acceptance.
 
 `sophia_namespace.h` implements the pinned
 [`namespace-discovery` contract](spec/namespace-discovery.md). Parsing uses
@@ -58,8 +104,9 @@ The output file
 codec and session pass scripted-peer tests, Sophia's production output export
 exchange and Sophia's attended native output acceptance on one card with two
 heads (see provenance for its scope). The output default rollout and other
-physical configurations are not qualified here. The admin file client is not
-implemented yet.
+physical configurations are not qualified here. The developing admin file client
+now provides startup, retained catalogs, command custody and status snapshots;
+its current qualification is recorded in [API parity](API-PARITY.md).
 
 Descriptor codecs and profile selection use the native layouts in
 `spec/sophia-shell-files-v1.kdl` and the rules in `spec/sophia-shell-descriptors.md`.
@@ -206,8 +253,9 @@ The lock API is experimental. The pinned contract (Sophia's signed master
 merge `61d545c90`, see PROVENANCE.md) still marks itself as revision 1
 (draft), and Sophia has not yet accepted it explicitly. It can change
 incompatibly before that acceptance. `compatibility.json` sets
-`lock_files=false` until the contract is accepted and Sophia's production
-lock export gate passes with this SDK vendored.
+`lock_files=false` until the contract is accepted. The permanent production
+export and protected revocation gates have passed; see LOCK-PARITY.md for their
+scope. This does not accept the draft contract or qualify physical locking.
 `sophia_lock_files.h` encodes and decodes the records in
 `spec/sophia-lock-files-v1.kdl`, checked against Sophia's golden records.
 

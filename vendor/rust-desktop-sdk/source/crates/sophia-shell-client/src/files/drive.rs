@@ -4,8 +4,9 @@
 //! writes, object fetch, event processing, the `events` read and its acks)
 //! take its next step, repeating while something keeps changing.
 use std::collections::VecDeque;
+use std::os::fd::{AsFd, BorrowedFd};
 
-use sophia_9p_client::pipeline::{PipelineError, Reply};
+use sophia_9p_client::pipeline::{IoBudget, PipelineError, Reply};
 use sophia_9p_records::Tag;
 use sophia_shell_protocol::shell_files::{
     SHELL_FILE_ACK_BYTES, ShellFileAck, encode_shell_file_ack,
@@ -17,17 +18,86 @@ use crate::wire::Inbound;
 use crate::{ShellClientError, outbox::ClientOutbox};
 
 impl FileWire {
+    pub(crate) fn journal_progress(&self) -> crate::JournalProgress {
+        let live = self.fatal.is_none() && !self.peer_closed;
+        crate::JournalProgress {
+            handled: self.ack_ready,
+            ack_limit: self.ack_limit(),
+            queued: self.acked,
+            acknowledged: self.ack_confirmed,
+            ack_pending: live && self.ack_tag.is_some(),
+            object_pending: live && self.holds.iter().any(Option::is_some),
+        }
+    }
+    pub(crate) fn set_automatic_journal_ack(
+        &mut self,
+        enabled: bool,
+    ) -> Result<(), ShellClientError> {
+        self.io_interest()?;
+        self.automatic_ack = enabled;
+        self.service_pending = true;
+        Ok(())
+    }
+    pub(crate) fn acknowledge_journal(&mut self) -> Result<bool, ShellClientError> {
+        self.io_interest()?;
+        self.queue_ack()
+    }
+    pub(crate) fn close(&mut self, output: &mut ClientOutbox, ledger: &mut Ledger) {
+        if self.fatal.is_some() {
+            return;
+        }
+        self.observe_custody_after_close();
+        self.peer_closed = true;
+        self.fatal = Some(ShellClientError::PeerClosed);
+        self.service_pending = false;
+        output.release_reservation();
+        self.classify_terminal(output);
+        self.settle(output, ledger);
+    }
+    pub(crate) fn as_fd(&self) -> BorrowedFd<'_> {
+        self.pipeline.as_fd()
+    }
+
+    pub(crate) fn io_interest(
+        &self,
+    ) -> Result<sophia_9p_client::pipeline::IoInterest, ShellClientError> {
+        if let Some(error) = &self.fatal {
+            return Err(error.clone());
+        }
+        if self.peer_closed {
+            return Err(ShellClientError::PeerClosed);
+        }
+        let mut interest = self.pipeline.io_interest()?;
+        interest.immediate |= self.service_pending;
+        Ok(interest)
+    }
+
     pub(crate) fn poll_io(
         &mut self,
         output: &mut ClientOutbox,
         inbox: &mut VecDeque<Inbound>,
         ledger: &mut Ledger,
+        dispatch: Option<(std::time::Instant, usize)>,
     ) -> Result<(), ShellClientError> {
+        if let Some((now, _)) = dispatch
+            && (self.last_dispatch_time.is_some_and(|last| now < last)
+                || now.checked_add(super::RETRY_MAX).is_none())
+        {
+            return Err(ShellClientError::InvalidArgument("dispatch time"));
+        }
         if let Some(error) = &self.fatal {
             return Err(error.clone());
         }
+        self.dispatch_time = dispatch.map(|(now, _)| now);
+        if let Some(now) = self.dispatch_time {
+            self.last_dispatch_time = Some(now);
+        }
         self.pass += 1;
-        let result = self.drive(output, inbox);
+        let result = self.drive(
+            output,
+            inbox,
+            dispatch.map(|(_, bytes)| IoBudget::new(bytes)),
+        );
         if let Err(error) = &result {
             self.fatal = Some(error.clone());
             // Buffered events are still trusted unless one of them caused
@@ -35,6 +105,7 @@ impl FileWire {
             self.observe_custody_after_close();
         }
         if result.is_err() || self.peer_closed {
+            output.release_reservation();
             self.classify_terminal(output);
         }
         self.settle(output, ledger);
@@ -91,7 +162,11 @@ impl FileWire {
     /// The instant a pending `EAGAIN` retry becomes due without event
     /// progress; the caller should service the connection by then.
     pub(crate) fn wake_deadline(&self) -> Option<std::time::Instant> {
-        self.retry_deadline()
+        if self.fatal.is_some() || self.peer_closed {
+            None
+        } else {
+            self.retry_deadline()
+        }
     }
 
     pub(crate) fn wait_for_io(&self, maximum: std::time::Duration) -> Result<(), ShellClientError> {
@@ -105,11 +180,16 @@ impl FileWire {
         &mut self,
         output: &mut ClientOutbox,
         inbox: &mut VecDeque<Inbound>,
+        mut budget: Option<IoBudget>,
     ) -> Result<(), ShellClientError> {
         self.service_pending = true;
         for _ in 0..MAX_ROUNDS {
             let mut eof = false;
-            match self.pipeline.poll() {
+            let result = match &mut budget {
+                Some(budget) => self.pipeline.poll_with_budget(budget),
+                None => self.pipeline.poll(),
+            };
+            match result {
                 Ok(()) => {}
                 Err(PipelineError::Io(kind)) if is_disconnect(kind) => {
                     eof = true;
@@ -146,7 +226,10 @@ impl FileWire {
             progressed |= self.maybe_read_events(inbox)?;
             progressed |= self.maybe_send_ack()?;
             if !progressed {
-                self.service_pending = false;
+                self.service_pending = budget.as_ref().is_some_and(IoBudget::exhausted);
+                break;
+            }
+            if budget.as_ref().is_some_and(IoBudget::exhausted) {
                 break;
             }
         }
@@ -226,7 +309,10 @@ impl FileWire {
     fn on_ack_reply(&mut self, reply: &Reply) -> Result<(), ShellClientError> {
         self.ack_tag = None;
         match reply {
-            Reply::Write(count) if *count as usize == SHELL_FILE_ACK_BYTES => Ok(()),
+            Reply::Write(count) if *count as usize == SHELL_FILE_ACK_BYTES => {
+                self.ack_confirmed = self.acked;
+                Ok(())
+            }
             _ => Err(ShellClientError::Protocol("unexpected ack reply")),
         }
     }
@@ -254,6 +340,12 @@ impl FileWire {
     /// unit is retained; never past what `handle_event` has committed, nor
     /// past an announcement whose object is not yet fetched.
     fn maybe_send_ack(&mut self) -> Result<bool, ShellClientError> {
+        if !self.automatic_ack {
+            return Ok(false);
+        }
+        self.queue_ack()
+    }
+    fn queue_ack(&mut self) -> Result<bool, ShellClientError> {
         let sequence = self.ack_limit();
         if self.ack_tag.is_some() || sequence <= self.acked {
             return Ok(false);

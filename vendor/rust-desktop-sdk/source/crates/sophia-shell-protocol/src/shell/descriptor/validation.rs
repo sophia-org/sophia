@@ -1,8 +1,8 @@
 //! Structural descriptor checks. Snapshot membership, freshness and action
 //! consumption remain with their owners. These checks grant no authority.
 use super::*;
+use crate::shell::unique::unique;
 use crate::{InvalidRecord, MAX_CHROME_LABEL_LEN};
-use std::collections::BTreeSet;
 
 pub fn validate_toplevel_action(action: ToplevelActionCapabilityRef) -> Result<(), InvalidRecord> {
     if action.token == 0
@@ -56,11 +56,14 @@ pub fn validate_shell_descriptor_snapshot(
     {
         return Err(InvalidRecord("shell_descriptor_snapshot"));
     }
-    let mut slots = BTreeSet::new();
+    if !unique::<SOPHIA_SHELL_MAX_DESCRIPTORS>(
+        snapshot.descriptors.iter().map(|d| u64::from(d.slot)),
+    ) {
+        return Err(InvalidRecord("shell_descriptor"));
+    }
     for descriptor in &snapshot.descriptors {
         validate_shell_descriptor(descriptor, snapshot.connection_epoch)?;
-        if !slots.insert(descriptor.slot)
-            || descriptor.action.issuer_epoch != snapshot.broker_epoch
+        if descriptor.action.issuer_epoch != snapshot.broker_epoch
             || descriptor.action.issuer_revocation_epoch != snapshot.broker_revocation_epoch
         {
             return Err(InvalidRecord("shell_descriptor"));
@@ -93,16 +96,19 @@ pub fn validate_shell_descriptor_candidate(
             return Err(InvalidRecord("shell_candidate_reservation_thickness"));
         }
     }
-    let mut slots = BTreeSet::new();
+    if !unique::<SOPHIA_SHELL_MAX_DESCRIPTORS>(candidate.entries.iter().map(|e| u64::from(e.slot)))
+    {
+        return Err(InvalidRecord("shell_candidate_entry"));
+    }
     for entry in &candidate.entries {
-        if entry.slot == 0 || entry.generation == 0 || !slots.insert(entry.slot) {
+        if entry.slot == 0 || entry.generation == 0 {
             return Err(InvalidRecord("shell_candidate_entry"));
         }
     }
     if candidate.visible != candidate.selected_slot.is_some()
         || candidate
             .selected_slot
-            .is_some_and(|slot| !slots.contains(&slot))
+            .is_some_and(|slot| !candidate.entries.iter().any(|e| e.slot == slot))
     {
         return Err(InvalidRecord("shell_candidate_selection"));
     }

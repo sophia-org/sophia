@@ -281,6 +281,11 @@ fn another_endpoint_cannot_discard_pending_relay_work() {
 
 #[test]
 fn one_launch_relay_authenticates_two_endpoints_without_resetting_the_first() {
+    two_endpoints(false);
+    two_endpoints(true);
+}
+
+fn two_endpoints(external: bool) {
     let (first, first_peer) = UnixStream::pair().unwrap();
     let (second, second_peer) = UnixStream::pair().unwrap();
     let (channel, relay_peer) = UnixStream::pair().unwrap();
@@ -295,8 +300,17 @@ fn one_launch_relay_authenticates_two_endpoints_without_resetting_the_first() {
     let mut first = Client::over(first, channel, b"lock", b"lock-provider").unwrap();
     drive(&mut first).unwrap();
     let first = first.into_authenticated().unwrap();
-    let mut second = Client::over_relay(second, first.relay, b"lock", b"lock-provider").unwrap();
-    drive(&mut second).unwrap();
+    let mut second = if external {
+        Client::over_relay_at(second, first.relay, b"lock", b"lock-provider", 100, 5100)
+    } else {
+        Client::over_relay(second, first.relay, b"lock", b"lock-provider")
+    }
+    .unwrap();
+    if external {
+        external_drive(&mut second, &mut 100);
+    } else {
+        drive(&mut second).unwrap();
+    }
     let second = second.into_authenticated().unwrap();
     assert_eq!(first.role.outstanding(), 0);
     assert_ne!(first.root.0, u32::MAX);
@@ -307,6 +321,48 @@ fn one_launch_relay_authenticates_two_endpoints_without_resetting_the_first() {
     a.join().unwrap();
     b.join().unwrap();
     p.join().unwrap();
+}
+
+#[test]
+fn another_endpoint_cannot_discard_live_relay_fids_or_partial_input() {
+    use sophia_9p_client::pipeline::{Pipeline, PipelineLimits};
+    for live_fid in [true, false] {
+        let (stream, mut peer) = UnixStream::pair().unwrap();
+        peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+        let job = std::thread::spawn(move || {
+            version(&mut peer);
+            if live_fid {
+                let attach = request(&mut peer, 104);
+                reply(&mut peer, &attach, 105, &qid(128));
+            } else {
+                // Uncorrelated partial traffic must not disappear in Tversion.
+                peer.write_all(&[7, 0, 0]).unwrap();
+            }
+            eof(&mut peer);
+        });
+        let mut relay =
+            Pipeline::over(stream, PipelineLimits::default(), Duration::from_secs(2)).unwrap();
+        let end = Instant::now() + Duration::from_secs(2);
+        if live_fid {
+            let (tag, _) = relay.attach(b"", b"sophia-launch-relay-v1").unwrap();
+            relay.wait(tag, end).unwrap();
+            assert_eq!(relay.fid_count(), 1);
+        } else {
+            while relay.is_quiescent() {
+                assert!(Instant::now() < end);
+                relay.poll().unwrap();
+                std::thread::yield_now();
+            }
+        }
+        assert_eq!(relay.outstanding(), 0);
+        let (role, unused_peer) = UnixStream::pair().unwrap();
+        drop(unused_peer);
+        assert!(matches!(
+            Client::over_relay(role, relay, b"lock", b"lock-provider"),
+            Err(Error::Invalid("shared launch relay is not empty"))
+        ));
+        job.join().unwrap();
+    }
 }
 fn start(case: Case, rounds: u8, timeout: Duration) -> (Client, Vec<JoinHandle<()>>) {
     let (client, jobs, _) = start_with_signal(case, rounds, timeout);
@@ -440,4 +496,112 @@ fn bounds_are_checked_before_any_wire_request() {
         eof(&mut b);
         eof(&mut q);
     }
+}
+
+#[test]
+fn external_startup_has_no_io_and_shares_a_one_byte_budget() {
+    let (a, mut b) = UnixStream::pair().unwrap();
+    let (p, mut q) = UnixStream::pair().unwrap();
+    for peer in [&b, &q] {
+        peer.set_nonblocking(true).unwrap();
+    }
+    let mut c = Client::new(a, p, b"lock", b"lock-provider", 100, 5100).unwrap();
+    assert!(c.role_fd().is_some() && c.relay_fd().is_some());
+    assert!(c.role_interest().writable && c.relay_interest().writable);
+    assert_eq!(c.next_wake(), Some(5100));
+    let mut bytes = [0; 32];
+    for peer in [&mut b, &mut q] {
+        assert_eq!(
+            peer.read(&mut bytes).unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+    }
+    c.dispatch(100, 0).unwrap();
+    for peer in [&mut b, &mut q] {
+        assert_eq!(
+            peer.read(&mut bytes).unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+    }
+    c.dispatch(100, 1).unwrap();
+    assert_eq!(b.read(&mut bytes).unwrap(), 1);
+    assert_eq!(
+        q.read(&mut bytes).unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+    // The same deadline applies even when neither version reply has arrived.
+    assert_eq!(c.dispatch(5100, 4096), Err(Error::Timeout));
+    assert_eq!(c.next_wake(), None);
+    assert!(c.role_fd().is_none() && c.relay_fd().is_none());
+    assert_eq!(b.read(&mut bytes).unwrap(), 0);
+    assert_eq!(q.read(&mut bytes).unwrap(), 0);
+    assert_eq!(c.dispatch(100, 4096), Err(Error::Timeout));
+}
+
+#[test]
+fn external_clock_regression_and_cancel_close_unnegotiated_wires() {
+    for cancel in [false, true] {
+        let (a, mut b) = UnixStream::pair().unwrap();
+        let (p, mut q) = UnixStream::pair().unwrap();
+        let mut c = Client::new(a, p, b"lock", b"lock-provider", 100, 5100).unwrap();
+        let expected = if cancel {
+            c.cancel();
+            Error::Cancelled
+        } else {
+            Error::Invalid("clock regressed")
+        };
+        assert_eq!(c.dispatch(99, 4096), Err(expected));
+        assert!(!c.ready());
+        assert_eq!(c.next_wake(), None);
+        eof(&mut b);
+        eof(&mut q);
+    }
+}
+
+fn external_drive(c: &mut Client, now: &mut u64) {
+    let end = Instant::now() + Duration::from_secs(2);
+    while !c.ready() {
+        assert!(Instant::now() < end, "external loop stalled");
+        c.dispatch(*now, 1).unwrap();
+        if let Some(wake) = c.next_wake()
+            && wake > *now
+            && wake < 5100
+        {
+            // Only EAGAIN may schedule this ten-millisecond retry.
+            assert_eq!(wake - *now, 10);
+            assert!(!c.role_interest().immediate && !c.relay_interest().immediate);
+            c.dispatch(wake - 1, 0).unwrap();
+            assert_eq!(c.next_wake(), Some(wake));
+            *now = wake;
+        }
+        std::thread::yield_now();
+    }
+    assert_eq!(c.next_wake(), None);
+    assert!(!c.role_interest().readable && !c.relay_interest().writable);
+}
+
+#[test]
+fn caller_driven_partial_io_retry_and_reauthentication() {
+    let (a, b) = UnixStream::pair().unwrap();
+    let (p, q) = UnixStream::pair().unwrap();
+    for s in [&b, &q] {
+        s.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+    }
+    let (signal, _received) = std::sync::mpsc::sync_channel(2);
+    let jobs = vec![
+        std::thread::spawn(move || role(b, Case::Retry, 2, signal)),
+        std::thread::spawn(move || relay(q, Case::Retry, 2)),
+    ];
+    let mut c = Client::new(a, p, b"lock", b"lock-provider", 100, 5100).unwrap();
+    let mut now = 100;
+    external_drive(&mut c, &mut now);
+    assert_eq!(now, 110);
+    let admitted = c.into_authenticated().unwrap();
+    assert_eq!(admitted.role.fid_count(), 1);
+    assert_eq!(admitted.relay.fid_count(), 0);
+    let mut c = admitted.reauthenticate_at(now, 5100).unwrap();
+    external_drive(&mut c, &mut now);
+    assert_eq!(now, 120);
+    drop(c.into_authenticated().unwrap());
+    join(jobs);
 }

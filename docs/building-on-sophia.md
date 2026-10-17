@@ -475,6 +475,19 @@ anybody:
 
 `docs/validation.md` owns the details.
 
+## SDK choice and API parity
+
+Use the native Rust SDK directly, or bind to the native C SDK from another
+language. Both are required to provide equivalent public desktop capabilities,
+including lifecycle, errors and recovery. Their naming and memory management
+can follow each language's conventions.
+
+Coverage does not yet match: Sophia's current C snapshot has WM and output
+clients that the Rust snapshot lacks, and a lock client where Rust has only
+the experimental codec. Neither has an administration client. Check the
+[SDK parity plan](notes/plans/9cd1ie0x-publish-independent-sophia-client-libraries.md#t333--match-the-c-and-rust-public-apis)
+and each release's declared coverage before choosing an interface.
+
 ## Where to Start
 
 | You want to build | Read next | Copy from |

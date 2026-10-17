@@ -299,6 +299,14 @@ fn catalog_activate_round_trips() {
     )
     .unwrap();
     assert_eq!(
+        shell_file_catalog_action_bytes(
+            candidate_header(ShellFileKind::CatalogActivate),
+            &tx_record
+        )
+        .unwrap(),
+        encoded.len()
+    );
+    assert_eq!(
         decode_shell_file_catalog_action(&encoded, ShellFileKind::CatalogActivate).unwrap(),
         tx_record
     );
@@ -358,6 +366,14 @@ fn catalog_candidate_round_trips() {
     )
     .unwrap();
     assert_eq!(
+        shell_file_catalog_candidate_bytes(
+            candidate_header(ShellFileKind::CatalogCandidate),
+            &value
+        )
+        .unwrap(),
+        encoded.len()
+    );
+    assert_eq!(
         decode_shell_file_catalog_candidate(&encoded).unwrap(),
         value
     );
@@ -370,6 +386,14 @@ fn catalog_candidate_refuses_zero_transaction() {
         transaction: TransactionId::INVALID,
         candidate,
     };
+    assert_eq!(
+        shell_file_catalog_candidate_bytes(
+            candidate_header(ShellFileKind::CatalogCandidate),
+            &value
+        )
+        .unwrap_err(),
+        ShellFilePayloadError::Identity
+    );
     assert_eq!(
         encode_shell_file_catalog_candidate(
             candidate_header(ShellFileKind::CatalogCandidate),

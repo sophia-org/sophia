@@ -21,9 +21,13 @@ int main(int argc, char **argv) {
     assert(unsetenv("SOPHIA_LAUNCH_AUTH_FD") == 0);
     assert(setenv("SOPHIA_TEST_LOCK_SOCKET", argv[2], 1) == 0);
     assert(setenv("SOPHIA_TEST_LOCK_REPORT", argv[3], 1) == 0);
+#ifdef SOPHIA_TEST_EXTERNAL_PEER
+    char *args[] = {argv[1], NULL};
+#else
     char *args[] = {argv[1], "--ignored", "--exact",
         SOPHIA_TEST_CHILD,
         "--nocapture", NULL};
+#endif
     execv(argv[1], args);
     return 111;
 }

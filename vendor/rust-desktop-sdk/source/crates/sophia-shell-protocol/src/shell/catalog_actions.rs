@@ -168,3 +168,28 @@ pub(crate) fn validate(record: &ShellCatalogActionRecord) -> Result<(), InvalidR
         }
     }
 }
+
+pub(crate) fn validate_catalog_candidate(
+    value: &CatalogContentCandidate,
+) -> Result<(), InvalidRecord> {
+    let candidate = &value.candidate;
+    validate(&ShellCatalogActionRecord::CandidateBegin(
+        CatalogCandidateBegin {
+            content: crate::shell::content::validation::candidate_begin(candidate)?,
+            catalog_generation: value.catalog_generation,
+        },
+    ))?;
+    crate::shell::content::validation::validate_candidate_rows(
+        candidate.grant,
+        candidate.candidate_generation,
+        &candidate.surfaces,
+        &candidate.placements,
+        &candidate.targets,
+        false,
+        3,
+    )?;
+    crate::shell::content::validation::validate_catalog_rows(
+        &candidate.surfaces,
+        &candidate.targets,
+    )
+}

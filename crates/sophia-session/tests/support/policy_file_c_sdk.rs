@@ -1,4 +1,4 @@
-//! C SDK against the production WM file export, reactor, profile reducer and
+//! Independent SDKs against the production WM file export, reactor, profile reducer and
 //! transport driver. Admission and policy outcomes are supplied by this test;
 //! no WM product, launch authentication, Engine commit or presentation proof.
 use super::super::super::startup::tests::profile;
@@ -35,10 +35,28 @@ fn c_sdk_drives_profile_configuration_snapshot_and_policy_exchange() {
         &["nine_p", "wm_files", "wm_session"],
         "policy_file_c_sdk/peer.c",
     );
+    exchange(&scratch, &binary, "c");
+}
+
+#[test]
+#[ignore = "requires SOPHIA_WM_RUST_SDK_PEER naming the built generic Rust SDK conformance peer"]
+fn rust_sdk_drives_profile_configuration_snapshot_and_policy_exchange() {
+    let binary = std::path::PathBuf::from(
+        std::env::var_os("SOPHIA_WM_RUST_SDK_PEER").expect("explicit Rust SDK peer required"),
+    );
+    assert!(
+        binary.is_absolute() && binary.is_file(),
+        "absolute peer executable required"
+    );
+    let scratch = process::Scratch::new();
+    exchange(&scratch, &binary, "rust");
+}
+
+fn exchange(scratch: &process::Scratch, binary: &std::path::Path, language: &str) {
     let socket = scratch.0.join("wm.sock");
     let listener = UnixListener::bind(&socket).unwrap();
     listener.set_nonblocking(true).unwrap();
-    let mut command = Command::new(&binary);
+    let mut command = Command::new(binary);
     command.arg(&socket);
     let peer = process::Process::spawn(&mut command, &scratch.0, "peer");
     let until = Instant::now() + Duration::from_secs(5);
@@ -46,14 +64,14 @@ fn c_sdk_drives_profile_configuration_snapshot_and_policy_exchange() {
         match listener.accept() {
             Ok((stream, _)) => break stream,
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
-            Err(error) => panic!("C peer accept: {error}"),
+            Err(error) => panic!("SDK peer accept: {error}"),
         }
         assert!(
             !peer.exited(),
-            "C peer exited before connect: {}",
+            "SDK peer exited before connect: {}",
             peer.diagnostic()
         );
-        assert!(Instant::now() < until, "C peer connect deadline");
+        assert!(Instant::now() < until, "SDK peer connect deadline");
         std::thread::sleep(Duration::from_millis(5));
     };
     let caps = sophia_runtime::select_policy_capabilities(u64::MAX, u64::MAX, true);
@@ -195,7 +213,9 @@ fn c_sdk_drives_profile_configuration_snapshot_and_policy_exchange() {
     );
     assert_eq!(
         peer.finish(Duration::from_secs(10)),
-        "sophia_c_wm_sdk status=pass profiles=2 snapshots=1 surfaces=64 projections=1 operations=1 receipts=1\n"
+        format!(
+            "sophia_{language}_wm_sdk status=pass profiles=2 snapshots=1 surfaces=64 projections=1 operations=1 receipts=1\n"
+        )
     );
     drop(worker);
 }

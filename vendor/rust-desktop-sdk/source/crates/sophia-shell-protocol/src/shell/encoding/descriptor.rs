@@ -14,6 +14,11 @@ pub use events::*;
 // has consumed exactly one complete value. Envelopes and custody stay outside.
 macro_rules! value_codec {
     ($encode:ident, $decode:ident, $ty:ty, $validate:expr) => {
+        impl crate::shell::encoding::ValidatedWire for $ty {
+            fn validate_wire(&self) -> Result<(), ValueError> {
+                ($validate)(self).map_err(Into::into)
+            }
+        }
         pub fn $encode(value: &$ty) -> Result<Vec<u8>, ValueError> {
             ($validate)(value)?;
             let mut bytes = Vec::new();
@@ -72,7 +77,7 @@ fn require_length(bytes: &[u8], expected: usize) -> Result<(), ValueError> {
 }
 
 impl Wire for ToplevelActionCapabilityRef {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.token.put(bytes);
         self.issuer_epoch.put(bytes);
         self.issuer_revocation_epoch.put(bytes);
@@ -100,7 +105,7 @@ impl Wire for ToplevelActionCapabilityRef {
 }
 
 impl Wire for ShellV1Descriptor {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.slot.put(bytes);
         let trust: u16 = match self.trust_level {
             TrustLevel::Unknown => 0,
@@ -180,19 +185,32 @@ pub fn encode_shell_descriptors_value(
 ) -> Result<Vec<u8>, ValueError> {
     validate_shell_descriptor_snapshot(value)?;
     let mut bytes = Vec::with_capacity(56 + value.descriptors.len() * DESCRIPTOR_BYTES);
-    value.connection_epoch.put(&mut bytes);
-    value.snapshot_generation.put(&mut bytes);
-    value.output.put(&mut bytes);
-    value.output_generation.put(&mut bytes);
-    value.broker_epoch.put(&mut bytes);
-    value.broker_revocation_epoch.put(&mut bytes);
-    (value.descriptors.len() as u16).put(&mut bytes);
-    0u16.put(&mut bytes);
-    0u32.put(&mut bytes);
-    for descriptor in &value.descriptors {
-        descriptor.put(&mut bytes);
-    }
+    put_descriptors_value(value, &mut bytes);
     Ok(bytes)
+}
+
+pub(crate) fn descriptors_value_bytes(
+    value: &ShellV1DescriptorSnapshot,
+) -> Result<usize, ValueError> {
+    validate_shell_descriptor_snapshot(value)?;
+    let mut count = super::ByteCount::new();
+    put_descriptors_value(value, &mut count);
+    count.finish()
+}
+
+fn put_descriptors_value(value: &ShellV1DescriptorSnapshot, bytes: &mut impl super::ByteSink) {
+    value.connection_epoch.put(bytes);
+    value.snapshot_generation.put(bytes);
+    value.output.put(bytes);
+    value.output_generation.put(bytes);
+    value.broker_epoch.put(bytes);
+    value.broker_revocation_epoch.put(bytes);
+    (value.descriptors.len() as u16).put(bytes);
+    0u16.put(bytes);
+    0u32.put(bytes);
+    for descriptor in &value.descriptors {
+        descriptor.put(bytes);
+    }
 }
 
 pub fn decode_shell_descriptors_value(
@@ -231,25 +249,37 @@ pub fn encode_shell_tabs_value(value: &ShellTabSnapshot) -> Result<Vec<u8>, Valu
     let count: usize = value.groups.iter().map(|g| g.entries.len()).sum();
     let mut bytes =
         Vec::with_capacity(24 + value.groups.len() * GROUP_BYTES + count * DESCRIPTOR_BYTES);
-    value.connection_epoch.put(&mut bytes);
-    value.generation.put(&mut bytes);
-    (value.groups.len() as u16).put(&mut bytes);
-    (count as u16).put(&mut bytes);
-    0u32.put(&mut bytes);
+    put_tabs_value(value, &mut bytes);
+    Ok(bytes)
+}
+
+pub(crate) fn tabs_value_bytes(value: &ShellTabSnapshot) -> Result<usize, ValueError> {
+    validate_shell_tab_snapshot(value)?;
+    let mut count = super::ByteCount::new();
+    put_tabs_value(value, &mut count);
+    count.finish()
+}
+
+fn put_tabs_value(value: &ShellTabSnapshot, bytes: &mut impl super::ByteSink) {
+    let count: usize = value.groups.iter().map(|g| g.entries.len()).sum();
+    value.connection_epoch.put(bytes);
+    value.generation.put(bytes);
+    (value.groups.len() as u16).put(bytes);
+    (count as u16).put(bytes);
+    0u32.put(bytes);
     for group in &value.groups {
-        group.slot.put(&mut bytes);
-        group.output.put(&mut bytes);
-        group.selected_slot.unwrap_or(0).put(&mut bytes);
-        u16::from(group.focused).put(&mut bytes);
-        (group.entries.len() as u16).put(&mut bytes);
-        0u16.put(&mut bytes);
+        group.slot.put(bytes);
+        group.output.put(bytes);
+        group.selected_slot.unwrap_or(0).put(bytes);
+        u16::from(group.focused).put(bytes);
+        (group.entries.len() as u16).put(bytes);
+        0u16.put(bytes);
     }
     for group in &value.groups {
         for descriptor in &group.entries {
-            descriptor.put(&mut bytes);
+            descriptor.put(bytes);
         }
     }
-    Ok(bytes)
 }
 
 pub fn decode_shell_tabs_value(bytes: &[u8]) -> Result<ShellTabSnapshot, ValueError> {
@@ -300,7 +330,7 @@ pub fn decode_shell_tabs_value(bytes: &[u8]) -> Result<ShellTabSnapshot, ValueEr
 }
 
 impl Wire for ShellShortcut {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.slot.put(bytes);
         u16::from(self.label.is_some()).put(bytes);
         u16::from(self.group.is_some()).put(bytes);
@@ -332,15 +362,26 @@ impl Wire for ShellShortcut {
 pub fn encode_shell_shortcuts_value(value: &ShellShortcutCatalog) -> Result<Vec<u8>, ValueError> {
     validate_shell_shortcut_catalog(value)?;
     let mut bytes = Vec::with_capacity(24 + value.entries.len() * SHORTCUT_BYTES);
-    value.connection_epoch.put(&mut bytes);
-    value.generation.put(&mut bytes);
-    (value.entries.len() as u16).put(&mut bytes);
-    0u16.put(&mut bytes);
-    0u32.put(&mut bytes);
-    for entry in &value.entries {
-        entry.put(&mut bytes);
-    }
+    put_shortcuts_value(value, &mut bytes);
     Ok(bytes)
+}
+
+pub(crate) fn shortcuts_value_bytes(value: &ShellShortcutCatalog) -> Result<usize, ValueError> {
+    validate_shell_shortcut_catalog(value)?;
+    let mut count = super::ByteCount::new();
+    put_shortcuts_value(value, &mut count);
+    count.finish()
+}
+
+fn put_shortcuts_value(value: &ShellShortcutCatalog, bytes: &mut impl super::ByteSink) {
+    value.connection_epoch.put(bytes);
+    value.generation.put(bytes);
+    (value.entries.len() as u16).put(bytes);
+    0u16.put(bytes);
+    0u32.put(bytes);
+    for entry in &value.entries {
+        entry.put(bytes);
+    }
 }
 
 pub fn decode_shell_shortcuts_value(bytes: &[u8]) -> Result<ShellShortcutCatalog, ValueError> {

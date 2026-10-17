@@ -48,7 +48,7 @@ fields!(ContentMargins {
 });
 
 impl Wire for ContentLimits {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.grant.put(bytes);
         self.limits_generation.put(bytes);
         self.max_resource_bytes.put(bytes);
@@ -221,7 +221,7 @@ impl Wire for ContentLimits {
 }
 
 impl Wire for ContentAdmissionRefused {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.reason.put(bytes);
         0u16.put(bytes);
         self.denied_capabilities.put(bytes);
@@ -238,7 +238,7 @@ impl Wire for ContentAdmissionRefused {
 }
 
 impl Wire for ContentAllocationRequest {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.grant.put(bytes);
         self.output.put(bytes);
         self.allocation_request_id.put(bytes);
@@ -288,7 +288,7 @@ impl Wire for ContentAllocationRequest {
 }
 
 impl Wire for ContentAllocationResult {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.grant.put(bytes);
         self.allocation_request_id.put(bytes);
         self.status.put(bytes);
@@ -346,7 +346,7 @@ impl Wire for ContentAllocationResult {
 }
 
 impl Wire for ContentResourceBegin {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.grant.put(bytes);
         self.resource.put(bytes);
         self.width_px.put(bytes);
@@ -393,7 +393,7 @@ fields!(ContentResourceStatus {
 });
 
 impl Wire for ContentResourceEnd {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.grant.put(bytes);
         self.resource.put(bytes);
         self.total_bytes.put(bytes);
@@ -432,7 +432,7 @@ fields!(ContentResourceReleased {
 });
 
 impl Wire for ContentCandidateBegin {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.grant.put(bytes);
         self.candidate_generation.put(bytes);
         self.output.put(bytes);
@@ -470,7 +470,7 @@ impl Wire for ContentCandidateBegin {
 }
 
 impl Wire for ContentCandidateEnd {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.grant.put(bytes);
         self.candidate_generation.put(bytes);
         self.surface_count.put(bytes);
@@ -515,7 +515,7 @@ fields!(ContentFrameDemand {
 });
 
 impl Wire for ContentFramePermit {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.grant.put(bytes);
         self.output.put(bytes);
         self.demand_id.put(bytes);
@@ -557,7 +557,7 @@ fields!(ContentFrameDemandCancel {
 });
 
 impl Wire for ContentAction {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.grant.put(bytes);
         self.output.put(bytes);
         self.candidate_generation.put(bytes);
@@ -604,7 +604,7 @@ impl Wire for ContentAction {
 }
 
 impl Wire for ContentActionAck {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.grant.put(bytes);
         self.output.put(bytes);
         self.candidate_generation.put(bytes);
@@ -659,7 +659,7 @@ fields!(ContentOutputFactsEntry {
 });
 
 impl Wire for ContentSurface {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.allocation.put(bytes);
         self.scale_generation.put(bytes);
         self.role.put(bytes);
@@ -696,7 +696,7 @@ impl Wire for ContentSurface {
 }
 
 impl Wire for ContentPlacement {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.resource.put(bytes);
         self.surface_index.put(bytes);
         0u16.put(bytes);
@@ -721,7 +721,7 @@ impl Wire for ContentPlacement {
 }
 
 impl Wire for ContentTarget {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.surface_index.put(bytes);
         self.action_kind.put(bytes);
         self.target_id.put(bytes);
@@ -768,7 +768,7 @@ fn take_table<T: Wire>(cursor: &mut Cursor<'_>, count: usize) -> Result<Vec<T>, 
 }
 
 impl Wire for ContentOutputFacts {
-    fn put(&self, b: &mut Vec<u8>) {
+    fn put(&self, b: &mut impl crate::shell::encoding::ByteSink) {
         self.grant.put(b);
         self.facts_generation.put(b);
         (self.outputs.len() as u32).put(b);
@@ -790,7 +790,7 @@ impl Wire for ContentOutputFacts {
     }
 }
 impl Wire for ContentResourceChunk {
-    fn put(&self, b: &mut Vec<u8>) {
+    fn put(&self, b: &mut impl crate::shell::encoding::ByteSink) {
         self.grant.put(b);
         self.resource.put(b);
         self.ordinal.put(b);
@@ -815,7 +815,7 @@ impl Wire for ContentResourceChunk {
     }
 }
 impl Wire for ContentCandidateChunk {
-    fn put(&self, b: &mut Vec<u8>) {
+    fn put(&self, b: &mut impl crate::shell::encoding::ByteSink) {
         self.grant.put(b);
         self.candidate_generation.put(b);
         self.chunk_ordinal.put(b);

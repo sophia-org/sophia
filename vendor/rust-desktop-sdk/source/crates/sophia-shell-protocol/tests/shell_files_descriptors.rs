@@ -283,6 +283,7 @@ fn all_seventeen_native_kinds_have_distinct_file_and_domain_identity() {
         assert_eq!(&body[..8], &17u64.to_le_bytes());
         assert_eq!(&body[8..16], &11u64.to_le_bytes());
         let bytes = encode_shell_file_descriptor(h, &value).unwrap();
+        assert_eq!(shell_file_descriptor_bytes(h, &value).unwrap(), bytes.len());
         let mut literal = vec![0; 32];
         literal[..4].copy_from_slice(&(bytes.len() as u32).to_le_bytes());
         literal[4..6].copy_from_slice(&1u16.to_le_bytes());
@@ -327,9 +328,11 @@ fn all_seventeen_native_kinds_have_distinct_file_and_domain_identity() {
         }
         let mut wrong = h;
         wrong.connection_epoch = 12;
+        assert!(shell_file_descriptor_bytes(wrong, &value).is_err());
         assert!(encode_shell_file_descriptor(wrong, &value).is_err());
         wrong = h;
         wrong.kind = ShellFileKind::Limits;
+        assert!(shell_file_descriptor_bytes(wrong, &value).is_err());
         assert!(encode_shell_file_descriptor(wrong, &value).is_err());
         assert!(decode_shell_file_descriptor(&literal, ShellFileKind::Limits).is_err());
         let zero = ShellFileDescriptorRecord {
@@ -404,6 +407,7 @@ fn large_tab_candidate_uses_its_own_bound_not_the_content_candidate_cap() {
         sequence: 0,
     };
     let bytes = encode_shell_file_descriptor(h, &value).unwrap();
+    assert_eq!(shell_file_descriptor_bytes(h, &value).unwrap(), 8260);
     assert_eq!(bytes.len(), 8260);
     assert!(bytes.len() > SHELL_FILE_MAX_CANDIDATE_BYTES);
     assert_eq!(decode_shell_file_descriptor(&bytes, h.kind).unwrap(), value);

@@ -29,4 +29,10 @@ int p9_fid(struct sophia_9p_client *, uint32_t *);
 void p9_free_fid(struct sophia_9p_client *, uint32_t);
 int p9_receive(struct sophia_9p_client *);
 int p9_decode(struct sophia_9p_client *, size_t, struct sophia_9p_reply *);
+static inline void p9_scrub(void *memory, size_t bytes)
+{
+    volatile uint8_t *p = memory;
+    while (bytes--)
+        *p++ = 0;
+}
 #endif

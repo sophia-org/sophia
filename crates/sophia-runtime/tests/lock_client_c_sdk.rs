@@ -31,8 +31,10 @@ impl Drop for Scratch {
     }
 }
 
-fn compile(directory: &Path) -> PathBuf {
-    let sdk = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/c-desktop-sdk/source/src");
+fn compile(directory: &Path, source: Option<&Path>) -> PathBuf {
+    let sdk = source.map(|p| p.join("src")).unwrap_or_else(|| {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/c-desktop-sdk/source/src")
+    });
     let binary = directory.join("lock_client_c_sdk");
     let mut sources: Vec<_> = std::fs::read_dir(sdk.join("nine_p"))
         .unwrap()
@@ -83,7 +85,32 @@ fn locked() -> LockObject {
 #[test]
 fn the_pinned_c_sdk_lock_client_runs_against_the_production_export() {
     let scratch = Scratch::new("presented");
-    let client = compile(&scratch.0);
+    let client = compile(&scratch.0, None);
+    exchange(&scratch, &client, "c");
+}
+
+#[test]
+#[ignore = "requires SOPHIA_LOCK_RUST_SDK_PEER, an independently built native Rust peer"]
+fn rust_sdk_lock_client_runs_against_the_production_export() {
+    let client = PathBuf::from(
+        std::env::var_os("SOPHIA_LOCK_RUST_SDK_PEER").expect("native Rust peer path"),
+    );
+    assert!(client.is_absolute() && client.is_file());
+    exchange(&Scratch::new("rust"), &client, "rust");
+}
+
+#[test]
+#[ignore = "requires SOPHIA_LOCK_C_SDK_SOURCE, a candidate C SDK checkout"]
+fn candidate_c_sdk_lock_client_runs_against_the_production_export() {
+    let source =
+        PathBuf::from(std::env::var_os("SOPHIA_LOCK_C_SDK_SOURCE").expect("candidate C source"));
+    assert!(source.is_absolute() && source.join("src/sophia_lock_client.h").is_file());
+    let scratch = Scratch::new("candidate-c");
+    let client = compile(&scratch.0, Some(&source));
+    exchange(&scratch, &client, "c");
+}
+
+fn exchange(scratch: &Scratch, client: &Path, language: &str) {
     let mut transport = LockFileTransport::bind_for_supervised_uid(
         scratch.0.join("endpoint"),
         rustix::process::geteuid().as_raw(),
@@ -103,7 +130,7 @@ fn the_pinned_c_sdk_lock_client_runs_against_the_production_export() {
         },
     )
     .unwrap();
-    let mut child = Command::new(&client)
+    let mut child = Command::new(client)
         .arg(transport.socket_path())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -121,7 +148,7 @@ fn the_pinned_c_sdk_lock_client_runs_against_the_production_export() {
     let status = loop {
         if Instant::now() >= deadline {
             let _ = child.kill();
-            panic!("the C SDK client did not finish");
+            panic!("the {language} SDK client did not finish");
         }
         if let Some(status) = child.try_wait().unwrap() {
             break status;
@@ -190,7 +217,10 @@ fn the_pinned_c_sdk_lock_client_runs_against_the_production_export() {
     let mut stdout = String::new();
     std::io::Read::read_to_string(child.stdout.as_mut().unwrap(), &mut stdout).unwrap();
     assert!(status.success(), "{status:?} {stdout}");
-    assert!(stdout.contains("lock_client_c_sdk status=done"), "{stdout}");
+    assert!(
+        stdout.contains(&format!("lock_client_{language}_sdk status=done")),
+        "{stdout}"
+    );
     assert_eq!(
         chords,
         Some(vec![LockChordRequest {

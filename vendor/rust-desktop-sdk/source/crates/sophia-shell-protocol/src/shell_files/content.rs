@@ -3,6 +3,7 @@ use super::payload::*;
 use super::*;
 use crate::shell::encoding::content::{
     ShellContentValueKind, decode_shell_content_value, encode_shell_content_value,
+    shell_content_value_bytes,
 };
 use crate::*;
 
@@ -29,6 +30,36 @@ pub fn decode_shell_file_limits(bytes: &[u8]) -> Result<ContentLimits, ShellFile
 pub struct ShellFileTransactionRecord {
     pub transaction: TransactionId,
     pub record: ShellContentRecord,
+}
+
+/// Validated encoded size for allocation, resource lifecycle and outputs records.
+/// ResourceBegin carries an upload slot and uses [`shell_file_resource_begin_bytes`].
+/// This query borrows the payload and neither allocates nor changes session state.
+pub fn shell_file_content_bytes(
+    header: ShellFileHeader,
+    value: &ShellFileTransactionRecord,
+) -> Result<usize, ShellFilePayloadError> {
+    let kind = match &value.record {
+        ShellContentRecord::AllocationRequest(_) => ShellFileKind::AllocationRequest,
+        ShellContentRecord::AllocationResult(_) => ShellFileKind::AllocationResult,
+        ShellContentRecord::ResourceEnd(_) => ShellFileKind::ResourceEnd,
+        ShellContentRecord::ResourceCancel(_) => ShellFileKind::ResourceCancel,
+        ShellContentRecord::ResourceRetire(_) => ShellFileKind::ResourceRetire,
+        ShellContentRecord::ResourceStatus(_) => ShellFileKind::ResourceStatus,
+        ShellContentRecord::ResourceReleased(_) => ShellFileKind::ResourceReleased,
+        ShellContentRecord::OutputFacts(_) => ShellFileKind::Outputs,
+        _ => return Err(ShellFileCodecError::Kind.into()),
+    };
+    header_kind(header, kind)?;
+    if !value.transaction.is_valid() {
+        return Err(ShellFilePayloadError::Identity);
+    }
+    let cap = if kind == ShellFileKind::Outputs {
+        SHELL_FILE_OUTPUTS_MAX_BYTES
+    } else {
+        u32::MAX as usize
+    };
+    sized_record(8, shell_content_value_bytes(&value.record)?, cap)
 }
 
 pub fn encode_shell_file_allocation_request(
@@ -441,6 +472,28 @@ pub struct ShellFileResourceBegin {
     pub transaction: TransactionId,
     pub slot: u16,
     pub record: ShellContentRecord,
+}
+
+/// Validated encoded size, including the transaction and upload-slot prefix.
+pub fn shell_file_resource_begin_bytes(
+    header: ShellFileHeader,
+    value: &ShellFileResourceBegin,
+) -> Result<usize, ShellFilePayloadError> {
+    header_kind(header, ShellFileKind::ResourceBegin)?;
+    if !value.transaction.is_valid() {
+        return Err(ShellFilePayloadError::Identity);
+    }
+    if value.slot >= SHELL_FILE_MAX_UPLOAD_SLOTS {
+        return Err(ShellFilePayloadError::Value);
+    }
+    if !matches!(value.record, ShellContentRecord::ResourceBegin(_)) {
+        return Err(ShellFileCodecError::Kind.into());
+    }
+    sized_record(
+        16,
+        shell_content_value_bytes(&value.record)?,
+        u32::MAX as usize,
+    )
 }
 
 pub fn encode_shell_file_resource_begin(

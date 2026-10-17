@@ -81,6 +81,13 @@ static void consume_publication(struct rig *r, unsigned kind, uint64_t generatio
     rig_run(r, 8);
     assert(!sophia_ss_event(&r->s, &e) && e->header.kind == SOPHIA_SF_OBJECT_PUBLISHED &&
            e->value.object_published.object_kind == kind);
+    uint64_t sequence = e->header.sequence;
+    uint64_t limit = sophia_ss_ack_limit(&r->s);
+    for (unsigned i = 0; i < 4; i++) {
+        rig_step(r);
+        assert(!sophia_ss_event(&r->s, &e) && e->header.sequence == sequence);
+        assert(sophia_ss_ack_limit(&r->s) == limit);
+    }
     assert(!sophia_ss_consume(&r->s));
 }
 static int fetch(struct rig *r, uint16_t kind, uint64_t generation, uint64_t qid)
@@ -239,7 +246,9 @@ static void selected_feeds_and_holds(void)
     rig_run(&r, 16);
     assert(rig_outcome(&r, ticket) == SOPHIA_SS_SUBMITTED &&
            rig_outcome(&r, ticket + 1) == SOPHIA_SS_ADMITTED_LOCAL && r.p.submits == 2);
-    for (unsigned kind = 5; kind <= 7; kind++) {
+    /* Fetch the last publication first; earlier unverified feeds still hold ACKs. */
+    for (unsigned kind = 7; kind >= 5; kind--) {
+        assert(!r.p.object_walks[kind] && "fetch must wait for the caller");
         assert(!sophia_ss_object(&r.s, (uint16_t)kind, 7, 100 + kind));
         uint64_t prior_limit = sophia_ss_ack_limit(&r.s);
         const struct sophia_sf_record *v = NULL;
@@ -250,9 +259,19 @@ static void selected_feeds_and_holds(void)
             status = sophia_ss_object_result(&r.s, &v);
         }
         assert(!status && v && v->header.kind == kind && r.p.object_eofs[kind]);
+        if (kind != 5)
+            assert(sophia_ss_ack_limit(&r.s) == 2);
         assert(r.p.acked == 2 && r.p.submits == 2);
     }
     assert(!sophia_ss_obligations(&r.s, &o) && !o.objects && !o.blocked);
+    /* Matching manual-ACK control: decoding/fetching alone must not send an
+     * ACK; queueing it is not evidence of a successful Rwrite. */
+    assert(o.acked == 2 && o.ack_limit > 2);
+    assert(!sophia_ss_ack(&r.s));
+    assert(!sophia_ss_obligations(&r.s, &o) && o.acked == 2);
+    peer_pump(&r.p);
+    assert(r.p.acked == 2);
+    rig_run(&r, 6);
     rig_ack(&r);
     assert(rig_until(&r, ticket + 1, 32) == SOPHIA_SS_SUBMITTED && !r.p.transaction_busy);
     rig_close(&r);
@@ -282,14 +301,14 @@ static void refused_and_superseded_fetches(void)
     assert(!fetch(&r, SOPHIA_SF_SHORTCUTS, 8, 101));
     rig_ack(&r);
     assert(r.p.acked == 4);
-    /* Fetch-before-consume also releases exactly its matching announcement. */
+    /* Prefetch before publication releases only the exact later identity. */
     snapshot(&r, SOPHIA_SF_DESCRIPTORS, 9, 102);
-    peer_published(&r.p, SOPHIA_SF_DESCRIPTORS, 9, 102);
-    rig_run(&r, 8);
     assert(!fetch(&r, SOPHIA_SF_DESCRIPTORS, 9, 102));
-    assert(!sophia_ss_consume(&r.s));
+    consume_publication(&r, SOPHIA_SF_DESCRIPTORS, 9, 102);
     rig_ack(&r);
     assert(r.p.acked == 5);
+    consume_publication(&r, SOPHIA_SF_DESCRIPTORS, 9, 103);
+    assert(sophia_ss_ack_limit(&r.s) == 5);
     rig_close(&r);
 }
 static void disclosure(void)
@@ -419,6 +438,41 @@ static void custody_cannot_cross_undisclosed_events(void)
 }
 int main(void)
 {
+    {
+        struct rig r;
+        struct sophia_ss_reservation token;
+        struct sophia_sf_record records[2] = {candidate(1), candidate(2)};
+        struct sophia_ss_config c = config(1, 1);
+        uint64_t ticket;
+        c.queue_slots = 2;
+        rig_start(&r, &c);
+        r.p.descriptor = 1;
+        rig_settle(&r);
+        assert(sophia_ss_state(&r.s) == SOPHIA_SS_READY);
+        rig_ack(&r);
+        records[1].value.descriptor_candidate.transaction = 2;
+        size_t bytes = sophia_ss_record_bytes(&records[0]) + sophia_ss_record_bytes(&records[1]);
+        assert(!sophia_ss_reserve(&r.s, 2, bytes, &token));
+        {
+            uint64_t extra;
+            assert(sophia_ss_submit(&r.s, records, 1, &extra) == SOPHIA_9P_BUSY);
+        }
+        rig_run(&r, 2);
+        assert(!sophia_ss_commit(&r.s, &token, records, 2, &ticket));
+        {
+            uint64_t extra;
+            /* C copies the head into separate transaction storage. Its two
+             * configured queue slots exclude that single in-flight record. */
+            struct sophia_sf_record third = candidate(3);
+            third.value.descriptor_candidate.transaction = 3;
+            assert(!sophia_ss_submit(&r.s, &third, 1, &extra));
+            assert(sophia_ss_submit(&r.s, records, 1, &extra) == SOPHIA_9P_BUSY);
+        }
+        assert(rig_until(&r, ticket, 32) == SOPHIA_SS_SUBMITTED);
+        rig_ack(&r);
+        assert(rig_until(&r, ticket + 1, 32) == SOPHIA_SS_SUBMITTED);
+        rig_close(&r);
+    }
     readiness();
     bad_offers();
     wrong_role_and_welcome();

@@ -1,0 +1,21 @@
+[package]
+name = "sophia-lock-client"
+description = "Experimental native lock provider client (implementation in progress)."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+sophia-9p-client.workspace = true
+sophia-9p-records.workspace = true
+sophia-lock-protocol = { path = "../sophia-lock-protocol", version = "0.3.0" }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+rustix = { workspace = true, features = ["event", "std"] }
+sophia-launch-client = { path = "../sophia-launch-client" }

@@ -1,14 +1,14 @@
-tree 4f7f041a468c47aa2a3c3b69769d84876f432c71
-parent 3edcd28a4c6e3274dd162f8a92001bb10a99c307
-author Mason Green <mason@greenm01.net> 1792171770 -0400
-committer Mason Green <mason@greenm01.net> 1792171770 -0400
+tree c1179ffd9442643ae42f1d3090879081f7e7873f
+parent 10ab5bb0b84c4ea58f39a4107326a20cfb95fcaa
+author Mason Green <mason@greenm01.net> 1792212688 -0400
+committer Mason Green <mason@greenm01.net> 1792212688 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatJe+hsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKf1QD9FwAdlJJCsn4GEkOdhWWx
- meXXTGhQd10MwBax5zkDbOAA/iI71nuDYRAiMnooAu5SdiIUy0IrZqOPX66M4XKt
- 7VkO
- =gfkQ
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL+0BsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGL4zAD9HMIYiKek6qD19FoCH3dj
+ l/n72JHAImCEt5d/QsnPTDcBAM9WNeTMNhsi7ESbqMKsS9iSUGZv1qBOrsQO3YTV
+ oU0O
+ =06Ho
  -----END PGP SIGNATURE-----
 
-Read retry clock only when the deadline controls eligibility
+Record desktop SDK parity release qualification

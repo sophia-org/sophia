@@ -55,9 +55,27 @@ fn snapshot() -> OutputAuthoritySnapshot {
 
 #[test]
 fn protected_output_authenticates_reauthenticates_and_revokes_retained_files() {
-    let peer =
-        Peer::rust_child("output_authenticated_transport::rust_peer::protected_output_child");
-    let root = Directory(std::env::temp_dir().join(format!("t317-output-{}", std::process::id())));
+    protected_exchange(None);
+}
+
+#[test]
+#[ignore = "requires SOPHIA_OUTPUT_AUTH_PEER naming an absolute built SDK peer"]
+fn external_sdk_output_authenticates_and_observes_revocation() {
+    let executable = PathBuf::from(std::env::var_os("SOPHIA_OUTPUT_AUTH_PEER").unwrap());
+    assert!(executable.is_absolute() && executable.is_file());
+    protected_exchange(Some(executable));
+}
+
+fn protected_exchange(external: Option<PathBuf>) {
+    let is_external = external.is_some();
+    let peer = if is_external {
+        Peer::external_sdk()
+    } else {
+        Peer::rust_child("output_authenticated_transport::rust_peer::protected_output_child")
+    };
+    let root = Directory(
+        std::env::temp_dir().join(format!("t317-output-{}-{is_external}", std::process::id())),
+    );
     std::fs::DirBuilder::new()
         .mode(0o700)
         .create(&root.0)
@@ -95,7 +113,7 @@ fn protected_output_authenticates_reauthenticates_and_revokes_retained_files() {
     while f.book.phase(id) != Some(Phase::Ready) {
         f.tick(end);
     }
-    let executable = std::env::current_exe().unwrap();
+    let executable = external.unwrap_or_else(|| std::env::current_exe().unwrap());
     let domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::OutputAuthority])
         .unwrap()
         .path(ProtectionPath::read_only(root.0.join("endpoint")))

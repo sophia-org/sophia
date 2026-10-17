@@ -1,3 +1,4 @@
+use super::metadata_broker::MetadataBrokerView;
 use super::*;
 mod content;
 #[path = "../../tests/support/descriptor_work_area.rs"]
@@ -345,7 +346,7 @@ impl LiveMetadataShell {
 
     pub(super) fn request_candidate(
         &mut self,
-        broker: &LiveMetadataBroker,
+        broker: &impl MetadataBrokerView,
         output: sophia_engine::HeadlessOutput,
         bounds: sophia_protocol::Rect,
         root: sophia_protocol::Rect,
@@ -428,7 +429,7 @@ impl LiveMetadataShell {
 
     pub(super) fn poll_candidate(
         &mut self,
-        broker: &LiveMetadataBroker,
+        broker: &impl MetadataBrokerView,
     ) -> Result<
         Option<Option<sophia_engine::DescriptorOverlayProjection>>,
         Box<dyn std::error::Error>,
@@ -696,7 +697,7 @@ impl LiveMetadataShell {
 
     pub(super) fn poll_activation(
         &mut self,
-        broker: &LiveMetadataBroker,
+        broker: &impl MetadataBrokerView,
     ) -> Result<ShellSurfaceObservation, Box<dyn std::error::Error>> {
         let Some(pending) = self.activating.as_ref() else {
             return Ok(None);

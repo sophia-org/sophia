@@ -636,8 +636,7 @@ fn worker_delivers_once_settles_reserved_outcome_and_pauses_without_a_peer() {
 
 #[test]
 fn independent_c_sdk_session_against_the_output_file_worker() {
-    use std::io::Write;
-    use std::process::{Command, Stdio};
+    use std::process::Command;
     let build = std::env::temp_dir().join(format!("output-c-peer-build-{}", std::process::id()));
     std::fs::create_dir(&build).unwrap();
     let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -677,7 +676,28 @@ fn independent_c_sdk_session_against_the_output_file_worker() {
         "{}",
         String::from_utf8_lossy(&compiled.stderr)
     );
-    let directory = std::env::temp_dir().join(format!("output-c-worker-{}", std::process::id()));
+    output_sdk_exchange(&binary, "c");
+    std::fs::remove_dir_all(build).unwrap();
+}
+
+#[test]
+#[ignore = "requires SOPHIA_OUTPUT_RUST_SDK_PEER naming the built SDK conformance peer"]
+fn independent_rust_sdk_session_against_the_output_file_worker() {
+    let binary = std::path::PathBuf::from(
+        std::env::var_os("SOPHIA_OUTPUT_RUST_SDK_PEER").expect("explicit Rust SDK peer required"),
+    );
+    assert!(
+        binary.is_absolute() && binary.is_file(),
+        "absolute peer executable required"
+    );
+    output_sdk_exchange(&binary, "rust");
+}
+
+fn output_sdk_exchange(binary: &std::path::Path, language: &str) {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let directory =
+        std::env::temp_dir().join(format!("output-{language}-worker-{}", std::process::id()));
     let mut transport = OutputFileTransport::bind_for_supervised_uid(
         &directory,
         rustix::process::geteuid().as_raw(),
@@ -741,5 +761,4 @@ fn independent_c_sdk_session_against_the_output_file_worker() {
     assert_eq!(proposals, 1);
     drop(service);
     assert!(!directory.exists());
-    std::fs::remove_dir_all(build).unwrap();
 }

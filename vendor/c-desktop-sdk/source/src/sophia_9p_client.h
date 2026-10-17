@@ -25,21 +25,33 @@ struct sophia_9p_qid {
     uint32_t version;
     uint8_t type;
 };
+struct sophia_9p_attr {
+    uint64_t valid, nlink, size;
+    struct sophia_9p_qid qid;
+    uint32_t mode;
+};
+struct sophia_9p_dirent {
+    struct sophia_9p_qid qid;
+    uint64_t next;
+    uint8_t type;
+    uint16_t name_bytes;
+    const uint8_t *name; /* Borrowed until reply consumption; not NUL-terminated. */
+};
 struct sophia_9p_reply {
     struct sophia_9p_handle handle;
     uint8_t type;
     uint32_t count, error, iounit;
     struct sophia_9p_qid qid;
-    /* Borrowed until consume; Rread data or a bounded Rwalk qid table. */
+    /* Borrowed until consume: read/directory/attribute bytes or a walk qid table. */
     const uint8_t *data;
 };
 /* Private state exposed for caller-owned allocation. Do not modify it. */
 struct sophia_9p_slot {
-    uint64_t serial, completed;
+    uint64_t serial, completed, offset;
     size_t bytes, sent;
     uint32_t fid, count;
     uint16_t tag, old_slot;
-    uint8_t type, state, flushing, consumed;
+    uint8_t type, state, flushing, consumed, secret;
 };
 struct sophia_9p_client {
     int fd, terminal;
@@ -77,8 +89,34 @@ int sophia_9p_lopen(struct sophia_9p_client *, uint32_t fid, uint32_t flags,
                     struct sophia_9p_handle *);
 int sophia_9p_read(struct sophia_9p_client *, uint32_t fid, uint64_t offset, uint32_t count,
                    struct sophia_9p_handle *);
+/* Requests all basic attributes (mask 0x3fff); only fields named by valid may
+ * be used. Unknown/unsupported attributes remain the server's decision. */
+int sophia_9p_getattr(struct sophia_9p_client *, uint32_t fid, struct sophia_9p_handle *);
+/* Copy passive fields out of a retained Rgetattr reply. Unlike the reply's
+ * borrowed bytes, the returned value survives reply consumption. */
+int sophia_9p_attributes(const struct sophia_9p_reply *, struct sophia_9p_attr *);
+/* count is capped to one negotiated reply. Entries have strictly increasing
+ * cookies, file/directory qids and matching d_type, and bounded safe names. */
+int sophia_9p_readdir(struct sophia_9p_client *, uint32_t fid, uint64_t cookie, uint32_t count,
+                      struct sophia_9p_handle *);
+/* Iterate a retained Rreaddir reply from position=0. OK yields one entry;
+ * AGAIN means end. On error/end position and output are unchanged. All names
+ * borrow the reply slot; consume only after the caller has finished with them. */
+int sophia_9p_dirent_next(const struct sophia_9p_reply *, size_t *position,
+                         struct sophia_9p_dirent *);
 int sophia_9p_write(struct sophia_9p_client *, uint32_t fid, uint64_t offset, const void *data,
                     size_t count, struct sophia_9p_handle *);
+/* Same wire request, but scrub each sent byte in SDK storage and any remaining
+ * bytes on transport failure or explicit close. Never moves/reallocates caller
+ * storage. The caller still owns and must clear its original data. */
+int sophia_9p_write_secret(struct sophia_9p_client *, uint32_t fid, uint64_t offset,
+                           const void *data, size_t count, struct sophia_9p_handle *);
+int sophia_9p_scrubbing_output(const struct sophia_9p_client *);
+/* Idempotent local retirement: scrub queued secret bytes, stop all I/O and
+ * retain already validated replies for draining. Does not close the borrowed
+ * fd or free storage. Call before abandoning/reinitializing a client that may
+ * hold secrets; C has no automatic destructor. Caller closes its descriptor. */
+void sophia_9p_close(struct sophia_9p_client *);
 int sophia_9p_clunk(struct sophia_9p_client *, uint32_t fid, struct sophia_9p_handle *);
 /* Refuses clunks, version, flushes, completed requests and duplicate flushes.
  * Original replies that beat Rflush remain deliverable; unanswered auth/attach/walk

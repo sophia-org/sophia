@@ -67,6 +67,2488 @@ archives remain transitional and outside the complete 9P target.
 The [C WM checkpoint](../milestones/bzitjwp8-c-wm-sdk-codec-and-session-checkpoint.md)
 records the signed codec/session slices and their test limits.
 
+## t333 — Match the C and Rust public APIs
+
+On 2026-10-16 niltempus required equivalent public APIs so applications can use
+Rust directly or bind to C from another language. This extends the unified role
+scope above; it does not reopen the completed first-release task t263.
+
+Parity means matching capabilities and observable contracts, not identical
+spelling, memory layouts or allocation strategies. Both SDKs must expose the
+same supported role revisions, operations, events, errors, custody states,
+revocation and recovery rules. Ownership, buffer lifetimes and bounded work
+must be explicit. Idiomatic Rust ownership and C caller-owned storage remain
+valid differences. Neither implementation may require a private protocol or
+application-owned transport to fill a gap.
+
+### Source audit, 2026-10-16
+
+This inventory describes Sophia's pinned snapshots: Rust
+`510a4349b4c62d6b32d21d7ae378423faa12ca10` and C
+`ba09265d1642e9fc9e7919dfd6a634855057055c`. It is a source audit, not a new test
+result or a claim about every upstream branch.
+
+| Surface | C | Rust | Remaining work |
+| --- | --- | --- | --- |
+| Generic 9P, authenticated launch and namespace access | Public clients | Public clients | Map ownership, cancellation, limits and relay handoff operation by operation. |
+| Shell | Codecs, session and native lifecycle helper | Codecs and shell client | Match revisions, admission, tickets, retained objects, uploads and native lifecycle operations. Presence in both is not proof of parity. |
+| Event-loop integration | Descriptor/interests, caller time, timeout and byte-budget dispatch | `poll_io`, internal clock, `wake_deadline` and `wait_for_io` | Provide equivalent external-loop integration and document work budgets and clock rules. The Rust shell facade currently exposes no descriptor/interests API. |
+| WM | Records and session client | No WM crate in the workspace | Add the native Rust client against the current WM file contract. |
+| Output | Records and session client | No output crate in the workspace | Add the native Rust client against the current output file contract. |
+| Lock | Experimental codec and client | Experimental codec only | Add Rust client coverage; retain experimental status until the role's separate acceptance gates pass. |
+| Administration | No role client | No role client | Implement both against the accepted administration contract; absence in both is not completion. |
+
+Evidence is in the pinned C `src/sophia_*_session.h`, `sophia_lock_client.h`,
+`COVERAGE.md` and README, and the Rust workspace manifest and
+`crates/sophia-shell-client/src/lib.rs`. C shell dispatch accepts monotonic
+`now_ms`; Rust obtains time internally. The recent conditional Rust retry-clock
+optimization therefore does not need a literal C port. Equivalent retry and
+custody behavior still needs paired tests.
+
+The Rust README's statement that WM and output modules await file contracts is
+stale: the server and C clients already provide those interfaces. Correct that
+upstream when adding coverage; never edit a vendored snapshot in place.
+
+### Implementation order and exit
+
+1. Publish a versioned operation matrix in both SDKs, tied to Sophia contract
+   revisions. Name every operation, event and terminal outcome, its C and Rust
+   entry points, ownership and test. Distinguish an absent server contract from
+   an absent SDK client. Include broker and portal contracts as they become
+   public; generic file access alone is not a typed role client.
+2. Close shell integration gaps first: external-loop readiness, deadlines,
+   bounded service, atomic admission and native lifecycle helpers. Keep
+   convenience wrappers, but make equivalent control available in both APIs.
+   Resolve differences in retry timing explicitly against the role contract.
+3. Add Rust WM, output and lock clients in that order, using the existing C
+   surface as a coverage checklist and Sophia's contracts as the authority.
+4. Complete administration coverage in both SDKs with its migration owner.
+   Audit the remaining public portal/broker operations before claiming full
+   desktop API parity; do not fold their authority into another role.
+5. Run matching scenarios through independent C and Rust clients against
+   scripted peers and Sophia's production exports. Cover partial traffic,
+   backpressure, same-ID retry, disconnect before and after custody,
+   revocation, stale epochs, cancellation, buffer limits and terminal errors.
+   Compare semantic outcomes, not language-specific call sequences. Compile
+   a thin foreign-language binding smoke test to check the C ownership API.
+6. Publish signed SDK revisions, refresh verified Sophia pins and developer
+   examples, and run the existing independent conformance gates. Every matrix
+   row needs evidence or an explicit unsupported capability in both SDKs;
+   unsupported declarations cannot waive the accepted complete role scope.
+
+The task closes when supported public desktop capabilities match, the paired
+tests pass, and release documentation states the remaining experimental and
+platform limits accurately. Physical desktop acceptance and performance gates
+remain separate. This work precedes t289's broad engine optimization; it does
+not change t331's current cost gate or the prepared CPU pilot.
+
+### Release audit, 2026-10-17
+
+This audit uses signed Rust `10ab5bb` and C `f7873a8`, imported by Sophia
+`c3c388955`. The operation maps below are present in both exact SDK snapshots.
+Historical implementation paragraphs are not current missing-capability lists.
+
+| Exit requirement | Evidence |
+| --- | --- |
+| 1. Versioned operation maps | `API-PARITY.md`, `SHELL-STARTUP.md`, `SHELL-SIZING.md`, and the WM, output, lock, admin, portal, broker, launch and transport parity maps identify contracts, operations, ownership and tests. Role-specific maps distinguish supplied admission from protected authentication. |
+| 2. Shell integration | Caller-driven startup, bounded dispatch, readiness/deadlines, atomic batches, reservations, lifecycle helpers, retained journal heads, explicit fetch/ACK controls and allocation-free candidate sizing are implemented. Independent full Rust/C tests and both metadata/content export peers pass at these pins. |
+| 3. WM, output and lock | Current maps enumerate startup, candidates, retained events, custody, snapshots, errors and disposal. Scripted tests are included in the passing SDK suites. Fresh paired production/protected runs at these pins pass; counts and limits follow below. Lock stays experimental against its draft contract. |
+| 4. Administration, portal and broker | Typed clients and current operation maps exist for all three, with recipient/requester authority kept separate. Fresh admin, broker, requester and recipient export runs pass at these pins. Portal refused-End live cancellation remains unavailable in both SDKs; explicit retry or close preserves uncertainty. |
+| 5. Independent scenarios and foreign binding | SDK suites cover fragmentation, bounded work, retry identity, custody loss, stale epochs and terminal errors as mapped per role. C `make check-binding` passed again at `f7873a8`: the Nim requester smoke uses the public headers and native static libraries with empty, one-byte and 64-KiB payloads. It is a binding smoke, not a complete Nim desktop SDK. |
+| 6. Publication and conformance | Both revisions are signed, pushed and verified in Sophia. Snapshot checks pass. The final-pin paired export refresh passes. The full canonical Sophia check passes, including workspace tests, imported SDK checks, Clippy, conformance, archive and pixel checks. |
+
+The audit has not identified another missing application-candidate sizing
+family. Generic create/rename/remove operations are outside the accepted 9P
+profile, not omitted role clients. Physical presentation, engine performance
+and untested platforms remain separate from SDK parity. The current platform
+claim is Linux x86_64; other targets retain the limits in `PLATFORMS.md`.
+Final-pin export evidence is preserved under
+`~/.local/state/sophia/t333-sdk-release-c3c388955/`, with executable paths and
+SHA-256 hashes in `identity.json`. No binaries or build trees are copied there.
+Fresh results: five admin scenarios and two broker gates per SDK; WM exchange
+with both peers and one protected WM gate per SDK; supplied-admission output
+and lock exchanges with both peers; four protected output/lock gates per SDK
+(including lock replacement); thirteen requester lifecycle cases per SDK in
+one test; and all 22 protected recipient scenarios per SDK. The independent
+shell export was refreshed during pin adoption. The canonical workspace run
+also executes the pinned C output/lock fixtures.
+
+The first broad admin invocation mistakenly selected an internal child helper;
+all five SDK cases passed, and the corrected `external_sdk` filter passes.
+The first direct WM invocation omitted `CARGO_TARGET_DIR`; the corrected
+cargo-slot invocation passes in both languages. Both unsuccessful invocation
+logs are preserved and are not counted as successful gates. The Rust recipient
+cases passed in the first combined log. No SDK implementation was changed to
+obtain these results. The full canonical check exited successfully. The evidence
+manifest `SHA256SUMS` has SHA-256
+`3bf4a3e88dcae10e6ef43a082d86a683633acb0f27bea6804daf537e5100d9ec`.
+
+### Current resumption
+
+The six exit requirements are satisfied by the release audit above. Final
+publication adds only qualification documentation to the tested SDK sources:
+Rust `f1cd92467f71204402f658b458388c1e51798be3` and C
+`9485fd006f65c0161094c1922c69f6838efed306`. Both are signed and pushed;
+Sophia imports their exact archives; both final snapshot checks pass, including
+the imported Rust workspace tests. The only upstream differences from the
+tested revisions are `README.md`, `API-PARITY.md` and
+`RELEASE-QUALIFICATION.md`. `RELEASE-QUALIFICATION.md` in each SDK
+records tested code revisions, paired results and remaining limits. No protocol
+contract was broadened or platform support inferred from these checks.
+
+Physical acceptance, t331's cost gate, t314's remaining migration/performance
+acceptance and t289's engine optimization retain their own exits. The lock
+contract stays experimental; portal End refusal permits retry or close but not
+live cancellation. Earlier entries below are historical implementation evidence,
+not additional current work or a second task ledger.
+
+### Sizing and manual-control checkpoint
+
+Signed Rust `10ab5bb` and C `f7873a8` supply allocation-free application-candidate
+sizing. Rust counts through shared field writers and validates whole candidates
+without cloning rows. Descriptor uniqueness uses bounded stack storage; padded
+text no longer builds a temporary vector. C's existing queries have strengthened
+literal and boundary checks. Both SDKs publish the API map in `SHELL-SIZING.md`,
+including header handling and the distinction between sizing and admission.
+
+The full independent Rust workspace, strict protocol Clippy, C check suite and
+standalone allocation probe pass. The probe covers a transaction, descriptor,
+maximum Tabs, nonempty base/native/catalog candidates and indicator activation;
+encoding provides a positive allocation control. It does not measure throughput
+or prove an allocation-free session. Run instructions are in `SHELL-SIZING.md`;
+unsafe allocator instrumentation remains outside production crates. Logs:
+`/tmp/t333-sizing-workspace.log`, `/tmp/t333-size-c-final.log`,
+`/tmp/t333-sizing-rust-pin.log` and `/tmp/t333-sizing-c-pin.log`.
+
+Rust now supports prefetch and selection among pending feeds, using fixed
+per-feed identity storage. The full Rust shell suite and strict Clippy pass.
+Independent C controls fetch publications in reverse order and prefetch before
+publication; the complete C suite passes. Both check that an earlier unverified
+feed, or a different Qid, still holds the journal ACK. Both independent peers
+pass Sophia's real metadata/content export while fetching Tabs before the
+earlier Descriptors publication. Prefetch-before-publication coverage remains
+scripted. The Rust supersession regression found during development is fixed
+and its existing test passes. Both API maps record the new controls and limits.
+Explicit Rust fetches now retain a `SnapshotFetchFailure` until the caller
+takes it; a failed object cannot release an ACK hold. Automatic fetches keep
+their prior error policy. Rust scripted controls recover from wrong Qid,
+generation, epoch, trailing bytes, overflow, EIO and exhausted EAGAIN/ESTALE
+retries. C's independent malformed/identity controls and complete suite pass.
+Both peers recover from a deliberately wrong Tabs generation against the real
+metadata/content export, then fetch the correct identity without reconnecting.
+The full Rust shell suite and strict Clippy pass. Malformed-server recovery is
+scripted evidence only. Transport and allocation errors remain terminal.
+Rust now offers caller-consumed journal delivery through
+`set_automatic_event_delivery(false)`, `journal_event` and
+`consume_journal_event`. The borrowed typed head remains stable across
+dispatches; consumption schedules its effects without I/O or a duplicate
+receive-queue copy. Startup and Submitted custody stay SDK-owned. Independent
+C/Rust controls and real metadata/content exports keep the head and ACK limit
+stable until consumption. Rust also checks ordering, local-close retention,
+automatic resumption and fetch-before-publication-consumption. The full shell
+suite, strict Clippy and C suite pass. Snapshot results retain their existing
+owned receive APIs; a failed decode can still discard an older undelivered
+snapshot, so manual callers should take ownership before requesting another.
+The sizing gap is addressed above; the full release audit remains open.
+Current peer SHA-256: Rust
+`e532e8579e79be9f97bf418d92f6a82273e93a5fd7a841db095e07f669924003`, C
+`b1cd69bd31246304c277ffff3bd38f7112ff83e113589d535298884066b293ea`.
+
+The role/API release audit remains open against the full exits above. Signed
+Rust `10ab5bb0b84c4ea58f39a4107326a20cfb95fcaa` and C
+`f7873a8409814442bb62a82ce955f3f0a1fff066` are pushed and imported. Both pin
+checks pass, including the imported Rust workspace tests. Both independent
+real-export peers pass again at these pins. Shell startup
+is now caller-driven in both SDKs; WM/lock maps and C's role inventory have
+been reconciled. C lock handoff now rejects extra fids and partial input.
+
+Protected lock reauthentication and explicit provider replacement now pass
+independently in C and Rust. Both peers authenticate twice before negotiation.
+The replacement scenario revokes epoch 7 with an unfinished upload, removes its
+admission, then authorizes a new process against the same service on epoch 8.
+No old resource or candidate reaches Session. All three `external_sdk_lock`
+tests pass with each peer; strict peer/fixture Clippy passes. This proves
+explicit process replacement, not automatic reconnect, mid-payload interruption
+or physical locking. Peer SHA-256: Rust
+`0e84ba5a6b458d26b255b57866538b16d8e570fdb855f170c2f6ef322da36918`, C
+`797016e6a4a6ca6cef9db112366fb61b0418dfa0e2e3d2c3faa0a219f920f5e6`.
+
+Next: finish the requirement-by-requirement release check, using the role maps
+and actual tests to identify any missing paired gates. Preserve the portal refused-End live-cancellation limit.
+
+Rust now exposes explicit journal ACK scheduling
+and handled/safe-limit/queued/confirmed progress. Defaults remain automatic;
+explicit ACKs cannot bypass snapshot holds. Independent Rust tests cover
+deferral, queueing without I/O, held replies, automatic resumption, close and
+unverified snapshots. C's existing manual API has a matching strengthened
+descriptor test. The Rust shell suite and strict Clippy pass; the C descriptor
+test passes. Both independent `shell_startup_peer` executables also pass the
+real `shell_sdk_startup` export test in metadata and content modes: fetch a
+descriptor snapshot, defer ACK, queue it explicitly and wait for confirmation.
+The complete C suite and strict peer/fixture Clippy pass. C already had the
+manual ACK API, so its runtime is unchanged. Both maps distinguish Rust's
+SDK-retained watermark from C's caller-consumed watermark; this does not close
+retained-head delivery or manual object scheduling. Allocation-free sizing is
+also still under review. Peer SHA-256: Rust
+`146b566493b70e4053b3eb05a7b881a4cf24ecc532afb73b03aae57b75f3c1c9`, C
+`3f3ed1ef6a4b5619b47d3145b8603880c462494d1fb91b8eaf80dca075cdb83a`.
+
+Rust now also supports deferring an announced snapshot with
+`set_automatic_snapshot_fetch`, inspecting `pending_snapshot` and admitting its
+exact identity through `request_snapshot`. Default fetching remains automatic;
+started fetches and bounded retries complete. Independent controls prove no
+walk before caller permission, stale/duplicate handling, automatic resumption
+and close. The Rust shell suite and strict Clippy pass, as does C's strengthened
+descriptor test. Both independent peers pass the real metadata/content export
+with caller-requested fetching and explicit ACKs. The new Rust peer SHA-256 is
+`75c95a03804c2ef361f6c7b62c172b4872b8fa40b05aaffa46686a024b0daedf`;
+the C peer was unchanged at that checkpoint. The prefetch/selection work above
+supersedes that checkpoint's scheduling limit; do not infer full parity from it.
+No quiet hold is active and nothing was installed into the desktop. Performance
+qualification remains separate; the broker diagnostic is not acceptance.
+
+### Recent audit checkpoints
+
+The following checkpoints retain their original revisions and next steps.
+Use Current resumption above for the current pins and next action.
+
+The native broker migration and paired submit-handle reuse are implemented.
+The short release diagnostic below found about 28% lower native CPU per update,
+but native remains much more expensive than legacy; no performance acceptance
+or internal-copy total is claimed. No quiet hold is active and nothing was
+installed into the desktop.
+
+Broker retry readiness, the five-operation broker map and caller-driven launch
+authentication are implemented in both SDKs. Rust's launch handoff now refuses
+live relay fids and partial input. Paired protected output checks pass; the
+integrated authentication suite passes 30 tests with 8 opt-in cases ignored.
+Detailed broker and launch evidence remains below.
+
+The transport audit added C attribute/directory access to match Rust's read-only
+client. Paired literal and malformed-reply tests pass, as do both real-core
+metadata checks, the full C suite, Nim binding smoke, Rust transport/namespace
+suites and affected strict Clippy. C's missing broker dependency include was
+also fixed: otherwise a changed transport layout left stale broker objects.
+Both SDKs now publish `TRANSPORT-PARITY.md`, including namespace ownership.
+C request-slot storage grew; consumers must rebuild with matching headers.
+The reply layout is unchanged; metadata operations allocate no heap storage.
+
+The secret-write gap is now implemented: C explicitly marks sensitive writes
+and scrubs SDK storage as bytes are sent, on failure and on local close. Rust
+now also scrubs pending secrets immediately on failure rather than waiting
+for drop. Independent memory/wire tests pass; removing Rust's failure wipe
+makes its regression fail. The lock provider receives no password text, so
+its rendering writes need no conversion. Both maps retain the caller's duty
+to clear its own input and C's explicit cleanup requirement.
+
+Next: finish the full role/API release audit against the criteria above,
+reconcile historical claims and run final release gates. Preserve the portal
+refused-End cancellation limit. Performance work must not replace these closure
+requirements. No full t333 completion is claimed by these transport slices.
+
+Output, administration and portal maps now separate current APIs from historical
+checkpoints. Rust's shared portal session also preserves image buffers on local
+rejection through `frame_buffer`; C already retains its borrowed storage. Paired
+scripted and protected shared-frame gates pass. The full Sophia check passed
+before this import; see the evidence below. Signed Rust `61d33d8` and C `c2d9c33`
+are imported. Next audit WM, experimental lock and shell maps, then reconcile
+the release inventory and remaining acceptance evidence. These audits do not
+establish physical desktop acceptance or remove the refused-End limit.
+
+The shell audit found that Rust still blocked during startup while C allowed
+caller-driven progress. Rust's `Connecting` API now covers direct
+and supplied-root startup with caller time, deadlines and shared I/O budgets.
+All four profiles pass independent fragmented-read, short-write and same-ID
+retry checks on both paths. Strict shell Clippy passes. Independently built C
+and Rust peers each pass `shell_sdk_startup` against Sophia's real export in
+metadata and content modes (one test, two modes per executable). These fixtures
+supply admission evidence; they do not prove protected launch or presentation.
+Both startup APIs also reject malformed custody, record bounds and stale
+event/limits epochs, and acknowledge explicit admission refusal. The paired
+`SHELL-STARTUP.md` maps caller time, ownership, cancellation and C's caller-owned
+deadline. Signed Rust `528b855452407d90b54b2636e05097df074c0fc8` and C
+`60d4dcce16cbde858877fa22d95ffb6bc43c8f74` are pushed and imported; the source
+pins supersede the previous pair above. No live desktop installation changed.
+
+The WM/lock operation audit is now recorded in both SDK maps. It found that C's
+attached lock constructor accepted extra fids and partial input, unlike Rust.
+C now requires the exact sole root and an empty input buffer before handoff.
+Independent controls pass in both SDKs; C's partial-input control failed before
+the correction. The full C suite, Rust lock suite and strict lock Clippy pass.
+Both protected lock tests pass with each independent peer: idle revocation and
+an acknowledged upload prefix with an unissued tail. This remains separate from
+mid-payload interruption, physical locking and fresh authorized replacement.
+
+Signed Rust `9a5fa8bd05824fc6e40e164191c93caa0399ec9b` and C
+`129abc7e7f2adf227169fc0ba84c145d6b14de4b` are pushed and imported, superseding
+the shell-startup pins above. Both Sophia pin checks pass, including imported
+Rust workspace tests. C's current inventory now links every role map,
+declares implemented administration support and keeps lock experimental because
+the contract is draft. The protected peer SHA-256 hashes are
+`efac85c8cbcee2a469707b1805dc05e9f99386135985c3df1a47f1c0f31359c8` (Rust) and
+`e8699dab0f6bc1e53339447dece720bd7c077ce4558a6fdf8b551a166e15f39f` (C).
+Reproduce with each absolute path in `SOPHIA_LOCK_AUTH_PEER` and
+`cargo-slot sophia cargo test --offline -p sophia-session --features
+native-session --test launch_authentication external_sdk_lock --
+--include-ignored --nocapture` (two selected tests per peer).
+Next: audit fresh authorized replacement/reauthentication and the remaining
+shell manual-control differences, then finish the requirement-by-requirement
+release check. These are the remaining audit targets, not waived capabilities.
+
+The independent startup peers have SHA-256 hashes
+`70230db89c60771091589c9137b67613d44f15fb3a9961860c8a7cbbcf7ebb3f` (Rust) and
+`06e37fb7d3a212a19d78bbe6f234d53a11830fa38eb5fb03f9747cc33a9edf05` (C).
+Run `cargo test --offline -p sophia-runtime --test shell_sdk_startup --
+--include-ignored --nocapture` through `cargo-slot sophia`, setting
+`SOPHIA_SHELL_STARTUP_PEER` to each independently built absolute executable
+path. The Rust example is `shell_startup_peer`; C builds
+`build/shell_startup_peer`. The shell suite, strict shell and fixture Clippy,
+and full C check suite pass. Both Sophia SDK pin checks pass at these revisions;
+the Rust check includes the imported SDK workspace tests. This does not close t333.
+
+For the quiet-window record, the Mac mini Claude reported no crunch activity
+between its 2026-10-17 02:59 UTC confirmation and the 03:00 UTC release; its
+training ran only on the mini. This is a coordination report, not measured
+host-idleness evidence. The hold is released.
+
+### Role audit and portal buffer evidence, 2026-10-17
+
+Signed, pushed source revisions are Rust
+`61d33d8920e5794134b1b1e6c7a9c75640ec7850` and C
+`c2d9c33ef901dc66c35de7743348a43805a52e3e`. Both are imported from exact archives.
+Output and administrative maps name public session operations and their paired
+evidence. Portal's recipient map covers shared watch/foreground scheduling;
+its requester map now reflects the existing rejection-preserving `begin_buffer`.
+Historical checkpoint counts and limits remain labelled as historical.
+
+Rust adds `Session::frame_buffer(&mut Vec, deadline)`. Local rejection retains
+bytes, pointer and capacity; admission takes the original storage without a
+copy or allocation. The consuming `frame` wrapper remains available. Admitted
+storage is recovered through `take_frame`, or `take_frame_scratch` after failure.
+C's existing borrowed operation needs no runtime change. Independent tests
+check expired/busy rejection, successful reuse and scratch recovery on faults.
+All 48 Rust portal tests, strict all-target Clippy, C's complete suite and the
+Nim binding smoke pass. Logs: `/tmp/t333-frame-buffer-{suite,clippy}.log` and
+`/tmp/t333-audit-c-check.log`.
+
+Both updated protected peers pass
+`external_sdk_portal_session_frame_survives_watch_cancellation`, with expired
+admission followed by a successful frame using the same storage. Logs are
+`/tmp/t333-frame-buffer-{rust,c}-export.log`. The test binary came from the full
+check at Sophia `b7c442e5c`; SHA-256
+`1bbd8f1c394ea1bde22e8b45f80e68666e09050e93fabeb5b01644d10a3a21a7`.
+Rust peer SHA-256 is
+`8c499ad3476bf1662b9b07122eb1fbc18445580a2ae49ae54abbd8857ce7b149`;
+C peer SHA-256 is
+`ed19937d4bb0aa4a81ad9967dc890c580d0efb7c5f2a6d4dcd3593e46a177f61`.
+These fixtures supply frame pixels; they do not prove physical capture or
+measured allocation/CPU savings. An initial invocation with a non-normalized
+peer path was refused before launch; the normalized absolute paths pass.
+
+The full `cargo-slot sophia cargo xtask check` completed successfully against
+the preceding pins at `b7c442e5c` (only the audit note changed during the run).
+Its log is `/tmp/t333-release-audit-check.log`: workspace tests, SDK checks,
+strict Clippy, deterministic tool checks, archive checks and the host's
+buffer-age/first-frame pixel gates pass. This is not evidence that ignored
+external-peer cases ran; the updated portal case was invoked separately above.
+Both new pin checks also pass, including the imported Rust SDK test suite:
+`/tmp/t333-audit-c-pin.log` and `/tmp/t333-audit-rust-pin.log`.
+
+### Secret-write parity evidence, 2026-10-17
+
+Signed SDK revisions are Rust `902a26e574f1c55d2e31599d104a1251dd4e408f`
+and C `8894d64cfaa2d66bb6a4f9380dbe1076e4fc5707`. C adds
+`sophia_9p_write_secret`, `sophia_9p_scrubbing_output` and `sophia_9p_close`.
+Sensitive outgoing request bytes are wiped through volatile stores as each
+prefix is sent. Transport failure or local close wipes remaining marked bytes.
+Caller-owned storage never reallocates. Close does not close the borrowed fd;
+already validated replies can still be drained. Ordinary writes retain their
+behavior. The private request-slot marker requires matching rebuilt headers
+and library, as with the preceding unreleased layout change.
+
+Rust's existing secret-write path now scrubs pending output on terminal failure,
+using the same cleanup as drop. Its independent regression inspects retained
+initialized output bytes before drop. Removing the failure-time cleanup makes
+that test fail; restoring it passes. Public socket tests separately cover EOF
+and malformed frames. C independently checks every erased byte under one-byte
+sends, unchanged wire data, failed admission, close, disconnect, malformed input
+and draining a validated reply after close. No protocol or authority changes.
+
+The lock audit followed both SDK sources and the pinned lock contract: the
+provider receives entry-state events, never password characters or key material.
+Its resource and rendering writes therefore do not need secret-write flags.
+The generic API remains useful to callers that already own sensitive data;
+it grants no new access to secrets. Neither SDK can clear a caller's original
+input; C callers must explicitly close before abandoning sensitive storage.
+
+The complete Rust workspace, affected strict Clippy, full C suite and Nim
+binding smoke pass. Logs: `/tmp/t333-secret-rust-workspace.log`,
+`/tmp/t333-secret-c-check.log`, `/tmp/t333-secret-rust-negative.log`.
+The independent C metadata peer additionally sends the test literal
+`test-secret` to the real core's static sink, and the host verifies unchanged
+bytes. That opt-in test passed; log `/tmp/t333-secret-c-export.log`.
+Executable SHA-256:
+`cb48bc5266cbdb6d19195169c49b4fc536e635565031d0ac18c4e52240858a6b`.
+The matching Rust core test is `secret_writes_reach_the_real_export_unchanged`.
+These are generic protocol fixtures, not a live lock/password experiment.
+After pin adoption the full `sophia-9p` suite passes, including that Rust test;
+the C opt-in was run separately above. Log: `/tmp/t333-secret-core.log`.
+Both signed-snapshot verifiers pass for the revisions named here.
+
+### Transport and namespace audit evidence, 2026-10-17
+
+Signed revisions Rust `f6a1a9d3f5b880aa5ff9ae9de310e78ed12a32ff` and C
+`dbb8f7ac114a7caab0f7374b4b1d53581f1f150a` publish the same
+`TRANSPORT-PARITY.md` operation map. Both pinned profile and namespace documents
+match byte for byte; the map records their hashes. Namespace parser, directory
+pinning, symlink refusal, descriptor flags and long-path checks pass. No namespace
+implementation change was needed in this slice.
+
+C now queues `Tgetattr` and `Treaddir`, validates complete replies before
+publishing them, copies passive attributes on request and iterates borrowed
+directory entries. It rejects nonadvancing cookies, mismatched qid/type, unsafe
+names, malformed lengths and oversized replies. The existing reply slot stores
+the payload without an extra allocation or a larger reply structure. Retaining
+the requested directory cookie grows private slot storage, so consumers and
+bindings must rebuild. Rust already supported these operations through its
+read-only client; new independent tests supply matching literal values and ten
+malformed cases. Generic raw-fid versus typed-handle ownership remains explicit.
+
+The first full C run exposed a missing `BROKER_FILES` dependency include in
+`GNUmakefile`: broker objects retained the old client layout after a header
+change. Adding the existing generated dependency files rebuilt those objects;
+the full C suite and Nim binding smoke then passed. Rust's generic transport
+and namespace suites and affected strict Clippy pass. Logs:
+`/tmp/t333-transport-c-check.log`, `/tmp/t333-transport-rust-check.log`.
+
+Sophia's `sophia-9p --test client` real-core suite passes 10 tests with one
+opt-in case ignored. That case, `external_c_metadata_matches_the_real_driver`,
+was also run explicitly with `SOPHIA_9P_METADATA_PEER` pointing to the independent
+C `build/metadata_peer`. It passed, checking the same file attributes and root
+listing as Rust against the real driver and static test export. It uses a supplied
+stream; it does not open a live role or device. Executable SHA-256:
+`e82571701887a04ea2611bb75d676159fa0072d764196a2c247b470d158ea9be`.
+Logs: `/tmp/t333-transport-c-export.log`,
+`/tmp/t333-transport-rust-export.log`. The new Sophia harness passes strict Clippy.
+
+This closes the metadata capability gap, not the entire transport audit. C
+still needs the secret-write handling described in Current resumption. No
+performance acceptance or installed desktop change is claimed.
+
+### Launch event-loop parity evidence, 2026-10-17
+
+Rust `4000b8dd45ccee66f2b244aadaabba03c2bc9599` adds nonblocking `Client::new`,
+caller-clock `dispatch`, both descriptors/interests and `next_wake`. It covers
+negotiation as well as the authenticated exchange. `reauthenticate_at` and
+`over_relay_at` retain that control on subsequent conversations. The original
+convenience constructors and polling methods remain supported. Shared I/O
+budgets bound both wires together; C bounds each wire separately. Neither
+stage transitions nor retry renew the total deadline.
+
+C `12e74746b4135ce1b80760b0bfb8454bbe5b704e` adds paired regression coverage
+and the same `LAUNCH-PARITY.md` operation map; its runtime is unchanged. Both
+refuse relay reuse with a settled live fid or partial header. Both independently
+complete authentication with one-byte budgets and a ten-millisecond EAGAIN
+retry, and reject a backwards clock and expired total deadline. Rust's new API
+also completes reauthentication and a second endpoint without resetting the
+first endpoint. Ownership differences and application-driven early cancellation
+remain explicit in the operation map.
+
+Validation ran in the independent SDK checkouts: Rust `cargo test --offline
+--workspace`, affected launch/output strict Clippy and formatting; C `make check`.
+Logs are `/tmp/t333-launch-rust-workspace.log` and `/tmp/t333-launch-c-check.log`.
+No per-frame instrumentation or live desktop change was introduced.
+
+Both independent output peers passed Sophia's real protected-launch,
+Factotum, output-export and revocation fixture at base `025735c69`. The Rust
+peer uses caller-driven authentication and reauthenticates before role startup.
+The C peer retains its existing caller-driven authentication. Command:
+`cargo-slot sophia cargo test --offline -p sophia-session --features native-session
+--test launch_authentication external_sdk_output_authenticates_and_observes_revocation
+-- --ignored --nocapture`, with `SOPHIA_OUTPUT_AUTH_PEER` set to each absolute
+executable path. Each run executed one passing test. An initial invocation
+without `native-session` selected zero tests and supplied no evidence.
+
+| Peer | Executable | SHA-256 |
+| --- | --- | --- |
+| Rust | `/home/niltempus/.cache/cargo-slots/sdk-rs-t331-reply-storage@sdk-rs-t331-reply-storage/1/debug/examples/output_authenticated_peer` | `65303ade9051dfe3dc57adba431625ef180cbf5fa60af2bb32ae0f2295a0c4be` |
+| C | `/home/niltempus/dev/sdk-c-t318-namespaces/build/output_authenticated_peer` | `704b5dd29890dcd80e92cb1c437521b9114cc21d018d7d4f13db5280d6559d26` |
+
+Export logs: `/tmp/t333-launch-rust-export.log` and
+`/tmp/t333-launch-c-export.log`. These checks establish the launch change's
+independent and production interoperability, not full t333 completion,
+physical acceptance or performance qualification.
+
+After adopting both signed snapshots, the integrated command
+`cargo-slot sophia cargo test --offline -p sophia-session --features native-session
+--test launch_authentication` passed 30 tests with 8 opt-in cases ignored.
+This includes independent C/Rust lock authentication and reauthentication,
+protected output reauthentication, endpoint grants and revocation. Log:
+`/tmp/t333-launch-integrated.log`. The independent output-peer opt-in case was
+run separately above; ignored fixture entry points are not blanket passes.
+
+### Broker integration and diagnostic evidence
+
+The untraced submit-reuse release run passed on October 17 at
+02:59:49–02:59:50 UTC, with clean source `57fa7d0ac` and unchanged artifacts
+built at `949186830`. Raw samples and identities are in the same evidence
+directory below. Native per-block median latency was 58.3–65.7 µs, compared
+with 84.7–94.2 µs before reuse. Mean combined owner/peer CPU per update was
+76.3 µs versus 106.3 µs, an observed reduction of about 28%. Legacy CPU means
+were 9.8 and 9.4 µs respectively; native remains substantially more expensive.
+These are short separate diagnostic runs, not a statistical qualification or
+proof that every workload improves by that percentage. Empty-work observations
+remain raw and unsubtracted. Internal buffer-copy accounting is still missing.
+The Mac mini confirmed no crunch activity during its 02:59–03:00 UTC hold;
+the hold was explicitly released. Muse remained blocked at its permission prompt.
+
+Signed Sophia `949186830` is pushed. Its separate release traces confirm the
+submit reuse reduces native peer socket calls from about 45 to about 31 per
+additional update. Peer bytes fall from 420 read/749 written to 367/698, with
+the same counts at all three label lengths. Legacy remains three calls and its
+previous byte counts. Evidence, artifact hashes, raw traces and the matched
+one-versus-ten-operation calculation are in
+`~/.local/state/sophia/broker-cost/949186830-20261017T025857Z/`.
+Both traced runs pass correctness and the strict completeness parser. Calls
+include unsuccessful nonblocking attempts; this is traffic evidence, not a
+CPU or latency speedup claim. Next run the prepared untraced release diagnostic
+in a coordinated quiet window. No hold is currently requested.
+
+Submit-handle reuse is implemented in both integrated broker SDK sessions and
+published as signed Rust `3830d84fba86ece78e195041d71e598bd5072659` and C
+`d6f83ec67c934808221f473c12b5a195e68519ee`. Sophia imports those exact snapshots;
+signature, tree and manifest verification pass. The session opens submit once
+and reuses it; each transaction still gets a new assembly and waits for its
+Submitted acknowledgement before clunk. Standalone transaction ownership is
+unchanged. C consumers must rebuild against the matching headers because the
+transaction storage fields changed.
+
+Both independent socket peers require one submit walk across negotiation and
+two responses and reject assembly cleanup before its receipt ack. All broker
+Rust tests, strict broker Clippy and the full C check suite pass. Both revised
+peers pass the real-export and protected-launch gates
+(`/tmp/t333-submit-reuse-{c,rust}-export.log`). The rebuilt release CLI also
+passes `protected_native_broker_preserves_all_operations_and_atomic_lowering`
+(`/tmp/t333-submit-reuse-process.log`). No speedup is claimed yet: next compare
+separate syscall traces, then untraced release latency and CPU. The full role/API
+matrix and release audit still gate t333 closure.
+
+Separate one-operation and ten-operation release traces now pass the strict
+socket-byte parser. Their raw logs and reports are under the evidence directory
+below in `trace-1/` and `trace-10/`. Joining each sample's peer PID and subtracting
+the matched full-lifetime counts gives, per additional update, 420 bytes read
+and 749 written by the native peer for all three label lengths. Legacy counts
+are respectively 56/91, 74/109 and 178/213 bytes for absent, 16-byte and 120-byte
+labels. All four matched cases per label agree. Native socket calls increase by
+44.6–45.1 per update versus exactly three for legacy; calls include unsuccessful
+nonblocking attempts. Startup and teardown are present in each raw trace, so
+these differences are a diagnostic attribution, not direct interval counters.
+Trace timings are not performance evidence, and internal copies remain unknown.
+
+Source inspection identifies eight serial transaction operations in the Rust
+broker SDK: transaction walk/open/write, submit walk/open/write, then both
+clunks after receipt acknowledgement. Journal reads and acknowledgements add
+traffic. The first bounded optimization candidate is a session-owned submit
+fid: its server handle has no assembly state, unlike the transaction handle.
+Review the pinned contract and independent C counterpart, retain immutable
+retry and receipt barriers, and prove reuse through paired socket and production
+export tests before adopting new pins. This is a candidate, not a measured fix;
+the traces do not attribute the entire CPU delta to those three avoidable calls.
+
+The first untraced release broker diagnostic at signed Sophia `313e0160c`
+completed all 24 blocks (1,000 operations each) on October 17 at 02:52 UTC.
+Evidence is in
+`~/.local/state/sophia/broker-cost/313e0160c-20261017T025157Z/`:
+artifact hashes and clean source checks, raw samples, process snapshot and log.
+Median update latency across blocks was 84.7–94.2 µs for native files versus
+6.6–8.4 µs for the legacy transport. Combined owner/peer CPU was 97.8–112.4 µs
+per operation versus 8.3–10.6 µs. Correctness checks passed; source and artifacts
+were unchanged. This is diagnostic evidence, not performance acceptance.
+Socket traces and internal copy accounting remain separate and incomplete.
+The next performance step is to attribute the extra native exchanges and CPU
+cost before proposing changes; the final SDK role/API audit also remains open.
+
+The Mac mini confirmed its quiet hold at 02:50 UTC and reported no crunch
+activity before release at 02:52. Muse was visibly stopped at an interactive
+permission prompt, without an explicit hold confirmation. Herdr rejected its
+release message with `agent_blocked`; its permission prompt was left untouched.
+The hold is over. Expected connection-reset messages came from deliberate
+transport teardown outside measurement, after the descriptor checks passed.
+
+The diagnostic now closes its transport and waits for process exit before
+supervisor cleanup, outside measurement. This lets blocked reads return instead
+of leaving syscall traces indeterminate. `cargo xtask check broker-socket-bytes
+/absolute/trace.log` counts returned Unix-stream read/write lengths by task;
+it handles short transfers, errors and interleaved resumed calls and refuses
+incomplete traces. Three parser tests and strict xtask/harness Clippy pass.
+The previous interrupted trace is a negative control and is refused. A new
+one-operation smoke at `/tmp/sophia-broker-trace-complete.BwTbKc` completed and
+parsed 25 socket tasks. Read and write totals differ by 132 bytes at teardown;
+they must remain distinct, not be assumed equal or multiplied into a copy total.
+The report includes startup and teardown and explicitly excludes internal
+buffer copies. New workload records name peer PID and owner PID/TID for joins.
+No performance qualification follows from these debug smoke traces.
+
+Signed Sophia `ab5e8b7ba` is pushed. Release CLI and diagnostic artifacts are
+recorded, without binary copies, in
+`~/.local/state/sophia/broker-cost/ab5e8b7ba-20261017T024355Z/prepared.json`.
+No timing qualification has run. The diagnostic now adds five empty-work CPU
+observations before each CPU block, without subtraction or per-operation
+counter reads. Strict harness Clippy and the two-operation smoke pass; the smoke
+validated all 12 CPU observation sets and their absence from 12 latency blocks
+(`/tmp/sophia-broker-observer-smoke.nPLrh3/samples.jsonl`). This harness change
+requires a new benchmark artifact; the broker implementation is unchanged.
+
+A separate one-operation strace smoke completed through the protected processes
+(`/tmp/sophia-broker-trace-smoke.dsm0Kd`). Successful socket reads/writes can be
+observed, including split and resumed syscalls. They establish a measurable
+user/kernel boundary, not internal buffer-copy totals. Any parser must account
+for unfinished/resumed calls and short transfers, exclude startup or report it
+separately, and reject incomplete traces. Do not count requested lengths as
+transferred bytes or reinterpret this smoke as a performance result.
+
+Final SDK pins are signed and pushed: Rust
+`da0937fab757eec2cce37e38813761b875d84487` and C
+`3bead0580870db1005b76db4f55631500fbf553f`. Each differs from the tested
+implementation pin only by removing a trailing blank line in `ADMIN-CLIENT.md`.
+Both snapshots were reimported and passed signature/tree/manifest verification;
+no vendored source was hand-edited. The staged diff check caught these lines in
+new files after the canonical check, so the upstream correction is docs-only.
+
+The full `cargo-slot sophia cargo xtask check` now passes; the log is
+`/tmp/t333-native-broker-repository-check-rerun.log`. The first run passed
+workspace tests and strict Clippy, then found two layout false positives in the
+9P core's test-only alias/readiness hooks. Narrow exceptions now identify their
+external fixture; no test bodies moved into production source. The successful
+rerun includes SDK integrity, all-feature workspace tests, strict Clippy,
+layout/tooling checks and the canonical gate's offscreen render-node pixel
+proofs. This does not establish broker performance or physical desktop acceptance.
+
+The integration now connects `LiveMetadataBroker` to the native shared-core
+driver and launches `metadata-broker-files-serve`. It keeps the protected peer
+check, X-client route checks, retirement tombstones and issuer-generation checks.
+Shells read descriptors and grants from the file owner; presentation fixtures
+use a read-only sanitized view instead of constructing a legacy transport.
+The legacy command remains for comparison and its existing smoke tests, not as
+a live Session fallback. This is an implementation checkpoint, not an installed
+desktop update or task closure.
+
+Validation: the protected live-wrapper test
+`protected_live_broker_routes_and_retires_native_metadata` passes with
+`--features native-session --lib -- --ignored`; it covers real launch,
+admission, wrong-route refusal, descriptor delivery, action invalidation and
+retirement, including retirement before admission. The 24 `metadata_shell_tests`
+and protected C descriptor/work-area presentation test pass. Session's native
+build and strict library Clippy pass. The protected five-operation process test
+also passes, including equal-generation acceptance, zero/older-generation
+rejection and both atomic disclosure-lowering paths.
+
+The process tests used the slot 1 debug executable SHA-256
+`a8783403f40039d28a64a05a7052eb90309240a115a2738e08afb9ba03e2d93b`;
+the live-wrapper test executable was
+`sophia_session-e50e790e77087e2d`, SHA-256
+`4b0661bd319caee6c737a40a6c1feda94593907e87b8ea44a46fde16b6998c3f`.
+These are protected, device-free checks, not physical desktop acceptance.
+
+Next: complete t314's matched descriptor-workload comparison against the retained
+envelope (latency, CPU and copied bytes), run the remaining replacement gates,
+then finish the t333 operation-matrix audit and publish Sophia's verified SDK
+pins and integration. Neither task is closed; no speedup is claimed.
+
+`crates/sophia-session/tests/broker_performance.rs` now provides an opt-in
+paired diagnostic using both actual protected broker commands. It runs an ABBA
+sequence with absent, 16-byte and 120-byte labels; admission and warmup precede
+measurement, and the final descriptor and grant are checked. Candidates and
+sample storage are allocated before measurement. Latency and combined
+owner/peer CPU use separate passes; the latter includes final receipt settlement.
+A two-operation smoke passed all 24 blocks, writing
+`/tmp/sophia-broker-cost-smoke.bec6r6/samples.jsonl`. This checks harness execution
+only: debug build, no quiet window, no performance conclusion. The harness
+passes strict Clippy. Copy accounting is explicitly null, and the result cannot
+claim qualification. Before interpreting costs, add the copy-accounting pass,
+account for CPU observation overhead, and bind the run to signed source and
+release executable identities. Do not treat wire length as copied bytes.
+
+### Broker migration checkpoints before live integration
+
+The native `metadata-broker-files-serve` command now passes
+`protected_native_broker_preserves_all_operations_and_atomic_lowering` in
+`sophia-session/tests/broker_process.rs`, using the real protected process and
+Session's file owner and driver. The test covers all five operations, equal
+generation acceptance, zero and older generation rejection, stable grants,
+attention no-change, atomic disclosure lowering and retirement. The original
+test incorrectly expected an equal generation to be stale; the reducer accepts
+it. Correcting the expectation required no production behavior change.
+The CLI also passes strict Clippy with `native-session`. The tested executable
+is the slot 1 debug build, not an installed desktop. Next, connect
+`LiveMetadataBroker` to this driver and update its descriptor fixture; its
+production transport is still legacy. Performance comparison remains pending.
+
+As of 2026-10-16, t333 remains open. C and Rust broker sessions pass 12
+independent socket schedules, including failure custody, explicit retry, retained
+labels and both atomic two-row response forms. This is SDK evidence, not
+production qualification. Portal requester production evidence is recorded below.
+
+The immediate work is t314's server migration. New native codecs in
+`crates/sophia-protocol/src/broker_files.rs` and `broker_files/request.rs` cover
+Limits, handshake events, all five BrokerRequest kinds, Negotiate, submit and ack. Native ResponseSet decoding now checks both rows,
+reserved fields, UTF-8, grant generations, request correlation and all five
+request-specific rejection sets before returning borrowed rows. No allocation
+is needed for decoding; current owner state and effect capacity remain unchecked.
+Nine literal/boundary tests and strict library Clippy pass. Request encoding uses
+fixed storage and preserves absent/empty/control/UTF-8 labels and raw zero domain
+values. The current protected legacy transport remains active.
+
+Runtime custody now uses the shared 9P journal in
+`crates/sophia-runtime/src/broker_files.rs`. Five tests and strict library Clippy
+pass: atomic handshake publication, immutable retries, receipt-ack release,
+refusal draining, one pending request, request deadlines after ack, and response
+preparation with no effects or receipt on failure. An accepted retry never calls
+the preparation/commit hooks again. Request publication reserves the future
+receipt's space and identities. The owner supplies its request-ID watermark when
+creating replacement connection custody; this state does not authenticate peers.
+
+The new `broker_files/filesystem.rs` implements the shared Export trait.
+Two direct export tests and strict library Clippy pass: protection-role evidence,
+exact peer/single attach, single-writer bounded staging, immutable accepted bytes,
+ack-stale transaction reads and fresh Qids. These fixtures supply trusted evidence
+and do not prove kernel socket admission or production integration.
+
+C and Rust broker peers now pass the shared-core export gate
+`cargo test -p sophia-runtime --test broker_sdk -- --ignored`, with
+`SOPHIA_BROKER_SDK_PEER` naming each independent executable. Both exercise native
+startup, negotiation, single-row retirement and two-row disclosure responses,
+acknowledgement and cleanup. The owner checks one atomic effect commit. The
+socketpair fixture uses synthetic protection evidence; it does not prove protected
+launch or foreign-process admission. Production selection remains legacy.
+
+The new `external_sdk_protected_broker_lifecycle` gate also passes for both SDKs:
+actual ProcessSupervisor/Bubblewrap evidence, exact kernel peer admission,
+negotiation, retirement and two-row disclosure, receipt ack and cleanup. The
+original socketpair gate still passes. Peers use an explicit supplied socket
+path for protected launch, never fallback on failure. Production reducer and
+live Session integration remain separate. Run the `broker_sdk` command above
+with `SOPHIA_TEST_BUBBLEWRAP=/home/linuxbrew/.linuxbrew/bin/bwrap` as well.
+Current executable SHA-256: C `5bafac353d5f1d64642412627a3b02f737d7edd0e04384164146ec19cc3e60c9`;
+Rust `b10603e16a7a8885bc30b7167c538a8b5a8b1e2a0e45ba8d469b88307fb5dd58`.
+Strict peer/harness Clippy and C compilation pass. SDK sources are published
+below; Sophia's harness remains uncommitted.
+
+`broker_files/service.rs` now binds an owner-only role endpoint, requires
+MetadataBroker protection evidence, verifies kernel UID/PID, and adopts the single
+admitted socket into the shared-core server. Turns are bounded by custody and
+staging deadlines. Four service tests and strict library Clippy pass, including
+a compiled foreign process rejected before attach and endpoint cleanup.
+Discovery uses `SOPHIA_BROKER_9P_SOCKET` without fallback.
+
+The opt-in `broker_protection` test now passes with actual ProcessSupervisor
+evidence and Bubblewrap 0.13.0. The exact protected child attaches and reads the
+native API; it checks absent desktop environment variables, hidden input/GPU
+devices and a host marker, plus a distinct network namespace. This qualifies
+protected admission/file access, not the reducer or full SDK exchange.
+Run with `SOPHIA_TEST_BUBBLEWRAP=/home/linuxbrew/.linuxbrew/bin/bwrap cargo-slot
+sophia cargo test -p sophia-runtime --test broker_protection
+protected_broker_is_admitted_from_real_supervisor_evidence -- --ignored --nocapture`.
+Bubblewrap SHA-256: `e4abc70832b1ee7099e58800d714a5888056931c8b313c13c7a9731cbfee9d82`.
+Test executable SHA-256: `036958309106f4917132f83b275fe427ec89b47721e0b16027e5e82fcf6447ce`,
+at `~/.cache/cargo-slots/sophia/1/debug/deps/broker_protection-85f64e947f76fdad`.
+
+The broker reducer now accepts all five native file requests without truncating
+its command list. Three tests cover disclosure lowering, readmission with the
+default class-only policy, label removal on later attention updates, retirement
+and invalid admission; strict library Clippy passes. Both disclosure lowering
+and readmission can require a rule plus a descriptor. The legacy CLI still
+rejects multiple commands; the new entry point awaits production wiring.
+
+Engine's descriptor table now exposes nonmutating `prepare_metadata`; Session's
+current broker path uses it before committing the descriptor and action grant.
+The 18 chrome/session tests pass, including abort, stale generation, invalid
+surface and label cases. Preparation moves the label's existing allocation;
+the pointer check proves that narrow property, not an end-to-end speedup.
+The native-session build check passes.
+
+`sophia-session::broker_responses` now prepares whole response sets against
+current admission, retirement, rule, descriptor and grant state. It rejects
+changed grants, stale replacement generations and a lowering rule without its
+replacement descriptor. Five tests cover all request kinds, two-row failures,
+absent effects on failure, explicit rejection/NoChange and labels that pass the
+wire codec but fail Engine presentation checks. The prepared result feeds
+`broker_file_owner`, which owns routes, rules, descriptors and grants and reserves
+one downstream completion before publication. Its runtime hook commits the whole
+result. Seven Session tests now pass, including a custody retry that commits only
+once, a full completion slot, route mismatch and a bad second row that changes
+no state and latches failure. The service closes custody when that owner fails,
+without waiting for client traffic; four service tests and two export tests pass.
+The live process still needs to use this owner and drain its completion;
+production selection remains legacy. Default-feature library Clippy encountered the existing
+missing native EGL renderer dependency; strict native-session library Clippy
+passes.
+
+`broker_file_driver` now provides bounded negotiation, request publication and
+completion delivery around that owner and the shared service. It drives receipt
+acknowledgements between calls, retains request IDs and closes on any terminal
+error. Two socket tests pass: a complete native admission/receipt exchange and
+stalled startup with immediate socket closure. Strict native-session library
+Clippy passes. The fixtures use synthetic evidence, not a protected launch.
+
+Next wire this driver into the live Session and the native broker process,
+qualify the full protected broker exchange, and compare latency, CPU and copied bytes with the
+legacy workload before retirement. Reconcile the full t333 role matrix before
+signed publication and pin adoption.
+
+Both SDK candidates are signed and pushed: Rust
+`1c3a00d432de3bee405c9bff779945365da13a38` and C
+`5de85f2e5a8e314248e58bc79b5529e43df89cce` (implementation `4daa707`, followed by
+the shell contract reconciliation). Sophia's working tree now imports both exact
+archives; signature, tree, manifest and contract verification pass. The C import
+first refused an older shell specification and rolled back; the correction was
+made upstream and signed before reimport. Full Rust workspace tests and strict
+all-target Clippy pass; full C `make check check-binding`, changed C formatting,
+Rust formatting and pinned contract hashes pass. README and provenance now name
+the portal and broker clients and retain their qualification limits. Logs are
+`/tmp/t333-sdk-rust-tests.log`, `/tmp/t333-sdk-rust-clippy.log` and
+`/tmp/t333-sdk-c-tests.log`. The owner's unlock allowed publication. Sophia's
+integration changes and updated pins remain uncommitted; the installed desktop
+is unchanged. The native-session build check passes against the updated pins
+(`/tmp/t333-sdk-pin-check.log`). Continue with the native broker process and live
+Session wiring.
+
+### Earlier broker and requester checkpoints
+
+Production broker foundation (2026-10-16): `sophia-protocol::broker_files`
+now encodes native Limits, Negotiated, Refused and Submitted records and decodes
+Negotiate directly from the designed KDL. Three independent literal/boundary
+tests and strict library Clippy pass. Unsupported revision ranges remain valid
+candidates for semantic refusal; malformed envelopes are rejected. No SDK code
+or IPC envelope is imported into these codecs.
+
+Production tracing confirms `LiveMetadataBroker` uses the protected legacy
+`MetadataBrokerSessionTransport`; the migration must preserve its protection
+evidence and exact peer admission. Its single-response API also needs atomic
+response-set handling. Next: native BrokerRequest/ResponseSet codecs, bounded
+export custody on the shared core, protected service and broker process wiring,
+then both SDK production gates and the t314 comparison measurements. The new
+handshake codecs alone do not implement an export. Production selection is
+unchanged; all current work remains uncommitted.
+
+Broker response checkpoint (2026-10-16): both SDKs pass 12 independent
+socket scenarios. New coverage preserves a pending label containing NUL, newline
+and multibyte UTF-8 after journal consumption. Both SurfaceAdmitted and
+SetDisclosure two-row responses reject a bad second row locally, then accept the
+corrected pair with submission ID two. The peer receives one complete 448-byte
+candidate, not separate row submissions. Strict Rust Clippy passes.
+
+Next: t314's production broker export and runtime migration. Its acceptance
+requires every existing broker path through files, no legacy production caller,
+a compiled foreign-attach negative, and latency/CPU/copied-byte comparison before
+legacy retirement. The owning plan is `jsschoen` section t314; existing Session
+integration is `crates/sophia-session/src/live_session/metadata_broker.rs`.
+The client fixtures do not prove those server properties. Changes remain
+uncommitted, and the installed desktop and SDK pins remain unchanged.
+
+
+Broker deadline, loss and retry checkpoint (2026-10-16): both SDKs now
+pass nine independent socket schedules. New cases prove that an acknowledged
+request still expires at its response deadline, loss after response submission
+leaves custody Unknown, and explicit EAGAIN retry preserves every candidate and
+control byte. The deadline test first drains the journal ack and prior cleanup,
+so an unrelated handshake or ack timer cannot satisfy it. Strict Rust Clippy
+passes. Next: retained-label and two-row integrated response coverage, then the
+production broker migration and its protected-admission and measurement gates.
+No production qualification is claimed; changes remain uncommitted.
+
+
+Broker session failure checkpoint (2026-10-16): both independent socket
+fixtures now pass six schedules: the full lifecycle, stale receipt epoch,
+contradictory negotiated limits, refusal through terminal acknowledgement, short
+ack reply and wrong receipt ID. Stale or uncorrelated receipts leave custody
+unknown; errors after a valid receipt preserve Submitted. Both sessions stop
+being ready on failure. C callers close the borrowed fd; Rust closes its owned
+connection. Test peers accept EOF/reset and broken pipe during deliberate closure;
+all protocol and custody assertions remain required. Strict Rust Clippy passes.
+
+Next: response timeout and connection-loss schedules, immutable EAGAIN retry,
+label retention and two-row integrated responses. Production export, protected
+admission and comparative measurements remain open under t314. No production
+qualification or publication is claimed; all changes remain uncommitted.
+
+
+Paired broker session checkpoint (2026-10-16): C `sophia_br` now supplies
+the integrated session counterpart to Rust `session::Session`. Both retain one
+request in fixed storage independently of journal consumption, route all replies
+through one connection driver, encode responses once, and wait for receipt ack
+before transaction cleanup. C borrows the transport and requires fd closure on
+terminal failure; Rust owns it. Neither reconnects or replays work.
+
+Independent C and Rust socket fixtures pass negotiation, request retention,
+a 448-byte response, acknowledgement and both transaction clunks. All 16 Rust
+broker client tests and eight protocol tests pass. C's new session compiles under
+strict warnings and passes its lifecycle test. These fixtures do not yet qualify
+failure behavior or the production export. Next: matched refusal, loss, stale
+epoch, deadline, malformed-event and two-row session schedules. Then t314 still
+requires the production migration, protected admission and comparative measurements.
+Changes remain uncommitted; SDK pins and the installed desktop are unchanged.
+
+
+Rust broker session checkpoint (2026-10-16): `session::Session` now owns
+the pipeline and routes startup, journal, ack and transaction replies. It copies
+one pending request into fixed storage so journal consumption cannot invalidate
+its label; response construction encodes borrowed rows once. Dispatch shares a
+bounded I/O budget. A literal socket fixture passes negotiation, request delivery,
+response submission, acknowledgement and both transaction clunks. Strict Clippy
+passes. This is one happy-path fixture, not production qualification.
+
+The C integrated session is still missing. Its independently tested startup,
+journal, transaction and ordering components are ready to wire together next.
+Do not claim broker session parity, publish this capability or adopt SDK pins
+until C implements it and both pass equivalent fault schedules and production
+export gates. Rust also still needs refusal, loss, stale epoch, response deadline,
+malformed event and two-row integrated tests. t314's export, protected admission
+and comparative measurements remain open.
+
+
+Broker ordering checkpoint (2026-10-16): C `sophia_bp` and Rust
+`phase::Ordering` now check handshake receipt ordering, negotiated limits,
+one pending request, increasing request IDs and response receipt correlation.
+Refusal keeps a fixed deadline from local observation; acknowledging only the
+preceding receipt cannot extend it. The server owns publication-time enforcement.
+Paired tests and strict Rust Clippy pass. This component assumes journal and
+transaction validation; it does not own request data, socket I/O, response timers
+or ack/cleanup pacing. Those remain work for the integrated session. Production
+migration, protected admission and measurement gates remain open under t314.
+
+
+Broker transaction checkpoint (2026-10-16):
+
+Broker transaction drivers now stage Negotiate and complete 448-byte
+ResponseSet records, submit explicitly and clunk both fids after receipt
+acknowledgement. C `sophia_bt` and Rust `transaction::Transaction` use fixed
+candidate storage and borrow operation bytes; they neither poll nor own the
+transport. One session driver must match tags and close on terminal failure.
+The original deadline includes cleanup. The assembly deadline starts when the
+first write enters the transport and never extends with progress. EAGAIN waits
+for explicit retry of the same control. Connection loss preserves known custody.
+
+Thirteen Rust broker client tests and the independent C transaction suite pass,
+including fragmented staging for both record sizes, retry, receipt/write ordering,
+acknowledgement before release, assembly expiry, disconnect and failed or timed-out
+cleanup. Strict Rust Clippy passes. These are component tests, not production
+export evidence. Next: integrate startup, journal and transactions into the broker
+session, then qualify against t314's production migration and admission gates.
+
+
+Broker startup checkpoint (2026-10-16):
+
+Both SDKs now discover broker metadata on the caller-admitted root: Rust
+`startup::Opening` and C `sophia_bo`. They retain the connection, read exact API
+and 72-byte Limits records through EOF, and require successful clunks before
+handoff. Fixed metadata storage and bounded dispatch avoid per-fragment role
+allocations. The caller retains the admission authority channel; discovery does
+not authenticate or negotiate. Rust owns and closes failed connections; C borrows
+the wire and requires its caller to close the fd on failure.
+
+Paired socket fixtures cover seven-byte fragments, one-byte I/O budgets,
+incorrect version/epoch, directory replies, truncated/trailing records, failed
+clunks, deadlines and clock regression. Rust's nine broker client tests, the C
+startup suite and strict Rust Clippy pass. Transaction I/O, session integration,
+t314's production export, protected admission and comparative measurements remain
+open. No SDK pin or installed desktop changed.
+
+
+Both requester sessions now admit subsequent requests and route Decision and
+terminal outcomes through retained, connection-scoped request handles. Fixed
+storage holds 64 grants plus one pending/denied request. Terminal results require
+acknowledgement before release; duplicate-request denial preserves the original
+grant. Independent C/Rust socket tests pass allowed/denied requests, duplicate
+denial, revocation, mismatched broker generations and premature Completed
+rejection. Strict Rust Clippy and the C build pass.
+
+Both sessions now submit Cancel only for an Allowed grant before End issuance.
+They retain that observation until the correlated Revoked event, reject repeated
+local cancellation and release terminal state only after acknowledgement.
+Independent socket tests pass cancellation and issuer-scoped request handles.
+Rust handles use a unique SDK issuer; C handles include their immovable session
+address. Equal wire epochs cannot substitute another live session's handle.
+Rust's four session tests and C's eleven schedules pass; strict Clippy passes.
+
+Both SDKs now have standalone upload writer components, Rust `upload::Upload`
+and C `sophia_pqu`. Independent tests pass empty/one-byte/64-KiB payloads,
+iounit/msize bounds, retained writer lifetime, original-buffer identity, partial
+walk, short write, ESTALE, deadline and failed-clunk cases. Strict Rust Clippy
+and C builds pass. Rust owns the supplied Vec; C borrows immutable caller storage.
+Neither allocates or copies a separate payload buffer. No measured speedup claim.
+
+Rust now integrates Begin/upload/End in `requester/session/upload.rs`. Its fifth
+session test passes empty and 64-KiB payloads, exact End length, writer retention
+through End, Completed routing and return of the original Vec. Upload requires
+four request slots and six fids; handshake/request-only minimums remain three
+and five. Both standalone upload components now drain one outstanding write and
+clunk after correlated terminal settlement, including ESTALE without replay.
+Those component tests and strict Clippy pass. Rust Begin currently consumes the
+Vec on admission error, matching the existing owned-buffer convention; retain
+this ownership limitation for the final API review.
+
+The C session now also integrates Begin/upload/End and transaction readiness.
+Both SDKs pass empty and 64-KiB uploads and cancellation with the completed
+writer still open. Cancellation preserves Allowed until the correlated Revoked
+event; writer cleanup then releases the payload storage. Rust's six session
+tests and C's fifteen schedules pass independently.
+
+Both sessions now pass Revoked before a pending upload write's ESTALE reply.
+The peers withhold the reply until acknowledgement, reject another payload
+write and verify writer clunk. Original storage is released with Revoked
+retained. Rust's seven tests and C's sixteen schedules pass.
+
+ESTALE without a terminal event now has paired failure controls. Both sessions
+close, hide the grant, preserve the last Allowed observation and release storage
+after connection closure, without replay or fabricated Revoked. Eight Rust tests
+and seventeen C schedules pass. Connection-preserving recovery for ESTALE before
+a later outcome remains an explicit ownership-audit question.
+
+Both independent SDK peers now pass the real PortalFileExport lifecycle gate:
+completion, executor failure, denial and cancellation, each with empty and
+64-KiB payloads. The harness verifies actual executor bytes and counts, with no
+execution for denial/cancellation. It supplies private admission and test owner
+authority; no desktop or recipient frontend runs. Rust peer Clippy and Sophia's
+17 ordinary portal-file tests pass. Both SDK parity files record executable
+hashes and uncommitted base revisions.
+
+The production gate now also covers disconnect before End and loss of the
+outcome after execution custody, for twelve cases per SDK. Before End, nothing
+executes. After custody, the executor runs once but both clients retain
+disconnected EndIssued rather than fabricate a terminal result. Both release
+payload storage; the harness drains transport retirement and rejects late work.
+Updated executable hashes are in the SDK parity documents; Rust Clippy passes.
+
+Both peers now cancel a partially acknowledged 64-KiB production upload. A
+one-byte dispatch budget exposes that some but not all bytes are acknowledged;
+both require Revoked and zero executions. Thirteen production cases per SDK
+pass. This does not control the ordering of a withheld write reply.
+
+The SDK portal parity documents now map requester entry points, ownership and
+evidence. Integrated End EAGAIN/retry now passes empty and 64-KiB uploads in
+both peers. Retry is explicit; the staged candidate and submit control remain
+identical, and one Completed follows. Nine Rust session tests and nineteen C
+schedules pass. EndIssued remains conservative across EAGAIN; cancelling a
+refused End on the live connection is not provided. Next resolve failed-admission
+buffer ownership and terminal-error recovery in the release audit.
+
+Failed-admission buffer ownership is now addressed by Rust `begin_buffer`,
+which takes the Vec only after validation. Rejection preserves its original
+pointer, bytes and capacity; admitted storage returns through `take_upload`.
+The consuming `begin` remains a convenience wrapper. C already borrows caller
+storage and needs no implementation change. Paired scripted tests cover rejected
+deadlines, successful reuse and a busy second Begin. Both production peers pass
+all thirteen cases with rejected Begin followed by reuse; strict Rust Clippy
+passes all portal-client targets. Latest executable hashes are in parity docs.
+The recovery audit now documents matched fail-closed behavior: neither SDK
+reconnects/replays; uncorrelated ESTALE closes without inventing an outcome,
+whereas terminal-correlated ESTALE drains and cleans up. EndIssued remains
+uncertain after disconnect. Live cancellation of a refused End is still absent.
+
+C's new `make check-binding` passes a thin Nim import of public structs and
+functions against the native static libraries. It checks empty/one-byte/64-KiB
+borrowed buffers, pointer identity, bounded writes, held lifetime and clunk
+release without Rust or Sophia. This satisfies the foreign-binding smoke, not
+a complete Nim client. Full C `make check` and both Rust portal crates pass.
+Next reconcile remaining role coverage and t314's broker dependency; the latter
+still requires its server migration, protected admission and measurements.
+
+Broker SDK discovery now has independent C/Rust implementations, with the KDL
+pinned from signed Sophia `519f07fd1`. Exact API identity, canonical epochs,
+Limits bounds, reserved fields and truncation controls pass; C preserves output
+on failure, and Rust Clippy passes. This does not implement the export or client.
+Next implement broker request/response codecs and correlation against that
+design, then the bounded client/server lifecycle and t314 integration gates.
+
+Incoming broker events now decode independently in both SDKs: handshake,
+custody and all five request kinds. Labels borrow the input and preserve
+absent/present-empty/control text; raw zero surface/generation values remain
+available for domain rejection. Literal, truncation, unused-field, boolean,
+UTF-8 and envelope tests pass, with output preservation in C. Four Rust tests
+and both C broker suites pass; strict Clippy is clean. ResponseSet encoding and
+pending-request correlation are next; no export/client parity claim yet.
+
+Both SDKs now encode atomic ResponseSet records and check request-visible
+correlation. Independent tests cover all five request kinds and rejection sets,
+both two-row lowering paths, present-zero icons, label distinctions and grant
+generation mismatch. Invalid second rows leave all output unchanged. Six Rust
+tests and three C broker suites pass; strict Clippy passes. The server must
+still validate retained owner state and prepare both effects atomically.
+Next complete negotiation/submit/ack codecs, then bounded broker client custody.
+
+Negotiation, submit and cumulative ack encoders now pass independent literal
+and boundary tests in both SDKs. Unsupported revision ranges are encoded for
+server refusal; invalid IDs, lengths and short buffers preserve all output.
+Eight Rust tests and four C broker suites pass; strict Clippy passes. The
+client-side record foundation is present, but typed client custody, journal,
+startup and transport integration remain. Next implement bounded immutable
+submission custody, keeping broker authority separate from portal/session roles.
+
+Both SDKs now retain immutable broker submissions in fixed storage. Four Rust
+custody tests and the independent C suite pass explicit retry, both receipt/write
+orders, acknowledgement barriers, short/failed replies, clock regression,
+deadlines and known/unknown disconnect custody. Incoming events retain epoch
+for receipt correlation; C's unreleased event layout changed accordingly.
+Eight protocol tests and strict Rust Clippy also pass. Next add the bounded
+retained journal, then startup/transaction I/O and integrated broker sessions.
+
+Both broker journals now use fixed 512-byte receive storage and retain one
+borrowed event head. Three Rust tests and the independent C suite pass partial
+and coalesced records, compaction, label pointer lifetime, immutable pending
+acks, sequence/epoch errors, malformed text, clocks, deadlines and overflow.
+Seven Rust client tests and strict Clippy pass. The observation-based ack timer
+does not replace the server's publication clock or Refused drain deadline.
+Next implement admitted-root startup and transaction I/O, then integrate the
+session with negotiation, one pending request and atomic response custody.
+Cross-role recovery/ownership, t314's design-only
+broker export, foreign C bindings, signed publication and verified Sophia pin
+adoption still block t333. Production pins and physical/performance acceptance
+remain unchanged; no speedup is claimed.
+
+The requester series and preceding shared-recipient changes are uncommitted.
+Rust's base is `4c18605`; C's is `2d719d5`. The staged hashes in the component
+checkpoint below predate the unstaged state/session additions. GPG signing
+remains pending unlock after the earlier timeout; do not retry without a changed
+condition or create an unsigned commit. No hold or build process is active.
+Pinned requester contracts come from signed Sophia
+`519f07fd1b6db3a665ae1e74368a3d2e234cbf9c`; both `PORTAL-PARITY.md` files record
+the source hashes and exact implementation limits.
+
+### Requester component checkpoints before request integration
+
+Both SDKs now have unstaged per-request grant correlation: Rust
+`requester::transfer::Transfer` and C `sophia_pqf`. Three Rust tests and the
+independent C suite pass all grant-field mismatches, domain denial, disconnect,
+premature completion and duplicate terminal outcomes. Strict Rust Clippy and
+the C build pass. These fixed-storage components retain known observations;
+disconnect hides grants without inventing terminal outcomes. Next integrate
+request admission and correlated Decision/outcome routing into both sessions,
+then implement the single upload slot. No production grant qualification yet.
+
+Both unstaged requester sessions, Rust `session::Session` and C `sophia_pqr`,
+now integrate negotiation, retained journal events, explicit cumulative
+acknowledgements and transaction cleanup under one nonblocking connection owner.
+Independent scripted peers pass normal and receipt-before-write negotiation,
+refusal, wrong receipt and short ack at three request slots and five fids.
+One-byte I/O budgets preserve retained events; readiness waits for acknowledgement
+and cleanup. C also exercises discovery-to-session handoff. Strict Rust Clippy
+and the C build pass. These sessions currently support the handshake only:
+next add subsequent requests and correlated grants, then upload ownership and
+terminal outcomes. Production requester gates remain open; no complete client
+or speedup is claimed.
+
+Both SDKs now have unstaged requester transaction operation drivers:
+Rust `transaction::Transaction` and C `sophia_pqt`.
+It stages immutable bytes in iounit-sized writes, submits an exact control,
+waits for explicit EAGAIN retry, and retains both fids until the Submitted receipt
+is acknowledged. Assembly and overall deadlines bound staging and cleanup.
+Three Rust tests and the independent C suite pass ordered staging/retry/ack
+cleanup, assembly expiry, disconnect custody and failed or stalled clunks.
+All eleven Rust requester tests pass, as does C's transaction suite with UBSan
+trap instrumentation. The ordinary UBSan link lacked its runtime; trap mode
+passed without one. Next integrate negotiation, journal and transaction driving
+under one connection owner. Neither SDK yet has that requester session or
+production requester gates.
+
+Requester discovery startup now exists in both SDKs: Rust
+`requester::startup::Opening` and C `sophia_pqo`. Independent scripted tests pass
+exact api/Limits reads, epoch correlation, partial traffic, successful cleanup,
+root preservation and malformed metadata/deadline failures. Strict Rust Clippy
+and the C build pass. These are unstaged changes with no production admission
+claim. Next connect negotiation and operation transport to the existing
+submission/journal state, then implement grants and uploads.
+
+Rust and C now both have fixed-storage requester submission custody and a
+retained journal with explicit cumulative acknowledgements. Six Rust tests and
+an independent C suite pass receipt/write reply ordering, explicit EAGAIN retry,
+uncertain delivery, fragmented/coalesced events, acknowledgement deadlines and
+malformed input. Strict Rust Clippy and the C warnings-as-errors build pass.
+These additions are unstaged; transport integration and production gates remain
+required. The staged hashes below describe the preceding checkpoint only.
+
+Trusted portal requester codecs now exist in both SDK worktrees, still staged
+and uncommitted with the preceding shared recipient work. Rust's base is
+`4c18605`; C's is `2d719d5`. GPG signing remains pending unlock after the earlier
+timeout. Do not repeat signing attempts without a changed condition or use an
+unsigned commit. There is no active hold or build process.
+
+The Rust `sophia-portal-protocol::requester` module and C
+`sophia_portal_requester_files.h` provide exact api/Limits decoding, all five
+candidate encoders, all five event kinds, and submit/ack controls. The codecs
+preserve lifecycle Denied and negotiation Refused inputs, optional UTF-8 MIME
+and all seven transfer kinds. They use fixed record scratch, reject malformed
+records and preserve output on failure. Three Rust tests and the independent C
+suite pass literal-layout, bounds, padding, truncation and failure-output checks;
+strict Clippy, C UBSan trap mode and both spec manifests pass.
+
+Requester docs, KDL and referenced broker custody rules are copied unchanged
+from signed Sophia `519f07fd1b6db3a665ae1e74368a3d2e234cbf9c`. Portal map 23 records
+source hashes and the stale design-only KDL preamble; the newer requester doc
+states the implemented private channel. The broker export remains design-only.
+No requester transport, custody or production-export claim follows from codecs.
+The preceding 22 recipient production gates were not rerun for this isolated
+protocol addition. Staged binary-diff SHA-256: Rust
+`d2a93fb7337f69cfb92e6310ebccb5a4455c3299b1cdaa3be582fa8badb2ff05`;
+C `651bb5b3358892c70150ead2cba28633c7faba59dbc0febe5c256d077a510966`.
+
+Next implement the admitted requester startup/session: exact api and Limits,
+negotiation with immutable candidate/submit custody, retained journal and
+cumulative ack, then grants, upload/0 and terminal outcomes. Reuse generic 9P,
+not recipient authority; no ambient endpoint or permission bits may substitute
+for the trusted connection. Pair independent SDK tests and production export
+gates. Cross-role ownership/recovery audit, the t314 broker dependency, foreign
+C bindings, signed publication and verified Sophia pin adoption still remain.
+t333 is active; production pins and physical/performance acceptance are unchanged.
+
+### Shared frame checkpoint
+
+Recipient composition now supports one watch beside a snapshot, capture request
+or frame read in both SDKs. Changes remain staged and uncommitted on Rust
+`4c18605` and C `2d719d5`, together with the preceding capture work. Signing is
+waiting for GPG unlock after the earlier timed-out Sophia attempt; no unsigned
+commit or retry was made. Continue implementation while publication waits.
+
+Shared frames reuse the exclusive operation state and preserve four concurrent
+pixel reads, exact EOF, retained metadata recheck and both clunks. Six requests
+reserve watch/flush capacity; four fids retain the objects. Rust validates bounded
+input capacity against the existing 60 KiB read cap, reuses Vec storage and moves
+the completed buffer. C borrows disjoint caller storage without allocation.
+Portal map 22 documents APIs, lifetimes and the unreleased C layout change.
+
+Both scripted peers require four reads before replying, reverse that first
+batch, return short reads, cancel a watch during partial pixels and reuse the
+same image address. Stale/changed metadata, excess data, premature EOF and clunk
+failure hide results; C also checks overlap and insufficient capacity. All 22
+Rust portal tests, affected strict C tests and strict Clippy pass. Both peers pass
+all 22 production portal gates. The C peer's initial new-mode assertion used the
+wrong expected capability string; it was corrected, then all gates passed.
+Peer SHA-256: Rust
+`ec6c329e9f4c8a39fa8d1a281ce45384bd3f5a89427f77162a7826f665299282`;
+C `e47a5e05ff4333074ce347daefd762d31406152e5dad173cc8190ccee404d2b5`.
+Staged binary-diff SHA-256: Rust
+`0f6702b6037cf15590ac739ed1066c9b78ff4ed8e0c6bf17d1c124f6eea02141`;
+C `b3f26eeafcdc09598287ac44f99d08c22a95059e2412aee569cb5891d48f1158`.
+These identify local candidates, not published SDK revisions.
+
+Next audit and implement the distinct trusted portal requester API against
+`docs/sophia-portal-files.md` and its KDL. Its admitted private connection is not
+an ambient endpoint or recipient capability. Finish cross-role recovery and
+ownership evidence, foreign C-binding smoke, signed publication and verified
+Sophia pin adoption. The task ledger explicitly makes t333 depend on t314;
+`docs/sophia-broker-files.md` still marks that export and its clients design-only.
+Do not claim full parity while that dependency lacks production evidence.
+t333 remains active; no quiet hold, production pin update, physical acceptance
+or measured performance claim.
+
+### Shared capture checkpoint
+
+Shared capture scheduling is implemented in both SDK worktrees, staged but not
+committed: Rust based on `4c18605`, C on `2d719d5`. The previous Sophia checkpoint
+commit timed out waiting for GPG; no unsigned commit was made. All three
+repositories use the same signing key. Await unlock before committing/pushing;
+implementation work may continue.
+
+The shared session now runs a capture request beside a watch, reusing the
+exclusive capture operation state. One foreground slot retains results until
+release. Custody survives terminal failure; results do not. Wake scheduling
+includes paced status snapshots without mistaking their wake for expiry.
+Inline request/status storage and a single I/O driver preserve bounded work.
+Portal map 21 lists the paired APIs and notes C's unreleased layout change.
+
+Independent C/Rust tests pass concurrent watch cancellation, paced fragmented
+status, explicit reuse, Busy admission and seven capture failure modes. The
+existing exclusive tests pass after refactoring. Both external peers pass all
+21 production portal gates, including replacement of a watched capture by a
+new request. Strict Rust Clippy and diff checks pass. Peer SHA-256:
+Rust `93afc9d820a72dcb1555115dea2ca9df7293cecea139d66eca129b82c86fd24b`;
+C `7673d5d44dfdd3cb8ae70a49906fc5bdccdeb68e514074edfffe880b03a5f911`.
+Staged binary-diff SHA-256 before this note: Rust
+`9040a1c1ff28fa307cc367faf5136b6541a227f7266409e8572c6bc6e49f9c3a`;
+C `a9870d810d73f7b97acb66ddeb12108680b0a6652a16e1de8ef67f8a54b89ad2`.
+These identify uncommitted candidates, not published revisions.
+
+Next integrate frame reads into the same scheduler without duplicating pixels
+or reducing the existing bounded read window. Then finish the cross-role
+ownership/recovery audit, trusted requester/broker gaps, foreign C-binding smoke,
+signed publication and verified Sophia pin adoption. t333 stays active. No quiet
+hold is in force; production pins and physical/performance acceptance are unchanged.
+
+### Buffered cancellation checkpoint
+
+Signed Rust `4c18605` and C `2d719d5` extend the shared-session suite to ten
+scripted cases. Empty/payload watch reads during flush fail without Rflush;
+cancellation before walk dispatch or during a held open reply avoids both the
+watch read and Tflush. Foreground status work still completes, and cleanup
+returns the original root.
+
+A peer handshake supplies status and revocation together before cancellation.
+Rust's exact read budget leaves revocation decoded but unconsumed; C routes
+both replies in the same dispatch. Both preserve Revoked without flushing a
+settled tag. A Rust immediate-flush mutation fails with "tag not outstanding";
+the original bytes were restored and the test passes. Native C/Rust suites,
+strict Clippy and diff checks pass. Portal map 20 records the evidence.
+Production code, pinned contracts and Sophia SDK pins are unchanged.
+
+Next integrate capture requests into the shared scheduler, then frame reads.
+Extract the existing exclusive capture transport's operation state so both
+entry points share custody, status pacing and deadline rules; route its tags
+alongside the watch, with one foreground operation at a time. Qualify both
+SDKs independently and through the affected production portal gates. Preserve
+caller buffers and bounded work; do not duplicate payloads or claim unmeasured
+savings. Recovery, trusted requester/broker, foreign bindings and publication
+remain open. t333 is active; no quiet hold is in force.
+
+### Flush custody checkpoint
+
+Signed Rust `db1dbaf` and C `122f9d4` add matching independent shared-session
+tests. Five cases force cancellation alone, watch revocation before Rflush,
+failed clunk after revocation, an error answering Tflush, and disconnect during
+flush. Successful cases preserve foreground status work and return root-only
+ownership after explicit releases. Failures expose neither event nor snapshot.
+Both check the exact old tag, one watch/flush, no second version/attach,
+one-byte dispatch and harmless clock regression. Focused native C/Rust tests,
+strict Rust Clippy and diff checks pass. Production code and pins are unchanged;
+the preceding production gates were not rerun for these test-only changes.
+
+Next force replies already decoded when cancellation is requested, malformed
+watch reads during flush and cancellation before the watch read; then integrate
+capture/frame work into the shared scheduler. Portal map 19 records the limits.
+t333 remains open. No quiet hold or measured performance claim.
+
+### Shared recipient session checkpoint
+
+Signed Rust `4dc6e67` and C `31911c2` add a developing shared recipient
+session: one watch alongside one metadata/transfer snapshot on the same
+pipeline. Separate tags route replies; events and snapshots remain retained
+until released. Transfer storage is borrowed and reused. Cancellation drains
+decoded replies before flushing a pending watch read, then clunks its fid
+without abandoning foreground work. Original deadlines bound cleanup.
+
+Both independent production peers pass concurrent status access, watch
+cancellation with a continuing transfer, and old-watch revocation beside a
+replacement transfer. All twenty external portal gates, nineteen Rust
+component tests and strict Clippy pass. Peer SHA-256: Rust
+`3ce54e7af95e27f76f319c42a784a7b586b4691b8eefcde0b6ed19173f738e7a`;
+C `70c27add8b2c8363b850b1ce83da59f2b8ee2eec822317be4cfbc299d80a5d7f`.
+Portal map 18 records the remaining limits.
+
+Next qualify deterministic flush/reply races and shared-session failures, then
+integrate capture requests and frame reads into this scheduler. Production
+scenarios do not prove every reply ordering. Reconnect/recovery, trusted
+requester/broker, foreign bindings and publication/pin adoption remain.
+t333 stays open; production pins are unchanged. No quiet hold or measured
+performance claim.
+
+### Watch failure audit checkpoint
+
+Signed Rust `1957ab2` and C `b483632` add independent watch protocol-failure
+and explicit-reuse tests. Empty/payload Rread, unrelated remote errors,
+directory replies, disconnect and clunk refusal never report revocation.
+ESTALE during open or read requires successful clunk. Two explicit watches
+reuse the same root with one version/attach exchange; one-byte dispatch and
+clock-regression checks pass. Both watch tests and strict Clippy pass.
+Production code and the preceding eighteen-gate evidence are unchanged.
+
+Portal map 17 records the result. Next replace the exclusive-operation
+composition gap with a shared recipient session: watch and foreground work
+must route replies by separate tags on one pipeline, retain independent object
+identities, share bounded dispatch and support explicit cancellation without
+discarding unrelated work. Qualify concurrent status/capture/transfer/frame
+work, flush races and connection loss independently in C and Rust, then through
+the production export. Reconnect must remain explicit, with no request replay.
+
+Trusted requester/broker, foreign bindings and publication/pin adoption remain.
+t333 stays open; production pins are unchanged. No quiet hold or measured
+performance claim.
+
+### Retained watch checkpoint
+
+Signed Rust `460c461` and C `1b6aabc` add retained watch drivers. One nonempty
+offset-zero read waits for ESTALE; successful clunk returns the original root.
+There is no automatic reopening or inference about a separately fetched
+transfer. Local cancellation/expiry close the owned role (C requires caller
+fd closure), without claiming revocation or flush-based connection reuse.
+
+All eighteen external production portal gates pass independently in both
+languages, including watch lock/replacement/source-generation, absence, local
+cancellation and deadline cases. Strict Rust Clippy passes. Peer SHA-256:
+Rust `0929b69098eea8951a745ac50cb112a78e7b035ccc679f6dda371e7a71ec90f3`;
+C `ebd10bdcad89f7f114b82136a7968c2dfded1053cfa663c5c663ef9f2675d0b2`.
+Portal map 16 records the limits.
+
+Next audit malformed watch replies/clunk failure and recovery, then compose
+watch with other recipient operations without surrendering shared-role
+ownership. Exclusive component drivers are not a complete concurrent recipient
+session. Trusted requester/broker, foreign bindings and publication/pin
+adoption remain. t333 stays open; production pins are unchanged. No quiet hold
+or measured performance claim.
+
+### Transfer transport checkpoint
+
+Signed Rust `0d474bb` and C `778e550` integrate retained transfer reads with
+authenticated transport. Both borrow caller storage, require EOF/clunk and
+return the same root without a payload copy. The independent production peers
+verify seven supplied bytes, the original buffer pointer and untouched tail.
+Absent transfers preserve ENOENT; revocation after payload receipt but before
+completion preserves ESTALE and hides scratch.
+
+All twelve external portal gates pass independently in C and Rust, as do the
+seventeen Rust component tests and strict Clippy. The 64 KiB limit is still
+component evidence, not this seven-byte production gate. Portal map 15 records
+ownership and limits. Peer SHA-256: Rust
+`b74008e5df9efa3ef6ef54fa204e10c810ca622be568f5cd5406754a6241d82d`;
+C `def40cbc2bac71705f6165ad3387cb31286a86eb59c4f597f2906c87457f4807`.
+
+Next implement retained watch in both SDKs, then finish recovery and local
+cancellation audits. Trusted requester/broker, foreign bindings and
+publication/pin adoption remain. t333 stays open; production pins are unchanged.
+No quiet hold or measured performance claim.
+
+### Transfer component checkpoint
+
+Signed Rust `5ca560f` and C `37c0138` extend the snapshot operation driver
+to opaque retained transfers. Both borrow caller storage of at least 64 KiB,
+leave unused bytes untouched, enforce the payload limit and expose bytes only
+after EOF and clunk. No second payload allocation or copy is introduced.
+Rust Fetch carries a storage lifetime; metadata remains inline. The driver
+does not associate a separately walked watch with the transfer.
+
+All seventeen Rust client tests, C transfer/snapshot/request tests and strict
+Clippy pass. Rebuilt peers pass all nine existing production portal gates as
+regressions; those gates do not yet exercise transfer delivery. Peer SHA-256:
+Rust `d4a9393ab6f967d598e58541bb1fd55db2af998610633ac3a5ecb82d5b96e127`;
+C `bf654a383b003e3e67da1a86339a4d788ae7a65a2ce627abbd624360db8243f4`.
+Portal map 14 records the component scope.
+
+Next compose transfer reads with authenticated transport and qualify delivery
+and revocation, then implement watch and finish recovery/local-cancellation
+audits. Trusted requester/broker, foreign bindings and publication/pin adoption
+remain. t333 stays open; production pins are unchanged. No quiet hold or
+measured performance claim.
+
+### Capture refusal and cancellation checkpoint
+
+Signed Rust `c0d99d2` and C `f4b3ec1` pass all nine production portal gates.
+New gates qualify locked/busy/stale-serial refusal with exact EACCES/EAGAIN/ESTALE,
+and cancellation after queueing or owner pickup. Both SDKs preserve Refused
+versus Cancelled. The fixture rejects late completion after unlock and confirms
+that no frame was installed. Cancelled status leaves a quiescent root-only role.
+Strict Rust Clippy and the two ordinary portal-dispatch regressions pass.
+
+Portal map 13 records the limits. Peer SHA-256: Rust
+`47c05ca921892fc675f915122a453c77c5da6d9f2f2058d73a6a807f22fa949b`;
+C `c6dbc61962a9ae2348f381d5ce24fca74069e2545ad0e5faab8964815a323402`.
+Next implement retained transfer/watch APIs in both SDKs, followed by the
+remaining recovery and local-cancellation audits. Trusted requester/broker,
+foreign bindings and publication/pin adoption remain. t333 stays open;
+production pins are unchanged. No quiet hold or performance claim.
+
+### Capture transport checkpoint
+
+Signed Rust `cd674b9` and C `df58325` now drive capture requests on the
+authenticated portal root. Both send one complete write, close its fid, read
+fresh bounded status snapshots through EOF/clunk, and return the same root for
+frame reads. Caller timers schedule pending status; no driver sleeps or replays
+requests. The caller owns serial sequencing across reconnects.
+
+Independent socket tests cover partial I/O, reuse, refusal, short writes, loss,
+identity mismatch, terminal-status clunk failure, limits, expiry and cancellation.
+The fifteen Rust client tests, C request test and strict Rust Clippy pass.
+Both independently built peers pass all four production portal gates, including
+the new request-to-frame path through real authentication and coordinator
+settlement. The two ordinary portal-dispatch regressions also pass. Policy
+and pixels are supplied; this is not native capture or performance acceptance.
+
+Use `SOPHIA_PORTAL_AUTH_PEER` with `external_sdk_portal_` as below.
+Peer SHA-256: Rust
+`53d89a923d4cf259f8d21f129165494849094513b6e06ff95596cc4d80e974b8`;
+C `ee3215d266fdf1cc12589ac4e70cb2ad061163a92a2d5d135fbbbf72dc34c681`.
+Portal map 12 records API ownership and limits. Next qualify production request
+refusal and lock cancellation, then finish transfer/watch and recovery coverage.
+Trusted requester/broker, foreign bindings and publication/pin adoption remain.
+t333 stays open; production pins are unchanged. No quiet hold is active.
+
+### Capture-custody component checkpoint
+
+Signed Rust `c18c9e4` and C `f8f6586` add capture-custody components with
+inline request storage and no allocation. They distinguish pipeline admission,
+exact write acceptance, refusal, uncertain delivery and all five terminal
+capture outcomes. Verified status snapshots must match serial and output;
+ready is historical status, not a frame grant. One caller-monotonic deadline
+covers observation. Local cancellation cannot cancel admitted server work.
+
+All twelve Rust portal-client tests and strict Clippy pass. C's independent
+capture-client test passes equivalent outcome, refusal, short-write, loss,
+identity, clock and deadline cases. Portal map 11 records this component scope.
+Next integrate capture writes and status reads with the authenticated role
+transport: enforce increasing owner serials, capability and write limits,
+then qualify request custody against the production export. The frame gates
+below remain evidence for frame delivery, not this new request path.
+
+t333 remains open. Transfer/watch, requester/broker, foreign bindings and
+release adoption remain; production pins are unchanged. No quiet hold or
+measured performance claim.
+
+### Mid-read revocation checkpoint
+
+Signed Rust `228ce0a` and C `e650904` pass production mid-read frame revocation.
+Each peer pauses after accepting part of the payload; the fixture advances the
+lock fence, then lets the peer continue. Both fail without a completed image;
+timeout cannot pass this check. Already buffered bytes are not recalled.
+All three external portal gates pass independently in both languages, as do
+the two ordinary portal-dispatch regressions and strict Rust Clippy. Portal
+map 10 records the limits.
+
+Peer SHA-256: Rust
+`2f94decb9742518519fb5088605d233a0e60872224c1c58c44537c8245303b53`;
+C `7b405aee867ccae4c702cb1f53d04c863ca57fe2525de9df3d555fe0b4a6bb2a`.
+Next implement capture-request custody and remaining recipient operations.
+Requester/broker, foreign bindings and release adoption remain. t333 stays
+open; production pins are unchanged. No quiet hold or performance claim.
+
+### Supplied-frame delivery checkpoint
+
+Signed Rust `328db4a` and C `5d805c7` pass real authenticated delivery of a
+supplied 256×128 frame. The fixture supplies policy, pixels and the request;
+the production coordinator installs the object. Both peers check metadata,
+every pixel and final root-only fid ownership. The startup and delivery gates
+pass independently in both languages; existing portal-dispatch tests and strict
+Rust Clippy pass. Portal map 9 records the limits.
+
+Use the earlier `SOPHIA_PORTAL_AUTH_PEER` command with filter
+`external_sdk_portal_` to run both gates. Updated peer SHA-256: Rust
+`d5c28815ddc7905e9e189955becff7d246c6f8cc6265c8b7cb769068151fb706`;
+C `ae63e59b06b88ec2e363932e4faceeef9e11d1fa9fc42994ec931335944b681f`.
+Next qualify mid-read revocation and implement SDK capture request custody and
+remaining recipient operations. Requester/broker, foreign bindings and release
+adoption remain. t333 stays open; branches pushed, production pins unchanged,
+no quiet hold or measured performance gain. Supplied frames do not prove native
+presentation or physical capture acceptance.
+
+### Retained-frame reader checkpoint
+
+Signed Rust `afa827c` and C `44157af` now integrate retained frame reads into
+reusable image storage. Both use four requests, verify payload/EOF and the
+original metadata fid, and clunk before exposing results. Repeated captures
+reuse the root and image buffer without api reads. Rust grows its Vec if needed
+but avoids re-zeroing unchanged storage; C allocates nothing and refuses
+insufficient caller capacity. Portal map 8 records ownership and failure rules.
+
+Independent peers pass short reads, one-byte dispatch, repeated reads, stale or
+changed metadata, extra pixels, early termination, clunk refusal, deadline and
+cancellation. C also tests insufficient capacity. Nine Rust client tests and
+strict Clippy pass; C's frame-client test passes. SDK branches are pushed.
+Next qualify both frame readers against the production authenticated portal
+export, then add capture custody and remaining recipient operations. Requester/
+broker, foreign bindings and release adoption remain. t333 stays open; production
+pins unchanged, no quiet hold or measured speedup.
+
+### Frame scheduler checkpoint
+
+Signed Rust `7966089` and C `58c25f6` add a fixed four-request frame range
+scheduler. It honors framing/iounit/chunk bounds, handles out-of-order and short
+reads without repeating accepted bytes, and rejects empty, oversized or
+duplicate replies. Independent exact-byte-coverage and 64 MiB range tests pass,
+with strict Rust Clippy. Portal map 7 records the component's limits: it owns
+neither transport nor image storage and performs no payload copies.
+
+Next integrate retained frame-info/frame fids, the range scheduler and
+caller-controlled image storage into recipient sessions. Require exact payload,
+EOF, a reread of the retained metadata fid, and successful clunk before exposing
+a completed image; do not infer binding from private qid numbering. Capture
+custody, revocation/delivery gates, requester/broker, foreign bindings and release
+adoption remain. t333 stays open; SDK branches pushed, production pins unchanged,
+no quiet hold or measured speedup.
+
+### Authenticated portal startup checkpoint
+
+Signed Rust `5f6b5bb` and C `82ffda2` pass protected namespace launch and
+Factotum authentication followed by portal metadata startup. Both independently
+built peers retain the admitted root and relay, read api and exit successfully.
+Portal map 6 records the startup-only scope. The two existing portal-dispatch
+tests also pass after the fixture extension; strict Rust Clippy passes.
+
+Run with `SOPHIA_PORTAL_AUTH_PEER` set to either SDK's built
+`portal_authenticated_peer`, then `cargo-slot sophia cargo test -p sophia-session
+--features native-session --lib external_sdk_portal_startup_uses_real_namespace_authentication
+-- --ignored --nocapture`. Rust executable SHA-256:
+`1f03bb2b4beee0e889456674a8c3525fec128a5d46e847785b4aee8f14d815de`;
+C: `d7fd227d631c13e8b42f78891c2e953aef0d0dd65dfc7c184a7ce422be13e556`.
+The Rust executable is in the SDK worktree's cargo-slot 1 debug/examples;
+the C executable is in its worktree's build directory.
+
+Next implement recipient session operations, retained-object frame reads and
+capture custody, then qualify revocation and delivery. Requester/broker,
+foreign bindings and release adoption remain. t333 stays open; SDK branches
+pushed, production pins unchanged, no quiet hold or measured speedup.
+
+### Attached-root startup checkpoint
+
+Signed Rust `91d5d21` and C `61fb84d` add metadata startup on the existing
+attached recipient root. Both read api through EOF/clunk, preserve root and
+pipeline, and issue no new version/attach/reconnect. The caller must complete
+launch authentication first and retain the relay separately. Root ownership
+checks prove no authority. Five Rust client tests, C startup tests and strict
+Clippy pass; portal map 5 records evidence and lifetimes. The scripted attach
+is not a production authentication proof.
+
+Next compose launch authentication with this handoff and implement recipient
+session operations, retained-object frame reads and capture custody. Production
+portal gates, requester/broker, foreign bindings and release adoption remain.
+t333 stays open; SDK branches pushed, production pins unchanged, no quiet hold
+or measured speedup.
+
+### Portal snapshot checkpoint
+
+Signed Rust `3a90668` and C `8da1961` add provisional metadata snapshot
+drivers for api, status and capture-status. Results wait for EOF, decoding and
+clunk; reads respect msize/iounit and file bounds. Three Rust tests, C's
+independent snapshot test and strict Clippy pass. Rust uses 101 inline bytes;
+C borrows caller storage. The helpers allocate no storage themselves, but
+Rust transport replies may own allocated data. Portal map 4 records limits.
+
+Next integrate authenticated startup using the existing launch client's
+authenticated root and exclusive role/relay pipelines, then retained-object
+frame reads and capture custody. The snapshot helpers neither authenticate nor
+own transport. Requester/broker, production gates, foreign bindings and release
+adoption remain required. t333 stays open; production pins unchanged, no quiet
+hold or measured speedup. SDK branches are pushed. The two formerly dirty
+native-scanout files were formatting only, checked and pushed separately as
+`8233b7641` at the owner's request.
+
+### Portal discovery checkpoint
+
+Signed Rust `574bb1f` and C `231e012` add allocation-free recipient api/status
+decoders. Both retain distinct request capabilities and transfer states, reject
+malformed snapshots and enforce 101/43-byte bounds. Independent tests and strict
+Rust Clippy pass; portal map 3 records coverage. Next build authenticated
+recipient sessions with retained-object reads, caller-controlled frame storage,
+capture custody and production gates. Requester/broker and release-wide parity
+remain required; t333 stays open, production pins unchanged, no quiet hold or
+measured speedup. The owner authorized pushing these signed development branches.
+
+### Capture record checkpoint
+
+Signed Rust `030128f` and C `14c687b` add allocation-free capture request
+encoding and status decoding. Both preserve all eight states and enforce
+exact record sizes, version and idle/nonidle identity rules. Independent literal
+and malformed-boundary tests pass, including unchanged C output on failure.
+Both portal test suites and strict Rust Clippy pass; portal map 2 records the
+scope. These passive codecs do not enforce serial ordering or authorize pixels.
+
+Next add recipient discovery/status records, then authenticated sessions with
+caller-controlled frame storage and production gates. Requester/broker and
+release-wide qualification remain required. t333 stays open; pins unchanged,
+no quiet hold and no measured performance gain.
+
+### Portal frame codec checkpoint
+
+Signed Rust `cf22985` and C `1d0f53c` add independent passive portal frame
+metadata decoders. Both enforce exact record size, identities, format, u32
+dimensions, canonical stride and the 64 MiB image limit without allocation or
+pixel copies. Independent malformed/boundary tests and strict Rust Clippy pass.
+`PORTAL-PARITY.md` revision 1 pins the unchanged recipient contract from Sophia
+`9b57fd040` and records the remaining scope. These are codecs, not portal clients.
+
+Next add capture request/status and discovery records, then authenticated
+recipient sessions with caller-controlled frame storage and production gates.
+Keep trusted requester authority separate; requester/broker and release-wide
+qualification remain required. t333 stays open, pins unchanged, no quiet hold
+and no measured performance gain.
+
+### Administrative namespace-denial checkpoint
+
+Signed Rust `bda343d` and C `9e71ea2` now pass foreign-namespace denial
+against the production administrative export. Both connect to the reachable
+socket, then require transport closure during negotiation; a timeout or ready
+session fails the check. No request reaches the owner. All five external SDK
+gates pass for each peer, and strict Rust Clippy passes. Admin map 15 records
+the scope: HostDomain admission, not another role's Factotum authentication.
+
+Peer SHA-256: Rust
+`e5b735c0790036ee455a582d0ba4c13f66d214d5b0bc9ea896fbb57d50f79bac`;
+C `f45a6ea4e5e841dd4fb0420308c9ad423db37f49b0f014bc4839f94aa6ef6ac2`.
+Use the executable paths and filtered production command below. Next implement
+typed portal recipient coverage against `docs/portal-client-files.md`, keeping
+requester authority separate; audit requester/broker requirements and the
+remaining release-wide gates. t333 stays open; pins are unchanged, no quiet
+hold is active and no performance gain is claimed.
+
+### Integrated failure checkpoint
+
+Signed Rust `2e84ad0` and C `7af01ca` add matched integrated failure checks
+for short write replies, malformed status detail lengths and an illegal
+owner/success outcome. All six negative schedules retain the expected custody,
+refuse further invocation and issue no replay. One-byte command dispatch also
+passes the successful three-command sequence, retaining the catalog until
+explicit refresh. Both independent tests and strict Rust Clippy pass; admin
+map 14 records the evidence. No production code or measured performance changed.
+
+Next qualify namespace denial, then finish the portal/broker and release-wide
+parity requirements. t333 remains open; pins are unchanged and no quiet hold
+is active. The four production gates and peer hashes below remain unchanged.
+
+### Abrupt process-loss checkpoint
+
+Both independently built administrative peers now pass abrupt death of a
+test-owned production service process before and after owner claim. The parent
+waits for the accepted/claimed marker, kills only that child and waits for its
+exit. Each SDK retains uncertain custody and refuses another invocation. The
+effect marker exists only after claim; the old endpoint refuses connection,
+and a replacement service gets a new endpoint. SDK doc checkpoints are Rust
+`0af3cf4` and C `a7fe221` (admin map 13); peer code/hashes are unchanged below.
+
+All four production external-SDK gates pass for each peer. The existing
+runtime-client crash gate also passes after extracting their shared service
+fixture. Run the SDK gate with `cargo-slot sophia cargo test -p sophia-runtime
+--test admin_external_sdk external_sdk_ -- --include-ignored --nocapture` and
+the same `SOPHIA_ADMIN_SDK_PEER` paths below. The name filter excludes the child
+helper, which requires its parent-provided environment. Next audit integrated
+malformed/partial traffic and namespace denial, then finish the remaining
+portal/broker and release-wide parity requirements. t333 stays open; pins
+unchanged, no quiet hold and no measured speedup.
+
+### Replacement-service recovery checkpoint
+
+Signed Rust `51e75e1` and C `b557c34` pass explicit recovery on a replacement
+production administrative service. Each peer retains its uncertain old command,
+waits for an explicit endpoint, discovers a different service identity and
+invokes a newly advertised probe. The new service deliberately reuses the old
+connection/request numbers. Finishing the old ticket as Committed does not
+settle the probe; the new owner's Rejected result does. No uncertain mutation
+is replayed, and the old command remains uncertain. Admin map 12 records this.
+
+All three `admin_external_sdk` tests pass independently for each SDK; strict
+Rust Clippy and the C peer build pass. Updated peer SHA-256: Rust
+`19a1566dd2204838a2245da541859426111c371a21347fd1c976d831fb98f1f7`;
+C `7d68379daeab5d72b0d3a32424f7877b5fb095f7f14dd9d14652617b805f2d43`.
+Use the same command and executable locations below. Next qualify abrupt
+service-process death and remaining integrated negative schedules, then the
+portal/broker and release-wide audit. t333 remains open; pins unchanged,
+no quiet hold and no measured speedup.
+
+### Service shutdown checkpoint
+
+Signed Rust `bf06a6f` and C `5367415` pass production administrative service
+shutdown before and after command-ticket claim. Both clients preserve uncertain
+custody and refuse further invocation. Dropping the service cancels the unclaimed
+ticket; the claimed ticket stays dispatched and may finish after the peer exits.
+This is orderly worker teardown, not abrupt process death. Both independent
+peers pass both `admin_external_sdk` tests, including the earlier completion,
+stale-refresh and admission-revocation schedules. Admin map 11 records the limit.
+
+Updated peer SHA-256: Rust
+`b1224db04ef31a021aa5904b497a68f13d90053987128b59f751ba02f0296ce2`;
+C `207e07651049b3592811426cad5976a9ee9ff8f862993ae9f8efe9adca4be7d0`.
+Use the same command and peer locations below. Next qualify explicit recovery
+on a replacement service without replaying the uncertain mutation, then remaining
+process-loss/integrated failures and the portal/broker release audit. t333 stays
+open, pins unchanged, no quiet hold and no measured speedup.
+
+### Initial administrative production checkpoint
+
+Signed Rust `c586e1b` and C `c40ce7a` pass the same production administrative
+export gate, `admin_external_sdk`. Each peer completes request 1 through a
+claimed ControlTicket, receives Stale for request 2 after catalog generation
+changes, refreshes and completes request 3 on the same connection. Only 1 and 3
+reach the owner. A separate run revokes child admission after its ticket is
+claimed: both SDKs terminate with uncertain custody and refuse another command;
+the ticket stays dispatched. The fixture supplies policy completion and does
+not execute a WM action. Admin map 10 records this qualification boundary.
+
+Run `cargo-slot sophia cargo test -p sophia-runtime --test admin_external_sdk
+-- --include-ignored --nocapture`, setting `SOPHIA_ADMIN_SDK_PEER` separately
+to each independently built executable. Rust: its worktree cargo-slot
+`debug/examples/admin_conformance_peer`, SHA-256
+`48f6f2e4cb5e45b85f73d01ab32b5af2f96d0ba3ba0c9dc131ad87b9b1d8d7bd`.
+C: `build/admin_conformance_peer`, SHA-256
+`89bcd5698f3316a96aa71f7cc062b6f6402f3d01f36b5599ce67ceb5ff88194c`.
+Both runs pass; strict Rust Clippy and the C peer build pass. No binaries were
+copied into evidence. Next qualify service loss/recovery and remaining integrated
+failure schedules, then continue the portal/broker and release-wide parity audit.
+t333 remains open, pins unchanged, no quiet hold and no measured speedup.
+
+### Socket startup checkpoint
+
+Signed Rust `99b9023` and C `3f90f17` add nonblocking startup from a caller-
+connected HostDomain socket, covering version, file opening and initial catalog
+under one absolute deadline. One phase spends the caller's I/O budget per
+dispatch; the ready session transfers once. The full scripted command exchange
+now uses these facades. Paired stalled-version tests cover zero/one-byte budgets,
+clock regression and expiry without extra writes; unsupported versions terminate
+without attach or fallback. Twelve Rust client tests and C's session/connecting
+tests pass; strict Clippy passes.
+
+Admin map 9 and shared `ADMIN-CLIENT.md` document admission, storage, event-loop
+driving, custody and explicit recovery. C retains caller descriptor ownership
+and requires immovable session storage; Rust owns its stream and uses offsets
+into retained catalog bytes. Neither automatically reconnects or replays. Next
+extend integrated failure schedules and run both independent peers against the
+production administrative export, including ticket/owner and process-loss
+behavior. t333 remains open, pins unchanged, no quiet hold and no measured
+speedup.
+
+### Integrated session checkpoint
+
+Signed Rust `1ea6ffe` and C `c201c6e` integrate administrative sessions on their
+startup handoffs. Both retain one catalog, admit one command, assign increasing
+IDs, drive matched replies and expose custody/outcomes, refresh, write readiness,
+next wake and close. Rust retains catalog bytes plus name offsets; C's borrowed
+names point into its fixed buffer, so initialized C session state must not move.
+Neither clones a catalog per command. Status storage is reused; idle sessions
+schedule no status reads. Terminal failures preserve custody and forbid replay.
+
+Ten Rust client tests, nine protocol tests and strict Clippy pass. C's independent
+integrated socket test passes. Both peers cover three commands on one attach,
+pending before each outcome, catalog reuse and refresh after a Session result,
+unadvertised/busy refusal, explicit write refusal, loss after write and wrong
+outcome generation. Confirmed outcomes survive close. Admin map 8 records the
+limits: these are scripted peers, not production export evidence. Next add the
+raw-socket/version facades, integrated deadline/partial-I/O failure cases and
+ownership/recovery guidance, then run paired production gates. t333 stays open;
+pins unchanged, no quiet hold and no measured speedup.
+
+### Command custody checkpoint
+
+Signed Rust `d50871a` and C `2ad3a29` add administrative command custody and
+caller-driven status scheduling. An immutable command distinguishes queued,
+issued, accepted, settled, refused, dropped-unsent and uncertain states.
+Explicit write errors prove refusal; short/lost replies and expiry after issue
+preserve uncertainty. Complete outcomes survive close. Status must match the
+connection/request/generation and the owner's legal success outcome.
+
+Pending results schedule another snapshot after one millisecond without
+extending the original deadline; each snapshot has its own bounded frame wait.
+The tracker allocates no heap memory and copies at most 256 detail bytes once
+for retained results. Eight Rust client tests, C's independent command test and
+strict Clippy pass. All owner/outcome combinations, identity refusal, custody
+on close, short/refused writes, expiry, clock regression and cadence are covered.
+Admin map 7 records the component boundary. Next integrate startup, snapshots
+and commands into the full session: retained catalog ownership, monotonic request
+sequencing, same-pipeline dispatch and external-loop facade, followed by paired
+production gates. t333 remains open; no speedup measured, pins unchanged and
+no quiet hold active.
+
+### Startup checkpoint
+
+Signed Rust `fdc9688` and C `826eeda` add administrative startup on an exclusive,
+already-versioned 9P pipeline. Both attach once, validate info through EOF/clunk,
+enforce timeout ceilings and open ctl with a complete-command iounit. They hand
+off the same pipeline/root/ctl without reconnecting. Rust uses a shared budget
+across at most 32 rounds; C services its bounded pipeline once per dispatch and
+queues the next request. Neither sleeps or performs I/O after startup is ready.
+
+Five Rust client tests, C's independent startup test and strict Rust Clippy pass.
+Socket cases cover fragmented info, one-byte budgets, file order, retained fids,
+directory/timeout/iounit/clunk refusals, expiry before transmission and clock
+regression. C distinguishes transport errors and requires its caller to close
+the borrowed fd; Rust drops its owned pipeline on terminal failure. Admin map 6
+records the scope. Raw-socket/version facades, catalog retention/refresh,
+invocation custody, status scheduling and paired production gates remain.
+Next implement the command session on this startup handoff. t333 stays open;
+pins are unchanged, no quiet hold is active and no speedup is measured.
+
+### Earlier SDK checkpoints
+
+Signed Rust `96aba59` and C `0797146` add provisional administrative snapshot
+state machines for info, commands and status. Both emit bounded Walk/Open/Read/
+Clunk operations and expose a result only after EOF, syntax validation and
+successful clunk. Reads respect msize/iounit and probe beyond the file bound
+without storing overflow. Remote errors do not cause retries. Absolute deadlines
+and nonmutating clock-regression refusals use caller-supplied monotonic time.
+
+Rust reserves/reuses the supplied Vec; C uses caller storage. Tests verify
+storage identity, fragmented reads of all three files, EOF/clunk barriers,
+malformed EOF, oversized replies, overflow, clunk refusal, EAGAIN, deadline and
+clock regression. Three Rust component tests, C's independent snapshot test and
+strict Rust Clippy pass. Admin map 5 documents the limits: matched replies are
+supplied by the tests, and the connection driver must match tags and close on
+terminal errors. Scratch storage before completion is not a validated result.
+Next join these components to each SDK's pipeline for startup, readiness and
+bounded dispatch, then invocation custody and pending-only status wakeups.
+No complete administrative client or production gate is claimed. t333 remains
+open, pins unchanged, no quiet hold or measured speedup.
+
+Signed Rust `42d28dd` and C `e184709` add complete administrative catalog
+validation and binary-search membership lookup. Both keep at most 259 inline
+rows with names borrowed from the immutable snapshot, without heap allocation.
+They reject the whole catalog for bad counts, ordering, duplicate names,
+unsupported Session operations, excessive policy rows or malformed text.
+C leaves caller output unchanged on failure. Nine Rust administrative tests,
+all four C administrative test binaries and strict Rust Clippy pass. The full
+259-row catalog and the 256-policy boundary have independent tests in both.
+
+Admin map 4 records this checkpoint. Next implement caller-driven clients over
+the existing 9P pipelines: bounded snapshot reads through EOF and clunk, one
+ctl invocation, exact identity/custody, pending-only status wakeups and explicit
+failure/recovery. The runtime reference clones catalogs during commands and
+invocation and sleeps between status snapshots; the SDK clients should retain
+one validated catalog and expose wake times instead. Record buffers must outlive
+borrowed views, with no self-referential Rust storage. Paired production and
+failure gates remain required. t333 stays open; no speedup is measured and pins
+remain unchanged.
+
+Signed Rust `a53824f` and C `a19fa07` add allocation-free invocation and
+status decoding and fixed-buffer invocation encoding. Names and outcome details
+borrow input storage; all ten outcomes remain distinct. Encoders validate
+before copying into caller storage, leaving it unchanged on failure. C permits
+the source name to overlap destination storage. Neither parser establishes
+catalog membership, admission, EOF or owner-specific outcome legality.
+
+Six Rust administrative tests, all three C administrative test binaries and
+strict Rust Clippy pass. Coverage includes literal wire records, maximum
+identities and lengths, all outcomes, borrowed pointers, short output buffers,
+truncated prefixes and invalid text. Admin map 3 records the boundaries.
+Next implement complete catalog validation, then the nonblocking clients and
+paired production gates. This is codec evidence, not client parity or a
+measured speedup. t333 remains active with unchanged pins and no quiet hold.
+
+Signed Rust `54d86dd` and C `d582a23` begin administration support with
+equivalent allocation-free info decoders. Rust returns a Copy value; C writes
+caller storage only after full validation. Independent literal and malformed
+tests cover maximum identities/timeouts, zero/overflow, canonical spelling,
+every truncated prefix, extra fields and invalid text. Both suites and strict
+Rust Clippy pass. Admin map 2 records the scope: parsing alone establishes
+neither EOF nor admission. Next implement catalog, invocation and status
+codecs, then the bounded external-loop clients. No CPU gain is claimed.
+
+Signed Rust `f649aff` and C `88cf285` also pass protected unfinished-upload
+revocation. Each writes and settles four bytes of a 16-byte resource, then
+queues its remaining twelve bytes with zero I/O budget. The parent revokes
+launch authority before the peer resumes. Both clients terminate, retain
+ResourceBegin custody, clear pending work and reject End/Cancel. No resource
+or candidate reaches Session; Rust returns the same owned tail buffer.
+This proves a queued-tail schedule, not interruption of a partially sent wire
+payload. Fresh authorized replacement and SDK reauthentication remain open.
+
+Both protected tests pass independently for each SDK with the
+`lock_external_sdk::` filter, `--include-ignored` and the peer paths below.
+Strict Rust Clippy, the C peer build, both contract hash manifests and diff
+checks pass. Updated protected-peer SHA-256: Rust
+`c7dedce92e7c9891552ae0d4c24e0a59a55972361aaa4f43c8ee4e86674d07a5`;
+C `6e0a2b60cd94703a61090a19bb2f926a5989503bc2f153c7645a0b28b4951a3b`.
+API matrix 48 / lock map 8 record the qualification boundary.
+
+The remaining-role audit confirms that administration has a production export
+but neither SDK has its typed client. Both now pin `sophia-admin-files.md`
+from Sophia `baedfd0c9` and carry `ADMIN-PARITY.md` revision 1. Implement its
+bounded passive codecs, then caller-driven clients in both languages. Preserve
+one pending invocation, uncertain custody after lost replies, and explicit
+recovery. Reuse connections and buffers; poll status only while a command is
+pending, with caller-driven wakeups rather than blocking sleeps. No speedup
+has been measured.
+
+Broker files remain design-only under t314; the legacy broker transport is
+not SDK file coverage. Portal requester and recipient/capture interfaces exist
+but need separate typed SDK coverage: private requester admission must not be
+confused with namespace-selected recipient authority. Administration and these
+portal gaps precede release-wide parity, foreign-language smoke, signed
+publication and verified pin adoption. t333 remains open; pins are unchanged
+and no quiet hold is active. The checkpoints below retain earlier evidence.
+
+Signed Rust `3e5b679` and C `165c250` pass paired lock production-export and
+protected idle-revocation gates. The runtime gate runs pinned C, candidate C
+and external Rust through the same production worker: chord negotiation, exact
+object fetch, two-chunk 2x2 upload, demand/permit, candidate outcome, Entry/Chord
+events and Unlocking publication. All three pass. The harness supplies admission,
+lock state, permits and outcome; this is not Engine rendering or physical-lock
+acceptance. The C candidate source path is explicit and pins remain unchanged.
+
+Both SDK peers separately pass the native-session launch-authentication test
+`external_sdk_lock_authenticates_and_observes_revocation`: real Factotum and
+bubblewrap, same admitted root, object/ACK, revocation, retained negotiation
+custody, one connection/disconnection and zero remaining namespace admissions.
+The existing raw authenticate/reauthenticate/revoke control also passes, but does
+not qualify SDK session reauthentication. Lock state and the private channel
+class remain supplied. In-flight upload revocation is still a separate gate.
+
+C now has a passive `sophia_lc_obligations` query corresponding to Rust's
+consumed/acked, pending flags, write count and retry/ACK waits. Invalid arguments,
+retry, held/drained uploads, terminal flags and production ACKs are tested.
+All 37 Rust lock tests, strict Clippy and C's full suite pass. Both SDKs record
+API matrix 47 / lock map 7 and the ownership guide. No performance gain is claimed.
+
+Reproduce with `cargo-slot sophia cargo test -p sophia-runtime --test
+lock_client_c_sdk -- --include-ignored --nocapture`, setting
+`SOPHIA_LOCK_RUST_SDK_PEER` to the independently built example and
+`SOPHIA_LOCK_C_SDK_SOURCE` to the candidate checkout. Run the protected test with
+`-p sophia-session --features native-session --test launch_authentication`, the
+test name above and `--include-ignored`; set `SOPHIA_LOCK_AUTH_PEER` separately
+for each SDK. Rust peer binaries are in the SDK worktree's cargo-slot pool;
+C's protected peer is `build/lock_authenticated_peer`.
+
+SHA-256: Rust production peer
+`a268d30fe0a557eff8b01184eab74e0ebc1f387993ca29174dff582aac4e5d90`;
+Rust protected peer
+`b2d06f663134eb8165f5c5fec12f2500c494fa9b1accb456466fe2bfd401dc72`;
+C protected peer
+`d68cdfa475b8d7e55c3bb80409258e2d84ddf32eeaa6b56d6759de10e9e81db2`.
+
+Next qualify in-flight lock revocation/recovery and audit remaining role failure
+coverage, then administration and public broker/portal APIs. Release-wide parity,
+foreign-language binding smoke, signed publication and verified pin adoption
+remain required. t333 is open; no quiet hold is active.
+
+Signed Rust `94ff9db` integrates the experimental lock Session and nonblocking
+Connecting facade. Direct startup and admitted-root handoff retain one connection;
+the facade transfers a ready session once and preserves terminal inspection.
+The session owns ordered events, exact object fetch, custody, explicit retry,
+ACKs and 1–8 upload writes. Control requests precede bulk writes; after draining
+cancellation, a second submission drive exposes the new request before returning.
+The default window now admits six request slots, matching C; larger windows need
+their width plus five slots. Rust still requires sixteen fids and bounded input.
+
+All 37 Rust lock-client tests, strict Clippy and formatting pass. Six integrated
+socket tests cover both startup paths, negotiation/later retry, object delivery,
+control progress with eight held writes, End/cancellation/short-write/rejection,
+short/error/stale ACKs, refusal ACK, uncertain disconnect and confirmed custody
+on close. A one-byte-budget test proves Cancel has POLLOUT after the last held
+reply drains. Signed C `86b3e89` adds independent six-request negotiation retry;
+the C lock suite passes. Both SDKs have API matrix 46, lock map 6 and LOCK-CLIENT
+ownership/recovery guidance. No measured performance gain is claimed.
+
+Next run paired C/Rust lock production-export and protected-launch gates. Then
+finish remaining role coverage, release-wide parity audits, foreign-language C
+binding smoke, publication and verified pin adoption. The lock contract remains
+draft; scripted peers do not establish production or physical acceptance.
+t333 stays open, pins are unchanged and no measurement hold is active.
+
+Signed Rust `506cec0` adds the provisional lock upload controller: one upload,
+1–8 write slots, five request slots reserved for controls, explicit cancellation
+and draining before cleanup. Reversed replies may free slots for refill while
+an earlier reply remains held. Pipelined short writes cancel; single-write mode
+continues at the returned count. Slot errors end or cancel only the upload;
+malformed replies terminate the session. Resource status and submission refusal
+drive cleanup, allowing later uploads after the slot is released.
+
+Chunks transfer as owned Vecs without a payload copy. Failed admission returns
+the same buffer; take_chunk returns completed storage for reuse only after all
+issued writes settle. C borrows storage instead. Transport may still copy wire
+payloads, and runtime gains remain unmeasured. Seven upload tests bring the Rust
+lock-client total to 31; all pass with strict Clippy. C's independent lock suite
+passes, including socket-backed window, cancellation and control-progress tests.
+Signed C `f7d3d45` records API matrix 45 / lock map 5 in both SDKs.
+
+Next integrate startup, submission, journal, object fetch and uploads into the
+lock session/connecting facades. Test real-socket control progress, immediate
+readiness after cancellation drains, terminal custody and recovery before paired
+production/protected gates. Remaining role coverage, publication and verified
+pin adoption still block t333. No quiet hold is active; pins remain unchanged.
+
+Signed Rust `70c9b22` adds the provisional lock journal and object fetch.
+The journal retains one application head and does not decode controls behind
+it, matching C. Both byte buffers are fixed at 1024 bytes. A cursor avoids
+moving unread events after every consume; compaction happens only when an
+append needs tail space. Lock fetch verifies Qid, envelope epoch, body and EOF,
+then clunks before exposing the value. A newer Qid supersedes the announcement;
+it is released unread and consumed internally. The decoded allocation list
+still allocates, but its verified value transfers without cloning. Neither
+component adds clocks, retries or polling; no runtime gain is measured.
+
+All 24 Rust lock-client tests and strict Clippy pass. Signed C `bdcd0f6` adds
+independent rejection checks for old Qids, wrong epoch, premature EOF and
+trailing bytes; the lock suite passes. Existing C checks cover supersession,
+ordered Entry/Chord events, grants and refusal ACKs. Both SDKs record API
+matrix 44 / lock map 4. Next implement upload lifecycle and 1–8 write windows,
+then integrate journal, fetch and submission into session/connecting facades.
+Production tests, remaining roles and publication still block t333. Pins and
+the measurement pilot remain unchanged; no quiet hold is active.
+
+Signed Rust `834d5b9` adds the bounded lock submission lane: immutable candidate
+storage, borrowed write slices, explicit retry, latest custody, refusal and
+disconnect handling. Transaction settlement clunks and walks the file again;
+reopening waits for the Submitted ACK. Earlier references below to a persistent
+transaction fid describe startup retention, not reuse across submissions.
+Signed C `b383726` fixes a contradictory EAGAIN after confirmed custody: fail
+closed and retain custody, never offer replay. Both SDKs document this behavior
+in lock map 3 / API matrix 43. Fourteen Rust lock-client tests, strict Clippy,
+formatting and C's full independent suite pass. The submission lane adds no
+clock reads or polling and owns fixed storage; candidate body preparation still
+uses a temporary allocation. Runtime improvements have not been measured.
+
+Next implement the lock journal and exact Lock object fetch, then uploads with
+1–8 outstanding writes and integrated session/connecting facades. Keep the
+caller-owned retry policy and avoid cloning fetched objects. Independent
+production gates, remaining role coverage and publication still block t333.
+No production pins changed and no measurement hold is active.
+
+Signed Rust `4c422a9` adds provisional lock fixed-file startup. It reads the
+exact decimal API epoch, verifies the Limits envelope against it through EOF
+and clunk, and opens events, transaction, submit and ACK with their proper
+modes. The transaction fid and iounit remain available to the submission lane.
+Attached startup preserves the exact sole quiescent root without reattachment.
+Seven socket tests cover fragments, malformed/overflowing epochs, epoch mismatch,
+control iounits, root/bounds, clock regression and unsent expiry. All ten Rust
+lock-client tests, strict Clippy and C's full suite pass. C `c101d3d` records
+matrix 42 / lock map 2, including Rust's conservative eight-request/sixteen-fid
+bound versus C's six-request minimum and caller-owned timeout difference.
+
+Next implement lock submission on the persistent transaction fid: immutable
+bytes, explicit EAGAIN retry, latest-result custody and Submitted ACK barriers.
+Then journal/Lock object handling, upload lifecycle and 1–8 write windows,
+integrated session/connecting facade and independent production tests. Startup
+alone does not establish lock-session parity. Production pins remain unchanged.
+
+Signed Rust `2ce53f7` starts experimental `sophia-lock-client` with typed
+preparation for all seven candidate kinds. Immutable encoded candidates fit
+fixed 128-byte owned storage; the body codec still uses one temporary Vec,
+so preparation is not allocation-free. Direct envelope writing avoids a second
+temporary allocation. Three tests cover all typed bodies, literal FrameDemand
+bytes, caller mutation, full-size presentation and invalid shapes/offers.
+Strict Clippy and C's independent full suite pass. C `fd99803` records the
+complete operation checklist in `LOCK-PARITY.md` revision 1 / matrix 41.
+
+Next implement lock startup and the persistent transaction submission lane,
+then journal/object handling and uploads. Lock differs from output: the API
+line contains the epoch, four fixed streams include a retained transaction
+fid, retries are explicit, superseded Lock publications are consumed internally,
+and uploads support 1–8 writes with five control slots reserved. Drain issued
+writes before cancellation; pipelined short writes cancel, single-write mode
+may continue. Keep startup/upload-owned candidate kinds out of unrestricted
+public submission. The pinned contract remains draft and providers only render;
+there is no credential or unlock authority. No session or performance claim
+is made by this foundation. All other t333 scope remains required.
+
+Signed Rust `5d66fec` and C `cce3196` add independent protected output peers.
+Both pass the real protected process/Factotum fixture, hand the exact admitted
+root to their native session, fetch and ACK topology, then observe idle grant
+revocation while retaining negotiation Submitted custody. Namespace admission
+returns to zero. The original raw reauthentication/revocation control passes
+separately. C's full suite and strict Rust output all-target Clippy pass.
+Matrix 40 / output map 9 record the scope: no SDK reauthentication or in-flight
+proposal revocation is claimed. Production pins and the desktop are unchanged.
+
+Run each prebuilt peer with
+`SOPHIA_OUTPUT_AUTH_PEER=/absolute/path/to/output_authenticated_peer cargo-slot sophia cargo test -p sophia-session --features native-session --test launch_authentication external_sdk_output_authenticates_and_observes_revocation -- --include-ignored --nocapture`.
+The invocation without `native-session` ran zero tests and is not evidence;
+the corrected explicit target ran one passing test for each SDK.
+Rust peer SHA-256: `02a798b4e609d77bb5673d2f2ebaae0e674365a815c3e4a6b669bd8f30a82551`
+at `~/.cache/cargo-slots/sophia-desktop-sdk-rs@sdk-rs-t331-reply-storage/1/debug/examples/output_authenticated_peer`.
+C peer SHA-256: `704b5dd29890dcd80e92cb1c437521b9114cc21d018d7d4f13db5280d6559d26`
+at `~/dev/sdk-c-t318-namespaces/build/output_authenticated_peer`. No binaries
+were copied into evidence. Next implement the experimental native Rust lock
+client against C's operations and pinned contract, keeping remaining output
+qualification limits in its operation map for the final release audit.
+
+Signed Rust `82b7319` adds `output_conformance_peer`; it and Sophia's existing
+C peer pass the same production output export/worker exchange. Both negotiate,
+fetch the exact topology, submit ValidateOnly, receive Validated and settle
+the final ACK. The fixture admits each peer's exact PID and supplies topology
+and the validation outcome. This proves wire/worker interoperability, not
+Engine validation, physical application or protected launch authentication.
+Signed C `936465a` records matrix 39 / output map 8. C's implementation and
+Sophia's verified SDK pins remain unchanged.
+
+The paired command passes two tests; the normal output export suite passes
+15 with the external Rust case ignored. Explicit invocation is required:
+`SOPHIA_OUTPUT_RUST_SDK_PEER=/absolute/path/to/output_conformance_peer cargo-slot sophia cargo test -p sophia-runtime --test output_file_export sdk_session_against_the_output_file_worker -- --include-ignored --nocapture`.
+Rust all-target output Clippy passes. The built Rust peer at
+`~/.cache/cargo-slots/sophia-desktop-sdk-rs@sdk-rs-t331-reply-storage/1/debug/examples/output_conformance_peer`
+has SHA-256 `2da234f7c6b93cfeb28b64e1bb9cf307aa17d53cb1bd45fab4228fc8ccd087d0`.
+No binary was copied to evidence. Protected output launch and idle revocation
+are now covered above; continue experimental lock,
+administration and the remaining t333 audit/publication requirements.
+
+Signed Rust `9ac9742` and C `fc67ebd` add independent output terminal socket
+checks through direct and attached startup: short ACK, ACK EINVAL/ESTALE and
+disconnect before/after observed proposal custody. Confirmed Submitted and
+UnknownDisconnected remain distinct; terminal state, errno and custody survive
+explicit close. All 37 Rust output-client tests, strict Clippy and C's full
+suite pass. Both SDKs carry `OUTPUT-CLIENT.md` with ownership, event-loop,
+topology and recovery rules; matrix 38 / output map 7 record evidence limits.
+
+The Rust output production-export peer now shares C's existing fixture above;
+protected launch and revocation remain. The
+scripted tests supply admission and do not prove Factotum grant revocation.
+No implementation change or native performance claim is made by this checkpoint.
+Production pins and the prepared t331 pilot remain unchanged.
+
+Signed Rust `fadc53f` adds nonblocking output `Connecting::direct` and
+`attached`, sharing the original deadline across version, fixed files and
+negotiation. Three tests cover expiry, remote errno retention and Observe
+validation. The integrated proposal test covers both startup paths, with and
+without EAGAIN: exact candidate/control bytes, caller mutation, domain IDs 50
+then 3, allocator 51, and transaction clunk/Submitted ACK barriers. Retry cases
+exercise Connecting through one-time Session transfer. All 35 output-client
+tests and strict Clippy pass; C's full suite passes. Signed C `034d426` records
+its independent existing counterparts in matrix 37 / output map 6.
+
+Terminal socket faults and recovery/ownership documentation are covered above;
+independent paired production-export and protected-launch peers remain. No extra
+clock or readiness syscall was added by this checkpoint. Native performance
+savings remain unmeasured; production SDK pins and the t331 pilot are unchanged.
+
+Signed Rust `f3a61c1` integrates the developing output session on one pipeline.
+Three independent socket tests cover startup/negotiation, topology delivery
+only after EOF/clunk, Refused only after its final ACK, and zero-budget/expired
+startup without sending queued negotiation. All 31 output-client tests and
+strict Clippy pass. C `ceb13ba` records the existing independent counterparts
+and remaining gaps in matrix 36 / output map 5.
+
+Keep performance in view while completing t333, as the owner requested.
+The session uses caller time and one shared dispatch budget. Verified topology
+ownership transfers without cloning vectors or labels; C already decodes into
+fixed session storage. This removes a concrete copy but establishes no native
+CPU savings. Preserve custody, fairness, deadlines and EOF/error behavior;
+measure any performance claim separately under t331.
+
+Proposal/retry, attached handoff and the connecting facade are now covered
+above. Terminal errors and paired production-export tests remain required.
+The Rust session is not yet fully qualified. Production pins
+and the t331 pilot remain unchanged; no quiet hold is active.
+
+Signed Rust `3f96b00` adds provisional publication-bound topology fetching.
+Walk/open must match the announced Qid; the decoded object must match both
+connection and topology epochs. Reads are bounded, and no value is exposed
+before EOF and successful clunk. Withheld opens clunk before a new walk;
+backoff never extends the original deadline. Five matched-reply tests cover
+fragmentation, identity, malformed lengths, early EOF, retry and clunk failure.
+All 28 Rust output-client tests and strict Clippy pass. C's full suite passes;
+signed C `c532820` records its existing independent fragmented-fetch, withheld
+open and wrong-Qid controls in matrix 35 / output map 4.
+
+The session above joins output startup, submission, journal and topology
+components with ordered reply handling, cumulative ACK barriers, Refused ACK
+settlement, caller-clock dispatch and terminal custody retention.
+Then add the nonblocking connecting facade and paired production-export tests.
+The standalone fetch tests do not qualify integrated socket dispatch.
+
+Signed Rust `34740d5` adds the provisional output journal. It checks granted
+capabilities and revision, makes Refused an internal ACK target, retains ordered
+application heads and validates custody behind a held head. ObjectPublished
+blocks delivery and ACK progress until an object driver confirms its sequence,
+Qid and topology epoch. Seven literal-wire tests cover these rules, all six
+outcomes, malformed-record stop, fragment deadlines and bounded retention.
+Signed C `67c8d95` independently checks all six outcomes and held-head ACK
+ordering through both constructors. All 23 Rust output-client tests, strict
+Clippy, formatting and C's full suite pass. Matrix 34 / output map 3 record
+the scope. A test callback does not qualify the missing object fetcher.
+
+The fetcher above now supplies publication-bound reads through EOF and clunk.
+Integrate startup, submission, journal and ACK handling into the output
+session and nonblocking connecting facade. Refused must settle its ACK before
+terminal handoff. Production pins and the t331 pilot remain unchanged.
+
+Signed Rust `a62d3f9` adds provisional immutable output submissions: Configure
+and epoch checks, separate domain IDs and tickets, 64-ticket custody history,
+same-ID retry, Submitted/ACK/clunk ordering and caller/assembly deadlines.
+Output permits out-of-order domain IDs and has no WM EALREADY success exception.
+Signed C `348efeb` independently checks both rules through direct and attached
+socket startup; C implementation is unchanged. All 16 Rust output-client tests
+(seven startup, nine submission), strict targeted Clippy, formatting and C's
+full suite pass. Both SDKs record matrix 33 and output map 2.
+
+The ordered journal above supplies grant intersection, explicit Refused ACK
+targets and retained application heads. Rust's
+submission tests supply matched replies directly; they do not qualify socket
+dispatch or production output exports. The final connecting facade still needs
+the nonblocking version handshake. Production pins remain unchanged.
+
+Signed Rust `21feb45` starts `sophia-output-client` with bounded fixed-file
+startup. `Opening::direct` accepts a versioned empty pipeline; `attached`
+preserves the exact quiescent admitted root without reset/reattach. It validates
+the exact output API and 72-byte Limits through EOF/clunk, then opens the three
+role files with control-iounit checks. Observe is required locally; unsupported
+revision requests remain for the server's explicit refusal. Seven socket tests
+and strict targeted Clippy pass. Signed C `4f64371` records matrix 32 and the
+new `OUTPUT-PARITY.md` operation map. This is not a complete output session.
+
+The submission implementation above follows C's
+`output_session/submission.c` behavior: Configure is required,
+domain IDs are distinct from tickets, and Submitted ACK plus transaction clunk
+must settle before the next transaction. The final connecting facade still
+needs the generic nonblocking version handshake. Keep output's explicit
+Refused state and grant/ACK/replay rules, rather than copying WM semantics.
+
+Signed Rust `8fe1c1a` adds `sophia-output-protocol`, extracted from signed
+Sophia `ad2fa4962ba1e7626b601e1a5b6b0ab95324bfc3`. Its 21 source hashes verify;
+the output schema and contract match C's pins byte for byte. The extraction
+retains passive values and codec validation, with no device or topology owner.
+All 30 extracted tests, the full Rust workspace suite and targeted strict
+Clippy pass. The spec hashes pass from `spec/`; the initial repository-root
+invocation used the wrong base, and the new hash rows were corrected to the
+existing relative-path convention. Signed C `a88efe7` records matrix 31.
+
+The codec foundation does not establish connection behavior. The developing
+client follows the C session operations below as its checklist.
+The output role differs from WM: explicit negotiation Refused state, Observe
+required, granted Configure, publication/Qid matching before exposing and ACKing
+ObjectPublished, bounded ACK progress, and domain replay capacity from Limits.
+Keep these semantics distinct instead of mechanically renaming the WM driver.
+
+Signed Rust `9890ed8` and C `afd9f90` check all nine profile completion
+kind/outcome combinations through independent sockets. Literal inspection
+confirms transaction/generation/digest echoes and outcome bytes, followed by
+Submitted and ACK settlement. The policy transaction allocator remains at 1.
+Rust's journal now accepts lifecycle/chord Cycle causes only with their
+negotiated capabilities, matching C's existing socket controls. All 45 Rust
+WM tests, strict targeted Clippy and C's full suite pass. Matrix 30 / WM map 6
+cover the implemented WM operations; publication-wide qualification remains.
+
+C's `sophia_output_session.h` owns the output comparison:
+direct/attached startup, observe-required negotiation with explicit Refused
+state, immutable proposals/custody, automatic topology fetch before publishing
+ObjectPublished, Qid/epoch/topology identity, ACK/clunk barriers and bounded
+caller-clock service. The neutral protocol crate above uses Sophia's
+`output_files.rs` and its six modules, passive `output_role.rs` and
+`packets/output_configuration.rs`, with shared typed IDs/geometry and the pinned
+output schema. Existing `output_file_{events,topology,limits,schema}.rs` and
+`output_files.rs` tests are the extraction controls. Preserve candidate
+structural parsing versus server-owned topology validation; no Engine authority
+belongs in the SDK. Record source hashes and exact signed source revision.
+
+Signed Rust `0681b4a` and C `016405a` independently check delivery of all three
+profile commands, all five configuration/projection/session-operation outcomes
+and all three presentation outcomes through their socket clients. Literal wire
+bodies avoid using the encoder under test. Held heads survive dispatch, ACKs
+never skip them, and semantic Disconnected outcomes leave the transport Ready.
+All 43 Rust WM tests, targeted Clippy and C's full suite pass (the final rename
+of the Rust fixture scenario enum was followed by its session suite).
+Matrix 29 / WM map 5 retain the limits: these are ordered observation tests,
+not execution of application-owned rollback policy. Do not require SDKs to own
+the application's rollback decisions.
+
+Signed Rust `d660990` and C `fe67eb3` add independent protected WM peers.
+Sophia's `policy_file_protected_authentication.rs` accepts an explicit absolute
+`SOPHIA_WM_AUTH_PEER` path while retaining its raw-protocol control. Both SDK
+peers pass the production protected supervisor/Factotum admission, transfer
+their exact admitted root into WM startup, settle configuration-capability
+negotiation and observe terminal closure/staleness after registration revocation.
+Confirmed negotiation custody remains readable. The shared Factotum stays ready.
+The native Rust run and the C run both passed; the raw control also passed.
+Strict Rust SDK Clippy and C's full `make check` pass. Matrix 28 and WM map 4
+record the build/run commands. This proves idle revocation, not revocation with
+application candidates in flight or automatic recovery.
+
+Built peer hashes (no executable copies): Rust
+`~/.cache/cargo-slots/sophia-desktop-sdk-rs@sdk-rs-t331-reply-storage/1/debug/examples/wm_authenticated_peer`
+SHA-256 `9b154d801f9fbbef49fe658c45a1844323efa9038e92b4942ebbdc26bdbb84e3`;
+C `~/dev/sdk-c-t318-namespaces/build/wm_authenticated_peer`
+SHA-256 `712dcc04042a8b65d1593574935aded8a2ff955c81a48b485d73eec0ecfaa550`.
+The first Rust attempt requested the wrong capability bit and was refused by
+Limits validation; the fixture now uses the named configuration constant.
+
+Signed Rust `1594612` and C `3809590` add paired terminal checks and the shared
+`WM-CLIENT.md` ownership/error guide. Independent socket peers cover short ACK,
+ACK EINVAL/ESTALE, and event-read revocation before/after Submitted. Confirmed
+custody survives; unconfirmed issued work becomes UnknownDisconnected. Remote
+errno, terminal state and custody survive explicit close. All 42 Rust WM tests,
+targeted strict Clippy and C's full `make check` pass. Matrix 27 and WM map 3
+distinguish these scripted checks from production grant revocation.
+
+Signed Rust `3228a06` adds startup status/error/custody inspection and the
+independent `wm_conformance_peer` example. Both C and Rust now pass the same
+production WM adapter/worker exchange: profile prepare/activate, configuration,
+a 64-surface snapshot spanning multiple reads, projection, session operation
+and receipt delivery. Signed C `324b2b1` records matrix 26 and WM map revision 2.
+All 41 Rust WM tests, the full SDK workspace suite and targeted strict Clippy
+pass. Startup checks preserve remote errno and ESTALE through explicit close.
+
+The Sophia fixture uses its pinned C `ba09265`; C WM code is unchanged in the
+candidate. The Rust test explicitly requires an absolute prebuilt peer path;
+it does not change production dependencies or verified pins. Run with
+`SOPHIA_WM_RUST_SDK_PEER=/absolute/path/to/wm_conformance_peer cargo-slot sophia cargo test -p sophia-session --features native-session --lib sdk_drives_profile_configuration_snapshot_and_policy_exchange -- --include-ignored --nocapture`.
+Both tests passed. Without `native-session`, the filter runs zero tests and
+provides no evidence. The first Rust run correctly refused invalid fixture
+chrome (disabled ring with nonzero width); the peer now sets width zero.
+The verified peer binary at
+`~/.cache/cargo-slots/sophia-desktop-sdk-rs@sdk-rs-t331-reply-storage/1/debug/examples/wm_conformance_peer`
+has SHA-256 `945af0642b5ab0fe976a6ad382fa28e4642b3834599ba175a60be266476d5ed8`.
+No executable was copied into evidence.
+
+The exchange test supplies admission and outcomes; protected admission is now
+covered separately above. Engine settlement and actual presentation remain
+separate claims. Publication/pin adoption and the other t333
+roles (output, lock, administration and broker/portal audit) remain required.
+
+Signed Rust `228f263` starts `sophia-wm-client` with typed application candidates
+and owned immutable encoding. Five tests cover all seven kinds, literal Dirty
+bytes, caller mutation, identity/capability rejection and separate domain IDs;
+targeted tests and strict Clippy pass. Signed C `4070e29` maps the counterparts
+in matrix 18. This prepares submissions only; the transport state machine is
+still required. In C, Submitted is validated before interpreting submit replies,
+and its ACK must settle before opening the next transaction. Preserve both
+ordering rules when implementing the Rust driver.
+
+Signed Rust `b71abfb` adds `sophia-wm-protocol`: neutral WM codecs and passive
+policy records extracted from Sophia `1d071c144`. Its extraction manifest's
+39 source hashes verify against that revision. The WM schema, API/file docs
+and golden corpus match C's pinned bytes; generated WM rows are unchanged.
+All 71 extracted tests, the full Rust workspace suite, strict Clippy and C's
+independent suite pass. Signed C `b6a99a3` records the comparison in matrix 17.
+
+Next is the Rust WM session client: direct and authenticated startup, bounded
+caller-clock dispatch, ordered retained events, submission/ACK barriers,
+same-ID retries, custody retention and Cycle-bound snapshot fetching. Codec
+tests do not establish session parity. Output, experimental lock, administration,
+broker/portal audit, paired production-export tests, foreign-language binding
+smoke and signed publication/pin adoption remain required. Production SDK pins
+and the prepared t331 pilot are unchanged. No measurement hold is active.
+
+Signed Rust `e2dfdc6` adds explicit local close, retaining custody and decoded
+observations without I/O; the native facade also disarms lifecycle authority.
+Tests distinguish Submitted, uncertain submission and unsent tails, and cover
+idempotence, held-credit release and retained-input cleanup. Full workspace
+tests (43 native), strict Clippy and C's full suite pass. Signed C `997f22d`
+records the paired existing close controls. Matrix revision 16 maps shell
+operations and explicitly distinguishes Rust's automatic snapshot/journal
+management from C's manual controls. Rust also lacks a separate allocation-free
+encoded-size query; prepared admission supplies a different pre-effect check.
+These differences require production-export review, not a silent parity waiver.
+
+Signed Rust `513cb31` adds configurable queue record/byte limits and optional
+control headroom. Defaults remain 64 records/2 MiB, reserving 32 records/8 KiB
+from bulk use. Zero headroom selects a shared pool; every C queue size is
+representable. Configuration requires a live empty queue with no delayed
+reservation. Invalid limits and busy resizing leave settings unchanged.
+
+Signed C `804c5f2` tests a two-slot queue and documents handoff accounting.
+C copies the front into separate transaction storage and releases queue credits;
+its limit excludes that single in-flight record. Rust transfers ownership and
+keeps the record charged until settlement. Identical settings therefore do not
+promise identical admission timing or memory use. Both remain bounded. Full
+Rust workspace tests, strict all-target Clippy and C's full suite pass. Both
+API matrices are revision 15; production-export qualification remains pending.
+
+The shell implementation now includes external-loop readiness and bounded
+caller-clock dispatch; prepared and serviceable delayed reservations; atomic
+content and general-role batches; custody retention queries; native transport,
+keyboard/focus, pointer, allocation/resource/pacing lifecycle; an owning native
+session with retained heads and scheduling hints; presentation metadata and
+reserve-before-edit callbacks. The SDK provenance files retain individual
+signed revisions, tests and limitations. Raw batches validate records and role
+support but do not establish action eligibility or register lifecycle state.
+Local atomic admission never implies atomic server effects.
+
+The owning Rust facade applies fetched catalog/facts generations when returning
+the observation; install its contents before presenting. C explicitly marks
+installed snapshots. Rust uses transport `Instant` and host-monotonic
+milliseconds; neither clock may go backwards. Scheduling deadlines do not
+settle server authority. Prepared commit needs no allocation or I/O; delayed
+commit can fail while preserving credits. Cancel unused delayed tokens.
+Input callback panic fails Rust's lifecycle closed before resuming unwinding,
+preventing replay of potentially applied external edits.
+
+Next, implement the Rust WM client against the pinned contract and C's coverage
+checklist, retaining the shell control differences above in the final audit.
+Output and experimental lock clients follow. The full task also requires
+administration coverage in both SDKs, the public broker/portal audit, independent
+paired production-export gates, a foreign-language binding smoke test, signed
+publication and verified Sophia pin adoption. Unsupported declarations cannot
+waive that accepted role scope.
+
+C's earlier reservation identity repair (`a90e235`) changed its public token
+layout. The candidate remains **0.10.0-dev, unreleased**; C consumers and
+foreign-language bindings must rebuild together. Do not move or reinitialize
+session storage with a live reservation. Mandatory parity rules are installed
+in Sophia's agent instructions and both SDKs.
+
+Sophia's production SDK pins and prepared t331 CPU pilot remain unchanged.
+No quiet hold is active. C helper tests use a session stand-in; current checks
+are SDK-level evidence, not production-export, physical or performance
+acceptance. t333 remains open.
+
 ## SDK platform policy
 
 Approved by niltempus on 2026-09-27: design both native SDKs for Linux and BSD,

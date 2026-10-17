@@ -1,11 +1,29 @@
 # Sophia desktop SDK for Rust
 
+The [2026-10-17 release audit](RELEASE-QUALIFICATION.md) records verified
+C/Rust capability parity, exact tested revisions and remaining limits.
+
+Allocation-free [shell candidate sizing](SHELL-SIZING.md) is available in both SDKs.
+
+Shell startup supports caller-driven progress from a connected socket or an
+admitted root. See [startup controls and ownership](SHELL-STARTUP.md).
+
+Launch authentication now supports caller-driven version negotiation, timers
+and bounded I/O from startup through root handoff. The existing blocking
+constructors remain available; see [launch parity](LAUNCH-PARITY.md).
+
 Clients for the Sophia desktop's role contracts over 9P2000.L. A shell, window
 manager, output or admin client links these crates; none of them needs a
 Sophia checkout to build.
 
 | Crate | What it is |
 | --- | --- |
+| `sophia-broker-protocol` | Native metadata broker request, response and custody records. |
+| `sophia-broker-client` | Caller-driven broker session with retained requests, atomic two-row responses and explicit retry; see [broker parity](BROKER-PARITY.md). |
+| `sophia-portal-protocol` | Portal recipient and requester file records. |
+| `sophia-portal-client` | Recipient capture/frame and transfer sessions, plus bounded requester uploads and outcome tracking. |
+| `sophia-admin-protocol` | Passive administrative info, catalog, invocation and status codecs. |
+| `sophia-admin-client` | Administrative session with retained catalogs, command custody and caller-driven status snapshots; paired production admission and recovery gates pass. |
 | `sophia-9p-records` | 9P2000.L value records (tags, fids, qids, wire errno, requests, replies), shared with Sophia's server core. |
 | `sophia-9p-client` | Bounded 9P2000.L clients: a blocking read-only `client` and the nonblocking, pipelined `pipeline` the role clients drive. |
 | `sophia-launch-client` | Sophia's local launch-channel authentication: correlated afid exchange, bounded progress and an admitted role root. |
@@ -13,12 +31,168 @@ Sophia checkout to build.
 | `sophia-desktop-ids` | Identifiers every role contract shares. |
 | `sophia-shell-protocol` | The shell's typed records and the `sophia_shell_fs_v1` file contract codec. |
 | `sophia-shell-client` | The shell client over the file contract. |
+| `sophia-wm-protocol` | The WM file codecs and passive policy records. |
+| `sophia-wm-client` | Developing WM session with negotiation, events, custody and Cycle-bound snapshots. |
+| `sophia-output-protocol` | Output file codecs and passive topology values. |
+| `sophia-output-client` | Output session with startup, submissions, journal and topology fetching; paired export and protected idle-revocation gates pass. |
 | `sophia-lock-protocol` | The lock provider's `sophia_lock_fs_v1` file contract codec (experimental; see Contracts). |
+| `sophia-lock-client` | Experimental lock session with startup, custody, events, object fetching and bounded uploads; paired export and protected idle-revocation gates pass. |
 
-The shell role is the only one with a full role client here. The lock provider role has
-an experimental codec and no client. WM, output and admin modules arrive as
-their file contracts are implemented; nothing here claims a contract Sophia
-does not serve.
+Shell, WM and output have native clients; their release qualification differs.
+The lock provider now has an experimental session against its draft contract.
+Administration has a developing session on a versioned pipeline. [API parity](API-PARITY.md) records
+the comparison, evidence and remaining gaps. [Portal parity](PORTAL-PARITY.md)
+records the recipient and requester scenarios and their qualification limits.
+
+For reusable portal image buffers, `Session::frame_buffer(&mut Vec, deadline)`
+keeps storage with the caller on local rejection. Admission takes the original
+buffer without a copy; recover it with `take_frame`, or `take_frame_scratch`
+after failure. The consuming `frame` convenience method remains available.
+
+The broker client starts from an exclusively owned, quiescent 9P pipeline and
+admitted root: drive `startup::Opening`, transfer its `Opened` result, then drive
+`session::Session`. It retains one request independently of journal consumption.
+Respond once, acknowledge events explicitly and retry only when requested by the
+application; disconnect never reconnects or replays. The supplied-root constructor
+does not authenticate the caller. The `broker_peer` example demonstrates the
+lifecycle against Sophia's generic export and protected-launch gates. Sophia's
+live broker now uses this SDK. Performance acceptance and the full desktop SDK
+release audit remain open; [broker parity](BROKER-PARITY.md) records their limits.
+
+The WM protocol crate includes negotiation, profile handoff, snapshots,
+configuration, projection, Cycle events and outcome records. Its schema and
+golden corpus match the C SDK's pinned contract. Encoding a valid record does
+not establish custody or a committed scene. See [WM parity](WM-PARITY.md) for
+the session's production evidence and remaining qualification limits.
+
+The developing output client also exposes `Connecting::direct` and `attached`.
+Drive startup with caller-monotonic milliseconds and a byte budget, then transfer
+the ready session once with `take_session`. Consume retained events explicitly;
+topology publications are exposed only after their exact object reaches EOF and
+clunk. `topology` borrows the verified snapshot without a deep-copy handoff.
+Proposal admission returns custody tickets, not proof of committed topology.
+See [output parity](OUTPUT-PARITY.md) for remaining qualification gates.
+
+Start the developing WM client with `Connecting::direct` for a supplied-admission
+socket or `Connecting::attached` for an authenticated pipeline/root. Drive
+`dispatch` until `ready`, then call `take_session`. Version, file opening and
+role negotiation share the original absolute deadline; constructors perform
+no socket I/O. Direct startup is never an authentication fallback.
+WM requires at least eight request slots, sixteen fids, msize at most 64 KiB,
+and input capacity of twice the negotiated msize plus 64 bytes for concurrent
+event/snapshot reads and scalar replies. Handoff requires no unfinished traffic
+and the exact sole root. Default pipeline bounds satisfy these requirements.
+Drive it with monotonic milliseconds and a byte budget; inspect socket interests
+and the wake deadline before sleeping. `event` retains one application head
+until `consume`. `submit` returns a local custody ticket; `custody` distinguishes
+Submitted from refusal and uncertain disconnect. Submitted does not establish
+scene commit. Call `request_snapshot` while its Cycle is the retained head;
+the request freezes the expected epoch, transaction and scene generation before
+the event is consumed. `snapshot_result` borrows the verified object only after
+EOF and clunk; `release_snapshot` frees the result for another fetch. One fetch
+or retained result is allowed at a time. The generic `wm_conformance_peer`
+example passes Sophia's supplied-admission production adapter/worker exchange
+alongside the independent C peer. Protected launch, terminal-error coverage and
+full WM qualification remain separate gates; see [WM parity](WM-PARITY.md).
+
+For an external level-triggered event loop, `ShellConnection` implements
+`AsFd` and exposes `io_interest()` alongside `wake_deadline()`. Drive `poll_io`
+and drain typed events before sleeping. Recompute interests after state changes;
+service `immediate` work without waiting, monitor only the requested socket
+interests (plus hangup/errors), and wake by the retry deadline even on an idle
+socket. The borrowed descriptor is for monitoring only; the SDK owns I/O.
+`wait_for_io` remains available for applications that need a simple wait.
+
+Use `dispatch(now, byte_budget)` to supply time and bound one complete service
+call to that many bytes and 32 syscall attempts per direction. A zero budget
+does no socket I/O. Drain with `take_*` methods when controlling the clock;
+`poll_*` receive methods and `wait_for_io` use the default driver. Retry backoff
+matches C: 4 ms, doubling to 256 ms, with earlier retry after event progress.
+
+Before a local UI change that needs a content record, `reserve_content` (or
+`reserve_content_group` for a complete candidate) validates and holds the record
+and its queue capacity. Perform the local change, then call the returned
+handle's `commit`; dropping it cancels. Commit performs no I/O or allocation and
+returns Queued tickets. The handle exclusively borrows the connection, so keep
+it within one synchronous operation.
+
+For records chosen later, `reserve_capacity(slots, bytes)` returns a connection-
+bound token that can stay live during dispatch and other admissions. Use
+`commit_reserved_content` or `commit_reserved_content_group`, or explicitly
+`cancel_reservation`; dropping this token alone does not release credits.
+Invalid records or sizing leave it live. This form guarantees queue credits,
+but encoding/allocation can still fail at commit, unlike the prepared handle.
+
+For several content operations, build `ContentBatchItem::Record` and
+`ContentBatchItem::Candidate` items, each with its own transaction. Use
+`enqueue_content_batch`, `reserve_content_batch`, or
+`commit_reserved_content_batch`. Admission is all-or-none locally, with one
+ticket per item. The server still accepts or refuses each operation separately;
+one accepted batch is not an atomic server transaction.
+
+`ShellBatchItem` extends those forms to native, descriptor, indicator and catalog
+operations through `enqueue_shell_batch`, `reserve_shell_batch` and
+`commit_reserved_shell_batch`. It validates records and role support but does not
+register lifecycle state or prove action eligibility. Use role helpers for
+those checks. A one-item batch provides delayed single-record admission.
+
+`set_queue_limits(QueueLimits { .. })` configures an empty live queue before
+handoff to a role facade. Defaults preserve 64 records/2 MiB with 32 records/
+8 KiB of control headroom; zero headroom uses a shared pool. In-flight records
+remain charged until settlement. Queue resizing is refused while records or
+delayed credits are held. Limits do not shrink retained allocation capacity.
+
+`close` ends locally without I/O while keeping custody and decoded observations
+readable. It releases delayed credits and blocks new work; the owned descriptor
+closes on Drop. The native facade also clears input and lifecycle authority.
+
+Use `custody_result(ticket)` to distinguish retained custody from
+`CustodyLookupError::Unavailable` (evicted history) and `Unissued`. The existing
+`custody` method still returns `None` for both lookup failures. Tickets must
+be queried on their issuing connection.
+
+For the native launcher, negotiate revision 7 with exactly the application
+catalog, content surface, discrete input and native launcher capabilities.
+`enqueue_native_launcher_tracked` sends allocation requests, input ACKs and
+activations; `enqueue_native_candidate_tracked` sends a whole candidate.
+`reserve_native_input_response` prepares an ACK and optional keyboard activation
+before a local edit; commit admits both or neither, with separate custody tickets.
+Drain `take_native_launcher_observation` for native events, content outcomes and
+catalogs in order. Do not mix other receive methods into that ordered stream.
+`NativeLauncherLifecycle` adds opening, presentation, focus and keyboard-input
+tracking. Feed observations in order, use `enqueue_native_candidate_with_lifecycle`
+to admit and track a candidate together, and `prepare_native_input` before any
+edit. The returned handle holds the exact response; commit consumes the retained
+input, while Drop leaves it available. Its status reports edit/activation
+eligibility and the input ACK scheduling deadline. Call `service` after driving
+the connection to reconcile custody and disconnects. Publication notices disarm
+stale scenes before snapshot fetching completes.
+
+Use `allocate_native`/`release_native_allocation` for allocation ownership and
+`begin_native_resource`, `upload_native_chunk`, `end_native_resource`,
+`cancel_native_resource` and `retire_native_resource` for uploads and retirement.
+Uploads wait for Stored between caller writes; Accepted alone makes a resource
+placeable. Close invalidates local use of an allocation but does not release
+resources. The helper waits for the server's invalidation/release records.
+
+`demand_native_frame`, `cancel_native_demand` and `present_native_scene` track
+permits and build candidates from current allocations and accepted resources.
+Drive `service_at` with host monotonic milliseconds. Permit deadlines and the
+caller-supplied margin are advisory; local expiry cannot authorize another
+demand before the server ends the old one. `action` exposes retained pointer
+events; `prepare_native_action` reserves an exact ACK and optional activation
+of any eligible displayed row. Drop preserves the event; commit consumes it.
+Cancellation events owe no ACK. `NativeLauncherSession` owns a fresh negotiated
+connection and combines these operations with ordered `next_event`/`done`,
+automatic transaction IDs, prepared responses, bounded `dispatch` and scheduling
+`obligations`. Its two supplied clocks are transport `Instant` and host monotonic
+milliseconds. Response Drop keeps the event; commit consumes it. Fetched
+catalog/facts observations must be installed by the caller before presenting.
+`presented` returns borrowed metadata for the last Presented candidate.
+`apply_input` reserves before an editable input callback and commits its result
+as Consumed or Stale. A callback panic fails the lifecycle closed and resumes
+unwinding; it cannot safely replay an edit whose external effects are unknown.
+Never use local admission as proof of presentation or application startup.
 
 The protocol crate also carries the descriptor, tabs, shortcut/reference and
 revision-4 launcher records, native file codecs and pure validation. This
@@ -63,6 +237,11 @@ explicitly. A lock provider only renders: the contract carries no secret and no
 unlock.
 `spec/SHA256SUMS` holds every digest; Sophia's gate refuses a vendored SDK
 whose copies differ from its own.
+
+Generic callers can use `pipeline::VersionHandshake` for nonblocking version
+negotiation with caller time and a shared `IoBudget`. `take_pipeline` transfers
+ownership once without repeating Tversion. Existing blocking constructors remain
+available. `limits`, `is_quiescent` and `owns_fid` support role handoff checks.
 
 The dialect is plain 9P2000.L; wire error numbers are the Linux values
 9P2000.L defines, whatever the host (see `PLATFORMS.md`).

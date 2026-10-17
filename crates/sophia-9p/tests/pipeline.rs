@@ -73,6 +73,22 @@ fn deadline() -> Instant {
 }
 
 #[test]
+fn secret_writes_reach_the_real_export_unchanged() {
+    let (served, mut pipeline) = pipeline_with(PipelineLimits::default());
+    let (tag, root) = pipeline.attach(b"", b"").unwrap();
+    pipeline.wait(tag, deadline()).unwrap();
+    let (tag, sink) = pipeline.walk(root, &[b"sink"]).unwrap();
+    pipeline.wait(tag, deadline()).unwrap();
+    let tag = pipeline.lopen(sink, 1).unwrap();
+    pipeline.wait(tag, deadline()).unwrap();
+    let tag = pipeline.write_secret(sink, 0, b"test-secret").unwrap();
+    assert!(pipeline.scrubbing_output());
+    assert_eq!(pipeline.wait(tag, deadline()).unwrap(), Reply::Write(11));
+    assert!(!pipeline.scrubbing_output());
+    assert_eq!(served.export.state().sink, b"test-secret");
+}
+
+#[test]
 fn pipelined_attach_walk_lopen_read_write_and_clunk_succeed_in_order() {
     let (served, mut pipeline) = pipeline_with(PipelineLimits::default());
     let (attach_tag, root) = pipeline.attach(b"", b"").unwrap();

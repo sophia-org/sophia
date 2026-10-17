@@ -10,7 +10,9 @@
 //! authority-neutral, which is what lets a second authority arrive without needing a
 //! second broker.
 
+pub mod file_client;
 mod metadata;
+mod requests;
 mod trust;
 
 pub use metadata::*;

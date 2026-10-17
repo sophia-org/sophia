@@ -20,7 +20,7 @@ use crate::shell::encoding::ValueError;
 use crate::*;
 
 impl Wire for ShellIndicatorActivation {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.connection_epoch.put(bytes);
         self.snapshot_generation.put(bytes);
         self.output.put(bytes);
@@ -60,7 +60,7 @@ impl TryFrom<u16> for ShellIndicatorActivationStatus {
 }
 
 impl Wire for ShellIndicatorActivationOutcome {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.connection_epoch.put(bytes);
         self.snapshot_generation.put(bytes);
         self.event_id.put(bytes);
@@ -126,7 +126,7 @@ pub fn decode_shell_indicator_activation_outcome_value(
 // ---------------------------------------------------------------------
 
 impl Wire for ShellOutputStatus {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.output.put(bytes);
         self.focus_bits.put(bytes);
         put_text_padded(bytes, &self.layout, SOPHIA_SHELL_MAX_INDICATOR_LABEL_BYTES);
@@ -144,7 +144,7 @@ impl Wire for ShellOutputStatus {
 }
 
 impl Wire for ShellIndicator {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.output.put(bytes);
         self.indicator.put(bytes);
         self.action.put(bytes);
@@ -171,7 +171,7 @@ impl Wire for ShellIndicator {
 }
 
 impl Wire for ShellIndicatorSnapshot {
-    fn put(&self, bytes: &mut Vec<u8>) {
+    fn put(&self, bytes: &mut impl crate::shell::encoding::ByteSink) {
         self.connection_epoch.put(bytes);
         self.generation.put(bytes);
         self.active_output.map_or(0u64, OutputId::raw).put(bytes);

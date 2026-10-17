@@ -61,7 +61,7 @@ struct peer {
   unsigned hold_upload, held_uploads, upload_short, upload_error, upload_ends;
   uint16_t held_tag;
   uint64_t held_sequence;
-  uint32_t submit_error, extra_grant;
+  uint32_t submit_error, extra_grant, error_after_custody;
   uint8_t last_bytes[SOPHIA_LF_MAX_CANDIDATE];
   size_t last_size;
   struct sophia_lf_resource_begin begin;
@@ -331,6 +331,11 @@ static void submit(struct peer *p, uint16_t tag, const uint8_t *d) {
     return;
   }
   submitted(p, id, c.header.kind);
+  if (p->error_after_custody) {
+    events(p);
+    error(p, tag, p->error_after_custody);
+    return;
+  }
   accept_candidate(p, &c);
   count(p, tag, SOPHIA_LF_SUBMIT_BYTES);
 }
@@ -638,6 +643,23 @@ static void superseded_announcement(void) {
   rig_free(r);
 }
 
+static void rejects_invalid_lock_fetch(void) {
+  unsigned fault;
+  for (fault = 0; fault < 4; ++fault) {
+    struct rig *r = ready();
+    publish(&r->peer, SOPHIA_LF_LOCKED, 5, 1);
+    switch (fault) {
+    case 0: r->peer.lock[8] = EPOCH + 1; break;
+    case 1: r->peer.lock[r->peer.lock_size++] = 0; break;
+    case 2: r->peer.lock_size = 0; break;
+    default: --r->peer.qid; break;
+    }
+    assert(spin(r) == SOPHIA_9P_INVALID);
+    assert(sophia_lc_state(&r->client) == SOPHIA_LC_FAILED);
+    rig_free(r);
+  }
+}
+
 static void entry_and_chord(void) {
   struct rig *r = ready();
   struct sophia_lf_record v;
@@ -783,6 +805,31 @@ static void rejected_and_refused_uploads(void) {
   rig_free(r);
 }
 
+static void negotiation_retry_with_six_requests(void) {
+  struct sophia_lf_negotiate o = offer();
+  struct rig *r = rig_new_capacity(&o, NULL, 6);
+  unsigned submits;
+  struct sophia_lc_obligations obligations;
+  r->peer.submit_again = 1;
+  assert(!spin(r));
+  assert(!sophia_lc_ready(&r->client));
+  assert(sophia_lc_obligations(NULL, &obligations) == SOPHIA_9P_ARGUMENT);
+  assert(sophia_lc_obligations(&r->client, NULL) == SOPHIA_9P_ARGUMENT);
+  assert(!sophia_lc_obligations(&r->client, &obligations));
+  assert(obligations.waiting_for_retry);
+  submits = r->peer.submits;
+  assert(!spin(r) && r->peer.submits == submits);
+  assert(!sophia_lc_submit_retry(&r->client));
+  assert(next(r)->header.kind == SOPHIA_LF_OBJECT_PUBLISHED);
+  consume(r);
+  assert(sophia_lc_ready(&r->client));
+  assert(!sophia_lc_obligations(&r->client, &obligations));
+  assert(!obligations.waiting_for_retry && obligations.acked == obligations.consumed);
+  assert(!sophia_lc_upload_window(&r->client, 1));
+  assert(sophia_lc_upload_window(&r->client, 2) == SOPHIA_9P_ARGUMENT);
+  rig_free(r);
+}
+
 static void again_then_retry(void) {
   struct rig *r = ready();
   struct sophia_lf_record v;
@@ -808,6 +855,25 @@ static void again_then_retry(void) {
   assert(!sophia_lc_submission(&r->client, &id, &stage, NULL));
   assert(id == 2 && stage == SOPHIA_LC_SUBMISSION_CUSTODIED);
   consume(r);
+  rig_free(r);
+}
+
+static void contradictory_retry_preserves_custody(void) {
+  struct rig *r = ready();
+  struct sophia_lf_record v = {0};
+  enum sophia_lc_submission stage;
+  uint64_t id;
+  v.header.kind = SOPHIA_LF_RESOURCE_RETIRE;
+  v.value.resource_step.transaction = 40;
+  v.value.resource_step.resource.id = 21;
+  v.value.resource_step.resource.generation = 2;
+  r->peer.error_after_custody = 11;
+  assert(!sophia_lc_submit(&r->client, &v));
+  assert(spin(r));
+  assert(sophia_lc_remote_error(&r->client) == 11);
+  assert(!sophia_lc_submission(&r->client, &id, &stage, NULL));
+  assert(id == 2 && stage == SOPHIA_LC_SUBMISSION_CUSTODIED);
+  assert(sophia_lc_submit_retry(&r->client));
   rig_free(r);
 }
 
@@ -948,21 +1014,58 @@ static void an_admitted_root_is_not_reset_or_attached_again(void) {
   assert(!sophia_9p_consume(&r->wire,reply.handle));
   assert(sophia_lc_init_attached(&r->client,&r->wire,UINT32_MAX,&o)==SOPHIA_9P_ARGUMENT);
   assert(sophia_lc_init_attached(&r->client,&r->wire,root+1,&o)==SOPHIA_9P_ARGUMENT);
+  {
+    const char *name = "api";
+    uint32_t extra;
+    assert(!sophia_9p_walk(&r->wire,root,&name,1,&h,&extra));
+    reply=wire_reply(r);assert(reply.type==111);
+    assert(!sophia_9p_consume(&r->wire,reply.handle));
+    assert(sophia_lc_init_attached(&r->client,&r->wire,root,&o)==SOPHIA_9P_ARGUMENT);
+    assert(!sophia_9p_clunk(&r->wire,extra,&h));
+    reply=wire_reply(r);assert(reply.type==121);
+    assert(!sophia_9p_consume(&r->wire,reply.handle));
+  }
   assert(!sophia_lc_init_attached(&r->client,&r->wire,root,&o));
   assert(!spin(r));
   assert(sophia_lc_ready(&r->client) && r->peer.attaches==1);
   rig_free(r);
 }
 
+static void attached_root_rejects_partial_input(void) {
+  struct sophia_lf_negotiate o=offer();
+  struct rig *r=rig_storage(&o,NULL,8,0);
+  struct sophia_9p_handle h;
+  struct sophia_9p_reply reply;
+  uint32_t root;
+  unsigned spin_count;
+  const uint8_t prefix=11;
+  assert(!sophia_9p_version(&r->wire,&h));
+  reply=wire_reply(r);assert(reply.type==101);
+  assert(!sophia_9p_consume(&r->wire,reply.handle));
+  assert(!sophia_9p_attach(&r->wire,"","",&h,&root));
+  reply=wire_reply(r);assert(reply.type==105);
+  assert(!sophia_9p_consume(&r->wire,reply.handle));
+  assert(send(r->peer.fd,&prefix,1,MSG_NOSIGNAL)==1);
+  for(spin_count=0; !r->wire.rx_used && spin_count<100; ++spin_count)
+    assert(!sophia_9p_service(&r->wire,1));
+  assert(r->wire.rx_used==1);
+  assert(sophia_lc_init_attached(&r->client,&r->wire,root,&o)==SOPHIA_9P_ARGUMENT);
+  rig_free(r);
+}
+
 int main(void) {
+  attached_root_rejects_partial_input();
   an_admitted_root_is_not_reset_or_attached_again();
   bootstrap_and_lock();
   superseded_announcement();
+  rejects_invalid_lock_fetch();
   entry_and_chord();
   upload_and_present();
   upload_pipeline_tests();
   rejected_and_refused_uploads();
   again_then_retry();
+  negotiation_retry_with_six_requests();
+  contradictory_retry_preserves_custody();
   custody_waits_for_ack();
   refused_negotiation();
   stale_connection();

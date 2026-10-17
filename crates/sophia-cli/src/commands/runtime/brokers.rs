@@ -1,6 +1,11 @@
 use super::*;
+mod files;
 
 pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error>> {
+    if args.iter().any(|arg| arg == "metadata-broker-files-serve") {
+        files::run()?;
+        return Ok(true);
+    }
     if args.iter().any(|arg| arg == "metadata-broker-serve") {
         run_metadata_broker_server()?;
         return Ok(true);

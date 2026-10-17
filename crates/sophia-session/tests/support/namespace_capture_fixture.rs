@@ -30,8 +30,23 @@ pub struct Fixture {
     pub objects: Arc<PortalObjectRecipient>,
     queue: Arc<CaptureRequestQueue>,
     coordinator: PortalTransferCoordinator,
+    fence: PortalExecutionFence,
 }
 impl Fixture {
+    pub fn install_supplied_frame(&self) {
+        self.queue_request();
+        self.service();
+    }
+    pub fn queue_request(&self) {
+        self.queue
+            .submit(
+                sophia_protocol::output_capture_request::OutputCaptureRequest {
+                    serial: 1,
+                    output: OutputId::from_raw(7),
+                },
+            )
+            .unwrap();
+    }
     pub fn new(width: u32, height: u32) -> Self {
         let fence = PortalExecutionFence::default();
         let queue = Arc::new(CaptureRequestQueue::new(fence.clone()));
@@ -57,7 +72,7 @@ impl Fixture {
             source,
             objects.clone(),
             Arc::new(OutputCapturePayloadHandler),
-            fence,
+            fence.clone(),
             PortalFileLimits::defaults(1),
         )
         .unwrap();
@@ -65,6 +80,7 @@ impl Fixture {
             objects,
             queue,
             coordinator,
+            fence,
         }
     }
     pub fn service(&self) {
@@ -89,5 +105,29 @@ impl Fixture {
                 .unwrap();
             assert!(self.queue.finish(work, OutputCaptureState::Ready));
         }
+    }
+    pub fn revoke_supplied_frame(&self) {
+        self.fence.block();
+        self.fence.unblock();
+        assert!(self.objects.current().is_err());
+    }
+    pub fn lock_requests(&self) {
+        self.fence.block();
+    }
+    pub fn cancel_request(&self, active: bool) -> bool {
+        if self.queue.status().state != OutputCaptureState::Queued {
+            return false;
+        }
+        let work = active.then(|| self.queue.take().unwrap());
+        self.fence.block();
+        self.fence.unblock();
+        assert_eq!(self.queue.status().state, OutputCaptureState::Cancelled);
+        assert!(self.queue.take().is_none());
+        if let Some(work) = work {
+            assert!(!self.queue.current(work));
+            assert!(!self.queue.finish(work, OutputCaptureState::Ready));
+        }
+        assert!(self.objects.current().is_err());
+        true
     }
 }

@@ -4,6 +4,7 @@
 //! when and how to install a subscriber.
 
 pub mod authenticated_files;
+pub mod broker_files;
 #[cfg(target_os = "linux")]
 mod broker_transport;
 #[cfg(target_os = "linux")]

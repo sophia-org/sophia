@@ -1,6 +1,6 @@
 use super::*;
+use crate::shell::unique::unique;
 use crate::{InvalidRecord, validate_shell_descriptor};
-use std::collections::BTreeSet;
 
 pub fn validate_shell_tab_snapshot(snapshot: &ShellTabSnapshot) -> Result<(), InvalidRecord> {
     let bad = || InvalidRecord("shell_tabs");
@@ -16,12 +16,19 @@ pub fn validate_shell_tab_snapshot(snapshot: &ShellTabSnapshot) -> Result<(), In
     for group in &snapshot.groups {
         remaining = remaining.checked_sub(group.entries.len()).ok_or_else(bad)?;
     }
-    let mut groups = BTreeSet::new();
-    let mut slots = BTreeSet::new();
+    if !unique::<SOPHIA_SHELL_MAX_TAB_GROUPS>(snapshot.groups.iter().map(|g| g.slot))
+        || !unique::<SOPHIA_SHELL_MAX_TAB_ENTRIES>(
+            snapshot
+                .groups
+                .iter()
+                .flat_map(|g| g.entries.iter().map(|d| u64::from(d.slot))),
+        )
+    {
+        return Err(bad());
+    }
     for group in &snapshot.groups {
         if group.slot == 0
             || !group.output.is_valid()
-            || !groups.insert(group.slot)
             || group.entries.is_empty() != group.selected_slot.is_none()
             || group
                 .selected_slot
@@ -31,9 +38,6 @@ pub fn validate_shell_tab_snapshot(snapshot: &ShellTabSnapshot) -> Result<(), In
         }
         for descriptor in &group.entries {
             validate_shell_descriptor(descriptor, snapshot.connection_epoch)?;
-            if !slots.insert(descriptor.slot) {
-                return Err(bad());
-            }
         }
     }
     Ok(())
@@ -45,7 +49,7 @@ pub fn validate_shell_tab_candidate(candidate: &ShellTabCandidate) -> Result<(),
         || candidate.candidate_generation == 0
         || candidate.groups.len() > SOPHIA_SHELL_MAX_TAB_GROUPS
         || candidate.groups.contains(&0)
-        || candidate.groups.iter().collect::<BTreeSet<_>>().len() != candidate.groups.len()
+        || !unique::<SOPHIA_SHELL_MAX_TAB_GROUPS>(candidate.groups.iter().copied())
     {
         return Err(InvalidRecord("shell_tabs"));
     }

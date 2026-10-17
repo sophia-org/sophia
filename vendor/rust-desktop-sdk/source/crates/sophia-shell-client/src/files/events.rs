@@ -31,7 +31,7 @@ use crate::wire::Inbound;
 pub(super) const MAX_EVENT_BYTES: usize = SHELL_FILE_MAX_JOURNAL_BYTES as usize;
 
 /// One decoded event, before it is applied.
-enum Event {
+pub(super) enum Event {
     Submitted(u64, ShellFileKind),
     Published(ShellFileObjectPublished, usize),
     ResourceStatus(sophia_shell_protocol::ContentResourceId, u16, Inbound),
@@ -58,6 +58,136 @@ fn check_record_length(bytes: &[u8]) -> Result<(), ShellClientError> {
 }
 
 impl FileWire {
+    pub(crate) fn set_automatic_event_delivery(
+        &mut self,
+        enabled: bool,
+    ) -> Result<(), ShellClientError> {
+        self.io_interest()?;
+        if enabled && self.retained_event.is_some() && !self.retained_event_consumed {
+            return Err(ShellClientError::InvalidArgument(
+                "journal head is retained",
+            ));
+        }
+        self.automatic_events = enabled;
+        self.service_pending = true;
+        Ok(())
+    }
+
+    pub(crate) fn journal_event(&self) -> Option<crate::JournalEvent<'_>> {
+        use crate::JournalRecord;
+        if self.retained_event_consumed {
+            return None;
+        }
+        let (sequence, event) = self.retained_event.as_ref()?;
+        let record = match event {
+            Event::Published(value, _) => JournalRecord::ObjectPublished(value),
+            Event::Inbound(value) | Event::ResourceStatus(_, _, value) => match value {
+                Inbound::Content(tx, value) => JournalRecord::Content(*tx, value),
+                Inbound::Native(value) => JournalRecord::Native(value),
+                Inbound::Descriptor(value) => JournalRecord::Descriptor(value),
+                Inbound::IndicatorOutcome(tx, value) => JournalRecord::IndicatorOutcome(*tx, value),
+                Inbound::CatalogOutcome(tx, value) => JournalRecord::CatalogOutcome(*tx, value),
+                _ => unreachable!("snapshot values are not journal events"),
+            },
+            Event::Submitted(..) => unreachable!("custody events are SDK-owned"),
+        };
+        Some(crate::JournalEvent {
+            sequence: *sequence,
+            record,
+        })
+    }
+
+    pub(crate) fn consume_journal_event(&mut self) -> Result<bool, ShellClientError> {
+        self.io_interest()?;
+        if self.retained_event.is_none() || self.retained_event_consumed {
+            return Ok(false);
+        }
+        self.retained_event_consumed = true;
+        self.service_pending = true;
+        Ok(true)
+    }
+
+    pub(crate) fn snapshot_failure(&self) -> Option<&crate::SnapshotFetchFailure> {
+        self.snapshot_failure.as_ref()
+    }
+
+    pub(crate) fn take_snapshot_failure(&mut self) -> Option<crate::SnapshotFetchFailure> {
+        let failure = self.snapshot_failure.take();
+        if failure.is_some() {
+            self.service_pending = true;
+        }
+        failure
+    }
+
+    pub(crate) fn set_automatic_snapshot_fetch(
+        &mut self,
+        enabled: bool,
+    ) -> Result<(), ShellClientError> {
+        self.io_interest()?;
+        self.automatic_objects = enabled;
+        self.service_pending = true;
+        Ok(())
+    }
+    pub(crate) fn pending_snapshot(&self) -> Option<ShellFileObjectPublished> {
+        if self.fatal.is_some() || self.peer_closed {
+            return None;
+        }
+        self.pending_objects.iter().flatten().copied().next()
+    }
+    pub(crate) fn pending_snapshots(&self) -> impl Iterator<Item = ShellFileObjectPublished> + '_ {
+        self.pending_objects
+            .iter()
+            .flatten()
+            .copied()
+            .filter(|_| self.fatal.is_none() && !self.peer_closed)
+    }
+    pub(crate) fn request_snapshot(
+        &mut self,
+        request: ShellFileObjectPublished,
+    ) -> Result<bool, ShellClientError> {
+        self.io_interest()?;
+        if !self.pending_objects.contains(&Some(request)) {
+            return Err(ShellClientError::InvalidArgument("snapshot is not pending"));
+        }
+        self.prefetch_snapshot(request)
+    }
+    pub(crate) fn prefetch_snapshot(
+        &mut self,
+        request: ShellFileObjectPublished,
+    ) -> Result<bool, ShellClientError> {
+        self.io_interest()?;
+        if self.snapshot_failure.is_some() {
+            return Err(ShellClientError::QueueSaturated);
+        }
+        if !self.feed_disclosed(request.object) || request.generation == 0 || request.qid == 0 {
+            return Err(ShellClientError::InvalidArgument(
+                "invalid snapshot identity or capability",
+            ));
+        }
+        if let Some(fetch) = &self.object_fetch {
+            if (fetch.feed, fetch.generation, fetch.qid)
+                == (request.object, request.generation, request.qid)
+            {
+                return Ok(false);
+            }
+            return Err(ShellClientError::QueueSaturated);
+        }
+        self.object_fetch = Some(ObjectFetch {
+            feed: request.object,
+            generation: request.generation,
+            qid: request.qid,
+            phase: FetchPhase::NotStarted,
+            buf: Vec::new(),
+            restarts: 0,
+            caller_requested: true,
+        });
+        let index = feed_index(request.object).expect("disclosed feed");
+        if self.pending_objects[index] == Some(request) {
+            self.attempted_objects[index] = true;
+        }
+        self.service_pending = true;
+        Ok(true)
+    }
     /// The ack bound: every handled event, but never past a held
     /// announcement.
     pub(super) fn ack_limit(&self) -> u64 {
@@ -76,11 +206,18 @@ impl FileWire {
         &mut self,
         inbox: &mut VecDeque<Inbound>,
     ) -> Result<bool, ShellClientError> {
+        if self.retained_event_consumed {
+            let (sequence, event) = self.retained_event.take().expect("consumed head");
+            self.retained_event_consumed = false;
+            self.apply_event(sequence, event, inbox, false)?;
+            self.progress += 1;
+            return Ok(true);
+        }
         if let Err(error) = check_record_length(&self.event_buf) {
             self.event_fault = true;
             return Err(error);
         }
-        if self.object_fetch.is_some() {
+        if self.object_fetch.is_some() || self.retained_event.is_some() {
             return Ok(false);
         }
         let Some(size) = complete_record(&self.event_buf) else {
@@ -129,8 +266,8 @@ impl FileWire {
         }
         let needed = match feed {
             ShellFileKind::Outputs => SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE,
-            // The file wire's catalog object is the r8 persistent catalog.
-            ShellFileKind::Catalog if self.descriptor => {
+            // Descriptor and launcher catalogs omit the r8 identity extension.
+            ShellFileKind::Catalog if self.descriptor || self.native_launcher => {
                 SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG
             }
             ShellFileKind::Catalog => SOPHIA_SHELL_CAPABILITY_PERSISTENT_CATALOG,
@@ -240,6 +377,20 @@ impl FileWire {
                 let value = decode_shell_file_indicator_activation_outcome(record)?;
                 Event::Inbound(Inbound::IndicatorOutcome(value.transaction, value.outcome))
             }
+            ShellFileKind::NativeOpening
+            | ShellFileKind::NativeFocus
+            | ShellFileKind::NativeFocusRevoked
+            | ShellFileKind::NativeInput
+            | ShellFileKind::NativeActivationOutcome
+            | ShellFileKind::NativeClosed => {
+                self.require_native_launcher()?;
+                let value = if header.kind == ShellFileKind::NativeInput {
+                    decode_shell_file_native_input(record)?
+                } else {
+                    decode_shell_file_native_launcher_transaction(record, header.kind)?
+                };
+                Event::Inbound(Inbound::Native(value))
+            }
             kind if shell_file_descriptor_max_bytes(kind).is_some() => {
                 self.require_descriptor_kind(kind)?;
                 Event::Inbound(Inbound::Descriptor(decode_shell_file_descriptor(
@@ -260,31 +411,51 @@ impl FileWire {
         if sequence <= self.ack_ready {
             return Err(ShellClientError::Protocol("event sequence did not rise"));
         }
+        if !self.automatic_events && !matches!(event, Event::Submitted(..)) {
+            self.retained_event = Some((sequence, event));
+            return Ok(());
+        }
+        self.apply_event(sequence, event, inbox, true)
+    }
+
+    fn apply_event(
+        &mut self,
+        sequence: u64,
+        event: Event,
+        inbox: &mut VecDeque<Inbound>,
+        deliver: bool,
+    ) -> Result<(), ShellClientError> {
         match event {
             Event::Submitted(submission, kind) => {
                 self.on_submitted(submission, kind)?;
                 self.submitted_sequence = sequence;
             }
             Event::Published(published, index) => {
-                let bound = sequence - 1;
-                let hold = self.holds[index].get_or_insert(bound);
-                *hold = (*hold).min(bound);
-                if !self.superseded(published.object) {
-                    self.object_fetch = Some(ObjectFetch {
-                        feed: published.object,
-                        generation: published.generation,
-                        qid: published.qid,
-                        phase: FetchPhase::NotStarted,
-                        buf: Vec::new(),
-                        restarts: 0,
-                    });
+                if deliver && self.native_launcher {
+                    inbox.push_back(Inbound::NativePublication(published));
+                }
+                if self.verified_objects[index] == Some(published) {
+                    self.holds[index] = None;
+                    self.pending_objects[index] = None;
+                } else {
+                    let bound = sequence - 1;
+                    let hold = self.holds[index].get_or_insert(bound);
+                    *hold = (*hold).min(bound);
+                    self.pending_objects[index] = Some(published);
+                    self.attempted_objects[index] = false;
                 }
             }
             Event::ResourceStatus(resource, status, item) => {
                 self.observe_resource_status(resource, status)?;
-                inbox.push_back(item);
+                if deliver {
+                    inbox.push_back(item);
+                }
             }
-            Event::Inbound(item) => inbox.push_back(item),
+            Event::Inbound(item) => {
+                if deliver {
+                    inbox.push_back(item);
+                }
+            }
         }
         self.ack_ready = sequence;
         Ok(())
@@ -317,6 +488,22 @@ impl FileWire {
     }
 
     pub(super) fn drive_object_fetch(&mut self) -> Result<bool, ShellClientError> {
+        if self.object_fetch.is_none()
+            && self.snapshot_failure.is_none()
+            && self.automatic_objects
+            && let Some(request) = self
+                .pending_objects
+                .iter()
+                .flatten()
+                .copied()
+                .find(|request| {
+                    !self.attempted_objects[feed_index(request.object).unwrap()]
+                        && !self.superseded(request.object)
+                })
+        {
+            self.prefetch_snapshot(request)?;
+            self.object_fetch.as_mut().unwrap().caller_requested = false;
+        }
         let Some(fetch) = &mut self.object_fetch else {
             return Ok(false);
         };
@@ -351,7 +538,11 @@ impl FileWire {
         }
         let fetch = self.object_fetch.as_mut().expect("a fetch is in flight");
         if fetch.restarts == MAX_FETCH_RESTARTS {
-            return Err(ShellClientError::Protocol("snapshot object unavailable"));
+            let fetch = self.object_fetch.take().unwrap();
+            return self.record_fetch_failure(
+                fetch,
+                ShellClientError::Protocol("snapshot object unavailable"),
+            );
         }
         fetch.restarts += 1;
         fetch.phase = FetchPhase::NotStarted;
@@ -385,6 +576,18 @@ impl FileWire {
             self.restart_fetch(walked.then_some(fid))?;
             return Ok(true);
         }
+        if matches!(reply, Reply::Error(_)) {
+            let walked = !matches!(fetch.phase, FetchPhase::Walk { .. });
+            if walked {
+                self.forget(fid)?;
+            }
+            let fetch = self.object_fetch.take().unwrap();
+            self.record_fetch_failure(
+                fetch,
+                ShellClientError::Protocol("snapshot object fetch refused"),
+            )?;
+            return Ok(true);
+        }
         match (fetch.phase, reply) {
             (FetchPhase::Walk { .. }, Reply::Walk(qids)) if qids.len() == 1 => {
                 let open = self.pipeline.lopen(fid, O_RDONLY)?;
@@ -396,7 +599,13 @@ impl FileWire {
                     // deliver nothing and keep the hold until the newer
                     // announcement is handled.
                     self.forget(fid)?;
-                    self.object_fetch = None;
+                    let fetch = self.object_fetch.take().unwrap();
+                    if fetch.caller_requested {
+                        self.record_fetch_failure(
+                            fetch,
+                            ShellClientError::Protocol("snapshot object Qid differs from request"),
+                        )?;
+                    }
                     return Ok(true);
                 }
                 let count = if *iounit == 0 { u32::MAX } else { *iounit };
@@ -412,7 +621,13 @@ impl FileWire {
                     return self.finish_fetch(fid, inbox).map(|()| true);
                 }
                 if fetch.buf.len() + data.len() > cap {
-                    return Err(ShellClientError::Protocol("snapshot object over its cap"));
+                    self.forget(fid)?;
+                    let fetch = self.object_fetch.take().unwrap();
+                    self.record_fetch_failure(
+                        fetch,
+                        ShellClientError::Protocol("snapshot object over its cap"),
+                    )?;
+                    return Ok(true);
                 }
                 // Exact growth: capacity never passes the cap.
                 fetch
@@ -443,7 +658,12 @@ impl FileWire {
                 self.finish_fetch(fid, inbox)?;
             }
             (FetchPhase::Probe { .. }, Reply::Read(_)) => {
-                return Err(ShellClientError::Protocol("snapshot object over its cap"));
+                self.forget(fid)?;
+                let fetch = self.object_fetch.take().unwrap();
+                self.record_fetch_failure(
+                    fetch,
+                    ShellClientError::Protocol("snapshot object over its cap"),
+                )?;
             }
             _ => return Err(ShellClientError::Protocol("snapshot object fetch refused")),
         }
@@ -460,6 +680,37 @@ impl FileWire {
     ) -> Result<(), ShellClientError> {
         self.forget(fid)?;
         let fetch = self.object_fetch.take().expect("a fetch is in flight");
+        let result = self.decode_fetch(&fetch, inbox);
+        if let Err(error) = result {
+            return self.record_fetch_failure(fetch, error);
+        }
+        Ok(())
+    }
+
+    fn record_fetch_failure(
+        &mut self,
+        fetch: ObjectFetch,
+        error: ShellClientError,
+    ) -> Result<(), ShellClientError> {
+        if !fetch.caller_requested {
+            return Err(error);
+        }
+        self.snapshot_failure = Some(crate::SnapshotFetchFailure {
+            request: ShellFileObjectPublished {
+                object: fetch.feed,
+                generation: fetch.generation,
+                qid: fetch.qid,
+            },
+            error,
+        });
+        Ok(())
+    }
+
+    fn decode_fetch(
+        &mut self,
+        fetch: &ObjectFetch,
+        inbox: &mut VecDeque<Inbound>,
+    ) -> Result<(), ShellClientError> {
         // Drop the older undelivered object of this feed before decoding, so
         // the peak is one decoded object, not two.
         match fetch.feed {
@@ -497,7 +748,8 @@ impl FileWire {
             ShellFileKind::Catalog => {
                 let value = decode_shell_file_catalog(&fetch.buf)?;
                 if value.catalog.catalog.connection_epoch != self.epoch
-                    || (self.descriptor && !value.catalog.identities.is_empty())
+                    || ((self.descriptor || self.native_launcher)
+                        && !value.catalog.identities.is_empty())
                 {
                     return Err(ShellClientError::Protocol("catalog identity or profile"));
                 }
@@ -507,7 +759,7 @@ impl FileWire {
                     ));
                 }
                 let generation = value.catalog.catalog.generation;
-                let item = if self.descriptor {
+                let item = if self.descriptor || self.native_launcher {
                     Inbound::ApplicationCatalog(value.transaction, value.catalog.catalog)
                 } else {
                     Inbound::Catalog(value.transaction, value.catalog)
@@ -547,7 +799,17 @@ impl FileWire {
             ));
         }
         inbox.push_back(item);
-        self.holds[feed_index(fetch.feed).expect("fetched feeds are known")] = None;
+        let index = feed_index(fetch.feed).expect("fetched feeds are known");
+        let verified = ShellFileObjectPublished {
+            object: fetch.feed,
+            generation,
+            qid: fetch.qid,
+        };
+        self.verified_objects[index] = Some(verified);
+        if self.pending_objects[index] == Some(verified) {
+            self.holds[index] = None;
+            self.pending_objects[index] = None;
+        }
         Ok(())
     }
 }

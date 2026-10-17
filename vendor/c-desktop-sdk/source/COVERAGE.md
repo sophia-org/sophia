@@ -1,5 +1,8 @@
 # Desktop SDK coverage
 
+The [launch operation map](LAUNCH-PARITY.md) compares C's caller-driven
+authentication with Rust, including partial I/O, deadlines and relay ownership.
+
 ## Required boundary
 
 The C SDK and Rust SDK remain independent repositories, one per language.
@@ -17,7 +20,30 @@ Clients retain their own policy and UI logic. No missing file operation falls
 back to IPC. Former descriptor-based operations require a reviewed file or
 protected-grant contract, rather than a hidden ancillary-data channel.
 
-## Release 0.8.0
+## Current development inventory, 2026-10-17
+
+The candidate remains 0.10.0-dev, unreleased. The operation maps below describe
+the current implementation; the older checkpoints that follow preserve their
+original scope. An old missing-client statement is not the current inventory.
+
+| Surface | Current implementation and evidence |
+| --- | --- |
+| Generic 9P and namespace discovery | [Transport map](TRANSPORT-PARITY.md): bounded requests, metadata, discovery and secret cleanup. |
+| Launch authentication | [Launch map](LAUNCH-PARITY.md): caller-driven authentication, admitted-root handoff and relay reuse. |
+| Shell | [API map](API-PARITY.md) and [startup map](SHELL-STARTUP.md): all profiles, custody, content and native lifecycle; manual-control differences remain explicit. |
+| WM | [WM map](WM-PARITY.md): complete entry-point inventory, supplied-admission exchange and protected idle revocation. |
+| Output | [Output map](OUTPUT-PARITY.md): topology and proposals, paired export and protected revocation evidence. |
+| Lock | [Lock map](LOCK-PARITY.md): experimental session and uploads, paired export and protected revocation evidence. Contract acceptance remains pending. |
+| Administration | [Administrative map](ADMIN-PARITY.md): catalog, invocation, custody, status and explicit replacement; five paired production scenarios. |
+| Broker | [Broker map](BROKER-PARITY.md): discovery, retained requests, atomic responses, explicit retry and production export evidence. |
+| Portal | [Portal map](PORTAL-PARITY.md): requester transfers and recipient capture/frame operations; refused-End live-cancellation limit remains explicit. |
+
+`compatibility.json` now declares administrative file support. Lock support
+remains false there because its contract is still draft, despite the implemented
+client and passing permanent export tests. Neither flag declares full t333
+release acceptance or physical desktop qualification.
+
+## Historical release 0.8.0 checkpoint
 
 The t318 discovery module independently parses the bounded v1 namespace file
 and pins Linux directory/socket identities. Literal and local-socket tests
@@ -50,6 +76,29 @@ that a unit test proves operation against a live Session. `compatibility.json`
 continues to describe implemented support until the relevant gates pass.
 
 ## Parity gate
+
+[API-PARITY.md](API-PARITY.md) maps the shell event-loop operations to the
+native Rust SDK, with tests and remaining differences. Rust `1f33550` supplies
+borrowed-descriptor/readiness access, caller time, whole-call byte/syscall
+budgets and the same 4–256 ms backoff as C. C already provides these controls;
+its library implementation is unchanged. `make check` passes, including the
+new `service_byte_budget_bounds_partial_requests` control and existing clock
+and retry tests. Full shell operation coverage, missing role clients and the
+documented clock-representation differences remain explicit under Sophia t333.
+
+Rust `85b37ed` adds prepared content reservations with infallible local commit
+and cancellation by Drop. C's `reservation` test now also checks successful
+cancellation without ticket issuance. `make check` passes. Rust still cannot
+service the connection through that prepared handle. The later Rust `a2c0e74`
+adds a separate `reserve_capacity` token that allows service and delayed record
+selection. Rust `5b72169` adds atomic batches of content records and whole
+candidates, with distinct transactions and custody tickets. Its batch controls
+map to C's existing `admission_atomicity` tests; the full C suite passes at
+`a90e235`. Non-content batch coverage and native lifecycle parity remain open.
+
+The C cross-session token regression failed before the owner/epoch fix and now
+passes with the full check suite. This is an unreleased 0.10.0-dev candidate:
+the public reservation struct changed and requires consumer/binding rebuilds.
 
 Descriptor support covers all seventeen native envelopes:
 three whole objects, eight events, two activation acknowledgements and four

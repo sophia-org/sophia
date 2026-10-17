@@ -68,15 +68,30 @@ fn authenticated_wm_child() {
 
 #[test]
 fn protected_wm_authenticates_then_negotiates_on_the_same_worker_connection() {
+    protected_exchange(None);
+}
+
+#[test]
+#[ignore = "requires SOPHIA_WM_AUTH_PEER naming an absolute prebuilt generic SDK peer"]
+fn external_sdk_wm_authenticates_then_negotiates_on_the_same_worker_connection() {
+    let executable = PathBuf::from(std::env::var_os("SOPHIA_WM_AUTH_PEER").unwrap());
+    assert!(executable.is_absolute() && executable.is_file());
+    protected_exchange(Some(executable));
+}
+
+fn protected_exchange(external: Option<PathBuf>) {
     let directory = Directory::new();
     let endpoint = directory.endpoint(PolicyRole::Wm);
     let socket = endpoint.socket_path().to_owned();
     let markers = directory.0.join("markers");
     std::fs::create_dir(&markers).unwrap();
     let report = markers.join("complete");
-    let executable = std::env::current_exe().unwrap();
-    let bootstrap = PathBuf::from(std::env::var_os("CARGO_TARGET_DIR").unwrap())
-        .join(format!("tmp/t317-wm-auth-{}", std::process::id()));
+    let is_external = external.is_some();
+    let executable = external.unwrap_or_else(|| std::env::current_exe().unwrap());
+    let bootstrap = PathBuf::from(std::env::var_os("CARGO_TARGET_DIR").unwrap()).join(format!(
+        "tmp/t317-wm-auth-{}-{is_external}",
+        std::process::id()
+    ));
     std::fs::create_dir_all(bootstrap.parent().unwrap()).unwrap();
     assert!(
         std::process::Command::new("/usr/bin/cc")
@@ -84,6 +99,11 @@ fn protected_wm_authenticates_then_negotiates_on_the_same_worker_connection() {
             .env("PATH", "/usr/bin:/bin")
             .args(["-std=c11", "-Wall", "-Wextra", "-Werror", "-O2"])
             .arg(format!("-DSOPHIA_TEST_CHILD=\"{AUTH_CHILD}\""))
+            .args(if is_external {
+                vec!["-DSOPHIA_TEST_EXTERNAL_PEER"]
+            } else {
+                vec![]
+            })
             .arg(concat!(
                 env!("CARGO_MANIFEST_DIR"),
                 "/tests/support/lock_rust_bootstrap.c"
@@ -178,6 +198,18 @@ fn protected_wm_authenticates_then_negotiates_on_the_same_worker_connection() {
         std::fs::read(&report).unwrap(),
         b"authenticated-and-negotiated"
     );
+    if is_external {
+        auth.coordinator
+            .revoke(started.registration, Instant::now())
+            .unwrap();
+        let revoked = report.with_extension("revoked");
+        while !revoked.exists() {
+            assert!(Instant::now() < end, "native WM revocation deadline");
+            auth.tick();
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(std::fs::read(revoked).unwrap(), b"revoked-custody-retained");
+    }
     drop(worker);
     for _ in 0..10 {
         auth.tick();
@@ -186,8 +218,10 @@ fn protected_wm_authenticates_then_negotiates_on_the_same_worker_connection() {
         auth.coordinator.ready(),
         "WM cleanup must preserve shared Factotum"
     );
-    auth.coordinator
-        .revoke(started.registration, Instant::now())
-        .unwrap();
+    if !is_external {
+        auth.coordinator
+            .revoke(started.registration, Instant::now())
+            .unwrap();
+    }
     supervisor.terminate().unwrap();
 }

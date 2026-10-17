@@ -1,5 +1,316 @@
 # Provenance
 
+## Allocation-free shell candidate sizing, 2026-10-17
+
+Rust now counts validated application candidates through the same field writers
+used for encoding. Whole-candidate validation borrows rows, descriptor uniqueness
+uses bounded stack storage, and padded strings no longer need a temporary vector.
+C already supplies allocation-free sizing; its independent literal and boundary
+tests now assert the returned sizes directly. SHELL-SIZING.md maps the APIs and
+header differences. The Rust protocol and shell suites, strict protocol Clippy,
+C check suite and standalone allocation probe pass. Both independent startup
+peers pass Sophia's real metadata/content export. The probe establishes zero
+allocations only for its named queries; no throughput improvement or full t333
+release qualification is claimed.
+
+## Lock handoff and role inventory audit, 2026-10-17
+
+C now rejects attached lock startup with extra fids or partial input, matching
+Rust's existing guard. The new C partial-input regression failed before the
+fix; independent extra-fid and partial-input controls now pass in both SDKs.
+The full C suite, Rust lock suite and strict lock Clippy pass. Both independent
+peers pass Sophia's protected idle and queued-tail revocation tests. The WM and
+lock maps identify current APIs and distinguish historical qualification runs.
+Fresh authorized replacement and SDK reauthentication still need audit.
+
+## Caller-driven shell startup, 2026-10-17
+
+Rust adds an owned nonblocking startup driver; C's existing borrowed session
+already provides the counterpart. Both publish the operation map in
+SHELL-STARTUP.md and independent executable peers. Each peer passes Sophia's
+real-export fixture with one-byte dispatch budgets, with and without content
+limits. Admission is supplied by the fixture; no protected launch or physical
+presentation is claimed. The Rust shell suite, strict all-target shell Clippy
+and C check suite pass. Full desktop release acceptance remains under t333.
+
+## Portal and broker publication candidate, 2026-10-16
+
+This series adds native portal requester sessions and broker sessions in both
+SDKs, and joins recipient capture/frame operations to their session drivers.
+The broker codecs follow the pinned Sophia `519f07fd1` contract; no legacy IPC
+framing or runtime owner is imported. C remains independently usable without
+Rust. The complete Rust workspace and C check suites pass, as does the Nim
+requester binding smoke test. Detailed paired scenarios and exact export-peer
+hashes are in API-PARITY.md and PORTAL-PARITY.md.
+
+The broker's shared-core export fixtures cover negotiation, retirement and
+atomic two-row disclosure responses. Both peers also pass the protected variant
+using actual ProcessSupervisor evidence and Bubblewrap 0.13.0; current executable
+hashes are in API-PARITY.md. Production reducer integration and the live migration
+remain open in Sophia t314.
+These additions do not establish full t333 parity or change installed SDK pins.
+Earlier checkpoints below describe their source state at the time.
+
+## t333 broker discovery and incoming events
+
+The independent C and Rust discovery/event codecs follow the designed
+`sophia-broker-files-v1.kdl` and markdown copied from signed Sophia
+`519f07fd1b6db3a665ae1e74368a3d2e234cbf9c`. No broker runtime or legacy IPC
+framing is imported. The manifest pins the exact source bytes. These passive,
+allocation-free decoders are not a broker client or an implemented export;
+response encoding and request correlation remain next.
+
+## t333 administrative info decoder
+
+The new passive info decoder is implemented from the pinned
+`spec/sophia-admin-files.md` grammar (Sophia `baedfd0c9`), independently
+in C and Rust. It imports no runtime owner or transport. Both parse into
+fixed-size values without heap allocation; literal and malformed-boundary
+tests pass. Remaining administrative codecs and the client are still missing.
+
+## t333 native WM protocol foundation
+
+`sophia-wm-protocol` extracts neutral WM codecs, passive policy records and
+selected identifier/geometry/support types from signed Sophia
+`1d071c144199548b55d8c42a961aa3e13b60ef74`. The crate's `EXTRACTION.md` records
+source hashes, selections and adaptations. No Engine, X11 or IPC owner is
+included. WM KDL, API docs, file docs and golden corpus match the C SDK's pins
+byte for byte; the new spec entries pass SHA-256 verification.
+The 71 extracted tests, full workspace suite, strict Clippy and C's independent
+suite pass. This supplies codecs, not a WM session or production-export gate.
+
+## t333 local close and shell operation audit
+
+`ShellConnection::close` settles local custody without I/O and retains decoded
+observations; the owning native facade additionally disarms lifecycle authority.
+Tests cover idempotence, held credits, unsent versus uncertain submissions,
+retained Submitted and input cleanup. Full workspace tests (43 native), strict
+Clippy and C's full suite pass. C's existing custody controls independently
+exercise explicit close. Matrix 16 records the shell operation audit, including
+Rust's automatic snapshot/journal management versus C's manual controls and
+the lack of a separate allocation-free Rust size query. Those differences need
+production-export review; this is not a full desktop parity claim.
+
+## t333 configurable queue limits
+
+`QueueLimits` makes total records/bytes and optional control headroom explicit.
+Defaults are unchanged. Configuration requires a live empty queue without
+reserved credits; the wire-owned front remains charged until settlement.
+Tests cover boundaries, invalid settings, busy resizing and retained headroom.
+The independent C descriptor test documents its different handoff accounting:
+one record moves into separate transaction storage outside its queue limit.
+Full workspace tests, strict Clippy and C's full suite pass. Matrix 15 records
+supported ranges and accounting; production-export adoption remains pending.
+
+## t333 general role batches
+
+`ShellBatchItem` extends immediate, prepared and serviceable delayed admission
+to native/descriptor/indicator/catalog operations as well as content. Tests
+cover native response pairs, cancelled preparation, retained credits after
+validation/size failure, delayed descriptor pairs and catalog role/record checks.
+C independently exercises a delayed descriptor pair. Full workspace tests,
+strict Clippy and C's full suite pass. Matrix 14 distinguishes raw submission
+from lifecycle eligibility and keeps production-export qualification pending.
+
+## t333 presentation access and input edit convenience
+
+`presented` exposes borrowed presentation metadata and row slots, separately
+from focus eligibility. `apply_native_input` and session `apply_input` reserve
+before the edit and pre-encode both ACK dispositions before application code
+runs. Choosing the result and committing need no allocation or I/O. Panic fails
+the lifecycle closed before resuming unwinding, preventing replay after a caught
+panic. Three new tests check both wire dispositions, pressure/uneditable-input
+suppression and panic. Presentation checks cover Prepared, Presented and close.
+Full workspace tests (38 native), strict Clippy and C's full suite pass; C adds
+the independent declined-edit control. Production-export acceptance is pending.
+
+## t333 owning native session
+
+`NativeLauncherSession` integrates exclusive connection ownership, retained
+events, transaction assignment, native operations and scheduling obligations.
+Five new controls cover initialization, repeated head reads, response Drop,
+transaction exhaustion, monotonic time, disconnect cleanup and action hints.
+The C suite independently checks that repeated Action reads keep the original
+hint. Full Rust workspace tests, strict Clippy, the final 35 native tests and
+C's full suite pass. Matrix 12 records ownership/clock/snapshot differences and
+remaining helper inventory; production-export qualification remains pending.
+
+## t333 native pointer responses
+
+The lifecycle retains Actions until required ACK admission and constructs exact
+pointer activation/ACK pairs from current focus and displayed rows. A prepared
+response can be dropped without consuming the action. Queue failure changes no
+ownership; commit tracks separate custody tickets. Both SDKs independently test
+activation of a displayed nonselected row. Rust also checks stale and cancelled
+actions, exact wire records, saturation and each split-refusal order. Full
+workspace tests, strict all-target Clippy and the final 30 native tests pass;
+C's full suite passes. Production-export acceptance remains pending.
+
+## t333 explicit resource cancellation parity
+
+C now exposes `sophia_ns_resource_cancel`, matching Rust's explicit-resource
+cleanup after a refused End. A new Rust regression verifies cancellation keeps
+the identity until terminal status and then allows another Begin. All 26 native
+tests and C's full `make check` pass. C separately checks saturated admission and
+stale generations. This is SDK evidence, not production-export qualification.
+
+## t333 native resources and pacing
+
+The Rust lifecycle now owns allocation requests, orphaned grants, bounded
+resource identities, upload progress, retirement and frame demands/permits.
+The scene helper fills current identities and admits only accepted resources
+under a usable permit. Advisory expiry does not cancel server authority; a
+definitively refused candidate waits for authoritative permit end unless that
+end was already observed. Caller writes may split the declared image chunks;
+only Stored advances local upload progress, and uncertain bytes are not replayed.
+
+Two regressions exposed existing defects. In C `c678319`, expiry before a
+candidate submit refusal recreated a wait for the same expiry; its new control
+failed before the companion correction. In Rust's existing file wire, refused
+ResourceBegin claims leaked all four slots. The new six-refusal control failed
+before repair. Definitive refusal now releases its pending claim, and queued
+payload for a vanished binding becomes DroppedUnsent instead of stalling.
+
+The native suite now has 25 passing tests. Full workspace tests, strict Clippy
+and C's full suite pass. Allocation controls cover resize rejection, close,
+late grants and invalidation; resource controls cover partial writes, refusal,
+cancel, retirement and release; pacing controls cover local expiry, cancellation,
+candidate admission and both expiry/refusal orders. No SDK pin, native campaign
+or production export was changed. Pointer handling and the full facade remain.
+
+## t333 native presentation and keyboard lifecycle
+
+`NativeLauncherLifecycle` tracks ordered openings, candidate outcomes, exact
+focus bindings, input revisions and activation outcomes. The tracked candidate
+API registers metadata only after successful admission. A retained input cannot
+be skipped; its prepared response reserves capacity before an edit and commits
+without allocation or I/O. Cancellation keeps the input, refused ACKs are counted
+once rather than replayed, and disconnect/correlation failure disarms authority.
+
+`NativeLauncherObservation::Published` now exposes catalog/output announcements
+before their objects finish fetching, allowing immediate stale-scene checks.
+Downstream exhaustive matches must handle this new variant. Nine new lifecycle
+controls cover Prepared versus Presented, exact/replaced/revoked focus, retained
+inputs and cancellation, saturation, deadlines, ACK refusal, activation admission,
+close/reopen, late Presented and disconnect. The full workspace suite, final
+native suite and strict Clippy pass; C's full suite passes at `62b62f6`, including
+its independent `test_focus`, `test_input`, `test_activation` and `test_close`.
+These are SDK checks, not production-export qualification. Resource and permit
+ownership, pointer-response batching and the full lifecycle facade remain open.
+
+## t333 native launcher transport
+
+The shell client now carries revision-7 native launcher records under the
+pinned shell-file contract. Negotiation requires the launcher role, exact
+capability mask and Limits. Typed observations preserve order across native
+events, shared content outcomes and fetched application catalogs. Whole native
+candidates and allocation/input/activation records use the existing custody
+lane. A prepared keyboard response admits activation then ACK atomically, each
+with its own ticket; no lifecycle authority is inferred from admission.
+
+Seven scripted-peer tests cover negotiation refusal, event order, catalog
+fetching, allocation/candidate submission, response cancellation and saturation,
+invalid inputs, malformed padding, foreign epochs and split disconnect custody.
+Workspace tests and strict all-target Clippy pass. C's full `make check` passes
+at `f8ca212`, including independent native codecs, input reservation and ordered
+activation/ACK controls. Its helper tests use a session stand-in; production
+export qualification remains pending. Full Rust lifecycle, pointer-response
+batching and delayed native reservation APIs remain open under t333.
+
+## t333 custody lookup
+
+`custody_result` adds explicit unissued/evicted lookup results while preserving
+the existing optional query. Rust ledger boundary and scripted disconnect
+controls and C’s independent retention-boundary test cover the distinction.
+No wire or production pin changes; native-launcher transport remains a
+prerequisite to lifecycle parity, recorded in matrix revision 6.
+
+## t333 atomic content batches
+
+The shell client now admits independent content records and whole candidates
+as one bounded local batch, directly or through either reservation form.
+Each item keeps its transaction and custody ticket. Encoding stages distinct
+upload-slot claims without consuming them; failure and cancellation discard
+all claims. A fixed four-slot array replaces the single staged resource start.
+Mixed batches spend bulk credits; all-ACK batches retain control headroom.
+
+Rust workspace tests and strict all-target Clippy pass. Batch controls cover
+order, transactions, invalid middle records, size limits, cancellation, slot
+reuse, control credits and distinct Submitted/Unknown/DroppedUnsent outcomes
+after one disconnect. C's existing atomic-admission tests and full `make check`
+pass at `a90e235`; no C implementation change is needed for this slice. Matrix
+revision 5 names remaining non-content batch and native lifecycle gaps. There
+is no wire change, production pin adoption or new performance qualification.
+
+## t333 delayed-content capacity reservations
+
+`reserve_capacity` holds encoded-unit and byte credits without borrowing the
+connection. Records can be chosen later while dispatch and unreserved admissions
+continue. Commit validates token identity, size and records, retains credits on
+failure, and issues tickets only on success. Explicit cancellation or terminal
+classification releases credits. Tokens use private shared identities, avoiding
+cross-connection and stale-token collisions without global counters.
+
+Rust workspace tests and strict all-target Clippy pass. Controls cover credit
+isolation, control headroom, service while reserved, sizing/validation failures,
+stale/wrong-connection tokens and closure. C's paired identity test exposed a
+serial collision across two live sessions and passes with its owner/epoch fix;
+the full C check suite passes. C's changed token layout requires a consumer
+rebuild and is marked unreleased 0.10.0-dev. Neither SDK candidate is yet adopted
+by Sophia's production pins; native and export qualification remain separate.
+
+## t333 prepared content reservations
+
+The Rust shell client exposes reservations for one content operation or a whole
+candidate. Preparation runs the existing encoder, acquires pending-wire, outbox
+and custody-ledger capacity, and returns an exclusive connection borrow. Commit
+moves the prepared units into the queue and issues tickets without further
+allocation or I/O. Cancel and Drop discard the staged units and upload claim.
+This guarantees local admission, not remote custody or semantic acceptance.
+
+Workspace tests, strict all-target Clippy and formatting pass. Controls cover
+exclusive borrowing, cancellation, saturation, invalid groups, slot reuse and
+disconnect, plus queue storage before/after commit. C's existing reservation
+controls gain successful cancellation coverage; `make check` passes. Matrix
+revision 3 names the remaining gaps: arbitrary groups, delayed-content and
+serviceable reservations, and native lifecycle integration. Source-pin adoption,
+production-export and physical/performance gates remain separate.
+
+## t333 caller-controlled dispatch
+
+`ShellConnection::dispatch` accepts monotonic caller time and a whole-call byte
+budget. A shared `IoBudget` limits all internal transport rounds to the supplied
+bytes and 32 syscall attempts per direction. Zero budget allows local processing
+without socket I/O. Backward caller time is rejected without changing state.
+The existing convenience driver retains its own clock and work limits, including
+the conditional clock read when a retry actually needs time. Both drivers now
+use the C SDK's 4–256 ms retry schedule; wire custody rules are unchanged.
+
+Workspace tests cover deterministic caller-time retries through the cap, invalid
+time, one-byte progress to Submitted custody, partial reads/writes and shared
+budget exhaustion. C has a matching partial-request budget control alongside
+its existing monotonic-clock and retry tests. Clock representation limits and
+driver-mixing rules are explicit in `API-PARITY.md`. This candidate still needs
+Sophia source-pin adoption and production-export qualification; no native
+performance benefit or installed-desktop acceptance is claimed.
+
+## t333 external event-loop API
+
+The shell client now lends its socket through `AsFd` and reports read/write
+interests and immediate local work through `io_interest`. Applications combine
+these with the existing retry deadline in a level-triggered loop. The generic
+pipeline exposes the same interest value; its convenience wait uses that value.
+Typed events, newly admitted work and exhausted drive rounds prevent an unsafe
+sleep. Terminal connections report an error instead of live interests.
+
+Workspace tests and all-target Clippy pass, including new independent scripted
+checks for idle interests, queued requests, buffered replies/events and closure.
+The C SDK at `65ea947` passes `make check`, including its existing poll and retry
+controls. `API-PARITY.md` maps the APIs and names remaining clock, budget and
+role gaps. No wire contract or specification snapshot changed. Sophia production
+pin adoption and its export gates remain separate; this is not an installed
+desktop or performance qualification.
+
 ## t331 conditional retry clock
 
 Submission retry handling reads the clock only when a pending retry has no

@@ -1,0 +1,256 @@
+// Output file byte contract for t253. The export and its custody lifecycle are
+// described in docs/sophia-output-files.md; these records alone grant no
+// admission, capability or output authority. Integers are little endian.
+// Structural rules only: head/mode/generation identities, primary index and
+// geometry in a proposal reach the topology owner's semantic validation.
+protocol "sophia_output_fs_v1" api-version=1 byte-order="little" max-record-bytes=65536 max-candidate-bytes=1784 {
+    // Exact contents of the api file.
+    api "sophia-output-files version=1\n"
+
+    // Fixed root vocabulary. Objects and events are complete records; submit
+    // and ack take the fixed control layouts at the end of this file.
+    file "api" access="read"
+    file "limits" access="read"
+    file "topology" access="read"
+    file "events" access="read"
+    file "transaction" access="read-write"
+    file "submit" access="write"
+    file "ack" access="write"
+
+    header size=32 {
+        field "total_bytes" type="u32" offset=0 min=32 max=65536
+        field "api_version" type="u16" offset=4 value=1
+        field "kind" type="u16" offset=6
+        field "connection_epoch" type="u64" offset=8 nonzero=#true
+        field "submission_id" type="u64" offset=16
+        field "sequence" type="u64" offset=24
+    }
+
+    // Objects have submission_id=sequence=0. Candidates have submission_id>0
+    // and sequence=0. Events have submission_id=0 and sequence>0. Unknown
+    // kinds and versions are refused.
+    object "Limits" kind=1
+    object "Topology" kind=2
+    event "Negotiated" kind=16
+    event "Refused" kind=17
+    event "Submitted" kind=18
+    event "ObjectPublished" kind=19
+    event "Outcome" kind=32
+    candidate "Negotiate" kind=256
+    candidate "Proposal" kind=257
+
+    capability "observe" bit=0 required=#true
+    capability "configure" bit=1
+
+    refusal "unsupported_revision" value=1
+    refusal "observation_required" value=2
+
+    outcome "validated" value=1
+    outcome "committed" value=2
+    outcome "stale" value=3
+    outcome "rejected" value=4
+    outcome "rolled_back" value=5
+    outcome "failed" value=6
+
+    // Open vocabulary: unknown reasons are preserved and never imply success.
+    reason "none" value=0
+    reason "stale" value=1
+    reason "preparation" value=2
+    reason "apply" value=3
+    reason "head_lost" value=4
+    reason "first_presentation" value=5
+    reason "rollback" value=6
+    reason "invariant" value=7
+
+    intent "validate_only" value=1
+    intent "apply" value=2
+
+    // A head's transform mask sets bit (value - 1) for each supported value.
+    transform "normal" value=1
+    transform "rotate90" value=2
+    transform "rotate180" value=3
+    transform "rotate270" value=4
+    transform "flipped" value=5
+    transform "flipped90" value=6
+    transform "flipped180" value=7
+    transform "flipped270" value=8
+
+    vrr "disabled" value=1
+    vrr "automatic" value=2
+    vrr "always" value=3
+
+    mapping "fit" value=1
+    mapping "cover" value=2
+    mapping "exact" value=3
+
+    head-flag "connected" bit=0
+    head-flag "enabled" bit=1
+    head-flag "vrr_capable" bit=2
+
+    // Revision 1 fixes the first seven fields. The remaining resources are
+    // per-epoch values between the allowed minimum and the default ceiling.
+    // Acknowledging an event never makes a domain transaction reusable.
+    body "Limits" size=40 {
+        field "interface_revision" type="u16" offset=0 value=1
+        field "max_heads" type="u16" offset=2 value=16
+        field "max_groups" type="u16" offset=4 value=16
+        field "max_modes_per_head" type="u16" offset=6 value=128
+        field "max_members_per_group" type="u16" offset=8 value=4
+        field "max_label_bytes" type="u16" offset=10 value=64
+        field "max_modes" type="u16" offset=12 value=2048
+        field "reserved" type="u16" offset=14 value=0
+        field "journal_records" type="u32" offset=16 min=8 max=64
+        field "journal_bytes" type="u32" offset=20 min=2048 max=16384
+        field "staging_bytes" type="u32" offset=24 value=1784
+        field "assembly_timeout_ms" type="u32" offset=28 min=1 max=12000
+        field "ack_progress_timeout_ms" type="u32" offset=32 min=1 max=2000
+        field "max_domain_transactions" type="u32" offset=36 min=1 max=4096
+    }
+
+    // Revision ranges and unknown capability bits are owner refusals, not
+    // malformed records; negotiation intersects them with the known bits.
+    body "Negotiate" size=16 {
+        field "minimum_revision" type="u16" offset=0
+        field "maximum_revision" type="u16" offset=2
+        field "reserved" type="u32" offset=4 value=0
+        field "requested_capabilities" type="u64" offset=8
+    }
+    // The client also checks the grant against its own request.
+    body "Negotiated" size=24 {
+        field "selected_revision" type="u16" offset=0 value=1
+        field "reserved" type="bytes" offset=2 size=6 value=0
+        field "granted_capabilities" type="u64" offset=8 mask=3 required=1
+        field "max_heads" type="u16" offset=16 value=16
+        field "max_groups" type="u16" offset=18 value=16
+        field "max_modes_per_head" type="u16" offset=20 value=128
+        field "max_members_per_group" type="u16" offset=22 value=4
+    }
+    body "Refused" size=8 {
+        field "reason" type="u16" offset=0 min=1 max=2
+        field "reserved" type="bytes" offset=2 size=6 value=0
+    }
+    // File custody only; not a topology validation or commit.
+    body "Submitted" size=16 {
+        field "submission_id" type="u64" offset=0 nonzero=#true
+        field "candidate_kind" type="u16" offset=8 min=256 max=257
+        field "reserved" type="bytes" offset=10 size=6 value=0
+    }
+    // The Qid path names the exact immutable bytes of that publication.
+    body "ObjectPublished" size=24 {
+        field "object_kind" type="u16" offset=0 value=2
+        field "reserved" type="bytes" offset=2 size=6 value=0
+        field "topology_epoch" type="u64" offset=8 nonzero=#true
+        field "qid_path" type="u64" offset=16 nonzero=#true
+    }
+    // The domain transaction is distinct from submission ID and sequence.
+    body "Outcome" size=24 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "topology_epoch" type="u64" offset=8 nonzero=#true
+        field "outcome" type="u16" offset=16 min=1 max=6
+        field "reason" type="u16" offset=18
+        field "reserved" type="u32" offset=20 value=0
+    }
+
+    row "Mode" size=24 {
+        field "mode" type="u64" offset=0 nonzero=#true
+        field "width" type="i32" offset=8 min=1
+        field "height" type="i32" offset=12 min=1
+        field "refresh_millihz" type="u32" offset=16 min=1
+        field "preferred" type="u16" offset=20 min=0 max=1
+        field "reserved" type="u16" offset=22 value=0
+    }
+    // Every byte of an unused member slot is zero.
+    row "Member" size=12 {
+        field "head" type="u64" offset=0
+        field "mapping" type="u16" offset=8 min=1 max=3
+        field "reserved" type="u16" offset=10 value=0
+    }
+    // first_mode equals the sum of the preceding heads' mode counts; the
+    // ranges tile the mode table exactly. A zero current mode is absent.
+    row "Head" size=104 {
+        field "head" type="u64" offset=0 nonzero=#true
+        field "generation" type="u64" offset=8 nonzero=#true
+        field "flags" type="u16" offset=16 mask=7
+        field "transforms" type="u16" offset=18 mask=255 nonzero=#true
+        field "label_bytes" type="u16" offset=20 min=1 max=64
+        field "mode_count" type="u16" offset=22 min=1 max=128
+        field "current_mode" type="u64" offset=24
+        field "first_mode" type="u16" offset=32
+        field "reserved" type="bytes" offset=34 size=6 value=0
+        // UTF-8 followed by zero padding.
+        field "label" type="bytes" offset=40 size=64
+    }
+    row "Group" size=84 {
+        field "output" type="u64" offset=0 nonzero=#true
+        field "generation" type="u64" offset=8 nonzero=#true
+        field "x" type="i32" offset=16 min=0
+        field "y" type="i32" offset=20 min=0
+        field "width" type="i32" offset=24 min=1
+        field "height" type="i32" offset=28 min=1
+        field "member_count" type="u16" offset=32 min=1 max=4
+        field "reserved" type="u16" offset=34 value=0
+        field "members" type="row:Member" offset=36 count=4
+    }
+    row "HeadTarget" size=32 {
+        field "head" type="u64" offset=0
+        field "head_generation" type="u64" offset=8
+        field "mode" type="u64" offset=16
+        field "transform" type="u16" offset=24 min=1 max=8
+        field "vrr" type="u16" offset=26 min=1 max=3
+        field "reserved" type="u32" offset=28 value=0
+    }
+    // A zero output requests a new logical output identity.
+    row "ProposalGroup" size=76 {
+        field "output" type="u64" offset=0
+        field "x" type="i32" offset=8
+        field "y" type="i32" offset=12
+        field "width" type="i32" offset=16
+        field "height" type="i32" offset=20
+        field "member_count" type="u16" offset=24 min=1 max=4
+        field "reserved" type="u16" offset=26 value=0
+        field "members" type="row:Member" offset=28 count=4
+    }
+
+    // A published topology is authoritative: decoders also apply the snapshot
+    // invariants in docs/sophia-output-files.md. Largest body 52,184 bytes.
+    body-prefix "Topology" size=24 {
+        field "topology_epoch" type="u64" offset=0 nonzero=#true
+        field "primary_output" type="u64" offset=8 nonzero=#true
+        field "head_count" type="u16" offset=16 min=1 max=16
+        field "group_count" type="u16" offset=18 min=1 max=16
+        field "mode_count" type="u16" offset=20 min=1 max=2048
+        field "reserved" type="u16" offset=22 value=0
+    }
+    rows "Topology" {
+        row "Head" count="head_count"
+        row "Mode" count="mode_count"
+        row "Group" count="group_count"
+    }
+    // Largest body 1,752 bytes; its record is the 1,784-byte candidate bound.
+    body-prefix "Proposal" size=24 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "base_topology_epoch" type="u64" offset=8 nonzero=#true
+        field "intent" type="u16" offset=16 min=1 max=2
+        field "primary_group_index" type="u16" offset=18
+        field "head_count" type="u16" offset=20 min=1 max=16
+        field "group_count" type="u16" offset=22 min=1 max=16
+    }
+    rows "Proposal" {
+        row "HeadTarget" count="head_count"
+        row "ProposalGroup" count="group_count"
+    }
+
+    // Written at offset zero. The length is an assembly bound; the typed
+    // candidate decoder enforces the exact shape.
+    submit size=24 {
+        field "connection_epoch" type="u64" offset=0 nonzero=#true
+        field "submission_id" type="u64" offset=8 nonzero=#true
+        field "candidate_bytes" type="u32" offset=16 min=48 max=1784
+        field "reserved" type="u32" offset=20 value=0
+    }
+    // Cumulative through sequence; releases journal retention only.
+    ack size=16 {
+        field "connection_epoch" type="u64" offset=0 nonzero=#true
+        field "sequence" type="u64" offset=8 nonzero=#true
+    }
+}

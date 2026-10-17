@@ -22,7 +22,7 @@ fn require(ok: bool, field: &'static str) -> Result<(), ValueError> {
 }
 
 impl Wire for ShellCatalogIdentity {
-    fn put(&self, out: &mut Vec<u8>) {
+    fn put(&self, out: &mut impl crate::shell::encoding::ByteSink) {
         self.connection_epoch.put(out);
         self.catalog_generation.put(out);
         self.slot.put(out);
@@ -54,7 +54,7 @@ impl Wire for ShellCatalogIdentity {
     }
 }
 impl Wire for CatalogCandidateBegin {
-    fn put(&self, out: &mut Vec<u8>) {
+    fn put(&self, out: &mut impl crate::shell::encoding::ByteSink) {
         self.content.put(out);
         self.catalog_generation.put(out);
     }
@@ -66,7 +66,7 @@ impl Wire for CatalogCandidateBegin {
     }
 }
 impl Wire for CatalogActivation {
-    fn put(&self, out: &mut Vec<u8>) {
+    fn put(&self, out: &mut impl crate::shell::encoding::ByteSink) {
         self.action.put(out);
         self.catalog_generation.put(out);
     }
@@ -78,7 +78,7 @@ impl Wire for CatalogActivation {
     }
 }
 impl Wire for CatalogActivationOutcome {
-    fn put(&self, out: &mut Vec<u8>) {
+    fn put(&self, out: &mut impl crate::shell::encoding::ByteSink) {
         self.activation.put(out);
         self.status.put(out);
         self.reason.put(out);
@@ -102,33 +102,44 @@ impl Wire for CatalogActivationOutcome {
 pub fn encode_catalog_content_candidate(
     value: &CatalogContentCandidate,
 ) -> Result<Vec<u8>, ValueError> {
-    let (begin, chunk, end) = value.parts();
-    crate::shell::catalog_actions::validate(&begin)?;
-    crate::shell::catalog_actions::validate(&chunk)?;
-    crate::shell::content::validation::validate(&end)?;
-    let candidate = &value.candidate;
+    crate::shell::catalog_actions::validate_catalog_candidate(value)?;
     let mut bytes = Vec::new();
-    candidate.grant.put(&mut bytes);
-    candidate.candidate_generation.put(&mut bytes);
-    candidate.output.put(&mut bytes);
-    candidate.facts_generation.put(&mut bytes);
-    candidate.pacing_permit.put(&mut bytes);
-    candidate.interaction_generation.put(&mut bytes);
-    value.catalog_generation.put(&mut bytes);
-    (candidate.surfaces.len() as u16).put(&mut bytes);
-    (candidate.placements.len() as u16).put(&mut bytes);
-    (candidate.targets.len() as u16).put(&mut bytes);
-    0u16.put(&mut bytes);
+    put_catalog_candidate(value, &mut bytes);
+    Ok(bytes)
+}
+
+/// Validated whole catalog candidate length without cloning its rows.
+pub fn catalog_content_candidate_bytes(
+    value: &CatalogContentCandidate,
+) -> Result<usize, ValueError> {
+    crate::shell::catalog_actions::validate_catalog_candidate(value)?;
+    let mut bytes = super::ByteCount::new();
+    put_catalog_candidate(value, &mut bytes);
+    bytes.finish()
+}
+
+fn put_catalog_candidate(value: &CatalogContentCandidate, bytes: &mut impl super::ByteSink) {
+    let candidate = &value.candidate;
+    candidate.grant.put(bytes);
+    candidate.candidate_generation.put(bytes);
+    candidate.output.put(bytes);
+    candidate.facts_generation.put(bytes);
+    candidate.pacing_permit.put(bytes);
+    candidate.interaction_generation.put(bytes);
+    value.catalog_generation.put(bytes);
+    (candidate.surfaces.len() as u16).put(bytes);
+    (candidate.placements.len() as u16).put(bytes);
+    (candidate.targets.len() as u16).put(bytes);
+    0u16.put(bytes);
     for row in &candidate.surfaces {
-        row.put(&mut bytes);
+        row.put(bytes);
     }
     for row in &candidate.placements {
-        row.put(&mut bytes);
+        row.put(bytes);
     }
     for row in &candidate.targets {
-        row.put(&mut bytes);
+        row.put(bytes);
     }
-    Ok(bytes)
 }
 
 pub fn decode_catalog_content_candidate(
@@ -164,10 +175,7 @@ pub fn decode_catalog_content_candidate(
         },
         catalog_generation,
     };
-    let (begin, chunk, end) = value.parts();
-    crate::shell::catalog_actions::validate(&begin)?;
-    crate::shell::catalog_actions::validate(&chunk)?;
-    crate::shell::content::validation::validate(&end)?;
+    crate::shell::catalog_actions::validate_catalog_candidate(&value)?;
     Ok(value)
 }
 
@@ -205,14 +213,28 @@ pub fn encode_shell_catalog_action_value(
 ) -> Result<Vec<u8>, ValueError> {
     crate::shell::catalog_actions::validate(record)?;
     let mut bytes = Vec::new();
-    match record {
-        ShellCatalogActionRecord::Identity(v) => v.put(&mut bytes),
-        ShellCatalogActionRecord::CandidateBegin(v) => v.put(&mut bytes),
-        ShellCatalogActionRecord::CandidateChunk(v) => v.put(&mut bytes),
-        ShellCatalogActionRecord::Activate(v) => v.put(&mut bytes),
-        ShellCatalogActionRecord::ActivationOutcome(v) => v.put(&mut bytes),
-    }
+    put_catalog_action_value(record, &mut bytes);
     Ok(bytes)
+}
+
+/// Validated value-body length without allocating a byte buffer.
+pub fn shell_catalog_action_value_bytes(
+    record: &ShellCatalogActionRecord,
+) -> Result<usize, ValueError> {
+    crate::shell::catalog_actions::validate(record)?;
+    let mut bytes = super::ByteCount::new();
+    put_catalog_action_value(record, &mut bytes);
+    bytes.finish()
+}
+
+fn put_catalog_action_value(record: &ShellCatalogActionRecord, bytes: &mut impl super::ByteSink) {
+    match record {
+        ShellCatalogActionRecord::Identity(v) => v.put(bytes),
+        ShellCatalogActionRecord::CandidateBegin(v) => v.put(bytes),
+        ShellCatalogActionRecord::CandidateChunk(v) => v.put(bytes),
+        ShellCatalogActionRecord::Activate(v) => v.put(bytes),
+        ShellCatalogActionRecord::ActivationOutcome(v) => v.put(bytes),
+    }
 }
 
 /// Decodes one record's value body for the given kind. Rejects trailing

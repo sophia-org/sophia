@@ -271,6 +271,10 @@ int sophia_ns_release(struct sophia_ns *, uint64_t now_ms, uint64_t *ticket);
 int sophia_ns_upload_begin(struct sophia_ns *, struct sophia_sf_resource_begin, uint64_t *ticket);
 int sophia_ns_upload_end(struct sophia_ns *, uint64_t *ticket);
 int sophia_ns_upload_cancel(struct sophia_ns *, uint64_t *ticket);
+/* Cancel a tracked Begun/Admitted resource, including after a refused End.
+ * Local admission does not release it; its terminal status does. */
+int sophia_ns_resource_cancel(struct sophia_ns *, uint64_t resource_id, uint64_t generation,
+                              uint64_t *ticket);
 int sophia_ns_retire(struct sophia_ns *, uint64_t resource_id, uint64_t generation,
                      uint64_t *ticket);
 /* FrameDemand for the granted allocation: refused while the output's permit

@@ -403,6 +403,220 @@ static void authentication_qid_is_not_an_ordinary_file_qid(void)
         finish(&f);
     }
 }
+static void service_byte_budget_bounds_partial_requests(void)
+{
+    struct fixture f;
+    struct sophia_9p_handle h;
+    uint32_t fid;
+    uint8_t bytes[128], extra;
+    size_t used = 0, total = 4;
+    ssize_t n;
+    init(&f, 4, 4);
+    assert(!sophia_9p_attach(&f.c, "", "", &h, &fid));
+    assert(!sophia_9p_service(&f.c, 0));
+    assert(recv(f.fd[1], &extra, 1, MSG_DONTWAIT) < 0 &&
+           (errno == EAGAIN || errno == EWOULDBLOCK));
+    while (used < total) {
+        assert(!sophia_9p_service(&f.c, 3));
+        n = recv(f.fd[1], bytes + used, sizeof(bytes) - used, MSG_DONTWAIT);
+        assert(n > 0 && n <= 3);
+        used += (size_t)n;
+        if (used >= 4) {
+            total = get32(bytes);
+            assert(total <= sizeof(bytes));
+        }
+        assert(!sophia_9p_service(&f.c, 0));
+        assert(recv(f.fd[1], &extra, 1, MSG_DONTWAIT) < 0 &&
+               (errno == EAGAIN || errno == EWOULDBLOCK));
+    }
+    assert(used == total && bytes[4] == 104 && !sophia_9p_wants_write(&f.c));
+    finish(&f);
+}
+
+static size_t directory_entry(uint8_t *b, uint64_t cookie, uint8_t kind, const char *name)
+{
+    size_t n = strlen(name);
+    memset(b, 0, 24 + n);
+    b[0] = kind;
+    put(b + 5, 42, 8);
+    put(b + 13, cookie, 8);
+    b[21] = kind == 0x80 ? 4 : 8;
+    put(b + 22, n, 2);
+    memcpy(b + 24, name, n);
+    return 24 + n;
+}
+static void metadata_and_directory_pages(void)
+{
+    struct fixture f;
+    struct sophia_9p_handle h;
+    struct sophia_9p_reply r;
+    struct sophia_9p_dirent entry;
+    struct sophia_9p_attr fields;
+    uint8_t attr[153] = {0}, expected[16] = {0}, page[128] = {0};
+    uint32_t fid;
+    uint16_t tag;
+    size_t n, position;
+    unsigned i;
+    init(&f, 2, 2);
+    fid = attach(&f);
+    assert(!sophia_9p_getattr(&f.c, fid, &h));
+    put(expected, fid, 4); put(expected + 4, 0x3fff, 8);
+    tag = request_matches(&f, 24, expected, 12);
+    put(attr, 0x3fff, 8); attr[8] = 0x80;
+    put(attr + 13, 42, 8); put(attr + 21, 0040755, 4);
+    put(attr + 33, 2, 8); put(attr + 49, 4096, 8);
+    answer(&f, 25, tag, attr, sizeof attr);
+    assert(!sophia_9p_service(&f.c, 4096));
+    assert(!sophia_9p_peek(&f.c, &r));
+    assert(!sophia_9p_attributes(&r, &fields));
+    assert(!sophia_9p_consume(&f.c, r.handle));
+    assert(fields.valid == 0x3fff && fields.qid.type == 0x80 && fields.qid.path == 42);
+    assert(fields.mode == 0040755 && fields.nlink == 2 && fields.size == 4096);
+    assert(!sophia_9p_readdir(&f.c, fid, 7, UINT32_MAX, &h));
+    put(expected + 4, 7, 8); put(expected + 12, 4096 - 11, 4);
+    tag = request_matches(&f, 40, expected, 16);
+    n = directory_entry(page + 4, 8, 0x80, "roles");
+    n += directory_entry(page + 4 + n, 10, 0, "api");
+    put(page, n, 4);
+    answer(&f, 41, tag, page, n + 4);
+    for (i = 0; i < 256; i++) {
+        assert(!sophia_9p_service(&f.c, 1));
+        if (!sophia_9p_peek(&f.c, &r)) break;
+    }
+    assert(i < 256 && r.type == 41 && r.count == n);
+    position = 0;
+    assert(!sophia_9p_dirent_next(&r, &position, &entry));
+    assert(entry.next == 8 && entry.type == 4 && entry.name_bytes == 5 && !memcmp(entry.name, "roles", 5));
+    assert(!sophia_9p_dirent_next(&r, &position, &entry));
+    assert(entry.next == 10 && entry.type == 8 && entry.name_bytes == 3 && !memcmp(entry.name, "api", 3));
+    assert(sophia_9p_dirent_next(&r, &position, &entry) == SOPHIA_9P_AGAIN && position == n);
+    assert(!sophia_9p_consume(&f.c, r.handle));
+    assert(!sophia_9p_readdir(&f.c, fid, 10, 128, &h));
+    tag = request(&f, 40);
+    memset(page, 0, 4); answer(&f, 41, tag, page, 4);
+    r = take(&f, 41);
+    assert(!r.count);
+    finish(&f);
+}
+static void malformed_metadata_and_directories_fail_closed(void)
+{
+    unsigned mode;
+    for (mode = 0; mode < 10; mode++) {
+        struct fixture f;
+        struct sophia_9p_handle h;
+        uint8_t b[256] = {0};
+        uint16_t tag;
+        uint32_t fid;
+        size_t n;
+        init(&f, 2, 2); fid = attach(&f);
+        if (mode < 2) {
+            assert(!sophia_9p_getattr(&f.c, fid, &h));
+            tag = request(&f, 24);
+            b[8] = mode == 1 ? 8 : 0x80;
+            answer(&f, 25, tag, b, mode == 0 ? 152 : 153);
+        } else {
+            assert(!sophia_9p_readdir(&f.c, fid, 7, mode == 9 ? 1 : 128, &h));
+            tag = request(&f, 40);
+            n = directory_entry(b + 4, mode == 2 ? 7 : 8, 0, mode == 4 ? "a/b" : mode == 5 ? ".." : "api");
+            if (mode == 3) b[4 + 21] = 4;
+            if (mode == 6) b[4] = 8;
+            if (mode == 7) n--;
+            put(b, mode == 8 ? n + 1 : n, 4);
+            answer(&f, 41, tag, b, n + 4);
+        }
+        assert(sophia_9p_service(&f.c, 4096) == SOPHIA_9P_INVALID);
+        assert(sophia_9p_getattr(&f.c, fid, &h) == SOPHIA_9P_INVALID);
+        finish(&f);
+    }
+}
+
+static void zero_bytes(const uint8_t *bytes, size_t n)
+{
+    size_t i;
+    for (i = 0; i < n; i++) assert(!bytes[i]);
+}
+static void secret_writes_scrub_sent_bytes_without_changing_the_wire(void)
+{
+    struct fixture f;
+    struct sophia_9p_handle h, plain;
+    uint8_t expected[29], observed[29], body[4] = {6, 0, 0, 0};
+    uint8_t *slot;
+    size_t i;
+    init(&f, 2, 2);
+    assert(sophia_9p_write_secret(&f.c, 3, 0, "secret", 4096, &h) == SOPHIA_9P_ARGUMENT);
+    assert(!sophia_9p_scrubbing_output(&f.c));
+    assert(!sophia_9p_write_secret(&f.c, 3, 0, "secret", 6, &h));
+    slot = f.memory + h.slot * 4096;
+    memcpy(expected, slot, sizeof expected);
+    assert(!sophia_9p_write(&f.c, 4, 0, "plain", 5, &plain));
+    for (i = 0; i < sizeof expected; i++) {
+        assert(sophia_9p_scrubbing_output(&f.c));
+        assert(!sophia_9p_service(&f.c, 1));
+        assert(recv(f.fd[1], observed + i, 1, MSG_DONTWAIT) == 1);
+        zero_bytes(slot, i + 1);
+        assert(!memcmp(slot + i + 1, expected + i + 1, sizeof expected - i - 1));
+    }
+    assert(!memcmp(expected, observed, sizeof expected));
+    assert(!sophia_9p_scrubbing_output(&f.c));
+    answer(&f, 119, (uint16_t)get16(expected + 5), body, 4);
+    take(&f, 119);
+    sophia_9p_close(&f.c);
+    assert(!sophia_9p_wants_write(&f.c));
+    assert(sophia_9p_write_secret(&f.c, 3, 0, "secret", 6, &h) == SOPHIA_9P_CLOSED);
+    finish(&f);
+}
+static void secret_cleanup_on_close_disconnect_and_bad_reply(void)
+{
+    unsigned mode;
+    for (mode = 0; mode < 3; mode++) {
+        struct fixture f;
+        struct sophia_9p_handle h;
+        uint8_t *slot;
+        size_t n;
+        int r;
+        init(&f, 2, 2);
+        assert(!sophia_9p_write_secret(&f.c, 3, 0, "secret", 6, &h));
+        slot = f.memory + h.slot * 4096;
+        n = f.c.slots[h.slot].bytes;
+        if (!mode) {
+            sophia_9p_close(&f.c);
+            sophia_9p_close(&f.c);
+        } else if (mode == 1) {
+            assert(!close(f.fd[1])); f.fd[1] = -1;
+            assert(sophia_9p_service(&f.c, 1) == SOPHIA_9P_IO);
+        } else {
+            const uint8_t invalid[4] = {6, 0, 0, 0};
+            assert(send(f.fd[1], invalid, sizeof invalid, MSG_DONTWAIT) == 4);
+            do { r = sophia_9p_service(&f.c, 1); } while (!r);
+            assert(r == SOPHIA_9P_INVALID);
+        }
+        assert(!sophia_9p_scrubbing_output(&f.c));
+        zero_bytes(slot, n);
+        assert(sophia_9p_service(&f.c, 4096) < 0);
+        finish(&f);
+    }
+}
+static void close_preserves_validated_replies_but_scrubs_queued_secrets(void)
+{
+    struct fixture f;
+    struct sophia_9p_handle ordinary, secret;
+    struct sophia_9p_reply r;
+    uint8_t count[4] = {0};
+    uint16_t tag;
+    init(&f, 2, 2);
+    assert(!sophia_9p_write(&f.c, 3, 0, NULL, 0, &ordinary));
+    tag = request(&f, 118); answer(&f, 119, tag, count, 4);
+    assert(!sophia_9p_service(&f.c, 4096));
+    assert(!sophia_9p_write_secret(&f.c, 3, 0, "secret", 6, &secret));
+    sophia_9p_close(&f.c);
+    zero_bytes(f.memory + secret.slot * 4096, 29);
+    assert(!sophia_9p_service(&f.c, 4096));
+    assert(!sophia_9p_peek(&f.c, &r) && r.type == 119 && r.handle.serial == ordinary.serial);
+    assert(!sophia_9p_consume(&f.c, r.handle));
+    assert(sophia_9p_service(&f.c, 4096) == SOPHIA_9P_CLOSED);
+    finish(&f);
+}
+
 int main(void)
 {
     puts("tag wrap");
@@ -417,6 +631,12 @@ int main(void)
     reply_shape_poisoning();
     authenticated_attach_and_afid_custody();
     authentication_qid_is_not_an_ordinary_file_qid();
+    service_byte_budget_bounds_partial_requests();
+    metadata_and_directory_pages();
+    malformed_metadata_and_directories_fail_closed();
+    secret_writes_scrub_sent_bytes_without_changing_the_wire();
+    secret_cleanup_on_close_disconnect_and_bad_reply();
+    close_preserves_validated_replies_but_scrubs_queued_secrets();
     puts("Tauth/afid wire and custody controls passed");
     puts("sophia_9p_client: R4-1..R4-7 controls passed");
     return 0;

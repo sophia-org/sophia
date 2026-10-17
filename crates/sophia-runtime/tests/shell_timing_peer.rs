@@ -296,9 +296,24 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
         }
         if cfg!(feature = "comparator-counters") {
             let counters = String::from_utf8(stderr).unwrap();
-            assert_eq!(counters.lines().count(), 2 * FRAMES as usize);
-            for (index, line) in counters.lines().enumerate() {
-                assert!(line.starts_with(if cfg!(feature = "comparator-profiling") {
+            let lines: Vec<_> = counters.lines().collect();
+            let stride = if cfg!(feature = "comparator-progress") {
+                2
+            } else {
+                1
+            };
+            assert_eq!(lines.len(), stride * 2 * FRAMES as usize);
+            for (index, pair) in lines.chunks_exact(stride).enumerate() {
+                let line = pair[0];
+                if stride == 2 {
+                    assert!(pair[1].starts_with(
+                        "sophia_comparator_progress schema=2 mode=progress process=peer "
+                    ));
+                    assert!(pair[1].contains(&format!("sequence={} ", index / 2 + 1)));
+                }
+                assert!(line.starts_with(if cfg!(feature = "comparator-progress") {
+                    "sophia_comparator_counters schema=2 mode=progress process=peer "
+                } else if cfg!(feature = "comparator-profiling") {
                     "sophia_comparator_counters schema=2 mode=profile process=peer "
                 } else if cfg!(feature = "comparator-allocation-counting") {
                     "sophia_comparator_counters schema=1 process=peer "

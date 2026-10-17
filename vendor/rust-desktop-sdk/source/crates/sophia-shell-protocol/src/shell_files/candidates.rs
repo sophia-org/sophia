@@ -61,6 +61,24 @@ pub fn encode_shell_file_transaction(
     Ok(encode_shell_file_record(header, &body)?)
 }
 
+/// Validated complete transaction-record length without a scratch buffer.
+/// This checks wire values and header identity, not session admission or custody.
+pub fn shell_file_transaction_bytes(
+    header: ShellFileHeader,
+    tx_record: &ShellFileTransactionRecord,
+) -> Result<usize, ShellFilePayloadError> {
+    let kind = shell_file_transaction_kind(&tx_record.record).ok_or(ShellFileCodecError::Kind)?;
+    header_kind(header, kind)?;
+    if !tx_record.transaction.is_valid() {
+        return Err(ShellFilePayloadError::Identity);
+    }
+    let payload = crate::shell::encoding::content::shell_content_value_bytes(&tx_record.record)?;
+    SHELL_FILE_HEADER_BYTES
+        .checked_add(8)
+        .and_then(|n| n.checked_add(payload))
+        .ok_or(ShellFileCodecError::Length.into())
+}
+
 /// Decodes a single-payload transaction record of `kind`, with every
 /// existing record check.
 pub fn decode_shell_file_transaction(
@@ -127,4 +145,24 @@ pub fn decode_shell_file_candidate(
         transaction,
         candidate: decode_content_candidate(&r.body[8..])?,
     })
+}
+
+/// Validated complete candidate length without cloning or allocating rows.
+pub fn shell_file_candidate_bytes(
+    header: ShellFileHeader,
+    value: &ShellFileCandidate,
+) -> Result<usize, ShellFilePayloadError> {
+    header_kind(header, ShellFileKind::Candidate)?;
+    if !value.transaction.is_valid() {
+        return Err(ShellFilePayloadError::Identity);
+    }
+    let payload = crate::shell::encoding::content::content_candidate_bytes(&value.candidate)?;
+    let length = SHELL_FILE_HEADER_BYTES
+        .checked_add(8)
+        .and_then(|n| n.checked_add(payload))
+        .ok_or(ShellFileCodecError::Length)?;
+    if length > SHELL_FILE_MAX_CANDIDATE_BYTES {
+        return Err(ShellFileCodecError::Length.into());
+    }
+    Ok(length)
 }

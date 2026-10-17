@@ -1,14 +1,14 @@
-tree 5062f72cd3a5023e377ba3c403b0726ad959d810
-parent 8bb069e13afb076f08431cf299a64d2305330ea7
-author Mason Green <mason@greenm01.net> 1791806792 -0400
-committer Mason Green <mason@greenm01.net> 1791806792 -0400
+tree 8618e94dc4da8eebe684a77b90453aa23a06214e
+parent f7873a8409814442bb62a82ce955f3f0a1fff066
+author Mason Green <mason@greenm01.net> 1792212693 -0400
+committer Mason Green <mason@greenm01.net> 1792212693 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCaszNSBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKBZgD+OmMJCREgzpKkzvD4aVMz
- aoHKlvKolL2xHh+EpgPWD4ABAPLfzznaNKXJzIdNIw8e5hGkYZhK7POj/LbzBvxc
- TdUJ
- =6yIe
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL+1RsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIOHgEAmP4e+HM+Z59HDaMiXdN7
+ nQZGGMoAfWl0fmgaEE/hZ5cBAOF4oCqrfSzKlvBGIdN4ZvmRNTWTQVdEjhQrEC6h
+ ImQI
+ =FIm9
  -----END PGP SIGNATURE-----
 
-feat(auth): reuse quiescent launch relay for another endpoint
+Record desktop SDK parity release qualification

@@ -118,6 +118,35 @@ fn reads_stats_and_lists_through_the_real_driver() {
 }
 
 #[test]
+#[ignore = "requires SOPHIA_9P_METADATA_PEER naming an independently built C SDK peer"]
+fn external_c_metadata_matches_the_real_driver() {
+    use std::os::fd::OwnedFd;
+    use std::process::{Command, Stdio};
+    let executable = std::path::PathBuf::from(std::env::var_os("SOPHIA_9P_METADATA_PEER").unwrap());
+    assert!(executable.is_absolute() && executable.is_file());
+    let mut served = Served::new();
+    let stream = served.stream();
+    served.start();
+    let output = Command::new(executable)
+        .stdin(Stdio::from(OwnedFd::from(stream)))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        format!(
+            "attr {} {}\nentry 8 info\nentry 8 sink\nentry 8 events\nentry 4 dir\nentry 8 ledger\n",
+            0o100444, INFO_LEN,
+        )
+    );
+    assert_eq!(served.export.state().sink, b"test-secret");
+}
+
+#[test]
 fn server_refusals_leave_the_client_usable() {
     let (served, mut client) = client();
     let root = client.attach(b"", b"").unwrap();

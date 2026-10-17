@@ -29,6 +29,116 @@ fn capture_cli_reads_one_image_through_real_namespace_launch_authentication() {
     run_boundary("capture");
 }
 #[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_startup_uses_real_namespace_authentication() {
+    run_boundary("sdk-startup");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_reads_retained_supplied_frame() {
+    run_boundary("sdk-frame");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_mid_read_revocation_hides_partial_image() {
+    run_boundary("sdk-frame-revoke");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_requests_capture_then_reads_frame() {
+    run_boundary("sdk-request");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_locked_capture_is_refused() {
+    run_boundary("sdk-request-refused");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_queued_capture_is_cancelled_by_lock() {
+    run_boundary("sdk-request-cancelled");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_active_capture_is_cancelled_by_lock() {
+    run_boundary("sdk-request-cancelled-active");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_busy_capture_is_refused() {
+    run_boundary("sdk-request-busy");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_stale_capture_serial_is_refused() {
+    run_boundary("sdk-request-stale");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_transfer_delivery() {
+    run_boundary("sdk-transfer");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_transfer_absence() {
+    run_boundary("sdk-transfer-absent");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_watch_lock() {
+    run_boundary("sdk-watch-lock");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_watch_replacement() {
+    run_boundary("sdk-watch-replacement");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_watch_source_generation() {
+    run_boundary("sdk-watch-generation");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_watch_absence() {
+    run_boundary("sdk-watch-absent");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_watch_local_cancellation() {
+    run_boundary("sdk-watch-cancel");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_watch_deadline() {
+    run_boundary("sdk-watch-expire");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_session_flush_preserves_transfer() {
+    run_boundary("sdk-session-cancel");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_session_old_watch_and_new_transfer() {
+    run_boundary("sdk-session-revoke");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independent SDK peer"]
+fn external_sdk_portal_session_capture_replaces_watched_frame() {
+    run_boundary("sdk-session-capture");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independent SDK peer"]
+fn external_sdk_portal_session_frame_survives_watch_cancellation() {
+    run_boundary("sdk-session-frame");
+}
+#[test]
+#[ignore = "requires SOPHIA_PORTAL_AUTH_PEER naming an independently built SDK peer"]
+fn external_sdk_portal_transfer_revocation_hides_scratch() {
+    run_boundary("sdk-transfer-revoke");
+}
+#[test]
 #[ignore = "requires SOPHIA_TEST_CAPTURE_CLI naming the built generic Sophia CLI"]
 fn capture_cli_bootstrap_uses_the_attested_launch_channel() {
     run_boundary("capture-bootstrap");
@@ -39,10 +149,30 @@ fn capture_cli_reads_a_4k_image_within_the_existing_grant_deadline() {
     run_boundary("capture-bootstrap-large");
 }
 fn run_boundary(boundary: &str) {
-    let is_capture = boundary.starts_with("capture");
+    let external = boundary.starts_with("sdk-");
+    let sdk_session = boundary.starts_with("sdk-session");
+    let sdk_watch = boundary.starts_with("sdk-watch");
+    let watch_absent = boundary == "sdk-watch-absent";
+    let sdk_transfer = boundary.starts_with("sdk-transfer");
+    let transfer_absent = boundary == "sdk-transfer-absent";
+    let transfer_revoke = boundary == "sdk-transfer-revoke";
+    let sdk_request = boundary.starts_with("sdk-request");
+    let locked_request = boundary == "sdk-request-refused";
+    let occupied_request = matches!(boundary, "sdk-request-busy" | "sdk-request-stale");
+    let refused_request = locked_request || occupied_request;
+    let cancelled_request = boundary.starts_with("sdk-request-cancelled");
+    let session_capture = boundary == "sdk-session-capture";
+    let sdk_frame = boundary.starts_with("sdk-frame")
+        || sdk_request
+        || session_capture
+        || boundary == "sdk-session-frame";
+    let revoke_frame = boundary == "sdk-frame-revoke";
+    let is_capture = boundary.starts_with("capture") || sdk_frame;
     let standalone = boundary.starts_with("capture-bootstrap");
     let (width, height) = if boundary.ends_with("-large") {
         (3840, 2160)
+    } else if sdk_frame {
+        (256, 128)
     } else {
         (2, 2)
     };
@@ -60,13 +190,41 @@ fn run_boundary(boundary: &str) {
     )
     .unwrap();
     let objects = objects::Fixture::new();
+    if sdk_session {
+        objects.transfer(1);
+    }
+    if sdk_transfer && !transfer_absent {
+        objects.transfer(1);
+    }
+    if sdk_watch && !watch_absent {
+        objects.transfer(1);
+    }
     let capture = is_capture.then(|| capture_fixture::Fixture::new(width, height));
-    let executable = std::env::current_exe().unwrap();
+    if sdk_frame && !sdk_request {
+        capture.as_ref().unwrap().install_supplied_frame();
+    }
+    if locked_request {
+        capture.as_ref().unwrap().lock_requests();
+    }
+    if occupied_request {
+        capture.as_ref().unwrap().queue_request();
+    }
+    let executable = if external {
+        let path = PathBuf::from(std::env::var_os("SOPHIA_PORTAL_AUTH_PEER").unwrap());
+        assert!(path.is_absolute() && path.is_file());
+        path
+    } else {
+        std::env::current_exe().unwrap()
+    };
     let bootstrap = Bootstrap(executable.with_file_name(format!(
         "recipe-portal-bootstrap-{}-{boundary}",
         std::process::id()
     )));
-    assert!(std::process::Command::new("/usr/bin/cc").env_clear().env("PATH", "/usr/bin:/bin")
+    let mut compiler = std::process::Command::new("/usr/bin/cc");
+    if external {
+        compiler.arg("-DSOPHIA_TEST_EXTERNAL_PEER");
+    }
+    assert!(compiler.env_clear().env("PATH", "/usr/bin:/bin")
         .args(["-std=c11", "-Wall", "-Wextra", "-Werror", "-O2"])
         .arg("-DSOPHIA_TEST_CHILD=\"namespace_launch::tests::portal_dispatch::recipe_portal_child\"")
         .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/lock_rust_bootstrap.c"))
@@ -166,7 +324,97 @@ fn run_boundary(boundary: &str) {
             f.wake.notifier(),
         )
         .unwrap();
-    if let Some(capture) = capture {
+    if external {
+        let mut cancelled = false;
+        while std::fs::read_to_string(&report).ok().as_deref()
+            != Some(if sdk_session {
+                "session-ready\n"
+            } else if sdk_watch {
+                if watch_absent {
+                    "watch-done\n"
+                } else {
+                    "watch-ready\n"
+                }
+            } else if transfer_revoke {
+                "transfer-partial\n"
+            } else if sdk_transfer {
+                "transfer-done\n"
+            } else if refused_request {
+                "request-refused\n"
+            } else if cancelled_request {
+                "request-cancelled\n"
+            } else if revoke_frame {
+                "partial\n"
+            } else if sdk_frame {
+                "frame\n"
+            } else {
+                "started\n"
+            })
+        {
+            assert!(
+                Instant::now() < deadline,
+                "external portal startup deadline"
+            );
+            f.auth.tick();
+            if cancelled_request && !cancelled {
+                cancelled = capture
+                    .as_ref()
+                    .unwrap()
+                    .cancel_request(boundary.ends_with("-active"));
+            } else if sdk_request && !cancelled_request && !refused_request {
+                capture.as_ref().unwrap().service();
+            }
+        }
+        assert!(!cancelled_request || cancelled);
+        if sdk_session {
+            if boundary == "sdk-session-revoke" {
+                objects.transfer(2);
+            }
+            std::fs::write(&report, b"continue\n").unwrap();
+            while std::fs::read_to_string(&report).ok().as_deref() != Some("session-done\n") {
+                assert!(Instant::now() < deadline, "shared session deadline");
+                f.auth.tick();
+                if session_capture {
+                    capture.as_ref().unwrap().service();
+                }
+            }
+        }
+        if sdk_watch && !watch_absent {
+            assert!(objects.objects.current().is_ok());
+            match boundary {
+                "sdk-watch-lock" => {
+                    objects.fence.block();
+                    objects.fence.unblock();
+                }
+                "sdk-watch-replacement" => objects.transfer(2),
+                "sdk-watch-generation" => objects.source.0.store(10, Ordering::Release),
+                "sdk-watch-cancel" | "sdk-watch-expire" => (),
+                _ => unreachable!(),
+            }
+            std::fs::write(&report, b"continue\n").unwrap();
+            while std::fs::read_to_string(&report).ok().as_deref() != Some("watch-done\n") {
+                assert!(Instant::now() < deadline, "watch completion deadline");
+                f.auth.tick();
+            }
+        }
+        if transfer_revoke {
+            objects.fence.block();
+            objects.fence.unblock();
+            std::fs::write(&report, b"continue\n").unwrap();
+            while std::fs::read_to_string(&report).ok().as_deref() != Some("transfer-done\n") {
+                assert!(Instant::now() < deadline, "transfer revocation deadline");
+                f.auth.tick();
+            }
+        }
+        if revoke_frame {
+            capture.as_ref().unwrap().revoke_supplied_frame();
+            std::fs::write(&report, b"continue\n").unwrap();
+            while std::fs::read_to_string(&report).ok().as_deref() != Some("revoked\n") {
+                assert!(Instant::now() < deadline, "frame revocation deadline");
+                f.auth.tick();
+            }
+        }
+    } else if let Some(capture) = capture {
         while if standalone {
             !report.with_extension("pam").exists()
         } else {
@@ -212,7 +460,7 @@ fn run_boundary(boundary: &str) {
             break;
         }
     }
-    if is_capture {
+    if is_capture && !external {
         let bytes = std::fs::read(report.with_extension("pam")).unwrap();
         assert_eq!(
             bytes,

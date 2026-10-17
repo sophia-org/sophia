@@ -7,6 +7,11 @@ inline-tests crates/sophia-drm-clock/src/lib.rs
 # One external raw 9P peer shared by shell and output unit fixtures; no test bodies.
 inline-tests crates/sophia-runtime/src/lib.rs
 
+# Shared-core readiness counters and crate alias for external socket fixtures.
+# Test bodies remain in crates/sophia-9p/tests/support/observed_readiness.rs.
+inline-tests crates/sophia-9p/src/lib.rs
+inline-tests crates/sophia-9p/src/unix.rs
+
 # Private allocation-adoption race; rationale in docs/style-guide.md.
 inline-tests crates/sophia-renderer-live/src/shared_pixmap/service.rs
 

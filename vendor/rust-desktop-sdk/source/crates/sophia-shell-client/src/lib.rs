@@ -4,22 +4,42 @@
 //! (`files`). It grants no authority, renders no pixels and opens no X11 or
 //! Wayland connection. Internals hold whole typed values (see `wire`).
 
+mod batch;
 mod candidate;
+pub use batch::{ContentBatchItem, ShellBatchItem};
 mod custody;
-pub use custody::{Admission, Custody, Ticket};
+pub use custody::{Admission, Custody, CustodyLookupError, Ticket};
 mod catalog;
 pub use catalog::{CatalogInbox, CatalogObservation};
 mod descriptor;
 mod files;
 pub use descriptor::DescriptorObservation;
+pub use files::Connecting;
 mod lifecycle;
+mod native_launcher;
+pub use native_launcher::NativeLauncherObservation;
+mod native_lifecycle;
+pub use native_lifecycle::{
+    NativeActionReservation, NativeActionStatus, NativeAllocationParams, NativeInputReservation,
+    NativeInputStatus, NativeLauncherLifecycle, NativeLauncherSession, NativeLifecycleState,
+    NativeObligations, NativePresentation, NativeResourceState, NativeScene, NativeSessionResponse,
+};
 mod outbox;
+pub use outbox::{QueueLimits, QueueReservation};
+mod reservation;
 pub use lifecycle::*;
+mod journal_event;
+mod journal_progress;
+pub use journal_event::{JournalEvent, JournalRecord};
 mod wire;
+pub use journal_progress::{JournalProgress, SnapshotFetchFailure};
 
 use std::collections::VecDeque;
+use std::os::fd::{AsFd, BorrowedFd};
 use std::path::Path;
 use std::time::Duration;
+
+pub use sophia_9p_client::pipeline::IoInterest;
 
 use sophia_shell_protocol::{
     ContentAdmissionRefused, ShellContentRecord, ShellIndicatorActivation,
@@ -44,6 +64,8 @@ pub struct ShellClientOptions {
 /// failure so a shell can report operator policy without claiming corruption.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ShellClientError {
+    /// Invalid caller input; the dispatch did not change the connection.
+    InvalidArgument(&'static str),
     Io(String),
     /// A `sophia_shell_fs_v1` envelope or record failed to encode/decode.
     FileCodec(sophia_shell_protocol::shell_files::ShellFilePayloadError),
@@ -103,6 +125,50 @@ pub struct ShellConnection {
     output: outbox::ClientOutbox,
     inbox: VecDeque<Inbound>,
     ledger: custody::Ledger,
+}
+
+/// Validated shell records whose local admission capacity is held exclusively.
+/// No ticket is issued and nothing is sent until `commit`. Drop or `cancel`
+/// discards it. The connection cannot be driven or used for another admission
+/// while this handle exists. It reserves local capacity, not server acceptance.
+///
+/// ```compile_fail
+/// use sophia_shell_client::ShellConnection;
+/// use sophia_shell_protocol::{ShellContentRecord, TransactionId};
+/// fn cannot_drive(connection: &mut ShellConnection, tx: TransactionId, record: &ShellContentRecord) {
+///     let reservation = connection.reserve_content(tx, record).unwrap();
+///     connection.poll_io().unwrap(); // the reservation exclusively borrows it
+///     reservation.commit();
+/// }
+/// ```
+#[must_use = "commit the prepared content, or drop it to cancel"]
+pub struct ContentReservation<'a> {
+    connection: &'a mut ShellConnection,
+    prepared: Option<outbox::PreparedQueue>,
+}
+
+impl ContentReservation<'_> {
+    /// Admit all prepared units with no I/O, allocation or capacity failure.
+    /// Tickets begin in `Queued`; later disconnects can still leave them unsent
+    /// or with unknown custody. This does not establish semantic acceptance.
+    pub fn commit(mut self) -> Admission {
+        let prepared = self.prepared.take().expect("reservation consumed once");
+        let admission = self
+            .connection
+            .output
+            .commit(prepared, &mut self.connection.ledger);
+        self.connection.wire.commit_encoded();
+        admission
+    }
+
+    /// Release the prepared content without admitting it or issuing tickets.
+    pub fn cancel(self) {}
+}
+
+impl Drop for ContentReservation<'_> {
+    fn drop(&mut self) {
+        self.connection.wire.cancel_encoded();
+    }
 }
 
 impl ShellConnection {
@@ -209,6 +275,48 @@ impl ShellConnection {
         self.admit(outbound, control)
     }
 
+    /// Validate and reserve one content operation before a local side effect.
+    /// The record is copied; no borrow of application data survives. Commit
+    /// consumes the handle; dropping it cancels. Failed or cancelled preparation
+    /// issues no custody tickets, though internal submission IDs may be skipped.
+    pub fn reserve_content(
+        &mut self,
+        transaction: TransactionId,
+        record: &ShellContentRecord,
+    ) -> Result<ContentReservation<'_>, ShellClientError> {
+        let outbound = Outbound::Content(transaction, record.clone());
+        let control = outbound.is_control();
+        self.reserve_outbound(outbound, control)
+    }
+
+    /// Prepare a whole content candidate atomically, as for
+    /// `enqueue_content_group_tracked`. This does not register lifecycle
+    /// metadata; use `enqueue_candidate_tracked` when that is required.
+    pub fn reserve_content_group(
+        &mut self,
+        transaction: TransactionId,
+        records: &[ShellContentRecord],
+    ) -> Result<ContentReservation<'_>, ShellClientError> {
+        self.reserve_outbound(Outbound::ContentGroup(transaction, records.to_vec()), false)
+    }
+
+    fn reserve_outbound(
+        &mut self,
+        outbound: Outbound,
+        control: bool,
+    ) -> Result<ContentReservation<'_>, ShellClientError> {
+        if self.wire.peer_closed() {
+            return Err(ShellClientError::PeerClosed);
+        }
+        let units = self.wire.encode(outbound)?;
+        self.wire.reserve_encoded()?;
+        let prepared = self.output.prepare(units, control, &mut self.ledger)?;
+        Ok(ContentReservation {
+            connection: self,
+            prepared: Some(prepared),
+        })
+    }
+
     /// Encodes one outbound unit and admits all of its wire units, or none.
     fn admit(&mut self, outbound: Outbound, control: bool) -> Result<Admission, ShellClientError> {
         let units = self.wire.encode(outbound)?;
@@ -225,11 +333,45 @@ impl ShellConnection {
         self.ledger.get(ticket)
     }
 
+    /// Query custody while distinguishing evicted tickets from unissued ones.
+    /// Use tickets only with the connection that issued them. This does no I/O
+    /// and remains available after disconnect. `Unavailable` is lost local
+    /// history, whereas `Custody::Unknown` is a retained uncertain outcome.
+    pub fn custody_result(&self, ticket: Ticket) -> Result<Custody, CustodyLookupError> {
+        self.ledger.lookup(ticket)
+    }
+
+    /// End locally without I/O. Retain custody and already-decoded observations
+    /// for inspection: queued units become DroppedUnsent, a possibly submitted
+    /// unit becomes Unknown, and observed Submitted remains Submitted. Repeated
+    /// close is harmless. The owned descriptor stays open until this value drops;
+    /// unregister it from readiness monitoring and do not use it directly.
+    pub fn close(&mut self) {
+        self.wire.close(&mut self.output, &mut self.ledger);
+    }
+
     /// When to call [`Self::poll_io`] again even if the socket has nothing
     /// to read or write: a write the session refused with `EAGAIN` is retried
     /// then (or sooner, once an event is consumed). `None` when nothing waits.
     pub fn wake_deadline(&self) -> Option<std::time::Instant> {
         self.wire.wake_deadline()
+    }
+
+    /// Interests for a level-triggered external event loop. Call `poll_io`
+    /// and drain typed events before sleeping, then recompute after every
+    /// operation that changes connection state. If `immediate` is true,
+    /// service/drain again without sleeping; otherwise monitor `as_fd()` for
+    /// the requested readiness and hangup/errors. Limit the wait by
+    /// `wake_deadline()`, even when the socket has no activity. On waking,
+    /// call `poll_io`; readiness does not guarantee progress.
+    ///
+    /// Errors are terminal; stop registering this connection. Already received
+    /// typed events can still be drained through the usual receive methods.
+    /// This query performs no I/O and does not read the clock.
+    pub fn io_interest(&self) -> Result<IoInterest, ShellClientError> {
+        let mut interest = self.wire.io_interest()?;
+        interest.immediate |= !self.inbox.is_empty();
+        Ok(interest)
     }
 
     /// Makes one bounded I/O pass, then waits at most `maximum` for readiness.
@@ -454,11 +596,46 @@ impl ShellConnection {
     }
 
     /// Bounded nonblocking progress. A queue limit is a protocol failure, not
-    /// permission to discard an accepted outcome. Each call reads and writes
-    /// at most 256 KiB in at most 64 syscalls per direction.
+    /// permission to discard an accepted outcome. Each call runs at most 32
+    /// transport rounds, each limited to 256 KiB and 64 syscalls per direction.
     pub fn poll_io(&mut self) -> Result<(), ShellClientError> {
         self.wire
-            .poll_io(&mut self.output, &mut self.inbox, &mut self.ledger)
+            .poll_io(&mut self.output, &mut self.inbox, &mut self.ledger, None)
+    }
+
+    /// Nonblocking external-loop dispatch, with caller time and a shared
+    /// per-call byte budget. At most `byte_budget` bytes and 32 syscall attempts
+    /// per direction are spent across all internal rounds (at most 32).
+    /// `now` is used for every retry decision in this call, without a clock read.
+    /// Successive supplied times must not decrease. Backward time or a value
+    /// that cannot represent a 256 ms retry is rejected without state changes.
+    /// Zero budget permits local work but no socket I/O. Query `io_interest` and
+    /// drain typed events before sleeping, and service again by `wake_deadline`.
+    ///
+    /// Use `take_*` receive methods with this API: `poll_*` and `wait_for_io`
+    /// invoke the default clock/budget driver. If mixing drivers, supplied time
+    /// must follow the real `Instant` timeline; simulated time requires using
+    /// only `dispatch` and non-driving receive methods after connection setup.
+    pub fn dispatch(
+        &mut self,
+        now: std::time::Instant,
+        byte_budget: usize,
+    ) -> Result<(), ShellClientError> {
+        self.wire.poll_io(
+            &mut self.output,
+            &mut self.inbox,
+            &mut self.ledger,
+            Some((now, byte_budget)),
+        )
+    }
+}
+
+/// Borrow the role socket for readiness monitoring only. Do not read, write,
+/// close, duplicate or change its flags outside the SDK. The connection keeps
+/// ownership; unregister it from an external event loop before dropping it.
+impl AsFd for ShellConnection {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.wire.as_fd()
     }
 }
 

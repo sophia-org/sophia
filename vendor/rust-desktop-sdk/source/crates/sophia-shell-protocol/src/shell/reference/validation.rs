@@ -1,6 +1,6 @@
 use super::*;
+use crate::shell::unique::unique;
 use crate::{InvalidRecord, ShellV1CandidateOutcomeKind, shell_launcher_text_valid};
-use std::collections::BTreeSet;
 
 fn require(ok: bool) -> Result<(), InvalidRecord> {
     if ok {
@@ -19,11 +19,12 @@ pub fn validate_shell_shortcut_catalog(value: &ShellShortcutCatalog) -> Result<(
             && value.generation > 0
             && value.entries.len() <= SOPHIA_SHELL_MAX_SHORTCUTS,
     )?;
-    let mut slots = BTreeSet::new();
+    require(unique::<SOPHIA_SHELL_MAX_SHORTCUTS>(
+        value.entries.iter().map(|e| u64::from(e.slot)),
+    ))?;
     for entry in &value.entries {
         require(
             entry.slot > 0
-                && slots.insert(entry.slot)
                 && text(&entry.chord, 64)
                 && text(&entry.action, 128)
                 && entry.label.as_ref().is_none_or(|v| text(v, 128))
@@ -66,14 +67,11 @@ pub fn validate_shell_reference_candidate(
             && style.colors[1..].iter().all(|color| color >> 24 == 255)
             && text(&style.title, 128),
     )?;
-    let mut slots = BTreeSet::new();
+    require(unique::<SOPHIA_SHELL_MAX_SHORTCUTS>(
+        value.entries.iter().map(|e| u64::from(e.slot)),
+    ))?;
     for entry in &value.entries {
-        require(
-            entry.slot > 0
-                && slots.insert(entry.slot)
-                && text(&entry.key, 64)
-                && text(&entry.label, 128),
-        )?;
+        require(entry.slot > 0 && text(&entry.key, 64) && text(&entry.label, 128))?;
     }
     Ok(())
 }
