@@ -172,7 +172,10 @@ the existing window saves within the current bound.
    and keep tickets unresolved across a short head/EINVAL tail until successful
    resend. Cover EAGAIN mid-window, out-of-order replies, partial transport writes,
    canonical boundaries, zero/oversized Rwrite, terminal events, cancellation,
-   flush races and successor binding fences. Match C/Rust scenarios independently.
+   and successor binding fences. Match C/Rust scenarios independently. Neither
+   shell SDK issues Tflush for upload writes: both drain replies before releasing
+   storage. SDK upload-flush races are therefore inapplicable; generic 9P flush
+   tests remain separate from this window's drain/cancellation checks.
 5. Verify actual request lengths/counts and ordered dependency traces before a
    native run. Require unchanged normal-path pixel and record request counts and
    zero resends in the deterministic workload. Count short replies, EAGAIN heads,

@@ -418,7 +418,7 @@ static int receive(struct sophia_sf_client *c, const struct sophia_9p_reply *r)
         c->upload_op.active = 0;
         return sf_session_upload_reply(c, r);
     }
-    return SOPHIA_9P_INVALID;
+    return sf_session_upload_write_reply(c, r);
 }
 int sophia_sf_client_service(struct sophia_sf_client *c, size_t budget)
 {

@@ -15,6 +15,35 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+B3 validation is complete in signed Rust SDK `01474a9` and C SDK `5246f96`.
+The final fault tests cover terminal status with four outstanding writes, a stale
+head, partial transport output and cancellation with unissued chunks. Both SDK
+suites pass, as does strict Rust Clippy. The independent review found no blockers.
+The exact archives are imported for production adoption. Snapshot checks, C
+export/lifecycle gates, the full default Sophia suite, formatting and offline
+metadata checks pass. The final source commits add only the reviewed test-scope
+clarifications; their repeated snapshot checks also pass.
+The matched native B2/B3 pilot is next.
+No quiet hold is active and the installed desktop is unchanged. The +10% gates
+remain unchanged; no B2/B3 native result exists yet.
+
+The test scopes differ deliberately: Rust forces kernel socket backpressure;
+C limits each dispatch to one output byte. Rust's queued chunks are dropped by
+the terminal status in its cancellation test. Enqueuing ResourceCancel alone
+does not preempt those chunks. Prioritizing cancellation by dropping unissued
+same-resource chunks is a follow-up investigation, outside B3; it needs its own
+ordering and custody review before implementation.
+
+The server's one-msize input budget remains the main limit on bulk pass counts.
+Four client credits do not imply four pixel writes serviced in one owner pass.
+Use the matched pilot to decide whether the proposed descriptor path should take
+priority; its implementation is not yet approved. The
+[accepted plan](../plans/nfe0blnb-queue-shell-submit-and-pixel-writes-within-existing-custody-bounds.md)
+owns the remaining performance gate. Evidence is under
+`~/.local/state/sophia/development-evidence/t331-b3-20261017/`.
+
+## October 17 implementation and validation history
+
 Production `a3c94bb86` implements the approved reusable writer (`ee22309ba`) and
 imports signed Rust SDK `9d56625` and C SDK `30b7c1f`. Both source branches and
 Sophia's first-slice adoption were pushed. Later checkpoints remain local as

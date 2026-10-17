@@ -1033,3 +1033,50 @@ preserved old uncertainty and isolation from an old ticket's late completion.
 
 Admin map 13 adds paired abrupt service-process death before/after claim,
 with retained uncertainty and no automatic retry.
+
+## B3 upload window (working candidate)
+
+Zero and oversized pixel Rwrite counts fail the connection in both SDKs without
+resending. Rust retains Unknown custody for an issued unit whose invalid reply
+establishes no accepted prefix; an oversized count cannot establish Stored on
+terminal cleanup. Independent regression tests cover both invalid counts. C's
+borrowed-buffer API exposes terminal failure rather than per-chunk custody.
+
+Window regressions also cover terminal-event draining, head ESTALE, and partial
+transport frames during refill. Rust tests cancellation with four issued and four
+unissued chunks: confirmed writes remain Stored and unissued chunks become
+DroppedUnsent after the peer's terminal status, not because enqueuing Cancel
+preempts the outbox. An explicit Rust ResourceCancel follows already-queued
+chunks of its resource. C refuses a caller cancellation while its borrowed upload buffer
+is outstanding; a terminal resource event still fences and drains that window
+before clunking and releasing the buffer. Neither shell SDK flushes upload tags.
+Rust's slow-reader test forces kernel socket backpressure; C's one-byte dispatch
+budget forces partial SDK output across calls. Both verify ordered window refill.
+
+The shell client keeps up to four adjacent same-resource canonical upload units
+in an inline window. Each retains its payload charge and custody ticket. Replies
+match by tag but settle in issue order; a returned credit permits the next chunk
+without waiting for the entire burst. Records and resource changes stop gathering.
+Fragmented prefixes are confirmed sequentially; the final fragment can overlap
+following units. Every write respects iounit and the canonical unit boundary.
+
+Short writes and EAGAIN drain invalidated tails before resuming at the confirmed
+cursor. Only EAGAIN backs off. Fencing prohibits recovery, and terminal status
+drains outstanding replies before clunk. End waits for all upload units to settle.
+Both SDKs close the writer after draining a permanent head refusal, cancelling
+that resource before End. Rust previously kept the binding after refusing one unit;
+later chunks now cannot resume that abandoned binding.
+Five request credits remain reserved for control work. The fixed window adds no
+per-burst allocation and does not change the caller API.
+
+The paired C candidate windows a borrowed multi-chunk buffer, rather than Rust's
+separate outbox units. A one-chunk C call usually has depth one. C can window
+fragments and retries after event/ACK progress or time; Rust retries on time.
+C retains its unconsumed-event refill gate and confirmed-ACK transaction barrier.
+These scheduling differences remain explicit. C adds a low-level upload_retry
+call; its high-level session owns the independent timer. Its client/session
+layouts and default request storage grow, requiring consumer rebuilds.
+
+Independent window/recovery tests pass locally; exact signed B3 revisions, export
+adoption and native performance remain pending. Counts come from scripted peers
+and instrumented captures, not a new production metrics API.

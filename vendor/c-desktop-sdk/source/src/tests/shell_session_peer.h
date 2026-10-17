@@ -42,9 +42,14 @@ struct peer {
     uint8_t staged[65536], last_submit[24];
     size_t staged_used;
     unsigned tx_writes, submits, acks, upload_bytes;
+    unsigned hold_upload, upload_held, upload_clunks;
+    uint16_t upload_tags[16];
+    uint32_t upload_counts[16];
+    uint64_t upload_offsets[16];
     uint64_t outputs_generation;
     /* Rlerror for walks of outputs or upload/N: node-specific failures. */
     uint32_t object_error, upload_error;
+    uint32_t upload_iounit;
     /* outputs: append one trailing byte; cap each Rread (0: no cap). */
     int object_trailing;
     uint32_t object_read_max;
@@ -387,10 +392,12 @@ static inline void peer_request(struct peer *p, const uint8_t *m, size_t size)
         peer_qid(b, file);
         if (peer_object_kind(file) && p->object_qids[peer_object_kind(file)])
             peer_put(b + 5, p->object_qids[peer_object_kind(file)], 8);
-        peer_put(b + 13, 0, 4);
+        peer_put(b + 13, file == F_UPLOAD ? p->upload_iounit : 0, 4);
         peer_send(p, 13, tag, b, 17);
         return;
     case 120:
+        if (peer_file(p, (uint32_t)peer_get(body, 4)) == F_UPLOAD)
+            p->upload_clunks++;
         if (peer_file(p, (uint32_t)peer_get(body, 4)) == F_TX) {
             p->staged_used = 0;
             p->tx_clunks++;
@@ -458,6 +465,14 @@ static inline void peer_request(struct peer *p, const uint8_t *m, size_t size)
             } else
                 peer_count(p, tag, count);
         } else if (file == F_UPLOAD) {
+            if (p->hold_upload) {
+                unsigned i = p->upload_held++;
+                assert(i < 16);
+                p->upload_tags[i] = tag;
+                p->upload_counts[i] = count;
+                p->upload_offsets[i] = offset;
+                return;
+            }
             p->upload_bytes += count;
             peer_count(p, tag, count);
         } else if (file == F_SUBMIT) {
@@ -509,13 +524,21 @@ struct rig {
     int fd[2];
     void *storage;
     uint64_t now;
+    size_t service_budget;
+    unsigned partial_send_seen;
 };
 static const struct sophia_ss_config rig_config = {{5, 6, 0}, SOPHIA_SF_BAR, 4096, 4, 8192,
                                                    NULL, 0};
 static inline void rig_step(struct rig *r)
 {
-    int status = sophia_ss_dispatch(&r->s, POLLIN, 65536, r->now);
+    unsigned i;
+    int status = sophia_ss_dispatch(&r->s, POLLIN, r->service_budget ? r->service_budget : 65536, r->now);
     (void)status;
+    for (i = 0; i < SOPHIA_9P_REQUESTS * 2; i++) {
+        const struct sophia_9p_slot *slot = &r->s.files.wire->slots[i];
+        if (slot->sent && slot->sent < slot->bytes)
+            r->partial_send_seen = 1;
+    }
     if (r->p.fd >= 0)
         peer_pump(&r->p);
 }

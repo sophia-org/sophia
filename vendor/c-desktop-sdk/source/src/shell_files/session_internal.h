@@ -16,6 +16,8 @@ int sf_session_attached_wire(const struct sophia_9p_client *, uint32_t root, uin
 int sf_session_event_parse(struct sophia_sf_client *);
 int sf_session_object_reply(struct sophia_sf_client *, const struct sophia_9p_reply *);
 int sf_session_upload_reply(struct sophia_sf_client *, const struct sophia_9p_reply *);
+int sf_session_upload_write_reply(struct sophia_sf_client *, const struct sophia_9p_reply *);
+int sf_session_upload_write_drive(struct sophia_sf_client *);
 int sf_session_upload_drive(struct sophia_sf_client *);
 int sf_session_upload_event(struct sophia_sf_client *, const struct sophia_sf_record *);
 int sf_session_object_drive(struct sophia_sf_client *);

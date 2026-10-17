@@ -886,3 +886,15 @@ production multi-endpoint launch is claimed by this SDK-only run. The C check su
 Evidence `t318-c-relay-01` has SHA256SUMS SHA-256
 `226a7028ea678c8f2bb3b2082541c3365b8eeb1013bc6850afc52d3c950125ea`. The candidate hashes cover
 all modified/untracked files at the run; this provenance addition follows it.
+
+## B3 implementation checkpoint, 2026-10-17
+
+The upload window implements the queued-shell-writes amendment already pinned
+from signed Sophia `feaf3cbc7`. No new server feature, wire field or capability
+is inferred. Scripted tests cover four outstanding writes, rolling refill,
+reversed replies, short/EAGAIN recovery, iounit, fences, direct clockless retry
+and an idle session's retry timeout. Eight-slot attached clients retain support
+with three upload credits. API-PARITY.md records the independent Rust candidate
+and C rebuild requirement. Old/current export compatibility, signed snapshot
+adoption, fairness diagnostics and native cost qualification remain separate
+gates; no B3 performance result is claimed.

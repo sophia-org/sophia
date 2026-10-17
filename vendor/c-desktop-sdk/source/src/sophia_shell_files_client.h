@@ -26,6 +26,13 @@ struct sophia_sf_operation {
     struct sophia_9p_handle handle;
     uint8_t active;
 };
+#define SOPHIA_SF_MAX_QUEUED_UPLOAD_WRITES 4u
+/* Replies are matched by handle, then retired in issue order. */
+struct sophia_sf_upload_write {
+    struct sophia_sf_operation op;
+    uint32_t count, reply_count, error;
+    uint8_t ready, type;
+};
 struct sophia_sf_buffers {
     void *objects;
     size_t object_capacity;
@@ -67,6 +74,9 @@ struct sophia_sf_client {
     uint32_t submit_error;
     size_t tx_size, tx_offset, event_used, object_used, upload_sent, upload_size, api_used;
     uint64_t upload_offset;
+    size_t upload_issued;
+    uint8_t upload_head, upload_count, upload_draining, upload_wait;
+    struct sophia_sf_upload_write upload_writes[SOPHIA_SF_MAX_QUEUED_UPLOAD_WRITES];
     uint16_t upload_slot;
     uint32_t remote_error;
     struct sophia_sf_resource_begin resource;
@@ -74,7 +84,7 @@ struct sophia_sf_client {
     struct sophia_sf_operation boot_op, event_op, submit_op, ack_op, object_op, upload_op;
     struct sophia_sf_operation paired_submit_op;
     uint8_t tx[8192], event_bytes[1024], object_bytes[1024];
-    /* An upload chunk is borrowed until its Twrite reply is processed. */
+    /* Borrowed until all queued writes and any recovery have drained. */
     const uint8_t *upload_data;
 };
 /* wire must be fresh and exclusively owned by this client until disposal.
@@ -145,12 +155,19 @@ int sophia_sf_client_ack_through(struct sophia_sf_client *, uint64_t sequence);
 int sophia_sf_client_object(struct sophia_sf_client *, uint16_t kind, uint64_t generation,
                             uint64_t qid);
 int sophia_sf_client_object_result(struct sophia_sf_client *, const struct sophia_sf_record **);
-/* Begin copies its record; wait for status 1 before opening upload/N. Supply
- * one bounded chunk at a time, advancing by positive short Rwrite counts.
+/* Begin copies its record; wait for status 1 before opening upload/N. One
+ * borrowed buffer may span canonical chunks. Up to four writes are queued,
+ * reserving five control slots; fewer than nine wire slots reduce the window.
+ * Supplying only one canonical chunk per call usually gives depth one.
+ * Short writes drain the invalidated tail before resuming at the confirmed cursor.
  * End is allowed only after all declared bytes are acknowledged. Cancel waits
  * for the writer to open and any writes to finish, preserving their order. */
 int sophia_sf_client_upload_begin(struct sophia_sf_client *, struct sophia_sf_resource_begin);
 int sophia_sf_client_upload_chunk(struct sophia_sf_client *, const void *, size_t);
+/* EAGAIN retains the borrowed bytes and waits after draining queued replies.
+ * Call after event/ack progress or a bounded backoff; service reads no clock.
+ * ARGUMENT when no upload waits. Positive short writes resume automatically. */
+int sophia_sf_client_upload_retry(struct sophia_sf_client *);
 /* Chunk storage may be released when ready becomes true or pending becomes
  * false. A terminal session also releases every borrowed chunk. */
 int sophia_sf_client_upload_ready(const struct sophia_sf_client *);

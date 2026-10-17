@@ -16,3 +16,6 @@ sophia-shell-protocol = { workspace = true }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+rustix = { workspace = true, features = ["net"] }

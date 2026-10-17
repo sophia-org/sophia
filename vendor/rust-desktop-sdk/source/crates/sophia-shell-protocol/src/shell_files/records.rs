@@ -17,6 +17,8 @@ pub const SHELL_FILE_OUTPUTS_MAX_BYTES: usize = 1024;
 pub const SHELL_FILE_INDICATORS_MAX_BYTES: usize = 32_768;
 /// The number of upload slots a connection may address in a `ResourceBegin`.
 pub const SHELL_FILE_MAX_UPLOAD_SLOTS: u16 = 4;
+/// SDK sender ceiling; not a server pending-request limit.
+pub const SHELL_FILE_MAX_QUEUED_UPLOAD_WRITES: usize = 4;
 /// One complete `Candidate` record, header included: the content limits'
 /// `max_candidate_bytes` prototype cap (docs/sophia-shell-files.md).
 pub const SHELL_FILE_MAX_CANDIDATE_BYTES: usize = 8192;

@@ -1,14 +1,14 @@
-tree bf4dd07e71e110bf0dbfcd845951e6e72276b403
-parent b8b7b55473796aa71768155d7bbfd743db84d8fc
-author Mason Green <mason@greenm01.net> 1792244336 -0400
-committer Mason Green <mason@greenm01.net> 1792244336 -0400
+tree 8ec1a6848fe8ec03672199541bd4282fd3933bbe
+parent f45057a1dea98832f9ae8ef790d0120c9100c9a8
+author Mason Green <mason@greenm01.net> 1792249750 -0400
+committer Mason Green <mason@greenm01.net> 1792249750 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatN6cBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJUYQD/UHV58zMRpAojF1Inu4WI
- FJEc+i9ktrsl6dTkuFVJI34A/1SwVgcbMVCIyG7DMSgFcNyK8epTMlkcMtgpCeJI
- EbIJ
- =C/WX
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatOPlhsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKV/AD/bKYdIUY8BlqgIGQl7Gcd
+ MkIrHokvlQSKVFPtSqtqPL4A/3ZIgIJISBfKSmfKaF2x7iNMrK1MdUFHr/ZcegVq
+ phMO
+ =DieF
  -----END PGP SIGNATURE-----
 
-Preserve accepted shell submissions on terminal failure
+Clarify queued cancellation and transport test scope
