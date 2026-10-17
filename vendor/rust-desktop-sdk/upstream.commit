@@ -1,14 +1,14 @@
-tree 338cf236cb6916c5bf2e13d8d02937008f5ee59e
-parent 033bb2b2d8e3ac10f162c1979b0c16c99fe36ecd
-author Mason Green <mason@greenm01.net> 1792236876 -0400
-committer Mason Green <mason@greenm01.net> 1792236876 -0400
+tree bdb756b7c458710ad834782df0e6582e8e476719
+parent cab32bf454c46ffc9baacdb7ad1d2d05263afcad
+author Mason Green <mason@greenm01.net> 1792238683 -0400
+committer Mason Green <mason@greenm01.net> 1792238683 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatNdTBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIrSwD+NzXM9dQ5MXcumPztDkGz
- pmDP+jjZ6UDuQSPJRs8Sh8wA/0mBHTomZLSMhxLsVFuxNLNpFwjHpdNRjl3ykPKU
- HiEB
- =jcck
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatNkWxsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJPywD/cxnBYv1w5sh0nPpskGWE
+ MYmWxbfOA2aneNq8Rd2tuAYBANzbK/Op4XfAaHPqrWtTIyohsFnB92QIFwjNSAbU
+ A28N
+ =vzfe
  -----END PGP SIGNATURE-----
 
-Coalesce automatic journal ACKs at bounded drive boundaries
+test: prove retained record precedes covering ACK reply

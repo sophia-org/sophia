@@ -175,7 +175,8 @@ int sf_session_drive(struct sophia_sf_client *c)
             r = sophia_9p_clunk(c->wire, c->fids[1], &c->submit_op.handle);
         else if (c->submit_stage == 5) {
             const char *name = c->transaction_mode == 2 ? "transaction" : "transaction-reuse";
-            if (!c->transaction_mode && c->acked_sequence < c->submitted_sequence)
+            if (!c->transaction_mode &&
+                (!c->negotiated || c->acked_sequence < c->submitted_sequence))
                 r = SOPHIA_9P_BUSY;
             else
                 r = sophia_9p_walk(c->wire, c->root, &name, 1, &c->submit_op.handle, &c->fids[1]);

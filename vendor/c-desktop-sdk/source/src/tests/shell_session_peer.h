@@ -50,6 +50,8 @@ struct peer {
     uint32_t object_read_max;
     /* Descriptor tests select this role explicitly; ordinary rigs remain bars. */
     int descriptor, hold_bootstrap_submitted, wrong_welcome_epoch;
+    int hold_negotiated;
+    struct sophia_sf_record held_negotiated;
     const char *api_override;
     const struct sophia_sf_negotiated *welcome_override;
     const uint8_t *object_data[8];
@@ -282,6 +284,10 @@ static inline void peer_submit(struct peer *p, uint16_t tag, const uint8_t *b)
             }
             if (p->welcome_override)
                 r.value.negotiated = *p->welcome_override;
+        }
+        if (p->hold_negotiated && r.header.kind == SOPHIA_SF_NEGOTIATED) {
+            p->held_negotiated = r;
+            return;
         }
         peer_record(p, &r);
         if (p->wrong_welcome_epoch && r.header.kind == SOPHIA_SF_NEGOTIATED)

@@ -437,6 +437,27 @@ static void old_and_unissued_tickets(void)
     rig_close(&r);
 }
 
+static void reusable_probe_waits_for_negotiated_after_ack(void)
+{
+    struct rig r;
+    rig_start(&r, &rig_config);
+    r.p.reusable = 1;
+    r.p.hold_negotiated = 1;
+    rig_run(&r, 64);
+    assert(r.s.files.submitted_sequence && !r.s.files.negotiated);
+    /* A lower-level caller may acknowledge Submitted before Negotiated arrives. */
+    assert(!sophia_sf_client_ack(&r.s.files));
+    rig_run(&r, 16);
+    assert(r.s.files.acked_sequence >= r.s.files.submitted_sequence);
+    assert(!r.p.reuse_probes);
+    peer_record(&r.p, &r.p.held_negotiated);
+    rig_settle(&r);
+    rig_ack(&r);
+    assert(r.s.files.negotiated && r.p.reuse_probes == 1);
+    assert(r.s.files.transaction_mode == 1);
+    rig_close(&r);
+}
+
 static void reusable_transaction_writer(void)
 {
     struct rig r;
@@ -481,6 +502,7 @@ static void reusable_transaction_writer(void)
 
 int main(void)
 {
+    reusable_probe_waits_for_negotiated_after_ack();
     reusable_transaction_writer();
     old_and_unissued_tickets();
     admission_atomicity();

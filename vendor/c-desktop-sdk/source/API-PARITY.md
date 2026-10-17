@@ -14,6 +14,13 @@ operation tested in C; it does not establish a native request-count reduction.
 
 ## Reusable shell transaction writer, 2026-10-17
 
+Review follow-ups explicitly test that C delays discovery until Negotiated has
+arrived even when Submitted was acknowledged earlier. Rust's scripted peer
+withholds the covering ACK reply and observes the next record write outstanding
+at the same time. C still waits for the confirmed ACK before the next record;
+this scheduling difference preserves custody but may cost an extra service pass.
+These tests establish ordering, not measured native performance.
+
 The optional `transaction-reuse` node follows signed Sophia `ee22309ba`.
 Both SDKs probe after negotiation and its covering ACK; only lookup ENOENT
 selects legacy transactions. Successful writers survive submissions; covering

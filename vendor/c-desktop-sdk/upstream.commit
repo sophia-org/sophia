@@ -1,14 +1,14 @@
-tree 35bfb2f64ca3e660f8bc3c82fa1ef771752afab5
-parent fa1824a374e7c09bbb18065882f48fbc97c1f5fc
-author Mason Green <mason@greenm01.net> 1792236877 -0400
-committer Mason Green <mason@greenm01.net> 1792236877 -0400
+tree c5708df15bcb2e6984d825b18207bc604b1229ea
+parent 71582a5cc7f42c5bbc5b1f9b1139d91504bc6c27
+author Mason Green <mason@greenm01.net> 1792238684 -0400
+committer Mason Green <mason@greenm01.net> 1792238684 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatNdTRsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJ/RQD/dKv3cBzDrGcOL1nfN0Rq
- Xodhnq+4yVdvfnBj3UAUPhIA/ibKX1IP7icKUmp/1y4mWITheD6x7aCxgupeNlQf
- 2roK
- =QNeJ
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatNkXBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLr1gEA3oWzcRngQGL1RwhG2qZj
+ AO9kj7y8FDipuW9uIGuiBqYBAKtPXb94fMMsgOXwLd8cee62mhm6Kn3SnNlg7gX/
+ oxkN
+ =fScy
  -----END PGP SIGNATURE-----
 
-Verify cumulative ACK parity without changing caller scheduling
+fix: await negotiation before reusable writer discovery
