@@ -231,10 +231,12 @@ The client checks that selection against its offered revision range and grants
 against its request before changing event decoding. A capability alone never
 selects r2. The legacy codec entry points remain r1-only; revision-aware entry
 points carry the new selection without changing the 16-byte body layout.
-`image_channel_unavailable` is
-ResourceStatus Rejected reason 9 for r2; unknown reasons retain the existing
-open-vocabulary rule and never imply success. Current runtime and SDK support
-remains lock r1 until the new codecs and authenticated channel land.
+ResourceStatus Rejected uses reason 9 `image_channel_unavailable`, reason 10
+`invalid_source` for an invalid sealed backing type, seals or pixels, and reason
+11 `validation_timeout` for an admitted source that misses its arrival/validation
+deadline. A wrong backing length uses the existing `size_mismatch` reason 4.
+These descriptor reasons apply at r2; unknown reasons retain the existing
+open-vocabulary rule and never imply success. Byte-only callers retain r1.
 Sealed backing is immutable; mutable DMA-BUF sources require a renderer-owned
 capture and proven safe completion before release. No socket closure, timeout or
 lock transition substitutes for that proof. Descriptor failure cannot delay

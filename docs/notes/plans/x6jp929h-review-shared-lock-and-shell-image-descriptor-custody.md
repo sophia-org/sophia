@@ -15,6 +15,14 @@ parity remain open. Claude's review found no blockers
 in the retired-epoch completion fix (`d33e546d8`) or the independent journal
 reservations (`310cb886f`).
 
+The reason-name pins are C `f5e499c` and Rust `e3bdbe6`: lock r2
+`invalid_source` (10) and `validation_timeout` (11), with wrong backing length
+retaining reason 4. Existing open-vocabulary codecs preserve these values.
+Unsent expiry uses SourceReleased disposition 3; cancellation uses 4 only after
+source custody permits release. Lock admission must reserve terminal journal
+capacity before committing Submitted. These rules guide Claude's next lock
+admission/worker slice; that slice has not activated Source acceptance yet.
+
 The resource owner now has a bounded four-job handoff table retaining admission
 identity and completed validation results until the exact active or retired
 store consumes them. Real worker tests cover disconnect, clock-regression retry,
@@ -536,10 +544,15 @@ the first t338 implementation step, not a result attributed to these fixtures.
 Codex owns the shared contract, shell/lock schema and protocol codecs, SDK spec
 copies, vendor pins, Session endpoint wiring, integration and pushes. Under the
 owner's parallel implementation direction, Claude owns the independent C SDK
-producer channel and role adapters and reviews Rust. Muse reached the usage
-limit; Codex has taken over the shell export discovery/refusal files and journal
-reservations. Codex keeps authenticated socket admission and Session wiring. Lock runtime work has not
-been assigned. Shared checkout edits remain separated by file ownership.
+producer channel and role adapters, reviews Rust, and now owns the lock runtime
+files. Muse owns the Rust role-neutral producer; role adapters follow separately.
+Codex owns the shell export, journal reservations, authenticated socket admission
+and Session wiring. Shared checkout edits remain separated by file ownership.
+The [current resumption](#current-resumption) records the live state and remaining
+gates. The following checkpoints preserve what each earlier slice proved; their
+then-outstanding work is superseded by that resumption.
+
+#### Earlier implementation checkpoints
 
 The receipt prerequisite is published in Rust `93fe07b` and C `a208c95`:
 explicit shell r9 and lock r2 entry points carry ImageBegin in Submitted while

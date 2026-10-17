@@ -1,5 +1,12 @@
 # C and Rust SDK API parity
 
+## Lock sealed-source refusal names, 2026-10-17
+
+Both SDKs name lock r2 reasons `invalid_source` (10) and
+`validation_timeout` (11). Wrong backing length retains `size_mismatch` (4).
+The existing open-vocabulary codecs already preserve these values; no decoder
+bound or negotiation behavior changes. Rust producer/adapters remain unfinished.
+
 ## Sealed-image offer cancellation, C, 2026-10-17
 
 Both C adapters cancel an offer with the existing ResourceCancel record; no

@@ -1,14 +1,14 @@
-tree bc66d23cce6134f189c1d3f5ed591d4fd63db574
-parent e77723576e91060869094261f43c08cb14bbb798
-author Mason Green <mason@greenm01.net> 1792276685 -0400
-committer Mason Green <mason@greenm01.net> 1792276685 -0400
+tree 6a6101fd4f0deb6550cbe5596bd01760d495ea04
+parent 02ea2ad674201871e3632c6b1f68b944805e2e7e
+author Mason Green <mason@greenm01.net> 1792277123 -0400
+committer Mason Green <mason@greenm01.net> 1792277123 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatP4zRsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKxmwD/Vqg1N7JUqJSIIe//Xslc
- 0R2Xf6EnzmEn+BSf+ix8UlMA/jcms7x13aHoti7EFe1Giw+fpNOZx5WS+Aus0oLe
- qgcB
- =GOOL
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatP6gxsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLPXAD8Cxy5W6R/7tO3nKgyiD6Z
+ 0BtWEhHqCdhh8VBezl+NeCgA/RIMFeh9GHJOd+1RMylBYGZUsFZeQ16bsRJMh3XW
+ G70M
+ =RK8x
  -----END PGP SIGNATURE-----
 
-docs: pin the shared offer cancellation contract
+feat(lock): name sealed-source refusal and validation timeout reasons

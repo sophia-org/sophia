@@ -391,6 +391,14 @@ ChannelClosed reasons are 1 peer disconnect, 2 protocol fault, 3 Hello timeout,
 4 descriptor grant revoked. If 9P itself is gone, no ChannelClosed delivery is
 promised. Closing the channel does not prove that a capture has finished.
 
+For sealed lock offers, ResourceStatus Rejected uses `invalid_source` (10) for
+invalid backing type, seals or pixels, `size_mismatch` (4) for a wrong backing
+length, and `validation_timeout` (11) when arrival or validation misses the
+original deadline. These are offer refusals, not packet-shape channel faults.
+An admitted offer that expires without a Source still receives SourceReleased
+with disposition 3. Cancellation and channel loss preserve any earlier terminal
+cause and release only when the actual source custody allows it.
+
 The discovery file is bounded ASCII with a fixed first line
 `sophia-image-channel version=1`, followed by one key/value per line: role,
 connection_epoch, channel_generation, endpoint, source_kinds,

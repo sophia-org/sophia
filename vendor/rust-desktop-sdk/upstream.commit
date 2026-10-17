@@ -1,14 +1,14 @@
-tree 5a6820add2351c965b6700a4c4efb990ffbf1a7f
-parent 86187932a089ce19241c0fc4bb8657f40f0d6f8d
-author Mason Green <mason@greenm01.net> 1792276680 -0400
-committer Mason Green <mason@greenm01.net> 1792276680 -0400
+tree 6933c0ee5994ea1bacff17a10e0e2127978a4146
+parent 7d5d5221598d040538189b8578362e60776a9176
+author Mason Green <mason@greenm01.net> 1792277124 -0400
+committer Mason Green <mason@greenm01.net> 1792277124 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatP4yBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJ+qAEAxdDD+dDcrze9shglbQbK
- QDq0NADdvORFpSq9BCzZrDkA/i+bA5FmvtpcIvLF01CUHNCENot1dJF/AVrbSK1R
- pLsJ
- =EJlX
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatP6hBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIKzgD9GjUhtSdQU30Y93ZLYvVI
+ fDqcAVXBNaiE6v946TOkygoA/0de1Umg1cFTiGtQ4sCUSbNvcOYQaZvh5en0qqew
+ +08H
+ =IC2o
  -----END PGP SIGNATURE-----
 
-docs: pin shared image cancellation identity and custody rules
+feat(lock): name sealed-source refusal and validation timeout reasons

@@ -135,6 +135,8 @@ impl LockResourceStep {
 /// channel is unavailable. The lock reason vocabulary stays open; this names
 /// the one value the image contract allocates.
 pub const LOCK_RESOURCE_REASON_IMAGE_CHANNEL_UNAVAILABLE: u16 = 9;
+pub const LOCK_RESOURCE_REASON_INVALID_SOURCE: u16 = 10;
+pub const LOCK_RESOURCE_REASON_VALIDATION_TIMEOUT: u16 = 11;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u16)]

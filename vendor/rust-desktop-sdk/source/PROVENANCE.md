@@ -1,5 +1,11 @@
 # Provenance
 
+## Lock sealed-source refusal names, 2026-10-17
+
+The lock KDL, lock contract and shared image contract are copied from the
+coordinated Sophia working tree based on signed `d5ffb8d2a`. The exact bytes
+are recorded in `spec/SHA256SUMS`; reasons 10/11 name invalid source and timeout.
+
 ## Image cancellation identity, 2026-10-17
 
 The shared image contract is copied from the coordinated Sophia working tree
