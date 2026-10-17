@@ -4,7 +4,7 @@
 //! discovery, records and packets exist so codecs and tests can speak the
 //! contract before any runtime enables it.
 
-use super::{LOCK_FILE_MAX_PIXELS_PER_SIDE, invalid, nonzero, range, reserved};
+use super::{invalid, nonzero, range, reserved};
 use crate::BinaryCodecError;
 use crate::byte_cursor::{Cursor, push_u16, push_u32, push_u64};
 
@@ -62,18 +62,10 @@ impl LockImageMetadata {
         ] {
             nonzero(value, field)?;
         }
-        range(
-            u64::from(self.width),
-            1,
-            u64::from(LOCK_FILE_MAX_PIXELS_PER_SIDE),
-            "width",
-        )?;
-        range(
-            u64::from(self.height),
-            1,
-            u64::from(LOCK_FILE_MAX_PIXELS_PER_SIDE),
-            "height",
-        )?;
+        // No role maximum here: the shared contract leaves per-role width
+        // and height limits to the caller's role-limit check.
+        nonzero_u32(self.width, "width")?;
+        nonzero_u32(self.height, "height")?;
         let bytes = u64::from(self.width)
             .checked_mul(u64::from(self.height))
             .and_then(|pixels| pixels.checked_mul(4))
@@ -244,18 +236,8 @@ impl LockImageLimits {
             256,
             "max_format_rows_per_output",
         )?;
-        range(
-            u64::from(self.max_width),
-            1,
-            u64::from(LOCK_FILE_MAX_PIXELS_PER_SIDE),
-            "max_width",
-        )?;
-        range(
-            u64::from(self.max_height),
-            1,
-            u64::from(LOCK_FILE_MAX_PIXELS_PER_SIDE),
-            "max_height",
-        )?;
+        nonzero_u32(self.max_width, "max_width")?;
+        nonzero_u32(self.max_height, "max_height")?;
         nonzero_u32(self.validation_timeout_ms, "validation_timeout_ms")?;
         nonzero_u32(
             self.capture_interest_timeout_ms,

@@ -233,6 +233,20 @@ fn metadata_refuses_noncanonical_sources() {
         .encode()
         .is_err()
     );
+    // The shared shapes carry no role maximum: a width past the lock
+    // role's own 16384 bound still encodes, leaving the refusal to the
+    // caller's role-limit check.
+    assert!(
+        LockImageMetadata {
+            width: 20_000,
+            height: 1,
+            stride: 80_000,
+            declared_bytes: 80_000,
+            ..sealed
+        }
+        .encode()
+        .is_ok()
+    );
 }
 
 #[test]
