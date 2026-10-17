@@ -19,11 +19,20 @@ B3 validation is complete in signed Rust SDK `01474a9` and C SDK `5246f96`.
 The final fault tests cover terminal status with four outstanding writes, a stale
 head, partial transport output and cancellation with unissued chunks. Both SDK
 suites pass, as does strict Rust Clippy. The independent review found no blockers.
-The exact archives are imported for production adoption. Snapshot checks, C
+Production adoption `ec410a09a` is signed and pushed. Snapshot checks, C
 export/lifecycle gates, the full default Sophia suite, formatting and offline
 metadata checks pass. The final source commits add only the reviewed test-scope
 clarifications; their repeated snapshot checks also pass.
-The matched native B2/B3 pilot is next.
+Comparator merge `6c87721fa` is signed and pushed with those exact archives;
+its repeated snapshot checks pass. Integration remains `4b16974`. The matched
+native B2/B3 pilot has twelve prepared, hashed launch plans: eight files/IPC
+cost arms for panel and bulk, plus four separate progress arms. Release builds
+and device-free session argument validation pass. Each arm offers 1,000 frames
+within a 60-second session, preserving the previous explicit output selection.
+Plans, build output, artifact hashes and the short launcher are in
+`t331-b3-20261017/native-candidate` under the evidence directory below. The next
+step is attended tty4 readiness and a fresh strict quiet window, then capture
+and offline replay. These plans are preparation evidence, not captured results.
 No quiet hold is active and the installed desktop is unchanged. The +10% gates
 remain unchanged; no B2/B3 native result exists yet.
 
