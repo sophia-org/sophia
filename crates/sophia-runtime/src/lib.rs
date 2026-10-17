@@ -16,6 +16,8 @@ mod error;
 mod host_domain;
 #[cfg(target_os = "linux")]
 pub mod inspection;
+#[cfg(target_os = "linux")]
+pub mod image_channel;
 pub mod lock_files;
 #[cfg(target_os = "linux")]
 pub mod namespace_publication;
