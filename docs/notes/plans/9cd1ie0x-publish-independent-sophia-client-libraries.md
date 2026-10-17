@@ -144,6 +144,28 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Separate one-operation and ten-operation release traces now pass the strict
+socket-byte parser. Their raw logs and reports are under the evidence directory
+below in `trace-1/` and `trace-10/`. Joining each sample's peer PID and subtracting
+the matched full-lifetime counts gives, per additional update, 420 bytes read
+and 749 written by the native peer for all three label lengths. Legacy counts
+are respectively 56/91, 74/109 and 178/213 bytes for absent, 16-byte and 120-byte
+labels. All four matched cases per label agree. Native socket calls increase by
+44.6–45.1 per update versus exactly three for legacy; calls include unsuccessful
+nonblocking attempts. Startup and teardown are present in each raw trace, so
+these differences are a diagnostic attribution, not direct interval counters.
+Trace timings are not performance evidence, and internal copies remain unknown.
+
+Source inspection identifies eight serial transaction operations in the Rust
+broker SDK: transaction walk/open/write, submit walk/open/write, then both
+clunks after receipt acknowledgement. Journal reads and acknowledgements add
+traffic. The first bounded optimization candidate is a session-owned submit
+fid: its server handle has no assembly state, unlike the transaction handle.
+Review the pinned contract and independent C counterpart, retain immutable
+retry and receipt barriers, and prove reuse through paired socket and production
+export tests before adopting new pins. This is a candidate, not a measured fix;
+the traces do not attribute the entire CPU delta to those three avoidable calls.
+
 The first untraced release broker diagnostic at signed Sophia `313e0160c`
 completed all 24 blocks (1,000 operations each) on October 17 at 02:52 UTC.
 Evidence is in
