@@ -328,22 +328,23 @@ impl ShellComponentConnections {
         let result = admission.and_then(|()| {
             if authenticated
                 && connection.wire == ShellTransportSelection::NineP2000L
-                && matches!(policy, ShellContentAdmissionPolicy::Granted { .. }) {
+                && matches!(policy, ShellContentAdmissionPolicy::Granted { .. })
+            {
                 images::configure(connection)?;
             }
             match connection.wire {
-            ShellTransportSelection::NineP2000L => connection.transport.begin_file_negotiation(
-                &self.epochs,
-                key.grant.connection_epoch,
-                timeout,
-                policy,
-            ),
-            ShellTransportSelection::ComparisonIpc => connection.transport.begin_negotiation(
-                &self.epochs,
-                key.grant.connection_epoch,
-                timeout,
-                policy,
-            ),
+                ShellTransportSelection::NineP2000L => connection.transport.begin_file_negotiation(
+                    &self.epochs,
+                    key.grant.connection_epoch,
+                    timeout,
+                    policy,
+                ),
+                ShellTransportSelection::ComparisonIpc => connection.transport.begin_negotiation(
+                    &self.epochs,
+                    key.grant.connection_epoch,
+                    timeout,
+                    policy,
+                ),
             }
         });
         if let Err(error) = result {
