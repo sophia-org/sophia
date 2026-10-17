@@ -189,6 +189,7 @@ pub struct Peer {
     /// Replies collected for one write, between [`Peer::begin_batch`] and
     /// [`Peer::end_batch`].
     batch: Option<Vec<u8>>,
+    reuse_error: Option<u32>,
 }
 
 fn qid(kind: u8, path: u64) -> [u8; 13] {
@@ -248,6 +249,7 @@ impl Peer {
             edit_bootstrap,
             edit_limits,
             false,
+            Some(2),
         )
     }
 
@@ -257,7 +259,19 @@ impl Peer {
             connection_epoch: EPOCH,
             content_grant_epoch: CONTENT_GRANT_EPOCH,
         });
-        Self::handshake_settings(listener, profile, limits, |_| {}, |_| {}, true)
+        Self::handshake_settings(listener, profile, limits, |_| {}, |_| {}, true, Some(2))
+    }
+
+    pub fn reusable_handshake(
+        listener: UnixListener,
+        profile: Profile,
+        error: Option<u32>,
+    ) -> Self {
+        let limits = ContentLimits::prototype(ContentGrant {
+            connection_epoch: EPOCH,
+            content_grant_epoch: CONTENT_GRANT_EPOCH,
+        });
+        Self::handshake_settings(listener, profile, limits, |_| {}, |_| {}, false, error)
     }
 
     fn handshake_settings(
@@ -267,6 +281,7 @@ impl Peer {
         edit_bootstrap: fn(&mut Vec<u8>),
         edit_limits: fn(&mut Vec<u8>),
         fragmented_startup: bool,
+        reuse_error: Option<u32>,
     ) -> Self {
         let deadline = Instant::now() + WAIT;
         listener.set_nonblocking(true).unwrap();
@@ -334,6 +349,7 @@ impl Peer {
             limits,
             edit_bootstrap,
             batch: None,
+            reuse_error,
         };
         let (kind, tag, body) = peer.frame(WAIT).expect("Tversion");
         assert_eq!((kind, tag), (TVERSION, u16::MAX), "Tversion first");
@@ -516,6 +532,13 @@ impl Peer {
                     self.walks.push(node.clone());
                     self.log.push(Logged::Walk(node.clone()));
                 }
+                if node == "transaction-reuse"
+                    && let Some(error) = self.reuse_error
+                {
+                    self.answer_error(tag, error);
+                    self.handshake_done = true;
+                    return;
+                }
                 let mut reply = names.to_le_bytes().to_vec();
                 for _ in 0..names {
                     reply.extend_from_slice(&self.qid_of(&node));
@@ -539,6 +562,10 @@ impl Peer {
                 self.log.push(Logged::Open(node.clone()));
                 let held = self.hold_writer_opens
                     && (node == "transaction" || node.starts_with("upload/"));
+                if node == "transaction-reuse" {
+                    self.handshake_done = true;
+                    self.fids.insert(fid, "transaction".into());
+                }
                 self.opens.push((node, u64_at(&reported, 5)));
                 let mut reply = reported.to_vec();
                 reply.extend_from_slice(&0u32.to_le_bytes());
@@ -566,10 +593,7 @@ impl Peer {
                     }
                     "limits" => {
                         let limits = self.limits.clone();
-                        let served = self.serve_bytes(tag, &limits, offset, count as usize);
-                        if self.handshaking && served == 0 {
-                            self.handshake_done = true;
-                        }
+                        self.serve_bytes(tag, &limits, offset, count as usize);
                     }
                     "events" => {
                         assert!(self.events_read.is_none(), "one events read at a time");
@@ -672,9 +696,6 @@ impl Peer {
                                 .push((RWRITE, tag, reply.to_le_bytes().to_vec()));
                         } else {
                             self.answer_write(tag, reply);
-                        }
-                        if self.handshaking && ack.sequence == 2 && !self.profile.limits_published {
-                            self.handshake_done = true;
                         }
                     }
                     _ => self.answer_error(tag, EIO),

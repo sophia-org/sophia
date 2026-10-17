@@ -526,8 +526,28 @@ static void unsupported_descriptor_publications_cannot_be_acknowledged(void)
     assert(sophia_ss_ack_limit(&r.s) == 2 && r.p.acked == 2);
     rig_close(&r);
 }
+static void cumulative_ack_coalesces_consumed_burst(void)
+{
+    struct rig r;
+    unsigned before, i;
+    rig_ready(&r, &rig_config);
+    before = r.p.acks;
+    for (i = 0; i < 3; i++)
+        peer_app_event(&r.p);
+    for (i = 0; i < 3; i++) {
+        next_event(&r, 3 + i);
+        assert(!sophia_ss_consume(&r.s));
+    }
+    /* Explicit scheduling remains explicit: consuming never sends an ACK. */
+    assert(r.p.acks == before);
+    ack(&r, 5);
+    assert(r.p.acks == before + 1);
+    rig_close(&r);
+}
+
 int main(void)
 {
+    cumulative_ack_coalesces_consumed_burst();
     ack_bounded_by_undelivered_events();
     ack_bounded_by_unfetched_object();
     superseded_announcement_keeps_bound();

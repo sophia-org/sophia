@@ -437,8 +437,51 @@ static void old_and_unissued_tickets(void)
     rig_close(&r);
 }
 
+static void reusable_transaction_writer(void)
+{
+    struct rig r;
+    struct sophia_sf_record request;
+    uint64_t ticket;
+    unsigned i;
+    rig_start(&r, &rig_config);
+    r.p.reusable = 1;
+    rig_settle(&r);
+    rig_ack(&r);
+    assert(r.s.files.transaction_mode == 1 && r.p.reuse_probes == 1);
+    for (i = 0; i < 3; i++) {
+        request = rig_request(i + 1);
+        assert(!sophia_ss_submit(&r.s, &request, 1, &ticket));
+        assert(rig_until(&r, ticket, 64) == SOPHIA_SS_SUBMITTED);
+        rig_ack(&r);
+    }
+    assert(r.p.tx_opens == 2 && r.p.tx_clunks == 1);
+    r.p.policy = P_HOLD;
+    request = rig_request(4);
+    assert(!sophia_ss_submit(&r.s, &request, 1, &ticket));
+    rig_run(&r, 12);
+    assert(r.p.submit_held);
+    peer_error(&r.p, r.p.submit_tag, 22);
+    r.p.submit_held = 0;
+    assert(rig_until(&r, ticket, 64) == SOPHIA_SS_REFUSED);
+    rig_run(&r, 12);
+    assert(r.p.reuse_probes == 2 && r.p.tx_opens == 3 && r.p.tx_clunks == 2);
+    rig_close(&r);
+    for (i = 0; i < 3; i++) {
+        static const uint32_t errors[] = {5, 13, 116};
+        rig_start(&r, &rig_config);
+        r.p.reuse_lookup_error = errors[i];
+        rig_settle(&r);
+        assert(!sophia_ss_ack(&r.s));
+        rig_run(&r, 16);
+        assert(sophia_ss_state(&r.s) != SOPHIA_SS_READY);
+        assert(r.p.tx_opens == 1 && r.p.reuse_probes == 1);
+        rig_close(&r);
+    }
+}
+
 int main(void)
 {
+    reusable_transaction_writer();
     old_and_unissued_tickets();
     admission_atomicity();
     reservation();

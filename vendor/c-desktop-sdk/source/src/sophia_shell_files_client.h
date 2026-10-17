@@ -52,6 +52,8 @@ struct sophia_sf_client {
     int terminal, object_status;
     uint8_t bootstrap, negotiated, have_limits, event_ready, object_ready;
     uint8_t bootstrap_custody_consumed, welcome_consumed;
+    /* 0: discovery pending, 1: reusable writer, 2: legacy ENOENT fallback. */
+    uint8_t transaction_mode;
     uint8_t submit_stage, submitted, submit_replied, object_stage, upload_stage, refused,
         upload_closing;
     /* stale: ESTALE answered events, submit or ack (not object/upload).

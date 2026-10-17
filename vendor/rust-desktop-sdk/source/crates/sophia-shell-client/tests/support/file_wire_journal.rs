@@ -1,6 +1,24 @@
 use super::*;
 
 #[test]
+fn automatic_ack_coalesces_a_consumed_burst_before_yielding() {
+    let (mut connection, mut peer) = connect(bar(0));
+    let mut burst = Vec::new();
+    for _ in 0..3 {
+        burst.extend(permit(&mut peer));
+    }
+    peer.push(burst);
+    drive(&mut connection, &mut peer, |c, _| {
+        c.journal_progress().acknowledged == 5
+    })
+    .unwrap();
+    assert_eq!(
+        peer.acks.iter().map(|ack| ack.sequence).collect::<Vec<_>>(),
+        [5]
+    );
+}
+
+#[test]
 fn retained_heads_hold_delivery_and_ack_until_explicit_consumption() {
     let (mut connection, mut peer) = connect(bar(0));
     connection.set_automatic_event_delivery(false).unwrap();

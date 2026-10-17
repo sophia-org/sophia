@@ -1,14 +1,14 @@
-tree 8618e94dc4da8eebe684a77b90453aa23a06214e
-parent f7873a8409814442bb62a82ce955f3f0a1fff066
-author Mason Green <mason@greenm01.net> 1792212693 -0400
-committer Mason Green <mason@greenm01.net> 1792212693 -0400
+tree 35bfb2f64ca3e660f8bc3c82fa1ef771752afab5
+parent fa1824a374e7c09bbb18065882f48fbc97c1f5fc
+author Mason Green <mason@greenm01.net> 1792236877 -0400
+committer Mason Green <mason@greenm01.net> 1792236877 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL+1RsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIOHgEAmP4e+HM+Z59HDaMiXdN7
- nQZGGMoAfWl0fmgaEE/hZ5cBAOF4oCqrfSzKlvBGIdN4ZvmRNTWTQVdEjhQrEC6h
- ImQI
- =FIm9
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatNdTRsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJ/RQD/dKv3cBzDrGcOL1nfN0Rq
+ Xodhnq+4yVdvfnBj3UAUPhIA/ibKX1IP7icKUmp/1y4mWITheD6x7aCxgupeNlQf
+ 2roK
+ =QNeJ
  -----END PGP SIGNATURE-----
 
-Record desktop SDK parity release qualification
+Verify cumulative ACK parity without changing caller scheduling

@@ -404,7 +404,7 @@ impl Tap {
         if kind == TWRITE {
             let data = body[16..].to_vec();
             match node.as_str() {
-                "transaction" => self.seen.push(Seen::Staged(data)),
+                "transaction" | "transaction-reuse" => self.seen.push(Seen::Staged(data)),
                 "submit" => {
                     self.seen.push(Seen::Submit { tag, bytes: data });
                     if self.hold_after_submit {

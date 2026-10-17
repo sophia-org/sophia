@@ -70,15 +70,29 @@ impl FileWire {
                     .expect("pending mirrors the outbox one-for-one");
                 let header = decode_shell_file_record(bytes, ShellFileClass::Candidate)?.header;
                 let (submission_id, kind) = (header.submission_id, header.kind);
-                let opening =
-                    Opening::start(&mut self.pipeline, self.root, &[b"transaction"], O_RDWR)?;
+                let phase = if let Some(fid) = self.transaction_fid {
+                    let tag = self.pipeline.write(fid, 0, bytes)?;
+                    SubmissionPhase::WriteRecord { tag, fid }
+                } else {
+                    let name: &[u8] = if self.reusable_transactions {
+                        b"transaction-reuse"
+                    } else {
+                        b"transaction"
+                    };
+                    SubmissionPhase::Opening(Opening::start(
+                        &mut self.pipeline,
+                        self.root,
+                        &[name],
+                        O_RDWR,
+                    )?)
+                };
                 Current::Submission {
                     bytes: output.take_front_bytes(),
                     submission_id,
                     kind,
                     ticket,
                     submit: Vec::new(),
-                    phase: SubmissionPhase::Opening(opening),
+                    phase,
                     submitted: false,
                 }
             }
@@ -252,6 +266,9 @@ impl FileWire {
             let result = opening.receive(&mut self.pipeline, tag, reply)?;
             if result == Some(true) {
                 let fid = opening.fid;
+                if self.reusable_transactions {
+                    self.transaction_fid = Some(fid);
+                }
                 let tag = self.pipeline.write(fid, 0, bytes)?;
                 *phase = SubmissionPhase::WriteRecord { tag, fid };
             }
@@ -355,6 +372,7 @@ impl FileWire {
                             }
                         }
                         self.forget(fid)?;
+                        self.transaction_fid = None;
                         self.backoff = RETRY_FIRST;
                         self.settle_current(Custody::Refused(errno));
                         return Ok(true);
@@ -364,7 +382,9 @@ impl FileWire {
                 // `submit` accepted: clunk the transaction (a submitted
                 // candidate is immutable; clunk cannot undo it) and settle
                 // once `Submitted` has been observed too.
-                self.forget(fid)?;
+                if !self.reusable_transactions {
+                    self.forget(fid)?;
+                }
                 self.backoff = RETRY_FIRST;
                 if let Some(Current::Submission { phase, .. }) = &mut self.current {
                     *phase = SubmissionPhase::AwaitSubmitted;

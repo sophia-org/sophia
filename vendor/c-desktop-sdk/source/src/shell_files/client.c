@@ -151,6 +151,12 @@ int sf_session_drive(struct sophia_sf_client *c)
         if (r)
             return r;
     }
+    /* Retain successful reusable writers. Refusals still clunk their assembly.
+     * Await the covering ACK before admitting another record on this token. */
+    if (c->submit_stage == 4 && c->transaction_mode == 1 && !c->submit_error)
+        c->submit_stage = 7;
+    if (c->submit_stage == 7 && c->acked_sequence >= c->submitted_sequence)
+        c->submit_stage = 0;
     if (c->submit_stage && !c->submit_op.active && !(c->submit_stage == 2 && c->submit_wait)) {
         if (c->submit_stage == 1) {
             size_t n = c->tx_size - c->tx_offset, cap = c->wire->msize - 23u;
@@ -167,8 +173,13 @@ int sf_session_drive(struct sophia_sf_client *c)
             r = sophia_9p_write(c->wire, c->fids[2], 0, b, 24, &c->submit_op.handle);
         } else if (c->submit_stage == 4)
             r = sophia_9p_clunk(c->wire, c->fids[1], &c->submit_op.handle);
-        else if (c->submit_stage == 5)
-            r = sophia_9p_walk(c->wire, c->root, &names[1], 1, &c->submit_op.handle, &c->fids[1]);
+        else if (c->submit_stage == 5) {
+            const char *name = c->transaction_mode == 2 ? "transaction" : "transaction-reuse";
+            if (!c->transaction_mode && c->acked_sequence < c->submitted_sequence)
+                r = SOPHIA_9P_BUSY;
+            else
+                r = sophia_9p_walk(c->wire, c->root, &name, 1, &c->submit_op.handle, &c->fids[1]);
+        }
         else if (c->submit_stage == 6) {
             /* Clunk cannot release accepted custody. A caller may defer its
              * cumulative ack behind an object fetch or event consumption;
@@ -202,6 +213,10 @@ static int remote_failure(struct sophia_sf_client *c, uint32_t error, int stream
 }
 static int submission_reply(struct sophia_sf_client *c, const struct sophia_9p_reply *r)
 {
+    if (r->type == 7 && c->submit_stage == 5 && !c->transaction_mode && r->error == 2) {
+        c->transaction_mode = 2;
+        return 0;
+    }
     if (r->type == 7 && c->submit_stage == 2) {
         /* EAGAIN transferred nothing: never re-driven in this service pass. */
         if (r->error == 11) {
@@ -236,8 +251,11 @@ static int submission_reply(struct sophia_sf_client *c, const struct sophia_9p_r
     if (c->submit_stage >= 4) {
         if (c->submit_stage == 5 && r->count != 1)
             return SOPHIA_9P_INVALID;
-        if (c->submit_stage == 6)
+        if (c->submit_stage == 6) {
             c->iounit[1] = r->iounit;
+            if (!c->transaction_mode)
+                c->transaction_mode = 1;
+        }
         c->submit_stage = c->submit_stage == 6 ? 0 : (uint8_t)(c->submit_stage + 1);
         return 0;
     }
