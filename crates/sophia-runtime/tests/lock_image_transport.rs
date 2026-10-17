@@ -503,6 +503,12 @@ fn configuration_is_coherent_sealed_only_and_before_negotiation() {
     settings.discovery.max_offers = 3;
     settings.limits.max_offers = 3;
     bad.push(settings);
+    // Fewer offers than slots is refused too: the SDKs check equality.
+    let mut settings = image_settings();
+    settings.discovery.max_offers = 1;
+    settings.limits.max_offers = 1;
+    settings.limits.max_validation_jobs = 1;
+    bad.push(settings);
     let mut settings = image_settings();
     settings.limits.max_admitted_outputs = 5;
     bad.push(settings);

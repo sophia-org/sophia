@@ -81,13 +81,13 @@ impl ImageChannel {
         let sealed = discovery.source_kinds == SEALED_KIND
             && image.max_validation_jobs != 0
             && image.max_dma_source_bytes == 0;
-        // Offers are bounded by the role's transfer slots, outputs by the
-        // role's outputs; validation jobs fit within offers, and backing
-        // holds at least one whole resource.
+        // Offers equal min(4, the role's transfer slots), as the SDK
+        // coherence checks require; outputs stay within the role's outputs,
+        // validation jobs within offers, and backing holds one resource.
         let bounded = image.max_resource_bytes <= limits.max_resource_bytes
             && image.max_width <= limits.max_width_px
             && image.max_height <= limits.max_height_px
-            && image.max_offers <= u32::from(limits.upload_slots).min(4)
+            && image.max_offers == u32::from(limits.upload_slots).min(4)
             && image.max_admitted_outputs <= u32::from(limits.max_outputs)
             && image.max_validation_jobs <= image.max_offers
             && image.max_sealed_backing_bytes >= image.max_resource_bytes;
