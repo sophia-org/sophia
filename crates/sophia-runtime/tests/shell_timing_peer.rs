@@ -72,6 +72,8 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
     let binary = std::env::var_os("SOPHIA_TIMING_PEER_BINARY").expect("explicit peer binary");
     assert!(std::path::Path::new(&binary).is_absolute());
     for (files, probe) in [(true, false), (false, false), (true, true), (false, true)] {
+        #[cfg(feature = "comparator-progress")]
+        let progress_before = sophia_runtime::comparator_counters::progress::snapshot();
         let root = std::env::temp_dir().join(format!(
             "timing-peer-{}-{files}-{probe}",
             std::process::id()
@@ -268,6 +270,35 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
             .map(|line| serde_json::from_str(line).unwrap())
             .collect();
         assert_eq!(completed, FRAMES);
+        #[cfg(feature = "comparator-progress")]
+        {
+            let progress = sophia_runtime::comparator_counters::progress::snapshot();
+            let counts: serde_json::Map<String, serde_json::Value> =
+                sophia_runtime::comparator_counters::progress::NAMES
+                    .iter()
+                    .zip(progress.iter().zip(progress_before))
+                    .map(|(name, (after, before))| (name.to_string(), (after - before).into()))
+                    .collect();
+            if let Some(directory) = std::env::var_os("SOPHIA_TIMING_PEER_JOURNALS") {
+                let stem = format!(
+                    "{}{}",
+                    if files { "files" } else { "ipc" },
+                    if probe { "-4mib" } else { "" }
+                );
+                let path =
+                    std::path::Path::new(&directory).join(format!("{stem}.server-progress.json"));
+                let mut file = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(path)
+                    .unwrap();
+                serde_json::to_writer_pretty(&mut file, &serde_json::json!({
+                    "frames": FRAMES, "includes_startup": true,
+                    "scope": "supplied owner fixture; no Session owner loop or physical presentation",
+                    "counts": counts,
+                })).unwrap();
+            }
+        }
         let offers: Vec<_> = records.iter().filter(|r| r["event"] == "offer").collect();
         let terminals: Vec<_> = records
             .iter()
