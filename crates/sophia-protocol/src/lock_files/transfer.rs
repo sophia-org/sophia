@@ -131,6 +131,11 @@ impl LockResourceStep {
     }
 }
 
+/// `ResourceStatus` reason for a descriptor offer refused because the image
+/// channel is unavailable. The lock reason vocabulary stays open; this names
+/// the one value the image contract allocates.
+pub const LOCK_RESOURCE_REASON_IMAGE_CHANNEL_UNAVAILABLE: u16 = 9;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u16)]
 pub enum LockResourceState {

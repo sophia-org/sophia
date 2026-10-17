@@ -14,6 +14,10 @@ pub const LOCK_FILE_MAX_PIXELS_PER_SIDE: u32 = 16_384;
 pub const LOCK_FILE_MAX_RESOURCE_BYTES: u64 = 1 << 30;
 pub const LOCK_FILE_CAPABILITY_PRESENT: u64 = 1 << 0;
 pub const LOCK_FILE_CAPABILITY_CHORDS: u64 = 1 << 1;
+/// Allocated for lock r2 descriptor admission. Naming the bits does not
+/// advertise them: r1 negotiation below still refuses either bit.
+pub const LOCK_FILE_CAPABILITY_SEALED_MEMORY: u64 = 1 << 2;
+pub const LOCK_FILE_CAPABILITY_DMA_BUF: u64 = 1 << 3;
 /// Shift, control, alt and super.
 pub const LOCK_FILE_MODIFIER_MASK: u16 = 0b1111;
 const SHIFT: u16 = 1;
