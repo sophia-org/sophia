@@ -711,6 +711,17 @@ authenticated receive/admit exchange or pixel validation. Rust's new target and
 strict Clippy pass; C `make check` passes. Lifecycle fixtures for readiness,
 admission, cancellation, source release and journal loss remain the next work.
 
+Follow-up Rust `7977ba7` and C `90307ac` add expected refusal categories to
+all 53 cases. These are test diagnostics, not new wire reason codes. Snapshot
+generation values are now decoded independently and compared between discovery,
+limits and formats. For each generation axis, matching changes to generation 3
+pass; discovery-only changes and each participating object-only mismatch fail
+as incoherent. The grant/allocation and sealed-only scope remain fixed.
+Both targets and strict Rust Clippy pass. The C target also passes Clang
+ASan/UBSan; GCC's sanitizer link was unavailable because its runtime libraries
+are not installed. This checks decoding/coherence, not the timed retry policy
+or lifecycle peer behavior, which remain outstanding.
+
 ### Draft golden cases
 
 The first encode/decode review uses these canonical values: shell role 1,

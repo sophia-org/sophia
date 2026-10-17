@@ -70,6 +70,10 @@ Rust shell-client suite, targeted strict Clippy and C `make check` passing.
 Test-only decoders now pass all 53 draft cases in Rust `47397e5` and C `c6d7837`,
 including truncated-prefix controls and real sealed-file length checks. They
 use a fixed admitted sealed-only context, not general production codecs.
+Follow-ups Rust `7977ba7` and C `90307ac` assert specific refusal categories and
+compare generations across actual discovery/limits/formats objects; matching
+changed generations pass and individual mismatches refuse. Both targets,
+strict Rust Clippy and C Clang ASan/UBSan pass.
 SDK admission/journal-custody fixtures remain outstanding. No vendor pin or runtime
 changed, and the design remains proposed.
 
