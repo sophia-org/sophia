@@ -1,3 +1,5 @@
+#![cfg(feature = "native-session")]
+
 use sophia_backend_live::{
     LibdrmNativeOutputCapability, LibdrmNativeOutputTiming, LibdrmNativeVrrPropertyDiscoveryStatus,
     project_live_output_authority_snapshot,
