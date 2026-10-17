@@ -24,29 +24,24 @@ and C `ca61d21`. The preserved 54-case corpus and source hashes are in that
 contract. Model tests do not prove production authentication, live discovery
 fids, asynchronous validation or GPU completion.
 
-t338's first codec slice is in progress. Reviewed C `0a12720` is pushed on its
-development branch, not yet vendored. The Go oracle is integrated as `42548ad9b`
-and `fd805a2eb`; its session tests prove revision selection before reason-13
-decoding. Sophia lock codecs at `4fbe66d71`, plus tests at `f4eb0d2f1`, passed
-independent review and 34 runtime custody/export/service tests. Old lock entry
-points remain r1; new image envelopes require an explicit r2 entry point.
+t338's passive codec checkpoint is reviewed, published and vendored at Rust
+`5c41aeb` and C `e146897`. It includes authoritative image KDL rows, explicit
+classes, the distinct Rust lock mirror, shell image bodies and explicit r9/r2
+envelopes. Old entry points retain their vocabulary. Review caught and fixed
+LockSubmitted accepting ImageBegin at r1; the pre-existing shell receipt KDL
+ceiling is corrected to 278. The Go oracle is integrated as `42548ad9b` and
+`fd805a2eb`, with revision selection tested before reason-13 decoding.
 
-The next codec checkpoint is signed locally: Rust `5c83d6d` (SDK lock mirror,
-shell image bodies, explicit r9 envelope/reason APIs and schemas) and C `380654f`
-(matching specs and parity limits). Authoritative KDL rows and explicit image
-classes are integrated. Both Rust protocol suites, strict Clippy, new shell
-field-offset checks, C's 54-case codec controls and targeted Sophia schemas pass.
-Independent C/Rust review and differential checks are pending; these SDK heads
-are not published or vendored yet. Next: resolve review, publish, adopt signed
-snapshots and run affected export gates.
+Both Rust protocol suites, strict Clippy, shell field-offset tests, C's 54-case
+codec controls and targeted Sophia schemas pass. Signed snapshot identity and
+spec equality pass; the affected Sophia C/Rust/Go shell and lock export run
+passes 62 tests. One existing test requiring an independently built upload peer
+remains ignored. Claude's final 117,756-case differential per role on the exact
+SDK heads has only the expected opposite-role discovery split and byte-identical
+accepted round trips. The plan records scope, negative controls and harness
+hashes. No independent review blockers remain for this codec checkpoint.
 
-Review found a plain LockSubmitted vocabulary leak in both Rust trees. Fixed
-SDK head `5c41aeb` requires the r1 candidate range on both encode and decode;
-C `e146897` also corrects the pre-existing shell KDL receipt ceiling to 278.
-The affected tests and strict Clippy pass. Claude's 117,756-case differential
-per role on the prior heads found only the expected role-specific discovery
-split, with byte-identical accepted round trips; final fixed-head rerun is
-pending. The plan records exact comparison scope and preserved harness hashes.
+Next: discovery/admission integration and its remaining parity prerequisites.
 ImageBegin's revision-aware Submitted receipt is an explicit prerequisite for
 runtime wiring, not enabled by this passive codec checkpoint.
 

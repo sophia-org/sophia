@@ -1,15 +1,39 @@
 # C and Rust SDK API parity
 
-## Accepted image-channel contract, 2026-10-17
+## Coordinated image codec and KDL checkpoint, 2026-10-17
+
+Both SDK spec copies now declare the seven image kinds with explicit classes.
+Rust shell envelopes require an explicit negotiated r9 for those kinds, and
+lock envelopes require r2. Ordinary entry points retain their old vocabulary.
+The C image codec remains separate from its legacy role codecs. Neither SDK
+changes the revisions it offers or opens a descriptor channel.
+
+Explicit shell ResourceStatus entry points in both SDKs admit reason 13 only
+for Rejected at r9. Rust sizing follows the same rule without allocating.
+Legacy entry points and the other seven reason fields retain the <=12 bound.
+The Go oracle has matching revision-aware support but still offers old revisions.
+
+Rust packet and discovery values are owned; formats own their row vector.
+C format rows borrow the original input bytes, while its packet and discovery
+values are copied. C also supplies cross-object coherence and caller-bound
+checks. Rust body codecs do not yet supply that check: the discovery reader
+must compare epochs, all three generations, discovery/limits equalities,
+source-kind grants and per-output bounds before Hello. Actual received FD
+counts are also a separate caller check in Rust. This gap blocks a claim of
+complete discovery/packet-admission parity; it does not activate a fallback.
+No channel I/O, authenticated endpoint, custody implementation or performance
+result is established by this codec checkpoint.
+
+## Acceptance-time image-channel boundary, 2026-10-17 (historical)
 
 The spec copies now include the shared shell/lock descriptor contract and its
 54-case sealed-only corpus. The coordinated Sophia acceptance changes both
 topology contracts and reserves ResourceStatus Rejected reason 13 for shell r9.
-Current SDK codecs deliberately keep the <=12 bound and do not advertise r9;
-Sophia's Rust emission path and the independent Go oracle also retain <=12.
-No current production connection may emit or accept reason 13. t338 must add
-revision-aware ResourceStatus support without widening other reason fields,
-then new-kind codecs, authenticated discovery and channel service in both SDKs.
+At acceptance the SDK codecs kept the <=12 bound and did not advertise r9;
+Sophia's Rust emission path and the Go oracle then also retained <=12.
+The coordinated checkpoint above supersedes that codec boundary. Production
+connections still use the old revisions; authenticated discovery and channel
+service remain t338 work in both SDKs.
 Lock's reason vocabulary remains open; reason 9 is named for the r2 refusal.
 
 This is a spec/evidence update, not public descriptor API or ABI support. The
@@ -18,7 +42,7 @@ The local lifecycle peers remain models, not authenticated export, worker or
 GPU-completion proof. The image contract is authoritative for subsequent work.
 
 
-## Proposed sealed lifecycle peer, 2026-10-17
+## Proposed sealed lifecycle peer, 2026-10-17 (historical fixture checkpoint)
 
 `descriptor_custody` exercises proposed Sophia x6jp929h at `0f3289c2e`.
 It is a test-side producer/owner model, not an exported SDK or authenticated

@@ -5,6 +5,9 @@ use crate::byte_cursor::{Cursor, push_u16, push_u32, push_u64};
 pub const LOCK_FILE_API_VERSION: u16 = 1;
 pub const LOCK_FILE_HEADER_BYTES: usize = 32;
 pub const LOCK_FILE_MAX_BYTES: usize = 65_536;
+/// The image-formats object is the one record allowed past the general
+/// record bound: a 64-byte framing prefix plus at most 4096 format rows.
+pub const LOCK_FILE_MAX_IMAGE_FORMATS_BYTES: usize = 163_904;
 pub const LOCK_FILE_MAX_CANDIDATE_BYTES: usize = 128;
 /// The smallest candidate: a header and the shortest candidate body.
 const LOCK_FILE_MIN_CANDIDATE_BYTES: usize = 48;
@@ -38,19 +41,29 @@ pub enum LockFileKind {
     ResourceRetire = 261,
     Candidate = 262,
     FrameDemand = 263,
+    ImageBegin = 28_672,
+    ImageAdmitted = 28_673,
+    SourceReleased = 28_674,
+    ChannelReady = 28_675,
+    ChannelClosed = 28_676,
+    ImageLimits = 28_677,
+    ImageFormats = 28_678,
 }
 
 impl LockFileKind {
     pub const fn class(self) -> LockFileClass {
         match self {
-            Self::Limits | Self::Lock => LockFileClass::Object,
+            Self::Limits | Self::Lock | Self::ImageLimits | Self::ImageFormats => {
+                LockFileClass::Object
+            }
             Self::Negotiate
             | Self::ResourceBegin
             | Self::ResourceEnd
             | Self::ResourceCancel
             | Self::ResourceRetire
             | Self::Candidate
-            | Self::FrameDemand => LockFileClass::Candidate,
+            | Self::FrameDemand
+            | Self::ImageBegin => LockFileClass::Candidate,
             _ => LockFileClass::Event,
         }
     }
@@ -76,6 +89,13 @@ impl LockFileKind {
             261 => Self::ResourceRetire,
             262 => Self::Candidate,
             263 => Self::FrameDemand,
+            28_672 => Self::ImageBegin,
+            28_673 => Self::ImageAdmitted,
+            28_674 => Self::SourceReleased,
+            28_675 => Self::ChannelReady,
+            28_676 => Self::ChannelClosed,
+            28_677 => Self::ImageLimits,
+            28_678 => Self::ImageFormats,
             _ => return Err(BinaryCodecError::UnknownMessageKind(value)),
         })
     }
@@ -107,13 +127,55 @@ fn validate(header: LockFileHeader) -> Result<(), BinaryCodecError> {
         .ok_or_else(|| invalid("record_identity"))
 }
 
-/// Decodes exactly one complete record of `class`. Its typed body must still
-/// be decoded before anything acts on it.
+fn check_revision(kind: LockFileKind, revision: u16) -> Result<(), BinaryCodecError> {
+    match revision {
+        1 | 2 => {}
+        other => return Err(BinaryCodecError::UnsupportedVersion(other)),
+    }
+    let image = matches!(
+        kind,
+        LockFileKind::ImageBegin
+            | LockFileKind::ImageAdmitted
+            | LockFileKind::SourceReleased
+            | LockFileKind::ChannelReady
+            | LockFileKind::ChannelClosed
+            | LockFileKind::ImageLimits
+            | LockFileKind::ImageFormats
+    );
+    if image && revision < 2 {
+        return Err(invalid("image_kind_revision"));
+    }
+    Ok(())
+}
+
+/// Decodes exactly one complete record of `class` under the original r1
+/// vocabulary. Image kinds are refused here; they exist only through
+/// [`decode_lock_file_record_at_revision`]. Its typed body must still be
+/// decoded before anything acts on it.
 pub fn decode_lock_file_record(
     bytes: &[u8],
     class: LockFileClass,
 ) -> Result<LockFileRecord<'_>, BinaryCodecError> {
-    if !(LOCK_FILE_HEADER_BYTES..=LOCK_FILE_MAX_BYTES).contains(&bytes.len()) {
+    decode_lock_file_record_at_revision(bytes, class, 1)
+}
+
+/// Decodes one record under an explicit negotiated role revision. Revision
+/// 1 is the existing vocabulary; revision 2 adds the image kinds. Any other
+/// revision is refused, and no revision is inferred from the bytes.
+pub fn decode_lock_file_record_at_revision(
+    bytes: &[u8],
+    class: LockFileClass,
+    revision: u16,
+) -> Result<LockFileRecord<'_>, BinaryCodecError> {
+    // Only the image-formats object may pass the general record bound.
+    let max_bytes = if bytes.len() >= 8
+        && u16::from_le_bytes([bytes[6], bytes[7]]) == LockFileKind::ImageFormats as u16
+    {
+        LOCK_FILE_MAX_IMAGE_FORMATS_BYTES
+    } else {
+        LOCK_FILE_MAX_BYTES
+    };
+    if !(LOCK_FILE_HEADER_BYTES..=max_bytes).contains(&bytes.len()) {
         return Err(invalid("record_length"));
     }
     let mut cursor = Cursor::new(bytes);
@@ -131,6 +193,7 @@ pub fn decode_lock_file_record(
         sequence: cursor.u64()?,
     };
     validate(header)?;
+    check_revision(header.kind, revision)?;
     if header.kind.class() != class {
         return Err(invalid("record_class"));
     }
@@ -143,13 +206,28 @@ pub fn decode_lock_file_record(
     })
 }
 
+/// Encodes one record under the original r1 vocabulary; image kinds are
+/// refused, exactly as on decode.
 pub fn encode_lock_file_record(
     header: LockFileHeader,
     body: &[u8],
 ) -> Result<Vec<u8>, BinaryCodecError> {
+    encode_lock_file_record_at_revision(header, body, 1)
+}
+
+/// Encodes one record under an explicit negotiated role revision; see
+/// [`decode_lock_file_record_at_revision`].
+pub fn encode_lock_file_record_at_revision(
+    header: LockFileHeader,
+    body: &[u8],
+    revision: u16,
+) -> Result<Vec<u8>, BinaryCodecError> {
     validate(header)?;
+    check_revision(header.kind, revision)?;
     let limit = if header.kind.class() == LockFileClass::Candidate {
         LOCK_FILE_MAX_CANDIDATE_BYTES
+    } else if header.kind == LockFileKind::ImageFormats {
+        LOCK_FILE_MAX_IMAGE_FORMATS_BYTES
     } else {
         LOCK_FILE_MAX_BYTES
     };

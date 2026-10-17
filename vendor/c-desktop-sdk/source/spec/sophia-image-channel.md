@@ -7,18 +7,18 @@ The [design and evidence](notes/plans/x6jp929h-review-shared-lock-and-shell-imag
 record the decisions, exact fixtures and remaining implementation gates.
 
 **Implementation status:** production and both SDKs still advertise the existing
-shell r1–r8 and lock r1 paths. They do not yet expose this channel or its new
-records. t338 owns sealed-memory implementation and revision-aware codecs;
+shell r1–r8 and lock r1 paths. Passive image codecs do not expose a live channel
+or enable its records on those connections. t338 owns sealed-memory implementation;
 t339/t304 own DMA-BUF after the renderer safe-completion seam. Contract acceptance
 is not a runtime release or performance result. The existing 9P `api` line stays
 unchanged: `fd_transfer=none` describes the 9P stream, not this separate socket.
 
-The shell KDL's ResourceStatus ceiling includes the reserved r9 value 13, while
-current C and Rust codecs and the independent Go oracle deliberately retain 12
-until revision-aware r9 support lands. Sophia's emission path uses the same Rust
-validation, so it cannot emit reason 13 either. All other reason fields retain their
-bounds. Complete image-kind KDL rows and generated public codecs are the first
-t338 prerequisite; the exact tables here govern that work.
+The shell KDL's ResourceStatus ceiling includes r9 value 13. Explicit
+revision-aware C and Rust codec entry points admit it only for Rejected at r9;
+the independent Go oracle also checks the negotiated revision. Legacy entry
+points and Sophia's existing emission path retain 12. All other reason fields
+retain their bounds. Image-kind KDL rows describe passive codec support, not
+negotiated production service; the exact tables here govern both.
 
 ## Namespace and reviewed vectors
 
@@ -385,6 +385,11 @@ The 250 ms Hello and 500 ms capture-interest values are provisional design
 defaults, not qualified bounds; accept them only after loaded-startup and
 supported-topology review. Exceeding a capture-interest deadline never asserts
 GPU completion.
+
+Hello, validation and capture-interest timeouts, validation chunk bytes and
+max packets per turn must be positive. Zero means neither an unlimited wait nor
+disabled service; source availability is expressed by the kind mask and its
+capacity fields. The limits object follows the same rule.
 
 `max_offers` is min(4, the role's transfer-slot count). Those offers include
 quarantined captures: a timeout never returns the slot until cleanup is safe.

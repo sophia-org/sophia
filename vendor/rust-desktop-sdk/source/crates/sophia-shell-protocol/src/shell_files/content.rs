@@ -210,7 +210,9 @@ pub struct ShellFileObjectPublished {
 pub fn encode_shell_file_object_published_body(
     value: ShellFileObjectPublished,
 ) -> Result<Vec<u8>, ShellFilePayloadError> {
-    if shell_file_class(value.object) != ShellFileClass::Object {
+    if shell_file_class(value.object) != ShellFileClass::Object
+        || super::codec::kind(value.object as u16).is_err()
+    {
         return Err(ShellFileCodecError::Kind.into());
     }
     if value.qid == 0 {

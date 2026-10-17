@@ -14,6 +14,10 @@ pub const LOCK_FILE_MAX_PIXELS_PER_SIDE: u32 = 16_384;
 pub const LOCK_FILE_MAX_RESOURCE_BYTES: u64 = 1 << 30;
 pub const LOCK_FILE_CAPABILITY_PRESENT: u64 = 1 << 0;
 pub const LOCK_FILE_CAPABILITY_CHORDS: u64 = 1 << 1;
+/// Allocated for lock r2 descriptor admission. Naming the bits does not
+/// advertise them: r1 negotiation below still refuses either bit.
+pub const LOCK_FILE_CAPABILITY_SEALED_MEMORY: u64 = 1 << 2;
+pub const LOCK_FILE_CAPABILITY_DMA_BUF: u64 = 1 << 3;
 /// Shift, control, alt and super.
 pub const LOCK_FILE_MODIFIER_MASK: u16 = 0b1111;
 const SHIFT: u16 = 1;
@@ -489,7 +493,11 @@ pub struct LockSubmitted {
 
 impl LockSubmitted {
     pub fn encode(&self) -> Result<Vec<u8>, BinaryCodecError> {
-        if self.candidate_kind.class() != LockFileClass::Candidate {
+        // Plain Submitted retains the r1 vocabulary even though the enum also
+        // names r2 image kinds. Revision-aware image receipts are separate.
+        if self.candidate_kind.class() != LockFileClass::Candidate
+            || !(256..=263).contains(&(self.candidate_kind as u16))
+        {
             return Err(invalid("candidate_kind"));
         }
         let mut bytes = Vec::with_capacity(16);
@@ -504,7 +512,9 @@ impl LockSubmitted {
         let submission_id = nonzero(cursor.u64()?, "submission_id")?;
         let candidate_kind = LockFileKind::decode(cursor.u16()?)
             .ok()
-            .filter(|kind| kind.class() == LockFileClass::Candidate)
+            .filter(|kind| {
+                kind.class() == LockFileClass::Candidate && (256..=263).contains(&(*kind as u16))
+            })
             .ok_or_else(|| invalid("candidate_kind"))?;
         reserved(&mut cursor, 6)?;
         cursor.finish()?;

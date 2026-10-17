@@ -1,15 +1,82 @@
 # C and Rust SDK API parity
 
-## Accepted image-channel contract, 2026-10-17
+## Coordinated image codec and KDL checkpoint, 2026-10-17
+
+Both SDK spec copies now declare the seven image kinds with explicit classes.
+Rust shell envelopes require an explicit negotiated r9 for those kinds, and
+lock envelopes require r2. Ordinary entry points retain their old vocabulary.
+The C image codec remains separate from its legacy role codecs. Neither SDK
+changes the revisions it offers or opens a descriptor channel.
+
+Explicit shell ResourceStatus entry points in both SDKs admit reason 13 only
+for Rejected at r9. Rust sizing follows the same rule without allocating.
+Legacy entry points and the other seven reason fields retain the <=12 bound.
+The Go oracle has matching revision-aware support but still offers old revisions.
+
+Rust packet and discovery values are owned; formats own their row vector.
+C format rows borrow the original input bytes, while its packet and discovery
+values are copied. C also supplies cross-object coherence and caller-bound
+checks. Rust body codecs do not yet supply that check: the discovery reader
+must compare epochs, all three generations, discovery/limits equalities,
+source-kind grants and per-output bounds before Hello. Actual received FD
+counts are also a separate caller check in Rust. This gap blocks a claim of
+complete discovery/packet-admission parity; it does not activate a fallback.
+No channel I/O, authenticated endpoint, custody implementation or performance
+result is established by this codec checkpoint.
+
+## Public image-channel codecs and shell r9 reason 13, C, 2026-10-17
+
+The C SDK now has a passive public codec for the accepted image-channel
+contract, declared in sophia_image_channel.h. It encodes and decodes the 40-byte
+Hello and 200-byte Source packets, the seven shared records from ImageBegin
+(0x7000) to ImageFormats (0x7006), and the ASCII discovery file. A separate
+check compares one discovery set, meaning discovery, limits and formats, against
+each other and against bounds the caller supplies from its role. A successful
+check yields the expected role, epoch, channel generation, source kinds and
+size bounds for packet decoding. Validation runs in a fixed order and each
+refusal reports the first failed check, preserving the corpus categories. That
+order is not the contract's field-table order. Encoders decode what they wrote
+and return the same category, so they cannot emit bytes the decoder refuses.
+Format rows are the one borrowed view: they point into the caller's input
+buffer, which must stay alive and unchanged while the view is used. Packet and discovery results are owned
+copies. DMA-BUF plane offsets and strides are left to the import validator;
+the codec checks only descriptor order and reserved bytes for those rows.
+
+The codec performs no I/O and holds no descriptors. It does not check seals,
+map memory, enforce budgets or decide custody, and it does not open a channel or
+advertise anything. The role codecs are unchanged. They still refuse the
+0x7000 kinds, and sophia_sf_decode and sophia_sf_encode still refuse reason 13.
+The new sophia_sf_decode_revision and sophia_sf_encode_revision take the
+negotiated shell revision. At revision 9 they admit ResourceStatus reason 13,
+image_channel_unavailable, but only with status 3 (Rejected). Every other
+status, ResourceReleased and every earlier revision keep the existing bound.
+Revisions outside 1 to 9 are argument errors. The shared reason helpers are not
+widened. The lock reason vocabulary was already open; it now names reason 9.
+
+image_channel_codec_test reads spec/golden/sophia-image-channel-v1.tsv at run
+time. All 54 cases give their expected category. Every accepted case round
+trips byte for byte, and every strict prefix and one-byte extension of it is
+refused. Further controls cover two-plane DMA-BUF shape, unused and reserved
+plane bytes, overflowed sizes, dispositions, close reasons, record direction,
+limits grant pairs, format row order and flags, the 4097-row ceiling,
+per-output and dimension bounds, and each generation in the coherence check.
+All 59 bounded source mutants were killed. The test also passes under
+clang AddressSanitizer and UndefinedBehaviorSanitizer.
+
+The coordinated checkpoint above records the Rust counterpart and the remaining
+coherence/admission gaps. The Go oracle now checks the negotiated revision;
+none of these changes makes a production connection negotiate r9.
+
+## Acceptance-time image-channel boundary, 2026-10-17 (historical)
 
 The spec copies now include the shared shell/lock descriptor contract and its
 54-case sealed-only corpus. The coordinated Sophia acceptance changes both
 topology contracts and reserves ResourceStatus Rejected reason 13 for shell r9.
-Current SDK codecs deliberately keep the <=12 bound and do not advertise r9;
-Sophia's Rust emission path and the independent Go oracle also retain <=12.
-No current production connection may emit or accept reason 13. t338 must add
-revision-aware ResourceStatus support without widening other reason fields,
-then new-kind codecs, authenticated discovery and channel service in both SDKs.
+At acceptance the SDK codecs kept the <=12 bound and did not advertise r9;
+Sophia's Rust emission path and the Go oracle then also retained <=12.
+The coordinated checkpoint above supersedes that codec boundary. Production
+connections still use the old revisions; authenticated discovery and channel
+service remain t338 work in both SDKs.
 Lock's reason vocabulary remains open; reason 9 is named for the r2 refusal.
 
 This is a spec/evidence update, not public descriptor API or ABI support. The

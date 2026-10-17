@@ -1,14 +1,14 @@
-tree 45ae33d62bdb003341ce11130b7148177e1f857e
-parent 452f527b0a9c014ee47277c28a22bd4043056024
-author Mason Green <mason@greenm01.net> 1792266057 -0400
-committer Mason Green <mason@greenm01.net> 1792266057 -0400
+tree 6c17b63042b78d0d30aeb2a97f7ef3b5b3990c91
+parent 380654fffb77119e09757cad35c21c827247eb68
+author Mason Green <mason@greenm01.net> 1792268117 -0400
+committer Mason Green <mason@greenm01.net> 1792268117 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatPPSRsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJ6LgD+M90JyJR0/vggbgVtSG7G
- LaUcc9m6BGbC83a9CngAV7UBAOnXr6DJBquEkskiT+0HdDle7kbov5l4iaJZ1023
- rOID
- =nILk
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatPXVRsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLrrAEA40zpyQUVeuLGQh5ta5NZ
+ owfv9BclZtNC5o+PEKUNBAgBAI+84EgAbHJFBayS/te03vCw37OIkSSt4SN3aO8Q
+ 2GgE
+ =71tb
  -----END PGP SIGNATURE-----
 
-Normalize image contract trailing whitespace
+Correct shell Submitted schema to include existing descriptor candidates

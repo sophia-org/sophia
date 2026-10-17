@@ -85,12 +85,7 @@ impl Schema {
             let class = node.name().value();
             if matches!(class, "object" | "event" | "candidate") {
                 let kind = integer(node, "kind").unwrap() as u16;
-                let range = match class {
-                    "object" => 1..=15,
-                    "event" => 16..=255,
-                    _ => 256..=u16::MAX,
-                };
-                assert!(range.contains(&kind), "{} misclassified", name(node));
+                assert!(class_admits(class, kind), "{} misclassified", name(node));
                 assert!(
                     kinds
                         .insert(name(node).to_owned(), (class.to_owned(), kind))
@@ -144,6 +139,39 @@ impl Schema {
     }
 }
 
+/// The shared image-channel namespace of docs/sophia-image-channel.md. Its
+/// kinds sit outside the numeric class ranges, so each one carries its class
+/// explicitly: ImageBegin is a candidate, ImageAdmitted through ChannelClosed
+/// are events, and ImageLimits and ImageFormats are objects.
+pub const IMAGE_KINDS: std::ops::RangeInclusive<u16> = 0x7000..=0x7006;
+
+pub fn image_class(kind: u16) -> Option<&'static str> {
+    if !IMAGE_KINDS.contains(&kind) {
+        return None;
+    }
+    match kind {
+        0x7000 => Some("candidate"),
+        0x7001..=0x7004 => Some("event"),
+        0x7005 | 0x7006 => Some("object"),
+        _ => None,
+    }
+}
+
+/// Whether a declaring keyword may carry `kind`. Image kinds must use their
+/// one explicit class; every other kind keeps the numeric ranges: objects
+/// 1-15, events 16-255, candidates 256 and above.
+pub fn class_admits(class: &str, kind: u16) -> bool {
+    match image_class(kind) {
+        Some(required) => class == required,
+        None => match class {
+            "object" => (1..=15).contains(&kind),
+            "event" => (16..=255).contains(&kind),
+            "candidate" => kind >= 256,
+            _ => false,
+        },
+    }
+}
+
 pub fn fields(
     node: &KdlNode,
     size: usize,
@@ -159,6 +187,7 @@ pub fn fields(
         let ty = text(field, "type").unwrap().to_owned();
         let mut row = None;
         let width = match ty.as_str() {
+            "u8" => 1,
             "u16" => 2,
             "u32" | "i32" => 4,
             "u64" => 8,

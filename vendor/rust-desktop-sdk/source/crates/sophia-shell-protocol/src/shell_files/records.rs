@@ -9,6 +9,7 @@ pub const SHELL_FILE_MAX_JOURNAL_BYTES: u32 = 1_048_576;
 pub const SHELL_FILE_ASSEMBLY_TIMEOUT_MILLIS: u32 = 12_000;
 pub const SHELL_FILE_ACK_PROGRESS_TIMEOUT_MILLIS: u32 = 2_000;
 pub const SHELL_FILE_MAX_OBJECT_BYTES: usize = 4_194_304;
+pub const SHELL_FILE_MAX_IMAGE_FORMATS_BYTES: usize = 64 + 40 * 4096;
 /// The `outputs` object cap (docs/sophia-shell-files.md, snapshot objects).
 pub const SHELL_FILE_OUTPUTS_MAX_BYTES: usize = 1024;
 /// The `indicators` object cap (docs/sophia-shell-files.md, t252 B5 draft
@@ -86,6 +87,13 @@ pub enum ShellFileKind {
     ReferenceCandidate = 276,
     LauncherCandidate = 277,
     LauncherActivationAck = 278,
+    ImageBegin = 0x7000,
+    ImageAdmitted = 0x7001,
+    SourceReleased = 0x7002,
+    ChannelReady = 0x7003,
+    ChannelClosed = 0x7004,
+    ImageLimits = 0x7005,
+    ImageFormats = 0x7006,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

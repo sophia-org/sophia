@@ -26,12 +26,14 @@ struct Sample {
     open_fields: bool,
 }
 
+/// The class a kind declares, image kinds included; no numeric range.
 fn class(kind: u16) -> LockFileClass {
-    match kind {
-        1..=15 => LockFileClass::Object,
-        16..=255 => LockFileClass::Event,
-        _ => LockFileClass::Candidate,
-    }
+    LockFileKind::decode(kind).unwrap().class()
+}
+
+/// The role revision that introduced a kind: image kinds exist only at r2.
+fn revision(kind: u16) -> u16 {
+    if image_class(kind).is_some() { 2 } else { 1 }
 }
 
 fn record(kind: LockFileKind, body: &[u8]) -> Vec<u8> {
@@ -40,7 +42,7 @@ fn record(kind: LockFileKind, body: &[u8]) -> Vec<u8> {
         LockFileClass::Candidate => (5, 0),
         LockFileClass::Event => (0, 3),
     };
-    encode_lock_file_record(
+    encode_lock_file_record_at_revision(
         LockFileHeader {
             kind,
             connection_epoch: EPOCH,
@@ -48,13 +50,15 @@ fn record(kind: LockFileKind, body: &[u8]) -> Vec<u8> {
             sequence,
         },
         body,
+        revision(kind as u16),
     )
     .unwrap()
 }
 
 fn body(bytes: &[u8]) -> Option<&[u8]> {
     let kind = u16::from_le_bytes(bytes.get(6..8)?.try_into().ok()?);
-    decode_lock_file_record(bytes, class(kind))
+    let kind_class = LockFileKind::decode(kind).ok()?.class();
+    decode_lock_file_record_at_revision(bytes, kind_class, revision(kind))
         .ok()
         .map(|record| record.body)
 }
@@ -134,6 +138,68 @@ fn candidate() -> LockCandidate {
     }
 }
 
+fn metadata() -> LockImageMetadata {
+    LockImageMetadata {
+        offer_id: 3,
+        resource: 4,
+        resource_generation: 5,
+        admission_epoch: 6,
+        output_id: 7,
+        allocation_id: 8,
+        topology_generation: 9,
+        source_kind: LOCK_IMAGE_SOURCE_SEALED_MEMORY,
+        source_format: LOCK_IMAGE_SEALED_FORMAT,
+        width: 2,
+        height: 1,
+        stride: 8,
+        plane_count: 1,
+        descriptor_count: 1,
+        declared_bytes: 8,
+        modifier: 0,
+    }
+}
+
+fn image_limits() -> LockImageLimits {
+    LockImageLimits {
+        channel_generation: 2,
+        limits_generation: 1,
+        max_resource_bytes: 8,
+        max_sealed_backing_bytes: 8,
+        max_dma_source_bytes: 0,
+        max_renderer_allocation_bytes: 0,
+        max_renderer_entries: 0,
+        max_offers: 4,
+        max_validation_jobs: 1,
+        max_capture_jobs: 0,
+        max_admitted_outputs: 1,
+        max_format_rows_per_output: 1,
+        max_width: 4096,
+        max_height: 4096,
+        validation_timeout_ms: 2000,
+        capture_interest_timeout_ms: 500,
+        validation_chunk_bytes: 65536,
+        max_packets_per_turn: 1,
+    }
+}
+
+fn image_formats() -> LockImageFormats {
+    LockImageFormats {
+        channel_generation: 2,
+        formats_generation: 9,
+        limits_generation: 1,
+        rows: vec![LockImageFormatRow {
+            output: 7,
+            device_major: 226,
+            device_minor: 128,
+            fourcc: 0x3432_5258,
+            flags: LOCK_IMAGE_FORMAT_FLAG_OPAQUE,
+            modifier: 0,
+            max_width: 4096,
+            max_height: 4096,
+        }],
+    }
+}
+
 fn samples(schema: &Schema) -> Vec<Sample> {
     let header = |block: &str| vec![("header".to_owned(), 0), (block.to_owned(), 32)];
     // Place the tail rows of a variable body after its prefix.
@@ -160,6 +226,10 @@ fn samples(schema: &Schema) -> Vec<Sample> {
     };
     let lock_record = record(LockFileKind::Lock, &lock().encode().unwrap());
     let negotiate_record = record(LockFileKind::Negotiate, &negotiate().encode().unwrap());
+    let formats_record = record(
+        LockFileKind::ImageFormats,
+        &image_formats().encode().unwrap(),
+    );
     let step = |total_bytes| LockResourceStep {
         transaction: 31,
         resource: RESOURCE,
@@ -374,6 +444,73 @@ fn samples(schema: &Schema) -> Vec<Sample> {
             |bytes| body(bytes).is_some_and(|b| LockFrameDemand::decode(b).is_ok()),
             true,
         ),
+        // The image-channel kinds, encoded and decoded at lock r2.
+        fixed(
+            "ImageBegin",
+            LockFileKind::ImageBegin,
+            metadata().encode().unwrap().to_vec(),
+            |bytes| body(bytes).is_some_and(|b| LockImageMetadata::decode(b).is_ok()),
+            false,
+        ),
+        fixed(
+            "ImageAdmitted",
+            LockFileKind::ImageAdmitted,
+            metadata().encode().unwrap().to_vec(),
+            |bytes| body(bytes).is_some_and(|b| LockImageMetadata::decode(b).is_ok()),
+            false,
+        ),
+        fixed(
+            "SourceReleased",
+            LockFileKind::SourceReleased,
+            LockSourceReleased {
+                offer_id: 3,
+                resource: 4,
+                resource_generation: 5,
+                disposition: LockSourceDisposition::CaptureComplete,
+            }
+            .encode()
+            .unwrap(),
+            |bytes| body(bytes).is_some_and(|b| LockSourceReleased::decode(b).is_ok()),
+            false,
+        ),
+        fixed(
+            "ChannelReady",
+            LockFileKind::ChannelReady,
+            LockChannelReady {
+                channel_generation: 2,
+                granted_source_kinds: 1,
+            }
+            .encode()
+            .unwrap(),
+            |bytes| body(bytes).is_some_and(|b| LockChannelReady::decode(b).is_ok()),
+            false,
+        ),
+        fixed(
+            "ChannelClosed",
+            LockFileKind::ChannelClosed,
+            LockChannelClosed {
+                channel_generation: 2,
+                reason: LockChannelClosedReason::GrantRevoked,
+            }
+            .encode()
+            .unwrap(),
+            |bytes| body(bytes).is_some_and(|b| LockChannelClosed::decode(b).is_ok()),
+            false,
+        ),
+        fixed(
+            "ImageLimits",
+            LockFileKind::ImageLimits,
+            image_limits().encode().unwrap(),
+            |bytes| body(bytes).is_some_and(|b| LockImageLimits::decode(b).is_ok()),
+            false,
+        ),
+        Sample {
+            name: "ImageFormats",
+            blocks: tail("ImageFormats", &formats_record),
+            bytes: formats_record,
+            decode: |bytes| body(bytes).is_some_and(|b| LockImageFormats::decode(b).is_ok()),
+            open_fields: false,
+        },
         Sample {
             name: "submit",
             bytes: encode_lock_file_submit(LockFileSubmit {
@@ -443,10 +580,18 @@ fn every_block_covers_its_bytes_and_matches_the_native_sizes() {
         ("FramePermit", 48),
         ("Entry", 16),
         ("Chord", 16),
+        ("ImageBegin", LockImageMetadata::BYTES),
+        ("ImageAdmitted", LockImageMetadata::BYTES),
+        ("SourceReleased", 32),
+        ("ChannelReady", 16),
+        ("ChannelClosed", 16),
+        ("ImageLimits", LockImageLimits::BYTES),
+        ("ImageFormats", 32),
+        ("ImageFormat", 40),
     ] {
         assert_eq!(schema.size(block), size, "{block}");
     }
-    assert_eq!(schema.blocks.len(), 24, "every block is sized above");
+    assert_eq!(schema.blocks.len(), 32, "every block is sized above");
     // Rows follow their prefix; no lock block embeds fixed member slots.
     assert!(
         schema
@@ -513,6 +658,26 @@ fn every_block_covers_its_bytes_and_matches_the_native_sizes() {
         Some(LOCK_FILE_MAX_CANDIDATE_BYTES as i128)
     );
     assert!(largest("Lock") <= LOCK_FILE_MAX_BYTES);
+    // Only the image-formats object may pass the general record bound, and
+    // its row ceiling sets exactly that exemption.
+    assert_eq!(largest("ImageFormats"), LOCK_FILE_MAX_IMAGE_FORMATS_BYTES);
+    let exempt: BTreeMap<_, _> = schema
+        .nodes("object")
+        .chain(schema.nodes("event"))
+        .chain(schema.nodes("candidate"))
+        .filter_map(|node| Some((name(node).to_owned(), integer(node, "max-bytes")?)))
+        .collect();
+    assert_eq!(
+        exempt,
+        BTreeMap::from([(
+            "ImageFormats".to_owned(),
+            LOCK_FILE_MAX_IMAGE_FORMATS_BYTES as i128
+        )])
+    );
+    assert_eq!(
+        schema.field("ImageFormats", "row_count").max,
+        Some(LOCK_IMAGE_MAX_FORMAT_ROWS as i128)
+    );
     assert_eq!(
         schema.field("Lock", "allocation_count").max,
         Some(LOCK_FILE_MAX_OUTPUTS as i128)
@@ -546,6 +711,13 @@ fn kinds_vocabulary_and_namespace_match_the_contract() {
         ("ResourceRetire", LockFileKind::ResourceRetire),
         ("Candidate", LockFileKind::Candidate),
         ("FrameDemand", LockFileKind::FrameDemand),
+        ("ImageBegin", LockFileKind::ImageBegin),
+        ("ImageAdmitted", LockFileKind::ImageAdmitted),
+        ("SourceReleased", LockFileKind::SourceReleased),
+        ("ChannelReady", LockFileKind::ChannelReady),
+        ("ChannelClosed", LockFileKind::ChannelClosed),
+        ("ImageLimits", LockFileKind::ImageLimits),
+        ("ImageFormats", LockFileKind::ImageFormats),
     ];
     assert_eq!(schema.kinds.len(), native.len());
     for (name, kind) in native {
@@ -559,6 +731,12 @@ fn kinds_vocabulary_and_namespace_match_the_contract() {
         };
         assert_eq!(class, expected, "{name}");
         assert!(schema.blocks.contains_key(name), "{name} has no body");
+        // Image kinds exist only at r2; the plain r1 envelope refuses them.
+        assert_eq!(
+            image_class(*value).is_some(),
+            revision(*value) == 2,
+            "{name}"
+        );
     }
     let capabilities = schema.values("capability", "bit");
     assert_eq!(
@@ -566,7 +744,68 @@ fn kinds_vocabulary_and_namespace_match_the_contract() {
         LOCK_FILE_CAPABILITY_PRESENT
     );
     assert_eq!(1u64 << capabilities["chords"], LOCK_FILE_CAPABILITY_CHORDS);
-    assert_eq!(capabilities.len(), 2);
+    assert_eq!(
+        1u64 << capabilities["sealed_memory"],
+        LOCK_FILE_CAPABILITY_SEALED_MEMORY
+    );
+    assert_eq!(
+        1u64 << capabilities["dma_buf"],
+        LOCK_FILE_CAPABILITY_DMA_BUF
+    );
+    assert_eq!(capabilities.len(), 4);
+    // The r2 bits are named, but Negotiated still grants only the r1 pair.
+    let granted = schema.field("Negotiated", "granted_capabilities");
+    assert_eq!(
+        granted.mask,
+        Some((LOCK_FILE_CAPABILITY_PRESENT | LOCK_FILE_CAPABILITY_CHORDS) as i128)
+    );
+    assert_eq!(
+        schema.field("Negotiated", "selected_revision").value,
+        Some(1)
+    );
+    assert_eq!(
+        schema.values("disposition", "value"),
+        BTreeMap::from([
+            ("retained".into(), LockSourceDisposition::Retained as i128),
+            (
+                "capture_complete".into(),
+                LockSourceDisposition::CaptureComplete as i128
+            ),
+            (
+                "refused_before_use".into(),
+                LockSourceDisposition::RefusedBeforeUse as i128
+            ),
+            (
+                "cancelled_before_import".into(),
+                LockSourceDisposition::CancelledBeforeImport as i128
+            ),
+            (
+                "drained_after_submission".into(),
+                LockSourceDisposition::DrainedAfterSubmission as i128
+            ),
+        ])
+    );
+    assert_eq!(
+        schema.values("channel-closed-reason", "value"),
+        BTreeMap::from([
+            (
+                "peer_disconnect".into(),
+                LockChannelClosedReason::PeerDisconnect as i128
+            ),
+            (
+                "protocol_fault".into(),
+                LockChannelClosedReason::ProtocolFault as i128
+            ),
+            (
+                "hello_timeout".into(),
+                LockChannelClosedReason::HelloTimeout as i128
+            ),
+            (
+                "grant_revoked".into(),
+                LockChannelClosedReason::GrantRevoked as i128
+            ),
+        ])
+    );
     assert_eq!(
         schema.values("refusal", "value"),
         BTreeMap::from([
@@ -704,6 +943,31 @@ fn native_encoders_place_values_at_declared_offsets() {
     assert_eq!(at(find("Entry"), "Entry", 0, "empty_after"), 1);
     assert_eq!(at(find("Chord"), "Chord", 0, "chord"), 1);
     assert_eq!(at(find("submit"), "submit", 0, "candidate_bytes"), 48);
+    let begin = find("ImageBegin");
+    assert_eq!(at(begin, "header", 0, "kind"), 0x7000);
+    assert_eq!(at(begin, "ImageBegin", 0, "offer_id"), 3);
+    assert_eq!(at(begin, "ImageBegin", 0, "topology_generation"), 9);
+    assert_eq!(at(begin, "ImageBegin", 0, "stride"), 8);
+    assert_eq!(at(begin, "ImageBegin", 0, "declared_bytes"), 8);
+    assert_eq!(
+        at(find("SourceReleased"), "SourceReleased", 0, "disposition"),
+        2
+    );
+    assert_eq!(at(find("ChannelClosed"), "ChannelClosed", 0, "reason"), 4);
+    assert_eq!(at(find("ImageLimits"), "ImageLimits", 0, "max_offers"), 4);
+    assert_eq!(
+        at(
+            find("ImageLimits"),
+            "ImageLimits",
+            0,
+            "max_packets_per_turn"
+        ),
+        1
+    );
+    let formats = find("ImageFormats");
+    assert_eq!(at(formats, "ImageFormats", 0, "row_count"), 1);
+    assert_eq!(at(formats, "ImageFormat", 0, "fourcc"), 0x3432_5258);
+    assert_eq!(at(formats, "ImageFormat", 0, "max_height"), 4096);
 }
 
 #[test]
@@ -788,6 +1052,13 @@ fn record_identity_classes_follow_the_header_rules() {
         .filter(|sample| sample.blocks[0].0 == "header")
     {
         let kind = u16::from_le_bytes(sample.bytes[6..8].try_into().unwrap());
+        // The plain entry point is r1: image records are refused whole there.
+        assert_eq!(
+            decode_lock_file_record(&sample.bytes, class(kind)).is_ok(),
+            revision(kind) == 1,
+            "{} under r1",
+            sample.name
+        );
         let (submission, sequence) = match class(kind) {
             LockFileClass::Object => (1u64, 1u64),
             LockFileClass::Candidate => (0, 1),
@@ -806,7 +1077,10 @@ fn record_identity_classes_follow_the_header_rules() {
             LockFileClass::Event,
         ] {
             if other != class(kind) {
-                assert!(decode_lock_file_record(&sample.bytes, other).is_err());
+                assert!(
+                    decode_lock_file_record_at_revision(&sample.bytes, other, revision(kind))
+                        .is_err()
+                );
             }
         }
     }

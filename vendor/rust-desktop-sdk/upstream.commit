@@ -1,14 +1,14 @@
-tree 5eb3794f96071e7e39ae74bd14fe563bb962a07d
-parent 1ea1259cbbfad66f63520773fea84ae910921ee3
-author Mason Green <mason@greenm01.net> 1792266053 -0400
-committer Mason Green <mason@greenm01.net> 1792266053 -0400
+tree 1c7583b24b34e5c2c7ffc4256bd623a9dd9665db
+parent 5c83d6d58448a93e61f3d1db0f951f7c2f36d042
+author Mason Green <mason@greenm01.net> 1792268117 -0400
+committer Mason Green <mason@greenm01.net> 1792268117 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatPPRRsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLVhwEA7U/ReXOeHJnUHdM1wfFv
- Xuk2saQ0lWUc4NbA4MdCd2kBAM/MHaKvF/GKeVMC3Q2q/nJ+w5A95QXgIpbPj4pk
- +RoG
- =L/vu
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatPXVRsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIx1QD/WNV4k+bmbHCaa3eZASDG
+ C4ruQnuYyzqhgkmV0WfQ/moA/3szBViEv+kc3oNRCHjSnKcknOoy6YCHoaxhb8om
+ dQMM
+ =aWVQ
  -----END PGP SIGNATURE-----
 
-Normalize image contract trailing whitespace
+Keep legacy lock receipts within the r1 candidate vocabulary

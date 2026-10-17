@@ -93,22 +93,24 @@ including refusal of r2 ImageBegin before r1 epoch/submission checks, unchanged
 journal state and successful subsequent legacy submission. Evidence is under
 `~/.local/state/sophia/development-evidence/t338-lock-codec-review-20261017/`.
 
-The coordinated codec checkpoint is signed locally: Rust `5c83d6d` includes
+The coordinated codec checkpoint, now adopted at Rust `5c41aeb`, includes
 the SDK lock mirror `1b07ebb`, shell image bodies `4c14819`, explicit shell r9
 envelopes and ResourceStatus entry points, and schema tests against the new KDL
-rows. C `380654f` carries matching specs and the stated parity limits. The
+rows. Adopted C `e146897` carries matching specs and the stated parity limits. The
 shared contract now makes timeout, chunk and per-turn values positive. Legacy
 entry points still refuse image kinds and reason 13; legacy Submitted and
 ObjectPublished encoders also retain their old embedded-kind vocabulary.
 
 Both Rust protocol suites pass, along with strict Clippy, formatting, the new
 shell field-offset tests, and C's 54-case image codec controls. Sophia's image,
-lock-schema and explicit-class tests pass. These commits are not yet published
-or vendored; independent C/Rust review and differential checks are pending.
+lock-schema and explicit-class tests pass. Both SDK heads are published and
+their signed archive snapshots pass identity and spec-equality checks. The
+affected Sophia C/Rust/Go shell and lock export run passes 62 tests, with one
+existing ignored test left unselected. Independent review has no remaining
+blockers, and the final differential result is recorded below.
 No production revision, endpoint or installed desktop changes here.
 
-Remaining first-slice work: resolve that review, publish the paired SDK commits,
-adopt their signed snapshots and run affected export gates. C's cross-object
+Remaining first-slice work is discovery/admission integration. C's cross-object
 coherence helper has no Rust counterpart yet: the discovery reader must check
 epochs, all three generations, discovery/limits equalities, source-kind grants
 and per-output bounds before Hello. Rust packet shape also leaves the actual
@@ -129,14 +131,15 @@ receipt. Plain entry points retain their legacy ranges. This is a prerequisite
 for new-revision transaction wiring, not permission to widen the legacy APIs.
 
 The receipt fix is signed in Rust `5c41aeb`; C `e146897` carries the matching
-shell KDL correction. Claude's independent differential run on the preceding
-Rust `5c83d6d` and C `380654f` archives compared 117,756 cases per role, including
+shell KDL correction. Claude's independent differential run on these exact
+signed archives compared 117,756 cases per role, including
 field mutations, truncation, format-row boundaries and seeded random inputs.
 Accept/refuse and accepted-byte round trips agree except for the expected
 opposite-role discovery case: C is shared, Rust's codecs are role-specific.
 A deliberately weakened Rust codec produced 365 mismatches, demonstrating
-that the comparison detects disagreement. The final lock receipt probe and
-differential rerun on `5c41aeb` remain pending.
+that the comparison detects disagreement. The final lock receipt probe refuses
+ImageBegin in both directions, and the differential verdicts match the earlier
+run byte-for-byte.
 
 The differential supplies matching packet expectations and FD counts; it does
 not exercise the missing Rust caller-bound or cross-object checks. Harness

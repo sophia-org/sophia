@@ -28,7 +28,9 @@ pub fn shell_file_class(kind: ShellFileKind) -> ShellFileClass {
         | ShellFileKind::Indicators
         | ShellFileKind::Descriptors
         | ShellFileKind::Tabs
-        | ShellFileKind::Shortcuts => ShellFileClass::Object,
+        | ShellFileKind::Shortcuts
+        | ShellFileKind::ImageLimits
+        | ShellFileKind::ImageFormats => ShellFileClass::Object,
         ShellFileKind::Negotiate
         | ShellFileKind::AllocationRequest
         | ShellFileKind::ResourceBegin
@@ -51,7 +53,8 @@ pub fn shell_file_class(kind: ShellFileKind) -> ShellFileClass {
         | ShellFileKind::TabsCandidate
         | ShellFileKind::ReferenceCandidate
         | ShellFileKind::LauncherCandidate
-        | ShellFileKind::LauncherActivationAck => ShellFileClass::Candidate,
+        | ShellFileKind::LauncherActivationAck
+        | ShellFileKind::ImageBegin => ShellFileClass::Candidate,
         ShellFileKind::Negotiated
         | ShellFileKind::Refused
         | ShellFileKind::Submitted
@@ -77,7 +80,11 @@ pub fn shell_file_class(kind: ShellFileKind) -> ShellFileClass {
         | ShellFileKind::LauncherRequest
         | ShellFileKind::LauncherOutcome
         | ShellFileKind::LauncherActivation
-        | ShellFileKind::LaunchOutcome => ShellFileClass::Event,
+        | ShellFileKind::LaunchOutcome
+        | ShellFileKind::ImageAdmitted
+        | ShellFileKind::SourceReleased
+        | ShellFileKind::ChannelReady
+        | ShellFileKind::ChannelClosed => ShellFileClass::Event,
     }
 }
 
@@ -157,6 +164,17 @@ pub fn decode_shell_file_record(
     bytes: &[u8],
     expected: ShellFileClass,
 ) -> Result<ShellFileRecord<'_>, ShellFileCodecError> {
+    decode_shell_file_record_at_revision(bytes, expected, 8)
+}
+
+/// Decode with the caller's negotiated revision. The ordinary entry point
+/// retains its r1-r8 vocabulary; bytes never select a newer revision.
+pub fn decode_shell_file_record_at_revision(
+    bytes: &[u8],
+    expected: ShellFileClass,
+    revision: u16,
+) -> Result<ShellFileRecord<'_>, ShellFileCodecError> {
+    check_revision(revision)?;
     let size = bytes.len();
     if size < SHELL_FILE_HEADER_BYTES {
         return Err(ShellFileCodecError::Length);
@@ -169,7 +187,7 @@ pub fn decode_shell_file_record(
         return Err(ShellFileCodecError::Version);
     }
     let header = ShellFileHeader {
-        kind: kind(u16_at(bytes, 6)?)?,
+        kind: kind_at_revision(u16_at(bytes, 6)?, revision)?,
         connection_epoch: u64_at(bytes, 8)?,
         submission_id: u64_at(bytes, 16)?,
         sequence: u64_at(bytes, 24)?,
@@ -179,7 +197,9 @@ pub fn decode_shell_file_record(
     if class != expected {
         return Err(ShellFileCodecError::Class);
     }
-    let max_size = if class == ShellFileClass::Object {
+    let max_size = if header.kind == ShellFileKind::ImageFormats {
+        SHELL_FILE_MAX_IMAGE_FORMATS_BYTES
+    } else if class == ShellFileClass::Object {
         SHELL_FILE_MAX_OBJECT_BYTES
     } else {
         SHELL_FILE_MAX_TRANSACTION_BYTES
@@ -197,12 +217,25 @@ pub fn encode_shell_file_record(
     header: ShellFileHeader,
     body: &[u8],
 ) -> Result<Vec<u8>, ShellFileCodecError> {
+    encode_shell_file_record_at_revision(header, body, 8)
+}
+
+/// Encode an envelope without changing the revisions offered by a client.
+pub fn encode_shell_file_record_at_revision(
+    header: ShellFileHeader,
+    body: &[u8],
+    revision: u16,
+) -> Result<Vec<u8>, ShellFileCodecError> {
+    check_revision(revision)?;
+    kind_at_revision(header.kind as u16, revision)?;
     validate_header(header)?;
     let size = SHELL_FILE_HEADER_BYTES
         .checked_add(body.len())
         .ok_or(ShellFileCodecError::Length)?;
     let class = shell_file_class(header.kind);
-    let max_size = if class == ShellFileClass::Object {
+    let max_size = if header.kind == ShellFileKind::ImageFormats {
+        SHELL_FILE_MAX_IMAGE_FORMATS_BYTES
+    } else if class == ShellFileClass::Object {
         SHELL_FILE_MAX_OBJECT_BYTES
     } else {
         SHELL_FILE_MAX_TRANSACTION_BYTES
@@ -223,6 +256,31 @@ pub fn encode_shell_file_record(
     bytes.extend(header.sequence.to_le_bytes());
     bytes.extend(body);
     Ok(bytes)
+}
+
+fn check_revision(revision: u16) -> Result<(), ShellFileCodecError> {
+    (1..=9)
+        .contains(&revision)
+        .then_some(())
+        .ok_or(ShellFileCodecError::Version)
+}
+
+fn kind_at_revision(value: u16, revision: u16) -> Result<ShellFileKind, ShellFileCodecError> {
+    // Keep `kind` itself legacy-only: embedded kinds in Submitted and
+    // ObjectPublished must not acquire new vocabulary through this addition.
+    if revision == 9 {
+        match value {
+            0x7000 => return Ok(ShellFileKind::ImageBegin),
+            0x7001 => return Ok(ShellFileKind::ImageAdmitted),
+            0x7002 => return Ok(ShellFileKind::SourceReleased),
+            0x7003 => return Ok(ShellFileKind::ChannelReady),
+            0x7004 => return Ok(ShellFileKind::ChannelClosed),
+            0x7005 => return Ok(ShellFileKind::ImageLimits),
+            0x7006 => return Ok(ShellFileKind::ImageFormats),
+            _ => {}
+        }
+    }
+    kind(value)
 }
 
 pub fn decode_shell_file_submit(bytes: &[u8]) -> Result<ShellFileSubmit, ShellFileCodecError> {
