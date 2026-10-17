@@ -1,5 +1,12 @@
 # C and Rust SDK API parity
 
+## Producer transport and revision preconditions, 2026-10-17
+
+The producer accepts only the implemented shell r9 or lock r2 selection and
+requires a SEQPACKET socket at attach. Refusal preserves caller FD ownership
+and the Discovered state. The Rust producer under review applies the same
+checks; its role adapters and full parity qualification remain unfinished.
+
 ## Lock sealed-source refusal names, 2026-10-17
 
 Both SDKs name lock r2 reasons `invalid_source` (10) and

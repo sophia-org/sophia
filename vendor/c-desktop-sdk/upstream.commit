@@ -1,14 +1,14 @@
-tree 6a6101fd4f0deb6550cbe5596bd01760d495ea04
-parent 02ea2ad674201871e3632c6b1f68b944805e2e7e
-author Mason Green <mason@greenm01.net> 1792277123 -0400
-committer Mason Green <mason@greenm01.net> 1792277123 -0400
+tree c06f17a463ba1f9b42f8bcd272ce795d80e234e1
+parent f5e499c0f790f56dc7a4214755ef0237a75f1f7f
+author Mason Green <mason@greenm01.net> 1792277420 -0400
+committer Mason Green <mason@greenm01.net> 1792277420 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatP6gxsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLPXAD8Cxy5W6R/7tO3nKgyiD6Z
- 0BtWEhHqCdhh8VBezl+NeCgA/RIMFeh9GHJOd+1RMylBYGZUsFZeQ16bsRJMh3XW
- G70M
- =RK8x
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatP7rBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKjPQEAw0q/ILdRjaL+StkztvAO
+ HhqawmHBRbv43+nReoqwMpIBAPZzRYXzxcbmYv06nAbyS+kpLjT9llS1OS4Ot8S4
+ 1isP
+ =IDGy
  -----END PGP SIGNATURE-----
 
-feat(lock): name sealed-source refusal and validation timeout reasons
+fix(image): require supported revisions and packet sockets before custody

@@ -21,6 +21,30 @@ pub struct Prepared {
     kind: LockFileKind,
 }
 impl Prepared {
+    pub(crate) fn image(
+        epoch: u64,
+        submission: u64,
+        body: &[u8; 96],
+    ) -> Result<Self, BinaryCodecError> {
+        LockImageMetadata::decode(body)?;
+        let encoded = encode_lock_file_record_at_revision(
+            LockFileHeader {
+                kind: LockFileKind::ImageBegin,
+                connection_epoch: epoch,
+                submission_id: submission,
+                sequence: 0,
+            },
+            body,
+            2,
+        )?;
+        let mut bytes = [0; LOCK_FILE_MAX_CANDIDATE_BYTES];
+        bytes[..encoded.len()].copy_from_slice(&encoded);
+        Ok(Self {
+            bytes,
+            len: encoded.len(),
+            kind: LockFileKind::ImageBegin,
+        })
+    }
     pub fn bytes(&self) -> &[u8] {
         &self.bytes[..self.len]
     }
@@ -39,7 +63,13 @@ impl Candidate {
                 if offer.minimum_revision == 0
                     || offer.minimum_revision > offer.maximum_revision
                     || caps & LOCK_FILE_CAPABILITY_PRESENT == 0
-                    || caps & !(LOCK_FILE_CAPABILITY_PRESENT | LOCK_FILE_CAPABILITY_CHORDS) != 0
+                    || caps
+                        & !(LOCK_FILE_CAPABILITY_PRESENT
+                            | LOCK_FILE_CAPABILITY_CHORDS
+                            | LOCK_FILE_CAPABILITY_SEALED_MEMORY)
+                        != 0
+                    || (caps & LOCK_FILE_CAPABILITY_SEALED_MEMORY != 0
+                        && offer.maximum_revision < 2)
                     || (!offer.chords.is_empty() && caps & LOCK_FILE_CAPABILITY_CHORDS == 0)
                 {
                     return Err(BinaryCodecError::InvalidRecord("negotiation_offer"));

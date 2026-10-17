@@ -35,6 +35,8 @@ pub(crate) enum Outbound {
     /// A complete bounded group of content records owned atomically (for
     /// example a candidate's Begin/Chunk*/End), encoded as one file record.
     ContentGroup(TransactionId, Vec<ShellContentRecord>),
+    /// One r9 ImageBegin candidate: the producer's 96-byte body.
+    ImageBegin([u8; 96]),
     /// One indicator activation naming an exact published generation.
     IndicatorActivation(TransactionId, ShellIndicatorActivation),
     /// An action ACK, optionally paired atomically with the indicator
@@ -75,6 +77,7 @@ impl Outbound {
                 | sophia_shell_protocol::shell_files::ShellDescriptorRecord::LauncherActivationAck(_)),
             Outbound::Content(_, record) => matches!(record, ShellContentRecord::ActionAck(_)),
             Outbound::ContentGroup(..)
+            | Outbound::ImageBegin(..)
             | Outbound::IndicatorActivation(..)
             | Outbound::CatalogCandidateGroup { .. } => false,
             Outbound::ActionResponse { .. } | Outbound::CatalogActionResponse { .. } | Outbound::CatalogActivation(..) => true,

@@ -146,8 +146,8 @@ int sophia_ip_discover(struct sophia_ip *, const void *text, size_t text_bytes,
  * backlog is full (retry before the startup deadline); REFUSED leaves errno.
  * It never waits. */
 int sophia_ip_connect(int endpoint_dir, const char *endpoint, int *fd);
-/* In DISCOVERED, takes ownership of fd and queues Hello. On any other result
- * the caller still owns fd. */
+/* In DISCOVERED, verifies SOCK_SEQPACKET, takes ownership of the connected fd
+ * and queues Hello. On any other result the caller still owns fd. */
 int sophia_ip_attach(struct sophia_ip *, int fd, uint64_t now_ms);
 
 /* -1 when not attached. POLLIN while attached (hangup detection; the owner

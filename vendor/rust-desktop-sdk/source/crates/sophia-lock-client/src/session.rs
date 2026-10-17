@@ -1,3 +1,5 @@
+#[path = "session_image.rs"]
+mod image_driver;
 use crate::{
     Candidate,
     journal::{Control, Event, Journal},
@@ -66,6 +68,9 @@ convert!(crate::upload::Error, Upload);
 /// Experimental lock session. Providers render; this grants no credential or
 /// unlock authority. Release and production qualification remain separate.
 pub struct Session {
+    image: Option<crate::LockImageAdapter>,
+    image_tag: Option<Tag>,
+    image_cancel_submission: Option<u64>,
     wire: Option<Pipeline>,
     root: Fid,
     events: Fid,
@@ -98,11 +103,40 @@ pub struct Session {
 }
 impl Session {
     pub fn from_opened(o: Opened) -> Result<Self, SessionError> {
-        let journal = Journal::new(o.epoch, &o.offer)?;
+        Self::from_opened_inner(o, None)
+    }
+    pub fn from_opened_with_image(
+        o: Opened,
+        config: crate::LockImageConfig,
+    ) -> Result<Self, SessionError> {
+        if o.offer.minimum_revision > 2
+            || o.offer.maximum_revision < 2
+            || o.offer.requested_capabilities & LOCK_FILE_CAPABILITY_SEALED_MEMORY == 0
+            || o.offer.requested_capabilities & LOCK_FILE_CAPABILITY_DMA_BUF != 0
+        {
+            return Err(SessionError::Protocol(
+                "image adapter requires sealed r2 offer",
+            ));
+        }
+        let image = crate::LockImageAdapter::new(config, o.epoch, o.limits, o.now)
+            .map_err(|_| SessionError::Protocol("invalid image config"))?;
+        Self::from_opened_inner(o, Some(image))
+    }
+    fn from_opened_inner(
+        o: Opened,
+        image: Option<crate::LockImageAdapter>,
+    ) -> Result<Self, SessionError> {
+        let mut journal = Journal::new(o.epoch, &o.offer)?;
+        if image.is_some() {
+            journal.enable_image();
+        }
         let mut submission = Submission::new(o.epoch, o.transaction, o.transaction_iounit)?;
         submission.admit(&Candidate::Negotiate(o.offer))?;
         let upload = Upload::new(usize::from(o.pipeline.limits().max_outstanding))?;
         Ok(Self {
+            image,
+            image_tag: None,
+            image_cancel_submission: None,
             wire: Some(o.pipeline),
             root: o.root,
             events: o.events,
@@ -145,6 +179,9 @@ impl Session {
     }
     pub fn welcome(&self) -> Option<LockNegotiated> {
         self.journal.welcome()
+    }
+    pub fn selected_revision(&self) -> Option<u16> {
+        self.journal.selected_revision()
     }
     pub fn error(&self) -> Option<&SessionError> {
         self.error.as_ref()
@@ -262,7 +299,11 @@ impl Session {
     }
     pub fn wake_deadline(&self) -> Option<u64> {
         if self.error.is_none() {
-            self.bootstrap_deadline
+            let image = self.image.as_ref().and_then(|i| i.deadline(self.now));
+            match (self.bootstrap_deadline, image) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            }
         } else {
             None
         }
@@ -335,6 +376,10 @@ impl Session {
         self.wire.take();
         self.submission.disconnect();
         self.upload.disconnect();
+        if let Some(image) = &mut self.image {
+            image.settle_submission(self.submission.latest(), self.now);
+            image.producer.journal_lost();
+        }
         self.fetch = None;
         self.state = match &error {
             SessionError::Refused(_) => SessionState::Refused,
@@ -353,16 +398,38 @@ impl Session {
     }
     fn advance(&mut self) -> Result<(), SessionError> {
         let s = &mut self.submission;
+        let image = &mut self.image;
+        let now = self.now;
         self.journal.advance(|h, c| {
+            if let Some(image) = image.as_mut()
+                && let Control::Image(v) = c
+            {
+                image
+                    .record(h.connection_epoch, v, now)
+                    .map_err(|_| crate::journal::Error::Invalid)?;
+            }
             if let Control::Submitted(v) = c {
                 s.submitted(h.sequence, v)
                     .map_err(|_| crate::journal::Error::Invalid)?;
             }
             Ok(())
         })?;
+        if let Some(image) = &mut self.image {
+            if let (Some(revision), Some(welcome)) =
+                (self.journal.selected_revision(), self.journal.welcome())
+            {
+                image.select(revision, welcome.granted_capabilities);
+            }
+            image.settle_submission(self.submission.latest(), self.now);
+        }
         if let Some((h, Event::ResourceStatus(v))) = self.journal.head()
             && h.sequence != self.status_sequence
         {
+            if let Some(image) = &mut self.image {
+                image
+                    .status(*v, self.now)
+                    .map_err(|_| SessionError::Protocol("invalid image status"))?;
+            }
             self.upload.status(*v);
             self.status_sequence = h.sequence;
         }
@@ -404,6 +471,14 @@ impl Session {
                     Reply::Error(e) => Err(SessionError::Remote(e.0)),
                     _ => Err(SessionError::Protocol("invalid ACK reply")),
                 }
+            } else if self.image_tag == Some(tag) {
+                self.image_tag = None;
+                self.image
+                    .as_mut()
+                    .and_then(|i| i.read.as_mut())
+                    .ok_or(SessionError::Protocol("missing image read"))?
+                    .reply(reply)
+                    .map_err(|_| SessionError::Protocol("invalid image read"))
             } else if self.object_tag == Some(tag) {
                 self.object_tag = None;
                 self.fetch
@@ -434,6 +509,7 @@ impl Session {
                 .submission
                 .reply(reply, self.journal.welcome().is_some());
             if matches!(self.submission.latest(), Some((_, Custody::Refused(_))))
+                && self.submission.latest().map(|(id, _)| id) != self.image_cancel_submission
                 && let Some(k) = kind
             {
                 self.upload.refused(k);
@@ -441,6 +517,9 @@ impl Session {
             if failure.is_none() {
                 failure = result.err().map(Into::into);
             }
+        }
+        if let Some(image) = &mut self.image {
+            image.settle_submission(self.submission.latest(), self.now);
         }
         failure.map_or(Ok(progress), Err)
     }
@@ -526,6 +605,7 @@ impl Session {
                 None => (),
             }
         }
+        queued |= self.drive_image()?;
         queued |= self.drive_submission()?;
         let wire = self.wire.as_mut().ok_or(SessionError::Closed)?;
         // Queue control work before bulk writes, then revisit submission after

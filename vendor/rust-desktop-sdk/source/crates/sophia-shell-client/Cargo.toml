@@ -13,6 +13,7 @@ rustix = { workspace = true, features = ["event", "std"] }
 sophia-9p-client = { workspace = true }
 sophia-9p-records = { workspace = true }
 sophia-shell-protocol = { workspace = true }
+sophia-image-producer = { path = "../sophia-image-producer", version = "0.3.0" }
 
 [lints]
 workspace = true

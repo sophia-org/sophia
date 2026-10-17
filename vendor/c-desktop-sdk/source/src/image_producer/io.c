@@ -73,6 +73,16 @@ int sophia_ip_attach(struct sophia_ip *p, int fd, uint64_t now_ms)
         ip_fail(p, SOPHIA_IPX_TIMEOUT);
         return SOPHIA_IPR_CLOSED;
     }
+#ifdef __linux__
+    {
+        int type;
+        socklen_t size = sizeof type;
+        if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &size) || type != SOCK_SEQPACKET)
+            return SOPHIA_IPR_REFUSED;
+    }
+#else
+    return SOPHIA_IPR_REFUSED;
+#endif
     p->fd = fd;
     p->hello_deadline_ms = now_ms + p->hello_timeout_ms;
     if (p->hello_deadline_ms < now_ms || p->hello_deadline_ms > p->config.startup_deadline_ms)

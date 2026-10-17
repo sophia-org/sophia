@@ -283,6 +283,11 @@ impl ClientOutbox {
         }
         ledger.issue(records)
     }
+    /// Whether `slots` more frames of `bytes` would fit right now.
+    pub(crate) fn has_room(&self, slots: usize, bytes: usize, control: bool) -> bool {
+        self.fits(slots, bytes, control)
+    }
+
     pub(crate) fn front(&self) -> Option<&[u8]> {
         self.frames.front().and_then(|frame| frame.bytes.as_deref())
     }

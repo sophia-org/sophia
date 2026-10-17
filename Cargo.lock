@@ -1487,6 +1487,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sophia-image-producer"
+version = "0.3.0"
+dependencies = [
+ "rustix",
+ "sophia-lock-protocol",
+ "sophia-shell-protocol",
+]
+
+[[package]]
 name = "sophia-input-authority"
 version = "0.1.0"
 dependencies = [
@@ -1645,6 +1654,7 @@ dependencies = [
  "rustix",
  "sophia-9p-client",
  "sophia-9p-records",
+ "sophia-image-producer",
  "sophia-shell-protocol",
 ]
 

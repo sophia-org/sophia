@@ -34,7 +34,8 @@ pub(super) const MAX_EVENT_BYTES: usize = SHELL_FILE_MAX_JOURNAL_BYTES as usize;
 pub(super) enum Event {
     Submitted(u64, ShellFileKind),
     Published(ShellFileObjectPublished, usize),
-    ResourceStatus(sophia_shell_protocol::ContentResourceId, u16, Inbound),
+    ResourceStatus(sophia_shell_protocol::ContentResourceId, u16, u16, Inbound),
+    Image(sophia_image_producer::ImageEvent),
     Inbound(Inbound),
 }
 
@@ -81,7 +82,7 @@ impl FileWire {
         let (sequence, event) = self.retained_event.as_ref()?;
         let record = match event {
             Event::Published(value, _) => JournalRecord::ObjectPublished(value),
-            Event::Inbound(value) | Event::ResourceStatus(_, _, value) => match value {
+            Event::Inbound(value) | Event::ResourceStatus(_, _, _, value) => match value {
                 Inbound::Content(tx, value) => JournalRecord::Content(*tx, value),
                 Inbound::Native(value) => JournalRecord::Native(value),
                 Inbound::Descriptor(value) => JournalRecord::Descriptor(value),
@@ -89,7 +90,7 @@ impl FileWire {
                 Inbound::CatalogOutcome(tx, value) => JournalRecord::CatalogOutcome(*tx, value),
                 _ => unreachable!("snapshot values are not journal events"),
             },
-            Event::Submitted(..) => unreachable!("custody events are SDK-owned"),
+            Event::Submitted(..) | Event::Image(_) => unreachable!("custody events are SDK-owned"),
         };
         Some(crate::JournalEvent {
             sequence: *sequence,
@@ -223,11 +224,20 @@ impl FileWire {
         let Some(size) = complete_record(&self.event_buf) else {
             return Ok(false);
         };
-        let header =
-            decode_shell_file_record(&self.event_buf[..size], ShellFileClass::Event)?.header;
+        let header = if self.image_enabled {
+            decode_shell_file_record_at_revision(&self.event_buf[..size], ShellFileClass::Event, 9)?
+                .header
+        } else {
+            decode_shell_file_record(&self.event_buf[..size], ShellFileClass::Event)?.header
+        };
         let needs_inbox_room = !matches!(
             header.kind,
-            ShellFileKind::Submitted | ShellFileKind::ObjectPublished
+            ShellFileKind::Submitted
+                | ShellFileKind::ObjectPublished
+                | ShellFileKind::ChannelReady
+                | ShellFileKind::ChannelClosed
+                | ShellFileKind::ImageAdmitted
+                | ShellFileKind::SourceReleased
         );
         if needs_inbox_room && inbox.len() >= crate::MAX_QUEUED_FRAMES {
             return Ok(false);
@@ -299,6 +309,97 @@ impl FileWire {
     /// normal intake and the close scan use it, so neither accepts what the
     /// other would refuse. It changes nothing.
     fn decode_event(&self, record: &[u8]) -> Result<(u64, Event), ShellClientError> {
+        if self.image_enabled
+            && let Ok(parsed) =
+                decode_shell_file_record_at_revision(record, ShellFileClass::Event, 9)
+            && matches!(
+                parsed.header.kind,
+                ShellFileKind::ChannelReady
+                    | ShellFileKind::ChannelClosed
+                    | ShellFileKind::ImageAdmitted
+                    | ShellFileKind::SourceReleased
+            )
+        {
+            use sophia_image_producer::{ImageClosedReason, ImageEvent, ProducerMetadata};
+            use sophia_shell_protocol::shell_files::{
+                ShellChannelClosedReason, ShellChannelReady, ShellImageMetadata,
+                ShellSourceReleased,
+            };
+            let convert = |m: ShellImageMetadata| ProducerMetadata {
+                offer_id: m.offer_id,
+                resource: m.resource,
+                resource_generation: m.resource_generation,
+                admission_epoch: m.admission_epoch,
+                output_id: m.output_id,
+                allocation_id: m.allocation_id,
+                topology_generation: m.topology_generation,
+                source_kind: m.source_kind,
+                source_format: m.source_format,
+                width: m.width,
+                height: m.height,
+                stride: m.stride,
+                plane_count: m.plane_count,
+                descriptor_count: m.descriptor_count,
+                declared_bytes: m.declared_bytes,
+                modifier: m.modifier,
+            };
+            let image = match parsed.header.kind {
+                ShellFileKind::ChannelReady => {
+                    let value = ShellChannelReady::decode(parsed.body)
+                        .map_err(|_| ShellClientError::Protocol("image event body"))?;
+                    ImageEvent::ChannelReady {
+                        channel_generation: value.channel_generation,
+                        granted_source_kinds: value.granted_source_kinds,
+                    }
+                }
+                ShellFileKind::ChannelClosed => {
+                    let value =
+                        sophia_shell_protocol::shell_files::ShellChannelClosed::decode(parsed.body)
+                            .map_err(|_| ShellClientError::Protocol("image event body"))?;
+                    ImageEvent::ChannelClosed {
+                        channel_generation: value.channel_generation,
+                        reason: match value.reason {
+                            ShellChannelClosedReason::PeerDisconnect => {
+                                ImageClosedReason::PeerDisconnect
+                            }
+                            ShellChannelClosedReason::ProtocolFault => {
+                                ImageClosedReason::ProtocolFault
+                            }
+                            ShellChannelClosedReason::HelloTimeout => {
+                                ImageClosedReason::HelloTimeout
+                            }
+                            ShellChannelClosedReason::GrantRevoked => {
+                                ImageClosedReason::GrantRevoked
+                            }
+                        },
+                    }
+                }
+                ShellFileKind::ImageAdmitted => {
+                    let value = ShellImageMetadata::decode(parsed.body)
+                        .map_err(|_| ShellClientError::Protocol("image event body"))?;
+                    ImageEvent::ImageAdmitted {
+                        metadata: convert(value),
+                    }
+                }
+                ShellFileKind::SourceReleased => {
+                    let value = ShellSourceReleased::decode(parsed.body)
+                        .map_err(|_| ShellClientError::Protocol("image event body"))?;
+                    ImageEvent::SourceReleased {
+                        offer_id: value.offer_id,
+                        resource: value.resource,
+                        resource_generation: value.resource_generation,
+                        disposition: value.disposition as u32,
+                    }
+                }
+                _ => return Err(ShellClientError::Protocol("unexpected event kind")),
+            };
+            if parsed.header.connection_epoch != self.epoch {
+                return Err(ShellClientError::Protocol(
+                    "event from another connection epoch",
+                ));
+            }
+            return Ok((parsed.header.sequence, Event::Image(image)));
+        }
         let header = decode_shell_file_record(record, ShellFileClass::Event)?.header;
         if header.connection_epoch != self.epoch {
             return Err(ShellClientError::Protocol(
@@ -327,7 +428,13 @@ impl FileWire {
         }
         let event = match header.kind {
             ShellFileKind::Submitted => {
-                let value = decode_shell_file_submitted(record)?;
+                let value = if self.image_enabled {
+                    sophia_shell_protocol::shell_files::decode_shell_file_submitted_at_revision(
+                        record, 9,
+                    )?
+                } else {
+                    decode_shell_file_submitted(record)?
+                };
                 Event::Submitted(value.submission_id, value.candidate_kind)
             }
             ShellFileKind::ObjectPublished => {
@@ -353,6 +460,7 @@ impl FileWire {
                 Event::ResourceStatus(
                     status.resource,
                     status.status,
+                    status.reason,
                     Inbound::Content(value.transaction, value.record),
                 )
             }
@@ -411,6 +519,9 @@ impl FileWire {
         if sequence <= self.ack_ready {
             return Err(ShellClientError::Protocol("event sequence did not rise"));
         }
+        if matches!(event, Event::Image(_)) {
+            return self.apply_event(sequence, event, inbox, true);
+        }
         if !self.automatic_events && !matches!(event, Event::Submitted(..)) {
             self.retained_event = Some((sequence, event));
             return Ok(());
@@ -445,11 +556,40 @@ impl FileWire {
                     self.attempted_objects[index] = false;
                 }
             }
-            Event::ResourceStatus(resource, status, item) => {
+            Event::ResourceStatus(resource, status, reason, item) => {
                 self.observe_resource_status(resource, status)?;
+                if self.image_enabled {
+                    use sophia_image_producer::ResourceStatusKind;
+                    let mapped = match status {
+                        2 => Some(ResourceStatusKind::Accepted),
+                        3 => Some(ResourceStatusKind::Rejected),
+                        4 => Some(ResourceStatusKind::Cancelled),
+                        _ => None,
+                    };
+                    if let Some(status) = mapped {
+                        self.image_routed
+                            .push_back(super::image_adapter::Routed::Status(
+                                super::image_adapter::StatusRoute {
+                                    transaction: match &item {
+                                        Inbound::Content(tx, _) => tx.raw(),
+                                        _ => 0,
+                                    },
+                                    resource: resource.id,
+                                    generation: resource.generation,
+                                    status,
+                                    unavailable: status == ResourceStatusKind::Rejected
+                                        && reason == 13,
+                                },
+                            ));
+                    }
+                }
                 if deliver {
                     inbox.push_back(item);
                 }
+            }
+            Event::Image(event) => {
+                self.image_routed
+                    .push_back(super::image_adapter::Routed::Event(event));
             }
             Event::Inbound(item) => {
                 if deliver {

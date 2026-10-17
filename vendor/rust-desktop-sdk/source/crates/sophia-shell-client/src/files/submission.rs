@@ -69,7 +69,16 @@ impl FileWire {
                 let bytes = output
                     .front()
                     .expect("pending mirrors the outbox one-for-one");
-                let header = decode_shell_file_record(bytes, ShellFileClass::Candidate)?.header;
+                let header = if self.image_enabled {
+                    sophia_shell_protocol::shell_files::decode_shell_file_record_at_revision(
+                        bytes,
+                        ShellFileClass::Candidate,
+                        9,
+                    )?
+                    .header
+                } else {
+                    decode_shell_file_record(bytes, ShellFileClass::Candidate)?.header
+                };
                 let (submission_id, kind) = (header.submission_id, header.kind);
                 let phase = if let Some(fid) = self.transaction_fid {
                     let tag = self.pipeline.write(fid, 0, bytes)?;

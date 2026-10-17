@@ -51,8 +51,8 @@ int sophia_ip_init(struct sophia_ip *p, const struct sophia_ip_config *c, uint64
     if (!p || !c || !c->connection_epoch || !c->transfer_timeout_ms || now_ms >= c->startup_deadline_ms ||
         !c->granted_kinds || (c->granted_kinds & ~3u))
         return SOPHIA_IPR_ARGUMENT;
-    if (c->role == SOPHIA_IC_ROLE_SHELL ? c->revision < 9
-        : c->role == SOPHIA_IC_ROLE_LOCK ? c->revision < 2
+    if (c->role == SOPHIA_IC_ROLE_SHELL ? c->revision != 9
+        : c->role == SOPHIA_IC_ROLE_LOCK ? c->revision != 2
                                          : 1)
         return SOPHIA_IPR_ARGUMENT;
     memset(p, 0, sizeof *p);

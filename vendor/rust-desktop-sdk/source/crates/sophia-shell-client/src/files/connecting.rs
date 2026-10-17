@@ -683,6 +683,10 @@ impl Handshake {
             retire: 0,
             uploads: Default::default(),
             forgettable: Default::default(),
+            image_enabled: false,
+            image_fetch: None,
+            image_discovery: None,
+            image_routed: std::collections::VecDeque::new(),
             peer_closed: false,
             event_fault: false,
             fatal: None,
@@ -693,6 +697,7 @@ impl Handshake {
             inbox: self.inbox,
             output: crate::outbox::ClientOutbox::default(),
             ledger: crate::custody::Ledger::default(),
+            image: None,
         })
     }
 }

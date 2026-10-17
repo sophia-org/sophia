@@ -317,8 +317,12 @@ static void init_arguments(void)
     struct sophia_ip_config c = config(SOPHIA_IC_ROLE_SHELL, 1);
     c.revision = 8;
     assert(sophia_ip_init(&p, &c, START) == SOPHIA_IPR_ARGUMENT);
+    c.revision = 10;
+    assert(sophia_ip_init(&p, &c, START) == SOPHIA_IPR_ARGUMENT);
     c = config(SOPHIA_IC_ROLE_LOCK, 1);
     c.revision = 1;
+    assert(sophia_ip_init(&p, &c, START) == SOPHIA_IPR_ARGUMENT);
+    c.revision = 3;
     assert(sophia_ip_init(&p, &c, START) == SOPHIA_IPR_ARGUMENT);
     c = config(SOPHIA_IC_ROLE_SHELL, 1);
     c.granted_kinds = 4;
@@ -443,6 +447,12 @@ static void barrier(void)
         make_set(&s, SOPHIA_IC_ROLE_SHELL, LIMITS_GEN, 1);
         assert(sophia_ip_init(&q, &c, START) == SOPHIA_IPR_OK);
         assert(discover(&q, &s, 1, START) == SOPHIA_IPR_OK);
+        assert(socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv) == 0);
+        assert(sophia_ip_attach(&q, sv[0], START) == SOPHIA_IPR_REFUSED);
+        assert(sophia_ip_channel(&q) == SOPHIA_IPC_DISCOVERED);
+        assert(fcntl(sv[0], F_GETFD) >= 0); /* Refusal retains caller custody. */
+        close(sv[0]);
+        close(sv[1]);
         fd = sealed(16, 16);
         assert(sophia_ip_begin(&q, &m, fd, START, body, &offer) == SOPHIA_IPR_AGAIN);
         close(fd);

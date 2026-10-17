@@ -1,14 +1,14 @@
-tree 6933c0ee5994ea1bacff17a10e0e2127978a4146
-parent 7d5d5221598d040538189b8578362e60776a9176
-author Mason Green <mason@greenm01.net> 1792277124 -0400
-committer Mason Green <mason@greenm01.net> 1792277124 -0400
+tree bf80efb1fac9f505a44df9e9c5c2ff8465da0b00
+parent 3d9855cd8608004f2501fdaf86bab480c93884f6
+author Mason Green <mason@greenm01.net> 1792278843 -0400
+committer Mason Green <mason@greenm01.net> 1792278843 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatP6hBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIKzgD9GjUhtSdQU30Y93ZLYvVI
- fDqcAVXBNaiE6v946TOkygoA/0de1Umg1cFTiGtQ4sCUSbNvcOYQaZvh5en0qqew
- +08H
- =IC2o
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatQBOxsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIq6wEA5sigqd/YGAHZ/h/qvRQQ
+ pLk79L8UPPNjcuTy1BwbCVYA+waO7RBs6bzuZ2mEtShFWdC7kbGiQiL35RekpUNJ
+ cuUH
+ =RaH+
  -----END PGP SIGNATURE-----
 
-feat(lock): name sealed-source refusal and validation timeout reasons
+fix(lock-client): keep failed discovery cleanup distinct from absence

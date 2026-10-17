@@ -38,6 +38,7 @@ mod batch;
 mod budget;
 mod connect;
 mod connecting;
+pub(crate) mod image_adapter;
 pub use connecting::Connecting;
 mod descriptor;
 mod drive;
@@ -310,6 +311,12 @@ pub(crate) struct FileWire {
     /// without bound.
     forgettable: HashSet<Tag>,
 
+    /// BAR image adapter opt-in: image journal events are consumed and
+    /// routed instead of delivered, and the staged discovery reader runs.
+    pub(crate) image_enabled: bool,
+    pub(crate) image_fetch: Option<image_adapter::ImageFetch>,
+    pub(crate) image_discovery: Option<image_adapter::DiscoveryOutcome>,
+    pub(crate) image_routed: VecDeque<image_adapter::Routed>,
     peer_closed: bool,
     /// An event failed to parse or apply: bytes after it prove nothing.
     event_fault: bool,
@@ -462,6 +469,11 @@ impl FileWire {
             return Err(ShellClientError::MissingCapability);
         }
         match outbound {
+            Outbound::ImageBegin(body) => {
+                let header = self.next_header(ShellFileKind::ImageBegin);
+                let bytes = encode_shell_file_record_at_revision(header, &body, 9)?;
+                Ok(self.stage_records(vec![bytes]))
+            }
             Outbound::CatalogActivation(transaction, activation) => {
                 let header = self.next_header(ShellFileKind::CatalogActivate);
                 let bytes = encode_shell_file_catalog_action(

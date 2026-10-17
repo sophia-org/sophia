@@ -19,6 +19,7 @@ enum Phase {
 /// Nonblocking lock startup, from a connected socket or an authenticated root.
 /// One absolute deadline covers version, file startup and role negotiation.
 pub struct Connecting {
+    image: Option<crate::LockImageConfig>,
     phase: Option<Phase>,
     offer: Option<LockNegotiate>,
     now: u64,
@@ -39,6 +40,7 @@ impl Connecting {
             .prepare(1, 1)
             .map_err(|_| SessionError::Protocol("invalid lock offer"))?;
         Ok(Self {
+            image: None,
             phase: Some(Phase::Version(VersionHandshake::new(
                 stream, limits, now, deadline,
             )?)),
@@ -56,6 +58,7 @@ impl Connecting {
         deadline: u64,
     ) -> Result<Self, SessionError> {
         Ok(Self {
+            image: None,
             phase: Some(Phase::Files(Box::new(Opening::attached(
                 pipeline, root, offer, now, deadline,
             )?))),
@@ -64,6 +67,18 @@ impl Connecting {
             deadline,
             error: None,
         })
+    }
+    /// Attach image policy before role negotiation starts. The caller must
+    /// already have offered r2 and the sealed capability; no offer is widened.
+    pub fn enable_images(&mut self, config: crate::LockImageConfig) -> Result<(), SessionError> {
+        if self.image.is_some()
+            || self.error.is_some()
+            || !matches!(self.phase, Some(Phase::Version(_) | Phase::Files(_)))
+        {
+            return Err(SessionError::Protocol("image configuration too late"));
+        }
+        self.image = Some(config);
+        Ok(())
     }
     pub fn ready(&self) -> bool {
         self.error.is_none()
@@ -117,6 +132,12 @@ impl Connecting {
     pub fn welcome(&self) -> Option<LockNegotiated> {
         match &self.phase {
             Some(Phase::Session(s)) => s.welcome(),
+            _ => None,
+        }
+    }
+    pub fn selected_revision(&self) -> Option<u16> {
+        match &self.phase {
+            Some(Phase::Session(s)) => s.selected_revision(),
             _ => None,
         }
     }
@@ -241,8 +262,10 @@ impl Connecting {
             match (*files)
                 .into_opened()
                 .map_err(SessionError::from)
-                .and_then(Session::from_opened)
-            {
+                .and_then(|opened| match self.image.take() {
+                    Some(config) => Session::from_opened_with_image(opened, config),
+                    None => Session::from_opened(opened),
+                }) {
                 Ok(session) => phase = Phase::Session(Box::new(session)),
                 Err(error) => {
                     self.error = Some(error.clone());

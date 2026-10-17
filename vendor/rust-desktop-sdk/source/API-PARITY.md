@@ -1,5 +1,69 @@
 # C and Rust SDK API parity
 
+## Opt-in sealed-image role adapters, Rust, 2026-10-17
+
+The BAR shell adapter (`9cc9678`, corrected by `1e1eecf`) and lock adapter
+integrate the shared producer with their existing 9P sessions. Default
+constructors remain byte-only. Explicit selection and sealed grants gate
+discovery; DMA is not requested. Each adapter reads one bounded, immutable
+three-file set per pass, waits for clunk completion, and treats only an absent
+image-channel file as clean absence. Generation mismatches retry; other read
+or coherence failures close the image path without destroying the role session.
+
+Image events are consumed internally in journal order; ResourceStatus remains
+public and reaches the producer only for its exact offer transaction and resource
+identity. Cancellation prepares the candidate before permanently suppressing
+Source transmission. SourceReleased retains sole settlement authority after
+admission. Both socket interests and image deadlines join the caller's drive;
+neither adapter hides a second event loop. A validated selection without a sealed
+grant reports Unavailable consistently, including through the producer view.
+
+These capabilities correspond to C role adapters and cancellation through
+`e777235` (published in the C `d51b033` stack). Rust's lock controls exercise real
+9P discovery and SEQPACKET descriptor handoff, cancel-before-admission, ordered
+status/release, clean absence, malformed/denied/oversized/clunk-failed discovery,
+channel contradictions and an ungranted sealed path. Shell controls additionally
+pin failed-forget custody, transaction-specific status routing and clock
+preflight. Full lock-client/producer suites and strict Clippy pass; shell's
+205-test result is recorded by its lane. Production-export interoperability and
+native performance remain separate qualification gates; this is not a claim
+that t338 is complete.
+
+## Rust lock revision selection, 2026-10-17
+
+The lock session validates the explicit Negotiated selection against the offered
+range, epoch, sequence and requested grants before changing journal decoding.
+Session and Connecting expose selected_revision(); r1 offers retain their bytes.
+Sealed offers require a maximum revision of at least 2; DMA requests remain
+refused. This matches C lock-client selection at `6122b60`, without yet claiming
+its discovery/producer adapter: those Rust integration paths remain unfinished.
+Literal journal controls cover same-read and split-read r2 receipts, invalid
+selections and grants, and identity failures. The full lock-client suite and
+strict all-target Clippy pass.
+
+## Sealed-image producer, Rust, 2026-10-17
+
+`sophia-image-producer` provides the role-neutral channel half corresponding to
+C `sophia_ip` at `d51b033`. It owns a connected SEQPACKET socket and up to four
+offers; discovery and journal records remain the role caller's responsibility.
+Time and poll readiness are caller-supplied. Both implementations require the
+known shell r9 or lock r2 selection, admission before Source, permanent cancel
+suppression, exactly-once send attempts and authoritative release. Rust returns
+the source/socket `OwnedFd` with local begin/attach errors; C leaves the integer
+descriptor with its caller. Neither reconnects or silently chooses byte fallback.
+
+Independent Rust controls cover both role codes with real SCM_RIGHTS, descriptor
+ownership, EAGAIN/resume, ambiguous send, expiry, cancellation, four-offer order
+and final release. Root reran 19 distinct tests. These are channel controls, not
+authentication, a live 9P role-adapter result, or native performance evidence.
+The C producer and adapters pass the full C check; Rust role adapters remain
+unfinished, so complete role capability parity is still open.
+
+Rust's safe sealed builder writes exact bounded ranges using `pwrite` and then
+seals; it does not expose C's writable mapping helper. Existing sealed FDs are
+also accepted after seal/type/size checks. This storage-construction difference
+must be included in producer-cost measurements; it is not a zero-copy claim.
+
 ## Lock sealed-source refusal names, 2026-10-17
 
 Both SDKs name lock r2 reasons `invalid_source` (10) and
