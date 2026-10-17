@@ -614,46 +614,49 @@ fn malformed(peer: &Peer) -> Vec<u8> {
     bytes
 }
 
-/// A malformed trailing record, then end of file: the unit whose
-/// `Submitted` never arrived is `Unknown`; one whose `Submitted` came first
-/// stays `Submitted`.
+/// Malformed journal data cannot erase a valid event or full submit reply.
+/// Without either source of custody, disconnect remains unknown.
 #[test]
 fn a_malformed_trailing_record_before_end_of_file_leaves_unobserved_custody_unknown() {
-    for observed in [false, true] {
-        let (mut connection, mut peer) = connect(bar(0));
-        let ticket = enqueue_demand(&mut connection, 1);
-        let held = submit(&mut connection, &mut peer);
-        let (submission, kind) = staged(&peer, &held);
-        peer.answer_write(held.tag, SHELL_FILE_SUBMIT_BYTES as u32);
-        if observed {
-            let event = peer.submitted(submission, kind);
-            peer.push(event);
+    for accepted in [false, true] {
+        for observed in [false, true] {
+            let (mut connection, mut peer) = connect(bar(0));
+            let ticket = enqueue_demand(&mut connection, 1);
+            let held = submit(&mut connection, &mut peer);
+            let (submission, kind) = staged(&peer, &held);
+            if accepted {
+                peer.answer_write(held.tag, SHELL_FILE_SUBMIT_BYTES as u32);
+            }
+            if observed {
+                let event = peer.submitted(submission, kind);
+                peer.push(event);
+            }
+            let bad = malformed(&peer);
+            peer.push(bad);
+            peer.flush_events();
+            peer.close();
+            let (custody, error) = settle(&mut connection, &mut peer, ticket);
+            let expected = if observed || accepted {
+                Custody::Submitted
+            } else {
+                Custody::Unknown
+            };
+            assert_eq!(custody, expected, "Submitted observed: {observed}");
+            if !observed {
+                assert!(
+                    matches!(error, Some(ShellClientError::FileCodec(_))),
+                    "the malformed record fails the connection: {error:?}"
+                );
+            }
+            // The record itself fails the connection either way.
+            let mut error = error;
+            let deadline = Instant::now() + WAIT;
+            while error.is_none() {
+                error = connection.poll_io().err();
+                assert!(Instant::now() < deadline);
+            }
+            assert_eq!(connection.custody(ticket), Some(expected));
         }
-        let bad = malformed(&peer);
-        peer.push(bad);
-        peer.flush_events();
-        peer.close();
-        let (custody, error) = settle(&mut connection, &mut peer, ticket);
-        let expected = if observed {
-            Custody::Submitted
-        } else {
-            Custody::Unknown
-        };
-        assert_eq!(custody, expected, "Submitted observed: {observed}");
-        if !observed {
-            assert!(
-                matches!(error, Some(ShellClientError::FileCodec(_))),
-                "the malformed record fails the connection: {error:?}"
-            );
-        }
-        // The record itself fails the connection either way.
-        let mut error = error;
-        let deadline = Instant::now() + WAIT;
-        while error.is_none() {
-            error = connection.poll_io().err();
-            assert!(Instant::now() < deadline);
-        }
-        assert_eq!(connection.custody(ticket), Some(expected));
     }
 }
 
@@ -694,7 +697,8 @@ fn a_close_scan_stops_at_a_record_its_full_decode_refuses() {
             let ticket = enqueue_demand(&mut connection, 1);
             let held = submit(&mut connection, &mut peer);
             let (submission, kind) = staged(&peer, &held);
-            peer.answer_write(held.tag, SHELL_FILE_SUBMIT_BYTES as u32);
+            // Withhold the submit reply so only the ordered event scan can
+            // establish custody; a full reply would be independent evidence.
             for _ in 0..2 {
                 connection.poll_io().unwrap();
                 peer.pump();
@@ -798,10 +802,10 @@ fn a_disconnect_after_submit_is_unknown_and_queued_units_are_dropped_unsent() {
     assert_eq!(connection.take_content(), Err(ShellClientError::PeerClosed));
 }
 
-/// A disconnect while only the record is staged in `transaction` (its write
-/// unanswered, or answered but `submit` not yet sent) transferred nothing.
+/// Submit now accompanies the record. A lost reply leaves custody unknown,
+/// even when the record's own reply was withheld.
 #[test]
-fn a_disconnect_with_only_the_transaction_written_is_dropped_unsent() {
+fn a_disconnect_with_the_paired_record_unanswered_is_unknown() {
     for answered in [false, true] {
         let (mut connection, mut peer) = connect(bar(0));
         peer.hold_transactions = true;
@@ -816,8 +820,12 @@ fn a_disconnect_with_only_the_transaction_written_is_dropped_unsent() {
         }
         peer.close();
         let (custody, _) = settle(&mut connection, &mut peer, ticket);
-        assert_eq!(custody, Custody::DroppedUnsent, "answered: {answered}");
-        assert!(peer.submits.is_empty(), "answered: {answered}");
+        assert_eq!(custody, Custody::Unknown, "answered: {answered}");
+        assert_eq!(
+            peer.submits.len(),
+            1,
+            "submit was already issued: {answered}"
+        );
     }
 }
 

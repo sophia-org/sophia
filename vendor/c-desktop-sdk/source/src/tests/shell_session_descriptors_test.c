@@ -417,7 +417,9 @@ static void custody_cannot_cross_undisclosed_events(void)
                                          .value.descriptor_outcome = {1, PEER_EPOCH, 1, 0, 1}};
         uint64_t ticket;
         ready(&r, 8, 1);
-        r.p.policy = P_SILENT;
+        /* Withhold the submit reply: this test isolates custody from the
+         * ordered journal scan, without an independent acceptance reply. */
+        r.p.policy = P_HOLD;
         assert(!sophia_ss_submit(&r.s, &v, 1, &ticket));
         rig_run(&r, 16);
         assert(r.p.submits == 2 && rig_outcome(&r, ticket) == SOPHIA_SS_IN_FLIGHT);

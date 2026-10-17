@@ -131,9 +131,13 @@ impl FileWire {
             let current = match &self.current {
                 Some(Current::Submission {
                     submitted: true, ..
-                }) => Some(Custody::Submitted),
+                })
+                | Some(Current::Submission { accepted: true, .. }) => Some(Custody::Submitted),
                 Some(Current::Submission {
-                    phase: SubmissionPhase::WriteSubmit { .. } | SubmissionPhase::AwaitSubmitted,
+                    phase:
+                        SubmissionPhase::WritePair { .. }
+                        | SubmissionPhase::WriteSubmit { .. }
+                        | SubmissionPhase::AwaitSubmitted,
                     ..
                 }) => Some(Custody::Unknown),
                 Some(Current::Submission { .. }) => Some(Custody::DroppedUnsent),
@@ -203,6 +207,7 @@ impl FileWire {
             // A reply handler may queue the next request (an open after a
             // walk); the next round's `poll` writes it, in this same pass.
             let drained = self.drain_replies(inbox)?;
+            let paired = self.finish_write_pair()?;
             if eof || self.peer_closed || self.pipeline.is_poisoned() {
                 self.peer_closed = true;
                 // Whatever complete events already arrived still count
@@ -214,7 +219,7 @@ impl FileWire {
                 self.observe_custody_after_close();
                 return Ok(());
             }
-            let mut progressed = drained;
+            let mut progressed = drained || paired;
             for _ in 0..std::mem::take(&mut self.retire) {
                 output.retire_front();
             }
@@ -226,6 +231,7 @@ impl FileWire {
                 progressed |= self.maybe_send_ack()?;
             }
             progressed |= self.start_next_outbound(output)?;
+            progressed |= self.queue_submit_with_record()?;
             progressed |= self.drive_submit_retry()?;
             progressed |= self.drive_slot_write()?;
             progressed |= self.drive_object_fetch()?;

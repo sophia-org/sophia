@@ -1,5 +1,22 @@
 # Provenance
 
+## Queued shell submit, 2026-10-17
+
+The shell contract copy comes from signed Sophia `feaf3cbc7`. B2 queues
+submit behind the final record write, retaining both tag outcomes before retry
+or failure. Earlier fragments, startup and the covering-ACK barrier retain
+their ordering. A failed record never retries its paired submit; observed
+acceptance survives the failure and the connection stops.
+
+Independent C and Rust scripted tests cover legacy and reusable writers,
+withheld and reversed replies, early Submitted, short records and paired
+submit refusals. Rust's shell-client tests and strict Clippy pass; the full C
+suite passes, including prior-fragment ordering. Both independent startup peers
+pass both Sophia `116075541` (the oldest supported export) and `feaf3cbc7`
+with metadata and content negotiation. These startup exchanges do not cover
+every export failure path. Vendor adoption and native performance remain pending. B3 pixel-write
+windowing is not implemented by this change.
+
 ## Reusable shell transaction writer, 2026-10-17
 
 The optional `transaction-reuse` node follows signed Sophia `ee22309ba`.

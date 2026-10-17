@@ -13,7 +13,7 @@
 //! definitive refusal, recorded as-is, and the lane moves on.
 use std::time::{Duration, Instant};
 
-use sophia_9p_client::pipeline::Reply;
+use sophia_9p_client::pipeline::{PipelineError, Reply};
 use sophia_9p_records::{Errno, Tag};
 use sophia_shell_protocol::shell_files::{
     ShellFileClass, ShellFileKind, ShellFileSubmit, decode_shell_file_record,
@@ -22,6 +22,7 @@ use sophia_shell_protocol::shell_files::{
 
 use super::{
     Current, FileWire, O_RDWR, Opening, QueuedKind, RETRY_FIRST, RETRY_MAX, SubmissionPhase,
+    SubmitReply,
 };
 use crate::ShellClientError;
 use crate::custody::Custody;
@@ -94,6 +95,7 @@ impl FileWire {
                     submit: Vec::new(),
                     phase,
                     submitted: false,
+                    accepted: false,
                 }
             }
             QueuedKind::SlotWrite { resource, offset } => Current::SlotWrite {
@@ -151,7 +153,9 @@ impl FileWire {
         };
         let issued = matches!(
             phase,
-            SubmissionPhase::WriteSubmit { .. } | SubmissionPhase::AwaitSubmitted
+            SubmissionPhase::WritePair { .. }
+                | SubmissionPhase::WriteSubmit { .. }
+                | SubmissionPhase::AwaitSubmitted
         );
         if *submission_id != submission || *kind != candidate_kind || *submitted || !issued {
             return Err(ShellClientError::Protocol("unexpected Submitted event"));
@@ -206,7 +210,10 @@ impl FileWire {
             submission_id,
             kind,
             submitted: false,
-            phase: SubmissionPhase::WriteSubmit { .. } | SubmissionPhase::AwaitSubmitted,
+            phase:
+                SubmissionPhase::WritePair { .. }
+                | SubmissionPhase::WriteSubmit { .. }
+                | SubmissionPhase::AwaitSubmitted,
             ..
         }) = &self.current
         else {
@@ -243,6 +250,98 @@ impl FileWire {
         backoff
     }
 
+    /// The existing record write is whole, so it is also its final fragment.
+    /// A capacity refusal queues nothing and keeps the sequential path valid.
+    pub(super) fn queue_submit_with_record(&mut self) -> Result<bool, ShellClientError> {
+        let Some(Current::Submission {
+            bytes,
+            submission_id,
+            submit,
+            phase,
+            ..
+        }) = &mut self.current
+        else {
+            return Ok(false);
+        };
+        let SubmissionPhase::WriteRecord { tag, fid } = *phase else {
+            return Ok(false);
+        };
+        if submit.is_empty() {
+            *submit = encode_shell_file_submit(ShellFileSubmit {
+                connection_epoch: self.epoch,
+                submission_id: *submission_id,
+                candidate_bytes: bytes.len() as u32,
+            })?;
+        }
+        let submit_tag = match self.pipeline.write(self.submit_fid, 0, submit) {
+            Ok(tag) => tag,
+            Err(PipelineError::Limit(_)) => return Ok(false),
+            Err(error) => return Err(error.into()),
+        };
+        *phase = SubmissionPhase::WritePair {
+            record_tag: tag,
+            submit_tag,
+            fid,
+            record_ok: None,
+            reply: None,
+        };
+        Ok(true)
+    }
+
+    /// Reconcile only after draining replies: a later read in the same batch
+    /// can carry Submitted and must survive a contradictory record result.
+    pub(super) fn finish_write_pair(&mut self) -> Result<bool, ShellClientError> {
+        let Some(Current::Submission {
+            phase:
+                SubmissionPhase::WritePair {
+                    submit_tag,
+                    fid,
+                    record_ok: Some(ok),
+                    reply: Some(reply),
+                    ..
+                },
+            ..
+        }) = &self.current
+        else {
+            return Ok(false);
+        };
+        let (tag, fid, ok, reply) = (*submit_tag, *fid, *ok, *reply);
+        if !ok {
+            self.settle_buffered_submitted();
+            let Some(Current::Submission {
+                submitted, submit, ..
+            }) = &self.current
+            else {
+                unreachable!("a paired write cannot retire before reconciliation");
+            };
+            let custody = if *submitted
+                || matches!(reply, SubmitReply::Write(n) if n as usize == submit.len())
+            {
+                Custody::Submitted
+            } else {
+                match reply {
+                    SubmitReply::Error(errno) if errno != Errno::EALREADY => Custody::DroppedUnsent,
+                    _ => Custody::Unknown,
+                }
+            };
+            self.settle_current(custody);
+            return Err(ShellClientError::Protocol(
+                "transaction record write refused",
+            ));
+        }
+        if let Some(Current::Submission { phase, .. }) = &mut self.current {
+            *phase = SubmissionPhase::WriteSubmit { tag, fid };
+        }
+        let reply = match reply {
+            SubmitReply::Write(count) => Reply::Write(count),
+            SubmitReply::Error(errno) => Reply::Error(errno),
+            SubmitReply::Invalid => {
+                return Err(ShellClientError::Protocol("unexpected submit reply"));
+            }
+        };
+        self.on_submission_reply(tag, &reply)
+    }
+
     /// Advances the current submission's own phase once its outstanding
     /// tag's reply arrives. Returns `false` (unconsumed) for any other tag,
     /// including one belonging to a slot open, a slot write or the events
@@ -257,11 +356,43 @@ impl FileWire {
             submission_id,
             submit,
             phase,
+            accepted,
             ..
         }) = &mut self.current
         else {
             return Ok(false);
         };
+        let is_submit = match phase {
+            SubmissionPhase::WritePair { submit_tag, .. } => tag == *submit_tag,
+            SubmissionPhase::WriteSubmit {
+                tag: submit_tag, ..
+            } => tag == *submit_tag,
+            _ => false,
+        };
+        if is_submit && matches!(reply, Reply::Write(n) if *n as usize == submit.len()) {
+            *accepted = true;
+        }
+        if let SubmissionPhase::WritePair {
+            record_tag,
+            submit_tag,
+            record_ok,
+            reply: submit_reply,
+            ..
+        } = phase
+        {
+            if tag == *record_tag {
+                *record_ok = Some(matches!(reply, Reply::Write(n) if *n as usize == bytes.len()));
+            } else if tag == *submit_tag {
+                *submit_reply = Some(match reply {
+                    Reply::Write(n) => SubmitReply::Write(*n),
+                    Reply::Error(errno) => SubmitReply::Error(*errno),
+                    _ => SubmitReply::Invalid,
+                });
+            } else {
+                return Ok(false);
+            }
+            return Ok(true);
+        }
         if let SubmissionPhase::Opening(opening) = phase {
             let result = opening.receive(&mut self.pipeline, tag, reply)?;
             if result == Some(true) {
@@ -277,11 +408,13 @@ impl FileWire {
         match *phase {
             SubmissionPhase::WriteRecord { tag: t, fid } if t == tag => match reply {
                 Reply::Write(count) if *count as usize == bytes.len() => {
-                    *submit = encode_shell_file_submit(ShellFileSubmit {
-                        connection_epoch: self.epoch,
-                        submission_id: *submission_id,
-                        candidate_bytes: bytes.len() as u32,
-                    })?;
+                    if submit.is_empty() {
+                        *submit = encode_shell_file_submit(ShellFileSubmit {
+                            connection_epoch: self.epoch,
+                            submission_id: *submission_id,
+                            candidate_bytes: bytes.len() as u32,
+                        })?;
+                    }
                     let submit_tag = self.pipeline.write(self.submit_fid, 0, submit)?;
                     *phase = SubmissionPhase::WriteSubmit {
                         tag: submit_tag,

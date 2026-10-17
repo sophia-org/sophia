@@ -155,7 +155,8 @@ static void finish(struct sophia_ss *s, enum sophia_ss_state state)
     if (s->flight) {
         if (sophia_sf_client_submission(&s->files, &id, &stage) || id != s->flight_id)
             stage = SOPHIA_SF_SUBMISSION_ISSUED;
-        if (stage == SOPHIA_SF_SUBMISSION_ISSUED && received_custody(s))
+        if (s->files.submit_accepted ||
+            ((stage == SOPHIA_SF_SUBMISSION_ISSUED || s->files.pair_failed) && received_custody(s)))
             stage = SOPHIA_SF_SUBMISSION_CUSTODIED;
         if (stage == SOPHIA_SF_SUBMISSION_CUSTODIED)
             outcome = SOPHIA_SS_SUBMITTED;
