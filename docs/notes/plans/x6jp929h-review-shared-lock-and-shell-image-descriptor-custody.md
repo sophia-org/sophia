@@ -54,11 +54,12 @@ window is not pursued unless t338/t339 measurements show per-image descriptor
 cost on high-rate CPU content warrants reopening it. This decision does not
 authorize mutable-source sampling or advance the DMA-BUF implementation.
 
-Muse will explore application surfaces in a separate note: registered pools,
-synchronization points, presentation feedback and scanout as a gated final phase.
-That work is exploratory, allocates no opcodes and changes no contract. Codex
-reviews and integrates the note and links it here when it lands; Claude reviews
-read-only.
+Muse's [application-surface exploration](../concepts/kgrl6al7-generalising-the-shell-and-lock-image-resource-toward-an-application-surface.md)
+considers registered pools, synchronization points, presentation feedback and
+scanout as a gated final phase. It is exploratory, allocates no opcodes and
+changes no contract. It does not add t338 acceptance requirements or authorize
+direct sampling of mutable producer buffers. Codex owns integration; Claude
+reviews read-only.
 
 ## Recommended answers to the nine lock questions
 
