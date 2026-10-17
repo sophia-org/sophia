@@ -24,6 +24,7 @@ impl LockFileTransport {
             .checked_add(expiry)
             .into_iter()
             .chain(self.negotiation_deadline)
+            .chain(self.image.as_ref().and_then(|image| image.deadline()))
             .min();
         let mut fds = vec![PollFd::new(wake, PollFlags::IN)];
         // A full owner handoff cannot consume more inbound events. Waiting on
@@ -31,6 +32,9 @@ impl LockFileTransport {
         if service_io {
             if let Some(server) = &self.server {
                 fds.extend(server.poll_fds());
+                if let Some(image) = &self.image {
+                    image.visit_poll_fds(now, &mut |fd| fds.push(fd));
+                }
             } else if self.retiring.len() < 8
                 && self.assignee_alive()?
                 && let Some(fd) = self.endpoint.accept_readiness()

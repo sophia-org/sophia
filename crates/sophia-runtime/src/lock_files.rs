@@ -17,6 +17,7 @@ use sophia_protocol::lock_files::*;
 
 mod export;
 mod image;
+mod image_service;
 mod presentation;
 mod resources;
 #[cfg(target_os = "linux")]
@@ -26,6 +27,7 @@ mod transport;
 
 pub use export::{LockFileAttachment, LockFileExport, LockFileHandle, LockFileNode, LockFileQids};
 pub use image::{LockImageReadiness, LockImageSettings};
+pub use image_service::LockImagePolicy;
 #[cfg(target_os = "linux")]
 pub use service::{
     LockFileService, LockFileServiceCommand, LockFileServiceEvent, LockFileServiceStats,

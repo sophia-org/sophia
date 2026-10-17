@@ -8,6 +8,13 @@ use sophia_9p::{Errno, ReadOutcome};
 use sophia_protocol::lock_files::*;
 use sophia_runtime::lock_files::*;
 
+#[path = "support/image_test_authority.rs"]
+mod authority;
+#[path = "support/shell_file_peer.rs"]
+mod raw;
+#[path = "support/lock_image_wire.rs"]
+mod wire;
+
 const EPOCH: u64 = 7;
 const GENERATION: u64 = 5;
 const EBUSY: Errno = Errno(16);

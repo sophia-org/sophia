@@ -341,6 +341,14 @@ impl LockFileExport {
         &self.custody
     }
 
+    pub(super) fn custody_mut(&mut self) -> &mut LockFileCustody {
+        &mut self.custody
+    }
+
+    pub(super) fn connection(&self) -> Option<ConnectionId> {
+        self.connection
+    }
+
     pub fn revoke(&mut self) {
         self.custody.revoke();
         self.staging = None;

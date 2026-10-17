@@ -11,7 +11,11 @@ use std::time::{Duration, Instant};
 use sophia_9p::{Errno, records::Limits, unix::Server};
 use sophia_protocol::lock_files::*;
 
-use super::{LockFileExport, LockFileQids, LockFileSettings, LockInbound};
+use super::image_service::{ImageService, LockImagePolicy};
+use super::{
+    LockFileCustody, LockFileExport, LockFileQids, LockFileSettings, LockImageReadiness,
+    LockInbound,
+};
 use crate::authenticated_files::{
     AuthenticatedFiles, FileAuthentication, FileAuthenticationFactory,
 };
@@ -93,6 +97,11 @@ pub struct LockFileTransport {
     authentication: Option<Box<dyn FileAuthenticationFactory>>,
     retiring: Vec<Box<dyn FileAuthentication>>,
     negotiation_deadline: Option<Instant>,
+    images: Option<LockImagePolicy>,
+    /// The epoch's channel, once negotiation disclosed it; `image_bound`
+    /// keeps a failed bind from retrying within the epoch.
+    pub(super) image: Option<ImageService>,
+    image_bound: bool,
 }
 
 fn pidfd_alive(pidfd: &OwnedFd) -> Result<bool, LockFileTransportError> {
@@ -136,7 +145,35 @@ impl LockFileTransport {
             authentication: None,
             retiring: Vec::new(),
             negotiation_deadline: None,
+            images: None,
+            image: None,
+            image_bound: false,
         })
+    }
+
+    /// Offer sealed images to later authenticated connections. The policy
+    /// is checked now against these lock limits, so a later epoch cannot
+    /// fail its setup on it. Legacy connections never receive a channel.
+    pub fn enable_sealed_images(
+        &mut self,
+        policy: LockImagePolicy,
+    ) -> Result<(), LockFileTransportError> {
+        let lock = LockObject {
+            lock_epoch: 0,
+            topology_generation: 1,
+            phase: LockPhase::Unlocked,
+            allocations: Vec::new(),
+        };
+        LockFileCustody::new(LockFileSettings {
+            epoch: self.next_epoch,
+            limits: self.limits,
+            reserved_chords: Vec::new(),
+            lock,
+            lock_qid: 0,
+        })?
+        .configure_image(policy.settings(self.next_epoch, &self.limits, 1))?;
+        self.images = Some(policy);
+        Ok(())
     }
 
     pub fn socket_path(&self) -> &Path {
@@ -244,7 +281,7 @@ impl LockFileTransport {
         // From admission on, even a failed setup spends the epoch.
         self.next_epoch = next;
         let setup = (|| {
-            let export = LockFileExport::new(
+            let mut export = LockFileExport::new(
                 LockFileSettings {
                     epoch,
                     limits: self.limits,
@@ -254,6 +291,15 @@ impl LockFileTransport {
                 },
                 self.qids.clone(),
             )?;
+            if self.authentication.is_some()
+                && let Some(policy) = self.images
+            {
+                export.configure_image(policy.settings(
+                    epoch,
+                    &self.limits,
+                    lock.topology_generation,
+                ))?;
+            }
             let limits = Limits::new(65_536, 512, 16, 32, 131_072, 1).map_err(|_| Errno::EINVAL)?;
             let export = if self.authentication.is_some() {
                 AuthenticatedFiles::pending(export)
@@ -315,6 +361,15 @@ impl LockFileTransport {
         {
             server.export_mut().files_mut().revoke();
         }
+        if service_image(
+            &mut self.image,
+            &mut self.image_bound,
+            &self.endpoint,
+            server.export_mut(),
+            now,
+        ) {
+            server.wake().wake();
+        }
         let running = server.turn(Some(Duration::ZERO))?;
         Ok(running && server.connection_count() != 0 && !server.export().files().is_revoked())
     }
@@ -368,7 +423,10 @@ impl LockFileTransport {
     }
 
     /// Ends the connection; the next accepted provider gets a fresh epoch.
+    /// Its image channel and listener close with it.
     pub fn disconnect(&mut self) -> Result<(), LockFileTransportError> {
+        self.image = None;
+        self.image_bound = false;
         if let Some(mut server) = self.server.take() {
             server.export_mut().files_mut().revoke();
             server.wake().wake();
@@ -401,6 +459,53 @@ impl LockFileTransport {
             !owner.drained()
         });
     }
+}
+
+/// Bind the listener once the epoch discloses its channel, then serve it.
+/// A failed bind closes the channel for the epoch; 9P bytes continue.
+fn service_image(
+    image: &mut Option<ImageService>,
+    bound: &mut bool,
+    endpoint: &PolicyRoleEndpoint,
+    files: &mut AuthenticatedFiles<LockFileExport>,
+    now: Instant,
+) -> bool {
+    let export = files.files();
+    if !*bound && export.custody().image_readiness() == LockImageReadiness::AwaitingHello {
+        *bound = true;
+        let settings = export.custody().image_settings().cloned();
+        let service = (|| {
+            let settings = settings?;
+            let listener =
+                crate::image_channel::ImageChannelListener::bind(endpoint.socket_path().parent()?)
+                    .ok()?;
+            Some(ImageService::new(
+                listener,
+                endpoint.active_peer()?,
+                export.connection()?,
+                &settings,
+            ))
+        })();
+        match service {
+            Some(service) => *image = Some(service),
+            None => {
+                let generation = export
+                    .custody()
+                    .image_settings()
+                    .map(|settings| settings.discovery.channel_generation);
+                if let Some(generation) = generation {
+                    let _ = files.files_mut().custody_mut().image_channel_hello_failed(
+                        generation,
+                        LockChannelClosedReason::ProtocolFault,
+                    );
+                    return true;
+                }
+            }
+        }
+    }
+    image
+        .as_mut()
+        .is_some_and(|image| image.service(files, now))
 }
 
 #[path = "transport_wait.rs"]
