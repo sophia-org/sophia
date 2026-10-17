@@ -132,6 +132,85 @@ fn a_listener_client_walks_opens_and_reads() {
 }
 
 #[test]
+fn a_refilled_write_window_keeps_the_read_budget_and_neighbor_service() {
+    const MSIZE: usize = 65536;
+    const PAYLOAD: usize = 16384;
+    const ROUNDS: usize = 128;
+    let mut export = StaticExport::new();
+    export.sink_limit = Some(ROUNDS * 4 * PAYLOAD);
+    let limits = Limits::new(MSIZE as u32, 512, 16, 32, 131072, 1).unwrap();
+    let mut upload = Server::new(export, limits).unwrap();
+    let mut neighbor = Server::new(StaticExport::new(), limits).unwrap();
+    let mut clients = Vec::new();
+    for server in [&mut upload, &mut neighbor] {
+        let (mut client, socket) = UnixStream::pair().unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        client
+            .set_write_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        server.adopt(socket).map_err(|r| r.error).unwrap();
+        for request in [
+            tversion(NOTAG, MSIZE as u32, b"9P2000.L"),
+            tattach(1, 0, NOFID, b"", b""),
+            twalk(2, 0, 1, &[b"sink"]),
+            tlopen(3, 1, 1),
+        ] {
+            client.write_all(&request).unwrap();
+            server.turn(Some(Duration::ZERO)).unwrap();
+            assert!(reply(&mut client).errno().is_none());
+        }
+        clients.push(client);
+    }
+    let mut control = clients.pop().unwrap();
+    let mut writer = clients.pop().unwrap();
+    let payload = vec![0; PAYLOAD];
+    let mut issued = 0u16;
+    for _ in 0..4 {
+        issued += 1;
+        writer
+            .write_all(&twrite(issued + 10, 1, 0, &payload))
+            .unwrap();
+    }
+    let mut completed = 0;
+    let mut delays = Vec::new();
+    for round in 0..ROUNDS {
+        control
+            .write_all(&tgetattr(1000 + round as u16, 0))
+            .unwrap();
+        let start = Instant::now();
+        upload.turn(Some(Duration::ZERO)).unwrap();
+        neighbor.turn(Some(Duration::ZERO)).unwrap();
+        assert_eq!(reply(&mut control).tag, 1000 + round as u16);
+        delays.push(start.elapsed().as_nanos());
+        let writes = upload.export().state().writes;
+        assert!(writes > completed, "ready upload must also progress");
+        assert!(
+            writes * (PAYLOAD + 23) <= (round + 1) * MSIZE,
+            "completed requests cannot exceed cumulative input budget"
+        );
+        for _ in completed..writes {
+            assert_eq!(reply(&mut writer).kind, 119);
+            if round + 1 < ROUNDS {
+                issued += 1;
+                writer
+                    .write_all(&twrite(issued + 10, 1, 0, &payload))
+                    .unwrap();
+            }
+        }
+        completed = writes;
+    }
+    delays.sort_unstable();
+    eprintln!(
+        "bounded upload: turns={ROUNDS} writes={completed} neighbor_p50_ns={} neighbor_p99_ns={} neighbor_max_ns={}; supplied owner, not native latency",
+        delays[ROUNDS / 2],
+        delays[ROUNDS * 99 / 100],
+        delays[ROUNDS - 1]
+    );
+}
+
+#[test]
 fn revoked_backpressured_reply_closes_the_unix_transport() {
     let mut export = StaticExport::new();
     export.guarded = true;
