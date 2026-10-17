@@ -15,6 +15,35 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+B3 validation is complete in signed Rust SDK `01474a9` and C SDK `5246f96`.
+The final fault tests cover terminal status with four outstanding writes, a stale
+head, partial transport output and cancellation with unissued chunks. Both SDK
+suites pass, as does strict Rust Clippy. The independent review found no blockers.
+The exact archives are imported for production adoption. Snapshot checks, C
+export/lifecycle gates, the full default Sophia suite, formatting and offline
+metadata checks pass. The final source commits add only the reviewed test-scope
+clarifications; their repeated snapshot checks also pass.
+The matched native B2/B3 pilot is next.
+No quiet hold is active and the installed desktop is unchanged. The +10% gates
+remain unchanged; no B2/B3 native result exists yet.
+
+The test scopes differ deliberately: Rust forces kernel socket backpressure;
+C limits each dispatch to one output byte. Rust's queued chunks are dropped by
+the terminal status in its cancellation test. Enqueuing ResourceCancel alone
+does not preempt those chunks. Prioritizing cancellation by dropping unissued
+same-resource chunks is a follow-up investigation, outside B3; it needs its own
+ordering and custody review before implementation.
+
+The server's one-msize input budget remains the main limit on bulk pass counts.
+Four client credits do not imply four pixel writes serviced in one owner pass.
+Use the matched pilot to decide whether the proposed descriptor path should take
+priority; its implementation is not yet approved. The
+[accepted plan](../plans/nfe0blnb-queue-shell-submit-and-pixel-writes-within-existing-custody-bounds.md)
+owns the remaining performance gate. Evidence is under
+`~/.local/state/sophia/development-evidence/t331-b3-20261017/`.
+
+## October 17 implementation and validation history
+
 Production `a3c94bb86` implements the approved reusable writer (`ee22309ba`) and
 imports signed Rust SDK `9d56625` and C SDK `30b7c1f`. Both source branches and
 Sophia's first-slice adoption were pushed. Later checkpoints remain local as
@@ -184,6 +213,37 @@ executable. This proves the multi-chunk path and End/cancellation interoperabili
 not the maximum simultaneous wire depth or neighbor latency. The ordinary C
 peer also exercises transport fragmentation with a 4,096-byte msize. Remaining
 fault audit, depth/fairness diagnostics, adoption and the native pilot are open.
+
+The fault audit found a Rust custody error before adoption: a zero or oversized
+Rwrite removed the outstanding tag before validation, so teardown could label
+issued bytes DroppedUnsent. Signed Rust `c1d3515` preserves Unknown and permits
+Stored only for a valid positive reply within the issued length. The regression
+failed before the fix and passes after it. The full shell suite and strict Clippy
+pass. C already failed closed; signed `17f4b0f` adds matching invalid-count tests
+and parity wording, with its full suite passing.
+
+Comparator `e9dafb67a` stages those exact archives for qualification; production
+has not adopted B3. Both snapshot checks pass. Two four-arm 64-frame traces
+have identical pixel totals: panel 192 writes / 11,796,480 bytes; bulk 4,608 /
+280,231,936. Short replies, EAGAIN, invalidated tails and other pixel errors are
+all zero. B2 overlap remains 320/320 panel and 512/512 bulk. The first run used
+Rust `10c9226`; the second includes the custody fix. Evidence is under
+`t331-b3-20261017/ordered-candidate-01` and `ordered-candidate-02`.
+
+The server dispatch trace sees at most one panel or two bulk pixel writes before
+their replies finish sending. This does not measure the client's four-credit
+window: the server reads at most 65,536 bytes per connection turn. A 4 MiB
+payload plus request headers needs at least 65 input turns, so 69/4 was never a
+valid server-pass prediction. The accepted plan now records this bound; B3 does
+not change it. Native benefit remains unmeasured.
+
+A separate two-export driver fixture keeps four writes queued for 128 turns,
+completes 448 writes within the cumulative read budget, and answers a neighbor's
+event read and control request on every supplied-owner iteration. One run reports
+42.2 microseconds median, 74.4 microseconds p99 and 76.7 microseconds maximum
+for that iteration. These are unqualified fixture timings, not native Session
+latency or real-role performance. All ten Unix-driver tests pass. The remaining
+fault review and native pilot still control adoption and qualification.
 
 ## First-slice native pilot — October 17
 

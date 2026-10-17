@@ -144,6 +144,14 @@ complete requests and release those slots during one turn. Retain byte and work
 budgets; test another connection's events and controls under a continuously full
 window. No fairness conclusion follows from the credit count alone.
 
+The current server's read budget is one negotiated message per connection turn
+(`Connection::read_budget`, called by `Server::read`): 65,536 bytes on this shell
+wire. Four sender credits do not multiply that budget. A 4 MiB payload plus its
+write headers therefore needs at least 65 input turns even with no waits between
+writes. Do not use the earlier 69/4 estimate as a Session-pass prediction. A
+different input budget is outside this slice; the matched pilot decides what
+the existing window saves within the current bound.
+
 ## Task details
 
 1. Finish the first-slice native capture and publish its remaining costs. The
@@ -164,7 +172,10 @@ window. No fairness conclusion follows from the credit count alone.
    and keep tickets unresolved across a short head/EINVAL tail until successful
    resend. Cover EAGAIN mid-window, out-of-order replies, partial transport writes,
    canonical boundaries, zero/oversized Rwrite, terminal events, cancellation,
-   flush races and successor binding fences. Match C/Rust scenarios independently.
+   and successor binding fences. Match C/Rust scenarios independently. Neither
+   shell SDK issues Tflush for upload writes: both drain replies before releasing
+   storage. SDK upload-flush races are therefore inapplicable; generic 9P flush
+   tests remain separate from this window's drain/cancellation checks.
 5. Verify actual request lengths/counts and ordered dependency traces before a
    native run. Require unchanged normal-path pixel and record request counts and
    zero resends in the deterministic workload. Count short replies, EAGAIN heads,

@@ -400,6 +400,14 @@ fn held_window_n(
     replies: &[Result<u32, u32>],
     chunks: u32,
 ) -> (ShellConnection, Peer, Vec<Ticket>) {
+    held_window_transport(replies, chunks, false)
+}
+
+fn held_window_transport(
+    replies: &[Result<u32, u32>],
+    chunks: u32,
+    slow: bool,
+) -> (ShellConnection, Peer, Vec<Ticket>) {
     let (mut c, mut p) = connect(reduced());
     content(&mut c, &mut p);
     let tx = TransactionId::from_raw(7);
@@ -413,6 +421,10 @@ fn held_window_n(
     status(&mut p, tx, resource(1), 1, ContentReason::None, 0, 0);
     content(&mut c, &mut p);
     p.hold_upload_replies = true;
+    if slow {
+        rustix::net::sockopt::set_socket_send_buffer_size(&c, 4096).unwrap();
+        p.read_budget = 512;
+    }
     p.upload_replies.extend(replies.iter().copied());
     let mut tickets = Vec::new();
     for i in 0..chunks {
@@ -609,5 +621,96 @@ fn invalid_write_counts_fail_without_claiming_unsent_bytes() {
             assert_eq!(c.custody(ticket), Some(Custody::Unknown));
         }
         assert_eq!(p.upload_offsets.len(), 4);
+    }
+}
+
+#[test]
+fn cancelled_status_drains_inflight_and_drops_unissued_chunks() {
+    let (mut c, mut p, tickets) = held_window_n(&[], 8);
+    let cancel = only(
+        c.enqueue_content_tracked(
+            TransactionId::from_raw(8),
+            &ShellContentRecord::ResourceCancel(ContentResourceCancel {
+                grant: grant(),
+                resource: resource(1),
+            }),
+        )
+        .unwrap(),
+    );
+    p.hold_clunks = true;
+    status(
+        &mut p,
+        TransactionId::from_raw(7),
+        resource(1),
+        4,
+        ContentReason::Cancelled,
+        0,
+        0,
+    );
+    content(&mut c, &mut p);
+    assert_eq!(p.held_clunks, 0);
+    assert_eq!(p.upload_offsets.len(), 4);
+    p.held_replies.reverse();
+    p.release_replies();
+    next(&mut c, &mut p, |c, _| {
+        tickets[4..]
+            .iter()
+            .all(|t| c.custody(*t) == Some(Custody::DroppedUnsent))
+            .then_some(())
+    });
+    assert!(
+        tickets[..4]
+            .iter()
+            .all(|t| c.custody(*t) == Some(Custody::Stored))
+    );
+    assert_eq!(p.upload_offsets.len(), 4);
+    next(&mut c, &mut p, |_, p| (p.held_clunks > 0).then_some(()));
+    let record = commit(&mut c, &mut p, cancel);
+    assert_eq!(
+        decode_shell_file_record(&record, ShellFileClass::Candidate)
+            .unwrap()
+            .header
+            .kind,
+        ShellFileKind::ResourceCancel
+    );
+}
+
+#[test]
+fn stale_head_drains_tails_without_replay() {
+    let (mut c, mut p, tickets) = held_window(&[]);
+    let held = std::mem::take(&mut p.held_replies);
+    p.answer_error(held[0].1, 116);
+    c.poll_io().unwrap();
+    for reply in held[1..].iter().rev() {
+        p.answer_error(reply.1, 116);
+    }
+    next(&mut c, &mut p, |c, _| {
+        tickets
+            .iter()
+            .all(|t| c.custody(*t) == Some(Custody::Refused(116)))
+            .then_some(())
+    });
+    assert_eq!(p.upload_offsets.len(), 4);
+}
+
+#[test]
+fn a_slow_reader_preserves_window_offsets_and_refill() {
+    let (mut c, mut p, tickets) = held_window_transport(&[], 8, true);
+    assert!(p.partial_frames > 0);
+    p.hold_upload_replies = false;
+    p.release_replies();
+    next(&mut c, &mut p, |c, _| {
+        tickets
+            .iter()
+            .all(|t| c.custody(*t) == Some(Custody::Stored))
+            .then_some(())
+    });
+    assert_eq!(
+        p.upload_offsets,
+        (0..8).map(|n| n * 32768).collect::<Vec<_>>()
+    );
+    assert_eq!(p.uploads["upload/0"].len(), 8 * 32768);
+    for (i, chunk) in p.uploads["upload/0"].chunks(32768).enumerate() {
+        assert!(chunk.iter().all(|byte| *byte == i as u8));
     }
 }

@@ -103,6 +103,7 @@ pub struct StaticExport {
     /// Model a request changing data observed by an already waiting reader.
     pub publish_sink_writes: bool,
     pub buffered_read: Option<BufferedRead>,
+    pub sink_limit: Option<usize>,
 }
 
 pub type BufferedRead = fn(u64, u32, &mut Vec<u8>) -> Result<ReadOutcome, Errno>;
@@ -315,7 +316,7 @@ impl Export for StaticExport {
         if node.name != Name::Sink {
             return Err(Errno::EBADF);
         }
-        if state.sink.len() + data.len() > SINK_LIMIT {
+        if state.sink.len() + data.len() > self.sink_limit.unwrap_or(SINK_LIMIT) {
             return Err(Errno::ENOSPC);
         }
         state.sink.extend_from_slice(data);

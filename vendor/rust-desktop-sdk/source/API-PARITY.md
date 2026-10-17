@@ -1042,6 +1042,17 @@ establishes no accepted prefix; an oversized count cannot establish Stored on
 terminal cleanup. Independent regression tests cover both invalid counts. C's
 borrowed-buffer API exposes terminal failure rather than per-chunk custody.
 
+Window regressions also cover terminal-event draining, head ESTALE, and partial
+transport frames during refill. Rust tests cancellation with four issued and four
+unissued chunks: confirmed writes remain Stored and unissued chunks become
+DroppedUnsent after the peer's terminal status, not because enqueuing Cancel
+preempts the outbox. An explicit Rust ResourceCancel follows already-queued
+chunks of its resource. C refuses a caller cancellation while its borrowed upload buffer
+is outstanding; a terminal resource event still fences and drains that window
+before clunking and releasing the buffer. Neither shell SDK flushes upload tags.
+Rust's slow-reader test forces kernel socket backpressure; C's one-byte dispatch
+budget forces partial SDK output across calls. Both verify ordered window refill.
+
 The shell client keeps up to four adjacent same-resource canonical upload units
 in an inline window. Each retains its payload charge and custody ticket. Replies
 match by tag but settle in issue order; a returned credit permits the next chunk

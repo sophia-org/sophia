@@ -1,14 +1,14 @@
-tree 01c644a686e2cc2a71234c52102e14c094141376
-parent 303dfd0e0c8eb3513c41acf8c47f177f4b4c2f34
-author Mason Green <mason@greenm01.net> 1792249226 -0400
-committer Mason Green <mason@greenm01.net> 1792249226 -0400
+tree 428be37d429d5f1589e74f04057b6962b3962671
+parent 0bc0393a5a0104eb3b15aeb6ff24753c26fe1000
+author Mason Green <mason@greenm01.net> 1792249750 -0400
+committer Mason Green <mason@greenm01.net> 1792249750 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatONihsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJ5pgEAxdDKW1WHgx0DmxmFhbvu
- VUmMagaIEEz+/VgBPYbMy0kBAKmNe4HwbVSrvmVRaMbEpiiL4vgCGvmv9vvWvH64
- CKgM
- =6c5q
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatOPlhsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJUugD+IpLYt9K8jNRIKE+uDpbR
+ 64TvEvrbNKlYVMrIeEcaX30BAI+T4mftq86stFCGgg6Nua/+JhAifJQ8kGHXs892
+ ht0C
+ =8Gig
  -----END PGP SIGNATURE-----
 
-Test invalid upload reply counts fail without retry
+Clarify queued cancellation and transport test scope

@@ -2,11 +2,12 @@
 
 /* A multi-chunk buffer, not four separate calls: each call borrows storage
  * until its entire window has settled. The peer withholds every pixel reply. */
-static void start_cap(struct rig *r, const uint8_t *pixels, size_t size, uint32_t iounit)
+static void start_budget(struct rig *r, const uint8_t *pixels, size_t size, uint32_t iounit, size_t budget)
 {
     struct sophia_sf_resource_begin b = {0};
     const struct sophia_sf_record *e;
     uint64_t ticket;
+    unsigned i;
     rig_ready(r, &rig_config);
     r->p.upload_iounit = iounit;
     r->s.files.limits.max_height_px = 16;
@@ -32,9 +33,17 @@ static void start_cap(struct rig *r, const uint8_t *pixels, size_t size, uint32_
     rig_run(r, 8);
     assert(sophia_ss_upload_ready(&r->s));
     r->p.hold_upload = 1;
+    r->service_budget = budget;
+    r->partial_send_seen = 0;
     assert(!sophia_ss_upload_chunk(&r->s, pixels, size));
-    rig_run(r, 8);
+    for (i = 0; i < 4096 && r->p.upload_held < (size >= 16 ? 4 : size / 4); i++)
+        rig_step(r);
     assert(r->p.upload_held == (size >= 16 ? 4 : size / 4));
+}
+
+static void start_cap(struct rig *r, const uint8_t *pixels, size_t size, uint32_t iounit)
+{
+    start_budget(r, pixels, size, iounit, 0);
 }
 
 static void start(struct rig *r, const uint8_t *pixels, size_t size)
@@ -208,6 +217,61 @@ static void invalid_write_counts(void)
     }
 }
 
+static void terminal_window(int stale_head)
+{
+    struct rig r;
+    uint8_t pixels[16] = {0};
+    const struct sophia_sf_record *event;
+    uint64_t ticket;
+    unsigned i;
+    start(&r, pixels, sizeof(pixels));
+    assert(sophia_ss_upload_cancel(&r.s, 78, &ticket) == SOPHIA_9P_BUSY);
+    if (stale_head)
+        peer_error(&r.p, r.p.upload_tags[0], 116);
+    else
+        peer_resource_status(&r.p, &r.s.files.resource, 4);
+    rig_run(&r, 4);
+    assert(!r.p.upload_clunks && r.s.files.upload_data == pixels);
+    if (!stale_head) {
+        assert(!sophia_ss_event(&r.s, &event));
+        assert(event->header.kind == SOPHIA_SF_RESOURCE_STATUS);
+        assert(!sophia_ss_consume(&r.s));
+    }
+    for (i = 4; i > (unsigned)stale_head; i--) {
+        if (!stale_head && i == 1)
+            peer_count(&r.p, r.p.upload_tags[i - 1], 4);
+        else
+            peer_error(&r.p, r.p.upload_tags[i - 1], stale_head ? 116 : 22);
+    }
+    rig_run(&r, 12);
+    assert(r.p.upload_clunks == 1 && !r.s.files.upload_data);
+    assert(!sophia_ss_upload_pending(&r.s) && r.s.state == SOPHIA_SS_READY);
+    assert(r.p.upload_held == 4);
+    rig_close(&r);
+}
+
+static void partial_transport_window(void)
+{
+    struct rig r;
+    uint8_t pixels[24] = {0};
+    unsigned i;
+    start_budget(&r, pixels, sizeof(pixels), 0, 1);
+    assert(r.partial_send_seen);
+    for (i = 0; i < 4; i++)
+        peer_count(&r.p, r.p.upload_tags[i], 4);
+    for (i = 0; i < 4096 && r.p.upload_held < 6; i++)
+        rig_step(&r);
+    assert(r.p.upload_held == 6);
+    for (i = 0; i < 6; i++)
+        assert(r.p.upload_offsets[i] == i * 4 && r.p.upload_counts[i] == 4);
+    for (i = 4; i < 6; i++)
+        peer_count(&r.p, r.p.upload_tags[i], 4);
+    for (i = 0; i < 4096 && !sophia_ss_upload_ready(&r.s); i++)
+        rig_step(&r);
+    assert(sophia_ss_upload_ready(&r.s) && r.s.files.upload_offset == sizeof(pixels));
+    rig_close(&r);
+}
+
 int main(void)
 {
     ordered_success();
@@ -218,6 +282,9 @@ int main(void)
     bad_tail_and_fence(1);
     explicit_retry_and_backoff();
     invalid_write_counts();
+    terminal_window(0);
+    terminal_window(1);
+    partial_transport_window();
     puts("shell upload window: ordered credit, short recovery, idle wake and fencing: ok");
     return 0;
 }

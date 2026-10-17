@@ -128,6 +128,9 @@ pub struct Peer {
     pub attaches: usize,
     stream: UnixStream,
     inbuf: Vec<u8>,
+    pub read_budget: usize,
+    read_remaining: usize,
+    pub partial_frames: usize,
     closed: bool,
     profile: Profile,
     handshaking: bool,
@@ -316,6 +319,9 @@ impl Peer {
             attaches: 0,
             stream,
             inbuf: Vec::new(),
+            read_budget: 0,
+            read_remaining: 0,
+            partial_frames: 0,
             closed: false,
             profile,
             handshaking: true,
@@ -386,8 +392,12 @@ impl Peer {
     /// Answers every request the client has already written, without
     /// waiting, then delivers pending events if a read is outstanding.
     pub fn pump(&mut self) {
+        self.read_remaining = self.read_budget;
         while let Some((kind, tag, body)) = self.frame(Duration::ZERO) {
             self.handle(kind, tag, body);
+        }
+        if self.inbuf.len() >= 7 && self.inbuf.len() < u32_at(&self.inbuf, 0) as usize {
+            self.partial_frames += 1;
         }
         self.flush_events();
     }
@@ -873,12 +883,23 @@ impl Peer {
                 self.stream.set_read_timeout(Some(left)).unwrap();
             }
             let mut chunk = [0u8; 16384];
-            match self.stream.read(&mut chunk) {
+            let limit = if wait.is_zero() && self.read_budget > 0 {
+                if self.read_remaining == 0 {
+                    return None;
+                }
+                chunk.len().min(self.read_remaining)
+            } else {
+                chunk.len()
+            };
+            match self.stream.read(&mut chunk[..limit]) {
                 Ok(0) => {
                     self.closed = true;
                     return None;
                 }
-                Ok(count) => self.inbuf.extend_from_slice(&chunk[..count]),
+                Ok(count) => {
+                    self.read_remaining = self.read_remaining.saturating_sub(count);
+                    self.inbuf.extend_from_slice(&chunk[..count]);
+                }
                 Err(error) if error.kind() == ErrorKind::Interrupted => {}
                 Err(error)
                     if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) =>

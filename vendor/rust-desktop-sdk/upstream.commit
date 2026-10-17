@@ -1,14 +1,14 @@
-tree c52827d1f7af02c420f17f322303eabb8e99be05
-parent 10c92264384100240f02c9bb29d01ba033c6b3c3
-author Mason Green <mason@greenm01.net> 1792249234 -0400
-committer Mason Green <mason@greenm01.net> 1792249234 -0400
+tree 8ec1a6848fe8ec03672199541bd4282fd3933bbe
+parent f45057a1dea98832f9ae8ef790d0120c9100c9a8
+author Mason Green <mason@greenm01.net> 1792249750 -0400
+committer Mason Green <mason@greenm01.net> 1792249750 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatONkhsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKpxwEAyN+/trs5RNBfemvD8WCj
- gW72G3ID5z/mQlG+/xtCgA4BAL6TDevipd+7z7JIMC45PQ32kcM4EwdqEB6QWJm2
- 164C
- =Vl+Y
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatOPlhsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKV/AD/bKYdIUY8BlqgIGQl7Gcd
+ MkIrHokvlQSKVFPtSqtqPL4A/3ZIgIJISBfKSmfKaF2x7iNMrK1MdUFHr/ZcegVq
+ phMO
+ =DieF
  -----END PGP SIGNATURE-----
 
-Preserve uncertain upload custody after invalid write counts
+Clarify queued cancellation and transport test scope
