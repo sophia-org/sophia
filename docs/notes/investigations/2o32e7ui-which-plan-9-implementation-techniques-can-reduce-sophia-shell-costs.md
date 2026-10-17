@@ -40,7 +40,7 @@ has begun. The frozen campaign is under `t331-reuse-20261017/native-candidate`;
 keep comparator `9e3c741f8` and integration `4b16974` unchanged until capture.
 The detached `sophia-t331-baseline-recapture` checkout at `363e06998` supplies
 the baseline source identity and should be removed after its recapture.
-The prepared campaign lives under
+The completed baseline lives under
 `~/.local/state/sophia/development-evidence/t331-reuse-20261017/native-baseline`.
 Any further native capture requires attended readiness and a fresh quiet window.
 
@@ -50,6 +50,11 @@ Neither the request reduction nor buffer reuse establishes CPU or allocation
 savings; the unchanged +10% gate and full matrix remain open.
 
 ## SDK review follow-ups and candidate ledger — October 17
+
+The subsequent [B2/B3 design](../plans/nfe0blnb-queue-shell-submit-and-pixel-writes-within-existing-custody-bounds.md)
+is proposed only. It preserves tail fencing, submit errno precedence, per-ticket
+custody and canonical-chunk idle renewal. No implementation or frozen capture
+changes follow from drafting it.
 
 Signed Rust `9d56625` proves that the next retained-fid record is outstanding
 while the covering ACK reply is withheld. Signed C `30b7c1f` waits for Negotiated

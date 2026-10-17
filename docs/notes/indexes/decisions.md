@@ -5,6 +5,7 @@ Current contracts are identified in the [documentation map](../../README.md).
 
 | Record | Status | Scope |
 | --- | --- | --- |
+| [Pipeline shell writes with bounded recovery](../decisions/s5msyyv2-pipeline-shell-writes-with-bounded-recovery-and-unchanged-custody.md) | Proposed 2026-10-17 | Queued final-fragment submit and up to four pixel writes; acceptance and first-slice capture required before implementation |
 | [Separate desktop readiness from application proofs](../decisions/adr0001-separate-desktop-readiness-from-application-proofs.md) | Accepted, recorded retrospectively | Ordinary session lifecycle; physical acceptance remains pending |
 | [Session owns desktop composition](../decisions/adr0002-session-owns-desktop-composition.md) | Accepted, recorded retrospectively | Operator component selection and restart semantics |
 | [Adopt 9P2000.L as the target public interface](../decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md) | Accepted direction 2026-09-25; implementation reaffirmed 2026-09-26 | Progressive public desktop IPC replacement; WM implementation and acceptance in progress, other role contracts and the later application frontend remain open |

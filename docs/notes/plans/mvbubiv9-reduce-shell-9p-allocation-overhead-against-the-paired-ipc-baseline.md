@@ -53,6 +53,11 @@ Task state and execution order remain in todo.md.
 
 ### Approved reusable writer and cumulative ACK slice — October 17
 
+The later [B2/B3 proposal](nfe0blnb-queue-shell-submit-and-pixel-writes-within-existing-custody-bounds.md)
+contains a draft amendment for queued final-fragment submit and a bounded pixel
+window. It is design work only; it does not expand this accepted slice or change
+the frozen first-slice capture. Its companion ADR still requires acceptance.
+
 niltempus approved the replacement plan and directed implementation. The
 [accepted decision](../decisions/7mls2e2q-reuse-a-shell-transaction-writer-without-changing-custody.md)
 and [normative amendment](../../sophia-shell-files.md#reusable-transaction-writer)
