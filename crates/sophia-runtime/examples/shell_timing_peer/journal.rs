@@ -23,6 +23,9 @@ pub enum Event<'a> {
         frames: u64,
         wire: &'a str,
         probe_bytes: u64,
+        /// Absent on byte runs, so their records keep the earlier bytes.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        source: Option<&'a str>,
     },
     UploadOffer {
         upload: Upload,

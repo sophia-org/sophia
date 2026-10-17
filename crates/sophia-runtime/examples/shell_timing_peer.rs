@@ -1,7 +1,10 @@
 //! Generic paced shell peer for the isolated comparison tree.
 //! Emits every offer before submission; native timing comes from host custody.
 use sophia_protocol::*;
-use sophia_shell_client::{ShellClientError, ShellClientOptions, ShellConnection};
+use sophia_shell_client::{
+    IMAGE_CAPABILITY_SEALED, ProducerMetadata, ShellClientError, ShellClientOptions,
+    ShellConnection,
+};
 use std::{
     io::{Read, Write},
     os::unix::net::UnixStream,
@@ -13,6 +16,9 @@ const WAIT: Duration = Duration::from_secs(5);
 #[path = "shell_timing_peer/journal.rs"]
 mod journal;
 use journal::{Event, Upload};
+#[path = "shell_timing_peer/sealed.rs"]
+mod sealed;
+use sealed::SealedConfig;
 
 #[cfg(feature = "comparator-allocation-counting")]
 #[global_allocator]
@@ -41,17 +47,28 @@ fn frame(stream: &mut UnixStream) -> Result<Vec<u8>> {
 }
 
 impl Wire {
-    fn connect(files: bool) -> Result<Self> {
+    fn connect(files: bool, sealed: Option<SealedConfig>) -> Result<Self> {
         let caps = SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
             | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
             | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT;
+        // Sealed sources need revision 9 and the sealed capability; the
+        // byte comparison keeps its revision 6 handshake unchanged.
+        let revision = if sealed.is_some() { 9 } else { 6 };
         let options = ShellClientOptions {
-            minimum_revision: 6,
-            maximum_revision: 6,
-            required_capabilities: caps,
+            minimum_revision: revision,
+            maximum_revision: revision,
+            required_capabilities: caps
+                | if sealed.is_some() {
+                    IMAGE_CAPABILITY_SEALED
+                } else {
+                    0
+                },
             handshake_timeout: WAIT,
         };
         let auth = std::env::var_os("SOPHIA_LAUNCH_AUTH_FD");
+        if sealed.is_some() && (!files || auth.is_none()) {
+            return Err("sealed source requires an authenticated file launch".into());
+        }
         if files {
             if std::env::var_os("SOPHIA_SHELL_SOCKET").is_some() {
                 return Err("ambiguous shell wire".into());
@@ -67,7 +84,7 @@ impl Wire {
                 // channel and its safe CLOEXEC duplicate live until process exit.
                 let relay = UnixStream::from(sophia_linux_peer::duplicate_inherited_fd(fd)?);
                 let mut auth = sophia_launch_client::Client::with_timeout(
-                    UnixStream::connect(socket)?,
+                    UnixStream::connect(&socket)?,
                     relay,
                     b"shell",
                     b"bar",
@@ -80,12 +97,28 @@ impl Wire {
                     }
                 }
                 let attached = auth.into_authenticated()?;
+                let client = match sealed {
+                    Some(config) => {
+                        let origin_ms = clock_usec() / 1000;
+                        let image = sealed::image_config(
+                            config,
+                            std::path::Path::new(&socket),
+                            origin_ms,
+                            WAIT,
+                        )?;
+                        ShellConnection::from_attached_with_image(
+                            attached.role,
+                            attached.root,
+                            options,
+                            image,
+                            Instant::now(),
+                            origin_ms,
+                        )?
+                    }
+                    None => ShellConnection::from_attached(attached.role, attached.root, options)?,
+                };
                 Ok(Self::Files {
-                    client: Box::new(ShellConnection::from_attached(
-                        attached.role,
-                        attached.root,
-                        options,
-                    )?),
+                    client: Box::new(client),
                     _relay: Some(Box::new(attached.relay)),
                 })
             } else {
@@ -117,6 +150,13 @@ impl Wire {
                 return Err("wrong welcome".into());
             }
             Ok(Self::Ipc(stream))
+        }
+    }
+
+    fn client(&mut self) -> Result<&mut ShellConnection> {
+        match self {
+            Self::Files { client, .. } => Ok(client),
+            Self::Ipc(_) => Err("sealed source requires the file wire".into()),
         }
     }
 
@@ -216,7 +256,7 @@ fn run() -> Result<()> {
     let object = config
         .as_object()
         .ok_or("configuration must be an object")?;
-    if !(5..=6).contains(&object.len())
+    if !(5..=8).contains(&object.len())
         || object.keys().any(|k| {
             ![
                 "wire",
@@ -225,11 +265,13 @@ fn run() -> Result<()> {
                 "height",
                 "hold_msec",
                 "probe_bytes",
+                "source",
+                "image",
             ]
             .contains(&k.as_str())
         })
     {
-        return Err("configuration requires wire, output, frames, height, hold_msec and optional probe_bytes".into());
+        return Err("configuration requires wire, output, frames, height, hold_msec and optional probe_bytes, source and image".into());
     }
     let number = |key: &str| -> Result<u64> {
         config[key]
@@ -258,10 +300,28 @@ fn run() -> Result<()> {
         Some("ipc") => false,
         _ => return Err("invalid wire".into()),
     };
-    let mut wire = Wire::connect(files)?;
+    // Bytes is the default. Sealed names its role bounds explicitly and
+    // never falls back to bytes.
+    let sealed = match object.get("source").map(|v| v.as_str()) {
+        None | Some(Some("bytes")) if !object.contains_key("image") => None,
+        Some(Some("sealed")) => Some(sealed::parse(
+            object
+                .get("image")
+                .ok_or("sealed source requires image bounds")?,
+        )?),
+        None | Some(Some("bytes")) => return Err("image bounds require sealed source".into()),
+        _ => return Err("invalid source".into()),
+    };
+    if sealed.is_some() && !files {
+        return Err("sealed source requires the file wire".into());
+    }
+    let mut wire = Wire::connect(files, sealed)?;
     let ShellContentRecord::Limits(limits) = wire.receive()? else {
         return Err("missing limits".into());
     };
+    if let Some(config) = sealed {
+        sealed::check_limits(config, &limits)?;
+    }
     let ShellContentRecord::OutputFacts(facts) = wire.receive()? else {
         return Err("missing output facts".into());
     };
@@ -307,10 +367,14 @@ fn run() -> Result<()> {
     {
         return Err("allocation refused or misattributed".into());
     }
+    if sealed.is_some() {
+        sealed::wait_ready(wire.client()?, WAIT)?;
+    }
     emit(Event::Start {
         frames,
         wire: if files { "files" } else { "ipc" },
         probe_bytes,
+        source: sealed.map(|_| "sealed"),
     })?;
     for generation in 1..=frames {
         #[cfg(feature = "comparator-counters")]
@@ -348,6 +412,10 @@ fn run() -> Result<()> {
                 })
                 .collect();
             let chunks = bytes.len().div_ceil(chunk_bytes) as u32;
+            let source = match sealed {
+                Some(_) => Some(sealed::prepare(width, height, &bytes)?),
+                None => None,
+            };
             // Preserve the attempt before sending. This conservative interval includes
             // flushing the offer journal, but excludes pixel preparation above.
             let begin_usec = clock_usec();
@@ -365,43 +433,67 @@ fn run() -> Result<()> {
                     begin_usec,
                 },
             })?;
-            wire.send(
-                2,
-                &[ShellContentRecord::ResourceBegin(ContentResourceBegin {
-                    grant,
-                    resource,
-                    width_px: width,
-                    height_px: height,
-                    rendered_scale_numerator: allocation.scale_numerator,
-                    rendered_scale_denominator: allocation.scale_denominator,
-                    pixel_format: 1,
-                    chunk_count: chunks,
-                    total_bytes: length,
-                })],
-            )?;
-            expect_status(&mut wire, grant, resource, 1)?;
-            for (ordinal, chunk) in bytes.chunks(chunk_bytes).enumerate() {
+            if let Some(source) = source {
+                let metadata = ProducerMetadata {
+                    offer_id: 0,
+                    resource: resource.id,
+                    resource_generation: resource.generation,
+                    admission_epoch: grant.content_grant_epoch,
+                    output_id: output.output.id,
+                    allocation_id: allocation.allocation.id,
+                    topology_generation: facts.facts_generation,
+                    source_kind: 1,
+                    source_format: 1,
+                    width,
+                    height,
+                    stride: row,
+                    plane_count: 1,
+                    descriptor_count: 1,
+                    declared_bytes: length,
+                    modifier: 0,
+                };
+                let offer = sealed::begin(wire.client()?, metadata, source)?;
+                expect_status(&mut wire, grant, resource, 2)?;
+                sealed::settle(wire.client()?, offer, resource, WAIT)?;
+            } else {
                 wire.send(
-                    3,
-                    &[ShellContentRecord::ResourceChunk(ContentResourceChunk {
+                    2,
+                    &[ShellContentRecord::ResourceBegin(ContentResourceBegin {
                         grant,
                         resource,
-                        ordinal: ordinal as u32,
-                        offset: ordinal as u64 * chunk_bytes as u64,
-                        bytes: chunk.to_vec(),
+                        width_px: width,
+                        height_px: height,
+                        rendered_scale_numerator: allocation.scale_numerator,
+                        rendered_scale_denominator: allocation.scale_denominator,
+                        pixel_format: 1,
+                        chunk_count: chunks,
+                        total_bytes: length,
                     })],
                 )?;
+                expect_status(&mut wire, grant, resource, 1)?;
+                for (ordinal, chunk) in bytes.chunks(chunk_bytes).enumerate() {
+                    wire.send(
+                        3,
+                        &[ShellContentRecord::ResourceChunk(ContentResourceChunk {
+                            grant,
+                            resource,
+                            ordinal: ordinal as u32,
+                            offset: ordinal as u64 * chunk_bytes as u64,
+                            bytes: chunk.to_vec(),
+                        })],
+                    )?;
+                }
+                wire.send(
+                    4,
+                    &[ShellContentRecord::ResourceEnd(ContentResourceEnd {
+                        grant,
+                        resource,
+                        total_bytes: length,
+                        chunk_count: chunks,
+                    })],
+                )?;
+                expect_status(&mut wire, grant, resource, 2)?;
             }
-            wire.send(
-                4,
-                &[ShellContentRecord::ResourceEnd(ContentResourceEnd {
-                    grant,
-                    resource,
-                    total_bytes: length,
-                    chunk_count: chunks,
-                })],
-            )?;
-            expect_status(&mut wire, grant, resource, 2)?;
             let accepted_usec = clock_usec();
             emit(Event::UploadAccepted {
                 resource_id: resource.id,

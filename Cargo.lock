@@ -1596,6 +1596,7 @@ dependencies = [
  "sophia-9p",
  "sophia-9p-client",
  "sophia-engine",
+ "sophia-image-producer",
  "sophia-launch-client",
  "sophia-linux-peer",
  "sophia-namespace-client",

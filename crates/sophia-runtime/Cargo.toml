@@ -36,6 +36,7 @@ sha2.workspace = true
 sophia-engine = { path = "../sophia-engine" }
 sophia-shell-client = { workspace = true }
 sophia-launch-client = { workspace = true }
+sophia-image-producer = { path = "../../vendor/rust-desktop-sdk/source/crates/sophia-image-producer" }
 
 [lints]
 workspace = true
