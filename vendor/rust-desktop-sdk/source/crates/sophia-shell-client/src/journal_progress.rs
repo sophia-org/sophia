@@ -10,7 +10,8 @@ pub struct SnapshotFetchFailure {
 /// Journal delivery progress, not application completion or presentation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct JournalProgress {
-    /// Highest event retained by the SDK; the application may not have read it.
+    /// Highest processed event: SDK-retained in automatic delivery mode, or
+    /// caller-consumed in retained mode. Startup/custody are SDK-owned.
     pub handled: u64,
     /// Highest safe ACK, bounded by every unverified snapshot announcement.
     pub ack_limit: u64,

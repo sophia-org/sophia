@@ -27,8 +27,32 @@ SDKs cover prefetch before publication and a different-Qid refusal to release
 the hold. Both independent peers pass the real metadata/content export while
 fetching Tabs before the earlier Descriptors publication.
 
-Prefetch before publication has scripted coverage only. Retained-head delivery
-and allocation-free record sizing remain under the full t333 audit.
+Prefetch before publication has scripted coverage only. Allocation-free record
+sizing remains under the full t333 audit.
+
+## Retained journal delivery, 2026-10-17
+
+Rust `set_automatic_event_delivery(false)` retains one validated application
+event. `journal_event` borrows its sequence and typed `JournalRecord` without
+cloning. Repeated dispatches expose the same head; `consume_journal_event`
+schedules its consumption without I/O or a duplicate receive-queue copy.
+Dispatch applies its effects before later events and advances ACK eligibility.
+Startup and Submitted custody remain SDK-owned, as in C. Existing automatic
+delivery remains the default; switching modes cannot retract prior delivery
+or queued ACKs. A retained head must be consumed before automatic delivery
+resumes. Local close leaves the head readable but refuses further consumption.
+
+C's `sophia_ss_event/consume` already provides caller-consumed delivery.
+Independent scripted controls keep the head and ACK limit stable across
+dispatches. Rust additionally checks ordinary event ordering, close retention,
+automatic resumption and prefetch-before-publication-consumption. Both real
+metadata/content peers hold each publication across dispatches before consuming
+it, then recover a wrong-generation fetch and fetch Tabs before Descriptors.
+
+Snapshot results still use Rust's existing owned receive APIs; they are not
+journal heads. In manual fetch mode the caller controls replacement and can
+take ownership of a result before requesting another. Automatic snapshot
+coalescing and the documented failed-decode eviction behavior are unchanged.
 
 ## Explicit snapshot fetch failures, 2026-10-17
 
@@ -49,7 +73,7 @@ pass the real metadata/content export after requesting a wrong Tabs generation,
 observing failure and fetching the correct identity on the same connection.
 Malformed-object recovery is scripted evidence, not a production-server fault
 injection. A failed Rust decode can discard an older undelivered snapshot;
-retaining an application-visible head remains part of the open delivery audit.
+the retained journal API above does not turn snapshot results into journal heads.
 
 ## Journal ACK scheduling, 2026-10-17
 
@@ -700,7 +724,7 @@ pending under t333.
 | `record_bytes`, `submit` | protocol encoders, `enqueue_shell_batch` | Rust has no separate allocation-free encoded-size query; prepared admission can validate and reserve before effects. |
 | `reserve`, `commit`, `cancel` | capacity tokens and `commit_reserved_shell_batch` | Same all-or-none admission; Rust prepared handles additionally borrow exclusively and cancel on Drop. |
 | `outcome` | `custody_result` | Retained unknown versus evicted/unissued distinctions above. |
-| `event`, `consume` | typed `take_*`; native `next_event`/`done` | Rust generic receives transfer owned values; native facade retains its head until done/response. Decoded observations remain readable after connection close. |
+| `event`, `consume` | `journal_event/consume_journal_event`, `set_automatic_event_delivery`; typed `take_*`; native `next_event/done` | Rust can retain a borrowed typed journal head until explicit consumption, or automatically deliver owned observations. Retained heads remain readable after local close. |
 | `object`, `object_result` | `pending_snapshots/request_snapshot`, `prefetch_snapshot`, `snapshot_failure/take_snapshot_failure`, typed observations | Rust defaults to automatic fetch/retry; explicit fetches retain failures and allow retry. Both validate identity before releasing journal holds. See recovery and delivery limits above. |
 | `ack_limit`, `ack`, generic `obligations` | `journal_progress`, `acknowledge_journal`, `set_automatic_journal_ack`, readiness and retry wake deadline | Rust defaults to automatic ACKs and counts SDK-retained events; C counts caller-consumed events. Both preserve snapshot barriers. Delivery ACK is separate from application input/action ACK. |
 | `upload_begin/chunk/ready/pending/end/cancel` | resource records and Stored tickets; native upload helpers | C borrows chunks; Rust copies them and exposes custody. In-flight/queue accounting above. |

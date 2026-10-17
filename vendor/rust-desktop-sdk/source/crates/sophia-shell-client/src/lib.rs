@@ -28,7 +28,9 @@ mod outbox;
 pub use outbox::{QueueLimits, QueueReservation};
 mod reservation;
 pub use lifecycle::*;
+mod journal_event;
 mod journal_progress;
+pub use journal_event::{JournalEvent, JournalRecord};
 mod wire;
 pub use journal_progress::{JournalProgress, SnapshotFetchFailure};
 

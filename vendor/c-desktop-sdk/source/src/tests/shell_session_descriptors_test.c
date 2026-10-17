@@ -81,6 +81,13 @@ static void consume_publication(struct rig *r, unsigned kind, uint64_t generatio
     rig_run(r, 8);
     assert(!sophia_ss_event(&r->s, &e) && e->header.kind == SOPHIA_SF_OBJECT_PUBLISHED &&
            e->value.object_published.object_kind == kind);
+    uint64_t sequence = e->header.sequence;
+    uint64_t limit = sophia_ss_ack_limit(&r->s);
+    for (unsigned i = 0; i < 4; i++) {
+        rig_step(r);
+        assert(!sophia_ss_event(&r->s, &e) && e->header.sequence == sequence);
+        assert(sophia_ss_ack_limit(&r->s) == limit);
+    }
     assert(!sophia_ss_consume(&r->s));
 }
 static int fetch(struct rig *r, uint16_t kind, uint64_t generation, uint64_t qid)

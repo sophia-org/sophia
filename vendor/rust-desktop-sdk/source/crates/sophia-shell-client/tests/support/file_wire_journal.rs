@@ -1,6 +1,88 @@
 use super::*;
 
 #[test]
+fn retained_heads_hold_delivery_and_ack_until_explicit_consumption() {
+    let (mut connection, mut peer) = connect(bar(0));
+    connection.set_automatic_event_delivery(false).unwrap();
+    for _ in 0..2 {
+        let event = permit(&mut peer);
+        peer.push(event);
+    }
+    drive(&mut connection, &mut peer, |c, _| {
+        c.journal_event().is_some()
+    })
+    .unwrap();
+    for _ in 0..8 {
+        connection.poll_io().unwrap();
+        peer.pump();
+        let event = connection.journal_event().unwrap();
+        assert_eq!(event.sequence, 3);
+        assert!(matches!(
+            event.record,
+            sophia_shell_client::JournalRecord::Content(_, ShellContentRecord::FramePermit(_))
+        ));
+        assert_eq!(connection.journal_progress().ack_limit, 2);
+    }
+    assert!(connection.set_automatic_event_delivery(true).is_err());
+    assert!(connection.take_content().unwrap().is_none());
+    assert!(connection.consume_journal_event().unwrap());
+    assert!(!connection.consume_journal_event().unwrap());
+    assert!(connection.journal_event().is_none());
+    assert_eq!(connection.journal_progress().ack_limit, 2);
+    drive(&mut connection, &mut peer, |c, _| {
+        c.journal_progress().acknowledged == 3 && c.journal_event().is_some()
+    })
+    .unwrap();
+    assert_eq!(connection.journal_event().unwrap().sequence, 4);
+    connection.close();
+    assert_eq!(connection.journal_event().unwrap().sequence, 4);
+    assert!(connection.consume_journal_event().is_err());
+}
+
+#[test]
+fn retained_publication_can_be_fetched_before_consumption_without_ack() {
+    let (mut connection, mut peer) = connect(bar(SOPHIA_SHELL_CAPABILITY_VIEW_INDICATORS));
+    connection.set_automatic_event_delivery(false).unwrap();
+    connection.set_automatic_snapshot_fetch(false).unwrap();
+    publish(
+        &mut peer,
+        "indicators",
+        5,
+        indicators_object(EPOCH, 1),
+        usize::MAX,
+    );
+    let event = peer.published(ShellFileKind::Indicators, 1, 5);
+    peer.push(event);
+    drive(&mut connection, &mut peer, |c, _| {
+        c.journal_event().is_some()
+    })
+    .unwrap();
+    let sophia_shell_client::JournalRecord::ObjectPublished(request) =
+        connection.journal_event().unwrap().record
+    else {
+        panic!("expected publication")
+    };
+    let request = *request;
+    assert!(connection.pending_snapshot().is_none());
+    connection.prefetch_snapshot(request).unwrap();
+    next(&mut connection, &mut peer, ShellConnection::take_indicators);
+    assert_eq!(connection.journal_event().unwrap().sequence, 3);
+    assert_eq!(connection.journal_progress().ack_limit, 2);
+    connection.consume_journal_event().unwrap();
+    connection.set_automatic_event_delivery(true).unwrap();
+    drive(&mut connection, &mut peer, |c, _| {
+        c.journal_progress().acknowledged == 3
+    })
+    .unwrap();
+    assert!(!connection.journal_progress().object_pending);
+    assert_eq!(peer.walk_count("indicators"), 1);
+    let event = permit(&mut peer);
+    peer.push(event);
+    next(&mut connection, &mut peer, ShellConnection::take_content);
+    assert!(connection.journal_event().is_none());
+}
+
+#[test]
 fn explicit_fetch_failures_retain_identity_and_allow_retry_without_acknowledging() {
     for fault in 0..8 {
         let (mut connection, mut peer) = connect(bar(SOPHIA_SHELL_CAPABILITY_VIEW_INDICATORS));

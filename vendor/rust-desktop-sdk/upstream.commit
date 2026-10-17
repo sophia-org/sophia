@@ -1,14 +1,14 @@
-tree fa7ae7d9184520122e4c3e8460bae67afe598e50
-parent 2f09b8f6acc42dca827bc0f83a258cad5f2cd801
-author Mason Green <mason@greenm01.net> 1792210744 -0400
-committer Mason Green <mason@greenm01.net> 1792210744 -0400
+tree 199db72a52e5e1dc1501094166def9097717bd13
+parent 01626c63202ce34fd201e9c93960cae7a04480b7
+author Mason Green <mason@greenm01.net> 1792210992 -0400
+committer Mason Green <mason@greenm01.net> 1792210992 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL3OBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLW2QEAkoDbVP48a7VQboHi5CKQ
- WEsCVRDSreR3o0r4fRUyBqgBAMzdDC6IOJROZ/1ABqUl8GZdj4uRLDqeSazDza/q
- W0kJ
- =ynWK
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL4MBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIvtQEA5ZjYFjJFC4UoVPGoHj7e
+ 5ZxKKQCw4bQfYQhbTn5Z0hUBAK7Ofq82BAOafXk4woOoxjQp7rONdYyqAaBqQI4P
+ W78G
+ =dZ+6
  -----END PGP SIGNATURE-----
 
-Retain explicit shell snapshot failures for caller recovery
+Add caller-consumed shell journal heads

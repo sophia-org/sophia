@@ -31,7 +31,7 @@ use crate::wire::Inbound;
 pub(super) const MAX_EVENT_BYTES: usize = SHELL_FILE_MAX_JOURNAL_BYTES as usize;
 
 /// One decoded event, before it is applied.
-enum Event {
+pub(super) enum Event {
     Submitted(u64, ShellFileKind),
     Published(ShellFileObjectPublished, usize),
     ResourceStatus(sophia_shell_protocol::ContentResourceId, u16, Inbound),
@@ -58,6 +58,55 @@ fn check_record_length(bytes: &[u8]) -> Result<(), ShellClientError> {
 }
 
 impl FileWire {
+    pub(crate) fn set_automatic_event_delivery(
+        &mut self,
+        enabled: bool,
+    ) -> Result<(), ShellClientError> {
+        self.io_interest()?;
+        if enabled && self.retained_event.is_some() && !self.retained_event_consumed {
+            return Err(ShellClientError::InvalidArgument(
+                "journal head is retained",
+            ));
+        }
+        self.automatic_events = enabled;
+        self.service_pending = true;
+        Ok(())
+    }
+
+    pub(crate) fn journal_event(&self) -> Option<crate::JournalEvent<'_>> {
+        use crate::JournalRecord;
+        if self.retained_event_consumed {
+            return None;
+        }
+        let (sequence, event) = self.retained_event.as_ref()?;
+        let record = match event {
+            Event::Published(value, _) => JournalRecord::ObjectPublished(value),
+            Event::Inbound(value) | Event::ResourceStatus(_, _, value) => match value {
+                Inbound::Content(tx, value) => JournalRecord::Content(*tx, value),
+                Inbound::Native(value) => JournalRecord::Native(value),
+                Inbound::Descriptor(value) => JournalRecord::Descriptor(value),
+                Inbound::IndicatorOutcome(tx, value) => JournalRecord::IndicatorOutcome(*tx, value),
+                Inbound::CatalogOutcome(tx, value) => JournalRecord::CatalogOutcome(*tx, value),
+                _ => unreachable!("snapshot values are not journal events"),
+            },
+            Event::Submitted(..) => unreachable!("custody events are SDK-owned"),
+        };
+        Some(crate::JournalEvent {
+            sequence: *sequence,
+            record,
+        })
+    }
+
+    pub(crate) fn consume_journal_event(&mut self) -> Result<bool, ShellClientError> {
+        self.io_interest()?;
+        if self.retained_event.is_none() || self.retained_event_consumed {
+            return Ok(false);
+        }
+        self.retained_event_consumed = true;
+        self.service_pending = true;
+        Ok(true)
+    }
+
     pub(crate) fn snapshot_failure(&self) -> Option<&crate::SnapshotFetchFailure> {
         self.snapshot_failure.as_ref()
     }
@@ -157,11 +206,18 @@ impl FileWire {
         &mut self,
         inbox: &mut VecDeque<Inbound>,
     ) -> Result<bool, ShellClientError> {
+        if self.retained_event_consumed {
+            let (sequence, event) = self.retained_event.take().expect("consumed head");
+            self.retained_event_consumed = false;
+            self.apply_event(sequence, event, inbox, false)?;
+            self.progress += 1;
+            return Ok(true);
+        }
         if let Err(error) = check_record_length(&self.event_buf) {
             self.event_fault = true;
             return Err(error);
         }
-        if self.object_fetch.is_some() {
+        if self.object_fetch.is_some() || self.retained_event.is_some() {
             return Ok(false);
         }
         let Some(size) = complete_record(&self.event_buf) else {
@@ -355,13 +411,27 @@ impl FileWire {
         if sequence <= self.ack_ready {
             return Err(ShellClientError::Protocol("event sequence did not rise"));
         }
+        if !self.automatic_events && !matches!(event, Event::Submitted(..)) {
+            self.retained_event = Some((sequence, event));
+            return Ok(());
+        }
+        self.apply_event(sequence, event, inbox, true)
+    }
+
+    fn apply_event(
+        &mut self,
+        sequence: u64,
+        event: Event,
+        inbox: &mut VecDeque<Inbound>,
+        deliver: bool,
+    ) -> Result<(), ShellClientError> {
         match event {
             Event::Submitted(submission, kind) => {
                 self.on_submitted(submission, kind)?;
                 self.submitted_sequence = sequence;
             }
             Event::Published(published, index) => {
-                if self.native_launcher {
+                if deliver && self.native_launcher {
                     inbox.push_back(Inbound::NativePublication(published));
                 }
                 if self.verified_objects[index] == Some(published) {
@@ -377,9 +447,15 @@ impl FileWire {
             }
             Event::ResourceStatus(resource, status, item) => {
                 self.observe_resource_status(resource, status)?;
-                inbox.push_back(item);
+                if deliver {
+                    inbox.push_back(item);
+                }
             }
-            Event::Inbound(item) => inbox.push_back(item),
+            Event::Inbound(item) => {
+                if deliver {
+                    inbox.push_back(item);
+                }
+            }
         }
         self.ack_ready = sequence;
         Ok(())

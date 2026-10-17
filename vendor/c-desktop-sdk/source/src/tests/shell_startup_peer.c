@@ -62,6 +62,12 @@ int main(int argc, char **argv) {
         status = sophia_ss_event(session, &event);
       } while (status == SOPHIA_9P_AGAIN);
       assert(!status && event->header.kind == SOPHIA_SF_OBJECT_PUBLISHED);
+      for (unsigned check = 0; check < 4; check++) {
+        assert(!sophia_ss_dispatch(session, POLLIN | POLLOUT, 1, now()));
+        assert(!sophia_ss_event(session, &event));
+        assert(event->header.sequence == 3 + i);
+        assert(sophia_ss_ack_limit(session) == 2);
+      }
       publications[i] = event->value.object_published;
       assert(publications[i].object_kind ==
              (i ? SOPHIA_SF_TABS : SOPHIA_SF_DESCRIPTORS));

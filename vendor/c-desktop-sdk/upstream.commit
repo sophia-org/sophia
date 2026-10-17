@@ -1,14 +1,14 @@
-tree bd6e85ab03af90d4ee22b53730abace180be98a7
-parent df45b95e3c5fb39b096f682dd8298eed661d2461
-author Mason Green <mason@greenm01.net> 1792210744 -0400
-committer Mason Green <mason@greenm01.net> 1792210744 -0400
+tree 100da36b56f6906cb356425e0b72e550bc076fe1
+parent 13aa7e01397e4b5c776cb1dc3a95a239b84bc7e6
+author Mason Green <mason@greenm01.net> 1792210992 -0400
+committer Mason Green <mason@greenm01.net> 1792210992 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL3OBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKcRAEAkzThUKzj0kn3WaUwBS9S
- HJFFAeb0Jn5pT86BsR8t5uYA/jHC2YSK9uMWDKYbdGSTc7sQUVgXUTSvb3zYfjml
- 4t4P
- =KMJ/
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL4MBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJBvgEAyfhFtq8h2IfpAh07xQvg
+ golU8ywPHSoXr+alFAdsFE8A/idHjmqkw68owbV19hw2o6+gtGKuw3mGvWqmXVV3
+ S7UG
+ =w47Z
  -----END PGP SIGNATURE-----
 
-Verify same-connection shell snapshot recovery against exports
+Verify retained shell journal delivery alongside Rust
