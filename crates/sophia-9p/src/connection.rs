@@ -407,6 +407,8 @@ impl<E: Export> Connection<E> {
     }
 
     fn send(&mut self, tag: Tag, reply: &Reply) -> Result<(), Fatal> {
+        #[cfg(feature = "comparator-wire-trace")]
+        crate::wire_trace::reply(self.id.0, tag.0, reply);
         let start = self.output.len();
         wire::encode(tag, reply, &mut self.output).map_err(|_| Fatal::Unframeable)?;
         #[cfg(feature = "comparator-progress")]
@@ -439,6 +441,8 @@ impl<E: Export> Connection<E> {
         tag: Tag,
         request: Request<'_>,
     ) -> Result<Option<Reply>, Fatal> {
+        #[cfg(feature = "comparator-wire-trace")]
+        crate::wire_trace::request(self.id.0, tag.0, &request);
         #[cfg(feature = "comparator-progress")]
         {
             use crate::progress::{Counter, add};

@@ -59,6 +59,8 @@ impl<E: Export> Connection<E> {
                 break;
             }
             count -= reply.remaining;
+            #[cfg(feature = "comparator-wire-trace")]
+            crate::wire_trace::sent(self.id.0, reply.tag.0);
             self.unwritten.pop_front();
         }
     }

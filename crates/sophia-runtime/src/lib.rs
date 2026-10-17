@@ -3,6 +3,16 @@
 //! Libraries emit structured diagnostics through `tracing`; binaries decide
 //! when and how to install a subscriber.
 
+#[cfg(all(
+    feature = "comparator-wire-trace",
+    any(
+        feature = "comparator-cpu-counting",
+        feature = "comparator-allocation-counting",
+        feature = "comparator-profiling"
+    )
+))]
+compile_error!("ordered wire traces must not be enabled in CPU/allocation campaigns");
+
 pub mod authenticated_files;
 pub mod broker_files;
 #[cfg(target_os = "linux")]

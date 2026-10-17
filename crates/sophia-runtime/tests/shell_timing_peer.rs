@@ -1,6 +1,9 @@
 //! Real child, supplied admission and completion. No native display claim.
 use sophia_protocol::*;
 use sophia_runtime::*;
+#[cfg(feature = "comparator-wire-trace")]
+#[path = "support/shell_timing_trace.rs"]
+mod ordered_trace;
 use std::{
     process::Command,
     time::{Duration, Instant},
@@ -72,6 +75,8 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
     let binary = std::env::var_os("SOPHIA_TIMING_PEER_BINARY").expect("explicit peer binary");
     assert!(std::path::Path::new(&binary).is_absolute());
     for (files, probe) in [(true, false), (false, false), (true, true), (false, true)] {
+        #[cfg(feature = "comparator-wire-trace")]
+        sophia_9p::wire_trace::begin();
         #[cfg(feature = "comparator-progress")]
         let progress_before = sophia_runtime::comparator_counters::progress::snapshot();
         let root = std::env::temp_dir().join(format!(
@@ -299,6 +304,8 @@ fn supplied_owner_records_every_offer_and_terminal_on_both_wires() {
                 })).unwrap();
             }
         }
+        #[cfg(feature = "comparator-wire-trace")]
+        ordered_trace::finish(files, probe, FRAMES);
         let offers: Vec<_> = records.iter().filter(|r| r["event"] == "offer").collect();
         let terminals: Vec<_> = records
             .iter()

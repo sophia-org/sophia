@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [features]
 comparator-progress = []
+comparator-wire-trace = []
 
 [dependencies]
 rustix = { workspace = true, features = ["event", "net", "pipe", "std"] }

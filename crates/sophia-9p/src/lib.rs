@@ -27,6 +27,8 @@ pub mod connection;
 pub mod export;
 #[cfg(feature = "comparator-progress")]
 pub mod progress;
+#[cfg(feature = "comparator-wire-trace")]
+pub mod wire_trace;
 
 pub mod journal;
 pub mod unix;
