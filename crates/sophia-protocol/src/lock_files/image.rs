@@ -111,29 +111,25 @@ impl LockImageMetadata {
 
     pub fn encode(&self) -> Result<[u8; Self::BYTES], BinaryCodecError> {
         self.validate()?;
-        let mut bytes = Vec::with_capacity(Self::BYTES);
-        for value in [
-            self.offer_id,
-            self.resource,
-            self.resource_generation,
-            self.admission_epoch,
-            self.output_id,
-            self.allocation_id,
-            self.topology_generation,
-        ] {
-            push_u64(&mut bytes, value);
-        }
-        push_u32(&mut bytes, self.source_kind);
-        push_u32(&mut bytes, self.source_format);
-        push_u32(&mut bytes, self.width);
-        push_u32(&mut bytes, self.height);
-        push_u32(&mut bytes, self.stride);
-        push_u16(&mut bytes, self.plane_count);
-        push_u16(&mut bytes, self.descriptor_count);
-        push_u64(&mut bytes, self.declared_bytes);
-        push_u64(&mut bytes, self.modifier);
+        // Fill the fixed array directly; encoding a metadata value on the
+        // packet path must not allocate a scratch buffer.
         let mut out = [0; Self::BYTES];
-        out.copy_from_slice(&bytes);
+        out[0..8].copy_from_slice(&self.offer_id.to_le_bytes());
+        out[8..16].copy_from_slice(&self.resource.to_le_bytes());
+        out[16..24].copy_from_slice(&self.resource_generation.to_le_bytes());
+        out[24..32].copy_from_slice(&self.admission_epoch.to_le_bytes());
+        out[32..40].copy_from_slice(&self.output_id.to_le_bytes());
+        out[40..48].copy_from_slice(&self.allocation_id.to_le_bytes());
+        out[48..56].copy_from_slice(&self.topology_generation.to_le_bytes());
+        out[56..60].copy_from_slice(&self.source_kind.to_le_bytes());
+        out[60..64].copy_from_slice(&self.source_format.to_le_bytes());
+        out[64..68].copy_from_slice(&self.width.to_le_bytes());
+        out[68..72].copy_from_slice(&self.height.to_le_bytes());
+        out[72..76].copy_from_slice(&self.stride.to_le_bytes());
+        out[76..78].copy_from_slice(&self.plane_count.to_le_bytes());
+        out[78..80].copy_from_slice(&self.descriptor_count.to_le_bytes());
+        out[80..88].copy_from_slice(&self.declared_bytes.to_le_bytes());
+        out[88..96].copy_from_slice(&self.modifier.to_le_bytes());
         Ok(out)
     }
 
@@ -245,12 +241,26 @@ impl LockImageLimits {
         )?;
         nonzero_u32(self.validation_chunk_bytes, "validation_chunk_bytes")?;
         nonzero_u32(self.max_packets_per_turn, "max_packets_per_turn")?;
-        if self.max_sealed_backing_bytes > 0
-            && (self.max_validation_jobs == 0 || self.max_validation_jobs > self.max_offers)
+        // Sealed group: both zero, or validation jobs within the offer
+        // bound and backing room for one maximum-size resource.
+        if (self.max_validation_jobs != 0 || self.max_sealed_backing_bytes != 0)
+            && (self.max_validation_jobs == 0
+                || self.max_validation_jobs > self.max_offers
+                || self.max_sealed_backing_bytes < self.max_resource_bytes)
         {
             return Err(invalid("max_validation_jobs"));
         }
-        if self.max_capture_jobs > self.max_offers {
+        // DMA-BUF group: all four reservations zero, or all positive with
+        // capture jobs within the offer bound.
+        let dma = [
+            self.max_dma_source_bytes != 0,
+            self.max_renderer_allocation_bytes != 0,
+            self.max_renderer_entries != 0,
+            self.max_capture_jobs != 0,
+        ];
+        if dma.iter().any(|set| *set)
+            && (dma.iter().any(|set| !*set) || self.max_capture_jobs > self.max_offers)
+        {
             return Err(invalid("max_capture_jobs"));
         }
         Ok(())
@@ -711,7 +721,10 @@ impl LockImagePacket {
                 }
                 nonzero(offer_id, "offer_id")?;
                 let metadata = LockImageMetadata::decode(cursor.slice(96)?)?;
-                if metadata.offer_id != offer_id || metadata.descriptor_count != descriptor_count {
+                if metadata.offer_id != offer_id {
+                    return Err(invalid("offer_id"));
+                }
+                if metadata.descriptor_count != descriptor_count {
                     return Err(invalid("descriptor_count"));
                 }
                 let mut planes = [LockImagePlane {
@@ -752,45 +765,91 @@ impl LockImagePacket {
 
 /// The canonical `image-channel` discovery text for the lock role. Version 1
 /// refuses unknown, duplicate, missing, reordered or noncanonical fields.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Only `max_packet_bytes=200` and `max_fds=4` are fixed by the contract;
+/// every other budget and timeout is carried as the positive value the
+/// publisher chose, never compared against the fixture's example numbers.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LockImageDiscovery {
     pub connection_epoch: u64,
     pub channel_generation: u64,
+    pub endpoint: String,
     pub source_kinds: u32,
     pub max_offers: u32,
+    pub max_packets_per_turn: u32,
+    pub hello_timeout_ms: u32,
+    pub validation_timeout_ms: u32,
+    pub validation_chunk_bytes: u32,
+    pub capture_interest_timeout_ms: u32,
     pub formats_generation: u64,
     pub limits_generation: u64,
 }
 
 impl LockImageDiscovery {
     pub const MAX_BYTES: usize = 2048;
-    pub const ENDPOINT: &'static str = "image.sock";
 
-    pub fn encode(&self) -> String {
-        format!(
+    fn validate(&self) -> Result<(), BinaryCodecError> {
+        nonzero(self.connection_epoch, "connection_epoch")?;
+        nonzero(self.channel_generation, "channel_generation")?;
+        if self.endpoint.is_empty()
+            || self.endpoint.len() > 64
+            || self.endpoint == "."
+            || self.endpoint == ".."
+            || !self
+                .endpoint
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
+        {
+            return Err(invalid("endpoint"));
+        }
+        if self.source_kinds == 0 || self.source_kinds & !0b11 != 0 {
+            return Err(invalid("source_kinds"));
+        }
+        range(u64::from(self.max_offers), 1, 4, "max_offers")?;
+        nonzero_u32(self.max_packets_per_turn, "max_packets_per_turn")?;
+        nonzero_u32(self.hello_timeout_ms, "hello_timeout_ms")?;
+        nonzero_u32(self.validation_timeout_ms, "validation_timeout_ms")?;
+        nonzero_u32(self.validation_chunk_bytes, "validation_chunk_bytes")?;
+        nonzero_u32(
+            self.capture_interest_timeout_ms,
+            "capture_interest_timeout_ms",
+        )?;
+        nonzero(self.formats_generation, "formats_generation")?;
+        nonzero(self.limits_generation, "limits_generation")?;
+        Ok(())
+    }
+
+    pub fn encode(&self) -> Result<String, BinaryCodecError> {
+        self.validate()?;
+        Ok(format!(
             "sophia-image-channel version=1\n\
              role=2\n\
              connection_epoch={}\n\
              channel_generation={}\n\
-             endpoint=image.sock\n\
+             endpoint={}\n\
              source_kinds={}\n\
              max_packet_bytes=200\n\
              max_fds=4\n\
              max_offers={}\n\
-             max_packets_per_turn=1\n\
-             hello_timeout_ms=250\n\
-             validation_timeout_ms=2000\n\
-             validation_chunk_bytes=65536\n\
-             capture_interest_timeout_ms=500\n\
+             max_packets_per_turn={}\n\
+             hello_timeout_ms={}\n\
+             validation_timeout_ms={}\n\
+             validation_chunk_bytes={}\n\
+             capture_interest_timeout_ms={}\n\
              formats_generation={}\n\
              limits_generation={}\n",
             self.connection_epoch,
             self.channel_generation,
+            self.endpoint,
             self.source_kinds,
             self.max_offers,
+            self.max_packets_per_turn,
+            self.hello_timeout_ms,
+            self.validation_timeout_ms,
+            self.validation_chunk_bytes,
+            self.capture_interest_timeout_ms,
             self.formats_generation,
             self.limits_generation,
-        )
+        ))
     }
 
     pub fn decode(text: &str) -> Result<Self, BinaryCodecError> {
@@ -830,58 +889,48 @@ impl LockImageDiscovery {
             decimal(field("channel_generation")?, "channel_generation")?,
             "channel_generation",
         )?;
-        if field("endpoint")? != Self::ENDPOINT {
-            return Err(invalid("endpoint"));
-        }
+        let endpoint = field("endpoint")?.to_owned();
         let source_kinds = decimal(field("source_kinds")?, "source_kinds")?;
+        // Only these two constants are fixed by the contract.
         if decimal::<u32>(field("max_packet_bytes")?, "max_packet_bytes")? != 200 {
             return Err(invalid("max_packet_bytes"));
         }
         if decimal::<u32>(field("max_fds")?, "max_fds")? != 4 {
             return Err(invalid("max_fds"));
         }
-        let max_offers = decimal(field("max_offers")?, "max_offers")?;
-        if decimal::<u32>(field("max_packets_per_turn")?, "max_packets_per_turn")? != 1 {
-            return Err(invalid("max_packets_per_turn"));
-        }
-        if decimal::<u32>(field("hello_timeout_ms")?, "hello_timeout_ms")? != 250 {
-            return Err(invalid("hello_timeout_ms"));
-        }
-        if decimal::<u32>(field("validation_timeout_ms")?, "validation_timeout_ms")? != 2000 {
-            return Err(invalid("validation_timeout_ms"));
-        }
-        if decimal::<u32>(field("validation_chunk_bytes")?, "validation_chunk_bytes")? != 65536 {
-            return Err(invalid("validation_chunk_bytes"));
-        }
-        if decimal::<u32>(
-            field("capture_interest_timeout_ms")?,
-            "capture_interest_timeout_ms",
-        )? != 500
-        {
-            return Err(invalid("capture_interest_timeout_ms"));
-        }
-        let formats_generation = nonzero(
-            decimal(field("formats_generation")?, "formats_generation")?,
-            "formats_generation",
-        )?;
-        let limits_generation = nonzero(
-            decimal(field("limits_generation")?, "limits_generation")?,
-            "limits_generation",
-        )?;
+        let discovery = Self {
+            connection_epoch,
+            channel_generation,
+            endpoint,
+            source_kinds,
+            max_offers: decimal(field("max_offers")?, "max_offers")?,
+            max_packets_per_turn: decimal(field("max_packets_per_turn")?, "max_packets_per_turn")?,
+            hello_timeout_ms: decimal(field("hello_timeout_ms")?, "hello_timeout_ms")?,
+            validation_timeout_ms: decimal(
+                field("validation_timeout_ms")?,
+                "validation_timeout_ms",
+            )?,
+            validation_chunk_bytes: decimal(
+                field("validation_chunk_bytes")?,
+                "validation_chunk_bytes",
+            )?,
+            capture_interest_timeout_ms: decimal(
+                field("capture_interest_timeout_ms")?,
+                "capture_interest_timeout_ms",
+            )?,
+            formats_generation: nonzero(
+                decimal(field("formats_generation")?, "formats_generation")?,
+                "formats_generation",
+            )?,
+            limits_generation: nonzero(
+                decimal(field("limits_generation")?, "limits_generation")?,
+                "limits_generation",
+            )?,
+        };
         if lines.next() != Some("") || lines.next().is_some() {
             return Err(invalid("discovery_fields"));
         }
-        if source_kinds == 0 || source_kinds & !0b11 != 0 {
-            return Err(invalid("source_kinds"));
-        }
-        range(u64::from(max_offers), 1, 4, "max_offers")?;
-        Ok(Self {
-            connection_epoch,
-            channel_generation,
-            source_kinds,
-            max_offers,
-            formats_generation,
-            limits_generation,
-        })
+        discovery.validate()?;
+        Ok(discovery)
     }
 }

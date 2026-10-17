@@ -34,13 +34,20 @@ fn golden(name: &str) -> Vec<u8> {
 
 fn record(name: &str, class: LockFileClass, kind: LockFileKind) -> (LockFileHeader, Vec<u8>) {
     let bytes = golden(name);
-    let decoded = decode_lock_file_record(&bytes, class).unwrap();
+    // Image records exist only when the caller selects r2 explicitly; the
+    // plain entry points stay on the r1 vocabulary.
+    assert!(
+        decode_lock_file_record(&bytes, class).is_err(),
+        "{name} must refuse under r1"
+    );
+    let decoded = decode_lock_file_record_at_revision(&bytes, class, 2).unwrap();
     assert_eq!(decoded.header.kind, kind, "{name}");
     assert_eq!(
-        encode_lock_file_record(decoded.header, decoded.body).unwrap(),
+        encode_lock_file_record_at_revision(decoded.header, decoded.body, 2).unwrap(),
         bytes,
         "{name} must re-encode byte for byte"
     );
+    assert!(encode_lock_file_record(decoded.header, decoded.body).is_err());
     (decoded.header, decoded.body.to_vec())
 }
 
@@ -166,7 +173,8 @@ fn golden_lock_packets_and_discovery_round_trip() {
                 assert_eq!(accepted, "1");
                 let text = String::from_utf8(hex(bytes)).unwrap();
                 let discovery = LockImageDiscovery::decode(&text).unwrap();
-                assert_eq!(discovery.encode(), text);
+                assert_eq!(discovery.encode().unwrap(), text);
+                assert_eq!(discovery.endpoint, "image.sock");
                 found += 1;
             }
             _ => {}
@@ -307,7 +315,7 @@ fn image_formats_may_pass_the_general_record_bound() {
         rows,
     };
     let body = formats.encode().unwrap();
-    let bytes = encode_lock_file_record(
+    let bytes = encode_lock_file_record_at_revision(
         LockFileHeader {
             kind: LockFileKind::ImageFormats,
             connection_epoch: 1,
@@ -315,10 +323,11 @@ fn image_formats_may_pass_the_general_record_bound() {
             sequence: 0,
         },
         &body,
+        2,
     )
     .unwrap();
     assert!(bytes.len() > LOCK_FILE_MAX_BYTES);
-    let decoded = decode_lock_file_record(&bytes, LockFileClass::Object).unwrap();
+    let decoded = decode_lock_file_record_at_revision(&bytes, LockFileClass::Object, 2).unwrap();
     assert_eq!(LockImageFormats::decode(decoded.body).unwrap(), formats);
 
     // The same size in any other kind still refuses.
@@ -332,6 +341,93 @@ fn image_formats_may_pass_the_general_record_bound() {
         &body,
     );
     assert!(oversized.is_err());
+}
+
+#[test]
+fn limits_groups_are_all_or_nothing() {
+    let base = LockImageLimits {
+        channel_generation: 2,
+        limits_generation: 1,
+        max_resource_bytes: 8,
+        max_sealed_backing_bytes: 8,
+        max_dma_source_bytes: 0,
+        max_renderer_allocation_bytes: 0,
+        max_renderer_entries: 0,
+        max_offers: 4,
+        max_validation_jobs: 1,
+        max_capture_jobs: 0,
+        max_admitted_outputs: 1,
+        max_format_rows_per_output: 1,
+        max_width: 2,
+        max_height: 1,
+        validation_timeout_ms: 2000,
+        capture_interest_timeout_ms: 500,
+        validation_chunk_bytes: 65536,
+        max_packets_per_turn: 1,
+    };
+    assert!(base.encode().is_ok());
+    // Sealed: jobs without backing, backing without jobs, and backing
+    // smaller than one maximum-size resource each refuse.
+    assert!(
+        LockImageLimits {
+            max_sealed_backing_bytes: 0,
+            ..base
+        }
+        .encode()
+        .is_err()
+    );
+    assert!(
+        LockImageLimits {
+            max_validation_jobs: 0,
+            ..base
+        }
+        .encode()
+        .is_err()
+    );
+    assert!(
+        LockImageLimits {
+            max_sealed_backing_bytes: 7,
+            ..base
+        }
+        .encode()
+        .is_err()
+    );
+    // DMA-BUF: a partial group refuses; the full group within the offer
+    // bound passes, and capture jobs past the bound refuse.
+    assert!(
+        LockImageLimits {
+            max_dma_source_bytes: 8,
+            ..base
+        }
+        .encode()
+        .is_err()
+    );
+    let dma = LockImageLimits {
+        max_dma_source_bytes: 8,
+        max_renderer_allocation_bytes: 8,
+        max_renderer_entries: 1,
+        max_capture_jobs: 2,
+        ..base
+    };
+    assert!(dma.encode().is_ok());
+    assert!(
+        LockImageLimits {
+            max_capture_jobs: 5,
+            ..dma
+        }
+        .encode()
+        .is_err()
+    );
+}
+
+#[test]
+fn unsupported_revisions_refuse_at_the_envelope() {
+    let bytes = golden("channel-ready");
+    assert!(decode_lock_file_record_at_revision(&bytes, LockFileClass::Event, 0).is_err());
+    assert!(decode_lock_file_record_at_revision(&bytes, LockFileClass::Event, 3).is_err());
+    // The same bytes decode under the revision that added their kind.
+    let limits = golden("lock-limits");
+    assert!(decode_lock_file_record_at_revision(&limits, LockFileClass::Object, 2).is_ok());
 }
 
 #[test]
@@ -355,13 +451,30 @@ fn discovery_refuses_shape_errors() {
     let good = LockImageDiscovery {
         connection_epoch: 1,
         channel_generation: 2,
+        endpoint: "image.sock".to_owned(),
         source_kinds: 1,
         max_offers: 4,
+        max_packets_per_turn: 3,
+        hello_timeout_ms: 300,
+        validation_timeout_ms: 5000,
+        validation_chunk_bytes: 4096,
+        capture_interest_timeout_ms: 750,
         formats_generation: 9,
         limits_generation: 1,
     };
-    let text = good.encode();
-    assert_eq!(LockImageDiscovery::decode(&text), Ok(good));
+    // Budgets and timeouts are carried values, not the fixture's example
+    // numbers: varied positive values round-trip unchanged.
+    let text = good.encode().unwrap();
+    assert!(text.contains("hello_timeout_ms=300\n"));
+    assert!(text.contains("validation_chunk_bytes=4096\n"));
+    assert_eq!(LockImageDiscovery::decode(&text), Ok(good.clone()));
+    // A zero budget is refused, and the endpoint is carried, not assumed.
+    assert!(
+        LockImageDiscovery::decode(&text.replace("hello_timeout_ms=300", "hello_timeout_ms=0"))
+            .is_err()
+    );
+    let moved = LockImageDiscovery::decode(&text.replace("image.sock", "provider.sock")).unwrap();
+    assert_eq!(moved.endpoint, "provider.sock");
     // A duplicate key, a leading zero, a wrong endpoint and a missing
     // final line feed are failures, never optional discovery.
     assert!(LockImageDiscovery::decode(&format!("{text}role=2\n")).is_err());

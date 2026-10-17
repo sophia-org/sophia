@@ -127,11 +127,45 @@ fn validate(header: LockFileHeader) -> Result<(), BinaryCodecError> {
         .ok_or_else(|| invalid("record_identity"))
 }
 
-/// Decodes exactly one complete record of `class`. Its typed body must still
-/// be decoded before anything acts on it.
+fn check_revision(kind: LockFileKind, revision: u16) -> Result<(), BinaryCodecError> {
+    match revision {
+        1 | 2 => {}
+        other => return Err(BinaryCodecError::UnsupportedVersion(other)),
+    }
+    let image = matches!(
+        kind,
+        LockFileKind::ImageBegin
+            | LockFileKind::ImageAdmitted
+            | LockFileKind::SourceReleased
+            | LockFileKind::ChannelReady
+            | LockFileKind::ChannelClosed
+            | LockFileKind::ImageLimits
+            | LockFileKind::ImageFormats
+    );
+    if image && revision < 2 {
+        return Err(invalid("image_kind_revision"));
+    }
+    Ok(())
+}
+
+/// Decodes exactly one complete record of `class` under the original r1
+/// vocabulary. Image kinds are refused here; they exist only through
+/// [`decode_lock_file_record_at_revision`]. Its typed body must still be
+/// decoded before anything acts on it.
 pub fn decode_lock_file_record(
     bytes: &[u8],
     class: LockFileClass,
+) -> Result<LockFileRecord<'_>, BinaryCodecError> {
+    decode_lock_file_record_at_revision(bytes, class, 1)
+}
+
+/// Decodes one record under an explicit negotiated role revision. Revision
+/// 1 is the existing vocabulary; revision 2 adds the image kinds. Any other
+/// revision is refused, and no revision is inferred from the bytes.
+pub fn decode_lock_file_record_at_revision(
+    bytes: &[u8],
+    class: LockFileClass,
+    revision: u16,
 ) -> Result<LockFileRecord<'_>, BinaryCodecError> {
     // Only the image-formats object may pass the general record bound.
     let max_bytes = if bytes.len() >= 8
@@ -159,6 +193,7 @@ pub fn decode_lock_file_record(
         sequence: cursor.u64()?,
     };
     validate(header)?;
+    check_revision(header.kind, revision)?;
     if header.kind.class() != class {
         return Err(invalid("record_class"));
     }
@@ -171,11 +206,24 @@ pub fn decode_lock_file_record(
     })
 }
 
+/// Encodes one record under the original r1 vocabulary; image kinds are
+/// refused, exactly as on decode.
 pub fn encode_lock_file_record(
     header: LockFileHeader,
     body: &[u8],
 ) -> Result<Vec<u8>, BinaryCodecError> {
+    encode_lock_file_record_at_revision(header, body, 1)
+}
+
+/// Encodes one record under an explicit negotiated role revision; see
+/// [`decode_lock_file_record_at_revision`].
+pub fn encode_lock_file_record_at_revision(
+    header: LockFileHeader,
+    body: &[u8],
+    revision: u16,
+) -> Result<Vec<u8>, BinaryCodecError> {
     validate(header)?;
+    check_revision(header.kind, revision)?;
     let limit = if header.kind.class() == LockFileClass::Candidate {
         LOCK_FILE_MAX_CANDIDATE_BYTES
     } else if header.kind == LockFileKind::ImageFormats {
