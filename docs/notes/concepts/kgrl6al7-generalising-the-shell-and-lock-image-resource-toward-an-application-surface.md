@@ -92,10 +92,12 @@ the fast systems comes from pre-registered buffers named by small integers
 and from explicit release, not from their opcode encodings, so nothing here
 needs a Sophia message type. Per frame, the steady state is one bounded
 record naming what to present; tags already let a client pipeline without
-waiting for each reply. That cuts the client's dependent waits, not the
-server's passes: the server still reads at most one `msize` frame per
-connection per turn, so the server cost stays one pass per record and
-admission remains the backpressure.
+waiting for each reply. That cuts the client's dependent waits, not
+necessarily the server's passes. The server still has an msize-byte read
+budget per connection per turn; near-msize pixel writes therefore need
+roughly one read turn each, while several small control records may fit
+in one turn. Pipelining does not promise a proportional reduction in
+server passes, and admission remains the backpressure.
 
 ## What t338 must not preclude
 
