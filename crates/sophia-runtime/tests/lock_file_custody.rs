@@ -13,6 +13,73 @@ const EPOCH: u64 = 7;
 const LOCK: u64 = 4;
 const QID: u64 = 90;
 
+#[test]
+fn r1_refuses_image_begin_before_epoch_or_submission_checks() {
+    let mut provider = Provider::new(locked(LOCK, 1));
+    provider.negotiate(Vec::new()).unwrap();
+    provider.events();
+    let before = provider.custody.position();
+    let metadata = LockImageMetadata {
+        offer_id: 1,
+        resource: 1,
+        resource_generation: 1,
+        admission_epoch: LOCK,
+        output_id: 1,
+        allocation_id: 11,
+        topology_generation: 3,
+        source_kind: 1,
+        source_format: 1,
+        width: 4,
+        height: 2,
+        stride: 16,
+        plane_count: 1,
+        descriptor_count: 1,
+        declared_bytes: 32,
+        modifier: 0,
+    }
+    .encode()
+    .unwrap();
+    // Construct the foreign r2 envelope independently of the r1 encoder.
+    for epoch in [EPOCH, EPOCH + 1] {
+        for submission in [1_u64, 2] {
+            let mut image = vec![0_u8; 128];
+            image[..4].copy_from_slice(&128_u32.to_le_bytes());
+            image[4..6].copy_from_slice(&1_u16.to_le_bytes());
+            image[6..8].copy_from_slice(&0x7000_u16.to_le_bytes());
+            image[8..16].copy_from_slice(&epoch.to_le_bytes());
+            image[16..24].copy_from_slice(&submission.to_le_bytes());
+            image[32..].copy_from_slice(&metadata);
+            assert_eq!(
+                provider.custody.submit(&image, provider.now),
+                Err(Errno::EINVAL)
+            );
+            assert_eq!(provider.custody.position().tail, before.tail);
+            assert_eq!(
+                provider.custody.position().next_sequence,
+                before.next_sequence
+            );
+        }
+    }
+    // Refused image records neither replace accepted custody nor spend id 2.
+    let begin = LockResourceBegin {
+        transaction: 1,
+        resource: LockResourceId {
+            id: 1,
+            generation: 1,
+        },
+        width_px: 4,
+        height_px: 2,
+        slot: 0,
+    }
+    .encode()
+    .unwrap();
+    provider
+        .submit(LockFileKind::ResourceBegin, &begin)
+        .unwrap();
+    assert_eq!(provider.submission, 2);
+    assert!(provider.kinds().contains(&LockFileKind::Submitted));
+}
+
 fn limits() -> LockFileLimits {
     LockFileLimits {
         max_outputs: 4,

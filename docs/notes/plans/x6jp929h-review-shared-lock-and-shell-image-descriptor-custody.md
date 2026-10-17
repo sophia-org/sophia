@@ -59,6 +59,54 @@ Normative KDL, generated rows and production implementation follow acceptance;
 this note deliberately does not allocate production opcodes. The first review
 must resolve the lifecycle before making those layouts normative.
 
+## C codec review checkpoint
+
+The independent C codec landed on its development branch at signed `0a12720`
+(following `276e89b`). Codex ran `make check` successfully on the initial
+candidate and reran the 54-case image codec target after review fixes. Muse
+independently reviewed packet and discovery handling. The fixes move pointer
+arithmetic after argument validation, state the actual validation-order promise,
+make the input-buffer lifetime of format rows explicit, and leave DMA-BUF stride
+validity to import validation. Legacy shell codecs retain reason bounds of 12;
+the explicit revision-aware entry points admit reason 13 only for r9 Rejected.
+
+This is a codec checkpoint, not channel I/O or custody implementation. Sophia
+has not adopted this pin, and Rust parity is not yet claimed. Positive timeout,
+validation-chunk and per-turn service values are being stated explicitly in the
+shared contract; synchronize that clarification with both SDK specs in the
+codec adoption series. The independent Go follow-up is recorded below.
+
+The Go oracle revision check is integrated locally as signed `42548ad9b` and
+`fd805a2eb`. Independent `go test ./...` and `go vet ./...` pass. A bounded
+`net.Pipe` peer covers Negotiated and ResourceStatus in one read and split
+reads: r9 accepts Rejected reason 13, r8 and no negotiation refuse it, and
+foreign-epoch or stale-sequence negotiation cannot change the selected revision.
+The oracle still offers only its existing revisions.
+
+The Sophia lock codec at `4fbe66d71`, with test follow-up `f4eb0d2f1`, passed
+Claude's independent review. Existing envelope entry points remain r1 and reject
+image kinds; explicit revision-aware entry points accept r2 without advertising
+it. Discovery carries publisher values rather than fixture constants. Intrinsic
+capacity checks match C, and metadata encoding uses its fixed array without a
+scratch allocation. Codex ran the 34 runtime custody, export and service tests,
+including refusal of r2 ImageBegin before r1 epoch/submission checks, unchanged
+journal state and successful subsequent legacy submission. Evidence is under
+`~/.local/state/sophia/development-evidence/t338-lock-codec-review-20261017/`.
+
+Remaining first-slice work: authoritative image KDL rows and schema-class
+handling; Rust shell codecs; the distinct Rust SDK lock codec; coordinated spec
+copies and pins. The C cross-object coherence helper has no lock counterpart
+yet: the lock discovery reader must check epochs, all three generations,
+discovery/limits equalities, source-kind grants and per-output bounds before
+Hello. Shape codecs alone do not establish that parity.
+
+Carry this explicit clarification into the shared contract and both SDK spec
+copies together at adoption: Hello, validation and capture-interest timeouts,
+validation chunk bytes and max packets per turn must be positive. Zero means
+neither an unlimited wait nor disabled service; source availability is expressed
+by the kind mask and its capacity fields. The limits object follows the same
+rule. The new codecs enforce it, but their runtime paths remain unadvertised.
+
 ## Owner direction — October 17, 2026
 
 niltempus approved this design and ADR qujwzrdz in principle, conditional on the

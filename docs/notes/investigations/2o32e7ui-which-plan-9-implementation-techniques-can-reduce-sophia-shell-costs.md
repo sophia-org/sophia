@@ -24,16 +24,23 @@ and C `ca61d21`. The preserved 54-case corpus and source hashes are in that
 contract. Model tests do not prove production authentication, live discovery
 fids, asynchronous validation or GPU completion.
 
-t338 is the next implementation task. Codex owns authoritative KDL rows, Rust
-shell codecs, pins, Session wiring and integration. Claude owns independent C
-codecs from `ca61d21`, then the Go oracle. Muse owns the Sophia lock codec and
-its tests, with SDK lock parity coordinated before edits. Runtime discovery and
-receive-and-refuse wait for those codec/pin prerequisites and a named file
-assignment. The [first slice](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md#t338-first-slice-and-ownership)
-keeps r9/r2 unadvertised until an authenticated channel can honor them. Current
-C/Rust/Go codecs and Sophia emission still enforce shell reasons <=12; reserved
-reason 13 applies only to Rejected under r9 in the new contract. Other reason
-fields must not widen.
+t338's first codec slice is in progress. Reviewed C `0a12720` is pushed on its
+development branch, not yet vendored. The Go oracle is integrated as `42548ad9b`
+and `fd805a2eb`; its session tests prove revision selection before reason-13
+decoding. Sophia lock codecs at `4fbe66d71`, plus tests at `f4eb0d2f1`, passed
+independent review and 34 runtime custody/export/service tests. Old lock entry
+points remain r1; new image envelopes require an explicit r2 entry point.
+
+Next: Codex's authoritative KDL rows and schema-class handling, Rust shell
+codecs and the distinct SDK lock counterpart, then coordinated specs and pins.
+The lock discovery reader still needs the equivalent of C's cross-object
+coherence checks; no parity claim is made yet. Keep positive timeout/chunk/turn
+rules explicit in the coordinated contract update. Runtime discovery and
+receive-and-refuse wait for these prerequisites and named ownership. The
+[first slice](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md#t338-first-slice-and-ownership)
+keeps r9/r2 unadvertised. Explicit C and oracle revision-aware paths admit shell
+reason 13 only for r9 Rejected; legacy decoders and Sophia emission remain <=12.
+Other reason fields must not widen.
 
 CPU content uses sealed memfd per image. A shared launch window is not pursued
 without measured need. DMA-BUF remains behind t339/t304 and t289 safe-completion
