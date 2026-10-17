@@ -1,5 +1,12 @@
 use crate::{ShellClientError, ShellConnection};
 
+/// A failed explicit snapshot fetch. Its publication remains unverified.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SnapshotFetchFailure {
+    pub request: sophia_shell_protocol::shell_files::ShellFileObjectPublished,
+    pub error: ShellClientError,
+}
+
 /// Journal delivery progress, not application completion or presentation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct JournalProgress {
@@ -16,6 +23,18 @@ pub struct JournalProgress {
 }
 
 impl ShellConnection {
+    /// Inspect the retained explicit-fetch failure without consuming it.
+    pub fn snapshot_failure(&self) -> Option<&SnapshotFetchFailure> {
+        self.wire.snapshot_failure()
+    }
+
+    /// Take the retained failure of an explicitly requested fetch without I/O.
+    /// Until taken, no new fetch starts. Retry explicitly after checking the
+    /// current publication; transport failures still terminate the connection.
+    pub fn take_snapshot_failure(&mut self) -> Option<SnapshotFetchFailure> {
+        self.wire.take_snapshot_failure()
+    }
+
     /// Latest unverified announcement per feed. Manual mode can retain several;
     /// choose any one with `request_snapshot`. Only one fetch runs at a time.
     pub fn pending_snapshots(
@@ -29,6 +48,8 @@ impl ShellConnection {
     /// The feed must be disclosed by this connection. The SDK still verifies
     /// Qid, generation and epoch; only an exact later announcement discharges
     /// its ACK hold. A different active fetch refuses without changing it.
+    /// Object failures are retained for `take_snapshot_failure`; transport
+    /// failures remain terminal. No automatic retry follows a retained failure.
     pub fn prefetch_snapshot(
         &mut self,
         request: sophia_shell_protocol::shell_files::ShellFileObjectPublished,
@@ -56,6 +77,7 @@ impl ShellConnection {
     /// its fetch was already requested or started. Wrong/stale identities are
     /// rejected without mutation. Dispatch fetches, validates and delivers the
     /// typed snapshot through the ordinary receive API before releasing holds.
+    /// Object failures are retained for `take_snapshot_failure` and explicit retry.
     pub fn request_snapshot(
         &mut self,
         request: sophia_shell_protocol::shell_files::ShellFileObjectPublished,

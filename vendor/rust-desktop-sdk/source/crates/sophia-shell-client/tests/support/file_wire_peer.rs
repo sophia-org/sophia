@@ -165,6 +165,7 @@ pub struct Peer {
     pub held_clunks: usize,
     /// When set, object reads wait until [`Peer::release_object_reads`].
     pub hold_object_reads: bool,
+    pub object_read_error: Option<u32>,
     held_object_reads: VecDeque<HeldRead>,
     pub object_reads: Vec<ObjectRead>,
     /// Every ack, walk, open and object read, in arrival order.
@@ -318,6 +319,7 @@ impl Peer {
             hold_clunks: false,
             held_clunks: 0,
             hold_object_reads: false,
+            object_read_error: None,
             held_object_reads: VecDeque::new(),
             object_reads: Vec::new(),
             log: Vec::new(),
@@ -587,7 +589,9 @@ impl Peer {
                             offset,
                             count,
                         };
-                        if self.hold_object_reads {
+                        if let Some(errno) = self.object_read_error {
+                            self.answer_error(tag, errno);
+                        } else if self.hold_object_reads {
                             self.held_object_reads.push_back(read);
                         } else {
                             self.serve_object_read(read);

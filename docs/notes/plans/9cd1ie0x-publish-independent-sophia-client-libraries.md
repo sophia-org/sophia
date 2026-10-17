@@ -153,17 +153,25 @@ pass Sophia's real metadata/content export while fetching Tabs before the
 earlier Descriptors publication. Prefetch-before-publication coverage remains
 scripted. The Rust supersession regression found during development is fixed
 and its existing test passes. Both API maps record the new controls and limits.
-Retained-head delivery, allocation-free sizing and fetch-error recovery
-differences remain open; Rust currently terminates on malformed objects where
-C returns a fetch error and permits another request. Both pin checks pass,
-including the imported Rust workspace tests. The paired export passes again
-at the imported pins. Peer SHA-256: Rust
-`62e8cf183bc0c4924def04a576eaee24011669601926cffc54b7c51d6ca12353`, C
-`c3087e80de6845df1d6d0960c2814c5d27ef61308a368cba8938d14d210cd411`.
+Explicit Rust fetches now retain a `SnapshotFetchFailure` until the caller
+takes it; a failed object cannot release an ACK hold. Automatic fetches keep
+their prior error policy. Rust scripted controls recover from wrong Qid,
+generation, epoch, trailing bytes, overflow, EIO and exhausted EAGAIN/ESTALE
+retries. C's independent malformed/identity controls and complete suite pass.
+Both peers recover from a deliberately wrong Tabs generation against the real
+metadata/content export, then fetch the correct identity without reconnecting.
+The full Rust shell suite and strict Clippy pass. Malformed-server recovery is
+scripted evidence only. Transport and allocation errors remain terminal.
+Retained-head delivery and allocation-free sizing remain open; a failed Rust
+decode can discard an older undelivered snapshot. Current peer SHA-256: Rust
+`b3c0c34e5dbdbfbd720c6d6c6f9ec1286071ec493f32c5a8c300d7d8cb5c9d39`, C
+`43a96e0e355fcc4cbeb00b2582eaa26cdcc30ce3390b086215e2c3f2333c53cb`.
 
 The role/API release audit remains open against the full exits above. Signed
-Rust `2f09b8f6acc42dca827bc0f83a258cad5f2cd801` and C
-`df45b95e3c5fb39b096f682dd8298eed661d2461` are pushed and imported. Shell startup
+Rust `01626c63202ce34fd201e9c93960cae7a04480b7` and C
+`13aa7e01397e4b5c776cb1dc3a95a239b84bc7e6` are pushed and imported. Both pin checks
+pass, including the imported Rust workspace. Both real-export peers pass again
+at these pins. Shell startup
 is now caller-driven in both SDKs; WM/lock maps and C's role inventory have
 been reconciled. C lock handoff now rejects extra fids and partial input.
 

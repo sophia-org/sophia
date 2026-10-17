@@ -1,14 +1,14 @@
-tree fcc6b3a5ed92c45b7b223966effc82a6a8f5db7e
-parent 43965b69f93a990d5fa6128253891dcc3365593f
-author Mason Green <mason@greenm01.net> 1792210500 -0400
-committer Mason Green <mason@greenm01.net> 1792210500 -0400
+tree fa7ae7d9184520122e4c3e8460bae67afe598e50
+parent 2f09b8f6acc42dca827bc0f83a258cad5f2cd801
+author Mason Green <mason@greenm01.net> 1792210744 -0400
+committer Mason Green <mason@greenm01.net> 1792210744 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL2RBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKWqgEA8PBn9evMcZNUplESOHRN
- ApTwjs79XdcScP9i4vCivewBAPi1/qn/auvfbOFXbgD9x8EFGjGlDB2RXTXa+4+I
- EFQH
- =SeXP
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL3OBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLW2QEAkoDbVP48a7VQboHi5CKQ
+ WEsCVRDSreR3o0r4fRUyBqgBAMzdDC6IOJROZ/1ABqUl8GZdj4uRLDqeSazDza/q
+ W0kJ
+ =ynWK
  -----END PGP SIGNATURE-----
 
-Add shell snapshot prefetch and out-of-order selection
+Retain explicit shell snapshot failures for caller recovery

@@ -645,6 +645,7 @@ impl Handshake {
             automatic_objects: true,
             ack_tag: None,
             object_fetch: None,
+            snapshot_failure: None,
             pending_objects: [None; super::FEEDS.len()],
             verified_objects: [None; super::FEEDS.len()],
             attempted_objects: [false; super::FEEDS.len()],

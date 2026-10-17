@@ -27,10 +27,29 @@ SDKs cover prefetch before publication and a different-Qid refusal to release
 the hold. Both independent peers pass the real metadata/content export while
 fetching Tabs before the earlier Descriptors publication.
 
-Prefetch before publication has scripted coverage only. Retained-head delivery,
-allocation-free record sizing and fetch-error recovery remain under the full
-t333 audit: Rust can terminate on malformed objects where C returns a fetch
-error and permits another request. No full recovery parity is claimed.
+Prefetch before publication has scripted coverage only. Retained-head delivery
+and allocation-free record sizing remain under the full t333 audit.
+
+## Explicit snapshot fetch failures, 2026-10-17
+
+Rust explicit requests now retain a `SnapshotFetchFailure` with the requested
+identity and error. Inspect `snapshot_failure`, then `take_snapshot_failure`
+before requesting another fetch. Failed objects never release journal holds.
+Automatic fetches keep their existing terminal-error policy; callers needing
+recovery disable automatic fetching and choose requests explicitly, as in C.
+Transport failures and local allocation failures still terminate the connection.
+Rust retries EAGAIN/ESTALE a bounded number of times before retaining failure;
+C returns the fetch error to the caller for its retry decision.
+
+Rust scripted controls cover wrong Qid, generation, epoch, trailing bytes,
+object size overflow, EIO and exhausted EAGAIN/ESTALE retries, followed by a
+successful explicit retry. C's independent descriptor controls cover wrong Qid,
+generation, epoch and trailing bytes without clearing ACK holds. Both peers
+pass the real metadata/content export after requesting a wrong Tabs generation,
+observing failure and fetching the correct identity on the same connection.
+Malformed-object recovery is scripted evidence, not a production-server fault
+injection. A failed Rust decode can discard an older undelivered snapshot;
+retaining an application-visible head remains part of the open delivery audit.
 
 ## Journal ACK scheduling, 2026-10-17
 
@@ -682,7 +701,7 @@ pending under t333.
 | `reserve`, `commit`, `cancel` | capacity tokens and `commit_reserved_shell_batch` | Same all-or-none admission; Rust prepared handles additionally borrow exclusively and cancel on Drop. |
 | `outcome` | `custody_result` | Retained unknown versus evicted/unissued distinctions above. |
 | `event`, `consume` | typed `take_*`; native `next_event`/`done` | Rust generic receives transfer owned values; native facade retains its head until done/response. Decoded observations remain readable after connection close. |
-| `object`, `object_result` | `pending_snapshots/request_snapshot`, `prefetch_snapshot`, `set_automatic_snapshot_fetch`, typed observations | Rust defaults to automatic fetch/retry; manual mode permits prefetch and out-of-order selection. Both validate identity before releasing journal holds. Fetch-error recovery remains under audit. |
+| `object`, `object_result` | `pending_snapshots/request_snapshot`, `prefetch_snapshot`, `snapshot_failure/take_snapshot_failure`, typed observations | Rust defaults to automatic fetch/retry; explicit fetches retain failures and allow retry. Both validate identity before releasing journal holds. See recovery and delivery limits above. |
 | `ack_limit`, `ack`, generic `obligations` | `journal_progress`, `acknowledge_journal`, `set_automatic_journal_ack`, readiness and retry wake deadline | Rust defaults to automatic ACKs and counts SDK-retained events; C counts caller-consumed events. Both preserve snapshot barriers. Delivery ACK is separate from application input/action ACK. |
 | `upload_begin/chunk/ready/pending/end/cancel` | resource records and Stored tickets; native upload helpers | C borrows chunks; Rust copies them and exposes custody. In-flight/queue accounting above. |
 | `close` | `ShellConnection::close`, `NativeLauncherSession::close` | Local terminal classification without I/O. C leaves borrowed fd open; Rust keeps its owned fd until Drop. |

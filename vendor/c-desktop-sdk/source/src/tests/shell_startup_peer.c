@@ -70,6 +70,17 @@ int main(int argc, char **argv) {
     }
     for (int i = 1; i >= 0; i--) {
       struct sophia_sf_object_published publication = publications[i];
+      if (i == 1) {
+        assert(!sophia_ss_object(session, publication.object_kind,
+                                 publication.generation + 1, publication.qid));
+        do {
+          assert(now() < deadline);
+          assert(!sophia_ss_dispatch(session, POLLIN | POLLOUT, 1, now()));
+          status = sophia_ss_object_result(session, &object);
+        } while (status == SOPHIA_9P_BUSY);
+        assert(status == SOPHIA_9P_AGAIN);
+        assert(sophia_ss_ack_limit(session) == 2);
+      }
       assert(!sophia_ss_object(session, publication.object_kind,
                                publication.generation, publication.qid));
       do {

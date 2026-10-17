@@ -58,6 +58,18 @@ fn check_record_length(bytes: &[u8]) -> Result<(), ShellClientError> {
 }
 
 impl FileWire {
+    pub(crate) fn snapshot_failure(&self) -> Option<&crate::SnapshotFetchFailure> {
+        self.snapshot_failure.as_ref()
+    }
+
+    pub(crate) fn take_snapshot_failure(&mut self) -> Option<crate::SnapshotFetchFailure> {
+        let failure = self.snapshot_failure.take();
+        if failure.is_some() {
+            self.service_pending = true;
+        }
+        failure
+    }
+
     pub(crate) fn set_automatic_snapshot_fetch(
         &mut self,
         enabled: bool,
@@ -95,6 +107,9 @@ impl FileWire {
         request: ShellFileObjectPublished,
     ) -> Result<bool, ShellClientError> {
         self.io_interest()?;
+        if self.snapshot_failure.is_some() {
+            return Err(ShellClientError::QueueSaturated);
+        }
         if !self.feed_disclosed(request.object) || request.generation == 0 || request.qid == 0 {
             return Err(ShellClientError::InvalidArgument(
                 "invalid snapshot identity or capability",
@@ -115,6 +130,7 @@ impl FileWire {
             phase: FetchPhase::NotStarted,
             buf: Vec::new(),
             restarts: 0,
+            caller_requested: true,
         });
         let index = feed_index(request.object).expect("disclosed feed");
         if self.pending_objects[index] == Some(request) {
@@ -397,6 +413,7 @@ impl FileWire {
 
     pub(super) fn drive_object_fetch(&mut self) -> Result<bool, ShellClientError> {
         if self.object_fetch.is_none()
+            && self.snapshot_failure.is_none()
             && self.automatic_objects
             && let Some(request) = self
                 .pending_objects
@@ -409,6 +426,7 @@ impl FileWire {
                 })
         {
             self.prefetch_snapshot(request)?;
+            self.object_fetch.as_mut().unwrap().caller_requested = false;
         }
         let Some(fetch) = &mut self.object_fetch else {
             return Ok(false);
@@ -444,7 +462,11 @@ impl FileWire {
         }
         let fetch = self.object_fetch.as_mut().expect("a fetch is in flight");
         if fetch.restarts == MAX_FETCH_RESTARTS {
-            return Err(ShellClientError::Protocol("snapshot object unavailable"));
+            let fetch = self.object_fetch.take().unwrap();
+            return self.record_fetch_failure(
+                fetch,
+                ShellClientError::Protocol("snapshot object unavailable"),
+            );
         }
         fetch.restarts += 1;
         fetch.phase = FetchPhase::NotStarted;
@@ -478,6 +500,18 @@ impl FileWire {
             self.restart_fetch(walked.then_some(fid))?;
             return Ok(true);
         }
+        if matches!(reply, Reply::Error(_)) {
+            let walked = !matches!(fetch.phase, FetchPhase::Walk { .. });
+            if walked {
+                self.forget(fid)?;
+            }
+            let fetch = self.object_fetch.take().unwrap();
+            self.record_fetch_failure(
+                fetch,
+                ShellClientError::Protocol("snapshot object fetch refused"),
+            )?;
+            return Ok(true);
+        }
         match (fetch.phase, reply) {
             (FetchPhase::Walk { .. }, Reply::Walk(qids)) if qids.len() == 1 => {
                 let open = self.pipeline.lopen(fid, O_RDONLY)?;
@@ -489,7 +523,13 @@ impl FileWire {
                     // deliver nothing and keep the hold until the newer
                     // announcement is handled.
                     self.forget(fid)?;
-                    self.object_fetch = None;
+                    let fetch = self.object_fetch.take().unwrap();
+                    if fetch.caller_requested {
+                        self.record_fetch_failure(
+                            fetch,
+                            ShellClientError::Protocol("snapshot object Qid differs from request"),
+                        )?;
+                    }
                     return Ok(true);
                 }
                 let count = if *iounit == 0 { u32::MAX } else { *iounit };
@@ -505,7 +545,13 @@ impl FileWire {
                     return self.finish_fetch(fid, inbox).map(|()| true);
                 }
                 if fetch.buf.len() + data.len() > cap {
-                    return Err(ShellClientError::Protocol("snapshot object over its cap"));
+                    self.forget(fid)?;
+                    let fetch = self.object_fetch.take().unwrap();
+                    self.record_fetch_failure(
+                        fetch,
+                        ShellClientError::Protocol("snapshot object over its cap"),
+                    )?;
+                    return Ok(true);
                 }
                 // Exact growth: capacity never passes the cap.
                 fetch
@@ -536,7 +582,12 @@ impl FileWire {
                 self.finish_fetch(fid, inbox)?;
             }
             (FetchPhase::Probe { .. }, Reply::Read(_)) => {
-                return Err(ShellClientError::Protocol("snapshot object over its cap"));
+                self.forget(fid)?;
+                let fetch = self.object_fetch.take().unwrap();
+                self.record_fetch_failure(
+                    fetch,
+                    ShellClientError::Protocol("snapshot object over its cap"),
+                )?;
             }
             _ => return Err(ShellClientError::Protocol("snapshot object fetch refused")),
         }
@@ -553,6 +604,37 @@ impl FileWire {
     ) -> Result<(), ShellClientError> {
         self.forget(fid)?;
         let fetch = self.object_fetch.take().expect("a fetch is in flight");
+        let result = self.decode_fetch(&fetch, inbox);
+        if let Err(error) = result {
+            return self.record_fetch_failure(fetch, error);
+        }
+        Ok(())
+    }
+
+    fn record_fetch_failure(
+        &mut self,
+        fetch: ObjectFetch,
+        error: ShellClientError,
+    ) -> Result<(), ShellClientError> {
+        if !fetch.caller_requested {
+            return Err(error);
+        }
+        self.snapshot_failure = Some(crate::SnapshotFetchFailure {
+            request: ShellFileObjectPublished {
+                object: fetch.feed,
+                generation: fetch.generation,
+                qid: fetch.qid,
+            },
+            error,
+        });
+        Ok(())
+    }
+
+    fn decode_fetch(
+        &mut self,
+        fetch: &ObjectFetch,
+        inbox: &mut VecDeque<Inbound>,
+    ) -> Result<(), ShellClientError> {
         // Drop the older undelivered object of this feed before decoding, so
         // the peak is one decoded object, not two.
         match fetch.feed {

@@ -195,6 +195,8 @@ struct ObjectFetch {
     buf: Vec<u8>,
     /// Fetches restarted after a node-specific `ESTALE`/`EAGAIN`.
     restarts: u8,
+    /// Explicit callers inspect failures and decide whether to retry.
+    caller_requested: bool,
 }
 
 /// Snapshot feeds the file wire fetches, and each one's encoded cap
@@ -245,6 +247,7 @@ pub(crate) struct FileWire {
     automatic_objects: bool,
     ack_tag: Option<Tag>,
     object_fetch: Option<ObjectFetch>,
+    snapshot_failure: Option<crate::SnapshotFetchFailure>,
     pending_objects: [Option<ShellFileObjectPublished>; FEEDS.len()],
     verified_objects: [Option<ShellFileObjectPublished>; FEEDS.len()],
     attempted_objects: [bool; FEEDS.len()],

@@ -1,6 +1,72 @@
 use super::*;
 
 #[test]
+fn explicit_fetch_failures_retain_identity_and_allow_retry_without_acknowledging() {
+    for fault in 0..8 {
+        let (mut connection, mut peer) = connect(bar(SOPHIA_SHELL_CAPABILITY_VIEW_INDICATORS));
+        connection.set_automatic_snapshot_fetch(false).unwrap();
+        let request = ShellFileObjectPublished {
+            object: ShellFileKind::Indicators,
+            generation: 1,
+            qid: 5,
+        };
+        let mut bytes = indicators_object(
+            if fault == 2 { EPOCH + 1 } else { EPOCH },
+            if fault == 1 { 2 } else { 1 },
+        );
+        if fault == 3 {
+            bytes.push(0);
+        }
+        if fault == 4 {
+            bytes.resize(SHELL_FILE_INDICATORS_MAX_BYTES + 1, 0);
+        }
+        peer.object_read_error = match fault {
+            5 => Some(5),   // EIO
+            6 => Some(11),  // EAGAIN exhausts bounded restarts
+            7 => Some(116), // ESTALE exhausts bounded restarts
+            _ => None,
+        };
+        publish(
+            &mut peer,
+            "indicators",
+            if fault == 0 { 6 } else { 5 },
+            bytes,
+            17,
+        );
+        let event = peer.published(request.object, request.generation, request.qid);
+        peer.push(event);
+        drive(&mut connection, &mut peer, |c, _| {
+            c.pending_snapshot().is_some()
+        })
+        .unwrap();
+        connection.request_snapshot(request).unwrap();
+        drive(&mut connection, &mut peer, |c, _| {
+            c.snapshot_failure().is_some()
+        })
+        .unwrap();
+        assert_eq!(connection.snapshot_failure().unwrap().request, request);
+        assert_eq!(connection.journal_progress().ack_limit, 2);
+        assert_eq!(
+            connection.request_snapshot(request),
+            Err(ShellClientError::QueueSaturated)
+        );
+        assert!(connection.take_indicators().unwrap().is_none());
+        assert!(connection.take_snapshot_failure().is_some());
+        assert!(connection.take_snapshot_failure().is_none());
+        peer.object_read_error = None;
+        publish(&mut peer, "indicators", 5, indicators_object(EPOCH, 1), 17);
+        connection.request_snapshot(request).unwrap();
+        let (_, value) = next(&mut connection, &mut peer, ShellConnection::take_indicators);
+        assert_eq!(value, indicator_snapshot(1));
+        drive(&mut connection, &mut peer, |c, _| {
+            c.journal_progress().acknowledged == 3
+        })
+        .unwrap();
+        assert!(connection.snapshot_failure().is_none());
+    }
+}
+
+#[test]
 fn prefetched_identity_discharges_only_the_matching_publication() {
     let (mut connection, mut peer) = connect(bar(SOPHIA_SHELL_CAPABILITY_VIEW_INDICATORS));
     connection.set_automatic_snapshot_fetch(false).unwrap();

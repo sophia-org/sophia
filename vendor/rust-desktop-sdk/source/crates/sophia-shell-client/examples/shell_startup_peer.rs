@@ -54,6 +54,8 @@ fn main() {
         content
     );
     let mut tabs_received = false;
+    let mut rejected_probe = false;
+    let mut probe_started = false;
     loop {
         assert!(start.elapsed() < Duration::from_secs(3));
         client.dispatch(Instant::now(), 1).unwrap();
@@ -66,7 +68,26 @@ fn main() {
         if let Some(request) = request {
             assert_eq!(request.generation, if tabs_received { 17 } else { 18 });
             assert_eq!(client.journal_progress().ack_limit, 2);
-            client.request_snapshot(request).unwrap();
+            if !rejected_probe {
+                if !probe_started {
+                    client
+                        .prefetch_snapshot(
+                            sophia_shell_protocol::shell_files::ShellFileObjectPublished {
+                                generation: request.generation + 1,
+                                ..request
+                            },
+                        )
+                        .unwrap();
+                    probe_started = true;
+                }
+                if let Some(failure) = client.take_snapshot_failure() {
+                    assert_eq!(failure.request.generation, 19);
+                    assert_eq!(client.journal_progress().ack_limit, 2);
+                    rejected_probe = true;
+                }
+            } else {
+                client.request_snapshot(request).unwrap();
+            }
         }
         if let Some(sophia_shell_client::DescriptorObservation::Record(record)) =
             client.take_descriptor_observation().unwrap()

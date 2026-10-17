@@ -1,14 +1,14 @@
-tree 4ad32643a895efd78a71a3db2bf448c2c0e9cbd9
-parent 60400404df4d85dd0bc60d752b72fae016a796e7
-author Mason Green <mason@greenm01.net> 1792210500 -0400
-committer Mason Green <mason@greenm01.net> 1792210500 -0400
+tree bd6e85ab03af90d4ee22b53730abace180be98a7
+parent df45b95e3c5fb39b096f682dd8298eed661d2461
+author Mason Green <mason@greenm01.net> 1792210744 -0400
+committer Mason Green <mason@greenm01.net> 1792210744 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL2RBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIeiwD+IyG2KVemm8W3SX+QDcP9
- 04IxIQdQYMXTD2DRZbjrFpUBANxFmKQf2TV6SUU7I/WBa3UUMxI/fO4weD3qSKgp
- jFsE
- =7CAy
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatL3OBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKcRAEAkzThUKzj0kn3WaUwBS9S
+ HJFFAeb0Jn5pT86BsR8t5uYA/jHC2YSK9uMWDKYbdGSTc7sQUVgXUTSvb3zYfjml
+ 4t4P
+ =KMJ/
  -----END PGP SIGNATURE-----
 
-Verify shell prefetch and out-of-order snapshot holds
+Verify same-connection shell snapshot recovery against exports
