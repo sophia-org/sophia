@@ -64,8 +64,12 @@ The draft now includes exact discovery/limits/formats layouts and a C/Rust
 custody fixture matrix. Thirty-two packet vectors received independent review;
 19 companion-object cases received independent review, then the draft switched
 to common record headers with 21 revised cases. Formats now follow topology
-generation; limits remain fixed per connection. Real ancillary/seal and
-SDK custody fixtures remain unrun, and the design remains proposed.
+generation; limits remain fixed per connection. Independent real ancillary/seal
+kernel fixtures now pass in Rust SDK `05bf018` and C SDK `9bca0db`, with the
+Rust shell-client suite, targeted strict Clippy and C `make check` passing.
+These tests establish kernel prerequisites only; draft codecs and SDK
+admission/journal-custody fixtures remain outstanding. No vendor pin or runtime
+changed, and the design remains proposed.
 
 ## B2/B3 native pilot — October 17
 

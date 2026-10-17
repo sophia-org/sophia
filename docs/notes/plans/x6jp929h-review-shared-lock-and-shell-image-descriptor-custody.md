@@ -623,7 +623,8 @@ the race between observing readiness and submitting the next offer.
 
 ### C and Rust custody fixture contract
 
-These are required independent fixture cases, not claims of tests already run.
+These are required independent fixture cases; the kernel-only results below
+do not establish the whole matrix.
 Use local SEQPACKET pairs and real SCM_RIGHTS/sealable files without a GPU or
 live desktop. A protocol fixture represents the owner; it must not impersonate
 an authenticated production endpoint. Run the same cases in each SDK's own
@@ -660,6 +661,28 @@ Public C layout changes require consumer rebuilds and an API-PARITY entry.
 GPU completion, safe rollback and quarantine cannot be proved by these local
 fixtures. A fake completion signal tests state transitions only. Real DMA-BUF
 acceptance stays behind t289's safe-completion seam and attended GPU evidence.
+
+#### Kernel prerequisite results — October 17
+
+Signed Rust SDK `05bf018` and C SDK `9bca0db` add independent Linux tests using
+real SEQPACKET, SCM_RIGHTS and sealed memfds. Both pass required-seal checks,
+FUTURE_WRITE insufficiency, producer-close survival, receiver CLOEXEC, immutable
+bytes, missing/extra rights, ancillary truncation, bounded nonblocking EAGAIN
+and queued-reference cleanup at socket teardown. Each process returns to its
+initial FD count. C also verifies EBUSY when adding F_SEAL_WRITE with a shared
+writable mapping; Rust retains the workspace unsafe-code prohibition and tests
+the seal requirement without creating a mapping.
+
+Rust's `cargo-slot sdk-rs cargo test -p sophia-shell-client --offline -q` passes,
+as does strict Clippy for the new `descriptor_kernel` target. C `make check`
+passes, including the Linux-only `descriptor_kernel_test`. The fixtures live in
+the SDK test trees, with matching API-PARITY scope notes. No public API, normative
+contract or Sophia vendor pin changed; no GPU or live session was accessed.
+
+These are kernel-prerequisite results, not an implementation of the proposed
+channel. Full draft codec, authentication/admission, cancellation, journal
+custody, timed retries and cross-process owner fixtures remain outstanding.
+The probes do not establish performance, GPU completion or design acceptance.
 
 ### Draft golden cases
 
