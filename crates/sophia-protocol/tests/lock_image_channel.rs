@@ -418,6 +418,27 @@ fn limits_groups_are_all_or_nothing() {
         .encode()
         .is_err()
     );
+    // Zeroing any one of the four DMA fields breaks the group.
+    for partial in [
+        LockImageLimits {
+            max_dma_source_bytes: 0,
+            ..dma
+        },
+        LockImageLimits {
+            max_renderer_allocation_bytes: 0,
+            ..dma
+        },
+        LockImageLimits {
+            max_renderer_entries: 0,
+            ..dma
+        },
+        LockImageLimits {
+            max_capture_jobs: 0,
+            ..dma
+        },
+    ] {
+        assert!(partial.encode().is_err());
+    }
 }
 
 #[test]
@@ -425,6 +446,36 @@ fn unsupported_revisions_refuse_at_the_envelope() {
     let bytes = golden("channel-ready");
     assert!(decode_lock_file_record_at_revision(&bytes, LockFileClass::Event, 0).is_err());
     assert!(decode_lock_file_record_at_revision(&bytes, LockFileClass::Event, 3).is_err());
+    // r2 is a superset: an ordinary r1 record also decodes through the
+    // r2 entry point, unchanged.
+    let limits_body = LockFileLimits {
+        max_outputs: 1,
+        upload_slots: 1,
+        max_chords: 0,
+        max_width_px: 2,
+        max_height_px: 1,
+        max_resource_bytes: 8,
+        max_live_resources: 2,
+        journal_records: 8,
+        journal_bytes: 2048,
+        assembly_timeout_ms: 1,
+        ack_progress_timeout_ms: 1,
+    }
+    .encode()
+    .unwrap();
+    let old = encode_lock_file_record(
+        LockFileHeader {
+            kind: LockFileKind::Limits,
+            connection_epoch: 1,
+            submission_id: 0,
+            sequence: 0,
+        },
+        &limits_body,
+    )
+    .unwrap();
+    let decoded = decode_lock_file_record_at_revision(&old, LockFileClass::Object, 2).unwrap();
+    assert_eq!(decoded.header.kind, LockFileKind::Limits);
+    assert_eq!(decoded.body, limits_body.as_slice());
     // The same bytes decode under the revision that added their kind.
     let limits = golden("lock-limits");
     assert!(decode_lock_file_record_at_revision(&limits, LockFileClass::Object, 2).is_ok());
