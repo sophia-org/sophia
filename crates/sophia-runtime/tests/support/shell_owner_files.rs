@@ -129,7 +129,7 @@ impl Peer {
         let Some(files) = t.wire.as_mut() else {
             panic!("file wire required")
         };
-        ShellComponentTransport::drain_file_output(files, &mut t.output).unwrap()
+        ShellComponentTransport::drain_file_output(files, &mut t.output, None).unwrap()
     }
 
     pub fn fill_journal(t: &mut ShellComponentTransport, record: &OutboundRecord) -> usize {

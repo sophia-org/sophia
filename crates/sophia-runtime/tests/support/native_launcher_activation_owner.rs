@@ -165,7 +165,7 @@ impl Fixture {
         let Some(files) = self.transport.wire.as_mut() else {
             unreachable!()
         };
-        ShellComponentTransport::drain_file_output(files, &mut self.transport.output).unwrap()
+        ShellComponentTransport::drain_file_output(files, &mut self.transport.output, None).unwrap()
     }
     fn next_event(&mut self) -> Vec<u8> {
         self.drive(|peer| {
