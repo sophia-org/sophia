@@ -234,6 +234,119 @@ fn exhausted_worker_does_not_consume_resource_generation() {
 }
 
 #[test]
+fn owner_job_table_keeps_completions_across_clock_retry_and_disconnect() {
+    use std::time::{Duration, Instant};
+    for disconnect in [false, true] {
+        let mut registry = image_registry();
+        let mut worker = SealedValidationWorker::new(1, 16000).unwrap();
+        let mut jobs = SealedImageJobs::default();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let job = jobs
+            .reserve(
+                &mut registry,
+                &mut worker,
+                grant(),
+                image_metadata(),
+                10,
+                deadline,
+            )
+            .unwrap();
+        // An ordinary file fails validation on the real worker, rather than
+        // inventing a completion or testing only a successful store handoff.
+        worker
+            .submit_reserved(job, std::fs::File::open("/dev/null").unwrap().into())
+            .unwrap();
+        if disconnect {
+            assert!(registry.disconnect(grant()));
+        }
+        let completion = loop {
+            if let Some(completion) = worker.take_completed().unwrap() {
+                break completion;
+            }
+            assert!(Instant::now() < deadline, "worker completion deadline");
+            std::thread::sleep(Duration::from_millis(1));
+        };
+        assert!(jobs.receive(completion).is_ok());
+        assert_eq!(worker.pending(), 0);
+        assert!(jobs.reconcile(&mut registry, 9).is_none());
+        assert_eq!(jobs.pending(), 1, "clock failure retains owner custody");
+        let settlement = jobs.reconcile(&mut registry, 11).unwrap();
+        assert_eq!(settlement.admission.worker_job, job);
+        assert_eq!(
+            settlement.validation_failure,
+            Some(SealedValidationFailure::Malformed)
+        );
+        assert_eq!(
+            settlement.outcome,
+            Err(if disconnect {
+                ContentStoreError::Revoked
+            } else {
+                ContentStoreError::Malformed
+            })
+        );
+        assert_eq!(jobs.pending(), 0);
+        assert!(jobs.reconcile(&mut registry, 11).is_none());
+        assert_eq!(registry.accounting().retired_epochs, 0);
+        let duplicate = SealedValidationCompletion {
+            job,
+            result: Err(SealedValidationFailure::Cancelled),
+        };
+        let returned = jobs.receive(duplicate).err().unwrap();
+        assert_eq!(returned.job, job);
+        assert!(matches!(
+            returned.result,
+            Err(SealedValidationFailure::Cancelled)
+        ));
+    }
+}
+
+#[test]
+fn completed_worker_jobs_still_hold_owner_table_capacity() {
+    use std::time::{Duration, Instant};
+    let mut registry = image_registry();
+    let mut worker = SealedValidationWorker::new(1, 16000).unwrap();
+    let mut jobs = SealedImageJobs::default();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    for id in 1..=4 {
+        let mut metadata = image_metadata();
+        metadata.offer_id = id;
+        metadata.resource = id;
+        let job = jobs
+            .reserve(&mut registry, &mut worker, grant(), metadata, 0, deadline)
+            .unwrap();
+        worker
+            .submit_reserved(job, std::fs::File::open("/dev/null").unwrap().into())
+            .unwrap();
+        loop {
+            if let Some(completion) = worker.take_completed().unwrap() {
+                assert!(jobs.receive(completion).is_ok());
+                break;
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(worker.pending(), 0);
+        assert_eq!(jobs.pending(), id as usize);
+    }
+    let mut metadata = image_metadata();
+    metadata.offer_id = 5;
+    metadata.resource = 5;
+    assert_eq!(
+        jobs.reserve(&mut registry, &mut worker, grant(), metadata, 0, deadline),
+        Err(SealedImageAdmissionError::Worker(
+            SealedSubmitFailure::Capacity
+        ))
+    );
+    assert_eq!(worker.pending(), 0);
+    assert!(registry.disconnect(grant()));
+    for remaining in (0..4).rev() {
+        assert!(jobs.reconcile(&mut registry, 1).is_some());
+        assert_eq!(jobs.pending(), remaining);
+    }
+    assert_eq!(registry.accounting().retired_epochs, 0);
+}
+
+#[test]
 fn output_facts_and_an_exact_engine_resolution_create_one_allocation() {
     let mut store = store();
     let request = panel_request(1, 1, ContentAllocationId::default());

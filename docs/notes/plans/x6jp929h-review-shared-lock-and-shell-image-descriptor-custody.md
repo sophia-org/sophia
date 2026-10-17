@@ -6,6 +6,26 @@ tags: [plan, shell, lock, rendering]
 ---
 # Review shared lock and shell image descriptor custody
 
+## Current resumption
+
+t338 remains in implementation. The C lock adapter is published at `6122b60`;
+an independent full `make check` passed. Its ABI additions require rebuilding
+consumers, and offer cancellation remains open. Claude's review found no blockers
+in the retired-epoch completion fix (`d33e546d8`) or the independent journal
+reservations (`310cb886f`).
+
+The resource owner now has a bounded four-job handoff table retaining admission
+identity and completed validation results until the exact active or retired
+store consumes them. Real worker tests cover disconnect, clock-regression retry,
+exactly-once reconciliation and owner capacity remaining occupied after worker
+completion. The allocation suite passes 15 tests; targeted strict Clippy and the
+layout check pass. This table is not yet wired to live Source admission. The
+owner must still stop unsent reservations and cancel jobs on expiry or channel
+loss, then emit each admitted offer's terminal records through its held credits.
+Session activation, Rust producer/adapters, lock receive/accept integration and
+the matched native gates remain outstanding; no runtime admission or performance
+acceptance is claimed by this checkpoint.
+
 ## Scope and exit
 
 **Accepted October 17.** The independent lifecycle peers (Rust `8f7dc5d`, C
