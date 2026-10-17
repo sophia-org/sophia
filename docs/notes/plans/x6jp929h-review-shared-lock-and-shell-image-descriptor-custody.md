@@ -119,9 +119,12 @@ valid channel or spending its channel generation.
 
 A 9P disconnect, epoch replacement, revocation or assignee death stops new offers
 and closes the channel. A channel-only failure disables descriptor admission for
-that epoch; the still-authorized 9P byte path may continue. Old received work is
-drained or cancelled according to its actual ownership, not declared released
-merely because the socket closed. A new 9P epoch gets a new channel generation
+that epoch; the still-authorized 9P byte path may continue. Channel loss withdraws
+interest in every live offer. Unsent or synchronously held sources release with
+disposition 4; validation already in flight retains custody until its worker
+returns, and submitted GPU work releases with disposition 5 only after proven
+safe cleanup. Socket closure alone never proves that cleanup.
+A new 9P epoch gets a new channel generation
 and cannot resume an old offer.
 This deliberately makes recovery conservative: a transient failure of the
 authorized channel disables descriptors for the rest of that 9P epoch. The SDK
@@ -177,7 +180,12 @@ records must follow those tables, not Rust struct layout.
 
 Receive with close-on-exec and bounded ancillary storage. Reject truncated data
 or ancillary data, unexpected ancillary types, extra/missing descriptors and
-noncanonical lengths. Close every received FD on every refusal path. Do not
+noncanonical lengths. These packet-shape errors, foreign packet identity and
+metadata that differs from the live offer's admitted metadata fault the joined
+channel with ChannelClosed reason 2. Zero offer IDs and disagreement between
+header and metadata offer IDs are shape errors. Check packet shape before the
+stale-ID drain; an expired ID cannot hide malformed framing or plane rows.
+Close every received FD on every refusal path. Do not
 recover a malformed packet by guessing which FD belongs to which offer. Reserve
 terminal journal capacity before ImageAdmitted: two event slots per offer, for
 final ResourceStatus and SourceReleased, in addition to ordinary admission and
@@ -194,7 +202,12 @@ The source is one sealable file of exactly the admitted tight BGRA8 byte length.
 Require F_SEAL_WRITE, F_SEAL_GROW, F_SEAL_SHRINK and F_SEAL_SEAL before mapping.
 F_SEAL_FUTURE_WRITE alone is insufficient. Validate seals and size before creating
 a read-only mapping, use checked width/height/stride arithmetic and enforce the
-existing premultiplied-pixel rules. Validate in bounded chunks, without a whole
+existing premultiplied-pixel rules. Once a packet has valid shape and matches its
+admission, missing seals, unsupported seal queries, wrong backing size or invalid
+pixels refuse that offer with a rejected ResourceStatus and SourceReleased
+disposition 3; they do not fault the channel. Missing or extra descriptors are
+packet-shape errors, not this source-content refusal. Validate in bounded chunks,
+without a whole
 image scan on the input/lock owner thread. The validation worker processes
 64 KiB units under a wall-clock deadline; these units are not paced one per
 Session pass. `max_packets_per_turn` bounds receive work, not validation progress.
@@ -454,7 +467,10 @@ ResourceRetire applies only after immutable acceptance, as on the byte path.
 SourceReleased body: offer ID `u64 @0`, resource ID `u64 @8`, resource generation
 `u64 @16`, disposition `u32 @24`, reserved `u32 @28 = 0`. Dispositions are
 1 retained immutable backing, 2 capture complete, 3 refused/expired before use,
-4 cancelled before import, 5 drained after GPU submission and cancellation.
+4 cancelled before import, 5 drained after GPU submission and withdrawal of
+interest. Disposition 5 includes explicit cancellation, channel loss, expiry and
+capture-interest timeout after submission; none permits release before proven
+safe cleanup. A successful uncancelled capture uses disposition 2.
 A live journal promises exactly one release for every admitted offer, including
 one whose packet never arrived. Losing the journal leaves release unknown to
 the producer. Disposition does not replace ResourceStatus or ResourceReleased.
@@ -535,7 +551,8 @@ on that fid cannot mix versions. Discovery names the limits and formats
 generations; their connection epochs and body channel generations must match
 discovery. The authenticated role root supplies the contract family; the common
 record header does not repeat it. After a
-mismatch, close all three and retry the set at most once per caller drive pass,
+mismatch, close all three and wait for the next caller drive pass. Acquire at
+most one complete set per pass, including the initial acquisition,
 under the existing connection/startup deadline. Do not spin or send Hello from
 an incoherent set. A completed snapshot is discovery, not an admission promise:
 ImageBegin checks current permission, topology, format support and budget again.
@@ -678,11 +695,11 @@ seams, not in a named desktop client's harness.
 | Ancillary ownership | Missing/extra FDs, control truncation and malformed packets close all received references; receiver FDs have close-on-exec. Valid mapping lifetime survives producer close. |
 | Expiry race | Released-before-arrival packets are drained and closed with no second release or retained bytes. Skipped lower IDs are discarded; above-mark packets fault. |
 | Cancellation | Before packet receipt, after receipt, and during validation each end in one terminal status and one release on the live journal; no early mutable reuse. |
-| Channel loss | Closed switches descriptor availability off for that epoch; pending source custody remains separate; byte fallback follows caller policy. |
+| Channel loss | Closed switches descriptor availability off for that epoch and withdraws interest in every live offer; release follows actual custody and safe cleanup, never socket closure alone; byte fallback follows caller policy. |
 | Journal loss | No implied release from EOF or socket closure; no mutable reuse without authoritative release. |
 | 9P epoch end | Stop admission and close channel/queued references; no events on the dead journal. Received references held by submitted GPU work survive only until proven safe cleanup, then close. No teardown step invents SourceReleased or frees an in-use source. |
 | Capacity | Four offers cannot create a fifth reservation; terminal event capacity is reserved before admission; quarantine retains its slot. |
-| Sealed backing | Release does not make the sealed source writable; resource retirement waits for final consumer leases. |
+| Sealed backing | Release does not make the sealed source writable; resource retirement waits for final consumer leases. On a live journal, retain backing, slot and charge until ResourceReleased fits; retry on journal ACK. A dead journal owes no event. |
 
 C low-level service remains clockless. The caller supplies deadline expiry and
 poll readiness; timeout/interest accessors must prevent a stalled unsent packet
@@ -697,7 +714,8 @@ acceptance stays behind t289's safe-completion seam and attended GPU evidence.
 
 #### Sealed lifecycle peer checkpoint — October 17
 
-Rust SDK `2ed263d` is a signed, published test-only candidate. Its
+Rust SDK `8f7dc5d` and C SDK `b2ca17d` are signed, published test-only candidates.
+Claude's final cross-review and Muse's C review found no blockers. Rust's
 `descriptor_custody` target and targeted strict Clippy pass. The producer and
 owner exchange real 200-byte Source packets and SCM_RIGHTS for both role codes.
 They exercise nonblocking send pressure and writable wake, cancellation and
@@ -712,18 +730,32 @@ the expiry disposition, admitted metadata was reconstructed rather than stored,
 and status/release were collapsed into one model event. The follow-ups separate
 those cases and events. A source offer also ends independently of its retained
 resource backing; late packets are discarded after source release even while a
-consumer lease holds the backing. Follow-up cross-review remains pending.
+consumer lease holds the backing. Final review also fixed producer send deadlines,
+shape checks before stale-ID lookup, and deferred ResourceReleased when the
+journal is full. The proposed text now distinguishes packet faults from source
+content refusal and states release rules after channel loss.
 
 These are explicit producer/owner state models. Control admission, journal
 delivery and worker completion are fixture calls; discovery retry uses immutable
 owned bytes rather than real open fids, and authentication is a supplied predicate.
 SourceReleased has a test-side record decoder. Neither an authenticated runtime
 endpoint, cross-process owner, real worker nor GPU completion is established.
-The evidence does not complete the sixteen-case matrix or satisfy conditional
-acceptance by itself. Claude owns the independent C peer in
-`sdk-c-t337-lifecycle` from `1516463`; Codex retains integration and cross-review.
-Muse's Sophia survey remains read-only. No public API, normative layout, vendor
-pin or installed desktop changed, and t338 implementation remains unopened.
+C independently exercises all sixteen matrix cases for shell and lock, with
+real ancillary transfer, scripted discovery parsing, same-process SO_PEERCRED,
+synchronous validation and structured journal events. Its full `check-files`
+suite passes; Claude reports clean Clang ASan/LSan/UBSan runs and 29 rejected
+mutants. Codex reran both C programs successfully. Rust's custody target and
+targeted strict Clippy pass; Claude independently reran the custody target.
+Rust's producer is single-offer, and journal-capacity recovery explicitly invokes
+collection after consumption. Concurrent producer scheduling and a production
+ACK wake are not established by that model.
+
+The independent peers and cross-review satisfy the fixture condition for the
+owner's acceptance in principle. Acceptance still requires the coordinated
+normative changes below; this checkpoint does not make the layouts normative.
+C is integrated on `development/t318-namespace-discovery`; Rust remains on
+`performance/t331-reply-storage`. Muse's Sophia lane stays closed until acceptance.
+No public API, vendor pin or installed desktop changed.
 
 #### Kernel prerequisite results — October 17
 

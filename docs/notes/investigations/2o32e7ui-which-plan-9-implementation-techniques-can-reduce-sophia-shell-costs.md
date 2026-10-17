@@ -15,6 +15,13 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+The independent t337 lifecycle peers are reviewed and published: Rust `8f7dc5d`
+and C `b2ca17d`. Both exercise real descriptor transfer and local custody models;
+neither proves production authentication, live discovery fids or GPU completion.
+Cross-review found no remaining blockers. Next is the owner's conditional
+acceptance change: both topology contracts and the shell KDL reason bound
+together, then opening t338. The proposed plan records the precise test limits.
+
 October 17 owner direction: t331 remains open, waiting on t338, with the panel
 allocation result accepted as red and all four +10% gates unchanged. Rerun all
 four after t338; per-request allocation attribution and journal read pairing
