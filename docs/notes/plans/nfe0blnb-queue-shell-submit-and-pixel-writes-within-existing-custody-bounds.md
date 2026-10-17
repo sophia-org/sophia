@@ -29,6 +29,15 @@ relax t331's +10% gates. Any later descriptor-path comparison must include produ
 and Sophia CPU, GPU work, frame latency and memory, so moving work outside the
 byte-upload measurement cannot count as eliminating it.
 
+The matched B2/B3 pilot is now captured and replayed at comparator `6c87721fa`.
+All 12,000 presentation joins and eight cost reports reproduce, but all four
++10% gates still fail. Panel CPU excess is 14.02–14.29% and allocation excess
+45.49–46.01%; bulk excess is 15.71–15.76% and 54.06–54.21%, respectively.
+See the [result and accounting limits](../investigations/2o32e7ui-which-plan-9-implementation-techniques-can-reduce-sophia-shell-costs.md#b2b3-native-pilot--october-17).
+Implementation and adoption are complete; the performance exit remains open.
+Descriptor design is the recommended next architectural review, not an accepted
+implementation or a replacement for the byte-path gate.
+
 ## Contract implementation requirements
 
 The [accepted amendment](../../sophia-shell-files.md#queued-shell-writes) owns

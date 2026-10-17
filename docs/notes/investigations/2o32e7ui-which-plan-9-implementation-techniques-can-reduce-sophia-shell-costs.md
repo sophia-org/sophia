@@ -25,16 +25,18 @@ metadata checks pass. The final source commits add only the reviewed test-scope
 clarifications; their repeated snapshot checks also pass.
 Comparator merge `6c87721fa` is signed and pushed with those exact archives;
 its repeated snapshot checks pass. Integration remains `4b16974`. The matched
-native B2/B3 pilot has twelve prepared, hashed launch plans: eight files/IPC
-cost arms for panel and bulk, plus four separate progress arms. Release builds
-and device-free session argument validation pass. Each arm offers 1,000 frames
-within a 60-second session, preserving the previous explicit output selection.
-Plans, build output, artifact hashes and the short launcher are in
-`t331-b3-20261017/native-candidate` under the evidence directory below. The next
-step is attended tty4 readiness and a fresh strict quiet window, then capture
-and offline replay. These plans are preparation evidence, not captured results.
-No quiet hold is active and the installed desktop is unchanged. The +10% gates
-remain unchanged; no B2/B3 native result exists yet.
+native B2/B3 pilot completed twelve arms: eight files/IPC cost arms for panel and
+bulk, plus four separate progress arms. Offline replay reproduces all 12,000
+exact presentation joins, journal reports and eight cost reports. Every arm
+records normal console recovery. Both Claude sessions and Muse report no work
+during the strict hold, now released. The installed desktop is unchanged.
+
+All four +10% gates still fail. Panel CPU is +14.02–14.29% and allocations
++45.49–46.01% versus IPC; bulk CPU is +15.71–15.76% and allocations
++54.06–54.21%. Files owner passes per frame are 17.548–17.607 for panel and
+90.179–90.384 for bulk. The result below separates improvements from the
+remaining gap. Evidence, frozen plans and offline replay are under
+`t331-b3-20261017/native-candidate` in the evidence directory below.
 
 The test scopes differ deliberately: Rust forces kernel socket backpressure;
 C limits each dispatch to one output byte. Rust's queued chunks are dropped by
@@ -45,11 +47,59 @@ ordering and custody review before implementation.
 
 The server's one-msize input budget remains the main limit on bulk pass counts.
 Four client credits do not imply four pixel writes serviced in one owner pass.
-Use the matched pilot to decide whether the proposed descriptor path should take
-priority; its implementation is not yet approved. The
+The pilot supports prioritizing descriptor-path design for bulk content, with
+producer/Sophia CPU, GPU work, latency and memory measured together. It does not
+prove a descriptor speedup or solve the panel's remaining per-pass costs. The
+descriptor implementation is not yet approved. The
 [accepted plan](../plans/nfe0blnb-queue-shell-submit-and-pixel-writes-within-existing-custody-bounds.md)
 owns the remaining performance gate. Evidence is under
 `~/.local/state/sophia/development-evidence/t331-b3-20261017/`.
+
+## B2/B3 native pilot — October 17
+
+The matched candidate is comparator `6c87721fa`, integration `4b16974`, Rust
+SDK `01474a9` and C SDK `5246f96`. The timing peer uses Rust; these figures do
+not establish C client performance. Each arm offered 1,000 frames at 60 Hz in a
+60-second session. The bulk arm adds a 4 MiB upload to each panel frame. CPU and
+allocation instrumentation run separately, with separate progress arms. The
+replay's `comparison.json` uses whole-workload bounds, without interpolation or
+subtracting instrumentation overhead.
+
+| Workload and metric | Files | IPC | Files excess |
+| --- | --- | --- | --- |
+| Panel CPU, ms/uploaded MiB | 8.982–8.991 | 7.866–7.878 | 14.02–14.29% |
+| Panel allocations/frame | 1,663–1,666 | 1,141–1,143 | 45.49–46.01% |
+| Bulk CPU, ms/uploaded MiB | 1.6206–1.6209 | 1.4003–1.4006 | 15.71–15.76% |
+| Bulk allocations/frame | 5,218–5,220 | 3,385–3,387 | 54.06–54.21% |
+
+CPU includes all threads in Session and the peer, including foreign code, but
+excludes other processes. Allocation counts cover their Rust global allocations
+and reallocations, excluding foreign allocators. This synthetic byte-upload
+workload does not measure a GPU producer's readback cost. It is a pilot, not the
+full qualification matrix or an uninstrumented latency result.
+
+Compared with the first-slice pilot, files CPU fell about 5.8% for panel and
+4.0% for bulk; allocations fell about 10.5% and 8.6%. IPC CPU rose about 1.6%
+in both workloads, so the narrower ratios are not entirely files improvements.
+These are sequential campaigns, not repeated-run confidence intervals.
+
+Separate progress arms bracket files owner passes/frame at 17.548–17.607 for
+panel, against IPC 8.019–8.043, and 90.179–90.384 for bulk, against IPC
+45.069–46.208. The previous files figures were about 22.6 and 102.3. Bulk still
+has 67.863–67.999 pixel-bearing owner passes per frame; panel has 2.997–3.000.
+These are observed activity counts, not exclusive wake causes or CPU attribution.
+They support the one-msize input-budget explanation and rule out the earlier
+69/4 bulk-pass projection for this implementation.
+
+Keep t331 open with its existing gates. The recommended next design work is the
+[proposed descriptor channel](../decisions/qujwzrdz-admit-shell-content-through-a-negotiated-descriptor-channel-beside-the-9p-wire.md),
+starting with its accounting and shared lock/shell ownership decisions. It may
+avoid repeated bulk byte transport, but no measured result yet establishes that
+benefit. Keep the panel's request/pass and allocation costs explicit: three
+pixel-bearing passes cannot explain its entire gap. Do not widen the server
+budget, claim a descriptor pass, or start another fixed-cost slice from this
+pilot alone. No candidate task is promoted and no new transport is implemented
+by this result checkpoint.
 
 ## October 17 implementation and validation history
 
