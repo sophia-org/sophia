@@ -518,8 +518,14 @@ fn a_split_upload_through_its_slot_is_accepted_as_canonical_chunks() {
         assert_eq!(u32::from_le_bytes(reply.1[..4].try_into().unwrap()), 1000);
         assert_eq!(errno(peer.write_at(10, 999, &sent[999..1100])), EINVAL);
         assert_eq!(errno(peer.write_at(10, 2000, &sent[2000..2100])), EINVAL);
-        let reply = peer.write_at(10, 1000, &sent[1000..61000]);
+        let mut replies = peer
+            .write_burst(10, &[(1000, &sent[1000..61000]), (61000, &sent[61000..])])
+            .into_iter();
+        let reply = replies.next().unwrap();
         assert_eq!(u32::from_le_bytes(reply.1[..4].try_into().unwrap()), 56344);
+        // The short head leaves the queued tail beyond the cursor. It must
+        // refuse without custody, so recovery can resend the exact suffix.
+        assert_eq!(errno(replies.next().unwrap()), EINVAL);
         let reply = peer.write_at(10, 57344, &sent[57344..]);
         assert_eq!(u32::from_le_bytes(reply.1[..4].try_into().unwrap()), 8192);
         assert_eq!(errno(peer.write_at(10, 65536, &[0; 4])), EINVAL);
