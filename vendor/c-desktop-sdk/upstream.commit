@@ -1,14 +1,14 @@
-tree 6c17b63042b78d0d30aeb2a97f7ef3b5b3990c91
-parent 380654fffb77119e09757cad35c21c827247eb68
-author Mason Green <mason@greenm01.net> 1792268117 -0400
-committer Mason Green <mason@greenm01.net> 1792268117 -0400
+tree 17f878b04e5418074d33916e89d99ab542edbcce
+parent 21d03b86117c299a391a1b5e676b8099006d3629
+author Mason Green <mason@greenm01.net> 1792269032 -0400
+committer Mason Green <mason@greenm01.net> 1792269032 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatPXVRsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLrrAEA40zpyQUVeuLGQh5ta5NZ
- owfv9BclZtNC5o+PEKUNBAgBAI+84EgAbHJFBayS/te03vCw37OIkSSt4SN3aO8Q
- 2GgE
- =71tb
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatPa6BsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGK02QD/YWqcT9C2O+0ZHHbSBNSy
+ Cxmsr+pooSL1iaSuPm1QsSoA/jv4pZj8HqmgFFHtj+JXtOl3I9YSTOzqDy5EnB2p
+ 7EoL
+ =YDkQ
  -----END PGP SIGNATURE-----
 
-Correct shell Submitted schema to include existing descriptor candidates
+Sync revision-gated image receipt contract and parity

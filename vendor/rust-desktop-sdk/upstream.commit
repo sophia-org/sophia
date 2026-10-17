@@ -1,14 +1,14 @@
-tree 1c7583b24b34e5c2c7ffc4256bd623a9dd9665db
-parent 5c83d6d58448a93e61f3d1db0f951f7c2f36d042
-author Mason Green <mason@greenm01.net> 1792268117 -0400
-committer Mason Green <mason@greenm01.net> 1792268117 -0400
+tree d08673aca32f35640b6eb7bbdb25642723d665c3
+parent a8150e755287500c2e3a0f038bec5b0fc9e0d785
+author Mason Green <mason@greenm01.net> 1792269021 -0400
+committer Mason Green <mason@greenm01.net> 1792269021 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatPXVRsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIx1QD/WNV4k+bmbHCaa3eZASDG
- C4ruQnuYyzqhgkmV0WfQ/moA/3szBViEv+kc3oNRCHjSnKcknOoy6YCHoaxhb8om
- dQMM
- =aWVQ
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatPa3RsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJ8lAEA6ZYRCm5SQ4a19Irtcd1r
+ 32UnoSbpT3zvBXkK0C7EL3UBAOPms09ScD9yTXQGqdoB3gpzKOW42HI3lwtZc5Ad
+ MIUL
+ =s6od
  -----END PGP SIGNATURE-----
 
-Keep legacy lock receipts within the r1 candidate vocabulary
+Carry ImageBegin receipts at explicit shell and lock revisions

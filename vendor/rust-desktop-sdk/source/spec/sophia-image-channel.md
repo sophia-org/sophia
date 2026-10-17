@@ -79,6 +79,10 @@ a second live channel is refused, never a replacement of the first. After Hello
 is checked, a ChannelReady event on the 9P journal names the channel generation.
 The client consumes that event before ImageBegin; otherwise the two sockets
 could race during setup.
+ImageBegin uses the ordinary transaction submit and ACK barrier. The ImageBegin candidate's Submitted
+receipt names ImageBegin (0x7000), admitted only by the explicit shell r9 or
+lock r2 receipt codec. Earlier revisions and legacy codec entry points keep
+their existing candidate sets; no other image kind is a valid receipt target.
 Unauthorized connection attempts are rejected without disabling another peer's
 valid channel or spending its channel generation.
 

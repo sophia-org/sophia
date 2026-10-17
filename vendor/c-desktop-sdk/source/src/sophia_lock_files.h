@@ -229,4 +229,17 @@ int sophia_lf_encode(void *dst, size_t capacity,
 int sophia_lf_submit_encode(uint8_t dst[24], uint64_t epoch,
                             uint64_t submission, uint32_t bytes);
 int sophia_lf_ack_encode(uint8_t dst[16], uint64_t epoch, uint64_t sequence);
+/* Negotiated lock revision 2 adds Submitted receipts naming ImageBegin
+ * (0x7000). sophia_lf_decode/encode keep the r1 vocabulary and refuse it.
+ * The _revision variants take the negotiated revision (1-2) and admit
+ * candidate kind 0x7000 only in Submitted at revision 2; every other bound,
+ * including Negotiated's r1 revision field, is unchanged. Selecting revision
+ * 2 here does not advertise it. Same returns as sophia_lf_decode/encode. */
+#define SOPHIA_LF_REVISION_IMAGE_CHANNEL 2u
+#define SOPHIA_LF_KIND_IMAGE_BEGIN 0x7000u
+int sophia_lf_decode_revision(const void *src, size_t bytes,
+                              uint16_t revision, struct sophia_lf_record *out);
+int sophia_lf_encode_revision(void *dst, size_t capacity, uint16_t revision,
+                              const struct sophia_lf_record *record,
+                              size_t *bytes);
 #endif

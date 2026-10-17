@@ -1,5 +1,21 @@
 # C and Rust SDK API parity
 
+## Image receipts and context checks, 2026-10-17
+
+Explicit Rust shell r9 and lock r2 receipt entry points now carry ImageBegin
+as Submitted.candidate_kind. Plain APIs and earlier revisions retain their
+legacy candidate sets. C 21d03b8 provides equivalent revision-aware receipt
+encoding and decoding. Both independently test the actual kind bytes, old
+record byte identity, invalid revisions, identities, padding and other image
+kinds. This does not enable negotiation or a producer channel.
+
+Both Rust image codecs now provide caller-context packet validation and
+discovery coherence, matching the C capability. Rust additionally revalidates
+public typed limits and formats passed to coherence; C requires decoded
+inputs. Neither infers narrowing from ChannelReady: the caller supplies the
+granted source mask. No authenticated endpoint or runtime custody is proved
+by these codec checks.
+
 ## Coordinated image codec and KDL checkpoint, 2026-10-17
 
 Both SDK spec copies now declare the seven image kinds with explicit classes.

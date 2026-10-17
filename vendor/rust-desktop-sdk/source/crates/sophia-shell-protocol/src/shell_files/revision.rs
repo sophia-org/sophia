@@ -3,6 +3,69 @@
 use super::*;
 use crate::ShellContentRecord;
 
+/// A receipt names the actual accepted candidate, including ImageBegin at r9.
+/// This does not enable image submission in the legacy session client.
+pub fn encode_shell_file_submitted_body_at_revision(
+    value: ShellFileSubmitted,
+    revision: u16,
+) -> Result<Vec<u8>, ShellFilePayloadError> {
+    check_revision(revision)?;
+    let kind = super::codec::kind_at_revision(value.candidate_kind as u16, revision)?;
+    if shell_file_class(kind) != ShellFileClass::Candidate {
+        return Err(ShellFileCodecError::Kind.into());
+    }
+    if value.submission_id == 0 {
+        return Err(ShellFilePayloadError::Identity);
+    }
+    let mut bytes = Vec::with_capacity(16);
+    bytes.extend_from_slice(&value.submission_id.to_le_bytes());
+    bytes.extend_from_slice(&(kind as u16).to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    Ok(bytes)
+}
+
+pub fn encode_shell_file_submitted_at_revision(
+    header: ShellFileHeader,
+    value: ShellFileSubmitted,
+    revision: u16,
+) -> Result<Vec<u8>, ShellFilePayloadError> {
+    super::payload::header_kind(header, ShellFileKind::Submitted)?;
+    let body = encode_shell_file_submitted_body_at_revision(value, revision)?;
+    Ok(encode_shell_file_record_at_revision(
+        header, &body, revision,
+    )?)
+}
+
+pub fn decode_shell_file_submitted_at_revision(
+    bytes: &[u8],
+    revision: u16,
+) -> Result<ShellFileSubmitted, ShellFilePayloadError> {
+    check_revision(revision)?;
+    let record = decode_shell_file_record_at_revision(bytes, ShellFileClass::Event, revision)?;
+    if record.header.kind != ShellFileKind::Submitted {
+        return Err(ShellFileCodecError::Kind.into());
+    }
+    if record.body.len() != 16 {
+        return Err(ShellFileCodecError::Length.into());
+    }
+    if record.body[10..].iter().any(|byte| *byte != 0) {
+        return Err(ShellFileCodecError::Reserved.into());
+    }
+    let candidate_kind =
+        super::codec::kind_at_revision(super::codec::u16_at(record.body, 8)?, revision)?;
+    if shell_file_class(candidate_kind) != ShellFileClass::Candidate {
+        return Err(ShellFileCodecError::Kind.into());
+    }
+    let submission_id = super::codec::u64_at(record.body, 0)?;
+    if submission_id == 0 {
+        return Err(ShellFilePayloadError::Identity);
+    }
+    Ok(ShellFileSubmitted {
+        submission_id,
+        candidate_kind,
+    })
+}
+
 fn check_revision(revision: u16) -> Result<(), ShellFilePayloadError> {
     if !(1..=9).contains(&revision) {
         return Err(ShellFileCodecError::Version.into());

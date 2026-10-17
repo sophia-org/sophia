@@ -178,3 +178,85 @@ fn existing_descriptor_candidates_keep_legacy_receipts() {
         assert_eq!(decode_shell_file_submitted(&bytes).unwrap(), value);
     }
 }
+
+#[test]
+fn image_begin_receipt_requires_explicit_r9() {
+    let h = header(ShellFileKind::Submitted);
+    let value = ShellFileSubmitted {
+        submission_id: 17,
+        candidate_kind: ShellFileKind::ImageBegin,
+    };
+    let bytes = encode_shell_file_submitted_at_revision(h, value, 9).unwrap();
+    assert_eq!(&bytes[40..42], &0x7000_u16.to_le_bytes());
+    assert_eq!(
+        decode_shell_file_submitted_at_revision(&bytes, 9).unwrap(),
+        value
+    );
+    assert!(encode_shell_file_submitted(h, value).is_err());
+    assert!(decode_shell_file_submitted(&bytes).is_err());
+    for revision in [0, 1, 8, 10, u16::MAX] {
+        assert!(encode_shell_file_submitted_at_revision(h, value, revision).is_err());
+        assert!(decode_shell_file_submitted_at_revision(&bytes, revision).is_err());
+    }
+    for kind in [
+        0, 255, 279, 0x6fff, 0x7001, 0x7002, 0x7003, 0x7004, 0x7005, 0x7006, 0x7007,
+    ] {
+        let mut bad = bytes.clone();
+        bad[40..42].copy_from_slice(&(kind as u16).to_le_bytes());
+        assert!(decode_shell_file_submitted_at_revision(&bad, 9).is_err());
+    }
+    for at in 42..48 {
+        let mut bad = bytes.clone();
+        bad[at] = 1;
+        assert!(decode_shell_file_submitted_at_revision(&bad, 9).is_err());
+    }
+    for end in 0..bytes.len() {
+        assert!(decode_shell_file_submitted_at_revision(&bytes[..end], 9).is_err());
+    }
+    let mut bad = bytes.clone();
+    bad[32..40].fill(0);
+    assert!(decode_shell_file_submitted_at_revision(&bad, 9).is_err());
+    for kind in [
+        ShellFileKind::ResourceBegin,
+        ShellFileKind::LauncherActivationAck,
+    ] {
+        let legacy = ShellFileSubmitted {
+            candidate_kind: kind,
+            ..value
+        };
+        assert_eq!(
+            encode_shell_file_submitted_at_revision(h, legacy, 9).unwrap(),
+            encode_shell_file_submitted(h, legacy).unwrap()
+        );
+    }
+}
+
+#[test]
+fn receipt_extension_is_explicit_in_the_contract() {
+    let schema: kdl::KdlDocument = include_str!("../../../spec/sophia-shell-files-v1.kdl")
+        .parse()
+        .unwrap();
+    let submitted = schema
+        .nodes()
+        .first()
+        .unwrap()
+        .children()
+        .unwrap()
+        .nodes()
+        .iter()
+        .find(|node| {
+            node.name().value() == "body"
+                && node.get(0).and_then(|v| v.as_string()) == Some("Submitted")
+        })
+        .unwrap();
+    let field = submitted
+        .children()
+        .unwrap()
+        .nodes()
+        .iter()
+        .find(|node| node.get(0).and_then(|v| v.as_string()) == Some("candidate_kind"))
+        .unwrap();
+    assert_eq!(field.get("min").unwrap().as_integer(), Some(256));
+    assert_eq!(field.get("max").unwrap().as_integer(), Some(278));
+    assert_eq!(field.get("r9-value").unwrap().as_integer(), Some(0x7000));
+}

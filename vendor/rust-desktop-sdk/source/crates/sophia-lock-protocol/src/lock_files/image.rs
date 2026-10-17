@@ -934,3 +934,202 @@ impl LockImageDiscovery {
         Ok(discovery)
     }
 }
+
+/// The authenticated role's own bounds, from its negotiated limits,
+/// supplied by the caller. Nothing here infers them from discovery.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LockImageRoleBounds {
+    pub max_resource_bytes: u64,
+    pub max_width: u32,
+    pub max_height: u32,
+    pub max_admitted_outputs: u32,
+    pub transfer_slots: u32,
+}
+
+/// What the owner expects on this channel. Bounds come from the limits
+/// object; `granted_source_kinds` is the mask granted by ChannelReady (or,
+/// immediately after coherence, the discovery mask the caller then
+/// narrows with the actual Ready record). This module never narrows it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LockImageExpect {
+    pub role: u16,
+    pub connection_epoch: u64,
+    pub channel_generation: u64,
+    pub granted_source_kinds: u32,
+    pub max_width: u32,
+    pub max_height: u32,
+    pub max_resource_bytes: u64,
+}
+
+impl LockImageExpect {
+    fn validate(&self) -> Result<(), BinaryCodecError> {
+        if self.role != LOCK_IMAGE_CHANNEL_ROLE {
+            return Err(invalid("role"));
+        }
+        nonzero(self.connection_epoch, "connection_epoch")?;
+        nonzero(self.channel_generation, "channel_generation")?;
+        if self.granted_source_kinds == 0 || self.granted_source_kinds & !0b11 != 0 {
+            return Err(invalid("granted_source_kinds"));
+        }
+        nonzero_u32(self.max_width, "max_width")?;
+        nonzero_u32(self.max_height, "max_height")?;
+        nonzero(self.max_resource_bytes, "max_resource_bytes")?;
+        Ok(())
+    }
+}
+
+impl LockImageMetadata {
+    /// Shape plus the limits-derived bounds and granted source kinds in
+    /// `expect`. A kind the grant does not name is refused here, before any
+    /// admission state exists.
+    pub fn admissible(&self, expect: &LockImageExpect) -> Result<(), BinaryCodecError> {
+        self.validate()?;
+        expect.validate()?;
+        let bit = match self.source_kind {
+            LOCK_IMAGE_SOURCE_SEALED_MEMORY => 1,
+            LOCK_IMAGE_SOURCE_DMA_BUF => 2,
+            _ => return Err(invalid("source_kind")),
+        };
+        if expect.granted_source_kinds & bit == 0 {
+            return Err(invalid("source_kind"));
+        }
+        if self.width > expect.max_width || self.height > expect.max_height {
+            return Err(invalid("dimensions"));
+        }
+        if self.declared_bytes > expect.max_resource_bytes {
+            return Err(invalid("declared_bytes"));
+        }
+        Ok(())
+    }
+}
+
+impl LockImagePacket {
+    /// Decode against caller-supplied channel context and the descriptor
+    /// count actually received. Existing shape decoding stays context-free;
+    /// this method adds role, epoch, generation, actual-FD count and
+    /// admissibility checks without inferring any grant.
+    pub fn decode_with_context(
+        bytes: &[u8],
+        received_descriptors: u16,
+        expect: &LockImageExpect,
+    ) -> Result<Self, BinaryCodecError> {
+        expect.validate()?;
+        let packet = Self::decode(bytes)?;
+        let (connection_epoch, channel_generation, descriptor_count) = match &packet {
+            Self::Hello {
+                connection_epoch,
+                channel_generation,
+            } => (*connection_epoch, *channel_generation, 0),
+            Self::Source {
+                connection_epoch,
+                channel_generation,
+                metadata,
+                ..
+            } => (
+                *connection_epoch,
+                *channel_generation,
+                metadata.descriptor_count,
+            ),
+        };
+        if connection_epoch != expect.connection_epoch {
+            return Err(invalid("connection_epoch"));
+        }
+        if channel_generation != expect.channel_generation {
+            return Err(invalid("channel_generation"));
+        }
+        if descriptor_count != received_descriptors {
+            return Err(invalid("descriptor_count"));
+        }
+        if let Self::Source { metadata, .. } = &packet {
+            metadata.admissible(expect)?;
+        }
+        Ok(packet)
+    }
+}
+
+impl LockImageDiscovery {
+    /// Cross-object coherence for one discovery set: this text, the decoded
+    /// limits and formats bodies, and the connection epochs carried by
+    /// their record headers (supplied explicitly, since bodies do not
+    /// carry them). On success returns the packet expectation with the
+    /// discovery source-kind mask; the caller narrows that mask with the
+    /// granted ChannelReady record before admitting Sources.
+    pub fn coherent(
+        &self,
+        limits: &LockImageLimits,
+        formats: &LockImageFormats,
+        limits_connection_epoch: u64,
+        formats_connection_epoch: u64,
+        role_bounds: &LockImageRoleBounds,
+    ) -> Result<LockImageExpect, BinaryCodecError> {
+        // Typed structs can be constructed or mutated past decode, so the
+        // intrinsic rules are rechecked here (broader than the C API,
+        // which documents decoded inputs; no allocation is needed).
+        self.validate()?;
+        limits.validate()?;
+        formats.validate()?;
+        if limits_connection_epoch != self.connection_epoch
+            || formats_connection_epoch != self.connection_epoch
+            || limits.channel_generation != self.channel_generation
+            || formats.channel_generation != self.channel_generation
+            || limits.limits_generation != self.limits_generation
+            || formats.limits_generation != self.limits_generation
+            || formats.formats_generation != self.formats_generation
+            || limits.max_offers != self.max_offers
+            || limits.validation_timeout_ms != self.validation_timeout_ms
+            || limits.capture_interest_timeout_ms != self.capture_interest_timeout_ms
+            || limits.validation_chunk_bytes != self.validation_chunk_bytes
+            || limits.max_packets_per_turn != self.max_packets_per_turn
+        {
+            return Err(invalid("coherence"));
+        }
+        let sealed = self.source_kinds & 1 != 0;
+        let dma_buf = self.source_kinds & 2 != 0;
+        if !formats.rows.is_empty() && !dma_buf {
+            return Err(invalid("formats_unsupported"));
+        }
+        if sealed != (limits.max_validation_jobs != 0) || dma_buf != (limits.max_capture_jobs != 0)
+        {
+            return Err(invalid("capacity"));
+        }
+        if limits.max_resource_bytes > role_bounds.max_resource_bytes
+            || limits.max_width > role_bounds.max_width
+            || limits.max_height > role_bounds.max_height
+            || limits.max_admitted_outputs > role_bounds.max_admitted_outputs
+            || limits.max_offers != role_bounds.transfer_slots.min(4)
+        {
+            return Err(invalid("capacity"));
+        }
+        // Per-output format bounds: rows are strictly ordered by decode, so
+        // one pass counts outputs and rows per output.
+        let mut outputs = 0u32;
+        let mut per_output = 0u32;
+        let mut current = 0u64;
+        for row in &formats.rows {
+            if row.output != current {
+                current = row.output;
+                outputs += 1;
+                per_output = 0;
+                if outputs > limits.max_admitted_outputs {
+                    return Err(invalid("capacity"));
+                }
+            }
+            per_output += 1;
+            if per_output > limits.max_format_rows_per_output
+                || row.max_width > limits.max_width
+                || row.max_height > limits.max_height
+            {
+                return Err(invalid("capacity"));
+            }
+        }
+        Ok(LockImageExpect {
+            role: LOCK_IMAGE_CHANNEL_ROLE,
+            connection_epoch: self.connection_epoch,
+            channel_generation: self.channel_generation,
+            granted_source_kinds: self.source_kinds,
+            max_width: limits.max_width,
+            max_height: limits.max_height,
+            max_resource_bytes: limits.max_resource_bytes,
+        })
+    }
+}

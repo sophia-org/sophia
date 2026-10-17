@@ -211,7 +211,8 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     }
     body "Submitted" size=16 {
         field "submission_id" type="u64" offset=0 nonzero=#true
-        field "candidate_kind" type="u16" offset=8 min=256 max=278
+        // r1-r8 retain the legacy range; r9 additionally admits ImageBegin only.
+        field "candidate_kind" type="u16" offset=8 min=256 max=278 r9-value=28672
         field "reserved" type="bytes" offset=10 size=6 value=0
     }
     body "ObjectPublished" size=24 {

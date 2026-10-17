@@ -15,6 +15,18 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+t338 runtime implementation is now split by owner: Codex handles authenticated
+socket admission and Session wiring; Muse handles shell export discovery,
+refusal and journal reservations; Claude implements the C producer channel.
+The receipt/coherence prerequisite is published and vendored at Rust `93fe07b`
+and C `a208c95`. Explicit revision-aware Submitted receipts name ImageBegin;
+legacy APIs keep their candidate sets. Both SDK checks pass, including the full
+vendored Rust suite. Root's bounded SEQPACKET/SCM_RIGHTS and live-authentication
+join checks pass, alongside lock export/service and shell oracle regressions.
+These primitives are not yet wired into a complete authenticated Hello path.
+The runtime export and producer work remains in progress; sealed mapping,
+retirement and paired performance evidence still follow the receive/refuse gate.
+
 t337 design acceptance is recorded October 17 under niltempus's conditional
 approval. Independent lifecycle peers Rust `8f7dc5d` and C `b2ca17d` passed
 cross-review. The coordinated change widens both role topology contracts and

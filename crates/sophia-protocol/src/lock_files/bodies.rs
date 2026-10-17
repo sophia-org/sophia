@@ -493,13 +493,12 @@ pub struct LockSubmitted {
 
 impl LockSubmitted {
     pub fn encode(&self) -> Result<Vec<u8>, BinaryCodecError> {
-        // Plain Submitted retains the r1 vocabulary even though the enum also
-        // names r2 image kinds. Revision-aware image receipts are separate.
-        if self.candidate_kind.class() != LockFileClass::Candidate
-            || !(256..=263).contains(&(self.candidate_kind as u16))
-        {
-            return Err(invalid("candidate_kind"));
-        }
+        self.encode_at_revision(1)
+    }
+
+    /// ImageBegin receipts are valid only at the caller's negotiated r2.
+    pub fn encode_at_revision(&self, revision: u16) -> Result<Vec<u8>, BinaryCodecError> {
+        Self::check_kind(self.candidate_kind, revision)?;
         let mut bytes = Vec::with_capacity(16);
         push_u64(&mut bytes, nonzero(self.submission_id, "submission_id")?);
         push_u16(&mut bytes, self.candidate_kind as u16);
@@ -508,20 +507,39 @@ impl LockSubmitted {
     }
 
     pub fn decode(bytes: &[u8]) -> Result<Self, BinaryCodecError> {
+        Self::decode_at_revision(bytes, 1)
+    }
+
+    pub fn decode_at_revision(bytes: &[u8], revision: u16) -> Result<Self, BinaryCodecError> {
+        if !(1..=2).contains(&revision) {
+            return Err(BinaryCodecError::UnsupportedVersion(revision));
+        }
         let mut cursor = Cursor::new(bytes);
         let submission_id = nonzero(cursor.u64()?, "submission_id")?;
-        let candidate_kind = LockFileKind::decode(cursor.u16()?)
-            .ok()
-            .filter(|kind| {
-                kind.class() == LockFileClass::Candidate && (256..=263).contains(&(*kind as u16))
-            })
-            .ok_or_else(|| invalid("candidate_kind"))?;
+        let candidate_kind =
+            LockFileKind::decode(cursor.u16()?).map_err(|_| invalid("candidate_kind"))?;
+        Self::check_kind(candidate_kind, revision)?;
         reserved(&mut cursor, 6)?;
         cursor.finish()?;
         Ok(Self {
             submission_id,
             candidate_kind,
         })
+    }
+
+    fn check_kind(kind: LockFileKind, revision: u16) -> Result<(), BinaryCodecError> {
+        if !(1..=2).contains(&revision) {
+            return Err(BinaryCodecError::UnsupportedVersion(revision));
+        }
+        // Keep the legacy vocabulary exact; r2 adds only ImageBegin here,
+        // not every kind sharing the image namespace.
+        if kind.class() != LockFileClass::Candidate
+            || !((256..=263).contains(&(kind as u16))
+                || revision == 2 && kind == LockFileKind::ImageBegin)
+        {
+            return Err(invalid("candidate_kind"));
+        }
+        Ok(())
     }
 }
 

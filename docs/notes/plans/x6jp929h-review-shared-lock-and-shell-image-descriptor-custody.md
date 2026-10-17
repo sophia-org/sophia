@@ -426,11 +426,21 @@ the first t338 implementation step, not a result attributed to these fixtures.
 ### t338 first slice and ownership
 
 Codex owns the shared contract, shell/lock schema and protocol codecs, SDK spec
-copies, vendor pins, Session endpoint wiring, integration and pushes. Claude
-reviews read-only. Muse owns the proposed runtime discovery/refusal work only
-after Codex names the files and the protocol/vendor prerequisites have landed.
-Until then Muse may review the slice read-only; acceptance does not authorize
-overlapping edits to export owners.
+copies, vendor pins, Session endpoint wiring, integration and pushes. Under the
+owner's parallel implementation direction, Claude owns the independent C SDK
+producer channel and reviews Rust; Muse owns the named shell export
+discovery/refusal files and their journal reservation mechanism. Codex keeps
+authenticated socket admission and Session wiring. Lock runtime work has not
+been assigned. Shared checkout edits remain separated by file ownership.
+
+The receipt prerequisite is published in Rust `93fe07b` and C `a208c95`:
+explicit shell r9 and lock r2 entry points carry ImageBegin in Submitted while
+plain APIs retain their legacy vocabulary. Both Rust protocol suites and strict
+Clippy pass, as does the full C check. Rust coherence now checks caller context
+and revalidates public typed limits/formats. These are codec results; neither
+SDK yet implements a producer channel. The in-progress runtime transport test
+uses real SEQPACKET and SCM_RIGHTS to check bounded reception, truncation cleanup,
+CLOEXEC and listener isolation, without claiming authenticated Hello.
 
 First add all seven image kinds and exact body/row codecs independently in C
 and Rust, with role-specific schema tests, literal vectors and negative cases.

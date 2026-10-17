@@ -265,7 +265,10 @@ fn check_revision(revision: u16) -> Result<(), ShellFileCodecError> {
         .ok_or(ShellFileCodecError::Version)
 }
 
-fn kind_at_revision(value: u16, revision: u16) -> Result<ShellFileKind, ShellFileCodecError> {
+pub(super) fn kind_at_revision(
+    value: u16,
+    revision: u16,
+) -> Result<ShellFileKind, ShellFileCodecError> {
     // Keep `kind` itself legacy-only: embedded kinds in Submitted and
     // ObjectPublished must not acquire new vocabulary through this addition.
     if revision == 9 {
