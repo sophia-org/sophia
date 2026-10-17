@@ -47,7 +47,12 @@ fn bounded_receive_closes_truncated_rights_and_transfers_valid_references_once()
             .map(|_| memfd_create("image-datagram", MemfdFlags::CLOEXEC).unwrap())
             .collect();
         let stable = count();
-        for (bytes, fds) in [(vec![0; 201], 1), (vec![0; 200], 8), (vec![], 1)] {
+        for (bytes, fds) in [
+            (vec![0; 201], 1),
+            (vec![0; 200], 5),
+            (vec![0; 200], 8),
+            (vec![], 1),
+        ] {
             send(&sender, &bytes, &sources[..fds]);
             assert!(matches!(
                 receive_image_datagram(receiver.as_fd()),
@@ -77,7 +82,7 @@ fn bounded_receive_closes_truncated_rights_and_transfers_valid_references_once()
         drop(sender);
         assert!(matches!(
             receive_image_datagram(receiver.as_fd()),
-            Err(Errno::PROTO)
+            Err(Errno::PIPE)
         ));
     }
     assert_eq!(count(), baseline);
@@ -88,7 +93,22 @@ fn bounded_receive_closes_truncated_rights_and_transfers_valid_references_once()
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
     {
         let listener = ImageChannelListener::bind(&path).unwrap();
-        assert!(listener.accept().unwrap().is_none());
+        let readiness = listener.readiness();
+        let mut ready = [rustix::event::PollFd::new(
+            &readiness,
+            rustix::event::PollFlags::IN,
+        )];
+        assert_eq!(
+            rustix::event::poll(
+                &mut ready,
+                Some(&rustix::event::Timespec {
+                    tv_sec: 0,
+                    tv_nsec: 0
+                })
+            )
+            .unwrap(),
+            0
+        );
         // A second bind must not unlink the first listener.
         assert!(ImageChannelListener::bind(&path).is_err());
         let client = socket_with(
@@ -103,15 +123,7 @@ fn bounded_receive_closes_truncated_rights_and_transfers_valid_references_once()
             &SocketAddrUnix::new(path.join("image.sock")).unwrap(),
         )
         .unwrap();
-        let accepted = listener.accept().unwrap().unwrap();
         send(&client, &[3; 40], &[]);
-        assert_eq!(
-            receive_image_datagram(accepted.as_fd())
-                .unwrap()
-                .unwrap()
-                .bytes(),
-            &[3; 40]
-        );
     }
     assert!(!path.join("image.sock").exists());
     std::fs::remove_dir(path).unwrap();

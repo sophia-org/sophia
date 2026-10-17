@@ -4,6 +4,8 @@ use std::io;
 use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 
 mod exec_gate;
+mod rights;
+pub use rights::{ReceivedRights, receive_rights};
 pub use exec_gate::{ExecGate, ExecGateChild};
 
 /// Duplicate an inherited descriptor without claiming ownership of its number.

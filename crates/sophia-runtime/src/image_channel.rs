@@ -3,20 +3,19 @@
 //! Receiving bytes conveys no authority: the owner must join Hello to a live
 //! authenticated 9P principal before admitting any source. Descriptor ownership
 //! transfers into a packet only after the kernel message is known to fit.
-use std::io::IoSliceMut;
-use std::mem::MaybeUninit;
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use rustix::io::Errno;
-use rustix::net::{RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, ReturnFlags, recvmsg};
 
 pub const IMAGE_PACKET_BYTES: usize = 200;
 pub const IMAGE_PACKET_FDS: usize = 4;
+pub const IMAGE_ENDPOINT_BASENAME: &str = "image.sock";
 
 /// Listener beneath an existing private role directory. It does not create or
 /// authorize a role; accepted sockets still need authenticated Hello admission.
+/// Drop this listener before the RoleEndpoint that owns the directory.
 pub struct ImageChannelListener {
     socket: OwnedFd,
     path: PathBuf,
@@ -189,7 +188,7 @@ impl ImageChannelListener {
         {
             return Err(std::io::Error::from(Errno::ACCESS));
         }
-        let path = directory.join("image.sock");
+        let path = directory.join(IMAGE_ENDPOINT_BASENAME);
         let socket = rustix::net::socket_with(
             rustix::net::AddressFamily::UNIX,
             rustix::net::SocketType::SEQPACKET,
@@ -210,7 +209,7 @@ impl ImageChannelListener {
     /// One accept per call bounds work under a stream of unauthorized peers.
     /// A caller must close a returned socket unless its Hello joins live 9P
     /// custody. Credential equality alone never grants image authority.
-    pub fn accept(&self) -> Result<Option<OwnedFd>, Errno> {
+    fn accept(&self) -> Result<Option<OwnedFd>, Errno> {
         match rustix::net::accept_with(
             &self.socket,
             rustix::net::SocketFlags::CLOEXEC | rustix::net::SocketFlags::NONBLOCK,
@@ -295,41 +294,32 @@ pub fn receive_image_datagram(socket: BorrowedFd<'_>) -> Result<Option<ImageData
         descriptors: std::array::from_fn(|_| None),
         count: 0,
     };
-    let mut control = [MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(IMAGE_PACKET_FDS))];
-    let mut ancillary = RecvAncillaryBuffer::new(&mut control);
-    let message = match recvmsg(
-        socket,
-        &mut [IoSliceMut::new(&mut packet.bytes)],
-        &mut ancillary,
-        RecvFlags::CMSG_CLOEXEC | RecvFlags::DONTWAIT,
-    ) {
+    let message = match sophia_linux_peer::receive_rights(socket, &mut packet.bytes) {
         Ok(message) => message,
-        Err(Errno::AGAIN) => return Ok(None),
-        Err(error) => return Err(error),
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => return Ok(None),
+        Err(error) => return Err(Errno::from_raw_os_error(error.raw_os_error().unwrap_or(5))),
     };
-    let mut invalid = message.bytes == 0
-        || message.bytes > IMAGE_PACKET_BYTES
-        || message
-            .flags
-            .intersects(ReturnFlags::TRUNC | ReturnFlags::CTRUNC);
-    for message in ancillary.drain() {
-        match message {
-            RecvAncillaryMessage::ScmRights(rights) => {
-                for fd in rights {
-                    if packet.count == IMAGE_PACKET_FDS {
-                        invalid = true;
-                    } else {
-                        packet.descriptors[packet.count] = Some(fd);
-                        packet.count += 1;
-                    }
-                }
-            }
-            _ => invalid = true,
+    if message.bytes == 0 && message.count == 0 {
+        let mut state = [rustix::event::PollFd::new(
+            &socket,
+            rustix::event::PollFlags::IN,
+        )];
+        rustix::event::poll(
+            &mut state,
+            Some(&rustix::event::Timespec {
+                tv_sec: 0,
+                tv_nsec: 0,
+            }),
+        )?;
+        if state[0].revents().contains(rustix::event::PollFlags::HUP) {
+            return Err(Errno::PIPE);
         }
     }
-    if invalid {
+    if message.bytes == 0 || message.bytes > IMAGE_PACKET_BYTES {
         return Err(Errno::PROTO);
     }
     packet.length = message.bytes;
+    packet.descriptors = message.descriptors;
+    packet.count = message.count;
     Ok(Some(packet))
 }
