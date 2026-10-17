@@ -28,8 +28,18 @@ frame joins and the cost reports. The two bulk-allocation arms overlap reported
 reviewer activity and remain provisional. The held-ACK Rust regression and C
 negotiation-probe guard pass. Comparator `b67cb38d5` now carries the implementation;
 its deterministic ledger reduces panel requests by about 30% and bulk requests
-by about 16%, including startup. Next prepare fresh matched CPU/allocation pilots;
-recapture the provisional baseline bulk-allocation pair before relying on it.
+by about 16%, including startup. Fourteen native arms are prepared: eight
+candidate cost arms, four separate progress arms, and clean recaptures of the
+two provisional baseline bulk-allocation arms. Next obtain attended readiness
+and a fresh quiet window before running the installed `t331-check` on tty4.
+Comparator `9e3c741f8` adds separate owner-pass activity diagnostics; integration
+`4b16974` reads the new format while retaining historical captures. These are
+observations of work within passes, not inferred wake causes, and are excluded
+from CPU/allocation builds. All plans and arguments validate; no new native run
+has begun. The frozen campaign is under `t331-reuse-20261017/native-candidate`;
+keep comparator `9e3c741f8` and integration `4b16974` unchanged until capture.
+The detached `sophia-t331-baseline-recapture` checkout at `363e06998` supplies
+the baseline source identity and should be removed after its recapture.
 The prepared campaign lives under
 `~/.local/state/sophia/development-evidence/t331-reuse-20261017/native-baseline`.
 Any further native capture requires attended readiness and a fresh quiet window.
@@ -100,6 +110,41 @@ End-of-pass pending-read service, a different ACK cadence, queued submit and
 pipelined pixel writes remain possible follow-up investigations. They are not
 authorized implementation extensions of this slice; the matched native pilot
 must establish the remaining costs before selecting another change.
+The [9P transport prior-art survey](yhsocuvc-what-prior-art-on-9p-transport-cost-says-about-the-shell-wire.md)
+records independent research and the deferred t334/t335 candidates.
+
+### Owner-pass observation method
+
+Comparator `9e3c741f8` uses a thread-local, allocation-free scope around each
+owner-loop pass. Scope exit counts completion even on early return or continue.
+Setup observes core 9P walks/opens across roles; shell writes distinguish record,
+submit and pixel activity. IPC classifies decoded resource chunks as pixels and
+other decoded frames as records, with no artificial separate submit operation.
+Cadence observes a due pacing/deadline predicate, not a completed presentation.
+Other includes core reads/writes/clunks and IPC input bytes; it deliberately
+overlaps refined categories. Mixed passes remain explicit. Flush-only means
+observed output bytes without another category, and unattributed means no
+instrumented observation; neither establishes that no other work occurred.
+Mixed includes the Other overlap: a single shell write or decoded IPC frame can
+set both bits. Other is not residual, and mixed does not mean multiple kinds of
+shell work. Presence counters cannot establish ACK/read ordering or identify
+which event pair shared a reply; that requires an ordered trace.
+
+Tests cover allocation-free accumulation, repeated activity counted once per
+pass, mixed/unattributed/flush-only categories, bounded formatting and historical
+schema parsing. The native-feature build check and both-wire supplied-owner
+diagnostic pass. That fixture has no real owner loop, so native attribution still
+requires separate progress captures. Diagnostic schema 3 cannot be mixed with
+cost instrumentation. Evidence is in `t331-reuse-20261017/pass-ledger`.
+
+The three release modes are built separately and hashed at their cargo-slot
+paths. Baseline allocation executables retain their original hashes through
+hard links within the original cargo slot, not binary copies in evidence.
+Fourteen fresh plans pass source/artifact checks and device-free argument
+validation. Initial preparation refused a changed preflight hash; the current
+integration preflight was rebuilt and explicitly pinned, and the refusal log
+is retained. The helper performs no builds and refuses existing run directories.
+No quiet hold or desktop installation is active.
 
 ## Reconciled native baseline — October 17
 
