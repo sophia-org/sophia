@@ -15,15 +15,16 @@ repairs? Reconcile the existing evidence before repeating a desktop campaign.
 ## Current resumption
 
 The October 17 [replacement plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#approved-reusable-writer-and-cumulative-ack-slice--october-17)
-is implemented through production `29b64531c`, with Rust SDK `cab32bf` and C SDK
-`71582a5`. The [active attribution investigation](2o32e7ui-which-plan-9-implementation-techniques-can-reduce-sophia-shell-costs.md#current-resumption)
+is implemented through production `a3c94bb86`, with Rust SDK `9d56625` and C SDK
+`30b7c1f`. The [active attribution investigation](2o32e7ui-which-plan-9-implementation-techniques-can-reduce-sophia-shell-costs.md#current-resumption)
 records passing protocol gates and the remaining measurements. Comparator
 `363e06998` preserves the reconciled pre-change baseline (`116075541`, SDK
 `f1cd924`). Its eight-arm baseline now has 8,000 replayed frame joins and matching
 cost reports; the two bulk-allocation arms overlap reviewer activity and remain
-provisional. The active investigation records the bounds and limits. Next finish
-the SDK review follow-ups, carry the implementation onto the comparator and
-measure the candidate. No candidate performance result or desktop installation
+provisional. Comparator `b67cb38d5` now carries the reviewed implementation;
+its 64-frame diagnostic reduces panel requests by about 30% and bulk requests
+by about 16%, including startup. Next prepare matched native pilots and recapture
+the provisional baseline pair. No candidate CPU/allocation result or desktop installation
 is claimed.
 
 CPU-20 is superseded preparation: its frozen artifacts remain, but no capture

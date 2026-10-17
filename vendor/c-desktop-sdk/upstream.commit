@@ -1,14 +1,14 @@
-tree c5708df15bcb2e6984d825b18207bc604b1229ea
-parent 71582a5cc7f42c5bbc5b1f9b1139d91504bc6c27
-author Mason Green <mason@greenm01.net> 1792238684 -0400
-committer Mason Green <mason@greenm01.net> 1792238684 -0400
+tree d6fc95b2024e134f98dca9fb1844e5f39ac37b68
+parent c0f0375f652bf71e3702509f614746c9d9b3bc9f
+author Mason Green <mason@greenm01.net> 1792244336 -0400
+committer Mason Green <mason@greenm01.net> 1792244336 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatNkXBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLr1gEA3oWzcRngQGL1RwhG2qZj
- AO9kj7y8FDipuW9uIGuiBqYBAKtPXb94fMMsgOXwLd8cee62mhm6Kn3SnNlg7gX/
- oxkN
- =fScy
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatN6cBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJlKAEAhmq37iGqSBAgKgjaHOqw
+ 7/6eZtdbw4YNECR/gUak1Q4A/2eeCDIfHSG3ugUcHK0wxnYa48RDUWwutY82gHsy
+ v2wH
+ =X9PE
  -----END PGP SIGNATURE-----
 
-fix: await negotiation before reusable writer discovery
+Preserve submit acceptance and record revocation in paired writes

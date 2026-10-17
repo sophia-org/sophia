@@ -15,27 +15,255 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
-Production `29b64531c` implements the approved reusable writer (`ee22309ba`) and
-imports signed Rust SDK `cab32bf` and C SDK `71582a5`. Both source branches and
-Sophia master are pushed. The [decision](../decisions/7mls2e2q-reuse-a-shell-transaction-writer-without-changing-custody.md)
+Production `a3c94bb86` implements the approved reusable writer (`ee22309ba`) and
+imports signed Rust SDK `9d56625` and C SDK `30b7c1f`. Both source branches and
+Sophia's first-slice adoption were pushed. Later checkpoints remain local as
+noted below. The [decision](../decisions/7mls2e2q-reuse-a-shell-transaction-writer-without-changing-custody.md)
 and [t331 plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#approved-reusable-writer-and-cumulative-ack-slice--october-17)
 remain authoritative. No desktop installation has run.
 
 The reconciled baseline captured all eight arms at comparator `363e06998`: merge `10d25e680`
 carries production `116075541` and its existing SDK optimizations; the later
 commit adds per-arm diagnostic output only. Offline replay reproduces all 8,000
-frame joins and the cost reports. The two bulk-allocation arms overlap reported
-reviewer activity and remain provisional. Next add the held-ACK Rust regression
-and C negotiation-probe guard from review, carry the implementation onto the
-comparator, compare request ledgers, and run fresh matched CPU/allocation pilots.
-The prepared campaign lives under
+frame joins and the cost reports. The original two bulk-allocation arms overlap
+reviewer activity; clean recaptures now supply their comparison. The held-ACK Rust regression and C
+negotiation-probe guard pass. Comparator `b67cb38d5` now carries the implementation;
+its deterministic ledger reduces panel requests by about 30% and bulk requests
+by about 16%, including startup. Fourteen native arms have now captured: eight
+candidate cost arms, four separate progress arms, and clean recaptures of the
+two provisional baseline bulk-allocation arms. Offline replay reproduces all
+14,000 exact presentation joins, journal/cost reports and console recovery.
+Comparator `9e3c741f8` adds separate owner-pass activity diagnostics; integration
+`4b16974` reads the new format while retaining historical captures. These are
+observations of work within passes, not inferred wake causes, and are excluded
+from CPU/allocation builds. The completed campaign is under
+`t331-reuse-20261017/native-candidate`; its exact comparator `9e3c741f8` and
+integration `4b16974` identities remain in the plans and reports. The temporary
+baseline checkout at `363e06998` was removed after its clean recapture.
+The completed baseline lives under
 `~/.local/state/sophia/development-evidence/t331-reuse-20261017/native-baseline`.
 Any further native capture requires attended readiness and a fresh quiet window.
 
 CPU-20 remains superseded preparation, with no capture. Cost-15 and perf-18 are
 historical evidence, not qualification of this candidate. No quiet hold is active.
-Neither the request reduction nor buffer reuse establishes CPU or allocation
-savings; the unchanged +10% gate and full matrix remain open.
+The pilot remains above the +10% ceiling: panel CPU +23.03–23.34% and allocations
++62.61–63.16%; bulk CPU +22.31–22.37% and allocations +68.48–68.62%. The full
+matrix remains open. Request reductions alone do not explain those costs.
+
+niltempus has accepted the [B2/B3 plan](../plans/nfe0blnb-queue-shell-submit-and-pixel-writes-within-existing-custody-bounds.md)
+and directed implementation. The contract now permits queued final-fragment
+submit and a four-write pixel window. The capture prerequisite is complete.
+B2 is signed as Rust `7722502` and C `574a1eb`, adopted by signed Sophia `406f73f31`.
+Rust's shell-client suite and strict Clippy pass; the full C suite passes.
+Independent tests hold and reverse both replies, preserve early Submitted after
+a failed record, reject incomplete-record retry and keep earlier C fragments
+sequential. Initial candidates `b8b7b55`/`c0f0375` passed startup exchanges with
+metadata and content negotiation on oldest supported export `116075541` and
+current `feaf3cbc7`. The review follow-ups passed the current export again.
+These are startup exchanges, not the entire export failure matrix. Logs are under
+`~/.local/state/sophia/development-evidence/t331-b2-20261017/`.
+The production export's incomplete/absent-staging and backpressure precedence
+fixture passes for both writer paths. Further compatibility fixtures and B3
+qualification remain open. No B2 native performance result exists yet.
+
+The review follow-ups restore C's record-write ESTALE classification and preserve
+a complete successful submit reply on terminal failure in both SDKs, even when
+the record reply or journal event is missing. The ordinary AwaitSubmitted path
+uses the same terminal rule; live progress still waits for the journal and its
+covering ACK. Tests retain Unknown when no authoritative reply or valid event
+establishes custody, and malformed journal data still fails validation. C reports
+record ESTALE as a stale session; Rust retains its previous protocol-error
+category. API-PARITY records that difference and B2's C consumer rebuild
+requirement. Both signed follow-ups are upstream; B3 changes now sit above them locally.
+
+Publication is complete: both signed SDK candidates and Sophia's result notes
+are upstream. Exact archives have been imported locally. Both snapshot checks,
+the Rust SDK suite and C production export/lifecycle gates pass. The full default
+Sophia suite passes after adding the missing native-session guard to
+`output_snapshot_allocations.rs`; that test also passes with its feature enabled.
+Formatting, metadata and diff checks pass. After niltempus unlocked signing,
+the guard was committed as `d3a94f878`, followed by B2 adoption `406f73f31`.
+The installed desktop is unchanged.
+
+B3 export coverage has begun locally: the real-socket split-upload test now
+issues a short head and its tail before reading replies, checks tail EINVAL and
+recovers the exact bytes. A direct export fixture verifies EAGAIN leaves the
+cursor unchanged, queued tails refuse EINVAL while live, and a closing binding
+answers ESTALE without more custody. Both pass. These tests do not establish
+SDK windowing or expiry timing.
+
+Both B3 SDK windows are signed and published: Rust `365e5f3`, C `63efea3`.
+Sophia `bba813fa8` records the export fixtures above. Rust gathers
+four adjacent canonical units with separate tickets, matches replies by tag and
+settles in issue order. Its tests cover credit refill across eight chunks, reversed
+replies, short/EAGAIN heads with invalidated tails, End after drain and a terminal
+status before write replies. C windows one borrowed buffer, with independent
+tests for reversed replies, cursor recovery, idle wake, repeated backoff, explicit
+low-level retry, contradictory tails and fencing. C's full suite passes. Rust's
+shell/protocol suites and strict Clippy pass. Both also test iounit fragmentation;
+C's eight-slot attached-client fixture proves a three-write window and refill.
+The inline Rust window avoids a per-burst allocation; this is a storage property,
+not a measured allocation-gate result.
+
+C keeps the low-level client clockless and adds upload_retry; sophia_ss owns an
+independent supplied-clock deadline and reports the earlier submit/upload wake.
+Five control slots are reserved: default C session storage now has nine request
+slots, while direct eight-slot clients use three upload credits. Both C structs
+grow and consumers must rebuild. API-PARITY records the buffer/ticket distinction,
+fragment scheduling and progress-or-time versus time-only retry. Recovery counts
+remain in fixtures/instrumented evidence. Claude's C review found no blocker;
+the control reserve correction is applied, and Rust review is pending. No B3
+snapshot, comparator ledger or native pilot has run. No quiet hold is active.
+SDK logs are under `~/.local/state/sophia/development-evidence/t331-b3-20261017/`.
+Next: resolve review findings; preserve a B2-only comparator checkpoint; complete
+old/current export, fault and fairness checks before adopting B3; then collect
+matched native evidence. The existing +10% gates remain unchanged.
+
+## First-slice native pilot — October 17
+
+All fourteen arms captured 1,000 frames at 60 Hz, 1080p, scale 1, VRR off and
+idle host load. Offline collection, journal metrics and exact kernel joins
+reproduce the recorded reports. All console recovery checks pass. The three
+other agents report no crunch activity during the hold; `quiet-window.txt`
+records their confirmations and release. This is a pilot, not the full gate.
+
+| Workload / measure | Files | Paired IPC | Conservative excess |
+| --- | --- | --- | --- |
+| Panel CPU ms/MiB, ordinary allocator | 9.538267–9.548299 | 7.741651–7.752949 | 23.03–23.34% |
+| Panel allocations + reallocations/frame | 1,857–1,860 | 1,140–1,142 | 62.61–63.16% |
+| Panel + 4 MiB CPU ms/MiB, ordinary allocator | 1.687707–1.688053 | 1.379412–1.379823 | 22.31–22.37% |
+| Panel + 4 MiB allocations + reallocations/frame | 5,708–5,711 | 3,387–3,388 | 68.48–68.62% |
+
+The clean baseline bulk-allocation recaptures are 6,078–6,080 files and
+3,384–3,386 IPC operations/frame. The earlier panel baseline was 2,082–2,086
+files and 1,142–1,144 IPC. Candidate allocations are lower, but neither workload
+passes +10%. CPU and allocation figures above come from separate build modes;
+do not substitute allocation-instrumented CPU for the ordinary-allocator result.
+
+The IPC panel CPU arm also rose from 7.529965–7.541559 to 7.741651–7.752949
+ms/MiB, about 2.8%. The files arm fell from 10.405274–10.418833. The ratio
+improvement therefore includes comparator drift; it is not entirely a files-side
+saving. Projections based on allocations per historical pass remain hypotheses,
+not grounds to change the gate or assign the remaining gap to another task.
+
+Separate progress runs bracket Session passes over the peer's full workload:
+22.615–22.672 per panel frame versus IPC 8.018–8.040; 102.297–102.389 per bulk
+frame versus 45.014–45.532. Files observes about five record, five submit and
+three pixel passes per panel frame; bulk observes eight, eight and 72. These
+categories overlap and are not wake causes. There is no matched native progress
+baseline for the first slice, so historical pass counts do not prove its exact
+pass saving. The results support testing B2/B3; they predict no automatic pass.
+
+Evidence: `~/.local/state/sophia/development-evidence/t331-reuse-20261017/native-candidate/`
+contains immutable run directories and `offline-replay/{summary,comparison}.json`.
+The latter records exact ratios and false +10% verdicts for both cost measures
+on both workloads. The disposable replay script is
+`/tmp/t331-replay-reuse-candidate.py`; reports and raw logs are the retained evidence.
+
+## SDK review follow-ups and candidate ledger — October 17
+
+The subsequent [B2/B3 design](../plans/nfe0blnb-queue-shell-submit-and-pixel-writes-within-existing-custody-bounds.md)
+was reviewed as proposed, then accepted by niltempus on October 17. It preserves
+tail fencing, submit errno precedence, per-ticket custody and canonical-chunk
+idle renewal. The frozen first-slice capture remains unchanged. B2 is now a local
+SDK candidate as described in Current resumption; B3 has signed source candidates
+but is not yet adopted into Sophia.
+
+Signed Rust `9d56625` proves that the next retained-fid record is outstanding
+while the covering ACK reply is withheld. Signed C `30b7c1f` waits for Negotiated
+before discovery even when the caller has already acknowledged Submitted; a
+scripted delayed-Negotiated test covers that ordering. C still waits for the
+confirmed ACK before sending its next record, as documented in both parity files.
+The full Rust shell suite, strict all-target shell Clippy, full C suite, both
+vendor gates, Sophia runtime tests and independent C/Rust startup checks against
+the production export pass. Production adoption is `a3c94bb86`.
+
+Signed comparator merge `b67cb38d5` keeps IPC isolated and passes the supplied-owner
+progress diagnostic on both wires. Across 64 frames, including startup/teardown:
+
+| Request | Panel before → after | Panel + 4 MiB before → after |
+| --- | --- | --- |
+| Walk | 391 → 72 | 647 → 136 |
+| Open | 391 → 72 | 647 → 136 |
+| Clunk | 388 → 68 | 644 → 132 |
+| Read | 648 → 648 | 1,032 → 1,031 |
+| Write | 1,541 → 1,477 | 6,725 → 6,661 |
+| Total | 3,359 → 2,337 | 9,695 → 8,096 |
+
+The retained writer removes steady transaction lifecycle requests, with its
+one-time discovery included. Write counts fall by 64 per workload; the single
+bulk-read difference is not evidence of a general read reduction. IPC continues
+to issue no 9P requests. This fixture has no Session owner loop or physical
+presentation: its zero owner-pass counter is not a native result. CPU and
+allocation savings were unmeasured at that checkpoint; the native pilot above
+now records them. Evidence is under
+`~/.local/state/sophia/development-evidence/t331-reuse-20261017/sdk-followups`
+and `candidate-ledger`, with the comparison in `candidate-ledger/comparison.json`.
+
+### ACK cadence finding and remaining attribution
+
+Claude's independent review reproduces the lifecycle arithmetic: panel loses
+319 walks, 319 opens and 320 clunks across 64 frames; bulk loses 511, 511 and
+512. The one-time reusable-node probe accounts for the extra walk and open.
+The measured write reduction is only one per frame in each workload. Do not
+carry the earlier hypothetical panel ACK reduction from 11 to 5 into the pilot.
+The unchanged pixel writes and nearly unchanged reads are expected for this slice.
+
+The source offers an explanation for the limited ACK batching: the server retries
+waiting reads after requests, and Rust sends eligible ACKs when its bounded drive
+finds no further progress. Journal entries delivered separately can therefore
+each trigger an ACK before the next entry arrives. The diagnostic's aggregate
+counts do not identify which event pair shared a drive call or prove this cadence
+in the native owner loop. In particular, the old 53/152 steady-frame ledger must
+not replace the reconciled 64-frame totals, which include startup and teardown.
+
+Removing requests does not establish an equal reduction in Session passes.
+Clunks are not awaited, and several requests can share a pass. Predictions of
+about 17 panel passes or a particular allocation gap remain hypotheses. The next
+diagnostic must report owner passes on both wires, attribute setup, record,
+submit, pixel, flush-only and cadence work where directly observable, and retain
+unattributed or overlapping work explicitly. Do not infer those causes from
+request totals or add diagnostic logging to CPU/allocation acceptance arms.
+
+End-of-pass pending-read service, a different ACK cadence, queued submit and
+pipelined pixel writes remain possible follow-up investigations. They are not
+authorized implementation extensions of this slice; the matched native pilot
+must establish the remaining costs before selecting another change.
+The [9P transport prior-art survey](yhsocuvc-what-prior-art-on-9p-transport-cost-says-about-the-shell-wire.md)
+records independent research and the deferred t334/t335 candidates.
+
+### Owner-pass observation method
+
+Comparator `9e3c741f8` uses a thread-local, allocation-free scope around each
+owner-loop pass. Scope exit counts completion even on early return or continue.
+Setup observes core 9P walks/opens across roles; shell writes distinguish record,
+submit and pixel activity. IPC classifies decoded resource chunks as pixels and
+other decoded frames as records, with no artificial separate submit operation.
+Cadence observes a due pacing/deadline predicate, not a completed presentation.
+Other includes core reads/writes/clunks and IPC input bytes; it deliberately
+overlaps refined categories. Mixed passes remain explicit. Flush-only means
+observed output bytes without another category, and unattributed means no
+instrumented observation; neither establishes that no other work occurred.
+Mixed includes the Other overlap: a single shell write or decoded IPC frame can
+set both bits. Other is not residual, and mixed does not mean multiple kinds of
+shell work. Presence counters cannot establish ACK/read ordering or identify
+which event pair shared a reply; that requires an ordered trace.
+
+Tests cover allocation-free accumulation, repeated activity counted once per
+pass, mixed/unattributed/flush-only categories, bounded formatting and historical
+schema parsing. The native-feature build check and both-wire supplied-owner
+diagnostic pass. That fixture has no real owner loop, so native attribution still
+requires separate progress captures. Diagnostic schema 3 cannot be mixed with
+cost instrumentation. Evidence is in `t331-reuse-20261017/pass-ledger`.
+
+The three release modes are built separately and hashed at their cargo-slot
+paths. Baseline allocation executables retain their original hashes through
+hard links within the original cargo slot, not binary copies in evidence.
+Fourteen fresh plans pass source/artifact checks and device-free argument
+validation. Initial preparation refused a changed preflight hash; the current
+integration preflight was rebuilt and explicitly pinned, and the refusal log
+is retained. The helper performs no builds and refuses existing run directories.
+No quiet hold or desktop installation is active.
 
 ## Reconciled native baseline — October 17
 

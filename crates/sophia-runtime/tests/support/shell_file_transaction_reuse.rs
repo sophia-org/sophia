@@ -89,6 +89,46 @@ fn backpressure_keeps_reusable_assembly_retryable() {
 }
 
 #[test]
+fn paired_submit_after_incomplete_record_preserves_refusal_precedence() {
+    for node in [Node::Transaction, Node::TransactionReuse] {
+        for incomplete in [false, true] {
+            let mut files = export("descriptor", BASE | 4);
+            let mut writer = files.open(&node, OpenFlags(2)).unwrap();
+            let (bytes, submit) = assembly(1);
+            if incomplete {
+                let prefix = &bytes[..bytes.len() - 1];
+                assert_eq!(
+                    files.write(&node, &mut writer, 0, prefix),
+                    Ok(prefix.len() as u32)
+                );
+            }
+            for _ in 0..INBOUND_RECORDS {
+                files
+                    .inbound
+                    .push_back(Inbound::Descriptor(Box::new(candidate())));
+            }
+            // A queued submit can see backpressure before staging validation.
+            assert_eq!(
+                files.write(&Node::Submit, &mut Handle::Plain, 0, &submit),
+                Err(Errno::EAGAIN)
+            );
+            assert!(files.accepted.is_none());
+            files.inbound.clear();
+            let expected = if !incomplete && node == Node::TransactionReuse {
+                Errno::ESTALE
+            } else {
+                Errno::EINVAL
+            };
+            assert_eq!(
+                files.write(&Node::Submit, &mut Handle::Plain, 0, &submit),
+                Err(expected)
+            );
+            assert!(files.accepted.is_none() && files.inbound.is_empty());
+        }
+    }
+}
+
+#[test]
 fn reusable_writer_recycles_only_after_covering_ack() {
     let mut files = export("descriptor", BASE | 4);
     let mut writer = files.open(&Node::TransactionReuse, OpenFlags(2)).unwrap();

@@ -28,10 +28,12 @@ A writer must receive both a complete successful walk and a successful open
 before sending payload. A partial walk or either refusal ends that setup;
 an early successful open does not authorize data. Bounded clients may retain
 the sequential walk-then-open path when they lack a second request credit.
-This changes no upload, submission or acknowledgement barrier: resource
-admission precedes upload setup, writes remain sequential, the complete record
-write precedes submit, and the covering acknowledgement precedes the next
-transaction setup or reusable writer's next record. Terminal resource status
+Resource admission precedes upload setup, write offsets remain sequential,
+the complete record executes before submit, and the covering acknowledgement
+precedes the next transaction setup or reusable writer's next record. The
+[queued-write amendment](#queued-shell-writes) permits a bounded pixel window
+and submit behind the final record fragment without waiting for its reply.
+Terminal resource status
 discards pending setup replies
 and releases its fid without allowing a later reply to reopen the slot.
 
@@ -349,7 +351,8 @@ The writer has five states:
   at offset zero succeeds without beginning assembly or starting a deadline;
   other initial offsets return `EINVAL`.
 - **Assembling:** the legacy append, identical-range retry, declared-length and
-  assembly-deadline rules apply. A complete record write still precedes submit.
+  assembly-deadline rules apply. Complete record execution still precedes submit;
+  the queued-write amendment permits overlapping their replies.
 - **AwaitAck:** successful submit moves the bytes into immutable accepted
   custody. They remain readable until the covering ACK. Every write, including
   an empty write, returns `EBUSY` without changing bytes. Identical submit retry,
@@ -386,9 +389,100 @@ clunk cannot cancel a successor token. Metadata identifies only the held token:
 a fenced token cannot reveal a successor's size or contents.
 
 Resource completion fences its upload binding, not this transaction writer.
-Upload admission, sequential writes, explicit End, presentation and retirement
+Upload admission, sequential byte offsets, explicit End, presentation and retirement
 rules are unchanged. The C and Rust SDKs discover and use this extension with
 equivalent custody, error and recovery behavior.
+
+### Queued shell writes
+
+Accepted by niltempus on October 17, 2026 under
+[the bounded-pipelining decision](notes/decisions/s5msyyv2-pipeline-shell-writes-with-bounded-recovery-and-unchanged-custody.md).
+SDK implementation and performance qualification remain pending. The prepared
+reusable-writer capture precedes implementation of this amendment.
+
+#### Final record fragment and submit
+
+A client may queue its final transaction-record Twrite and submit Twrite in
+that order on one connection, with distinct tags, without awaiting the final
+record reply. All earlier fragments must have complete successful replies.
+Setup, negotiation, covering ACK and single-live-transaction barriers remain.
+Use fresh legacy staging or a reusable writer rearmed after its covering ACK;
+this rule does not permit uncertain replay.
+
+The export executes these requests in wire order. Custody begins only at the
+existing submit acceptance point. Absent or incomplete assembly cannot gain
+custody. Existing errno precedence remains: accepted/replay checks and inbound
+EAGAIN can precede missing-staging ESTALE or length EINVAL. Clients reconcile
+both replies and any matching Submitted before applying submit retry policy.
+
+After a short or refused final record write, stop issuing that transaction and
+consume its queued submit response. Do not retry an incomplete assembly because
+submit answered EAGAIN. Preserve existing failed-record behavior. An unexpected
+successful submit or matching Submitted is authoritative custody: retain it,
+suppress replay and fail the connection. Submitted may precede Rwrite(submit).
+Unknown custody applies only where neither an event nor an authoritative reply
+established the outcome. After a successful record write, ordinary submit
+EAGAIN/backoff, identical retry and terminal rules continue unchanged.
+
+#### Bounded pixel window
+
+The SDK sender ceiling is `SHELL_FILE_MAX_QUEUED_UPLOAD_WRITES = 4` outstanding
+pixel Twrites. Existing tag credits, output bytes and service budgets may lower
+the window. Reserve control capacity before admitting data; fall back to a
+smaller window or sequential writes when necessary. Four is not a negotiated
+ContentLimits field or a server pending-request guarantee.
+
+Only adjacent bytes for the same resource, live binding, writer fid and grant
+may share the window. Do not pass a record, resource change, cancellation or
+End. Rust may gather adjacent queued SlotWrite units, retaining every ticket;
+C may fragment its current borrowed buffer, retaining the caller's ownership
+and completion rules. A fixed ring must not add per-frame heap allocations.
+Fragment writes at canonical chunk boundaries, msize overhead and iounit.
+Each issued offset assumes the preceding requested bytes will be accepted.
+Match replies by tag, retain out-of-order results and settle only the contiguous
+resolved prefix in issue order. Refill credits as they become available.
+
+End and ordinary closing clunk wait for all successful write replies for the
+resource. Presentation, retirement and frame-to-frame barriers remain unchanged.
+
+#### Recovery, deadlines and compatibility
+
+A positive short Rwrite advances the live cursor only by its count. A completing
+chunk refused with EAGAIN changes no bytes. Later queued writes whose planned
+offsets exceed that cursor refuse EINVAL without changing bytes while the same
+binding is live; a fenced binding answers ESTALE instead. This follows from
+cursor validation, not a remembered failure group at the server.
+
+On short write or retryable EAGAIN, stop refilling and drain the outstanding
+tail. Keep invalidated later units pending; their EINVAL replies must not settle
+them as Refused. Resume at the confirmed accepted prefix without duplicating
+acknowledged bytes. Apply the existing backoff only to EAGAIN. Settle each ticket
+Stored once all its bytes are confirmed. A tail success inconsistent with that
+prefix is a protocol failure, not permission to guess the cursor.
+
+For an ambiguous flush or lost reply, getattr may recover the cursor only on
+the same live fid, after its outstanding tail has drained or flush has settled
+its tags. Validate the qid and cursor against the retained byte range. A fenced
+fid answers ESTALE and recovery ends; disconnect permits no reconnect-and-replay.
+A permanent refusal or terminal resource event also ends refill and retry.
+Settle tickets from established byte custody and existing cancellation rules;
+never report unconfirmed bytes Stored. Consume or flush owned tags before
+releasing storage. Late replies cannot reopen a slot or affect its successor.
+
+Only successful canonical chunks renew the existing idle deadline. Queued,
+partial, empty, refused and invalidated writes do not. Transfer and assembly
+deadlines remain fixed. Existing staging, scratch and inbound bounds remain;
+do not buffer extra completed chunks to conceal EAGAIN or hold an owner lock
+across client streaming.
+
+This amendment relies on the shell export's synchronous wire-order guarantee.
+It adds no capability bit, node, opcode, role revision or record format. Old
+clients may remain sequential. Both SDKs must pass the ordering, cursor and
+errno fixtures against the oldest supported export revision and the current
+one before adoption. This amendment adds export fixtures, not server behavior.
+Do not infer compatibility from transaction-reuse discovery. Retain
+byte and work budgets and verify other connections' event and control service
+under a continuously full window; the credit ceiling alone proves no fairness.
 
 ### Resource staging without client-created files
 
@@ -430,7 +524,8 @@ bookkeeping, not authority.
 `getattr` on the live bound slot reports its accepted append cursor as size:
 canonical bytes already passed to the store plus bytes in charged partial
 scratch. It reports the binding's qid, not a successor's. After a flush race,
-the writer can query that same binding and resume at this offset. Flush never
+the writer first drains or flushes its outstanding tail, then can query that
+same live binding and resume at this offset. Flush never
 undoes an executed write; repeating an earlier prefix is still refused.
 If the binding ended, the held fid is stale and cannot discover or append to
 a successor. This metadata read grants no pixel readback.

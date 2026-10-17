@@ -137,6 +137,28 @@ static int bootstrap_drive(struct sophia_sf_client *c)
     }
     return sf_started(&c->boot_op, r);
 }
+static int queue_paired_submit(struct sophia_sf_client *c)
+{
+    uint8_t b[24];
+    size_t cap = c->wire->msize - 23u;
+    int r;
+    if (!c->negotiated || c->submit_stage != 1 || !c->submit_op.active || c->submit_pair)
+        return 0;
+    if (c->iounit[1] && cap > c->iounit[1])
+        cap = c->iounit[1];
+    /* Earlier fragments must have replied before the final fragment is issued. */
+    if (c->tx_size - c->tx_offset > cap)
+        return 0;
+    if (sophia_sf_submit_encode(b, c->epoch, c->next_submission - 1, (uint32_t)c->tx_size))
+        return SOPHIA_9P_INVALID;
+    r = sophia_9p_write(c->wire, c->fids[2], 0, b, 24, &c->paired_submit_op.handle);
+    if (r == SOPHIA_9P_BUSY)
+        return 0; /* No request queued; the sequential path remains valid. */
+    if (r)
+        return r;
+    c->paired_submit_op.active = c->submit_pair = c->submit_sent = 1;
+    return 0;
+}
 int sf_session_drive(struct sophia_sf_client *c)
 {
     int r = bootstrap_drive(c);
@@ -157,7 +179,7 @@ int sf_session_drive(struct sophia_sf_client *c)
         c->submit_stage = 7;
     if (c->submit_stage == 7 && c->acked_sequence >= c->submitted_sequence)
         c->submit_stage = 0;
-    if (c->submit_stage && !c->submit_op.active && !(c->submit_stage == 2 && c->submit_wait)) {
+    if (c->submit_stage && !c->submit_pair && !c->submit_op.active && !(c->submit_stage == 2 && c->submit_wait)) {
         if (c->submit_stage == 1) {
             size_t n = c->tx_size - c->tx_offset, cap = c->wire->msize - 23u;
             if (c->iounit[1] && cap > c->iounit[1])
@@ -198,6 +220,9 @@ int sf_session_drive(struct sophia_sf_client *c)
         if (c->submit_stage == 2 && c->submit_op.active)
             c->submit_sent = 1;
     }
+    r = queue_paired_submit(c);
+    if (r)
+        return r;
     r = sf_session_object_drive(c);
     if (r)
         return r;
@@ -221,6 +246,8 @@ static int submission_reply(struct sophia_sf_client *c, const struct sophia_9p_r
     if (r->type == 7 && c->submit_stage == 2) {
         /* EAGAIN transferred nothing: never re-driven in this service pass. */
         if (r->error == 11) {
+            if (c->submitted)
+                return SOPHIA_9P_INVALID;
             c->submit_sent = 0;
             c->submit_wait = 1;
             return 0;
@@ -274,6 +301,34 @@ static int submission_reply(struct sophia_sf_client *c, const struct sophia_9p_r
     }
     return 0;
 }
+/* Defer reconciliation until the reply batch is drained so a pending events
+ * read can establish custody even after a contradictory record reply. */
+static int finish_paired_submit(struct sophia_sf_client *c)
+{
+    struct sophia_9p_reply reply = {0};
+    if (!c->submit_pair || !c->pair_record_done || !c->pair_submit_done)
+        return 0;
+    reply.type = c->pair_reply_type;
+    reply.count = c->pair_reply_count;
+    reply.error = c->pair_reply_error;
+    c->submit_pair = 0;
+    if (!c->pair_record_ok) {
+        c->pair_failed = 1;
+        if (reply.type == 119 && reply.count == 24)
+            c->submitted = 1; /* Known acceptance must never be replayed. */
+        if (reply.type == 7 && reply.error != 114) {
+            c->submit_sent = 0;
+            c->submit_stage = 1; /* Failed record, not a retryable submit. */
+        } else
+            c->submit_stage = 2; /* Unknown unless custody was observed. */
+        if (c->pair_record_type == 7)
+            return remote_failure(c, c->pair_record_error, 1);
+        return SOPHIA_9P_INVALID;
+    }
+    c->tx_offset = c->tx_size;
+    c->submit_stage = 2;
+    return submission_reply(c, &reply);
+}
 static int receive(struct sophia_sf_client *c, const struct sophia_9p_reply *r)
 {
     if (sf_same(&c->boot_op, r->handle)) {
@@ -313,7 +368,26 @@ static int receive(struct sophia_sf_client *c, const struct sophia_9p_reply *r)
     }
     if (sf_same(&c->submit_op, r->handle)) {
         c->submit_op.active = 0;
+        if (c->submit_pair) {
+            c->pair_record_done = 1;
+            c->pair_record_type = r->type;
+            c->pair_record_error = r->error;
+            c->pair_record_ok = r->type == 119 && r->count == c->tx_size - c->tx_offset;
+            return 0;
+        }
+        if (c->submit_stage == 2 && r->type == 119 && r->count == 24)
+            c->submit_accepted = 1;
         return submission_reply(c, r);
+    }
+    if (sf_same(&c->paired_submit_op, r->handle)) {
+        c->paired_submit_op.active = 0;
+        c->pair_submit_done = 1;
+        c->pair_reply_type = r->type;
+        c->pair_reply_count = r->count;
+        c->pair_reply_error = r->error;
+        if (r->type == 119 && r->count == 24)
+            c->submit_accepted = 1;
+        return 0;
     }
     if (sf_same(&c->event_op, r->handle)) {
         c->event_op.active = 0;
@@ -374,6 +448,9 @@ int sophia_sf_client_service(struct sophia_sf_client *c, size_t budget)
         if (r)
             return c->terminal = r;
     }
+    r = finish_paired_submit(c);
+    if (r)
+        return c->terminal = r;
     r = sf_session_drive(c);
     if (r)
         c->terminal = r;
@@ -389,6 +466,12 @@ static void submission_arm(struct sophia_sf_client *c, size_t n)
     c->submitted_sequence = 0;
     c->submit_wait = c->submit_sent = 0;
     c->submit_error = 0;
+    c->submit_pair = c->pair_record_done = c->pair_record_ok = 0;
+    c->pair_submit_done = c->pair_failed = 0;
+    c->pair_reply_type = 0;
+    c->pair_reply_count = c->pair_reply_error = 0;
+    c->pair_record_type = c->submit_accepted = 0;
+    c->pair_record_error = 0;
 }
 int sf_session_queue(struct sophia_sf_client *c, const struct sophia_sf_record *value)
 {
@@ -456,10 +539,12 @@ int sophia_sf_client_submission(const struct sophia_sf_client *c, uint64_t *id,
     *id = c->next_submission - 1;
     if (!*id)
         *stage = SOPHIA_SF_SUBMISSION_NONE;
-    else if (c->submitted)
+    else if (c->submitted || (c->terminal && c->submit_accepted))
         *stage = SOPHIA_SF_SUBMISSION_CUSTODIED;
     else if (c->submit_error)
         *stage = SOPHIA_SF_SUBMISSION_REFUSED;
+    else if (c->submit_pair)
+        *stage = SOPHIA_SF_SUBMISSION_ISSUED;
     else if (c->submit_stage == 1 || (c->submit_stage == 2 && !c->submit_sent))
         *stage = SOPHIA_SF_SUBMISSION_STAGED;
     else if (c->submit_stage == 2 || c->submit_stage == 3)

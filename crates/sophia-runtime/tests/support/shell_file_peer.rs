@@ -198,6 +198,36 @@ impl Peer {
         assert_eq!(self.rpc(120, &fid.to_le_bytes()).unwrap().0, 121);
     }
 
+    /// Send every write before reading any reply. This tests the shell
+    /// export's wire-order guarantee, independently of either SDK's driver.
+    pub fn write_burst(&mut self, fid: u32, writes: &[(u64, &[u8])]) -> Vec<(u8, Vec<u8>)> {
+        let mut requests = Vec::new();
+        let first = self.tag + 1;
+        for (offset, bytes) in writes {
+            self.tag += 1;
+            requests.extend(((23 + bytes.len()) as u32).to_le_bytes());
+            requests.push(118);
+            requests.extend(self.tag.to_le_bytes());
+            requests.extend(fid.to_le_bytes());
+            requests.extend(offset.to_le_bytes());
+            requests.extend((bytes.len() as u32).to_le_bytes());
+            requests.extend_from_slice(bytes);
+        }
+        self.stream.write_all(&requests).unwrap();
+        (first..=self.tag)
+            .map(|tag| {
+                let mut header = [0; 7];
+                self.stream.read_exact(&mut header).unwrap();
+                assert_eq!(u16::from_le_bytes(header[5..].try_into().unwrap()), tag);
+                let size = u32::from_le_bytes(header[..4].try_into().unwrap()) as usize;
+                assert!((7..=65536).contains(&size));
+                let mut body = vec![0; size - 7];
+                self.stream.read_exact(&mut body).unwrap();
+                (header[4], body)
+            })
+            .collect()
+    }
+
     pub fn read(&mut self, fid: u32, offset: u64) -> Vec<u8> {
         self.try_read(fid, offset).unwrap()
     }

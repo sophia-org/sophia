@@ -1,14 +1,14 @@
-tree bdb756b7c458710ad834782df0e6582e8e476719
-parent cab32bf454c46ffc9baacdb7ad1d2d05263afcad
-author Mason Green <mason@greenm01.net> 1792238683 -0400
-committer Mason Green <mason@greenm01.net> 1792238683 -0400
+tree bf4dd07e71e110bf0dbfcd845951e6e72276b403
+parent b8b7b55473796aa71768155d7bbfd743db84d8fc
+author Mason Green <mason@greenm01.net> 1792244336 -0400
+committer Mason Green <mason@greenm01.net> 1792244336 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatNkWxsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJPywD/cxnBYv1w5sh0nPpskGWE
- MYmWxbfOA2aneNq8Rd2tuAYBANzbK/Op4XfAaHPqrWtTIyohsFnB92QIFwjNSAbU
- A28N
- =vzfe
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatN6cBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJUYQD/UHV58zMRpAojF1Inu4WI
+ FJEc+i9ktrsl6dTkuFVJI34A/1SwVgcbMVCIyG7DMSgFcNyK8epTMlkcMtgpCeJI
+ EbIJ
+ =C/WX
  -----END PGP SIGNATURE-----
 
-test: prove retained record precedes covering ACK reply
+Preserve accepted shell submissions on terminal failure

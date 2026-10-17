@@ -51,7 +51,25 @@ Task state and execution order remain in todo.md.
 
 ## Implementation sequence
 
+### Approved queued submit and pixel-write window — October 17
+
+niltempus approved the [B2/B3 plan](nfe0blnb-queue-shell-submit-and-pixel-writes-within-existing-custody-bounds.md)
+and directed implementation after reviewing the capture-first sequence. Record
+the prepared first-slice native results before changing either SDK. Then queue
+submit behind the final confirmed-prefix record fragment and add up to four
+outstanding pixel writes for the same live resource, in separate signed changes.
+The [accepted amendment](../../sophia-shell-files.md#queued-shell-writes) preserves
+custody, fences, deadlines and existing budgets. Both SDKs must pass independent
+tests and vendor gates; C retains its confirmed-ACK barrier and borrowed-buffer
+lifetime. Use matched pilots for each change before the unchanged full matrix.
+This supersedes the earlier prohibition on these two scheduling changes only.
+Larger chunks, changed ACK policy, independent-resource concurrency and desktop
+installation remain outside the approved scope.
+
 ### Approved reusable writer and cumulative ACK slice — October 17
+
+The subsequent B2/B3 amendment above extends this slice only after its frozen
+native capture. The following sequence records the reusable-writer work.
 
 niltempus approved the replacement plan and directed implementation. The
 [accepted decision](../decisions/7mls2e2q-reuse-a-shell-transaction-writer-without-changing-custody.md)

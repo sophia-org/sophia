@@ -56,8 +56,21 @@ fn retained_record_is_outstanding_before_covering_ack_reply() {
     .unwrap();
     assert_eq!(connection.custody(first), Some(Custody::Submitted));
     assert_eq!(peer.acks.last().unwrap().sequence, covering);
-    assert_eq!(peer.held_replies.len(), 1, "covering ACK remains unanswered");
-    assert_eq!(peer.held_transactions.len(), 1, "record is also outstanding");
+    assert_eq!(
+        peer.held_replies.len(),
+        1,
+        "covering ACK remains unanswered"
+    );
+    assert_eq!(
+        peer.held_transactions.len(),
+        1,
+        "record is also outstanding"
+    );
+    assert_eq!(
+        peer.submits.len(),
+        1,
+        "submit shares the ACK and record flush"
+    );
     let record = peer.held_transactions.pop_front().unwrap();
     peer.release_replies();
     peer.answer_write(record.tag, record.data.len() as u32);
@@ -77,5 +90,131 @@ fn only_missing_reusable_node_selects_legacy() {
             "only negotiation uses legacy"
         );
         assert_eq!(peer.walk_count("transaction-reuse"), 1);
+    }
+}
+
+#[test]
+fn paired_submit_is_issued_before_record_reply_and_reconciles_reverse_order() {
+    for reuse in [false, true] {
+        let (mut connection, mut peer) = if reuse {
+            let (connection, peer) = reusable(None);
+            (connection.unwrap(), peer)
+        } else {
+            connect(bar(0))
+        };
+        peer.hold_transactions = true;
+        let ticket = enqueue_demand(&mut connection, 1);
+        let submit = submit(&mut connection, &mut peer);
+        let record = peer
+            .held_transactions
+            .pop_front()
+            .expect("record reply remains held");
+        let (id, kind) = staged(&peer, &submit);
+        peer.answer_write(submit.tag, submit.data.len() as u32);
+        connection.poll_io().unwrap();
+        assert_eq!(connection.custody(ticket), Some(Custody::InFlight));
+        peer.answer_write(record.tag, record.data.len() as u32);
+        let event = peer.submitted(id, kind);
+        peer.push(event);
+        assert_eq!(
+            settle(&mut connection, &mut peer, ticket),
+            (Custody::Submitted, None)
+        );
+    }
+}
+
+#[test]
+fn failed_paired_record_drains_submit_without_retry_and_preserves_acceptance() {
+    for reuse in [false, true] {
+        for errno in [0, EAGAIN, EINVAL, 116, EALREADY] {
+            let (mut connection, mut peer) = if reuse {
+                let (connection, peer) = reusable(None);
+                (connection.unwrap(), peer)
+            } else {
+                connect(bar(0))
+            };
+            peer.hold_transactions = true;
+            let ticket = enqueue_demand(&mut connection, 1);
+            let held = submit(&mut connection, &mut peer);
+            let record = peer.held_transactions.pop_front().unwrap();
+            peer.answer_write(record.tag, record.data.len() as u32 - 1);
+            connection.poll_io().unwrap();
+            assert_eq!(connection.custody(ticket), Some(Custody::InFlight));
+            if errno == 0 {
+                peer.answer_write(held.tag, held.data.len() as u32);
+            } else {
+                peer.answer_error(held.tag, errno);
+            }
+            let (custody, error) = settle(&mut connection, &mut peer, ticket);
+            assert!(error.is_some());
+            assert_eq!(
+                custody,
+                match errno {
+                    0 => Custody::Submitted,
+                    EALREADY => Custody::Unknown,
+                    _ => Custody::DroppedUnsent,
+                }
+            );
+            assert!(
+                peer.submits.is_empty(),
+                "a failed record must never retry submit"
+            );
+        }
+    }
+}
+
+#[test]
+fn early_submitted_survives_a_failed_pair() {
+    for reuse in [false, true] {
+        let (mut connection, mut peer) = if reuse {
+            let (connection, peer) = reusable(None);
+            (connection.unwrap(), peer)
+        } else {
+            connect(bar(0))
+        };
+        peer.hold_transactions = true;
+        let ticket = enqueue_demand(&mut connection, 1);
+        let held = submit(&mut connection, &mut peer);
+        let record = peer.held_transactions.pop_front().unwrap();
+        let (id, kind) = staged(&peer, &held);
+        peer.begin_batch();
+        peer.answer_error(record.tag, EINVAL);
+        peer.answer_error(held.tag, EAGAIN);
+        let event = peer.submitted(id, kind);
+        peer.push(event);
+        peer.end_batch();
+        let (custody, error) = settle(&mut connection, &mut peer, ticket);
+        assert_eq!(custody, Custody::Submitted);
+        assert!(error.is_some());
+        assert!(peer.submits.is_empty());
+    }
+}
+
+#[test]
+fn accepted_submit_survives_disconnect_without_record_reply_or_journal() {
+    for reuse in [false, true] {
+        for record_replied in [false, true] {
+            let (mut connection, mut peer) = if reuse {
+                let (connection, peer) = reusable(None);
+                (connection.unwrap(), peer)
+            } else {
+                connect(bar(0))
+            };
+            peer.hold_transactions = true;
+            let ticket = enqueue_demand(&mut connection, 1);
+            let held = submit(&mut connection, &mut peer);
+            let record = peer.held_transactions.pop_front().unwrap();
+            if record_replied {
+                peer.answer_write(record.tag, record.data.len() as u32);
+            }
+            peer.answer_write(held.tag, held.data.len() as u32);
+            connection.poll_io().unwrap();
+            assert_eq!(connection.custody(ticket), Some(Custody::InFlight));
+            peer.close();
+            assert_eq!(
+                settle(&mut connection, &mut peer, ticket).0,
+                Custody::Submitted
+            );
+        }
     }
 }

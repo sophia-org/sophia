@@ -56,9 +56,14 @@ struct sophia_sf_client {
     uint8_t transaction_mode;
     uint8_t submit_stage, submitted, submit_replied, object_stage, upload_stage, refused,
         upload_closing;
-    /* stale: ESTALE answered events, submit or ack (not object/upload).
+    /* stale: ESTALE answered transaction, events, submit or ack (not object/upload).
      * object_probe: the exact object was read; the next read must be EOF. */
     uint8_t submit_wait, submit_sent, stale, object_probe;
+    /* Final record and submit have separate tags and may answer in either order. */
+    uint8_t submit_pair, pair_record_done, pair_record_ok, pair_submit_done, pair_failed;
+    uint8_t pair_reply_type, pair_record_type, submit_accepted;
+    uint32_t pair_record_error;
+    uint32_t pair_reply_count, pair_reply_error;
     uint32_t submit_error;
     size_t tx_size, tx_offset, event_used, object_used, upload_sent, upload_size, api_used;
     uint64_t upload_offset;
@@ -67,6 +72,7 @@ struct sophia_sf_client {
     struct sophia_sf_resource_begin resource;
     struct sophia_sf_record event, object;
     struct sophia_sf_operation boot_op, event_op, submit_op, ack_op, object_op, upload_op;
+    struct sophia_sf_operation paired_submit_op;
     uint8_t tx[8192], event_bytes[1024], object_bytes[1024];
     /* An upload chunk is borrowed until its Twrite reply is processed. */
     const uint8_t *upload_data;
