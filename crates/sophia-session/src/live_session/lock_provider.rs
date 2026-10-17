@@ -90,12 +90,15 @@ impl LockProvider {
         policy: LaunchPolicy,
         endpoint: EndpointBudget,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let transport = LockFileTransport::bind_for_supervised_uid(
+        let mut transport = LockFileTransport::bind_for_supervised_uid(
             directory,
             rustix::process::geteuid().as_raw(),
             1,
             limits,
         )?;
+        transport.enable_sealed_images(crate::session_lock_object::session_lock_image_policy(
+            &limits,
+        ))?;
         let mut domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::LockProvider])?
             .bubblewrap_path(bubblewrap)
             .path(ProtectionPath::read_only(directory))?;

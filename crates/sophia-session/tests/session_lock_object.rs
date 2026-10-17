@@ -9,6 +9,31 @@ use sophia_protocol::*;
 use sophia_session::session_lock::{SessionLockPhase, SessionUnlockAttempt};
 use sophia_session::session_lock_object::{session_lock_file_limits, session_lock_object};
 
+#[test]
+fn sealed_policy_fits_the_topology_derived_role_limits() {
+    use sophia_runtime::lock_files::LockFileTransport;
+    use sophia_session::session_lock_object::session_lock_image_policy;
+    let limits = session_lock_file_limits(Some(&topology(7, 2)));
+    let policy = session_lock_image_policy(&limits);
+    assert_eq!(policy.max_sealed_backing_bytes, 2880 * 1620 * 4 * 4);
+    assert_eq!(policy.validation_chunk_bytes, 65536);
+    assert_eq!(policy.validation_timeout_ms, limits.assembly_timeout_ms);
+    let directory =
+        std::env::temp_dir().join(format!("session-lock-image-policy-{}", std::process::id()));
+    let mut transport = LockFileTransport::bind_for_supervised_uid(
+        &directory,
+        rustix::process::geteuid().as_raw(),
+        1,
+        limits,
+    )
+    .unwrap();
+    transport.enable_sealed_images(policy).unwrap();
+    // Enabling the owner policy alone grants no unauthenticated channel.
+    assert!(!directory.join("image.sock").exists());
+    drop(transport);
+    assert!(!directory.exists());
+}
+
 fn epoch(raw: u64) -> SessionLockEpoch {
     SessionLockEpoch::from_raw(raw).unwrap()
 }
