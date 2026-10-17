@@ -15,40 +15,27 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
-t338 remains in implementation. Codex owns the runtime, export and journal work
-after Muse reached the usage limit; Claude owns the C producer and role adapters.
-The receipt/coherence prerequisite is published and vendored at Rust `93fe07b`
-and C `a208c95`. Explicit revision-aware Submitted receipts name ImageBegin;
-legacy APIs keep their candidate sets. Both SDK checks pass, including the full
-vendored Rust suite. Root's bounded SEQPACKET/SCM_RIGHTS and live-authentication
-join checks pass, alongside lock export/service and shell oracle regressions.
-The shell receive/refuse test now joins real 9P and SEQPACKET with a supplied
-afid authority: Hello publishes ChannelReady, ImageBegin receives reason 13,
-and a byte upload of the same resource succeeds on that connection. Bad Hello
-faults; an earlier image configuration does not poison a later legacy epoch.
-This is not a launch-domain or Factotum authentication proof. ChannelClosed has
-held journal capacity, tested under byte and record exhaustion; listener accept
-errors back off without revoking an existing channel. No Session caller enables
-the image configuration yet.
+t338 remains in implementation. Codex owns shell/Session integration; Claude
+owns the lock runtime lane. Muse remains quota-limited and has not started the
+Rust producer. The [delivery plan's current resumption](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md#current-resumption)
+records the implementation and evidence boundaries.
 
-The immutable sealed mapping primitive is published as `28ce4a776`; the shell
-receive/refuse wiring is `140c7dcab`. Sealed store admission now reserves the
-existing budget without an upload Vec and moves a validated mapping into normal
-leases without copying. Cancellation/expiry/revocation retain charges until
-worker completion. ResourceReleased keeps backing charged through the outbound
-queue until actual journal handoff; dead epochs release after the last lease
-without a live-journal confirmation. A bounded worker maps and scans off the
-owner thread, with four outstanding jobs at most and 64 KiB validation units.
-Store and worker controls pass; the wire test checks retirement of an
-owner-supplied validated map. Source-to-offer admission and Session wiring are
-not connected yet. The full runtime suite passed before the journal callback;
-affected publication, resource and wire tests pass after it.
+Shell sealed admission now connects real 9P and SEQPACKET to bounded validation,
+mapped resource backing and separate terminal reservations. The persistent
+owner survives disconnects and reconciles against exact retired stores.
+Session installs it for authenticated components using their reserved budgets,
+shares a monotonic resource clock, polls workers after revocation and guards
+shutdown. Wire tests cover supplied afid authority, success, cancellation,
+unsent-offer disconnect cleanup, topology snapshot replacement and legacy
+absence. These are not protected-launch or native performance results.
 
-C producer `db8b24a` plus `69a5d80` is published after an independent full check.
-The opt-in BAR adapter `963f399` passes that check too; other profiles, lock
-adapters and the Rust producer remain incomplete. Lock r2 still needs
-explicit Negotiated selection in the revision-aware codecs before its adapter
-can run. Sealed acceptance, retirement and paired performance evidence remain.
+C producer, BAR and lock adapters, explicit lock r2 selection and cancellation
+are published through `e777235`; an independent full check passes. Rust
+producer/adapters and cancellation parity remain open. Claude's lock runtime
+now selects r2 and publishes coherent immutable discovery after the sealed
+grant, with readiness-gated refusal. Lock authenticated Hello/Source acceptance,
+Session submitted-worker shutdown qualification, SDK adoption and the native
+CPU comparison remain to finish. The installed desktop is unchanged.
 
 t337 design acceptance is recorded October 17 under niltempus's conditional
 approval. Independent lifecycle peers Rust `8f7dc5d` and C `b2ca17d` passed
@@ -76,8 +63,8 @@ SDK heads has only the expected opposite-role discovery split and byte-identical
 accepted round trips. The plan records scope, negative controls and harness
 hashes. No independent review blockers remain for this codec checkpoint.
 
-Next: finish the producer/adapter and lock negotiation paths, then connect
-sealed admission to bounded validation and retained backing custody. Rust's
+Next: finish Rust producer/adapters and lock receive/accept integration, then
+qualify complete custody and native performance. Rust's
 contextual codecs now check coherence and received FD counts; production
 readers must use those entry points. Complete admission parity is not claimed. The
 [first slice](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md#t338-first-slice-and-ownership)

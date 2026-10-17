@@ -17,10 +17,22 @@ impl ShellComponentTransport {
         if !self.bulk_capacity_available(epochs, bytes) {
             return Err(ShellTransportError::ContentQueueSaturated);
         }
+        let image = self
+            .files_mut()
+            .map(|files| files.export_mut().prepare_image_topology(facts_generation))
+            .transpose()
+            .map_err(|error| ShellTransportError::Io(format!("image topology: {error:?}")))?
+            .flatten();
         epochs
             .allocations_mut(self.store_grant)
             .ok_or(ShellTransportError::MissingCapability)?
             .publish_outputs(transaction, facts_generation, outputs)?;
+        if let Some(image) = image {
+            self.files_mut()
+                .expect("prepared file topology")
+                .export_mut()
+                .install_image_topology(image);
+        }
         self.flush_content_allocation_events(epochs)
     }
 

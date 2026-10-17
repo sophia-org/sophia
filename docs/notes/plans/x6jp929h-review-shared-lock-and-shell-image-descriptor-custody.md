@@ -71,9 +71,8 @@ receive/refuse. Published sealed budgets are enforced conservatively against all
 backing retained by that role and all pending work on the paired worker; separate
 per-source backing sub-pools are not claimed. Shell cancellation transaction
 identity clarification still needs the coordinated contract/SDK spec sync.
-Session activation, Rust producer/adapters, lock receive/accept integration and
-the matched native gates remain outstanding; no runtime admission or performance
-acceptance is claimed by this checkpoint.
+Rust producer/adapters, lock receive/accept integration and the matched native
+gates remain outstanding. Runtime wiring alone is not performance acceptance.
 
 `ShellSealedImageOwner` now composes the shell hooks into a bounded per-component
 service turn. It owns the worker, four jobs and retained release settlements;
@@ -86,9 +85,29 @@ Disconnect after ImageAdmitted with no Source also drains the reservation and
 retired epoch without a fabricated release event. A refusal blocked on journal
 capacity waits for peer progress rather than repeatedly waking on its expired
 admission deadline.
-The temporary connection facade can service it, but Session still must install
-the persistent owner, poll its readiness, service it after disconnect and drain
-it at shutdown. These fixture results do not yet prove that Session lifecycle.
+Session now installs this owner beside each authenticated component transport,
+using the actual reserved role limits. Byte-resource service and image jobs use
+one monotonic content clock across connection replacement. Worker readiness and
+deadlines survive revocation; paused/stopping visits still service the owners,
+and final backend disposal refuses while image handoffs remain pending. The
+Session wire test covers r9 discovery/Hello, r6 absence, replacement r9, an
+admitted unsent offer's staging charge and disconnect cleanup. Its authority is
+supplied, not a protected-launch proof; submitted-worker shutdown and native
+presentation still require qualification.
+
+Shell discovery and formats now follow output-facts generation. Encodings and
+qids are prepared before the store accepts new facts, then installed before
+the existing notification. Open discovery/formats fids keep their prior bytes;
+the Session test checks old and new reads across generation 1 to 2 before
+admitting an offer against generation 2. Native Session check, targeted strict
+Clippy, the ten existing connection tests, real-wire runtime image cases, the
+C descriptor peer and layout checks pass. No installed desktop was changed.
+
+Claude's lock slices `ec550020c`, `703f246b1` and `7a5e5aee9` add explicit r2
+selection, readiness-gated clean refusal, coherent role bounds and disclosed
+immutable discovery snapshots. Lock socket/Hello service and sealed admission
+remain in his lane. The C descriptor peer's link dependencies are corrected in
+`16dead7f8`; its independent production-export test passes.
 
 ## Scope and exit
 

@@ -14,6 +14,8 @@ use sophia_runtime::{
 };
 
 const MIB: u64 = 1024 * 1024;
+mod images;
+pub(crate) use images::content_now_msec;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ComponentConnectionKey {
@@ -63,6 +65,8 @@ struct Connection {
     wire: ShellTransportSelection,
     attempt: Option<(ContentGrant, ComponentConnectionPhase)>,
     readiness: Cell<Option<(ComponentConnectionKey, sophia_9p::unix::Observation)>>,
+    limits: Option<ContentLimits>,
+    images: Option<sophia_runtime::ShellSealedImageOwner>,
 }
 
 /// Bounded registration for one component in the owner's combined poll set.
@@ -102,6 +106,12 @@ pub type ComponentNegotiationEvent = (
 );
 
 impl ShellComponentConnections {
+    /// Clock for role resource service and image jobs, including retired
+    /// epochs. Callers must not restart it when replacing a component.
+    pub fn content_clock_msec(&self) -> u64 {
+        content_now_msec()
+    }
+
     pub fn new() -> Result<Self, ComponentConnectionError> {
         Ok(Self {
             connections: Vec::with_capacity(MAX_SHELL_COMPONENTS),
@@ -160,6 +170,8 @@ impl ShellComponentConnections {
             wire,
             attempt: None,
             readiness: Cell::new(None),
+            limits: None,
+            images: None,
         });
         Ok(slot)
     }
@@ -241,15 +253,19 @@ impl ShellComponentConnections {
                 Ok(limits)
             });
         match result {
-            Ok(limits) if limits != nominal => record_reconnect_budget(
-                slot,
-                connection.role,
-                &nominal,
-                budget,
-                allowance,
-                Some(&limits),
-            ),
-            Ok(_) => {}
+            Ok(limits) => {
+                if limits != nominal {
+                    record_reconnect_budget(
+                        slot,
+                        connection.role,
+                        &nominal,
+                        budget,
+                        allowance,
+                        Some(&limits),
+                    );
+                }
+                connection.limits = Some(limits);
+            }
             Err(error) => {
                 if matches!(
                     error,
@@ -302,6 +318,7 @@ impl ShellComponentConnections {
     ) -> Result<(), ComponentConnectionError> {
         self.require_phase(key, ComponentConnectionPhase::Reserved)?;
         let connection = &mut self.connections[key.slot];
+        let authenticated = factory.is_some();
         let admission = match factory {
             Some(factory) => connection
                 .transport
@@ -309,6 +326,9 @@ impl ShellComponentConnections {
             None => connection.transport.authorize_protected_peer(evidence),
         };
         let result = admission.and_then(|()| {
+            if authenticated && matches!(policy, ShellContentAdmissionPolicy::Granted { .. }) {
+                images::configure(connection)?;
+            }
             connection.transport.begin_file_negotiation(
                 &self.epochs,
                 key.grant.connection_epoch,
@@ -372,16 +392,17 @@ impl ShellComponentConnections {
     }
 
     pub fn visit_poll_fds<'a>(&'a self, mut visit: impl FnMut(rustix::event::PollFd<'a>)) {
-        for connection in self.connections.iter().filter(|connection| {
-            matches!(
+        for connection in &self.connections {
+            if matches!(
                 connection.attempt,
                 Some((
                     _,
                     ComponentConnectionPhase::Negotiating | ComponentConnectionPhase::Connected
                 ))
-            )
-        }) {
-            connection.transport.visit_poll_fds(&mut visit);
+            ) {
+                connection.transport.visit_poll_fds(&mut visit);
+            }
+            images::visit_worker(connection, &mut visit);
         }
     }
 
@@ -392,6 +413,7 @@ impl ShellComponentConnections {
         let mut registrations = smallvec::SmallVec::new();
         for (slot, connection) in self.connections.iter().enumerate() {
             connection.readiness.take();
+            images::visit_worker(connection, &mut |fd| fds.push(fd));
             let Some((grant, phase)) = connection.attempt else {
                 continue;
             };
@@ -423,7 +445,7 @@ impl ShellComponentConnections {
         }
     }
 
-    /// Only serviced attempts may shorten the owner wait.
+    /// Active wire deadlines and retained image jobs may shorten the wait.
     pub fn authentication_wait(&self, now: std::time::Instant) -> std::time::Duration {
         self.connections
             .iter()
@@ -437,6 +459,13 @@ impl ShellComponentConnections {
                 )
             })
             .map(|connection| connection.transport.authentication_wait(now))
+            .chain(self.connections.iter().filter_map(|connection| {
+                connection
+                    .images
+                    .as_ref()?
+                    .deadline()
+                    .map(|at| at.saturating_duration_since(now))
+            }))
             .min()
             .unwrap_or(std::time::Duration::MAX)
     }
@@ -451,8 +480,8 @@ impl ShellComponentConnections {
         })
     }
 
-    /// Start one owner pass for every connected wire. Subsequent role visits
-    /// share the buffered input and flush only their new publications.
+    /// Start one owner pass for every connected wire and every retained image
+    /// owner. Subsequent role visits share input and flush new publications.
     /// A failure is reported once for its exact owner; neighbors still turn.
     pub fn turn_connected(
         &mut self,
@@ -465,18 +494,30 @@ impl ShellComponentConnections {
             .enumerate()
         {
             let readiness = connection.readiness.take();
-            let Some((grant, ComponentConnectionPhase::Connected)) = connection.attempt else {
+            let Some((grant, phase)) = connection.attempt else {
                 continue;
             };
             let key = ComponentConnectionKey { slot, grant };
             let readiness = readiness
                 .filter(|(owner, _)| *owner == key)
                 .map(|(_, observation)| observation);
-            if let Err(error) = connection
-                .transport
-                .service_owner_observed(&mut self.epochs, readiness)
+            if phase == ComponentConnectionPhase::Connected
+                && let Err(error) = connection
+                    .transport
+                    .service_owner_observed(&mut self.epochs, readiness)
             {
                 *failure = Some((ComponentConnectionKey { slot, grant }, error));
+            }
+            if let Some(owner) = connection.images.as_mut()
+                && let Err(error) = owner.service(
+                    &mut connection.transport,
+                    &mut self.epochs,
+                    content_now_msec(),
+                    std::time::Instant::now(),
+                )
+                && failure.is_none()
+            {
+                *failure = Some((key, error));
             }
         }
         failures
@@ -515,7 +556,16 @@ impl ShellComponentConnections {
         }
         let result = connection.transport.disconnect(&mut self.epochs);
         connection.attempt = Some((grant, ComponentConnectionPhase::Revoked));
-        result.map_err(Into::into)
+        result?;
+        if let Some(owner) = connection.images.as_mut() {
+            owner.service(
+                &mut connection.transport,
+                &mut self.epochs,
+                content_now_msec(),
+                std::time::Instant::now(),
+            )?;
+        }
+        Ok(())
     }
 
     /// Final Session backend shutdown only. Refuse without dropping the actual
@@ -529,8 +579,12 @@ impl ShellComponentConnections {
     ) -> Result<(usize, ContentEpochAccounting), B> {
         if self.connections.iter().any(|connection| {
             connection
-                .attempt
-                .is_some_and(|(_, phase)| phase != ComponentConnectionPhase::Revoked)
+                .images
+                .as_ref()
+                .is_some_and(|owner| owner.pending() != 0)
+                || connection
+                    .attempt
+                    .is_some_and(|(_, phase)| phase != ComponentConnectionPhase::Revoked)
         }) {
             return Err(backend);
         }

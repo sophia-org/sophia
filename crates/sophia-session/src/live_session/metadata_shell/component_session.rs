@@ -320,6 +320,14 @@ impl ShellComponentSession {
             }
         }
         if !self.available || self.stopping {
+            // Wires are revoked, but submitted image validation still owns
+            // descriptors and must finish its retired-store handoff.
+            for (key, error) in self.processes.turn_connected().into_iter().flatten() {
+                crate::session_eprintln!(
+                    "sophia_shell_component schema=1 status=image_drain_failed slot={} reason={error}",
+                    key.slot
+                );
+            }
             return Ok(visit);
         }
         // Reconcile actual connected owners, not only this visit's events. An
@@ -413,9 +421,8 @@ impl ShellComponentSession {
         Ok(visit)
     }
 
-    /// Readiness of the wires `poll` visits, borrowed for the owner's wait.
-    /// Nothing is subscribed while service is paused or stopping: `poll`
-    /// then closes those wires rather than turning them.
+    /// Readiness of wires and validation workers. Revoked wires disappear
+    /// while paused or stopping, but workers retain their completion wakeups.
     pub fn poll_fds(&self) -> Vec<rustix::event::PollFd<'_>> {
         let mut fds = Vec::new();
         self.visit_poll_fds(|fd| fds.push(fd));
@@ -423,9 +430,6 @@ impl ShellComponentSession {
     }
 
     pub fn visit_poll_fds<'a>(&'a self, visit: impl FnMut(rustix::event::PollFd<'a>)) {
-        if !self.available || self.stopping {
-            return;
-        }
         self.processes.visit_poll_fds(visit)
     }
 
@@ -436,9 +440,6 @@ impl ShellComponentSession {
         [crate::shell_component_connections::ComponentWait<'a>;
             sophia_config::MAX_SHELL_COMPONENTS],
     > {
-        if !self.available || self.stopping {
-            return smallvec::SmallVec::new();
-        }
         self.processes.subscribe_wait(fds)
     }
 

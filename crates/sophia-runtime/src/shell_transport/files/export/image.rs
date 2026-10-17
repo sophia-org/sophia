@@ -51,7 +51,7 @@ pub(super) struct PendingImageRefusal {
 
 pub(super) struct ImageChannelState {
     pub config: ShellImageChannelConfig,
-    pub discovery_text: String,
+    pub discovery: Arc<super::image_topology::DiscoverySnapshot>,
     pub limits_body: Vec<u8>,
     pub formats_body: Vec<u8>,
     pub readiness: ShellImageReadiness,
@@ -127,8 +127,8 @@ impl ShellFiles {
     }
 
     /// Installs prepared snapshot objects at disclosure. They are
-    /// configured before negotiation and never change during the epoch,
-    /// so no `ObjectPublished` event is journalled: the root gains them
+    /// configured before negotiation. No `ObjectPublished` event is
+    /// journalled: the root gains them
     /// atomically with negotiation, and each open pins its bytes.
     pub(super) fn install_image_objects(&mut self, prepared: Vec<(ShellFileKind, u64, Vec<u8>)>) {
         for (kind, qid, bytes) in prepared {
@@ -176,9 +176,13 @@ impl ShellFiles {
         let discovery_text = discovery.encode().map_err(|_| Errno::EINVAL)?;
         let limits_body = config.limits.encode().map_err(|_| Errno::EINVAL)?;
         let formats_body = config.formats.encode().map_err(|_| Errno::EINVAL)?;
+        let discovery = Arc::new(super::image_topology::DiscoverySnapshot {
+            qid: self.allocate_qid()?,
+            text: discovery_text,
+        });
         self.image = Some(ImageChannelState {
             config,
-            discovery_text,
+            discovery,
             limits_body,
             formats_body,
             readiness: ShellImageReadiness::AwaitingHello,

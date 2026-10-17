@@ -26,6 +26,7 @@ use sophia_9p::journal::{Staging, StagingBounds};
 mod authentication;
 mod image;
 pub(super) mod image_offers;
+mod image_topology;
 use image::{ImageChannelState, PendingImageRefusal, ShellImageReadiness};
 pub(in crate::shell_transport) use image::{
     ShellImageChannelConfig, ShellImageReadiness as ImageReadiness,
@@ -133,6 +134,7 @@ pub(in crate::shell_transport) enum Handle {
     ReusableTransaction(u64),
     /// A pinned snapshot object: immutable, whatever is published later.
     Object(Arc<Object>),
+    ImageDiscovery(Arc<image_topology::DiscoverySnapshot>),
     /// A writer fid on one binding of an upload slot. Its `binding` qid fences
     /// it from any later binding of the same slot.
     Upload {
@@ -658,8 +660,14 @@ impl Export for ShellFiles {
         match handle {
             Some(Handle::Transaction(id) | Handle::ReusableTransaction(id)) => qid_path = *id,
             Some(Handle::Object(object)) => qid_path = object.qid,
+            Some(Handle::ImageDiscovery(discovery)) => qid_path = discovery.qid,
             Some(Handle::Upload { binding, .. }) => qid_path = *binding,
             _ => {
+                if *node == Node::ImageChannel
+                    && let Some(state) = &self.image
+                {
+                    qid_path = state.discovery.qid;
+                }
                 if let Some(kind) = node.object_kind()
                     && let Some(object) = self
                         .object_slot(kind)
@@ -671,10 +679,13 @@ impl Export for ShellFiles {
         }
         let size = match (node, handle) {
             (Node::Api, _) => self.api.len() as u64,
+            (Node::ImageChannel, Some(Handle::ImageDiscovery(discovery))) => {
+                discovery.text.len() as u64
+            }
             (Node::ImageChannel, _) => self
                 .image
                 .as_ref()
-                .map_or(0, |state| state.discovery_text.len() as u64),
+                .map_or(0, |state| state.discovery.text.len() as u64),
             (Node::Limits, _) => self.limits.as_ref().map_or(0, |l| l.len() as u64),
             (node, Some(Handle::Object(object))) if node.object_kind().is_some() => {
                 object.bytes.len() as u64
@@ -734,6 +745,14 @@ impl Export for ShellFiles {
         }
         match node {
             Node::Limits if self.limits.is_none() => Err(Errno::EAGAIN),
+            Node::ImageChannel if self.image_disclosed() => Ok(Handle::ImageDiscovery(
+                self.image
+                    .as_ref()
+                    .expect("disclosed image")
+                    .discovery
+                    .clone(),
+            )),
+            Node::ImageChannel => Err(Errno::ENOENT),
             Node::Upload(slot) => {
                 let writer = self.next_qid;
                 let binding = self.uploads[usize::from(*slot)]
@@ -802,11 +821,9 @@ impl Export for ShellFiles {
     ) -> Result<ReadOutcome, Errno> {
         match (node, handle) {
             (Node::Api, _) => Ok(slice(&self.api, offset, count)),
-            (Node::ImageChannel, _) => self
-                .image
-                .as_ref()
-                .map(|state| slice(state.discovery_text.as_bytes(), offset, count))
-                .ok_or(Errno::EAGAIN),
+            (Node::ImageChannel, Handle::ImageDiscovery(discovery)) => {
+                Ok(slice(discovery.text.as_bytes(), offset, count))
+            }
             (Node::Limits, _) => self
                 .limits
                 .as_ref()
