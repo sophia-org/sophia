@@ -93,6 +93,8 @@ answers ESTALE without more custody. Both pass. These tests do not establish
 SDK windowing or expiry timing.
 
 Both B3 SDK windows are signed and published: Rust `365e5f3`, C `63efea3`.
+Documentation follow-ups `f3df891`/`303dfd0` record cancellation after a permanent
+head refusal; the implementation bytes are unchanged.
 Sophia `bba813fa8` records the export fixtures above. Rust gathers
 four adjacent canonical units with separate tickets, matches replies by tag and
 settles in issue order. Its tests cover credit refill across eight chunks, reversed
@@ -112,12 +114,24 @@ slots, while direct eight-slot clients use three upload credits. Both C structs
 grow and consumers must rebuild. API-PARITY records the buffer/ticket distinction,
 fragment scheduling and progress-or-time versus time-only retry. Recovery counts
 remain in fixtures/instrumented evidence. Claude's C review found no blocker;
-the control reserve correction is applied, and Rust review is pending. No B3
+the control reserve correction is applied. Claude also reviewed Rust `365e5f3`
+and C `63efea3` without adoption blockers. No B3
 snapshot, comparator ledger or native pilot has run. No quiet hold is active.
 SDK logs are under `~/.local/state/sophia/development-evidence/t331-b3-20261017/`.
-Next: resolve review findings; preserve a B2-only comparator checkpoint; complete
-old/current export, fault and fairness checks before adopting B3; then collect
+Next: complete old/current export, remaining fault and fairness checks before
+adopting B3; then collect
 matched native evidence. The existing +10% gates remain unchanged.
+
+The B2-only comparator checkpoint is signed and published as `87d135484`.
+Its device-hidden supplied-owner diagnostic passes four 64-frame arms; files
+panel counts remain 72 walk, 72 open, 648 read, 1,477 write and 68 clunk. Bulk
+counts remain 136 walk, 136 open, 6,661 write and 132 clunk; reads are 1,032
+against 1,031 in the earlier reusable-writer diagnostic. These totals include
+startup. B2 removes a dependency wait, not requests. This fixture has no Session
+owner loop, physical presentation or qualified CPU/allocation measurement.
+Evidence: `t331-b2-20261017/candidate-ledger`, including per-arm source counters
+and `comparison.json`. The comparator's existing mixed-activity labels still
+include the previously reported Other overlap; do not infer wake causes from them.
 
 ## First-slice native pilot — October 17
 

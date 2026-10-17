@@ -160,7 +160,9 @@ window. No fairness conclusion follows from the credit count alone.
 5. Verify actual request lengths/counts and ordered dependency traces before a
    native run. Require unchanged normal-path pixel and record request counts and
    zero resends in the deterministic workload. Count short replies, EAGAIN heads,
-   invalidated tails and resends separately in fault cases. With sufficient
+   invalidated tails and resends separately in fault cases. Use scripted-peer
+   counters for fixtures and export/progress-feature counters for the ordered
+   diagnostic; production SDKs expose no new metrics API. With sufficient
    credits, one request per chunk and replies withheld, require
    `min(4, adjacent chunks remaining)` outstanding pixel writes; verify lower
    windows under tighter budgets. For one-fragment records, the Rust peer must
