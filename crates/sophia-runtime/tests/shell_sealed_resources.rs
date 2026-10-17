@@ -57,11 +57,15 @@ fn shared_sealed_pixels_retain_the_original_mapping_without_copying() {
     let pixels = validated();
     let address = pixels.bytes().as_ptr();
     let shared = pixels.into_shared();
+    let watch = shared.watch();
     assert_eq!(shared.as_ptr(), address);
     let lease = shared.clone();
     drop(shared);
+    assert!(!watch.released());
     assert_eq!(lease.as_ptr(), address);
     assert_eq!(lease.as_ref(), &[1, 2, 3, 255, 4, 5, 6, 255]);
+    drop(lease);
+    assert!(watch.released());
     let bytes: std::sync::Arc<[u8]> = std::sync::Arc::from([0u8; 8]);
     let address = bytes.as_ptr();
     let shared = SharedPixels::from(bytes);

@@ -1,6 +1,6 @@
 //! Immutable CPU pixels whose backing follows every renderer lease.
 use std::ops::Deref;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 #[derive(Clone)]
 enum Backing {
@@ -14,6 +14,24 @@ enum Backing {
 #[derive(Clone)]
 pub struct SharedPixels(Backing);
 
+/// Observes final consumer release without retaining pixel storage. Once
+/// released, the backing cannot be resurrected through this watch.
+pub struct SharedPixelsWatch(WeakBacking);
+
+enum WeakBacking {
+    Bytes(Weak<[u8]>),
+    Sealed(Weak<sophia_linux_peer::SealedMapping>),
+}
+
+impl SharedPixelsWatch {
+    pub fn released(&self) -> bool {
+        match &self.0 {
+            WeakBacking::Bytes(bytes) => bytes.strong_count() == 0,
+            WeakBacking::Sealed(mapping) => mapping.strong_count() == 0,
+        }
+    }
+}
+
 impl From<Arc<[u8]>> for SharedPixels {
     fn from(bytes: Arc<[u8]>) -> Self {
         Self(Backing::Bytes(bytes))
@@ -21,6 +39,13 @@ impl From<Arc<[u8]>> for SharedPixels {
 }
 
 impl SharedPixels {
+    pub fn watch(&self) -> SharedPixelsWatch {
+        SharedPixelsWatch(match &self.0 {
+            Backing::Bytes(bytes) => WeakBacking::Bytes(Arc::downgrade(bytes)),
+            Backing::Sealed(mapping) => WeakBacking::Sealed(Arc::downgrade(mapping)),
+        })
+    }
+
     pub(crate) fn sealed(mapping: sophia_linux_peer::SealedMapping) -> Self {
         Self(Backing::Sealed(Arc::new(mapping)))
     }

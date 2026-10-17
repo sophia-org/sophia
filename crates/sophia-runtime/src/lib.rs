@@ -44,7 +44,7 @@ mod policy_socket;
 mod role_endpoint;
 mod session;
 mod shared_pixels;
-pub use shared_pixels::SharedPixels;
+pub use shared_pixels::{SharedPixels, SharedPixelsWatch};
 #[cfg(target_os = "linux")]
 mod shell_transport;
 mod supervisor;
