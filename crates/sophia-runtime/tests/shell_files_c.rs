@@ -27,7 +27,14 @@ impl Drop for Scratch {
     }
 }
 fn compile(directory: &Path, name: &str) -> PathBuf {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/c-desktop-sdk/source/src");
+    // An exact independent candidate can be checked before replacing the pin.
+    let root = if let Some(source) = std::env::var_os("SOPHIA_C_SDK_SOURCE") {
+        let source = PathBuf::from(source);
+        assert!(source.is_absolute() && source.is_dir());
+        source.join("src")
+    } else {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/c-desktop-sdk/source/src")
+    };
     let binary = directory.join(name);
     let mut cc = Command::new(std::env::var_os("CC").unwrap_or_else(|| "cc".into()));
     cc.args([
@@ -81,7 +88,20 @@ fn public_c_session_tracks_custody_and_uploads_against_production_owners() {
 fn session_peer(name: &str) {
     let scratch = Scratch::new();
     let binary = compile(&scratch.0, name);
-    let directory = scratch.0.join("socket");
+    run_peer(&binary, &scratch.0, 65536);
+}
+
+#[test]
+#[ignore = "requires SOPHIA_SHELL_UPLOAD_PEER naming an independently built 256 KiB upload peer"]
+fn independent_sdk_uploads_multiple_canonical_chunks() {
+    let binary = PathBuf::from(std::env::var_os("SOPHIA_SHELL_UPLOAD_PEER").expect("SDK peer"));
+    assert!(binary.is_absolute() && binary.is_file());
+    let scratch = Scratch::new();
+    run_peer(&binary, &scratch.0, 262144);
+}
+
+fn run_peer(binary: &Path, scratch: &Path, expected_bytes: usize) {
+    let directory = scratch.join("socket");
     let mut transport = ShellComponentTransport::bind_for_supervised_uid(
         &directory,
         rustix::process::geteuid().as_raw(),
@@ -186,7 +206,8 @@ fn session_peer(name: &str) {
             },
         )
         .unwrap();
-    assert_eq!(lease.bytes(), &[0u8; 65536]);
+    assert_eq!(lease.bytes().len(), expected_bytes);
+    assert!(lease.bytes().iter().all(|byte| *byte == 0));
     drop(lease);
     transport.disconnect(&mut registry).unwrap();
     registry.collect();

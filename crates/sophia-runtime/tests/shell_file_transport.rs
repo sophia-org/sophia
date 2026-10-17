@@ -12,6 +12,9 @@ use sophia_runtime::*;
 mod shell_file_peer;
 use shell_file_peer::Peer;
 
+#[path = "support/shell_file_upload_deadline.rs"]
+mod upload_deadline;
+
 const MIB: u64 = 1024 * 1024;
 static NEXT: AtomicU64 = AtomicU64::new(0);
 

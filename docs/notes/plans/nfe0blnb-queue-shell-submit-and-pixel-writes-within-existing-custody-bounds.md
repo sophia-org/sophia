@@ -21,6 +21,14 @@ gates. Neither ZX nor a request-count model promises a performance pass. ACK
 cadence, pending-read deferral, larger chunks, new limits, independent-resource
 concurrency, implicit End and merged retirement are excluded.
 
+On October 17 niltempus approved finishing B3 validation and one matched native
+pilot before choosing the next architectural change. Use the measured remaining
+costs to decide whether a proposed t304-style descriptor channel for shell content
+should take priority. This does not approve that channel's implementation or
+relax t331's +10% gates. Any later descriptor-path comparison must include producer
+and Sophia CPU, GPU work, frame latency and memory, so moving work outside the
+byte-upload measurement cannot count as eliminating it.
+
 ## Contract implementation requirements
 
 The [accepted amendment](../../sophia-shell-files.md#queued-shell-writes) owns
@@ -160,7 +168,9 @@ window. No fairness conclusion follows from the credit count alone.
 5. Verify actual request lengths/counts and ordered dependency traces before a
    native run. Require unchanged normal-path pixel and record request counts and
    zero resends in the deterministic workload. Count short replies, EAGAIN heads,
-   invalidated tails and resends separately in fault cases. With sufficient
+   invalidated tails and resends separately in fault cases. Use scripted-peer
+   counters for fixtures and export/progress-feature counters for the ordered
+   diagnostic; production SDKs expose no new metrics API. With sufficient
    credits, one request per chunk and replies withheld, require
    `min(4, adjacent chunks remaining)` outstanding pixel writes; verify lower
    windows under tighter budgets. For one-fragment records, the Rust peer must

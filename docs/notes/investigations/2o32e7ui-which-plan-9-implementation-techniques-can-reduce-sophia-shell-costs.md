@@ -93,6 +93,8 @@ answers ESTALE without more custody. Both pass. These tests do not establish
 SDK windowing or expiry timing.
 
 Both B3 SDK windows are signed and published: Rust `365e5f3`, C `63efea3`.
+Documentation follow-ups `f3df891`/`303dfd0` record cancellation after a permanent
+head refusal; the implementation bytes are unchanged.
 Sophia `bba813fa8` records the export fixtures above. Rust gathers
 four adjacent canonical units with separate tickets, matches replies by tag and
 settles in issue order. Its tests cover credit refill across eight chunks, reversed
@@ -112,12 +114,76 @@ slots, while direct eight-slot clients use three upload credits. Both C structs
 grow and consumers must rebuild. API-PARITY records the buffer/ticket distinction,
 fragment scheduling and progress-or-time versus time-only retry. Recovery counts
 remain in fixtures/instrumented evidence. Claude's C review found no blocker;
-the control reserve correction is applied, and Rust review is pending. No B3
+the control reserve correction is applied. Claude also reviewed Rust `365e5f3`
+and C `63efea3` without adoption blockers. No B3
 snapshot, comparator ledger or native pilot has run. No quiet hold is active.
 SDK logs are under `~/.local/state/sophia/development-evidence/t331-b3-20261017/`.
-Next: resolve review findings; preserve a B2-only comparator checkpoint; complete
-old/current export, fault and fairness checks before adopting B3; then collect
+Next: complete old/current export, remaining fault and fairness checks before
+adopting B3; then collect
 matched native evidence. The existing +10% gates remain unchanged.
+
+The B2-only comparator checkpoint is signed and published as `87d135484`.
+Its device-hidden supplied-owner diagnostic passes four 64-frame arms; files
+panel counts remain 72 walk, 72 open, 648 read, 1,477 write and 68 clunk. Bulk
+counts remain 136 walk, 136 open, 6,661 write and 132 clunk; reads are 1,032
+against 1,031 in the earlier reusable-writer diagnostic. These totals include
+startup. B2 removes a dependency wait, not requests. This fixture has no Session
+owner loop, physical presentation or qualified CPU/allocation measurement.
+Evidence: `t331-b2-20261017/candidate-ledger`, including per-arm source counters
+and `comparison.json`. The comparator's existing mixed-activity labels still
+include the previously reported Other overlap; do not infer wake causes from them.
+
+Comparator `c014ad37f` adds an opt-in ordered shell trace. Three four-arm,
+64-frame runs prove every steady B2 submit was dispatched before its record
+reply finished sending: 320/320 panel and 512/512 bulk. Negotiation remains
+sequential. The observation is dispatch, not socket arrival; it conservatively
+proves that submit did not wait for the record reply. A separate fixture checks
+partial reply delivery and a sequential negative control. A compile-time guard
+rejects combining the trace with cost instrumentation; its allocation and timing
+overhead are not performance evidence.
+
+The extra bulk read is startup grouping. Runs 01 and 02 returned the first 168
+journal bytes together; run 03 returned 112 then 56. Every later event-read
+offset and reply length matches, including the final parked read. Thus the
+traced 1,031/1,032 totals differ by one Tread and one Rread header, with identical
+journal payload. This reproduces the earlier counter difference; the historical
+untraced capture cannot identify its particular split. Evidence lives under
+`t331-b2-20261017/ordered-trace-01`, `ordered-trace-02` and `ordered-trace-03`.
+The first two include the separate progress sampler; the third omits it. All
+ran before the trace commit, whose final changes only format code and clarify
+dispatch wording. Raw summaries retain the earlier word "arrival"; interpret
+their request phase as dispatch. B3 compatibility, fault and neighbor-service
+checks are next. No B2/B3 native cost result exists yet.
+
+niltempus approved completing B3 validation and one matched native pilot before
+deciding whether to prioritize the proposed descriptor channel. The +10% gates
+remain unchanged. The new supplied-clock socket fixture proves that partial
+pixel scratch at one millisecond before the idle deadline does not renew it;
+expiry fences later burst writes, and a late write or clunk from that fid cannot
+affect a successor binding. All thirteen socket fixtures pass against current
+export `0d79bd170` and oldest supported export `116075541`, using test-only
+overlays on the latter. This establishes these export behaviors, not complete
+B3 SDK interoperability or neighbor fairness. Logs and the old-export overlay
+are under `t331-b3-20261017/`. No desktop or native measurement was started.
+
+The same direct-export backpressure/tail fixture also passes both revisions.
+C candidate `303dfd0` passes all three independent vector and native-file session
+tests against both exports, including allocation, upload, cancellation and ACKs.
+The test now accepts an explicit absolute `SOPHIA_C_SDK_SOURCE` directory so a
+candidate can be tested before replacing the vendor pin; default runs still
+check the pinned SDK. Rust candidate `f3df891` passes independent metadata and
+content startup against both exports. These do not prove a full four-credit
+window against production or neighbor fairness; those gates remain open.
+
+Rust test-only follow-up `10c9226` adds an independent upload peer. It queues
+five canonical chunks followed by End, checks every ticket becomes Stored,
+then cancels a second resource. Against both exports the host verifies all
+262,144 accepted bytes exactly; both runs pass, as does strict example Clippy.
+The generic ignored fixture accepts an absolute `SOPHIA_SHELL_UPLOAD_PEER`
+executable. This proves the multi-chunk path and End/cancellation interoperability,
+not the maximum simultaneous wire depth or neighbor latency. The ordinary C
+peer also exercises transport fragmentation with a 4,096-byte msize. Remaining
+fault audit, depth/fairness diagnostics, adoption and the native pilot are open.
 
 ## First-slice native pilot — October 17
 
