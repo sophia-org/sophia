@@ -81,6 +81,13 @@ lock cancellation controls are separate qualification work. Follow-up
 after Source submission, then sends cancellation over 9P. Timeout remains the
 first cause through real completion collection, with release disposition 3.
 All three shell transport tests and targeted strict Clippy pass.
+Transport teardown control `c57dd321d` sends a real Source, withholds completion
+collection, disconnects and drops the transport, registry and worker, then
+requires the FD count to return to baseline. It runs alone in a bounded child
+process, so parallel tests cannot contaminate the count. All four shell
+transport tests and targeted strict Clippy pass. This covers uncollected
+handoff cleanup, not a particular scan position or simultaneous multi-offer
+transport teardown.
 
 Next are the remaining SDK/export and cancellation controls, and matched sealed-versus-byte
 native panel/bulk evidence. Comparator `c1b5faa71` merges the reviewed SDK/runtime
@@ -88,7 +95,8 @@ while retaining both byte and IPC controls: its native-session check and both
 device-hidden peer tests pass. `93fb5991e` also carries the worker corrections.
 The generic sealed peer is published in `ae6dbdc2d`; comparator head `721ceea33`
 also restores its formatting/layout gates with an unchanged metadata-helper
-move. External integration `a1a3c38`
+move. Root independently reran all four comparator tests successfully at that
+head (9.02 seconds). External integration `a1a3c38`
 binds request, peer configuration and captured journal to the byte or sealed
 source and wire; all 30 targeted tests and strict Clippy pass. Reports preserve
 logical accepted payload bytes and CPU/frame alongside existing cost fields.
