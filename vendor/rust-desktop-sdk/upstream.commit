@@ -1,14 +1,14 @@
-tree bab9e006ca5e9a8049768219de91bf971cda10c0
-parent 93fe07b9687add7628e7073221cd82af55ff7b28
-author Mason Green <mason@greenm01.net> 1792271212 -0400
-committer Mason Green <mason@greenm01.net> 1792271212 -0400
+tree 5a6820add2351c965b6700a4c4efb990ffbf1a7f
+parent 86187932a089ce19241c0fc4bb8657f40f0d6f8d
+author Mason Green <mason@greenm01.net> 1792276680 -0400
+committer Mason Green <mason@greenm01.net> 1792276680 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatPjbBsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJOyAD+JPVFebj2a3fOdIlAM27c
- uK9KVJWE9vp29dleAYAyT0YA/AtiDdUPxWESnw+1XU9FAcdWM7jyaP2xZeriT5tg
- fxIM
- =shC5
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatP4yBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJ+qAEAxdDD+dDcrze9shglbQbK
+ QDq0NADdvORFpSq9BCzZrDkA/i+bA5FmvtpcIvLF01CUHNCENot1dJF/AVrbSK1R
+ pLsJ
+ =EJlX
  -----END PGP SIGNATURE-----
 
-Carry explicit lock r2 selection through Negotiated codecs
+docs: pin shared image cancellation identity and custody rules

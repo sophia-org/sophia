@@ -1,14 +1,14 @@
-tree 54bbf08e668b0241f2cc8c63b357b8e4bf2a4484
-parent af75ab34ca36df0910522c94a3f6b6c9cb231048
-author Mason Green <mason@greenm01.net> 1792272309 -0400
-committer Mason Green <mason@greenm01.net> 1792272309 -0400
+tree bc66d23cce6134f189c1d3f5ed591d4fd63db574
+parent e77723576e91060869094261f43c08cb14bbb798
+author Mason Green <mason@greenm01.net> 1792276685 -0400
+committer Mason Green <mason@greenm01.net> 1792276685 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatPntRsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJm9gD/d+lMstT/gNdrao8QcoaH
- F8nxRyey7gqWluhAGJ6z8YAA/0pki8uWUxdGXoNNBsoLJKm+JD4Gpfg1OhkyC/5N
- +VoD
- =go7z
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatP4zRsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKxmwD/Vqg1N7JUqJSIIe//Xslc
+ 0R2Xf6EnzmEn+BSf+ix8UlMA/jcms7x13aHoti7EFe1Giw+fpNOZx5WS+Aus0oLe
+ qgcB
+ =GOOL
  -----END PGP SIGNATURE-----
 
-Sync the explicit lock revision selection contract
+docs: pin the shared offer cancellation contract

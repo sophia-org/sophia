@@ -204,12 +204,18 @@ void sophia_lc_internal_upload_status(
   else if (v->status != SOPHIA_LF_ADMITTED)
     c->upload_closing = 1;
 }
+/* An End or Cancel for another resource, such as an image offer, is not
+ * the upload's. */
 void sophia_lc_internal_upload_refused(struct sophia_lc_client *c,
                                        uint16_t kind) {
   if ((kind == SOPHIA_LF_RESOURCE_BEGIN &&
        c->upload_stage == LC_UPLOAD_BEGUN) ||
       ((kind == SOPHIA_LF_RESOURCE_END || kind == SOPHIA_LF_RESOURCE_CANCEL) &&
-       c->upload_stage == LC_UPLOAD_ENDING))
+       c->upload_stage == LC_UPLOAD_ENDING &&
+       lc_get(c->tx + SOPHIA_LF_HEADER_BYTES + 8, 8) ==
+           c->upload.resource.id &&
+       lc_get(c->tx + SOPHIA_LF_HEADER_BYTES + 16, 8) ==
+           c->upload.resource.generation))
     c->upload_closing = 1;
 }
 int sophia_lc_upload_chunk(struct sophia_lc_client *c, const void *bytes,

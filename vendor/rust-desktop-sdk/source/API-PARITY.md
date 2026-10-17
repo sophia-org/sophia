@@ -1,5 +1,16 @@
 # C and Rust SDK API parity
 
+## Image cancellation contract sync, 2026-10-17
+
+The shared contract now explicitly gives shell and lock ResourceCancel the
+metadata offer ID as transaction identity; the shell grant uses the connection
+epoch and metadata admission epoch. Cancellation may queue behind ImageBegin,
+permanently suppresses an unsent Source once locally recorded, and never
+releases admitted custody before SourceReleased. Queue refusal changes nothing;
+an acceptance that wins the race is retained. C `e777235` implements these
+controls. Rust producer and role adapters remain unimplemented, so cancellation
+and producer parity are still open. This spec sync changes no Rust codec or API.
+
 ## Explicit lock revision selection, 2026-10-17
 
 LockNegotiated now has explicit revision-aware encode/decode and a
@@ -9,10 +20,9 @@ required. The client must validate its offered range and requested grants
 before installing the returned selection. No capability implies a revision.
 The body remains 16 bytes and existing r1 encodings are unchanged.
 
-The matching C Negotiated revision path is assigned to the C adapter lane;
-until that lands, negotiation parity is incomplete and no lock r2 runtime
-activation is claimed. This change does not implement the Rust producer or
-role adapters; C producer 69a5d80 is ahead on that capability.
+The matching C Negotiated revision path landed in `af75ab3`; its lock adapter
+landed in `6122b60`. Codec selection is aligned, but this does not implement the
+Rust producer or role adapters. C remains ahead on those capabilities.
 
 ## Image receipts and context checks, 2026-10-17
 

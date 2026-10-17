@@ -87,7 +87,7 @@ static int source_queued(const struct sophia_ip *p)
     if (p->channel != SOPHIA_IPC_READY)
         return 0;
     for (i = 0; i < SOPHIA_IP_MAX_OFFERS; i++)
-        if (p->slots[i].state == SOPHIA_IPO_ADMITTED)
+        if (p->slots[i].state == SOPHIA_IPO_ADMITTED && !p->slots[i].cancelled)
             return 1;
     return 0;
 }
@@ -191,7 +191,7 @@ static int send_sources(struct sophia_ip *p)
         if (p->channel != SOPHIA_IPC_READY)
             return changed;
         for (i = 0; i < SOPHIA_IP_MAX_OFFERS; i++)
-            if (p->slots[i].state == SOPHIA_IPO_ADMITTED &&
+            if (p->slots[i].state == SOPHIA_IPO_ADMITTED && !p->slots[i].cancelled &&
                 (!next || p->slots[i].metadata.offer < next->metadata.offer))
                 next = &p->slots[i];
         if (!next)

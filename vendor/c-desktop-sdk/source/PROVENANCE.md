@@ -1,5 +1,13 @@
 # Extraction and contract provenance
 
+## Image cancellation identity, 2026-10-17
+
+The shared image contract is copied from the coordinated Sophia working tree
+based on signed `67b38ae5d`. Its exact digest is in `spec/SHA256SUMS`.
+It records the approved ResourceCancel identity and custody rules for both
+roles, implemented in C `e777235`. This sync changes no C library behavior;
+the Rust producer counterpart remains open.
+
 ## Shared image-channel acceptance, 2026-10-17
 
 Spec copies come from the coordinated Sophia acceptance working tree based on

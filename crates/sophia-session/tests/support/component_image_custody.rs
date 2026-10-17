@@ -51,7 +51,7 @@ fn submit(peer: &mut raw::Peer, bytes: &[u8], grant: ContentGrant, id: u64) {
     peer.clear();
 }
 
-pub fn admit_unsent(peer: &mut raw::Peer, grant: ContentGrant) {
+pub fn admit_unsent(peer: &mut raw::Peer, grant: ContentGrant) -> ShellImageMetadata {
     let allocation = encode_shell_file_allocation_request(
         ShellFileHeader {
             kind: ShellFileKind::AllocationRequest,
@@ -119,6 +119,115 @@ pub fn admit_unsent(peer: &mut raw::Peer, grant: ContentGrant) {
     let record = decode_shell_file_record_at_revision(&admitted, ShellFileClass::Event, 9).unwrap();
     assert_eq!(ShellImageMetadata::decode(record.body).unwrap(), metadata);
     ack(peer, &admitted);
+    metadata
+}
+
+pub fn complete_source(
+    peer: &mut raw::Peer,
+    socket: &std::os::fd::OwnedFd,
+    grant: ContentGrant,
+    metadata: ShellImageMetadata,
+    channel_generation: u64,
+) {
+    use rustix::fs::{MemfdFlags, SealFlags, fcntl_add_seals, memfd_create};
+    use rustix::net::{SendAncillaryBuffer, SendAncillaryMessage, SendFlags, sendmsg};
+    use std::os::fd::AsFd;
+    let source = std::fs::File::from(
+        memfd_create(
+            c"session-sealed-source",
+            MemfdFlags::CLOEXEC | MemfdFlags::ALLOW_SEALING,
+        )
+        .unwrap(),
+    );
+    source.set_len(8).unwrap();
+    fcntl_add_seals(
+        &source,
+        SealFlags::WRITE | SealFlags::GROW | SealFlags::SHRINK | SealFlags::SEAL,
+    )
+    .unwrap();
+    let mut planes = [ShellImagePlane {
+        offset: 0,
+        stride: 0,
+        fd_index: 0,
+    }; 4];
+    planes[0].stride = 8;
+    let packet = ShellImagePacket::Source {
+        connection_epoch: grant.connection_epoch,
+        channel_generation,
+        metadata,
+        planes,
+    }
+    .encode()
+    .unwrap();
+    let mut space = [std::mem::MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(1))];
+    let mut control = SendAncillaryBuffer::new(&mut space);
+    let rights = [source.as_fd()];
+    assert!(control.push(SendAncillaryMessage::ScmRights(&rights)));
+    assert_eq!(
+        sendmsg(
+            socket,
+            &[std::io::IoSlice::new(&packet)],
+            &mut control,
+            SendFlags::NOSIGNAL
+        )
+        .unwrap(),
+        200
+    );
+    drop(source);
+    let (mut status, mut released) = (false, false);
+    for _ in 0..2 {
+        let bytes = peer.next_event();
+        let record =
+            decode_shell_file_record_at_revision(&bytes, ShellFileClass::Event, 9).unwrap();
+        match record.header.kind {
+            ShellFileKind::ResourceStatus => {
+                assert!(!status);
+                let value = decode_shell_file_resource_status(&bytes).unwrap();
+                assert!(
+                    matches!(value.record, ShellContentRecord::ResourceStatus(value) if value.status == 2 && value.resource.id == 1 && value.admitted_bytes == 8)
+                );
+                status = true;
+            }
+            ShellFileKind::SourceReleased => {
+                assert!(!released);
+                assert_eq!(
+                    ShellSourceReleased::decode(record.body)
+                        .unwrap()
+                        .disposition,
+                    ShellSourceDisposition::Retained
+                );
+                released = true;
+            }
+            _ => panic!("unexpected image terminal event"),
+        }
+        ack(peer, &bytes);
+    }
+    assert!(status && released);
+    let retire = encode_shell_file_resource_retire(
+        ShellFileHeader {
+            kind: ShellFileKind::ResourceRetire,
+            connection_epoch: grant.connection_epoch,
+            submission_id: 4,
+            sequence: 0,
+        },
+        &ShellFileTransactionRecord {
+            transaction: TransactionId::from_raw(4),
+            record: ShellContentRecord::ResourceRetire(ContentResourceRetire {
+                grant,
+                resource: ContentResourceId {
+                    id: 1,
+                    generation: 1,
+                },
+            }),
+        },
+    )
+    .unwrap();
+    submit(peer, &retire, grant, 4);
+    let release = next_kind(peer, ShellFileKind::ResourceReleased);
+    assert!(
+        matches!(decode_shell_file_resource_released(&release).unwrap().record, ShellContentRecord::ResourceReleased(value) if value.resource.id == 1)
+    );
+    ack(peer, &release);
 }
 
 pub fn service(transport: &mut ShellTransportConnection<'_>, now: u64, published: &mut bool) {

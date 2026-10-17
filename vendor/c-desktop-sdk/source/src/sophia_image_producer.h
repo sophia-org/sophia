@@ -106,13 +106,14 @@ struct sophia_ip_offer_info {
     enum sophia_ip_status status;  /* 0 until a ResourceStatus */
     int unavailable;               /* that status carried reason image_channel_unavailable */
     uint32_t disposition;          /* SourceReleased disposition, 0 until then */
+    int cancel_requested;          /* sophia_ip_cancel marked it; never cleared */
 };
 
 struct sophia_ip_slot {
     struct sophia_ic_metadata metadata;
     uint64_t deadline_ms;
     int fd;
-    uint8_t state, deadline_passed, unavailable, status;
+    uint8_t state, deadline_passed, unavailable, status, cancelled;
     uint32_t disposition;
 };
 
@@ -197,6 +198,13 @@ int sophia_ip_begin(struct sophia_ip *, struct sophia_ic_metadata *metadata, int
 int sophia_ip_offer(const struct sophia_ip *, uint64_t offer, struct sophia_ip_offer_info *);
 /* Live slots in slot order; *cursor starts at 0. Returns 0 when done. */
 int sophia_ip_offer_next(const struct sophia_ip *, unsigned *cursor, struct sophia_ip_offer_info *);
+/* Marks an offer cancelled before its role client queues ResourceCancel
+ * naming it; check queue room first. The mark is permanent, even if the
+ * cancel is refused: an admitted source is never sent afterward and the fd
+ * stays held. Settlement is still only SourceReleased (or UNKNOWN on journal
+ * loss); acceptance may win the race and is kept. REFUSED once the offer has
+ * a status or a mark, or is refused, settled or unknown. */
+int sophia_ip_cancel(struct sophia_ip *, uint64_t offer, uint64_t now_ms);
 /* Frees a REFUSED, SETTLED or UNKNOWN slot. */
 int sophia_ip_forget(struct sophia_ip *, uint64_t offer);
 enum sophia_ip_channel sophia_ip_channel(const struct sophia_ip *);

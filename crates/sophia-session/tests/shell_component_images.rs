@@ -96,6 +96,8 @@ fn session_configures_each_authenticated_epoch_and_joins_the_image_socket() {
         let (admitted, admission) = std::sync::mpsc::channel();
         let (close_source, await_close) = std::sync::mpsc::channel();
         let (change_topology, topology) = std::sync::mpsc::channel();
+        let (completed, completion) = std::sync::mpsc::channel();
+        let (finish, finished) = std::sync::mpsc::channel();
         let peer = std::thread::spawn(move || {
             let mut peer = raw::Peer::connect(&path);
             attach(&mut peer);
@@ -141,6 +143,8 @@ fn session_configures_each_authenticated_epoch_and_joins_the_image_socket() {
                     .unwrap();
                 assert_eq!(reply.0, 7);
                 assert_eq!(u32::from_le_bytes(reply.1.try_into().unwrap()), 2);
+                completed.send(()).unwrap();
+                finished.recv_timeout(Duration::from_secs(2)).unwrap();
                 return;
             }
             peer.open(6, b"image-channel", 0);
@@ -225,19 +229,36 @@ fn session_configures_each_authenticated_epoch_and_joins_the_image_socket() {
                     .formats_generation,
                 2
             );
-            image_custody::admit_unsent(&mut peer, key.grant);
+            let metadata = image_custody::admit_unsent(&mut peer, key.grant);
             admitted.send(()).unwrap();
             await_close.recv_timeout(Duration::from_secs(2)).unwrap();
+            if key.grant.connection_epoch == 3 {
+                image_custody::complete_source(
+                    &mut peer,
+                    &socket,
+                    key.grant,
+                    metadata,
+                    discovery.channel_generation,
+                );
+            }
+            completed.send(()).unwrap();
+            finished.recv_timeout(Duration::from_secs(2)).unwrap();
         });
         let deadline = Instant::now() + Duration::from_secs(5);
         let mut published = false;
+        let mut ready_fds = None;
         while !peer.is_finished() {
+            if completion.try_recv().is_ok() {
+                finish.send(()).unwrap();
+                break;
+            }
             assert!(Instant::now() < deadline);
             for (_, result) in owner.poll_negotiations(65536).into_iter().flatten() {
                 result.unwrap();
             }
             assert!(owner.turn_connected().iter().all(Option::is_none));
             if topology.try_recv().is_ok() {
+                ready_fds = Some(owner.poll_fds().len());
                 owner
                     .with_connection(key, |transport| image_custody::publish(transport, 2))
                     .unwrap();
@@ -252,13 +273,22 @@ fn session_configures_each_authenticated_epoch_and_joins_the_image_socket() {
             }
             if admission.try_recv().is_ok() {
                 assert_eq!(owner.accounting().memory.staging, 8);
-                assert!(
-                    owner.poll_fds().len() >= 3,
+                assert_eq!(
+                    owner.poll_fds().len(),
+                    ready_fds.unwrap() + 1,
                     "worker retained beside the wire"
                 );
                 close_source.send(()).unwrap();
             }
-            std::thread::yield_now();
+            let mut fds = owner.poll_fds();
+            rustix::event::poll(
+                &mut fds,
+                Some(&rustix::event::Timespec {
+                    tv_sec: 0,
+                    tv_nsec: 1_000_000,
+                }),
+            )
+            .unwrap();
         }
         peer.join().unwrap();
         owner.close(key).unwrap();

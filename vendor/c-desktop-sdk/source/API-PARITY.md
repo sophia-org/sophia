@@ -1,5 +1,88 @@
 # C and Rust SDK API parity
 
+## Sealed-image offer cancellation, C, 2026-10-17
+
+Both C adapters cancel an offer with the existing ResourceCancel record; no
+wire kind is added. The record's transaction is the offer ID, and its resource
+is the offer's resource. The shell record carries the files connection epoch
+as grant_connection_epoch and the offer metadata's admission_epoch as
+grant_content_epoch. sophia_ss_image_cancel returns a session ticket;
+sophia_lc_image_cancel queues the lock client's one submission.
+
+sophia_ip_cancel marks an offer on the producer. The mark is permanent: an
+admitted source is never sent afterward and its descriptor stays held, even
+when the cancel is refused or never answered. Settlement is unchanged. Only
+SourceReleased closes the descriptor and settles an admitted offer, and
+journal loss makes it UNKNOWN. A Cancelled status before admission refuses
+the offer as before. After admission, a Cancelled status is recorded and the
+offer still waits for SourceReleased; there is no early release. Acceptance
+may win the race with the cancel, in which case Accepted is kept and the
+release that follows settles the offer. An owner-initiated Cancelled routes
+the same way without a local mark. Nothing is inferred from the cancel's own
+outcome.
+
+A cancel may be queued before ImageAdmitted, behind ImageBegin on the same
+connection. Queue room is checked before the mark, so BUSY changes nothing.
+The shell cancel ticket is the caller's alone: whatever its outcome, the mark
+stays and custody is unchanged, and session end is journal loss as for any
+offer. The lock adapter is BUSY while any submission is in flight or its
+transaction file is recycling. A mark is refused once the offer has a status
+or a mark, or is refused, settled or unknown.
+
+A refused End or Cancel closes a byte upload in either client only when the
+refused record names the upload's resource ID and generation. A refused image
+ResourceCancel therefore leaves a byte upload's pending End alone. The shell
+check is in shell_files/client.c and the lock check in lock_files/upload.c.
+
+ABI: struct sophia_ip_slot gains cancelled and struct sophia_ip_offer_info
+gains cancel_requested; callers must rebuild. Rust has no offer cancellation
+yet. Tests: image_producer_test cancellation, shell_image_test cancel_before_admission,
+cancel_races, cancel_lost_with_session and cancel_beside_upload, and
+lock_image_test cancellation, cancel_beside_upload and cancel_journal_loss.
+The scripted lock peer leaves a ResourceCancel naming the last ImageBegin's
+resource for the test to answer, and can hold an upload End's status.
+
+## Lock sealed-image adapter, revision 2, C, 2026-10-17
+
+The lock client now adopts the explicit selection for every caller. Before
+negotiation it decodes at the lower of the offer's maximum and 2; Negotiated
+must select a revision inside the offered range, with grants within the
+request, before any later event is decoded at the selected revision. An offer
+of revision 1 is byte-identical to before. sophia_lc_init accepts capability 2
+(sealed images) only with a maximum revision of 2 or more, and still refuses
+capability 3 (DMA-BUF).
+
+sophia_lock_image.h adds an optional adapter, mirroring the shell one. The
+caller attaches it after sophia_lc_init or sophia_lc_init_attached and before
+Negotiated arrives; the offer must span revision 2 and request capability 2.
+After a selection of 2 with a sealed grant, sophia_lc_image_dispatch reads
+image-channel, image-limits and image-formats through the client's own 9P
+wire, one set per pass, with the shell's ENOENT, back-off and formats-cap
+rules, then connects and attaches the image socket. A selection of 1, or no
+sealed grant, closes the producer as unavailable, so the byte path serves
+images when the caller allows it. The client is clockless: dispatch drives
+discovery and connect, and records routed inside sophia_lc_service use the
+producer's last time.
+
+Image events (0x7001 to 0x7004) at revision 2 are consumed and acknowledged
+by the client and routed to the producer; sophia_lc_event never returns them.
+An image event without the adapter, at selection 1, without a sealed grant,
+of another epoch or out of sequence fails the client. ResourceStatus naming a
+live offer as its transaction, for the same resource, is routed and still
+presented; status 1 is not routed, and Rejected reason 9 means unavailable.
+ImageBegin is the client's one submission, so begin is BUSY while any
+submission is in flight or awaits its ack. A refused submit, or a terminal
+client whose ImageBegin submit was never queued, refuses the offer. A submit
+possibly sent when the client ends is journal loss. See the offer
+cancellation section for ResourceCancel naming an offer.
+
+ABI: struct sophia_lc_client gains a trailing image pointer, the image
+submission and whole-file-read fields, and struct sophia_lf_negotiated already
+carries selected_revision; callers must rebuild. Rust has the selection
+(8618793) but no lock image adapter yet. lock_image_test drives the adapter
+against the scripted lock peer, now shared as src/tests/lock_client_peer.h,
+and a real SEQPACKET endpoint.
+
 ## Explicit lock Negotiated selection at r2, C, 2026-10-17
 
 Lock revision 2 carries its selection on the wire. Negotiated's u16 at body
@@ -37,6 +120,8 @@ wire, one complete set per pass, hands the set to the producer, connects the
 discovered endpoint beneath the caller's endpoint directory and attaches it.
 Discovery and connect retries use the session's EAGAIN policy (4 ms doubling
 to 256 ms) inside the producer's startup deadline.
+The image-formats read is capped at the contract's 64 + 40 * 4096 bytes even
+when the caller's storage is larger, so a longer file is a discovery error.
 
 At r9 the session decodes journal records with the revision 9 codec. Image
 events (ImageAdmitted, SourceReleased, ChannelReady, ChannelClosed) are

@@ -20,10 +20,11 @@ impl ShellFiles {
         &mut self,
         generation: u64,
     ) -> Result<Option<ImageTopology>, Errno> {
-        if !self.image_disclosed() {
+        // Facts can advance before negotiation. Keep the hidden configuration
+        // current too, so its first disclosed snapshots name those facts.
+        let Some(state) = self.image.as_ref() else {
             return Ok(None);
-        }
-        let state = self.image.as_ref().expect("disclosed image");
+        };
         if generation < state.config.formats.formats_generation {
             return Err(Errno::ESTALE);
         }

@@ -93,4 +93,21 @@ void sophia_lc_internal_upload_status(struct sophia_lc_client *,
                                       const struct sophia_lf_resource_status *);
 void sophia_lc_internal_upload_refused(struct sophia_lc_client *,
                                        uint16_t kind);
+int sophia_lc_internal_drive(struct sophia_lc_client *);
+/* Image seams (image.c); inert while c->image is NULL. */
+int sophia_lc_internal_queue_image(struct sophia_lc_client *, const uint8_t *,
+                                   size_t);
+int sophia_lc_internal_image_kind(uint16_t kind);
+int sophia_lc_internal_image_event(struct sophia_lc_client *, const uint8_t *,
+                                   size_t);
+void sophia_lc_internal_image_status(struct sophia_lc_client *,
+                                     const struct sophia_lf_resource_status *);
+void sophia_lc_internal_image_settled(struct sophia_lc_client *, int refused);
+int sophia_lc_internal_file_read(struct sophia_lc_client *, const char *name,
+                                 void *buf, size_t cap);
+int sophia_lc_internal_file_result(struct sophia_lc_client *, size_t *bytes,
+                                   uint32_t *error);
+int sophia_lc_internal_file_drive(struct sophia_lc_client *);
+int sophia_lc_internal_file_reply(struct sophia_lc_client *,
+                                  const struct sophia_9p_reply *);
 #endif

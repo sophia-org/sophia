@@ -131,6 +131,7 @@ static void info(const struct sophia_ip_slot *s, struct sophia_ip_offer_info *ou
     out->status = (enum sophia_ip_status)s->status;
     out->unavailable = s->unavailable;
     out->disposition = s->disposition;
+    out->cancel_requested = s->cancelled;
 }
 
 int sophia_ip_offer(const struct sophia_ip *p, uint64_t offer, struct sophia_ip_offer_info *out)
@@ -157,6 +158,23 @@ int sophia_ip_offer_next(const struct sophia_ip *p, unsigned *cursor, struct sop
         }
     }
     return 0;
+}
+
+int sophia_ip_cancel(struct sophia_ip *p, uint64_t offer, uint64_t now_ms)
+{
+    struct sophia_ip_slot *s;
+    if (!p || !ip_clock(p, now_ms))
+        return SOPHIA_IPR_ARGUMENT;
+    s = ip_slot(p, offer);
+    if (!s)
+        return SOPHIA_IPR_ARGUMENT;
+    if (s->cancelled || s->status ||
+        (s->state != SOPHIA_IPO_BEGUN && s->state != SOPHIA_IPO_ADMITTED &&
+         s->state != SOPHIA_IPO_SENT && s->state != SOPHIA_IPO_AMBIGUOUS &&
+         s->state != SOPHIA_IPO_EXPIRED))
+        return SOPHIA_IPR_REFUSED;
+    s->cancelled = 1;
+    return SOPHIA_IPR_OK;
 }
 
 int sophia_ip_forget(struct sophia_ip *p, uint64_t offer)

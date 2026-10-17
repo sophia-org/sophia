@@ -353,12 +353,29 @@ not inferred from the numeric range.
 | 28678 (0x7006) ImageFormats | object | 32 bytes plus format rows below | Format snapshot tied to topology. |
 
 Existing ResourceStatus reports accepted/rejected/cancelled with its existing
-meaning; ResourceReleased remains the last-consumer event. For lock records,
-the metadata offer ID is the resource transaction identity used by subsequent
-ResourceCancel and status records. It is distinct from the outer submission ID.
+meaning; ResourceReleased remains the last-consumer event. For both shell and
+lock records, the metadata offer ID is the resource transaction identity used
+by subsequent ResourceCancel and status records. It is distinct from the outer
+submission ID. Shell ResourceCancel names the current connection epoch and the
+metadata admission epoch as its content-grant epoch; both roles name the exact
+metadata resource ID and generation.
 A descriptor offer has no ResourceEnd: validation or capture determines its
 completion. Sending ResourceEnd against it is refused without changing custody.
 ResourceRetire applies only after immutable acceptance, as on the byte path.
+
+ResourceCancel may follow a submitted ImageBegin before ImageAdmitted arrives.
+The owner processes that offer's ImageBegin before its cancellation. Locally,
+the producer checks submission capacity before recording cancellation; a busy
+refusal changes nothing. Once cancellation is recorded, it permanently prevents
+that offer's unsent Source from being sent, even if ImageAdmitted arrives later
+or the cancel submission is definitively refused. Once admitted, neither the
+local mark nor ResourceStatus closes producer custody: the offer settles only
+on SourceReleased, or becomes unknown on journal loss. A cancellation that wins
+before acceptance reports Cancelled and releases according to actual source
+custody. An acceptance that already won remains authoritative. Owner-initiated
+Cancelled status follows the same release rules without requiring a local mark.
+After a final status the producer refuses a new local offer cancellation;
+accepted resources use ResourceRetire instead.
 
 SourceReleased body: offer ID `u64 @0`, resource ID `u64 @8`, resource generation
 `u64 @16`, disposition `u32 @24`, reserved `u32 @28 = 0`. Dispositions are

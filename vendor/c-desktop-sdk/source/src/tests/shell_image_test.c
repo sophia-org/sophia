@@ -711,6 +711,27 @@ static void contradictions(void)
     assert(sophia_ip_cause(sophia_ss_image_producer(&t.img)) == SOPHIA_IPX_DISCOVERY);
     assert(t.img.limits_used == 0);
     image_close(&t);
+    /* Formats storage larger than the contract's object budget reads no
+     * more than that budget, and an over-long formats file is refused. */
+    image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
+    {
+        static uint8_t wide[SOPHIA_IC_MAX_FORMATS_BYTES + 64], served[SOPHIA_IC_MAX_FORMATS_BYTES + 1];
+        memset(wide, 0xa5, sizeof(wide));
+        memcpy(served, t.set.formats, t.set.formats_bytes);
+        t.img.config.formats = wide;
+        t.img.config.formats_capacity = sizeof(wide);
+        t.r.p.image_data[2] = served;
+        t.r.p.image_bytes[2] = sizeof(served);
+        rig_settle(&t.r);
+        for (i = 0; i < 256 && sophia_ip_cause(sophia_ss_image_producer(&t.img)) !=
+                                   SOPHIA_IPX_DISCOVERY; i++)
+            image_step(&t);
+        assert(sophia_ip_cause(sophia_ss_image_producer(&t.img)) == SOPHIA_IPX_DISCOVERY);
+        for (i = SOPHIA_IC_MAX_FORMATS_BYTES; i < sizeof(wide); i++)
+            assert(wide[i] == 0xa5);
+        assert(t.img.formats_used == 0);
+    }
+    image_close(&t);
     /* Image bits below r9 fail the welcome. */
     image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
     t.welcome.selected_revision = 8;
@@ -774,6 +795,287 @@ static void events_after_end(void)
     image_close(&t);
 }
 
+static void peer_released(struct peer *p, uint64_t offer, uint64_t resource, uint32_t disposition)
+{
+    struct sophia_ic_record r;
+    memset(&r, 0, sizeof(r));
+    r.header.kind = SOPHIA_IC_SOURCE_RELEASED;
+    r.value.released.offer = offer;
+    r.value.released.resource_id = resource;
+    r.value.released.resource_generation = 1;
+    r.value.released.disposition = disposition;
+    peer_image(p, &r);
+}
+
+static void peer_admitted(struct peer *p, const struct sophia_ic_metadata *m)
+{
+    struct sophia_ic_record r;
+    memset(&r, 0, sizeof(r));
+    r.header.kind = SOPHIA_IC_IMAGE_ADMITTED;
+    r.value.image = *m;
+    peer_image(p, &r);
+}
+
+/* Steps, consuming and acknowledging application events, until ticket has
+ * a final outcome. */
+static enum sophia_ss_outcome settle_ticket(struct image_rig *t, uint64_t ticket)
+{
+    uint16_t kinds[8];
+    unsigned i;
+    for (i = 0; i < 32; i++) {
+        enum sophia_ss_outcome o = rig_outcome(&t->r, ticket);
+        if (o != SOPHIA_SS_ADMITTED_LOCAL && o != SOPHIA_SS_IN_FLIGHT)
+            return o;
+        image_step(t);
+        (void)app_events(t, kinds, 8);
+        ack_all(t);
+    }
+    return rig_outcome(&t->r, ticket);
+}
+
+static void run(struct image_rig *t, unsigned passes)
+{
+    uint16_t kinds[8];
+    unsigned i;
+    for (i = 0; i < passes; i++) {
+        image_step(t);
+        (void)app_events(t, kinds, 8);
+        ack_all(t);
+    }
+}
+
+static struct sophia_ip_offer_info offer_info(struct image_rig *t, uint64_t offer)
+{
+    struct sophia_ip_offer_info info;
+    assert(sophia_ip_offer(sophia_ss_image_producer(&t->img), offer, &info) == SOPHIA_IPR_OK);
+    return info;
+}
+
+static void cancel_before_admission(void)
+{
+    struct image_rig t;
+    struct sophia_ic_metadata m = image(120);
+    struct sophia_sf_record staged;
+    struct sophia_ip_offer_info info;
+    struct sophia_ss_reservation v;
+    uint8_t b[256];
+    uint64_t offer, ticket, cancel = 0;
+    unsigned base = fd_count(), held;
+    int src, fd;
+    image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
+    assert(sophia_ss_image_cancel(&t.img, 1, t.r.now, &cancel) == SOPHIA_IPR_CLOSED);
+    image_ready(&t);
+    ack_all(&t);
+    assert(sophia_ss_image_cancel(&t.img, 1, t.r.now, &cancel) == SOPHIA_IPR_ARGUMENT);
+    assert(sophia_ss_image_cancel(&t.img, 1, t.r.now, NULL) == SOPHIA_IPR_ARGUMENT);
+    src = sealed(16, 16);
+    assert(sophia_ss_image_begin(&t.img, &m, src, t.r.now, &offer, &ticket) == SOPHIA_IPR_OK);
+    /* No room: BUSY, and the offer is not marked. */
+    assert(!sophia_ss_reserve(&t.r.s, (uint16_t)(t.r.s.slots - t.r.s.queued), 0, &v));
+    assert(sophia_ss_image_cancel(&t.img, offer, t.r.now, &cancel) == SOPHIA_IPR_BUSY);
+    assert(!offer_info(&t, offer).cancel_requested && !cancel);
+    assert(!sophia_ss_cancel(&t.r.s, &v));
+    /* Queued behind ImageBegin on the same connection, before admission. */
+    assert(rig_outcome(&t.r, ticket) != SOPHIA_SS_SUBMITTED);
+    assert(sophia_ss_image_cancel(&t.img, offer, t.r.now, &cancel) == SOPHIA_IPR_OK && cancel);
+    assert(cancel > ticket && offer_info(&t, offer).cancel_requested);
+    assert(sophia_ss_image_cancel(&t.img, offer, t.r.now, &cancel) == SOPHIA_IPR_REFUSED);
+    assert(settle_ticket(&t, ticket) == SOPHIA_SS_SUBMITTED);
+    assert(settle_ticket(&t, cancel) == SOPHIA_SS_SUBMITTED);
+    /* The transaction file was clunked; its last bytes are still staged. */
+    assert(!sophia_sf_decode(t.r.p.staged, peer_get(t.r.p.staged, 4), &staged));
+    assert(staged.header.kind == SOPHIA_SF_RESOURCE_CANCEL && staged.header.epoch == PEER_EPOCH);
+    assert(staged.value.resource_cancel.transaction == offer &&
+           staged.value.resource_cancel.grant_connection_epoch == PEER_EPOCH &&
+           staged.value.resource_cancel.grant_content_epoch == 3 &&
+           staged.value.resource_cancel.resource_id == 120 &&
+           staged.value.resource_cancel.resource_generation == 1);
+    /* Admitted after the cancel: the source is never sent; the fd is held. */
+    peer_admitted(&t.r.p, &m);
+    run(&t, 8);
+    assert(owner_receive(&t, b, sizeof(b), &fd) < 0 && errno == EAGAIN);
+    info = offer_info(&t, offer);
+    assert(info.state == SOPHIA_IPO_ADMITTED && !info.status);
+    held = fd_count(); /* the session, channel and the held source */
+    /* Cancelled is not a release; SourceReleased settles exactly once. */
+    peer_status(&t.r.p, offer, 120, 4, 0);
+    run(&t, 6);
+    info = offer_info(&t, offer);
+    assert(info.state == SOPHIA_IPO_ADMITTED && info.status == SOPHIA_IPS_CANCELLED);
+    assert(fd_count() == held);
+    peer_released(&t.r.p, offer, 120, SOPHIA_IC_CANCELLED);
+    run(&t, 6);
+    info = offer_info(&t, offer);
+    assert(info.state == SOPHIA_IPO_SETTLED && info.disposition == SOPHIA_IC_CANCELLED);
+    assert(fd_count() == held - 1);
+    assert(sophia_ss_image_cancel(&t.img, offer, t.r.now, &cancel) == SOPHIA_IPR_REFUSED);
+    assert(sophia_ip_channel(sophia_ss_image_producer(&t.img)) == SOPHIA_IPC_READY);
+    image_close(&t);
+    assert(fd_count() == base);
+}
+
+static void cancel_races(void)
+{
+    struct image_rig t;
+    struct sophia_ic_metadata a = image(130), b = image(131), c = image(132);
+    struct sophia_ip_offer_info info;
+    uint8_t buf[256];
+    uint64_t oa, ob, oc, ta, tb, tc, cancel;
+    unsigned i, base = fd_count();
+    int src, fd;
+    image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
+    image_ready(&t);
+    ack_all(&t);
+    /* Acceptance wins: the source was sent before the cancel was seen. */
+    src = sealed(16, 16);
+    assert(sophia_ss_image_begin(&t.img, &a, src, t.r.now, &oa, &ta) == SOPHIA_IPR_OK);
+    assert(settle_ticket(&t, ta) == SOPHIA_SS_SUBMITTED);
+    peer_admitted(&t.r.p, &a);
+    for (i = 0; i < 8 && owner_receive(&t, buf, sizeof(buf), &fd) < 0; i++)
+        image_step(&t);
+    assert(fd >= 0);
+    close(fd);
+    assert(sophia_ss_image_cancel(&t.img, oa, t.r.now, &cancel) == SOPHIA_IPR_OK);
+    assert(settle_ticket(&t, cancel) == SOPHIA_SS_SUBMITTED);
+    peer_status(&t.r.p, oa, 130, 2, 0);
+    run(&t, 6);
+    info = offer_info(&t, oa);
+    assert(info.state == SOPHIA_IPO_SENT && info.status == SOPHIA_IPS_ACCEPTED && info.cancel_requested);
+    peer_released(&t.r.p, oa, 130, SOPHIA_IC_RETAINED);
+    run(&t, 6);
+    info = offer_info(&t, oa);
+    assert(info.state == SOPHIA_IPO_SETTLED && info.disposition == SOPHIA_IC_RETAINED);
+    assert(sophia_ip_forget(sophia_ss_image_producer(&t.img), oa) == SOPHIA_IPR_OK);
+    /* A refused cancel keeps the mark: no resumed source, wait for release. */
+    src = sealed(16, 16);
+    assert(sophia_ss_image_begin(&t.img, &b, src, t.r.now, &ob, &tb) == SOPHIA_IPR_OK);
+    assert(settle_ticket(&t, tb) == SOPHIA_SS_SUBMITTED);
+    t.r.p.policy = P_ERROR;
+    t.r.p.error = 22;
+    t.r.p.once = 1;
+    assert(sophia_ss_image_cancel(&t.img, ob, t.r.now, &cancel) == SOPHIA_IPR_OK);
+    assert(settle_ticket(&t, cancel) == SOPHIA_SS_REFUSED);
+    assert(sophia_ss_state(&t.r.s) == SOPHIA_SS_READY);
+    peer_admitted(&t.r.p, &b);
+    run(&t, 8);
+    assert(owner_receive(&t, buf, sizeof(buf), &fd) < 0 && errno == EAGAIN);
+    info = offer_info(&t, ob);
+    assert(info.state == SOPHIA_IPO_ADMITTED && info.cancel_requested);
+    assert(sophia_ss_image_cancel(&t.img, ob, t.r.now, &cancel) == SOPHIA_IPR_REFUSED);
+    peer_status(&t.r.p, ob, 131, 3, 0);
+    peer_released(&t.r.p, ob, 131, SOPHIA_IC_BEFORE_USE);
+    run(&t, 8);
+    info = offer_info(&t, ob);
+    assert(info.state == SOPHIA_IPO_SETTLED && info.status == SOPHIA_IPS_REJECTED);
+    assert(sophia_ip_forget(sophia_ss_image_producer(&t.img), ob) == SOPHIA_IPR_OK);
+    /* An owner-initiated Cancelled routes without a local mark. */
+    src = sealed(16, 16);
+    assert(sophia_ss_image_begin(&t.img, &c, src, t.r.now, &oc, &tc) == SOPHIA_IPR_OK);
+    assert(settle_ticket(&t, tc) == SOPHIA_SS_SUBMITTED);
+    peer_admitted(&t.r.p, &c);
+    for (i = 0; i < 8 && owner_receive(&t, buf, sizeof(buf), &fd) < 0; i++)
+        image_step(&t);
+    assert(fd >= 0);
+    close(fd);
+    peer_status(&t.r.p, oc, 132, 4, 0);
+    peer_released(&t.r.p, oc, 132, SOPHIA_IC_CANCELLED);
+    run(&t, 8);
+    info = offer_info(&t, oc);
+    assert(info.state == SOPHIA_IPO_SETTLED && info.status == SOPHIA_IPS_CANCELLED &&
+           !info.cancel_requested);
+    assert(sophia_ip_channel(sophia_ss_image_producer(&t.img)) == SOPHIA_IPC_READY);
+    image_close(&t);
+    assert(fd_count() == base);
+}
+
+/* The session ends with a cancel not yet answered: custody is unknown. */
+static void cancel_lost_with_session(void)
+{
+    struct image_rig t;
+    struct sophia_ic_metadata m = image(140);
+    struct sophia_ip *p;
+    uint64_t offer, ticket, cancel;
+    unsigned i, base = fd_count();
+    int src;
+    image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
+    image_ready(&t);
+    p = sophia_ss_image_producer(&t.img);
+    ack_all(&t);
+    src = sealed(16, 16);
+    assert(sophia_ss_image_begin(&t.img, &m, src, t.r.now, &offer, &ticket) == SOPHIA_IPR_OK);
+    assert(settle_ticket(&t, ticket) == SOPHIA_SS_SUBMITTED);
+    peer_admitted(&t.r.p, &m);
+    t.r.p.policy = P_HOLD;
+    assert(sophia_ss_image_cancel(&t.img, offer, t.r.now, &cancel) == SOPHIA_IPR_OK);
+    for (i = 0; i < 6; i++)
+        image_step(&t);
+    assert(rig_outcome(&t.r, cancel) == SOPHIA_SS_IN_FLIGHT);
+    assert(offer_info(&t, offer).state == SOPHIA_IPO_ADMITTED);
+    peer_close(&t.r.p);
+    for (i = 0; i < 4; i++)
+        rig_step(&t.r);
+    assert(sophia_ss_state(&t.r.s) == SOPHIA_SS_CLOSED);
+    assert(offer_info(&t, offer).state == SOPHIA_IPO_UNKNOWN);
+    assert(sophia_ip_cause(p) == SOPHIA_IPX_JOURNAL_LOST);
+    assert(sophia_ss_image_cancel(&t.img, offer, t.r.now, &cancel) == SOPHIA_IPR_CLOSED);
+    image_close(&t);
+    assert(fd_count() == base);
+}
+
+/* A refused image cancel is not a byte upload's refused End, whether its
+ * resource differs in ID or only in generation. */
+static void cancel_beside_upload(void)
+{
+    struct image_rig t;
+    struct sophia_ic_metadata m[2] = {image(150), image(151)};
+    struct sophia_sf_resource_begin u = {0};
+    uint8_t pixels[16] = {0};
+    uint64_t offer, ticket, cancel, end;
+    unsigned i;
+    int src;
+    m[1].resource_generation = 2;
+    image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
+    image_ready(&t);
+    ack_all(&t);
+    t.r.s.files.limits.max_height_px = 16;
+    t.r.s.files.limits.max_resource_bytes = 64;
+    t.r.s.files.limits.max_chunk_bytes = 4;
+    u.transaction = 77;
+    u.grant_connection_epoch = PEER_EPOCH;
+    u.grant_content_epoch = t.r.s.files.limits.grant_content_epoch;
+    u.resource_id = 150;
+    u.resource_generation = 2;
+    u.width_px = 1;
+    u.height_px = 4;
+    u.rendered_scale_numerator = u.rendered_scale_denominator = u.pixel_format = 1;
+    u.total_bytes = sizeof(pixels);
+    u.chunk_count = 4;
+    assert(!sophia_ss_upload_begin(&t.r.s, u, &ticket));
+    assert(settle_ticket(&t, ticket) == SOPHIA_SS_SUBMITTED);
+    peer_resource_status(&t.r.p, &u, 1);
+    run(&t, 8);
+    assert(sophia_ss_upload_ready(&t.r.s));
+    assert(!sophia_ss_upload_chunk(&t.r.s, pixels, sizeof(pixels)));
+    run(&t, 8);
+    assert(!sophia_ss_upload_end(&t.r.s, 77, &end));
+    assert(settle_ticket(&t, end) == SOPHIA_SS_SUBMITTED);
+    assert(t.r.s.files.upload_stage == 6 && !t.r.s.files.upload_closing);
+    for (i = 0; i < 2; i++) {
+        src = sealed(16, 16);
+        assert(sophia_ss_image_begin(&t.img, &m[i], src, t.r.now, &offer, &ticket) ==
+               SOPHIA_IPR_OK);
+        assert(settle_ticket(&t, ticket) == SOPHIA_SS_SUBMITTED);
+        t.r.p.policy = P_ERROR;
+        t.r.p.error = 22;
+        t.r.p.once = 1;
+        assert(sophia_ss_image_cancel(&t.img, offer, t.r.now, &cancel) == SOPHIA_IPR_OK);
+        assert(settle_ticket(&t, cancel) == SOPHIA_SS_REFUSED);
+        assert(t.r.s.files.upload_stage == 6 && !t.r.s.files.upload_closing);
+        assert(sophia_ss_upload_pending(&t.r.s));
+    }
+    image_close(&t);
+}
+
 int main(void)
 {
     unsigned base = fd_count();
@@ -787,6 +1089,10 @@ int main(void)
     queue_room_keeps_fd();
     contradictions();
     events_after_end();
+    cancel_before_admission();
+    cancel_races();
+    cancel_lost_with_session();
+    cancel_beside_upload();
     assert(fd_count() == base);
     puts("shell_image_test: ok");
     return 0;

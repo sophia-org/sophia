@@ -269,10 +269,14 @@ static int submission_reply(struct sophia_sf_client *c, const struct sophia_9p_r
             c->submit_sent = 0;
             c->submit_error = r->error;
             c->submit_stage = 4;
-            /* A refused upload record leaves nothing for the writer to wait on. */
+            /* A refused upload record leaves nothing for the writer to wait on.
+             * An End or Cancel for another resource, such as an image offer,
+             * is not the upload's. */
             if ((kind == SOPHIA_SF_RESOURCE_BEGIN && c->upload_stage == 1) ||
                 ((kind == SOPHIA_SF_RESOURCE_END || kind == SOPHIA_SF_RESOURCE_CANCEL) &&
-                 c->upload_stage == 6))
+                 c->upload_stage == 6 &&
+                 sf_get(c->tx_storage + 32 + 24, 8) == c->resource.resource_id &&
+                 sf_get(c->tx_storage + 32 + 32, 8) == c->resource.resource_generation))
                 c->upload_closing = 1;
             return 0;
         }

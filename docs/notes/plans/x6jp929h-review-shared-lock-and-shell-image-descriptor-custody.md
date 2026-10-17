@@ -8,8 +8,8 @@ tags: [plan, shell, lock, rendering]
 
 ## Current resumption
 
-t338 remains in implementation. C offer cancellation is published at `e777235`
-on top of the lock adapter; an independent full `make check` passed. Its ABI
+t338 remains in implementation. The C pin `02ea2ad` includes offer cancellation
+(`e777235`) on top of the lock adapter; an independent full `make check` passed. Its ABI
 additions require rebuilding consumers. Rust producer/adapters and cancellation
 parity remain open. Claude's review found no blockers
 in the retired-epoch completion fix (`d33e546d8`) or the independent journal
@@ -33,8 +33,8 @@ ResourceCancel propagation to both unsent and submitted worker custody. The
 owner bridge observes store stops before accepting new Sources; repeated
 observations neither release submitted work early nor create another settlement.
 Claude owns the lock runtime implementation lane (`lock_files` only), while
-Codex owns shell/Session integration. Muse remains quota-limited and has not
-started a Rust producer. The existing runtime worker fixes are reviewed;
+Codex owns shell/Session integration. Muse owns the new role-neutral Rust
+producer crate; role adapters remain a separate, unfinished step. The existing runtime worker fixes are reviewed;
 targeted strict Clippy and the layout
 check pass. Explicit shell owner hooks now connect ImageBegin, Source and the
 terminal records. The real 9P/SEQPACKET fixture waits for ImageAdmitted, sends a
@@ -69,8 +69,9 @@ completion and release hooks on every path; the live fixture covers success and
 malformed stale packets, not the full cancellation matrix. Default callers remain
 receive/refuse. Published sealed budgets are enforced conservatively against all
 backing retained by that role and all pending work on the paired worker; separate
-per-source backing sub-pools are not claimed. Shell cancellation transaction
-identity clarification still needs the coordinated contract/SDK spec sync.
+per-source backing sub-pools are not claimed. Cancellation identity and permanent
+local send suppression are now explicit in the shared contract and both SDK
+spec copies (`02ea2ad` C, `7d5d522` Rust). This is not a Rust producer parity claim.
 Rust producer/adapters, lock receive/accept integration and the matched native
 gates remain outstanding. Runtime wiring alone is not performance acceptance.
 
@@ -91,7 +92,9 @@ one monotonic content clock across connection replacement. Worker readiness and
 deadlines survive revocation; paused/stopping visits still service the owners,
 and final backend disposal refuses while image handoffs remain pending. The
 Session wire test covers r9 discovery/Hello, r6 absence, replacement r9, an
-admitted unsent offer's staging charge and disconnect cleanup. Its authority is
+admitted unsent offer's staging charge and disconnect cleanup. The replacement
+epoch also sends a real sealed Source through worker acceptance, SourceReleased,
+Retire and ResourceReleased. Its authority is
 supplied, not a protected-launch proof; submitted-worker shutdown and native
 presentation still require qualification.
 
@@ -105,8 +108,10 @@ C descriptor peer and layout checks pass. No installed desktop was changed.
 
 Claude's lock slices `ec550020c`, `703f246b1` and `7a5e5aee9` add explicit r2
 selection, readiness-gated clean refusal, coherent role bounds and disclosed
-immutable discovery snapshots. Lock socket/Hello service and sealed admission
-remain in his lane. The C descriptor peer's link dependencies are corrected in
+immutable discovery snapshots. Slice `02387f6e3` adds authenticated lock
+socket/Hello service and Ready/Closed journal transitions; its supplied-authority
+wire tests include timeout, wrong Hello, peer close, provider exit and legacy
+absence. Sealed lock admission remains in his lane. The C descriptor peer's link dependencies are corrected in
 `16dead7f8`; its independent production-export test passes.
 
 ## Scope and exit

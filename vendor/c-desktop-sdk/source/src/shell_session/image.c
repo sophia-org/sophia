@@ -3,6 +3,7 @@
 #include "internal.h"
 #include "../shell_files/session_internal.h"
 #include "../sophia_shell_image.h"
+#include "../image_producer/internal.h"
 #include <errno.h>
 #include <unistd.h>
 
@@ -106,9 +107,12 @@ static int read_next(struct sophia_ss_image *img)
     void *buf = img->file == 1 ? (void *)img->text
                 : img->file == 2 ? (void *)img->limits
                                  : img->config.formats;
+    /* Larger caller storage never widens the formats object's budget. */
     size_t cap = img->file == 1 ? sizeof(img->text)
                  : img->file == 2 ? sizeof(img->limits)
-                                  : img->config.formats_capacity;
+                 : img->config.formats_capacity < SOPHIA_IC_MAX_FORMATS_BYTES
+                     ? img->config.formats_capacity
+                     : SOPHIA_IC_MAX_FORMATS_BYTES;
     return sf_session_file_read(c, files[img->file - 1], buf, cap);
 }
 
@@ -350,6 +354,48 @@ int sophia_ss_image_begin(struct sophia_ss_image *img, struct sophia_ic_metadata
     }
     img->tickets[free_ticket].ticket = *ticket;
     img->tickets[free_ticket].offer = *offer;
+    (void)ss_pump(s, 0);
+    return SOPHIA_IPR_OK;
+}
+
+int sophia_ss_image_cancel(struct sophia_ss_image *img, uint64_t offer, uint64_t now_ms,
+                           uint64_t *ticket)
+{
+    struct sophia_ss *s;
+    struct sophia_ip_slot *slot;
+    struct sophia_sf_record record;
+    uint8_t bytes[SOPHIA_SS_IMAGE_BEGIN_BYTES];
+    size_t n;
+    int r;
+    if (!img || !img->session || !ticket)
+        return SOPHIA_IPR_ARGUMENT;
+    s = img->session;
+    if (!img->started || ss_final(s))
+        return SOPHIA_IPR_CLOSED;
+    if (s->state != SOPHIA_SS_READY)
+        return SOPHIA_IPR_AGAIN;
+    slot = ip_slot(&img->producer, offer);
+    if (!slot)
+        return SOPHIA_IPR_ARGUMENT;
+    memset(&record, 0, sizeof(record));
+    record.header.kind = SOPHIA_SF_RESOURCE_CANCEL;
+    record.header.epoch = s->files.epoch;
+    record.header.submission = 1;
+    record.value.resource_cancel.transaction = offer;
+    record.value.resource_cancel.grant_connection_epoch = s->files.epoch;
+    record.value.resource_cancel.grant_content_epoch = slot->metadata.admission_epoch;
+    record.value.resource_cancel.resource_id = slot->metadata.resource_id;
+    record.value.resource_cancel.resource_generation = slot->metadata.resource_generation;
+    if (sophia_sf_encode(bytes, sizeof(bytes), &record, &n))
+        return SOPHIA_IPR_REFUSED;
+    /* Room first: once the producer marks the offer, the cancel must queue. */
+    if (!ss_room(s, n))
+        return SOPHIA_IPR_BUSY;
+    r = sophia_ip_cancel(&img->producer, offer, now_ms);
+    if (r != SOPHIA_IPR_OK)
+        return r;
+    if (ss_admit_encoded(s, bytes, n, ticket))
+        return SOPHIA_IPR_REFUSED; /* unreachable after the room check */
     (void)ss_pump(s, 0);
     return SOPHIA_IPR_OK;
 }

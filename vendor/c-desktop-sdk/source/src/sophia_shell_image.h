@@ -16,7 +16,8 @@
  * the socket. Image journal events are consumed by the session and routed to
  * the producer; they never reach sophia_ss_event. ResourceStatus for a live
  * image offer is routed too and still delivered. ImageBegin is queued as an
- * ordinary session candidate with its own ticket.
+ * ordinary session candidate with its own ticket, and so is a ResourceCancel
+ * naming an offer.
  *
  * DMA-BUF is never requested. Default sessions never touch this file. */
 #define SOPHIA_SS_IMAGE_TEXT_BYTES 2048u
@@ -76,6 +77,18 @@ int sophia_ss_image_dispatch(struct sophia_ss_image *, short revents, uint64_t n
  * not ready) and every refusal leave source_fd with the caller. */
 int sophia_ss_image_begin(struct sophia_ss_image *, struct sophia_ic_metadata *, int source_fd,
                           uint64_t now_ms, uint64_t *offer, uint64_t *ticket);
+/* Queues ResourceCancel naming offer: transaction is the offer ID, the
+ * grant's content epoch is the metadata's admission epoch. READY sessions
+ * only. Queue room is checked first; then the producer marks the offer
+ * (sophia_ip_cancel), so its source is never sent afterward. The cancel may
+ * queue behind its ImageBegin. On OK *ticket is the session ticket, for the
+ * caller only: whatever its outcome, the mark stays and custody is unchanged.
+ * Session end is journal loss as for any offer. BUSY (no room),
+ * REFUSED (a status, a mark, or no live custody) and ARGUMENT (unknown
+ * offer) change nothing. Acceptance may still win; settlement is only
+ * SourceReleased. */
+int sophia_ss_image_cancel(struct sophia_ss_image *, uint64_t offer, uint64_t now_ms,
+                           uint64_t *ticket);
 /* The producer, for offer, path, cause and forget queries. */
 struct sophia_ip *sophia_ss_image_producer(struct sophia_ss_image *);
 #endif

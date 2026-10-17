@@ -74,15 +74,17 @@ int sf_session_file_result(struct sophia_sf_client *c, size_t *bytes, uint32_t *
 
 int sf_session_file_drive(struct sophia_sf_client *c)
 {
-    uint32_t count = (uint32_t)(c->file_cap - c->file_used);
+    size_t room = c->file_cap - c->file_used;
+    uint32_t count = c->wire->msize - 11u;
     int r;
     if (!c->file_stage || c->file_op.active)
         return 0;
-    /* At capacity, one more byte proves the file is not larger. */
-    if (!count)
+    /* At capacity, one more byte proves the file is not larger. Bound the
+     * room before narrowing it, so a large buffer cannot wrap the count. */
+    if (!room)
         count = 1;
-    if (count > c->wire->msize - 11u)
-        count = c->wire->msize - 11u;
+    else if (room < count)
+        count = (uint32_t)room;
     if (c->file_iounit && count > c->file_iounit)
         count = c->file_iounit;
     switch (c->file_stage) {

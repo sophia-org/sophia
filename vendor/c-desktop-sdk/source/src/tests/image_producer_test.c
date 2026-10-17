@@ -539,9 +539,9 @@ static void offer_lifecycle(uint16_t role)
     /* A second release for a still-held offer is a contradiction. */
     {
         struct sophia_ip copy = p;
+        copy.fd = -1; /* failing would close p's socket */
         assert(sophia_ip_record(&copy, &r, now) == SOPHIA_IPR_CLOSED);
         assert(sophia_ip_cause(&copy) == SOPHIA_IPX_FAULT);
-        /* copy shares p's socket fd number; p still owns it. */
     }
     assert(sophia_ip_forget(&p, offer) == SOPHIA_IPR_OK);
     /* A late event for a forgotten offer is ignored. */
@@ -1041,6 +1041,128 @@ static void bounds_and_order(void)
     }
 }
 
+static int cancel_requested(const struct sophia_ip *p, uint64_t offer)
+{
+    struct sophia_ip_offer_info i;
+    assert(sophia_ip_offer(p, offer, &i) == SOPHIA_IPR_OK);
+    return i.cancel_requested;
+}
+
+static void cancellation(void)
+{
+    struct sophia_ip p;
+    struct owner o;
+    struct sophia_ic_metadata a = image(110, 16, 16), b = image(111, 16, 16), c = image(112, 16, 16);
+    struct sophia_ic_record r;
+    struct sophia_ip_offer_info i;
+    uint8_t buf[256];
+    unsigned base;
+    int fd;
+    ready(&p, &o, SOPHIA_IC_ROLE_SHELL, 1);
+    base = fd_count();
+    begin(&p, &a);
+    /* Arguments: unknown offers and a clock that went backward. */
+    assert(sophia_ip_cancel(NULL, a.offer, now) == SOPHIA_IPR_ARGUMENT);
+    assert(sophia_ip_cancel(&p, a.offer + 5, now) == SOPHIA_IPR_ARGUMENT);
+    assert(sophia_ip_cancel(&p, a.offer, now - 1) == SOPHIA_IPR_ARGUMENT);
+    assert(!cancel_requested(&p, a.offer));
+    /* Marked before admission; a second mark is refused. */
+    assert(sophia_ip_cancel(&p, a.offer, ++now) == SOPHIA_IPR_OK);
+    assert(cancel_requested(&p, a.offer) && state(&p, a.offer) == SOPHIA_IPO_BEGUN);
+    assert(sophia_ip_cancel(&p, a.offer, now) == SOPHIA_IPR_REFUSED);
+    /* Admission after the mark: the source is never sent, the fd stays held. */
+    r = admitted(&a);
+    assert(sophia_ip_record(&p, &r, ++now) == SOPHIA_IPR_OK);
+    assert(state(&p, a.offer) == SOPHIA_IPO_ADMITTED);
+    assert(sophia_ip_poll_events(&p) == POLLIN);
+    assert(sophia_ip_dispatch(&p, POLLOUT, ++now) == 0);
+    assert(owner_receive(&o, buf, sizeof buf, &fd) < 0 && errno == EAGAIN);
+    assert(fd_count() == base + 1);
+    assert(sophia_ip_forget(&p, a.offer) == SOPHIA_IPR_REFUSED);
+    /* An admitted offer marked cancelled still expires locally. */
+    now += TRANSFER;
+    assert(sophia_ip_dispatch(&p, 0, now) == SOPHIA_IP_CHANGED_OFFERS);
+    assert(state(&p, a.offer) == SOPHIA_IPO_EXPIRED && fd_count() == base + 1);
+    assert(sophia_ip_cancel(&p, a.offer, now) == SOPHIA_IPR_REFUSED);
+    /* Accepted is impossible without a source; Cancelled then release. */
+    assert(sophia_ip_resource_status(&p, 110, 1, SOPHIA_IPS_CANCELLED, 0, now) == SOPHIA_IPR_OK);
+    assert(fd_count() == base + 1); /* no early release on the status */
+    r = released(&a, SOPHIA_IC_CANCELLED);
+    assert(sophia_ip_record(&p, &r, ++now) == SOPHIA_IPR_OK);
+    assert(sophia_ip_offer(&p, a.offer, &i) == SOPHIA_IPR_OK);
+    assert(i.state == SOPHIA_IPO_SETTLED && i.status == SOPHIA_IPS_CANCELLED && i.cancel_requested);
+    assert(fd_count() == base);
+    {
+        struct sophia_ip copy = p; /* exactly once */
+        copy.fd = -1;              /* p keeps its socket */
+        assert(sophia_ip_record(&copy, &r, now) == SOPHIA_IPR_CLOSED);
+        assert(sophia_ip_cause(&copy) == SOPHIA_IPX_FAULT);
+    }
+    assert(sophia_ip_cancel(&p, a.offer, now) == SOPHIA_IPR_REFUSED); /* settled */
+    assert(sophia_ip_forget(&p, a.offer) == SOPHIA_IPR_OK);
+    /* Acceptance wins the race: kept, then the release settles it. */
+    begin(&p, &b);
+    r = admitted(&b);
+    assert(sophia_ip_record(&p, &r, ++now) == SOPHIA_IPR_OK);
+    assert(sophia_ip_dispatch(&p, POLLOUT, ++now) == SOPHIA_IP_CHANGED_OFFERS);
+    assert(owner_receive(&o, buf, sizeof buf, &fd) == SOPHIA_IC_SOURCE_BYTES && fd >= 0);
+    close(fd);
+    assert(sophia_ip_cancel(&p, b.offer, ++now) == SOPHIA_IPR_OK);
+    assert(state(&p, b.offer) == SOPHIA_IPO_SENT);
+    assert(sophia_ip_resource_status(&p, 111, 1, SOPHIA_IPS_ACCEPTED, 0, now) == SOPHIA_IPR_OK);
+    assert(sophia_ip_offer(&p, b.offer, &i) == SOPHIA_IPR_OK);
+    assert(i.status == SOPHIA_IPS_ACCEPTED && i.cancel_requested);
+    assert(sophia_ip_cancel(&p, b.offer, now) == SOPHIA_IPR_REFUSED);
+    r = released(&b, SOPHIA_IC_RETAINED);
+    assert(sophia_ip_record(&p, &r, ++now) == SOPHIA_IPR_OK);
+    assert(state(&p, b.offer) == SOPHIA_IPO_SETTLED);
+    assert(sophia_ip_forget(&p, b.offer) == SOPHIA_IPR_OK);
+    /* Cancelled before admission is a refusal: no source, fd closed. A
+     * status already received refuses a later mark. */
+    begin(&p, &c);
+    assert(sophia_ip_cancel(&p, c.offer, now) == SOPHIA_IPR_OK);
+    assert(sophia_ip_resource_status(&p, 112, 1, SOPHIA_IPS_CANCELLED, 0, now) == SOPHIA_IPR_OK);
+    assert(state(&p, c.offer) == SOPHIA_IPO_REFUSED && fd_count() == base);
+    assert(sophia_ip_cancel(&p, c.offer, now) == SOPHIA_IPR_REFUSED);
+    assert(sophia_ip_forget(&p, c.offer) == SOPHIA_IPR_OK);
+    c = image(113, 16, 16);
+    begin(&p, &c);
+    r = admitted(&c);
+    assert(sophia_ip_record(&p, &r, ++now) == SOPHIA_IPR_OK);
+    assert(sophia_ip_resource_status(&p, 113, 1, SOPHIA_IPS_REJECTED, 0, now) == SOPHIA_IPR_OK);
+    assert(sophia_ip_cancel(&p, c.offer, now) == SOPHIA_IPR_REFUSED);
+    assert(!cancel_requested(&p, c.offer));
+    /* Settled or refused without any status: nothing left to cancel. */
+    b = image(115, 16, 16);
+    begin(&p, &b);
+    r = admitted(&b);
+    assert(sophia_ip_record(&p, &r, ++now) == SOPHIA_IPR_OK);
+    assert(sophia_ip_dispatch(&p, POLLOUT, ++now) == SOPHIA_IP_CHANGED_OFFERS);
+    assert(owner_receive(&o, buf, sizeof buf, &fd) == SOPHIA_IC_SOURCE_BYTES && fd >= 0);
+    close(fd);
+    r = released(&b, SOPHIA_IC_BEFORE_USE);
+    assert(sophia_ip_record(&p, &r, ++now) == SOPHIA_IPR_OK);
+    assert(state(&p, b.offer) == SOPHIA_IPO_SETTLED);
+    assert(sophia_ip_cancel(&p, b.offer, now) == SOPHIA_IPR_REFUSED);
+    assert(sophia_ip_forget(&p, b.offer) == SOPHIA_IPR_OK);
+    b = image(116, 16, 16);
+    begin(&p, &b);
+    assert(sophia_ip_begin_refused(&p, b.offer, now) == SOPHIA_IPR_OK);
+    assert(sophia_ip_cancel(&p, b.offer, now) == SOPHIA_IPR_REFUSED);
+    assert(sophia_ip_forget(&p, b.offer) == SOPHIA_IPR_OK);
+    /* Journal loss ends a marked, held offer as UNKNOWN. */
+    a = image(114, 16, 16);
+    begin(&p, &a);
+    r = admitted(&a);
+    assert(sophia_ip_record(&p, &r, ++now) == SOPHIA_IPR_OK);
+    assert(sophia_ip_cancel(&p, a.offer, now) == SOPHIA_IPR_OK);
+    sophia_ip_journal_lost(&p);
+    assert(state(&p, a.offer) == SOPHIA_IPO_UNKNOWN);
+    assert(sophia_ip_cancel(&p, a.offer, now) == SOPHIA_IPR_REFUSED);
+    drop(&p, &o);
+    assert(fd_count() == base - 2);
+}
+
 int main(void)
 {
     unsigned base = fd_count();
@@ -1057,6 +1179,7 @@ int main(void)
     connect_helper();
     sealed_helpers();
     bounds_and_order();
+    cancellation();
     assert(fd_count() == base);
     puts("image_producer_test: ok");
     return 0;
