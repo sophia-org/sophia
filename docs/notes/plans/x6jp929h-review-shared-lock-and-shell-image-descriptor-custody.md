@@ -55,7 +55,8 @@ not wait for a new GPU capture implementation.
 Add a read-only `image-channel` object with its own format version. It describes
 supported source kinds, the endpoint basename, current connection epoch, channel
 generation, message/FD limits and per-output formats generation. The endpoint is
-resolved only within the admitted component directory. Keep the existing `api`
+resolved only within the component endpoint directory containing its role's 9P
+socket (the supervised lock-provider socket directory for lock). Keep the existing `api`
 line byte-for-byte compatible; its `fd_transfer=none` continues to describe the
 9P stream. The new object explicitly describes the separate channel.
 
@@ -406,6 +407,8 @@ check the complete namespace again when making the KDL normative.
 | 28674 (0x7002) SourceReleased | event | 32 bytes below | The admitted offer no longer needs producer cooperation, whether or not its source arrived. |
 | 28675 (0x7003) ChannelReady | event | 16 bytes: channel generation u64 @0, granted source-kind mask u32 @8, reserved u32 @12 = 0 | Hello passed; ImageBegin may follow. |
 | 28676 (0x7004) ChannelClosed | event | 16 bytes: channel generation u64 @0, reason u32 @8, reserved u32 @12 = 0 | Descriptor admission disabled; no source release is implied. |
+| 28677 (0x7005) ImageLimits | object | 104 bytes below | Fixed descriptor limits for this connection. |
+| 28678 (0x7006) ImageFormats | object | 32 bytes plus format rows below | Format snapshot tied to topology. |
 
 Existing ResourceStatus reports accepted/rejected/cancelled with its existing
 meaning; ResourceReleased remains the last-consumer event. For lock records,
@@ -485,54 +488,57 @@ limits_generation=1
 These values form the sealed-only shell fixture, not a universal capacity grant.
 Lock changes role to 2 and uses its own limits. Integers are canonical unsigned
 decimal (no signs or leading zeros except `0`), checked in their destination
-width. Role is u16; epochs and generations are nonzero u64; all other integers
+width. `role` is the channel contract-family code (1 shell, 2 lock), not the
+profile-name value in the adjacent `api` file. Role is u16; epochs and generations are nonzero u64; all other integers
 are u32. `source_kinds` is a nonzero subset of bits 0 and 1. Endpoint is 1–64
 bytes from ASCII letters, digits, `_`, `-` and `.`, excluding `.` and `..`.
-It is resolved beneath the admitted directory, never as an arbitrary path.
+It is resolved beneath the component endpoint directory containing the role's
+9P socket, never as an arbitrary path. Version 1 requires max_packet_bytes=200
+and max_fds=4 exactly; a reader refuses any other values.
 Unknown, reordered, missing or duplicate fields are refused in version 1.
 
 The three files are immutable snapshots per open fid. Reads at different offsets
 on that fid cannot mix versions. Discovery names the limits and formats
-generations; their headers must match its role, connection and channel. After a
+generations; their connection epochs and body channel generations must match
+discovery. The authenticated role root supplies the contract family; the common
+record header does not repeat it. After a
 mismatch, close all three and retry the set at most once per caller drive pass,
 under the existing connection/startup deadline. Do not spin or send Hello from
 an incoherent set. A completed snapshot is discovery, not an admission promise:
 ImageBegin checks current permission, topology, format support and budget again.
 An output change does not authorize reading another role's outputs.
 
-#### Image limits, 128 bytes
+#### Image limits, 136 bytes
 
 All integers are little-endian. Exact length is required. Reserved fields must
-be zero. This grant is fixed for the channel generation; topology that requires
+be zero. Use the existing 32-byte role record header: total=136, API version=1,
+kind=0x7005, connection epoch, submission=0 and sequence=0. This grant and its
+limits_generation are fixed for the entire connection; topology that requires
 larger limits needs a new connection. Counters below are ceilings, not current
 free-space reports. Runtime admission still reserves within them.
 
 | Offset | Type | Field |
 | --- | --- | --- |
-| 0 | 8 bytes | ASCII `SOPHILIM` |
-| 8 | u16 | version = 1 |
-| 10 | u16 | role, 1 shell or 2 lock |
-| 12 | u32 | total bytes = 128 |
-| 16 | u64 | connection epoch |
-| 24 | u64 | channel generation |
-| 32 | u64 | limits generation |
-| 40 | u64 | max logical bytes per resource, no greater than the role limit |
-| 48 | u64 | max retained sealed backing bytes, including retiring leases |
-| 56 | u64 | max pending DMA source logical bytes |
-| 64 | u64 | max owned renderer allocation bytes, including retiring images |
-| 72 | u32 | max owned renderer entries |
-| 76 | u32 | max offers, matching discovery and bounded by role transfer slots |
-| 80 | u32 | max validation jobs, queued plus running |
-| 84 | u32 | max capture jobs, queued plus running plus quarantined |
-| 88 | u32 | max admitted outputs, 1–16 and no greater than role limit |
-| 92 | u32 | max format rows per output, 1–256 |
-| 96 | u32 | max width, no greater than role limit |
-| 100 | u32 | max height, no greater than role limit |
-| 104 | u32 | validation timeout in ms, matching discovery |
-| 108 | u32 | capture-interest timeout in ms, matching discovery |
-| 112 | u32 | validation chunk bytes, matching discovery |
-| 116 | u32 | max packets per turn, matching discovery |
-| 120 | u64 | reserved = 0 |
+| 0 | 32 bytes | common role record header |
+| 32 | u64 | channel generation |
+| 40 | u64 | limits generation |
+| 48 | u64 | max logical bytes per resource, no greater than the role limit |
+| 56 | u64 | max retained sealed backing bytes, including retiring leases |
+| 64 | u64 | max pending DMA source logical bytes |
+| 72 | u64 | max owned renderer allocation bytes, including retiring images |
+| 80 | u32 | max owned renderer entries |
+| 84 | u32 | max offers, matching discovery and bounded by role transfer slots |
+| 88 | u32 | max validation jobs, queued plus running |
+| 92 | u32 | max capture jobs, queued plus running plus quarantined |
+| 96 | u32 | max admitted outputs, 1–16 and no greater than role limit |
+| 100 | u32 | max format rows per output, 1–256 |
+| 104 | u32 | max width, no greater than role limit |
+| 108 | u32 | max height, no greater than role limit |
+| 112 | u32 | validation timeout in ms, matching discovery |
+| 116 | u32 | capture-interest timeout in ms, matching discovery |
+| 120 | u32 | validation chunk bytes, matching discovery |
+| 124 | u32 | max packets per turn, matching discovery |
+| 128 | u64 | reserved = 0 |
 
 Epochs, generations, resource bound, dimensions and max offers are nonzero.
 Validation jobs must be between 1 and max offers when sealed memory is advertised;
@@ -547,17 +553,19 @@ no offer is pending. Publication must refuse inconsistent grants.
 
 #### Image formats, 64-byte header plus 40-byte rows
 
+The first 32 bytes are the common role record header, with total=64+40*rows,
+API version=1, kind=0x7006, connection epoch, submission=0 and sequence=0.
+The next 32 bytes describe the snapshot. This reuses the normal object framing;
+only ASCII discovery has a separate grammar.
+
 | Offset | Type | Field |
 | --- | --- | --- |
-| 0 | 8 bytes | ASCII `SOPHIFMT` |
-| 8 | u16 | version = 1 |
-| 10 | u16 | role |
-| 12 | u32 | row count, 0–4096 |
-| 16 | u64 | connection epoch |
-| 24 | u64 | channel generation |
-| 32 | u64 | formats generation, matching discovery |
-| 40 | u64 | limits generation, matching discovery |
-| 48 | 16 bytes | reserved = 0 |
+| 0 | 32 bytes | common role record header |
+| 32 | u64 | channel generation |
+| 40 | u64 | formats generation, matching discovery and role topology generation |
+| 48 | u64 | limits generation, matching discovery |
+| 56 | u32 | row count, 0–4096 |
+| 60 | u32 | reserved = 0 |
 
 Each row is `output:u64 @0`, `device_major:u32 @8`, `device_minor:u32 @12`,
 `fourcc:u32 @16`, `flags:u32 @20`, `modifier:u64 @24`, `max_width:u32 @32`,
@@ -574,7 +582,15 @@ the limits object, checked multiplication, and exact length `64 + 40 * rows`
 defined by the source layout, not a fabricated GPU format. DMA-BUF rows describe
 only authorized outputs on the granted device. An empty DMA list means no
 currently usable import pair, not permission to assume LINEAR. A format change
-increments formats generation; it does not rewrite an already-open snapshot.
+requires a new role topology generation; formats_generation equals that value.
+Publish the updated format snapshot before announcing the topology through the
+role's existing topology notification. Even a format-only change advances that
+topology generation. Clients re-read discovery and formats on that notification;
+an already-open snapshot stays unchanged. Fixed limits do not change during this
+retry. There is no independent unannounced formats update or new ObjectPublished
+vocabulary in this draft. A stale ImageBegin topology is refused as shell Stale
+(reason 1) or lock topology (reason 7), never as malformed. A client re-reads
+after that refusal too, since its offer may race the topology notification.
 
 #### Admission refusal
 
@@ -601,17 +617,19 @@ seams, not in a named desktop client's harness.
 | Case | Required observation in both SDKs |
 | --- | --- |
 | Optional discovery | ENOENT permits caller-authorized bytes; malformed, stale and denied discovery do not silently downgrade. |
-| Snapshot replacement | Mixed generations never produce Hello; reads on one open fid remain consistent; retry is bounded. |
+| Snapshot replacement | Force two consecutive generation mismatches; mixed snapshots never produce Hello, each drive pass attempts at most one fresh set, and the startup deadline terminates repeated mismatch. One open fid remains consistent across multiple reads. |
 | Readiness race | No ImageBegin before matching ChannelReady; old-generation Ready/Closed cannot control the new channel. |
+| Duplicate channel / bad Hello | Refuse a second live channel without disturbing the first. A foreign/stale epoch or generation cannot join a channel or close another connection's channel; reject that socket without emitting ChannelClosed for the valid channel. An already joined channel's protocol violation uses ChannelClosed reason 2. |
 | Offer IDs | Descriptor APIs allocate or enforce increasing IDs; retries retain identity, a fresh attempt uses a greater ID, and exhaustion requires reconnect. Legacy byte APIs remain unchanged. |
 | Source send | No send before ImageAdmitted. A successful packet send transfers a reference, not proof of acceptance or release. EAGAIN retains the unsent offer and enables a writable-interest wake. |
 | Ambiguous send | After an indeterminate send outcome, no blind replay, mutable reuse or invented acceptance; await authoritative disposition or report unknown custody. |
-| Kernel seals | Missing WRITE/GROW/SHRINK/SEAL, FUTURE_WRITE alone, wrong size and outstanding writable mappings cannot produce Accepted. |
+| Kernel seals | Missing WRITE/GROW/SHRINK/SEAL, FUTURE_WRITE alone and wrong size cannot produce Accepted. On the producer, an outstanding shared writable mapping makes adding F_SEAL_WRITE fail with EBUSY; the receiver observes the missing seal, not the producer's mappings. |
 | Ancillary ownership | Missing/extra FDs, control truncation and malformed packets close all received references; receiver FDs have close-on-exec. Valid mapping lifetime survives producer close. |
 | Expiry race | Released-before-arrival packets are drained and closed with no second release or retained bytes. Skipped lower IDs are discarded; above-mark packets fault. |
 | Cancellation | Before packet receipt, after receipt, and during validation each end in one terminal status and one release on the live journal; no early mutable reuse. |
 | Channel loss | Closed switches descriptor availability off for that epoch; pending source custody remains separate; byte fallback follows caller policy. |
 | Journal loss | No implied release from EOF or socket closure; no mutable reuse without authoritative release. |
+| 9P epoch end | Stop admission and close channel/queued references; no events on the dead journal. Received references held by submitted GPU work survive only until proven safe cleanup, then close. No teardown step invents SourceReleased or frees an in-use source. |
 | Capacity | Four offers cannot create a fifth reservation; terminal event capacity is reserved before admission; quarantine retains its slot. |
 | Sealed backing | Release does not make the sealed source writable; resource retirement waits for final consumer leases. |
 
@@ -649,10 +667,16 @@ a layout check, not independent SDK conformance or actual ancillary/seal testing
 The C/Rust codec and custody fixtures remain required before implementation can
 be adopted; the draft vectors allocate no normative opcodes.
 
-The companion `draft-object-vectors.json` in the same evidence directory contains
-19 discovery/limits/formats layout cases, SHA-256
+The earlier companion `draft-object-vectors.json` in the same evidence directory
+contains 19 independently reviewed cases for the superseded magic framing, SHA-256
 `9ea7c2eee0808241c572a2d936a99119802fb5f69b1851581d88b11671f72d84`.
-Its format-row example checks byte shape only: it does not advertise that device
+It remains historical evidence. Current common-header layouts use 21 cases in
+`draft-object-vectors-r2.json`, SHA-256
+`8444e92f1f1db24165f2576aa02376a4f3f46825169cc4792fc517325771775b`.
+The two added cases refuse changed version-1 packet and FD constants.
+The format-row example checks byte shape only: it does not advertise that device
 or format on this machine. The sealed-only fixture has no GPU rows. Negative
 cases cover grammar, generation disagreement, length/reserved values and bounds.
-These object vectors have not yet passed independent C/Rust codecs.
+These object vectors have not yet passed independent C/Rust codecs. Shell and
+lock binary objects now have identical fixture bytes because the common header
+uses the authenticated role context, not an extra role field.
