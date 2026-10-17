@@ -84,7 +84,14 @@ impl ShellFiles {
         &mut self,
         reason: sophia_protocol::ContentReason,
     ) -> Result<(), Errno> {
-        if reason == sophia_protocol::ContentReason::None {
+        self.refuse_image_offer_reason(reason as u16)
+    }
+
+    pub(in crate::shell_transport) fn refuse_image_offer_reason(
+        &mut self,
+        reason: u16,
+    ) -> Result<(), Errno> {
+        if reason == 0 {
             return Err(Errno::EINVAL);
         }
         let metadata = self.pending_image_offer().ok_or(Errno::EAGAIN)?;
@@ -97,7 +104,7 @@ impl ShellFiles {
                     generation: metadata.resource_generation,
                 },
             },
-            reason as u16,
+            reason,
         )? {
             return Err(Errno::EAGAIN);
         }

@@ -295,6 +295,13 @@ impl SealedImageJobs {
         self.pending.iter().flatten().count()
     }
 
+    pub fn admissions(&self) -> impl Iterator<Item = &SealedImageAdmission> {
+        self.pending
+            .iter()
+            .flatten()
+            .map(|pending| &pending.admission)
+    }
+
     /// Bridge store-side ResourceCancel, expiry and revocation to worker
     /// custody. Run after resource service and before taking new Sources.
     /// A stopped unsent offer needs a local handoff even if no FD ever arrives.

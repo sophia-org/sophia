@@ -9,6 +9,12 @@ use std::time::Instant;
 fn wire_error(error: sophia_9p::Errno) -> ShellTransportError {
     if error == sophia_9p::Errno::EAGAIN {
         ShellTransportError::ContentQueueSaturated
+    } else if error == sophia_9p::Errno::ESTALE {
+        ShellTransportError::WrongContentGrant
+    } else if error == sophia_9p::Errno::EACCES {
+        ShellTransportError::MissingCapability
+    } else if error == sophia_9p::Errno::EINVAL {
+        ShellTransportError::WrongContentRecord
     } else {
         ShellTransportError::Io(format!("image offer: {error:?}"))
     }

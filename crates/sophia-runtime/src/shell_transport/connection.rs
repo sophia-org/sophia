@@ -11,6 +11,17 @@ pub struct ShellTransportConnection<'a> {
 }
 
 impl ShellTransportConnection<'_> {
+    /// Service the component's persistent image owner using the same clock as
+    /// ordinary content resources. The owner itself must outlive this borrow.
+    pub fn service_sealed_images(
+        &mut self,
+        owner: &mut super::ShellSealedImageOwner,
+        now_msec: u64,
+        now: std::time::Instant,
+    ) -> Result<(), super::ShellTransportError> {
+        owner.service(self.state, self.content_epochs, now_msec, now)
+    }
+
     /// Observe existing admission; this never enables negotiation or changes a
     /// store profile. Persistent launch cannot inherit a transient menu grant.
     pub fn supports_persistent_catalog(&self) -> bool {

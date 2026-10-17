@@ -41,6 +41,8 @@ mod descriptor_state;
 mod files;
 mod image_configuration;
 mod image_offers;
+mod image_owner;
+pub use image_owner::ShellSealedImageOwner;
 mod indicator_responses;
 pub(crate) mod outbound;
 mod outbox;

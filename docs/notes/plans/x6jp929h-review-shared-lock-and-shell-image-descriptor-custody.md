@@ -75,6 +75,21 @@ Session activation, Rust producer/adapters, lock receive/accept integration and
 the matched native gates remain outstanding; no runtime admission or performance
 acceptance is claimed by this checkpoint.
 
+`ShellSealedImageOwner` now composes the shell hooks into a bounded per-component
+service turn. It owns the worker, four jobs and retained release settlements;
+exposes worker readiness and the earliest deadline; withdraws jobs when the
+channel or epoch disappears; and bounds admission-capacity retries. A second
+real-wire success case uses this owner rather than manual job handoffs. A wire
+ResourceCancel after ImageAdmitted but before Source now produces one Cancelled
+status and one pre-import SourceReleased, returning all job/backing credit.
+Disconnect after ImageAdmitted with no Source also drains the reservation and
+retired epoch without a fabricated release event. A refusal blocked on journal
+capacity waits for peer progress rather than repeatedly waking on its expired
+admission deadline.
+The temporary connection facade can service it, but Session still must install
+the persistent owner, poll its readiness, service it after disconnect and drain
+it at shutdown. These fixture results do not yet prove that Session lifecycle.
+
 ## Scope and exit
 
 **Accepted October 17.** The independent lifecycle peers (Rust `8f7dc5d`, C
