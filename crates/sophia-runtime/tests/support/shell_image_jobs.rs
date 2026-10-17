@@ -123,6 +123,67 @@ fn delivered_success_has_no_remaining_validation_deadline() {
 }
 
 #[test]
+fn resource_cancel_reaches_unsent_and_submitted_worker_custody() {
+    use std::time::{Duration, Instant};
+    for submitted in [false, true] {
+        let mut registry = image_registry();
+        let mut worker = SealedValidationWorker::new(1, 16000).unwrap();
+        let mut jobs = SealedImageJobs::default();
+        let metadata = image_metadata();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let job = jobs
+            .reserve(&mut registry, &mut worker, grant(), metadata, 0, deadline)
+            .unwrap();
+        if submitted {
+            jobs.submit(&mut worker, job, image_source()).unwrap();
+        }
+        registry
+            .resources_mut(grant())
+            .unwrap()
+            .cancel(
+                tx(metadata.offer_id),
+                &ContentResourceCancel {
+                    grant: grant(),
+                    resource: ContentResourceId {
+                        id: metadata.resource,
+                        generation: metadata.resource_generation,
+                    },
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            worker.pending(),
+            1,
+            "store cancellation alone does not return worker custody"
+        );
+        jobs.observe_store_stops(&mut registry, &mut worker, 1)
+            .unwrap();
+        jobs.observe_store_stops(&mut registry, &mut worker, 1)
+            .unwrap();
+        if submitted {
+            assert_eq!(worker.pending(), 1);
+            assert!(jobs.reconcile(&mut registry, 1).is_none());
+            let completion = loop {
+                if let Some(completion) = worker.take_completed().unwrap() {
+                    break completion;
+                }
+                assert!(Instant::now() < deadline);
+                std::thread::sleep(Duration::from_millis(1));
+            };
+            assert!(jobs.receive(completion).is_ok());
+        } else {
+            assert_eq!(worker.pending(), 0);
+            assert!(jobs.submit(&mut worker, job, image_source()).is_err());
+        }
+        let settlement = jobs.reconcile(&mut registry, 1).unwrap();
+        assert_eq!(settlement.stopped, Some(ContentReason::Cancelled));
+        assert!(settlement.outcome.is_err());
+        assert_eq!(registry.resources(grant()).unwrap().usage().backing, 0);
+        assert!(jobs.reconcile(&mut registry, 1).is_none());
+    }
+}
+
+#[test]
 fn unsent_withdrawal_with_wrong_worker_preserves_a_retryable_credit() {
     use std::time::{Duration, Instant};
     let mut registry = image_registry();

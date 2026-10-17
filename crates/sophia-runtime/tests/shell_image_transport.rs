@@ -516,6 +516,8 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool) 
                     )
                     .unwrap();
             }
+            jobs.observe_store_stops(&mut epochs, &mut validation, 0)
+                .unwrap();
             if let Some((job, source)) = transport.take_sealed_image_source() {
                 assert!(
                     transport.take_sealed_image_source().is_none(),

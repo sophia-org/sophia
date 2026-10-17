@@ -18,6 +18,12 @@ impl ValidatedSealedPixels {
     pub fn bytes(&self) -> &[u8] {
         self.0.bytes()
     }
+
+    /// Transfer validated backing to an immutable consumer lease without a
+    /// pixel copy. This does not grant presentation or release accounting.
+    pub fn into_shared(self) -> crate::SharedPixels {
+        crate::SharedPixels::sealed(self.0)
+    }
 }
 
 impl SealedPixelValidation {

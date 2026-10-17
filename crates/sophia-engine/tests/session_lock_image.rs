@@ -17,7 +17,7 @@ fn lock_image(connection_epoch: u64, resource_generation: u64) -> SessionLockIma
         },
         width_px: 2,
         height_px: 1,
-        pixels: Arc::from(vec![1u8; 8]),
+        pixels: Arc::<[u8]>::from(vec![1u8; 8]).into(),
     }
 }
 

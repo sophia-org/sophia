@@ -69,7 +69,7 @@ pub struct SessionLockImage {
     pub identity: SessionLockImageIdentity,
     pub width_px: u32,
     pub height_px: u32,
-    pub pixels: std::sync::Arc<[u8]>,
+    pub pixels: sophia_runtime::SharedPixels,
 }
 
 impl PartialEq for SessionLockImage {

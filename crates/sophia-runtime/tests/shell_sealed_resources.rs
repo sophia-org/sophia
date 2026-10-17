@@ -53,6 +53,22 @@ fn validated() -> ValidatedSealedPixels {
 }
 
 #[test]
+fn shared_sealed_pixels_retain_the_original_mapping_without_copying() {
+    let pixels = validated();
+    let address = pixels.bytes().as_ptr();
+    let shared = pixels.into_shared();
+    assert_eq!(shared.as_ptr(), address);
+    let lease = shared.clone();
+    drop(shared);
+    assert_eq!(lease.as_ptr(), address);
+    assert_eq!(lease.as_ref(), &[1, 2, 3, 255, 4, 5, 6, 255]);
+    let bytes: std::sync::Arc<[u8]> = std::sync::Arc::from([0u8; 8]);
+    let address = bytes.as_ptr();
+    let shared = SharedPixels::from(bytes);
+    assert_eq!(shared.as_ptr(), address);
+}
+
+#[test]
 fn transfer_capacity_retry_preserves_the_sealed_resource_generation() {
     let mut limits = ContentLimits::prototype(grant());
     limits.max_open_transfers = 1;

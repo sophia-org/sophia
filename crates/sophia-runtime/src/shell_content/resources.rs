@@ -523,6 +523,13 @@ impl ContentResourceStore {
         Ok(stopped.get_or_insert((reason, transfer.transaction)).0)
     }
 
+    pub(super) fn sealed_stop_reason(&self, resource: ContentResourceId) -> Option<ContentReason> {
+        match &self.transfers.get(&resource)?.source {
+            TransferSource::Sealed { stopped } => stopped.map(|(reason, _)| reason),
+            TransferSource::Bytes => None,
+        }
+    }
+
     fn abort(
         &mut self,
         key: ContentResourceId,

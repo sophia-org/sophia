@@ -294,4 +294,37 @@ impl SealedImageJobs {
     pub fn pending(&self) -> usize {
         self.pending.iter().flatten().count()
     }
+
+    /// Bridge store-side ResourceCancel, expiry and revocation to worker
+    /// custody. Run after resource service and before taking new Sources.
+    /// A stopped unsent offer needs a local handoff even if no FD ever arrives.
+    /// The store's original cause wins; the fallback cause cannot replace it.
+    pub fn observe_store_stops(
+        &mut self,
+        registry: &mut ContentEpochRegistry,
+        worker: &mut SealedValidationWorker,
+        now: u64,
+    ) -> Result<(), ContentStoreError> {
+        let jobs = self.pending.each_ref().map(|slot| {
+            let pending = slot.as_ref()?;
+            let admission = &pending.admission;
+            registry.sealed_stop_reason(
+                admission.grant,
+                ContentResourceId {
+                    id: admission.metadata.resource,
+                    generation: admission.metadata.resource_generation,
+                },
+            )?;
+            Some(admission.worker_job)
+        });
+        let mut first_error = None;
+        for job in jobs.into_iter().flatten() {
+            if let Err(error) =
+                self.withdraw(registry, worker, job, SealedImageWithdrawal::Cancelled, now)
+            {
+                first_error.get_or_insert(error);
+            }
+        }
+        first_error.map_or(Ok(()), Err)
+    }
 }

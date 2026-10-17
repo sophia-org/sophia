@@ -28,7 +28,13 @@ One epoch's withdrawal error no longer prevents expiry of another epoch's jobs.
 Delivered results no longer contribute a validation deadline, while store deadlines and
 explicit cancellation still apply at reconciliation. A failed unsent-credit
 release preserves custody for retry with the paired worker. The allocation
-suite passes 22 tests, including two-epoch isolation and wrong-worker recovery;
+suite passes 23 tests, including two-epoch isolation, wrong-worker recovery and
+ResourceCancel propagation to both unsent and submitted worker custody. The
+owner bridge observes store stops before accepting new Sources; repeated
+observations neither release submitted work early nor create another settlement.
+Claude owns the lock runtime implementation lane (`lock_files` only), while
+Codex owns shell/Session integration. Muse remains quota-limited and has not
+started a Rust producer. The existing runtime worker fixes are reviewed;
 targeted strict Clippy and the layout
 check pass. Explicit shell owner hooks now connect ImageBegin, Source and the
 terminal records. The real 9P/SEQPACKET fixture waits for ImageAdmitted, sends a
@@ -39,6 +45,13 @@ without consuming terminal holds or worker credit; the same offer succeeds once
 the supplied test owner grants it. A late valid Source drains silently, while
 an extra-FD packet for that same stale offer faults the channel. This is supplied
 afid authority, not a Factotum or deployed Session qualification.
+
+The lock acceptance lane has an immutable `SharedPixels` backing handle for
+validated mappings and existing byte Arcs. Session, Engine and the CPU renderer
+retain that handle through their existing lock-image path. A pointer-identity
+and clone-lifetime test proves that converting a validated mapping does not
+copy its pixels. This removes the backing-type blocker, not the remaining lock
+admission, release accounting or native presentation qualification.
 
 The reviewed shell checkpoint `992e20653` keeps four live offers, exact metadata and two independent
 terminal reservations each; the ChannelClosed hold makes nine. Journal encoding,

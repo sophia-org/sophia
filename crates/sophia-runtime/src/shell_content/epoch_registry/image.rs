@@ -23,6 +23,19 @@ pub struct SealedImageAdmission {
 }
 
 impl ContentEpochRegistry {
+    pub(in crate::shell_content) fn sealed_stop_reason(
+        &self,
+        grant: ContentGrant,
+        resource: sophia_protocol::ContentResourceId,
+    ) -> Option<sophia_protocol::ContentReason> {
+        self.active
+            .iter()
+            .chain(&self.retired)
+            .find(|epoch| epoch.resources.grant() == grant)?
+            .resources
+            .sealed_stop_reason(resource)
+    }
+
     pub(in crate::shell_content) fn stop_sealed_image(
         &mut self,
         grant: ContentGrant,

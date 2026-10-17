@@ -24,7 +24,7 @@ const NONE: u16 = 0;
 struct Resource {
     width_px: u32,
     height_px: u32,
-    pixels: Arc<[u8]>,
+    pixels: sophia_runtime::SharedPixels,
 }
 
 #[derive(Default)]
@@ -364,6 +364,24 @@ impl SessionLockFrames {
         height_px: u32,
         pixels: Arc<[u8]>,
     ) {
+        self.resource_ready_shared(
+            connection_epoch,
+            resource,
+            width_px,
+            height_px,
+            pixels.into(),
+        );
+    }
+
+    /// Retain immutable backing directly, including a validated sealed mapping.
+    pub fn resource_ready_shared(
+        &mut self,
+        connection_epoch: u64,
+        resource: LockResourceId,
+        width_px: u32,
+        height_px: u32,
+        pixels: sophia_runtime::SharedPixels,
+    ) {
         if self.current(connection_epoch) {
             self.resources.insert(
                 resource,
@@ -461,7 +479,7 @@ impl SessionLockFrames {
             },
             width_px: resource.width_px,
             height_px: resource.height_px,
-            pixels: Arc::clone(&resource.pixels),
+            pixels: resource.pixels.clone(),
         };
         let mut owed = Vec::new();
         if let Some(entry) = self
