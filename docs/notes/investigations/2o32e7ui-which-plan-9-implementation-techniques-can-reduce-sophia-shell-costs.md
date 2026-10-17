@@ -155,6 +155,17 @@ dispatch wording. Raw summaries retain the earlier word "arrival"; interpret
 their request phase as dispatch. B3 compatibility, fault and neighbor-service
 checks are next. No B2/B3 native cost result exists yet.
 
+niltempus approved completing B3 validation and one matched native pilot before
+deciding whether to prioritize the proposed descriptor channel. The +10% gates
+remain unchanged. The new supplied-clock socket fixture proves that partial
+pixel scratch at one millisecond before the idle deadline does not renew it;
+expiry fences later burst writes, and a late write or clunk from that fid cannot
+affect a successor binding. All thirteen socket fixtures pass against current
+export `0d79bd170` and oldest supported export `116075541`, using test-only
+overlays on the latter. This establishes these export behaviors, not complete
+B3 SDK interoperability or neighbor fairness. Logs and the old-export overlay
+are under `t331-b3-20261017/`. No desktop or native measurement was started.
+
 ## First-slice native pilot — October 17
 
 All fourteen arms captured 1,000 frames at 60 Hz, 1080p, scale 1, VRR off and

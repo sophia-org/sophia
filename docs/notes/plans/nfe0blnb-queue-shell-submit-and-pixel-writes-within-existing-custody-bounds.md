@@ -21,6 +21,14 @@ gates. Neither ZX nor a request-count model promises a performance pass. ACK
 cadence, pending-read deferral, larger chunks, new limits, independent-resource
 concurrency, implicit End and merged retirement are excluded.
 
+On October 17 niltempus approved finishing B3 validation and one matched native
+pilot before choosing the next architectural change. Use the measured remaining
+costs to decide whether a proposed t304-style descriptor channel for shell content
+should take priority. This does not approve that channel's implementation or
+relax t331's +10% gates. Any later descriptor-path comparison must include producer
+and Sophia CPU, GPU work, frame latency and memory, so moving work outside the
+byte-upload measurement cannot count as eliminating it.
+
 ## Contract implementation requirements
 
 The [accepted amendment](../../sophia-shell-files.md#queued-shell-writes) owns
