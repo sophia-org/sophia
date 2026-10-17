@@ -168,6 +168,14 @@ int sophia_9p_write(struct sophia_9p_client *c, uint32_t f, uint64_t o, const vo
 {
     return io_request(c, 118, f, o, b, n, h);
 }
+int sophia_9p_write_secret(struct sophia_9p_client *c, uint32_t f, uint64_t o,
+                           const void *b, size_t n, struct sophia_9p_handle *h)
+{
+    int r = io_request(c, 118, f, o, b, n, h);
+    if (!r)
+        c->slots[h->slot].secret = 1;
+    return r;
+}
 int sophia_9p_getattr(struct sophia_9p_client *c, uint32_t fid, struct sophia_9p_handle *h)
 {
     int slot, r = p9_available(c, &slot);

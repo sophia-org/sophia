@@ -28,7 +28,8 @@ nonblocking client; `Client` is its separate read-only convenience client.
 | Flush | `flush` | `Pipeline::flush`; `Client::read_until` | Reserved flush admission, original-tag correlation and reply/flush races. Pipeline callers retain raced replies; the read-only timed helper intentionally discards them. |
 | Bounded progress | `service`, `wants_write`, borrowed fd | `poll_with_budget`, `io_interest`, `AsFd` | Partial I/O stays owned. Each budget limits bytes and syscall attempts per direction. |
 | Completion | `peek`, `consume` | `Pipeline::take_reply`, `wait` | C replies/names borrow a stable slot until explicit consume; Rust transfers owned replies. Tags remain reserved until settlement. |
-| Error and shutdown | Result code, reply errno, caller fd close | Typed wire/remote errors, owned stream close/drop | Protocol corruption is terminal; ordinary server errno is a request outcome. No reconnect/replay. |
+| Secret writes | `write_secret`, `scrubbing_output` | `Pipeline::write_secret`, `scrubbing_output` | Same Twrite, with SDK-owned outgoing bytes scrubbed after sending and on terminal failure. Caller clears its own input. |
+| Error and shutdown | Result code, reply errno, `close`, then caller fd close | Typed wire/remote errors, owned stream close/drop | Protocol corruption is terminal; ordinary server errno is a request outcome. Close/drop scrubs unsent secrets. No reconnect/replay. |
 
 The read-only Rust Client's directory and attribute operations are not Pipeline
 methods. C provides equivalent capability through its asynchronous client; it
@@ -67,12 +68,28 @@ paths, symlink refusal, descriptor flags and old-view identity after replacement
 
 ## Evidence
 
-One transport capability is still missing in C: Rust `Pipeline::write_secret`
-scrubs SDK-owned outgoing secret bytes after sending and on drop. C's generic
-`write` has no equivalent scrubbing contract. Audit the C lock caller and add
-explicit secret-write/cleanup support with independent tests before closing
-t333's transport parity gate. Caller cleanup alone does not establish matching
-SDK handling of its own copies. The metadata addition does not close this gap.
+C now exposes secret writes and explicit local close. Its fixed request slots
+never relocate secret data; sent prefixes are wiped through volatile writes,
+and failure/close wipes the remaining marked bytes. Rust reserves its output
+bound before admitting a secret, scrubs vacated storage after sends and clears
+pending bytes on failure or drop. C callers must call close before abandoning
+or reinitializing secret-bearing storage; there is no C destructor. Close does
+not close the borrowed descriptor and retains validated replies for draining.
+Ordinary writes do not acquire a new scrubbing or allocation cost beyond a flag
+check; callers must explicitly mark sensitive writes.
+
+C tests inspect each erased byte under one-byte sends, compare the intact wire
+frame, and check rejection, close, disconnect, malformed input and retained
+completion cleanup. Rust tests cover the same wire behavior, bounded storage,
+partial sends, disconnect and malformed input; its terminal-failure test checks
+that retained output storage is zero before drop. Removing immediate failure
+scrubbing makes that regression fail. The shared production export accepts the
+same test-only secret payload through both clients.
+
+The lock provider contract gives clients entry-state events, never password
+text or key material. Its C and Rust role clients therefore need no conversion
+of rendering/resource writes to secret writes. This transport addition does
+not change that authority boundary.
 
 C `src/tests/sophia_9p_client_test.c` and Rust
 `crates/sophia-9p-client/tests/client.rs` now independently cover literal

@@ -165,13 +165,59 @@ Both SDKs now publish `TRANSPORT-PARITY.md`, including namespace ownership.
 C request-slot storage grew; consumers must rebuild with matching headers.
 The reply layout is unchanged; metadata operations allocate no heap storage.
 
-Next: close the newly identified secret-write gap. Rust `Pipeline::write_secret`
-scrubs SDK-owned copies after sending and on drop; C generic writes do not.
-Audit C's lock caller, implement equivalent secret-write/cleanup support and
-prove it independently before closing the transport parity gate. Then finish
-the full role/API release audit against the criteria above, reconcile historical
-claims, and run final release gates. Preserve the portal refused-End
-cancellation limit. Performance work must not replace these closure requirements.
+The secret-write gap is now implemented: C explicitly marks sensitive writes
+and scrubs SDK storage as bytes are sent, on failure and on local close. Rust
+now also scrubs pending secrets immediately on failure rather than waiting
+for drop. Independent memory/wire tests pass; removing Rust's failure wipe
+makes its regression fail. The lock provider receives no password text, so
+its rendering writes need no conversion. Both maps retain the caller's duty
+to clear its own input and C's explicit cleanup requirement.
+
+Next: finish the full role/API release audit against the criteria above,
+reconcile historical claims and run final release gates. Preserve the portal
+refused-End cancellation limit. Performance work must not replace these closure
+requirements. No full t333 completion is claimed by these transport slices.
+
+### Secret-write parity evidence, 2026-10-17
+
+Signed SDK revisions are Rust `902a26e574f1c55d2e31599d104a1251dd4e408f`
+and C `8894d64cfaa2d66bb6a4f9380dbe1076e4fc5707`. C adds
+`sophia_9p_write_secret`, `sophia_9p_scrubbing_output` and `sophia_9p_close`.
+Sensitive outgoing request bytes are wiped through volatile stores as each
+prefix is sent. Transport failure or local close wipes remaining marked bytes.
+Caller-owned storage never reallocates. Close does not close the borrowed fd;
+already validated replies can still be drained. Ordinary writes retain their
+behavior. The private request-slot marker requires matching rebuilt headers
+and library, as with the preceding unreleased layout change.
+
+Rust's existing secret-write path now scrubs pending output on terminal failure,
+using the same cleanup as drop. Its independent regression inspects retained
+initialized output bytes before drop. Removing the failure-time cleanup makes
+that test fail; restoring it passes. Public socket tests separately cover EOF
+and malformed frames. C independently checks every erased byte under one-byte
+sends, unchanged wire data, failed admission, close, disconnect, malformed input
+and draining a validated reply after close. No protocol or authority changes.
+
+The lock audit followed both SDK sources and the pinned lock contract: the
+provider receives entry-state events, never password characters or key material.
+Its resource and rendering writes therefore do not need secret-write flags.
+The generic API remains useful to callers that already own sensitive data;
+it grants no new access to secrets. Neither SDK can clear a caller's original
+input; C callers must explicitly close before abandoning sensitive storage.
+
+The complete Rust workspace, affected strict Clippy, full C suite and Nim
+binding smoke pass. Logs: `/tmp/t333-secret-rust-workspace.log`,
+`/tmp/t333-secret-c-check.log`, `/tmp/t333-secret-rust-negative.log`.
+The independent C metadata peer additionally sends the test literal
+`test-secret` to the real core's static sink, and the host verifies unchanged
+bytes. That opt-in test passed; log `/tmp/t333-secret-c-export.log`.
+Executable SHA-256:
+`cb48bc5266cbdb6d19195169c49b4fc536e635565031d0ac18c4e52240858a6b`.
+The matching Rust core test is `secret_writes_reach_the_real_export_unchanged`.
+These are generic protocol fixtures, not a live lock/password experiment.
+After pin adoption the full `sophia-9p` suite passes, including that Rust test;
+the C opt-in was run separately above. Log: `/tmp/t333-secret-core.log`.
+Both signed-snapshot verifiers pass for the revisions named here.
 
 ### Transport and namespace audit evidence, 2026-10-17
 

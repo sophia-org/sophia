@@ -1,14 +1,14 @@
-tree fb6bc73b23f8faaecc11f9caab6eb6af89b96a0c
-parent 12e74746b4135ce1b80760b0bfb8454bbe5b704e
-author Mason Green <mason@greenm01.net> 1792207450 -0400
-committer Mason Green <mason@greenm01.net> 1792207450 -0400
+tree 07c798de5154cb859f2fd5e9d39a54346e5280bd
+parent dbb8f7ac114a7caab0f7374b4b1d53581f1f150a
+author Mason Green <mason@greenm01.net> 1792207785 -0400
+committer Mason Green <mason@greenm01.net> 1792207785 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLqWhsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLMGgD/XC4NYUsSrjPaslLonAP4
- TT+pWy5rYrLLDot9V3LI2r8A/052Xbu5F3DICNgMOtqtWcqQJBcjyePYtLsYNLSS
- qfQH
- =y7op
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLrqRsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJaoAEAjcpCwL2EO+oyckl0Q0or
+ VtaVMJ9/aWBgE48evYs8HNUA/1TWHnG55IW5Ds/3bxZQleseUGyKSY1clamj5JI3
+ +5QL
+ =k3G3
  -----END PGP SIGNATURE-----
 
-Add bounded attribute and directory access to the C transport
+Add secret-write scrubbing and explicit transport cleanup

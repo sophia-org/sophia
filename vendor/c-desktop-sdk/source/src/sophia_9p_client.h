@@ -51,7 +51,7 @@ struct sophia_9p_slot {
     size_t bytes, sent;
     uint32_t fid, count;
     uint16_t tag, old_slot;
-    uint8_t type, state, flushing, consumed;
+    uint8_t type, state, flushing, consumed, secret;
 };
 struct sophia_9p_client {
     int fd, terminal;
@@ -106,6 +106,17 @@ int sophia_9p_dirent_next(const struct sophia_9p_reply *, size_t *position,
                          struct sophia_9p_dirent *);
 int sophia_9p_write(struct sophia_9p_client *, uint32_t fid, uint64_t offset, const void *data,
                     size_t count, struct sophia_9p_handle *);
+/* Same wire request, but scrub each sent byte in SDK storage and any remaining
+ * bytes on transport failure or explicit close. Never moves/reallocates caller
+ * storage. The caller still owns and must clear its original data. */
+int sophia_9p_write_secret(struct sophia_9p_client *, uint32_t fid, uint64_t offset,
+                           const void *data, size_t count, struct sophia_9p_handle *);
+int sophia_9p_scrubbing_output(const struct sophia_9p_client *);
+/* Idempotent local retirement: scrub queued secret bytes, stop all I/O and
+ * retain already validated replies for draining. Does not close the borrowed
+ * fd or free storage. Call before abandoning/reinitializing a client that may
+ * hold secrets; C has no automatic destructor. Caller closes its descriptor. */
+void sophia_9p_close(struct sophia_9p_client *);
 int sophia_9p_clunk(struct sophia_9p_client *, uint32_t fid, struct sophia_9p_handle *);
 /* Refuses clunks, version, flushes, completed requests and duplicate flushes.
  * Original replies that beat Rflush remain deliverable; unanswered auth/attach/walk

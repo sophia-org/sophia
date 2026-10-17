@@ -1,14 +1,14 @@
-tree b9e107ed68efb98fff56762eea61e332bfeecdfe
-parent 4000b8dd45ccee66f2b244aadaabba03c2bc9599
-author Mason Green <mason@greenm01.net> 1792207450 -0400
-committer Mason Green <mason@greenm01.net> 1792207450 -0400
+tree 2e961687c000e23f9c93800174fa5309124e350e
+parent f6a1a9d3f5b880aa5ff9ae9de310e78ed12a32ff
+author Mason Green <mason@greenm01.net> 1792207784 -0400
+committer Mason Green <mason@greenm01.net> 1792207784 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLqWhsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIDfAD+O+jr96U6Ufis9JRfIIGc
- fxNRTa6bQ03S1E3eI4pZLVIBAPUBeddPR6Bf40FO64Kne6Dzw+2+ZD1ZyQjOuYxr
- BmIJ
- =H1Xh
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLrqBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKdoAEAkz5uwmr0WFKRe0eWs6Qd
+ UKj2naP//DLFAN7KfFNKG0cA/1Xy0ZHZKFuz8xO+ZmeFLNbsEPfIHu44wkMYiocq
+ V8QN
+ =q8C7
  -----END PGP SIGNATURE-----
 
-Map transport and namespace parity with metadata controls
+Scrub pending secret output immediately on transport failure

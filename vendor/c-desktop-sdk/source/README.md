@@ -5,6 +5,11 @@ without a Sophia checkout and uses no Rust code. Nim clients can use its C API.
 
 ## SDK scope
 
+Sensitive generic writes can use `sophia_9p_write_secret`. The SDK wipes its
+copies after sending and on failure or `sophia_9p_close`; callers still clear
+their input and close the borrowed descriptor. Call close before abandoning
+secret-bearing storage. Ordinary writes keep their existing behavior.
+
 Generic 9P now supports attributes and directory pages, matching Rust's
 read-only client. Request-slot storage has grown to retain directory cookies;
 rebuild C consumers and foreign-language bindings with matching headers and

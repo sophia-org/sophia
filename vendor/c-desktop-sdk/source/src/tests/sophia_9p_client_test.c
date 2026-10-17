@@ -530,6 +530,93 @@ static void malformed_metadata_and_directories_fail_closed(void)
     }
 }
 
+static void zero_bytes(const uint8_t *bytes, size_t n)
+{
+    size_t i;
+    for (i = 0; i < n; i++) assert(!bytes[i]);
+}
+static void secret_writes_scrub_sent_bytes_without_changing_the_wire(void)
+{
+    struct fixture f;
+    struct sophia_9p_handle h, plain;
+    uint8_t expected[29], observed[29], body[4] = {6, 0, 0, 0};
+    uint8_t *slot;
+    size_t i;
+    init(&f, 2, 2);
+    assert(sophia_9p_write_secret(&f.c, 3, 0, "secret", 4096, &h) == SOPHIA_9P_ARGUMENT);
+    assert(!sophia_9p_scrubbing_output(&f.c));
+    assert(!sophia_9p_write_secret(&f.c, 3, 0, "secret", 6, &h));
+    slot = f.memory + h.slot * 4096;
+    memcpy(expected, slot, sizeof expected);
+    assert(!sophia_9p_write(&f.c, 4, 0, "plain", 5, &plain));
+    for (i = 0; i < sizeof expected; i++) {
+        assert(sophia_9p_scrubbing_output(&f.c));
+        assert(!sophia_9p_service(&f.c, 1));
+        assert(recv(f.fd[1], observed + i, 1, MSG_DONTWAIT) == 1);
+        zero_bytes(slot, i + 1);
+        assert(!memcmp(slot + i + 1, expected + i + 1, sizeof expected - i - 1));
+    }
+    assert(!memcmp(expected, observed, sizeof expected));
+    assert(!sophia_9p_scrubbing_output(&f.c));
+    answer(&f, 119, (uint16_t)get16(expected + 5), body, 4);
+    take(&f, 119);
+    sophia_9p_close(&f.c);
+    assert(!sophia_9p_wants_write(&f.c));
+    assert(sophia_9p_write_secret(&f.c, 3, 0, "secret", 6, &h) == SOPHIA_9P_CLOSED);
+    finish(&f);
+}
+static void secret_cleanup_on_close_disconnect_and_bad_reply(void)
+{
+    unsigned mode;
+    for (mode = 0; mode < 3; mode++) {
+        struct fixture f;
+        struct sophia_9p_handle h;
+        uint8_t *slot;
+        size_t n;
+        int r;
+        init(&f, 2, 2);
+        assert(!sophia_9p_write_secret(&f.c, 3, 0, "secret", 6, &h));
+        slot = f.memory + h.slot * 4096;
+        n = f.c.slots[h.slot].bytes;
+        if (!mode) {
+            sophia_9p_close(&f.c);
+            sophia_9p_close(&f.c);
+        } else if (mode == 1) {
+            assert(!close(f.fd[1])); f.fd[1] = -1;
+            assert(sophia_9p_service(&f.c, 1) == SOPHIA_9P_IO);
+        } else {
+            const uint8_t invalid[4] = {6, 0, 0, 0};
+            assert(send(f.fd[1], invalid, sizeof invalid, MSG_DONTWAIT) == 4);
+            do { r = sophia_9p_service(&f.c, 1); } while (!r);
+            assert(r == SOPHIA_9P_INVALID);
+        }
+        assert(!sophia_9p_scrubbing_output(&f.c));
+        zero_bytes(slot, n);
+        assert(sophia_9p_service(&f.c, 4096) < 0);
+        finish(&f);
+    }
+}
+static void close_preserves_validated_replies_but_scrubs_queued_secrets(void)
+{
+    struct fixture f;
+    struct sophia_9p_handle ordinary, secret;
+    struct sophia_9p_reply r;
+    uint8_t count[4] = {0};
+    uint16_t tag;
+    init(&f, 2, 2);
+    assert(!sophia_9p_write(&f.c, 3, 0, NULL, 0, &ordinary));
+    tag = request(&f, 118); answer(&f, 119, tag, count, 4);
+    assert(!sophia_9p_service(&f.c, 4096));
+    assert(!sophia_9p_write_secret(&f.c, 3, 0, "secret", 6, &secret));
+    sophia_9p_close(&f.c);
+    zero_bytes(f.memory + secret.slot * 4096, 29);
+    assert(!sophia_9p_service(&f.c, 4096));
+    assert(!sophia_9p_peek(&f.c, &r) && r.type == 119 && r.handle.serial == ordinary.serial);
+    assert(!sophia_9p_consume(&f.c, r.handle));
+    assert(sophia_9p_service(&f.c, 4096) == SOPHIA_9P_CLOSED);
+    finish(&f);
+}
+
 int main(void)
 {
     puts("tag wrap");
@@ -547,6 +634,9 @@ int main(void)
     service_byte_budget_bounds_partial_requests();
     metadata_and_directory_pages();
     malformed_metadata_and_directories_fail_closed();
+    secret_writes_scrub_sent_bytes_without_changing_the_wire();
+    secret_cleanup_on_close_disconnect_and_bad_reply();
+    close_preserves_validated_replies_but_scrubs_queued_secrets();
     puts("Tauth/afid wire and custody controls passed");
     puts("sophia_9p_client: R4-1..R4-7 controls passed");
     return 0;

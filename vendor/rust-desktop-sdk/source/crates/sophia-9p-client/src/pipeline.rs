@@ -563,8 +563,8 @@ impl Pipeline {
     /// Queues a write whose bytes are secret, such as a password. The
     /// pipeline copies it directly into its output buffer and zeroes the
     /// output buffer's spare capacity after each send until the
-    /// buffer has emptied, and the whole buffer if the pipeline is dropped
-    /// first. Before the secret enters, the output buffer is given the whole
+    /// buffer has emptied, and the whole buffer on terminal failure or drop.
+    /// Before the secret enters, the output buffer is given the whole
     /// capacity its bound allows, so no later request can reallocate it and
     /// leave a copy in freed memory. The caller zeroes its own `data`.
     pub fn write_secret(
@@ -1236,11 +1236,22 @@ impl Pipeline {
 
     /// Marks the pipeline unusable and closes its socket.
     fn poison(&mut self, error: PipelineError) -> PipelineError {
+        self.scrub_pending_output();
         if !self.poisoned {
             self.poisoned = true;
             let _ = self.stream.shutdown(std::net::Shutdown::Both);
         }
         error
+    }
+
+    fn scrub_pending_output(&mut self) {
+        if self.scrub_output {
+            self.out_buf.fill(0);
+            std::hint::black_box(&mut self.out_buf);
+            scrub_spare(&mut self.out_buf);
+            self.out_start = self.out_buf.len();
+            self.scrub_output = false;
+        }
     }
 }
 
@@ -1317,10 +1328,7 @@ fn negotiate(
 
 impl Drop for Pipeline {
     fn drop(&mut self) {
-        if self.scrub_output {
-            self.out_buf.clear();
-            scrub_spare(&mut self.out_buf);
-        }
+        self.scrub_pending_output();
     }
 }
 

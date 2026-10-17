@@ -1428,6 +1428,37 @@ fn an_empty_rwalk_clones_a_fid_but_poisons_a_nonempty_walk() {
 // ---- secret writes ----
 
 #[test]
+fn disconnect_and_bad_frame_scrub_pending_secret_before_drop() {
+    for malformed in [false, true] {
+        let (client, thread) = scripted(
+            move |stream| {
+                versioned(stream);
+                if malformed {
+                    stream.write_all(&6u32.to_le_bytes()).unwrap();
+                    hold(stream);
+                }
+            },
+            PipelineLimits::default(),
+        );
+        let mut pipeline = client.unwrap();
+        pipeline.write_secret(Fid(3), 0, b"secret").unwrap();
+        let end = deadline();
+        loop {
+            assert!(Instant::now() < end);
+            let mut budget = sophia_9p_client::pipeline::IoBudget::new(1);
+            if pipeline.poll_with_budget(&mut budget).is_err() {
+                break;
+            }
+            std::thread::yield_now();
+        }
+        assert!(!pipeline.scrubbing_output());
+        assert_eq!(pipeline.poll(), Err(PipelineError::Poisoned));
+        drop(pipeline);
+        thread.join().unwrap();
+    }
+}
+
+#[test]
 fn a_secret_write_sends_the_same_frame_and_scrubs_until_it_has_gone() {
     let (client, thread) = scripted(
         |stream| {

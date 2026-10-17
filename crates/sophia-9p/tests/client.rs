@@ -143,6 +143,7 @@ fn external_c_metadata_matches_the_real_driver() {
             0o100444, INFO_LEN,
         )
     );
+    assert_eq!(served.export.state().sink, b"test-secret");
 }
 
 #[test]
