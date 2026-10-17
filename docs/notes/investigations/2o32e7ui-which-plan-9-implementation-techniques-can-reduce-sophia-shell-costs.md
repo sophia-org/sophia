@@ -133,6 +133,28 @@ Evidence: `t331-b2-20261017/candidate-ledger`, including per-arm source counters
 and `comparison.json`. The comparator's existing mixed-activity labels still
 include the previously reported Other overlap; do not infer wake causes from them.
 
+Comparator `c014ad37f` adds an opt-in ordered shell trace. Three four-arm,
+64-frame runs prove every steady B2 submit was dispatched before its record
+reply finished sending: 320/320 panel and 512/512 bulk. Negotiation remains
+sequential. The observation is dispatch, not socket arrival; it conservatively
+proves that submit did not wait for the record reply. A separate fixture checks
+partial reply delivery and a sequential negative control. A compile-time guard
+rejects combining the trace with cost instrumentation; its allocation and timing
+overhead are not performance evidence.
+
+The extra bulk read is startup grouping. Runs 01 and 02 returned the first 168
+journal bytes together; run 03 returned 112 then 56. Every later event-read
+offset and reply length matches, including the final parked read. Thus the
+traced 1,031/1,032 totals differ by one Tread and one Rread header, with identical
+journal payload. This reproduces the earlier counter difference; the historical
+untraced capture cannot identify its particular split. Evidence lives under
+`t331-b2-20261017/ordered-trace-01`, `ordered-trace-02` and `ordered-trace-03`.
+The first two include the separate progress sampler; the third omits it. All
+ran before the trace commit, whose final changes only format code and clarify
+dispatch wording. Raw summaries retain the earlier word "arrival"; interpret
+their request phase as dispatch. B3 compatibility, fault and neighbor-service
+checks are next. No B2/B3 native cost result exists yet.
+
 ## First-slice native pilot — October 17
 
 All fourteen arms captured 1,000 frames at 60 Hz, 1080p, scale 1, VRR off and
