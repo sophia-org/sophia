@@ -14,6 +14,20 @@ repairs? Reconcile the existing evidence before repeating a desktop campaign.
 
 ## Current resumption
 
+The October 17 [replacement plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#approved-reusable-writer-and-cumulative-ack-slice--october-17)
+is approved for implementation. The [active attribution investigation](2o32e7ui-which-plan-9-implementation-techniques-can-reduce-sophia-shell-costs.md#current-resumption)
+records comparator reconciliation, the request ledger and the accepted
+`transaction-reuse` amendment. Production begins at `116075541`, with all prior
+t331 SDK changes present in its `f1cd924` pin. The comparator must carry current
+production before any new performance claim.
+
+CPU-20 is superseded preparation: its frozen artifacts remain, but no capture
+ran and it must not supply the new baseline. Cost-15 and perf-18 remain historical
+cost and profiling evidence. t331 stays open until the unchanged paired cost and
+latency gates pass. No quiet hold, native run or installed-desktop change is active.
+
+## Historical resumption before comparator reconciliation
+
 The approved extra-pass fixes are implemented. Signed production `d817e6d8a`
 services launch relays from owner readiness and deadlines while retaining
 per-pass custody and retirement checks. Signed SDK `3edcd28` batches each

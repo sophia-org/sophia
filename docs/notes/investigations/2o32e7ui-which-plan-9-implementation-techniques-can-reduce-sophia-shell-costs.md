@@ -15,6 +15,62 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+niltempus approved the reusable transaction writer and bounded cumulative ACK
+plan on October 17. The [decision](../decisions/7mls2e2q-reuse-a-shell-transaction-writer-without-changing-custody.md)
+records compatibility and fencing; the [t331 plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#approved-reusable-writer-and-cumulative-ack-slice--october-17)
+owns implementation order and the unchanged acceptance gate. Production remains
+`116075541` before implementation; Rust SDK `f1cd924` contains all seven prior
+t331 SDK optimizations. No SDK restoration or merge from its old master is needed.
+
+The isolated comparator is being reconciled with this production revision before
+new measurements. CPU-20 has no capture and is superseded preparation, not a failed
+run. Cost-15 remains the latest completed cost pilot; perf-18 the latest valid
+paired profile. Neither qualifies the current t333 release. No quiet hold or
+native campaign is active, and the installed desktop is unchanged.
+
+The source ledger below reconciles historical counts; it is not fresh cost
+evidence. Reusable writers remove transaction-fid lifecycle requests, but their
+CPU, allocation and owner-pass effects need independent measurements. This first
+slice is not assumed to pass the gate. Record the new deterministic baseline,
+then implementation checks and exact candidates here before native capture.
+
+## Reconciled request ledger — October 17
+
+Comparator peer `9c527d566` has the same workload as batching-14 `bf19952dd`.
+It sends panel Begin, three canonical pixel chunks, End, FrameDemand, a grouped
+Candidate, then Retire of the previous resource after Presented. The first
+frame omits Retire; allocation setup precedes the measured loop. The grouped
+Candidate is one file transaction and three IPC records.
+
+The bulk case first sends a separate probe Begin, 69 pixel chunks, End and Retire,
+waits for release, then runs the complete panel sequence. Negotiated msize is
+65,536, its write payload bound 65,513, and canonical chunks are 61,440 bytes.
+Neither larger msize nor short-write avoidance reduces these pixel-write counts.
+
+| Steady-frame requests | Panel | Panel plus bulk |
+| --- | ---: | ---: |
+| Transaction walk/open/clunk | 15 | 24 |
+| Upload walk/open/clunk | 3 | 6 |
+| Record and submit writes | 10 | 16 |
+| Pixel writes | 3 | 72 |
+| Journal reads | 11 | 17 |
+| ACK writes | 11 | 17 |
+| Total | 53 | 152 |
+
+ACK and read counts match batching-14 but can vary with scheduling. Clunk is
+fire-and-forget, walk/open already share a setup batch, and idle relay counts
+record skipped core turns. Requests do not each cause a flush. IPC sends ten
+panel records and receives six; the probe adds 72 sent and three received.
+Those record counts are not owner passes or transport syscall counts.
+
+`Staging::new` uses `Vec::new`; it constructs an empty object without allocating.
+First record bytes, fid tables, request decoding and owner passes need separate
+allocation attribution. Ratios of allocations to passes do not establish an
+exclusive causal cost per pass. The reusable writer predicts 15/24 fewer requests,
+not a native gate verdict or a fixed number of eliminated passes.
+
+## Earlier resumption — October 16
+
 The audit identifies two concrete copy paths to measure: completed journal reads
 allocate a temporary payload before copying it into the server reply buffer,
 and the SDK copies upload payloads into its output buffer. Neither is a measured
