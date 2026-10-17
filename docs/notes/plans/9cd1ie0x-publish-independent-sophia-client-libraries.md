@@ -144,6 +144,25 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Submit-handle reuse is implemented in both integrated broker SDK sessions and
+published as signed Rust `3830d84fba86ece78e195041d71e598bd5072659` and C
+`d6f83ec67c934808221f473c12b5a195e68519ee`. Sophia imports those exact snapshots;
+signature, tree and manifest verification pass. The session opens submit once
+and reuses it; each transaction still gets a new assembly and waits for its
+Submitted acknowledgement before clunk. Standalone transaction ownership is
+unchanged. C consumers must rebuild against the matching headers because the
+transaction storage fields changed.
+
+Both independent socket peers require one submit walk across negotiation and
+two responses and reject assembly cleanup before its receipt ack. All broker
+Rust tests, strict broker Clippy and the full C check suite pass. Both revised
+peers pass the real-export and protected-launch gates
+(`/tmp/t333-submit-reuse-{c,rust}-export.log`). The rebuilt release CLI also
+passes `protected_native_broker_preserves_all_operations_and_atomic_lowering`
+(`/tmp/t333-submit-reuse-process.log`). No speedup is claimed yet: next compare
+separate syscall traces, then untraced release latency and CPU. The full role/API
+matrix and release audit still gate t333 closure.
+
 Separate one-operation and ten-operation release traces now pass the strict
 socket-byte parser. Their raw logs and reports are under the evidence directory
 below in `trace-1/` and `trace-10/`. Joining each sample's peer PID and subtracting

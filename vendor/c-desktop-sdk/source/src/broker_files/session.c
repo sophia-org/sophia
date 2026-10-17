@@ -256,6 +256,8 @@ int sophia_br_respond(struct sophia_br *s, uint64_t request,
   if (e)
     return e;
   ++s->last_submission;
+  transaction.retain_submit = 1;
+  transaction.submit = s->transaction.submit;
   s->transaction = transaction;
   s->releasing = 0;
   e = br_drive(s);
@@ -304,6 +306,7 @@ int sophia_br_init(struct sophia_br *s, struct sophia_bo *opening,
                           s->now, deadline, s->limits.assembly_timeout_ms);
   if (e)
     return br_fail(s, e);
+  s->transaction.retain_submit = 1;
   e = br_drive(s);
   if (e)
     return br_fail(s, e);

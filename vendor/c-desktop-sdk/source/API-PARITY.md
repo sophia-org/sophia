@@ -1,5 +1,28 @@
 # C and Rust SDK API parity
 
+## Broker submit-handle reuse, 2026-10-17
+
+Both integrated broker sessions keep the opened `submit` fid until connection
+close. Negotiation opens it once; later responses reuse it. Each candidate
+still gets a fresh transaction assembly, and its clunk still waits for the
+Submitted receipt acknowledgement. Standalone transaction drivers retain their
+original ownership and clunk both handles. No wire record, retry identity,
+deadline or public session operation changes.
+
+Independent C and Rust socket peers require one submit walk across negotiation
+and two responses, one assembly clunk per candidate, and no clunk before its
+receipt ack. Existing fragmented writes, immutable EAGAIN retry, malformed
+receipts and connection-loss scenarios pass. This removes three serial file
+operations per later response; it is not a measured latency or CPU improvement.
+The C transaction storage layout changes; rebuild consumers and bindings with
+matching headers. Sophia pin adoption and the release cost comparison remain
+separate steps.
+
+Both revised peers pass Sophia's `external_sdk_broker_lifecycle` and
+`external_sdk_protected_broker_lifecycle` against source `2af4195ab` with
+Bubblewrap 0.13.0. These export gates cover negotiation and single-/two-row
+responses; the independent socket peers provide the two-response reuse check.
+
 ## Current publication candidate, 2026-10-16
 
 Both native peers now pass `external_sdk_protected_broker_lifecycle` in Sophia's

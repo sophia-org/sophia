@@ -112,7 +112,7 @@ impl Session {
             opened.now,
             opened.limits.ack_progress_timeout_ms,
         )?;
-        let transaction = Transaction::new(
+        let mut transaction = Transaction::new(
             opened.epoch,
             1,
             Candidate::Negotiate { minimum, maximum },
@@ -120,6 +120,7 @@ impl Session {
             deadline,
             opened.limits.assembly_timeout_ms,
         )?;
+        transaction.retain_submit(None);
         let now = opened.now;
         let epoch = opened.epoch;
         let ordering = Ordering::new(epoch, opened.limits, 1, now)?;
@@ -192,7 +193,7 @@ impl Session {
             .ok_or(super::Error::Overflow)?;
         let request = pending.view();
         let opened = self.opened.as_ref().ok_or(super::Error::Closed)?;
-        let transaction = Transaction::new(
+        let mut transaction = Transaction::new(
             self.epoch,
             id,
             Candidate::Response {
@@ -203,6 +204,7 @@ impl Session {
             pending.due,
             opened.limits.assembly_timeout_ms,
         )?;
+        transaction.retain_submit(Some(&self.transaction));
         self.ordering.response(request_id, id, now)?;
         self.transaction = transaction;
         self.last_submission = id;

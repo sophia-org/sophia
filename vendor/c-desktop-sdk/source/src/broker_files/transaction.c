@@ -210,7 +210,9 @@ int sophia_bt_release(struct sophia_bt *t, uint64_t acknowledged,
   if (t->stage != WAIT || t->outstanding ||
       !sophia_bs_releasable(&t->submission, acknowledged))
     return SOPHIA_BS_BUSY;
-  t->stage = CLUNK_SUBMIT;
+  /* Integrated sessions own submit for the connection lifetime. The assembly
+   * remains transaction-owned and is released only after receipt acknowledgement. */
+  t->stage = t->retain_submit ? CLUNK_TRANSACTION : CLUNK_SUBMIT;
   return 0;
 }
 static int accept(struct sophia_bt *t, const struct sophia_9p_reply *r,
@@ -254,7 +256,7 @@ static int accept(struct sophia_bt *t, const struct sophia_9p_reply *r,
       return SOPHIA_BS_PROTOCOL;
     t->offset += t->sent;
     if (t->offset == t->submission.length)
-      t->stage = WALK_SUBMIT;
+      t->stage = t->submit == SOPHIA_9P_NOFID ? WALK_SUBMIT : SUBMIT;
     break;
   case CLUNK_SUBMIT:
   case CLUNK_TRANSACTION:

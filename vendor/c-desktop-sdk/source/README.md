@@ -26,6 +26,11 @@ to tunnel the old socket protocol through a file.
 
 ## Current coverage
 
+Broker sessions now retain their submit handle across responses. The private
+fields in public transaction storage have changed; rebuild consumers and
+foreign-language bindings with matching headers. Receipt acknowledgement,
+assembly cleanup and retry semantics are unchanged; see [API parity](API-PARITY.md).
+
 The developing broker API (`sophia_broker_session.h`) retains one request and
 submits its one- or two-row response atomically. Startup borrows a quiescent 9P
 client and an admitted root; it does not authenticate the caller. The caller

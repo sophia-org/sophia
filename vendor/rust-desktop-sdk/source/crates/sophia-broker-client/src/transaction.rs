@@ -36,6 +36,7 @@ pub struct Transaction {
     stage: Stage,
     transaction: Fid,
     submit: Fid,
+    retain_submit: bool,
     outstanding: bool,
     offset: usize,
     sent: usize,
@@ -63,6 +64,7 @@ impl Transaction {
             stage: Stage::WalkTransaction,
             transaction: Fid::NOFID,
             submit: Fid::NOFID,
+            retain_submit: false,
             outstanding: false,
             offset: 0,
             sent: 0,
@@ -78,6 +80,16 @@ impl Transaction {
         let e = *self.error.get_or_insert(e);
         self.submission.close();
         e
+    }
+    // Only Session uses this mode. The submit handle belongs to that connection,
+    // while each transaction still owns and clunks its assembly handle.
+    pub(crate) fn retain_submit(&mut self, previous: Option<&Self>) {
+        debug_assert!(self.stage == Stage::WalkTransaction && !self.outstanding);
+        self.retain_submit = true;
+        if let Some(previous) = previous {
+            debug_assert!(previous.done() && previous.retain_submit);
+            self.submit = previous.submit;
+        }
     }
     pub fn close(&mut self) {
         self.fail(Error::Closed);
@@ -214,7 +226,11 @@ impl Transaction {
         {
             return Err(Error::Busy);
         }
-        self.stage = Stage::ClunkSubmit;
+        self.stage = if self.retain_submit {
+            Stage::ClunkTransaction
+        } else {
+            Stage::ClunkSubmit
+        };
         Ok(())
     }
     pub fn reply(&mut self, reply: Reply, now: u64) -> Result<(), Error> {
@@ -269,7 +285,11 @@ impl Transaction {
             (Stage::Staging, Reply::Write(n)) if n as usize == self.sent => {
                 self.offset += self.sent;
                 if self.offset == self.submission.bytes().len() {
-                    self.stage = Stage::WalkSubmit;
+                    self.stage = if self.submit == Fid::NOFID {
+                        Stage::WalkSubmit
+                    } else {
+                        Stage::Submit
+                    };
                 }
             }
             (Stage::ClunkSubmit, Reply::Clunk) => self.stage = Stage::ClunkTransaction,

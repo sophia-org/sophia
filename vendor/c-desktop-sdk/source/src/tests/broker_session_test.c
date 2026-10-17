@@ -63,11 +63,13 @@ static void record(unsigned char *p, unsigned kind, size_t size, uint64_t seq) {
   put(p + 24, seq, 8);
 }
 static void peer(int fd, unsigned fault) {
+  unsigned target = fault ? 1 : 2;
   unsigned char h[7], b[4096], out[4096], journal[1024], staged[448];
   unsigned names[64] = {0}, pending = 0, pending_tag = 0, requests = 0,
-           responses = 0, clunks = 0;
+           responses = 0, clunks = 0, submit_walks = 0;
   size_t used = 0, staged_n = 0, offset = 0, count = 0;
   unsigned retry = 0;
+  uint64_t acknowledged = 0;
   unsigned char retry_candidate[448], retry_control[24];
   while (exact(fd, h, 7)) {
     size_t n = (size_t)get(h, 4) - 7;
@@ -94,6 +96,7 @@ static void peer(int fd, unsigned fault) {
         staged_n = 0;
       } else {
         assert(get(b + 10, 2) == 6 && !memcmp(b + 12, "submit", 6));
+        assert(++submit_walks == 1);
         names[fid] = 4;
       }
       out[0] = 1;
@@ -144,7 +147,7 @@ static void peer(int fd, unsigned fault) {
           close(fd);
           _exit(0);
         }
-        record(journal + used, 18, 48, kind == 256 ? 1 : 4);
+        record(journal + used, 18, 48, kind == 256 ? 1 : 4 + 2 * responses);
         if (fault == 1)
           journal[used + 8] = 8;
         put(journal + used + 32, fault == 5 ? id + 1 : id, 8);
@@ -166,8 +169,8 @@ static void peer(int fd, unsigned fault) {
           }
           used += fault == 3 ? 40 : 56;
         } else {
-          assert(kind == 257 && staged_n == 448 && get(staged + 32, 8) == 8);
-          assert(id == 2);
+          assert(kind == 257 && staged_n == 448 && get(staged + 32, 8) == 8 + responses);
+          assert(id == 2 + responses);
           if (fault == 9 || fault == 11) {
             assert(get(staged + 40, 2) == (fault == 9 ? 5u : 1u));
             assert(get(staged + 42, 2) == 2 && get(staged + 48, 2) == 1 &&
@@ -181,9 +184,10 @@ static void peer(int fd, unsigned fault) {
         }
       } else {
         assert(names[fid] == 2);
-        if ((!fault || fault >= 6) && get(b + 24, 8) >= 2 && !requests) {
-          record(journal + used, 32, 200, 3);
-          journal[used + 32] = 8;
+        acknowledged = get(b + 24, 8);
+        if ((!fault || fault >= 6) && get(b + 24, 8) >= 2 + 2 * requests && requests < target) {
+          record(journal + used, 32, 200, 3 + 2 * requests);
+          journal[used + 32] = (unsigned char)(8 + requests);
           journal[used + 40] = 4;
           journal[used + 48] = 2;
           journal[used + 52] = 3;
@@ -208,6 +212,8 @@ static void peer(int fd, unsigned fault) {
       break;
     }
     case 120:
+      assert(get(b, 4) < 64 && names[get(b, 4)] == 3);
+      assert(acknowledged >= (responses ? 2 + 2 * responses : 1));
       ++clunks;
       send_reply(fd, 121, tag, NULL, 0);
       break;
@@ -223,13 +229,14 @@ static void peer(int fd, unsigned fault) {
       pending = 0;
     }
   }
-  assert(responses == ((!fault || fault >= 8) ? 1u : 0u));
+  assert(responses == ((!fault || fault >= 8) ? target : 0u));
   if (!fault || fault >= 8)
-    assert(clunks == 4);
+    assert(clunks == 1 + target && submit_walks == 1);
   close(fd);
   _exit(0);
 }
 static void scenario(unsigned fault) {
+  int target = fault ? 1 : 2;
   int pair[2], status, e, responded = 0, receipt = 0;
   pid_t child;
   struct sophia_9p_client wire;
@@ -311,7 +318,7 @@ static void scenario(unsigned fault) {
     }
     while (!(e = sophia_br_event(&session, &event))) {
       if (event.kind == SOPHIA_BF_SUBMITTED && event.candidate_kind == 257)
-        receipt = 1;
+        ++receipt;
       assert(!sophia_br_consume(&session, 1));
     }
     assert(e == SOPHIA_BS_BUSY);
@@ -326,7 +333,7 @@ static void scenario(unsigned fault) {
         goto cleanup;
       }
     }
-    if (fault != 6 && !responded && sophia_br_transaction_ready(&session) &&
+    if (fault != 6 && responded < target && sophia_br_transaction_ready(&session) &&
         !sophia_br_request(&session, &request)) {
       size_t count = 1;
       rows[0].kind = SOPHIA_BF_RETIRE_SURFACE;
@@ -364,9 +371,9 @@ static void scenario(unsigned fault) {
           rows[1].grant_token = 12;
         }
       }
-      assert(request.id == 8 &&
-             !sophia_br_respond(&session, 8, rows, count, 1));
-      responded = 1;
+      assert(request.id == 8u + (unsigned)responded &&
+             !sophia_br_respond(&session, request.id, rows, count, 1));
+      ++responded;
     }
     if (fault == 8 && responded &&
         session.transaction.submission.custody == SOPHIA_BS_QUEUED) {
@@ -374,7 +381,7 @@ static void scenario(unsigned fault) {
       assert(!e || e == SOPHIA_BS_BUSY);
     }
     sched_yield();
-  } while (!receipt || !sophia_br_transaction_ready(&session));
+  } while (receipt < target || !sophia_br_transaction_ready(&session));
 cleanup:
   sophia_br_close(&session);
   close(pair[0]);

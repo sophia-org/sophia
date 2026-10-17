@@ -38,6 +38,7 @@ fn record(kind: u16, size: usize, seq: u64) -> Vec<u8> {
     v
 }
 fn scenario(fault: u8) {
+    let target = if fault == 0 { 2 } else { 1 };
     let (client, mut peer) = UnixStream::pair().unwrap();
     peer.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
     let job = thread::spawn(move || {
@@ -45,9 +46,11 @@ fn scenario(fault: u8) {
         let mut journal = Vec::new();
         let mut staged = Vec::new();
         let mut pending = None;
-        let mut sent_request = false;
+        let mut sent_requests = 0;
         let mut responses = 0;
         let mut clunks = 0;
+        let mut submit_walks = 0;
+        let mut acknowledged = 0;
         let mut refused_response: Option<(Vec<u8>, Vec<u8>)> = None;
         loop {
             let mut h = [0; 7];
@@ -71,6 +74,10 @@ fn scenario(fault: u8) {
                     let name = String::from_utf8(b[12..].to_vec()).unwrap();
                     if name == "transaction" {
                         staged.clear();
+                    }
+                    if name == "submit" {
+                        submit_walks += 1;
+                        assert_eq!(submit_walks, 1, "submit is connection-owned");
                     }
                     names.insert(n(&b[4..8]), name);
                     let mut q = [0; 15];
@@ -120,7 +127,7 @@ fn scenario(fault: u8) {
                                 assert_eq!(staged.len(), 448);
                                 return;
                             }
-                            let seq = if kind == 256 { 1 } else { 4 };
+                            let seq = if kind == 256 { 1 } else { 4 + 2 * responses };
                             let mut receipt = record(18, 48, seq);
                             receipt[32..40].copy_from_slice(
                                 &(if fault == 5 { id + 1 } else { id }).to_le_bytes(),
@@ -149,8 +156,8 @@ fn scenario(fault: u8) {
                             } else {
                                 assert_eq!(kind, 257);
                                 assert_eq!(staged.len(), 448);
-                                assert_eq!(n(&staged[32..40]), 8);
-                                assert_eq!(id, 2);
+                                assert_eq!(n(&staged[32..40]), 8 + responses);
+                                assert_eq!(id, 2 + responses);
                                 if fault == 9 || fault == 11 {
                                     assert_eq!(n(&staged[40..42]), if fault == 9 { 5 } else { 1 });
                                     assert_eq!(n(&staged[42..44]), 2);
@@ -168,9 +175,13 @@ fn scenario(fault: u8) {
                             }
                         }
                         "ack" => {
-                            if (fault == 0 || fault >= 6) && n(&b[24..32]) >= 2 && !sent_request {
-                                let mut v = record(32, 200, 3);
-                                v[32] = 8;
+                            acknowledged = n(&b[24..32]);
+                            if (fault == 0 || fault >= 6)
+                                && n(&b[24..32]) >= 2 + 2 * sent_requests
+                                && sent_requests < target
+                            {
+                                let mut v = record(32, 200, 3 + 2 * sent_requests);
+                                v[32] = (8 + sent_requests) as u8;
                                 v[40] = 4;
                                 v[48] = 2;
                                 v[52] = 3;
@@ -187,7 +198,7 @@ fn scenario(fault: u8) {
                                     v[72..76].copy_from_slice(b"\0\n\xc3\xa9");
                                 }
                                 journal.extend(v);
-                                sent_request = true;
+                                sent_requests += 1;
                             }
                         }
                         _ => panic!(),
@@ -200,6 +211,8 @@ fn scenario(fault: u8) {
                     send(&mut peer, 119, &h[5..], &reply_count.to_le_bytes());
                 }
                 120 => {
+                    assert_eq!(names[&n(&b[..4])], "transaction");
+                    assert!(acknowledged >= if responses == 0 { 1 } else { 2 + 2 * responses });
                     clunks += 1;
                     send(&mut peer, 121, &h[5..], &[]);
                 }
@@ -216,9 +229,10 @@ fn scenario(fault: u8) {
                 }
             }
         }
-        assert_eq!(responses, if fault == 0 || fault >= 8 { 1 } else { 0 });
+        assert_eq!(responses, if fault == 0 || fault >= 8 { target } else { 0 });
         if fault == 0 || fault >= 8 {
-            assert_eq!(clunks, 4);
+            assert_eq!(clunks, 1 + target);
+            assert_eq!(submit_walks, 1);
         }
     });
     let mut pipeline =
@@ -294,9 +308,9 @@ fn scenario(fault: u8) {
         job.join().unwrap();
         return;
     }
-    let mut responded = false;
-    let mut receipt = false;
-    while !receipt || s.custody() != sophia_broker_client::Custody::Submitted {
+    let mut responded = 0;
+    let mut receipts = 0;
+    while receipts < target || s.custody() != sophia_broker_client::Custody::Submitted {
         assert!(Instant::now() < end);
         if let Err(e) = s.dispatch(1, 4096) {
             assert_eq!(fault, 7);
@@ -314,7 +328,7 @@ fn scenario(fault: u8) {
                     ..
                 }
             ) {
-                receipt = true;
+                receipts += 1;
             }
             s.consume(1).unwrap();
         }
@@ -334,7 +348,7 @@ fn scenario(fault: u8) {
             job.join().unwrap();
             return;
         }
-        if fault != 6 && !responded && s.ready() && s.request().is_some() {
+        if fault != 6 && responded < target && s.transaction_ready() && s.request().is_some() {
             let label = s.request().unwrap().label.map(str::to_owned);
             let mut rows = vec![ResponseRow {
                 kind: RowKind::RetireSurface,
@@ -391,15 +405,15 @@ fn scenario(fault: u8) {
                 );
                 assert!(s.transaction_ready() && s.request().is_some());
             }
-            match s.respond(8, &rows, 1) {
-                Ok(()) => responded = true,
+            match s.respond(8 + responded, &rows, 1) {
+                Ok(()) => responded += 1,
                 Err(sophia_broker_client::session::Error::State(
                     sophia_broker_client::Error::Busy,
                 )) => (),
                 Err(e) => panic!("{e:?}"),
             }
         }
-        if fault == 8 && responded && s.custody() == sophia_broker_client::Custody::Queued {
+        if fault == 8 && responded != 0 && s.custody() == sophia_broker_client::Custody::Queued {
             match s.retry(1) {
                 Ok(())
                 | Err(sophia_broker_client::session::Error::State(
@@ -410,7 +424,7 @@ fn scenario(fault: u8) {
         }
         thread::yield_now();
     }
-    // Drain the acknowledged response and both clunks without a time-based wait.
+    // Drain the acknowledged response and assembly clunk without a timed wait.
     while !s.transaction_ready() {
         assert!(Instant::now() < end);
         s.dispatch(1, 4096).unwrap();

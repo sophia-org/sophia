@@ -1,14 +1,14 @@
-tree bf0819514b8cef11ff495157d8bf87d5a7c16f1f
-parent 5de85f2e5a8e314248e58bc79b5529e43df89cce
-author Mason Green <mason@greenm01.net> 1792204829 -0400
-committer Mason Green <mason@greenm01.net> 1792204829 -0400
+tree ab5930bb6c3c75463c528bb06b545be7cfd8d9af
+parent 3bead0580870db1005b76db4f55631500fbf553f
+author Mason Green <mason@greenm01.net> 1792205847 -0400
+committer Mason Green <mason@greenm01.net> 1792205847 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLgHRsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLicgD9FJQBWR7yW54YyRuZzRUr
- /C4PKmZOH98am/y7a0ZG5mQA/0fnj9wl85O81tONIf6dXOQnGG4b+lsFsZEiO5Rw
- A0wN
- =FcQq
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLkFxsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGI/RQD/c9km7cpOADwWl7ei6Knz
+ wCOFgwrbZuKIruX6ao5IeO8BAOx2atRGohlp+05GhiD+bTlU1O5GHEXBBiSPX4iW
+ 9E8P
+ =V9zx
  -----END PGP SIGNATURE-----
 
-Remove trailing blank line from administration guide
+Reuse broker submit handle across session transactions

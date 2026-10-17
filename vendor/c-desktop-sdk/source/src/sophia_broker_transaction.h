@@ -25,7 +25,7 @@ struct sophia_bt_operation {
  * Operation bytes borrow this object until the matched reply. */
 struct sophia_bt {
   struct sophia_bs_submission submission;
-  unsigned stage, outstanding, has_assembly_due;
+  unsigned stage, outstanding, has_assembly_due, retain_submit;
   uint32_t transaction, submit, iounit, remote_error;
   size_t offset, sent;
   uint64_t now, deadline, assembly_timeout, assembly_due;
