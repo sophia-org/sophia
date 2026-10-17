@@ -12,6 +12,7 @@ use sophia_9p::{Errno, records::Limits, unix::Server};
 use sophia_protocol::lock_files::*;
 
 use super::image_service::{ImageService, LockImagePolicy};
+use super::leases::OrphanLeases;
 use super::{
     LockFileCustody, LockFileExport, LockFileQids, LockFileSettings, LockImageReadiness,
     LockInbound,
@@ -102,6 +103,9 @@ pub struct LockFileTransport {
     /// keeps a failed bind from retrying within the epoch.
     pub(super) image: Option<ImageService>,
     image_bound: bool,
+    /// Sealed images of ended epochs still read somewhere; the next epoch
+    /// inherits them against its budgets.
+    pub(super) orphans: OrphanLeases,
 }
 
 fn pidfd_alive(pidfd: &OwnedFd) -> Result<bool, LockFileTransportError> {
@@ -148,6 +152,7 @@ impl LockFileTransport {
             images: None,
             image: None,
             image_bound: false,
+            orphans: OrphanLeases::default(),
         })
     }
 
@@ -300,6 +305,7 @@ impl LockFileTransport {
                     lock.topology_generation,
                 ))?;
             }
+            self.orphans.bequeath(export.custody_mut());
             let limits = Limits::new(65_536, 512, 16, 32, 131_072, 1).map_err(|_| Errno::EINVAL)?;
             let export = if self.authentication.is_some() {
                 AuthenticatedFiles::pending(export)
@@ -361,6 +367,12 @@ impl LockFileTransport {
         {
             server.export_mut().files_mut().revoke();
         }
+        self.orphans.poll();
+        let _ = server
+            .export_mut()
+            .files_mut()
+            .custody_mut()
+            .collect_sealed_leases();
         if service_image(
             &mut self.image,
             &mut self.image_bound,
@@ -429,6 +441,8 @@ impl LockFileTransport {
         self.image_bound = false;
         if let Some(mut server) = self.server.take() {
             server.export_mut().files_mut().revoke();
+            self.orphans
+                .adopt(server.export_mut().files_mut().custody_mut());
             server.wake().wake();
             for _ in 0..4 {
                 if !matches!(server.turn(Some(Duration::ZERO)), Ok(true)) {
@@ -453,6 +467,15 @@ impl LockFileTransport {
 
     /// Continue exact cancellation while disconnected; these owners retain
     /// their endpoint/global quota until Factotum answers or is failed closed.
+    /// Sealed images of this and earlier epochs still charged, retiring or
+    /// orphaned.
+    pub fn sealed_leases_pending(&self) -> usize {
+        self.orphans.len()
+            + self
+                .export()
+                .map_or(0, |export| export.custody().sealed_leases_pending())
+    }
+
     pub fn poll_authentication_cleanup(&mut self, now: Instant) {
         self.retiring.retain_mut(|owner| {
             let _ = owner.poll(now);

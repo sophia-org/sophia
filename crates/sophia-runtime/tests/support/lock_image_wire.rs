@@ -369,10 +369,36 @@ impl Files {
         self.submit(LockFileKind::ImageBegin, &metadata.encode().unwrap(), 2)
     }
 
+    /// An offer the ready channel took: its receipt only. This transport
+    /// does not admit offers yet, so it stays pending.
+    fn pending(&mut self, offer: u64) {
+        assert_eq!(self.image_begin(offer), None);
+        assert_eq!(self.next().0, LockFileKind::Submitted);
+    }
+
+    /// An offer beyond `max_offers` (one, from one upload slot): its
+    /// receipt, then Rejected with reason budget.
+    fn over_capacity(&mut self, offer: u64) {
+        assert_eq!(self.image_begin(offer), None);
+        assert_eq!(self.next().0, LockFileKind::Submitted);
+        let (kind, body) = self.next();
+        assert_eq!(kind, LockFileKind::ResourceStatus);
+        let status = LockResourceStatus::decode(&body).unwrap();
+        assert_eq!(
+            (status.transaction, status.status, status.reason),
+            (offer, LockResourceState::Rejected, 6)
+        );
+    }
+
     /// A refused offer: its receipt, then Rejected with reason 9.
     fn refused(&mut self, offer: u64) {
         assert_eq!(self.image_begin(offer), None);
         assert_eq!(self.next().0, LockFileKind::Submitted);
+        self.unavailable(offer);
+    }
+
+    /// Offer `offer` rejected with reason 9.
+    fn unavailable(&mut self, offer: u64) {
         let (kind, body) = self.next();
         assert_eq!(kind, LockFileKind::ResourceStatus);
         let status = LockResourceStatus::decode(&body).unwrap();
@@ -449,7 +475,7 @@ fn run_ready(label: &str, ending: Ending) {
         std::thread::spawn(move || {
             let mut files = Files::attach(stream);
             let socket = ready(&mut files, &mut provider);
-            files.refused(1);
+            files.pending(1);
             // A second connector is dropped; the serving channel stays.
             let duplicate = provider.connect_image();
             let mut buffer = [0u8; 8];
@@ -458,7 +484,7 @@ fn run_ready(label: &str, ending: Ending) {
                 matches!(read, Ok((0, _)) | Err(_)),
                 "duplicate was not refused"
             );
-            files.refused(2);
+            files.over_capacity(2);
             (files, socket, provider)
         }),
     );
@@ -482,6 +508,8 @@ fn run_ready(label: &str, ending: Ending) {
         std::thread::spawn(move || {
             let mut files = files;
             files.closed(reason);
+            // Channel loss refuses the pending offer with it.
+            files.unavailable(1);
             // Closed for the epoch: offers are still refused cleanly.
             files.refused(3);
         }),

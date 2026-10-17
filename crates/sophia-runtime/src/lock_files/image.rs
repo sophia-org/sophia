@@ -1,14 +1,15 @@
 //! The lock role's sealed-image channel for one connection epoch: the
 //! owner's configuration, revision 2 selection, disclosure, and readiness
-//! published only by the owner. Until offers are admitted, an `ImageBegin`
-//! is busy while the channel awaits its Hello and is refused cleanly with
-//! reason 9 once the channel is ready or closed. Readiness supplied through
-//! [`LockFileCustody::image_channel_ready`] is the owner's statement (in
-//! production, after its authenticated Hello); this file does not prove
-//! that Hello happened.
+//! published only by the owner. An `ImageBegin` is busy while the channel
+//! awaits its Hello, becomes an offer (see `offers.rs`) while it is ready,
+//! and is refused cleanly with reason 9 once it is closed. Readiness
+//! supplied through [`LockFileCustody::image_channel_ready`] is the owner's
+//! statement (in production, after its authenticated Hello); this file does
+//! not prove that Hello happened.
 use sophia_9p::Errno;
 use sophia_protocol::lock_files::*;
 
+use super::offers::{OFFER_CREDITS, Offers};
 use super::{LockFileCustody, LockFileLimits};
 
 /// Not in `sophia-9p`'s set: the offer waits for the channel's Hello.
@@ -49,6 +50,7 @@ pub(super) struct ImageChannel {
     pending_closed: Option<LockChannelClosed>,
     /// The highest offer ID taken into custody, refused ones included.
     submitted_high_water: u64,
+    pub(super) offers: Offers,
 }
 
 impl ImageChannel {
@@ -113,6 +115,7 @@ impl ImageChannel {
             close_held: false,
             pending_closed: None,
             submitted_high_water: 0,
+            offers: Offers::default(),
         })
     }
 
@@ -120,21 +123,16 @@ impl ImageChannel {
         &self.settings
     }
 
-    /// Journal credits this channel holds.
+    /// Journal credits this channel holds: its `ChannelClosed` and each
+    /// live offer's two terminal events.
     pub(super) fn credits(&self) -> usize {
-        usize::from(self.close_held)
+        usize::from(self.close_held) + OFFER_CREDITS * self.offers.len()
     }
 
     /// Negotiation disclosed the channel: it now awaits the provider's Hello.
     pub(super) fn disclose(&mut self) {
         self.readiness = LockImageReadiness::AwaitingHello;
     }
-}
-
-/// What an `ImageBegin` gets before offers are admitted.
-pub(super) enum ImageBeginPlan {
-    /// The Submitted receipt and a clean Rejected status, reason 9.
-    Refuse { offer: u64, body: Vec<u8> },
 }
 
 impl LockFileCustody {
@@ -239,8 +237,7 @@ impl LockFileCustody {
         }
         .encode()
         .map_err(|_| Errno::EINVAL)?;
-        let sequence =
-            self.journal_events(&[(LockFileKind::ChannelClosed, body)], self.credits() - 1)?;
+        let sequence = self.close_image_offers((LockFileKind::ChannelClosed, body), 1)?;
         let image = self.image.as_mut().expect("disclosed image");
         image.close_held = false;
         image.readiness = LockImageReadiness::Closed { reason };
@@ -290,8 +287,6 @@ impl LockFileCustody {
         }
     }
 
-    /// Decides an `ImageBegin` before anything is journalled. The offer ID
-    /// must exceed every one already taken into custody.
     /// Sealed-only formats have no rows, so a new topology changes only the
     /// generation that discovery and the formats snapshot name.
     pub(super) fn follow_image_topology(&mut self) {
@@ -302,7 +297,15 @@ impl LockFileCustody {
         }
     }
 
-    pub(super) fn plan_image_begin(&self, body: &[u8]) -> Result<ImageBeginPlan, Errno> {
+    /// `ImageBegin`: the offer ID must exceed every one already taken into
+    /// custody. Busy until the Hello; an offer while ready; refused with
+    /// reason 9 once closed.
+    pub(super) fn image_begin(
+        &mut self,
+        receipt: (LockFileKind, Vec<u8>),
+        body: &[u8],
+        now: std::time::Instant,
+    ) -> Result<(), Errno> {
         let image = self
             .image
             .as_ref()
@@ -313,8 +316,9 @@ impl LockFileCustody {
             return Err(Errno::ESTALE);
         }
         match image.readiness {
-            LockImageReadiness::AwaitingHello => Err(EBUSY),
-            LockImageReadiness::Ready { .. } | LockImageReadiness::Closed { .. } => {
+            LockImageReadiness::AwaitingHello => return Err(EBUSY),
+            LockImageReadiness::Ready { .. } => self.offer_image(receipt, metadata, now)?,
+            LockImageReadiness::Closed { .. } => {
                 let body = LockResourceStatus {
                     transaction: metadata.offer_id,
                     resource: LockResourceId {
@@ -327,32 +331,17 @@ impl LockFileCustody {
                 }
                 .encode()
                 .map_err(|_| Errno::EINVAL)?;
-                Ok(ImageBeginPlan::Refuse {
-                    offer: metadata.offer_id,
-                    body,
-                })
-            }
-            LockImageReadiness::Disabled => Err(Errno::EINVAL),
-        }
-    }
-
-    pub(super) fn image_begin(
-        &mut self,
-        receipt: (LockFileKind, Vec<u8>),
-        body: &[u8],
-    ) -> Result<(), Errno> {
-        match self.plan_image_begin(body)? {
-            ImageBeginPlan::Refuse { offer, body } => {
                 self.journal_events(
                     &[receipt, (LockFileKind::ResourceStatus, body)],
                     self.credits(),
                 )?;
-                self.image
-                    .as_mut()
-                    .expect("disclosed image")
-                    .submitted_high_water = offer;
             }
+            LockImageReadiness::Disabled => return Err(Errno::EINVAL),
         }
+        self.image
+            .as_mut()
+            .expect("disclosed image")
+            .submitted_high_water = metadata.offer_id;
         Ok(())
     }
 }

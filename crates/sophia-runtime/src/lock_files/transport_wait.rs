@@ -25,6 +25,10 @@ impl LockFileTransport {
             .into_iter()
             .chain(self.negotiation_deadline)
             .chain(self.image.as_ref().and_then(|image| image.deadline()))
+            .chain(
+                (self.sealed_leases_pending() != 0)
+                    .then(|| now + crate::lock_files::SEALED_LEASE_POLL),
+            )
             .min();
         let mut fds = vec![PollFd::new(wake, PollFlags::IN)];
         // A full owner handoff cannot consume more inbound events. Waiting on

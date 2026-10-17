@@ -589,24 +589,24 @@ fn storage_kept_for_reuse_stays_within_the_live_limit() {
         while provider.custody.take_inbound().is_some() {}
     };
     // Three retired images, released by Session, all kept for reuse. The
-    // weak references only observe them.
+    // watches only observe them.
     let kept: Vec<_> = (1..=3)
         .map(|id| {
             let pixels = ready(&mut provider, id, 4);
-            let observed = std::sync::Arc::downgrade(&pixels);
+            let observed = pixels.watch();
             drop(pixels);
             retire(&mut provider, id);
             observed
         })
         .collect();
-    assert!(kept.iter().all(|storage| storage.strong_count() == 1));
+    assert!(kept.iter().all(|storage| !storage.released()));
     // Three live images of another size fill the limit: none of the kept
     // storage may stay beside them.
     for id in 4..=6 {
         drop(ready(&mut provider, id, 2));
     }
     assert!(
-        kept.iter().all(|storage| storage.strong_count() == 0),
+        kept.iter().all(|storage| storage.released()),
         "spare storage beyond the live limit was kept"
     );
 }

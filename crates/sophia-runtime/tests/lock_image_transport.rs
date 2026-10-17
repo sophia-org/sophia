@@ -10,6 +10,8 @@ use sophia_runtime::lock_files::*;
 
 #[path = "support/image_test_authority.rs"]
 mod authority;
+#[path = "support/lock_image_offers.rs"]
+mod offers;
 #[path = "support/shell_file_peer.rs"]
 mod raw;
 #[path = "support/lock_image_wire.rs"]
@@ -327,7 +329,7 @@ fn a_configured_epoch_selects_two_and_grants_sealed_only_on_request() {
 }
 
 #[test]
-fn image_begin_is_busy_until_the_owner_reports_ready_then_refused_cleanly() {
+fn image_begin_is_busy_until_ready_an_offer_while_ready_and_refused_once_closed() {
     let mut provider = Provider::new(true);
     provider.negotiate(1, 2, PRESENT | SEALED);
     let before = provider.custody.position();
@@ -358,35 +360,23 @@ fn image_begin_is_busy_until_the_owner_reports_ready_then_refused_cleanly() {
             granted_source_kinds: 1,
         }
     );
-    // The same submission retried now gets its receipt and reason 9.
+    // The same submission retried now gets its receipt and stays pending.
     provider.image_begin(1).unwrap();
     let events = provider.events();
     assert_eq!(
         events.iter().map(|(kind, _)| *kind).collect::<Vec<_>>(),
-        [LockFileKind::Submitted, LockFileKind::ResourceStatus]
+        [LockFileKind::Submitted]
     );
     let receipt = LockSubmitted::decode_at_revision(&events[0].1, 2).unwrap();
     assert_eq!(receipt.submission_id, 2);
     assert_eq!(receipt.candidate_kind, LockFileKind::ImageBegin);
-    assert_eq!(
-        LockResourceStatus::decode(&events[1].1).unwrap(),
-        LockResourceStatus {
-            transaction: 1,
-            resource: LockResourceId {
-                id: 21,
-                generation: 1,
-            },
-            status: LockResourceState::Rejected,
-            reason: LOCK_RESOURCE_REASON_IMAGE_CHANNEL_UNAVAILABLE,
-            admitted_bytes: 0,
-        }
-    );
-    // A refused offer's ID, or a lower one, cannot return.
+    // A received offer's ID, or a lower one, cannot return.
     assert_eq!(provider.image_begin(1), Err(Errno::ESTALE));
     provider.image_begin(3).unwrap();
     assert_eq!(provider.image_begin(2), Err(Errno::ESTALE));
     provider.events();
-    // Closing spends the held credit once.
+    // Closing spends the held credit once and refuses both pending offers
+    // with reason 9.
     provider
         .custody
         .image_channel_closed(GENERATION, LockChannelClosedReason::PeerDisconnect)
@@ -398,7 +388,14 @@ fn image_begin_is_busy_until_the_owner_reports_ready_then_refused_cleanly() {
         Err(Errno::EACCES)
     );
     let events = provider.events();
-    assert_eq!(events.len(), 1);
+    assert_eq!(
+        events.iter().map(|(kind, _)| *kind).collect::<Vec<_>>(),
+        [
+            LockFileKind::ChannelClosed,
+            LockFileKind::ResourceStatus,
+            LockFileKind::ResourceStatus,
+        ]
+    );
     assert_eq!(
         LockChannelClosed::decode(&events[0].1).unwrap().reason,
         LockChannelClosedReason::PeerDisconnect
@@ -409,9 +406,26 @@ fn image_begin_is_busy_until_the_owner_reports_ready_then_refused_cleanly() {
             reason: LockChannelClosedReason::PeerDisconnect,
         }
     );
-    // Closed: still a clean refusal.
+    // Closed: a receipt and a clean refusal.
     provider.image_begin(4).unwrap();
-    assert_eq!(provider.events()[1].0, LockFileKind::ResourceStatus);
+    let events = provider.events();
+    assert_eq!(
+        events.iter().map(|(kind, _)| *kind).collect::<Vec<_>>(),
+        [LockFileKind::Submitted, LockFileKind::ResourceStatus]
+    );
+    assert_eq!(
+        LockResourceStatus::decode(&events[1].1).unwrap(),
+        LockResourceStatus {
+            transaction: 4,
+            resource: LockResourceId {
+                id: 24,
+                generation: 1,
+            },
+            status: LockResourceState::Rejected,
+            reason: LOCK_RESOURCE_REASON_IMAGE_CHANNEL_UNAVAILABLE,
+            admitted_bytes: 0,
+        }
+    );
 }
 
 #[test]

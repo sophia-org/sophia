@@ -8,7 +8,6 @@
 //! custody what the secret did and when a frame may be drawn; it never
 //! hands over what the secret holds.
 use std::collections::VecDeque;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use sophia_9p::journal::{Journal, JournalBounds, JournalPosition};
@@ -18,6 +17,8 @@ use sophia_protocol::lock_files::*;
 mod export;
 mod image;
 mod image_service;
+mod leases;
+mod offers;
 mod presentation;
 mod resources;
 #[cfg(target_os = "linux")]
@@ -28,6 +29,8 @@ mod transport;
 pub use export::{LockFileAttachment, LockFileExport, LockFileHandle, LockFileNode, LockFileQids};
 pub use image::{LockImageReadiness, LockImageSettings};
 pub use image_service::LockImagePolicy;
+pub use leases::SEALED_LEASE_POLL;
+pub use offers::{LockImageAdmission, LockImageSource, LockImageWorkerAction};
 #[cfg(target_os = "linux")]
 pub use service::{
     LockFileService, LockFileServiceCommand, LockFileServiceEvent, LockFileServiceStats,
@@ -78,14 +81,14 @@ pub enum LockInbound {
         resource: LockResourceId,
         width_px: u32,
         height_px: u32,
-        pixels: Arc<[u8]>,
+        pixels: crate::SharedPixels,
     },
     ResourceRetired(LockResourceId),
     /// A candidate that matched the current lock object, its allocation
     /// and its permit. Session reports its terminal outcome.
     Candidate {
         candidate: LockCandidate,
-        pixels: Arc<[u8]>,
+        pixels: crate::SharedPixels,
     },
     /// A standing request for a frame; Session answers with a permit.
     Demand(LockFrameDemand),
@@ -233,10 +236,13 @@ impl LockFileCustody {
         }
     }
 
-    /// Journal credits held for events owed later: presentation answers and
-    /// the image channel's terminal events.
+    /// Journal credits held for events owed later: presentation answers,
+    /// the image channel's terminal events and retiring sealed images'
+    /// releases.
     fn credits(&self) -> usize {
-        self.presentation.credits() + self.image.as_ref().map_or(0, image::ImageChannel::credits)
+        self.presentation.credits()
+            + self.image.as_ref().map_or(0, image::ImageChannel::credits)
+            + self.resources.leases.credits()
     }
 
     fn event(&self, kind: LockFileKind, body: &[u8], index: u64) -> Result<Vec<u8>, Errno> {
@@ -374,7 +380,7 @@ impl LockFileCustody {
             }
             LockFileKind::ImageBegin => {
                 self.negotiated()?;
-                self.image_begin(receipt, body)?;
+                self.image_begin(receipt, body, now)?;
             }
             _ => return Err(Errno::EINVAL),
         }
@@ -465,15 +471,25 @@ impl LockFileCustody {
     ) -> Result<(), Errno> {
         let invalid = |_| Errno::EINVAL;
         let plan = match kind {
-            LockFileKind::ResourceBegin => self
-                .resources
-                .plan_begin(LockResourceBegin::decode(body).map_err(invalid)?)?,
+            LockFileKind::ResourceBegin => {
+                let offered: Vec<_> = self
+                    .image
+                    .as_ref()
+                    .map(|image| image.offers.resources().collect())
+                    .unwrap_or_default();
+                self.resources
+                    .plan_begin(LockResourceBegin::decode(body).map_err(invalid)?, &offered)?
+            }
             LockFileKind::ResourceEnd => self
                 .resources
                 .plan_end(LockResourceStep::decode(body, true).map_err(invalid)?)?,
-            LockFileKind::ResourceCancel => self
-                .resources
-                .plan_cancel(LockResourceStep::decode(body, false).map_err(invalid)?)?,
+            LockFileKind::ResourceCancel => {
+                let step = LockResourceStep::decode(body, false).map_err(invalid)?;
+                if let Some(index) = self.image_offer_for(step.transaction, step.resource) {
+                    return self.cancel_image(receipt, index);
+                }
+                self.resources.plan_cancel(step)?
+            }
             _ => self
                 .resources
                 .plan_retire(LockResourceStep::decode(body, false).map_err(invalid)?)?,
@@ -482,7 +498,13 @@ impl LockFileCustody {
             ResourcePlan::Retire { resource, .. } => Some(resource),
             _ => None,
         };
-        self.journal_events(&[receipt, plan.event()?], self.credits())?;
+        // A sealed image's release waits for its last reader; its
+        // retirement holds the credit for it.
+        if retired.is_some_and(|resource| self.resources.is_sealed(resource)) {
+            self.journal_events(&[receipt], self.credits() + 1)?;
+        } else {
+            self.journal_events(&[receipt, plan.event()?], self.credits())?;
+        }
         if let Some((resource, image)) = self.resources.apply(plan) {
             self.inbound.push_back(LockInbound::ResourceReady {
                 resource,
@@ -512,7 +534,7 @@ impl LockFileCustody {
             CandidatePlan::Forward(candidate) => Some(
                 self.resources
                     .image(candidate.resource)
-                    .map(|image| Arc::clone(&image.pixels))
+                    .map(|image| image.pixels.clone())
                     .ok_or(Errno::EINVAL)?,
             ),
             CandidatePlan::Reject(_) => None,

@@ -8,7 +8,9 @@ use std::sync::Arc;
 use sophia_9p::Errno;
 use sophia_protocol::lock_files::*;
 
+use super::leases::{SealedLease, SealedLeases};
 use super::reason;
+use crate::SharedPixels;
 
 /// One upload in progress, bound to its slot from Begin until End or Cancel.
 struct Upload {
@@ -25,12 +27,14 @@ struct Upload {
     written: u64,
 }
 
-/// A whole image the provider may name in a candidate.
+/// A whole image the provider may name in a candidate. An uploaded image
+/// keeps its storage for reuse after retirement; a sealed one has none.
 #[derive(Clone)]
 pub(super) struct Image {
     pub(super) width_px: u32,
     pub(super) height_px: u32,
-    pub(super) pixels: Arc<[u8]>,
+    pub(super) pixels: SharedPixels,
+    storage: Option<Arc<[u8]>>,
 }
 
 /// What a resource step would do, decided before anything changes.
@@ -144,6 +148,8 @@ pub(super) struct Resources {
     /// resources and spare storage together stay within the epoch's
     /// live-resource limit.
     spare: Vec<Arc<[u8]>>,
+    /// Sealed images retired or inherited, charged until released.
+    pub(super) leases: SealedLeases,
 }
 
 impl Resources {
@@ -154,6 +160,7 @@ impl Resources {
             images: BTreeMap::new(),
             next_binding: 0,
             spare: Vec::new(),
+            leases: SealedLeases::default(),
         }
     }
 
@@ -210,24 +217,87 @@ impl Resources {
         self.images.get(&resource)
     }
 
+    /// Whether `resource` is an image or an upload in progress.
+    pub(super) fn holds(&self, resource: LockResourceId) -> bool {
+        self.images.contains_key(&resource)
+            || self.uploading(resource).is_some()
+            || self.leases.holds(resource)
+    }
+
+    /// Whether `resource` is a live sealed image.
+    pub(super) fn is_sealed(&self, resource: LockResourceId) -> bool {
+        self.images
+            .get(&resource)
+            .is_some_and(|image| image.storage.is_none())
+    }
+
+    /// Leases of the live sealed images and of those retiring or
+    /// inherited, as the epoch ends.
+    pub(super) fn take_sealed_leases(&mut self) -> Vec<SealedLease> {
+        let mut leases: Vec<_> = self
+            .images
+            .values()
+            .filter(|image| image.storage.is_none())
+            .map(|image| SealedLease::new(&image.pixels))
+            .collect();
+        leases.extend(self.leases.take());
+        leases
+    }
+
+    /// Bytes of sealed images, live or still leased.
+    pub(super) fn sealed_bytes(&self) -> u64 {
+        self.images
+            .values()
+            .filter(|image| image.storage.is_none())
+            .map(|image| image.pixels.len() as u64)
+            .sum::<u64>()
+            + self.leases.bytes()
+    }
+
+    /// A validated sealed image, admitted within the live-resource limit
+    /// as an offer before it became one.
+    pub(super) fn insert_sealed(
+        &mut self,
+        resource: LockResourceId,
+        width_px: u32,
+        height_px: u32,
+        pixels: SharedPixels,
+    ) {
+        self.images.insert(
+            resource,
+            Image {
+                width_px,
+                height_px,
+                pixels,
+                storage: None,
+            },
+        );
+    }
+
     fn uploading(&self, resource: LockResourceId) -> Option<usize> {
         self.slots
             .iter()
             .position(|slot| slot.as_ref().is_some_and(|u| u.resource == resource))
     }
 
-    fn live(&self) -> usize {
-        self.images.len() + self.slots.iter().flatten().count()
+    pub(super) fn live(&self) -> usize {
+        self.images.len() + self.slots.iter().flatten().count() + self.leases.len()
     }
 
     /// Slot misuse and duplicate identities are the provider's protocol
     /// errors and fail the write; sizes and budget are refused by status.
-    pub(super) fn plan_begin(&self, begin: LockResourceBegin) -> Result<ResourcePlan, Errno> {
+    /// Live image offers share the live-resource limit and their
+    /// identities, but no upload slot.
+    pub(super) fn plan_begin(
+        &self,
+        begin: LockResourceBegin,
+        offered: &[LockResourceId],
+    ) -> Result<ResourcePlan, Errno> {
         let slot = usize::from(begin.slot);
         if begin.slot >= self.limits.upload_slots || self.slots[slot].is_some() {
             return Err(Errno::EINVAL);
         }
-        if self.images.contains_key(&begin.resource) || self.uploading(begin.resource).is_some() {
+        if self.holds(begin.resource) || offered.contains(&begin.resource) {
             return Err(Errno::EINVAL);
         }
         let reject = |reason| ResourcePlan::Reject {
@@ -240,7 +310,7 @@ impl Resources {
             || begin.height_px > self.limits.max_height_px
             || begin.total_bytes() > self.limits.max_resource_bytes
             || usize::try_from(begin.total_bytes()).is_err()
-            || self.live() >= usize::from(self.limits.max_live_resources)
+            || self.live() + offered.len() >= usize::from(self.limits.max_live_resources)
         {
             return Ok(reject(reason::BUDGET));
         }
@@ -331,20 +401,31 @@ impl Resources {
             }
             ResourcePlan::Accept { slot, resource, .. } => {
                 let upload = self.slots[slot].take()?;
+                // Admit took the storage and every byte arrived (plan_end).
+                let storage = upload.pixels.unwrap_or_else(|| Arc::from([]));
                 let image = Image {
                     width_px: upload.width_px,
                     height_px: upload.height_px,
-                    // Admit took the storage and every byte arrived (plan_end).
-                    pixels: upload.pixels.unwrap_or_else(|| Arc::from([])),
+                    pixels: Arc::clone(&storage).into(),
+                    storage: Some(storage),
                 };
                 self.images.insert(resource, image.clone());
                 Some((resource, image))
             }
-            ResourcePlan::Retire { resource, .. } => {
+            ResourcePlan::Retire {
+                transaction,
+                resource,
+            } => {
                 // Session may still show it; the storage is reused only once
-                // every other holder has let it go.
-                if let Some(image) = self.images.remove(&resource) {
-                    self.recycle(image.pixels);
+                // every other holder has let it go. A sealed image stays
+                // charged until then.
+                match self.images.remove(&resource) {
+                    Some(Image {
+                        storage: Some(storage),
+                        ..
+                    }) => self.recycle(storage),
+                    Some(Image { pixels, .. }) => self.leases.retire(transaction, resource, pixels),
+                    None => {}
                 }
                 None
             }
