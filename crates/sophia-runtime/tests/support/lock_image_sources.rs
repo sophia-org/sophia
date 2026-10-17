@@ -147,7 +147,7 @@ fn a_sealed_source_becomes_a_resource_released_after_its_last_reader() {
     drop((files, socket, provider));
 }
 
-fn run_refused_source(label: &str, bytes: &[u8], sealed: bool) {
+fn run_refused_source(label: &str, bytes: &[u8], sealed: bool, reason: u16) {
     let (mut transport, directory) = transport(label);
     transport.enable_sealed_images(policy(2000)).unwrap();
     let (mut provider, stream) = Provider::start(&mut transport, &directory);
@@ -163,7 +163,7 @@ fn run_refused_source(label: &str, bytes: &[u8], sealed: bool) {
                 files.settled(1),
                 (
                     LockResourceState::Rejected,
-                    LOCK_RESOURCE_REASON_INVALID_SOURCE,
+                    reason,
                     LockSourceDisposition::RefusedBeforeUse,
                 )
             );
@@ -178,12 +178,25 @@ fn run_refused_source(label: &str, bytes: &[u8], sealed: bool) {
 
 #[test]
 fn an_unsealed_source_is_refused_as_invalid() {
-    run_refused_source("unsealed", &PIXELS, false);
+    run_refused_source(
+        "unsealed",
+        &PIXELS,
+        false,
+        LOCK_RESOURCE_REASON_INVALID_SOURCE,
+    );
+}
+
+/// The contract's `size_mismatch`: a wrong backing length, either way.
+const SIZE_MISMATCH: u16 = 4;
+
+#[test]
+fn a_short_source_is_refused_as_a_size_mismatch() {
+    run_refused_source("short", &PIXELS[..32], true, SIZE_MISMATCH);
 }
 
 #[test]
-fn a_short_source_is_refused_as_invalid() {
-    run_refused_source("short", &PIXELS[..32], true);
+fn a_long_source_is_refused_as_a_size_mismatch() {
+    run_refused_source("long", &[9; 128], true, SIZE_MISMATCH);
 }
 
 #[test]
