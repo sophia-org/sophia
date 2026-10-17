@@ -53,17 +53,28 @@ matrix remains open. Request reductions alone do not explain those costs.
 niltempus has accepted the [B2/B3 plan](../plans/nfe0blnb-queue-shell-submit-and-pixel-writes-within-existing-custody-bounds.md)
 and directed implementation. The contract now permits queued final-fragment
 submit and a four-write pixel window. The capture prerequisite is complete.
-B2 is signed locally as Rust `b8b7b55` and C `c0f0375`, pending review and adoption.
+B2 is signed locally as Rust `7722502` and C `574a1eb`, pending adoption.
 Rust's shell-client suite and strict Clippy pass; the full C suite passes.
 Independent tests hold and reverse both replies, preserve early Submitted after
 a failed record, reject incomplete-record retry and keep earlier C fragments
-sequential. Both startup peers pass the current export with metadata and content
-negotiation, on both oldest supported export `116075541` and current `feaf3cbc7`.
+sequential. Initial candidates `b8b7b55`/`c0f0375` passed startup exchanges with
+metadata and content negotiation on oldest supported export `116075541` and
+current `feaf3cbc7`. The review follow-ups passed the current export again.
 These are startup exchanges, not the entire export failure matrix. Logs are under
 `~/.local/state/sophia/development-evidence/t331-b2-20261017/`.
 The production export's incomplete/absent-staging and backpressure precedence
 fixture passes for both writer paths. Further compatibility fixtures, vendor
 adoption and B3 remain open. No B2 native performance result exists yet.
+
+The review follow-ups restore C's record-write ESTALE classification and preserve
+a complete successful submit reply on terminal failure in both SDKs, even when
+the record reply or journal event is missing. The ordinary AwaitSubmitted path
+uses the same terminal rule; live progress still waits for the journal and its
+covering ACK. Tests retain Unknown when no authoritative reply or valid event
+establishes custody, and malformed journal data still fails validation. C reports
+record ESTALE as a stale session; Rust retains its previous protocol-error
+category. API-PARITY records that difference and B2's C consumer rebuild
+requirement. Both SDK trees are clean at these signed follow-ups.
 
 Publication is blocked by the SSH agent refusing `id_crunch`; its socket matches
 `gpgconf --list-dirs agent-ssh-socket`. Commit signing works. Do not reset the
