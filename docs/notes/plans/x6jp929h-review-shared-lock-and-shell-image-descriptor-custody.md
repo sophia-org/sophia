@@ -39,18 +39,23 @@ C SDK provider test through real afid authentication, Hello, Source, Accepted
 and SourceReleased, retaining the received pixels across authority revocation.
 That test is not yet a passing qualification result.
 
-The latest lock audit found two remaining corrections: wrong sealed backing
-length must retain reason 4 rather than becoming invalid_source (10), and a
-dead worker must revoke live custody rather than strand validating offers.
-Codex owns the shared mapping/worker size distinction; Claude owns its lock
-reason mapping, worker-death handling and controls. Pending admission wait and
+The lock audit corrections are signed in `7f9c96917` and `bc667ecef`.
+Wrong sealed backing length retains reason 4 rather than invalid_source (10).
+Worker exit wakes its owner; a dead worker revokes live custody, is no longer
+polled, and refuses later offers with reason 9. All 34 lock image transport
+tests independently pass. The worker-failure controls inject the owner's
+failure transition; they do not prove an actual worker panic. Pending admission wait and
 post-admission validation have separate bounded deadlines; Source arrival never
 renews the latter. No contract relaxation is authorized by these fixes.
 
-Next are those corrections, protected SDK/export qualification, remaining
+Next are protected SDK/export qualification, remaining
 submitted-worker shutdown/cancellation controls, and matched sealed-versus-byte
-native panel/bulk evidence. Claude is surveying the frozen comparator and
-external integration seams read-only. No native capture has begun and no
+native panel/bulk evidence. Comparator `c1b5faa71` merges the reviewed SDK/runtime
+while retaining both byte and IPC controls: its native-session check and both
+device-hidden peer tests pass. `93fb5991e` also carries the worker corrections.
+The generic sealed peer and external source-labelled measurement tooling are
+being prepared; no new performance result follows from this merge.
+No native capture has begun and no
 installed desktop has changed. All four unchanged t331 +10% gates, per-request
 allocation attribution and journal-read pairing remain required; the earlier
 red panel result is permission to proceed, not a performance pass. DMA remains
