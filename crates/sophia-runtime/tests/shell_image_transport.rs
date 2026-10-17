@@ -258,6 +258,11 @@ fn submitted_source_cancel_waits_for_real_completion_and_fences_late_source() {
     run_image_epoch(false, false, true, 4);
 }
 
+#[test]
+fn submitted_source_expiry_keeps_its_cause_after_wire_cancellation() {
+    run_image_epoch(false, false, true, 5);
+}
+
 fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, coordinated: u8) {
     let epoch = if legacy_successor { 2 } else { 1 };
     let directory = std::env::temp_dir().join(format!(
@@ -424,12 +429,13 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
         ack(&mut peer, &submitted);
         peer.clear();
         if admit_source {
-            if coordinated == 4 {
+            if matches!(coordinated, 4 | 5) {
                 cancellation::submitted_source(
                     &mut peer,
                     &socket,
                     await_submission,
                     allow_completion,
+                    coordinated == 5,
                 );
             } else if coordinated == 3 {
                 let admitted = peer.next_event();
@@ -503,7 +509,7 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
     let mut validation = SealedValidationWorker::new(4, 4 << 20).unwrap();
     let mut stored = false;
     let mut source_submitted = Some(source_submitted);
-    let mut collect = coordinated != 4;
+    let mut collect = !matches!(coordinated, 4 | 5);
     let mut image_owner = ShellSealedImageOwner::new(4 << 20, 65536).unwrap();
     while !worker.is_finished() {
         assert!(Instant::now() < deadline, "image wire stalled");
@@ -590,7 +596,15 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
                     "Source is take-once"
                 );
                 jobs.submit(&mut validation, job, source).unwrap();
-                if coordinated == 4 {
+                if coordinated == 5 {
+                    // Advance only the supplied owner clock to the admission
+                    // deadline. Collection remains gated, even if scanning won.
+                    let expiry = jobs.deadline().unwrap();
+                    jobs.expire(&mut epochs, &mut validation, expiry, 0)
+                        .unwrap();
+                    assert!(jobs.deadline().is_none());
+                }
+                if matches!(coordinated, 4 | 5) {
                     source_submitted.take().unwrap().send(()).unwrap();
                 }
             }
@@ -606,9 +620,16 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
                 assert!(jobs.receive(completion).is_ok());
             }
             while let Some(settlement) = jobs.reconcile(&mut epochs, 0) {
-                if coordinated == 4 {
+                if matches!(coordinated, 4 | 5) {
                     assert!(settlement.outcome.is_err());
-                    assert_eq!(settlement.stopped, Some(ContentReason::Cancelled));
+                    assert_eq!(
+                        settlement.stopped,
+                        Some(if coordinated == 5 {
+                            ContentReason::Timeout
+                        } else {
+                            ContentReason::Cancelled
+                        })
+                    );
                     assert_eq!(validation.pending(), 0);
                     transport.release_sealed_image_source(&settlement).unwrap();
                     continue;
@@ -642,7 +663,7 @@ fn run_image_epoch(bad_hello: bool, legacy_successor: bool, admit_source: bool, 
         assert_eq!(epochs.accounting().retired_epochs, 0);
         return;
     }
-    assert_eq!(stored, admit_source && !matches!(coordinated, 2 | 4));
+    assert_eq!(stored, admit_source && !matches!(coordinated, 2 | 4 | 5));
     assert_eq!(jobs.pending(), 0);
     assert_eq!(image_owner.pending(), 0);
     if !bad_hello && !legacy_successor {

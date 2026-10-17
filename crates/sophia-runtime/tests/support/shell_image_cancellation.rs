@@ -8,7 +8,7 @@ pub(super) fn cancelled_source(peer: &mut raw::Peer) {
     let metadata = ShellImageMetadata::decode(record.body).unwrap();
     ack(peer, &admitted);
     cancel(peer, &metadata);
-    settled(peer);
+    settled(peer, false);
 }
 
 fn cancel(peer: &mut raw::Peer, metadata: &ShellImageMetadata) {
@@ -37,7 +37,7 @@ fn cancel(peer: &mut raw::Peer, metadata: &ShellImageMetadata) {
     peer.submit_acknowledged(&cancel, 3);
 }
 
-fn settled(peer: &mut raw::Peer) {
+fn settled(peer: &mut raw::Peer, expired: bool) {
     let (mut status, mut release) = (false, false);
     for _ in 0..2 {
         let bytes = peer.next_event();
@@ -46,10 +46,15 @@ fn settled(peer: &mut raw::Peer) {
         match record.header.kind {
             ShellFileKind::ResourceStatus => {
                 assert!(!status);
-                assert!(
-                    matches!(decode_shell_file_resource_status(&bytes).unwrap().record,
-                    ShellContentRecord::ResourceStatus(value) if value.status == 4)
-                );
+                let ShellContentRecord::ResourceStatus(value) =
+                    decode_shell_file_resource_status(&bytes).unwrap().record
+                else {
+                    unreachable!()
+                };
+                assert_eq!(value.status, if expired { 3 } else { 4 });
+                if expired {
+                    assert_eq!(value.reason, ContentReason::Timeout as u16);
+                }
                 status = true;
             }
             ShellFileKind::SourceReleased => {
@@ -58,7 +63,11 @@ fn settled(peer: &mut raw::Peer) {
                     ShellSourceReleased::decode(record.body)
                         .unwrap()
                         .disposition,
-                    ShellSourceDisposition::CancelledBeforeImport
+                    if expired {
+                        ShellSourceDisposition::RefusedBeforeUse
+                    } else {
+                        ShellSourceDisposition::CancelledBeforeImport
+                    }
                 );
                 release = true;
             }
@@ -74,6 +83,7 @@ pub(super) fn submitted_source(
     socket: &std::os::fd::OwnedFd,
     submitted: std::sync::mpsc::Receiver<()>,
     collect: std::sync::mpsc::Sender<()>,
+    expired: bool,
 ) {
     use rustix::fs::{MemfdFlags, SealFlags, fcntl_add_seals, memfd_create};
     let admitted = peer.next_event();
@@ -115,7 +125,7 @@ pub(super) fn submitted_source(
     // withholds collection, so cancellation cannot invent its completion.
     peer.no_event();
     collect.send(()).unwrap();
-    settled(peer);
+    settled(peer, expired);
     let late = std::fs::File::open("/dev/null").unwrap();
     send(socket, &bytes, &late);
     peer.no_event();
