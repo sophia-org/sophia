@@ -19,21 +19,51 @@ Production `29b64531c` implements the approved reusable writer (`ee22309ba`) and
 imports signed Rust SDK `cab32bf` and C SDK `71582a5`. Both source branches and
 Sophia master are pushed. The [decision](../decisions/7mls2e2q-reuse-a-shell-transaction-writer-without-changing-custody.md)
 and [t331 plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#approved-reusable-writer-and-cumulative-ack-slice--october-17)
-remain authoritative. No desktop installation or native measurement has run.
+remain authoritative. No desktop installation has run.
 
-Next capture the reconciled baseline at comparator `363e06998`: merge `10d25e680`
+The reconciled baseline captured all eight arms at comparator `363e06998`: merge `10d25e680`
 carries production `116075541` and its existing SDK optimizations; the later
-commit adds per-arm diagnostic output only. Keep this checkout on that revision
-until its baseline capture finishes. Then carry the implementation onto the
+commit adds per-arm diagnostic output only. Offline replay reproduces all 8,000
+frame joins and the cost reports. The two bulk-allocation arms overlap reported
+reviewer activity and remain provisional. Next add the held-ACK Rust regression
+and C negotiation-probe guard from review, carry the implementation onto the
 comparator, compare request ledgers, and run fresh matched CPU/allocation pilots.
 The prepared campaign lives under
 `~/.local/state/sophia/development-evidence/t331-reuse-20261017/native-baseline`.
-Attended readiness and a fresh quiet window are still required.
+Any further native capture requires attended readiness and a fresh quiet window.
 
 CPU-20 remains superseded preparation, with no capture. Cost-15 and perf-18 are
 historical evidence, not qualification of this candidate. No quiet hold is active.
 Neither the request reduction nor buffer reuse establishes CPU or allocation
 savings; the unchanged +10% gate and full matrix remain open.
+
+## Reconciled native baseline — October 17
+
+The eight-arm baseline uses comparator `363e06998`, Rust SDK `f1cd924`, and
+integration `fd2cb6c`. Each arm presented all 1,000 offered frames at 60 Hz.
+Independent `collect`, `join` and `cost-metrics` replay reproduces the saved
+frame joins and cost reports. Evidence and replay are under
+`~/.local/state/sophia/development-evidence/t331-reuse-20261017/native-baseline`.
+
+| Workload | 9P CPU ms/MiB | IPC CPU ms/MiB | 9P Rust alloc/realloc per frame | IPC Rust alloc/realloc per frame |
+| --- | --- | --- | --- | --- |
+| Panel | 10.405274–10.418833 | 7.529965–7.541559 | 2,082–2,086 | 1,142–1,144 |
+| Panel + 4 MiB | 1.697965–1.698256 | 1.375569–1.375945 | 6,079–6,081 (provisional) | 3,386–3,388 (provisional) |
+
+CPU comes from the CPU-only arms; allocations come from separate Rust-global
+arms. CPU covers all threads in Session and the peer, including foreign code;
+allocations cover their Rust global allocators only. Other processes are excluded.
+These are conservative measurement bounds, not confidence intervals across runs.
+The baseline predates reusable writers and ACK batching; it cannot establish
+their effect or qualify the candidate.
+
+Claude's review pane reported read-only searches and git reads at
+11:56:53–11:58:58 UTC during the requested hold. Approximate realtime mapping
+places the bulk-allocation intervals at 11:57:37–11:57:54 and
+11:58:42–11:58:59, so both remain provisional, with all samples retained.
+The CPU arms and panel-allocation pair ended before that activity. Muse reports
+no activity. The quiet hold is released. See `quiet-window.txt` and
+`offline-replay/summary.json` for provenance and timing limits.
 
 ## Implemented writer and ACK slice — October 17
 
