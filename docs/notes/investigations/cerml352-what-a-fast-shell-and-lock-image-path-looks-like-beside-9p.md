@@ -26,9 +26,13 @@ remains proposed, and the choices named at the end are the owner's.
 The measurements are the pilot's. A Session pass costs about 20 microseconds
 and 40 allocations, and a 4 MiB image on the file wire costs about 69 pixel
 writes, each of which the server reads in its own turn because the connection
-read budget is one message per turn for fairness. Both wires copy every pixel
-twice, once into the kernel on send and once out on receive, and both pay the
-per-pixel premultiplied-alpha check on arrival. The bar's frame has three
+read budget is one message per turn for fairness. On both wires every pixel
+byte crosses a Unix socket, which by mechanism means a kernel copy on send and
+another on receive; the pilot did not attribute cost to those copies
+separately. Both wires pay the per-pixel premultiplied-alpha check on arrival.
+After the B3 window the client waits on about a quarter of its pixel writes
+rather than on each one, while the server still spends one read turn per
+write, so server passes and client waits are different counts. The bar's frame has three
 pixel writes, so its cost is pass count and per-request allocation rather
 than transport.
 
@@ -88,7 +92,7 @@ The costs separate into three problems that the week's work had treated as
 one. How many passes a frame costs is wire shape, and the byte path is near
 its floor after transaction reuse and the queued writes. What a pass costs is
 the Session loop, which is t289. How many pixel bytes arrive and get checked
-is validation plus two socket copies, and no transport change touches the
+is validation plus the socket crossings, and no transport change touches the
 validation half.
 
 9P describes files and copies bytes. It fits everything in the shell and lock
@@ -107,48 +111,57 @@ choices marked.
 ```
              SHELL COMPONENT / LOCK PROVIDER (supervised launch)
  ┌────────────────────────────────────────────────────────────────────────┐
- │ inherited at launch: 9P socket, endpoint dir, supervisor evidence,      │
- │ [OPEN B] shared CPU window (memfd from Sophia, mapped by both sides)    │
+ │ inherited at launch: 9P socket, endpoint dir, supervisor evidence,     │
+ │ [OPEN B] shared CPU window (memfd from Sophia, mapped by both sides)   │
  │                                                                        │
- │ CPU render ──► [A] fresh sealed memfd per image                         │
- │             or [B] slot in the launch window, named by offset+gen       │
- │ GPU render ──► GBM buffer from a pool of 2-3, reused every frame        │
+ │ CPU render ──► [A] fresh sealed memfd per image                        │
+ │             or [B] slot in the launch window, named by offset+gen      │
+ │ GPU render ──► GBM buffer from a pool of 2-3, reused every frame       │
  └───────┬──────────────────────────────────────────────┬─────────────────┘
          │ 9P2000.L: all control, custody, events       │ SEQPACKET: descriptors
          │ (unchanged from the draft)                   │ only
          ▼                                              ▼
- ┌───────────────────────────────────────┐  ┌───────────────────────────────┐
- │ role root, per connection epoch       │  │ image.sock                    │
- │  image-channel / image-limits /       │  │  Hello  once per connection   │
- │  image-formats  (constraints before   │  │  [A] one sealed memfd per     │
- │  allocation, as sysmem does)          │  │      image, as drafted        │
- │                                       │  │  DMA-BUF: register a pool     │
- │  ChannelReady  ──► carries N credits  │  │      buffer once (phase 2)    │
- │  BufferRegistered ◄── new object      │  │                               │
- │  Present(buffer id, acquire point)    │  └──────────────┬────────────────┘
- │    ◄── for registered pool buffers    │                 │
- │  ResourceStatus / release point       │                 │
- │  SourceReleased  (exactly one per     │                 │
- │                   offer, as drafted)  │                 │
- └──────────────────┬────────────────────┘                 │
+ ┌───────────────────────────────────────┐   ┌───────────────────────────────┐
+ │ role root, per connection epoch       │   │ image.sock                    │
+ │  image-channel / image-limits /       │   │  Hello  once per connection   │
+ │  image-formats  (constraints before   │   │  [A] one sealed memfd per     │
+ │  allocation, as sysmem does)          │   │      image, as drafted        │
+ │                                       │   │  DMA-BUF: register a pool     │
+ │  ImageBegin ──► ImageAdmitted, per    │   │      buffer once (phase 2)    │
+ │    image, as drafted (grant check,    │   │                               │
+ │    bytes, jobs, two journal slots)    │   └───────────────────────────────┘
+ │  [OPEN] slot credits at ChannelReady  │                   │
+ │    for the fixed-size part only       │                   │
+ │  BufferRegistered ◄── new object,     │                   │
+ │    DMA-BUF pool buffers (phase 2)     │                   │
+ │  Present(buffer id, acquire point)    │                   │
+ │  ResourceStatus / release point       │                   │
+ │  SourceReleased  (exactly one per     │                   │
+ │                   offer, as drafted)  │                   │
+ └───────────────────────────────────────┘                   │
                     ▼                                      ▼
  ┌────────────────────────────────────────────────────────────────────────┐
- │ SOPHIA SESSION                                                         │
- │  admission: credits replace the Begin→Admitted round trip (≤4 live)    │
- │  registration: seal check, size check, map read-only, GPU import once  │
- │     sealed memfd ──udmabuf──► GPU image     dma-buf ──import──► GPU    │
+ │  SOPHIA SESSION                                                        │
+ │  admission: per image, as drafted; a credit could pre-reserve only the │
+ │     offer slot and journal slots, never bytes, jobs or the grant check │
+ │  sealed [A]: seal check, size check, map read-only, validate once      │
+ │     sealed memfd ──udmabuf──► GPU image (an import, not a copy)        │
  │     [GAP] udmabuf import not in draft; today a CPU texture upload      │
- │  per frame: wait acquire fence, sample, signal release fence           │
+ │  DMA-BUF, as drafted: capture job copies the client buffer into a      │
+ │     renderer-owned immutable image; SourceReleased when capture is done│
+ │     per present: wait acquire fence, capture, signal release fence     │
  │     [GAP] fences forbidden in phase 1; producer must finish on CPU     │
- │  validation: once for immutable sources;                               │
- │     [B] window slots are mutable → validate per present or copy once   │
+ │     [NOT PROPOSED] sampling the client buffer directly at composite    │
+ │       time would be a separate custody change, not an optimisation     │
+ │  [B] window slots are mutable → validate per present or copy once      │
  │  release: SourceReleased per offer; pool buffers stay registered       │
  └────────────────────────────────────────────────────────────────────────┘
 
- STEADY STATE PER FRAME     9P: one record in, one status out (about 2 passes)
-                            side socket: nothing for a registered pool buffer,
-                                         one 200-byte packet + 1 fd for [A]
-                            kernel: zero pixel copies
+ STEADY STATE PER IMAGE    9P: Begin, Admitted, Present or Source, status,
+                           release (a handful of server passes on the model)
+                           side socket: nothing for a registered pool buffer,
+                                        one 200-byte packet + 1 fd for [A]
+                           kernel: no pixel bytes on any socket
 ```
 
 What the diagram keeps from the draft: the supervised launch, the
@@ -157,16 +170,25 @@ bounded to four live offers, the journal, exactly one release per admitted
 offer, byte fallback, and the rule that a packet must name something 9P
 already admitted.
 
-What it adds. Credits issued at ChannelReady replace the per-image reserve
-and admit round trip; the bound is the same and one pass of latency goes away.
-A registration object and a present-by-identifier record let a DMA-BUF pool
-buffer cross the side socket once and be shown many times, which is the
-wl_buffer, BufferQueue and image-pipe pattern; it is deferred to the DMA-BUF
-phase, because nothing measured yet shows descriptor passing itself to be a
-cost at four outstanding offers. Acquire and release fences replace the
-producer-completed rule once t289's completion seam exists. Importing a sealed
-memfd into the GPU through udmabuf removes the compositor's texture copy; the
-kernel's precondition is the shrink seal, which the draft already requires.
+What it adds. Credits issued at ChannelReady can pre-reserve only what is
+fixed in size, the offer slot and its two journal slots. Bytes, validation or
+capture jobs, and the grant check against current permission, topology and
+format must still be admitted per image, so ImageBegin and ImageAdmitted stay
+as drafted; the latency available is pipelining, a client holding admitted
+offers ahead of the images it has not yet produced, not the removal of a
+round trip. A registration object and a present-by-identifier record let a
+DMA-BUF pool buffer cross the side socket once and be presented many times,
+which is the wl_buffer, BufferQueue and image-pipe pattern; it is deferred to
+the DMA-BUF phase, because nothing measured yet shows descriptor passing
+itself to be a cost at four outstanding offers. The drafted custody stays
+with it: each present is a capture job that copies the client's buffer into a
+renderer-owned immutable image, and SourceReleased follows the capture.
+Sampling the client's buffer directly at composite time would be a separate
+custody change and is not proposed here. Acquire and release fences replace
+the producer-completed rule once t289's completion seam exists. Importing a
+sealed memfd into the GPU through udmabuf removes the compositor's texture
+copy for CPU content; the kernel's precondition is the shrink seal, which the
+draft already requires.
 
 What it does not change, after the second review. For sealed memory a
 descriptor per image is inherent, not an inefficiency: seals are whole-file
@@ -206,12 +228,15 @@ kind 1 by its guarantees, sealed shared memory that cannot change, rather than
 by the name memfd.
 
 On performance the honest claim is a model, not a result. Removing about 68
-pixel passes per 4 MiB image is worth roughly 1.4 ms and 2,700 allocations on
-the pilot's per-pass costs, which would put the bulk arm below the IPC
-baseline rather than within 10% of it, and the client stops waiting on 68
-round trips. The bar gains three passes out of about eighteen and nothing
-else; its allocation gate stays unreachable by any transport. The new floor is
-the validation read and, until udmabuf import exists, the texture upload.
+server read turns per 4 MiB image is worth roughly 1.4 ms and 2,700
+allocations on the pilot's per-pass costs, which would put the bulk arm below
+the IPC baseline rather than within 10% of it; the client's dependent waits,
+already cut to about a quarter of the writes by the B3 window, go with them.
+The bar gains three passes out of about eighteen and nothing else. On the pass
+model its allocation gate needs fewer passes than the IPC path itself takes,
+which is an inference from measured per-pass deltas, not a proved bound, and
+the gates themselves are unchanged. The new floor is the validation read and,
+until udmabuf import exists, the texture upload.
 
 ## Validation and remaining work
 
@@ -230,7 +255,7 @@ memory on the Session side, fences after t289, a minimum kernel, and a
 precedent paragraph using the corrected virtio-fs wording with passthrough as
 a considered alternative. Two decisions are the owner's and block nothing yet:
 A alone or A for GPU content with B for CPU content, and the panel allocation
-gate in t331, which no transport can satisfy.
+gate in t331, which on the pass model no transport satisfies.
 
 ## Connections
 
