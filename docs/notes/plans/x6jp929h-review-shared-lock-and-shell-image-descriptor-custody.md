@@ -474,6 +474,19 @@ ignored). Four legacy test helpers were corrected for the store-aware drain
 signature introduced in `8b08e3f71`; they had not been built by that checkpoint's
 integration-only rerun. The reservations are a prerequisite, not Source admission.
 
+Claude's custody review found two completion hazards before Source activation:
+retired epochs had no resource-completion route, and an early grant/clock error
+could drop a returned mapping while retaining its charge. The registry now
+routes completion to the exact active or retired grant. The store borrows an
+optional result and takes it only once the transfer is identified; callers keep
+the result on an early error. Tests cover a real worker completion after
+disconnect, clock-error retry, and reconnect cycles beyond the retired-epoch
+limit. The worker can reserve its credit and deadline before ImageAdmitted,
+then accept exactly one Source against that reservation. Unsent credits can be
+returned; submitted credits survive cancellation until completion is collected.
+The eight sealed-store and seven worker tests pass, alongside the runtime library
+suite. Source receipt and admission wiring still remain.
+
 First add all seven image kinds and exact body/row codecs independently in C
 and Rust, with role-specific schema tests, literal vectors and negative cases.
 The Go oracle must gain the same revision-aware ResourceStatus rule. Rust's

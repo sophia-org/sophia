@@ -536,6 +536,11 @@ fn supply_sealed(epochs: &mut ContentEpochRegistry) {
         )
         .unwrap();
     store
-        .complete_sealed(grant, resource, Ok(validation.finish().unwrap()), 0)
+        .complete_sealed(
+            grant,
+            resource,
+            &mut Some(Ok(validation.finish().unwrap())),
+            0,
+        )
         .unwrap();
 }

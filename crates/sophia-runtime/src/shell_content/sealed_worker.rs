@@ -31,6 +31,14 @@ struct Job {
     cancelled: Arc<AtomicBool>,
 }
 
+struct Pending {
+    id: u64,
+    bytes: usize,
+    deadline: Instant,
+    cancelled: Arc<AtomicBool>,
+    submitted: bool,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SealedSubmitFailure {
     Capacity,
@@ -44,7 +52,7 @@ pub enum SealedSubmitFailure {
 pub struct SealedValidationWorker {
     sender: mpsc::SyncSender<Job>,
     completed: mpsc::Receiver<SealedValidationCompletion>,
-    pending: [Option<(u64, Arc<AtomicBool>)>; 4],
+    pending: [Option<Pending>; 4],
     next_id: u64,
     max_jobs: usize,
     max_bytes: usize,
@@ -112,33 +120,75 @@ impl SealedValidationWorker {
         bytes: usize,
         deadline: Instant,
     ) -> Result<u64, (SealedSubmitFailure, OwnedFd)> {
+        let id = match self.reserve(bytes, deadline) {
+            Ok(id) => id,
+            Err(error) => return Err((error, source)),
+        };
+        match self.submit_reserved(id, source) {
+            Ok(()) => Ok(id),
+            Err(error) => {
+                self.release_reserved(id);
+                Err(error)
+            }
+        }
+    }
+
+    /// Reserve a validation credit before ImageAdmitted. No FD is needed yet;
+    /// the original byte bound and absolute deadline are fixed here. The owner
+    /// must either submit the source or release this unsent reservation.
+    pub fn reserve(&mut self, bytes: usize, deadline: Instant) -> Result<u64, SealedSubmitFailure> {
         if bytes == 0
             || !bytes.is_multiple_of(4)
             || bytes > self.max_bytes
             || self.next_id == u64::MAX
         {
-            return Err((SealedSubmitFailure::Invalid, source));
+            return Err(SealedSubmitFailure::Invalid);
         }
         let Some(slot) = self.pending[..self.max_jobs]
             .iter_mut()
             .find(|slot| slot.is_none())
         else {
-            return Err((SealedSubmitFailure::Capacity, source));
+            return Err(SealedSubmitFailure::Capacity);
         };
-        let cancelled = Arc::new(AtomicBool::new(false));
-        let job = Job {
-            id: self.next_id,
-            source,
+        let id = self.next_id;
+        self.next_id += 1;
+        *slot = Some(Pending {
+            id,
             bytes,
             deadline,
-            cancelled: cancelled.clone(),
+            cancelled: Arc::new(AtomicBool::new(false)),
+            submitted: false,
+        });
+        Ok(id)
+    }
+
+    /// Transfers the Source once, against its already held credit. Refusal
+    /// returns the descriptor and leaves the reservation for the owner to
+    /// reconcile. Arrival and retries cannot extend its original deadline.
+    pub fn submit_reserved(
+        &mut self,
+        id: u64,
+        source: OwnedFd,
+    ) -> Result<(), (SealedSubmitFailure, OwnedFd)> {
+        let Some(pending) = self
+            .pending
+            .iter_mut()
+            .flatten()
+            .find(|pending| pending.id == id && !pending.submitted)
+        else {
+            return Err((SealedSubmitFailure::Invalid, source));
+        };
+        let job = Job {
+            id,
+            source,
+            bytes: pending.bytes,
+            deadline: pending.deadline,
+            cancelled: pending.cancelled.clone(),
         };
         match self.sender.try_send(job) {
             Ok(()) => {
-                let id = self.next_id;
-                self.next_id += 1;
-                *slot = Some((id, cancelled));
-                Ok(id)
+                pending.submitted = true;
+                Ok(())
             }
             Err(mpsc::TrySendError::Full(job)) => Err((SealedSubmitFailure::Capacity, job.source)),
             Err(mpsc::TrySendError::Disconnected(job)) => {
@@ -147,9 +197,27 @@ impl SealedValidationWorker {
         }
     }
 
+    /// No completion is owed for an unsent source. Once submitted, only taking
+    /// its completion can release the credit, including after cancellation.
+    pub fn release_reserved(&mut self, id: u64) -> bool {
+        let Some(slot) = self.pending.iter_mut().find(|slot| {
+            slot.as_ref()
+                .is_some_and(|pending| pending.id == id && !pending.submitted)
+        }) else {
+            return false;
+        };
+        *slot = None;
+        true
+    }
+
     pub fn cancel(&self, job: u64) -> bool {
-        if let Some((_, cancelled)) = self.pending.iter().flatten().find(|(id, _)| *id == job) {
-            cancelled.store(true, Ordering::Release);
+        if let Some(pending) = self
+            .pending
+            .iter()
+            .flatten()
+            .find(|pending| pending.id == job)
+        {
+            pending.cancelled.store(true, Ordering::Release);
             true
         } else {
             false
@@ -172,7 +240,11 @@ impl SealedValidationWorker {
                 let slot = self
                     .pending
                     .iter_mut()
-                    .find(|slot| slot.as_ref().is_some_and(|(id, _)| *id == completion.job))
+                    .find(|slot| {
+                        slot.as_ref().is_some_and(|pending| {
+                            pending.id == completion.job && pending.submitted
+                        })
+                    })
                     .expect("worker returns only an outstanding job");
                 *slot = None;
                 Ok(Some(completion))
@@ -190,8 +262,8 @@ impl Drop for SealedValidationWorker {
     fn drop(&mut self) {
         // Never join on the owner thread. Shutdown cancels bounded units and
         // drops both queues; the worker closes any abandoned source itself.
-        for (_, cancelled) in self.pending.iter().flatten() {
-            cancelled.store(true, Ordering::Release);
+        for pending in self.pending.iter().flatten() {
+            pending.cancelled.store(true, Ordering::Release);
         }
     }
 }

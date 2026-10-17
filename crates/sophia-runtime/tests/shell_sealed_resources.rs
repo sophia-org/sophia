@@ -53,6 +53,98 @@ fn validated() -> ValidatedSealedPixels {
 }
 
 #[test]
+fn early_completion_errors_return_custody_for_the_exact_owner_to_retry() {
+    let mut store = owner();
+    let begin = description(1);
+    store.begin_sealed(tx(), begin.clone(), 10).unwrap();
+    let mut result = Some(Ok(validated()));
+    let address = result.as_ref().unwrap().as_ref().unwrap().bytes().as_ptr();
+    let wrong = ContentGrant {
+        connection_epoch: 99,
+        ..grant()
+    };
+    for (callback_grant, resource, now, error) in [
+        (wrong, begin.resource, 10, ContentStoreError::Stale),
+        (
+            grant(),
+            begin.resource,
+            9,
+            ContentStoreError::ClockRegression,
+        ),
+        (
+            grant(),
+            description(2).resource,
+            10,
+            ContentStoreError::Stale,
+        ),
+    ] {
+        assert_eq!(
+            store.complete_sealed(callback_grant, resource, &mut result, now),
+            Err(error)
+        );
+        assert_eq!(
+            result.as_ref().unwrap().as_ref().unwrap().bytes().as_ptr(),
+            address
+        );
+        assert_eq!(store.usage().backing, 8);
+        assert!(store.pending_event().is_none());
+    }
+    store
+        .complete_sealed(grant(), begin.resource, &mut result, 11)
+        .unwrap();
+    assert!(result.is_none());
+    assert_eq!(
+        store
+            .lease(grant(), begin.resource)
+            .unwrap()
+            .bytes()
+            .as_ptr(),
+        address
+    );
+}
+
+#[test]
+fn disconnected_registry_epochs_reconcile_and_release_their_worker_reservations() {
+    let mut registry = ContentEpochRegistry::new(64 << 20).unwrap();
+    // Repeated reconnects must not accumulate completed but unreachable epochs.
+    for epoch in 1..=ContentEpochRegistry::MAX_RETAINED_EPOCHS + 1 {
+        let grant = ContentGrant {
+            connection_epoch: epoch as u64,
+            content_grant_epoch: epoch as u64,
+        };
+        registry.admit(ContentLimits::prototype(grant)).unwrap();
+        let begin = ContentResourceBegin {
+            grant,
+            ..description(1)
+        };
+        registry
+            .resources_mut(grant)
+            .unwrap()
+            .begin_sealed(tx(), begin.clone(), 10)
+            .unwrap();
+        assert!(registry.disconnect(grant));
+        assert!(registry.resources_mut(grant).is_none());
+        assert_eq!(registry.retired_backing_bytes(), 8);
+        assert_eq!(registry.accounting().retired_epochs, 1);
+        let mut result = Some(Ok(validated()));
+        assert_eq!(
+            registry.complete_sealed(grant, begin.resource, &mut result, 9),
+            Err(ContentStoreError::ClockRegression)
+        );
+        assert!(result.is_some());
+        assert_eq!(registry.retired_backing_bytes(), 8);
+        assert_eq!(
+            registry.complete_sealed(grant, begin.resource, &mut result, 11),
+            Err(ContentStoreError::Revoked)
+        );
+        assert!(result.is_none());
+        assert_eq!(registry.retired_backing_bytes(), 0);
+        assert_eq!(registry.accounting().retired_epochs, 0);
+        assert_eq!(registry.accounting().response_records, 0);
+    }
+}
+
+#[test]
 fn mapping_moves_without_copy_and_lives_through_every_retiring_lease() {
     let mut store = owner();
     let begin = description(1);
@@ -67,7 +159,7 @@ fn mapping_moves_without_copy_and_lives_through_every_retiring_lease() {
     let pixels = validated();
     let address = pixels.bytes().as_ptr();
     store
-        .complete_sealed(grant(), begin.resource, Ok(pixels), 1)
+        .complete_sealed(grant(), begin.resource, &mut Some(Ok(pixels)), 1)
         .unwrap();
     let lease = store.lease(grant(), begin.resource).unwrap();
     assert_eq!(
@@ -157,7 +249,7 @@ fn stopped_validation_keeps_credit_until_worker_returns() {
                 .complete_sealed(
                     grant(),
                     begin.resource,
-                    Ok(worker.join().unwrap()),
+                    &mut Some(Ok(worker.join().unwrap())),
                     if stop == 1 { 2000 } else { 1 }
                 )
                 .is_err()
@@ -214,7 +306,7 @@ fn byte_operations_cannot_complete_or_abort_a_sealed_worker() {
     assert_eq!(store.usage().backing, 8);
     assert!(store.take_event().is_none());
     store
-        .complete_sealed(grant(), begin.resource, Ok(validated()), 2)
+        .complete_sealed(grant(), begin.resource, &mut Some(Ok(validated())), 2)
         .unwrap();
     assert_eq!(store.usage().resident, 8);
 }
@@ -261,7 +353,7 @@ fn stopped_worker_holds_transfer_capacity_and_wrong_size_never_accepts() {
             .complete_sealed(
                 grant(),
                 description(1).resource,
-                Err(ContentStoreError::Malformed),
+                &mut Some(Err(ContentStoreError::Malformed)),
                 1
             )
             .is_err()
@@ -274,7 +366,7 @@ fn stopped_worker_holds_transfer_capacity_and_wrong_size_never_accepts() {
         store.complete_sealed(
             grant(),
             description(3).resource,
-            Ok(short.finish().unwrap()),
+            &mut Some(Ok(short.finish().unwrap())),
             2
         ),
         Err(ContentStoreError::Malformed)
@@ -289,7 +381,7 @@ fn dead_epoch_needs_no_live_journal_confirmation_but_keeps_leases() {
     let resource = description(1).resource;
     store.begin_sealed(tx(), description(1), 0).unwrap();
     store
-        .complete_sealed(grant(), resource, Ok(validated()), 1)
+        .complete_sealed(grant(), resource, &mut Some(Ok(validated())), 1)
         .unwrap();
     store.take_event().unwrap();
     let lease = store.lease(grant(), resource).unwrap();
@@ -305,7 +397,7 @@ fn dead_epoch_needs_no_live_journal_confirmation_but_keeps_leases() {
     let mut store = owner();
     store.begin_sealed(tx(), description(1), 0).unwrap();
     store
-        .complete_sealed(grant(), resource, Ok(validated()), 1)
+        .complete_sealed(grant(), resource, &mut Some(Ok(validated())), 1)
         .unwrap();
     store.take_event().unwrap();
     store

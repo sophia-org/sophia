@@ -413,14 +413,17 @@ impl ContentResourceStore {
     /// Reconciles a finished validation job (or an offer for which no job was
     /// launched). It must run even after cancellation or epoch revocation.
     /// Only this handoff lets a stopped transfer release its retained charge.
+    /// The result is taken only after the grant, clock and transfer match.
+    /// If it remains Some on return, the caller still owns the completion and
+    /// must retry or route it to its actual owner; an error alone is not custody.
     pub fn complete_sealed(
         &mut self,
         grant: ContentGrant,
         resource: ContentResourceId,
-        result: Result<super::ValidatedSealedPixels, ContentStoreError>,
+        result: &mut Option<Result<super::ValidatedSealedPixels, ContentStoreError>>,
         now: u64,
     ) -> Result<(), ContentStoreError> {
-        if grant != self.limits.grant {
+        if grant != self.limits.grant || result.is_none() {
             return Err(ContentStoreError::Stale);
         }
         self.expire(now)?;
@@ -431,6 +434,7 @@ impl ContentResourceStore {
         let TransferSource::Sealed { stopped } = transfer.source else {
             return Err(ContentStoreError::Malformed);
         };
+        let result = result.take().expect("completion checked");
         if let Some((reason, transaction)) = stopped {
             // The result and its mapping drop only after the worker returned.
             self.abort_finished(resource, reason, Some(transaction));
