@@ -15,8 +15,8 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
-Production `29b64531c` implements the approved reusable writer (`ee22309ba`) and
-imports signed Rust SDK `cab32bf` and C SDK `71582a5`. Both source branches and
+Production `a3c94bb86` implements the approved reusable writer (`ee22309ba`) and
+imports signed Rust SDK `9d56625` and C SDK `30b7c1f`. Both source branches and
 Sophia master are pushed. The [decision](../decisions/7mls2e2q-reuse-a-shell-transaction-writer-without-changing-custody.md)
 and [t331 plan](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#approved-reusable-writer-and-cumulative-ack-slice--october-17)
 remain authoritative. No desktop installation has run.
@@ -25,9 +25,11 @@ The reconciled baseline captured all eight arms at comparator `363e06998`: merge
 carries production `116075541` and its existing SDK optimizations; the later
 commit adds per-arm diagnostic output only. Offline replay reproduces all 8,000
 frame joins and the cost reports. The two bulk-allocation arms overlap reported
-reviewer activity and remain provisional. Next add the held-ACK Rust regression
-and C negotiation-probe guard from review, carry the implementation onto the
-comparator, compare request ledgers, and run fresh matched CPU/allocation pilots.
+reviewer activity and remain provisional. The held-ACK Rust regression and C
+negotiation-probe guard pass. Comparator `b67cb38d5` now carries the implementation;
+its deterministic ledger reduces panel requests by about 30% and bulk requests
+by about 16%, including startup. Next prepare fresh matched CPU/allocation pilots;
+recapture the provisional baseline bulk-allocation pair before relying on it.
 The prepared campaign lives under
 `~/.local/state/sophia/development-evidence/t331-reuse-20261017/native-baseline`.
 Any further native capture requires attended readiness and a fresh quiet window.
@@ -36,6 +38,38 @@ CPU-20 remains superseded preparation, with no capture. Cost-15 and perf-18 are
 historical evidence, not qualification of this candidate. No quiet hold is active.
 Neither the request reduction nor buffer reuse establishes CPU or allocation
 savings; the unchanged +10% gate and full matrix remain open.
+
+## SDK review follow-ups and candidate ledger — October 17
+
+Signed Rust `9d56625` proves that the next retained-fid record is outstanding
+while the covering ACK reply is withheld. Signed C `30b7c1f` waits for Negotiated
+before discovery even when the caller has already acknowledged Submitted; a
+scripted delayed-Negotiated test covers that ordering. C still waits for the
+confirmed ACK before sending its next record, as documented in both parity files.
+The full Rust shell suite, strict all-target shell Clippy, full C suite, both
+vendor gates, Sophia runtime tests and independent C/Rust startup checks against
+the production export pass. Production adoption is `a3c94bb86`.
+
+Signed comparator merge `b67cb38d5` keeps IPC isolated and passes the supplied-owner
+progress diagnostic on both wires. Across 64 frames, including startup/teardown:
+
+| Request | Panel before → after | Panel + 4 MiB before → after |
+| --- | --- | --- |
+| Walk | 391 → 72 | 647 → 136 |
+| Open | 391 → 72 | 647 → 136 |
+| Clunk | 388 → 68 | 644 → 132 |
+| Read | 648 → 648 | 1,032 → 1,031 |
+| Write | 1,541 → 1,477 | 6,725 → 6,661 |
+| Total | 3,359 → 2,337 | 9,695 → 8,096 |
+
+The retained writer removes steady transaction lifecycle requests, with its
+one-time discovery included. Write counts fall by 64 per workload; the single
+bulk-read difference is not evidence of a general read reduction. IPC continues
+to issue no 9P requests. This fixture has no Session owner loop or physical
+presentation: its zero owner-pass counter is not a native result. CPU and
+allocation savings remain unmeasured for this candidate. Evidence is under
+`~/.local/state/sophia/development-evidence/t331-reuse-20261017/sdk-followups`
+and `candidate-ledger`, with the comparison in `candidate-ledger/comparison.json`.
 
 ## Reconciled native baseline — October 17
 
