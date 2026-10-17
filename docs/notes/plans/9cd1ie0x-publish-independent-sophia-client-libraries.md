@@ -144,6 +144,24 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Sophia `ab5e8b7ba` is pushed. Release CLI and diagnostic artifacts are
+recorded, without binary copies, in
+`~/.local/state/sophia/broker-cost/ab5e8b7ba-20261017T024355Z/prepared.json`.
+No timing qualification has run. The diagnostic now adds five empty-work CPU
+observations before each CPU block, without subtraction or per-operation
+counter reads. Strict harness Clippy and the two-operation smoke pass; the smoke
+validated all 12 CPU observation sets and their absence from 12 latency blocks
+(`/tmp/sophia-broker-observer-smoke.nPLrh3/samples.jsonl`). This harness change
+requires a new benchmark artifact; the broker implementation is unchanged.
+
+A separate one-operation strace smoke completed through the protected processes
+(`/tmp/sophia-broker-trace-smoke.dsm0Kd`). Successful socket reads/writes can be
+observed, including split and resumed syscalls. They establish a measurable
+user/kernel boundary, not internal buffer-copy totals. Any parser must account
+for unfinished/resumed calls and short transfers, exclude startup or report it
+separately, and reject incomplete traces. Do not count requested lengths as
+transferred bytes or reinterpret this smoke as a performance result.
+
 Final SDK pins are signed and pushed: Rust
 `da0937fab757eec2cce37e38813761b875d84487` and C
 `3bead0580870db1005b76db4f55631500fbf553f`. Each differs from the tested

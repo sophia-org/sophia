@@ -275,6 +275,23 @@ fn paired_broker_descriptor_cost() {
                 peer.settle();
                 let candidates: Vec<_> = (2..samples as u64 + 2).map(candidate).collect();
                 let mut timings = vec![0u64; samples];
+                // Characterize counter-reading overhead without issuing work.
+                // Keep raw observations; subtraction would disguise noise as a
+                // precise correction. These probes never run in the latency pass.
+                let observer = (!latency).then(|| {
+                    (0..5)
+                        .map(|_| {
+                            let pids = [std::process::id(), peer.pid];
+                            let start = Instant::now();
+                            let before = cpu::snapshot(&pids).unwrap();
+                            let after = cpu::snapshot(&pids).unwrap();
+                            let elapsed = start.elapsed();
+                            let cost = cpu::interval(&before, &after, elapsed).unwrap();
+                            serde_json::json!({"wall_ns":elapsed.as_nanos().to_string(),
+                            "cpu_ns":cost["combined_cpu_ns"],"tasks":cost["tasks"]})
+                        })
+                        .collect::<Vec<_>>()
+                });
                 let before =
                     (!latency).then(|| cpu::snapshot(&[std::process::id(), peer.pid]).unwrap());
                 let started = Instant::now();
@@ -302,6 +319,7 @@ fn paired_broker_descriptor_cost() {
                     "pass":if latency {"latency"} else {"cpu"},"elapsed_ns":elapsed.as_nanos().to_string(),
                     "latency_ns":if latency {Some(timings)} else {None},
                     "cpu_ns":cost.as_ref().map(|c| &c["combined_cpu_ns"]),"cpu_tasks":cost.as_ref().map(|c| &c["tasks"]),
+                    "empty_work_observations":observer,
                     "copied_bytes":null,"qualification":false})).unwrap();
             }
         }
