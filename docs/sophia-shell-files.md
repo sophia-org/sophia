@@ -478,8 +478,9 @@ across client streaming.
 This amendment relies on the shell export's synchronous wire-order guarantee.
 It adds no capability bit, node, opcode, role revision or record format. Old
 clients may remain sequential. Both SDKs must pass the ordering, cursor and
-errno fixtures against exact supported old and new export revisions before
-adoption. Do not infer compatibility from transaction-reuse discovery. Retain
+errno fixtures against the oldest supported export revision and the current
+one before adoption. This amendment adds export fixtures, not server behavior.
+Do not infer compatibility from transaction-reuse discovery. Retain
 byte and work budgets and verify other connections' event and control service
 under a continuously full window; the credit ceiling alone proves no fairness.
 

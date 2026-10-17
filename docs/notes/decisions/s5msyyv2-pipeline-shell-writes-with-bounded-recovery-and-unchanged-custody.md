@@ -35,7 +35,8 @@ Implement two separately tested changes after the first slice's native capture:
 Rust gathers adjacent queued upload units. C pipelines fragments of its current
 borrowed upload buffer; its caller retains that buffer until upload completion.
 Neither change requires a new caller API or releases storage before replies
-are settled.
+are settled. C client storage changes its layout; rebuild consumers and foreign
+bindings with matching headers and libraries. This is not ABI compatibility.
 
 Four is an SDK sender ceiling documented by the shell profile, not a new server
 pending-request guarantee or negotiated ContentLimits field. Smaller existing

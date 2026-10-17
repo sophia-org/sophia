@@ -24,35 +24,71 @@ remain authoritative. No desktop installation has run.
 The reconciled baseline captured all eight arms at comparator `363e06998`: merge `10d25e680`
 carries production `116075541` and its existing SDK optimizations; the later
 commit adds per-arm diagnostic output only. Offline replay reproduces all 8,000
-frame joins and the cost reports. The two bulk-allocation arms overlap reported
-reviewer activity and remain provisional. The held-ACK Rust regression and C
+frame joins and the cost reports. The original two bulk-allocation arms overlap
+reviewer activity; clean recaptures now supply their comparison. The held-ACK Rust regression and C
 negotiation-probe guard pass. Comparator `b67cb38d5` now carries the implementation;
 its deterministic ledger reduces panel requests by about 30% and bulk requests
-by about 16%, including startup. Fourteen native arms are prepared: eight
+by about 16%, including startup. Fourteen native arms have now captured: eight
 candidate cost arms, four separate progress arms, and clean recaptures of the
-two provisional baseline bulk-allocation arms. Next obtain attended readiness
-and a fresh quiet window before running the installed `t331-check` on tty4.
+two provisional baseline bulk-allocation arms. Offline replay reproduces all
+14,000 exact presentation joins, journal/cost reports and console recovery.
 Comparator `9e3c741f8` adds separate owner-pass activity diagnostics; integration
 `4b16974` reads the new format while retaining historical captures. These are
 observations of work within passes, not inferred wake causes, and are excluded
-from CPU/allocation builds. All plans and arguments validate; no new native run
-has begun. The frozen campaign is under `t331-reuse-20261017/native-candidate`;
-keep comparator `9e3c741f8` and integration `4b16974` unchanged until capture.
-The detached `sophia-t331-baseline-recapture` checkout at `363e06998` supplies
-the baseline source identity and should be removed after its recapture.
+from CPU/allocation builds. The completed campaign is under
+`t331-reuse-20261017/native-candidate`; its exact comparator `9e3c741f8` and
+integration `4b16974` identities remain in the plans and reports. The temporary
+baseline checkout at `363e06998` was removed after its clean recapture.
 The completed baseline lives under
 `~/.local/state/sophia/development-evidence/t331-reuse-20261017/native-baseline`.
 Any further native capture requires attended readiness and a fresh quiet window.
 
 CPU-20 remains superseded preparation, with no capture. Cost-15 and perf-18 are
 historical evidence, not qualification of this candidate. No quiet hold is active.
-Neither the request reduction nor buffer reuse establishes CPU or allocation
-savings; the unchanged +10% gate and full matrix remain open.
+The pilot remains above the +10% ceiling: panel CPU +23.03–23.34% and allocations
++62.61–63.16%; bulk CPU +22.31–22.37% and allocations +68.48–68.62%. The full
+matrix remains open. Request reductions alone do not explain those costs.
 
 niltempus has accepted the [B2/B3 plan](../plans/nfe0blnb-queue-shell-submit-and-pixel-writes-within-existing-custody-bounds.md)
 and directed implementation. The contract now permits queued final-fragment
-submit and a four-write pixel window. SDK implementation still follows the
-prepared first-slice capture and its cost report; obtain attended readiness next.
+submit and a four-write pixel window. The capture prerequisite is complete.
+Next implement B2 in C and Rust, independently prove ordering and failed-record
+custody, then adopt signed pins through both vendor gates. B3 follows separately.
+
+## First-slice native pilot — October 17
+
+All fourteen arms captured 1,000 frames at 60 Hz, 1080p, scale 1, VRR off and
+idle host load. Offline collection, journal metrics and exact kernel joins
+reproduce the recorded reports. All console recovery checks pass. The three
+other agents report no crunch activity during the hold; `quiet-window.txt`
+records their confirmations and release. This is a pilot, not the full gate.
+
+| Workload / measure | Files | Paired IPC | Conservative excess |
+| --- | --- | --- | --- |
+| Panel CPU ms/MiB, ordinary allocator | 9.538267–9.548299 | 7.741651–7.752949 | 23.03–23.34% |
+| Panel allocations + reallocations/frame | 1,857–1,860 | 1,140–1,142 | 62.61–63.16% |
+| Panel + 4 MiB CPU ms/MiB, ordinary allocator | 1.687707–1.688053 | 1.379412–1.379823 | 22.31–22.37% |
+| Panel + 4 MiB allocations + reallocations/frame | 5,708–5,711 | 3,387–3,388 | 68.48–68.62% |
+
+The clean baseline bulk-allocation recaptures are 6,078–6,080 files and
+3,384–3,386 IPC operations/frame. The earlier panel baseline was 2,082–2,086
+files and 1,142–1,144 IPC. Candidate allocations are lower, but neither workload
+passes +10%. CPU and allocation figures above come from separate build modes;
+do not substitute allocation-instrumented CPU for the ordinary-allocator result.
+
+Separate progress runs bracket Session passes over the peer's full workload:
+22.615–22.672 per panel frame versus IPC 8.018–8.040; 102.297–102.389 per bulk
+frame versus 45.014–45.532. Files observes about five record, five submit and
+three pixel passes per panel frame; bulk observes eight, eight and 72. These
+categories overlap and are not wake causes. There is no matched native progress
+baseline for the first slice, so historical pass counts do not prove its exact
+pass saving. The results support testing B2/B3; they predict no automatic pass.
+
+Evidence: `~/.local/state/sophia/development-evidence/t331-reuse-20261017/native-candidate/`
+contains immutable run directories and `offline-replay/{summary,comparison}.json`.
+The latter records exact ratios and false +10% verdicts for both cost measures
+on both workloads. The disposable replay script is
+`/tmp/t331-replay-reuse-candidate.py`; reports and raw logs are the retained evidence.
 
 ## SDK review follow-ups and candidate ledger — October 17
 
@@ -88,7 +124,8 @@ one-time discovery included. Write counts fall by 64 per workload; the single
 bulk-read difference is not evidence of a general read reduction. IPC continues
 to issue no 9P requests. This fixture has no Session owner loop or physical
 presentation: its zero owner-pass counter is not a native result. CPU and
-allocation savings remain unmeasured for this candidate. Evidence is under
+allocation savings were unmeasured at that checkpoint; the native pilot above
+now records them. Evidence is under
 `~/.local/state/sophia/development-evidence/t331-reuse-20261017/sdk-followups`
 and `candidate-ledger`, with the comparison in `candidate-ledger/comparison.json`.
 
