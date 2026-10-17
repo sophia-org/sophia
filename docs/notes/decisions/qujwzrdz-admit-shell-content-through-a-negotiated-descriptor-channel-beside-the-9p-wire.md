@@ -59,7 +59,17 @@ The [shared design review](../plans/x6jp929h-review-shared-lock-and-shell-image-
 now proposes answers to the nine lock questions, including separate admission,
 immutable acceptance and source release. niltempus directed this review after
 the B2/B3 pilot on October 17. That direction admits planning, not implementation
-or acceptance of the proposed contract.
+or acceptance of the proposed contract at that time.
+
+On October 17 niltempus subsequently approved acceptance in principle, conditional
+on the lifecycle/custody fixture peers landing and passing review. This ADR stays
+proposed until that condition is met. The acceptance change must include both
+contracts' formats/topology amendments and the shell KDL ResourceStatus reason
+bound together, as recorded in the
+[owner direction](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md#owner-direction--october-17-2026).
+Codex then records acceptance and promotes t338. Its CPU data plane is sealed
+memfd per image; a launch-time shared window is not pursued without measured
+descriptor cost from t338/t339 justifying reconsideration.
 
 A shell component holding a content grant may open a second endpoint beside its
 9P connection, admitted the same way: the peer's pidfd must be the launched

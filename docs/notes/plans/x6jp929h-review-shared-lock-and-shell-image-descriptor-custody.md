@@ -36,6 +36,30 @@ Normative KDL, generated rows and production implementation follow acceptance;
 this note deliberately does not allocate production opcodes. The first review
 must resolve the lifecycle before making those layouts normative.
 
+## Owner direction — October 17, 2026
+
+niltempus approved this design and ADR qujwzrdz in principle, conditional on the
+independent lifecycle/custody fixture peers landing and passing review. Kernel
+and decoder fixtures alone do not meet that condition. Until then the ADR remains
+proposed and the layouts remain non-normative. Once the condition is met, Codex
+owns the acceptance edits, ADR status change and promotion of t338.
+
+The acceptance change must widen the topology-change wording in both the shell
+contract (output facts and candidate validation) and the lock contract (object
+publication, stale allocations and forwarded candidates), together with the
+shell KDL ResourceStatus reason bound. These changes must land together.
+
+For t338, CPU content uses a fresh sealed memfd per image. The launch-time shared
+window is not pursued unless t338/t339 measurements show per-image descriptor
+cost on high-rate CPU content warrants reopening it. This decision does not
+authorize mutable-source sampling or advance the DMA-BUF implementation.
+
+Muse will explore application surfaces in a separate note: registered pools,
+synchronization points, presentation feedback and scanout as a gated final phase.
+That work is exploratory, allocates no opcodes and changes no contract. Codex
+reviews and integrates the note and links it here when it lands; Claude reviews
+read-only.
+
 ## Recommended answers to the nine lock questions
 
 | Question | Recommendation |

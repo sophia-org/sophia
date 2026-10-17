@@ -15,6 +15,16 @@ mixed t331 readiness pilot. Maintenance does not establish a speed ranking.
 
 ## Current resumption
 
+October 17 owner direction: t331 remains open, waiting on t338, with the panel
+allocation result accepted as red and all four +10% gates unchanged. Rerun all
+four after t338; per-request allocation attribution and journal read pairing
+remain required. t337 acceptance is approved in principle, conditional on reviewed
+lifecycle/custody peers. The ADR remains proposed until that condition and the
+coordinated contract/KDL amendment are satisfied. t338 uses sealed memfd per image;
+the shared launch window is not pursued without measured descriptor cost. See the
+[owner direction](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md#owner-direction--october-17-2026)
+and [t331 criteria](../plans/mvbubiv9-reduce-shell-9p-allocation-overhead-against-the-paired-ipc-baseline.md#t331--reduce-shell-allocation-overhead).
+
 B3 validation is complete in signed Rust SDK `01474a9` and C SDK `5246f96`.
 The final fault tests cover terminal status with four outstanding writes, a stale
 head, partial transport output and cancellation with unissued chunks. Both SDK

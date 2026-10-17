@@ -19,6 +19,14 @@ engine optimization programme. Requested by niltempus on October 15.
 
 ### t331 — Reduce shell allocation overhead
 
+On October 17 niltempus accepted leaving the panel allocation result red while
+descriptor work proceeds. This is permission to proceed, not a passing result
+or a changed threshold. t331 remains open, waiting on t338; all four +10% gates
+(panel and bulk CPU/MiB and allocations/frame) must be rerun after t338 under
+the existing accounting method. Per-request allocation attribution and the
+journal-read-pairing investigation remain required t331 work and may proceed
+while it waits. The failed B2/B3 pilot remains the latest native evidence.
+
 The paired debug diagnostic records 821–851 allocation operations per frame
 on files versus 250–271 on IPC for its small bar workload. With the 4 MiB
 transfer probe enabled, the bounds are 21,498–21,538 versus 8,288–8,300.
