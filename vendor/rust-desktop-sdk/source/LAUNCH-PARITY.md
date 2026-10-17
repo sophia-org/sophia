@@ -32,7 +32,11 @@ relay reuse refusal after a request has settled but left a fid or partial input.
 Rust additionally drives reauthentication with caller time and one-byte
 budgets; its two-endpoint test covers both convenience and external-loop entry.
 The protected output peer uses the new Rust API and reauthenticates before
-negotiating the output role. Production-export results and exact SDK pins belong
+negotiating the output role. Both protected lock peers also reauthenticate
+before negotiation; C explicitly retires its quiescent clients before resetting
+their storage on the same descriptors. Paired lock replacement checks use a new
+supervised process and capability, with a fresh connection epoch and no replay.
+Production-export results and exact SDK pins belong
 in Sophia's owning t333 note, separately from these independent scripted peers.
 
 ## Bounds and implementation differences

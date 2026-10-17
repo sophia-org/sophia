@@ -5,8 +5,9 @@ does not receive secrets, check passwords or unlock the desktop. These clients
 have scripted-peer and paired production-export coverage, including protected
 idle revocation and revocation with an acknowledged upload prefix and queued,
 unissued tail. Mid-payload interruption is a separate raw-peer control.
-Fresh authorized replacement, SDK reauthentication and release-wide
-qualification remain under audit; see LOCK-PARITY.md.
+Protected SDK reauthentication and fresh authorized process replacement now
+have paired evidence. Release-wide qualification remains under audit; see
+LOCK-PARITY.md. Replacement does not replay the old provider's unfinished work.
 
 Rust starts with Connecting::direct for a supplied-admission socket, or
 Connecting::attached for the launch client's exact admitted root. C uses

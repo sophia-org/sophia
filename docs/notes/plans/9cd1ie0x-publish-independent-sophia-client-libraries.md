@@ -144,6 +144,35 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+The role/API release audit remains open against the full exits above. Signed
+Rust `30805b15afc20b0b1fd1ec19f6d9034fcdbeef1e` and C
+`8b323695a54fc06820787a181c7e8559d55abc87` are pushed and imported. Both pin
+checks pass, including the imported Rust workspace tests. Shell startup
+is now caller-driven in both SDKs; WM/lock maps and C's role inventory have
+been reconciled. C lock handoff now rejects extra fids and partial input.
+
+Protected lock reauthentication and explicit provider replacement now pass
+independently in C and Rust. Both peers authenticate twice before negotiation.
+The replacement scenario revokes epoch 7 with an unfinished upload, removes its
+admission, then authorizes a new process against the same service on epoch 8.
+No old resource or candidate reaches Session. All three `external_sdk_lock`
+tests pass with each peer; strict peer/fixture Clippy passes. This proves
+explicit process replacement, not automatic reconnect, mid-payload interruption
+or physical locking. Peer SHA-256: Rust
+`0e84ba5a6b458d26b255b57866538b16d8e570fdb855f170c2f6ef322da36918`, C
+`797016e6a4a6ca6cef9db112366fb61b0418dfa0e2e3d2c3faa0a219f920f5e6`.
+
+Next: resolve the remaining shell manual-control differences against supported
+applications, then finish the requirement-by-requirement release check and
+missing paired gates. Preserve the portal refused-End live-cancellation limit.
+No quiet hold is active and nothing was installed into the desktop. Performance
+qualification remains separate; the broker diagnostic is not acceptance.
+
+### Recent audit checkpoints
+
+The following checkpoints retain their original revisions and next steps.
+Use Current resumption above for the current pins and next action.
+
 The native broker migration and paired submit-handle reuse are implemented.
 The short release diagnostic below found about 28% lower native CPU per update,
 but native remains much more expensive than legacy; no performance acceptance

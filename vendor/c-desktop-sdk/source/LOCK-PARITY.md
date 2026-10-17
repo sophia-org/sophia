@@ -26,9 +26,15 @@ unless noted. Public C state is caller storage, not permission to mutate it.
 
 Paired production evidence below covers supplied-admission exchange, protected
 idle revocation and revocation with an acknowledged prefix and unissued tail.
-The latter is not a mid-payload interruption test. Fresh authorized replacement
-and SDK reauthentication still need release-audit evidence. No draft-contract
-acceptance, physical lock or performance qualification is implied.
+The latter is not a mid-payload interruption test. Both protected peers now
+authenticate twice on the same endpoint before role negotiation, using the
+public launch SDK. A third scenario revokes an unfinished upload, then starts
+a newly authorized provider against the same worker. Its new epoch is 8 rather
+than 7; the old admission is gone and no unfinished resource or candidate is
+delivered. Each provider retains its own negotiation custody and terminates on
+revocation. This is explicit process replacement, not automatic reconnection
+or replay. No draft-contract acceptance, physical lock or performance
+qualification is implied.
 
 ## Earlier implementation checkpoints
 
@@ -162,4 +168,5 @@ ResourceBegin custody, clear pending work and refuse End/Cancel. Rust returns
 the same owned tail buffer after termination. This is a queued-tail schedule,
 not a claim that revocation interrupted a partially transmitted wire payload.
 The existing raw in-place-fragment test owns that separate boundary. Fresh
-authorized replacement/recovery and SDK reauthentication still need audit.
+authorized replacement and SDK reauthentication are covered by the current
+three-scenario fixture described above; this paragraph records the earlier run.

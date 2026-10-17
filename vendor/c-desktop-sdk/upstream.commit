@@ -1,14 +1,14 @@
-tree 1fc8376621e75c7efeb6bf18ba02d9d7af15c770
-parent 60d4dcce16cbde858877fa22d95ffb6bc43c8f74
-author Mason Green <mason@greenm01.net> 1792209411 -0400
-committer Mason Green <mason@greenm01.net> 1792209411 -0400
+tree 66cc8865c3a7419fd20ced4b1876a6a461c9ab1b
+parent 129abc7e7f2adf227169fc0ba84c145d6b14de4b
+author Mason Green <mason@greenm01.net> 1792209558 -0400
+committer Mason Green <mason@greenm01.net> 1792209558 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLyAxsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGI/0wD/Vtbb+ncwfHRyzHwEBIt7
- jE8qTQz+xPc4GBiV/Mf4WUIBALPWCg60Tmm2MuAYZ1NvU8+qj0WumHQ6oWpXPTCX
- yF0O
- =3NQD
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLylhsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGK7HgEAur6QRuggNI6KmLfnq9H0
+ m+oMdCsPdqnWdC2Wgzgn8e8A+QFChgzSEBDXNxNIE1HpxdzYV7cZvgFWcF2wcWo6
+ xsoM
+ =JjQD
  -----END PGP SIGNATURE-----
 
-Require exclusive quiescent lock handoff and reconcile coverage
+Exercise protected lock reauthentication and fresh provider epochs

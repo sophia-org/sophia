@@ -10,22 +10,29 @@ use std::os::unix::fs::DirBuilderExt;
 #[test]
 #[ignore = "requires SOPHIA_LOCK_AUTH_PEER naming an absolute built SDK peer"]
 fn external_sdk_lock_authenticates_and_observes_revocation() {
-    exchange(false);
+    exchange(false, false);
 }
 
 #[test]
 #[ignore = "requires SOPHIA_LOCK_AUTH_PEER naming an absolute built SDK peer"]
 fn external_sdk_lock_revocation_discards_unfinished_upload() {
-    exchange(true);
+    exchange(true, false);
 }
 
-fn exchange(upload: bool) {
+#[test]
+#[ignore = "requires SOPHIA_LOCK_AUTH_PEER naming an absolute built SDK peer"]
+fn external_sdk_lock_replacement_gets_fresh_epoch_after_unfinished_upload() {
+    exchange(true, true);
+}
+
+fn exchange(upload: bool, replacement: bool) {
     let executable = PathBuf::from(std::env::var_os("SOPHIA_LOCK_AUTH_PEER").unwrap());
     assert!(executable.is_absolute() && executable.is_file());
     let peer = Peer::external_sdk();
-    let root = Directory(
-        std::env::temp_dir().join(format!("t333-lock-sdk-{}-{upload}", std::process::id())),
-    );
+    let root = Directory(std::env::temp_dir().join(format!(
+        "t333-lock-sdk-{}-{upload}-{replacement}",
+        std::process::id()
+    )));
     std::fs::DirBuilder::new()
         .mode(0o700)
         .create(&root.0)
@@ -35,7 +42,6 @@ fn exchange(upload: bool) {
         .mode(0o700)
         .create(&reports)
         .unwrap();
-    let report = reports.join("progress");
     let transport = LockFileTransport::bind_for_supervised_uid(
         root.0.join("endpoint"),
         rustix::process::geteuid().as_raw(),
@@ -68,119 +74,129 @@ fn exchange(upload: bool) {
     )
     .unwrap();
     let mut f = Fixture::new();
-    let id = f
-        .book
-        .reserve(
-            LaunchPolicy {
-                principal: 8,
-                namespace: 9,
-                audience: 12,
-                role: ProtectionDomainRole::LockProvider,
-            },
-            Instant::now(),
-            deadline(),
-        )
-        .unwrap();
-    let end = deadline();
-    while f.book.phase(id) != Some(Phase::Ready) {
-        f.tick(end);
-    }
-    let domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::LockProvider])
-        .unwrap()
-        .path(ProtectionPath::read_only(root.0.join("endpoint")))
-        .unwrap()
-        .path(ProtectionPath::read_write(&reports))
-        .unwrap()
-        .path(ProtectionPath::read_only(&executable))
-        .unwrap();
-    let mut supervisor = ProcessSupervisor::new(
-        SupervisedProcessKind::LockProvider,
-        ProcessLaunchSpec::new(&peer.0)
-            .env("SOPHIA_TEST_LOCK_UPLOAD", if upload { "1" } else { "0" })
-            .arg(&executable)
-            .arg(&socket)
-            .arg(&report)
-            .protection_domain(domain),
-    );
-    supervisor
-        .start_with_launch_channel(f.book.take_channel(id, Instant::now()).unwrap())
-        .unwrap();
-    f.activate(id, &mut supervisor);
-    let worker = f
-        .book
-        .worker_authority(id, &mut supervisor, Instant::now())
-        .unwrap();
-    let factory = TransportBudget::new(f.namespaces.clone())
-        .endpoint()
-        .bind(worker, b"lock".to_vec(), b"lock-provider".to_vec())
-        .unwrap();
-    service
-        .command(LockFileServiceCommand::ReplaceSupervisedProcess(
-            LockFileAssignee::from_supervisor(&supervisor)
-                .unwrap()
-                .with_authentication(Box::new(factory)),
-        ))
-        .unwrap();
-    let end = Instant::now() + Duration::from_secs(10);
-    let mut connected = 0;
-    let mut disconnected = 0;
-    let mut revoked = false;
-    let mut exited = false;
-    loop {
-        f.tick(end);
-        while let Some(event) = service.try_event().unwrap() {
-            match event {
-                LockFileServiceEvent::Connected {
-                    connection_epoch: 7,
-                    chords,
-                } => {
-                    assert!(chords.is_empty());
-                    connected += 1;
-                }
-                LockFileServiceEvent::Disconnected {
-                    connection_epoch: 7,
-                } => disconnected += 1,
-                LockFileServiceEvent::Inbound { inbound, .. } => {
-                    panic!("unfinished upload must not deliver resource or candidate: {inbound:?}")
-                }
-                other => panic!("unexpected authenticated lock event: {other:?}"),
-            }
+    for round in 0..if replacement { 2 } else { 1 } {
+        let epoch = 7 + round;
+        let report = reports.join(format!("progress-{round}"));
+        let upload = upload && round == 0;
+        let id = f
+            .book
+            .reserve(
+                LaunchPolicy {
+                    principal: 8,
+                    namespace: 9,
+                    audience: 12,
+                    role: ProtectionDomainRole::LockProvider,
+                },
+                Instant::now(),
+                deadline(),
+            )
+            .unwrap();
+        let end = deadline();
+        while f.book.phase(id) != Some(Phase::Ready) {
+            f.tick(end);
         }
-        if !revoked
-            && connected == 1
-            && std::fs::read_to_string(&report).ok().as_deref()
-                == Some(if upload {
-                    "upload-waiting\n"
-                } else {
-                    "waiting\n"
-                })
-        {
-            assert_eq!(f.namespaces.lock().unwrap().admission_count(), 1);
-            f.book.revoke(id, Instant::now()).unwrap();
-            revoked = true;
+        let domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::LockProvider])
+            .unwrap()
+            .path(ProtectionPath::read_only(root.0.join("endpoint")))
+            .unwrap()
+            .path(ProtectionPath::read_write(&reports))
+            .unwrap()
+            .path(ProtectionPath::read_only(&executable))
+            .unwrap();
+        let mut supervisor = ProcessSupervisor::new(
+            SupervisedProcessKind::LockProvider,
+            ProcessLaunchSpec::new(&peer.0)
+                .env("SOPHIA_TEST_LOCK_UPLOAD", if upload { "1" } else { "0" })
+                .env("SOPHIA_TEST_LOCK_EPOCH", epoch.to_string())
+                .arg(&executable)
+                .arg(&socket)
+                .arg(&report)
+                .protection_domain(domain),
+        );
+        supervisor
+            .start_with_launch_channel(f.book.take_channel(id, Instant::now()).unwrap())
+            .unwrap();
+        f.activate(id, &mut supervisor);
+        let worker = f
+            .book
+            .worker_authority(id, &mut supervisor, Instant::now())
+            .unwrap();
+        let factory = TransportBudget::new(f.namespaces.clone())
+            .endpoint()
+            .bind(worker, b"lock".to_vec(), b"lock-provider".to_vec())
+            .unwrap();
+        service
+            .command(LockFileServiceCommand::ReplaceSupervisedProcess(
+                LockFileAssignee::from_supervisor(&supervisor)
+                    .unwrap()
+                    .with_authentication(Box::new(factory)),
+            ))
+            .unwrap();
+        let end = Instant::now() + Duration::from_secs(10);
+        let mut connected = 0;
+        let mut disconnected = 0;
+        let mut revoked = false;
+        let mut exited = false;
+        loop {
+            f.tick(end);
+            while let Some(event) = service.try_event().unwrap() {
+                match event {
+                    LockFileServiceEvent::Connected {
+                        connection_epoch,
+                        chords,
+                    } => {
+                        assert_eq!(connection_epoch, epoch);
+                        assert!(chords.is_empty());
+                        connected += 1;
+                    }
+                    LockFileServiceEvent::Disconnected { connection_epoch } => {
+                        assert_eq!(connection_epoch, epoch);
+                        disconnected += 1;
+                    }
+                    LockFileServiceEvent::Inbound { inbound, .. } => {
+                        panic!(
+                            "unfinished upload must not deliver resource or candidate: {inbound:?}"
+                        )
+                    }
+                    other => panic!("unexpected authenticated lock event: {other:?}"),
+                }
+            }
+            if !revoked
+                && connected == 1
+                && std::fs::read_to_string(&report).ok().as_deref()
+                    == Some(if upload {
+                        "upload-waiting\n"
+                    } else {
+                        "waiting\n"
+                    })
+            {
+                assert_eq!(f.namespaces.lock().unwrap().admission_count(), 1);
+                f.book.revoke(id, Instant::now()).unwrap();
+                revoked = true;
+                if upload {
+                    std::fs::write(&report, b"continue\n").unwrap();
+                }
+            }
+            exited |= supervisor.poll().unwrap().is_some();
+            if exited && disconnected == 1 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(
+            supervisor.take_exit_status().unwrap().success(),
+            "protected lock client must finish its authenticated exchange"
+        );
+        assert!(revoked);
+        assert_eq!(connected, 1);
+        assert_eq!(
+            std::fs::read_to_string(&report).unwrap(),
             if upload {
-                std::fs::write(&report, b"continue\n").unwrap();
+                "upload-revoked\n"
+            } else {
+                "revoked\n"
             }
-        }
-        exited |= supervisor.poll().unwrap().is_some();
-        if exited && disconnected == 1 {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(1));
+        );
+        assert_eq!(f.namespaces.lock().unwrap().admission_count(), 0);
     }
-    assert!(
-        supervisor.take_exit_status().unwrap().success(),
-        "protected lock client must finish its authenticated exchange"
-    );
-    assert!(revoked);
-    assert_eq!(connected, 1);
-    assert_eq!(
-        std::fs::read_to_string(&report).unwrap(),
-        if upload {
-            "upload-revoked\n"
-        } else {
-            "revoked\n"
-        }
-    );
-    assert_eq!(f.namespaces.lock().unwrap().admission_count(), 0);
 }

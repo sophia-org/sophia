@@ -1,14 +1,14 @@
-tree afd7f70595bc87ada7fce3aaf553956eda91291d
-parent 528b855452407d90b54b2636e05097df074c0fc8
-author Mason Green <mason@greenm01.net> 1792209410 -0400
-committer Mason Green <mason@greenm01.net> 1792209410 -0400
+tree 600005bbd8018cfe92995cd6c1e5783ee81ce00a
+parent 9a5fa8bd05824fc6e40e164191c93caa0399ec9b
+author Mason Green <mason@greenm01.net> 1792209557 -0400
+committer Mason Green <mason@greenm01.net> 1792209557 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLyAhsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJd9gEAtB21BAKk6SDlbEaHWEo5
- HMPdZgTTY/9bMUxbr5dkikABAINU12RoKTO8E2dOegMiH7ecX59R6YwJ9TtyNwuA
- y+oG
- =AhFl
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLylRsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKHgQD/ZtsGzXf469LrQvvC+C8f
+ UdZHRFJhul15kqapfBELUlcBANBzalWsrixVXJEPAyYERp82OCGzCqsZnpqxQCDK
+ LvIE
+ =8gqA
  -----END PGP SIGNATURE-----
 
-Audit lock and WM operations and test exclusive handoff
+Exercise protected lock reauthentication and fresh provider epochs

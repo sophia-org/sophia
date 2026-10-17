@@ -37,12 +37,22 @@ int main(void) {
   int upload = getenv("SOPHIA_TEST_LOCK_UPLOAD") && !strcmp(getenv("SOPHIA_TEST_LOCK_UPLOAD"), "1");
   uint8_t pixels[16];
   uint64_t deadline = now_ms() + 10000;
+  unsigned round;
   assert(fd >= 0 && role_storage && relay_storage);
   assert(socket_path && report_path && strlen(socket_path) < sizeof address.sun_path);
   address.sun_family = AF_UNIX;
   strcpy(address.sun_path, socket_path);
   assert(!connect(fd, (struct sockaddr *)&address, sizeof address));
   assert(!fcntl(fd, F_SETFD, FD_CLOEXEC));
+  for (round = 0; round < 2; ++round) {
+  /* Reauthentication invalidates the old root; it never reuses a verdict.
+   * Retire both quiescent clients before reusing their storage and fds. */
+  if (round) {
+    assert(role.fid_count == 1 && relay.fid_count == 0);
+    assert(!role.rx_used && !relay.rx_used);
+    sophia_9p_close(&role);
+    sophia_9p_close(&relay);
+  }
   assert(!sophia_9p_init(&role, fd, 4096, 8, 16, role_storage, bytes));
   assert(!sophia_9p_init(&relay, STDIN_FILENO, 4096, 8, 16, relay_storage, bytes));
   assert(!sophia_la_init(&auth, &role, &relay, "lock", "lock-provider", now_ms()));
@@ -54,6 +64,7 @@ int main(void) {
     assert(now_ms() < deadline);
     assert(poll(fds, 2, 1) >= 0);
     assert(!sophia_la_service(&auth, now_ms(), 65536));
+  }
   }
   offer.minimum_revision = offer.maximum_revision = 1;
   offer.capabilities = SOPHIA_LF_CAP_PRESENT;
@@ -74,7 +85,8 @@ int main(void) {
     }
     assert(!sophia_lc_obligations(&client, &obligations));
   } while (!observed || obligations.acked < 3);
-  assert(sophia_lc_epoch(&client) == 7);
+  assert(sophia_lc_epoch(&client) == (getenv("SOPHIA_TEST_LOCK_EPOCH") ?
+    strtoull(getenv("SOPHIA_TEST_LOCK_EPOCH"), NULL, 10) : 7));
   assert(sophia_lc_welcome(&client)->granted_capabilities == SOPHIA_LF_CAP_PRESENT);
   if (upload) {
     struct sophia_lf_resource_begin begin = {0};
