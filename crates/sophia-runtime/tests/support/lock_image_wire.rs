@@ -17,6 +17,9 @@ use sophia_runtime::{
 
 use super::{authority, raw};
 
+#[path = "lock_image_sources.rs"]
+mod sources;
+
 const EPOCH: u64 = 7;
 const RELAY: &str = "SOPHIA_TEST_LOCK_IMAGE_RELAY";
 const LOCK: &str = "SOPHIA_TEST_LOCK_IMAGE_SOCKET";
@@ -153,12 +156,18 @@ impl Drop for Provider {
 }
 
 fn policy(hello_timeout_ms: u32) -> LockImagePolicy {
+    policy_with(hello_timeout_ms, 2048)
+}
+
+/// Validation is given long enough that only a test's own ending settles
+/// an admitted offer.
+fn policy_with(hello_timeout_ms: u32, max_sealed_backing_bytes: u64) -> LockImagePolicy {
     LockImagePolicy {
         hello_timeout_ms,
-        validation_timeout_ms: 1000,
+        validation_timeout_ms: 5000,
         validation_chunk_bytes: 65536,
         capture_interest_timeout_ms: 500,
-        max_sealed_backing_bytes: 2048,
+        max_sealed_backing_bytes,
     }
 }
 
@@ -207,6 +216,15 @@ fn locked() -> LockObject {
 
 /// Pumps the transport until `peer` finishes.
 fn pump<T>(transport: &mut LockFileTransport, peer: std::thread::JoinHandle<T>) -> T {
+    pump_with(transport, peer, |_| {})
+}
+
+/// Pumps the transport until `peer` finishes, calling `each` every turn.
+fn pump_with<T>(
+    transport: &mut LockFileTransport,
+    peer: std::thread::JoinHandle<T>,
+    mut each: impl FnMut(&mut LockFileTransport),
+) -> T {
     let deadline = Instant::now() + Duration::from_secs(10);
     while !peer.is_finished() {
         assert!(Instant::now() < deadline, "peer did not finish");
@@ -215,6 +233,7 @@ fn pump<T>(transport: &mut LockFileTransport, peer: std::thread::JoinHandle<T>) 
         } else {
             let _ = transport.turn();
         }
+        each(transport);
         std::thread::sleep(Duration::from_millis(1));
     }
     peer.join().unwrap()
@@ -226,6 +245,7 @@ struct Files {
     offset: u64,
     queued: std::collections::VecDeque<(LockFileKind, u64, Vec<u8>)>,
     submission: u64,
+    epoch: u64,
 }
 
 impl Files {
@@ -261,7 +281,14 @@ impl Files {
             offset: 0,
             queued: Default::default(),
             submission: 0,
+            epoch: EPOCH,
         }
+    }
+
+    /// The same files on a later connection epoch.
+    fn at_epoch(mut self, epoch: u64) -> Self {
+        self.epoch = epoch;
+        self
     }
 
     /// Submits under the next ID. Returns the submit reply's errno, if any;
@@ -271,7 +298,7 @@ impl Files {
         let candidate = encode_lock_file_record_at_revision(
             LockFileHeader {
                 kind,
-                connection_epoch: EPOCH,
+                connection_epoch: self.epoch,
                 submission_id: id,
                 sequence: 0,
             },
@@ -282,7 +309,7 @@ impl Files {
         self.peer.open(5, b"transaction", 2);
         assert_eq!(self.peer.write(5, &candidate).0, 119);
         let control = encode_lock_file_submit(LockFileSubmit {
-            connection_epoch: EPOCH,
+            connection_epoch: self.epoch,
             submission_id: id,
             candidate_bytes: candidate.len() as u32,
         })
@@ -339,7 +366,7 @@ impl Files {
         }
         let (kind, sequence, body) = self.queued.pop_front().expect("an event");
         let ack = encode_lock_file_ack(LockFileAck {
-            connection_epoch: EPOCH,
+            connection_epoch: self.epoch,
             sequence,
         })
         .unwrap();
@@ -348,32 +375,30 @@ impl Files {
     }
 
     fn image_begin(&mut self, offer: u64) -> Option<u32> {
-        let metadata = LockImageMetadata {
-            offer_id: offer,
-            resource: 20 + offer,
-            resource_generation: 1,
-            admission_epoch: 3,
-            output_id: 1,
-            allocation_id: 2,
-            topology_generation: 4,
-            source_kind: LOCK_IMAGE_SOURCE_SEALED_MEMORY,
-            source_format: LOCK_IMAGE_SEALED_FORMAT,
-            width: 4,
-            height: 4,
-            stride: 16,
-            plane_count: 1,
-            descriptor_count: 1,
-            declared_bytes: 64,
-            modifier: 0,
-        };
+        let metadata = offer_metadata(offer);
         self.submit(LockFileKind::ImageBegin, &metadata.encode().unwrap(), 2)
     }
 
-    /// An offer the ready channel took: its receipt only. This transport
-    /// does not admit offers yet, so it stays pending.
-    fn pending(&mut self, offer: u64) {
+    /// An offer the ready channel took and the owner admitted.
+    fn admitted(&mut self, offer: u64) {
         assert_eq!(self.image_begin(offer), None);
         assert_eq!(self.next().0, LockFileKind::Submitted);
+        let (kind, body) = self.next();
+        assert_eq!(kind, LockFileKind::ImageAdmitted);
+        assert_eq!(LockImageMetadata::decode(&body).unwrap().offer_id, offer);
+    }
+
+    /// The final status and source release of offer `offer`.
+    fn settled(&mut self, offer: u64) -> (LockResourceState, u16, LockSourceDisposition) {
+        let (kind, body) = self.next();
+        assert_eq!(kind, LockFileKind::ResourceStatus);
+        let status = LockResourceStatus::decode(&body).unwrap();
+        assert_eq!(status.transaction, offer);
+        let (kind, body) = self.next();
+        assert_eq!(kind, LockFileKind::SourceReleased);
+        let released = LockSourceReleased::decode(&body).unwrap();
+        assert_eq!(released.offer_id, offer);
+        (status.status, status.reason, released.disposition)
     }
 
     /// An offer beyond `max_offers` (one, from one upload slot): its
@@ -416,16 +441,42 @@ impl Files {
         assert_eq!(
             LockChannelClosed::decode(&body).unwrap(),
             LockChannelClosed {
-                channel_generation: EPOCH,
+                channel_generation: self.epoch,
                 reason,
             }
         );
     }
 }
 
+/// A 4x4 sealed image for the one allocation of [`locked`].
+fn offer_metadata(offer: u64) -> LockImageMetadata {
+    LockImageMetadata {
+        offer_id: offer,
+        resource: 20 + offer,
+        resource_generation: 1,
+        admission_epoch: 3,
+        output_id: 1,
+        allocation_id: 2,
+        topology_generation: 4,
+        source_kind: LOCK_IMAGE_SOURCE_SEALED_MEMORY,
+        source_format: LOCK_IMAGE_SEALED_FORMAT,
+        width: 4,
+        height: 4,
+        stride: 16,
+        plane_count: 1,
+        descriptor_count: 1,
+        declared_bytes: 64,
+        modifier: 0,
+    }
+}
+
 fn hello(socket: &OwnedFd, generation: u64) {
+    hello_at(socket, EPOCH, generation);
+}
+
+fn hello_at(socket: &OwnedFd, epoch: u64, generation: u64) {
     let bytes = LockImagePacket::Hello {
-        connection_epoch: EPOCH,
+        connection_epoch: epoch,
         channel_generation: generation,
     }
     .encode()
@@ -439,20 +490,21 @@ fn ready(files: &mut Files, provider: &mut Provider) -> OwnedFd {
     files.peer.open(6, b"image-channel", 0);
     let text = String::from_utf8(files.peer.read(6, 0)).unwrap();
     let discovery = LockImageDiscovery::decode(&text).unwrap();
+    let epoch = files.epoch;
     assert_eq!(
         (discovery.connection_epoch, discovery.channel_generation),
-        (EPOCH, EPOCH)
+        (epoch, epoch)
     );
     assert_eq!(discovery.formats_generation, 4);
     assert_eq!(files.image_begin(1), Some(EBUSY));
     let socket = provider.connect_image();
-    hello(&socket, EPOCH);
+    hello_at(&socket, epoch, epoch);
     let (kind, body) = files.next();
     assert_eq!(kind, LockFileKind::ChannelReady);
     assert_eq!(
         LockChannelReady::decode(&body).unwrap(),
         LockChannelReady {
-            channel_generation: EPOCH,
+            channel_generation: epoch,
             granted_source_kinds: 1,
         }
     );
@@ -475,7 +527,7 @@ fn run_ready(label: &str, ending: Ending) {
         std::thread::spawn(move || {
             let mut files = Files::attach(stream);
             let socket = ready(&mut files, &mut provider);
-            files.pending(1);
+            files.admitted(1);
             // A second connector is dropped; the serving channel stays.
             let duplicate = provider.connect_image();
             let mut buffer = [0u8; 8];
@@ -508,8 +560,15 @@ fn run_ready(label: &str, ending: Ending) {
         std::thread::spawn(move || {
             let mut files = files;
             files.closed(reason);
-            // Channel loss refuses the pending offer with it.
-            files.unavailable(1);
+            // Channel loss refuses the admitted offer, its source unsent.
+            assert_eq!(
+                files.settled(1),
+                (
+                    LockResourceState::Rejected,
+                    LOCK_RESOURCE_REASON_IMAGE_CHANNEL_UNAVAILABLE,
+                    LockSourceDisposition::CancelledBeforeImport,
+                )
+            );
             // Closed for the epoch: offers are still refused cleanly.
             files.refused(3);
         }),
@@ -588,6 +647,7 @@ fn a_legacy_connection_never_gets_a_channel() {
                 offset: 0,
                 queued: Default::default(),
                 submission: 0,
+                epoch: EPOCH,
             };
             assert_eq!(files.negotiate(), 1);
             let walk = files.peer.rpc(

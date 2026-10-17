@@ -1,0 +1,199 @@
+//! The sealed validation worker beside the lock transport. It outlives each
+//! epoch's custody: custody decides and journals, this owner reserves
+//! worker credit for admitted offers, hands matched Sources to the worker
+//! and reports completions back. Each turn drains delivered completions
+//! before custody expires anything. Jobs of an ended epoch are released if
+//! unsent or cancelled if submitted; their completions are taken and
+//! dropped, so no slot is lost and nothing journals after the epoch.
+use std::os::fd::BorrowedFd;
+use std::time::Instant;
+
+use sophia_9p::Errno;
+use sophia_protocol::lock_files::LockImagePacket;
+
+use super::{LockFileCustody, LockImageSource, LockImageWorkerAction, reason};
+use crate::image_channel::ImageDatagram;
+use crate::{SealedSubmitFailure, SealedValidationFailure, SealedValidationWorker, SharedPixels};
+
+/// A worker job and whether its epoch has ended.
+struct Job {
+    id: u64,
+    ended: bool,
+}
+
+pub(super) struct ImageWorker {
+    worker: SealedValidationWorker,
+    jobs: Vec<Job>,
+    /// A completion custody could not journal yet; retried before others.
+    parked: Option<(u64, Result<SharedPixels, SealedValidationFailure>)>,
+}
+
+impl ImageWorker {
+    pub(super) fn new(
+        max_jobs: usize,
+        max_bytes: usize,
+        validation_bytes: usize,
+    ) -> std::io::Result<Self> {
+        Ok(Self {
+            worker: SealedValidationWorker::with_validation_budget(
+                max_jobs,
+                max_bytes,
+                validation_bytes,
+            )?,
+            jobs: Vec::new(),
+            parked: None,
+        })
+    }
+
+    pub(super) fn readiness(&self) -> BorrowedFd<'_> {
+        self.worker.readiness()
+    }
+
+    /// Worker credits held: reservations and jobs whose completion is owed.
+    pub(super) fn pending(&self) -> usize {
+        self.worker.pending()
+    }
+
+    fn forget(&mut self, id: u64) -> Option<Job> {
+        let index = self.jobs.iter().position(|job| job.id == id)?;
+        Some(self.jobs.remove(index))
+    }
+
+    /// Reports one completion to custody. `false` parks it for room.
+    fn complete(
+        &mut self,
+        custody: &mut LockFileCustody,
+        id: u64,
+        result: Result<SharedPixels, SealedValidationFailure>,
+    ) -> bool {
+        match custody.image_completed(id, result.clone()) {
+            Err(Errno::EAGAIN) => {
+                self.parked = Some((id, result));
+                false
+            }
+            // Settled, or its offer is gone with a revoked epoch: either
+            // way the worker credit is already back.
+            _ => {
+                self.forget(id);
+                true
+            }
+        }
+    }
+
+    /// One owner turn against the live epoch: completions, worker actions,
+    /// expiry, then admissions. Returns whether anything may have been
+    /// journalled.
+    pub(super) fn serve(&mut self, custody: &mut LockFileCustody, now: Instant) -> bool {
+        let before = custody.position().next_sequence;
+        if let Some((id, result)) = self.parked.take()
+            && !self.complete(custody, id, result)
+        {
+            return false;
+        }
+        while let Ok(Some(completion)) = self.worker.take_completed() {
+            let id = completion.job;
+            let ended = self
+                .jobs
+                .iter()
+                .find(|job| job.id == id)
+                .is_none_or(|job| job.ended);
+            if ended {
+                self.forget(id);
+                continue;
+            }
+            let result = completion.result.map(|pixels| pixels.into_shared());
+            if !self.complete(custody, id, result) {
+                break;
+            }
+        }
+        self.actions(custody);
+        let _ = custody.expire_images(now);
+        self.actions(custody);
+        self.admit(custody, now);
+        custody.position().next_sequence != before
+    }
+
+    fn actions(&mut self, custody: &mut LockFileCustody) {
+        while let Some(action) = custody.take_image_worker_action() {
+            match action {
+                LockImageWorkerAction::Release(id) => {
+                    self.worker.release_reserved(id);
+                    self.forget(id);
+                }
+                LockImageWorkerAction::Cancel(id) => {
+                    self.worker.cancel(id);
+                }
+            }
+        }
+    }
+
+    /// Reserves worker credit for each pending offer custody passes, oldest
+    /// first. Without credit the offer waits within its deadline; a size
+    /// the worker cannot take is refused as budget.
+    fn admit(&mut self, custody: &mut LockFileCustody, now: Instant) {
+        while let Ok(Some(admission)) = custody.image_admission(now) {
+            match self.worker.reserve(admission.bytes, admission.deadline) {
+                Ok(id) => match custody.admit_image(admission.offer_id, id, admission.deadline) {
+                    Ok(_) => self.jobs.push(Job { id, ended: false }),
+                    Err(_) => {
+                        self.worker.release_reserved(id);
+                        return;
+                    }
+                },
+                Err(SealedSubmitFailure::Capacity) => return,
+                Err(SealedSubmitFailure::Invalid | SealedSubmitFailure::Closed) => {
+                    if custody
+                        .refuse_image(admission.offer_id, reason::BUDGET)
+                        .is_err()
+                    {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    /// One received datagram on a ready channel. `Err` faults the channel:
+    /// a malformed packet or a Source custody does not owe. A Source the
+    /// worker refuses stays admitted with its reservation and settles at
+    /// its deadline.
+    pub(super) fn source(
+        &mut self,
+        custody: &mut LockFileCustody,
+        mut datagram: ImageDatagram,
+    ) -> Result<(), Errno> {
+        let packet = LockImagePacket::decode(datagram.bytes()).map_err(|_| Errno::EPROTO)?;
+        match custody.image_source(&packet, datagram.descriptor_count())? {
+            LockImageSource::Stale => Ok(()),
+            LockImageSource::Submit { job } => {
+                let source = datagram.take_descriptor(0).ok_or(Errno::EPROTO)?;
+                if self.worker.submit_reserved(job, source).is_ok() {
+                    custody.image_source_submitted(job)?;
+                }
+                Ok(())
+            }
+        }
+    }
+
+    /// The epoch ended: unsent reservations go back now, submitted jobs are
+    /// cancelled and their completions dropped when they arrive.
+    pub(super) fn end_epoch(&mut self) {
+        self.parked = None;
+        let worker = &mut self.worker;
+        self.jobs.retain_mut(|job| {
+            if worker.release_reserved(job.id) {
+                return false;
+            }
+            worker.cancel(job.id);
+            job.ended = true;
+            true
+        });
+    }
+
+    /// A turn with no live epoch: take and drop ended jobs' completions.
+    pub(super) fn drain_ended(&mut self) {
+        while let Ok(Some(completion)) = self.worker.take_completed() {
+            self.forget(completion.job);
+        }
+    }
+}

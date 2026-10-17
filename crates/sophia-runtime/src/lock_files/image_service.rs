@@ -2,8 +2,9 @@
 //! in the lock endpoint directory accepts connectors from the assigned
 //! provider only; the first one's Hello must name this epoch and channel
 //! generation before its deadline, and ChannelReady is journalled before the
-//! peer is kept. Sources are not admitted yet, so any packet after Ready
-//! closes the channel as a protocol fault.
+//! peer is kept. After Ready, at most one packet per turn goes to the
+//! validation worker's owner; a packet it does not owe closes the channel
+//! as a protocol fault.
 use std::time::{Duration, Instant};
 
 use sophia_9p::connection::ConnectionId;
@@ -12,6 +13,7 @@ use sophia_protocol::lock_files::{
     LockImageDiscovery, LockImageFormats, LockImageLimits,
 };
 
+use super::image_worker::ImageWorker;
 use super::{LockFileExport, LockImageReadiness, LockImageSettings};
 use crate::PolicyPeerIdentity;
 use crate::authenticated_files::AuthenticatedFiles;
@@ -159,6 +161,7 @@ impl ImageService {
     pub(super) fn service(
         &mut self,
         files: &mut AuthenticatedFiles<LockFileExport>,
+        worker: Option<&mut ImageWorker>,
         now: Instant,
     ) -> bool {
         // One accept per turn also drains unauthorized and duplicate
@@ -219,11 +222,16 @@ impl ImageService {
                 if peer.check(files, now).is_err() {
                     State::Closing(Reason::GrantRevoked)
                 } else {
-                    match receive_image_datagram(peer.socket()) {
-                        Ok(None) => State::Ready(peer),
-                        Err(rustix::io::Errno::PIPE) => State::Closing(Reason::PeerDisconnect),
-                        // No offer is admitted yet, so no Source is owed.
-                        Ok(Some(_)) | Err(_) => State::Closing(Reason::ProtocolFault),
+                    match (receive_image_datagram(peer.socket()), worker) {
+                        (Ok(None), _) => State::Ready(peer),
+                        (Err(rustix::io::Errno::PIPE), _) => State::Closing(Reason::PeerDisconnect),
+                        (Ok(Some(datagram)), Some(worker)) => {
+                            match worker.source(files.files_mut().custody_mut(), datagram) {
+                                Ok(()) => State::Ready(peer),
+                                Err(_) => State::Closing(Reason::ProtocolFault),
+                            }
+                        }
+                        (Ok(Some(_)) | Err(_), _) => State::Closing(Reason::ProtocolFault),
                     }
                 }
             }

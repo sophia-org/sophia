@@ -12,6 +12,7 @@ use sophia_9p::{Errno, records::Limits, unix::Server};
 use sophia_protocol::lock_files::*;
 
 use super::image_service::{ImageService, LockImagePolicy};
+use super::image_worker::ImageWorker;
 use super::leases::OrphanLeases;
 use super::{
     LockFileCustody, LockFileExport, LockFileQids, LockFileSettings, LockImageReadiness,
@@ -106,6 +107,8 @@ pub struct LockFileTransport {
     /// Sealed images of ended epochs still read somewhere; the next epoch
     /// inherits them against its budgets.
     pub(super) orphans: OrphanLeases,
+    /// Validates sealed sources for every epoch; created with the policy.
+    pub(super) worker: Option<ImageWorker>,
 }
 
 fn pidfd_alive(pidfd: &OwnedFd) -> Result<bool, LockFileTransportError> {
@@ -153,6 +156,7 @@ impl LockFileTransport {
             image: None,
             image_bound: false,
             orphans: OrphanLeases::default(),
+            worker: None,
         })
     }
 
@@ -177,6 +181,11 @@ impl LockFileTransport {
             lock_qid: 0,
         })?
         .configure_image(policy.settings(self.next_epoch, &self.limits, 1))?;
+        let jobs = usize::from(self.limits.upload_slots).min(4);
+        let bytes = usize::try_from(self.limits.max_resource_bytes).map_err(|_| Errno::EINVAL)?;
+        let validation =
+            usize::try_from(policy.validation_chunk_bytes).map_err(|_| Errno::EINVAL)?;
+        self.worker = Some(ImageWorker::new(jobs, bytes, validation)?);
         self.images = Some(policy);
         Ok(())
     }
@@ -347,6 +356,7 @@ impl LockFileTransport {
     /// `disconnect` before accepting a replacement.
     pub fn turn(&mut self) -> Result<bool, LockFileTransportError> {
         let Some(server) = &mut self.server else {
+            self.poll_detached_images();
             return Ok(false);
         };
         let now = Instant::now();
@@ -367,19 +377,22 @@ impl LockFileTransport {
         {
             server.export_mut().files_mut().revoke();
         }
-        self.orphans.poll();
-        let _ = server
-            .export_mut()
-            .files_mut()
-            .custody_mut()
-            .collect_sealed_leases();
-        if service_image(
+        let mut journalled = service_image(
             &mut self.image,
             &mut self.image_bound,
             &self.endpoint,
             server.export_mut(),
+            self.worker.as_mut(),
             now,
-        ) {
+        );
+        // Released leases return their budget before admissions run.
+        let custody = server.export_mut().files_mut().custody_mut();
+        self.orphans.poll();
+        journalled |= custody.collect_sealed_leases().unwrap_or(false);
+        if let Some(worker) = &mut self.worker {
+            journalled |= worker.serve(custody, now);
+        }
+        if journalled {
             server.wake().wake();
         }
         let running = server.turn(Some(Duration::ZERO))?;
@@ -441,6 +454,9 @@ impl LockFileTransport {
         self.image_bound = false;
         if let Some(mut server) = self.server.take() {
             server.export_mut().files_mut().revoke();
+            if let Some(worker) = &mut self.worker {
+                worker.end_epoch();
+            }
             self.orphans
                 .adopt(server.export_mut().files_mut().custody_mut());
             server.wake().wake();
@@ -467,6 +483,12 @@ impl LockFileTransport {
 
     /// Continue exact cancellation while disconnected; these owners retain
     /// their endpoint/global quota until Factotum answers or is failed closed.
+    /// Validation worker credits held, reservations and owed completions
+    /// of live and ended epochs alike.
+    pub fn image_jobs_pending(&self) -> usize {
+        self.worker.as_ref().map_or(0, ImageWorker::pending)
+    }
+
     /// Sealed images of this and earlier epochs still charged, retiring or
     /// orphaned.
     pub fn sealed_leases_pending(&self) -> usize {
@@ -474,6 +496,20 @@ impl LockFileTransport {
             + self
                 .export()
                 .map_or(0, |export| export.custody().sealed_leases_pending())
+    }
+
+    /// Between connections: takes ended epochs' worker completions and
+    /// drops released orphans. Owners call this every turn while no
+    /// provider is connected; the worker's readiness and the lease poll
+    /// wake them for it.
+    pub fn poll_detached_images(&mut self) {
+        if self.server.is_some() {
+            return;
+        }
+        if let Some(worker) = &mut self.worker {
+            worker.drain_ended();
+        }
+        self.orphans.poll();
     }
 
     pub fn poll_authentication_cleanup(&mut self, now: Instant) {
@@ -491,6 +527,7 @@ fn service_image(
     bound: &mut bool,
     endpoint: &PolicyRoleEndpoint,
     files: &mut AuthenticatedFiles<LockFileExport>,
+    worker: Option<&mut ImageWorker>,
     now: Instant,
 ) -> bool {
     let export = files.files();
@@ -528,7 +565,7 @@ fn service_image(
     }
     image
         .as_mut()
-        .is_some_and(|image| image.service(files, now))
+        .is_some_and(|image| image.service(files, worker, now))
 }
 
 #[path = "transport_wait.rs"]

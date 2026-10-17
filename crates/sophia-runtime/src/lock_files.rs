@@ -17,6 +17,7 @@ use sophia_protocol::lock_files::*;
 mod export;
 mod image;
 mod image_service;
+mod image_worker;
 mod leases;
 mod offers;
 mod presentation;
