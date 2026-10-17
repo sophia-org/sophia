@@ -142,12 +142,13 @@ func (s *session) readEvents() []byte {
 		need(n >= 32 && n <= len(rest), "partial event")
 		e, err := decodeAt(append([]byte(nil), rest[:n]...), s.revision)
 		must(err)
-		if e.kind == 16 {
-			s.revision = u16(e.body, 0)
-		}
 		need(e.kind >= 16 && e.epoch == s.epoch && e.sequence > s.sequence, "event epoch/sequence")
 		if e.kind >= 32 {
 			need(u64(e.body, 8) == s.epoch, "event grant epoch")
+		}
+		// Only a validated Negotiated selects the revision later events use.
+		if e.kind == 16 {
+			s.revision = u16(e.body, 0)
 		}
 		s.sequence = e.sequence
 		s.queue = append(s.queue, e)
