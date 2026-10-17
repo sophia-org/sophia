@@ -432,7 +432,7 @@ connection_epoch, channel_generation, endpoint, source_kinds,
 max_packet_bytes=200, max_fds=4, max_offers, max_packets_per_turn=1,
 hello_timeout_ms=250, validation_timeout_ms=2000,
 validation_chunk_bytes=65536, capture_interest_timeout_ms=500, and
-formats_generation. Integers are unsigned decimal, source_kinds is a numeric
+formats_generation and limits_generation. Integers are unsigned decimal, source_kinds is a numeric
 bitmask (bit 0 sealed, bit 1 DMA-BUF), and endpoint is a single basename with no
 slash or dot component. Refuse duplicate, missing or unknown fields in version 1.
 The separately versioned formats object publishes only this assignee's admitted
@@ -450,6 +450,181 @@ resource/live/retiring limits continue to apply. A separate immutable limits
 object must publish per-role renderer entry/byte reservations before DMA-BUF is
 advertised; its numeric grant is assigned from actual admitted topology and
 remaining global capacity, not a new fixed global allowance.
+
+### Discovery and companion objects
+
+These layouts are proposed additions, not changes to the existing role objects.
+Expose three read-only files in the authenticated role root: `image-channel`,
+`image-limits` and `image-formats`. No file grants authority by being readable.
+Legacy exports may omit all three; ENOENT on `image-channel` selects the byte
+path only when the caller permits fallback. Once it exists, a missing companion,
+malformed object or access error is a failure, not optional discovery.
+
+`image-channel` is at most 2048 bytes, ASCII with LF line endings and a final LF.
+The first line is exactly `sophia-image-channel version=1`. Remaining lines use
+`key=value`, in this order, once each, with no blank lines, spaces or comments:
+
+```
+role=1
+connection_epoch=1
+channel_generation=2
+endpoint=image.sock
+source_kinds=1
+max_packet_bytes=200
+max_fds=4
+max_offers=4
+max_packets_per_turn=1
+hello_timeout_ms=250
+validation_timeout_ms=2000
+validation_chunk_bytes=65536
+capture_interest_timeout_ms=500
+formats_generation=9
+limits_generation=1
+```
+
+These values form the sealed-only shell fixture, not a universal capacity grant.
+Lock changes role to 2 and uses its own limits. Integers are canonical unsigned
+decimal (no signs or leading zeros except `0`), checked in their destination
+width. Role is u16; epochs and generations are nonzero u64; all other integers
+are u32. `source_kinds` is a nonzero subset of bits 0 and 1. Endpoint is 1–64
+bytes from ASCII letters, digits, `_`, `-` and `.`, excluding `.` and `..`.
+It is resolved beneath the admitted directory, never as an arbitrary path.
+Unknown, reordered, missing or duplicate fields are refused in version 1.
+
+The three files are immutable snapshots per open fid. Reads at different offsets
+on that fid cannot mix versions. Discovery names the limits and formats
+generations; their headers must match its role, connection and channel. After a
+mismatch, close all three and retry the set at most once per caller drive pass,
+under the existing connection/startup deadline. Do not spin or send Hello from
+an incoherent set. A completed snapshot is discovery, not an admission promise:
+ImageBegin checks current permission, topology, format support and budget again.
+An output change does not authorize reading another role's outputs.
+
+#### Image limits, 128 bytes
+
+All integers are little-endian. Exact length is required. Reserved fields must
+be zero. This grant is fixed for the channel generation; topology that requires
+larger limits needs a new connection. Counters below are ceilings, not current
+free-space reports. Runtime admission still reserves within them.
+
+| Offset | Type | Field |
+| --- | --- | --- |
+| 0 | 8 bytes | ASCII `SOPHILIM` |
+| 8 | u16 | version = 1 |
+| 10 | u16 | role, 1 shell or 2 lock |
+| 12 | u32 | total bytes = 128 |
+| 16 | u64 | connection epoch |
+| 24 | u64 | channel generation |
+| 32 | u64 | limits generation |
+| 40 | u64 | max logical bytes per resource, no greater than the role limit |
+| 48 | u64 | max retained sealed backing bytes, including retiring leases |
+| 56 | u64 | max pending DMA source logical bytes |
+| 64 | u64 | max owned renderer allocation bytes, including retiring images |
+| 72 | u32 | max owned renderer entries |
+| 76 | u32 | max offers, matching discovery and bounded by role transfer slots |
+| 80 | u32 | max validation jobs, queued plus running |
+| 84 | u32 | max capture jobs, queued plus running plus quarantined |
+| 88 | u32 | max admitted outputs, 1–16 and no greater than role limit |
+| 92 | u32 | max format rows per output, 1–256 |
+| 96 | u32 | max width, no greater than role limit |
+| 100 | u32 | max height, no greater than role limit |
+| 104 | u32 | validation timeout in ms, matching discovery |
+| 108 | u32 | capture-interest timeout in ms, matching discovery |
+| 112 | u32 | validation chunk bytes, matching discovery |
+| 116 | u32 | max packets per turn, matching discovery |
+| 120 | u64 | reserved = 0 |
+
+Epochs, generations, resource bound, dimensions and max offers are nonzero.
+Validation jobs must be between 1 and max offers when sealed memory is advertised;
+sealed backing capacity must then cover at least one maximum-size resource.
+Otherwise both sealed fields are zero. DMA-BUF requires positive source capacity,
+renderer byte/entry reservations and capture jobs (at most max offers); otherwise
+those four fields are zero. These are separate bounds, not additive permission
+to exceed the global image ceiling. Source bytes are logical accounting only;
+driver allocations are not bounded by this number. Reserve actual destination
+allocation before capture. Retiring resources can exhaust capacity even when
+no offer is pending. Publication must refuse inconsistent grants.
+
+#### Image formats, 64-byte header plus 40-byte rows
+
+| Offset | Type | Field |
+| --- | --- | --- |
+| 0 | 8 bytes | ASCII `SOPHIFMT` |
+| 8 | u16 | version = 1 |
+| 10 | u16 | role |
+| 12 | u32 | row count, 0–4096 |
+| 16 | u64 | connection epoch |
+| 24 | u64 | channel generation |
+| 32 | u64 | formats generation, matching discovery |
+| 40 | u64 | limits generation, matching discovery |
+| 48 | 16 bytes | reserved = 0 |
+
+Each row is `output:u64 @0`, `device_major:u32 @8`, `device_minor:u32 @12`,
+`fourcc:u32 @16`, `flags:u32 @20`, `modifier:u64 @24`, `max_width:u32 @32`,
+`max_height:u32 @36`. Output, fourcc and dimensions are nonzero. Device numbers
+identify the already granted composing device; they grant no right to open one.
+Flag 1 means opaque with alpha forced to one during capture; flag 2 means full
+owned-copy premultiplied validation is supported. Exactly one flag is required;
+phase one advertises only 1. Width and height cannot exceed the limits object.
+
+Rows are ordered by unsigned `(output, device_major, device_minor, fourcc,
+modifier)`, with no duplicate key. Enforce both per-output and total bounds from
+the limits object, checked multiplication, and exact length `64 + 40 * rows`
+(maximum 163904 bytes). Sealed-only discovery has zero rows: sealed BGRA is
+defined by the source layout, not a fabricated GPU format. DMA-BUF rows describe
+only authorized outputs on the granted device. An empty DMA list means no
+currently usable import pair, not permission to assume LINEAR. A format change
+increments formats generation; it does not rewrite an already-open snapshot.
+
+#### Admission refusal
+
+Propose `image_channel_unavailable` as ResourceStatus Rejected reason 13 for
+shell r9 and reason 9 for lock r2. These numbers are unallocated draft values;
+the normative codec change must extend only the negotiated revision's allowed
+resource reasons, not every existing field that uses a reason code. A disabled
+channel refuses ImageBegin before ImageAdmitted, so no SourceReleased is owed.
+Other permission, size, stale-allocation and budget refusals retain their role's
+existing meanings. Malformed transaction bytes keep ordinary submit errors.
+ChannelClosed is the prompt state-change notification; this rejection covers
+the race between observing readiness and submitting the next offer.
+
+### C and Rust custody fixture contract
+
+These are required independent fixture cases, not claims of tests already run.
+Use local SEQPACKET pairs and real SCM_RIGHTS/sealable files without a GPU or
+live desktop. A protocol fixture represents the owner; it must not impersonate
+an authenticated production endpoint. Run the same cases in each SDK's own
+test suite, with separate codecs and no C dependency on Rust. Build new fixture
+support only in those repositories or Sophia's existing generic conformance
+seams, not in a named desktop client's harness.
+
+| Case | Required observation in both SDKs |
+| --- | --- |
+| Optional discovery | ENOENT permits caller-authorized bytes; malformed, stale and denied discovery do not silently downgrade. |
+| Snapshot replacement | Mixed generations never produce Hello; reads on one open fid remain consistent; retry is bounded. |
+| Readiness race | No ImageBegin before matching ChannelReady; old-generation Ready/Closed cannot control the new channel. |
+| Offer IDs | Descriptor APIs allocate or enforce increasing IDs; retries retain identity, a fresh attempt uses a greater ID, and exhaustion requires reconnect. Legacy byte APIs remain unchanged. |
+| Source send | No send before ImageAdmitted. A successful packet send transfers a reference, not proof of acceptance or release. EAGAIN retains the unsent offer and enables a writable-interest wake. |
+| Ambiguous send | After an indeterminate send outcome, no blind replay, mutable reuse or invented acceptance; await authoritative disposition or report unknown custody. |
+| Kernel seals | Missing WRITE/GROW/SHRINK/SEAL, FUTURE_WRITE alone, wrong size and outstanding writable mappings cannot produce Accepted. |
+| Ancillary ownership | Missing/extra FDs, control truncation and malformed packets close all received references; receiver FDs have close-on-exec. Valid mapping lifetime survives producer close. |
+| Expiry race | Released-before-arrival packets are drained and closed with no second release or retained bytes. Skipped lower IDs are discarded; above-mark packets fault. |
+| Cancellation | Before packet receipt, after receipt, and during validation each end in one terminal status and one release on the live journal; no early mutable reuse. |
+| Channel loss | Closed switches descriptor availability off for that epoch; pending source custody remains separate; byte fallback follows caller policy. |
+| Journal loss | No implied release from EOF or socket closure; no mutable reuse without authoritative release. |
+| Capacity | Four offers cannot create a fifth reservation; terminal event capacity is reserved before admission; quarantine retains its slot. |
+| Sealed backing | Release does not make the sealed source writable; resource retirement waits for final consumer leases. |
+
+C low-level service remains clockless. The caller supplies deadline expiry and
+poll readiness; timeout/interest accessors must prevent a stalled unsent packet
+from sleeping forever. Rust must expose equivalent progress and ownership states,
+even if its ownership types differ. Receiving SourceReleased once settles the
+offer once; duplicated delivery cannot double-close or release another source.
+Public C layout changes require consumer rebuilds and an API-PARITY entry.
+
+GPU completion, safe rollback and quarantine cannot be proved by these local
+fixtures. A fake completion signal tests state transitions only. Real DMA-BUF
+acceptance stays behind t289's safe-completion seam and attended GPU evidence.
 
 ### Draft golden cases
 
@@ -473,3 +648,11 @@ offset-by-offset construction, and packet lengths match these tables. This is
 a layout check, not independent SDK conformance or actual ancillary/seal testing.
 The C/Rust codec and custody fixtures remain required before implementation can
 be adopted; the draft vectors allocate no normative opcodes.
+
+The companion `draft-object-vectors.json` in the same evidence directory contains
+19 discovery/limits/formats layout cases, SHA-256
+`9ea7c2eee0808241c572a2d936a99119802fb5f69b1851581d88b11671f72d84`.
+Its format-row example checks byte shape only: it does not advertise that device
+or format on this machine. The sealed-only fixture has no GPU rows. Negative
+cases cover grammar, generation disagreement, length/reserved values and bounds.
+These object vectors have not yet passed independent C/Rust codecs.

@@ -60,6 +60,10 @@ niltempus subsequently directed the shared descriptor design review. Its
 answer the nine lock questions for both roles, with sealed memory first and
 DMA-BUF capture behind the renderer ownership decision. This is design work;
 t331's measured failure and the current byte contracts remain in force.
+The draft now includes exact discovery/limits/formats layouts and a C/Rust
+custody fixture matrix. Thirty-two packet vectors received independent review;
+19 companion-object cases have local layout checks. Real ancillary/seal and
+SDK custody fixtures remain unrun, and the design remains proposed.
 
 ## B2/B3 native pilot — October 17
 
