@@ -144,6 +144,18 @@ not change t331's current cost gate or the prepared CPU pilot.
 
 ### Current resumption
 
+Signed Sophia `949186830` is pushed. Its separate release traces confirm the
+submit reuse reduces native peer socket calls from about 45 to about 31 per
+additional update. Peer bytes fall from 420 read/749 written to 367/698, with
+the same counts at all three label lengths. Legacy remains three calls and its
+previous byte counts. Evidence, artifact hashes, raw traces and the matched
+one-versus-ten-operation calculation are in
+`~/.local/state/sophia/broker-cost/949186830-20261017T025857Z/`.
+Both traced runs pass correctness and the strict completeness parser. Calls
+include unsuccessful nonblocking attempts; this is traffic evidence, not a
+CPU or latency speedup claim. Next run the prepared untraced release diagnostic
+in a coordinated quiet window. No hold is currently requested.
+
 Submit-handle reuse is implemented in both integrated broker SDK sessions and
 published as signed Rust `3830d84fba86ece78e195041d71e598bd5072659` and C
 `d6f83ec67c934808221f473c12b5a195e68519ee`. Sophia imports those exact snapshots;
