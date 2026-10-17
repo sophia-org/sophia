@@ -91,15 +91,16 @@ Follow-ups Rust `7977ba7` and C `90307ac` assert specific refusal categories and
 compare generations across actual discovery/limits/formats objects; matching
 changed generations pass and individual mismatches refuse. Both targets,
 strict Rust Clippy and C Clang ASan/UBSan pass.
-Rust lifecycle peer `2ed263d` is now signed and published; its target and strict
-Clippy pass. Muse's initial review led to corrected cancellation dispositions,
-stored admitted metadata and separate lifecycle events. Follow-up review and
-Claude's independent C peer remain pending. Real Source/SCM_RIGHTS is exercised,
+Rust lifecycle peer `8f7dc5d` and C peer `b2ca17d` are signed and published;
+their targets pass, as does targeted strict Rust Clippy. Independent review
+closed cancellation, metadata, deadline, packet-shape and deferred-release
+findings. Real Source/SCM_RIGHTS is exercised,
 but control/journal/worker steps remain fixture models; authenticated endpoints,
 real discovery fids and GPU safety are not proved. The
 [fixture checkpoint](../plans/x6jp929h-review-shared-lock-and-shell-image-descriptor-custody.md#sealed-lifecycle-peer-checkpoint--october-17)
-records the scope. No vendor pin or runtime changed; conditional acceptance is
-not yet satisfied, and t338 implementation remains unopened.
+records the scope. No vendor pin or runtime changed. The fixture condition is
+satisfied; the coordinated acceptance amendment remains next, and t338
+implementation remains unopened.
 
 ## B2/B3 native pilot — October 17
 
