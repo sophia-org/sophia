@@ -120,4 +120,116 @@ fn side_channel_requires_live_authenticated_custody_and_context() {
         );
         live.store(true, Ordering::SeqCst);
     }
+    // Real side socket and SO_PEERPIDFD, with only the afid owner supplied.
+    use rustix::net::*;
+    use sophia_runtime::image_channel::ImageChannelListener;
+    use std::os::unix::fs::PermissionsExt;
+    let directory = std::env::temp_dir().join(format!("sophia-image-auth-{}", std::process::id()));
+    std::fs::create_dir(&directory).unwrap();
+    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap();
+    {
+        let listener = ImageChannelListener::bind(&directory).unwrap();
+        let connect_peer = || {
+            let fd = socket_with(
+                AddressFamily::UNIX,
+                SocketType::SEQPACKET,
+                SocketFlags::CLOEXEC | SocketFlags::NONBLOCK,
+                None,
+            )
+            .unwrap();
+            connect(
+                &fd,
+                &SocketAddrUnix::new(directory.join("image.sock")).unwrap(),
+            )
+            .unwrap();
+            fd
+        };
+        let identity = sophia_runtime::PolicyPeerIdentity {
+            uid: rustix::process::geteuid().as_raw(),
+            pid: std::process::id(),
+        };
+        let mut files = AuthenticatedFiles::pending(());
+        files
+            .install(Box::new(Owner {
+                live: live.clone(),
+                admitted: true,
+                context: Some(context),
+            }))
+            .unwrap();
+        let _first = connect_peer();
+        let wrong = sophia_runtime::PolicyPeerIdentity { pid: 0, ..identity };
+        assert!(
+            listener
+                .accept_authenticated(wrong, ConnectionId(7), &mut files, now)
+                .is_err()
+        );
+        let _second = connect_peer();
+        let mut legacy = AuthenticatedFiles::legacy(());
+        assert!(
+            listener
+                .accept_authenticated(identity, ConnectionId(7), &mut legacy, now)
+                .is_err()
+        );
+        let _third = connect_peer();
+        let peer = listener
+            .accept_authenticated(identity, ConnectionId(7), &mut files, now)
+            .unwrap()
+            .unwrap();
+        assert!(peer.check(&mut files, now).is_ok());
+        live.store(false, Ordering::SeqCst);
+        assert!(peer.check(&mut files, now).is_err());
+        live.store(true, Ordering::SeqCst);
+        use sophia_runtime::image_channel::{ImageChannelRole, ImageHelloPending};
+        for role in [ImageChannelRole::Shell, ImageChannelRole::Lock] {
+            for bad in [false, true] {
+                let sender = connect_peer();
+                let peer = listener
+                    .accept_authenticated(identity, ConnectionId(7), &mut files, now)
+                    .unwrap()
+                    .unwrap();
+                let mut pending =
+                    ImageHelloPending::new(peer, role, 9, 11, now + Duration::from_millis(250))
+                        .unwrap();
+                assert!(!pending.poll(&mut files, now).unwrap());
+                let generation = if bad { 12 } else { 11 };
+                let hello = match role {
+                    ImageChannelRole::Shell => shell_files::ShellImagePacket::Hello {
+                        connection_epoch: 9,
+                        channel_generation: generation,
+                    }
+                    .encode()
+                    .unwrap(),
+                    ImageChannelRole::Lock => lock_files::LockImagePacket::Hello {
+                        connection_epoch: 9,
+                        channel_generation: generation,
+                    }
+                    .encode()
+                    .unwrap(),
+                };
+                assert_eq!(
+                    send(&sender, &hello, SendFlags::NOSIGNAL).unwrap(),
+                    hello.len()
+                );
+                if bad {
+                    assert!(pending.poll(&mut files, now).is_err());
+                } else {
+                    assert!(pending.poll(&mut files, now).unwrap());
+                    // Journal backpressure cannot renew the original deadline.
+                    assert!(
+                        pending
+                            .poll(&mut files, now + Duration::from_millis(249))
+                            .unwrap()
+                    );
+                    assert!(
+                        pending
+                            .poll(&mut files, now + Duration::from_millis(250))
+                            .is_err()
+                    );
+                }
+                assert!(pending.poll(&mut files, now).is_err());
+                assert!(pending.into_peer().is_err());
+            }
+        }
+    }
+    std::fs::remove_dir(directory).unwrap();
 }
