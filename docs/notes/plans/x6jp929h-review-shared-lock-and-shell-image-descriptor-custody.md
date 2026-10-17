@@ -722,6 +722,13 @@ ASan/UBSan; GCC's sanitizer link was unavailable because its runtime libraries
 are not installed. This checks decoding/coherence, not the timed retry policy
 or lifecycle peer behavior, which remain outstanding.
 
+Rust `745272f` and C `1516463` refine the formats diagnostic order: exact
+`64 + 40 * rows` length precedes capacity and sealed-only support. The 54-case
+corpus adds one row declared in a 64-byte object (Length); the earlier short
+4097-row case also reports Length. A separately constructed complete 4097-row
+object reports Capacity. Both targets, strict Rust Clippy and C Clang ASan/UBSan
+pass. This changes fixture diagnostics only.
+
 ### Draft golden cases
 
 The first encode/decode review uses these canonical values: shell role 1,
