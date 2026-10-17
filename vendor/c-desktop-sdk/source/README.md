@@ -1,5 +1,8 @@
 # Sophia desktop SDK for C
 
+Shell startup supports caller-driven progress from a connected socket or an
+admitted root. See [startup controls and ownership](SHELL-STARTUP.md).
+
 Native C99 libraries for Sophia desktop components. This repository builds
 without a Sophia checkout and uses no Rust code. Nim clients can use its C API.
 

@@ -1,5 +1,8 @@
 # C and Rust SDK API parity
 
+[Shell startup](SHELL-STARTUP.md) maps caller-driven connection, timers,
+bounded progress and handoff in both SDKs, with independent export evidence.
+
 The [transport and namespace map](TRANSPORT-PARITY.md) covers generic wire
 operations, directory/attribute access, discovery and their ownership rules.
 
@@ -615,7 +618,7 @@ pending under t333.
 
 | C operation | Rust counterpart | Ownership or control difference |
 | --- | --- | --- |
-| `sophia_ss_init[_buffer]`, `init_attached[_buffer]` | `connect_files`, `from_attached` | C borrows fd/storage; Rust owns the pipeline. C transaction-buffer sizing is caller storage; Rust uses owned bounded record buffers. |
+| `sophia_ss_open_fd[_staging]`, `open_attached[_staging]` | `Connecting::direct/attached`; blocking `connect_files/from_attached` | C borrows fd/storage; Rust owns the pipeline. Both support caller-driven startup; see [startup controls](SHELL-STARTUP.md). |
 | `state`, `limits`, `refusal` | construction result/`welcome`, Limits observation, typed errors | Rust returns admission refusal during connection rather than retaining a half-initialized session for querying. |
 | `poll_events`, `dispatch` | `AsFd`, `io_interest`, `dispatch` | Whole-call budgets and monotonic-time rules above. |
 | `record_bytes`, `submit` | protocol encoders, `enqueue_shell_batch` | Rust has no separate allocation-free encoded-size query; prepared admission can validate and reserve before effects. |

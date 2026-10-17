@@ -1,14 +1,14 @@
-tree 075905afe637994bbbea22cad51b593293f989c6
-parent 080eefa60759c5b68a4adeaa0d5cf8f0558f793b
-author Mason Green <mason@greenm01.net> 1792208493 -0400
-committer Mason Green <mason@greenm01.net> 1792208493 -0400
+tree 04b7b823f64da89807036ee803c6ef3fdef94b9e
+parent 61d33d8920e5794134b1b1e6c7a9c75640ec7850
+author Mason Green <mason@greenm01.net> 1792209180 -0400
+committer Mason Green <mason@greenm01.net> 1792209180 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLubRsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIDHwEApDF0bO/eOs1+lNs7qV8v
- +gI0GNDVW1LunSUyi2H0x54A/2GDaPhrt9NEzZBt3ek8gN2TFiJCCsIRUE+GYyu5
- NogK
- =bEEk
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLxHBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJGqwD/aY39DZna4z2NqE+6+nzZ
+ xsIfERRWU8YRWN1u0JgVhhABAJgVO6KwFXDRQPkgF9zOSHHRNi5R/EJC9CjOd/bS
+ 2AQF
+ =+orR
  -----END PGP SIGNATURE-----
 
-Preserve rejected portal frame buffers and reconcile role maps
+Add caller-driven shell startup and export peer

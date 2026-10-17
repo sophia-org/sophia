@@ -187,6 +187,39 @@ are imported. Next audit WM, experimental lock and shell maps, then reconcile
 the release inventory and remaining acceptance evidence. These audits do not
 establish physical desktop acceptance or remove the refused-End limit.
 
+The shell audit found that Rust still blocked during startup while C allowed
+caller-driven progress. Rust's `Connecting` API now covers direct
+and supplied-root startup with caller time, deadlines and shared I/O budgets.
+All four profiles pass independent fragmented-read, short-write and same-ID
+retry checks on both paths. Strict shell Clippy passes. Independently built C
+and Rust peers each pass `shell_sdk_startup` against Sophia's real export in
+metadata and content modes (one test, two modes per executable). These fixtures
+supply admission evidence; they do not prove protected launch or presentation.
+Both startup APIs also reject malformed custody, record bounds and stale
+event/limits epochs, and acknowledge explicit admission refusal. The paired
+`SHELL-STARTUP.md` maps caller time, ownership, cancellation and C's caller-owned
+deadline. Signed Rust `528b855452407d90b54b2636e05097df074c0fc8` and C
+`60d4dcce16cbde858877fa22d95ffb6bc43c8f74` are pushed and imported; the source
+pins supersede the previous pair above. No live desktop installation changed.
+Next: finish WM/lock and shell-control audit, reconcile the release inventory
+and gather any missing acceptance evidence against the full criteria.
+
+The independent startup peers have SHA-256 hashes
+`70230db89c60771091589c9137b67613d44f15fb3a9961860c8a7cbbcf7ebb3f` (Rust) and
+`06e37fb7d3a212a19d78bbe6f234d53a11830fa38eb5fb03f9747cc33a9edf05` (C).
+Run `cargo test --offline -p sophia-runtime --test shell_sdk_startup --
+--include-ignored --nocapture` through `cargo-slot sophia`, setting
+`SOPHIA_SHELL_STARTUP_PEER` to each independently built absolute executable
+path. The Rust example is `shell_startup_peer`; C builds
+`build/shell_startup_peer`. The shell suite, strict shell and fixture Clippy,
+and full C check suite pass. Both Sophia SDK pin checks pass at these revisions;
+the Rust check includes the imported SDK workspace tests. This does not close t333.
+
+For the quiet-window record, the Mac mini Claude reported no crunch activity
+between its 2026-10-17 02:59 UTC confirmation and the 03:00 UTC release; its
+training ran only on the mini. This is a coordination report, not measured
+host-idleness evidence. The hold is released.
+
 ### Role audit and portal buffer evidence, 2026-10-17
 
 Signed, pushed source revisions are Rust

@@ -132,6 +132,8 @@ pub struct Peer {
     profile: Profile,
     handshaking: bool,
     handshake_done: bool,
+    fragmented_startup: bool,
+    startup_submit: Option<Vec<u8>>,
     fids: HashMap<u32, String>,
     /// Opened object fids: the object pinned at open time.
     pins: HashMap<u32, Object>,
@@ -238,6 +240,33 @@ impl Peer {
         edit_bootstrap: fn(&mut Vec<u8>),
         edit_limits: fn(&mut Vec<u8>),
     ) -> Self {
+        Self::handshake_settings(
+            listener,
+            profile,
+            limits,
+            edit_bootstrap,
+            edit_limits,
+            false,
+        )
+    }
+
+    #[allow(dead_code)] // Shared support is also compiled by non-startup tests.
+    pub fn fragmented_retry_handshake(listener: UnixListener, profile: Profile) -> Self {
+        let limits = ContentLimits::prototype(ContentGrant {
+            connection_epoch: EPOCH,
+            content_grant_epoch: CONTENT_GRANT_EPOCH,
+        });
+        Self::handshake_settings(listener, profile, limits, |_| {}, |_| {}, true)
+    }
+
+    fn handshake_settings(
+        listener: UnixListener,
+        profile: Profile,
+        limits: ContentLimits,
+        edit_bootstrap: fn(&mut Vec<u8>),
+        edit_limits: fn(&mut Vec<u8>),
+        fragmented_startup: bool,
+    ) -> Self {
         let deadline = Instant::now() + WAIT;
         listener.set_nonblocking(true).unwrap();
         let stream = loop {
@@ -269,6 +298,8 @@ impl Peer {
             profile,
             handshaking: true,
             handshake_done: false,
+            fragmented_startup,
+            startup_submit: None,
             fids: HashMap::new(),
             pins: HashMap::new(),
             next_sequence: 1,
@@ -517,6 +548,11 @@ impl Peer {
             }
             TREAD => {
                 let (fid, offset, count) = (u32_at(&body, 0), u64_at(&body, 4), u32_at(&body, 12));
+                let count = if self.handshaking && self.fragmented_startup {
+                    count.min(3)
+                } else {
+                    count
+                };
                 let node = self.fids.get(&fid).cloned().unwrap_or_default();
                 match node.as_str() {
                     "api" => {
@@ -537,7 +573,11 @@ impl Peer {
                         assert!(self.events_read.is_none(), "one events read at a time");
                         self.events_read = Some((tag, offset, count));
                         if self.handshaking {
-                            self.negotiated();
+                            if self.next_sequence == 1 {
+                                self.negotiated();
+                            } else {
+                                self.flush_events();
+                            }
                         }
                     }
                     _ if self.pins.contains_key(&fid) => {
@@ -564,9 +604,15 @@ impl Peer {
                 let node = self.fids.get(&fid).cloned().unwrap_or_default();
                 match node.as_str() {
                     "transaction" if self.handshaking => {
-                        decode_shell_file_negotiate(&data).expect("a Negotiate record");
-                        self.negotiate = Some(data);
-                        self.answer_write(tag, count);
+                        let accepted = if self.fragmented_startup {
+                            count.min(5)
+                        } else {
+                            count
+                        };
+                        let bytes = self.negotiate.get_or_insert_with(Vec::new);
+                        assert_eq!(u64_at(&body, 4) as usize, bytes.len());
+                        bytes.extend_from_slice(&data[..accepted as usize]);
+                        self.answer_write(tag, accepted);
                     }
                     "transaction" => {
                         self.transactions.push(data.clone());
@@ -577,8 +623,19 @@ impl Peer {
                         }
                     }
                     "submit" if self.handshaking => {
+                        decode_shell_file_negotiate(self.negotiate.as_ref().unwrap())
+                            .expect("a Negotiate record");
                         let submit = decode_shell_file_submit(&data).expect("a submit");
                         assert_eq!((submit.connection_epoch, submit.submission_id), (EPOCH, 1));
+                        if self.fragmented_startup {
+                            if let Some(first) = &self.startup_submit {
+                                assert_eq!(first, &data);
+                            } else {
+                                self.startup_submit = Some(data);
+                                self.answer_error(tag, 11);
+                                return;
+                            }
+                        }
                         self.answer_write(tag, count);
                     }
                     "submit" => self.submits.push_back(Held { tag, data }),

@@ -1,14 +1,14 @@
-tree 7724e554168febaaff45506b2b288e0ce49bb5d6
-parent bfd9ba2aab0995eae4707ff15a23f8c3d99b6f46
-author Mason Green <mason@greenm01.net> 1792208493 -0400
-committer Mason Green <mason@greenm01.net> 1792208493 -0400
+tree 352fbf51f43ddaf388d4fb4713c9caace9fb8e14
+parent c2d9c33ef901dc66c35de7743348a43805a52e3e
+author Mason Green <mason@greenm01.net> 1792209186 -0400
+committer Mason Green <mason@greenm01.net> 1792209186 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLubRsUgAAAAAAEAA5t
- YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGIM9AEA82hQKEC1L4srr3IfFwYJ
- iRXWpcnyV/tBkRIIP59D69IBANDeh+1ZiQ3ByMlX2CgbwWOlG1RJoP1eMXeZ45pC
- 014C
- =yZ8b
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCatLxIhsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGKyVAEAvhxgJuyZdX/jIZmLZPzC
+ Isjbk7QY8M/+EVMAG9HWx0gBAJCgVqIsqcw5UahlTD1BXfgPT8k9U5SE81iTCFTy
+ zCgC
+ =Cn7G
  -----END PGP SIGNATURE-----
 
-Verify portal frame rejection storage and reconcile role maps
+Document shell startup parity and add independent export peer

@@ -1,5 +1,15 @@
 # Provenance
 
+## Caller-driven shell startup, 2026-10-17
+
+Rust adds an owned nonblocking startup driver; C's existing borrowed session
+already provides the counterpart. Both publish the operation map in
+SHELL-STARTUP.md and independent executable peers. Each peer passes Sophia's
+real-export fixture with one-byte dispatch budgets, with and without content
+limits. Admission is supplied by the fixture; no protected launch or physical
+presentation is claimed. The Rust shell suite, strict all-target shell Clippy
+and C check suite pass. Full desktop release acceptance remains under t333.
+
 ## Portal and broker publication candidate, 2026-10-16
 
 This series adds native portal requester sessions and broker sessions in both

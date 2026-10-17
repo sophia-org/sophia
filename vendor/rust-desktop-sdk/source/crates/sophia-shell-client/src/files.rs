@@ -37,6 +37,8 @@ use crate::{ShellClientError, client_record};
 mod batch;
 mod budget;
 mod connect;
+mod connecting;
+pub use connecting::Connecting;
 mod descriptor;
 mod drive;
 mod events;

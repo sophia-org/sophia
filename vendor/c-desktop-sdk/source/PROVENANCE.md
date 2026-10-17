@@ -1,5 +1,15 @@
 # Extraction and contract provenance
 
+## Caller-driven shell startup, 2026-10-17
+
+Rust adds an owned nonblocking startup driver; C's existing borrowed session
+already provides the counterpart. Both publish the operation map in
+SHELL-STARTUP.md and independent executable peers. Each peer passes Sophia's
+real-export fixture with one-byte dispatch budgets, with and without content
+limits. Admission is supplied by the fixture; no protected launch or physical
+presentation is claimed. The Rust shell suite, strict all-target shell Clippy
+and C check suite pass. Full desktop release acceptance remains under t333.
+
 ## Shell contract reconciliation, 2026-10-16
 
 The shell file specification now matches signed Sophia `d817e6d8ab1906ff191e6bbb1fec9a902ead9b89`:

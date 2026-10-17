@@ -14,6 +14,7 @@ pub use catalog::{CatalogInbox, CatalogObservation};
 mod descriptor;
 mod files;
 pub use descriptor::DescriptorObservation;
+pub use files::Connecting;
 mod lifecycle;
 mod native_launcher;
 pub use native_launcher::NativeLauncherObservation;

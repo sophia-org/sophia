@@ -1,0 +1,55 @@
+#define _POSIX_C_SOURCE 200809L
+#include "sophia_shell_session.h"
+#include <assert.h>
+#include <poll.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <time.h>
+#include <unistd.h>
+static uint64_t now(void) {
+  struct timespec t;
+  assert(!clock_gettime(CLOCK_MONOTONIC, &t));
+  return (uint64_t)t.tv_sec * 1000 + (uint64_t)t.tv_nsec / 1000000;
+}
+int main(int argc, char **argv) {
+  struct sophia_ss *session = calloc(1, sizeof *session);
+  struct sophia_ss_config config = {{8, 8, 1}, SOPHIA_SF_DESCRIPTOR, 4096, 4, 8192, NULL, 0};
+  struct sockaddr_un address = {0};
+  struct sophia_ss_obligations obligations;
+  uint8_t go;
+  size_t size = sophia_ss_storage_bytes(4096, 8192);
+  void *storage = malloc(size);
+  uint64_t deadline;
+  int fd, content;
+  alarm(5);
+  assert(argc == 3 && session && storage);
+  content = !strcmp(argv[2], "content");
+  if (content) config.offer.required_capabilities |= 128;
+  assert(read(STDIN_FILENO, &go, 1) == 1 && go == 1);
+  fd = socket(AF_UNIX, SOCK_STREAM, 0);
+  assert(fd >= 0 && strlen(argv[1]) < sizeof address.sun_path);
+  address.sun_family = AF_UNIX;
+  strcpy(address.sun_path, argv[1]);
+  assert(!connect(fd, (struct sockaddr *)&address, sizeof address));
+  assert(!sophia_ss_open_fd(session, fd, &config, storage, size));
+  deadline = now() + 3000;
+  do {
+    int ack;
+    assert(now() < deadline);
+    assert(!sophia_ss_dispatch(session, POLLIN | POLLOUT, 1, now()));
+    ack = sophia_ss_ack(session);
+    assert(!ack || ack == SOPHIA_9P_BUSY);
+    assert(!sophia_ss_obligations(session, &obligations));
+  } while (sophia_ss_state(session) != SOPHIA_SS_READY || obligations.acked < 2);
+  assert(sophia_ss_epoch(session) == 41);
+  assert(sophia_ss_welcome(session)->selected_revision == 8);
+  assert(sophia_ss_welcome(session)->capabilities == (3u | (content ? 128u : 0u)));
+  assert(!!sophia_ss_limits(session) == content);
+  sophia_ss_close(session);
+  close(fd);
+  free(storage);
+  free(session);
+  return 0;
+}

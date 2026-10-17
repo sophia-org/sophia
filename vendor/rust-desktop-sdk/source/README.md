@@ -1,5 +1,8 @@
 # Sophia desktop SDK for Rust
 
+Shell startup supports caller-driven progress from a connected socket or an
+admitted root. See [startup controls and ownership](SHELL-STARTUP.md).
+
 Launch authentication now supports caller-driven version negotiation, timers
 and bounded I/O from startup through root handoff. The existing blocking
 constructors remain available; see [launch parity](LAUNCH-PARITY.md).
