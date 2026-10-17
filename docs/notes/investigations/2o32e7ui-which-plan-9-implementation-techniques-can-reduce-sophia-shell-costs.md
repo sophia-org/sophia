@@ -53,7 +53,7 @@ matrix remains open. Request reductions alone do not explain those costs.
 niltempus has accepted the [B2/B3 plan](../plans/nfe0blnb-queue-shell-submit-and-pixel-writes-within-existing-custody-bounds.md)
 and directed implementation. The contract now permits queued final-fragment
 submit and a four-write pixel window. The capture prerequisite is complete.
-B2 is signed locally as Rust `7722502` and C `574a1eb`, pending adoption.
+B2 is signed as Rust `7722502` and C `574a1eb`, adopted by signed Sophia `406f73f31`.
 Rust's shell-client suite and strict Clippy pass; the full C suite passes.
 Independent tests hold and reverse both replies, preserve early Submitted after
 a failed record, reject incomplete-record retry and keep earlier C fragments
@@ -63,8 +63,8 @@ current `feaf3cbc7`. The review follow-ups passed the current export again.
 These are startup exchanges, not the entire export failure matrix. Logs are under
 `~/.local/state/sophia/development-evidence/t331-b2-20261017/`.
 The production export's incomplete/absent-staging and backpressure precedence
-fixture passes for both writer paths. Further compatibility fixtures, vendor
-adoption and B3 remain open. No B2 native performance result exists yet.
+fixture passes for both writer paths. Further compatibility fixtures and B3
+qualification remain open. No B2 native performance result exists yet.
 
 The review follow-ups restore C's record-write ESTALE classification and preserve
 a complete successful submit reply on terminal failure in both SDKs, even when
@@ -74,12 +74,50 @@ covering ACK. Tests retain Unknown when no authoritative reply or valid event
 establishes custody, and malformed journal data still fails validation. C reports
 record ESTALE as a stale session; Rust retains its previous protocol-error
 category. API-PARITY records that difference and B2's C consumer rebuild
-requirement. Both SDK trees are clean at these signed follow-ups.
+requirement. Both signed follow-ups are upstream; B3 changes now sit above them locally.
 
-Publication is blocked by the SSH agent refusing `id_crunch`; its socket matches
-`gpgconf --list-dirs agent-ssh-socket`. Commit signing works. Do not reset the
-agent or adopt an unpublished SDK pin: the Rust snapshot rules require a revision
-reachable upstream. The source SDK trees are clean at the signed candidates.
+Publication is complete: both signed SDK candidates and Sophia's result notes
+are upstream. Exact archives have been imported locally. Both snapshot checks,
+the Rust SDK suite and C production export/lifecycle gates pass. The full default
+Sophia suite passes after adding the missing native-session guard to
+`output_snapshot_allocations.rs`; that test also passes with its feature enabled.
+Formatting, metadata and diff checks pass. After niltempus unlocked signing,
+the guard was committed as `d3a94f878`, followed by B2 adoption `406f73f31`.
+The installed desktop is unchanged.
+
+B3 export coverage has begun locally: the real-socket split-upload test now
+issues a short head and its tail before reading replies, checks tail EINVAL and
+recovers the exact bytes. A direct export fixture verifies EAGAIN leaves the
+cursor unchanged, queued tails refuse EINVAL while live, and a closing binding
+answers ESTALE without more custody. Both pass. These tests do not establish
+SDK windowing or expiry timing.
+
+Both B3 SDK windows are signed and published: Rust `365e5f3`, C `63efea3`.
+Sophia `bba813fa8` records the export fixtures above. Rust gathers
+four adjacent canonical units with separate tickets, matches replies by tag and
+settles in issue order. Its tests cover credit refill across eight chunks, reversed
+replies, short/EAGAIN heads with invalidated tails, End after drain and a terminal
+status before write replies. C windows one borrowed buffer, with independent
+tests for reversed replies, cursor recovery, idle wake, repeated backoff, explicit
+low-level retry, contradictory tails and fencing. C's full suite passes. Rust's
+shell/protocol suites and strict Clippy pass. Both also test iounit fragmentation;
+C's eight-slot attached-client fixture proves a three-write window and refill.
+The inline Rust window avoids a per-burst allocation; this is a storage property,
+not a measured allocation-gate result.
+
+C keeps the low-level client clockless and adds upload_retry; sophia_ss owns an
+independent supplied-clock deadline and reports the earlier submit/upload wake.
+Five control slots are reserved: default C session storage now has nine request
+slots, while direct eight-slot clients use three upload credits. Both C structs
+grow and consumers must rebuild. API-PARITY records the buffer/ticket distinction,
+fragment scheduling and progress-or-time versus time-only retry. Recovery counts
+remain in fixtures/instrumented evidence. Claude's C review found no blocker;
+the control reserve correction is applied, and Rust review is pending. No B3
+snapshot, comparator ledger or native pilot has run. No quiet hold is active.
+SDK logs are under `~/.local/state/sophia/development-evidence/t331-b3-20261017/`.
+Next: resolve review findings; preserve a B2-only comparator checkpoint; complete
+old/current export, fault and fairness checks before adopting B3; then collect
+matched native evidence. The existing +10% gates remain unchanged.
 
 ## First-slice native pilot — October 17
 
@@ -128,7 +166,8 @@ The subsequent [B2/B3 design](../plans/nfe0blnb-queue-shell-submit-and-pixel-wri
 was reviewed as proposed, then accepted by niltempus on October 17. It preserves
 tail fencing, submit errno precedence, per-ticket custody and canonical-chunk
 idle renewal. The frozen first-slice capture remains unchanged. B2 is now a local
-SDK candidate as described in Current resumption; B3 remains unimplemented.
+SDK candidate as described in Current resumption; B3 has signed source candidates
+but is not yet adopted into Sophia.
 
 Signed Rust `9d56625` proves that the next retained-fid record is outstanding
 while the covering ACK reply is withheld. Signed C `30b7c1f` waits for Negotiated
