@@ -34,10 +34,13 @@ Session `7bab56b0d` enables sealed lock images using the existing resource/live
 place envelope, the assembly timeout and 64 KiB validation units. It grants no
 unauthenticated channel. The seven lock-object/policy tests and native-session
 strict Clippy pass. The shared-pixel Session handoff is already in `85755e5c3`;
-the placed-image retirement control passes. Muse is now extending the protected
-C SDK provider test through real afid authentication, Hello, Source, Accepted
-and SourceReleased, retaining the received pixels across authority revocation.
-That test is not yet a passing qualification result.
+the placed-image retirement control passes. Protected C SDK test `49da1ded4`
+now proves real Factotum/afid authentication, Hello, Source, Accepted and
+SourceReleased disposition 1. It verifies exact 4×4 granted pixels and keeps
+them readable across authority revocation and provider replacement. The new
+test and all five authentication-module tests independently pass, including
+parallel execution after isolating each test's compiled C peer. This is a
+protected provider/export test, not native display or performance evidence.
 
 The lock audit corrections are signed in `7f9c96917` and `bc667ecef`.
 Wrong sealed backing length retains reason 4 rather than invalid_source (10).
@@ -48,13 +51,26 @@ failure transition; they do not prove an actual worker panic. Pending admission 
 post-admission validation have separate bounded deadlines; Source arrival never
 renews the latter. No contract relaxation is authorized by these fixes.
 
-Next are protected SDK/export qualification, remaining
-submitted-worker shutdown/cancellation controls, and matched sealed-versus-byte
+Shell control `9ef582fee` submits a real sealed Source to the worker, then
+cancels over 9P while the supplied owner schedule withholds completion
+collection. No terminal event appears before collection; the actual completion
+settles once with cancellation and disposition 4, and a late Source drains.
+This proves completion custody, not that the CPU scan was still running.
+The separate worker-shutdown control returns to its FD baseline after submitted,
+reserved and uncollected jobs, while delivered pixels remain readable until
+their last owner drops them. Both shell transport tests, the shutdown control
+and targeted strict Clippy pass. Transport-level teardown and the remaining
+lock cancellation controls are separate qualification work.
+
+Next are the remaining SDK/export and cancellation controls, and matched sealed-versus-byte
 native panel/bulk evidence. Comparator `c1b5faa71` merges the reviewed SDK/runtime
 while retaining both byte and IPC controls: its native-session check and both
 device-hidden peer tests pass. `93fb5991e` also carries the worker corrections.
-The generic sealed peer and external source-labelled measurement tooling are
-being prepared; no new performance result follows from this merge.
+The generic sealed peer is being prepared. External integration `a1a3c38`
+binds request, peer configuration and captured journal to the byte or sealed
+source and wire; all 30 targeted tests and strict Clippy pass. Reports preserve
+logical accepted payload bytes and CPU/frame alongside existing cost fields.
+No new performance result follows from this merge or tooling.
 No native capture has begun and no
 installed desktop has changed. All four unchanged t331 +10% gates, per-request
 allocation attribution and journal-read pairing remain required; the earlier
