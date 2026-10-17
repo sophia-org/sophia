@@ -1,6 +1,47 @@
 //! Real wire cancellation with caller-controlled completion collection.
 use super::*;
 
+pub(super) fn isolated_shutdown() {
+    const CHILD: &str = "SOPHIA_SHELL_IMAGE_SHUTDOWN_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "disconnected_transport_reclaims_uncollected_source_custody",
+                "--exact",
+                "--test-threads=1",
+            ])
+            .env(CHILD, "1")
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                assert!(status.success());
+                return;
+            }
+            if Instant::now() >= deadline {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                panic!("transport shutdown child stalled");
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+    // The child runs this test alone, so unrelated test FDs cannot alter the
+    // baseline. The worker may have completed, but collection is withheld.
+    let descriptors = || std::fs::read_dir("/proc/self/fd").unwrap().count();
+    let baseline = descriptors();
+    run_image_epoch(false, false, true, 6);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while descriptors() != baseline {
+        assert!(
+            Instant::now() < deadline,
+            "transport/worker retained descriptors"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
 pub(super) fn cancelled_source(peer: &mut raw::Peer) {
     let admitted = peer.next_event();
     let record = decode_shell_file_record_at_revision(&admitted, ShellFileClass::Event, 9).unwrap();
@@ -86,6 +127,23 @@ pub(super) fn submitted_source(
     collect: std::sync::mpsc::Sender<()>,
     expired: bool,
 ) {
+    let (metadata, bytes) = submit_source(peer, socket, submitted);
+    cancel(peer, &metadata);
+    // The real worker may have finished scanning. The supplied owner schedule
+    // withholds collection, so cancellation cannot invent its completion.
+    peer.no_event();
+    collect.send(()).unwrap();
+    settled(peer, expired);
+    let late = std::fs::File::open("/dev/null").unwrap();
+    send(socket, &bytes, &late);
+    peer.no_event();
+}
+
+pub(super) fn submit_source(
+    peer: &mut raw::Peer,
+    socket: &std::os::fd::OwnedFd,
+    submitted: std::sync::mpsc::Receiver<()>,
+) -> (ShellImageMetadata, Vec<u8>) {
     use rustix::fs::{MemfdFlags, SealFlags, fcntl_add_seals, memfd_create};
     let admitted = peer.next_event();
     let record = decode_shell_file_record_at_revision(&admitted, ShellFileClass::Event, 9).unwrap();
@@ -121,15 +179,7 @@ pub(super) fn submitted_source(
     .unwrap();
     send(socket, &bytes, &source);
     submitted.recv_timeout(Duration::from_secs(3)).unwrap();
-    cancel(peer, &metadata);
-    // The real worker may have finished scanning. The supplied owner schedule
-    // withholds collection, so cancellation cannot invent its completion.
-    peer.no_event();
-    collect.send(()).unwrap();
-    settled(peer, expired);
-    let late = std::fs::File::open("/dev/null").unwrap();
-    send(socket, &bytes, &late);
-    peer.no_event();
+    (metadata, bytes)
 }
 
 fn send(socket: &std::os::fd::OwnedFd, bytes: &[u8], source: &std::fs::File) {
