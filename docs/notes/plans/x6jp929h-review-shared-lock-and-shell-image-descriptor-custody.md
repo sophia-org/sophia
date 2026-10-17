@@ -22,6 +22,14 @@ and the October 4 revision-2 lock draft at
 That draft is historical input, not the contract. The recommendations below
 supersede its suggestions only if accepted.
 
+The [image-path investigation](../investigations/cerml352-what-a-fast-shell-and-lock-image-path-looks-like-beside-9p.md)
+collects precedents and further options: credits, reusable GPU registrations,
+sealed-memory GPU import and later fences. These are proposals for review, not
+additions accepted by this plan. Its performance projections are models, not
+measured bounds or grounds to change t331's gates. The custody review below
+still requires an immutable renderer-owned capture of mutable DMA-BUF content;
+registration or fences alone do not replace that requirement.
+
 The t337 exit is an accepted common ownership model, exact proposed record and
 object layouts with golden cases for both roles, and a compatibility/SDK review.
 Normative KDL, generated rows and production implementation follow acceptance;
